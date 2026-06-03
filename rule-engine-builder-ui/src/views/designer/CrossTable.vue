@@ -217,7 +217,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="text-danger">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>
@@ -559,7 +559,7 @@ export default {
   color: #ccc !important;
   padding: 0 !important;
   font-size: 13px;
-  &:hover { color: #F56C6C !important; }
+  &:hover { color: #F76E6C !important; }
 }
 .add-col-cell {
   background: #f9f9f9;
@@ -582,7 +582,7 @@ export default {
   color: #ccc !important;
   padding: 0 !important;
   font-size: 13px;
-  &:hover { color: #F56C6C !important; }
+  &:hover { color: #F76E6C !important; }
 }
 
 /* 数据单元格 */

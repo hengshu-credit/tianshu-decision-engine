@@ -26,10 +26,13 @@ CREATE TABLE IF NOT EXISTS `rule_project` (
 CREATE TABLE IF NOT EXISTS `rule_definition` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `project_code`      VARCHAR(64)  DEFAULT NULL             COMMENT '所属项目编码',
+  `project_name`      VARCHAR(128) DEFAULT NULL             COMMENT '所属项目名称',
   `rule_code`         VARCHAR(128) NOT NULL                COMMENT '规则编码（Client SDK调用标识）',
   `rule_name`         VARCHAR(256) NOT NULL                COMMENT '规则名称（中文）',
   `model_type`        VARCHAR(16)  NOT NULL                COMMENT '决策模型类型：TABLE/TREE/FLOW/CROSS/SCORE',
   `description`       VARCHAR(512) DEFAULT NULL             COMMENT '规则描述',
+  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `current_version`   INT          NOT NULL DEFAULT 0       COMMENT '当前设计版本号',
   `published_version` INT          DEFAULT NULL             COMMENT '已发布版本号',
   `status`            TINYINT      NOT NULL DEFAULT 0       COMMENT '状态：0-草稿，1-已发布，2-已下线',
@@ -61,6 +64,19 @@ CREATE TABLE IF NOT EXISTS `rule_definition_content` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_definition_id` (`definition_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则内容表（设计态数据和编译产物）';
+
+-- ============================================================
+-- 4. rule_definition_ref - 规则关联表（项目关联全局规则）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_definition_ref` (
+  `id`              BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `definition_id`   BIGINT   NOT NULL                COMMENT '全局规则定义ID',
+  `project_id`      BIGINT   NOT NULL                COMMENT '关联项目ID',
+  `create_time`    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_definition_project` (`definition_id`, `project_id`),
+  KEY `idx_project_id` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则关联表（用于项目关联全局规则）';
 
 -- ============================================================
 -- 4. rule_definition_version - 规则版本历史表（HASH分区）

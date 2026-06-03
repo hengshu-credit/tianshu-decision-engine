@@ -23,13 +23,31 @@ public class RuleFunctionController {
 
     /**
      * 按项目分页查询函数列表（管理页面）
+     * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
      */
     @GetMapping("/project/{projectId}")
     public Result<IPage<RuleFunction>> listByProject(
             @PathVariable Long projectId,
             @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "20") int pageSize) {
-        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize));
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName) {
+        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName));
+    }
+
+    /**
+     * 查询所有函数（分页，用于未选择项目时展示全部）
+     * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示全部
+     */
+    @GetMapping("/list")
+    public Result<IPage<RuleFunction>> pageAll(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName) {
+        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectCode, projectName));
     }
 
     /**

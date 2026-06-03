@@ -12,7 +12,7 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://localhost:3306/rule_engine?useUnicode=true&allowMultiQueries=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:root}
+    password: ${MYSQL_PASSWORD:1qaz@WSX}
   redis:
     host: ${REDIS_HOST:localhost}
     port: ${REDIS_PORT:6379}
@@ -47,7 +47,7 @@ rule-engine:
     # 未自定义 ConsoleLoginAuthenticator Bean 时使用以下账号登录；生产环境请改为环境变量或 BCrypt
     builtin:
       username: ${CONSOLE_USERNAME:admin}
-      password: ${CONSOLE_PASSWORD:admin}
+      password: ${CONSOLE_PASSWORD:1qaz@WSX}
       password-encoding: PLAIN
 
 mybatis-plus:

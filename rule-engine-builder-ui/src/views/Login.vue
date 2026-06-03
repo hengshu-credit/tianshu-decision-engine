@@ -10,24 +10,10 @@
       <div class="login-card" role="main">
         <header class="login-brand">
           <div class="login-brand__icon" aria-hidden="true">
-            <svg viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path
-                d="M24 6L8 16v16l16 10 16-10V16L24 6z"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linejoin="round"
-              />
-              <path
-                d="M24 22v10M18 19l6 3 6-3M16 26l8 4.5 8-4.5"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
+            <img src="/images/hengshucredit_animated.svg" alt="logo" class="login-logo-img">
           </div>
           <div class="login-brand__text">
-            <h1 class="login-brand__title">规则引擎</h1>
+            <h1 class="login-brand__title">衡枢决策引擎</h1>
             <p class="login-brand__subtitle">可视化编排 · 管理控制台</p>
           </div>
         </header>
@@ -115,14 +101,13 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-@import '@/styles/variables.scss';
 
-/* 设计 tokens：与 ui-ux-pro-max 建议一致的高对比中性色 + 项目主色 CTA */
-$login-text: #0f172a;
-$login-muted: #475569;
+/* 设计 tokens */
+$login-text: #1e293b;
+$login-muted: #64748b;
 $login-border: #e2e8f0;
 $login-primary: $--color-primary;
-$login-primary-soft: rgba(179, 0, 0, 0.12);
+$login-primary-soft: rgba(38, 57, 233, 0.1);
 
 .login-page {
   position: relative;
@@ -143,18 +128,18 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   position: fixed;
   inset: 0;
   z-index: 0;
-  background: linear-gradient(145deg, #f1f5f9 0%, #e2e8f0 45%, #cbd5e1 100%);
+  background: linear-gradient(145deg, #1C2038 0%, #13152A 50%, #0F1224 100%);
 }
 
 .login-bg__mesh {
   position: absolute;
   inset: 0;
-  opacity: 0.45;
+  opacity: 0.3;
   background-image:
-    radial-gradient(circle at 20% 30%, rgba(179, 0, 0, 0.07) 0%, transparent 45%),
-    radial-gradient(circle at 80% 70%, rgba(15, 23, 42, 0.06) 0%, transparent 40%),
-    linear-gradient(rgba(15, 23, 42, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
+    radial-gradient(circle at 20% 30%, rgba(38, 57, 233, 0.15) 0%, transparent 45%),
+    radial-gradient(circle at 80% 70%, rgba(38, 57, 233, 0.08) 0%, transparent 40%),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
   background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
   animation: mesh-drift 28s ease-in-out infinite alternate;
 }
@@ -172,7 +157,7 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   height: min(42vw, 360px);
   top: -8%;
   left: -5%;
-  background: rgba(179, 0, 0, 0.15);
+  background: rgba(38, 57, 233, 0.25);
   animation-delay: 0s;
 }
 
@@ -181,7 +166,7 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   height: min(50vw, 420px);
   bottom: -12%;
   right: -8%;
-  background: rgba(15, 23, 42, 0.12);
+  background: rgba(38, 57, 233, 0.15);
   animation-delay: -6s;
 }
 
@@ -228,12 +213,11 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
 .login-card {
   padding: 36px 32px 28px;
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.65);
+  background: rgba(28, 32, 56, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   box-shadow:
-    0 4px 24px rgba(15, 23, 42, 0.06),
-    0 24px 48px rgba(15, 23, 42, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+    0 4px 24px rgba(0, 0, 0, 0.3),
+    0 24px 48px rgba(0, 0, 0, 0.2);
   -webkit-backdrop-filter: blur(18px);
   backdrop-filter: blur(18px);
   animation: card-enter 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
@@ -256,7 +240,7 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   gap: 16px;
   margin-bottom: 28px;
   padding-bottom: 24px;
-  border-bottom: 1px solid $login-border;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .login-brand__icon {
@@ -267,19 +251,20 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   align-items: center;
   justify-content: center;
   border-radius: 14px;
-  color: $login-primary;
-  background: linear-gradient(135deg, rgba(179, 0, 0, 0.1) 0%, rgba(179, 0, 0, 0.04) 100%);
-  border: 1px solid rgba(179, 0, 0, 0.12);
+  background: rgba(38, 57, 233, 0.15);
+  border: 1px solid rgba(38, 57, 233, 0.25);
+  overflow: hidden;
   transition: transform 0.25s ease, box-shadow 0.25s ease;
 }
 
-.login-brand__icon svg {
-  width: 28px;
-  height: 28px;
+.login-logo-img {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
 }
 
 .login-card:hover .login-brand__icon {
-  box-shadow: 0 8px 20px rgba(179, 0, 0, 0.12);
+  box-shadow: 0 8px 20px rgba(38, 57, 233, 0.25);
 }
 
 .login-brand__title {
@@ -287,7 +272,7 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   font-size: 1.375rem;
   font-weight: 700;
   letter-spacing: -0.02em;
-  color: $login-text;
+  color: #FFFFFF;
   line-height: 1.25;
 }
 
@@ -295,7 +280,7 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   margin: 6px 0 0;
   font-size: 0.8125rem;
   font-weight: 500;
-  color: $login-muted;
+  color: #94A3B8;
   line-height: 1.4;
 }
 
@@ -328,21 +313,22 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   line-height: 1.3;
   font-weight: 600;
   font-size: 13px;
-  color: $login-text;
+  color: #E2E8F0;
 }
 
 ::v-deep .login-form .el-input__inner {
   height: 44px;
   line-height: 44px;
   border-radius: 12px;
-  border: 1px solid $login-border;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 15px;
-  color: $login-text;
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.06);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 ::v-deep .login-form .el-input__inner:hover {
-  border-color: #cbd5e1;
+  border-color: rgba(38, 57, 233, 0.5);
 }
 
 ::v-deep .login-form .el-input__inner:focus {
@@ -351,7 +337,11 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
 }
 
 ::v-deep .login-form .el-input__inner::placeholder {
-  color: #94a3b8;
+  color: #64748b;
+}
+
+::v-deep .login-form .el-input__suffix {
+  color: #64748b;
 }
 
 .login-btn {
@@ -363,6 +353,8 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
   font-weight: 600 !important;
   letter-spacing: 0.02em;
   border-radius: 12px !important;
+  background: $login-primary !important;
+  border-color: $login-primary !important;
   cursor: pointer;
   transition:
     background-color 0.2s ease,
@@ -371,7 +363,9 @@ $login-primary-soft: rgba(179, 0, 0, 0.12);
 }
 
 .login-btn:not(.is-loading):hover {
-  box-shadow: 0 10px 28px rgba(179, 0, 0, 0.28);
+  background: #1a2fd8 !important;
+  border-color: #1a2fd8 !important;
+  box-shadow: 0 10px 28px rgba(38, 57, 233, 0.4);
 }
 
 .login-btn:not(.is-loading):active {

@@ -7,7 +7,7 @@
         <div class="block-header-actions">
           <el-button type="text" size="mini" icon="el-icon-top" v-if="bi > 0" @click="moveBlock(bi, -1)" />
           <el-button type="text" size="mini" icon="el-icon-bottom" v-if="bi < blocks.length - 1" @click="moveBlock(bi, 1)" />
-          <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="removeBlock(bi)" />
+          <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="removeBlock(bi)" />
         </div>
       </div>
       <div class="block-body">
@@ -41,7 +41,7 @@
           <div v-for="(br, bri) in block.branches" :key="bri" class="branch-card" :class="'branch-' + br.type">
             <div class="branch-head">
               <span class="branch-tag" :class="'tag-' + br.type">{{ br.type === 'if' ? 'IF' : br.type === 'elseif' ? 'ELSE IF' : 'ELSE' }}</span>
-              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="removeBranch(block, bri)" />
+              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="removeBranch(block, bri)" />
             </div>
             <div v-if="br.type !== 'else'" class="cond-area">
               <var-picker :vars="vars" :value="br.condVar" placeholder="条件变量" size="mini" @select="v => { br.condVar = v.varCode; sync() }" />
@@ -57,7 +57,7 @@
                 <var-picker :vars="vars" :value="a.target" placeholder="变量" size="mini" @select="v => { a.target = v.varCode; sync() }" />
                 <span class="eq">=</span>
                 <el-input v-model="a.value" size="mini" placeholder="值" @input="sync" />
-                <el-button v-if="br.actions.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="br.actions.splice(ai,1); sync()" />
+                <el-button v-if="br.actions.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="br.actions.splice(ai,1); sync()" />
               </div>
               <el-button size="mini" icon="el-icon-plus" @click="br.actions.push({type:'assign',target:'',value:''})" style="width:100%;margin-top:2px">添加赋值</el-button>
             </div>
@@ -78,7 +78,7 @@
             <div class="case-head">
               <span class="case-tag">CASE</span>
               <el-input v-model="c.value" size="mini" placeholder="匹配值" @input="sync" style="flex:1" />
-              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="block.cases.splice(ci,1); sync()" />
+              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="block.cases.splice(ci,1); sync()" />
             </div>
             <div class="case-body">
               <div v-for="(a, ai) in c.actions" :key="ai" class="inline-row">
@@ -117,7 +117,7 @@
           <div class="inline-row" v-for="(arg, ai) in block.args" :key="ai" style="margin-bottom:2px">
             <span class="mini-label">参数{{ai+1}}</span>
             <el-input v-model="block.args[ai]" size="mini" placeholder="参数表达式" @input="sync" />
-            <el-button v-if="block.args.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="block.args.splice(ai,1); sync()" />
+            <el-button v-if="block.args.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="block.args.splice(ai,1); sync()" />
           </div>
           <el-button size="mini" icon="el-icon-plus" @click="block.args.push(''); sync()" style="width:100%;margin-top:2px">添加参数</el-button>
         </template>
@@ -156,7 +156,7 @@
           <div class="inline-row">
             <span class="mini-label" style="color:#52c41a">真</span>
             <el-input v-model="block.trueValue" size="mini" placeholder="真值" @input="sync" />
-            <span class="mini-label" style="color:#F56C6C">假</span>
+            <span class="mini-label" style="color:#F76E6C">假</span>
             <el-input v-model="block.falseValue" size="mini" placeholder="假值" @input="sync" />
           </div>
         </template>
@@ -177,7 +177,7 @@
           <div class="inline-row">
             <span class="mini-label" style="color:#52c41a">匹配</span>
             <el-input v-model="block.trueValue" size="mini" placeholder="true" @input="sync" />
-            <span class="mini-label" style="color:#F56C6C">不匹配</span>
+            <span class="mini-label" style="color:#F76E6C">不匹配</span>
             <el-input v-model="block.falseValue" size="mini" placeholder="false" @input="sync" />
           </div>
         </template>
@@ -193,7 +193,7 @@
               <el-option label="文本" value="text" /><el-option label="表达式" value="expr" />
             </el-select>
             <el-input v-model="p.content" size="mini" :placeholder="p.type === 'expr' ? '变量/表达式' : '文本内容'" @input="sync" />
-            <el-button v-if="block.parts.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C" @click="block.parts.splice(pi,1); sync()" />
+            <el-button v-if="block.parts.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="block.parts.splice(pi,1); sync()" />
           </div>
           <el-button size="mini" icon="el-icon-plus" @click="block.parts.push({type:'text',content:''}); sync()" style="width:100%;margin-top:2px">添加片段</el-button>
         </template>

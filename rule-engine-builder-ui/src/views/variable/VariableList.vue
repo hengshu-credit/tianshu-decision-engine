@@ -4,12 +4,8 @@
       <i class="el-icon-info" /> 变量在规则设计时使用，<router-link to="/test">规则测试</router-link>中可加载项目变量作为入参。支持从 Java 实体类、JSON、建表 DDL 批量导入。
     </div>
 
-    <!-- Toolbar -->
-    <div class="var-toolbar">
-      <el-select v-model="currentProjectId" placeholder="选择项目" size="small" style="width:200px;" clearable @change="onProjectChange">
-        <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
-      </el-select>
-      <div class="toolbar-right">
+    <div class="uiue-btn-bar">
+      <div class="btn-right">
         <el-dropdown trigger="click" @command="handleImportCmd" :disabled="!currentProjectId">
           <el-button size="small" type="primary" icon="el-icon-upload2">批量导入 <i class="el-icon-arrow-down el-icon--right" /></el-button>
           <el-dropdown-menu slot="dropdown">
@@ -20,13 +16,13 @@
             <el-dropdown-item command="json-const" icon="el-icon-price-tag">导入 JSON 常量</el-dropdown-item>
           </el-dropdown-menu>
         </el-dropdown>
-        <el-button size="small" icon="el-icon-plus" @click="handlePrimaryCreate" :disabled="!currentProjectId">{{ primaryCreateLabel }}</el-button>
+        <el-button size="small" icon="el-icon-plus" @click="handlePrimaryCreate">{{ primaryCreateLabel }}</el-button>
         <el-button size="small" icon="el-icon-video-play" type="warning" @click="handleBatchValidate" :disabled="!currentProjectId" :loading="validating">验证规则</el-button>
       </div>
     </div>
 
     <!-- Tabs -->
-    <el-tabs v-model="activeTab" type="border-card" class="var-tabs">
+    <el-tabs v-model="activeTab" type="border-card" class="var-tabs" @tab-click="onTabClick">
 
       <!-- Tab 1: Variable List -->
       <el-tab-pane label="变量列表" name="list">
@@ -35,14 +31,22 @@
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
           <el-input v-model="qp.keyword" placeholder="搜索编码或名称" size="mini" clearable style="width:180px;" @keyup.enter.native="handleQuery" />
-          <el-button size="mini" type="primary" @click="handleQuery">查询</el-button>
-          <el-button size="mini" @click="resetQuery">重置</el-button>
+          <el-button type="primary" @click="handleQuery">查询</el-button>
+          <el-button @click="resetQuery">重置</el-button>
         </div>
 
         <!-- 1. 普通变量（系统新增） -->
         <div v-if="standaloneVars.length > 0" class="var-list-section">
           <div class="section-title">普通变量</div>
           <el-table :data="standaloneVars" border size="small" v-loading="loading" style="width:100%;">
+            <el-table-column label="作用范围" width="90" align="center">
+              <template slot-scope="{ row }">
+                <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ scopeTagLabel(row.scope) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
+              <template slot-scope="{ row }">{{ row.projectName || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
+            </el-table-column>
             <el-table-column prop="varCode" label="变量编码" min-width="130" show-overflow-tooltip />
             <el-table-column prop="varLabel" label="名称（中文）" min-width="120" show-overflow-tooltip />
             <el-table-column label="脚本名称" min-width="130">
@@ -66,7 +70,7 @@
               <template slot-scope="{ row }">
                 <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
                 <el-button type="text" size="small" @click="handleOptions(row)" v-if="row.varType==='ENUM'">选项</el-button>
-                <el-button type="text" size="small" style="color:#F56C6C;" @click="handleDelete(row)">删除</el-button>
+                <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -77,21 +81,39 @@
 
         <!-- 空状态 -->
         <div v-if="!loading && standaloneVars.length===0" class="tab-empty">
-          <template v-if="!currentProjectId">请先在顶部选择一个项目</template>
-          <template v-else>暂无变量，可点击「新建变量」或「批量导入」添加</template>
+          暂无变量，可点击「新建变量」或「批量导入」添加
         </div>
       </el-tab-pane>
 
       <!-- Tab 2: Data Objects -->
       <el-tab-pane label="数据对象" name="objects">
-        <div v-if="!currentProjectId" class="tab-empty">请先在顶部选择一个项目</div>
-        <div v-else-if="objectTree.length===0 && !objLoading" class="tab-empty">暂无数据对象，点击「批量导入」导入 Java、JSON 或 DDL</div>
-        <div v-loading="objLoading" v-else>
+        <div class="tab-filter-row">
+          <el-select v-model="objQp.scope" clearable placeholder="作用范围" size="mini" style="width:90px;" @change="onObjFilterChange">
+            <el-option label="全局" value="GLOBAL" />
+            <el-option label="项目级" value="PROJECT" />
+          </el-select>
+          <el-select v-model="objQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:120px;"
+            :remote-method="queryProjectCode" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
+          </el-select>
+          <el-select v-model="objQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:120px;"
+            :remote-method="queryProjectName" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
+          </el-select>
+          <el-button type="primary" @click="onObjFilterChange">查询</el-button>
+          <el-button @click="resetObjQuery">重置</el-button>
+        </div>
+        <div v-if="filteredObjectTree.length===0 && !objLoading" class="tab-empty">暂无数据对象，点击「批量导入」导入 Java、JSON 或 DDL</div>
+        <div v-else v-loading="objLoading">
           <div v-for="node in paginatedObjectTree" :key="node.object.id" class="var-group-card">
             <div class="var-group-header" @click="toggleObjectExpand(node)">
               <i :class="node._expanded ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" class="expand-icon" />
               <span class="var-group-code">{{ node.object.objectCode }}</span>
               <span v-if="node.object.objectLabel && node.object.objectLabel !== node.object.objectCode" class="var-group-label">{{ node.object.objectLabel }}</span>
+              <el-tag size="mini" :type="node.object.scope === 'GLOBAL' ? 'success' : 'info'" style="margin-left:4px;">{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
+              <span v-if="getProjectName(node.object.projectId)" style="font-size:12px;color:#888;margin-left:2px;">{{ getProjectName(node.object.projectId) }}</span>
+            </div>
+            <div class="var-group-toolbar">
               <el-input v-model="node.object.scriptName" size="mini" placeholder="脚本名称" style="width:130px;margin-left:6px;" @blur="onObjectScriptNameChange(node.object)" @click.native.stop />
               <el-select v-model="node.object.objectType" size="mini" style="width:100px;" @change="onObjectTypeChange(node.object)" @click.native.stop>
                 <el-option label="输入对象" value="INPUT" /><el-option label="输出对象" value="OUTPUT" /><el-option label="输入输出" value="INOUT" />
@@ -100,7 +122,7 @@
               <el-tag size="mini" type="info" v-if="node.object.sourceType">{{ node.object.sourceType }}</el-tag>
               <span class="var-group-count">{{ node.variables.length }} 个字段</span>
               <el-button type="text" size="small" icon="el-icon-plus" style="margin-left:auto;" @click.stop="handleAddObjectField(node)">添加字段</el-button>
-              <el-button type="text" size="small" icon="el-icon-delete" style="color:#F56C6C;" @click.stop="handleDeleteObject(node.object)" />
+              <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click.stop="handleDeleteObject(node.object)" />
             </div>
             <div v-show="node._expanded" class="var-group-body">
               <el-table :data="node.variables" size="mini" border style="width:100%;">
@@ -121,31 +143,50 @@
                   <template slot-scope="{ row }">
                     <el-button type="text" size="small" @click="handleEditObjectField(row, node)">编辑</el-button>
                     <el-button type="text" size="small" @click="handleOptions(row, true)" v-if="row.varType==='ENUM'">选项</el-button>
-                    <el-button type="text" size="small" style="color:#F56C6C;" @click="handleDeleteObjectField(row)">删除</el-button>
+                    <el-button type="text" size="small" class="btn-delete" @click="handleDeleteObjectField(row)">删除</el-button>
                   </template>
                 </el-table-column>
               </el-table>
             </div>
           </div>
-          <el-pagination style="margin-top:12px;text-align:right;" :current-page="objPageNum" :page-size="objPageSize" :total="objectTree.length"
+          <el-pagination style="margin-top:12px;text-align:right;" :current-page="objPageNum" :page-size="objPageSize" :total="filteredObjectTree.length"
             layout="total,prev,pager,next" @current-change="handleObjPageChange" />
         </div>
       </el-tab-pane>
 
       <!-- Tab 3: 常量列表（与变量列表相同分页模型，必须有默认值） -->
       <el-tab-pane label="常量列表" name="constants">
-        <div class="tab-filter-row" v-if="currentProjectId">
+        <div class="tab-filter-row">
+          <el-select v-model="constQp.scope" clearable placeholder="作用范围" size="mini" style="width:90px;" @change="handleConstQuery">
+            <el-option label="全局" value="GLOBAL" />
+            <el-option label="项目级" value="PROJECT" />
+          </el-select>
+          <el-select v-model="constQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:120px;"
+            :remote-method="queryProjectCode" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
+          </el-select>
+          <el-select v-model="constQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:120px;"
+            :remote-method="queryProjectName" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
+          </el-select>
           <el-select v-model="constQp.varType" clearable placeholder="数据类型" size="mini" style="width:110px;" @change="handleConstQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
           <el-input v-model="constQp.keyword" placeholder="搜索编码或名称" size="mini" clearable style="width:180px;" @keyup.enter.native="handleConstQuery" />
-          <el-button size="mini" type="primary" @click="handleConstQuery">查询</el-button>
-          <el-button size="mini" @click="resetConstQuery">重置</el-button>
+          <el-button type="primary" @click="handleConstQuery">查询</el-button>
+          <el-button @click="resetConstQuery">重置</el-button>
         </div>
-        <div v-if="!currentProjectId" class="tab-empty">请先在顶部选择一个项目</div>
-        <div v-else-if="constantRows.length===0 && !constLoading" class="tab-empty">暂无常量，可点击「新建常量」或「批量导入」添加</div>
-        <div v-loading="constLoading" v-else>
+        <div v-if="constantRows.length===0 && !constLoading" class="tab-empty">暂无可用常量</div>
+        <div v-else v-loading="constLoading">
           <el-table :data="constantRows" border size="small" style="width:100%;">
+            <el-table-column label="作用范围" width="90" align="center">
+              <template slot-scope="{ row }">
+                <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
+              <template slot-scope="{ row }">{{ getProjectName(row.projectId) || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
+            </el-table-column>
             <el-table-column prop="varCode" label="常量编码" min-width="130" show-overflow-tooltip />
             <el-table-column prop="varLabel" label="名称" min-width="120" show-overflow-tooltip />
             <el-table-column label="脚本名称" min-width="130">
@@ -167,7 +208,7 @@
             <el-table-column label="操作" min-width="120" align="center">
               <template slot-scope="{ row }">
                 <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
-                <el-button type="text" size="small" style="color:#F56C6C;" @click="handleDelete(row)">删除</el-button>
+                <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -183,6 +224,17 @@
       <el-form ref="form" :model="form" :rules="rules" label-width="120px" size="small">
         <el-form-item v-if="!form.id && isObjectField && objectFieldParentId" label="所属数据对象">
           <span class="text-muted">{{ getObjectCode(objectFieldParentId) }}</span>
+        </el-form-item>
+        <el-form-item v-if="!isObjectField && !isConstantCreate" label="作用范围">
+          <el-select v-model="form.scope" placeholder="选择作用范围" style="width:100%;" @change="onVarScopeChange">
+            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
+            <el-option label="📁 项目级" value="PROJECT" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="!isObjectField && !isConstantCreate && form.scope === 'PROJECT'" label="项目名称" prop="projectId">
+          <el-select v-model="form.projectId" placeholder="请选择项目" style="width:100%;" filterable clearable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
         </el-form-item>
         <el-form-item label="变量编码" prop="varCode">
           <el-input v-model="form.varCode" placeholder="英文标识，如 taxAmount" :disabled="!!form.id" />
@@ -233,7 +285,7 @@
           <template slot-scope="{row}"><el-input v-model="row.optionLabel" size="mini" placeholder="中文标签" /></template>
         </el-table-column>
         <el-table-column label="操作" width="80" align="center">
-          <template slot-scope="{$index}"><el-button type="text" size="small" style="color:#F56C6C;" @click="optionList.splice($index,1)">移除</el-button></template>
+          <template slot-scope="{$index}"><el-button type="text" size="small" style="color:#F76E6C;" @click="optionList.splice($index,1)">移除</el-button></template>
         </el-table-column>
       </el-table>
       <el-button type="text" size="small" icon="el-icon-plus" style="margin-top:8px;" @click="optionList.push({optionValue:'',optionLabel:'',sortOrder:optionList.length})">添加选项</el-button>
@@ -370,6 +422,7 @@
 <script>
 import { listVariables, createVariable, updateVariable, deleteVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
+import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, getVariableTree, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions } from '@/api/dataObject'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 
@@ -383,7 +436,12 @@ export default {
       loading: false,
       tableData: [],
       total: 0,
-      qp: { pageNum: 1, pageSize: 10, projectId: '', varType: '', keyword: '' },
+      qp: { pageNum: 1, pageSize: 10, projectId: '', varType: '', keyword: '', scope: '', projectCode: '', projectName: '' },
+
+      projectList: [],
+      projectListLoading: false,
+      filteredProjectCodes: [],
+      filteredProjectNames: [],
 
       dialogVisible: false,
       form: this.initForm(),
@@ -404,7 +462,7 @@ export default {
 
       // 常量列表（分页，与变量接口相同）
       constLoading: false,
-      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '' },
+      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '', scope: '', projectCode: '', projectName: '' },
       constantRows: [],
       constantTotal: 0,
 
@@ -439,11 +497,17 @@ export default {
       objPageNum: 1,
       objPageSize: 10,
       objExpanded: {},
+      objQp: { scope: '', projectCode: '', projectName: '' },
 
     }
   },
   created() {
     this.loadProjects()
+  },
+  mounted() {
+    this.loadData()
+    this.loadObjectTree()
+    this.loadConstants()
   },
   computed: {
     standaloneVars() {
@@ -453,12 +517,28 @@ export default {
       return this.total
     },
     paginatedObjectTree() {
-      const list = this.objectTree || []
+      const list = this.filteredObjectTree || []
       const start = (this.objPageNum - 1) * this.objPageSize
       return list.slice(start, start + this.objPageSize).map(n => ({
         ...n,
         _expanded: this.objExpanded[n.object.id] === true
       }))
+    },
+    filteredObjectTree() {
+      const { scope, projectCode, projectName } = this.objQp
+      return (this.objectTree || []).filter(node => {
+        const obj = node.object
+        if (scope && obj.scope !== scope) return false
+        if (projectCode) {
+          const p = this.projectList.find(p => p.projectCode === projectCode)
+          if (p && obj.projectId !== p.id) return false
+        }
+        if (projectName) {
+          const p = this.projectList.find(p => p.projectName === projectName)
+          if (p && obj.projectId !== p.id) return false
+        }
+        return true
+      })
     },
     primaryCreateLabel() {
       return this.activeTab === 'constants' ? '新建常量' : '新建变量'
@@ -471,16 +551,15 @@ export default {
       return '新建变量'
     }
   },
-  watch: {
-    activeTab(tab) {
-      if (tab === 'objects' && this.currentProjectId) this.loadObjectTree()
-      if (tab === 'constants' && this.currentProjectId) this.loadConstants()
-    }
-  },
   methods: {
+    onTabClick(tab) {
+      if (tab.name === 'objects') this.loadObjectTree()
+      if (tab.name === 'constants') this.loadConstants()
+    },
     initForm() {
       return {
         id: null,
+        scope: 'GLOBAL',
         projectId: '',
         varCode: '',
         varLabel: '',
@@ -498,8 +577,35 @@ export default {
     async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 1000 })
-        this.projects = (res.data && res.data.records) ? res.data.records : []
-      } catch (e) { this.projects = [] }
+        const list = (res.data && res.data.records) ? res.data.records : []
+        this.projects = list
+        this.projectList = list
+        this.filteredProjectCodes = list.slice(0, 20)
+        this.filteredProjectNames = list.slice(0, 20)
+      } catch (e) { this.projects = []; this.projectList = [] }
+    },
+    getProjectName(pid) {
+      if (!pid) return ''
+      const p = this.projectList.find(x => x.id === pid)
+      return p ? p.projectName : ''
+    },
+    queryProjectCode(query) {
+      if (!query) {
+        this.filteredProjectCodes = this.projectList.slice(0, 20)
+        return
+      }
+      this.filteredProjectCodes = this.projectList.filter(p =>
+        p.projectCode && p.projectCode.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 20)
+    },
+    queryProjectName(query) {
+      if (!query) {
+        this.filteredProjectNames = this.projectList.slice(0, 20)
+        return
+      }
+      this.filteredProjectNames = this.projectList.filter(p =>
+        p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
+      ).slice(0, 20)
     },
     onProjectChange(pid) {
       this.currentProjectId = pid
@@ -523,6 +629,9 @@ export default {
         if (!params.projectId) delete params.projectId
         if (!params.varType) delete params.varType
         if (!params.keyword) delete params.keyword
+        if (!params.scope) delete params.scope
+        if (!params.projectCode) delete params.projectCode
+        if (!params.projectName) delete params.projectName
         const res = await listVariables(params)
         const data = res.data || {}
         this.tableData = data.records || []
@@ -533,14 +642,31 @@ export default {
       } finally { this.loading = false }
     },
     handleQuery() { this.qp.pageNum = 1; this.loadData() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: this.currentProjectId, varType: '', keyword: '' }; this.loadData() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: this.currentProjectId, varType: '', keyword: '', scope: '', projectCode: '', projectName: '' }; this.loadData() },
 
     // ── Objects ──
     async loadObjectTree() {
-      if (!this.currentProjectId) return
       this.objLoading = true
       try {
-        const res = await getVariableTree(this.currentProjectId)
+        const buildParams = () => {
+          const p = {}
+          const { scope, projectCode, projectName } = this.objQp
+          if (scope) p.scope = scope
+          if (projectCode) {
+            const proj = this.projectList.find(x => x.projectCode === projectCode)
+            if (proj) p.projectId = proj.id
+          } else if (projectName) {
+            const proj = this.projectList.find(x => x.projectName === projectName)
+            if (proj) p.projectId = proj.id
+          }
+          return p
+        }
+        let res
+        if (this.currentProjectId) {
+          res = await getVariableTree(this.currentProjectId)
+        } else {
+          res = await request.get('/rule/dataobject/tree', { params: buildParams() })
+        }
         this.objectTree = res.data || []
         this.objectMap = {}
         this.objectTree.forEach(n => { this.objectMap[n.object.id] = n.object })
@@ -660,18 +786,29 @@ export default {
 
     // ── 常量列表（分页） ──
     async loadConstants() {
-      if (!this.currentProjectId) return
       this.constLoading = true
       try {
-        const params = {
-          pageNum: this.constQp.pageNum,
-          pageSize: this.constQp.pageSize,
-          projectId: this.currentProjectId,
-          varSource: 'CONSTANT'
+        const buildParams = (extra) => {
+          const p = { pageNum: this.constQp.pageNum, pageSize: this.constQp.pageSize, varSource: 'CONSTANT', ...extra }
+          const { scope, projectCode, projectName, keyword, varType } = this.constQp
+          if (scope) p.scope = scope
+          if (keyword) p.keyword = keyword
+          if (varType) p.varType = varType
+          if (projectCode) {
+            const proj = this.projectList.find(x => x.projectCode === projectCode)
+            if (proj) p.projectId = proj.id
+          } else if (projectName) {
+            const proj = this.projectList.find(x => x.projectName === projectName)
+            if (proj) p.projectId = proj.id
+          }
+          return p
         }
-        if (this.constQp.keyword) params.keyword = this.constQp.keyword
-        if (this.constQp.varType) params.varType = this.constQp.varType
-        const res = await listVariables(params)
+        let res
+        if (this.currentProjectId) {
+          res = await listVariables(buildParams({ projectId: this.currentProjectId }))
+        } else {
+          res = await request.get('/rule/variable/list', { params: buildParams() })
+        }
         const data = res.data || {}
         this.constantRows = data.records || []
         this.constantTotal = data.total != null ? data.total : 0
@@ -682,8 +819,15 @@ export default {
     },
     handleConstQuery() { this.constQp.pageNum = 1; this.loadConstants() },
     resetConstQuery() {
-      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '' }
+      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', scope: '', projectCode: '', projectName: '' }
       this.loadConstants()
+    },
+    onObjFilterChange() {
+      this.objPageNum = 1
+    },
+    resetObjQuery() {
+      this.objQp = { scope: '', projectCode: '', projectName: '' }
+      this.objPageNum = 1
     },
 
     // ── CRUD ──
@@ -707,7 +851,10 @@ export default {
       this.isObjectField = false
       this.objectFieldParentId = null
       this.form = this.initForm()
-      this.form.projectId = this.currentProjectId
+      // 如果当前选中了项目，则 projectId 默认填充，scope 保持 initForm 的 PROJECT
+      if (this.currentProjectId) {
+        this.form.projectId = this.currentProjectId
+      }
       this.dialogVisible = true
       this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
     },
@@ -716,8 +863,14 @@ export default {
       this.isConstantCreate = false
       this.objectFieldParentId = null
       this.form = { ...this.initForm(), ...row }
+      this.form.scope = this.form.scope || 'PROJECT'
       this.dialogVisible = true
       this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
+    },
+    onVarScopeChange(val) {
+      if (val === 'GLOBAL') {
+        this.form.projectId = 0
+      }
     },
     handleSubmit() {
       this.$refs.form.validate(async (valid) => {
@@ -748,6 +901,14 @@ export default {
           return
         }
         if (!this.form.projectId) this.form.projectId = this.currentProjectId
+        // 处理 scope 逻辑：全局函数 projectId 设为 0
+        if (this.form.scope === 'GLOBAL') {
+          this.form.projectId = 0
+        }
+        if (this.form.scope === 'PROJECT' && !this.form.projectId) {
+          this.$message.warning('请选择所属项目')
+          return
+        }
         if (this.form.varSource === 'CONSTANT') {
           if (!this.form.defaultValue || !String(this.form.defaultValue).trim()) {
             this.$message.warning('常量必须填写默认值')
@@ -889,6 +1050,9 @@ export default {
     // ── Helpers ──
     typeLabel: varTypeLabel,
     typeTagColor: varTypeTagColor,
+    scopeTagLabel(scope) {
+      return { GLOBAL: '全局', PROJECT: '项目级' }[scope] || '项目级'
+    },
     sourceLabel(s) { return { INPUT:'输入', COMPUTED:'计算', CONSTANT:'常量', DB:'数据库', API:'接口' }[s] || s },
     sourceTagColor(s) { return { INPUT:'', COMPUTED:'warning', CONSTANT:'success', DB:'info', API:'info' }[s] || '' },
     objTypeLabel(t) { return { INPUT:'输入对象', OUTPUT:'输出对象', INOUT:'输入输出' }[t] || t },
@@ -902,9 +1066,6 @@ export default {
 .linkage-hint a { color:#1890ff; text-decoration:none; }
 .linkage-hint a:hover { text-decoration:underline; }
 
-.var-toolbar { display:flex; align-items:center; justify-content:space-between; margin-bottom:12px; flex-wrap:wrap; gap:8px; }
-.toolbar-right { display:flex; align-items:center; gap:8px; }
-
 .var-tabs { margin-bottom:16px; }
 .tab-filter-row { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
 .tab-empty { text-align:center; padding:48px 0; color:#c0c4cc; font-size:14px; }
@@ -917,6 +1078,7 @@ export default {
 .var-group-header { display:flex; align-items:center; gap:8px; padding:10px 14px; background:#fafafa; border-bottom:1px solid #ebeef5; cursor:pointer; flex-wrap:wrap; }
 .var-group-header:hover { background:#f0f2f5; }
 .var-group-header .expand-icon { font-size:14px; color:#909399; margin-right:4px; transition:transform 0.2s; }
+.var-group-toolbar { display:flex; align-items:center; gap:8px; padding:8px 14px; background:#f5f7fa; border-bottom:1px solid #ebeef5; flex-wrap:wrap; }
 .var-group-code { font-weight:bold; font-size:14px; color:#303133; font-family:Consolas,monospace; }
 .var-group-label { color:#909399; font-size:13px; }
 .var-group-count { font-size:12px; color:#909399; }
@@ -948,4 +1110,31 @@ export default {
 .import-result-body { text-align:center; padding:20px 0; }
 .import-result-body h3 { margin:12px 0 8px; }
 .import-result-body p { color:#606266; font-size:14px; margin:4px 0; }
+
+/* 重置按钮点击后去除 focus 高亮 */
+.tab-filter-row .el-button:not(.el-button--primary):focus,
+.tab-filter-row .el-button:not(.el-button--primary):focus-visible,
+.tab-filter-row .el-button:not(.el-button--primary):active,
+.tab-filter-row .el-button:not(.el-button--primary).is-plain:focus,
+.tab-filter-row .el-button:not(.el-button--primary).is-plain:active {
+  outline: none !important;
+  box-shadow: none !important;
+  background-color: transparent !important;
+  border-color: #dcdfe6 !important;
+}
+
+/* type="text" 按钮：始终保持纯文字样式，覆盖所有 active/focus 状态 */
+.el-button[type="text"],
+.el-button[type="text"]:hover,
+.el-button[type="text"]:focus,
+.el-button[type="text"]:active,
+.el-button[type="text"]:focus-visible {
+  color: #606266 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+.el-button[type="text"]:hover {
+  color: #1890ff !important;
+}
 </style>

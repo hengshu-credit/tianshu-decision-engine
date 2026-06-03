@@ -13,7 +13,10 @@ import java.time.LocalDateTime;
 public class RuleDataObjectField {
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** 所属项目ID，0表示全局 */
     private Long projectId;
+    /** 作用域：GLOBAL-全局，PROJECT-项目级 */
+    private String scope;
     private Long objectId;
     private String varCode;
     private String varLabel;

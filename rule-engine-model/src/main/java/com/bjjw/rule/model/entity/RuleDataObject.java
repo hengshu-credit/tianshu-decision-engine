@@ -9,7 +9,10 @@ import java.time.LocalDateTime;
 public class RuleDataObject {
     @TableId(type = IdType.AUTO)
     private Long id;
+    /** 所属项目ID，0表示全局 */
     private Long projectId;
+    /** 作用域：GLOBAL-全局，PROJECT-项目级 */
+    private String scope;
     private String objectCode;
     private String objectLabel;
     /** 脚本中的对象引用名（默认驼峰，如 taxRequest） */

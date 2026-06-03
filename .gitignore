@@ -4,3 +4,10 @@
 /*.iml
 /logs/
 /log/
+.github/
+.DS_Store
+*.log
+*.tmp
+.vscode/
+rule-engine-mysql/data/
+.claude/*

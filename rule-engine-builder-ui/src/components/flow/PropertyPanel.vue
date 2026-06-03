@@ -135,7 +135,7 @@
               </el-select>
               <span class="action-eq">=</span>
               <el-input v-model="action.value" size="mini" placeholder="值" style="flex:1;" @change="onNodeChange" />
-              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C;" @click="removeAction(idx)" />
+              <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C;" @click="removeAction(idx)" />
             </div>
             <el-button type="primary" size="mini" plain icon="el-icon-plus" @click="addAction" style="width:100%;margin-top:8px;">
               添加动作

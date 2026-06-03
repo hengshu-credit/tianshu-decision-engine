@@ -6,6 +6,9 @@ import router from './router'
 import store from './store'
 import './styles/index.scss'
 
+// 覆盖 Element UI 主题色为主色 #2639E9
+import './styles/element-override.scss'
+
 Vue.use(ElementUI, { size: 'small' })
 Vue.config.productionTip = false
 

@@ -86,6 +86,9 @@ INSERT INTO `rule_definition` (`id`, `project_id`, `rule_code`, `rule_name`, `mo
 (8, 1, 'RC_FLOW_BEAN_SAMPLE',  'Spring Bean 试算',     'FLOW',  '演示 BEAN 函数：调用 Spring 容器内 taxFunctions.calculateVAT', 1, 1, 1)
 ON DUPLICATE KEY UPDATE `rule_name` = VALUES(`rule_name`), `description` = VALUES(`description`), `status` = 1, `published_version` = 1;
 
+-- 回填已创建规则的 project_code 和 project_name（示例项目）
+UPDATE `rule_definition` SET `project_code` = 'RISK_DEMO', `project_name` = '综合风控示例项目' WHERE `project_id` = 1 AND (`project_code` IS NULL OR `project_code` = '');
+
 -- ============================================================
 -- 4. 规则内容（设计态 JSON + 编译产物）
 -- ============================================================

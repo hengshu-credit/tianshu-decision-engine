@@ -1,0 +1,357 @@
+/* Element UI 主题色覆盖：统一按钮背景为主色 #2639E9，副色 #F76E6C */
+
+/* 全局字体：阿里妈妈方圆体 */
+$font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
+
+// Element UI 全局字体覆盖
+.el-input__inner,
+.el-button,
+.el-input,
+.el-textarea__inner,
+.el-select-dropdown__item,
+.el-menu-item,
+.el-submenu__title,
+.el-form-item__label,
+.el-table__header th,
+.el-table__body td,
+.el-pagination,
+.el-tabs__item,
+.el-dialog__title,
+.el-message-box__title,
+.el-card__header,
+.el-popover__title {
+  font-family: $font-family-base;
+}
+
+$--color-primary: #2639E9;
+$secondary-color: #F76E6C;
+
+$--color-primary-light-1: mix(#FFFFFF, $--color-primary, 10%);
+$--color-primary-light-2: mix(#FFFFFF, $--color-primary, 20%);
+$--color-primary-light-3: mix(#FFFFFF, $--color-primary, 30%);
+$--color-primary-light-4: mix(#FFFFFF, $--color-primary, 40%);
+$--color-primary-light-5: mix(#FFFFFF, $--color-primary, 50%);
+$--color-primary-light-6: mix(#FFFFFF, $--color-primary, 60%);
+$--color-primary-light-7: mix(#FFFFFF, $--color-primary, 70%);
+$--color-primary-light-8: mix(#FFFFFF, $--color-primary, 80%);
+$--color-primary-light-9: mix(#FFFFFF, $--color-primary, 90%);
+$--color-primary-dark-1: mix(#000000, $--color-primary, 10%);
+$--color-primary-dark-2: mix(#000000, $--color-primary, 20%);
+
+$primary-color: $--color-primary;
+$success-color: #10B981;
+$warning-color: #F59E0B;
+$danger-color: $secondary-color;
+$info-color: #6366F1;
+
+/* ── 主要按钮 ── */
+.el-button--primary {
+  background-color: $--color-primary !important;
+  border-color: $--color-primary !important;
+
+  &:hover,
+  &:focus {
+    background-color: #1a30d4 !important;
+    border-color: #1a30d4 !important;
+  }
+
+  &:active,
+  &.is-active {
+    background-color: #152aad !important;
+    border-color: #152aad !important;
+  }
+
+  &:disabled,
+  &.is-disabled {
+    background-color: rgba($--color-primary, 0.5) !important;
+    border-color: rgba($--color-primary, 0.5) !important;
+    cursor: not-allowed;
+  }
+}
+
+/* ── 文字链接按钮 ── */
+.el-button--text {
+  color: $--color-primary !important;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover,
+  &:focus {
+    color: #1a30d4 !important;
+    background-color: rgba($--color-primary, 0.1) !important;
+  }
+
+  &:active {
+    color: #152aad !important;
+    background-color: rgba($--color-primary, 0.18) !important;
+  }
+}
+
+/* ── 删除按钮 ── */
+.el-button.btn-delete,
+.el-button--delete {
+  color: $secondary-color !important;
+  transition: color 0.15s ease, background-color 0.15s ease;
+
+  &:hover,
+  &:focus {
+    color: #d43d3d !important;
+    background-color: rgba($secondary-color, 0.1) !important;
+  }
+
+  &:active {
+    color: #b83030 !important;
+    background-color: rgba($secondary-color, 0.18) !important;
+  }
+}
+
+/* ── 全局文字危险色 ── */
+.text-danger {
+  color: $secondary-color;
+}
+
+/* ── 危险按钮（副色 #F76E6C） ── */
+.el-button--danger {
+  background-color: $secondary-color !important;
+  border-color: $secondary-color !important;
+
+  &:hover,
+  &:focus {
+    background-color: #e24f4f !important;
+    border-color: #e24f4f !important;
+  }
+
+  &:active,
+  &.is-active {
+    background-color: #c93333 !important;
+    border-color: #c93333 !important;
+  }
+
+  &:disabled,
+  &.is-disabled {
+    background-color: rgba($secondary-color, 0.5) !important;
+    border-color: rgba($secondary-color, 0.5) !important;
+    cursor: not-allowed;
+  }
+}
+
+/* ── 其他按钮 hover 样式 ── */
+.el-button--default {
+  transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+
+  &:hover,
+  &:focus {
+    color: $--color-primary;
+    border-color: $--color-primary;
+    background-color: rgba($--color-primary, 0.08);
+  }
+
+  &:active,
+  &.is-active {
+    color: #1a30d4;
+    border-color: #1a30d4;
+    background-color: rgba($--color-primary, 0.15);
+  }
+}
+
+.el-button--success {
+  &:hover,
+  &:focus {
+    background-color: #0a966f !important;
+    border-color: #0a966f !important;
+  }
+
+  &:active,
+  &.is-active {
+    background-color: #087a5d !important;
+    border-color: #087a5d !important;
+  }
+}
+
+.el-button--warning {
+  &:hover,
+  &:focus {
+    background-color: #db8d09 !important;
+    border-color: #db8d09 !important;
+  }
+
+  &:active,
+  &.is-active {
+    background-color: #b87607 !important;
+    border-color: #b87607 !important;
+  }
+}
+
+.el-button--info {
+  &:hover,
+  &:focus {
+    background-color: #5558e0 !important;
+    border-color: #5558e0 !important;
+  }
+
+  &:active,
+  &.is-active {
+    background-color: #4748bd !important;
+    border-color: #4748bd !important;
+  }
+}
+
+/* ── 危险标签 ── */
+.el-tag--danger {
+  background-color: rgba($secondary-color, 0.1) !important;
+  border-color: rgba($secondary-color, 0.22) !important;
+  color: $secondary-color !important;
+}
+
+.el-tag--warning {
+  background-color: rgba(#F59E0B, 0.1) !important;
+  border-color: rgba(#F59E0B, 0.22) !important;
+  color: #F59E0B !important;
+}
+
+/* ── 主色标签 ── */
+.el-tag--primary {
+  background-color: rgba($--color-primary, 0.1) !important;
+  border-color: rgba($--color-primary, 0.22) !important;
+  color: $--color-primary !important;
+}
+
+/* ── 链接颜色 ── */
+.el-link--primary {
+  color: $--color-primary !important;
+
+  &:hover,
+  &:focus {
+    color: rgba($--color-primary, 0.68) !important;
+  }
+}
+
+.el-link--danger {
+  color: $secondary-color !important;
+
+  &:hover,
+  &:focus {
+    color: rgba($secondary-color, 0.68) !important;
+  }
+}
+
+/* ── 开关 ── */
+.el-switch.is-checked .el-switch__core {
+  background-color: $--color-primary !important;
+  border-color: $--color-primary !important;
+}
+
+/* ── 分页 ── */
+.el-pagination {
+  .el-pager li.active {
+    color: $--color-primary;
+  }
+
+  .el-pager li:hover {
+    color: $--color-primary;
+  }
+
+  .btn-prev,
+  .btn-next {
+    &:hover {
+      color: $--color-primary;
+    }
+  }
+}
+
+/* ── Tabs ── */
+.el-tabs__item.is-active {
+  color: $--color-primary !important;
+}
+
+.el-tabs__active-bar {
+  background-color: $--color-primary !important;
+}
+
+/* ── 下拉选中 ── */
+.el-select-dropdown__item.selected {
+  color: $--color-primary !important;
+  font-weight: 500;
+}
+
+.el-cascader-node:not(.is-disabled):hover,
+.el-select-dropdown__item:hover {
+  color: $--color-primary;
+}
+
+/* ── 表单聚焦 ── */
+.el-input__inner:focus,
+.el-textarea__inner:focus {
+  border-color: $--color-primary !important;
+  box-shadow: 0 0 0 2px rgba($--color-primary, 0.15) !important;
+}
+
+.el-input__inner:hover,
+.el-textarea__inner:hover {
+  border-color: rgba($--color-primary, 0.42) !important;
+}
+
+/* ── 单选 / 多选 ── */
+.el-radio__input.is-checked .el-radio__inner {
+  background-color: $--color-primary !important;
+  border-color: $--color-primary !important;
+}
+
+.el-radio__input.is-checked + .el-radio__label {
+  color: $--color-primary !important;
+}
+
+.el-checkbox__input.is-checked .el-checkbox__inner {
+  background-color: $--color-primary !important;
+  border-color: $--color-primary !important;
+}
+
+.el-checkbox__input.is-checked + .el-checkbox__label {
+  color: $--color-primary !important;
+}
+
+.el-checkbox__inner:hover {
+  border-color: $--color-primary !important;
+}
+
+/* ── 进度条 ── */
+.el-progress-bar__inner {
+  background-color: $--color-primary !important;
+}
+
+/* ── 日期选择器 ── */
+.el-date-picker {
+  .el-picker-panel__icon-btn:hover {
+    color: $--color-primary;
+  }
+
+  .available:hover,
+  .today .el-date-picker__header-label:hover {
+    color: $--color-primary;
+  }
+}
+
+/* ── 菜单激活态 ── */
+.el-menu--horizontal {
+  .el-menu-item:not(.is-disabled):hover,
+  .el-submenu__title:not(.is-disabled):hover {
+    color: $--color-primary;
+  }
+
+  .el-menu-item.is-active {
+    color: $--color-primary;
+    border-bottom-color: $--color-primary;
+  }
+}
+
+/* ── 删除按钮 ── */
+.btn-delete {
+  color: $secondary-color !important;
+  &:hover {
+    color: rgba($secondary-color, 0.68) !important;
+  }
+}
+
+/* ── 错误文本 ── */
+.err-text {
+  color: $secondary-color !important;
+}

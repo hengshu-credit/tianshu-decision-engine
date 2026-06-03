@@ -41,6 +41,7 @@ public class RuleVariableController {
     /**
      * 分页查询变量；{@code varSource=CONSTANT} 用于常量列表；
      * {@code standaloneOnly=true} 且未指定 varSource 时排除常量（变量列表 Tab）。
+     * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
      */
     @GetMapping("/list")
     public R<IPage<RuleVariable>> list(
@@ -50,16 +51,20 @@ public class RuleVariableController {
             @RequestParam(required = false) String varType,
             @RequestParam(required = false) String keyword,
             @RequestParam(required = false) Boolean standaloneOnly,
-            @RequestParam(required = false) String varSource) {
-        return R.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource));
+            @RequestParam(required = false) String varSource,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName) {
+        return R.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource, scope, projectCode, projectName));
     }
 
     /** 从 Java 常量类批量导入常量（写入 rule_variable，var_source=CONSTANT） */
     @PostMapping("/import/constants/java")
     public R<Map<String, Object>> importConstantsJava(@RequestBody Map<String, String> body) {
         Long projectId = Long.valueOf(body.get("projectId"));
+        String scope = body.getOrDefault("scope", "PROJECT");
         String javaSource = body.get("javaSource");
-        Map<String, Object> result = variableService.importConstantsFromJava(projectId, javaSource);
+        Map<String, Object> result = variableService.importConstantsFromJava(projectId, scope, javaSource);
         trySyncSchema();
         return R.ok(result);
     }
@@ -68,8 +73,9 @@ public class RuleVariableController {
     @PostMapping("/import/constants/json")
     public R<Map<String, Object>> importConstantsJson(@RequestBody Map<String, String> body) {
         Long projectId = Long.valueOf(body.get("projectId"));
+        String scope = body.getOrDefault("scope", "PROJECT");
         String jsonContent = body.get("jsonContent");
-        Map<String, Object> result = variableService.importConstantsFromJson(projectId, jsonContent);
+        Map<String, Object> result = variableService.importConstantsFromJson(projectId, scope, jsonContent);
         trySyncSchema();
         return R.ok(result);
     }

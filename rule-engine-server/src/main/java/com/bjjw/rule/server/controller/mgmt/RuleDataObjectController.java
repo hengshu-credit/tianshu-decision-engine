@@ -27,9 +27,10 @@ public class RuleDataObjectController {
     @PostMapping("/import/java")
     public R<Map<String, Object>> importJava(@RequestBody Map<String, String> body) {
         Long projectId = Long.valueOf(body.get("projectId"));
+        String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String javaSource = body.get("javaSource");
-        Map<String, Object> result = dataObjectService.importFromJava(projectId, javaSource, objectType);
+        Map<String, Object> result = dataObjectService.importFromJava(projectId, scope, javaSource, objectType);
         trySyncSchema();
         return R.ok(result);
     }
@@ -37,10 +38,11 @@ public class RuleDataObjectController {
     @PostMapping("/import/java-file")
     public R<Map<String, Object>> importJavaFile(
             @RequestParam Long projectId,
+            @RequestParam(defaultValue = "PROJECT") String scope,
             @RequestParam(defaultValue = "INPUT") String objectType,
             @RequestParam("file") MultipartFile file) throws Exception {
         String javaSource = new String(file.getBytes(), StandardCharsets.UTF_8);
-        Map<String, Object> result = dataObjectService.importFromJava(projectId, javaSource, objectType);
+        Map<String, Object> result = dataObjectService.importFromJava(projectId, scope, javaSource, objectType);
         trySyncSchema();
         return R.ok(result);
     }
@@ -48,10 +50,11 @@ public class RuleDataObjectController {
     @PostMapping("/import/json")
     public R<Map<String, Object>> importJson(@RequestBody Map<String, String> body) {
         Long projectId = Long.valueOf(body.get("projectId"));
+        String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String objectCode = body.get("objectCode");
         String jsonContent = body.get("jsonContent");
-        Map<String, Object> result = dataObjectService.importFromJson(projectId, jsonContent, objectCode, objectType);
+        Map<String, Object> result = dataObjectService.importFromJson(projectId, scope, jsonContent, objectCode, objectType);
         trySyncSchema();
         return R.ok(result);
     }
@@ -60,9 +63,10 @@ public class RuleDataObjectController {
     @PostMapping("/import/ddl")
     public R<Map<String, Object>> importDdl(@RequestBody Map<String, String> body) {
         Long projectId = Long.valueOf(body.get("projectId"));
+        String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String ddlSource = body.get("ddlSource");
-        Map<String, Object> result = dataObjectService.importFromDdl(projectId, ddlSource, objectType);
+        Map<String, Object> result = dataObjectService.importFromDdl(projectId, scope, ddlSource, objectType);
         trySyncSchema();
         return R.ok(result);
     }
@@ -70,6 +74,14 @@ public class RuleDataObjectController {
     @GetMapping("/project/{projectId:\\d+}")
     public R<List<RuleDataObject>> listByProject(@PathVariable Long projectId) {
         return R.ok(dataObjectService.listByProject(projectId));
+    }
+
+    /**
+     * 获取所有项目的数据对象树（未选项目时使用）
+     */
+    @GetMapping("/tree")
+    public R<List<Map<String, Object>>> treeAll() {
+        return R.ok(dataObjectService.getVariableTreeAll());
     }
 
     @GetMapping("/{id:\\d+}")

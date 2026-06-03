@@ -45,7 +45,7 @@
           <div class="dt-rule-toolbar">
             <span class="dt-rule-no">#{{ ri + 1 }}</span>
             <el-button type="text" size="mini" @click="copyRule(ri)">复制</el-button>
-            <el-button type="text" size="mini" class="btn-del" @click="removeRule(ri)">删除</el-button>
+            <el-button type="text" size="mini" class="btn-delete" @click="removeRule(ri)">删除</el-button>
           </div>
           <div class="dt-rule-grid">
             <div class="dt-cond-panel">
@@ -230,7 +230,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误信息">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="text-danger">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>
@@ -817,12 +817,10 @@ export default {
     font-size: 13px;
     transition: color .2s;
     &:hover { color: #1890ff; }
-    &.el-icon-delete:hover { color: #F56C6C; }
+    .action-delete {
+      color: #F76E6C;
+    }
   }
-}
-
-.btn-del {
-  color: #F56C6C !important;
 }
 
 .dt-loading {

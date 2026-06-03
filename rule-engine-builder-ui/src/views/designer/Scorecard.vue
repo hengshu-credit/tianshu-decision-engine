@@ -80,7 +80,7 @@
               type="text"
               size="small"
               icon="el-icon-delete"
-              style="color:#F56C6C;"
+              class="btn-delete"
               @click="removeScoreItem(idx)"
             />
           </div>
@@ -218,7 +218,7 @@
           <el-tag :color="thresholdColor(ti)" effect="dark" size="small" class="thresh-badge">
             {{ thresh.result || '等级 ' + (ti + 1) }}
           </el-tag>
-          <el-button type="text" size="small" icon="el-icon-delete" style="color:#F56C6C;" @click="removeThreshold(ti)" />
+          <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click="removeThreshold(ti)" />
         </div>
         <div v-if="model.thresholds.length === 0" class="sc-empty">
           暂未配置等级，点击「添加等级」设置分数区间
@@ -282,7 +282,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="text-secondary">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>

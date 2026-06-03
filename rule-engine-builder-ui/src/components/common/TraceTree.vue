@@ -2211,13 +2211,13 @@ export default {
 .var-tag { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; background: #F2F6FC; border: 1px solid #EBEEF5; border-radius: 4px; font-size: 12px; gap: 4px; }
 .var-k { color: #606266; }
 .var-v { font-weight: 600; }
-.var-v.is-true { color: #67C23A; } .var-v.is-false { color: #F56C6C; } .var-v.is-val { color: #409EFF; }
+.var-v.is-true { color: #67C23A; } .var-v.is-false { color: #F76E6C; } .var-v.is-val { color: #409EFF; }
 .tree-viewport { overflow-x: auto; padding: 8px 0 16px; }
 .tree-canvas { display: inline-flex; justify-content: center; min-width: 100%; }
 .t-sec--result { display: flex; align-items: center; gap: 10px; }
 .result-label { font-size: 12px; color: #909399; flex-shrink: 0; }
 .result-val { font-size: 15px; font-weight: 600; }
-.result-val.is-true { color: #67C23A; } .result-val.is-false { color: #F56C6C; } .result-val.is-val { color: #409EFF; }
+.result-val.is-true { color: #67C23A; } .result-val.is-false { color: #F76E6C; } .result-val.is-val { color: #409EFF; }
 .t-empty { text-align: center; padding: 36px 0; color: #C0C4CC; font-size: 13px; }
 .fullscreen-btn { float: right; padding: 0; font-size: 12px; color: #909399; }
 .fullscreen-btn:hover { color: #409EFF; }
@@ -2403,7 +2403,7 @@ export default {
 .sc-table tr.sc-skipped td { background: #fafafa; color: #c0c4cc; }
 .sc-table tr.sc-miss td { background: #fff; }
 .sc-table .is-pos { color: #67C23A; }
-.sc-table .is-neg { color: #F56C6C; }
+.sc-table .is-neg { color: #F76E6C; }
 .sc-status { font-size: 11px; font-weight: 500; white-space: nowrap; }
 .sc-status--hit { color: #67C23A; }
 .sc-status--miss { color: #E6A23C; }

@@ -76,7 +76,7 @@
         </div>
         <div class="asc-group-right">
           <el-button size="small" icon="el-icon-plus" @click="addDimension(gi)">添加维度</el-button>
-          <el-button type="text" size="small" icon="el-icon-delete" style="color:#F56C6C;" @click="removeGroup(gi)" />
+          <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click="removeGroup(gi)" />
         </div>
       </div>
 
@@ -112,7 +112,7 @@
               />
             </div>
             <el-button size="mini" icon="el-icon-plus" @click="addRule(gi, di)">添加规则</el-button>
-            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C;" @click="removeDimension(gi, di)" />
+            <el-button type="text" size="mini" icon="el-icon-delete" class="btn-delete" @click="removeDimension(gi, di)" />
           </div>
 
           <!-- 规则表格 -->
@@ -166,7 +166,7 @@
                   <el-input-number v-model="rule.score" size="mini" :min="-9999" :max="9999" class="score-input" />
                 </td>
                 <td class="col-action">
-                  <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C;" @click="dim.rules.splice(ri, 1)" />
+                  <el-button type="text" size="mini" icon="el-icon-delete" class="btn-delete" @click="dim.rules.splice(ri, 1)" />
                 </td>
               </tr>
             </tbody>
@@ -272,7 +272,7 @@
           <el-tag :color="thresholdColor(ti)" effect="dark" size="small" class="thresh-badge">
             {{ thresh.result || '等级 ' + (ti + 1) }}
           </el-tag>
-          <el-button type="text" size="small" icon="el-icon-delete" style="color:#F56C6C;" @click="model.thresholds.splice(ti, 1)" />
+          <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click="model.thresholds.splice(ti, 1)" />
         </div>
         <div v-if="model.thresholds.length === 0" class="group-empty">
           暂未配置等级，点击「添加等级」
@@ -309,7 +309,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="text-danger">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>

@@ -166,7 +166,7 @@ export default {
   flex-shrink: 0;
 }
 .nd-res.is-true  { color: #67C23A; }
-.nd-res.is-false { color: #F56C6C; }
+.nd-res.is-false { color: #F76E6C; }
 .nd-res.is-val   { color: #409EFF; }
 .nd-res.is-skip  { color: #C0C4CC; font-weight: 400; }
 

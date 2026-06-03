@@ -23,3 +23,7 @@ export function deleteProject(id) {
 export function getMaskedToken(id) {
   return request({ url: `/rule/project/${id}/token/masked`, method: 'get' })
 }
+
+export function exportApiDoc(id) {
+  return request({ url: `/rule/project/${id}/api-doc`, method: 'get' })
+}

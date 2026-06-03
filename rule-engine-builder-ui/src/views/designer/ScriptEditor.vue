@@ -25,7 +25,7 @@
           <div v-if="loadingVars" style="text-align:center;padding:20px;color:#999;">
             <i class="el-icon-loading" /> 加载中...
           </div>
-          <div v-else-if="varsLoadError" style="text-align:center;padding:20px;color:#F56C6C;">
+          <div v-else-if="varsLoadError" class="text-danger" style="text-align:center;padding:20px;">
             <i class="el-icon-warning" /> 加载失败
             <el-button type="text" size="mini" @click="loadProjectVars($route.params.id)" style="display:block;margin:6px auto 0;">重试</el-button>
           </div>
@@ -165,7 +165,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="err-text">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>

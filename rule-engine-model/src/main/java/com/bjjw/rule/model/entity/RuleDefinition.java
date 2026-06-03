@@ -10,10 +10,13 @@ public class RuleDefinition {
     @TableId(type = IdType.AUTO)
     private Long id;
     private Long projectId;
+    private String projectCode;
+    private String projectName;
     private String ruleCode;
     private String ruleName;
     private String modelType;
     private String description;
+    private String scope;
     private Integer currentVersion;
     private Integer publishedVersion;
     private Integer status;

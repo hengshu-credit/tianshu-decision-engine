@@ -76,7 +76,7 @@
               <pre class="log-pre">{{fj(detail.outputResult)}}</pre>
             </div>
             <div class="uiue-card" style="margin-top:12px" v-if="detail.errorMessage">
-              <div class="uiue-card-title" style="color:#F56C6C">错误信息</div>
+              <div class="uiue-card-title" style="color:#F76E6C">错误信息</div>
               <pre class="log-pre error">{{detail.errorMessage}}</pre>
             </div>
           </el-tab-pane>
@@ -353,7 +353,7 @@ export default {
 }
 .log-pre.error {
   background: #fff2f2;
-  color: #F56C6C;
+  color: #F76E6C;
 }
 .trace-badge {
   margin-left: 4px;

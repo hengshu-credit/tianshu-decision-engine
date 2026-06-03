@@ -24,7 +24,7 @@
         </el-button>
         <el-divider direction="vertical" />
         <el-button-group>
-          <el-button size="mini" icon="el-icon-delete" :disabled="!hasSelection" @click="deleteSelected">删除</el-button>
+          <el-button size="mini" icon="el-icon-delete" class="btn-delete" :disabled="!hasSelection" @click="deleteSelected">删除</el-button>
           <el-button size="mini" icon="el-icon-refresh-left" @click="undo">撤销</el-button>
           <el-button size="mini" icon="el-icon-refresh-right" @click="redo">重做</el-button>
         </el-button-group>
@@ -292,7 +292,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span class="text-danger">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>

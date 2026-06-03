@@ -4,6 +4,7 @@ import com.bjjw.rule.core.compiler.CompileResult;
 import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.RuleDefinition;
 import com.bjjw.rule.model.entity.RuleDefinitionContent;
+import com.bjjw.rule.model.entity.RuleDefinitionRef;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleCompileService;
 import com.bjjw.rule.server.service.RuleDefinitionService;
@@ -37,9 +38,77 @@ public class RuleDefinitionController {
             @RequestParam(defaultValue = "1") int pageNum,
             @RequestParam(defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String status,
             @RequestParam(required = false) String modelType,
+            @RequestParam(required = false) String ruleCode,
+            @RequestParam(required = false) String ruleName,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String publishedVersion,
+            @RequestParam(required = false) String createBeginTime,
+            @RequestParam(required = false) String createEndTime,
+            @RequestParam(required = false) String updateBeginTime,
+            @RequestParam(required = false) String updateEndTime,
             @RequestParam(required = false) String keyword) {
-        return R.ok(definitionService.pageList(pageNum, pageSize, projectId, modelType, keyword));
+        return R.ok(definitionService.pageList(pageNum, pageSize, projectId, modelType, keyword, projectName, scope, status, ruleCode, ruleName, projectCode, publishedVersion, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
+    }
+
+    /**
+     * 获取全局规则列表（用于添加到项目）
+     */
+    @GetMapping("/global-list")
+    public R<IPage<RuleDefinition>> globalList(
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String modelType,
+            @RequestParam(required = false) String ruleCode,
+            @RequestParam(required = false) String ruleName,
+            @RequestParam(required = false) String createBeginTime,
+            @RequestParam(required = false) String createEndTime,
+            @RequestParam(required = false) String updateBeginTime,
+            @RequestParam(required = false) String updateEndTime,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(definitionService.pageList(pageNum, pageSize, 0L, modelType, keyword, null, "GLOBAL", null, ruleCode, ruleName, null, null, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
+    }
+
+    /**
+     * 将全局规则添加到项目
+     */
+    @PostMapping("/add-global-to-project")
+    public R<RuleDefinitionRef> addGlobalToProject(@RequestBody Map<String, Long> body) {
+        Long definitionId = body.get("definitionId");
+        Long projectId = body.get("projectId");
+        if (definitionId == null || projectId == null) {
+            return R.fail("definitionId 和 projectId 不能为空");
+        }
+        try {
+            RuleDefinitionRef ref = definitionService.addGlobalRuleToProject(definitionId, projectId);
+            return R.ok(ref);
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 获取项目规则列表（包含项目级规则和已关联的全局规则）
+     */
+    @GetMapping("/project-list/{projectId}")
+    public R<IPage<RuleDefinition>> projectList(
+            @PathVariable Long projectId,
+            @RequestParam(defaultValue = "1") int pageNum,
+            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String modelType,
+            @RequestParam(required = false) String ruleCode,
+            @RequestParam(required = false) String ruleName,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String createBeginTime,
+            @RequestParam(required = false) String createEndTime,
+            @RequestParam(required = false) String updateBeginTime,
+            @RequestParam(required = false) String updateEndTime,
+            @RequestParam(required = false) String keyword) {
+        return R.ok(definitionService.pageListForProject(pageNum, pageSize, projectId, modelType, keyword, scope, status, ruleCode, ruleName, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
     }
 
     @GetMapping("/{id}")
@@ -54,7 +123,7 @@ public class RuleDefinitionController {
 
     @PutMapping
     public R<Void> update(@RequestBody RuleDefinition definition) {
-        definitionService.updateById(definition);
+        definitionService.updateWithProjectInfo(definition);
         return R.ok();
     }
 

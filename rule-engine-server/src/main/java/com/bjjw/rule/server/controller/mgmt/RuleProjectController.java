@@ -1,5 +1,6 @@
 package com.bjjw.rule.server.controller.mgmt;
 
+import com.bjjw.rule.model.dto.ApiDocDTO;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleProjectService;
@@ -60,5 +61,13 @@ public class RuleProjectController {
     public R<String> getMaskedToken(@PathVariable Long id) {
         String maskedToken = projectService.getMaskedToken(id);
         return R.ok(maskedToken);
+    }
+
+    /**
+     * 导出项目API文档
+     */
+    @GetMapping("/{id}/api-doc")
+    public R<ApiDocDTO> exportApiDoc(@PathVariable Long id) {
+        return R.ok(projectService.exportApiDoc(id));
     }
 }

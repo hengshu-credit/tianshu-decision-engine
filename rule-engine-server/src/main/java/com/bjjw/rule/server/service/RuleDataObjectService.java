@@ -24,6 +24,11 @@ import java.util.stream.Collectors;
 @Service
 public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, RuleDataObject> {
 
+    /** 作用域：全局 */
+    public static final String SCOPE_GLOBAL = "GLOBAL";
+    /** 作用域：项目级 */
+    public static final String SCOPE_PROJECT = "PROJECT";
+
     @Resource
     private RuleDataObjectFieldMapper objectFieldMapper;
 
@@ -46,6 +51,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", f.getId());
         m.put("projectId", f.getProjectId());
+        m.put("scope", f.getScope());
         m.put("objectId", f.getObjectId());
         m.put("varCode", f.getVarCode());
         m.put("varLabel", f.getVarLabel());
@@ -60,15 +66,15 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     }
 
     @Transactional
-    public Map<String, Object> importFromDdl(Long projectId, String ddlSource, String objectType) {
+    public Map<String, Object> importFromDdl(Long projectId, String scope, String ddlSource, String objectType) {
         List<ParsedObject> parsed = ddlTableParser.parseCreateTables(ddlSource);
         int objectCount = 0;
         int varCount = 0;
         for (int i = 0; i < parsed.size(); i++) {
             ParsedObject po = parsed.get(i);
             String src = (i == 0) ? ddlSource : null;
-            RuleDataObject obj = findOrCreateObject(projectId, po.getObjectCode(), po.getScriptName(), objectType, "DDL", src);
-            varCount += batchCreateFields(projectId, obj.getId(), po, null);
+            RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "DDL", src);
+            varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
             objectCount++;
         }
         Map<String, Object> result = new HashMap<>();
@@ -78,19 +84,19 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     }
 
     @Transactional
-    public Map<String, Object> importFromJava(Long projectId, String javaSource, String objectType) {
+    public Map<String, Object> importFromJava(Long projectId, String scope, String javaSource, String objectType) {
         List<ParsedObject> parsed = javaEntityParser.parseEntities(javaSource);
         int objectCount = 0;
         int varCount = 0;
         for (ParsedObject po : parsed) {
-            RuleDataObject obj = findOrCreateObject(projectId, po.getObjectCode(), po.getScriptName(), objectType, "JAVA", javaSource);
-            varCount += batchCreateFields(projectId, obj.getId(), po, null);
+            RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "JAVA", javaSource);
+            varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
             objectCount++;
             for (ParsedObject nested : po.getNestedObjects()) {
-                RuleDataObject nestedObj = findOrCreateObject(projectId, nested.getObjectCode(), nested.getScriptName(), objectType, "JAVA", null);
+                RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JAVA", null);
                 nestedObj.setParentObjectId(obj.getId());
                 updateById(nestedObj);
-                varCount += batchCreateFields(projectId, nestedObj.getId(), nested, null);
+                varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
                 objectCount++;
             }
         }
@@ -101,17 +107,17 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     }
 
     @Transactional
-    public Map<String, Object> importFromJson(Long projectId, String jsonContent, String objectCode, String objectType) {
+    public Map<String, Object> importFromJson(Long projectId, String scope, String jsonContent, String objectCode, String objectType) {
         ParsedObject parsed = jsonSchemaParser.parseObject(jsonContent, objectCode);
-        RuleDataObject obj = findOrCreateObject(projectId, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
-        int varCount = batchCreateFields(projectId, obj.getId(), parsed, null);
+        RuleDataObject obj = findOrCreateObject(projectId, scope, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
+        int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null);
         int objectCount = 1;
 
         for (ParsedObject nested : parsed.getNestedObjects()) {
-            RuleDataObject nestedObj = findOrCreateObject(projectId, nested.getObjectCode(), nested.getScriptName(), objectType, "JSON", null);
+            RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JSON", null);
             nestedObj.setParentObjectId(obj.getId());
             updateById(nestedObj);
-            varCount += batchCreateFields(projectId, nestedObj.getId(), nested, null);
+            varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
             objectCount++;
         }
         Map<String, Object> result = new HashMap<>();
@@ -122,7 +128,39 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     public List<RuleDataObject> listByProject(Long projectId) {
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        if (projectId != null && projectId > 0) {
+            // 同时查询全局数据对象和指定项目的数据对象
+            wrapper.and(w -> w
+                    .eq(RuleDataObject::getScope, SCOPE_GLOBAL)
+                    .or()
+                    .eq(RuleDataObject::getScope, SCOPE_PROJECT)
+                    .eq(RuleDataObject::getProjectId, projectId)
+            );
+        } else {
+            // 只查询全局数据对象
+            wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
+        }
+        wrapper.orderByDesc(RuleDataObject::getCreateTime);
+        return list(wrapper);
+    }
+
+    /**
+     * 仅查询指定项目的数据对象（不包含全局）
+     */
+    public List<RuleDataObject> listByProjectOnly(Long projectId) {
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleDataObject::getProjectId, projectId)
+               .eq(RuleDataObject::getScope, SCOPE_PROJECT)
+               .orderByDesc(RuleDataObject::getCreateTime);
+        return list(wrapper);
+    }
+
+    /**
+     * 仅查询全局数据对象
+     */
+    public List<RuleDataObject> listGlobalOnly() {
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL)
                .orderByDesc(RuleDataObject::getCreateTime);
         return list(wrapper);
     }
@@ -144,6 +182,20 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         result.put("variables", rows);
         result.put("children", children);
         return result;
+    }
+
+    @Override
+    public boolean save(RuleDataObject entity) {
+        // 确保 scope 有默认值
+        if (entity.getScope() == null || entity.getScope().isEmpty()) {
+            entity.setScope(SCOPE_PROJECT);
+        }
+        return super.save(entity);
+    }
+
+    @Override
+    public boolean updateById(RuleDataObject entity) {
+        return super.updateById(entity);
     }
 
     @Transactional
@@ -181,12 +233,62 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         }
     }
 
+    /**
+     * 获取指定项目的变量树（包含全局和项目级）
+     */
     public List<Map<String, Object>> getVariableTree(Long projectId) {
         List<RuleDataObject> objects = listByProject(projectId);
+        List<RuleDataObjectField> allFields = new ArrayList<>();
+
+        if (projectId != null && projectId > 0) {
+            // 获取项目级字段
+            allFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_PROJECT)
+                            .eq(RuleDataObjectField::getProjectId, projectId)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+            // 获取全局字段
+            List<RuleDataObjectField> globalFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+            allFields.addAll(globalFields);
+        } else {
+            // 只查询全局字段
+            allFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+        }
+
+        Map<Long, List<RuleDataObjectField>> byObject = allFields.stream()
+                .collect(Collectors.groupingBy(RuleDataObjectField::getObjectId));
+
+        List<Map<String, Object>> tree = new ArrayList<>();
+        for (RuleDataObject obj : objects) {
+            Map<String, Object> node = new HashMap<>();
+            node.put("object", obj);
+            List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
+                    .map(RuleDataObjectService::toVariableRow)
+                    .collect(Collectors.toList());
+            node.put("variables", vars);
+            tree.add(node);
+        }
+        return tree;
+    }
+
+    /**
+     * 获取所有项目的数据对象树（未选项目时使用，显示所有项目的数据对象）
+     */
+    public List<Map<String, Object>> getVariableTreeAll() {
+        List<RuleDataObject> objects = getBaseMapper().selectList(
+                new LambdaQueryWrapper<RuleDataObject>()
+                        .orderByAsc(RuleDataObject::getProjectId)
+                        .orderByAsc(RuleDataObject::getId));
         List<RuleDataObjectField> allFields = objectFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectField>()
-                        .eq(RuleDataObjectField::getProjectId, projectId)
-                        .orderByAsc(RuleDataObjectField::getSortOrder));
+                        .orderByAsc(RuleDataObjectField::getProjectId)
+                        .orderByAsc(RuleDataObjectField::getId));
 
         Map<Long, List<RuleDataObjectField>> byObject = allFields.stream()
                 .collect(Collectors.groupingBy(RuleDataObjectField::getObjectId));
@@ -210,6 +312,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         if (obj == null) throw new IllegalArgumentException("数据对象不存在");
         field.setId(null);
         field.setProjectId(obj.getProjectId());
+        field.setScope(obj.getScope());
         field.setObjectId(objectId);
         if (field.getScriptName() == null || field.getScriptName().isEmpty()) {
             field.setScriptName(ScriptNameUtil.toCamelCase(field.getVarCode()));
@@ -262,9 +365,10 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         }
     }
 
-    private RuleDataObject findOrCreateObject(Long projectId, String objectCode, String scriptName, String objectType, String sourceType, String sourceContent) {
+    private RuleDataObject findOrCreateObject(Long projectId, String scope, String objectCode, String scriptName, String objectType, String sourceType, String sourceContent) {
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(RuleDataObject::getProjectId, projectId)
+        wrapper.eq(RuleDataObject::getScope, scope)
+               .eq(RuleDataObject::getProjectId, projectId)
                .eq(RuleDataObject::getObjectCode, objectCode);
         RuleDataObject existing = getOne(wrapper, false);
         if (existing != null) {
@@ -277,6 +381,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         }
         RuleDataObject obj = new RuleDataObject();
         obj.setProjectId(projectId);
+        obj.setScope(scope);
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
         obj.setScriptName(scriptName != null ? scriptName : ScriptNameUtil.toCamelCase(objectCode));
@@ -288,7 +393,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         return obj;
     }
 
-    private int batchCreateFields(Long projectId, Long objectId, ParsedObject parsed, Long parentFieldId) {
+    private int batchCreateFields(Long projectId, String scope, Long objectId, ParsedObject parsed, Long parentFieldId) {
         int count = 0;
         int order = 0;
         for (ParsedField field : parsed.getFields()) {
@@ -312,6 +417,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             } else {
                 RuleDataObjectField f = new RuleDataObjectField();
                 f.setProjectId(projectId);
+                f.setScope(scope);
                 f.setObjectId(objectId);
                 f.setVarCode(varCode);
                 f.setVarLabel(field.getFieldLabel() != null ? field.getFieldLabel() : varCode);

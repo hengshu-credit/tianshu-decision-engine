@@ -1,16 +1,21 @@
-$--color-primary: #B30000;
+// 必须在 :export 外面定义，这样才能通过 @use 被其他 scss 文件访问
+$--color-primary: #2639E9;
+$--color-danger: #F56C6C;
 $--font-path: "~element-ui/lib/theme-chalk/fonts";
 
-$menuText: #161617;
-$menuActiveText: #B30000;
-$menuBg: #E9EBF0;
-$menuHover: #F4F5F7;
+$menuText: #CBD5E1;
+$menuActiveText: #FFFFFF;
+$menuBg: #1C2038;
+$menuHover: #262D4F;
 $sideBarWidth: 210px;
 
 :export {
+  // JS 端导入时使用（通过 CSS Modules）
   menuText: $menuText;
   menuActiveText: $menuActiveText;
   menuBg: $menuBg;
   menuHover: $menuHover;
   sideBarWidth: $sideBarWidth;
+  colorPrimary: $--color-primary;
+  colorDanger: $--color-danger;
 }

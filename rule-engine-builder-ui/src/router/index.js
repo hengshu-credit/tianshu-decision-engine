@@ -30,7 +30,13 @@ const routes = [
         path: 'project',
         name: 'ProjectList',
         component: () => import('@/views/project/ProjectList.vue'),
-        meta: { title: '规则项目' }
+        meta: { title: '项目管理' }
+      },
+      {
+        path: 'rule',
+        name: 'RuleList',
+        component: () => import('@/views/rule/RuleList.vue'),
+        meta: { title: '规则管理' }
       },
       {
         path: 'project/:id',

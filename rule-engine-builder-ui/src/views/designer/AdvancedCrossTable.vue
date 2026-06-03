@@ -40,7 +40,7 @@
             <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
               <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
-            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C;" @click="removeDimension('row', di)" />
+            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C;" @click="removeDimension('row', di)" />
           </div>
           <div class="segments-area">
             <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
@@ -86,7 +86,7 @@
             <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
               <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
-            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F56C6C;" @click="removeDimension('col', di)" />
+            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C;" @click="removeDimension('col', di)" />
           </div>
           <div class="segments-area">
             <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
@@ -225,7 +225,7 @@
           </el-descriptions-item>
           <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
           <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F56C6C">{{ testResult.errorMessage }}</span>
+            <span style="color:#F76E6C">{{ testResult.errorMessage }}</span>
           </el-descriptions-item>
         </el-descriptions>
       </div>

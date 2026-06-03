@@ -1,7 +1,10 @@
 <template>
   <el-container style="height: 100vh;">
     <el-header height="50px" class="layout-header">
-      <div class="header-title">规则引擎可视化编排系统</div>
+      <div class="header-title">
+        <img src="/images/hengshucredit_animated.svg" alt="logo" class="header-logo">
+        <span>衡枢决策引擎</span>
+      </div>
       <div v-if="loginEnabled" class="header-actions">
         <span class="user-label">{{ username }}</span>
         <el-button type="text" @click="doLogout">退出</el-button>
@@ -18,7 +21,11 @@
         >
           <el-menu-item index="/project">
             <i class="el-icon-folder" />
-            <span>规则项目</span>
+            <span>项目管理</span>
+          </el-menu-item>
+          <el-menu-item index="/rule">
+            <i class="el-icon-document" />
+            <span>规则管理</span>
           </el-menu-item>
           <el-menu-item index="/variable">
             <i class="el-icon-collection-tag" />
@@ -98,8 +105,8 @@ export default {
 
 <style lang="scss" scoped>
 .layout-header {
-  background: #fff;
-  border-bottom: 2px solid $--color-primary;
+  background: $menuBg;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -108,7 +115,17 @@ export default {
   .header-title {
     font-size: 18px;
     font-weight: bold;
-    color: $--color-primary;
+    color: #FFFFFF;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+
+    .header-logo {
+      height: 24px;
+      width: 24px;
+      vertical-align: text-top;
+      margin-top: 2px;
+    }
   }
 
   .header-actions {
@@ -116,7 +133,7 @@ export default {
     align-items: center;
     gap: 12px;
     font-size: 14px;
-    color: #606266;
+    color: #94A3B8;
   }
 
   .user-label {
@@ -130,10 +147,29 @@ export default {
 .layout-aside {
   background: $menuBg;
   overflow: hidden;
+  border-right: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+::v-deep .el-menu {
+  border-right: none;
+
+  .el-menu-item {
+    color: $menuText;
+
+    &:hover {
+      background: $menuHover;
+    }
+
+    &.is-active {
+      color: $menuActiveText;
+      background: rgba($--color-primary, 0.25);
+      border-right: 3px solid $--color-primary;
+    }
+  }
 }
 
 .layout-main {
-  background: #F3F3F3;
+  background: #F3F4F6;
   padding: 16px;
   overflow-y: auto;
   overflow-x: hidden;

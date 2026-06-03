@@ -2,10 +2,13 @@ package com.bjjw.rule.server.service;
 
 import com.bjjw.rule.model.entity.RuleDefinition;
 import com.bjjw.rule.model.entity.RuleDefinitionContent;
+import com.bjjw.rule.model.entity.RuleDefinitionRef;
+import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.model.entity.RulePublished;
 import com.bjjw.rule.model.dto.RulePushMessage;
 import com.bjjw.rule.server.mapper.RuleDefinitionContentMapper;
 import com.bjjw.rule.server.mapper.RuleDefinitionMapper;
+import com.bjjw.rule.server.mapper.RuleDefinitionRefMapper;
 import com.bjjw.rule.server.mapper.RulePublishedMapper;
 import com.bjjw.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -17,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Service
 public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
@@ -30,13 +34,52 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RulePushService pushService;
 
-    public IPage<RuleDefinition> pageList(int pageNum, int pageSize, Long projectId, String modelType, String keyword) {
+    @Resource
+    private RuleProjectService projectService;
+
+    @Resource
+    private RuleDefinitionRefMapper refMapper;
+
+    public IPage<RuleDefinition> pageList(int pageNum, int pageSize, Long projectId, String modelType, String keyword, String projectName, String scope, String status, String ruleCode, String ruleName, String projectCode, String publishedVersion, String createBeginTime, String createEndTime, String updateBeginTime, String updateEndTime) {
         LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null) {
             wrapper.eq(RuleDefinition::getProjectId, projectId);
         }
         if (modelType != null && !modelType.isEmpty()) {
             wrapper.eq(RuleDefinition::getModelType, modelType);
+        }
+        if (projectName != null && !projectName.isEmpty()) {
+            wrapper.like(RuleDefinition::getProjectName, projectName);
+        }
+        if (scope != null && !scope.isEmpty()) {
+            wrapper.eq(RuleDefinition::getScope, scope);
+        }
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq(RuleDefinition::getStatus, status);
+        }
+        if (ruleCode != null && !ruleCode.isEmpty()) {
+            wrapper.eq(RuleDefinition::getRuleCode, ruleCode);
+        }
+        if (ruleName != null && !ruleName.isEmpty()) {
+            wrapper.like(RuleDefinition::getRuleName, ruleName);
+        }
+        if (projectCode != null && !projectCode.isEmpty()) {
+            wrapper.eq(RuleDefinition::getProjectCode, projectCode);
+        }
+        if (publishedVersion != null && !publishedVersion.isEmpty()) {
+            wrapper.eq(RuleDefinition::getPublishedVersion, publishedVersion);
+        }
+        if (createBeginTime != null && !createBeginTime.isEmpty()) {
+            wrapper.ge(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (createEndTime != null && !createEndTime.isEmpty()) {
+            wrapper.le(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (updateBeginTime != null && !updateBeginTime.isEmpty()) {
+            wrapper.ge(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (updateEndTime != null && !updateEndTime.isEmpty()) {
+            wrapper.le(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
         }
         if (keyword != null && !keyword.isEmpty()) {
             wrapper.and(w -> w.like(RuleDefinition::getRuleName, keyword)
@@ -49,6 +92,21 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     @Transactional
     public RuleDefinition createWithContent(RuleDefinition definition) {
+        // 全局规则 projectId 为 0，自动填充 scope
+        if (definition.getProjectId() == null || definition.getProjectId() == 0) {
+            definition.setProjectId(0L);
+            definition.setScope("GLOBAL");
+            definition.setProjectCode(null);
+            definition.setProjectName(null);
+        } else {
+            definition.setScope("PROJECT");
+            // 填充项目编码和名称
+            RuleProject project = projectService.getById(definition.getProjectId());
+            if (project != null) {
+                definition.setProjectCode(project.getProjectCode());
+                definition.setProjectName(project.getProjectName());
+            }
+        }
         save(definition);
         RuleDefinitionContent content = new RuleDefinitionContent();
         content.setDefinitionId(definition.getId());
@@ -56,6 +114,36 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         content.setCompileStatus(0);
         contentMapper.insert(content);
         return definition;
+    }
+
+    /**
+     * 更新规则，同时根据 projectId 填充 projectCode 和 projectName。
+     * 兼容 projectId 变更、projectId 清零（全局规则）等场景。
+     */
+    @Transactional
+    public void updateWithProjectInfo(RuleDefinition definition) {
+        populateProjectInfo(definition);
+        updateById(definition);
+    }
+
+    /**
+     * 统一根据 projectId 填充 scope、projectCode、projectName。
+     * 供 create / update 共用。
+     */
+    private void populateProjectInfo(RuleDefinition definition) {
+        if (definition.getProjectId() == null || definition.getProjectId() == 0) {
+            definition.setProjectId(0L);
+            definition.setScope("GLOBAL");
+            definition.setProjectCode(null);
+            definition.setProjectName(null);
+        } else {
+            definition.setScope("PROJECT");
+            RuleProject project = projectService.getById(definition.getProjectId());
+            if (project != null) {
+                definition.setProjectCode(project.getProjectCode());
+                definition.setProjectName(project.getProjectName());
+            }
+        }
     }
 
     @Transactional
@@ -138,6 +226,97 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     /**
      * 更新编辑模式（visual/script）
      */
+    /**
+     * 将全局规则添加到项目中
+     * 在关联表记录关联关系（用于前端筛选）
+     * @param definitionId 全局规则ID
+     * @param projectId 项目ID
+     * @return 关联记录
+     */
+    @Transactional
+    public RuleDefinitionRef addGlobalRuleToProject(Long definitionId, Long projectId) {
+        RuleDefinition globalRule = getById(definitionId);
+        if (globalRule == null) {
+            throw new IllegalArgumentException("规则不存在，id=" + definitionId);
+        }
+        if (!"GLOBAL".equals(globalRule.getScope())) {
+            throw new IllegalArgumentException("只能添加全局规则到项目");
+        }
+        RuleProject project = projectService.getById(projectId);
+        if (project == null) {
+            throw new IllegalArgumentException("项目不存在，id=" + projectId);
+        }
+
+        // 检查是否已添加过
+        Long existCount = refMapper.selectCount(new LambdaQueryWrapper<RuleDefinitionRef>()
+                .eq(RuleDefinitionRef::getDefinitionId, definitionId)
+                .eq(RuleDefinitionRef::getProjectId, projectId));
+        if (existCount > 0) {
+            throw new IllegalArgumentException("该全局规则已添加到当前项目");
+        }
+
+        // 创建关联记录
+        RuleDefinitionRef ref = new RuleDefinitionRef();
+        ref.setDefinitionId(definitionId);
+        ref.setProjectId(projectId);
+        ref.setCreateTime(LocalDateTime.now());
+        refMapper.insert(ref);
+
+        return ref;
+    }
+
+    /**
+     * 获取项目中可用的规则（包括项目级规则和已添加的全局规则）
+     * 已添加的全局规则通过关联表 rule_definition_ref 来记录
+     */
+    public IPage<RuleDefinition> pageListForProject(int pageNum, int pageSize, Long projectId, String modelType, String keyword, String scope, String status, String ruleCode, String ruleName, String createBeginTime, String createEndTime, String updateBeginTime, String updateEndTime) {
+        LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
+
+        // 查询条件：项目级规则 OR 已关联到该项目的全局规则（通过关联表）
+        if (projectId != null && projectId > 0) {
+            // 使用子查询来获取关联的全局规则ID
+            wrapper.and(w -> w
+                    .eq(RuleDefinition::getProjectId, projectId)
+                    .or()
+                    .exists("SELECT 1 FROM rule_definition_ref rdr WHERE rdr.definition_id = rule_definition.id AND rdr.project_id = " + projectId));
+        }
+
+        if (modelType != null && !modelType.isEmpty()) {
+            wrapper.eq(RuleDefinition::getModelType, modelType);
+        }
+        if (scope != null && !scope.isEmpty()) {
+            wrapper.eq(RuleDefinition::getScope, scope);
+        }
+        if (status != null && !status.isEmpty()) {
+            wrapper.eq(RuleDefinition::getStatus, status);
+        }
+        if (ruleCode != null && !ruleCode.isEmpty()) {
+            wrapper.eq(RuleDefinition::getRuleCode, ruleCode);
+        }
+        if (ruleName != null && !ruleName.isEmpty()) {
+            wrapper.like(RuleDefinition::getRuleName, ruleName);
+        }
+        if (createBeginTime != null && !createBeginTime.isEmpty()) {
+            wrapper.ge(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (createEndTime != null && !createEndTime.isEmpty()) {
+            wrapper.le(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (updateBeginTime != null && !updateBeginTime.isEmpty()) {
+            wrapper.ge(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (updateEndTime != null && !updateEndTime.isEmpty()) {
+            wrapper.le(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (keyword != null && !keyword.isEmpty()) {
+            wrapper.and(w -> w.like(RuleDefinition::getRuleName, keyword)
+                              .or()
+                              .like(RuleDefinition::getRuleCode, keyword));
+        }
+        wrapper.orderByDesc(RuleDefinition::getCreateTime);
+        return page(new Page<>(pageNum, pageSize), wrapper);
+    }
+
     public void updateScriptMode(Long definitionId, String scriptMode) {
         RuleDefinitionContent content = getContent(definitionId);
         if (content != null) {
