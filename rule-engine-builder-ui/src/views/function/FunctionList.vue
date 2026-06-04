@@ -24,6 +24,25 @@
             <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
           </el-select>
         </el-form-item>
+        <el-form-item label="实现方式">
+          <el-select v-model="qp.implType" clearable filterable placeholder="全部" style="width:110px;">
+            <el-option label="QLExpress 脚本" value="SCRIPT" />
+            <el-option label="Java 类" value="JAVA" />
+            <el-option label="Spring Bean" value="BEAN" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="函数编码">
+          <el-select v-model="qp.funcCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
+            :remote-method="queryFuncCode" :loading="funcCodeLoading">
+            <el-option v-for="v in filteredFuncCodes" :key="v" :label="v" :value="v" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="函数名称">
+          <el-select v-model="qp.funcLabel" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
+            :remote-method="queryFuncLabel" :loading="funcLabelLoading">
+            <el-option v-for="v in filteredFuncLabels" :key="v" :label="v" :value="v" />
+          </el-select>
+        </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
@@ -171,13 +190,20 @@ export default {
       currentProjectId: null,
       funcList: [],
       total: 0,
-      qp: { pageNum: 1, pageSize: 10, scope: '', projectCode: '', projectName: '' },
+      qp: { pageNum: 1, pageSize: 10, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' },
       loading: false,
       dialogVisible: false,
       projectList: [],
       projectListLoading: false,
       filteredProjectCodes: [],
       filteredProjectNames: [],
+      // 函数编码/名称远程搜索
+      funcCodeLoading: false,
+      funcLabelLoading: false,
+      allFuncCodes: [],
+      allFuncLabels: [],
+      filteredFuncCodes: [],
+      filteredFuncLabels: [],
       editForm: { funcCode: '', funcName: '', description: '', returnType: 'STRING', implType: 'SCRIPT', implScript: '', implClass: '', implMethod: '', implBeanName: '', status: 1 },
       editParams: [],
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
@@ -215,8 +241,26 @@ export default {
         p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
       ).slice(0, 20)
     },
+    queryFuncCode(query) {
+      this.funcCodeLoading = true
+      if (!query) {
+        this.filteredFuncCodes = this.allFuncCodes.slice(0, 20)
+      } else {
+        this.filteredFuncCodes = this.allFuncCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      }
+      this.funcCodeLoading = false
+    },
+    queryFuncLabel(query) {
+      this.funcLabelLoading = true
+      if (!query) {
+        this.filteredFuncLabels = this.allFuncLabels.slice(0, 20)
+      } else {
+        this.filteredFuncLabels = this.allFuncLabels.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      }
+      this.funcLabelLoading = false
+    },
     handleQuery() { this.qp.pageNum = 1; this.loadFunctions() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', projectCode: '', projectName: '' }; this.loadFunctions() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' }; this.loadFunctions() },
     async loadFunctions() {
       this.loading = true
       try {
@@ -225,9 +269,19 @@ export default {
         if (!params.scope) delete params.scope
         if (!params.projectCode) delete params.projectCode
         if (!params.projectName) delete params.projectName
+        if (!params.implType) delete params.implType
+        if (!params.funcCode) delete params.funcCode
+        if (!params.funcLabel) delete params.funcLabel
         const res = await request.get('/rule/function/list', { params })
         this.funcList = (res && res.data && res.data.records) || []
         this.total = (res && res.data && res.data.total) || 0
+        // 加载函数编码/名称列表供筛选下拉
+        const codeSet = new Set(), labelSet = new Set()
+        this.funcList.forEach(r => { if (r.funcCode) codeSet.add(r.funcCode); if (r.funcName) labelSet.add(r.funcName) })
+        this.allFuncCodes = Array.from(codeSet)
+        this.allFuncLabels = Array.from(labelSet)
+        this.filteredFuncCodes = this.allFuncCodes.slice(0, 20)
+        this.filteredFuncLabels = this.allFuncLabels.slice(0, 20)
       } catch (e) {
         this.funcList = []; this.total = 0
       } finally {

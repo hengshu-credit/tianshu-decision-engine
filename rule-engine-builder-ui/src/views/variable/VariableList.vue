@@ -27,10 +27,39 @@
       <!-- Tab 1: Variable List -->
       <el-tab-pane label="变量列表" name="list">
         <div class="tab-filter-row">
-          <el-select v-model="qp.varType" clearable placeholder="数据类型" size="mini" style="width:110px;" @change="handleQuery">
+          <el-select v-model="qp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;"
+            @change="handleQuery">
+            <el-option label="全局" value="GLOBAL" />
+            <el-option label="项目级" value="PROJECT" />
+          </el-select>
+          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
+            :remote-method="queryProjectCode" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
+          </el-select>
+          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
+            :remote-method="queryProjectName" :loading="projectListLoading">
+            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
+          </el-select>
+          <el-select v-model="qp.varSource" clearable filterable placeholder="来源" size="mini" style="width:100px;"
+            @change="handleQuery">
+            <el-option label="输入参数" value="INPUT" />
+            <el-option label="数据库查询" value="DB" />
+            <el-option label="接口调用" value="API" />
+            <el-option label="计算得出" value="COMPUTED" />
+            <el-option label="常量" value="CONSTANT" />
+          </el-select>
+          <el-select v-model="qp.varType" clearable filterable placeholder="数据类型" size="mini" style="width:100px;"
+            @change="handleQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <el-input v-model="qp.keyword" placeholder="搜索编码或名称" size="mini" clearable style="width:180px;" @keyup.enter.native="handleQuery" />
+          <el-select v-model="qp.varCode" clearable filterable remote reserve-keyword placeholder="变量编码" size="mini" style="width:120px;"
+            :remote-method="queryVarCode" :loading="varCodeLoading">
+            <el-option v-for="v in filteredVarCodes" :key="v" :label="v" :value="v" />
+          </el-select>
+          <el-select v-model="qp.varLabel" clearable filterable remote reserve-keyword placeholder="变量名称" size="mini" style="width:120px;"
+            :remote-method="queryVarLabel" :loading="varLabelLoading">
+            <el-option v-for="v in filteredVarLabels" :key="v" :label="v" :value="v" />
+          </el-select>
           <el-button type="primary" @click="handleQuery">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
         </div>
@@ -48,7 +77,7 @@
               <template slot-scope="{ row }">{{ row.projectName || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
             </el-table-column>
             <el-table-column prop="varCode" label="变量编码" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="varLabel" label="名称（中文）" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="varLabel" label="变量名称" min-width="120" show-overflow-tooltip />
             <el-table-column label="脚本名称" min-width="130">
               <template slot-scope="{row}">
                 <el-input v-model="row.scriptName" size="mini" placeholder="脚本名称" @blur="onVarScriptNameChange(row)" />
@@ -88,17 +117,27 @@
       <!-- Tab 2: Data Objects -->
       <el-tab-pane label="数据对象" name="objects">
         <div class="tab-filter-row">
-          <el-select v-model="objQp.scope" clearable placeholder="作用范围" size="mini" style="width:90px;" @change="onObjFilterChange">
+          <el-select v-model="objQp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;" @change="onObjFilterChange">
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select v-model="objQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:120px;"
+          <el-select v-model="objQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
             :remote-method="queryProjectCode" :loading="projectListLoading">
             <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
           </el-select>
-          <el-select v-model="objQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:120px;"
+          <el-select v-model="objQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
             :remote-method="queryProjectName" :loading="projectListLoading">
             <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
+          </el-select>
+          <el-select v-model="objQp.sourceType" clearable filterable placeholder="来源" size="mini" style="width:100px;" @change="onObjFilterChange">
+            <el-option label="Java 实体" value="JAVA" />
+            <el-option label="JSON" value="JSON" />
+            <el-option label="DDL" value="DDL" />
+            <el-option label="手动" value="MANUAL" />
+          </el-select>
+          <el-select v-model="objQp.objectCode" clearable filterable remote reserve-keyword placeholder="对象名称" size="mini" style="width:130px;"
+            :remote-method="queryObjectName" :loading="objectNameLoading">
+            <el-option v-for="o in filteredObjectNames" :key="o" :label="o" :value="o" />
           </el-select>
           <el-button type="primary" @click="onObjFilterChange">查询</el-button>
           <el-button @click="resetObjQuery">重置</el-button>
@@ -157,22 +196,32 @@
       <!-- Tab 3: 常量列表（与变量列表相同分页模型，必须有默认值） -->
       <el-tab-pane label="常量列表" name="constants">
         <div class="tab-filter-row">
-          <el-select v-model="constQp.scope" clearable placeholder="作用范围" size="mini" style="width:90px;" @change="handleConstQuery">
+          <el-select v-model="constQp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select v-model="constQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:120px;"
+          <el-select v-model="constQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
             :remote-method="queryProjectCode" :loading="projectListLoading">
             <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
           </el-select>
-          <el-select v-model="constQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:120px;"
+          <el-select v-model="constQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
             :remote-method="queryProjectName" :loading="projectListLoading">
             <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
           </el-select>
-          <el-select v-model="constQp.varType" clearable placeholder="数据类型" size="mini" style="width:110px;" @change="handleConstQuery">
+          <el-select v-model="constQp.varSource" clearable filterable placeholder="来源" size="mini" style="width:100px;" @change="handleConstQuery">
+            <el-option label="常量" value="CONSTANT" />
+          </el-select>
+          <el-select v-model="constQp.varType" clearable filterable placeholder="数据类型" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <el-input v-model="constQp.keyword" placeholder="搜索编码或名称" size="mini" clearable style="width:180px;" @keyup.enter.native="handleConstQuery" />
+          <el-select v-model="constQp.varCode" clearable filterable remote reserve-keyword placeholder="常量编码" size="mini" style="width:120px;"
+            :remote-method="queryConstCode" :loading="constCodeLoading">
+            <el-option v-for="v in filteredConstCodes" :key="v" :label="v" :value="v" />
+          </el-select>
+          <el-select v-model="constQp.varLabel" clearable filterable remote reserve-keyword placeholder="常量名称" size="mini" style="width:120px;"
+            :remote-method="queryConstLabel" :loading="constLabelLoading">
+            <el-option v-for="v in filteredConstLabels" :key="v" :label="v" :value="v" />
+          </el-select>
           <el-button type="primary" @click="handleConstQuery">查询</el-button>
           <el-button @click="resetConstQuery">重置</el-button>
         </div>
@@ -188,7 +237,7 @@
               <template slot-scope="{ row }">{{ getProjectName(row.projectId) || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
             </el-table-column>
             <el-table-column prop="varCode" label="常量编码" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="varLabel" label="名称" min-width="120" show-overflow-tooltip />
+            <el-table-column prop="varLabel" label="常量名称" min-width="120" show-overflow-tooltip />
             <el-table-column label="脚本名称" min-width="130">
               <template slot-scope="{row}">
                 <el-input v-model="row.scriptName" size="mini" placeholder="脚本名称" @blur="onVarScriptNameChange(row)" />
@@ -436,12 +485,33 @@ export default {
       loading: false,
       tableData: [],
       total: 0,
-      qp: { pageNum: 1, pageSize: 10, projectId: '', varType: '', keyword: '', scope: '', projectCode: '', projectName: '' },
+      qp: { pageNum: 1, pageSize: 10, projectId: '', varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' },
 
       projectList: [],
       projectListLoading: false,
       filteredProjectCodes: [],
       filteredProjectNames: [],
+
+      // 变量编码/名称远程搜索
+      varCodeLoading: false,
+      varLabelLoading: false,
+      allVarCodes: [],
+      allVarLabels: [],
+      filteredVarCodes: [],
+      filteredVarLabels: [],
+
+      // 常量编码/名称远程搜索
+      constCodeLoading: false,
+      constLabelLoading: false,
+      allConstCodes: [],
+      allConstLabels: [],
+      filteredConstCodes: [],
+      filteredConstLabels: [],
+
+      // 数据对象名称远程搜索
+      objectNameLoading: false,
+      allObjectNames: [],
+      filteredObjectNames: [],
 
       dialogVisible: false,
       form: this.initForm(),
@@ -462,7 +532,7 @@ export default {
 
       // 常量列表（分页，与变量接口相同）
       constLoading: false,
-      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '', scope: '', projectCode: '', projectName: '' },
+      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '', varSource: 'CONSTANT', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' },
       constantRows: [],
       constantTotal: 0,
 
@@ -497,7 +567,7 @@ export default {
       objPageNum: 1,
       objPageSize: 10,
       objExpanded: {},
-      objQp: { scope: '', projectCode: '', projectName: '' },
+      objQp: { scope: '', projectCode: '', projectName: '', sourceType: '', objectCode: '' },
 
     }
   },
@@ -525,7 +595,7 @@ export default {
       }))
     },
     filteredObjectTree() {
-      const { scope, projectCode, projectName } = this.objQp
+      const { scope, projectCode, projectName, sourceType, objectCode } = this.objQp
       return (this.objectTree || []).filter(node => {
         const obj = node.object
         if (scope && obj.scope !== scope) return false
@@ -537,6 +607,8 @@ export default {
           const p = this.projectList.find(p => p.projectName === projectName)
           if (p && obj.projectId !== p.id) return false
         }
+        if (sourceType && obj.sourceType !== sourceType) return false
+        if (objectCode && obj.objectCode && !obj.objectCode.toLowerCase().includes(objectCode.toLowerCase())) return false
         return true
       })
     },
@@ -607,6 +679,56 @@ export default {
         p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
       ).slice(0, 20)
     },
+    queryVarCode(query) {
+      this.varCodeLoading = true
+      if (!query) {
+        this.filteredVarCodes = this.allVarCodes.slice(0, 20)
+        this.varCodeLoading = false
+        return
+      }
+      this.filteredVarCodes = this.allVarCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      this.varCodeLoading = false
+    },
+    queryVarLabel(query) {
+      this.varLabelLoading = true
+      if (!query) {
+        this.filteredVarLabels = this.allVarLabels.slice(0, 20)
+        this.varLabelLoading = false
+        return
+      }
+      this.filteredVarLabels = this.allVarLabels.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      this.varLabelLoading = false
+    },
+    queryConstCode(query) {
+      this.constCodeLoading = true
+      if (!query) {
+        this.filteredConstCodes = this.allConstCodes.slice(0, 20)
+        this.constCodeLoading = false
+        return
+      }
+      this.filteredConstCodes = this.allConstCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      this.constCodeLoading = false
+    },
+    queryConstLabel(query) {
+      this.constLabelLoading = true
+      if (!query) {
+        this.filteredConstLabels = this.allConstLabels.slice(0, 20)
+        this.constLabelLoading = false
+        return
+      }
+      this.filteredConstLabels = this.allConstLabels.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      this.constLabelLoading = false
+    },
+    queryObjectName(query) {
+      this.objectNameLoading = true
+      if (!query) {
+        this.filteredObjectNames = this.allObjectNames.slice(0, 20)
+        this.objectNameLoading = false
+        return
+      }
+      this.filteredObjectNames = this.allObjectNames.filter(o => o && o.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      this.objectNameLoading = false
+    },
     onProjectChange(pid) {
       this.currentProjectId = pid
       this.qp.projectId = pid
@@ -632,17 +754,27 @@ export default {
         if (!params.scope) delete params.scope
         if (!params.projectCode) delete params.projectCode
         if (!params.projectName) delete params.projectName
+        if (!params.varSource) delete params.varSource
+        if (!params.varCode) delete params.varCode
+        if (!params.varLabel) delete params.varLabel
         const res = await listVariables(params)
         const data = res.data || {}
         this.tableData = data.records || []
         this.total = data.total != null ? data.total : 0
+        // 加载变量编码/名称列表供筛选下拉
+        const codeSet = new Set(), labelSet = new Set()
+        ;(data.records || []).forEach(r => { if (r.varCode) codeSet.add(r.varCode); if (r.varLabel) labelSet.add(r.varLabel) })
+        this.allVarCodes = Array.from(codeSet)
+        this.allVarLabels = Array.from(labelSet)
+        this.filteredVarCodes = this.allVarCodes.slice(0, 20)
+        this.filteredVarLabels = this.allVarLabels.slice(0, 20)
       } catch (err) {
         this.$message.error('加载变量列表失败')
         this.tableData = []; this.total = 0
       } finally { this.loading = false }
     },
     handleQuery() { this.qp.pageNum = 1; this.loadData() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: this.currentProjectId, varType: '', keyword: '', scope: '', projectCode: '', projectName: '' }; this.loadData() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: this.currentProjectId, varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }; this.loadData() },
 
     // ── Objects ──
     async loadObjectTree() {
@@ -650,7 +782,7 @@ export default {
       try {
         const buildParams = () => {
           const p = {}
-          const { scope, projectCode, projectName } = this.objQp
+          const { scope, projectCode, projectName, sourceType, objectCode } = this.objQp
           if (scope) p.scope = scope
           if (projectCode) {
             const proj = this.projectList.find(x => x.projectCode === projectCode)
@@ -659,6 +791,8 @@ export default {
             const proj = this.projectList.find(x => x.projectName === projectName)
             if (proj) p.projectId = proj.id
           }
+          if (sourceType) p.sourceType = sourceType
+          if (objectCode) p.objectCode = objectCode
           return p
         }
         let res
@@ -667,9 +801,22 @@ export default {
         } else {
           res = await request.get('/rule/dataobject/tree', { params: buildParams() })
         }
-        this.objectTree = res.data || []
+        let tree = res.data || []
+        // 前端额外过滤 sourceType 和 objectCode（如果后端不支持）
+        if (this.objQp.sourceType) {
+          tree = tree.filter(n => n.object.sourceType === this.objQp.sourceType)
+        }
+        if (this.objQp.objectCode) {
+          tree = tree.filter(n => n.object.objectCode && n.object.objectCode.toLowerCase().includes(this.objQp.objectCode.toLowerCase()))
+        }
+        this.objectTree = tree
         this.objectMap = {}
         this.objectTree.forEach(n => { this.objectMap[n.object.id] = n.object })
+        // 加载对象名称列表供筛选下拉
+        const nameSet = new Set()
+        tree.forEach(n => { if (n.object.objectCode) nameSet.add(n.object.objectCode) })
+        this.allObjectNames = Array.from(nameSet)
+        this.filteredObjectNames = this.allObjectNames.slice(0, 20)
       } catch (e) { this.objectTree = [] }
       finally { this.objLoading = false }
     },
@@ -790,10 +937,13 @@ export default {
       try {
         const buildParams = (extra) => {
           const p = { pageNum: this.constQp.pageNum, pageSize: this.constQp.pageSize, varSource: 'CONSTANT', ...extra }
-          const { scope, projectCode, projectName, keyword, varType } = this.constQp
+          const { scope, projectCode, projectName, keyword, varType, varSource, varCode, varLabel } = this.constQp
           if (scope) p.scope = scope
           if (keyword) p.keyword = keyword
           if (varType) p.varType = varType
+          if (varSource) p.varSource = varSource
+          if (varCode) p.varCode = varCode
+          if (varLabel) p.varLabel = varLabel
           if (projectCode) {
             const proj = this.projectList.find(x => x.projectCode === projectCode)
             if (proj) p.projectId = proj.id
@@ -812,6 +962,13 @@ export default {
         const data = res.data || {}
         this.constantRows = data.records || []
         this.constantTotal = data.total != null ? data.total : 0
+        // 加载常量编码/名称列表供筛选下拉
+        const codeSet = new Set(), labelSet = new Set()
+        ;(data.records || []).forEach(r => { if (r.varCode) codeSet.add(r.varCode); if (r.varLabel) labelSet.add(r.varLabel) })
+        this.allConstCodes = Array.from(codeSet)
+        this.allConstLabels = Array.from(labelSet)
+        this.filteredConstCodes = this.allConstCodes.slice(0, 20)
+        this.filteredConstLabels = this.allConstLabels.slice(0, 20)
       } catch (e) {
         this.constantRows = []
         this.constantTotal = 0
@@ -819,15 +976,17 @@ export default {
     },
     handleConstQuery() { this.constQp.pageNum = 1; this.loadConstants() },
     resetConstQuery() {
-      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', scope: '', projectCode: '', projectName: '' }
+      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', varSource: 'CONSTANT', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }
       this.loadConstants()
     },
     onObjFilterChange() {
       this.objPageNum = 1
+      this.loadObjectTree()
     },
     resetObjQuery() {
-      this.objQp = { scope: '', projectCode: '', projectName: '' }
+      this.objQp = { scope: '', projectCode: '', projectName: '', sourceType: '', objectCode: '' }
       this.objPageNum = 1
+      this.loadObjectTree()
     },
 
     // ── CRUD ──
