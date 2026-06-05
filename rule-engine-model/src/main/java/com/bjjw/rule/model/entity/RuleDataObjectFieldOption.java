@@ -9,7 +9,7 @@ import lombok.Data;
  * 数据对象字段的枚举选项（与 {@link com.bjjw.rule.model.entity.RuleVariableOption} 对应）。
  */
 @Data
-@TableName("rule_data_object_field_option")
+@TableName("rule_engine.rule_data_object_field_option")
 public class RuleDataObjectFieldOption {
     @TableId(type = IdType.AUTO)
     private Long id;

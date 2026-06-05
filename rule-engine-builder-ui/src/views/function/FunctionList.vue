@@ -58,7 +58,7 @@
     <el-table :data="funcList" border size="small" v-loading="loading" style="width:100%;margin-top:12px;">
       <el-table-column label="作用范围" width="90" align="center">
         <template slot-scope="{ row }">
-          <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ scopeLabel(row.scope) }}</el-tag>
+          <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ scopeLabel(row.scope) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>

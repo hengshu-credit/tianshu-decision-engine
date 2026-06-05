@@ -1,6 +1,9 @@
 CREATE DATABASE IF NOT EXISTS `rule_engine` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE `rule_engine`;
 
+SET NAMES utf8mb4;
+SET character_set_connection = utf8mb4;
+
 -- ============================================================
 -- 1. rule_project - 规则项目表
 -- ============================================================
@@ -125,6 +128,7 @@ CREATE TABLE IF NOT EXISTS `rule_published` (
 CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `object_code`      VARCHAR(128) NOT NULL                COMMENT '对象编码（Java类名/JSON键名）',
   `object_label`     VARCHAR(128) DEFAULT NULL             COMMENT '对象中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的对象引用名（默认驼峰，如 taxRequest）',
@@ -136,7 +140,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_project_object` (`project_id`, `object_code`),
+  UNIQUE KEY `uk_scope_project_object` (`scope`, `project_id`, `object_code`),
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象定义表（Java实体类/JSON对象）';
 
@@ -146,6 +150,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
 CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `object_id`        BIGINT       NOT NULL                COMMENT '所属数据对象ID',
   `var_code`         VARCHAR(128) NOT NULL                COMMENT '字段编码',
   `var_label`        VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
@@ -182,6 +187,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
 CREATE TABLE IF NOT EXISTS `rule_variable` (
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `var_code`          VARCHAR(128) NOT NULL                COMMENT '变量编码',
   `var_label`         VARCHAR(128) NOT NULL                COMMENT '变量中文名称',
   `script_name`       VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的变量名（默认驼峰）',
@@ -196,7 +202,7 @@ CREATE TABLE IF NOT EXISTS `rule_variable` (
   `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_project_var` (`project_id`, `var_code`),
+  UNIQUE KEY `uk_scope_project_var` (`scope`, `project_id`, `var_code`),
   KEY `idx_project_id` (`project_id`),
   KEY `idx_var_source` (`var_source`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则变量表（普通变量与常量）';
@@ -220,6 +226,7 @@ CREATE TABLE IF NOT EXISTS `rule_variable_option` (
 CREATE TABLE IF NOT EXISTS `rule_function` (
   `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`    BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `scope`         VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
   `func_code`     VARCHAR(128) NOT NULL                COMMENT '函数编码（QLExpress 中的函数名）',
   `func_name`     VARCHAR(128) NOT NULL                COMMENT '函数中文名称',
   `description`   VARCHAR(512) DEFAULT NULL             COMMENT '函数说明',
@@ -234,7 +241,7 @@ CREATE TABLE IF NOT EXISTS `rule_function` (
   `create_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_project_func` (`project_id`, `func_code`),
+  UNIQUE KEY `uk_scope_project_func` (`scope`, `project_id`, `func_code`),
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义函数定义表';
 
@@ -347,3 +354,115 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
         PARTITION p203112 VALUES LESS THAN (TO_DAYS('2032-01-01')) COMMENT '2031年12月',
         PARTITION p_future VALUES LESS THAN MAXVALUE              COMMENT '兜底分区'
         );
+
+-- ============================================================
+-- 13. rule_model - 统一模型主表
+-- 支持多种模型格式（PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE等），格式特有配置存入 model_config（JSON）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_model` (
+  `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`         BIGINT       DEFAULT NULL             COMMENT '所属项目ID（全局模型可为空）',
+  `project_code`       VARCHAR(64)  DEFAULT NULL             COMMENT '所属项目编码',
+  `project_name`       VARCHAR(128) DEFAULT NULL             COMMENT '所属项目名称',
+  `scope`              VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
+  `model_code`         VARCHAR(128) NOT NULL                COMMENT '模型编码（唯一）',
+  `model_name`         VARCHAR(256) NOT NULL                COMMENT '模型名称（中文）',
+  `model_type`         VARCHAR(32)  NOT NULL                COMMENT '模型大类：CLASSIFICATION-分类/REGRESSION-回归/CLUSTERING-聚类/ML-机器学习',
+  `model_format`       VARCHAR(32)  NOT NULL                COMMENT '模型格式：PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE',
+  `description`        VARCHAR(512) DEFAULT NULL             COMMENT '模型描述',
+  `model_content`      LONGTEXT     DEFAULT NULL             COMMENT '模型文件原始内容（Base64编码）',
+  `model_file_name`    VARCHAR(256) DEFAULT NULL             COMMENT '上传时的文件名',
+  `model_file_size`    BIGINT       DEFAULT NULL             COMMENT '文件大小（字节）',
+  `model_config`       JSON         DEFAULT NULL             COMMENT '模型特有配置（格式无关JSON）',
+  `input_field_count`  INT          DEFAULT NULL             COMMENT '输入字段数量',
+  `output_field_count` INT          DEFAULT NULL             COMMENT '输出字段数量',
+  `target_categories`  VARCHAR(256) DEFAULT NULL             COMMENT '目标变量类别数（分类模型）',
+  `model_version`      VARCHAR(64)  DEFAULT NULL             COMMENT '模型自身的版本号',
+  `training_info`      JSON         DEFAULT NULL             COMMENT '训练信息（特征重要性等）',
+  `current_version`     INT          NOT NULL DEFAULT 0       COMMENT '平台当前设计版本号',
+  `published_version`   INT          DEFAULT NULL             COMMENT '平台已发布版本号',
+  `status`             TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
+  `create_by`          VARCHAR(64)  DEFAULT NULL             COMMENT '创建人',
+  `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_by`          VARCHAR(64)  DEFAULT NULL             COMMENT '更新人',
+  `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_code` (`model_code`),
+  KEY `idx_project_id` (`project_id`),
+  KEY `idx_scope` (`scope`),
+  KEY `idx_model_format` (`model_format`),
+  KEY `idx_model_type` (`model_type`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型主表';
+
+-- ============================================================
+-- 14. rule_model_input_field - 统一模型输入字段表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
+  `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
+  `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（原始名称）',
+  `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
+  `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
+  `field_type`       VARCHAR(32)  NOT NULL                COMMENT '数据类型：STRING/NUMBER/INTEGER/DOUBLE/BOOLEAN/DATE',
+  `data_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '数据用途类型：CONTINUOUS-连续/CATEGORICAL-类别/ORDINAL-有序',
+  `missing_value`    VARCHAR(256) DEFAULT NULL             COMMENT '缺失值处理策略',
+  `default_value`    VARCHAR(256) DEFAULT NULL             COMMENT '默认值',
+  `valid_values`     TEXT         DEFAULT NULL             COMMENT '有效值列表（JSON数组，分类变量）',
+  `feature_name`     VARCHAR(128) DEFAULT NULL             COMMENT '模型内部特征名称（如XGBoost的f0）',
+  `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '预处理类型：NONE/NORMALIZE/DISCRETIZE/MAPVALUES/MINMAX',
+  `transform_params` JSON         DEFAULT NULL             COMMENT '预处理参数',
+  `importance_score` DECIMAL(10,6) DEFAULT NULL             COMMENT '特征重要性得分',
+  `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
+  `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
+  `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_model_id` (`model_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输入字段表';
+
+-- ============================================================
+-- 15. rule_model_output_field - 统一模型输出字段表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
+  `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
+  `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（输出变量名）',
+  `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
+  `field_type`       VARCHAR(32)  NOT NULL                COMMENT '字段类型：STRING/NUMBER/INTEGER/DOUBLE/PROBABILITY/VECTOR',
+  `target_field`     VARCHAR(128) DEFAULT NULL             COMMENT '对应的目标变量名',
+  `feature_name`     VARCHAR(128) DEFAULT NULL             COMMENT '模型内部输出特征名',
+  `is_probability`   TINYINT      NOT NULL DEFAULT 0       COMMENT '是否概率输出：0-否，1-是',
+  `category`         VARCHAR(64)  DEFAULT NULL             COMMENT '类别标签（概率输出时指定）',
+  `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
+  `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_model_id` (`model_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
+
+-- ============================================================
+-- 16. rule_model_version - 模型版本历史表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_model_version` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `model_id`        BIGINT       NOT NULL                COMMENT '模型ID',
+  `version`         INT          NOT NULL                COMMENT '版本号',
+  `model_content`   LONGTEXT     NOT NULL                COMMENT '版本快照 - 模型内容（Base64）',
+  `model_config`    JSON         DEFAULT NULL             COMMENT '版本快照 - 模型配置',
+  `change_log`      VARCHAR(512) DEFAULT NULL             COMMENT '变更说明',
+  `publish_by`      VARCHAR(64)  DEFAULT NULL             COMMENT '发布人',
+  `publish_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发布时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_version` (`model_id`, `version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型版本历史表';
+
+-- ============================================================
+-- 17. rule_model_ref - 模型关联表（项目关联全局模型）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_model_ref` (
+  `id`         BIGINT   NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `model_id`   BIGINT   NOT NULL                COMMENT '全局模型ID',
+  `project_id` BIGINT   NOT NULL                COMMENT '关联项目ID',
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_model_project` (`model_id`, `project_id`),
+  KEY `idx_project_id` (`project_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型关联表（用于项目关联全局模型）';

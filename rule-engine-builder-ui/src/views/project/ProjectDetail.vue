@@ -59,7 +59,7 @@
       </el-table-column>
       <el-table-column prop="scope" label="作用范围" min-width="90" align="center">
         <template slot-scope="{row}">
-          <el-tag :type="row.scope === 'GLOBAL' ? 'warning' : 'primary'" size="mini">
+          <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">
             {{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}
           </el-tag>
         </template>

@@ -5,11 +5,14 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_definition_ref")
-public class RuleDefinitionRef {
+@TableName("rule_engine.rule_model_ref")
+public class RuleModelRef {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long definitionId;
+
+    private Long modelId;
     private Long projectId;
+
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

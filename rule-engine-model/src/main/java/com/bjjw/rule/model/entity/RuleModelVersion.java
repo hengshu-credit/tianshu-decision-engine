@@ -5,16 +5,18 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_engine.rule_definition_version")
-public class RuleDefinitionVersion {
+@TableName("rule_engine.rule_model_version")
+public class RuleModelVersion {
     @TableId(type = IdType.AUTO)
     private Long id;
-    private Long definitionId;
+
+    private Long modelId;
     private Integer version;
-    private String modelJson;
-    private String compiledScript;
-    private String compiledType;
+    private String modelContent;
+    private String modelConfig;
     private String changeLog;
     private String publishBy;
+
+    @TableField(fill = FieldFill.INSERT)
     private LocalDateTime publishTime;
 }

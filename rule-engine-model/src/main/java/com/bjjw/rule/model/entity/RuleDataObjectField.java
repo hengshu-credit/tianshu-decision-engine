@@ -9,7 +9,7 @@ import java.time.LocalDateTime;
  * 数据对象下的字段定义（与 {@link RuleVariable} 分离存储）。
  */
 @Data
-@TableName("rule_data_object_field")
+@TableName("rule_engine.rule_data_object_field")
 public class RuleDataObjectField {
     @TableId(type = IdType.AUTO)
     private Long id;

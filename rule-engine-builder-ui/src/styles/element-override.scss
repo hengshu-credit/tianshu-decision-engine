@@ -215,6 +215,19 @@ $info-color: #6366F1;
   color: $--color-primary !important;
 }
 
+/* ── 作用范围标签：全局=品牌主色，项目级=浅绿色 ── */
+.el-tag--scope-global {
+  background-color: rgba($--color-primary, 0.1) !important;
+  border-color: rgba($--color-primary, 0.22) !important;
+  color: $--color-primary !important;
+}
+
+.el-tag--scope-project {
+  background-color: rgba(#10B981, 0.1) !important;
+  border-color: rgba(#10B981, 0.22) !important;
+  color: #10B981 !important;
+}
+
 /* ── 链接颜色 ── */
 .el-link--primary {
   color: $--color-primary !important;
@@ -353,5 +366,164 @@ $info-color: #6366F1;
 
 /* ── 错误文本 ── */
 .err-text {
+  color: $secondary-color !important;
+}
+
+/* ── 弹窗底部按钮：统一确认按钮样式 ── */
+.el-dialog__footer,
+.el-message-box__btns {
+  .el-button--primary {
+    background-color: $--color-primary !important;
+    border-color: $--color-primary !important;
+    color: #fff !important;
+
+    &:hover,
+    &:focus {
+      background-color: #1a30d4 !important;
+      border-color: #1a30d4 !important;
+    }
+
+    &:active {
+      background-color: #152aad !important;
+      border-color: #152aad !important;
+    }
+
+    &:disabled,
+    &.is-disabled {
+      background-color: rgba($--color-primary, 0.5) !important;
+      border-color: rgba($--color-primary, 0.5) !important;
+      cursor: not-allowed;
+    }
+  }
+
+  .el-button {
+    font-family: $font-family-base;
+  }
+}
+
+/* ── 弹窗标题 ── */
+.el-dialog__header {
+  border-bottom: 1px solid #e8e8e8;
+  padding: 16px 20px;
+  margin-right: 0;
+}
+
+.el-dialog__title {
+  font-family: $font-family-base;
+  font-weight: 600;
+  font-size: 16px;
+  color: #303133;
+}
+
+/* ── 弹窗主体内容 ── */
+.el-dialog__body {
+  font-family: $font-family-base;
+}
+
+/* ── 弹窗动画优化 ── */
+.el-dialog {
+  border-radius: 8px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+  transition: transform 0.3s ease, opacity 0.3s ease;
+
+  &.el-dialog--center {
+    .el-dialog__body {
+      padding: 24px;
+    }
+  }
+}
+
+.el-overlay {
+  background-color: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+/* ── 表格优化 ── */
+.el-table {
+  font-family: $font-family-base;
+
+  th {
+    background-color: #fafafa !important;
+    color: #606266;
+    font-weight: 600;
+  }
+
+  td {
+    padding: 8px 0;
+  }
+
+  tr:hover > td {
+    background-color: #f5f7fa !important;
+  }
+}
+
+/* ── 表格 hover 行高亮 ── */
+.el-table--striped .el-table__body tr.el-table__row--striped td {
+  background-color: #fafafa !important;
+}
+
+/* ── 表格空状态样式 ── */
+.el-table__empty-text {
+  font-family: $font-family-base;
+  color: #909399;
+  padding: 32px 0;
+}
+
+/* ── 分页信息文字 ── */
+.el-pagination__total {
+  font-family: $font-family-base;
+}
+
+.el-pagination__sizes {
+  .el-input__inner {
+    font-family: $font-family-base;
+  }
+}
+
+/* ── 表单项标签 ── */
+.el-form-item__label {
+  font-family: $font-family-base;
+  color: #606266;
+  font-weight: 500;
+}
+
+/* ── 表单错误提示 ── */
+.el-form-item__error {
+  font-family: $font-family-base;
+}
+
+/* ── 描述列表 ── */
+.el-descriptions__title {
+  font-family: $font-family-base;
+  font-weight: 600;
+}
+
+.el-descriptions__label {
+  font-family: $font-family-base;
+  background-color: #fafafa !important;
+  color: #606266;
+}
+
+.el-descriptions__content {
+  font-family: $font-family-base;
+}
+
+/* ── 下拉菜单选项 ── */
+.el-select-dropdown__item {
+  font-family: $font-family-base;
+}
+
+/* ── 消息提示样式优化 ── */
+.el-message {
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+}
+
+/* ── 消息框警告图标（感叹号）：副色 #F76E6C ── */
+.el-message-box__status.el-message-box__status--warning {
+  color: $secondary-color !important;
+}
+
+.el-message-box__status.el-icon-warning {
   color: $secondary-color !important;
 }

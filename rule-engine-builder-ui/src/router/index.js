@@ -101,6 +101,18 @@ const routes = [
         meta: { title: '变量管理' }
       },
       {
+        path: 'model',
+        name: 'ModelList',
+        component: () => import('@/views/model/ModelList.vue'),
+        meta: { title: '模型管理' }
+      },
+      {
+        path: 'model/:id',
+        name: 'ModelDetail',
+        component: () => import('@/views/model/ModelDetail.vue'),
+        meta: { title: '模型详情' }
+      },
+      {
         path: 'function',
         name: 'FunctionList',
         component: () => import('@/views/function/FunctionList.vue'),

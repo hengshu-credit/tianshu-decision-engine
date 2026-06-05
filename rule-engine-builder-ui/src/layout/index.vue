@@ -31,6 +31,10 @@
             <i class="el-icon-collection-tag" />
             <span>变量管理</span>
           </el-menu-item>
+          <el-menu-item index="/model">
+            <i class="el-icon-cpu" />
+            <span>模型管理</span>
+          </el-menu-item>
           <el-menu-item index="/function">
             <i class="el-icon-s-operation" />
             <span>函数管理</span>

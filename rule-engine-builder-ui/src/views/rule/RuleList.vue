@@ -62,7 +62,7 @@
     <el-table :data="tableData" border size="small" v-loading="loading" style="width: 100%;">
       <el-table-column label="作用范围" width="90" align="center">
         <template slot-scope="{ row }">
-          <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
+          <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="projectName" label="项目名称" min-width="130" show-overflow-tooltip />
@@ -87,7 +87,7 @@
           <el-button type="text" size="small" @click="handleDesign(row)">设计</el-button>
           <el-button type="text" size="small" @click="handlePublish(row)">{{ row.status === 1 ? '重新发布' : '发布' }}</el-button>
           <el-button type="text" size="small" v-if="row.status === 1" @click="handleUnpublish(row)">下线</el-button>
-          <el-button type="text" size="small" :style="{ color: colorDanger }" @click="handleDelete(row)">删除</el-button>
+          <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>

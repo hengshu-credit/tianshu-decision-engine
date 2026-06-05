@@ -5,7 +5,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 
 @Data
-@TableName("rule_published")
+@TableName("rule_engine.rule_published")
 public class RulePublished {
     @TableId(type = IdType.AUTO)
     private Long id;

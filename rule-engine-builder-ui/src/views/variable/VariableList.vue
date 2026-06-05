@@ -70,7 +70,7 @@
           <el-table :data="standaloneVars" border size="small" v-loading="loading" style="width:100%;">
             <el-table-column label="作用范围" width="90" align="center">
               <template slot-scope="{ row }">
-                <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ scopeTagLabel(row.scope) }}</el-tag>
+                <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ scopeTagLabel(row.scope) }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
@@ -149,7 +149,7 @@
               <i :class="node._expanded ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" class="expand-icon" />
               <span class="var-group-code">{{ node.object.objectCode }}</span>
               <span v-if="node.object.objectLabel && node.object.objectLabel !== node.object.objectCode" class="var-group-label">{{ node.object.objectLabel }}</span>
-              <el-tag size="mini" :type="node.object.scope === 'GLOBAL' ? 'success' : 'info'" style="margin-left:4px;">{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
+              <el-tag size="mini" :type="node.object.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" style="margin-left:4px;">{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
               <span v-if="getProjectName(node.object.projectId)" style="font-size:12px;color:#888;margin-left:2px;">{{ getProjectName(node.object.projectId) }}</span>
             </div>
             <div class="var-group-toolbar">
@@ -230,7 +230,7 @@
           <el-table :data="constantRows" border size="small" style="width:100%;">
             <el-table-column label="作用范围" width="90" align="center">
               <template slot-scope="{ row }">
-                <el-tag :type="row.scope === 'GLOBAL' ? 'success' : 'info'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
+                <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
@@ -461,7 +461,7 @@
         <p v-if="importResult.constantCount != null">创建/更新 <b>{{ importResult.constantCount }}</b> 个常量</p>
       </div>
       <div slot="footer">
-        <el-button size="small" type="warning" icon="el-icon-video-play" @click="importResultVisible=false;handleBatchValidate()">验证项目规则</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="importResultVisible=false;handleBatchValidate()">验证项目规则</el-button>
         <el-button size="small" @click="importResultVisible=false">关闭</el-button>
       </div>
     </el-dialog>
