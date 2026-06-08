@@ -45,8 +45,8 @@ public class RuleVariableController {
      */
     @GetMapping("/list")
     public R<IPage<RuleVariable>> list(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String varType,
             @RequestParam(required = false) String keyword,
@@ -61,7 +61,8 @@ public class RuleVariableController {
     /** 从 Java 常量类批量导入常量（写入 rule_variable，var_source=CONSTANT） */
     @PostMapping("/import/constants/java")
     public R<Map<String, Object>> importConstantsJava(@RequestBody Map<String, String> body) {
-        Long projectId = Long.valueOf(body.get("projectId"));
+        String pidStr = body.get("projectId");
+        Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
         String javaSource = body.get("javaSource");
         Map<String, Object> result = variableService.importConstantsFromJava(projectId, scope, javaSource);
@@ -72,7 +73,8 @@ public class RuleVariableController {
     /** 从扁平 JSON 批量导入常量 */
     @PostMapping("/import/constants/json")
     public R<Map<String, Object>> importConstantsJson(@RequestBody Map<String, String> body) {
-        Long projectId = Long.valueOf(body.get("projectId"));
+        String pidStr = body.get("projectId");
+        Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
         String jsonContent = body.get("jsonContent");
         Map<String, Object> result = variableService.importConstantsFromJson(projectId, scope, jsonContent);
@@ -138,6 +140,12 @@ public class RuleVariableController {
     @PostMapping("/batch-validate/{projectId:\\d+}")
     public R<List<RuleValidationResult>> batchValidate(@PathVariable Long projectId) {
         return R.ok(batchTestService.validateProjectRules(projectId));
+    }
+
+    /** 全局批量验证（不限定项目） */
+    @PostMapping("/batch-validate")
+    public R<List<RuleValidationResult>> batchValidateAll() {
+        return R.ok(batchTestService.validateAllRules());
     }
 
     private void trySyncSchema() {

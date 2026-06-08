@@ -5,8 +5,13 @@
     </div>
 
     <div class="uiue-btn-bar">
+      <div class="btn-left">
+        <el-select v-model="currentProjectId" clearable filterable placeholder="选择项目" size="mini" style="width: 160px;" @change="onProjectChange">
+          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
+        </el-select>
+      </div>
       <div class="btn-right">
-        <el-dropdown trigger="click" @command="handleImportCmd" :disabled="!currentProjectId">
+        <el-dropdown trigger="click" @command="handleImportCmd">
           <el-button size="small" type="primary" icon="el-icon-upload2">批量导入 <i class="el-icon-arrow-down el-icon--right" /></el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item command="java-entity" icon="el-icon-document">导入 Java 实体类</el-dropdown-item>
@@ -17,7 +22,7 @@
           </el-dropdown-menu>
         </el-dropdown>
         <el-button size="small" icon="el-icon-plus" @click="handlePrimaryCreate">{{ primaryCreateLabel }}</el-button>
-        <el-button size="small" icon="el-icon-video-play" type="warning" @click="handleBatchValidate" :disabled="!currentProjectId" :loading="validating">验证规则</el-button>
+        <el-button size="small" icon="el-icon-video-play" type="warning" @click="handleBatchValidate" :loading="validating">验证规则</el-button>
       </div>
     </div>
 
@@ -208,9 +213,6 @@
             :remote-method="queryProjectName" :loading="projectListLoading">
             <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
           </el-select>
-          <el-select v-model="constQp.varSource" clearable filterable placeholder="来源" size="mini" style="width:100px;" @change="handleConstQuery">
-            <el-option label="常量" value="CONSTANT" />
-          </el-select>
           <el-select v-model="constQp.varType" clearable filterable placeholder="数据类型" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
@@ -225,46 +227,43 @@
           <el-button type="primary" @click="handleConstQuery">查询</el-button>
           <el-button @click="resetConstQuery">重置</el-button>
         </div>
-        <div v-if="constantRows.length===0 && !constLoading" class="tab-empty">暂无可用常量</div>
-        <div v-else v-loading="constLoading">
-          <el-table :data="constantRows" border size="small" style="width:100%;">
-            <el-table-column label="作用范围" width="90" align="center">
-              <template slot-scope="{ row }">
-                <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
-              <template slot-scope="{ row }">{{ getProjectName(row.projectId) || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
-            </el-table-column>
-            <el-table-column prop="varCode" label="常量编码" min-width="130" show-overflow-tooltip />
-            <el-table-column prop="varLabel" label="常量名称" min-width="120" show-overflow-tooltip />
-            <el-table-column label="脚本名称" min-width="130">
-              <template slot-scope="{row}">
-                <el-input v-model="row.scriptName" size="mini" placeholder="脚本名称" @blur="onVarScriptNameChange(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column prop="varType" label="类型" min-width="80" align="center">
-              <template slot-scope="{ row }"><el-tag size="mini" :type="typeTagColor(row.varType)">{{ typeLabel(row.varType) }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="常量值（默认）" min-width="160">
-              <template slot-scope="{row}">
-                <el-input v-model="row.defaultValue" size="mini" @blur="onConstDefaultBlur(row)" />
-              </template>
-            </el-table-column>
-            <el-table-column prop="status" label="状态" min-width="60" align="center">
-              <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
-            </el-table-column>
-            <el-table-column label="操作" min-width="120" align="center">
-              <template slot-scope="{ row }">
-                <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
-                <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-          <el-pagination style="margin-top:12px;text-align:right;" :current-page="constQp.pageNum" :page-size="constQp.pageSize" :total="constantTotal"
-            layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
-            @current-change="p=>{constQp.pageNum=p;loadConstants()}" @size-change="s=>{constQp.pageSize=s;constQp.pageNum=1;loadConstants()}" />
-        </div>
+        <el-table v-loading="constLoading" :data="constantRows" border size="small" style="width:100%;" empty-text="暂无可用常量">
+          <el-table-column label="作用范围" width="90" align="center">
+            <template slot-scope="{ row }">
+              <el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ getProjectName(row.projectId) || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
+          </el-table-column>
+          <el-table-column prop="varCode" label="常量编码" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="varLabel" label="常量名称" min-width="120" show-overflow-tooltip />
+          <el-table-column label="脚本名称" min-width="130">
+            <template slot-scope="{row}">
+              <el-input v-model="row.scriptName" size="mini" placeholder="脚本名称" @blur="onVarScriptNameChange(row)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="varType" label="类型" min-width="80" align="center">
+            <template slot-scope="{ row }"><el-tag size="mini" :type="typeTagColor(row.varType)">{{ typeLabel(row.varType) }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="常量值（默认）" min-width="160">
+            <template slot-scope="{row}">
+              <el-input v-model="row.defaultValue" size="mini" @blur="onConstDefaultBlur(row)" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" min-width="60" align="center">
+            <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="操作" min-width="120" align="center">
+            <template slot-scope="{ row }">
+              <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination style="margin-top:12px;text-align:right;" :current-page="constQp.pageNum" :page-size="constQp.pageSize" :total="constantTotal"
+          layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
+          @current-change="p=>{constQp.pageNum=p;loadConstants()}" @size-change="s=>{constQp.pageSize=s;constQp.pageNum=1;loadConstants()}" />
       </el-tab-pane>
     </el-tabs>
 
@@ -274,13 +273,13 @@
         <el-form-item v-if="!form.id && isObjectField && objectFieldParentId" label="所属数据对象">
           <span class="text-muted">{{ getObjectCode(objectFieldParentId) }}</span>
         </el-form-item>
-        <el-form-item v-if="!isObjectField && !isConstantCreate" label="作用范围">
+        <el-form-item v-if="!isObjectField" label="作用范围">
           <el-select v-model="form.scope" placeholder="选择作用范围" style="width:100%;" @change="onVarScopeChange">
             <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
             <el-option label="📁 项目级" value="PROJECT" />
           </el-select>
         </el-form-item>
-        <el-form-item v-if="!isObjectField && !isConstantCreate && form.scope === 'PROJECT'" label="项目名称" prop="projectId">
+        <el-form-item v-if="!isObjectField && form.scope === 'PROJECT'" label="项目名称" prop="projectId">
           <el-select v-model="form.projectId" placeholder="请选择项目" style="width:100%;" filterable clearable>
             <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
           </el-select>
@@ -347,6 +346,17 @@
     <!-- Java Entity Import Dialog -->
     <el-dialog title="导入 Java 实体类" :visible.sync="importJavaEntityVisible" width="700px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
+        <el-form-item label="作用范围">
+          <el-radio-group v-model="importForm.scope">
+            <el-radio label="GLOBAL">全局（所有项目可用）</el-radio>
+            <el-radio label="PROJECT">项目级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="importForm.scope === 'PROJECT'" label="选择项目" required>
+          <el-select v-model="importForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="importForm.objectType">
             <el-radio label="INPUT">输入对象</el-radio><el-radio label="OUTPUT">输出对象</el-radio><el-radio label="INOUT">输入输出</el-radio>
@@ -370,6 +380,17 @@
     <!-- JSON Object Import Dialog -->
     <el-dialog title="导入 JSON 对象" :visible.sync="importJsonObjectVisible" width="700px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
+        <el-form-item label="作用范围">
+          <el-radio-group v-model="importForm.scope">
+            <el-radio label="GLOBAL">全局（所有项目可用）</el-radio>
+            <el-radio label="PROJECT">项目级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="importForm.scope === 'PROJECT'" label="选择项目" required>
+          <el-select v-model="importForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="对象编码"><el-input v-model="importForm.objectCode" placeholder="如 TaxRequest" /></el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="importForm.objectType">
@@ -389,6 +410,17 @@
     <!-- DDL Import Dialog -->
     <el-dialog title="导入 DDL 建表语句" :visible.sync="importDdlVisible" width="720px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
+        <el-form-item label="作用范围">
+          <el-radio-group v-model="importForm.scope">
+            <el-radio label="GLOBAL">全局（所有项目可用）</el-radio>
+            <el-radio label="PROJECT">项目级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="importForm.scope === 'PROJECT'" label="选择项目" required>
+          <el-select v-model="importForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="对象类型">
           <el-radio-group v-model="importForm.objectType">
             <el-radio label="INPUT">输入对象</el-radio><el-radio label="OUTPUT">输出对象</el-radio><el-radio label="INOUT">输入输出</el-radio>
@@ -407,6 +439,17 @@
     <!-- Java Constants Import Dialog -->
     <el-dialog title="导入 Java 常量类" :visible.sync="importJavaConstVisible" width="700px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
+        <el-form-item label="作用范围">
+          <el-radio-group v-model="importForm.scope">
+            <el-radio label="GLOBAL">全局（所有项目可用）</el-radio>
+            <el-radio label="PROJECT">项目级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="importForm.scope === 'PROJECT'" label="选择项目" required>
+          <el-select v-model="importForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="Java 源码">
           <el-input v-model="importForm.javaSource" type="textarea" :rows="14" placeholder="粘贴包含 static final 字段的 Java 类源码..." style="font-family:Consolas,monospace;" />
         </el-form-item>
@@ -425,6 +468,17 @@
     <!-- JSON Constants Import Dialog -->
     <el-dialog title="导入 JSON 常量" :visible.sync="importJsonConstVisible" width="700px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
+        <el-form-item label="作用范围">
+          <el-radio-group v-model="importForm.scope">
+            <el-radio label="GLOBAL">全局（所有项目可用）</el-radio>
+            <el-radio label="PROJECT">项目级</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item v-if="importForm.scope === 'PROJECT'" label="选择项目" required>
+          <el-select v-model="importForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="JSON 数据">
           <el-input v-model="importForm.jsonContent" type="textarea" :rows="14" placeholder='扁平 JSON 键值对，如：{"riskScore":72,"creditLevel":"A","channel":"ONLINE"}' style="font-family:Consolas,monospace;" />
         </el-form-item>
@@ -452,6 +506,24 @@
       <div slot="footer"><el-button size="small" @click="validateVisible=false">关闭</el-button></div>
     </el-dialog>
 
+    <!-- Batch Validate Dialog -->
+    <el-dialog title="验证规则" :visible.sync="validateDialogVisible" width="500px" :close-on-click-modal="false">
+      <el-form size="small" label-width="100px">
+        <el-form-item label="选择项目">
+          <el-select v-model="validateProjectId" placeholder="请选择项目（不选择则验证所有规则）" style="width:100%;" filterable clearable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <span style="color:#909399;font-size:12px;">不选择项目则验证所有规则</span>
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="validateDialogVisible=false">取消</el-button>
+        <el-button size="small" type="primary" :loading="validating" @click="doBatchValidate">开始验证</el-button>
+      </div>
+    </el-dialog>
+
     <!-- Import Result Dialog -->
     <el-dialog title="导入结果" :visible.sync="importResultVisible" width="500px">
       <div class="import-result-body">
@@ -461,7 +533,7 @@
         <p v-if="importResult.constantCount != null">创建/更新 <b>{{ importResult.constantCount }}</b> 个常量</p>
       </div>
       <div slot="footer">
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="importResultVisible=false;handleBatchValidate()">验证项目规则</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="importResultVisible=false;validateProjectId=importForm.scope==='PROJECT'?importForm.projectId:null;validateDialogVisible=true">验证项目规则</el-button>
         <el-button size="small" @click="importResultVisible=false">关闭</el-button>
       </div>
     </el-dialog>
@@ -472,7 +544,7 @@
 import { listVariables, createVariable, updateVariable, deleteVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import request from '@/api/request'
-import { importJavaEntity, importJsonObject, importDdlTable, getVariableTree, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions } from '@/api/dataObject'
+import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions } from '@/api/dataObject'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 
 export default {
@@ -532,7 +604,7 @@ export default {
 
       // 常量列表（分页，与变量接口相同）
       constLoading: false,
-      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '', varSource: 'CONSTANT', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' },
+      constQp: { pageNum: 1, pageSize: 10, keyword: '', varType: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' },
       constantRows: [],
       constantTotal: 0,
 
@@ -546,7 +618,7 @@ export default {
 
       // Import
       importing: false,
-      importForm: { objectType: 'INPUT', javaSource: '', jsonContent: '', ddlSource: '', objectCode: '' },
+      importForm: { objectType: 'INPUT', javaSource: '', jsonContent: '', ddlSource: '', objectCode: '', scope: 'GLOBAL', projectId: '' },
       importJavaEntityVisible: false,
       importJsonObjectVisible: false,
       importDdlVisible: false,
@@ -559,6 +631,8 @@ export default {
       validating: false,
       validateVisible: false,
       validateResults: [],
+      validateDialogVisible: false,
+      validateProjectId: '',
 
       varTypeFilterOptions: VAR_TYPE_FILTER_OPTIONS,
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
@@ -729,17 +803,6 @@ export default {
       this.filteredObjectNames = this.allObjectNames.filter(o => o && o.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
       this.objectNameLoading = false
     },
-    onProjectChange(pid) {
-      this.currentProjectId = pid
-      this.qp.projectId = pid
-      this.qp.pageNum = 1
-      this.loadData()
-      this.objExpanded = {}
-      this.objPageNum = 1
-      this.constQp.pageNum = 1
-      if (this.activeTab === 'objects') this.loadObjectTree()
-      if (this.activeTab === 'constants') this.loadConstants()
-    },
     toggleObjectExpand(node) {
       this.$set(this.objExpanded, node.object.id, !this.objExpanded[node.object.id])
     },
@@ -774,7 +837,7 @@ export default {
       } finally { this.loading = false }
     },
     handleQuery() { this.qp.pageNum = 1; this.loadData() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: this.currentProjectId, varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }; this.loadData() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: '', varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }; this.loadData() },
 
     // ── Objects ──
     async loadObjectTree() {
@@ -795,12 +858,7 @@ export default {
           if (objectCode) p.objectCode = objectCode
           return p
         }
-        let res
-        if (this.currentProjectId) {
-          res = await getVariableTree(this.currentProjectId)
-        } else {
-          res = await request.get('/rule/dataobject/tree', { params: buildParams() })
-        }
+        let res = await request.get('/rule/dataobject/tree', { params: buildParams() })
         let tree = res.data || []
         // 前端额外过滤 sourceType 和 objectCode（如果后端不支持）
         if (this.objQp.sourceType) {
@@ -937,11 +995,10 @@ export default {
       try {
         const buildParams = (extra) => {
           const p = { pageNum: this.constQp.pageNum, pageSize: this.constQp.pageSize, varSource: 'CONSTANT', ...extra }
-          const { scope, projectCode, projectName, keyword, varType, varSource, varCode, varLabel } = this.constQp
+          const { scope, projectCode, projectName, keyword, varType, varCode, varLabel } = this.constQp
           if (scope) p.scope = scope
           if (keyword) p.keyword = keyword
           if (varType) p.varType = varType
-          if (varSource) p.varSource = varSource
           if (varCode) p.varCode = varCode
           if (varLabel) p.varLabel = varLabel
           if (projectCode) {
@@ -976,7 +1033,7 @@ export default {
     },
     handleConstQuery() { this.constQp.pageNum = 1; this.loadConstants() },
     resetConstQuery() {
-      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', varSource: 'CONSTANT', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }
+      this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }
       this.loadConstants()
     },
     onObjFilterChange() {
@@ -998,7 +1055,15 @@ export default {
         this.isConstantCreate = true
         this.isObjectField = false
         this.objectFieldParentId = null
-        this.form = { ...this.initForm(), projectId: this.currentProjectId, varSource: 'CONSTANT', status: 1 }
+        this.form = { ...this.initForm(), varSource: 'CONSTANT', status: 1 }
+        // 如果当前选中了项目，默认项目级范围，否则全局
+        if (this.currentProjectId) {
+          this.form.scope = 'PROJECT'
+          this.form.projectId = this.currentProjectId
+        } else {
+          this.form.scope = 'GLOBAL'
+          this.form.projectId = ''
+        }
         this.dialogVisible = true
         this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
         return
@@ -1118,7 +1183,7 @@ export default {
 
     // ── Import ──
     handleImportCmd(cmd) {
-      this.importForm = { objectType: 'INPUT', javaSource: '', jsonContent: '', ddlSource: '', objectCode: '' }
+      this.importForm = { objectType: 'INPUT', javaSource: '', jsonContent: '', ddlSource: '', objectCode: '', scope: 'GLOBAL', projectId: '' }
       if (cmd === 'java-entity') this.importJavaEntityVisible = true
       else if (cmd === 'json-object') this.importJsonObjectVisible = true
       else if (cmd === 'ddl-table') this.importDdlVisible = true
@@ -1133,9 +1198,13 @@ export default {
     },
     async doImportJavaEntity() {
       if (!this.importForm.javaSource.trim()) { this.$message.warning('请输入或上传 Java 源码'); return }
+      if (this.importForm.scope === 'PROJECT' && !this.importForm.projectId) {
+        this.$message.warning('导入为「项目级」时请选择项目，或将作用范围改为「全局」'); return
+      }
       this.importing = true
       try {
-        const res = await importJavaEntity(this.currentProjectId, this.importForm.objectType, this.importForm.javaSource)
+        const projectId = this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
+        const res = await importJavaEntity(projectId, this.importForm.objectType, this.importForm.javaSource, this.importForm.scope)
         this.importResult = res.data || {}
         this.importJavaEntityVisible = false
         this.importResultVisible = true
@@ -1146,9 +1215,13 @@ export default {
     async doImportJsonObject() {
       if (!this.importForm.objectCode.trim()) { this.$message.warning('请输入对象编码'); return }
       if (!this.importForm.jsonContent.trim()) { this.$message.warning('请输入 JSON 内容'); return }
+      if (this.importForm.scope === 'PROJECT' && !this.importForm.projectId) {
+        this.$message.warning('导入为「项目级」时请选择项目，或将作用范围改为「全局」'); return
+      }
       this.importing = true
       try {
-        const res = await importJsonObject(this.currentProjectId, this.importForm.objectType, this.importForm.objectCode, this.importForm.jsonContent)
+        const projectId = this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
+        const res = await importJsonObject(projectId, this.importForm.objectType, this.importForm.objectCode, this.importForm.jsonContent, this.importForm.scope)
         this.importResult = res.data || {}
         this.importJsonObjectVisible = false
         this.importResultVisible = true
@@ -1159,9 +1232,13 @@ export default {
     /** 从 CREATE TABLE DDL 导入数据对象（COMMENT → 变量名称） */
     async doImportDdl() {
       if (!this.importForm.ddlSource || !this.importForm.ddlSource.trim()) { this.$message.warning('请输入建表 DDL'); return }
+      if (this.importForm.scope === 'PROJECT' && !this.importForm.projectId) {
+        this.$message.warning('导入为「项目级」时请选择项目，或将作用范围改为「全局」'); return
+      }
       this.importing = true
       try {
-        const res = await importDdlTable(this.currentProjectId, this.importForm.objectType, this.importForm.ddlSource)
+        const projectId = this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
+        const res = await importDdlTable(projectId, this.importForm.objectType, this.importForm.ddlSource, this.importForm.scope)
         this.importResult = res.data || {}
         this.importDdlVisible = false
         this.importResultVisible = true
@@ -1171,9 +1248,13 @@ export default {
     },
     async doImportJavaConst() {
       if (!this.importForm.javaSource.trim()) { this.$message.warning('请输入或上传 Java 源码'); return }
+      if (this.importForm.scope === 'PROJECT' && !this.importForm.projectId) {
+        this.$message.warning('导入为「项目级」时请选择项目，或将作用范围改为「全局」'); return
+      }
       this.importing = true
       try {
-        const res = await importJavaConstants(this.currentProjectId, this.importForm.javaSource)
+        const projectId = this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
+        const res = await importJavaConstants(this.importForm.javaSource, this.importForm.scope, projectId)
         this.importResult = res.data || {}
         this.importJavaConstVisible = false
         this.importResultVisible = true
@@ -1183,9 +1264,13 @@ export default {
     },
     async doImportJsonConst() {
       if (!this.importForm.jsonContent.trim()) { this.$message.warning('请输入 JSON 内容'); return }
+      if (this.importForm.scope === 'PROJECT' && !this.importForm.projectId) {
+        this.$message.warning('导入为「项目级」时请选择项目，或将作用范围改为「全局」'); return
+      }
       this.importing = true
       try {
-        const res = await importJsonConstants(this.currentProjectId, this.importForm.jsonContent)
+        const projectId = this.importForm.scope === 'GLOBAL' ? null : this.importForm.projectId
+        const res = await importJsonConstants(this.importForm.jsonContent, this.importForm.scope, projectId)
         this.importResult = res.data || {}
         this.importJsonConstVisible = false
         this.importResultVisible = true
@@ -1194,13 +1279,23 @@ export default {
       finally { this.importing = false }
     },
 
+    // ── Project Select ──
+    onProjectChange(_val) {
+      this.loadData()
+      this.loadConstants()
+    },
+
     // ── Batch Validate ──
-    async handleBatchValidate() {
-      if (!this.currentProjectId) { this.$message.warning('请先选择项目'); return }
+    handleBatchValidate() {
+      this.validateProjectId = this.currentProjectId || ''
+      this.validateDialogVisible = true
+    },
+    async doBatchValidate() {
       this.validating = true
       try {
-        const res = await batchValidateRules(this.currentProjectId)
+        const res = await batchValidateRules(this.validateProjectId || null)
         this.validateResults = res.data || []
+        this.validateDialogVisible = false
         this.validateVisible = true
       } catch (e) { this.$message.error('验证失败: ' + (e.message || '')) }
       finally { this.validating = false }

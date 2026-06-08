@@ -5,6 +5,43 @@ SET NAMES utf8mb4;
 SET character_set_connection = utf8mb4;
 
 -- ============================================================
+-- 增量修复：补充旧表缺失的字段（v2 新增 var_id / script_name / transform_type）
+-- 仅在对应列不存在时才执行（首次部署时由初始化脚本执行，后续幂等）
+-- ============================================================
+SET @dbname = DATABASE();
+SET @tablename = 'rule_model_input_field';
+SET @columnname = 'var_id';
+SET @preparedStatement = (SELECT IF((
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname
+) = 0, 'ALTER TABLE rule_model_input_field ADD COLUMN var_id BIGINT DEFAULT NULL COMMENT ''关联的变量ID（外键 -> rule_variable.id)'' AFTER model_id', 'SELECT 1'));
+PREPARE alterStmt FROM @preparedStatement; EXECUTE alterStmt; DEALLOCATE PREPARE alterStmt;
+
+SET @tablename = 'rule_model_output_field';
+SET @columnname = 'var_id';
+SET @preparedStatement = (SELECT IF((
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname
+) = 0, 'ALTER TABLE rule_model_output_field ADD COLUMN var_id BIGINT DEFAULT NULL COMMENT ''关联的变量ID（外键 -> rule_variable.id)'' AFTER model_id', 'SELECT 1'));
+PREPARE alterStmt FROM @preparedStatement; EXECUTE alterStmt; DEALLOCATE PREPARE alterStmt;
+
+SET @tablename = 'rule_model_output_field';
+SET @columnname = 'script_name';
+SET @preparedStatement = (SELECT IF((
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname
+) = 0, 'ALTER TABLE rule_model_output_field ADD COLUMN script_name VARCHAR(128) DEFAULT NULL COMMENT ''脚本中的引用名（驼峰）'' AFTER var_id', 'SELECT 1'));
+PREPARE alterStmt FROM @preparedStatement; EXECUTE alterStmt; DEALLOCATE PREPARE alterStmt;
+
+SET @tablename = 'rule_model_output_field';
+SET @columnname = 'transform_type';
+SET @preparedStatement = (SELECT IF((
+  SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+  WHERE TABLE_SCHEMA = @dbname AND TABLE_NAME = @tablename AND COLUMN_NAME = @columnname
+) = 0, 'ALTER TABLE rule_model_output_field ADD COLUMN transform_type VARCHAR(32) DEFAULT NULL COMMENT ''转换方法：NONE/RENAME/SCALE/OHE'' AFTER feature_name', 'SELECT 1'));
+PREPARE alterStmt FROM @preparedStatement; EXECUTE alterStmt; DEALLOCATE PREPARE alterStmt;
+
+-- ============================================================
 -- 1. rule_project - 规则项目表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_project` (
@@ -39,6 +76,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition` (
   `current_version`   INT          NOT NULL DEFAULT 0       COMMENT '当前设计版本号',
   `published_version` INT          DEFAULT NULL             COMMENT '已发布版本号',
   `status`            TINYINT      NOT NULL DEFAULT 0       COMMENT '状态：0-草稿，1-已发布，2-已下线',
+  `input_fields`     TEXT         DEFAULT NULL             COMMENT '输入字段（JSON数组，如 ["amount","age"]）',
+  `output_fields`    TEXT         DEFAULT NULL             COMMENT '输出字段（JSON数组，如 ["resultScore","level"]）',
   `create_by`         VARCHAR(64)  DEFAULT NULL             COMMENT '创建人',
   `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_by`         VARCHAR(64)  DEFAULT NULL             COMMENT '更新人',
@@ -368,7 +407,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `model_code`         VARCHAR(128) NOT NULL                COMMENT '模型编码（唯一）',
   `model_name`         VARCHAR(256) NOT NULL                COMMENT '模型名称（中文）',
   `model_type`         VARCHAR(32)  NOT NULL                COMMENT '模型大类：CLASSIFICATION-分类/REGRESSION-回归/CLUSTERING-聚类/ML-机器学习',
-  `model_format`       VARCHAR(32)  NOT NULL                COMMENT '模型格式：PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE',
+  `model_format`       VARCHAR(32)  NOT NULL                COMMENT '模型格式：PMML/PICKLE/DILL/ONNX',
   `description`        VARCHAR(512) DEFAULT NULL             COMMENT '模型描述',
   `model_content`      LONGTEXT     DEFAULT NULL             COMMENT '模型文件原始内容（Base64编码）',
   `model_file_name`    VARCHAR(256) DEFAULT NULL             COMMENT '上传时的文件名',
@@ -400,6 +439,7 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
 CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（原始名称）',
   `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
@@ -416,7 +456,9 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  KEY `idx_model_id` (`model_id`)
+  KEY `idx_model_id` (`model_id`),
+  KEY `idx_var_id` (`var_id`),
+  CONSTRAINT `fk_input_var` FOREIGN KEY (`var_id`) REFERENCES `rule_variable` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输入字段表';
 
 -- ============================================================
@@ -425,17 +467,22 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
 CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（输出变量名）',
   `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
+  `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
   `field_type`       VARCHAR(32)  NOT NULL                COMMENT '字段类型：STRING/NUMBER/INTEGER/DOUBLE/PROBABILITY/VECTOR',
   `target_field`     VARCHAR(128) DEFAULT NULL             COMMENT '对应的目标变量名',
   `feature_name`     VARCHAR(128) DEFAULT NULL             COMMENT '模型内部输出特征名',
+  `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '转换方法：NONE/RENAME/SCALE/OHE',
   `is_probability`   TINYINT      NOT NULL DEFAULT 0       COMMENT '是否概率输出：0-否，1-是',
   `category`         VARCHAR(64)  DEFAULT NULL             COMMENT '类别标签（概率输出时指定）',
   `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
-  KEY `idx_model_id` (`model_id`)
+  KEY `idx_model_id` (`model_id`),
+  KEY `idx_var_id` (`var_id`),
+  CONSTRAINT `fk_output_var` FOREIGN KEY (`var_id`) REFERENCES `rule_variable` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
 -- ============================================================

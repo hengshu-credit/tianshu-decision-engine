@@ -52,7 +52,7 @@
       </el-table-column>
       <el-table-column label="追踪" min-width="70" align="center">
         <template slot-scope="{row}">
-          <el-tag v-if="row.traceInfo" type="info" size="mini" effect="plain"><i class="el-icon-view"></i> 有</el-tag>
+          <el-tag v-if="row.success === 1 && row.traceInfo" type="success" size="mini"><i class="el-icon-view"></i> 有</el-tag>
           <span v-else style="color:#bfbfbf">-</span>
         </template>
       </el-table-column>

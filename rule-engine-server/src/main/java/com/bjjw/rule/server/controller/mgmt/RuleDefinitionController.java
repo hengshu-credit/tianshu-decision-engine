@@ -35,8 +35,8 @@ public class RuleDefinitionController {
 
     @GetMapping("/list")
     public R<IPage<RuleDefinition>> list(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String scope,
@@ -59,8 +59,8 @@ public class RuleDefinitionController {
      */
     @GetMapping("/global-list")
     public R<IPage<RuleDefinition>> globalList(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String ruleName,
@@ -96,8 +96,8 @@ public class RuleDefinitionController {
     @GetMapping("/project-list/{projectId}")
     public R<IPage<RuleDefinition>> projectList(
             @PathVariable Long projectId,
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String ruleCode,

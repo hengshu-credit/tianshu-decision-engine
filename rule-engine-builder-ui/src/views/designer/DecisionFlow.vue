@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="flow-toolbar">
       <div class="toolbar-left">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-share toolbar-icon" />
         <span class="toolbar-title">决策流设计器</span>
         <el-tag size="small" type="info" style="margin-left:8px;">可视化流程规则</el-tag>

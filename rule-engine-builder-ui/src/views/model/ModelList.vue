@@ -2,7 +2,7 @@
   <div class="uiue-list-page">
     <!-- 提示信息 -->
     <div class="linkage-hint">
-      <i class="el-icon-info" /> 模型支持从 PMML 等格式文件导入，用于在规则设计时调用机器学习模型进行预测。
+      <i class="el-icon-info" /> 模型支持从 PMML、PICKLE、DILL、ONNX 等格式文件导入，用于在规则设计时调用机器学习模型进行预测。
     </div>
 
     <!-- 操作按钮栏 -->
@@ -35,20 +35,22 @@
           </el-select>
         </el-form-item>
         <el-form-item label="模型大类">
-          <el-select v-model="qp.modelType" clearable filterable placeholder="全部" style="width:110px;" @change="handleQuery">
-            <el-option label="分类" value="CLASSIFICATION" />
-            <el-option label="回归" value="REGRESSION" />
-            <el-option label="聚类" value="CLUSTERING" />
-            <el-option label="机器学习" value="ML" />
+          <el-select v-model="qp.modelType" clearable filterable placeholder="全部" style="width:120px;" @change="handleQuery">
+            <el-option label="LR（逻辑回归）" value="LR" />
+            <el-option label="XGBoost" value="XGBOOST" />
+            <el-option label="LightGBM" value="LIGHTGBM" />
+            <el-option label="CatBoost" value="CATBOOST" />
+            <el-option label="RandomForest" value="RANDOM_FOREST" />
+            <el-option label="NeuralNet（神经网络）" value="NEURAL_NET" />
+            <el-option label="SVM" value="SVM" />
           </el-select>
         </el-form-item>
         <el-form-item label="模型格式">
           <el-select v-model="qp.modelFormat" clearable filterable placeholder="全部" style="width:110px;" @change="handleQuery">
             <el-option label="PMML" value="PMML" />
+            <el-option label="PICKLE" value="PICKLE" />
+            <el-option label="DILL" value="DILL" />
             <el-option label="ONNX" value="ONNX" />
-            <el-option label="TensorFlow" value="TENSORFLOW" />
-            <el-option label="LightGBM" value="LIGHTGBM" />
-            <el-option label="Pickle" value="PICKLE" />
           </el-select>
         </el-form-item>
         <el-form-item label="模型编码">
@@ -133,21 +135,29 @@
         </el-form-item>
         <el-form-item label="模型大类" prop="modelType">
           <el-select v-model="uploadForm.modelType" style="width:100%;">
-            <el-option label="分类模型" value="CLASSIFICATION" />
-            <el-option label="回归模型" value="REGRESSION" />
-            <el-option label="聚类模型" value="CLUSTERING" />
-            <el-option label="机器学习" value="ML" />
+            <el-option label="LR（逻辑回归）" value="LR" />
+            <el-option label="XGBoost" value="XGBOOST" />
+            <el-option label="LightGBM" value="LIGHTGBM" />
+            <el-option label="CatBoost" value="CATBOOST" />
+            <el-option label="RandomForest" value="RANDOM_FOREST" />
+            <el-option label="NeuralNet（神经网络）" value="NEURAL_NET" />
+            <el-option label="SVM" value="SVM" />
           </el-select>
         </el-form-item>
         <el-form-item label="模型文件" prop="file">
-          <el-upload ref="upload" :auto-upload="false" :limit="1" accept=".pmml,.xml,.onnx,.pb,.pkl,.pickle"
+          <el-upload ref="upload" action="#" :auto-upload="false" :limit="1" accept=".pmml,.xml,.onnx,.pb,.pkl,.pickle,.dill"
               :on-change="handleFileChange" :file-list="fileList">
             <el-button size="small" type="primary">选择文件</el-button>
-            <span slot="tip" class="el-upload__tip">支持 PMML、ONNX、TensorFlow、Pickle 等格式</span>
+            <span slot="tip" class="el-upload__tip">支持 PMML、PICKLE、DILL、ONNX 格式</span>
           </el-upload>
         </el-form-item>
         <el-form-item label="变更说明">
           <el-input v-model="uploadForm.changeLog" type="textarea" :rows="2" placeholder="简要描述本次变更内容" />
+        </el-form-item>
+        <el-form-item label="测试参数">
+          <el-input v-model="uploadForm.testParams" type="textarea" :rows="3"
+            placeholder='输入 JSON 测试参数，如 {"age": 30, "income": 5000}&#10;创建后可在此模型的测试对话框中自动加载' />
+          <div style="color:#909399;font-size:11px;margin-top:2px;">可选。用于在模型测试时自动填充默认参数（JSON 格式）</div>
         </el-form-item>
         <el-form-item label="描述">
           <el-input v-model="uploadForm.description" type="textarea" :rows="2" />
@@ -193,10 +203,13 @@ import * as api from '@/api/model'
 import { listProjects } from '@/api/project'
 
 const MODEL_TYPE_LABELS = {
-  CLASSIFICATION: '分类',
-  REGRESSION: '回归',
-  CLUSTERING: '聚类',
-  ML: '机器学习'
+  LR: 'LR（逻辑回归）',
+  XGBOOST: 'XGBoost',
+  LIGHTGBM: 'LightGBM',
+  CATBOOST: 'CatBoost',
+  RANDOM_FOREST: 'RandomForest',
+  NEURAL_NET: 'NeuralNet（神经网络）',
+  SVM: 'SVM'
 }
 
 export default {
@@ -223,7 +236,7 @@ export default {
 
       // 上传
       uploadVisible: false, uploading: false,
-      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'CLASSIFICATION', description: '', changeLog: '' },
+      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '' },
       uploadRules: {
         modelCode: [{ required: true, message: '请输入模型编码', trigger: 'blur' }],
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
@@ -302,7 +315,7 @@ export default {
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
 
     handleUpload() {
-      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'CLASSIFICATION', description: '', changeLog: '' }
+      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '' }
       this.fileList = []; this.selectedFile = null
       this.uploadVisible = true
       this.$nextTick(() => { if (this.$refs.uploadForm) this.$refs.uploadForm.clearValidate() })
@@ -327,6 +340,7 @@ export default {
           formData.append('modelType', this.uploadForm.modelType)
           formData.append('description', this.uploadForm.description || '')
           formData.append('changeLog', this.uploadForm.changeLog || '')
+          formData.append('testParams', this.uploadForm.testParams || '')
           await api.uploadModel(formData)
           this.$message.success('上传成功')
           this.uploadVisible = false

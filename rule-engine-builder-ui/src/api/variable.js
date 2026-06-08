@@ -38,11 +38,11 @@ export function saveVariableOptions(variableId, options) {
 }
 
 /** 从 Java 常量类批量导入（写入变量表，来源为 CONSTANT） */
-export function importJavaConstants(projectId, javaSource) {
-  return request({ url: '/rule/variable/import/constants/java', method: 'post', data: { projectId, javaSource } })
+export function importJavaConstants(projectId, javaSource, scope = 'PROJECT') {
+  return request({ url: '/rule/variable/import/constants/java', method: 'post', data: { projectId, javaSource, scope } })
 }
 
 /** 从扁平 JSON 批量导入常量 */
-export function importJsonConstants(projectId, jsonContent) {
-  return request({ url: '/rule/variable/import/constants/json', method: 'post', data: { projectId, jsonContent } })
+export function importJsonConstants(projectId, jsonContent, scope = 'PROJECT') {
+  return request({ url: '/rule/variable/import/constants/json', method: 'post', data: { projectId, jsonContent, scope } })
 }

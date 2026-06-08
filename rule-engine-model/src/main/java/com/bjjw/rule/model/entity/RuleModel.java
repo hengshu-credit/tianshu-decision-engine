@@ -22,7 +22,7 @@ public class RuleModel {
     /** 模型基本信息 */
     private String modelCode;
     private String modelName;
-    /** 模型大类：CLASSIFICATION-分类/REGRESSION-回归/CLUSTERING-聚类/ML-机器学习 */
+    /** 模型大类：LR-逻辑回归/XGBOOST-XGBoost/LIGHTGBM-LightGBM/CATBOOST-CatBoost/RANDOM_FOREST-RandomForest/NEURAL_NET-神经网络/SVM-SVM */
     private String modelType;
     /** 模型格式：PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE */
     private String modelFormat;

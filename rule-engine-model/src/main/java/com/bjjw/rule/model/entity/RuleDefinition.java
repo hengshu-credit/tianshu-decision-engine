@@ -20,6 +20,8 @@ public class RuleDefinition {
     private Integer currentVersion;
     private Integer publishedVersion;
     private Integer status;
+    private String inputFields;
+    private String outputFields;
     private String createBy;
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;

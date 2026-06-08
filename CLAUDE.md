@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-QLExpress 可视化规则引擎，基于 Spring Boot 2.3 + QLExpress 4，支持决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL脚本等模型的可视化编排。
+衡枢规则引擎是基于 QLExpress 可视化规则引擎改造的风控决策系统，基于 Spring Boot 2.3 + QLExpress 4，支持决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本等模型的可视化编排，涵盖变量管理、模型管理、函数管理、规则测试、执行日志、冠军挑战分流实验、ABTest 等功能，是一套能够支撑信贷风控产品全流程的风控决策引擎系统。
 
 ## 环境要求
 
@@ -92,10 +92,25 @@ cd rule-engine-redis && docker-compose up -d
 
 ### 关键类
 
+**后端核心：**
+
+- `RuleCompiler` - 规则编译接口，各模型均有对应实现（`DecisionTableCompiler`、`DecisionTreeCompiler`、`DecisionFlowCompiler`、`CrossTableCompiler`、`ScorecardCompiler`、`AdvancedCrossTableCompiler`、`AdvancedScorecardCompiler`、`ScriptPassthroughCompiler`）
+- `CompileResult` - 编译结果，包含生成的脚本和输出变量信息
+- `QLExpressEngine` - QLExpress 执行引擎
+- `QLExpressEngineFactory` - 执行引擎工厂
+- `AggregateBuiltinFunctionRegistry` - 内置聚合函数（sum/count/max/min/avg）注册器
+- `FunctionRegistrar` - 自定义函数注册器，支持 QLExpress 脚本/Java 类/Spring Bean
+
+**客户端：**
+
 - `RuleEngineClient` - 客户端入口类，负责规则同步和执行
-- `RuleCompiler` - 规则编译，将定义编译为可执行表达式
-- `RuleExecutor` - 规则执行器
-- `FunctionRegistrar` - 函数注册器，支持 QLExpress 脚本/Java 类/Spring Bean
+- `L1MemoryCache` - L1 内存缓存
+- `HttpSyncClient` - HTTP 同步客户端
+- `RedisSubscriber` - Redis 实时推送订阅
+
+### 客户端鉴权
+
+`TokenAuthInterceptor` 对 `/api/sync/` 等路径校验令牌：请求头 `X-Rule-Token` 或 Query `token`，须与 `rule_project.access_token` 匹配。
 
 ## 数据库
 
@@ -137,26 +152,30 @@ public void example() {
 
 常用方法：`refreshRule` / `refreshAll` 主动刷新缓存；`getRuleInfo` 查看本地缓存元数据。
 
-### 客户端鉴权
-
-`TokenAuthInterceptor` 对 `/api/sync/` 等路径校验令牌：请求头 `X-Rule-Token` 或 Query `token`，须与 `rule_project.access_token` 匹配。
-
 ## 控制台登录
 
 默认账号: `admin` / `1qaz@WSX`，可通过环境变量 `CONSOLE_USERNAME`、`CONSOLE_PASSWORD` 修改。关闭登录可将 `rule-engine.console-login.enabled` 设为 `false`。
 
-## 模型类型路由
+## 前端路由
 
 | 类型 | 前端路由 |
 |------|----------|
-| 决策表 | `#/designer/table/{id}` |
-| 决策树 | `#/designer/tree/{id}` |
-| 决策流 | `#/designer/flow/{id}` |
-| 交叉表 | `#/designer/cross/{id}` |
-| 评分卡 | `#/designer/score/{id}` |
-| 复杂交叉表 | `#/designer/cross-adv/{id}` |
-| 复杂评分卡 | `#/designer/score-adv/{id}` |
-| QL 脚本 | `#/designer/script/{id}` |
+| 项目管理 | `/#/project` |
+| 项目详情 | `/#/project/:id` |
+| 规则管理 | `/#/rule` |
+| 决策表 | `/#/designer/table/:id` |
+| 决策树 | `/#/designer/tree/:id` |
+| 决策流 | `/#/designer/flow/:id` |
+| 交叉表 | `/#/designer/cross/:id` |
+| 评分卡 | `/#/designer/score/:id` |
+| 复杂交叉表 | `/#/designer/cross-adv/:id` |
+| 复杂评分卡 | `/#/designer/score-adv/:id` |
+| QL 脚本 | `/#/designer/script/:id` |
+| 变量管理 | `/#/variable` |
+| 模型管理 | `/#/model` |
+| 函数管理 | `/#/function` |
+| 规则测试 | `/#/test` |
+| 执行日志 | `/#/log` |
 
 ## 技术栈
 
@@ -179,8 +198,10 @@ public void example() {
 ### 前端
 
 - 设计器视图: `src/views/designer/`（8个单文件组件）
-- API 层: `src/api/`（按模块拆分）
+- 页面视图: `src/views/`（包含 project、rule、variable、model、function、test、log 等）
+- API 层: `src/api/`（按模块拆分: auth、dataObject、definition、function、model、project、request、variable）
 - 全局样式覆盖: `src/styles/element-override.scss`
+- 前端路由守卫中集成了控制台登录校验逻辑
 
 ## 已知注意事项
 
@@ -191,3 +212,95 @@ public void example() {
 ### Redis 必须一致
 
 Redis 必须与 rule-engine-server 使用同一实例（含密码、database）。服务端在规则发布等事件时向频道 `rule:push:{appName}` 发布消息。
+
+## 未来规划
+
+以下功能已在 `rule_examples/` 下参考了多个开源决策引擎后规划，需要逐步实现。
+
+### 第一阶段：基础能力增强
+
+- [ ] **实时指标计算** — 基于 Redis ScoredSortedSet 的滑动窗口指标（sum/count/avg/max/min/his），参考 coolGuard 的 `AbstractIndicator` 设计
+  - 新增 `rule_indicator` 表定义指标
+  - 实现 `IndicatorFactory` + 多种 `AbstractIndicator` 子类
+  - 支持时间窗口：滑动窗口（LAST）和固定窗口（CUR）
+- [ ] **数据丰富化框架** — 外部数据解析（IP归属地、手机号、身份证、地理位置），参考 coolGuard 的 `analysis` 模块
+  - 统一分析器接口 `DataAnalyzer<T>`
+  - 实现 `IpAnalyzer`、`PhoneNoAnalyzer`、`IdCardAnalyzer`、`GeoAnalyzer`
+  - 支持在规则中调用分析结果作为变量输入
+- [ ] **规则影响分析** — 变更规则时自动分析影响范围，参考 rule_engine 的 `EngineRelaCpnt` 设计
+  - 实现 `RuleImpactAnalyzer` 分析组件依赖关系
+  - 在规则修改页面展示"影响哪些规则"
+
+### 第二阶段：实验与监控
+
+- [ ] **冠军挑战（Champion-Challenger）** — 多规则版本流量分配实验，参考 rule_engine 的组件分流和 risk_engine 的 `AbtestNode`
+  - 新增 `rule_experiment` / `rule_experiment_variant` / `rule_experiment_metrics` 表
+  - 实现 `ExperimentRouter` 分流路由，支持按流量比例自动分配
+  - 实时统计各变体的执行量和效果指标
+- [ ] **ABTest 分流实验** — 流量分流对比实验
+  - 基于用户 ID 或随机值进行流量切分
+  - 支持灰度发布：A/B 版本并行运行
+  - 支持多种分流策略：随机、按比例、按用户特征
+- [ ] **管理驾驶舱** — 规则执行大盘，参考 rule_engine_analy 模块
+  - 规则执行统计：总次数、成功/失败率、平均耗时
+  - 趋势图表：每日/每周执行量趋势
+  - TOP N 规则排行：按执行量、耗时、失败率排序
+
+### 第三阶段：高级能力
+
+- [ ] **版本对比与回滚** — 规则版本差异对比和一键回滚
+  - 参考 rule_engine 的 `compareCpntByCurrentAndVersion` 设计
+  - 可视化 Diff 展示：新增/删除/修改节点
+  - 支持版本间一键切换
+- [ ] **发布工作流** — 申请→审核→发布三级审批流程
+  - 参考 rule_engine 的 `applyRelease → auditRelease → release` 设计
+  - 支持多级审批、驳回重新编辑
+  - 审计日志记录完整发布历史
+- [ ] **外数管理** — 外部数据源配置和外部函数
+  - HTTP/API 数据源调用
+  - 数据库直连查询（DB/JDBC）
+  - 外部函数结果缓存（TTL 可配置）
+- [ ] **实时监控与告警** — 规则执行 QPS、耗时分布、异常告警
+  - 集成 Micrometer + Prometheus 指标暴露
+  - 耗时超阈值自动告警（邮件/钉钉/企业微信）
+- [ ] **规则链编排** — 子规则调用、规则组合
+  - 支持在一个规则中调用其他规则
+  - 实现 `RuleChainExecutor` 批量规则执行
+  - 支持规则依赖 DAG 分析
+- [ ] **批量测试** — 测试用例批量导入、执行、差异报告
+  - 支持 Excel/JSON 批量导入测试用例
+  - 一键执行并生成差异报告
+  - CI/CD 集成支持
+
+### 第四阶段：扩展能力
+
+- [ ] **权限管理** — 项目级用户角色和权限控制
+  - 角色：管理员、运维、分析师、普通用户
+  - 权限：设计、发布、测试、查看等细粒度控制
+- [ ] **DSL 简化规则定义** — YAML/JSON DSL 让非技术人员也能编写规则
+  - 参考 risk_engine 的 DSL 设计
+  - 降低规则编写门槛
+- [ ] **Kryo 序列化规则包** — 规则整包导出/导入
+  - 参考 rule_engine 的 `EngineFileContentSerialize` 设计
+  - 支持跨环境规则迁移
+- [ ] **TransmittableThreadLocal 统一上下文** — 执行链路全追踪
+  - 参考 coolGuard 的 `DecisionContextHolder` 设计
+  - 统一管理 FieldContext、IndicatorContext、PolicyContext、TraceContext
+  - 便于在复杂规则链中传递上下文
+
+## 参考项目
+
+`rule_examples/` 目录下包含多个开源决策引擎的研究代码：
+
+| 项目 | 来源 | 技术栈 | 借鉴价值 |
+|------|------|--------|----------|
+| `rule_engine/` | 企业级（mobanker） | Spring 4 / JDK 7 / MongoDB / Dubbo / Netty | ⭐⭐⭐ 组件依赖分析、版本对比、发布工作流、热部署 |
+| `coolGuard/` | 个人开源（wnhyang） | Spring Boot 3 / JDK 17 / Redisson / Elasticsearch | ⭐⭐⭐ 实时指标计算、数据丰富化框架、TransmittableThreadLocal |
+| `risk_engine/` | 个人开源（Go版） | Go / YAML DSL | ⭐⭐ DSL简化规则、内置ABTest分流 |
+| `daleks/` | 开源 | Spring Boot / Ant Design Pro | ⭐ 简洁实时风控基础架构 |
+
+**参考项目架构亮点速览：**
+
+- **rule_engine**: `EngineCpnt` 组件体系 + `EnginePolicyFlow` 树形执行流 + `EngineStepTaskProcessor` 顺序执行器 + MongoDB 快照持久化
+- **coolGuard**: `AbstractIndicator` 抽象指标工厂 + Redis ScoredSortedSet 滑动窗口 + `DecisionContextHolder` 四大上下文 + Kafka 事件流
+- **risk_engine**: `Kernel` 内核加载 YAML DSL + `AbtestNode` 内置分流节点 + `PipelineContext` 流水线上下文

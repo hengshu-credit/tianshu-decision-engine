@@ -1,6 +1,8 @@
 package com.bjjw.rule.server.controller;
 
 import com.bjjw.rule.model.entity.RuleModel;
+import com.bjjw.rule.model.entity.RuleModelInputField;
+import com.bjjw.rule.model.entity.RuleModelOutputField;
 import com.bjjw.rule.model.entity.RuleModelRef;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleModelService;
@@ -10,6 +12,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rule/model")
@@ -38,10 +41,11 @@ public class RuleModelController {
             @RequestParam String modelName,
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String description,
-            @RequestParam(required = false) String changeLog) {
+            @RequestParam(required = false) String changeLog,
+            @RequestParam(required = false) String testParams) {
         try {
             RuleModel model = modelService.uploadAndParse(
-                    file, projectId, scope, modelCode, modelName, modelType, description, changeLog);
+                    file, projectId, scope, modelCode, modelName, modelType, description, changeLog, testParams);
             return R.ok(model);
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
@@ -55,8 +59,8 @@ public class RuleModelController {
      */
     @GetMapping("/list")
     public R<IPage<RuleModel>> list(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String modelType,
@@ -155,5 +159,73 @@ public class RuleModelController {
     public R<Void> removeRef(@RequestBody RuleModelRef ref) {
         modelService.removeModelRef(ref.getModelId(), ref.getProjectId());
         return R.ok();
+    }
+
+    /**
+     * 执行模型测试
+     * @param id 模型ID
+     * @param params 输入参数（Map<String, Object>）
+     */
+    @PostMapping("/execute/{id}")
+    public R<Map<String, Object>> execute(@PathVariable Long id, @RequestBody Map<String, Object> params) {
+        try {
+            Map<String, Object> result = modelService.execute(id, params);
+            return R.ok(result);
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        } catch (RuntimeException e) {
+            return R.fail("模型执行失败: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 保存模型的测试参数（JSON）
+     * @param id 模型ID
+     * @param testParams JSON字符串的测试参数
+     */
+    @PostMapping("/testParams/{id}")
+    public R<Void> saveTestParams(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        try {
+            modelService.saveTestParams(id, body.get("testParams"));
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 获取模型的测试参数（JSON）
+     * @param id 模型ID
+     */
+    @GetMapping("/testParams/{id}")
+    public R<String> getTestParams(@PathVariable Long id) {
+        String params = modelService.getTestParams(id);
+        return R.ok(params);
+    }
+
+    /**
+     * 更新模型输入字段（关联变量映射）
+     */
+    @PutMapping("/inputField/{id}")
+    public R<Void> updateInputField(@PathVariable Long id, @RequestBody RuleModelInputField field) {
+        try {
+            modelService.updateInputField(id, field);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 更新模型输出字段（关联变量映射）
+     */
+    @PutMapping("/outputField/{id}")
+    public R<Void> updateOutputField(@PathVariable Long id, @RequestBody RuleModelOutputField field) {
+        try {
+            modelService.updateOutputField(id, field);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
     }
 }

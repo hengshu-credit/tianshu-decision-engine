@@ -1,4 +1,6 @@
+@use "sass:color";
 /* Element UI 主题色覆盖：统一按钮背景为主色 #2639E9，副色 #F76E6C */
+@use "./variables.scss" as *;
 
 /* 全局字体：阿里妈妈方圆体 */
 $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -26,17 +28,17 @@ $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans
 $--color-primary: #2639E9;
 $secondary-color: #F76E6C;
 
-$--color-primary-light-1: mix(#FFFFFF, $--color-primary, 10%);
-$--color-primary-light-2: mix(#FFFFFF, $--color-primary, 20%);
-$--color-primary-light-3: mix(#FFFFFF, $--color-primary, 30%);
-$--color-primary-light-4: mix(#FFFFFF, $--color-primary, 40%);
-$--color-primary-light-5: mix(#FFFFFF, $--color-primary, 50%);
-$--color-primary-light-6: mix(#FFFFFF, $--color-primary, 60%);
-$--color-primary-light-7: mix(#FFFFFF, $--color-primary, 70%);
-$--color-primary-light-8: mix(#FFFFFF, $--color-primary, 80%);
-$--color-primary-light-9: mix(#FFFFFF, $--color-primary, 90%);
-$--color-primary-dark-1: mix(#000000, $--color-primary, 10%);
-$--color-primary-dark-2: mix(#000000, $--color-primary, 20%);
+$--color-primary-light-1: color.mix(#FFFFFF, $--color-primary, 10%);
+$--color-primary-light-2: color.mix(#FFFFFF, $--color-primary, 20%);
+$--color-primary-light-3: color.mix(#FFFFFF, $--color-primary, 30%);
+$--color-primary-light-4: color.mix(#FFFFFF, $--color-primary, 40%);
+$--color-primary-light-5: color.mix(#FFFFFF, $--color-primary, 50%);
+$--color-primary-light-6: color.mix(#FFFFFF, $--color-primary, 60%);
+$--color-primary-light-7: color.mix(#FFFFFF, $--color-primary, 70%);
+$--color-primary-light-8: color.mix(#FFFFFF, $--color-primary, 80%);
+$--color-primary-light-9: color.mix(#FFFFFF, $--color-primary, 90%);
+$--color-primary-dark-1: color.mix(#000000, $--color-primary, 10%);
+$--color-primary-dark-2: color.mix(#000000, $--color-primary, 20%);
 
 $primary-color: $--color-primary;
 $success-color: #10B981;

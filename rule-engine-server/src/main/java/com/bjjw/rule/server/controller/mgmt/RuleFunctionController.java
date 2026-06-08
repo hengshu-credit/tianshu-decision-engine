@@ -28,8 +28,8 @@ public class RuleFunctionController {
     @GetMapping("/project/{projectId}")
     public Result<IPage<RuleFunction>> listByProject(
             @PathVariable Long projectId,
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName) {
@@ -42,8 +42,8 @@ public class RuleFunctionController {
      */
     @GetMapping("/list")
     public Result<IPage<RuleFunction>> pageAll(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName) {

@@ -29,7 +29,6 @@
           style="width:100%"
           clearable
           filterable
-          expand-trigger="hover"
           :props="cascaderProps"
           @change="onCascaderChange"
           @clear="$emit('input', ''); $emit('select', null)"
@@ -47,11 +46,13 @@
           @change="onChange"
           @clear="$emit('input', ''); $emit('select', null)"
         >
-          <el-option-group v-if="grouped" v-for="group in groupedOptions" :key="group.label" :label="group.label">
-            <el-option v-for="v in group.vars" :key="v.varCode" :value="v.varCode" :label="v.varLabel + ' (' + v.varCode + ')'" />
-          </el-option-group>
+          <template v-if="grouped">
+            <el-option-group v-for="group in groupedOptions" :key="group.label" :label="group.label">
+              <el-option v-for="v in group.vars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getOptionLabel(v)" />
+            </el-option-group>
+          </template>
           <template v-if="!grouped">
-            <el-option v-for="v in filteredVars" :key="v.varCode" :value="v.varCode" :label="v.varLabel" />
+            <el-option v-for="v in filteredVars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getOptionLabel(v)" />
             <div v-if="filteredVars.length === 0" class="var-empty">
               <i class="el-icon-warning-outline" /> {{ loading ? '加载中...' : '暂无可用变量，请先在变量管理中创建' }}
             </div>
@@ -83,7 +84,8 @@ import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 export default {
   name: 'VarPicker',
   props: {
-    value: { type: String, default: '' },
+    /** 绑定值：varCode（默认）或 id（数字） */
+    value: { type: [String, Number], default: '' },
     vars: { type: Array, default: () => [] },
     typeFilter: { type: String, default: '' },
     showAllWhenFilterEmpty: { type: Boolean, default: false },
@@ -94,7 +96,13 @@ export default {
     groupedByCategory: { type: Boolean, default: true },
     loading: { type: Boolean, default: false },
     /** 是否允许手动输入自定义变量（不在变量管理中的） */
-    allowCustom: { type: Boolean, default: true }
+    allowCustom: { type: Boolean, default: true },
+    /**
+     * 指定 value 字段类型：
+     * - 'code'（默认）：使用 varCode 作为 option value
+     * - 'id'：使用 var.id 作为 option value（用于模型出入参关联变量）
+     */
+    valueKey: { type: String, default: 'code' }
   },
   data() {
     return {
@@ -134,7 +142,7 @@ export default {
       return list
     },
     cascaderProps() {
-      return { emitPath: true, checkStrictly: false }
+      return { emitPath: true, checkStrictly: false, expandTrigger: 'hover' }
     },
     cascaderValue() {
       if (!this.value) return null
@@ -240,6 +248,14 @@ export default {
     }
   },
   methods: {
+    /** 获取选项的实际值（varCode 或 id） */
+    getOptionValue(v) {
+      return this.valueKey === 'id' ? v.id : (v.varCode || v.varLabel)
+    },
+    /** 获取选项的显示文本 */
+    getOptionLabel(v) {
+      return `${v.varLabel || v.varCode} (${v.varCode || v.varLabel})`
+    },
     onCascaderChange(path) {
       if (!path || !path.length) {
         this.$emit('input', '')
@@ -251,9 +267,17 @@ export default {
       const varObj = this.vars.find(v => v.varCode === refCode) || null
       this.$emit('select', varObj)
     },
-    onChange(code) {
-      this.$emit('input', code)
-      const varObj = this.vars.find(v => v.varCode === code) || null
+    onChange(val) {
+      // val 是 getOptionValue(v) 的结果（varCode 或 id）
+      this.$emit('input', val)
+      if (!val) {
+        this.$emit('select', null)
+        return
+      }
+      // 根据 valueKey 查找对应的完整变量对象
+      const varObj = this.valueKey === 'id'
+        ? (this.vars.find(v => String(v.id) === String(val)) || null)
+        : (this.vars.find(v => v.varCode === val) || null)
       this.$emit('select', varObj)
     },
     /** 手动输入模式下的输入事件（v-model 已同步 localCustomValue） */
@@ -275,7 +299,12 @@ export default {
     _autoSwitchIfUnmatched() {
       if (!this.allowCustom || !this.value || this.customMode) return
       if (!this.hasVarOptions) return
-      const found = this.vars.some(v => v.varCode === this.value)
+      let found
+      if (this.valueKey === 'id') {
+        found = this.vars.some(v => String(v.id) === String(this.value))
+      } else {
+        found = this.vars.some(v => v.varCode === this.value)
+      }
       if (!found) {
         this.customMode = true
         this.localCustomValue = this.value

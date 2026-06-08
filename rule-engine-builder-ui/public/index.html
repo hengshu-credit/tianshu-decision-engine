@@ -3,9 +3,13 @@
 
 <head>
   <meta charset="utf-8">
+  <!-- 压制 Chrome DevTools Violation 警告（第三方库 touchmove 事件问题，不影响功能） -->
+  <script>(function(){var w=console.warn.bind(console);console.warn=function(){var m=arguments[0];if(m&&(m.toLowerCase().includes('non-passive')||m.includes('touchmove')))return;w.apply(console,arguments)}})();</script>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
   <title>衡枢决策引擎</title>
+  <!-- SVG favicon -->
+  <link rel="icon" type="image/svg+xml" href="/images/hengshucredit_animated.svg">
   <!-- 阿里妈妈方圆体 - 网络字体 -->
   <style>
     @font-face {

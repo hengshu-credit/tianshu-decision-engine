@@ -73,7 +73,8 @@ export default {
       try {
         const defRes = await getDefinition(definitionId)
         const def = defRes && defRes.data ? defRes.data : defRes
-        if (!def || !def.projectId) {
+        // projectId == null 表示规则数据不完整；projectId = 0 表示 GLOBAL 规则，需继续调用 API
+        if (!def || def.projectId == null) {
           this.loadingVars = false
           return
         }

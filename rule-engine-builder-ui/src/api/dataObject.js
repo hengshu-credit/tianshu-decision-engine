@@ -1,23 +1,24 @@
 import request from './request'
 
-export function importJavaEntity(projectId, objectType, javaSource) {
-  return request({ url: '/rule/dataobject/import/java', method: 'post', data: { projectId, objectType, javaSource } })
+export function importJavaEntity(projectId, objectType, javaSource, scope = 'PROJECT') {
+  return request({ url: '/rule/dataobject/import/java', method: 'post', data: { projectId, objectType, javaSource, scope } })
 }
 
-export function importJavaFile(projectId, objectType, file) {
+export function importJavaFile(projectId, objectType, file, scope = 'PROJECT') {
   const formData = new FormData()
   formData.append('projectId', projectId)
   formData.append('objectType', objectType)
   formData.append('file', file)
+  formData.append('scope', scope)
   return request({ url: '/rule/dataobject/import/java-file', method: 'post', data: formData, headers: { 'Content-Type': 'multipart/form-data' } })
 }
 
-export function importJsonObject(projectId, objectType, objectCode, jsonContent) {
-  return request({ url: '/rule/dataobject/import/json', method: 'post', data: { projectId, objectType, objectCode, jsonContent } })
+export function importJsonObject(projectId, objectType, objectCode, jsonContent, scope = 'PROJECT') {
+  return request({ url: '/rule/dataobject/import/json', method: 'post', data: { projectId, objectType, objectCode, jsonContent, scope } })
 }
 
-export function importDdlTable(projectId, objectType, ddlSource) {
-  return request({ url: '/rule/dataobject/import/ddl', method: 'post', data: { projectId, objectType, ddlSource } })
+export function importDdlTable(projectId, objectType, ddlSource, scope = 'PROJECT') {
+  return request({ url: '/rule/dataobject/import/ddl', method: 'post', data: { projectId, objectType, ddlSource, scope } })
 }
 
 export function listDataObjects(projectId) {
@@ -69,5 +70,10 @@ export function saveDataObjectFieldOptions(fieldId, options) {
 }
 
 export function batchValidateRules(projectId) {
+  if (!projectId) return batchValidateAll()
   return request({ url: `/rule/variable/batch-validate/${projectId}`, method: 'post' })
+}
+
+export function batchValidateAll() {
+  return request({ url: `/rule/variable/batch-validate`, method: 'post' })
 }

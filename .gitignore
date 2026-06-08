@@ -11,3 +11,6 @@
 .vscode/
 rule-engine-mysql/data/
 .claude/*
+.harness
+rule_examples
+常用命令.txt

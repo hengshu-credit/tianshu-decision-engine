@@ -35,10 +35,49 @@ public class BatchTestService {
         List<RuleDefinition> definitions = definitionService.list(
                 new LambdaQueryWrapper<RuleDefinition>()
                         .eq(RuleDefinition::getProjectId, projectId));
-
         Map<String, Object> defaultParams = buildDefaultParams(projectId);
-        List<RuleValidationResult> results = new ArrayList<>();
+        return doValidate(definitions, defaultParams);
+    }
 
+    private Map<String, Object> buildDefaultParams(Long projectId) {
+        List<RuleVariable> vars = variableMapper.selectList(
+                new LambdaQueryWrapper<RuleVariable>()
+                        .eq(projectId != null, RuleVariable::getProjectId, projectId)
+                        .eq(RuleVariable::getStatus, 1));
+
+        Map<String, Object> params = new HashMap<>();
+        for (RuleVariable v : vars) {
+            String value = v.getDefaultValue() != null ? v.getDefaultValue()
+                    : v.getExampleValue();
+            if (value == null || value.isEmpty()) continue;
+
+            switch (v.getVarType()) {
+                case "NUMBER":
+                    try { params.put(v.getVarCode(), Double.parseDouble(value)); } catch (NumberFormatException ignored) {}
+                    break;
+                case "BOOLEAN":
+                    params.put(v.getVarCode(), Boolean.parseBoolean(value));
+                    break;
+                default:
+                    params.put(v.getVarCode(), value);
+                    break;
+            }
+        }
+        return params;
+    }
+
+    /**
+     * Compile and test-execute ALL rules (no project filter).
+     * Used when user clicks "验证规则" without selecting a project.
+     */
+    public List<RuleValidationResult> validateAllRules() {
+        List<RuleDefinition> definitions = definitionService.list();
+        Map<String, Object> defaultParams = buildDefaultParams(null);
+        return doValidate(definitions, defaultParams);
+    }
+
+    private List<RuleValidationResult> doValidate(List<RuleDefinition> definitions, Map<String, Object> defaultParams) {
+        List<RuleValidationResult> results = new ArrayList<>();
         for (RuleDefinition def : definitions) {
             RuleValidationResult vr = new RuleValidationResult();
             vr.setDefinitionId(def.getId());
@@ -76,32 +115,5 @@ public class BatchTestService {
             results.add(vr);
         }
         return results;
-    }
-
-    private Map<String, Object> buildDefaultParams(Long projectId) {
-        List<RuleVariable> vars = variableMapper.selectList(
-                new LambdaQueryWrapper<RuleVariable>()
-                        .eq(RuleVariable::getProjectId, projectId)
-                        .eq(RuleVariable::getStatus, 1));
-
-        Map<String, Object> params = new HashMap<>();
-        for (RuleVariable v : vars) {
-            String value = v.getDefaultValue() != null ? v.getDefaultValue()
-                    : v.getExampleValue();
-            if (value == null || value.isEmpty()) continue;
-
-            switch (v.getVarType()) {
-                case "NUMBER":
-                    try { params.put(v.getVarCode(), Double.parseDouble(value)); } catch (NumberFormatException ignored) {}
-                    break;
-                case "BOOLEAN":
-                    params.put(v.getVarCode(), Boolean.parseBoolean(value));
-                    break;
-                default:
-                    params.put(v.getVarCode(), value);
-                    break;
-            }
-        }
-        return params;
     }
 }

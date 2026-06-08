@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="ct-header">
       <div class="ct-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-data-analysis ct-title-icon" />
         <span class="ct-title">交叉表设计器</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">
@@ -286,7 +287,6 @@ export default {
                           : Array(colCount).fill('')
             )
           } else if (dimKey === 'colVar') {
-            const oldLen = this.model.colHeaders.length
             this.model.colHeaders = vals
             this.model.cells = this.model.cells.map(row => {
               const newRow = [...row]

@@ -19,8 +19,8 @@ public class ExecutionLogController {
 
     @GetMapping("/list")
     public R<IPage<RuleExecutionLog>> list(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "20") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String source,

@@ -18,7 +18,19 @@ module.exports = {
   css: {
     loaderOptions: {
       scss: {
-        prependData: `@import "~@/styles/variables.scss";`
+        additionalData: (content, loaderContext) => {
+          const resourcePath = loaderContext.resourcePath || ''
+          if (
+            resourcePath.includes('variables.scss') ||
+            resourcePath.includes('element-override.scss')
+          ) {
+            return content
+          }
+          return `@import "~@/styles/variables.scss";\n${content}`
+        },
+        sassOptions: {
+          silenceDeprecations: ['legacy-js-api', 'import']
+        }
       }
     }
   },

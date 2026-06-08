@@ -59,3 +59,28 @@ export function addModelRef(modelId, projectId) {
 export function removeModelRef(modelId, projectId) {
   return request({ url: '/rule/model/ref', method: 'delete', data: { modelId, projectId } })
 }
+
+/** 执行模型测试 */
+export function executeModel(id, params) {
+  return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params })
+}
+
+/** 保存模型测试参数（JSON） */
+export function saveTestParams(id, testParams) {
+  return request({ url: `/rule/model/testParams/${id}`, method: 'post', data: { testParams } })
+}
+
+/** 获取模型测试参数（JSON） */
+export function getTestParams(id) {
+  return request({ url: `/rule/model/testParams/${id}`, method: 'get' })
+}
+
+/** 更新模型输入字段（关联变量映射） */
+export function updateModelInputField(id, data) {
+  return request({ url: `/rule/model/inputField/${id}`, method: 'put', data })
+}
+
+/** 更新模型输出字段（关联变量映射） */
+export function updateModelOutputField(id, data) {
+  return request({ url: `/rule/model/outputField/${id}`, method: 'put', data })
+}

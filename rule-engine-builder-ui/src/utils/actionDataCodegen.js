@@ -19,7 +19,7 @@ function wrapValue(val) {
   if (!isNaN(s) && s !== '') return s
   if (/^[a-zA-Z_]\w*(\.\w+)*$/.test(s)) return s
   if (s.startsWith('"') || s.startsWith("'")) return s
-  if (/[+\-*/()><=!&|,\[\]{}]/.test(s)) return s
+  if (/[+\-*/()><=!&|,[{}]/.test(s)) return s
   return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 

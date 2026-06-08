@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="tree-toolbar">
       <div class="toolbar-left">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-set-up toolbar-icon" />
         <span class="toolbar-title">决策树设计器</span>
         <el-tag size="small" type="info" style="margin-left:8px;">可视化树形规则</el-tag>

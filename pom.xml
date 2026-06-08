@@ -31,6 +31,7 @@
         <lombok.version>1.18.24</lombok.version>
         <fastjson.version>2.0.43</fastjson.version>
         <okhttp.version>4.9.3</okhttp.version>
+        <jpmml.version>1.5.15</jpmml.version>
     </properties>
 
     <dependencyManagement>
@@ -98,6 +99,11 @@
                 <groupId>com.squareup.okhttp3</groupId>
                 <artifactId>okhttp</artifactId>
                 <version>${okhttp.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.jpmml</groupId>
+                <artifactId>pmml-evaluator</artifactId>
+                <version>${jpmml.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

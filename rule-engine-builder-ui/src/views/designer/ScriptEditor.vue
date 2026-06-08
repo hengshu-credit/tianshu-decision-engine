@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="se-header">
       <div class="se-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-edit-outline se-title-icon" />
         <span class="se-title">QL脚本编辑器</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">{{ lineCount }} 行</el-tag>

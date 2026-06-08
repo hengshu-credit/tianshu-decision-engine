@@ -13,6 +13,9 @@ public class RuleModelInputField {
 
     private Long modelId;
 
+    /** 关联的变量ID（外键 -> rule_variable.id） */
+    private Long varId;
+
     /** 字段名称（原始名称） */
     private String fieldName;
     private String fieldLabel;

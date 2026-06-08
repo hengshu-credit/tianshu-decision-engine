@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="dt-header">
       <div class="dt-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-s-grid dt-title-icon" />
         <span class="dt-title">决策表配置</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">共 {{ model.rules.length }} 条规则</el-tag>
@@ -350,8 +351,11 @@ export default {
           }
         })
       })
-      ;(this.model.rules || []).forEach(rule => {
-        ;(rule.actions || []).forEach(item => { if (item && item.varCode && this.syncVarItem(item)) changed = true })
+
+      (this.model.rules || []).forEach(rule => {
+        (rule.actions || []).forEach(item => {
+          if (item && item.varCode && this.syncVarItem(item)) changed = true
+        })
       })
       if (changed) this.$forceUpdate()
     },

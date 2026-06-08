@@ -26,7 +26,8 @@ public class RuleDataObjectController {
 
     @PostMapping("/import/java")
     public R<Map<String, Object>> importJava(@RequestBody Map<String, String> body) {
-        Long projectId = Long.valueOf(body.get("projectId"));
+        String pidStr = body.get("projectId");
+        Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String javaSource = body.get("javaSource");
@@ -37,7 +38,7 @@ public class RuleDataObjectController {
 
     @PostMapping("/import/java-file")
     public R<Map<String, Object>> importJavaFile(
-            @RequestParam Long projectId,
+            @RequestParam(required = false) Long projectId,
             @RequestParam(defaultValue = "PROJECT") String scope,
             @RequestParam(defaultValue = "INPUT") String objectType,
             @RequestParam("file") MultipartFile file) throws Exception {
@@ -49,7 +50,8 @@ public class RuleDataObjectController {
 
     @PostMapping("/import/json")
     public R<Map<String, Object>> importJson(@RequestBody Map<String, String> body) {
-        Long projectId = Long.valueOf(body.get("projectId"));
+        String pidStr = body.get("projectId");
+        Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String objectCode = body.get("objectCode");
@@ -62,7 +64,8 @@ public class RuleDataObjectController {
     /** 从建表 DDL（CREATE TABLE）导入数据对象与字段，COMMENT 作为变量名称 */
     @PostMapping("/import/ddl")
     public R<Map<String, Object>> importDdl(@RequestBody Map<String, String> body) {
-        Long projectId = Long.valueOf(body.get("projectId"));
+        String pidStr = body.get("projectId");
+        Long projectId = pidStr != null && !pidStr.isEmpty() ? Long.valueOf(pidStr) : null;
         String scope = body.getOrDefault("scope", "PROJECT");
         String objectType = body.getOrDefault("objectType", "INPUT");
         String ddlSource = body.get("ddlSource");

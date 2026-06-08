@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="sc-header">
       <div class="sc-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-data-line sc-title-icon" />
         <span class="sc-title">评分卡设计器</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">{{ model.scoreItems.length }} 个评分项</el-tag>

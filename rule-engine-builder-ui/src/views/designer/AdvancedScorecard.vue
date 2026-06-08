@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="asc-header">
       <div class="asc-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-data-line asc-title-icon" />
         <span class="asc-title">复杂评分卡设计器</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">{{ totalDimensions }} 个评分维度</el-tag>

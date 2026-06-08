@@ -22,8 +22,8 @@ public class RuleProjectController {
 
     @GetMapping("/list")
     public R<IPage<RuleProject>> list(
-            @RequestParam(defaultValue = "1") int pageNum,
-            @RequestParam(defaultValue = "10") int pageSize,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String keyword) {
         return R.ok(projectService.pageList(pageNum, pageSize, keyword));
     }

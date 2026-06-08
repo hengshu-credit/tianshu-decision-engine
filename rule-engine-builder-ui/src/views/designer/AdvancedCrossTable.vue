@@ -3,6 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="act-header">
       <div class="act-title-area">
+        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
         <i class="el-icon-data-analysis act-title-icon" />
         <span class="act-title">复杂交叉表设计器</span>
         <el-tag size="mini" type="info" style="margin-left:8px;">

@@ -12,14 +12,23 @@ public class RuleModelOutputField {
 
     private Long modelId;
 
+    /** 关联的变量ID（外键 -> rule_variable.id） */
+    private Long varId;
+
     private String fieldName;
     private String fieldLabel;
+
+    /** 脚本中的引用名（对应变量，用于关联引擎变量） */
+    private String scriptName;
 
     /** 字段类型：STRING/NUMBER/INTEGER/DOUBLE/PROBABILITY/VECTOR */
     private String fieldType;
 
     private String targetField;
     private String featureName;
+
+    /** 转换方法：NONE/RENAME/SCALE/OHE */
+    private String transformType;
 
     /** 是否概率输出：0-否，1-是 */
     private Integer isProbability;

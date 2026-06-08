@@ -37,7 +37,7 @@
           <div class="uiue-card-title">
             输入参数
             <el-button type="text" size="small" style="margin-left: 12px;" @click="loadVariables" v-if="selectedProjectId">
-              <i class="el-icon-refresh" /> 加载项目变量
+              <i class="el-icon-refresh" /> 加载变量
             </el-button>
             <el-button type="text" size="small" style="margin-left: 8px;" @click="addParam">
               <i class="el-icon-plus" /> 手动添加
@@ -129,7 +129,7 @@
 <script>
 import { listProjects } from '@/api/project'
 import { listDefinitions, executeRule, getContent } from '@/api/definition'
-import { listVariablesByProject, getVariableOptions } from '@/api/variable'
+import { listVariablesByProject, getVariableOptions, listVariables } from '@/api/variable'
 
 export default {
   name: 'RuleTest',
@@ -172,11 +172,17 @@ export default {
       this.result = null
     },
     async loadVariables() {
-      if (!this.selectedProjectId) return
+      if (this.selectedProjectId == null) return  // projectId == null 表示未选择项目，提前返回
       // 每次加载前清空已有参数
       this.params = []
       try {
-        const res = await listVariablesByProject(this.selectedProjectId)
+        // 根据规则的 scope 决定加载哪种变量：GLOBAL 规则加载全局变量，项目级规则加载项目变量
+        let res
+        if (this.selectedRule && this.selectedRule.scope === 'GLOBAL') {
+          res = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
+        } else {
+          res = await listVariablesByProject(this.selectedProjectId)
+        }
         console.log('[变量加载] API 响应原始数据:', res)
         const vars = res.data || []
         console.log('[变量加载] API 返回的变量列表:', vars)
@@ -265,7 +271,7 @@ export default {
       switch (modelType) {
         case 'TABLE': {
           // 决策表：从 rules 中的 conditionRoot 和 actions 提取
-          ;(model.rules || []).forEach(rule => {
+          (model.rules || []).forEach(rule => {
             // 从条件树提取
             this.extractFromConditionRoot(rule.conditionRoot, codes)
             // 从条件数组提取（兼容旧格式）
@@ -284,18 +290,16 @@ export default {
           })
           break
         }
-        case 'TREE':
+        case 'TREE': {
           this.extractFromTreeNodes(model.nodes, model.edges, codes)
+          // 顶层 conditionRoot 也可能被使用
+          this.extractFromConditionRoot(model.conditionRoot, codes)
           break
-        case 'FLOW':
+        }
+        case 'FLOW': {
           this.extractFromFlowNodes(model.nodes, model.edges, codes)
-          break
-        case 'TABLE': {
-          // 决策表：conditions 中的变量是输入，actions 中的变量是输出
-          this.extractFromConditions(model.conditions, codes)
-          ;(model.actions || []).forEach(a => {
-            if (a.varCode) codes.add(a.varCode)
-          })
+          // 顶层 conditionRoot 也可能被使用
+          this.extractFromConditionRoot(model.conditionRoot, codes)
           break
         }
         case 'CROSS': {
@@ -307,18 +311,29 @@ export default {
         }
         case 'CROSS_ADV': {
           // 复杂交叉表：行维度变量、列维度变量、结果变量
-          ;(model.rowDimensions || []).forEach(dim => { if (dim.varCode) codes.add(dim.varCode) })
-          ;(model.colDimensions || []).forEach(dim => { if (dim.varCode) codes.add(dim.varCode) })
+          (model.rowDimensions || []).forEach(dim => {
+            if (dim.varCode) codes.add(dim.varCode)
+            // 从维度条件树中提取变量
+            this.extractFromConditionRoot(dim.conditionRoot, codes)
+          })
+          ;(model.colDimensions || []).forEach(dim => {
+            if (dim.varCode) codes.add(dim.varCode)
+            // 从维度条件树中提取变量
+            this.extractFromConditionRoot(dim.conditionRoot, codes)
+          })
           if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
           break
         }
         case 'SCORE': {
           // 评分卡：评分项条件变量、结果变量
-          ;(model.scoreItems || []).forEach(item => {
-            // 从 condition 表达式中提取变量
+          (model.scoreItems || []).forEach(item => {
+            // 从 conditionRoot（树形条件）提取
+            this.extractFromConditionRoot(item.conditionRoot, codes)
+            // 从 condition 表达式中提取变量（字符串格式）
             if (item.condition && typeof item.condition === 'string') {
               this.extractFromConditionExpression(item.condition, codes)
             }
+            // 从 condVar 直接提取（主要输入变量）
             if (item.condVar) codes.add(item.condVar)
           })
           if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
@@ -326,8 +341,8 @@ export default {
         }
         case 'SCORE_ADV': {
           // 复杂评分卡：维度变量、结果变量
-          ;(model.dimensionGroups || []).forEach(group => {
-            ;(group.dimensions || []).forEach(dim => {
+          (model.dimensionGroups || []).forEach(group => {
+            (group.dimensions || []).forEach(dim => {
               if (dim.varCode) codes.add(dim.varCode)
               // 从维度规则中提取变量
               ;(dim.rules || []).forEach(rule => {
@@ -344,10 +359,10 @@ export default {
         }
         case 'SCRIPT': {
           // QL脚本：inputVars + 从 script 内容提取变量引用
-          ;(model.inputVars || []).forEach(v => { if (v.varCode) codes.add(v.varCode) })
+          (model.inputVars || []).forEach(v => { if (v.varCode) codes.add(v.varCode) })
           if (model.script) {
             // 从脚本内容中提取变量引用（简单匹配）
-            const scriptVars = model.script.match(/[a-zA-Z_]\w*(?=\s*[!=<>+\-*/%()\[\]{}]|;|$)/g) || []
+            const scriptVars = model.script.match(/[a-zA-Z_]\w*(?=\s*[!=<>+\-*/%()[\]{}]|;|$)/g) || []
             scriptVars.forEach(v => codes.add(v))
           }
           break
@@ -367,14 +382,16 @@ export default {
       } else {
         if (obj.varCode) codes.add(obj.varCode)
         if (obj.conditionExpression) {
-          // 从条件表达式中提取变量名（简单处理）
-          const match = obj.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-          if (match) codes.add(match[1])
+          // 从条件表达式中提取变量名（支持复杂表达式）
+          if (typeof obj.conditionExpression === 'string') {
+            this.extractFromConditionExpression(obj.conditionExpression, codes)
+          } else {
+            this.extractAllVarCodes(obj.conditionExpression, codes)
+          }
         }
         if (obj.condition) {
           if (typeof obj.condition === 'string') {
-            const match = obj.condition.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-            if (match) codes.add(match[1])
+            this.extractFromConditionExpression(obj.condition, codes)
           } else {
             this.extractAllVarCodes(obj.condition, codes)
           }
@@ -407,25 +424,32 @@ export default {
     },
     /**
      * 从 conditionRoot 递归提取变量代码
+     * conditionRoot 是一个树形结构，type=leaf 时为叶子条件节点
      */
     extractFromConditionRoot(root, codes) {
       if (!root) return
+      // 叶子节点直接添加 varCode
       if (root.type === 'leaf' && root.varCode) {
         codes.add(root.varCode)
       }
       if (root.varCode) codes.add(root.varCode)
+      // conditionExpression：可能是完整表达式（如 "creditLevel >= 3"），用改进后的方法提取
       if (root.conditionExpression) {
-        const match = root.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-        if (match) codes.add(match[1])
+        if (typeof root.conditionExpression === 'string') {
+          this.extractFromConditionExpression(root.conditionExpression, codes)
+        } else {
+          this.extractAllVarCodes(root.conditionExpression, codes)
+        }
       }
+      // condition：可能是字符串表达式或对象结构
       if (root.condition) {
         if (typeof root.condition === 'string') {
-          const match = root.condition.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-          if (match) codes.add(match[1])
+          this.extractFromConditionExpression(root.condition, codes)
         } else {
           this.extractAllVarCodes(root.condition, codes)
         }
       }
+      // 递归处理子节点
       if (root.children) {
         root.children.forEach(child => this.extractFromConditionRoot(child, codes))
       }
@@ -436,9 +460,17 @@ export default {
     extractFromConditionExpression(expr, codes) {
       if (!expr || typeof expr !== 'string') return
       // 匹配变量名：字母或下划线开头，后面是字母数字下划线
-      // 排除常见的关键字和函数名
-      const keywords = ['true', 'false', 'null', 'undefined', 'NaN', 'Infinity', 'and', 'or', 'not']
-      const matches = expr.match(/[a-zA-Z_][a-zA-Z0-9_]*/g) || []
+      // 使用 \b 词边界避免匹配操作符片段（如 "ge" 来自 ">="，"le" 来自 "<="）
+      const keywords = [
+        'true', 'false', 'null', 'undefined', 'NaN', 'Infinity',
+        'and', 'or', 'not',
+        // QLExpress 比较操作符关键字
+        'lt', 'le', 'gt', 'ge', 'eq', 'ne',
+        // QLExpress 算术/逻辑关键字
+        'div', 'mod', 'in', 'between'
+      ]
+      const regex = /\b[a-zA-Z_][a-zA-Z0-9_]*\b/g
+      const matches = expr.match(regex) || []
       matches.forEach(v => {
         if (!keywords.includes(v)) {
           codes.add(v)
@@ -454,16 +486,18 @@ export default {
       nodes.forEach(node => {
         // 优先从 varCode 提取
         if (node.varCode) codes.add(node.varCode)
-        // 从 conditionExpression 提取（如 "loanApplyId == 1"）
+        // 从 conditionExpression 提取（如 "taxComplianceScore >= 80 && annualRevenue >= 3000"）
         if (node.conditionExpression) {
-          const match = node.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-          if (match) codes.add(match[1])
+          if (typeof node.conditionExpression === 'string') {
+            this.extractFromConditionExpression(node.conditionExpression, codes)
+          } else {
+            this.extractAllVarCodes(node.conditionExpression, codes)
+          }
         }
         // 从 condition 提取（可能是字符串或对象）
         if (node.condition) {
           if (typeof node.condition === 'string') {
-            const match = node.condition.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-            if (match) codes.add(match[1])
+            this.extractFromConditionExpression(node.condition, codes)
           } else {
             this.extractAllVarCodes(node.condition, codes)
           }
@@ -477,12 +511,15 @@ export default {
           this.extractFromTreeNodes(node.children, null, codes)
         }
       })
-      // 2. 从 edges 中提取条件表达式变量（如 "loanApplyId == 1"）
+      // 2. 从 edges 中提取条件表达式变量（如 "hasViolation == true"、"taxComplianceScore >= 80 && annualRevenue >= 3000"）
       if (edges) {
         edges.forEach(edge => {
           if (edge.conditionExpression) {
-            const match = edge.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-            if (match) codes.add(match[1])
+            if (typeof edge.conditionExpression === 'string') {
+              this.extractFromConditionExpression(edge.conditionExpression, codes)
+            } else {
+              this.extractAllVarCodes(edge.conditionExpression, codes)
+            }
           }
         })
       }
@@ -494,14 +531,17 @@ export default {
       if (!nodes) return
       nodes.forEach(node => {
         if (node.varCode) codes.add(node.varCode)
+        // 从 conditionExpression 提取（如 "age >= 18 && age < 60"）
         if (node.conditionExpression) {
-          const match = node.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-          if (match) codes.add(match[1])
+          if (typeof node.conditionExpression === 'string') {
+            this.extractFromConditionExpression(node.conditionExpression, codes)
+          } else {
+            this.extractAllVarCodes(node.conditionExpression, codes)
+          }
         }
         if (node.condition) {
           if (typeof node.condition === 'string') {
-            const match = node.condition.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-            if (match) codes.add(match[1])
+            this.extractFromConditionExpression(node.condition, codes)
           } else {
             this.extractAllVarCodes(node.condition, codes)
           }
@@ -521,12 +561,15 @@ export default {
           this.extractFromFlowNodes(node.children, null, codes)
         }
       })
-      // 从 edges 中提取条件表达式
+      // 从 edges 中提取条件表达式变量
       if (edges) {
         edges.forEach(edge => {
           if (edge.conditionExpression) {
-            const match = edge.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-            if (match) codes.add(match[1])
+            if (typeof edge.conditionExpression === 'string') {
+              this.extractFromConditionExpression(edge.conditionExpression, codes)
+            } else {
+              this.extractAllVarCodes(edge.conditionExpression, codes)
+            }
           }
         })
       }
@@ -542,11 +585,12 @@ export default {
         if (a.type === 'assign') {
           if (a.target) codes.add(a.target)
           if (a.value && typeof a.value === 'string') {
+            // 跳过字符串字面量（如 "\"D\""、"\"A\"" 等），避免将 "D"、"A" 等误提取为变量
+            if (/^["'].*["']$/.test(a.value.trim())) return
             // 从 value 表达式中提取变量名（如 "totalAmount / (1 + taxRate)"）
-            const vars = a.value.match(/[a-zA-Z_]\w*/g) || []
+            const vars = a.value.match(/\b[a-zA-Z_]\w*\b/g) || []
             vars.forEach(v => {
-              // 排除常见的关键字和函数名
-              if (!['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'].includes(v)) {
+              if (!['true', 'false', 'null', 'undefined', 'NaN', 'Infinity', 'and', 'or', 'not', 'lt', 'le', 'gt', 'ge', 'eq', 'ne', 'div', 'mod', 'in', 'between'].includes(v)) {
                 codes.add(v)
               }
             })
