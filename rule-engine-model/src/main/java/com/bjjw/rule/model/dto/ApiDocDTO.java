@@ -40,6 +40,14 @@ public class ApiDocDTO {
         private Integer status;
         private String statusLabel;
         private String modelJson;
+        /** 该规则的输入变量（完整定义） */
+        private java.util.List<VariableInfo> inputVariables;
+        /** 该规则的输出变量（完整定义） */
+        private java.util.List<VariableInfo> outputVariables;
+        /** 该规则的输入数据对象 */
+        private java.util.List<DataObjectInfo> inputDataObjects;
+        /** 该规则的输出数据对象 */
+        private java.util.List<DataObjectInfo> outputDataObjects;
     }
 
     @Data

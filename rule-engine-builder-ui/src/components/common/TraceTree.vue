@@ -467,7 +467,6 @@ export default {
       var stmts = this._getStatements()
       var items = []
       var running = 0
-      var self = this
       for (var i = 0; i < stmts.length; i++) {
         var s = stmts[i]
         if (s.type === 'OPERATOR' && s.token === '=' && items.length === 0) {
@@ -523,7 +522,6 @@ export default {
       var items = []
       var running = 0
       var resCode = null
-      var self = this
       var i = 0
 
       while (i < stmts.length) {
@@ -540,15 +538,15 @@ export default {
       }
 
       while (i < stmts.length) {
-        var s = stmts[i]
-        if (!s) { i++; continue }
+        var stmt = stmts[i]
+        if (!stmt) { i++; continue }
 
-        if (s.type === 'OPERATOR' && s.token === '=' && s.children && s.children[0]) {
-          var varName = s.children[0].token
+        if (stmt.type === 'OPERATOR' && stmt.token === '=' && stmt.children && stmt.children[0]) {
+          var varName = stmt.children[0].token
           if (varName && varName.indexOf('_dim_') === 0) {
             var nextStmt = (i + 1 < stmts.length) ? stmts[i + 1] : null
             if (nextStmt && nextStmt.type === 'IF') {
-              var dimItems = this._walkScoreAdvChain(nextStmt, varName, running)
+              var dimItems = this._walkScoreAdvChain(nextStmt, varName)
               var dimHitScore = 0
               var anyHit = false
               for (var d = 0; d < dimItems.length; d++) {
@@ -574,11 +572,11 @@ export default {
           continue
         }
 
-        if (s.type === 'IF') {
-          var assigns = this._extractAssigns(s.children && s.children[1])
+        if (stmt.type === 'IF') {
+          var assigns = this._extractAssigns(stmt.children && stmt.children[1])
           if (assigns.length > 0 && assigns[0].varName !== resCode) {
             var levelVarName = assigns[0].varName
-            var condR = s.children && s.children[0]
+            var condR = stmt.children && stmt.children[0]
             var hitR = condR && condR.value === true
             var rv = hitR ? this._fv(assigns[0].value) : this._findThresholdResult(stmts, i)
             items.push({
@@ -642,9 +640,9 @@ export default {
         if (items[i].isResult) return items[i].subtotalDisplay
       }
       var running = 0
-      for (var i = 0; i < items.length; i++) {
-        if (items[i].hit && items[i].subtotalDisplay !== '-') {
-          running = Number(items[i].subtotalDisplay)
+      for (var r = 0; r < items.length; r++) {
+        if (items[r].hit && items[r].subtotalDisplay !== '-') {
+          running = Number(items[r].subtotalDisplay)
         }
       }
       return running || null
@@ -818,9 +816,9 @@ export default {
         nodeMap[nodes[i].id] = nodes[i]
         outEdgeMap[nodes[i].id] = []
       }
-      for (var i = 0; i < edges.length; i++) {
-        if (!outEdgeMap[edges[i].source]) outEdgeMap[edges[i].source] = []
-        outEdgeMap[edges[i].source].push(edges[i])
+      for (var j = 0; j < edges.length; j++) {
+        if (!outEdgeMap[edges[j].source]) outEdgeMap[edges[j].source] = []
+        outEdgeMap[edges[j].source].push(edges[j])
       }
       var startId = null
       for (var k in nodeMap) { if (nodeMap[k].type === 'start') { startId = k; break } }
@@ -920,9 +918,9 @@ export default {
         nodeMap[nodes[i].id] = nodes[i]
         outEdgeMap[nodes[i].id] = []
       }
-      for (var i = 0; i < edges.length; i++) {
-        if (!outEdgeMap[edges[i].source]) outEdgeMap[edges[i].source] = []
-        outEdgeMap[edges[i].source].push(edges[i])
+      for (var j = 0; j < edges.length; j++) {
+        if (!outEdgeMap[edges[j].source]) outEdgeMap[edges[j].source] = []
+        outEdgeMap[edges[j].source].push(edges[j])
       }
       var startId = null
       for (var k in nodeMap) { if (nodeMap[k].type === 'start') { startId = k; break } }
@@ -942,7 +940,7 @@ export default {
           result.push({ type: 'decision', name: nd.name || '' })
           current = this._findGraphMerge(current, outEdgeMap, nodeMap)
         } else {
-          var outs = outEdgeMap[current] || []
+          outs = outEdgeMap[current] || []
           current = outs.length > 0 ? outs[0].target : null
         }
       }
@@ -1212,7 +1210,6 @@ export default {
     },
     _extractAssigns: function (block) {
       var acts = []
-      var self = this
       var walk = function (n) {
         if (!n) return
         if (n.type === 'OPERATOR' && n.token === '=') {
@@ -1242,7 +1239,6 @@ export default {
       return rhs.value !== undefined ? rhs.value : 0
     },
     _getScoreDelta: function (thenBlock) {
-      var self = this
       var delta = 0
       var walk = function (n) {
         if (!n) return
@@ -1261,12 +1257,11 @@ export default {
       return delta
     },
     /** 遍历复杂评分卡同维度 if/else if 完整链（含未求值分支） */
-    _walkScoreAdvChain: function (ifNode, dimVarName, currentRunning) {
+    _walkScoreAdvChain: function (ifNode, dimVarName) {
       var items = []
       var current = ifNode
       var dimName = null
       var inputValue = null
-      var self = this
 
       while (current && current.type === 'IF') {
         var ch = current.children || []
@@ -1476,11 +1471,11 @@ export default {
         }
       }
       var edgeLabels = []
-      for (var i = 0; i < condEdges.length; i++) {
-        var e = condEdges[i]
-        var targetNd = nodeMap[e.target]
+      for (var k = 0; k < condEdges.length; k++) {
+        var e2 = condEdges[k]
+        var targetNd = nodeMap[e2.target]
         edgeLabels.push({
-          name: e.name || '',
+          name: e2.name || '',
           targetName: targetNd && targetNd.type === 'task' ? (targetNd.name || '') : '',
           isLeaf: targetNd && targetNd.type === 'task'
         })
@@ -1494,15 +1489,15 @@ export default {
         })
       }
       result.push({ name: nd.name || '', edges: edgeLabels })
-      for (var i = 0; i < condEdges.length; i++) {
-        var targetNd = nodeMap[condEdges[i].target]
-        if (targetNd && targetNd.type === 'decision') {
-          this._walkTreeGraph(condEdges[i].target, nodeMap, outEdgeMap, result)
+      for (var j = 0; j < condEdges.length; j++) {
+        var tgtNd2 = nodeMap[condEdges[j].target]
+        if (tgtNd2 && tgtNd2.type === 'decision') {
+          this._walkTreeGraph(condEdges[j].target, nodeMap, outEdgeMap, result)
         }
       }
       if (defaultEdge) {
-        var defTarget = nodeMap[defaultEdge.target]
-        if (defTarget && defTarget.type === 'decision') {
+        var defTarget2 = nodeMap[defaultEdge.target]
+        if (defTarget2 && defTarget2.type === 'decision') {
           this._walkTreeGraph(defaultEdge.target, nodeMap, outEdgeMap, result)
         }
       }
@@ -1672,7 +1667,6 @@ export default {
       var comps = this._flattenAnd(condNode)
       if (comps.length > 0 && comps[0].children && comps[0].children.length === 2) {
         var vn = comps[0].children[0].token || ''
-        var val = comps[0].children[1] ? comps[0].children[1].value : ''
         var parts = []
         for (var i = 0; i < comps.length; i++) {
           if (comps[i].children && comps[i].children[1]) {
@@ -2040,17 +2034,17 @@ export default {
         branchSets.push(reachable)
       }
       var firstKeys = Object.keys(branchSets[0])
-      for (var i = 0; i < firstKeys.length; i++) {
-        var nid = firstKeys[i]
-        var ok = true
-        for (var j = 1; j < branchSets.length; j++) { if (!branchSets[j][nid]) { ok = false; break } }
-        if (ok && nodeMap[nid] && nodeMap[nid].type === 'join') return nid
+      for (var ii = 0; ii < firstKeys.length; ii++) {
+        var nid2 = firstKeys[ii]
+        var ok2 = true
+        for (var jj = 1; jj < branchSets.length; jj++) { if (!branchSets[jj][nid2]) { ok2 = false; break } }
+        if (ok2 && nodeMap[nid2] && nodeMap[nid2].type === 'join') return nid2
       }
-      for (var i = 0; i < firstKeys.length; i++) {
-        var nid = firstKeys[i]
-        var ok = true
-        for (var j = 1; j < branchSets.length; j++) { if (!branchSets[j][nid]) { ok = false; break } }
-        if (ok) return nid
+      for (var kk = 0; kk < firstKeys.length; kk++) {
+        var nid3 = firstKeys[kk]
+        var ok3 = true
+        for (var mm = 1; mm < branchSets.length; mm++) { if (!branchSets[mm][nid3]) { ok3 = false; break } }
+        if (ok3) return nid3
       }
       return null
     },

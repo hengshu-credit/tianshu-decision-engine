@@ -352,7 +352,7 @@ export default {
         })
       })
 
-      (this.model.rules || []).forEach(rule => {
+      ;(this.model.rules || []).forEach(rule => {
         (rule.actions || []).forEach(item => {
           if (item && item.varCode && this.syncVarItem(item)) changed = true
         })

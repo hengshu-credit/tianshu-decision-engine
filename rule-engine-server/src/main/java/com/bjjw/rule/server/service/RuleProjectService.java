@@ -14,7 +14,6 @@ import org.springframework.util.StringUtils;
 
 import javax.annotation.Resource;
 import java.util.*;
-import java.util.stream.Collectors;
 
 @Slf4j
 @Service
@@ -146,6 +145,9 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     @Resource
     private com.bjjw.rule.server.mapper.RuleFunctionMapper functionMapper;
 
+    @Resource
+    private RuleModelVarParser ruleModelVarParser;
+
     /**
      * 导出项目API文档
      */
@@ -165,44 +167,14 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         projectInfo.setStatus(project.getStatus());
         doc.setProject(projectInfo);
 
-        // 规则列表
-        List<RuleDefinition> definitions = definitionMapper.selectList(
-                new LambdaQueryWrapper<RuleDefinition>()
-                        .eq(RuleDefinition::getProjectId, projectId)
-                        .eq(RuleDefinition::getStatus, 1)
-                        .orderByDesc(RuleDefinition::getCreateTime));
-        List<ApiDocDTO.RuleInfo> ruleInfos = new ArrayList<>();
-        for (RuleDefinition def : definitions) {
-            ApiDocDTO.RuleInfo ruleInfo = new ApiDocDTO.RuleInfo();
-            ruleInfo.setId(def.getId());
-            ruleInfo.setRuleCode(def.getRuleCode());
-            ruleInfo.setRuleName(def.getRuleName());
-            ruleInfo.setModelType(def.getModelType());
-            ruleInfo.setModelTypeLabel(getModelTypeLabel(def.getModelType()));
-            ruleInfo.setDescription(def.getDescription());
-            ruleInfo.setCurrentVersion(def.getCurrentVersion());
-            ruleInfo.setPublishedVersion(def.getPublishedVersion());
-            ruleInfo.setStatus(def.getStatus());
-            ruleInfo.setStatusLabel(getStatusLabel(def.getStatus()));
-
-            // 获取模型JSON
-            RuleDefinitionContent content = contentMapper.selectOne(
-                    new LambdaQueryWrapper<RuleDefinitionContent>()
-                            .eq(RuleDefinitionContent::getDefinitionId, def.getId()));
-            if (content != null) {
-                ruleInfo.setModelJson(content.getModelJson());
-            }
-            ruleInfos.add(ruleInfo);
-        }
-        doc.setRules(ruleInfos);
-
-        // 变量列表
+        // ========== 1. 先构建变量列表和 Map ==========
         List<RuleVariable> variables = variableMapper.selectList(
                 new LambdaQueryWrapper<RuleVariable>()
                         .eq(RuleVariable::getProjectId, projectId)
                         .eq(RuleVariable::getStatus, 1)
                         .orderByAsc(RuleVariable::getSortOrder));
         List<ApiDocDTO.VariableInfo> varInfos = new ArrayList<>();
+        java.util.Map<String, ApiDocDTO.VariableInfo> varCodeMap = new java.util.HashMap<>();
         for (RuleVariable var : variables) {
             ApiDocDTO.VariableInfo varInfo = new ApiDocDTO.VariableInfo();
             varInfo.setId(var.getId());
@@ -218,10 +190,11 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             varInfo.setDescription(var.getDescription());
             varInfo.setScriptName(var.getScriptName());
             varInfos.add(varInfo);
+            varCodeMap.put(var.getVarCode(), varInfo);
         }
         doc.setVariables(varInfos);
 
-        // 数据对象列表
+        // ========== 2. 构建数据对象列表和 Map ==========
         List<RuleDataObject> dataObjects = dataObjectMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObject>()
                         .eq(RuleDataObject::getProjectId, projectId)
@@ -262,6 +235,96 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             doInfos.add(doInfo);
         }
         doc.setDataObjects(doInfos);
+
+        // ========== 3. 处理规则列表 ==========
+        List<RuleDefinition> definitions = definitionMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinition>()
+                        .eq(RuleDefinition::getProjectId, projectId)
+                        .eq(RuleDefinition::getStatus, 1)
+                        .orderByDesc(RuleDefinition::getCreateTime));
+        List<ApiDocDTO.RuleInfo> ruleInfos = new ArrayList<>();
+        for (RuleDefinition def : definitions) {
+            ApiDocDTO.RuleInfo ruleInfo = new ApiDocDTO.RuleInfo();
+            ruleInfo.setId(def.getId());
+            ruleInfo.setRuleCode(def.getRuleCode());
+            ruleInfo.setRuleName(def.getRuleName());
+            ruleInfo.setModelType(def.getModelType());
+            ruleInfo.setModelTypeLabel(getModelTypeLabel(def.getModelType()));
+            ruleInfo.setDescription(def.getDescription());
+            ruleInfo.setCurrentVersion(def.getCurrentVersion());
+            ruleInfo.setPublishedVersion(def.getPublishedVersion());
+            ruleInfo.setStatus(def.getStatus());
+            ruleInfo.setStatusLabel(getStatusLabel(def.getStatus()));
+
+            // 获取模型JSON
+            RuleDefinitionContent content = contentMapper.selectOne(
+                    new LambdaQueryWrapper<RuleDefinitionContent>()
+                            .eq(RuleDefinitionContent::getDefinitionId, def.getId()));
+            String modelJson = null;
+            if (content != null) {
+                modelJson = content.getModelJson();
+                ruleInfo.setModelJson(modelJson);
+            }
+
+            // 解析模型的出入参变量代码
+            RuleModelVarParser.ParseResult parseResult = ruleModelVarParser.parse(modelJson, def.getModelType());
+            Set<String> inputCodes = parseResult.getInputCodes();
+            Set<String> outputCodes = parseResult.getOutputCodes();
+
+            // 根据代码匹配完整的变量信息（输入）
+            List<ApiDocDTO.VariableInfo> inputVars = new ArrayList<>();
+            for (String code : inputCodes) {
+                ApiDocDTO.VariableInfo vi = varCodeMap.get(code);
+                if (vi != null) {
+                    inputVars.add(vi);
+                }
+            }
+            ruleInfo.setInputVariables(inputVars);
+
+            // 根据代码匹配完整的变量信息（输出）
+            List<ApiDocDTO.VariableInfo> outputVars = new ArrayList<>();
+            for (String code : outputCodes) {
+                ApiDocDTO.VariableInfo vi = varCodeMap.get(code);
+                if (vi != null) {
+                    outputVars.add(vi);
+                }
+            }
+            ruleInfo.setOutputVariables(outputVars);
+
+            // 根据变量代码推断输入/输出数据对象
+            List<ApiDocDTO.DataObjectInfo> inputDOs = new ArrayList<>();
+            List<ApiDocDTO.DataObjectInfo> outputDOs = new ArrayList<>();
+            for (ApiDocDTO.DataObjectInfo doi : doInfos) {
+                String objType = doi.getObjectType();
+                if ("INPUT".equals(objType) || "INOUT".equals(objType)) {
+                    boolean hasInputField = false;
+                    boolean hasOutputField = false;
+                    List<ApiDocDTO.FieldInfo> fields = doi.getFields();
+                    if (fields != null) {
+                        for (ApiDocDTO.FieldInfo f : fields) {
+                            if (inputCodes.contains(f.getVarCode())) hasInputField = true;
+                            if (outputCodes.contains(f.getVarCode())) hasOutputField = true;
+                        }
+                    }
+                    if (hasInputField) inputDOs.add(doi);
+                    if (hasOutputField) outputDOs.add(doi);
+                } else if ("OUTPUT".equals(objType) || "INOUT".equals(objType)) {
+                    boolean hasOutputField = false;
+                    List<ApiDocDTO.FieldInfo> fields = doi.getFields();
+                    if (fields != null) {
+                        for (ApiDocDTO.FieldInfo f : fields) {
+                            if (outputCodes.contains(f.getVarCode())) hasOutputField = true;
+                        }
+                    }
+                    if (hasOutputField) outputDOs.add(doi);
+                }
+            }
+            ruleInfo.setInputDataObjects(inputDOs);
+            ruleInfo.setOutputDataObjects(outputDOs);
+
+            ruleInfos.add(ruleInfo);
+        }
+        doc.setRules(ruleInfos);
 
         // 自定义函数列表
         List<RuleFunction> functions = functionMapper.selectList(

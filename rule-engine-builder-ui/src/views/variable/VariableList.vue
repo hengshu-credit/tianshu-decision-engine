@@ -1280,7 +1280,7 @@ export default {
     },
 
     // ── Project Select ──
-    onProjectChange(_val) {
+    onProjectChange() {
       this.loadData()
       this.loadConstants()
     },

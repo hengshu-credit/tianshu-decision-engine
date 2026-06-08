@@ -174,20 +174,19 @@ export default {
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       }
 
-      // 生成每个规则的请求示例JSON（参考规则测试的请求格式）
-      const generateRequestExample = (rule, variables, dataObjects) => {
+      // 生成每个规则的请求示例JSON（使用该规则的实际输入变量）
+      const generateRequestExample = (rule) => {
         const params = {}
-        // 收集输入变量
-        variables.filter(v => v.varSource === 'INPUT' || v.varSource === 'COMPUTED').forEach(v => {
+        // 收集输入变量（使用该规则解析出的 inputVariables）
+        ;(rule.inputVariables || []).forEach(v => {
           let val = v.exampleValue || v.defaultValue || null
-          // 根据类型设置合适的示例值
           if (v.varType === 'NUMBER') val = val !== null && val !== '' ? Number(val) : null
           else if (v.varType === 'BOOLEAN') val = val === 'true'
           else if (v.varType === 'STRING' && !val) val = ''
           params[v.varCode] = val
         })
-        // 收集数据对象字段
-        dataObjects.filter(o => o.objectType === 'INPUT' || o.objectType === 'INOUT').forEach(obj => {
+        // 收集输入数据对象字段
+        ;(rule.inputDataObjects || []).forEach(obj => {
           const nested = {}
           ;(obj.fields || []).forEach(f => {
             nested[f.varCode] = f.varType === 'STRING' ? '' : null
@@ -200,11 +199,10 @@ export default {
         }, null, 2)
       }
 
-      // 生成响应示例JSON（参考规则测试的响应格式）
-      const generateResponseExample = (rule, dataObjects) => {
+      // 生成响应示例JSON（使用该规则的实际输出数据对象）
+      const generateResponseExample = (rule) => {
         const resultObj = {}
-        // 收集输出对象
-        dataObjects.filter(o => o.objectType === 'OUTPUT' || o.objectType === 'INOUT').forEach(obj => {
+        ;(rule.outputDataObjects || []).forEach(obj => {
           const nested = {}
           ;(obj.fields || []).forEach(f => {
             nested[f.varCode] = f.varType === 'STRING' ? '' : null
@@ -216,11 +214,7 @@ export default {
           result: resultObj,
           executeTimeMs: 15,
           traces: [
-            {
-              nodeName: '开始',
-              expression: null,
-              result: null
-            }
+            { nodeName: '开始', expression: null, result: null }
           ]
         }, null, 2)
       }
@@ -235,11 +229,11 @@ export default {
 
       // 生成右侧内容区HTML
       const contentPanels = doc.rules.map((rule, idx) => {
-        const requestExample = generateRequestExample(rule, doc.variables || [], doc.dataObjects || [])
-        const responseExample = generateResponseExample(rule, doc.dataObjects || [])
+        const requestExample = generateRequestExample(rule)
+        const responseExample = generateResponseExample(rule)
 
-        // 收集输入参数（变量）
-        const inputVars = (doc.variables || []).filter(v => v.varSource === 'INPUT' || v.varSource === 'COMPUTED')
+        // 收集输入参数（使用该规则解析出的 inputVariables）
+        const inputVars = rule.inputVariables || []
         const inputParams = inputVars.map(v =>
           `<tr>
             <td><code>params.${escapeHtml(v.varCode)}</code></td>
@@ -252,8 +246,7 @@ export default {
         ).join('')
 
         // 收集输入数据对象
-        const inputObjects = (doc.dataObjects || []).filter(o => o.objectType === 'INPUT' || o.objectType === 'INOUT')
-        const inputObjRows = inputObjects.map(obj =>
+        const inputObjRows = (rule.inputDataObjects || []).map(obj =>
           `<div class="sub-title">${escapeHtml(obj.objectLabel || obj.objectCode)} <span class="code">${escapeHtml(obj.objectCode)}</span></div>
           <table class="param-table">
             <thead><tr><th>参数名</th><th>类型</th><th>说明</th></tr></thead>
@@ -266,8 +259,7 @@ export default {
         ).join('')
 
         // 收集输出数据对象
-        const outputObjects = (doc.dataObjects || []).filter(o => o.objectType === 'OUTPUT' || o.objectType === 'INOUT')
-        const outputObjRows = outputObjects.map(obj =>
+        const outputObjRows = (rule.outputDataObjects || []).map(obj =>
           `<div class="sub-title">${escapeHtml(obj.objectLabel || obj.objectCode)} <span class="code">${escapeHtml(obj.objectCode)}</span></div>
           <table class="param-table">
             <thead><tr><th>参数名</th><th>类型</th><th>说明</th></tr></thead>
