@@ -53,6 +53,51 @@ CREATE TABLE IF NOT EXISTS `rule_definition` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则定义表';
 
 -- ============================================================
+-- 2.1 rule_definition_input_field - 规则输入字段表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
+  `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（原始名称）',
+  `field_label`      VARCHAR(128) DEFAULT NULL             COMMENT '字段中文名称',
+  `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
+  `field_type`       VARCHAR(32)  DEFAULT NULL             COMMENT '数据类型：STRING/NUMBER/INTEGER/DOUBLE/BOOLEAN/DATE',
+  `missing_value`    VARCHAR(256) DEFAULT NULL             COMMENT '缺失值处理策略',
+  `default_value`    VARCHAR(256) DEFAULT NULL             COMMENT '默认值',
+  `valid_values`     TEXT         DEFAULT NULL             COMMENT '有效值列表（JSON数组）',
+  `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '转换类型：NONE/NORMALIZE/DISCRETIZE/MAPVALUES/MINMAX',
+  `transform_params` JSON         DEFAULT NULL             COMMENT '转换参数',
+  `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
+  `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
+  `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_definition_id` (`definition_id`),
+  KEY `idx_var_id` (`var_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输入字段表';
+
+-- ============================================================
+-- 2.2 rule_definition_output_field - 规则输出字段表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
+  `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（输出变量名）',
+  `field_label`      VARCHAR(128) DEFAULT NULL             COMMENT '字段中文名称',
+  `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
+  `field_type`       VARCHAR(32)  DEFAULT NULL             COMMENT '字段类型：STRING/NUMBER/INTEGER/DOUBLE',
+  `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '转换方法：NONE/RENAME/SCALE/OHE',
+  `transform_params` JSON         DEFAULT NULL             COMMENT '转换参数',
+  `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
+  `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
+  `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_definition_id` (`definition_id`),
+  KEY `idx_var_id` (`var_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输出字段表';
+
+-- ============================================================
 -- 3. rule_definition_content - 规则内容表（设计态）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_content` (

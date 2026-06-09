@@ -33,6 +33,10 @@ export function getVariableTree(projectId) {
   return request({ url: `/rule/dataobject/tree/${projectId}`, method: 'get' })
 }
 
+export function createOrUpdateDataObject(obj) {
+  return request({ url: '/rule/dataobject', method: 'post', data: obj })
+}
+
 export function updateObjectType(id, objectType) {
   return request({ url: `/rule/dataobject/${id}/type`, method: 'put', data: { objectType } })
 }

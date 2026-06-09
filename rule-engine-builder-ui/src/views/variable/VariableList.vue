@@ -17,7 +17,7 @@
           </el-dropdown-menu>
         </el-dropdown>
         <el-button size="small" icon="el-icon-plus" @click="handlePrimaryCreate">{{ primaryCreateLabel }}</el-button>
-        <el-button size="small" icon="el-icon-video-play" type="warning" @click="handleBatchValidate" :loading="validating">验证规则</el-button>
+        <el-button size="small" icon="el-icon-video-play" type="warning" style="margin-left: 0;" @click="handleBatchValidate" :loading="validating">验证规则</el-button>
       </div>
     </div>
 
@@ -66,7 +66,6 @@
 
         <!-- 1. 普通变量（系统新增） -->
         <div v-if="standaloneVars.length > 0" class="var-list-section">
-          <div class="section-title">普通变量</div>
           <el-table :data="standaloneVars" border size="small" v-loading="loading" style="width:100%;">
             <el-table-column label="作用范围" width="90" align="center">
               <template slot-scope="{ row }">
@@ -142,7 +141,7 @@
           <el-button type="primary" @click="onObjFilterChange">查询</el-button>
           <el-button @click="resetObjQuery">重置</el-button>
         </div>
-        <div v-if="filteredObjectTree.length===0 && !objLoading" class="tab-empty">暂无数据对象，点击「批量导入」导入 Java、JSON 或 DDL</div>
+        <div v-if="filteredObjectTree.length===0 && !objLoading" class="tab-empty">暂无数据对象，点击「新建对象」或「批量导入」添加</div>
         <div v-else v-loading="objLoading">
           <div v-for="node in paginatedObjectTree" :key="node.object.id" class="var-group-card">
             <div class="var-group-header" @click="toggleObjectExpand(node)">
@@ -160,6 +159,7 @@
               <el-tag size="mini" :type="objTypeColor(node.object.objectType)">{{ objTypeLabel(node.object.objectType) }}</el-tag>
               <el-tag size="mini" type="info" v-if="node.object.sourceType">{{ node.object.sourceType }}</el-tag>
               <span class="var-group-count">{{ node.variables.length }} 个字段</span>
+              <el-button type="text" size="small" icon="el-icon-edit" @click.stop="handleEditObject(node.object)">编辑</el-button>
               <el-button type="text" size="small" icon="el-icon-plus" style="margin-left:auto;" @click.stop="handleAddObjectField(node)">添加字段</el-button>
               <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click.stop="handleDeleteObject(node.object)" />
             </div>
@@ -311,6 +311,54 @@
       <div slot="footer">
         <el-button size="small" @click="dialogVisible=false">取消</el-button>
         <el-button size="small" type="primary" @click="handleSubmit">确定</el-button>
+      </div>
+    </el-dialog>
+
+    <!-- Create/Edit Data Object Dialog -->
+    <el-dialog :title="objectDialogTitle" :visible.sync="objectDialogVisible" width="560px" :close-on-click-modal="false">
+      <el-form ref="objForm" :model="objectForm" :rules="objectRules" label-width="110px" size="small">
+        <el-form-item label="对象编码" prop="objectCode">
+          <el-input v-model="objectForm.objectCode" placeholder="英文标识，如 TaxRequest" :disabled="!!objectForm.id" />
+        </el-form-item>
+        <el-form-item label="对象名称" prop="objectLabel">
+          <el-input v-model="objectForm.objectLabel" placeholder="中文名称，如 税务请求" />
+        </el-form-item>
+        <el-form-item label="脚本名称" prop="scriptName">
+          <el-input v-model="objectForm.scriptName" placeholder="QLExpress 脚本中的引用名，如 taxRequest" />
+        </el-form-item>
+        <el-form-item label="作用范围">
+          <el-select v-model="objectForm.scope" style="width:100%;" @change="onObjScopeChange">
+            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
+            <el-option label="📁 项目级" value="PROJECT" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="objectForm.scope === 'PROJECT'" label="所属项目" prop="projectId">
+          <el-select v-model="objectForm.projectId" placeholder="请选择项目" style="width:100%;" filterable>
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="对象类型">
+          <el-radio-group v-model="objectForm.objectType">
+            <el-radio label="INPUT">输入对象</el-radio>
+            <el-radio label="OUTPUT">输出对象</el-radio>
+            <el-radio label="INOUT">输入输出</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="来源类型">
+          <el-select v-model="objectForm.sourceType" style="width:100%;">
+            <el-option label="Java 实体" value="JAVA" />
+            <el-option label="JSON" value="JSON" />
+            <el-option label="DDL" value="DDL" />
+            <el-option label="手动" value="MANUAL" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="objectForm.description" type="textarea" :rows="2" placeholder="对象说明" />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="objectDialogVisible=false">取消</el-button>
+        <el-button size="small" type="primary" @click="handleObjectSubmit">确定</el-button>
       </div>
     </el-dialog>
 
@@ -539,7 +587,7 @@
 import { listVariables, createVariable, updateVariable, deleteVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import request from '@/api/request'
-import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions } from '@/api/dataObject'
+import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 
 export default {
@@ -610,6 +658,15 @@ export default {
       isConstantCreate: false,
       /** 枚举选项弹窗：当前为对象字段上的 ENUM */
       optionTargetIsField: false,
+
+      // Data Object Dialog
+      objectDialogVisible: false,
+      objectForm: { id: null, objectCode: '', objectLabel: '', scriptName: '', scope: 'PROJECT', projectId: '', objectType: 'INPUT', sourceType: 'MANUAL', description: '' },
+      objectRules: {
+        objectCode: [{ required: true, message: '请输入对象编码', trigger: 'blur' }],
+        objectLabel: [{ required: true, message: '请输入对象名称', trigger: 'blur' }],
+        projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }]
+      },
 
       // Import
       importing: false,
@@ -682,7 +739,9 @@ export default {
       })
     },
     primaryCreateLabel() {
-      return this.activeTab === 'constants' ? '新建常量' : '新建变量'
+      if (this.activeTab === 'constants') return '新建常量'
+      if (this.activeTab === 'objects') return '新建对象'
+      return '新建变量'
     },
     /** 变量/对象字段/常量 弹窗标题 */
     variableDialogTitle() {
@@ -690,6 +749,10 @@ export default {
       if (this.form.id) return '编辑变量'
       if (this.isConstantCreate) return '新建常量'
       return '新建变量'
+    },
+    /** 数据对象弹窗标题 */
+    objectDialogTitle() {
+      return this.objectForm.id ? '编辑数据对象' : '新建数据对象'
     }
   },
   methods: {
@@ -926,6 +989,41 @@ export default {
       this.loadObjectTree()
       this.loadData()
     },
+    /** 新建数据对象（从工具栏按钮） */
+    handleCreateObject() {
+      this.objectForm = { id: null, objectCode: '', objectLabel: '', scriptName: '', scope: this.currentProjectId ? 'PROJECT' : 'GLOBAL', projectId: this.currentProjectId || '', objectType: 'INPUT', sourceType: 'MANUAL', description: '' }
+      this.objectDialogVisible = true
+      this.$nextTick(() => { if (this.$refs.objForm) this.$refs.objForm.clearValidate() })
+    },
+    /** 编辑数据对象（从行内操作） */
+    handleEditObject(obj) {
+      this.objectForm = { id: obj.id, objectCode: obj.objectCode, objectLabel: obj.objectLabel || '', scriptName: obj.scriptName || '', scope: obj.scope || 'PROJECT', projectId: obj.projectId || '', objectType: obj.objectType || 'INPUT', sourceType: obj.sourceType || 'MANUAL', description: obj.description || '' }
+      this.objectDialogVisible = true
+      this.$nextTick(() => { if (this.$refs.objForm) this.$refs.objForm.clearValidate() })
+    },
+    /** 切换数据对象 scope 时清空项目 */
+    onObjScopeChange(val) {
+      if (val === 'GLOBAL') this.objectForm.projectId = ''
+    },
+    /** 提交数据对象表单 */
+    handleObjectSubmit() {
+      this.$refs.objForm.validate(async (valid) => {
+        if (!valid) return
+        if (this.objectForm.scope === 'PROJECT' && !this.objectForm.projectId) {
+          this.$message.warning('请选择所属项目')
+          return
+        }
+        try {
+          await createOrUpdateDataObject(this.objectForm)
+          this.$message.success('操作成功')
+          this.objectDialogVisible = false
+          this.objPageNum = 1
+          this.loadObjectTree()
+        } catch (e) {
+          this.$message.error('保存失败: ' + (e.message || ''))
+        }
+      })
+    },
     /**
      * 在指定数据对象下新建字段（写入 rule_data_object_field）。
      */
@@ -1043,7 +1141,7 @@ export default {
 
     // ── CRUD ──
     /**
-     * 顶部「新建」：变量列表新建变量；常量列表新建常量。
+     * 顶部「新建」：变量列表新建变量；常量列表新建常量；数据对象列表新建对象。
      */
     handlePrimaryCreate() {
       if (this.activeTab === 'constants') {
@@ -1061,6 +1159,10 @@ export default {
         }
         this.dialogVisible = true
         this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
+        return
+      }
+      if (this.activeTab === 'objects') {
+        this.handleCreateObject()
         return
       }
       this.handleCreate()

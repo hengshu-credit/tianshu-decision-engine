@@ -15,3 +15,5 @@ rule-engine-builder-ui/node_modules/
 .harness
 rule_examples
 常用命令.txt
+rule-engine-mysql/data
+rule-engine-redis/data

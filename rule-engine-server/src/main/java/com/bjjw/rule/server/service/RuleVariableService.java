@@ -231,6 +231,16 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         if (entity.getScope() == null || entity.getScope().isEmpty()) {
             entity.setScope(SCOPE_PROJECT);
         }
+        // upsert：先查是否存在，存在则更新（保留 id），不存在则插入
+        LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RuleVariable::getScope, entity.getScope())
+               .eq(RuleVariable::getProjectId, entity.getProjectId())
+               .eq(RuleVariable::getVarCode, entity.getVarCode());
+        RuleVariable existing = getBaseMapper().selectOne(wrapper);
+        if (existing != null) {
+            entity.setId(existing.getId());
+            return super.updateById(entity);
+        }
         return super.save(entity);
     }
 

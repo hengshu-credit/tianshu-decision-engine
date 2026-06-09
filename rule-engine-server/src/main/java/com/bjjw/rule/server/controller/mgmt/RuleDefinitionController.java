@@ -2,9 +2,7 @@ package com.bjjw.rule.server.controller.mgmt;
 
 import com.bjjw.rule.core.compiler.CompileResult;
 import com.bjjw.rule.model.dto.RuleResult;
-import com.bjjw.rule.model.entity.RuleDefinition;
-import com.bjjw.rule.model.entity.RuleDefinitionContent;
-import com.bjjw.rule.model.entity.RuleDefinitionRef;
+import com.bjjw.rule.model.entity.*;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleCompileService;
 import com.bjjw.rule.server.service.RuleDefinitionService;
@@ -15,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.Collections;
+import java.util.List;
 import java.util.Map;
 
 @RestController

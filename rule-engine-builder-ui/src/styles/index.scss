@@ -57,7 +57,9 @@ body {
   align-items: center;
 
   .btn-left { flex: 0 0 auto; }
-  .btn-right { flex: 0 0 auto; margin-left: auto; }
+  .btn-right { flex: 0 0 auto; margin-left: auto; display: flex; align-items: center;
+    > *:not(:last-child) { margin-right: 8px; }
+  }
 }
 
 .uiue-card {

@@ -1,26 +1,45 @@
 package com.bjjw.rule.server.service;
 
-import com.bjjw.rule.model.entity.RuleDefinition;
-import com.bjjw.rule.model.entity.RuleDefinitionContent;
-import com.bjjw.rule.model.entity.RuleDefinitionRef;
-import com.bjjw.rule.model.entity.RuleProject;
-import com.bjjw.rule.model.entity.RulePublished;
+import com.bjjw.rule.model.entity.*;
 import com.bjjw.rule.model.dto.RulePushMessage;
-import com.bjjw.rule.server.mapper.RuleDefinitionContentMapper;
-import com.bjjw.rule.server.mapper.RuleDefinitionMapper;
-import com.bjjw.rule.server.mapper.RuleDefinitionRefMapper;
-import com.bjjw.rule.server.mapper.RulePublishedMapper;
+import com.bjjw.rule.server.mapper.*;
 import com.bjjw.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.alibaba.fastjson.JSON;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+
+@Service
+public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
+
+    @Resource
+    private RuleDefinitionContentMapper contentMapper;
+
+    @Resource
+    private RulePublishedMapper publishedMapper;
+
+    @Resource
+    private RulePushService pushService;
+
+    @Resource
+    private RuleProjectService projectService;
+
+    @Resource
+    private RuleDefinitionRefMapper refMapper;
+
+    @Resource
+    private RuleDefinitionInputFieldMapper inputFieldMapper;
+
+    @Resource
+    private RuleDefinitionOutputFieldMapper outputFieldMapper;
 
 @Service
 public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
@@ -323,5 +342,211 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             content.setScriptMode(scriptMode);
             contentMapper.updateById(content);
         }
+    }
+
+    // ========== 规则字段管理 ==========
+
+    /**
+     * 获取规则详情（含输入输出字段）
+     */
+    public RuleDefinition getDetail(Long definitionId) {
+        RuleDefinition definition = getById(definitionId);
+        if (definition == null) return null;
+
+        definition.setInputFieldsJson(inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionInputField>()
+                        .eq(RuleDefinitionInputField::getDefinitionId, definitionId)
+                        .orderByAsc(RuleDefinitionInputField::getSortOrder)));
+
+        definition.setOutputFieldsJson(outputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                        .eq(RuleDefinitionOutputField::getDefinitionId, definitionId)
+                        .orderByAsc(RuleDefinitionOutputField::getSortOrder)));
+
+        return definition;
+    }
+
+    /**
+     * 获取规则的输入字段列表
+     */
+    public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+        return inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionInputField>()
+                        .eq(RuleDefinitionInputField::getDefinitionId, definitionId)
+                        .orderByAsc(RuleDefinitionInputField::getSortOrder));
+    }
+
+    /**
+     * 获取规则的输出字段列表
+     */
+    public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+        return outputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                        .eq(RuleDefinitionOutputField::getDefinitionId, definitionId)
+                        .orderByAsc(RuleDefinitionOutputField::getSortOrder));
+    }
+
+    /**
+     * 更新规则输入字段（关联变量映射）
+     */
+    public void updateInputField(Long fieldId, RuleDefinitionInputField field) {
+        RuleDefinitionInputField existing = inputFieldMapper.selectById(fieldId);
+        if (existing == null) {
+            throw new IllegalArgumentException("输入字段不存在");
+        }
+        existing.setVarId(field.getVarId());
+        existing.setScriptName(field.getScriptName());
+        existing.setFieldLabel(field.getFieldLabel());
+        existing.setFieldType(field.getFieldType());
+        existing.setMissingValue(field.getMissingValue());
+        existing.setDefaultValue(field.getDefaultValue());
+        existing.setTransformType(field.getTransformType());
+        existing.setTransformParams(field.getTransformParams());
+        existing.setValidValues(field.getValidValues());
+        inputFieldMapper.updateById(existing);
+    }
+
+    /**
+     * 更新规则输出字段（关联变量映射）
+     */
+    public void updateOutputField(Long fieldId, RuleDefinitionOutputField field) {
+        RuleDefinitionOutputField existing = outputFieldMapper.selectById(fieldId);
+        if (existing == null) {
+            throw new IllegalArgumentException("输出字段不存在");
+        }
+        existing.setVarId(field.getVarId());
+        existing.setScriptName(field.getScriptName());
+        existing.setFieldLabel(field.getFieldLabel());
+        existing.setFieldType(field.getFieldType());
+        existing.setTransformType(field.getTransformType());
+        existing.setTransformParams(field.getTransformParams());
+        outputFieldMapper.updateById(existing);
+    }
+
+    /**
+     * 删除规则时级联删除字段
+     */
+    @Transactional
+    public void deleteWithFields(Long definitionId) {
+        inputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionInputField>()
+                .eq(RuleDefinitionInputField::getDefinitionId, definitionId));
+        outputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                .eq(RuleDefinitionOutputField::getDefinitionId, definitionId));
+        deleteWithContent(definitionId);
+    }
+
+    /**
+     * 迁移规则旧 JSON 字段到独立表
+     * 仅迁移关联了变量（varId 非空）的字段
+     */
+    @Transactional
+    public int migrateFields(Long definitionId) {
+        RuleDefinition definition = getById(definitionId);
+        if (definition == null) return 0;
+
+        int count = 0;
+
+        // 迁移输入字段
+        String inputJson = definition.getInputFields();
+        if (inputJson != null && !inputJson.isEmpty()) {
+            try {
+                List<?> rawList = JSON.parseArray(inputJson);
+                int order = 0;
+                for (Object item : rawList) {
+                    if (!(item instanceof java.util.Map)) continue;
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> f = (java.util.Map<String, Object>) item;
+                    Long varId = parseVarId(f.get("varId"));
+                    if (varId == null) {
+                        order++;
+                        continue; // 跳过未关联变量的字段
+                    }
+                    RuleDefinitionInputField field = new RuleDefinitionInputField();
+                    field.setDefinitionId(definitionId);
+                    field.setVarId(varId);
+                    field.setFieldName(str(f.get("fieldName")));
+                    field.setFieldLabel(str(f.get("fieldLabel")));
+                    field.setScriptName(str(f.get("scriptName")));
+                    field.setFieldType(str(f.get("fieldType")));
+                    field.setMissingValue(str(f.get("missingValue")));
+                    field.setDefaultValue(str(f.get("defaultValue")));
+                    field.setValidValues(str(f.get("validValues")));
+                    field.setTransformType(str(f.get("transformType")));
+                    field.setTransformParams(str(f.get("transformParams")));
+                    field.setSortOrder(order++);
+                    field.setStatus(1);
+                    field.setCreateTime(LocalDateTime.now());
+                    inputFieldMapper.insert(field);
+                    count++;
+                }
+            } catch (Exception e) {
+                // 解析失败，跳过
+            }
+        }
+
+        // 迁移输出字段
+        String outputJson = definition.getOutputFields();
+        if (outputJson != null && !outputJson.isEmpty()) {
+            try {
+                List<?> rawList = JSON.parseArray(outputJson);
+                int order = 0;
+                for (Object item : rawList) {
+                    if (!(item instanceof java.util.Map)) continue;
+                    @SuppressWarnings("unchecked")
+                    java.util.Map<String, Object> f = (java.util.Map<String, Object>) item;
+                    Long varId = parseVarId(f.get("varId"));
+                    if (varId == null) {
+                        order++;
+                        continue; // 跳过未关联变量的字段
+                    }
+                    RuleDefinitionOutputField field = new RuleDefinitionOutputField();
+                    field.setDefinitionId(definitionId);
+                    field.setVarId(varId);
+                    field.setFieldName(str(f.get("fieldName")));
+                    field.setFieldLabel(str(f.get("fieldLabel")));
+                    field.setScriptName(str(f.get("scriptName")));
+                    field.setFieldType(str(f.get("fieldType")));
+                    field.setTransformType(str(f.get("transformType")));
+                    field.setTransformParams(str(f.get("transformParams")));
+                    field.setSortOrder(order++);
+                    field.setStatus(1);
+                    field.setCreateTime(LocalDateTime.now());
+                    outputFieldMapper.insert(field);
+                    count++;
+                }
+            } catch (Exception e) {
+                // 解析失败，跳过
+            }
+        }
+
+        return count;
+    }
+
+    /**
+     * 全量迁移所有规则的旧 JSON 字段到独立表
+     */
+    @Transactional
+    public int migrateAllFields() {
+        List<RuleDefinition> all = list();
+        int total = 0;
+        for (RuleDefinition def : all) {
+            total += migrateFields(def.getId());
+        }
+        return total;
+    }
+
+    private Long parseVarId(Object val) {
+        if (val == null) return null;
+        if (val instanceof Number) return ((Number) val).longValue();
+        try {
+            return Long.parseLong(val.toString().trim());
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private String str(Object val) {
+        if (val == null) return null;
+        return val.toString();
     }
 }

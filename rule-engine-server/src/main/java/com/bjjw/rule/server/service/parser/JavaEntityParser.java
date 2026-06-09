@@ -3,7 +3,6 @@ package com.bjjw.rule.server.service.parser;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.bjjw.rule.model.dto.*;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
@@ -88,7 +87,7 @@ public class JavaEntityParser {
             ParsedObject obj = new ParsedObject();
             obj.setObjectCode(block.className);
             obj.setObjectLabel(block.className);
-            obj.setScriptName(ScriptNameUtil.toCamelCase(block.className));
+            obj.setScriptName(block.className);
 
             String labelScanBody = resolveLabelScanBody(block, strippedBlocks, i);
             List<String> labelsInOrder = extractFieldLabelsInDeclarationOrder(labelScanBody);
@@ -106,7 +105,7 @@ public class JavaEntityParser {
                     resolved = fieldName;
                 }
                 field.setFieldLabel(resolved);
-                field.setScriptName(ScriptNameUtil.toCamelCase(fieldName));
+                field.setScriptName(fieldName);
                 resolveType(rawType, field);
                 obj.getFields().add(field);
                 fieldIndex++;
@@ -299,7 +298,7 @@ public class JavaEntityParser {
         if (classMatcher.find()) {
             group.setGroupCode(classMatcher.group(1));
             group.setGroupLabel(classMatcher.group(1));
-            group.setScriptName(ScriptNameUtil.toCamelCase(classMatcher.group(1)));
+            group.setScriptName(classMatcher.group(1));
         } else {
             group.setGroupCode("Constants");
             group.setGroupLabel("Constants");
@@ -325,7 +324,7 @@ public class JavaEntityParser {
             ParsedConstant pc = new ParsedConstant();
             pc.setConstCode(name);
             pc.setConstLabel(name);
-            pc.setScriptName(ScriptNameUtil.toCamelCase(name));
+            pc.setScriptName(name);
             pc.setConstType(constType);
             pc.setConstValue(stored);
             group.getConstants().add(pc);

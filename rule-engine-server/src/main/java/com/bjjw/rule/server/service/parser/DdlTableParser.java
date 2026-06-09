@@ -66,7 +66,7 @@ public class DdlTableParser {
         String objectCode = tableNameToPascalCode(table);
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
-        obj.setScriptName(ScriptNameUtil.toCamelCase(objectCode));
+        obj.setScriptName(objectCode);
 
         String[] lines = innerBody.split("\\R");
         for (String raw : lines) {
@@ -138,7 +138,7 @@ public class DdlTableParser {
 
         ParsedField f = new ParsedField();
         f.setFieldName(colName);
-        f.setScriptName(ScriptNameUtil.toCamelCase(colName));
+        f.setScriptName(colName);
         f.setVarType(mapSqlTypeToVarType(typeBase));
         f.setFieldLabel(extractCommentLabel(line, colName));
         return f;

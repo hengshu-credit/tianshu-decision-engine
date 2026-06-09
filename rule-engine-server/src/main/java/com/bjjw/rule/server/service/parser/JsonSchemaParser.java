@@ -4,7 +4,6 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.bjjw.rule.model.dto.*;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import org.springframework.stereotype.Component;
 
 import java.util.Map;
@@ -37,7 +36,7 @@ public class JsonSchemaParser {
         ParsedConstantGroup group = new ParsedConstantGroup();
         group.setGroupCode(groupCode);
         group.setGroupLabel(groupLabel);
-        group.setScriptName(ScriptNameUtil.toCamelCase(groupCode));
+        group.setScriptName(groupCode);
 
         for (Map.Entry<String, Object> entry : json.entrySet()) {
             String key = entry.getKey();
@@ -49,7 +48,7 @@ public class JsonSchemaParser {
             ParsedConstant pc = new ParsedConstant();
             pc.setConstCode(key);
             pc.setConstLabel(key);
-            pc.setScriptName(ScriptNameUtil.toCamelCase(key));
+            pc.setScriptName(key);
             pc.setConstType(inferPrimitiveType(value));
             pc.setConstValue(value == null ? "" : String.valueOf(value));
             group.getConstants().add(pc);
@@ -61,7 +60,7 @@ public class JsonSchemaParser {
         ParsedObject obj = new ParsedObject();
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
-        obj.setScriptName(ScriptNameUtil.toCamelCase(objectCode));
+        obj.setScriptName(objectCode);
 
         for (Map.Entry<String, Object> entry : json.entrySet()) {
             String key = entry.getKey();
@@ -70,13 +69,12 @@ public class JsonSchemaParser {
             ParsedField field = new ParsedField();
             field.setFieldName(key);
             field.setFieldLabel(key);
-            field.setScriptName(ScriptNameUtil.toCamelCase(key));
+            field.setScriptName(key);
 
             if (value instanceof JSONObject) {
                 field.setVarType("OBJECT");
-                String childCode = capitalize(key);
-                field.setRefObjectCode(childCode);
-                ParsedObject nested = parseJsonObject((JSONObject) value, childCode);
+                field.setRefObjectCode(key);
+                ParsedObject nested = parseJsonObject((JSONObject) value, key);
                 obj.getNestedObjects().add(nested);
             } else if (value instanceof JSONArray) {
                 field.setVarType("LIST");
@@ -84,10 +82,9 @@ public class JsonSchemaParser {
                 if (!arr.isEmpty()) {
                     Object first = arr.get(0);
                     if (first instanceof JSONObject) {
-                        String childCode = capitalize(key) + "Item";
                         field.setGenericType("OBJECT");
-                        field.setRefObjectCode(childCode);
-                        ParsedObject nested = parseJsonObject((JSONObject) first, childCode);
+                        field.setRefObjectCode(key);
+                        ParsedObject nested = parseJsonObject((JSONObject) first, key);
                         obj.getNestedObjects().add(nested);
                     } else {
                         field.setGenericType(inferPrimitiveType(first));
@@ -110,8 +107,4 @@ public class JsonSchemaParser {
         return "STRING";
     }
 
-    private String capitalize(String s) {
-        if (s == null || s.isEmpty()) return s;
-        return Character.toUpperCase(s.charAt(0)) + s.substring(1);
-    }
 }

@@ -13,7 +13,6 @@ import com.bjjw.rule.server.mapper.RuleDataObjectMapper;
 import com.bjjw.rule.server.service.parser.DdlTableParser;
 import com.bjjw.rule.server.service.parser.JavaEntityParser;
 import com.bjjw.rule.server.service.parser.JsonSchemaParser;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -223,6 +222,27 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         if (entity.getScope() == null || entity.getScope().isEmpty()) {
             entity.setScope(SCOPE_PROJECT);
         }
+        // upsert：先查是否存在，存在则更新，不存在则插入
+        Long projectId = entity.getProjectId();
+        // 归一化 projectId：GLOBAL 场景统一为 0
+        Long normProjectId = (projectId == null || "GLOBAL".equals(entity.getScope())) ? 0L : projectId;
+        entity.setProjectId(normProjectId);
+
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RuleDataObject::getScope, entity.getScope())
+               .and(w -> {
+                   if (normProjectId != null && normProjectId != 0L) {
+                       w.eq(RuleDataObject::getProjectId, normProjectId);
+                   } else {
+                       w.and(inner -> inner.eq(RuleDataObject::getProjectId, 0L).or().isNull(RuleDataObject::getProjectId));
+                   }
+               })
+               .eq(RuleDataObject::getObjectCode, entity.getObjectCode());
+        RuleDataObject existing = getBaseMapper().selectOne(wrapper);
+        if (existing != null) {
+            entity.setId(existing.getId());
+            return super.updateById(entity);
+        }
         return super.save(entity);
     }
 
@@ -348,7 +368,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         field.setScope(obj.getScope());
         field.setObjectId(objectId);
         if (field.getScriptName() == null || field.getScriptName().isEmpty()) {
-            field.setScriptName(ScriptNameUtil.toCamelCase(field.getVarCode()));
+            field.setScriptName(field.getVarCode());
         }
         field.setStatus(1);
         if (field.getSortOrder() == null) {
@@ -399,9 +419,17 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     }
 
     private RuleDataObject findOrCreateObject(Long projectId, String scope, String objectCode, String scriptName, String objectType, String sourceType, String sourceContent) {
+        // GLOBAL 场景下 projectId 可能传 null，但数据库中存的是 0，需要兼容处理
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleDataObject::getScope, scope)
-               .eq(RuleDataObject::getProjectId, projectId)
+               .and(w -> {
+                   if (projectId != null && projectId != 0L) {
+                       w.eq(RuleDataObject::getProjectId, projectId);
+                   } else {
+                       // null 和 0 都视为全局
+                       w.and(inner -> inner.eq(RuleDataObject::getProjectId, 0L).or().isNull(RuleDataObject::getProjectId));
+                   }
+               })
                .eq(RuleDataObject::getObjectCode, objectCode);
         RuleDataObject existing = getOne(wrapper, false);
         if (existing != null) {
@@ -417,7 +445,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         obj.setScope(scope);
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
-        obj.setScriptName(scriptName != null ? scriptName : ScriptNameUtil.toCamelCase(objectCode));
+        obj.setScriptName(scriptName != null ? scriptName : objectCode);
         obj.setObjectType(objectType);
         obj.setSourceType(sourceType);
         obj.setSourceContent(sourceContent);
@@ -429,6 +457,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     private int batchCreateFields(Long projectId, String scope, Long objectId, ParsedObject parsed, Long parentFieldId) {
         int count = 0;
         int order = 0;
+        // GLOBAL 场景 projectId 可能为 null，统一转为 0 保持与对象一致
+        Long normProjectId = (projectId == null || projectId == 0L) ? 0L : projectId;
         for (ParsedField field : parsed.getFields()) {
             String varCode = field.getFieldName();
             LambdaQueryWrapper<RuleDataObjectField> existWrapper = new LambdaQueryWrapper<>();
@@ -449,12 +479,12 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 objectFieldMapper.updateById(existing);
             } else {
                 RuleDataObjectField f = new RuleDataObjectField();
-                f.setProjectId(projectId);
+                f.setProjectId(normProjectId);
                 f.setScope(scope);
                 f.setObjectId(objectId);
                 f.setVarCode(varCode);
                 f.setVarLabel(field.getFieldLabel() != null ? field.getFieldLabel() : varCode);
-                f.setScriptName(field.getScriptName() != null ? field.getScriptName() : ScriptNameUtil.toCamelCase(varCode));
+                f.setScriptName(field.getScriptName() != null ? field.getScriptName() : varCode);
                 f.setVarType(field.getVarType());
                 f.setRefObjectCode(field.getRefObjectCode());
                 f.setParentFieldId(parentFieldId);

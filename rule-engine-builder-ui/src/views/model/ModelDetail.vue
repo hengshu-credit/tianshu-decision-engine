@@ -58,36 +58,27 @@
             <template slot-scope="{row}">
               <div v-if="row._editing">
                 <el-select
-                  v-if="varPickerOptions.length"
                   v-model="row.varId"
                   filterable
                   clearable
-                  placeholder="模糊搜索或选择变量..."
+                  placeholder="搜索变量、常量、数据对象字段..."
                   size="mini"
                   style="width:100%;"
                   popper-append-to-body
-                  :filter-method="varFilterMethod"
                   @change="val => onVarChange(row, val)"
                   @clear="onVarClear(row)"
                 >
-                  <el-option-group
-                    v-for="group in varSelectGroups"
-                    :key="group.label"
-                    :label="group.label"
+                  <el-option
+                    v-for="v in varPickerOptions"
+                    :key="v.id"
+                    :value="v.id"
+                    :label="v.varLabel + ' (' + v.varCode + ')'"
                   >
-                    <el-option
-                      v-for="v in group.vars"
-                      :key="v.id"
-                      :value="v.id"
-                      :label="v.varLabel + ' (' + v.varCode + ')'"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabel }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
-                    </el-option>
-                  </el-option-group>
+                    <span style="font-weight:500;">{{ v.varLabel }}</span>
+                    <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
+                    <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
+                  </el-option>
                 </el-select>
-                <span v-else style="color:#999;font-size:12px;">暂无变量库</span>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -155,36 +146,27 @@
             <template slot-scope="{row}">
               <div v-if="row._editing">
                 <el-select
-                  v-if="varPickerOptions.length"
                   v-model="row.varId"
                   filterable
                   clearable
-                  placeholder="模糊搜索或选择变量..."
+                  placeholder="搜索变量、常量、数据对象字段..."
                   size="mini"
                   style="width:100%;"
                   popper-append-to-body
-                  :filter-method="varFilterMethod"
                   @change="val => onVarChange(row, val)"
                   @clear="onVarClear(row)"
                 >
-                  <el-option-group
-                    v-for="group in varSelectGroups"
-                    :key="group.label"
-                    :label="group.label"
+                  <el-option
+                    v-for="v in varPickerOptions"
+                    :key="v.id"
+                    :value="v.id"
+                    :label="v.varLabel + ' (' + v.varCode + ')'"
                   >
-                    <el-option
-                      v-for="v in group.vars"
-                      :key="v.id"
-                      :value="v.id"
-                      :label="v.varLabel + ' (' + v.varCode + ')'"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabel }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
-                    </el-option>
-                  </el-option-group>
+                    <span style="font-weight:500;">{{ v.varLabel }}</span>
+                    <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
+                    <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
+                  </el-option>
                 </el-select>
-                <span v-else style="color:#999;font-size:12px;">暂无变量库</span>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -393,12 +375,12 @@ export default {
     /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
       const projectId = this.model.projectId
-      if (this.model.scope === 'GLOBAL') {
-        // 全局模型：加载全局变量
-        await this.loadGlobalVars()
-      } else if (projectId && projectId > 0) {
-        // 项目级模型：加载项目变量 + 全局变量 + 常量
+      if (projectId && projectId > 0) {
+        // 项目级模型：加载项目变量 + 全局变量 + 常量 + 数据对象字段
         await this.loadVarsByProject(projectId)
+      } else {
+        // 全局模型（projectId 为 null/0）或 projectId 无效：加载全局变量 + 全局常量 + 全局数据对象字段
+        await this.loadGlobalVars()
       }
     },
     async loadVarsByProject(projectId) {
@@ -408,10 +390,12 @@ export default {
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(projectId)
         ])
-        // listByProject 返回数组，listVariables 返回分页
-        const vars = varsRes.data || []
-        const consts = (constRes.data && constRes.data.records) ? constRes.data.records : (constRes.data || [])
-        const tree = treeRes.data || []
+        // listByProject 返回数组，listVariables 返回分页 { records: [] }
+        const vars = Array.isArray(varsRes.data) ? varsRes.data : []
+        const consts = (constRes.data && Array.isArray(constRes.data.records))
+          ? constRes.data.records
+          : (Array.isArray(constRes.data) ? constRes.data : [])
+        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}; this.varPickerOptions = []
@@ -424,9 +408,14 @@ export default {
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(0)
         ])
-        const vars = (varsRes.data && varsRes.data.records) ? varsRes.data.records : (varsRes.data || [])
-        const consts = (constRes.data && constRes.data.records) ? constRes.data.records : (constRes.data || [])
-        const tree = treeRes.data || []
+        // listVariables 返回分页 { records: [] }
+        const vars = (varsRes.data && Array.isArray(varsRes.data.records))
+          ? varsRes.data.records
+          : (Array.isArray(varsRes.data) ? varsRes.data : [])
+        const consts = (constRes.data && Array.isArray(constRes.data.records))
+          ? constRes.data.records
+          : (Array.isArray(constRes.data) ? constRes.data : [])
+        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}; this.varPickerOptions = []
@@ -434,9 +423,12 @@ export default {
     },
     buildVarOptions(vars, doTree) {
       this.varMap = {}
-      vars.forEach(v => { if (v.id) this.varMap[v.id] = v })
+      const seenIds = new Set()
       const options = []
       vars.forEach(v => {
+        if (!v.id || seenIds.has(v.id)) return
+        seenIds.add(v.id)
+        this.varMap[v.id] = v
         options.push({
           id: v.id,
           varCode: v.scriptName || v.varCode,
@@ -452,6 +444,8 @@ export default {
         const obj = group.object || {}
         const fields = group.variables || []
         fields.forEach(f => {
+          if (!f.id || seenIds.has(f.id)) return
+          seenIds.add(f.id)
           options.push({
             id: f.id,
             varCode: f.scriptName || f.varCode,
@@ -464,27 +458,11 @@ export default {
           })
         })
       })
-      this.varPickerOptions = options
+      // 替换数组引用，确保 Vue 响应式更新
+      this.varPickerOptions.splice(0, this.varPickerOptions.length, ...options)
     },
-    /** 按变量来源分组的下拉选项 */
+    /** 按变量来源分组的下拉选项（已弃用，下拉直接使用 varPickerOptions） */
     varSelectGroups() {
-      if (!this.varPickerOptions.length) return []
-      const groups = []
-      const bySource = {}
-      this.varPickerOptions.forEach(v => {
-        const key = v.sourceType || 'other'
-        if (!bySource[key]) bySource[key] = []
-        bySource[key].push(v)
-      })
-      if (bySource.variable) groups.push({ label: '引擎变量', sourceType: 'variable', vars: bySource.variable })
-      if (bySource.constant) groups.push({ label: '常量', sourceType: 'constant', vars: bySource.constant })
-      if (bySource.dataObject) groups.push({ label: '数据对象字段', sourceType: 'dataObject', vars: bySource.dataObject })
-      if (bySource.other) groups.push({ label: '其他', sourceType: 'other', vars: bySource.other })
-      return groups
-    },
-    /** 模糊搜索过滤：el-select 的 filterable 模式默认搜索 option label（即 varLabel + ' (' + varCode + ')'），同时匹配中文名称和英文字母编码 */
-    varFilterMethod() {
-      // el-select 内置搜索，无需额外处理；保留此方法防止控制台未定义警告
     },
     /** 清除变量关联时，同时清除自动填充的字段信息 */
     onVarClear(row) {

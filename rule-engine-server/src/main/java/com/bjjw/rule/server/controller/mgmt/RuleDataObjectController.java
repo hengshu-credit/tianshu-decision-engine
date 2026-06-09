@@ -74,6 +74,27 @@ public class RuleDataObjectController {
         return R.ok(result);
     }
 
+    @PostMapping
+    public R<Long> createOrUpdate(@RequestBody RuleDataObject obj) {
+        if (obj.getId() != null) {
+            dataObjectService.updateById(obj);
+            trySyncSchema();
+            return R.ok(obj.getId());
+        } else {
+            dataObjectService.save(obj);
+            trySyncSchema();
+            return R.ok(obj.getId());
+        }
+    }
+
+    @PutMapping("/{id:\\d+}")
+    public R<Void> update(@PathVariable Long id, @RequestBody RuleDataObject obj) {
+        obj.setId(id);
+        dataObjectService.updateById(obj);
+        trySyncSchema();
+        return R.ok();
+    }
+
     @GetMapping("/project/{projectId:\\d+}")
     public R<List<RuleDataObject>> listByProject(@PathVariable Long projectId) {
         return R.ok(dataObjectService.listByProject(projectId));
