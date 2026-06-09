@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "npx vue-cli-service serve",
+    "dev": "NODE_OPTIONS='--no-deprecation' npx vue-cli-service serve",
     "build": "cross-env NODE_ENV=production vue-cli-service build",
     "lint": "vue-cli-service lint"
   },
@@ -25,9 +25,11 @@
     "@vue/cli-plugin-vuex": "^4.5.19",
     "@vue/cli-service": "^4.5.19",
     "babel-eslint": "^10.1.0",
+    "copy-webpack-plugin": "^6.4.1",
     "cross-env": "^7.0.3",
     "eslint": "^6.7.2",
     "eslint-plugin-vue": "^6.2.2",
+    "monaco-editor-webpack-plugin": "^4.2.0",
     "sass": "^1.65.0",
     "sass-loader": "^10.0.0",
     "vue-template-compiler": "^2.6.14"

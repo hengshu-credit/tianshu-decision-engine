@@ -9,7 +9,8 @@
 *.log
 *.tmp
 .vscode/
-rule-engine-mysql/data/
+rule-engine-builder-ui/public/vs/
+rule-engine-builder-ui/node_modules/
 .claude/*
 .harness
 rule_examples

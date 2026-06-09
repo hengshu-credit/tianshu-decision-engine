@@ -133,7 +133,7 @@ export default {
   methods: {
     format() {
       if (this.editor) {
-        this.editor.getAction('editor.action.formatDocument')?.run()
+        this.editor.getAction('editor.action.formatDocument').run()
       }
     },
     focus() {
