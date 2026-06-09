@@ -101,10 +101,11 @@
         <el-table-column prop="status" label="状态" min-width="60" align="center">
           <template slot-scope="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template>
         </el-table-column>
-        <el-table-column label="操作" min-width="200" align="center">
+        <el-table-column label="操作" min-width="230" align="center">
           <template slot-scope="{ row }">
             <el-button type="text" size="small" @click="$router.push('/model/' + row.id)">详情</el-button>
             <el-button type="text" size="small" @click="handlePublish(row)">{{ row.publishedVersion ? '重新发布' : '发布' }}</el-button>
+            <el-button v-if="row.scope === 'PROJECT'" type="text" size="small" @click="handleToGlobal(row)">转为全局</el-button>
             <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
@@ -166,6 +167,21 @@
       <div slot="footer">
         <el-button size="small" @click="uploadVisible=false">取消</el-button>
         <el-button size="small" type="primary" @click="handleDoUpload" :loading="uploading">上传</el-button>
+      </div>
+    </el-dialog>
+
+    <!-- 转为全局模型对话框 -->
+    <el-dialog title="转为全局模型" :visible.sync="toGlobalVisible" width="500px" :close-on-click-modal="false">
+      <el-form ref="toGlobalForm" :model="toGlobalForm" :rules="toGlobalRules" label-width="110px" size="small">
+        <el-form-item label="当前模型">{{ toGlobalModelInfo.modelName }}</el-form-item>
+        <el-form-item label="当前编码">{{ toGlobalModelInfo.modelCode }}</el-form-item>
+        <el-form-item label="新全局编码" prop="modelCode">
+          <el-input v-model="toGlobalForm.modelCode" placeholder="重新填写全局唯一编码" />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="toGlobalVisible=false">取消</el-button>
+        <el-button size="small" type="primary" @click="handleDoToGlobal" :loading="toGlobalLoading">确认转换</el-button>
       </div>
     </el-dialog>
 
@@ -238,7 +254,23 @@ export default {
       uploadVisible: false, uploading: false,
       uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '' },
       uploadRules: {
-        modelCode: [{ required: true, message: '请输入模型编码', trigger: 'blur' }],
+        modelCode: [{
+          required: true,
+          message: '请输入模型编码',
+          trigger: 'blur'
+        }, {
+          validator: (rule, value, callback) => {
+            if (!value) { callback(); return }
+            api.checkModelCode(value.trim(), this.uploadForm.scope, this.uploadForm.scope === 'PROJECT' ? this.uploadForm.projectId : null, null).then(res => {
+              if (res.data === true) {
+                callback(new Error(this.uploadForm.scope === 'GLOBAL' ? '该编码已被其他全局模型使用' : '该编码在当前项目内已存在，或与某个全局编码冲突'))
+              } else {
+                callback()
+              }
+            }).catch(() => callback())
+          },
+          trigger: 'blur'
+        }],
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
         modelType: [{ required: true, message: '请选择模型大类', trigger: 'change' }]
       },
@@ -246,7 +278,31 @@ export default {
 
       // 关联全局模型
       refVisible: false, refLoading: false, refQp: { modelCode: '', modelName: '' },
-      globalModels: []
+      globalModels: [],
+
+      // 转为全局模型
+      toGlobalVisible: false, toGlobalLoading: false,
+      toGlobalModelInfo: { id: null, modelCode: '', modelName: '' },
+      toGlobalForm: { modelCode: '' },
+      toGlobalRules: {
+        modelCode: [{
+          required: true,
+          message: '请填写新的全局模型编码',
+          trigger: 'blur'
+        }, {
+          validator: (rule, value, callback) => {
+            if (!value) { callback(); return }
+            api.checkModelCode(value.trim(), 'GLOBAL', null, this.toGlobalModelInfo.id).then(res => {
+              if (res.data === true) {
+                callback(new Error('该编码已被其他全局模型使用'))
+              } else {
+                callback()
+              }
+            }).catch(() => callback())
+          },
+          trigger: 'blur'
+        }]
+      }
     }
   },
   created() {
@@ -333,7 +389,7 @@ export default {
         try {
           const formData = new FormData()
           formData.append('file', this.selectedFile)
-          formData.append('projectId', this.uploadForm.projectId || '')
+          formData.append('projectId', this.uploadForm.scope === 'GLOBAL' ? null : (this.uploadForm.projectId || null))
           formData.append('scope', this.uploadForm.scope)
           formData.append('modelCode', this.uploadForm.modelCode)
           formData.append('modelName', this.uploadForm.modelName)
@@ -388,6 +444,24 @@ export default {
         this.$message.success('删除成功')
         this.load()
       } catch (e) { if (e !== 'cancel') this.$message.error(e.message || '删除失败') }
+    },
+    handleToGlobal(row) {
+      this.toGlobalModelInfo = { id: row.id, modelCode: row.modelCode, modelName: row.modelName }
+      this.toGlobalForm.modelCode = ''
+      this.toGlobalVisible = true
+      this.$nextTick(() => { if (this.$refs.toGlobalForm) this.$refs.toGlobalForm.clearValidate() })
+    },
+    handleDoToGlobal() {
+      this.$refs.toGlobalForm.validate(async valid => {
+        if (!valid) return
+        this.toGlobalLoading = true
+        try {
+          await api.toGlobalModel(this.toGlobalModelInfo.id, this.toGlobalForm.modelCode.trim())
+          this.$message.success('转换成功，该模型已转为全局模型')
+          this.toGlobalVisible = false
+          this.load()
+        } catch (e) { this.$message.error(e.message || '转换失败') } finally { this.toGlobalLoading = false }
+      })
     }
   }
 }

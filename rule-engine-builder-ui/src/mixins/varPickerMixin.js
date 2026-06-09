@@ -61,6 +61,10 @@ export default {
     if (this.$route && this.$route.params && this.$route.params.id) {
       this.loadProjectVars(this.$route.params.id)
     }
+    // 监听 contentLoaded 变化，确保竞态条件下也能触发同步
+    this.$watch('contentLoaded', (val) => {
+      if (val) this._trySyncModelVarRefs()
+    })
   },
 
   methods: {

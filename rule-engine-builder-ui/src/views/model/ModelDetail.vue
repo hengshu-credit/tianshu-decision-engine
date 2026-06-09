@@ -50,7 +50,7 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span>
+              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
           <!-- 对应变量（通过 varId 关联变量管理） -->
@@ -67,6 +67,7 @@
                   style="width:100%;"
                   popper-append-to-body
                   :filter-method="varFilterMethod"
+                  @change="val => onVarChange(row, val)"
                   @clear="onVarClear(row)"
                 >
                   <el-option-group
@@ -82,7 +83,7 @@
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
                       <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" type="info" style="margin-left:6px;float:right;">{{ v.varType }}</el-tag>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : 'info'" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : 'VAR' }}</el-tag>
                     </el-option>
                   </el-option-group>
                 </el-select>
@@ -146,7 +147,7 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span>
+              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
           <!-- 对应变量（通过 varId 关联变量管理） -->
@@ -163,6 +164,7 @@
                   style="width:100%;"
                   popper-append-to-body
                   :filter-method="varFilterMethod"
+                  @change="val => onVarChange(row, val)"
                   @clear="onVarClear(row)"
                 >
                   <el-option-group
@@ -178,7 +180,7 @@
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
                       <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" type="info" style="margin-left:6px;float:right;">{{ v.varType }}</el-tag>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : 'info'" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : 'VAR' }}</el-tag>
                     </el-option>
                   </el-option-group>
                 </el-select>
@@ -231,7 +233,7 @@
     </el-tabs>
 
     <!-- 模型测试对话框 -->
-    <el-dialog title="模型测试" :visible.sync="testVisible" width="800px" :close-on-click-modal="false" destroy-on-close>
+    <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false" destroy-on-close>
       <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
         <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
         <el-button size="mini" icon="el-icon-document" @click="handleSaveParams">保存测试参数</el-button>
@@ -246,28 +248,30 @@
 
       <el-alert v-if="model.modelFormat !== 'PMML'" :title="model.modelFormat + ' 格式暂不支持在线执行，仅 PMML 格式支持'" type="warning" :closable="false" style="margin-bottom:12px;" />
 
-      <div v-if="testMode === 'manual'" style="max-height:400px;overflow-y:auto;">
-        <el-form size="small" label-width="120px" v-if="testFields.length > 0">
-          <el-form-item v-for="field in testFields" :key="field.fieldName" :label="field.fieldLabel || field.fieldName">
+      <div v-if="testMode === 'manual'" class="test-form-wrapper">
+        <div v-if="testFields.length > 0" class="test-form-grid">
+          <div v-for="field in testFields" :key="field.fieldName" class="test-field-cell">
+            <div class="test-field-label">{{ field.fieldLabel || field.fieldName }}</div>
             <el-input-number
               v-if="field.fieldType === 'NUMBER' || field.fieldType === 'DOUBLE' || field.fieldType === 'INTEGER'"
               v-model="testParams[field.fieldName]"
-              :placeholder="'输入 ' + (field.fieldLabel || field.fieldName)"
-              style="width:100%;"
+              :placeholder="'输入值'"
               controls-position="right"
               :precision="field.fieldType === 'INTEGER' ? 0 : 6"
+              style="width:100%;"
             />
             <el-select
               v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
               v-model="testParams[field.fieldName]"
               style="width:100%;"
               clearable filterable
+              placeholder="选择值"
             >
               <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
             </el-select>
             <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[field.fieldName]" style="width:100%;">
-              <el-option label="true" value="true" />
-              <el-option label="false" value="false" />
+              <el-option label="true" :value="true" />
+              <el-option label="false" :value="false" />
             </el-select>
             <el-date-picker
               v-else-if="field.fieldType === 'DATE'"
@@ -278,10 +282,10 @@
               format="yyyy-MM-dd"
               value-format="yyyy-MM-dd"
             />
-            <el-input v-else v-model="testParams[field.fieldName]" :placeholder="'输入 ' + (field.fieldLabel || field.fieldName)" />
-            <span slot="label">{{ field.fieldLabel || field.fieldName }}<span style="color:#c0c4cc;font-size:11px;margin-left:4px;">({{ field.fieldName }})</span></span>
-          </el-form-item>
-        </el-form>
+            <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
+            <div class="test-field-hint">{{ field.fieldName }}</div>
+          </div>
+        </div>
         <div v-else style="text-align:center;padding:30px 0;color:#909399;">暂无输入字段，请切换到 JSON 模式手动编辑参数</div>
       </div>
 
@@ -312,6 +316,7 @@
 <script>
 import * as api from '@/api/model'
 import { listVariablesByProject } from '@/api/variable'
+import { getVariableTree } from '@/api/dataObject'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -344,6 +349,8 @@ export default {
       testFields: [],
       testParams: {},
       testJsonStr: '{}',
+      testJsonSkeletion: '{}',
+      jsonEdited: false,
       jsonError: '',
       testExecuting: false,
       testResult: null
@@ -368,7 +375,7 @@ export default {
           this.model.outputFields.forEach(f => this.$set(f, '_editing', false))
         }
         // 模型加载后加载变量库
-        this.loadVars()
+        await this.loadVars()
       } catch (e) {
         this.$message.error(e.message || '加载模型详情失败')
       } finally {
@@ -378,48 +385,105 @@ export default {
     /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
       const projectId = this.model.projectId
-      if (!projectId) { this.varMap = {}; this.varPickerOptions = []; return }
+      if (projectId && projectId > 0) {
+        // 项目级模型：加载项目变量
+        await this.loadVarsByProject(projectId)
+      } else if (this.model.scope === 'GLOBAL') {
+        // 全局模型：加载全局变量（projectId 为 null）
+        await this.loadGlobalVars()
+      }
+      // 否则（projectId 为空且非 GLOBAL）不加载任何变量
+    },
+    async loadVarsByProject(projectId) {
       try {
-        const res = await listVariablesByProject(projectId)
-        const vars = res.data || []
-        // 建立 id -> 变量对象映射
-        this.varMap = {}
-        vars.forEach(v => { if (v.id) this.varMap[v.id] = v })
-        // 构造选项列表（含 varObj，供模糊搜索使用）
-        this.varPickerOptions = vars.map(v => ({
+        const [varsRes, treeRes] = await Promise.all([
+          listVariablesByProject(projectId),
+          getVariableTree(projectId)
+        ])
+        this.buildVarOptions(varsRes.data || [], treeRes.data || [])
+      } catch (e) {
+        this.varMap = {}; this.varPickerOptions = []
+      }
+    },
+    async loadGlobalVars() {
+      try {
+        // 加载全局变量：projectId 传 0 或专门查询全局变量的 API
+        const [varsRes, treeRes] = await Promise.all([
+          listVariablesByProject(0),
+          getVariableTree(0)
+        ])
+        this.buildVarOptions(varsRes.data || [], treeRes.data || [])
+      } catch (e) {
+        this.varMap = {}; this.varPickerOptions = []
+      }
+    },
+    buildVarOptions(vars, doTree) {
+      this.varMap = {}
+      vars.forEach(v => { if (v.id) this.varMap[v.id] = v })
+      const options = []
+      vars.forEach(v => {
+        options.push({
           id: v.id,
           varCode: v.scriptName || v.varCode,
           varLabel: v.varLabel || v.varCode,
           varType: v.varType,
           varSource: v.varSource,
+          sourceType: 'variable',
+          sourceLabel: '变量',
           varObj: v
-        }))
-      } catch (e) {
-        this.varMap = {}; this.varPickerOptions = []
-      }
+        })
+      })
+      doTree.forEach(group => {
+        const obj = group.object || {}
+        const fields = group.variables || []
+        fields.forEach(f => {
+          options.push({
+            id: f.id,
+            varCode: f.scriptName || f.varCode,
+            varLabel: f.varLabel || f.varCode,
+            varType: f.varType,
+            varSource: 'INPUT',
+            sourceType: 'dataObject',
+            sourceLabel: obj.objectName || obj.objectCode || '数据对象',
+            varObj: f
+          })
+        })
+      })
+      this.varPickerOptions = options
     },
-    /** 按变量来源分组的下拉选项（普通变量 / 常量） */
+    /** 按变量来源分组的下拉选项 */
     varSelectGroups() {
       if (!this.varPickerOptions.length) return []
-      const groups = [
-        { label: '输入变量 (INPUT)', source: 'INPUT', vars: [] },
-        { label: '计算变量 (COMPUTED)', source: 'COMPUTED', vars: [] },
-        { label: '常量 (CONSTANT)', source: 'CONSTANT', vars: [] },
-        { label: '其他', source: '', vars: [] }
-      ]
+      const groups = []
+      // 按来源类型分组
+      const bySource = {}
       this.varPickerOptions.forEach(v => {
-        const g = groups.find(g => g.source === (v.varSource || '')) || groups[3]
-        g.vars.push(v)
+        const key = v.sourceType || 'other'
+        if (!bySource[key]) bySource[key] = []
+        bySource[key].push(v)
       })
-      return groups.filter(g => g.vars.length > 0)
+      if (bySource.variable) groups.push({ label: '引擎变量', sourceType: 'variable', vars: bySource.variable })
+      if (bySource.dataObject) groups.push({ label: '数据对象字段', sourceType: 'dataObject', vars: bySource.dataObject })
+      if (bySource.other) groups.push({ label: '其他', sourceType: 'other', vars: bySource.other })
+      return groups
     },
     /** 模糊搜索过滤：el-select 的 filterable 模式默认搜索 option label（即 varLabel + ' (' + varCode + ')'），同时匹配中文名称和英文字母编码 */
     varFilterMethod() {
       // el-select 内置搜索，无需额外处理；保留此方法防止控制台未定义警告
     },
-    /** 清除变量关联 */
+    /** 清除变量关联时，同时清除自动填充的字段信息 */
     onVarClear(row) {
       this.$set(row, 'varId', null)
+      this.$set(row, 'fieldLabel', '')
+      this.$set(row, 'scriptName', '')
+    },
+    /** 选择变量后，自动带出变量编码和名称填充到字段信息 */
+    onVarChange(row, varId) {
+      if (!varId) return
+      const opt = this.varPickerOptions.find(o => o.id === varId)
+      if (!opt) return
+      this.$set(row, 'fieldLabel', opt.varLabel)
+      this.$set(row, 'scriptName', opt.varCode)
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
@@ -446,6 +510,7 @@ export default {
       try {
         await api.updateModelInputField(row.id, {
           varId: row.varId,
+          scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
           missingValue: row.missingValue,
@@ -488,6 +553,7 @@ export default {
       try {
         await api.updateModelOutputField(row.id, {
           varId: row.varId,
+          scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
           transformType: row.transformType,
@@ -517,6 +583,7 @@ export default {
       this.testVisible = true
       this.testResult = null
       this.testMode = 'manual'
+      this.jsonEdited = false
       this.testFields = (this.model.inputFields || []).filter(f => f.status !== 0).map(f => {
         if (f.validValues && typeof f.validValues === 'string') {
           try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
@@ -529,23 +596,26 @@ export default {
         if (f.defaultValue) {
           this.testParams[f.fieldName] = f.defaultValue
         } else if (f.fieldType === 'BOOLEAN') {
-          this.testParams[f.fieldName] = 'false'
+          this.testParams[f.fieldName] = false
         } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
           this.testParams[f.fieldName] = null
         } else {
           this.testParams[f.fieldName] = ''
         }
       })
+      // 构造仅含输入字段的 JSON 骨架（不含输出）
+      this.testJsonSkeletion = this.buildJsonStr()
+      this.testJsonStr = this.testJsonSkeletion
+      // 如果有已保存的参数，加载之（仅覆盖输入字段，保留用户已编辑的输出字段）
       try {
         const res = await api.getTestParams(this.model.id)
         if (res.data) {
           this.testJsonStr = res.data
+          this.jsonEdited = true
           this.syncJsonToParams()
-        } else {
-          this.testJsonStr = this.buildJsonStr()
         }
       } catch (e) {
-        this.testJsonStr = this.buildJsonStr()
+        // ignore
       }
     },
     buildJsonStr() {
@@ -558,6 +628,7 @@ export default {
       return JSON.stringify(obj, null, 2)
     },
     onJsonInput() {
+      this.jsonEdited = true
       this.jsonError = ''
       try {
         JSON.parse(this.testJsonStr)
@@ -568,7 +639,13 @@ export default {
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
-        this.testParams = { ...this.testParams, ...obj }
+        const inputFieldNames = new Set(this.testFields.map(f => f.fieldName))
+        Object.keys(obj).forEach(k => {
+          // 只同步输入字段，忽略输出字段
+          if (inputFieldNames.has(k)) {
+            this.testParams[k] = obj[k]
+          }
+        })
         this.jsonError = ''
       } catch (e) {
         this.jsonError = 'JSON 格式错误: ' + e.message
@@ -596,11 +673,9 @@ export default {
         const res = await api.executeModel(this.model.id, params)
         this.testResult = res.data || {}
         if (this.testResult.success) {
-          const merged = { ...params }
-          if (this.testResult.outputs) {
-            Object.keys(this.testResult.outputs).forEach(k => { merged[k] = this.testResult.outputs[k] })
-          }
-          this.testJsonStr = JSON.stringify(merged, null, 2)
+          // 成功时更新 JSON 编辑器内容为用户实际提交的参数
+          this.testJsonStr = JSON.stringify(params, null, 2)
+          this.jsonEdited = true
         }
       } catch (e) {
         this.testResult = { success: false, error: e.message || '测试执行失败' }
@@ -633,11 +708,12 @@ export default {
     handleClearParams() {
       this.testParams = {}
       this.testFields.forEach(f => {
-        if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = 'false'
+        if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
         else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = null
         else this.testParams[f.fieldName] = ''
       })
-      this.testJsonStr = '{}'
+      this.testJsonStr = this.testJsonSkeletion
+      this.jsonEdited = false
       this.testResult = null
       this.jsonError = ''
     },
@@ -665,5 +741,47 @@ export default {
 }
 ::v-deep .el-table .editing-row td {
   background-color: #f0f9eb;
+}
+
+/* 模型测试表单 - 多列网格布局 */
+.test-form-wrapper {
+  max-height: 420px;
+  overflow-y: auto;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  padding: 4px 0;
+}
+.test-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0;
+  padding: 8px;
+}
+.test-field-cell {
+  padding: 8px 12px;
+  border-radius: 4px;
+  transition: background-color 0.15s;
+}
+.test-field-cell:hover {
+  background-color: #f5f7fa;
+}
+.test-field-label {
+  font-size: 13px;
+  color: #303133;
+  font-weight: 500;
+  margin-bottom: 6px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.test-field-hint {
+  font-size: 11px;
+  color: #c0c4cc;
+  margin-top: 4px;
+  font-family: 'Courier New', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

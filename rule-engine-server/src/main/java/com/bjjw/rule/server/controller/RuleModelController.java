@@ -30,6 +30,23 @@ public class RuleModelController {
     }
 
     /**
+     * 检查模型编码是否与现有模型冲突
+     * @param modelCode 模型编码
+     * @param scope GLOBAL / PROJECT
+     * @param projectId 项目ID（仅 PROJECT 时需要）
+     * @param excludeId 排除的模型ID（编辑时传自己的ID，跳过自身比对）
+     */
+    @GetMapping("/checkCode")
+    public R<Boolean> checkCode(
+            @RequestParam String modelCode,
+            @RequestParam String scope,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Long excludeId) {
+        boolean exists = modelService.existsModelCodeConflict(modelCode, scope, projectId, excludeId);
+        return R.ok(exists);
+    }
+
+    /**
      * 上传并解析模型文件
      */
     @PostMapping("/upload")
@@ -174,7 +191,9 @@ public class RuleModelController {
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
         } catch (RuntimeException e) {
-            return R.fail("模型执行失败: " + e.getMessage());
+            String msg = e.getMessage();
+            if (msg == null || msg.isEmpty()) msg = e.toString();
+            return R.fail("模型执行失败: " + msg);
         }
     }
 
@@ -223,6 +242,22 @@ public class RuleModelController {
     public R<Void> updateOutputField(@PathVariable Long id, @RequestBody RuleModelOutputField field) {
         try {
             modelService.updateOutputField(id, field);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 将项目级模型转为全局模型
+     * @param id 模型ID
+     * @param newModelCode 新的全局编码（用户重新填写）
+     */
+    @PostMapping("/toGlobal/{id:\\d+}")
+    public R<Void> toGlobal(@PathVariable Long id, @RequestBody Map<String, String> body) {
+        try {
+            String newModelCode = body.get("modelCode");
+            modelService.toGlobal(id, newModelCode);
             return R.ok();
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());

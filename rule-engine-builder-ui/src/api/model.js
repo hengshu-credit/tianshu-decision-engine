@@ -5,6 +5,15 @@ export function checkModelHealth() {
   return request({ url: '/rule/model/health', method: 'get' })
 }
 
+/** 检查模型编码是否冲突 */
+export function checkModelCode(modelCode, scope, projectId, excludeId) {
+  return request({
+    url: '/rule/model/checkCode',
+    method: 'get',
+    params: { modelCode, scope, projectId, excludeId }
+  })
+}
+
 /** 上传模型文件 */
 export function uploadModel(formData) {
   return request({
@@ -83,4 +92,9 @@ export function updateModelInputField(id, data) {
 /** 更新模型输出字段（关联变量映射） */
 export function updateModelOutputField(id, data) {
   return request({ url: `/rule/model/outputField/${id}`, method: 'put', data })
+}
+
+/** 将项目级模型转为全局模型 */
+export function toGlobalModel(id, modelCode) {
+  return request({ url: `/rule/model/toGlobal/${id}`, method: 'post', data: { modelCode } })
 }
