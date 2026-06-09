@@ -479,8 +479,8 @@ export default {
       if (!variable) return
       const act = this.activeColDef
       if (!act) return
-      const varLabel = (variable.varObj && variable.varObj.varLabel) || variable.varLabel || variable.varCode
-      const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
+      const varLabel = variable.varLabel || variable.varCode
+      const _varId = variable._ref && variable._ref.id ? variable._ref.id : null
       this.$set(act, 'varCode', variable.varCode)
       this.$set(act, 'varLabel', varLabel)
       this.$set(act, '_varId', _varId)

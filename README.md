@@ -1,3 +1,20 @@
+<p align="center">
+  <img src="https://hengshucredit.com/images/hengshucredit_animated.svg" alt="衡枢真信" width="200">
+</p>
+
+
+<h1 align="center">
+  <span style="color:#6366f1">▌</span> hscredit <span style="color:#6366f1">▌</span>
+</h1>
+
+<h3 align="center">
+
+🔍 鉴真伪 · 📊 斟信用 · ⚖️ 衡风险 · 🎯 枢定策
+
+</h3>
+
+---
+
 # QLExpress 可视化规则引擎项目使用说明
 
 ---

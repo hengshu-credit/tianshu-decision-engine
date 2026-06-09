@@ -92,8 +92,9 @@
         </template>
       </el-table-column>
       <el-table-column prop="updateTime" label="更新时间" min-width="160" />
-      <el-table-column label="操作" width="180" align="center">
+      <el-table-column label="操作" width="230" align="center">
         <template slot-scope="{ row }">
+          <el-button type="text" size="small" @click="handleDetail(row)">详情</el-button>
           <el-button type="text" size="small" @click="handleDesign(row)">设计</el-button>
           <el-button type="text" size="small" @click="handlePublish(row)">{{ row.status === 1 ? '重新发布' : '发布' }}</el-button>
           <el-button type="text" size="small" v-if="row.status === 1" @click="handleUnpublish(row)">下线</el-button>
@@ -363,6 +364,9 @@ export default {
       }
       const path = routes[row.modelType] || '/designer/table'
       this.$router.push(`${path}/${row.id}`)
+    },
+    handleDetail(row) {
+      this.$router.push(`/rule/${row.id}`)
     },
     async handlePublish(row) {
       try {

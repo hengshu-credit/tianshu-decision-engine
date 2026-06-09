@@ -218,4 +218,62 @@ public class RuleDefinitionController {
         }
         return R.ok(compileService.validateScript(script.trim()));
     }
+
+    // ========== 规则字段管理 ==========
+
+    /**
+     * 获取规则详情（含输入输出字段）
+     */
+    @GetMapping("/detail/{id}")
+    public R<RuleDefinition> getDetail(@PathVariable Long id) {
+        return R.ok(definitionService.getDetail(id));
+    }
+
+    /**
+     * 获取规则输入字段列表
+     */
+    @GetMapping("/inputFields/{definitionId}")
+    public R<List<RuleDefinitionInputField>> listInputFields(@PathVariable Long definitionId) {
+        return R.ok(definitionService.listInputFields(definitionId));
+    }
+
+    /**
+     * 获取规则输出字段列表
+     */
+    @GetMapping("/outputFields/{definitionId}")
+    public R<List<RuleDefinitionOutputField>> listOutputFields(@PathVariable Long definitionId) {
+        return R.ok(definitionService.listOutputFields(definitionId));
+    }
+
+    /**
+     * 更新规则输入字段（关联变量映射）
+     */
+    @PutMapping("/inputField/{fieldId:\\d+}")
+    public R<Void> updateInputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionInputField field) {
+        definitionService.updateInputField(fieldId, field);
+        return R.ok();
+    }
+
+    /**
+     * 更新规则输出字段（关联变量映射）
+     */
+    @PutMapping("/outputField/{fieldId:\\d+}")
+    public R<Void> updateOutputField(@PathVariable Long fieldId, @RequestBody RuleDefinitionOutputField field) {
+        definitionService.updateOutputField(fieldId, field);
+        return R.ok();
+    }
+
+    /**
+     * 迁移所有规则的旧 JSON 字段到独立表
+     */
+    @PostMapping("/migrateFields")
+    public R<Map<String, Object>> migrateFields(@RequestBody(required = false) Map<String, Long> body) {
+        int count;
+        if (body != null && body.get("definitionId") != null) {
+            count = definitionService.migrateFields(body.get("definitionId"));
+        } else {
+            count = definitionService.migrateAllFields();
+        }
+        return R.ok(java.util.Collections.singletonMap("migratedCount", count));
+    }
 }

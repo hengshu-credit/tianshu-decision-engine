@@ -895,7 +895,7 @@ export default {
     // === 条件可视化构建 ===
     onNodeCondVarSelect(v, side) {
       if (!v) return
-      const label = (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
+      const label = v.varLabel || v.varCode
       if (side === 'left') {
         this.nodeCondVisual.leftVar = v.varCode
         this.nodeCondVisual.leftLabel = label
@@ -905,7 +905,7 @@ export default {
     },
     onEdgeCondVarSelect(v, side) {
       if (!v) return
-      const label = (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
+      const label = v.varLabel || v.varCode
       if (side === 'left') {
         this.edgeCondVisual.leftVar = v.varCode
         this.edgeCondVisual.leftLabel = label

@@ -41,24 +41,6 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RuleDefinitionOutputFieldMapper outputFieldMapper;
 
-@Service
-public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
-
-    @Resource
-    private RuleDefinitionContentMapper contentMapper;
-
-    @Resource
-    private RulePublishedMapper publishedMapper;
-
-    @Resource
-    private RulePushService pushService;
-
-    @Resource
-    private RuleProjectService projectService;
-
-    @Resource
-    private RuleDefinitionRefMapper refMapper;
-
     public IPage<RuleDefinition> pageList(int pageNum, int pageSize, Long projectId, String modelType, String keyword, String projectName, String scope, String status, String ruleCode, String ruleName, String projectCode, String publishedVersion, String createBeginTime, String createEndTime, String updateBeginTime, String updateEndTime) {
         LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null) {
@@ -167,6 +149,10 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     @Transactional
     public void deleteWithContent(Long id) {
+        inputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionInputField>()
+                .eq(RuleDefinitionInputField::getDefinitionId, id));
+        outputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                .eq(RuleDefinitionOutputField::getDefinitionId, id));
         removeById(id);
         contentMapper.delete(new LambdaQueryWrapper<RuleDefinitionContent>()
                 .eq(RuleDefinitionContent::getDefinitionId, id));

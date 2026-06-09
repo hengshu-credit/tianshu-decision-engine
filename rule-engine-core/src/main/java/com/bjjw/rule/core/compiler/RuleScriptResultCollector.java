@@ -15,6 +15,11 @@ public final class RuleScriptResultCollector {
     /**
      * 在脚本最前面插入输出变量的 null 初始化，避免未命中分支时变量未定义而无法构建返回 Map。
      *
+     * <p>对于嵌套属性（如 {@code user.address.city}）：
+     * 1. 先按层级顺序初始化所有父对象（{@code user = {}，user.address = {}}），
+     *    这样子属性在访问时不会触发 QLExpress 的 NULL_FIELD_ACCESS
+     * 2. 最后初始化字段本身（{@code user.address.city = null}）
+     *
      * @param script   已生成的脚本正文
      * @param varCodes 需要参与返回的变量名（去重、忽略空串）
      */
@@ -24,6 +29,26 @@ public final class RuleScriptResultCollector {
             return;
         }
         StringBuilder head = new StringBuilder();
+        // 收集需要初始化的父对象路径（去重、保持插入顺序）
+        LinkedHashSet<String> parentInitSet = new LinkedHashSet<>();
+        for (String code : uniq) {
+            if (code.contains(".")) {
+                // 提取父路径，如 "user.address.city" → 需要初始化 "user" 和 "user.address"
+                String parent = code.substring(0, code.lastIndexOf('.'));
+                String[] parts = parent.split("\\.");
+                StringBuilder sb = new StringBuilder();
+                for (String part : parts) {
+                    if (sb.length() > 0) sb.append(".");
+                    sb.append(part);
+                    parentInitSet.add(sb.toString());
+                }
+            }
+        }
+        // 先初始化父对象
+        for (String p : parentInitSet) {
+            head.append(p).append(" = {}\n");
+        }
+        // 再初始化字段本身（嵌套属性此时父对象已存在，不会空指针）
         for (String code : uniq) {
             head.append(code).append(" = null\n");
         }

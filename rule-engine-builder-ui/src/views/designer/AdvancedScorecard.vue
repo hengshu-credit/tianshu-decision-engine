@@ -403,7 +403,7 @@ export default {
       if (!v) return
       this.$set(this.model, 'resultVar', {
         varCode: v.varCode,
-        varLabel: (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode,
+        varLabel: v.varLabel || v.varCode,
         _varId: (v.varObj && v.varObj.id) || null
       })
     },
@@ -411,7 +411,7 @@ export default {
       if (!v) return
       const dim = this.model.dimensionGroups[gi].dimensions[di]
       dim.varCode = v.varCode
-      dim.varLabel = (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
+      dim.varLabel = v.varLabel || v.varCode
     },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]

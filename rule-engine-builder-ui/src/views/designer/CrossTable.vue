@@ -264,7 +264,7 @@ export default {
   methods: {
     applyVarToDim(variable, dimKey) {
       if (!variable) return
-      const varLabel = (variable.varObj && variable.varObj.varLabel) || variable.varLabel || variable.varCode
+      const varLabel = variable.varLabel || variable.varCode
       const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
       this.model[dimKey] = {
         ...this.model[dimKey],

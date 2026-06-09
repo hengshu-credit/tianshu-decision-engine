@@ -5,7 +5,6 @@ import com.bjjw.rule.model.dto.ParsedConstantGroup;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.model.entity.RuleVariable;
 import com.bjjw.rule.model.entity.RuleVariableOption;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import com.bjjw.rule.server.mapper.RuleProjectMapper;
 import com.bjjw.rule.server.mapper.RuleVariableMapper;
 import com.bjjw.rule.server.mapper.RuleVariableOptionMapper;
@@ -371,7 +370,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                 var.setScope(scope);
                 var.setVarCode(pc.getConstCode());
                 var.setVarLabel(pc.getConstLabel() != null ? pc.getConstLabel() : pc.getConstCode());
-                var.setScriptName(pc.getScriptName() != null ? pc.getScriptName() : ScriptNameUtil.toCamelCase(pc.getConstCode()));
+                var.setScriptName(pc.getScriptName() != null ? pc.getScriptName() : pc.getConstCode());
                 var.setVarType(pc.getConstType());
                 var.setVarSource("CONSTANT");
                 var.setDefaultValue(val);

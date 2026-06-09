@@ -134,7 +134,7 @@ export default {
             const refCode = `${objScriptName}.${varScriptName}`
             refs.push({
               refCode,
-              refLabel: `${v.varLabel || v.varCode} (${varScriptName})`,
+              refLabel: `${v.varLabel || v.varCode} (${refCode})`,
               varType: v.varType,
               varObj: v,
               category: 'object',
@@ -223,9 +223,10 @@ export default {
           const objScriptName = obj.scriptName || objectCode
           ;(node.variables || []).forEach(v => {
             const varScriptName = v.scriptName || v.varCode
+            const refCode = `${objScriptName}.${varScriptName}`
             refs.push({
-              refCode: `${objScriptName}.${varScriptName}`,
-              refLabel: `${v.varLabel || v.varCode} (${varScriptName})`,
+              refCode,
+              refLabel: `${v.varLabel || v.varCode} (${refCode})`,
               varType: v.varType,
               varObj: v,
               category: 'object',
@@ -297,8 +298,7 @@ export default {
         if (ref) {
           let changed = false
           if (item.varCode !== ref.refCode) { item.varCode = ref.refCode; changed = true }
-          const newLabel = (ref.varObj && ref.varObj.varLabel) || ref.refLabel
-          if (item.varLabel !== newLabel) { item.varLabel = newLabel; changed = true }
+          if (item.varLabel !== ref.refLabel) { item.varLabel = ref.refLabel; changed = true }
           if (ref.varType && item.varType !== ref.varType) { item.varType = ref.varType; changed = true }
           return changed
         }
@@ -315,7 +315,7 @@ export default {
         if (candidates.length === 1) {
           const ref = candidates[0]
           item.varCode = ref.refCode
-          item.varLabel = (ref.varObj && ref.varObj.varLabel) || ref.refLabel
+          item.varLabel = ref.refLabel
           item._varId = ref.varObj && ref.varObj.id
           if (ref.varType) item.varType = ref.varType
           return true

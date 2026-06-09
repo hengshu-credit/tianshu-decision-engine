@@ -58,3 +58,33 @@ export function updateScriptMode(definitionId, scriptMode) {
 export function validateScript(definitionId, script) {
   return request({ url: `/rule/definition/validateScript/${definitionId}`, method: 'post', data: { script } })
 }
+
+/** 获取规则详情（含输入输出字段） */
+export function getDefinitionDetail(id) {
+  return request({ url: `/rule/definition/detail/${id}`, method: 'get' })
+}
+
+/** 获取规则输入字段列表 */
+export function listInputFields(definitionId) {
+  return request({ url: `/rule/definition/inputFields/${definitionId}`, method: 'get' })
+}
+
+/** 获取规则输出字段列表 */
+export function listOutputFields(definitionId) {
+  return request({ url: `/rule/definition/outputFields/${definitionId}`, method: 'get' })
+}
+
+/** 更新规则输入字段 */
+export function updateInputField(fieldId, data) {
+  return request({ url: `/rule/definition/inputField/${fieldId}`, method: 'put', data })
+}
+
+/** 更新规则输出字段 */
+export function updateOutputField(fieldId, data) {
+  return request({ url: `/rule/definition/outputField/${fieldId}`, method: 'put', data })
+}
+
+/** 迁移旧 JSON 字段到独立表 */
+export function migrateFields(body) {
+  return request({ url: '/rule/definition/migrateFields', method: 'post', data: body })
+}

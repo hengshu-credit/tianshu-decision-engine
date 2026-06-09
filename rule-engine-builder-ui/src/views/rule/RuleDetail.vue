@@ -2,31 +2,31 @@
   <div class="uiue-list-page">
     <!-- 页面头部 -->
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
-      <h2 style="margin:0;">{{ model.modelName || '模型详情' }}</h2>
+      <h2 style="margin:0;">{{ rule.ruleName || '规则详情' }}</h2>
       <div>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">模型测试</el-button>
-        <el-button size="small" icon="el-icon-back" @click="$router.push('/model')">返回</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">规则测试</el-button>
+        <el-button size="small" icon="el-icon-back" @click="$router.push('/rule')">返回</el-button>
       </div>
     </div>
 
     <!-- 基本信息 -->
     <el-descriptions :column="2" border size="small" style="margin-bottom:16px;" v-loading="loading">
-      <el-descriptions-item label="模型编码">{{ model.modelCode }}</el-descriptions-item>
-      <el-descriptions-item label="模型名称">{{ model.modelName }}</el-descriptions-item>
-      <el-descriptions-item label="模型大类">{{ modelTypeLabel(model.modelType) }}</el-descriptions-item>
-      <el-descriptions-item label="模型格式">{{ model.modelFormat }}</el-descriptions-item>
-      <el-descriptions-item label="作用范围">{{ model.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-descriptions-item>
-      <el-descriptions-item label="所属项目">{{ model.projectName || '—' }}</el-descriptions-item>
-      <el-descriptions-item label="文件名">{{ model.modelFileName }}</el-descriptions-item>
-      <el-descriptions-item label="文件大小">{{ formatFileSize(model.modelFileSize) }}</el-descriptions-item>
-      <el-descriptions-item label="设计版本">{{ model.currentVersion }}</el-descriptions-item>
-      <el-descriptions-item label="发布版本">{{ model.publishedVersion || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="规则编码">{{ rule.ruleCode }}</el-descriptions-item>
+      <el-descriptions-item label="规则名称">{{ rule.ruleName }}</el-descriptions-item>
+      <el-descriptions-item label="决策模型">{{ modelTypeLabel(rule.modelType) }}</el-descriptions-item>
+      <el-descriptions-item label="作用范围">{{ rule.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-descriptions-item>
+      <el-descriptions-item label="所属项目">{{ rule.projectName || '—' }}</el-descriptions-item>
+      <el-descriptions-item label="设计版本">v{{ rule.currentVersion }}</el-descriptions-item>
+      <el-descriptions-item label="发布版本">{{ rule.publishedVersion ? 'v' + rule.publishedVersion : '-' }}</el-descriptions-item>
+      <el-descriptions-item label="状态">
+        <el-tag size="mini" :type="statusType(rule.status)">{{ statusLabel(rule.status) }}</el-tag>
+      </el-descriptions-item>
     </el-descriptions>
 
     <!-- 描述 -->
-    <el-card v-if="model.description" shadow="never" style="margin-bottom:16px;">
+    <el-card v-if="rule.description" shadow="never" style="margin-bottom:16px;">
       <div slot="header" style="font-weight:600;">描述</div>
-      <div style="color:#606266;font-size:14px;line-height:1.6;">{{ model.description }}</div>
+      <div style="color:#606266;font-size:14px;line-height:1.6;">{{ rule.description }}</div>
     </el-card>
 
     <!-- 输入输出字段 -->
@@ -36,12 +36,12 @@
         <span slot="label"><i class="el-icon-arrow-down" /> 输入字段</span>
         <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
           <span style="color:#909399;font-size:12px;">
-            共 {{ model.inputFields ? model.inputFields.length : 0 }} 个字段，请关联引擎变量
+            共 {{ rule.inputFieldsJson ? rule.inputFieldsJson.length : 0 }} 个字段，请关联引擎变量
           </span>
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="model.inputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
+        <el-table :data="rule.inputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
             <template slot-scope="{ $index }">{{ $index + 1 }}</template>
@@ -50,23 +50,35 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
-          <!-- 对应变量（通过 varId 关联变量管理） -->
-          <el-table-column label="对应变量" min-width="260">
+          <!-- 对应变量 -->
+          <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing">
-                <VarPicker
-                  :value="row.varId ? String(row.varId) : ''"
-                  :vars="varPickerOptions"
-                  value-key="id"
+                <el-select
+                  v-model="row._varId"
+                  filterable clearable
                   placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini"
-                  style="width:100%;"
-                  @input="val => onVarChange(row, val)"
-                  @select="opt => onVarSelect(row, opt)"
-                />
+                  size="mini" style="width:100%;"
+                  popper-append-to-body
+                  @change="val => onVarChange(row, val)"
+                  @clear="onVarClear(row)"
+                >
+                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
+                    <el-option
+                      v-for="v in group.options"
+                      :key="v.id" :value="v.id"
+                      :label="v.varLabel + ' (' + v.varCode + ')'"
+                    >
+                      <span style="font-weight:500;">{{ v.varLabel }}</span>
+                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
+                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
+                      </el-tag>
+                    </el-option>
+                  </el-option-group>
+                </el-select>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -82,7 +94,7 @@
               <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
             </template>
           </el-table-column>
-          <!-- 缺失值（可编辑） -->
+          <!-- 缺失值 -->
           <el-table-column label="缺失值" min-width="130">
             <template slot-scope="{row}">
               <div v-if="row._editing">
@@ -104,7 +116,7 @@
             </template>
           </el-table-column>
         </el-table>
-        <div v-if="!model.inputFields || model.inputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输入字段</div>
+        <div v-if="!rule.inputFieldsJson || rule.inputFieldsJson.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输入字段</div>
       </el-tab-pane>
 
       <!-- 输出字段 tab -->
@@ -112,12 +124,12 @@
         <span slot="label"><i class="el-icon-arrow-up" /> 输出字段</span>
         <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
           <span style="color:#909399;font-size:12px;">
-            共 {{ model.outputFields ? model.outputFields.length : 0 }} 个字段，请关联引擎变量
+            共 {{ rule.outputFieldsJson ? rule.outputFieldsJson.length : 0 }} 个字段，请关联引擎变量
           </span>
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="model.outputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
+        <el-table :data="rule.outputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
             <template slot-scope="{ $index }">{{ $index + 1 }}</template>
@@ -126,23 +138,35 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
-          <!-- 对应变量（通过 varId 关联变量管理） -->
-          <el-table-column label="对应变量" min-width="260">
+          <!-- 对应变量 -->
+          <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing">
-                <VarPicker
-                  :value="row.varId ? String(row.varId) : ''"
-                  :vars="varPickerOptions"
-                  value-key="id"
+                <el-select
+                  v-model="row._varId"
+                  filterable clearable
                   placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini"
-                  style="width:100%;"
-                  @input="val => onVarChange(row, val)"
-                  @select="opt => onVarSelect(row, opt)"
-                />
+                  size="mini" style="width:100%;"
+                  popper-append-to-body
+                  @change="val => onVarChange(row, val, 'output')"
+                  @clear="onVarClear(row)"
+                >
+                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
+                    <el-option
+                      v-for="v in group.options"
+                      :key="v.id" :value="v.id"
+                      :label="v.varLabel + ' (' + v.varCode + ')'"
+                    >
+                      <span style="font-weight:500;">{{ v.varLabel }}</span>
+                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
+                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
+                      </el-tag>
+                    </el-option>
+                  </el-option-group>
+                </el-select>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -158,7 +182,7 @@
               <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
             </template>
           </el-table-column>
-          <!-- 转换方法（可编辑） -->
+          <!-- 转换方法 -->
           <el-table-column label="转换方法" min-width="160">
             <template slot-scope="{row}">
               <div v-if="row._editing">
@@ -186,18 +210,16 @@
             </template>
           </el-table-column>
         </el-table>
-        <div v-if="!model.outputFields || model.outputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
+        <div v-if="!rule.outputFieldsJson || rule.outputFieldsJson.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
       </el-tab-pane>
     </el-tabs>
 
-    <!-- 模型测试对话框 -->
-    <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false">
-      <!-- 数据未就绪时显示加载中，防止旧数据闪烁 -->
+    <!-- 规则测试对话框 -->
+    <el-dialog title="规则测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false">
       <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载...</div>
       <template v-else>
         <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
           <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
-          <el-button size="mini" icon="el-icon-document" @click="handleSaveParams">保存测试参数</el-button>
           <el-button size="mini" icon="el-icon-delete" @click="handleClearParams">清空参数</el-button>
           <el-tooltip content="从输入字段自动生成表单填写" placement="top">
             <el-button size="mini" :type="testMode === 'manual' ? 'primary' : ''" @click="switchToManualMode">表单填写</el-button>
@@ -206,8 +228,6 @@
             <el-button size="mini" :type="testMode === 'json' ? 'primary' : ''" @click="switchToJsonMode">JSON 编辑</el-button>
           </el-tooltip>
         </div>
-
-        <el-alert v-if="model.modelFormat !== 'PMML'" :title="model.modelFormat + ' 格式暂不支持在线执行，仅 PMML 格式支持'" type="warning" :closable="false" style="margin-bottom:12px;" />
 
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
@@ -220,15 +240,12 @@
                 controls-position="right"
                 :precision="field.fieldType === 'INTEGER' ? 0 : undefined"
                 :step="field.fieldType === 'INTEGER' ? 1 : 0.01"
-                clearable
-                style="width:100%;"
+                clearable style="width:100%;"
               />
               <el-select
                 v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
                 v-model="testParams[field.fieldName]"
-                style="width:100%;"
-                clearable filterable
-                placeholder="选择值"
+                style="width:100%;" clearable filterable placeholder="选择值"
               >
                 <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
               </el-select>
@@ -239,11 +256,8 @@
               <el-date-picker
                 v-else-if="field.fieldType === 'DATE'"
                 v-model="testParams[field.fieldName]"
-                type="date"
-                placeholder="选择日期"
-                style="width:100%;"
-                format="yyyy-MM-dd"
-                value-format="yyyy-MM-dd"
+                type="date" placeholder="选择日期"
+                style="width:100%;" format="yyyy-MM-dd" value-format="yyyy-MM-dd"
               />
               <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
               <div class="test-field-hint">{{ field.fieldName }}</div>
@@ -261,11 +275,9 @@
           <el-divider content-position="left">执行结果</el-divider>
           <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:8px;">
             <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
-            <span v-if="testResult.modelType">，模型类型：{{ testResult.modelType }}</span>
           </el-alert>
           <div v-if="testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.error }}</div>
           <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
-          <div v-if="testResult.note" style="color:#909399;font-size:12px;margin-bottom:8px;">{{ testResult.note }}</div>
           <pre v-if="testResult.outputs" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.outputs) }}</pre>
         </div>
       </template>
@@ -278,36 +290,36 @@
 </template>
 
 <script>
-import * as api from '@/api/model'
+import * as api from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import VarPicker from '@/components/common/VarPicker.vue'
 
 const MODEL_TYPE_LABELS = {
-  LR: 'LR（逻辑回归）',
-  XGBOOST: 'XGBoost',
-  LIGHTGBM: 'LightGBM',
-  CATBOOST: 'CatBoost',
-  RANDOM_FOREST: 'RandomForest',
-  NEURAL_NET: 'NeuralNet（神经网络）',
-  SVM: 'SVM',
-  CLASSIFICATION: '分类',
-  REGRESSION: '回归',
-  CLUSTERING: '聚类',
-  ML: '机器学习'
+  TABLE: '决策表',
+  TREE: '决策树',
+  FLOW: '决策流',
+  CROSS: '交叉表',
+  SCORE: '评分卡',
+  CROSS_ADV: '复杂交叉表',
+  SCORE_ADV: '复杂评分卡',
+  SCRIPT: 'QL 脚本'
 }
 
 export default {
-  name: 'ModelDetail',
-  components: { VarPicker },
+  name: 'RuleDetail',
+  components: {},
   data() {
     return {
       loading: false,
-      model: {},
-      /** varId -> 变量对象映射（从变量管理加载） */
+      rule: {},
+      /** varId -> 变量对象映射 */
       varMap: {},
-      /** VarPicker 下拉选项列表（含 _ref / varObj，供级联选择器使用） */
-      varPickerOptions: [],
+      /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段） */
+      varPickerGroups: [
+        { label: '普通变量', options: [] },
+        { label: '常量', options: [] },
+        { label: '数据对象字段', options: [] }
+      ],
       // 测试相关
       testVisible: false,
       testReady: false,
@@ -315,7 +327,6 @@ export default {
       testFields: [],
       testParams: {},
       testJsonStr: '{}',
-      testJsonSkeleton: '{}',
       jsonEdited: false,
       jsonError: '',
       testExecuting: false,
@@ -332,31 +343,26 @@ export default {
       if (!id) return
       this.loading = true
       try {
-        const res = await api.getModel(id)
-        this.model = res.data || {}
-        // 初始化 _editing 标志
-        if (this.model.inputFields) {
-          this.model.inputFields.forEach(f => this.$set(f, '_editing', false))
+        const res = await api.getDefinitionDetail(id)
+        this.rule = res.data || {}
+        if (this.rule.inputFieldsJson) {
+          this.rule.inputFieldsJson.forEach(f => this.$set(f, '_editing', false))
         }
-        if (this.model.outputFields) {
-          this.model.outputFields.forEach(f => this.$set(f, '_editing', false))
+        if (this.rule.outputFieldsJson) {
+          this.rule.outputFieldsJson.forEach(f => this.$set(f, '_editing', false))
         }
-        // 模型加载后加载变量库
         await this.loadVars()
       } catch (e) {
-        this.$message.error(e.message || '加载模型详情失败')
+        this.$message.error(e.message || '加载规则详情失败')
       } finally {
         this.loading = false
       }
     },
-    /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
-      const projectId = this.model.projectId
+      const projectId = this.rule.projectId
       if (projectId && projectId > 0) {
-        // 项目级模型：加载项目变量 + 全局变量 + 常量 + 数据对象字段
         await this.loadVarsByProject(projectId)
       } else {
-        // 全局模型（projectId 为 null/0）或 projectId 无效：加载全局变量 + 全局常量 + 全局数据对象字段
         await this.loadGlobalVars()
       }
     },
@@ -367,7 +373,6 @@ export default {
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(projectId)
         ])
-        // listByProject 返回数组，listVariables 返回分页 { records: [] }
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
@@ -385,7 +390,6 @@ export default {
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(0)
         ])
-        // listVariables 返回分页 { records: [] }
         const vars = (varsRes.data && Array.isArray(varsRes.data.records))
           ? varsRes.data.records
           : (Array.isArray(varsRes.data) ? varsRes.data : [])
@@ -395,37 +399,41 @@ export default {
         const tree = Array.isArray(treeRes.data) ? treeRes.data : []
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
-        this.varMap = {}; this.varPickerOptions = []
+        this.varMap = {}
+        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+          { label: '普通变量', options: [] },
+          { label: '常量', options: [] },
+          { label: '数据对象字段', options: [] }
+        ])
       }
     },
     buildVarOptions(vars, doTree) {
       this.varMap = {}
       const seenIds = new Set()
-      const options = []
+      /** @type {Array} 普通变量选项 */
+      const varOptions = []
+      /** @type {Array} 常量选项 */
+      const constOptions = []
+      /** @type {Array} 数据对象字段选项 */
+      const objOptions = []
       vars.forEach(v => {
         if (!v.id || seenIds.has(v.id)) return
         seenIds.add(v.id)
-        this.varMap[v.id] = v
-        const refCode = v.scriptName || v.varCode
-        const isConst = v.varSource === 'CONSTANT'
-        options.push({
+        const item = {
           id: v.id,
-          varCode: refCode,
+          varCode: v.scriptName || v.varCode,
           varLabel: v.varLabel || v.varCode,
           varType: v.varType,
           varSource: v.varSource,
-          sourceType: isConst ? 'constant' : 'variable',
-          sourceLabel: isConst ? '常量' : '变量',
-          varObj: v,
-          // _ref 供 VarPicker 级联结构使用
-          _ref: {
-            category: isConst ? 'constant' : 'standalone',
-            refCode,
-            refLabel: v.varLabel || v.varCode,
-            varType: v.varType,
-            varObj: v
-          }
-        })
+          sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
+          varObj: v
+        }
+        this.varMap[v.id] = item
+        if (v.varSource === 'CONSTANT') {
+          constOptions.push(item)
+        } else {
+          varOptions.push(item)
+        }
       })
       doTree.forEach(group => {
         const obj = group.object || {}
@@ -433,82 +441,71 @@ export default {
         fields.forEach(f => {
           if (!f.id || seenIds.has(f.id)) return
           seenIds.add(f.id)
-          this.varMap[f.id] = f
-          const refCode = f.scriptName || f.varCode
-          options.push({
+          const item = {
             id: f.id,
-            varCode: refCode,
+            varCode: f.scriptName || f.varCode,
             varLabel: f.varLabel || f.varCode,
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',
-            sourceLabel: obj.objectName || obj.objectCode || '数据对象',
-            varObj: f,
-            // _ref 供 VarPicker 级联结构使用
-            _ref: {
-              category: 'object',
-              objectCode: obj.objectCode,
-              objectLabel: obj.objectName || obj.objectCode,
-              refCode,
-              refLabel: f.varLabel || f.varCode,
-              varType: f.varType,
-              varObj: f
-            }
-          })
+            sourceLabel: obj.objectLabel || obj.objectCode || '数据对象',
+            varObj: f
+          }
+          this.varMap[f.id] = item
+          objOptions.push(item)
         })
       })
-      // 替换数组引用，确保 Vue 响应式更新
-      this.varPickerOptions.splice(0, this.varPickerOptions.length, ...options)
+      this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+        { label: '普通变量', options: varOptions },
+        { label: '常量', options: constOptions },
+        { label: '数据对象字段', options: objOptions }
+      ])
     },
-    /** 按变量来源分组的下拉选项（已弃用，下拉直接使用 varPickerOptions） */
-    varSelectGroups() {
+    onVarClear(row) {
+      this.$set(row, 'varId', null)
+      this.$set(row, '_varId', null)
+      this.$set(row, 'fieldLabel', '')
+      this.$set(row, 'scriptName', '')
     },
-    /** 选择变量后，自动带出变量编码和名称填充到字段信息 */
-    onVarSelect(row, opt) {
-      if (!opt) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-        return
+    onVarChange(row, varId) {
+      if (!varId) return
+      // 从 varPickerGroups 所有选项中查找
+      let opt = null
+      for (const group of this.varPickerGroups) {
+        const found = group.options.find(o => o.id === varId)
+        if (found) { opt = found; break }
       }
+      if (!opt) return
+      this.$set(row, 'varId', opt.id)
       this.$set(row, 'fieldLabel', opt.varLabel)
       this.$set(row, 'scriptName', opt.varCode)
-    },
-    /** VarPicker 清空或值变化时，清除关联信息 */
-    onVarChange(row, val) {
-      if (!val) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-      } else {
-        // VarPicker valueKey="id"，val 是字符串 id
-        this.$set(row, 'varId', val ? Number(val) : null)
-      }
+      this.$set(row, 'varSource', opt.sourceType)
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
     },
-    formatFileSize(size) {
-      if (!size) return '-'
-      if (size < 1024) return size + ' B'
-      if (size < 1024 * 1024) return (size / 1024).toFixed(1) + ' KB'
-      return (size / 1024 / 1024).toFixed(2) + ' MB'
+    statusLabel(s) {
+      return { 0: '草稿', 1: '已发布', 2: '已下线' }[s] || '—'
+    },
+    statusType(s) {
+      return { 0: 'info', 1: 'success', 2: 'warning' }[s] || 'info'
     },
 
     // ========== 输入字段编辑 ==========
     editInputField(row) {
-      if (this.model.inputFields) {
-        this.model.inputFields.forEach(f => {
+      if (this.rule.inputFieldsJson) {
+        this.rule.inputFieldsJson.forEach(f => {
           if (f !== row) this.$set(f, '_editing', false)
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, missingValue: row.missingValue })
+      this.$set(row, '_varId', row.varId)
+      this.$set(row, '_origin', { varId: row.varId, _varId: row.varId, missingValue: row.missingValue })
     },
     async saveInputField(row) {
       this.$set(row, '_saving', true)
       try {
-        await api.updateModelInputField(row.id, {
+        await api.updateInputField(row.id, {
           varId: row.varId,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
@@ -530,6 +527,7 @@ export default {
     cancelEditInput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, '_varId', row._origin._varId)
         this.$set(row, 'missingValue', row._origin.missingValue)
       }
       this.$set(row, '_editing', false)
@@ -540,24 +538,25 @@ export default {
 
     // ========== 输出字段编辑 ==========
     editOutputField(row) {
-      if (this.model.outputFields) {
-        this.model.outputFields.forEach(f => {
+      if (this.rule.outputFieldsJson) {
+        this.rule.outputFieldsJson.forEach(f => {
           if (f !== row) this.$set(f, '_editing', false)
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, transformType: row.transformType })
+      this.$set(row, '_varId', row.varId)
+      this.$set(row, '_origin', { varId: row.varId, _varId: row.varId, transformType: row.transformType })
     },
     async saveOutputField(row) {
       this.$set(row, '_saving', true)
       try {
-        await api.updateModelOutputField(row.id, {
+        await api.updateOutputField(row.id, {
           varId: row.varId,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
           transformType: row.transformType,
-          targetField: row.targetField
+          transformParams: row.transformParams
         })
         this.$set(row, '_editing', false)
         this.$set(row, '_saving', false)
@@ -570,6 +569,7 @@ export default {
     cancelEditOutput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, '_varId', row._origin._varId)
         this.$set(row, 'transformType', row._origin.transformType)
       }
       this.$set(row, '_editing', false)
@@ -578,26 +578,23 @@ export default {
       return row._editing ? 'editing-row' : ''
     },
 
-    // ========== 模型测试 ==========
+    // ========== 规则测试 ==========
     async openTestDialog() {
-      // 1. 先打开弹窗，此时 testReady=false，内容显示"正在加载..."，旧数据被隐藏
       this.testVisible = true
       this.testReady = false
       this.testResult = null
       this.testMode = 'manual'
       this.jsonEdited = false
       this.jsonError = ''
-      this.testDialogKey++ // 递增 key 强制重新挂载 MonacoEditor
+      this.testDialogKey++
 
-      // 2. 异步获取最新模型数据（不阻塞弹窗打开）
-      let freshModel = this.model
+      let freshRule = this.rule
       try {
-        const res = await api.getModel(this.model.id)
-        if (res.data) freshModel = res.data
-      } catch (e) { /* fallback to cached */ }
+        const res = await api.getDefinitionDetail(this.rule.id)
+        if (res.data) freshRule = res.data
+      } catch (e) { /* fallback */ }
 
-      // 3. 初始化字段列表（解析 validValues）
-      const testFields = (freshModel.inputFields || []).filter(f => f.status !== 0).map(f => {
+      const testFields = (freshRule.inputFieldsJson || []).filter(f => f.status !== 0).map(f => {
         if (f.validValues && typeof f.validValues === 'string') {
           try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
         }
@@ -605,39 +602,9 @@ export default {
         return f
       })
 
-      // 4. 从服务端获取已保存的测试参数（最高优先级）
-      let savedParams = null
-      try {
-        const res = await api.getTestParams(this.model.id)
-        if (res.data) {
-          savedParams = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
-        }
-      } catch (e) { /* ignore */ }
-
-      // 5. 从上传时设置的样例初始化（modelConfig.testParams，次优先级）
-      let configParams = null
-      if (!savedParams) {
-        try {
-          const rawConfig = freshModel.modelConfig
-          const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : (rawConfig || {})
-          if (config && config.testParams) {
-            configParams = typeof config.testParams === 'string'
-              ? JSON.parse(config.testParams)
-              : config.testParams
-          }
-        } catch (e) { /* ignore */ }
-      }
-
-      // 6. 优先级：已保存参数 > 上传样例 > 空对象
-      const initObj = savedParams || configParams || {}
-
-      // 7. 构建 testParams 和 testJsonStr
-      //    数字字段默认 0（而非 null），避免 el-input-number 显示 0.000000
       const testParams = {}
       testFields.forEach(f => {
-        if (initObj[f.fieldName] !== undefined) {
-          testParams[f.fieldName] = initObj[f.fieldName]
-        } else if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
+        if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
           testParams[f.fieldName] = f.defaultValue
         } else if (f.fieldType === 'BOOLEAN') {
           testParams[f.fieldName] = false
@@ -648,34 +615,20 @@ export default {
         }
       })
 
-      // 8. 构建初始 JSON（包含所有字段的当前值）
       const jsonObj = {}
-      testFields.forEach(f => {
-        jsonObj[f.fieldName] = testParams[f.fieldName]
-      })
+      testFields.forEach(f => { jsonObj[f.fieldName] = testParams[f.fieldName] })
       const testJsonStr = JSON.stringify(jsonObj, null, 2)
-      const testJsonSkeleton = JSON.stringify({}, null, 2)
 
-      // 9. 一次性设置所有数据，然后标记为就绪，触发重新渲染
       this.testFields = testFields
       this.testParams = testParams
       this.testJsonStr = testJsonStr
-      this.testJsonSkeleton = testJsonSkeleton
-      this.testReady = true // ✅ 内容切换：隐藏加载中，显示实际表单/JSON编辑器
+      this.testReady = true
     },
-    /**
-     * 切换到 JSON 编辑模式：同步 testParams → testJsonStr
-     */
     switchToJsonMode() {
       if (this.testMode === 'json') return
       this.testMode = 'json'
       this.syncParamsToJson()
     },
-    /**
-     * 切换到表单填写模式：同步 testJsonStr → testParams
-     * 仅更新 testParams 中原本为 undefined 或已为默认值（非用户填写）的字段，
-     * 保留用户已手动填写的值不被覆盖。
-     */
     switchToManualMode() {
       if (this.testMode === 'manual') return
       this.testMode = 'manual'
@@ -685,75 +638,45 @@ export default {
       const obj = {}
       this.testFields.forEach(f => {
         const val = this.testParams[f.fieldName]
-        if (val !== '' && val !== null) {
-          obj[f.fieldName] = val
-        } else {
-          obj[f.fieldName] = null
-        }
+        obj[f.fieldName] = (val !== '' && val !== null) ? val : null
       })
       this.testJsonStr = JSON.stringify(obj, null, 2)
       this.jsonEdited = false
       this.jsonError = ''
     },
-    buildJsonStr() {
-      const obj = {}
-      Object.keys(this.testParams).forEach(k => {
-        const val = this.testParams[k]
-        if (val !== '' && val !== null) obj[k] = val
-        else obj[k] = null
-      })
-      return JSON.stringify(obj, null, 2)
-    },
     onJsonInput() {
       this.jsonEdited = true
       this.jsonError = ''
-      try {
-        JSON.parse(this.testJsonStr)
-      } catch (e) {
-        this.jsonError = 'JSON 格式错误: ' + e.message
-      }
+      try { JSON.parse(this.testJsonStr) } catch (e) { this.jsonError = 'JSON 格式错误: ' + e.message }
     },
-    /**
-     * 从 JSON 同步到表单：只更新 testParams 中原本为 undefined 的字段，
-     * 保留用户已在表单中填写的值不被覆盖。
-     */
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
         const inputFieldNames = new Set(this.testFields.map(f => f.fieldName))
         Object.keys(obj).forEach(k => {
-          if (inputFieldNames.has(k)) {
-            // 仅当当前 testParams 中该字段为 undefined 时才更新
-            if (this.testParams[k] === undefined) {
-              this.testParams[k] = obj[k]
-            }
+          if (inputFieldNames.has(k) && this.testParams[k] === undefined) {
+            this.testParams[k] = obj[k]
           }
         })
         this.jsonError = ''
-      } catch (e) {
-        this.jsonError = 'JSON 格式错误: ' + e.message
-      }
+      } catch (e) { this.jsonError = 'JSON 格式错误: ' + e.message }
     },
     async doTest() {
       this.testResult = null
       this.testExecuting = true
       let params
       if (this.testMode === 'json') {
-        try {
-          params = JSON.parse(this.testJsonStr)
-        } catch (e) {
+        try { params = JSON.parse(this.testJsonStr) } catch (e) {
           this.$message.error('JSON 格式错误: ' + e.message)
           this.testExecuting = false
           return
         }
       } else {
         params = { ...this.testParams }
-        Object.keys(params).forEach(k => {
-          if (params[k] === '' || params[k] === null) delete params[k]
-        })
+        Object.keys(params).forEach(k => { if (params[k] === '' || params[k] === null) delete params[k] })
       }
       try {
-        const res = await api.executeModel(this.model.id, params)
+        const res = await api.executeRule({ id: this.rule.id, params })
         this.testResult = res.data || {}
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)
@@ -765,31 +688,6 @@ export default {
         this.testExecuting = false
       }
     },
-    async handleSaveParams() {
-      let params
-      if (this.testMode === 'json') {
-        try {
-          params = JSON.parse(this.testJsonStr)
-        } catch (e) {
-          this.$message.error('JSON 格式错误: ' + e.message)
-          return
-        }
-      } else {
-        params = { ...this.testParams }
-        Object.keys(params).forEach(k => {
-          if (params[k] === '' || params[k] === null) delete params[k]
-        })
-      }
-      try {
-        await api.saveTestParams(this.model.id, JSON.stringify(params))
-        this.$message.success('测试参数已保存')
-      } catch (e) {
-        this.$message.error('保存失败: ' + (e.message || e))
-      }
-    },
-    /**
-     * 清空参数：数字字段重置为 0，布尔重置为 false，字符串重置为空
-     */
     handleClearParams() {
       this.testParams = {}
       this.testFields.forEach(f => {
@@ -822,15 +720,9 @@ export default {
   color: #c0c4cc;
   font-style: italic;
 }
-/* 编辑行高亮 */
-::v-deep .editing-row {
-  background-color: #f0f9eb;
-}
-::v-deep .el-table .editing-row td {
-  background-color: #f0f9eb;
-}
+::v-deep .editing-row { background-color: #f0f9eb; }
+::v-deep .el-table .editing-row td { background-color: #f0f9eb; }
 
-/* 模型测试表单 - 多列网格布局 */
 .test-form-wrapper {
   max-height: 420px;
   overflow-y: auto;
@@ -849,9 +741,7 @@ export default {
   border-radius: 4px;
   transition: background-color 0.15s;
 }
-.test-field-cell:hover {
-  background-color: #f5f7fa;
-}
+.test-field-cell:hover { background-color: #f5f7fa; }
 .test-field-label {
   font-size: 13px;
   color: #303133;

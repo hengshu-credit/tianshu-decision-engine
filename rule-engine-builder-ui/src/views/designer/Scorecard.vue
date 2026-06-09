@@ -422,7 +422,7 @@ export default {
     },
     onResultVarSelect(v) {
       if (!v) return
-      const varLabel = (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
+      const varLabel = v.varLabel || v.varCode
       const _varId = v.varObj && v.varObj.id ? v.varObj.id : null
       const newCode = v.varCode
       // 检测结果变量是否与已有条件变量同名（评分卡中结果变量应为输出变量，不应与输入条件变量同名）

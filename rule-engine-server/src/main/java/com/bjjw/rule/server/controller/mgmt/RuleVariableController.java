@@ -8,7 +8,6 @@ import com.bjjw.rule.server.service.BatchTestService;
 import com.bjjw.rule.server.service.RuleDataObjectService;
 import com.bjjw.rule.server.service.RuleVariableService;
 import com.bjjw.rule.server.service.SchemaSyncService;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 
@@ -98,7 +97,7 @@ public class RuleVariableController {
     @PostMapping
     public R<RuleVariable> create(@RequestBody RuleVariable variable) {
         if (variable.getScriptName() == null || variable.getScriptName().isEmpty()) {
-            variable.setScriptName(ScriptNameUtil.toCamelCase(variable.getVarCode()));
+            variable.setScriptName(variable.getVarCode());
         }
         try {
             variableService.save(variable);

@@ -125,7 +125,7 @@
           placeholder="选择结果变量..."
           width="100%"
           class="result-field-var"
-          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = (v.varObj && v.varObj.varLabel) || v.varCode }"
+          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode }"
         />
         <el-input v-else v-model="model.resultVar.varCode" size="mini" placeholder="变量编码" class="result-field-var" />
         <el-input v-model="model.resultVar.varLabel" size="mini" placeholder="结果名称" class="result-field-label" />
@@ -417,7 +417,7 @@ export default {
       if (!variable) return
       const dim = this.model[dimKey][di]
       dim.varCode = variable.varCode
-      dim.varLabel = (variable.varObj && variable.varObj.varLabel) || variable.varLabel || variable.varCode
+      dim.varLabel = variable.varLabel || variable.varCode
       dim.varType = variable.varType || 'STRING'
       if (variable.varType === 'ENUM') {
         const options = this.getVarOptions(variable.varCode)

@@ -197,7 +197,7 @@ export default {
         this.$set(leaf, '_varId', undefined)
         return
       }
-      const varLabel = (variable.varObj && variable.varObj.varLabel) || variable.varLabel || variable.varCode
+      const varLabel = variable.varLabel || variable.varCode
       const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
       this.$set(leaf, 'varCode', variable.varCode)
       this.$set(leaf, 'varLabel', varLabel)
@@ -222,7 +222,7 @@ export default {
         this.$set(leaf, '_rightVarId', undefined)
         return
       }
-      const varLabel = (variable.varObj && variable.varObj.varLabel) || variable.varLabel || variable.varCode
+      const varLabel = variable.varLabel || variable.varCode
       const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
       this.$set(leaf, 'value', variable.varCode)
       this.$set(leaf, 'rightVarType', variable.varType || 'STRING')

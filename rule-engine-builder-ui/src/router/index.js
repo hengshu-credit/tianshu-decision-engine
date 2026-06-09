@@ -39,6 +39,12 @@ const routes = [
         meta: { title: '规则管理' }
       },
       {
+        path: 'rule/:id',
+        name: 'RuleDetail',
+        component: () => import('@/views/rule/RuleDetail.vue'),
+        meta: { title: '规则详情' }
+      },
+      {
         path: 'project/:id',
         name: 'ProjectDetail',
         component: () => import('@/views/project/ProjectDetail.vue'),

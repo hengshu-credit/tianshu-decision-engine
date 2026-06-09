@@ -321,8 +321,24 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         for (RuleDataObject obj : objects) {
             Map<String, Object> node = new HashMap<>();
             node.put("object", obj);
+            String objScriptName = obj.getScriptName();
             List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
                     .map(RuleDataObjectService::toVariableRow)
+                    .peek(m -> {
+                        // 前缀对象路径，使 varCode/varLabel 展示为 "User.age" 而非 "age"
+                        String fieldVarCode = (String) m.get("varCode");
+                        String fieldScriptName = (String) m.get("scriptName");
+                        String fieldVarLabel = (String) m.get("varLabel");
+                        if (objScriptName != null && fieldVarCode != null) {
+                            m.put("varCode", objScriptName + "." + fieldVarCode);
+                        }
+                        if (objScriptName != null && fieldScriptName != null) {
+                            m.put("scriptName", objScriptName + "." + fieldScriptName);
+                        }
+                        if (objScriptName != null && fieldVarLabel != null) {
+                            m.put("varLabel", objScriptName + "." + fieldVarLabel);
+                        }
+                    })
                     .collect(Collectors.toList());
             node.put("variables", vars);
             tree.add(node);
@@ -350,8 +366,24 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         for (RuleDataObject obj : objects) {
             Map<String, Object> node = new HashMap<>();
             node.put("object", obj);
+            String objScriptName = obj.getScriptName();
             List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
                     .map(RuleDataObjectService::toVariableRow)
+                    .peek(m -> {
+                        // 前缀对象路径，使 varCode/varLabel 展示为 "User.age" 而非 "age"
+                        String fieldVarCode = (String) m.get("varCode");
+                        String fieldScriptName = (String) m.get("scriptName");
+                        String fieldVarLabel = (String) m.get("varLabel");
+                        if (objScriptName != null && fieldVarCode != null) {
+                            m.put("varCode", objScriptName + "." + fieldVarCode);
+                        }
+                        if (objScriptName != null && fieldScriptName != null) {
+                            m.put("scriptName", objScriptName + "." + fieldScriptName);
+                        }
+                        if (objScriptName != null && fieldVarLabel != null) {
+                            m.put("varLabel", objScriptName + "." + fieldVarLabel);
+                        }
+                    })
                     .collect(Collectors.toList());
             node.put("variables", vars);
             tree.add(node);

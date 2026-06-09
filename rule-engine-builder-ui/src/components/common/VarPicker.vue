@@ -187,26 +187,16 @@ export default {
           children: standalone.map(v => ({ value: v.varCode, label: v.varLabel }))
         })
       }
-      const byConstGroup = {}
-      constantRefs.forEach(v => {
-        const gc = v._ref.groupCode || ''
-        const gl = v._ref.groupLabel || gc
-        const key = gc || 'unknown'
-        if (!byConstGroup[key]) byConstGroup[key] = { groupCode: gc, groupLabel: gl, vars: [] }
-        byConstGroup[key].vars.push(v)
-      })
-      const constChildren = Object.keys(byConstGroup).filter(k => k !== 'unknown').map(key => {
-        const g = byConstGroup[key]
-        const items = useTypeFilter ? g.vars.filter(v => v.varType === this.typeFilter) : g.vars
-        if (!items.length) return null
-        return {
-          value: g.groupCode,
-          label: g.groupLabel || g.groupCode,
-          children: items.map(v => ({ value: v.varCode, label: v.varLabel }))
+      if (constantRefs.length) {
+        // 常量直接作为叶子（refCode = scriptName），不再按 group 分组
+        const filtered = useTypeFilter ? constantRefs.filter(v => v.varType === this.typeFilter) : constantRefs
+        if (filtered.length) {
+          options.push({
+            value: '__constant__',
+            label: '常量',
+            children: filtered.map(v => ({ value: v.varCode, label: v.varLabel }))
+          })
         }
-      }).filter(Boolean)
-      if (constChildren.length) {
-        options.push({ value: '__constant__', label: '常量', children: constChildren })
       }
       const byObject = {}
       objectRefs.forEach(v => {
