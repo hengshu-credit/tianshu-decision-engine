@@ -5,11 +5,6 @@
     </div>
 
     <div class="uiue-btn-bar">
-      <div class="btn-left">
-        <el-select v-model="currentProjectId" clearable filterable placeholder="选择项目" size="mini" style="width: 160px;" @change="onProjectChange">
-          <el-option v-for="p in projects" :key="p.id" :label="p.name" :value="p.id" />
-        </el-select>
-      </div>
       <div class="btn-right">
         <el-dropdown trigger="click" @command="handleImportCmd">
           <el-button size="small" type="primary" icon="el-icon-upload2">批量导入 <i class="el-icon-arrow-down el-icon--right" /></el-button>
@@ -1277,12 +1272,6 @@ export default {
         this.loadData(); this.loadConstants()
       } catch (e) { this.$message.error('导入失败: ' + (e.message || '')) }
       finally { this.importing = false }
-    },
-
-    // ── Project Select ──
-    onProjectChange() {
-      this.loadData()
-      this.loadConstants()
     },
 
     // ── Batch Validate ──

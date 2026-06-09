@@ -366,6 +366,8 @@ export default {
     },
     async handleSave() {
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
     async handleCompile() {

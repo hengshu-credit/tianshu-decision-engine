@@ -24,6 +24,14 @@ export function getMaskedToken(id) {
   return request({ url: `/rule/project/${id}/token/masked`, method: 'get' })
 }
 
+export function getFullToken(id) {
+  return request({ url: `/rule/project/${id}/token/full`, method: 'get' })
+}
+
+export function regenerateToken(id) {
+  return request({ url: `/rule/project/${id}/token/regenerate`, method: 'post' })
+}
+
 export function exportApiDoc(id) {
   return request({ url: `/rule/project/${id}/api-doc`, method: 'get' })
 }

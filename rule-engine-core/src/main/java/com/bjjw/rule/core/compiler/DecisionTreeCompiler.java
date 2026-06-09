@@ -14,8 +14,24 @@ import java.util.*;
  */
 public class DecisionTreeCompiler implements RuleCompiler {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
     @Override
     public CompileResult compile(String modelJson) {
+        return compile(modelJson, null);
+    }
+
+    @Override
+    public CompileResult compile(String modelJson, VarContext varContext) {
+        CTX.set(varContext);
+        try {
+            return doCompile(modelJson);
+        } finally {
+            CTX.remove();
+        }
+    }
+
+    private CompileResult doCompile(String modelJson) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             JSONArray nodes = model.getJSONArray("nodes");
@@ -79,6 +95,8 @@ public class DecisionTreeCompiler implements RuleCompiler {
                 return CompileResult.fail("缺少开始节点");
             }
 
+            VarContext varContext = CTX.get();
+            GraphScriptGenerator.setVarContext(varContext);
             String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();
@@ -92,7 +110,8 @@ public class DecisionTreeCompiler implements RuleCompiler {
             return CompileResult.ok(sb.toString(), "QLEXPRESS");
         } catch (Exception e) {
             return CompileResult.fail("决策树编译失败: " + e.getMessage());
+        } finally {
+            GraphScriptGenerator.setVarContext(null);
         }
     }
-
 }

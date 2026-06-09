@@ -67,62 +67,95 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     @Transactional
     public Map<String, Object> importFromDdl(Long projectId, String scope, String ddlSource, String objectType) {
-        List<ParsedObject> parsed = ddlTableParser.parseCreateTables(ddlSource);
-        int objectCount = 0;
-        int varCount = 0;
-        for (int i = 0; i < parsed.size(); i++) {
-            ParsedObject po = parsed.get(i);
-            String src = (i == 0) ? ddlSource : null;
-            RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "DDL", src);
-            varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
-            objectCount++;
-        }
         Map<String, Object> result = new HashMap<>();
-        result.put("objectCount", objectCount);
-        result.put("variableCount", varCount);
+        try {
+            List<ParsedObject> parsed = ddlTableParser.parseCreateTables(ddlSource);
+            if (parsed == null || parsed.isEmpty()) {
+                result.put("success", false);
+                result.put("error", "未能从 DDL 中解析出任何表结构，请检查 DDL 语法是否正确");
+                return result;
+            }
+            int objectCount = 0;
+            int varCount = 0;
+            for (int i = 0; i < parsed.size(); i++) {
+                ParsedObject po = parsed.get(i);
+                String src = (i == 0) ? ddlSource : null;
+                RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "DDL", src);
+                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
+                objectCount++;
+            }
+            result.put("success", true);
+            result.put("objectCount", objectCount);
+            result.put("variableCount", varCount);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "DDL 解析失败: " + e.getMessage());
+        }
         return result;
     }
 
     @Transactional
     public Map<String, Object> importFromJava(Long projectId, String scope, String javaSource, String objectType) {
-        List<ParsedObject> parsed = javaEntityParser.parseEntities(javaSource);
-        int objectCount = 0;
-        int varCount = 0;
-        for (ParsedObject po : parsed) {
-            RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "JAVA", javaSource);
-            varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
-            objectCount++;
-            for (ParsedObject nested : po.getNestedObjects()) {
-                RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JAVA", null);
-                nestedObj.setParentObjectId(obj.getId());
-                updateById(nestedObj);
-                varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
-                objectCount++;
-            }
-        }
         Map<String, Object> result = new HashMap<>();
-        result.put("objectCount", objectCount);
-        result.put("variableCount", varCount);
+        try {
+            List<ParsedObject> parsed = javaEntityParser.parseEntities(javaSource);
+            if (parsed == null || parsed.isEmpty()) {
+                result.put("success", false);
+                result.put("error", "未能从 Java 源码中解析出任何类定义，请检查源码格式是否正确");
+                return result;
+            }
+            int objectCount = 0;
+            int varCount = 0;
+            for (ParsedObject po : parsed) {
+                RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "JAVA", javaSource);
+                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
+                objectCount++;
+                for (ParsedObject nested : po.getNestedObjects()) {
+                    RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JAVA", null);
+                    nestedObj.setParentObjectId(obj.getId());
+                    updateById(nestedObj);
+                    varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
+                    objectCount++;
+                }
+            }
+            result.put("success", true);
+            result.put("objectCount", objectCount);
+            result.put("variableCount", varCount);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "Java 源码解析失败: " + e.getMessage());
+        }
         return result;
     }
 
     @Transactional
     public Map<String, Object> importFromJson(Long projectId, String scope, String jsonContent, String objectCode, String objectType) {
-        ParsedObject parsed = jsonSchemaParser.parseObject(jsonContent, objectCode);
-        RuleDataObject obj = findOrCreateObject(projectId, scope, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
-        int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null);
-        int objectCount = 1;
-
-        for (ParsedObject nested : parsed.getNestedObjects()) {
-            RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JSON", null);
-            nestedObj.setParentObjectId(obj.getId());
-            updateById(nestedObj);
-            varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
-            objectCount++;
-        }
         Map<String, Object> result = new HashMap<>();
-        result.put("objectCount", objectCount);
-        result.put("variableCount", varCount);
+        try {
+            ParsedObject parsed = jsonSchemaParser.parseObject(jsonContent, objectCode);
+            if (parsed == null || parsed.getFields() == null || parsed.getFields().isEmpty()) {
+                result.put("success", false);
+                result.put("error", "未能从 JSON 中解析出任何字段，请确保 JSON 格式正确");
+                return result;
+            }
+            RuleDataObject obj = findOrCreateObject(projectId, scope, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
+            int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null);
+            int objectCount = 1;
+
+            for (ParsedObject nested : parsed.getNestedObjects()) {
+                RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JSON", null);
+                nestedObj.setParentObjectId(obj.getId());
+                updateById(nestedObj);
+                varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
+                objectCount++;
+            }
+            result.put("success", true);
+            result.put("objectCount", objectCount);
+            result.put("variableCount", varCount);
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "JSON 解析失败: " + e.getMessage());
+        }
         return result;
     }
 

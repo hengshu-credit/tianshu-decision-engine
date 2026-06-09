@@ -10,11 +10,28 @@ import java.util.List;
 /**
  * 复杂交叉表编译器：支持多维行/列交叉 + 区间匹配。
  * 将多维分段的笛卡尔积生成 if/else if 链，每条为所有维度条件的 AND 组合。
+ * 通过 {@link VarContext} 将 varCode 解析为正确的 scriptName。
  */
 public class AdvancedCrossTableCompiler implements RuleCompiler {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
     @Override
     public CompileResult compile(String modelJson) {
+        return compile(modelJson, null);
+    }
+
+    @Override
+    public CompileResult compile(String modelJson, VarContext varContext) {
+        CTX.set(varContext);
+        try {
+            return doCompile(modelJson);
+        } finally {
+            CTX.remove();
+        }
+    }
+
+    private CompileResult doCompile(String modelJson) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             JSONArray rowDims = model.getJSONArray("rowDimensions");
@@ -93,6 +110,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             JSONObject dim = dimensions.getJSONObject(d);
             String varCode = dim.getString("varCode");
             String varType = dim.getString("varType");
+            Long varId = dim.containsKey("_varId") ? dim.getLong("_varId") : null;
             JSONArray segments = dim.getJSONArray("segments");
 
             List<List<SegmentInfo>> newResult = new ArrayList<>();
@@ -100,7 +118,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                 for (int s = 0; s < segments.size(); s++) {
                     JSONObject seg = segments.getJSONObject(s);
                     List<SegmentInfo> newList = new ArrayList<>(existing);
-                    newList.add(new SegmentInfo(varCode, varType,
+                    newList.add(new SegmentInfo(varCode, varType, varId,
                             seg.getString("operator"),
                             seg.getString("value"),
                             seg.getString("min"),
@@ -128,21 +146,30 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
     /** 将单个分段条件追加到脚本 */
     private void appendCondition(StringBuilder sb, SegmentInfo seg) {
-        String code = seg.varCode;
+        String scriptName = resolveVar(seg.varId, seg.varCode);
         String op = seg.operator;
 
         if ("range".equals(op)) {
-            sb.append(code).append(" >= ");
+            sb.append(scriptName).append(" >= ");
             appendValue(sb, seg.min, seg.varType);
-            sb.append(" && ").append(code).append(" < ");
+            sb.append(" && ").append(scriptName).append(" < ");
             appendValue(sb, seg.max, seg.varType);
         } else {
-            sb.append(code).append(" ").append(op).append(" ");
+            sb.append(scriptName).append(" ").append(op).append(" ");
             appendValue(sb, seg.value, seg.varType);
         }
     }
 
-    private void appendValue(StringBuilder sb, String value, String type) {
+    private static String resolveVar(Long varId, String varCode) {
+        VarContext ctx = CTX.get();
+        if (ctx != null && varId != null) {
+            String s = ctx.getScriptName(varId);
+            if (s != null) return s;
+        }
+        return varCode != null ? varCode : "";
+    }
+
+    private static void appendValue(StringBuilder sb, String value, String type) {
         if ("STRING".equals(type) || "ENUM".equals(type)) {
             sb.append("\"").append(value.replace("\"", "\\\"")).append("\"");
         } else {
@@ -154,14 +181,16 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
     private static class SegmentInfo {
         final String varCode;
         final String varType;
+        final Long varId;
         final String operator;
         final String value;
         final String min;
         final String max;
 
-        SegmentInfo(String varCode, String varType, String operator, String value, String min, String max) {
+        SegmentInfo(String varCode, String varType, Long varId, String operator, String value, String min, String max) {
             this.varCode = varCode;
             this.varType = varType;
+            this.varId = varId;
             this.operator = operator;
             this.value = value;
             this.min = min;

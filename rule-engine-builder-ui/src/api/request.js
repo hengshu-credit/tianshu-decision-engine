@@ -8,6 +8,18 @@ const service = axios.create({
   withCredentials: true
 })
 
+service.interceptors.request.use(config => {
+  // 过滤 params 中的 null/undefined，避免被 axios 序列化为字面量 "null" 导致后端 Long 类型转换失败
+  if (config.params) {
+    Object.keys(config.params).forEach(key => {
+      if (config.params[key] === null || config.params[key] === undefined) {
+        delete config.params[key]
+      }
+    })
+  }
+  return config
+}, error => Promise.reject(error))
+
 service.interceptors.response.use(
   response => {
     const res = response.data

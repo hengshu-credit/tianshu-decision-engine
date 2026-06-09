@@ -24,6 +24,9 @@ public class RuleCompileService {
     @Resource
     private RuleDefinitionContentMapper contentMapper;
 
+    @Resource
+    private RuleVariableService variableService;
+
     public RuleCompileService() {
         compilers.put("TABLE", new DecisionTableCompiler());
         compilers.put("TREE", new DecisionTreeCompiler());
@@ -51,7 +54,11 @@ public class RuleCompileService {
             return CompileResult.fail("暂不支持的模型类型: " + definition.getModelType());
         }
 
-        CompileResult result = compiler.compile(content.getModelJson());
+        // 构建变量上下文：通过 varId 查询正确的 scriptName，解决大小写不一致问题
+        Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
+        VarContext varContext = new VarContext(varIdToScriptName);
+
+        CompileResult result = compiler.compile(content.getModelJson(), varContext);
 
         content.setCompileStatus(result.isSuccess() ? 1 : 2);
         content.setCompiledScript(result.getCompiledScript());

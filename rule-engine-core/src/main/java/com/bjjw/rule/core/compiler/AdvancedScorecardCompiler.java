@@ -9,11 +9,28 @@ import java.util.LinkedHashSet;
 /**
  * 复杂评分卡编译器：支持分组维度 + 结构化条件。
  * 同一维度内的规则互斥（if/else if），维度间得分累加。
+ * 通过 {@link VarContext} 将 varCode 解析为正确的 scriptName。
  */
 public class AdvancedScorecardCompiler implements RuleCompiler {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
     @Override
     public CompileResult compile(String modelJson) {
+        return compile(modelJson, null);
+    }
+
+    @Override
+    public CompileResult compile(String modelJson, VarContext varContext) {
+        CTX.set(varContext);
+        try {
+            return doCompile(modelJson);
+        } finally {
+            CTX.remove();
+        }
+    }
+
+    private CompileResult doCompile(String modelJson) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             double initialScore = model.getDoubleValue("initialScore");
@@ -24,7 +41,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             String resCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
 
             StringBuilder script = new StringBuilder();
-            script.append(resCode).append(" = ").append(initialScore).append("\n");
+            script.append(resCode).append(" = ").append(initialScore).append(";\n");
 
             if (dimensionGroups != null) {
                 for (int g = 0; g < dimensionGroups.size(); g++) {
@@ -42,7 +59,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                         if (rules == null || rules.isEmpty()) continue;
 
                         String dimScoreVar = "_dim_" + g + "_" + d;
-                        script.append(dimScoreVar).append(" = 0\n");
+                        script.append(dimScoreVar).append(" = 0;\n");
 
                         for (int r = 0; r < rules.size(); r++) {
                             JSONObject rule = rules.getJSONObject(r);
@@ -52,15 +69,14 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                             script.append(r == 0 ? "if (" : " else if (");
                             appendConditions(script, conditions);
                             script.append(") {\n    ");
-                            script.append(dimScoreVar).append(" = ").append(score);
-                            script.append("\n}");
+                            script.append(dimScoreVar).append(" = ").append(score).append(";\n}");
                         }
                         script.append("\n");
 
                         script.append("// ").append(dimLabel != null ? dimLabel : "维度" + (d + 1))
                               .append(" 得分累加\n");
                         script.append(resCode).append(" = ").append(resCode)
-                              .append(" + ").append(dimScoreVar).append("\n");
+                              .append(" + ").append(dimScoreVar).append(";\n");
                     }
                 }
             }
@@ -74,7 +90,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                     levelVar = firstThreshold.getString("resultVar");
                 }
 
-                script.append(levelVar).append(" = \"未知\"\n");
+                script.append(levelVar).append(" = \"未知\";\n");
                 for (int i = 0; i < thresholds.size(); i++) {
                     JSONObject th = thresholds.getJSONObject(i);
                     double min = th.getDoubleValue("min");
@@ -103,6 +119,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             if (thresholds != null && !thresholds.isEmpty()) {
                 outVars.add(levelVarForResult);
             }
+            RuleScriptResultCollector.prependOutputNullInits(script, outVars);
             RuleScriptResultCollector.appendResultMapReturn(script, outVars);
 
             return CompileResult.ok(script.toString(), "QLEXPRESS");
@@ -115,9 +132,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
      * 将阈值档位文案转义后嵌入 QLExpress 的双引号字符串字面量，避免引号或反斜杠破坏脚本语法。
      */
     private static String escapeForQlDoubleQuotedString(String value) {
-        if (value == null) {
-            return "";
-        }
+        if (value == null) return "";
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
@@ -130,20 +145,31 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
         for (int i = 0; i < conditions.size(); i++) {
             if (i > 0) sb.append(" && ");
             JSONObject cond = conditions.getJSONObject(i);
+            Long varId = cond.containsKey("_varId") ? cond.getLong("_varId") : null;
             String varCode = cond.getString("varCode");
             String operator = cond.getString("operator");
             String value = cond.getString("value");
 
-            sb.append(varCode).append(" ").append(operator).append(" ");
+            String scriptName = resolveVar(varId, varCode);
+            sb.append(scriptName).append(" ").append(operator).append(" ");
             if (isNumericValue(value)) {
                 sb.append(value);
             } else {
-                sb.append("\"").append(value.replace("\"", "\\\"")).append("\"");
+                sb.append("\"").append(value != null ? value.replace("\"", "\\\"") : "").append("\"");
             }
         }
     }
 
-    private boolean isNumericValue(String value) {
+    private static String resolveVar(Long varId, String varCode) {
+        VarContext ctx = CTX.get();
+        if (ctx != null && varId != null) {
+            String s = ctx.getScriptName(varId);
+            if (s != null) return s;
+        }
+        return varCode != null ? varCode : "";
+    }
+
+    private static boolean isNumericValue(String value) {
         if (value == null) return false;
         try {
             Double.parseDouble(value);

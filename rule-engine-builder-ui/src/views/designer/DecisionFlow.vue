@@ -852,6 +852,8 @@ export default {
     async handleSave() {
       const modelJson = JSON.stringify(this.buildBackendModel())
       await saveContent({ definitionId: this.definitionId, modelJson })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
 
@@ -927,6 +929,7 @@ export default {
       if (expr === null) return
       this.nodeProps.scriptContent = expr
       this.onNodeChange()
+
       this.$message.success('已生成: ' + expr)
     },
     applyEdgeCondVisual() {
@@ -937,6 +940,7 @@ export default {
         this.edgeProps.conditionName = (this.edgeCondVisual.leftLabel || this.edgeCondVisual.leftVar) + this.edgeCondVisual.operator + (this.edgeCondVisual.rightType === 'var' ? this.edgeCondVisual.rightVar : this.edgeCondVisual.rightValue)
       }
       this.onEdgeChange()
+
       this.$message.success('已生成: ' + expr)
     },
 

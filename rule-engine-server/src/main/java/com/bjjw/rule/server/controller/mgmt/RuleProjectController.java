@@ -24,8 +24,13 @@ public class RuleProjectController {
     public R<IPage<RuleProject>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
-            @RequestParam(required = false) String keyword) {
-        return R.ok(projectService.pageList(pageNum, pageSize, keyword));
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) Integer status,
+            @RequestParam(required = false) String createBeginTime,
+            @RequestParam(required = false) String createEndTime) {
+        return R.ok(projectService.pageList(pageNum, pageSize, keyword, projectCode, projectName, status, createBeginTime, createEndTime));
     }
 
     @GetMapping("/{id}")
@@ -61,6 +66,24 @@ public class RuleProjectController {
     public R<String> getMaskedToken(@PathVariable Long id) {
         String maskedToken = projectService.getMaskedToken(id);
         return R.ok(maskedToken);
+    }
+
+    /**
+     * 获取项目完整Token（需登录后查看）
+     */
+    @GetMapping("/{id}/token/full")
+    public R<String> getFullToken(@PathVariable Long id) {
+        String token = projectService.getFullToken(id);
+        return R.ok(token);
+    }
+
+    /**
+     * 重新生成项目AccessToken（支持禁用旧Token后重新生成）
+     */
+    @PostMapping("/{id}/token/regenerate")
+    public R<String> regenerateToken(@PathVariable Long id) {
+        String token = projectService.regenerateToken(id);
+        return R.ok(token);
     }
 
     /**

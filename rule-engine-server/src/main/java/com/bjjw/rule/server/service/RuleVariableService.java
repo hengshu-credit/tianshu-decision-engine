@@ -73,7 +73,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
      */
     public IPage<RuleVariable> pageList(int pageNum, int pageSize, Long projectId, String varType,
                                         String keyword, Boolean standaloneOnly, String varSource, String scope,
-                                        String projectCode, String projectName) {
+                                        String projectCode, String projectName, String varCode, String varLabel) {
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleVariable::getScope, scope);
@@ -105,6 +105,14 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         } else if (Boolean.TRUE.equals(standaloneOnly)) {
             wrapper.ne(RuleVariable::getVarSource, "CONSTANT");
         }
+        // 前缀匹配变量编码（likeLeft: 输入 "AMOUNT" 匹配 "AMOUNT"、"AMOUNT_DISCOUNT" 等）
+        if (varCode != null && !varCode.isEmpty()) {
+            wrapper.likeRight(RuleVariable::getVarCode, varCode);
+        }
+        // 前缀匹配变量名称
+        if (varLabel != null && !varLabel.isEmpty()) {
+            wrapper.likeRight(RuleVariable::getVarLabel, varLabel);
+        }
         // 通过 projectCode 或 projectName 进行筛选
         if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
@@ -130,6 +138,9 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                 // 没查到项目，默认查全局
                 wrapper.eq(RuleVariable::getScope, SCOPE_GLOBAL);
             }
+        } else {
+            // 无任何项目筛选条件时，返回所有数据（全局+项目级），便于管理控制台查看全量资源
+            // 仅在用户显式指定了 scope 时才做 scope 过滤
         }
         wrapper.orderByAsc(RuleVariable::getSortOrder).orderByDesc(RuleVariable::getCreateTime);
         IPage<RuleVariable> result = page(new Page<>(pageNum, pageSize), wrapper);
@@ -137,7 +148,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         return result;
     }
 
-    public List<RuleVariable> listByProject(Long projectId) {
+    public List<RuleVariable> listByProject(Long projectId, String varSource) {
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null && projectId > 0) {
             // 同时查询全局变量和指定项目的变量
@@ -150,6 +161,9 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         } else {
             // 只查询全局变量
             wrapper.eq(RuleVariable::getScope, SCOPE_GLOBAL);
+        }
+        if (varSource != null && !varSource.isEmpty()) {
+            wrapper.eq(RuleVariable::getVarSource, varSource);
         }
         wrapper.eq(RuleVariable::getStatus, 1)
                .orderByAsc(RuleVariable::getSortOrder);
@@ -177,6 +191,37 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                .eq(RuleVariable::getStatus, 1)
                .orderByAsc(RuleVariable::getSortOrder);
         return list(wrapper);
+    }
+
+    /**
+     * 构建 VarContext 所需的映射表（varId → scriptName）。
+     * 包含全局变量和指定项目的变量，返回的 map 可直接传入 {@link com.bjjw.rule.core.compiler.VarContext}。
+     *
+     * scriptName 规则：
+     * - 若 scriptName 非空，使用 scriptName（后端统一驼峰）
+     * - 若 scriptName 为空，回退到 varCode
+     *
+     * @param projectId 项目 ID（传 null 或 0 时仅查全局）
+     * @return varId → scriptName 映射（永不为 null）
+     */
+    public Map<Long, String> buildVarIdScriptNameMap(Long projectId) {
+        List<RuleVariable> vars;
+        if (projectId != null && projectId > 0) {
+            vars = listByProject(projectId, null);
+        } else {
+            vars = listGlobalOnly();
+        }
+        Map<Long, String> map = new HashMap<>();
+        for (RuleVariable v : vars) {
+            String scriptName = v.getScriptName();
+            if (scriptName != null && !scriptName.trim().isEmpty()) {
+                map.put(v.getId(), scriptName.trim());
+            } else {
+                // scriptName 为空时回退到 varCode（兼容旧数据）
+                map.put(v.getId(), v.getVarCode());
+            }
+        }
+        return map;
     }
 
     @Override
@@ -231,10 +276,25 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
      */
     @Transactional
     public Map<String, Object> importConstantsFromJava(Long projectId, String scope, String javaSource) {
-        ParsedConstantGroup parsed = javaEntityParser.parseConstants(javaSource);
-        int count = batchUpsertConstants(projectId, scope, parsed);
         Map<String, Object> result = new HashMap<>();
-        result.put("constantCount", count);
+        try {
+            ParsedConstantGroup parsed = javaEntityParser.parseConstants(javaSource);
+            if (parsed == null || parsed.getConstants() == null || parsed.getConstants().isEmpty()) {
+                result.put("success", false);
+                result.put("error", "未能从 Java 源码中解析出任何常量，请检查源码格式是否正确");
+                return result;
+            }
+            int count = batchUpsertConstants(projectId, scope, parsed);
+            result.put("success", true);
+            result.put("constantCount", count);
+            result.put("groupCode", parsed.getGroupCode());
+        } catch (IllegalArgumentException e) {
+            result.put("success", false);
+            result.put("error", e.getMessage());
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "Java 源码解析失败: " + e.getMessage());
+        }
         return result;
     }
 
@@ -244,10 +304,25 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
      */
     @Transactional
     public Map<String, Object> importConstantsFromJson(Long projectId, String scope, String jsonContent) {
-        ParsedConstantGroup parsed = jsonSchemaParser.parseConstants(jsonContent);
-        int count = batchUpsertConstants(projectId, scope, parsed);
         Map<String, Object> result = new HashMap<>();
-        result.put("constantCount", count);
+        try {
+            ParsedConstantGroup parsed = jsonSchemaParser.parseConstants(jsonContent);
+            if (parsed == null || parsed.getConstants() == null || parsed.getConstants().isEmpty()) {
+                result.put("success", false);
+                result.put("error", "未能从 JSON 中解析出任何常量，请确保 JSON 格式正确且包含顶层基本类型键值对");
+                return result;
+            }
+            int count = batchUpsertConstants(projectId, scope, parsed);
+            result.put("success", true);
+            result.put("constantCount", count);
+            result.put("groupCode", parsed.getGroupCode());
+        } catch (IllegalArgumentException e) {
+            result.put("success", false);
+            result.put("error", e.getMessage());
+        } catch (Exception e) {
+            result.put("success", false);
+            result.put("error", "JSON 解析失败: " + e.getMessage());
+        }
         return result;
     }
 

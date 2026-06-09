@@ -204,6 +204,15 @@ export default {
   },
   methods: {
     async loadProjectList() {
+      // 项目列表会话级缓存，避免每次进页面都请求
+      const cached = sessionStorage.getItem('projectList')
+      if (cached) {
+        const list = JSON.parse(cached)
+        this.projectList = list
+        this.filteredProjectCodes = list.slice(0, 20)
+        this.filteredProjectNames = list.slice(0, 20)
+        return
+      }
       this.projectListLoading = true
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 500 })
@@ -212,6 +221,7 @@ export default {
           this.projectList = list
           this.filteredProjectCodes = list.slice(0, 20)
           this.filteredProjectNames = list.slice(0, 20)
+          sessionStorage.setItem('projectList', JSON.stringify(list))
         }
       } catch (e) {
         console.error('加载项目列表失败:', e)

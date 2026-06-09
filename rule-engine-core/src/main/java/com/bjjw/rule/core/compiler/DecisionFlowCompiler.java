@@ -14,8 +14,24 @@ import java.util.*;
  */
 public class DecisionFlowCompiler implements RuleCompiler {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
     @Override
     public CompileResult compile(String modelJson) {
+        return compile(modelJson, null);
+    }
+
+    @Override
+    public CompileResult compile(String modelJson, VarContext varContext) {
+        CTX.set(varContext);
+        try {
+            return doCompile(modelJson);
+        } finally {
+            CTX.remove();
+        }
+    }
+
+    private CompileResult doCompile(String modelJson) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             JSONArray nodes = model.getJSONArray("nodes");
@@ -86,6 +102,8 @@ public class DecisionFlowCompiler implements RuleCompiler {
                 outEdgeMap.computeIfAbsent(src, k -> new ArrayList<>()).add(e);
             }
 
+            VarContext varContext = CTX.get();
+            GraphScriptGenerator.setVarContext(varContext);
             String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();
@@ -100,7 +118,8 @@ public class DecisionFlowCompiler implements RuleCompiler {
 
         } catch (Exception e) {
             return CompileResult.fail("决策流编译失败: " + e.getMessage());
+        } finally {
+            GraphScriptGenerator.setVarContext(null);
         }
     }
-
 }

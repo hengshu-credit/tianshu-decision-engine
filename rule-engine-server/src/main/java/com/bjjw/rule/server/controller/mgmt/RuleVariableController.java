@@ -54,8 +54,10 @@ public class RuleVariableController {
             @RequestParam(required = false) String varSource,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String projectCode,
-            @RequestParam(required = false) String projectName) {
-        return R.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource, scope, projectCode, projectName));
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String varCode,
+            @RequestParam(required = false) String varLabel) {
+        return R.ok(variableService.pageList(pageNum, pageSize, projectId, varType, keyword, standaloneOnly, varSource, scope, projectCode, projectName, varCode, varLabel));
     }
 
     /** 从 Java 常量类批量导入常量（写入 rule_variable，var_source=CONSTANT） */
@@ -83,8 +85,9 @@ public class RuleVariableController {
     }
 
     @GetMapping("/project/{projectId:\\d+}")
-    public R<List<RuleVariable>> listByProject(@PathVariable Long projectId) {
-        return R.ok(variableService.listByProject(projectId));
+    public R<List<RuleVariable>> listByProject(@PathVariable Long projectId,
+            @RequestParam(required = false) String varSource) {
+        return R.ok(variableService.listByProject(projectId, varSource));
     }
 
     @GetMapping("/{id:\\d+}")

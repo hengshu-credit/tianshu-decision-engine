@@ -14,6 +14,16 @@ import java.util.*;
  */
 public class GraphScriptGenerator {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
+    /**
+     * 设置当前编译上下文的变量映射（由 DecisionTreeCompiler / DecisionFlowCompiler 在调用前设置）。
+     * ActionDataCompiler 会读取此 ThreadLocal 中的 VarContext。
+     */
+    public static void setVarContext(VarContext varContext) {
+        CTX.set(varContext);
+    }
+
     /**
      * 根据图结构生成 QLExpress 脚本
      *

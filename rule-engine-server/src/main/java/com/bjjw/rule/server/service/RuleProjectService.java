@@ -19,12 +19,33 @@ import java.util.*;
 @Service
 public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProject> {
 
-    public IPage<RuleProject> pageList(int pageNum, int pageSize, String keyword) {
+    public IPage<RuleProject> pageList(int pageNum, int pageSize, String keyword, String projectCode, String projectName, Integer status, String createBeginTime, String createEndTime) {
         LambdaQueryWrapper<RuleProject> wrapper = new LambdaQueryWrapper<>();
+        // 关键字搜索（模糊匹配编码或名称）
         if (keyword != null && !keyword.isEmpty()) {
-            wrapper.like(RuleProject::getProjectName, keyword)
-                   .or()
-                   .like(RuleProject::getProjectCode, keyword);
+            wrapper.and(w -> w
+                    .like(RuleProject::getProjectCode, keyword)
+                    .or()
+                    .like(RuleProject::getProjectName, keyword));
+        }
+        // 项目编码精确匹配
+        if (projectCode != null && !projectCode.isEmpty()) {
+            wrapper.eq(RuleProject::getProjectCode, projectCode);
+        }
+        // 项目名称模糊匹配
+        if (projectName != null && !projectName.isEmpty()) {
+            wrapper.like(RuleProject::getProjectName, projectName);
+        }
+        // 启用状态筛选
+        if (status != null) {
+            wrapper.eq(RuleProject::getStatus, status);
+        }
+        // 创建时间范围
+        if (createBeginTime != null && !createBeginTime.isEmpty()) {
+            wrapper.ge(RuleProject::getCreateTime, createBeginTime + " 00:00:00");
+        }
+        if (createEndTime != null && !createEndTime.isEmpty()) {
+            wrapper.le(RuleProject::getCreateTime, createEndTime + " 23:59:59");
         }
         wrapper.orderByDesc(RuleProject::getCreateTime);
         return page(new Page<>(pageNum, pageSize), wrapper);
@@ -83,6 +104,17 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             return null;
         }
         return maskToken(project.getAccessToken());
+    }
+
+    /**
+     * 获取完整Token（需登录后查看，不脱敏）
+     */
+    public String getFullToken(Long projectId) {
+        RuleProject project = getById(projectId);
+        if (project == null || !StringUtils.hasText(project.getAccessToken())) {
+            return null;
+        }
+        return project.getAccessToken();
     }
 
     /**

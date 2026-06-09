@@ -83,7 +83,7 @@
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
                       <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : 'info'" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : 'VAR' }}</el-tag>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
                     </el-option>
                   </el-option-group>
                 </el-select>
@@ -180,7 +180,7 @@
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
                       <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : 'info'" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : 'VAR' }}</el-tag>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">{{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}</el-tag>
                     </el-option>
                   </el-option-group>
                 </el-select>
@@ -233,78 +233,84 @@
     </el-tabs>
 
     <!-- 模型测试对话框 -->
-    <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false" destroy-on-close>
-      <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
-        <el-button size="mini" icon="el-icon-document" @click="handleSaveParams">保存测试参数</el-button>
-        <el-button size="mini" icon="el-icon-delete" @click="handleClearParams">清空参数</el-button>
-        <el-tooltip content="从输入字段自动生成表单填写" placement="top">
-          <el-button size="mini" :type="testMode === 'manual' ? 'primary' : ''" @click="testMode = 'manual'">表单填写</el-button>
-        </el-tooltip>
-        <el-tooltip content="直接编辑 JSON 参数" placement="top">
-          <el-button size="mini" :type="testMode === 'json' ? 'primary' : ''" @click="testMode = 'json'">JSON 编辑</el-button>
-        </el-tooltip>
-      </div>
-
-      <el-alert v-if="model.modelFormat !== 'PMML'" :title="model.modelFormat + ' 格式暂不支持在线执行，仅 PMML 格式支持'" type="warning" :closable="false" style="margin-bottom:12px;" />
-
-      <div v-if="testMode === 'manual'" class="test-form-wrapper">
-        <div v-if="testFields.length > 0" class="test-form-grid">
-          <div v-for="field in testFields" :key="field.fieldName" class="test-field-cell">
-            <div class="test-field-label">{{ field.fieldLabel || field.fieldName }}</div>
-            <el-input-number
-              v-if="field.fieldType === 'NUMBER' || field.fieldType === 'DOUBLE' || field.fieldType === 'INTEGER'"
-              v-model="testParams[field.fieldName]"
-              :placeholder="'输入值'"
-              controls-position="right"
-              :precision="field.fieldType === 'INTEGER' ? 0 : 6"
-              style="width:100%;"
-            />
-            <el-select
-              v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
-              v-model="testParams[field.fieldName]"
-              style="width:100%;"
-              clearable filterable
-              placeholder="选择值"
-            >
-              <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
-            </el-select>
-            <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[field.fieldName]" style="width:100%;">
-              <el-option label="true" :value="true" />
-              <el-option label="false" :value="false" />
-            </el-select>
-            <el-date-picker
-              v-else-if="field.fieldType === 'DATE'"
-              v-model="testParams[field.fieldName]"
-              type="date"
-              placeholder="选择日期"
-              style="width:100%;"
-              format="yyyy-MM-dd"
-              value-format="yyyy-MM-dd"
-            />
-            <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
-            <div class="test-field-hint">{{ field.fieldName }}</div>
-          </div>
+    <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false">
+      <!-- 数据未就绪时显示加载中，防止旧数据闪烁 -->
+      <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载...</div>
+      <template v-else>
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
+          <el-button size="mini" icon="el-icon-document" @click="handleSaveParams">保存测试参数</el-button>
+          <el-button size="mini" icon="el-icon-delete" @click="handleClearParams">清空参数</el-button>
+          <el-tooltip content="从输入字段自动生成表单填写" placement="top">
+            <el-button size="mini" :type="testMode === 'manual' ? 'primary' : ''" @click="switchToManualMode">表单填写</el-button>
+          </el-tooltip>
+          <el-tooltip content="直接编辑 JSON 参数" placement="top">
+            <el-button size="mini" :type="testMode === 'json' ? 'primary' : ''" @click="switchToJsonMode">JSON 编辑</el-button>
+          </el-tooltip>
         </div>
-        <div v-else style="text-align:center;padding:30px 0;color:#909399;">暂无输入字段，请切换到 JSON 模式手动编辑参数</div>
-      </div>
 
-      <div v-else>
-        <el-input v-model="testJsonStr" type="textarea" :rows="12" placeholder='输入 JSON 参数，如 {"age": 30, "income": 5000}' style="font-family:monospace;" @input="onJsonInput" />
-        <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
-      </div>
+        <el-alert v-if="model.modelFormat !== 'PMML'" :title="model.modelFormat + ' 格式暂不支持在线执行，仅 PMML 格式支持'" type="warning" :closable="false" style="margin-bottom:12px;" />
 
-      <div v-if="testResult" style="margin-top:16px;">
-        <el-divider content-position="left">执行结果</el-divider>
-        <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:8px;">
-          <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
-          <span v-if="testResult.modelType">，模型类型：{{ testResult.modelType }}</span>
-        </el-alert>
-        <div v-if="testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.error }}</div>
-        <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
-        <div v-if="testResult.note" style="color:#909399;font-size:12px;margin-bottom:8px;">{{ testResult.note }}</div>
-        <pre v-if="testResult.outputs" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.outputs) }}</pre>
-      </div>
+        <div v-if="testMode === 'manual'" class="test-form-wrapper">
+          <div v-if="testFields.length > 0" class="test-form-grid">
+            <div v-for="field in testFields" :key="field.fieldName" class="test-field-cell">
+              <div class="test-field-label">{{ field.fieldLabel || field.fieldName }}</div>
+              <el-input-number
+                v-if="field.fieldType === 'NUMBER' || field.fieldType === 'DOUBLE' || field.fieldType === 'INTEGER'"
+                v-model="testParams[field.fieldName]"
+                placeholder="输入值"
+                controls-position="right"
+                :precision="field.fieldType === 'INTEGER' ? 0 : undefined"
+                :step="field.fieldType === 'INTEGER' ? 1 : 0.01"
+                clearable
+                style="width:100%;"
+              />
+              <el-select
+                v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
+                v-model="testParams[field.fieldName]"
+                style="width:100%;"
+                clearable filterable
+                placeholder="选择值"
+              >
+                <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
+              </el-select>
+              <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[field.fieldName]" style="width:100%;">
+                <el-option label="true" :value="true" />
+                <el-option label="false" :value="false" />
+              </el-select>
+              <el-date-picker
+                v-else-if="field.fieldType === 'DATE'"
+                v-model="testParams[field.fieldName]"
+                type="date"
+                placeholder="选择日期"
+                style="width:100%;"
+                format="yyyy-MM-dd"
+                value-format="yyyy-MM-dd"
+              />
+              <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
+              <div class="test-field-hint">{{ field.fieldName }}</div>
+            </div>
+          </div>
+          <div v-else style="text-align:center;padding:30px 0;color:#909399;">暂无输入字段，请切换到 JSON 模式手动编辑参数</div>
+        </div>
+
+        <div v-else class="test-form-wrapper">
+          <monaco-editor v-model="testJsonStr" language="json" height="300px" :key="testDialogKey" @change="onJsonInput" />
+          <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
+        </div>
+
+        <div v-if="testResult" style="margin-top:16px;">
+          <el-divider content-position="left">执行结果</el-divider>
+          <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:8px;">
+            <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
+            <span v-if="testResult.modelType">，模型类型：{{ testResult.modelType }}</span>
+          </el-alert>
+          <div v-if="testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.error }}</div>
+          <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
+          <div v-if="testResult.note" style="color:#909399;font-size:12px;margin-bottom:8px;">{{ testResult.note }}</div>
+          <pre v-if="testResult.outputs" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.outputs) }}</pre>
+        </div>
+      </template>
 
       <div slot="footer">
         <el-button size="small" @click="testVisible = false">关闭</el-button>
@@ -315,7 +321,7 @@
 
 <script>
 import * as api from '@/api/model'
-import { listVariablesByProject } from '@/api/variable'
+import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 
 const MODEL_TYPE_LABELS = {
@@ -345,15 +351,17 @@ export default {
       varPickerOptions: [],
       // 测试相关
       testVisible: false,
+      testReady: false,
       testMode: 'manual',
       testFields: [],
       testParams: {},
       testJsonStr: '{}',
-      testJsonSkeletion: '{}',
+      testJsonSkeleton: '{}',
       jsonEdited: false,
       jsonError: '',
       testExecuting: false,
-      testResult: null
+      testResult: null,
+      testDialogKey: 1
     }
   },
   created() {
@@ -385,34 +393,41 @@ export default {
     /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
       const projectId = this.model.projectId
-      if (projectId && projectId > 0) {
-        // 项目级模型：加载项目变量
-        await this.loadVarsByProject(projectId)
-      } else if (this.model.scope === 'GLOBAL') {
-        // 全局模型：加载全局变量（projectId 为 null）
+      if (this.model.scope === 'GLOBAL') {
+        // 全局模型：加载全局变量
         await this.loadGlobalVars()
+      } else if (projectId && projectId > 0) {
+        // 项目级模型：加载项目变量 + 全局变量 + 常量
+        await this.loadVarsByProject(projectId)
       }
-      // 否则（projectId 为空且非 GLOBAL）不加载任何变量
     },
     async loadVarsByProject(projectId) {
       try {
-        const [varsRes, treeRes] = await Promise.all([
+        const [varsRes, constRes, treeRes] = await Promise.all([
           listVariablesByProject(projectId),
+          listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(projectId)
         ])
-        this.buildVarOptions(varsRes.data || [], treeRes.data || [])
+        // listByProject 返回数组，listVariables 返回分页
+        const vars = varsRes.data || []
+        const consts = (constRes.data && constRes.data.records) ? constRes.data.records : (constRes.data || [])
+        const tree = treeRes.data || []
+        this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}; this.varPickerOptions = []
       }
     },
     async loadGlobalVars() {
       try {
-        // 加载全局变量：projectId 传 0 或专门查询全局变量的 API
-        const [varsRes, treeRes] = await Promise.all([
-          listVariablesByProject(0),
+        const [varsRes, constRes, treeRes] = await Promise.all([
+          listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
+          listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(0)
         ])
-        this.buildVarOptions(varsRes.data || [], treeRes.data || [])
+        const vars = (varsRes.data && varsRes.data.records) ? varsRes.data.records : (varsRes.data || [])
+        const consts = (constRes.data && constRes.data.records) ? constRes.data.records : (constRes.data || [])
+        const tree = treeRes.data || []
+        this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}; this.varPickerOptions = []
       }
@@ -428,8 +443,8 @@ export default {
           varLabel: v.varLabel || v.varCode,
           varType: v.varType,
           varSource: v.varSource,
-          sourceType: 'variable',
-          sourceLabel: '变量',
+          sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
+          sourceLabel: v.varSource === 'CONSTANT' ? '常量' : '变量',
           varObj: v
         })
       })
@@ -455,7 +470,6 @@ export default {
     varSelectGroups() {
       if (!this.varPickerOptions.length) return []
       const groups = []
-      // 按来源类型分组
       const bySource = {}
       this.varPickerOptions.forEach(v => {
         const key = v.sourceType || 'other'
@@ -463,6 +477,7 @@ export default {
         bySource[key].push(v)
       })
       if (bySource.variable) groups.push({ label: '引擎变量', sourceType: 'variable', vars: bySource.variable })
+      if (bySource.constant) groups.push({ label: '常量', sourceType: 'constant', vars: bySource.constant })
       if (bySource.dataObject) groups.push({ label: '数据对象字段', sourceType: 'dataObject', vars: bySource.dataObject })
       if (bySource.other) groups.push({ label: '其他', sourceType: 'other', vars: bySource.other })
       return groups
@@ -580,50 +595,127 @@ export default {
 
     // ========== 模型测试 ==========
     async openTestDialog() {
+      // 1. 先打开弹窗，此时 testReady=false，内容显示"正在加载..."，旧数据被隐藏
       this.testVisible = true
+      this.testReady = false
       this.testResult = null
       this.testMode = 'manual'
       this.jsonEdited = false
-      this.testFields = (this.model.inputFields || []).filter(f => f.status !== 0).map(f => {
+      this.jsonError = ''
+      this.testDialogKey++ // 递增 key 强制重新挂载 MonacoEditor
+
+      // 2. 异步获取最新模型数据（不阻塞弹窗打开）
+      let freshModel = this.model
+      try {
+        const res = await api.getModel(this.model.id)
+        if (res.data) freshModel = res.data
+      } catch (e) { /* fallback to cached */ }
+
+      // 3. 初始化字段列表（解析 validValues）
+      const testFields = (freshModel.inputFields || []).filter(f => f.status !== 0).map(f => {
         if (f.validValues && typeof f.validValues === 'string') {
           try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
         }
         if (!f.validValues) f.validValues = []
         return f
       })
-      this.testParams = {}
-      this.testFields.forEach(f => {
-        if (f.defaultValue) {
-          this.testParams[f.fieldName] = f.defaultValue
-        } else if (f.fieldType === 'BOOLEAN') {
-          this.testParams[f.fieldName] = false
-        } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
-          this.testParams[f.fieldName] = null
-        } else {
-          this.testParams[f.fieldName] = ''
-        }
-      })
-      // 构造仅含输入字段的 JSON 骨架（不含输出）
-      this.testJsonSkeletion = this.buildJsonStr()
-      this.testJsonStr = this.testJsonSkeletion
-      // 如果有已保存的参数，加载之（仅覆盖输入字段，保留用户已编辑的输出字段）
+
+      // 4. 从服务端获取已保存的测试参数（最高优先级）
+      let savedParams = null
       try {
         const res = await api.getTestParams(this.model.id)
         if (res.data) {
-          this.testJsonStr = res.data
-          this.jsonEdited = true
-          this.syncJsonToParams()
+          savedParams = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
         }
-      } catch (e) {
-        // ignore
+      } catch (e) { /* ignore */ }
+
+      // 5. 从上传时设置的样例初始化（modelConfig.testParams，次优先级）
+      let configParams = null
+      if (!savedParams) {
+        try {
+          const rawConfig = freshModel.modelConfig
+          const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : (rawConfig || {})
+          if (config && config.testParams) {
+            configParams = typeof config.testParams === 'string'
+              ? JSON.parse(config.testParams)
+              : config.testParams
+          }
+        } catch (e) { /* ignore */ }
       }
+
+      // 6. 优先级：已保存参数 > 上传样例 > 空对象
+      const initObj = savedParams || configParams || {}
+
+      // 7. 构建 testParams 和 testJsonStr
+      //    数字字段默认 0（而非 null），避免 el-input-number 显示 0.000000
+      const testParams = {}
+      testFields.forEach(f => {
+        if (initObj[f.fieldName] !== undefined) {
+          testParams[f.fieldName] = initObj[f.fieldName]
+        } else if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
+          testParams[f.fieldName] = f.defaultValue
+        } else if (f.fieldType === 'BOOLEAN') {
+          testParams[f.fieldName] = false
+        } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
+          testParams[f.fieldName] = 0
+        } else {
+          testParams[f.fieldName] = ''
+        }
+      })
+
+      // 8. 构建初始 JSON（包含所有字段的当前值）
+      const jsonObj = {}
+      testFields.forEach(f => {
+        jsonObj[f.fieldName] = testParams[f.fieldName]
+      })
+      const testJsonStr = JSON.stringify(jsonObj, null, 2)
+      const testJsonSkeleton = JSON.stringify({}, null, 2)
+
+      // 9. 一次性设置所有数据，然后标记为就绪，触发重新渲染
+      this.testFields = testFields
+      this.testParams = testParams
+      this.testJsonStr = testJsonStr
+      this.testJsonSkeleton = testJsonSkeleton
+      this.testReady = true // ✅ 内容切换：隐藏加载中，显示实际表单/JSON编辑器
+    },
+    /**
+     * 切换到 JSON 编辑模式：同步 testParams → testJsonStr
+     */
+    switchToJsonMode() {
+      if (this.testMode === 'json') return
+      this.testMode = 'json'
+      this.syncParamsToJson()
+    },
+    /**
+     * 切换到表单填写模式：同步 testJsonStr → testParams
+     * 仅更新 testParams 中原本为 undefined 或已为默认值（非用户填写）的字段，
+     * 保留用户已手动填写的值不被覆盖。
+     */
+    switchToManualMode() {
+      if (this.testMode === 'manual') return
+      this.testMode = 'manual'
+      this.syncJsonToParams()
+    },
+    syncParamsToJson() {
+      const obj = {}
+      this.testFields.forEach(f => {
+        const val = this.testParams[f.fieldName]
+        if (val !== '' && val !== null) {
+          obj[f.fieldName] = val
+        } else {
+          obj[f.fieldName] = null
+        }
+      })
+      this.testJsonStr = JSON.stringify(obj, null, 2)
+      this.jsonEdited = false
+      this.jsonError = ''
     },
     buildJsonStr() {
       const obj = {}
       Object.keys(this.testParams).forEach(k => {
-        if (this.testParams[k] !== '' && this.testParams[k] !== null) {
-          obj[k] = this.testParams[k]
-        }
+        const val = this.testParams[k]
+        if (val !== '' && val !== null) obj[k] = val
+        else obj[k] = null
       })
       return JSON.stringify(obj, null, 2)
     },
@@ -636,14 +728,20 @@ export default {
         this.jsonError = 'JSON 格式错误: ' + e.message
       }
     },
+    /**
+     * 从 JSON 同步到表单：只更新 testParams 中原本为 undefined 的字段，
+     * 保留用户已在表单中填写的值不被覆盖。
+     */
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
         const inputFieldNames = new Set(this.testFields.map(f => f.fieldName))
         Object.keys(obj).forEach(k => {
-          // 只同步输入字段，忽略输出字段
           if (inputFieldNames.has(k)) {
-            this.testParams[k] = obj[k]
+            // 仅当当前 testParams 中该字段为 undefined 时才更新
+            if (this.testParams[k] === undefined) {
+              this.testParams[k] = obj[k]
+            }
           }
         })
         this.jsonError = ''
@@ -673,7 +771,6 @@ export default {
         const res = await api.executeModel(this.model.id, params)
         this.testResult = res.data || {}
         if (this.testResult.success) {
-          // 成功时更新 JSON 编辑器内容为用户实际提交的参数
           this.testJsonStr = JSON.stringify(params, null, 2)
           this.jsonEdited = true
         }
@@ -705,14 +802,19 @@ export default {
         this.$message.error('保存失败: ' + (e.message || e))
       }
     },
+    /**
+     * 清空参数：数字字段重置为 0，布尔重置为 false，字符串重置为空
+     */
     handleClearParams() {
       this.testParams = {}
       this.testFields.forEach(f => {
         if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
-        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = null
+        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = 0
         else this.testParams[f.fieldName] = ''
       })
-      this.testJsonStr = this.testJsonSkeletion
+      const jsonObj = {}
+      this.testFields.forEach(f => { jsonObj[f.fieldName] = this.testParams[f.fieldName] })
+      this.testJsonStr = JSON.stringify(jsonObj, null, 2)
       this.jsonEdited = false
       this.testResult = null
       this.jsonError = ''

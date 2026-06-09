@@ -546,6 +546,8 @@ export default {
     async handleSave() {
       this.normalizeModel()
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
 

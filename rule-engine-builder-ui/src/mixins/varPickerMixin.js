@@ -174,6 +174,78 @@ export default {
       }
     },
 
+    /**
+     * 刷新项目变量/函数列表（设计器保存后调用）。
+     * 重新拉取当前项目下的所有数据，更新 projectVars、projectRefs、projectFunctions。
+     */
+    async refreshProjectRefs() {
+      if (!this._projectId) return
+      this.loadingVars = true
+      this.varsLoadError = false
+      try {
+        const pid = this._projectId
+        const [varRes, objRes, funcRes] = await Promise.all([
+          listVariablesByProject(pid).catch(() => ({ data: [] })),
+          getVariableTree(pid).catch(() => ({ data: [] })),
+          listAllFunctionsByProject(pid).catch(() => ({ data: [] }))
+        ])
+        const funcData = (funcRes && funcRes.data ? funcRes.data : funcRes) || []
+        this.projectFunctions = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
+
+        const allVars = (varRes && varRes.data ? varRes.data : varRes) || []
+        const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
+
+        this.projectVars = allVars
+
+        const refs = []
+        allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
+          refs.push({
+            refCode: v.scriptName || v.varCode,
+            refLabel: `${v.varLabel} (${v.scriptName || v.varCode})`,
+            varType: v.varType,
+            varObj: v,
+            category: 'standalone'
+          })
+        })
+        allVars.filter(v => v.varSource === 'CONSTANT').forEach(c => {
+          const constScriptName = c.scriptName || c.varCode
+          refs.push({
+            refCode: constScriptName,
+            refLabel: `${c.varLabel || c.varCode} (${constScriptName})`,
+            varType: c.varType,
+            varObj: c,
+            category: 'constant'
+          })
+        })
+        objectTree.forEach(node => {
+          const obj = node.object || node
+          const objectCode = obj.objectCode || ''
+          const objScriptName = obj.scriptName || objectCode
+          ;(node.variables || []).forEach(v => {
+            const varScriptName = v.scriptName || v.varCode
+            refs.push({
+              refCode: `${objScriptName}.${varScriptName}`,
+              refLabel: `${v.varLabel || v.varCode} (${varScriptName})`,
+              varType: v.varType,
+              varObj: v,
+              category: 'object',
+              objectCode,
+              objectLabel: obj.objectLabel || objectCode
+            })
+          })
+        })
+
+        this.projectRefs = refs
+        this._trySyncModelVarRefs()
+        const enumRefs = refs.filter(r => r.varType === 'ENUM')
+        await Promise.all(enumRefs.map(r => this.loadVarOptionsForRef(r.refCode, r.varObj)))
+      } catch (e) {
+        this.varsLoadError = true
+      } finally {
+        this.loadingVars = false
+      }
+    },
+
     getVarByCode(code) {
       const ref = this.projectRefs.find(r => r.refCode === code)
       return ref ? ref.varObj : (this.projectVars.find(v => v.varCode === code) || null)

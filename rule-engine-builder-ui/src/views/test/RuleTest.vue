@@ -6,14 +6,21 @@
         <div class="uiue-card">
           <div class="uiue-card-title">选择规则</div>
           <el-form size="small" label-width="80px">
-            <el-form-item label="项目">
+            <el-form-item label="筛选范围">
+              <el-radio-group v-model="ruleScope" size="small" style="width: 100%;" @change="onScopeChange">
+                <el-radio-button label="ALL">全部</el-radio-button>
+                <el-radio-button label="PROJECT">项目级</el-radio-button>
+                <el-radio-button label="GLOBAL">全局</el-radio-button>
+              </el-radio-group>
+            </el-form-item>
+            <el-form-item label="项目" v-if="ruleScope === 'PROJECT'">
               <el-select v-model="selectedProjectId" placeholder="请选择项目" clearable style="width: 100%;" @change="onProjectChange">
                 <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
               </el-select>
             </el-form-item>
             <el-form-item label="规则">
-              <el-select v-model="selectedRuleId" placeholder="请先选择项目" :disabled="!selectedProjectId" style="width: 100%;" filterable @change="onRuleChange">
-                <el-option v-for="r in rules" :key="r.id" :label="r.ruleName + ' (' + r.ruleCode + ')'" :value="r.id" />
+              <el-select v-model="selectedRuleId" :placeholder="ruleScope === 'PROJECT' && !selectedProjectId ? '请先选择项目' : '请选择规则'" :disabled="ruleScope === 'PROJECT' && !selectedProjectId" style="width: 100%;" filterable @change="onRuleChange">
+                <el-option v-for="r in rules" :key="r.id" :label="(r.scope === 'GLOBAL' ? '[全局] ' : '[项目] ') + r.ruleName + ' (' + r.ruleCode + ')'" :value="r.id" />
               </el-select>
             </el-form-item>
           </el-form>
@@ -36,7 +43,7 @@
         <div class="uiue-card" style="margin-top: 12px;">
           <div class="uiue-card-title">
             输入参数
-            <el-button type="text" size="small" style="margin-left: 12px;" @click="loadVariables" v-if="selectedProjectId">
+            <el-button type="text" size="small" style="margin-left: 12px;" @click="loadVariables" v-if="selectedRule">
               <i class="el-icon-refresh" /> 加载变量
             </el-button>
             <el-button type="text" size="small" style="margin-left: 8px;" @click="addParam">
@@ -44,7 +51,7 @@
             </el-button>
           </div>
           <div v-if="params.length === 0" style="color: #999; padding: 12px 0; text-align: center;">
-            请选择项目后加载变量，或手动添加参数
+            请选择规则后加载变量，或手动添加参数
           </div>
           <el-form v-else size="small" label-width="0">
             <div v-for="(p, idx) in params" :key="idx" class="param-row">
@@ -137,6 +144,7 @@ export default {
     return {
       projects: [],
       rules: [],
+      ruleScope: 'ALL',
       selectedProjectId: null,
       selectedRuleId: null,
       selectedRule: null,
@@ -147,13 +155,51 @@ export default {
   },
   created() {
     this.loadProjects()
+    this.loadRulesByScope()
   },
   methods: {
+    async loadRulesByScope() {
+      // 页面加载时根据当前 ruleScope 自动加载规则列表
+      if (this.ruleScope === 'ALL') {
+        try {
+          const res = await listDefinitions({ pageNum: 1, pageSize: 1000 })
+          this.rules = res.data.records || []
+        } catch (e) { /* ignore */ }
+      } else if (this.ruleScope === 'GLOBAL') {
+        try {
+          const res = await listDefinitions({ pageNum: 1, pageSize: 1000, scope: 'GLOBAL' })
+          this.rules = res.data.records || []
+        } catch (e) { /* ignore */ }
+      }
+      // PROJECT 模式由用户选择项目后触发，不在此加载
+    },
     async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 1000 })
         this.projects = res.data.records || []
       } catch (e) { /* ignore */ }
+    },
+    async onScopeChange() {
+      this.selectedRuleId = null
+      this.selectedRule = null
+      this.rules = []
+      this.params = []
+      this.result = null
+      this.selectedProjectId = null
+
+      if (this.ruleScope === 'ALL') {
+        try {
+          const res = await listDefinitions({ pageNum: 1, pageSize: 1000 })
+          this.rules = res.data.records || []
+        } catch (e) { /* ignore */ }
+      } else if (this.ruleScope === 'GLOBAL') {
+        try {
+          const res = await listDefinitions({ pageNum: 1, pageSize: 1000, scope: 'GLOBAL' })
+          this.rules = res.data.records || []
+        } catch (e) { /* ignore */ }
+      } else if (this.ruleScope === 'PROJECT') {
+        // 项目级规则由 onProjectChange 处理，此处不加载
+      }
     },
     async onProjectChange() {
       this.selectedRuleId = null
@@ -172,19 +218,24 @@ export default {
       this.result = null
     },
     async loadVariables() {
-      if (this.selectedProjectId == null) return  // projectId == null 表示未选择项目，提前返回
-      // 每次加载前清空已有参数
-      this.params = []
+      if (!this.selectedRule) return  // 未选择规则，提前返回
       try {
         // 根据规则的 scope 决定加载哪种变量：GLOBAL 规则加载全局变量，项目级规则加载项目变量
+        // projectId 直接从 selectedRule 取，不依赖 selectedProjectId（切换范围时会被清空）
         let res
-        if (this.selectedRule && this.selectedRule.scope === 'GLOBAL') {
+        if (this.selectedRule.scope === 'GLOBAL') {
           res = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
         } else {
-          res = await listVariablesByProject(this.selectedProjectId)
+          const ruleProjectId = this.selectedRule.projectId
+          if (!ruleProjectId) {
+            this.$message.warning('无法获取规则所属项目，加载变量失败')
+            return
+          }
+          res = await listVariablesByProject(ruleProjectId)
         }
         console.log('[变量加载] API 响应原始数据:', res)
-        const vars = res.data || []
+        // listVariables 返回分页 { records, total }；listVariablesByProject 返回数组
+        const vars = res.data && res.data.records !== undefined ? res.data.records : (res.data || [])
         console.log('[变量加载] API 返回的变量列表:', vars)
         console.log('[变量加载] API 变量代码列表:', vars.map(v => v.varCode))
 

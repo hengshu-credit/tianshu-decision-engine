@@ -14,7 +14,7 @@
         <el-divider direction="vertical" />
         <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
         <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">测试</el-button>
       </div>
     </div>
 
@@ -97,7 +97,7 @@
                   placeholder="选择变量"
                   width="100%"
                   class="cond-var"
-                  @select="v => { item.condVar = v.varCode; item.condVarType = v.varType }"
+                  @select="v => { item.condVar = v.varCode; item.condVarType = v.varType; item._varId = (v.varObj && v.varObj.id) || null }"
                 />
                 <el-input v-else v-model="item.condVar" size="small" placeholder="变量编码" class="cond-var" />
                 <el-select v-model="item.condOperator" size="small" class="cond-op">
@@ -136,7 +136,7 @@
                     :min="0"
                     :max="2"
                     :step="0.05"
-                    :format-tooltip="v => v.toFixed(2)"
+                    :format-tooltip="v => (v == null ? '0.00' : v.toFixed(2))"
                     show-input
                     input-size="small"
                     style="flex:1;"
@@ -145,7 +145,7 @@
               </div>
               <div class="weighted-score">
                 <span class="item-field-label">加权分</span>
-                <span class="weighted-value">{{ (item.score * item.weight).toFixed(1) }}</span>
+                <span class="weighted-value">{{ ((item.score || 0) * (item.weight || 0)).toFixed(1) }}</span>
               </div>
             </div>
           </div>
@@ -176,7 +176,7 @@
               <code>{{ item.score }}</code>
               <template v-if="item.weight !== 1">
                 <span class="op"> × </span>
-                <code>{{ item.weight.toFixed(2) }}</code>
+                <code>{{ (item.weight || 0).toFixed(2) }}</code>
               </template>
             </span>
             <span v-if="idx < model.scoreItems.length - 1" :key="'op-' + idx" class="op"> + </span>
@@ -257,35 +257,29 @@
     </div>
 
     <!-- 测试执行弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <p class="test-hint"><i class="el-icon-info" /> 请输入测试参数（JSON 格式），包含各评分条件中使用的变量</p>
-      <el-input
-        v-model="testParamsJson"
-        type="textarea"
-        :rows="6"
-        placeholder='{"creditLevel": "A", "income": 600000, "age": 25}'
-      />
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
+    <el-dialog title="测试执行" :visible.sync="testVisible" width="680px" append-to-body :close-on-click-modal="false">
+      <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载编辑器...</div>
+      <template v-else>
+        <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式），包含评分条件中使用的变量</p>
+        <monaco-editor v-model="testParamsJson" language="json" height="260px" :key="testDialogKey" @change="onJsonInput" />
+        <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
+        <div v-if="testResult" class="test-result">
+          <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:10px;" />
+          <el-descriptions :column="1" border size="small">
+            <el-descriptions-item v-if="isResultMap" label="执行结果">
+              <div v-for="(val, key) in testResult.result" :key="key"><strong style="font-size:15px;color:#1890ff;">{{ key }}: {{ val }}</strong></div>
+            </el-descriptions-item>
+            <el-descriptions-item v-else :label="model.resultVar.varLabel || '评分结果'"><strong style="font-size:16px;color:#1890ff;">{{ testResult.result }}</strong></el-descriptions-item>
+            <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
+            <el-descriptions-item v-if="testResult.errorMessage" label="错误"><span style="color:#f56c6c;">{{ testResult.errorMessage }}</span></el-descriptions-item>
+          </el-descriptions>
+        </div>
       </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false"
-          show-icon
-          style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="model.resultVar.varLabel || '评分结果'">
-            <strong style="font-size:16px;color:#1890ff;">{{ testResult.result }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span class="text-secondary">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
+      <div slot="footer">
+        <el-button size="small" icon="el-icon-document" @click="saveTestParams" :disabled="!testParamsJson || testParamsJson === '{}'">保存样例</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
+        <el-button size="small" @click="handleClearParams">清空</el-button>
+        <el-button size="small" @click="testVisible = false">关闭</el-button>
       </div>
     </el-dialog>
   </div>
@@ -311,12 +305,18 @@ export default {
         initialScore: 0,
         scoreItems: [],
         resultVar: { varCode: '', varLabel: '' },
-        thresholds: []
+        thresholds: [],
+        testParams: null
       },
       scriptMode: 'visual',
       testVisible: false,
       testParamsJson: '{}',
-      testResult: null
+      testResult: null,
+      testJsonError: '',
+      testDialogKey: 1,
+      testReady: false,
+      testExecuting: false,
+      jsonError: ''
     }
   },
   computed: {
@@ -337,6 +337,9 @@ export default {
     },
     sortedThresholds() {
       return [...this.model.thresholds].sort((a, b) => (b.min || 0) - (a.min || 0))
+    },
+    isResultMap() {
+      return this.testResult && this.testResult.result && typeof this.testResult.result === 'object' && !Array.isArray(this.testResult.result)
     }
   },
   created() {
@@ -402,6 +405,18 @@ export default {
         }
       }
     },
+    /** 统一条件表达式生成（评分项保存和反解共用） */
+    buildCondition(condVar, condOperator, condValue, condVarType) {
+      if (!condVar || !condOperator || condValue == null || condValue === '') return ''
+      // 数值比较运算符始终使用数字（不加引号）
+      const numericOps = ['>=', '<=', '>', '<']
+      if (numericOps.includes(condOperator)) {
+        return condVar + ' ' + condOperator + ' ' + condValue
+      }
+      const needQuote = !condVarType || condVarType === 'STRING' || condVarType === 'ENUM'
+      const quoted = needQuote ? '"' + String(condValue).replace(/"/g, '\\"') + '"' : condValue
+      return condVar + ' ' + condOperator + ' ' + quoted
+    },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
     },
@@ -409,9 +424,18 @@ export default {
       if (!v) return
       const varLabel = (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
       const _varId = v.varObj && v.varObj.id ? v.varObj.id : null
+      const newCode = v.varCode
+      // 检测结果变量是否与已有条件变量同名（评分卡中结果变量应为输出变量，不应与输入条件变量同名）
+      const conflictItem = this.model.scoreItems.find(item => item.condVar === newCode)
+      if (conflictItem) {
+        this.$message.warning({
+          message: `结果变量「${newCode}」与评分项「${conflictItem.conditionLabel || ('#' + (this.model.scoreItems.indexOf(conflictItem) + 1))}」的条件变量「${newCode}」同名，生成脚本时会相互覆盖。`,
+          duration: 5000
+        })
+      }
       this.$set(this.model, 'resultVar', {
         ...this.model.resultVar,
-        varCode: v.varCode,
+        varCode: newCode,
         varLabel,
         _varId
       })
@@ -432,13 +456,11 @@ export default {
     },
     async handleSave() {
       this.model.scoreItems.forEach(item => {
-        if (item.condVar && item.condOperator && item.condValue != null && item.condValue !== '') {
-          const needQuote = !item.condVarType || item.condVarType === 'STRING' || item.condVarType === 'ENUM'
-          const val = needQuote ? '"' + String(item.condValue).replace(/"/g, '\\"') + '"' : item.condValue
-          item.condition = item.condVar + ' ' + item.condOperator + ' ' + val
-        }
+        item.condition = this.buildCondition(item.condVar, item.condOperator, item.condValue, item.condVarType)
       })
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
     async handleCompile() {
@@ -455,19 +477,67 @@ export default {
         this.$message.error('编译失败: ' + (res && res.data ? res.data.errorMessage : '未知错误'))
       }
     },
-    handleTest() {
+    openTestDialog() {
+      // 强制重新挂载 monaco-editor，解决编辑器内容/光标异常
+      this.testDialogKey++
+      this.testReady = false
+      this.testResult = null
+      this.jsonError = ''
+      // 首次打开时自动填充已保存的测试样例
+      if (!this.testParamsJson || this.testParamsJson === '{}') {
+        const saved = this.model.testParams
+        if (saved && saved !== '{}') {
+          try { JSON.parse(saved); this.testParamsJson = saved } catch (e) { /* ignore */ }
+        }
+      }
+      this.testVisible = true
+      // 等 monaco 加载完成后标记 ready（通过 nextTick 让 :key 生效）
+      this.$nextTick(() => { setTimeout(() => { this.testReady = true }, 50) })
+    },
+    onJsonInput(val) {
+      this.jsonError = ''
+      if (val && val !== '{}') {
+        try { JSON.parse(val) } catch (e) { this.jsonError = 'JSON 格式错误: ' + e.message }
+      }
+    },
+    handleClearParams() {
       this.testParamsJson = '{}'
       this.testResult = null
-      this.testVisible = true
+      this.jsonError = ''
     },
     async doTest() {
+      if (this.jsonError) { this.$message.error('请修正 JSON 格式错误后再执行'); return }
+      this.testExecuting = true
+      this.testResult = null
       let params = {}
       try { params = JSON.parse(this.testParamsJson || '{}') } catch (e) {
+        this.testExecuting = false
         this.$message.error('参数 JSON 格式错误')
         return
       }
-      const res = await executeRule({ definitionId: this.definitionId, params })
-      this.testResult = res && res.data ? res.data : res
+      try {
+        const res = await executeRule({ definitionId: this.definitionId, params })
+        this.testResult = res && res.data ? res.data : res
+      } catch (e) {
+        this.testResult = { success: false, errorMessage: e.message }
+      } finally {
+        this.testExecuting = false
+      }
+    },
+    saveTestParams() {
+      // 将当前编辑的 JSON 保存到 model.testParams，下次打开时自动填充
+      if (!this.testParamsJson || this.testParamsJson === '{}') {
+        this.$message.warning('请先填写有效的测试参数')
+        return
+      }
+      // 验证 JSON 格式
+      try { JSON.parse(this.testParamsJson) } catch (e) {
+        this.$message.error('JSON 格式错误: ' + e.message)
+        return
+      }
+      this.model.testParams = this.testParamsJson
+      this.handleSave()
+      this.$message.success('测试样例已保存')
     }
   }
 }

@@ -221,15 +221,22 @@ public class RuleModelService {
     }
 
     /**
-     * 更新模型元信息（不包括文件内容）
+     * 更新模型元信息（不包括文件内容和编码/项目等核心字段）
      */
     public void update(RuleModel model) {
         RuleModel existing = modelMapper.selectById(model.getId());
         if (existing == null) {
             throw new IllegalArgumentException("模型不存在");
         }
-        fillProjectCode(model);
-        modelMapper.updateById(model);
+        // 只更新允许变更的字段，避免覆盖文件内容等核心数据
+        existing.setModelName(model.getModelName());
+        existing.setDescription(model.getDescription());
+        existing.setTargetCategories(model.getTargetCategories());
+        existing.setModelVersion(model.getModelVersion());
+        if (model.getStatus() != null) {
+            existing.setStatus(model.getStatus());
+        }
+        modelMapper.updateById(existing);
     }
 
     /**

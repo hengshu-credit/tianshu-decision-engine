@@ -7,20 +7,38 @@ import com.alibaba.fastjson.JSONObject;
  * actionData JSON → QLExpress 脚本生成器（后端 Java 版）
  *
  * 支持块类型：assign, if-block, switch-block, func-call, foreach, ternary, in-check, template-str
+ * 通过 {@link VarContext} 将 condVar / checkVar / matchVar 等字段中的 varCode 解析为正确的 scriptName。
  */
 public class ActionDataCompiler {
 
+    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+
+    /**
+     * 无变量上下文的编译（兼容旧调用）。
+     */
     public static String compile(JSONArray actionData) {
-        if (actionData == null || actionData.isEmpty()) return "";
-        StringBuilder sb = new StringBuilder();
-        for (int i = 0; i < actionData.size(); i++) {
-            String code = compileBlock(actionData.getJSONObject(i), 0);
-            if (code != null && !code.isEmpty()) {
-                if (sb.length() > 0) sb.append("\n");
-                sb.append(code);
+        return compile(actionData, null);
+    }
+
+    /**
+     * 带变量上下文的编译，condVar / checkVar / matchVar 等将通过 VarContext 解析为 scriptName。
+     */
+    public static String compile(JSONArray actionData, VarContext varContext) {
+        CTX.set(varContext);
+        try {
+            if (actionData == null || actionData.isEmpty()) return "";
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < actionData.size(); i++) {
+                String code = compileBlock(actionData.getJSONObject(i), 0);
+                if (code != null && !code.isEmpty()) {
+                    if (sb.length() > 0) sb.append("\n");
+                    sb.append(code);
+                }
             }
+            return sb.toString();
+        } finally {
+            CTX.remove();
         }
-        return sb.toString();
     }
 
     private static String compileBlock(JSONObject block, int indent) {
@@ -80,8 +98,9 @@ public class ActionDataCompiler {
     private static String compileSwitchBlock(JSONObject b, int indent) {
         String matchVar = b.getString("matchVar");
         if (empty(matchVar)) return "";
+        Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("switch (").append(matchVar).append(") {\n");
+        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, matchVar)).append(") {\n");
         JSONArray cases = b.getJSONArray("cases");
         if (cases != null) {
             for (int i = 0; i < cases.size(); i++) {
@@ -123,8 +142,9 @@ public class ActionDataCompiler {
         String itemVar = b.getString("itemVar");
         String listExpr = b.getString("listExpr");
         if (empty(itemVar) || empty(listExpr)) return "";
+        Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("for (").append(itemVar).append(" : ").append(listExpr).append(") {\n");
+        sb.append(pad(indent)).append("for (").append(resolveVar(varId, itemVar)).append(" : ").append(listExpr).append(") {\n");
         sb.append(compileActions(b.getJSONArray("actions"), indent + 1));
         sb.append(pad(indent)).append("}");
         return sb.toString();
@@ -134,9 +154,10 @@ public class ActionDataCompiler {
         String target = b.getString("target");
         String condVar = b.getString("condVar");
         if (empty(target) || empty(condVar)) return "";
+        Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         String op = b.getString("condOp");
         if (empty(op)) op = "==";
-        String cond = condVar + " " + op + " " + wrapValue(b.getString("condValue"));
+        String cond = resolveVar(varId, condVar) + " " + op + " " + wrapValue(b.getString("condValue"));
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
         return pad(indent) + target + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv);
@@ -146,6 +167,7 @@ public class ActionDataCompiler {
         String target = b.getString("target");
         String checkVar = b.getString("checkVar");
         if (empty(target) || empty(checkVar)) return "";
+        Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         JSONArray vals = b.getJSONArray("inValues");
         StringBuilder vb = new StringBuilder();
         if (vals != null) {
@@ -159,7 +181,7 @@ public class ActionDataCompiler {
         }
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
-        return pad(indent) + target + " = " + checkVar + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
+        return pad(indent) + target + " = " + resolveVar(varId, checkVar) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
     }
 
     private static String compileTemplateStr(JSONObject b, int indent) {
@@ -188,11 +210,25 @@ public class ActionDataCompiler {
     }
 
     private static String buildCond(JSONObject branch) {
+        Long varId = branch.containsKey("_varId") ? branch.getLong("_varId") : null;
         String v = branch.getString("condVar");
         if (empty(v)) return "true";
         String op = branch.getString("condOp");
         if (empty(op)) op = "==";
-        return v + " " + op + " " + wrapValue(branch.getString("condValue"));
+        return resolveVar(varId, v) + " " + op + " " + wrapValue(branch.getString("condValue"));
+    }
+
+    /**
+     * 根据 varId 解析脚本变量名：优先通过 varContext 查 scriptName，回退到 varCode。
+     * 支持 varId 为 null 的情况（直接用 varCode）。
+     */
+    private static String resolveVar(Long varId, String varCode) {
+        VarContext ctx = CTX.get();
+        if (ctx != null && varId != null) {
+            String s = ctx.getScriptName(varId);
+            if (s != null) return s;
+        }
+        return varCode != null ? varCode : "";
     }
 
     private static String wrapValue(String val) {

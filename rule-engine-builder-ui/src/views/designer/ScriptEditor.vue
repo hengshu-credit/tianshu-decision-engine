@@ -339,6 +339,7 @@ export default {
       const modelJson = JSON.stringify({ script: this.script })
       await saveContent({ definitionId: this.definitionId, modelJson })
       this.$message.success('保存成功')
+      this.refreshProjectRefs()
     },
     async handleCompile() {
       await this.handleSave()

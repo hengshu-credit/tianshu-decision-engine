@@ -59,16 +59,6 @@ export function listAllModelsByProject(projectId) {
   return request({ url: `/rule/model/project/${projectId}/all`, method: 'get' })
 }
 
-/** 添加全局模型到项目 */
-export function addModelRef(modelId, projectId) {
-  return request({ url: '/rule/model/ref', method: 'post', data: { modelId, projectId } })
-}
-
-/** 从项目移除全局模型 */
-export function removeModelRef(modelId, projectId) {
-  return request({ url: '/rule/model/ref', method: 'delete', data: { modelId, projectId } })
-}
-
 /** 执行模型测试 */
 export function executeModel(id, params) {
   return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params })

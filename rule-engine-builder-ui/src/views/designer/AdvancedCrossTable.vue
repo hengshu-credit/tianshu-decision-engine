@@ -445,6 +445,8 @@ export default {
     async handleSave() {
       const saveModel = this.buildSaveModel()
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(saveModel) })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
     async handleCompile() {

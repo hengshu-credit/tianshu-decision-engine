@@ -3,7 +3,6 @@ package com.bjjw.rule.server.controller;
 import com.bjjw.rule.model.entity.RuleModel;
 import com.bjjw.rule.model.entity.RuleModelInputField;
 import com.bjjw.rule.model.entity.RuleModelOutputField;
-import com.bjjw.rule.model.entity.RuleModelRef;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleModelService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -154,28 +153,6 @@ public class RuleModelController {
     @GetMapping("/project/{projectId}/all")
     public R<List<RuleModel>> listAllByProject(@PathVariable Long projectId) {
         return R.ok(modelService.listByProject(projectId));
-    }
-
-    /**
-     * 添加全局模型到项目
-     */
-    @PostMapping("/ref")
-    public R<Void> addRef(@RequestBody RuleModelRef ref) {
-        try {
-            modelService.addModelRef(ref.getModelId(), ref.getProjectId());
-            return R.ok();
-        } catch (IllegalArgumentException e) {
-            return R.fail(e.getMessage());
-        }
-    }
-
-    /**
-     * 从项目移除全局模型
-     */
-    @DeleteMapping("/ref")
-    public R<Void> removeRef(@RequestBody RuleModelRef ref) {
-        modelService.removeModelRef(ref.getModelId(), ref.getProjectId());
-        return R.ok();
     }
 
     /**

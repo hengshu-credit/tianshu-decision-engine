@@ -97,7 +97,7 @@ public class RuleFunctionService {
      * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
      */
     public IPage<RuleFunction> pageByProject(Long projectId, int pageNum, int pageSize, String scope,
-                                              String projectCode, String projectName) {
+                                              String projectCode, String projectName, String funcCode, String funcLabel) {
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
@@ -115,6 +115,14 @@ public class RuleFunctionService {
                 wrapper.eq(RuleFunction::getProjectId, projectId);
             }
             // GLOBAL 情况下 projectId 不作为过滤条件
+        }
+        // 精确匹配函数编码
+        if (funcCode != null && !funcCode.isEmpty()) {
+            wrapper.eq(RuleFunction::getFuncCode, funcCode);
+        }
+        // 精确匹配函数名称
+        if (funcLabel != null && !funcLabel.isEmpty()) {
+            wrapper.eq(RuleFunction::getFuncName, funcLabel);
         }
         // 通过 projectCode 或 projectName 进行筛选
         if (projectCode != null && !projectCode.isEmpty()) {
@@ -149,14 +157,36 @@ public class RuleFunctionService {
     /**
      * 查询所有函数（分页，未选项目时使用）
      * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示全部
+     * @note 无 projectId/projectCode/projectName 时，默认只查询全局函数（scope=GLOBAL），
+     *       避免返回所有项目级函数造成数据泄露和界面混乱。
      */
-    public IPage<RuleFunction> pageAll(int pageNum, int pageSize, String scope, String projectCode, String projectName) {
+    public IPage<RuleFunction> pageAll(int pageNum, int pageSize, String scope, Long projectId,
+                                        String projectCode, String projectName, String funcCode, String funcLabel) {
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
         }
-        // 通过 projectCode 或 projectName 进行筛选
-        if (projectCode != null && !projectCode.isEmpty()) {
+        // 精确匹配函数编码
+        if (funcCode != null && !funcCode.isEmpty()) {
+            wrapper.eq(RuleFunction::getFuncCode, funcCode);
+        }
+        // 精确匹配函数名称
+        if (funcLabel != null && !funcLabel.isEmpty()) {
+            wrapper.eq(RuleFunction::getFuncName, funcLabel);
+        }
+        // projectId 精确匹配（优先于 projectCode/projectName）
+        if (projectId != null && projectId > 0) {
+            if (scope == null || scope.isEmpty()) {
+                wrapper.and(w -> w
+                        .eq(RuleFunction::getScope, SCOPE_GLOBAL)
+                        .or()
+                        .eq(RuleFunction::getScope, SCOPE_PROJECT)
+                        .eq(RuleFunction::getProjectId, projectId)
+                );
+            } else if (SCOPE_PROJECT.equals(scope)) {
+                wrapper.eq(RuleFunction::getProjectId, projectId);
+            }
+        } else if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
                     new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectCode, projectCode))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
@@ -178,6 +208,9 @@ public class RuleFunctionService {
             } else {
                 wrapper.eq(RuleFunction::getScope, SCOPE_GLOBAL);
             }
+        } else {
+            // 无任何项目筛选条件时，返回所有数据（全局+项目级），便于管理控制台查看全量资源
+            // 仅在用户显式指定了 scope 时才做 scope 过滤
         }
         wrapper.orderByAsc(RuleFunction::getScope, RuleFunction::getProjectId, RuleFunction::getFuncCode);
         IPage<RuleFunction> result = functionMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);

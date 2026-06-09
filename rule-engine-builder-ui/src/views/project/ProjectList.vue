@@ -2,8 +2,27 @@
   <div class="uiue-list-page">
     <div class="uiue-search-container">
       <el-form :inline="true" size="small">
-        <el-form-item label="关键字">
-          <el-input v-model="queryParams.keyword" placeholder="项目编码或名称" clearable @keyup.enter.native="handleQuery" />
+        <el-form-item label="项目编码">
+          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:160px;"
+            :remote-method="queryProjectCode" :loading="projectCodeLoading">
+            <el-option v-for="p in filteredProjectCodes" :key="p" :label="p" :value="p" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="项目名称">
+          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:160px;"
+            :remote-method="queryProjectName" :loading="projectNameLoading">
+            <el-option v-for="p in filteredProjectNames" :key="p" :label="p" :value="p" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="启用状态">
+          <el-select v-model="qp.status" clearable filterable placeholder="全部" style="width:100px;" @change="handleQuery">
+            <el-option label="启用" :value="1" />
+            <el-option label="停用" :value="0" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="创建时间">
+          <el-date-picker v-model="createTimeRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期"
+            value-format="yyyy-MM-dd" style="width:240px;" @change="onCreateTimeChange" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -36,14 +55,15 @@
         <template slot-scope="{ row }">
           <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button type="text" size="small" @click="$router.push('/project/' + row.id)">进入</el-button>
-          <el-button type="text" size="small" @click="handleExportDoc(row)">导出文档</el-button>
+          <el-button type="text" size="small" @click="handleViewToken(row)">令牌</el-button>
+          <el-button type="text" size="small" @click="handleExportDoc(row)">API</el-button>
           <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:16px;text-align:right;" :current-page="queryParams.pageNum" :page-size="queryParams.pageSize" :total="total"
+    <el-pagination style="margin-top:16px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
       layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100,200,500]"
-      @current-change="p => { queryParams.pageNum = p; loadData() }" @size-change="s => { queryParams.pageSize = s; queryParams.pageNum = 1; loadData() }" />
+      @current-change="p => { qp.pageNum = p; loadData() }" @size-change="s => { qp.pageSize = s; qp.pageNum = 1; loadData() }" />
     <el-dialog :title="form.id ? '编辑项目' : '新建项目'" :visible.sync="dialogVisible" width="500px">
       <el-form ref="form" :model="form" :rules="rules" label-width="100px" size="small">
         <el-form-item label="项目编码" prop="projectCode"><el-input v-model="form.projectCode" :disabled="!!form.id" /></el-form-item>
@@ -56,32 +76,53 @@
         <el-button size="small" type="primary" @click="handleSubmit">确定</el-button>
       </div>
     </el-dialog>
-    <!-- Token显示对话框 -->
-    <el-dialog title="AccessToken" :visible.sync="tokenDialogVisible" width="500px">
-      <div style="padding: 20px; background: #f5f7fa; border-radius: 4px;">
-        <p style="margin: 0; font-family: monospace; word-break: break-all;">{{ fullToken }}</p>
+    <!-- Token查看对话框 -->
+    <el-dialog title="项目访问令牌" :visible.sync="tokenDialogVisible" width="520px">
+      <div v-if="fullToken" style="padding: 16px; background: #f5f7fa; border-radius: 4px; position: relative;">
+        <p style="margin: 0; font-family: monospace; word-break: break-all; font-size: 14px; line-height: 1.6;">{{ fullToken }}</p>
       </div>
-      <div style="margin-top: 10px; color: #909399; font-size: 12px;">
-        <i class="el-icon-warning"></i> 请妥善保管Token，不要泄露给他人
+      <div v-else style="padding: 16px; color: #909399; text-align: center;">暂无令牌，请重新生成</div>
+      <div style="margin-top: 12px; color: #909399; font-size: 12px;">
+        <i class="el-icon-warning"></i> 请妥善保管Token，不要泄露给他人。Client SDK 通过请求头 <code>X-Rule-Token</code> 或 Query 参数 <code>token</code> 传递。
       </div>
       <div slot="footer">
+        <el-button size="small" @click="handleRegenerateToken">重新生成</el-button>
         <el-button size="small" @click="copyToken">复制</el-button>
         <el-button size="small" type="primary" @click="tokenDialogVisible = false">关闭</el-button>
+      </div>
+    </el-dialog>
+    <!-- 重新生成确认对话框 -->
+    <el-dialog title="重新生成令牌" :visible.sync="regenerateDialogVisible" width="400px">
+      <div style="padding: 8px 0;">
+        <p style="color: #f56c6c; font-size: 14px;">⚠️ 重新生成将导致原有令牌立即失效！</p>
+        <p style="color: #606266; font-size: 13px; margin-top: 8px;">正在为项目「{{ currentTokenProject }}」生成新令牌，确认继续吗？</p>
+      </div>
+      <div slot="footer">
+        <el-button size="small" @click="regenerateDialogVisible = false">取消</el-button>
+        <el-button size="small" type="danger" :loading="regenerating" @click="confirmRegenerate">确认重新生成</el-button>
       </div>
     </el-dialog>
   </div>
 </template>
 <script>
-import { listProjects, createProject, updateProject, deleteProject, getMaskedToken, exportApiDoc } from '@/api/project'
+import { listProjects, createProject, updateProject, deleteProject, getMaskedToken, getFullToken, regenerateToken, exportApiDoc } from '@/api/project'
 export default {
   name: 'ProjectList',
   data() {
     return {
       loading: false, tableData: [], total: 0,
-      queryParams: { pageNum: 1, pageSize: 10, keyword: '' },
+      qp: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' },
+      createTimeRange: [],
+      // 项目编码/名称远程搜索
+      projectCodeLoading: false, filteredProjectCodes: [], allProjectCodes: [],
+      projectNameLoading: false, filteredProjectNames: [], allProjectNames: [],
       dialogVisible: false,
       tokenDialogVisible: false,
       fullToken: '',
+      regenerateDialogVisible: false,
+      regenerating: false,
+      currentTokenProject: '',
+      currentTokenId: null,
       form: { id: null, projectCode: '', projectName: '', description: '', status: 1 },
       rules: {
         projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
@@ -94,9 +135,15 @@ export default {
     async loadData() {
       this.loading = true
       try {
-        const res = await listProjects(this.queryParams)
-        this.tableData = res.data.records
-        this.total = res.data.total
+        const params = { ...this.qp }
+        if (!params.projectCode) delete params.projectCode
+        if (!params.projectName) delete params.projectName
+        if (!params.status && params.status !== 0) delete params.status
+        if (!params.createBeginTime) delete params.createBeginTime
+        if (!params.createEndTime) delete params.createEndTime
+        const res = await listProjects(params)
+        this.tableData = res.data.records || []
+        this.total = res.data.total || 0
         // 加载每个项目的脱敏Token
         for (let row of this.tableData) {
           try {
@@ -108,10 +155,43 @@ export default {
             // ignore
           }
         }
+        // 加载项目编码/名称列表供筛选下拉
+        const codeSet = new Set(), nameSet = new Set()
+        this.tableData.forEach(r => { if (r.projectCode) codeSet.add(r.projectCode); if (r.projectName) nameSet.add(r.projectName) })
+        this.allProjectCodes = Array.from(codeSet)
+        this.allProjectNames = Array.from(nameSet)
+        this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
+        this.filteredProjectNames = this.allProjectNames.slice(0, 20)
       } finally { this.loading = false }
     },
-    handleQuery() { this.queryParams.pageNum = 1; this.loadData() },
-    resetQuery() { this.queryParams.keyword = ''; this.handleQuery() },
+    handleQuery() { this.qp.pageNum = 1; this.loadData() },
+    resetQuery() {
+      this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' }
+      this.createTimeRange = []
+      this.handleQuery()
+    },
+    onCreateTimeChange(val) {
+      this.qp.createBeginTime = val ? val[0] : ''
+      this.qp.createEndTime = val ? val[1] : ''
+    },
+    queryProjectCode(query) {
+      this.projectCodeLoading = true
+      if (!query) {
+        this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
+      } else {
+        this.filteredProjectCodes = this.allProjectCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      }
+      this.projectCodeLoading = false
+    },
+    queryProjectName(query) {
+      this.projectNameLoading = true
+      if (!query) {
+        this.filteredProjectNames = this.allProjectNames.slice(0, 20)
+      } else {
+        this.filteredProjectNames = this.allProjectNames.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
+      }
+      this.projectNameLoading = false
+    },
     handleCreate() { this.form = { id: null, projectCode: '', projectName: '', description: '', status: 1 }; this.dialogVisible = true },
     handleEdit(row) { this.form = { ...row }; this.dialogVisible = true },
     async handleSubmit() {
@@ -148,6 +228,42 @@ export default {
       document.execCommand('copy')
       document.body.removeChild(input)
       this.$message.success('已复制到剪贴板')
+    },
+    async handleViewToken(row) {
+      try {
+        const res = await getFullToken(row.id)
+        if (res.code === 200 && res.data) {
+          this.fullToken = res.data
+          this.currentTokenId = row.id
+          this.currentTokenProject = row.projectName
+          this.tokenDialogVisible = true
+        }
+      } catch (e) {
+        this.$message.error('获取令牌失败')
+      }
+    },
+    handleRegenerateToken() {
+      this.tokenDialogVisible = false
+      this.regenerateDialogVisible = true
+    },
+    async confirmRegenerate() {
+      this.regenerating = true
+      try {
+        const res = await regenerateToken(this.currentTokenId)
+        if (res.code === 200 && res.data) {
+          this.fullToken = res.data
+          this.$message.success('令牌已重新生成')
+          this.regenerateDialogVisible = false
+          this.tokenDialogVisible = true
+          this.loadData()
+        } else {
+          this.$message.error('重新生成失败')
+        }
+      } catch (e) {
+        this.$message.error('重新生成失败')
+      } finally {
+        this.regenerating = false
+      }
     },
     async handleExportDoc(row) {
       try {

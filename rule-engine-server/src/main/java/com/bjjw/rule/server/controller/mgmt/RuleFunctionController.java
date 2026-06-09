@@ -32,8 +32,10 @@ public class RuleFunctionController {
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String projectCode,
-            @RequestParam(required = false) String projectName) {
-        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName));
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String funcCode,
+            @RequestParam(required = false) String funcLabel) {
+        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName, funcCode, funcLabel));
     }
 
     /**
@@ -45,9 +47,12 @@ public class RuleFunctionController {
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
             @RequestParam(required = false) String scope,
+            @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) String projectCode,
-            @RequestParam(required = false) String projectName) {
-        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectCode, projectName));
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String funcCode,
+            @RequestParam(required = false) String funcLabel) {
+        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectId, projectCode, projectName, funcCode, funcLabel));
     }
 
     /**

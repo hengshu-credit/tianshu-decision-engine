@@ -13,7 +13,7 @@
     <el-container>
       <el-aside :width="sideBarWidth + 'px'" class="layout-aside">
         <el-menu
-          :default-active="$route.path"
+          :default-active="activeMenuIndex"
           router
           :background-color="menuBg"
           :text-color="menuText"
@@ -72,7 +72,19 @@ export default {
     sideBarWidth() { return parseInt(variables.sideBarWidth) },
     menuBg() { return variables.menuBg },
     menuText() { return variables.menuText },
-    menuActiveText() { return variables.menuActiveText }
+    menuActiveText() { return variables.menuActiveText },
+    /**
+     * 根据当前路由路径返回菜单激活状态。
+     * - 设计师页面 (/designer/*) → 高亮"规则管理"
+     * - 项目详情 (/project/:id) → 高亮"项目管理"
+     * - 其他路由直接匹配菜单 index
+     */
+    activeMenuIndex() {
+      const path = this.$route.path
+      if (path.startsWith('/designer/')) return '/rule'
+      if (/^\/project\/\d+$/.test(path)) return '/project'
+      return path
+    }
   },
   async mounted() {
     await this.refreshAuthBar()

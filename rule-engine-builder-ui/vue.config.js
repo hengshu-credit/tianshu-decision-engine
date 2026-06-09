@@ -2,6 +2,9 @@
  * Vue CLI 构建配置：生产构建为常规压缩打包，不再使用 javascript-obfuscator 混淆。
  * 构建产物默认输出到本目录下的 dist/，不写入 rule-engine-server。
  */
+const CopyWebpackPlugin = require('copy-webpack-plugin')
+const path = require('path')
+
 module.exports = {
   /** 生产构建不跑 eslint-loader（避免历史代码阻断打包）；开发可依赖 IDE，或执行 npm run lint */
   lintOnSave: process.env.NODE_ENV !== 'production',
@@ -38,5 +41,14 @@ module.exports = {
     if (process.env.NODE_ENV === 'production') {
       config.module.rules.delete('eslint')
     }
+
+    // Monaco Editor：手动复制预构建的 min/vs 目录到 dist/vs
+    config.plugin('copy-monaco').use(CopyWebpackPlugin, [[
+      {
+        from: path.resolve(__dirname, 'node_modules/monaco-editor/min/vs'),
+        to: 'vs',
+        noErrorOnMissing: true
+      }
+    ]])
   }
 }

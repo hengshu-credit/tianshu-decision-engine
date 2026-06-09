@@ -403,7 +403,8 @@ export default {
       if (!v) return
       this.$set(this.model, 'resultVar', {
         varCode: v.varCode,
-        varLabel: (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode
+        varLabel: (v.varObj && v.varObj.varLabel) || v.varLabel || v.varCode,
+        _varId: (v.varObj && v.varObj.id) || null
       })
     },
     onDimVarSelect(gi, di, v) {
@@ -449,6 +450,8 @@ export default {
       const saveModel = JSON.parse(JSON.stringify(this.model))
       ;(saveModel.dimensionGroups || []).forEach(g => { delete g._collapsed })
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(saveModel) })
+      this.refreshProjectRefs()
+
       this.$message.success('保存成功')
     },
     async handleCompile() {

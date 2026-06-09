@@ -18,8 +18,20 @@
             <el-option v-for="r in filteredRules" :key="r.ruleCode" :label="r.ruleName" :value="r.ruleCode" />
           </el-select>
         </el-form-item>
+        <el-form-item label="模型类型">
+          <el-select v-model="qp.modelType" clearable placeholder="全部类型">
+            <el-option label="决策表" value="TABLE" />
+            <el-option label="决策树" value="TREE" />
+            <el-option label="决策流" value="FLOW" />
+            <el-option label="交叉表" value="CROSS" />
+            <el-option label="评分卡" value="SCORE" />
+            <el-option label="复杂交叉表" value="CROSS_ADV" />
+            <el-option label="复杂评分卡" value="SCORE_ADV" />
+            <el-option label="脚本" value="SCRIPT" />
+          </el-select>
+        </el-form-item>
         <el-form-item label="时间范围">
-          <el-date-picker v-model="timeRange" type="datetimerange" range-separator="至"
+          <el-date-picker v-model="timeRange" type="datetimerange" range-separator="-"
             start-placeholder="开始时间" end-placeholder="结束时间" value-format="yyyy-MM-dd HH:mm:ss"
             :default-time="['00:00:00','23:59:59']" :picker-options="pickerOptions" size="small" style="width:360px" />
         </el-form-item>
@@ -108,7 +120,7 @@ export default {
       loading: false,
       list: [],
       total: 0,
-      qp: { pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '' },
+      qp: { pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '', modelType: '' },
       /** 时间范围，默认最近三个月 */
       timeRange: null,
       /** 日期快捷选项 */
@@ -306,6 +318,7 @@ export default {
       this.qp.source = ''
       this.qp.projectCode = ''
       this.qp.ruleCode = ''
+      this.qp.modelType = ''
       this.qp.pageNum = 1
       this.initDefaultTimeRange()
       this.load()

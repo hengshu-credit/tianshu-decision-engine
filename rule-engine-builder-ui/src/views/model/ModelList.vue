@@ -9,7 +9,6 @@
     <div class="uiue-btn-bar">
       <div class="btn-right">
         <el-button size="small" type="primary" icon="el-icon-upload2" @click="handleUpload">上传模型</el-button>
-        <el-button size="small" icon="el-icon-link" @click="handleAddGlobalRef">关联全局模型</el-button>
       </div>
     </div>
 
@@ -104,6 +103,7 @@
         <el-table-column label="操作" min-width="230" align="center">
           <template slot-scope="{ row }">
             <el-button type="text" size="small" @click="$router.push('/model/' + row.id)">详情</el-button>
+            <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
             <el-button type="text" size="small" @click="handlePublish(row)">{{ row.publishedVersion ? '重新发布' : '发布' }}</el-button>
             <el-button v-if="row.scope === 'PROJECT'" type="text" size="small" @click="handleToGlobal(row)">转为全局</el-button>
             <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
@@ -185,31 +185,33 @@
       </div>
     </el-dialog>
 
-    <!-- 关联全局模型对话框 -->
-    <el-dialog title="关联全局模型" :visible.sync="refVisible" width="600px" :close-on-click-modal="false">
-      <el-form :inline="true" size="small" style="margin-bottom:12px;">
-        <el-form-item label="模型编码">
-          <el-input v-model="refQp.modelCode" clearable placeholder="模型编码" style="width:150px;" />
+    <!-- 编辑模型对话框 -->
+    <el-dialog title="编辑模型" :visible.sync="editVisible" width="600px" :close-on-click-modal="false">
+      <el-form ref="editForm" :model="editForm" :rules="editRules" label-width="110px" size="small">
+        <el-form-item label="模型编码">{{ editForm.modelCode }}</el-form-item>
+        <el-form-item label="模型名称" prop="modelName">
+          <el-input v-model="editForm.modelName" placeholder="模型中文名称" />
         </el-form-item>
-        <el-form-item label="模型名称">
-          <el-input v-model="refQp.modelName" clearable placeholder="模型名称" style="width:150px;" />
+        <el-form-item label="模型大类">{{ modelTypeLabel(editForm.modelType) }}</el-form-item>
+        <el-form-item label="模型格式">{{ editForm.modelFormat }}</el-form-item>
+        <el-form-item label="作用范围">{{ editForm.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-form-item>
+        <el-form-item label="目标类别">
+          <el-input v-model="editForm.targetCategories" placeholder="分类模型的目标变量类别数，如 2" />
         </el-form-item>
-        <el-form-item><el-button type="primary" @click="loadGlobalModels">查询</el-button></el-form-item>
+        <el-form-item label="模型版本">
+          <el-input v-model="editForm.modelVersion" placeholder="模型自身版本号" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="editForm.description" type="textarea" :rows="3" placeholder="模型描述信息" />
+        </el-form-item>
+        <el-form-item label="状态">
+          <el-switch v-model="editForm.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" />
+        </el-form-item>
       </el-form>
-      <el-table :data="globalModels" border size="small" max-height="300" v-loading="refLoading">
-        <el-table-column prop="modelCode" label="模型编码" min-width="140" />
-        <el-table-column prop="modelName" label="模型名称" min-width="140" />
-        <el-table-column prop="modelType" label="模型大类" width="90" align="center">
-          <template slot-scope="{row}">{{ modelTypeLabel(row.modelType) }}</template>
-        </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
-          <template slot-scope="{row}">
-            <el-button type="text" size="small" @click="doAddRef(row)">关联</el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <div v-if="globalModels.length === 0" style="text-align:center;padding:20px;color:#909399;">暂无全局模型</div>
-      <div slot="footer"><el-button size="small" @click="refVisible=false">关闭</el-button></div>
+      <div slot="footer">
+        <el-button size="small" @click="editVisible=false">取消</el-button>
+        <el-button size="small" type="primary" @click="handleDoEdit" :loading="editLoading">保存</el-button>
+      </div>
     </el-dialog>
   </div>
 </template>
@@ -261,7 +263,8 @@ export default {
         }, {
           validator: (rule, value, callback) => {
             if (!value) { callback(); return }
-            api.checkModelCode(value.trim(), this.uploadForm.scope, this.uploadForm.scope === 'PROJECT' ? this.uploadForm.projectId : null, null).then(res => {
+            const pid = this.uploadForm.scope === 'PROJECT' ? (this.uploadForm.projectId || undefined) : undefined
+            api.checkModelCode(value.trim(), this.uploadForm.scope, pid, undefined).then(res => {
               if (res.data === true) {
                 callback(new Error(this.uploadForm.scope === 'GLOBAL' ? '该编码已被其他全局模型使用' : '该编码在当前项目内已存在，或与某个全局编码冲突'))
               } else {
@@ -276,10 +279,6 @@ export default {
       },
       fileList: [], selectedFile: null,
 
-      // 关联全局模型
-      refVisible: false, refLoading: false, refQp: { modelCode: '', modelName: '' },
-      globalModels: [],
-
       // 转为全局模型
       toGlobalVisible: false, toGlobalLoading: false,
       toGlobalModelInfo: { id: null, modelCode: '', modelName: '' },
@@ -292,7 +291,7 @@ export default {
         }, {
           validator: (rule, value, callback) => {
             if (!value) { callback(); return }
-            api.checkModelCode(value.trim(), 'GLOBAL', null, this.toGlobalModelInfo.id).then(res => {
+            api.checkModelCode(value.trim(), 'GLOBAL', undefined, this.toGlobalModelInfo.id || undefined).then(res => {
               if (res.data === true) {
                 callback(new Error('该编码已被其他全局模型使用'))
               } else {
@@ -302,6 +301,13 @@ export default {
           },
           trigger: 'blur'
         }]
+      },
+
+      // 编辑模型
+      editVisible: false, editLoading: false,
+      editForm: { id: null, modelCode: '', modelName: '', modelType: '', modelFormat: '', scope: '', targetCategories: '', modelVersion: '', description: '', status: 1 },
+      editRules: {
+        modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }]
       }
     }
   },
@@ -389,7 +395,10 @@ export default {
         try {
           const formData = new FormData()
           formData.append('file', this.selectedFile)
-          formData.append('projectId', this.uploadForm.scope === 'GLOBAL' ? null : (this.uploadForm.projectId || null))
+          // 修复: projectId 为 null 时不添加到 FormData，避免被转成字符串 "null" 导致后端 Long 类型转换失败
+          if (this.uploadForm.scope !== 'GLOBAL' && this.uploadForm.projectId) {
+            formData.append('projectId', this.uploadForm.projectId)
+          }
           formData.append('scope', this.uploadForm.scope)
           formData.append('modelCode', this.uploadForm.modelCode)
           formData.append('modelName', this.uploadForm.modelName)
@@ -403,30 +412,6 @@ export default {
           this.load()
         } catch (e) { this.$message.error(e.message || '上传失败') } finally { this.uploading = false }
       })
-    },
-
-    handleAddGlobalRef() {
-      this.refQp = { modelCode: '', modelName: '' }
-      this.globalModels = []
-      this.refVisible = true
-      this.loadGlobalModels()
-    },
-    async loadGlobalModels() {
-      this.refLoading = true
-      try {
-        const params = { ...this.refQp, scope: 'GLOBAL', pageNum: 1, pageSize: 100 }
-        Object.keys(params).forEach(k => { if (!params[k]) delete params[k] })
-        const res = await api.listModels(params)
-        this.globalModels = (res.data && res.data.records) ? res.data.records : []
-      } catch (e) { this.globalModels = [] } finally { this.refLoading = false }
-    },
-    async doAddRef(row) {
-      if (!row.id) return
-      try {
-        await api.addModelRef(row.id, 0)
-        this.$message.success('关联成功')
-        this.load()
-      } catch (e) { this.$message.error(e.message || '关联失败') }
     },
 
     async handlePublish(row) {
@@ -444,6 +429,41 @@ export default {
         this.$message.success('删除成功')
         this.load()
       } catch (e) { if (e !== 'cancel') this.$message.error(e.message || '删除失败') }
+    },
+    handleEdit(row) {
+      this.editForm = {
+        id: row.id,
+        modelCode: row.modelCode,
+        modelName: row.modelName,
+        modelType: row.modelType,
+        modelFormat: row.modelFormat,
+        scope: row.scope,
+        targetCategories: row.targetCategories || '',
+        modelVersion: row.modelVersion || '',
+        description: row.description || '',
+        status: row.status || 1
+      }
+      this.editVisible = true
+      this.$nextTick(() => { if (this.$refs.editForm) this.$refs.editForm.clearValidate() })
+    },
+    handleDoEdit() {
+      this.$refs.editForm.validate(async valid => {
+        if (!valid) return
+        this.editLoading = true
+        try {
+          await api.updateModel({
+            id: this.editForm.id,
+            modelName: this.editForm.modelName,
+            description: this.editForm.description,
+            targetCategories: this.editForm.targetCategories || null,
+            modelVersion: this.editForm.modelVersion || null,
+            status: this.editForm.status
+          })
+          this.$message.success('保存成功')
+          this.editVisible = false
+          this.load()
+        } catch (e) { this.$message.error(e.message || '保存失败') } finally { this.editLoading = false }
+      })
     },
     handleToGlobal(row) {
       this.toGlobalModelInfo = { id: row.id, modelCode: row.modelCode, modelName: row.modelName }

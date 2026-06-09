@@ -21,12 +21,14 @@ public class ExecutionLogController {
     public R<IPage<RuleExecutionLog>> list(
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
-            @RequestParam(required = false) String ruleCode,
-            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String source,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (modelType != null && !modelType.isEmpty()) wrapper.eq(RuleExecutionLog::getModelType, modelType);
         if (source != null && !source.isEmpty()) wrapper.eq(RuleExecutionLog::getSource, source);
         if (projectCode != null && !projectCode.isEmpty()) wrapper.eq(RuleExecutionLog::getProjectCode, projectCode);
         if (ruleCode != null && !ruleCode.isEmpty()) wrapper.eq(RuleExecutionLog::getRuleCode, ruleCode);

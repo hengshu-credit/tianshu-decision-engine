@@ -33,10 +33,10 @@
           <el-input v-model="qp.ruleName" clearable style="width:150px;" />
         </el-form-item>
         <el-form-item label="创建时间">
-          <el-date-picker v-model="createTimeRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="yyyy-MM-dd" style="width:240px;" />
+          <el-date-picker v-model="createTimeRange" type="daterange" range-separator="~" start-placeholder="开始日期" end-placeholder="结束日期" value-format="yyyy-MM-dd" style="width:240px;" />
         </el-form-item>
         <el-form-item label="更新时间">
-          <el-date-picker v-model="updateTimeRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" value-format="yyyy-MM-dd" style="width:240px;" />
+          <el-date-picker v-model="updateTimeRange" type="daterange" range-separator="~" start-placeholder="开始日期" end-placeholder="结束日期" value-format="yyyy-MM-dd" style="width:240px;" />
         </el-form-item>
         <el-form-item><el-button type="primary" @click="handleQuery">查询</el-button><el-button @click="resetQuery">重置</el-button></el-form-item>
       </el-form>

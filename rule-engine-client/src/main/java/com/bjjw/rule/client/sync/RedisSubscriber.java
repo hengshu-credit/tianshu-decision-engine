@@ -9,32 +9,58 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.connection.Message;
 import org.springframework.data.redis.connection.MessageListener;
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
+import org.springframework.data.redis.listener.Topic;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Redis订阅器 - 使用Spring Data Redis实现
  * 支持规则推送（PUBLISH/UNPUBLISH）和函数推送（FUNC_UPDATE/FUNC_DELETE）
+ *
+ * 断线重连机制（Spring Data Redis 2.3 兼容）：
+ * 1. 启动时指数退避重试（最多3次，间隔1s/2s/4s）
+ * 2. 后台守护线程定期检测连接存活，每30s一次
+ * 3. 检测到订阅失效时自动重建整个监听容器
  */
 public class RedisSubscriber {
 
     private static final Logger log = LoggerFactory.getLogger(RedisSubscriber.class);
 
+    /** 启动重试次数 */
+    private static final int MAX_STARTUP_RETRIES = 3;
+    /** 守护线程检测间隔（ms） */
+    private static final long HEALTH_CHECK_INTERVAL_MS = 30_000;
+    /** 守护线程重连等待时间（ms） */
+    private static final long RECONNECT_WAIT_MS = 5_000;
+
     private final L1MemoryCache cache;
     private final RedisConnectionFactory connectionFactory;
     private final String appName;
     private final String channel;
+    private final List<Topic> topics;
+
     private RedisMessageListenerContainer container;
     private ClientFunctionRegistrar functionRegistrar;
+
+    private final AtomicBoolean running = new AtomicBoolean(false);
+    private final AtomicInteger reconnectCount = new AtomicInteger(0);
+    private Thread healthCheckThread;
 
     public RedisSubscriber(L1MemoryCache cache, RedisConnectionFactory connectionFactory, String appName) {
         this.cache = cache;
         this.connectionFactory = connectionFactory;
         this.appName = appName;
         this.channel = "rule:push:" + appName;
+        this.topics = Arrays.asList(
+                new ChannelTopic(channel),
+                new ChannelTopic("rule:push:broadcast"));
     }
 
     /**
@@ -45,35 +71,133 @@ public class RedisSubscriber {
     }
 
     /**
-     * 启动Redis订阅
+     * 启动Redis订阅（带指数退避重试）
      */
     public void start() {
-        try {
-            container = new RedisMessageListenerContainer();
-            container.setConnectionFactory(connectionFactory);
-
-            container.addMessageListener(new RuleMessageListener(),
-                    Arrays.asList(new ChannelTopic(channel), new ChannelTopic("rule:push:broadcast")));
-
-            container.afterPropertiesSet();
-            container.start();
-
-            log.info("Redis subscriber started on channels: {}, rule:push:broadcast", channel);
-        } catch (Exception e) {
-            log.error("Failed to start Redis subscriber: {}", e.getMessage(), e);
+        if (running.compareAndSet(false, true)) {
+            doStartWithRetry();
+            startHealthCheck();
         }
+    }
+
+    private void doStartWithRetry() {
+        int attempts = 0;
+        long delay = 1_000;
+
+        while (attempts < MAX_STARTUP_RETRIES) {
+            try {
+                doStart();
+                log.info("Redis subscriber started successfully (attempt {})", attempts + 1);
+                return;
+            } catch (Exception e) {
+                attempts++;
+                log.warn("Redis subscriber start attempt {} failed: {}. Retrying in {}ms...",
+                        attempts, e.getMessage(), delay);
+                if (attempts < MAX_STARTUP_RETRIES) {
+                    try { Thread.sleep(delay); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); return; }
+                    delay = Math.min(delay * 2, 10_000);
+                } else {
+                    log.error("Redis subscriber failed to start after {} attempts: {}",
+                            MAX_STARTUP_RETRIES, e.getMessage());
+                }
+            }
+        }
+    }
+
+    private synchronized void doStart() {
+        stopContainer();
+        container = new RedisMessageListenerContainer();
+        container.setConnectionFactory(connectionFactory);
+        container.addMessageListener(new RuleMessageListener(), topics);
+        container.afterPropertiesSet();
+        container.start();
+        reconnectCount.set(0);
     }
 
     /**
      * 停止Redis订阅
      */
     public void stop() {
+        running.set(false);
+        stopContainer();
+        stopHealthCheck();
+        log.info("Redis subscriber stopped");
+    }
+
+    private void stopContainer() {
         if (container != null) {
-            container.stop();
+            try {
+                container.stop();
+                container.destroy();
+            } catch (Exception e) {
+                log.debug("Error stopping RedisMessageListenerContainer: {}", e.getMessage());
+            }
+            container = null;
         }
     }
 
-    private class RuleMessageListener implements MessageListener {
+    private void stopHealthCheck() {
+        if (healthCheckThread != null) {
+            healthCheckThread.interrupt();
+            healthCheckThread = null;
+        }
+    }
+
+    /**
+     * 启动守护线程，定期检测订阅是否存活
+     */
+    private void startHealthCheck() {
+        healthCheckThread = new Thread(() -> {
+            log.debug("Redis subscriber health-check thread started");
+            while (running.get()) {
+                try {
+                    Thread.sleep(HEALTH_CHECK_INTERVAL_MS);
+                    if (!running.get()) break;
+
+                    if (!isSubscriptionAlive()) {
+                        int count = reconnectCount.incrementAndGet();
+                        log.warn("Redis subscription appears dead, attempting reconnect #{}", count);
+                        Thread.sleep(RECONNECT_WAIT_MS);
+                        if (running.get()) {
+                            try {
+                                doStart();
+                                log.info("Redis subscription recovered after #{} reconnect", count);
+                            } catch (Exception e) {
+                                log.error("Reconnect attempt failed: {}", e.getMessage());
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    break;
+                }
+            }
+            log.debug("Redis subscriber health-check thread exited");
+        }, "redis-subscriber-health");
+        healthCheckThread.setDaemon(true);
+        healthCheckThread.start();
+    }
+
+    /**
+     * 通过 PING 检测 Redis 连接是否可用
+     */
+    private boolean isSubscriptionAlive() {
+        RedisConnection conn = null;
+        try {
+            conn = connectionFactory.getConnection();
+            String pong = conn.ping();
+            return "PONG".equals(pong);
+        } catch (Exception e) {
+            log.debug("Redis health-check ping failed: {}", e.getMessage());
+            return false;
+        } finally {
+            if (conn != null) {
+                try { conn.close(); } catch (Exception ignored) {}
+            }
+        }
+    }
+
+    private class RuleMessageListener implements org.springframework.data.redis.connection.MessageListener {
         @Override
         public void onMessage(Message message, byte[] pattern) {
             String body = new String(message.getBody());
