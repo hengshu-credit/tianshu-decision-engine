@@ -40,7 +40,7 @@ public class ActionDataCompiler {
         String type = block.getString("type");
         if (type == null) return "";
         switch (type) {
-            case "assign": return compileAssign(block, indent);
+            case "assign": return compileAssign(block, indent, varContext);
             case "if-block": return compileIfBlock(block, indent, varContext);
             case "switch-block": return compileSwitchBlock(block, indent, varContext);
             case "func-call": return compileFuncCall(block, indent);
@@ -52,12 +52,14 @@ public class ActionDataCompiler {
         }
     }
 
-    private static String compileAssign(JSONObject b, int indent) {
+    private static String compileAssign(JSONObject b, int indent, VarContext varContext) {
         String target = b.getString("target");
         String value = b.getString("value");
         if (empty(target) || empty(value)) return "";
+        Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
+        String resolvedTarget = resolveVar(varId, target, varContext);
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append(target).append(" = ").append(value);
+        sb.append(pad(indent)).append(resolvedTarget).append(" = ").append(value);
         Boolean enableRounding = b.getBoolean("enableRounding");
         if (Boolean.TRUE.equals(enableRounding)) {
             Integer dp = b.getInteger("decimalPlaces");
@@ -65,8 +67,8 @@ public class ActionDataCompiler {
                 String rm = b.getString("roundingMode");
                 if (empty(rm)) rm = "HALF_UP";
                 sb.append("\n").append(pad(indent))
-                  .append(target).append(" = (new java.math.BigDecimal(\"\" + ")
-                  .append(target).append(")).setScale(").append(dp)
+                  .append(resolvedTarget).append(" = (new java.math.BigDecimal(\"\" + ")
+                  .append(resolvedTarget).append(")).setScale(").append(dp)
                   .append(", java.math.RoundingMode.").append(rm).append(").doubleValue()");
             }
         }

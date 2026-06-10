@@ -17,6 +17,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
 
     private VarContext varContext;
 
+    private Long levelVarId;
+
     @Override
     public CompileResult compile(String modelJson) {
         return compile(modelJson, null);
@@ -36,7 +38,9 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             JSONArray dimensionGroups = model.getJSONArray("dimensionGroups");
             JSONArray thresholds = model.getJSONArray("thresholds");
 
-            String resCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
+            Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
+            String resCode = resolveVar(resVarId, varCode);
 
             StringBuilder script = new StringBuilder();
             script.append(resCode).append(" = ").append(initialScore).append(";\n");
@@ -82,10 +86,13 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             if (thresholds != null && !thresholds.isEmpty()) {
                 script.append("\n// ---- 等级判定 ----\n");
                 String levelVar = "riskLevel";
+                this.levelVarId = null;
 
                 JSONObject firstThreshold = thresholds.getJSONObject(0);
                 if (firstThreshold.containsKey("resultVar")) {
-                    levelVar = firstThreshold.getString("resultVar");
+                    String rawLevelVar = firstThreshold.getString("resultVar");
+                    this.levelVarId = firstThreshold.containsKey("_varId") ? firstThreshold.getLong("_varId") : null;
+                    levelVar = resolveVar(this.levelVarId, rawLevelVar);
                 }
 
                 script.append(levelVar).append(" = \"未知\";\n");
@@ -109,7 +116,9 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             if (thresholds != null && !thresholds.isEmpty()) {
                 JSONObject firstTh = thresholds.getJSONObject(0);
                 if (firstTh.containsKey("resultVar")) {
-                    levelVarForResult = firstTh.getString("resultVar");
+                    String rawLevelVar = firstTh.getString("resultVar");
+                    Long lvId = firstTh.containsKey("_varId") ? firstTh.getLong("_varId") : null;
+                    levelVarForResult = resolveVar(lvId, rawLevelVar);
                 }
             }
             LinkedHashSet<String> outVars = new LinkedHashSet<>();

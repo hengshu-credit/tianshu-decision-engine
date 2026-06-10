@@ -86,7 +86,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                         appendCondition(script, seg);
                     }
 
-                    script.append(") {\n    ").append(resCode).append(" = ");
+                    script.append(") {\n    ").append(resolvedResCode).append(" = ");
                     appendValue(script, cellValue, resType);
                     script.append("\n}");
                 }
