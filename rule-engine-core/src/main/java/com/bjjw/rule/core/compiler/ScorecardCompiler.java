@@ -126,6 +126,11 @@ public class ScorecardCompiler implements RuleCompiler {
             String s = ctx.getScriptName(varId);
             if (s != null) return s;
         }
+        // varId 为 null 时，通过 varCode 在 VarContext 中查找 scriptName（设计器未保存 _varId 时兜底）
+        if (ctx != null && varCode != null) {
+            String s = ctx.getScriptNameByVarCode(varCode);
+            if (s != null) return s;
+        }
         return varCode != null ? varCode : "";
     }
 

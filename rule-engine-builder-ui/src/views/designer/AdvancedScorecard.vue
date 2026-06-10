@@ -319,7 +319,7 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent } from '@/api/definition'
+import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
@@ -450,6 +450,7 @@ export default {
       const saveModel = JSON.parse(JSON.stringify(this.model))
       ;(saveModel.dimensionGroups || []).forEach(g => { delete g._collapsed })
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(saveModel) })
+      await refreshFields(this.definitionId)
       this.refreshProjectRefs()
 
       this.$message.success('保存成功')

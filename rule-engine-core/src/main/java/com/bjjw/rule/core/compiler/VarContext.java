@@ -4,24 +4,43 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * 变量上下文：提供 varId → scriptName 的可靠映射，
+ * 变量上下文：提供 varId → scriptName 和 varCode → scriptName 的可靠映射，
  * 解决 varCode 与 scriptName 大小写不一致导致的脚本变量名错误问题。
  *
- * 编译时传入此上下文，所有编译器通过 {@link #getScriptName(Long)} 获取
- * 脚本中实际使用的变量引用名，而不是直接使用 modelJson 中的 varCode。
+ * 编译时传入此上下文，所有编译器通过 {@link #getScriptName(Long)} 或
+ * {@link #getScriptNameByVarCode(String)} 获取脚本中实际使用的变量引用名，
+ * 而不是直接使用 modelJson 中的 varCode。
  *
  * 设计原则：
  * - 优先通过 varId 精确查 scriptName（大小写正确）
  * - 若 varId 为 null 或未命中，回退到 varCode（兼容旧数据）
+ * - 进一步通过 varCode 在全局映射中查找 scriptName（设计器未保存 _varId 时兜底）
  */
 public class VarContext {
 
     /** varId → scriptName 映射 */
     private final Map<Long, String> varIdToScriptName;
 
-    /** 构造函数，接收已构建好的映射 */
+    /** varCode（小写）→ scriptName 映射，用于 varId 缺失时的兜底查找 */
+    private final Map<String, String> varCodeToScriptName;
+
+    /**
+     * 构造函数，仅构建 varId → scriptName 映射。
+     * {@link #getScriptNameByVarCode(String)} 在此构造方式下恒返 null。
+     */
     public VarContext(Map<Long, String> varIdToScriptName) {
+        this(varIdToScriptName, Collections.emptyMap());
+    }
+
+    /**
+     * 构造函数，同时构建两种映射。
+     *
+     * @param varIdToScriptName   varId → scriptName
+     * @param varCodeToScriptName varCode（小写）→ scriptName
+     */
+    public VarContext(Map<Long, String> varIdToScriptName, Map<String, String> varCodeToScriptName) {
         this.varIdToScriptName = varIdToScriptName != null ? varIdToScriptName : Collections.emptyMap();
+        this.varCodeToScriptName = varCodeToScriptName != null ? varCodeToScriptName : Collections.emptyMap();
     }
 
     /**
@@ -45,9 +64,22 @@ public class VarContext {
         return name != null ? name : fallback;
     }
 
+    /**
+     * 根据 varCode 查找脚本引用名。
+     * 忽略大小写，优先精确匹配，未命中时返回 null。
+     * 用于设计器未保存 _varId 时的兜底回溯。
+     *
+     * @param varCode 变量编码（来自设计器 modelJson）
+     * @return scriptName，查不到时返回 null
+     */
+    public String getScriptNameByVarCode(String varCode) {
+        if (varCode == null) return null;
+        return varCodeToScriptName.get(varCode.toLowerCase());
+    }
+
     /** 是否为空（无任何映射） */
     public boolean isEmpty() {
-        return varIdToScriptName.isEmpty();
+        return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty();
     }
 
     /** 返回只读映射快照，便于调试和日志输出 */

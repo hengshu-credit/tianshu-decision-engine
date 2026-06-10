@@ -2,7 +2,8 @@
  * Vue CLI 构建配置：生产构建为常规压缩打包，不再使用 javascript-obfuscator 混淆。
  * 构建产物默认输出到本目录下的 dist/，不写入 rule-engine-server。
  */
-const MonacoWebpackPlugin = require('monaco-editor-webpack-plugin')
+const CopyWebpackPlugin = require('copy-webpack-plugin')
+const path = require('path')
 
 module.exports = {
   /** 生产构建不跑 eslint-loader（避免历史代码阻断打包）；开发可依赖 IDE，或执行 npm run lint */
@@ -41,18 +42,15 @@ module.exports = {
       config.module.rules.delete('eslint')
     }
 
-    // Monaco Editor：插件自动处理 worker 文件注入
-    config.plugin('monaco-editor').use(MonacoWebpackPlugin, [{
-      languages: ['json']
-    }])
-
-    // 强制 babel 处理 monaco-editor（include-loader 加载的 ESM 文件需要转译）
-    config.module.rule('js')
-      .test(/\.js$/)
-      .include
-      .add('/node_modules/monaco-editor/')
-      .end()
-      .use('babel-loader')
-      .loader('babel-loader')
+    // Monaco Editor：AMD loader 方式，将 monaco-editor/min/vs 目录复制到输出目录的 vs/
+    // 这样 main.js 中动态加载 /vs/loader.js 可以正常找到文件
+    config.plugin('copy-monaco')
+      .use(CopyWebpackPlugin, [{
+        patterns: [{
+          from: path.resolve(__dirname, 'node_modules/monaco-editor/min/vs'),
+          to: 'vs',
+          noErrorOnMissing: true
+        }]
+      }])
   }
 }

@@ -9,13 +9,24 @@ import './styles/index.scss'
 // 覆盖 Element UI 主题色为主色 #2639E9
 import './styles/element-override.scss'
 
-// Monaco Editor 通过 AMD 方式加载预构建文件（min/vs 已被 copy-webpack-plugin 复制到 dist/vs）
-// 避免 ESM 语法在 webpack 4 下无法转译的问题
+// Monaco Editor 通过 AMD loader 方式加载（vs/ 目录由 copy-webpack-plugin 复制到输出目录）
 const base = process.env.NODE_ENV === 'production' ? './' : '/'
 window.MonacoEnvironment = {
   getWorkerUrl: function (moduleId, label) {
     if (label === 'json') {
       return base + 'vs/language/json/json.worker.js'
+    }
+    if (label === 'javascript' || label === 'typescript') {
+      return base + 'vs/language/typescript/ts.worker.js'
+    }
+    if (label === 'python') {
+      return base + 'vs/language/python/python.worker.js'
+    }
+    if (label === 'java') {
+      return base + 'vs/language/java/java.worker.js'
+    }
+    if (label === 'yaml') {
+      return base + 'vs/language/yaml/yaml.worker.js'
     }
     return base + 'vs/editor/editor.worker.js'
   }

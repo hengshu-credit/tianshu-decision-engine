@@ -54,9 +54,11 @@ public class RuleCompileService {
             return CompileResult.fail("暂不支持的模型类型: " + definition.getModelType());
         }
 
-        // 构建变量上下文：通过 varId 查询正确的 scriptName，解决大小写不一致问题
+        // 构建变量上下文：通过 varId 查询正确的 scriptName，
+        // 以及通过 varCode 回溯 scriptName（设计器未保存 _varId 时兜底）
         Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
-        VarContext varContext = new VarContext(varIdToScriptName);
+        Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
+        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName);
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
 

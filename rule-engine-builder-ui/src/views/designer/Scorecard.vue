@@ -286,7 +286,7 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent } from '@/api/definition'
+import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
@@ -459,6 +459,7 @@ export default {
         item.condition = this.buildCondition(item.condVar, item.condOperator, item.condValue, item.condVarType)
       })
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+      await refreshFields(this.definitionId)
       this.refreshProjectRefs()
 
       this.$message.success('保存成功')

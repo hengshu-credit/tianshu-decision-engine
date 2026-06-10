@@ -227,7 +227,7 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent } from '@/api/definition'
+import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
@@ -366,6 +366,7 @@ export default {
     },
     async handleSave() {
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+      await refreshFields(this.definitionId)
       this.refreshProjectRefs()
 
       this.$message.success('保存成功')

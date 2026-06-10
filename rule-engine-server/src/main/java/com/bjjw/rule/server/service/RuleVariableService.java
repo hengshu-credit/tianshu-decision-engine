@@ -223,6 +223,45 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         return map;
     }
 
+    /**
+     * 构建 varCode（小写）→ scriptName 映射。
+     * 用于编译器在 varId 缺失时，通过 varCode 回溯找到正确的 scriptName。
+     * 包含全局变量和指定项目的变量。
+     *
+     * 匹配规则：
+     * - 优先使用 scriptName（小写）作为 key（对应前端的 refCode 格式）
+     * - 若 scriptName 为空，使用 varCode（小写）作为 key
+     *
+     * @param projectId 项目 ID（传 null 或 0 时仅查全局）
+     * @return varCode（小写）→ scriptName 映射（永不为 null）
+     */
+    public Map<String, String> buildVarCodeScriptNameMap(Long projectId) {
+        List<RuleVariable> vars;
+        if (projectId != null && projectId > 0) {
+            vars = listByProject(projectId, null);
+        } else {
+            vars = listGlobalOnly();
+        }
+        Map<String, String> map = new HashMap<>();
+        for (RuleVariable v : vars) {
+            String scriptName = v.getScriptName();
+            if (scriptName != null && !scriptName.trim().isEmpty()) {
+                // 优先用 scriptName（小写）作为 key，对应前端的 refCode
+                map.put(scriptName.trim().toLowerCase(), scriptName.trim());
+            }
+            // 同时用 varCode（小写）作为 key（兼容旧数据）
+            if (v.getVarCode() != null && !v.getVarCode().isEmpty()) {
+                String varCodeKey = v.getVarCode().toLowerCase();
+                // 若 scriptName 已存在则不覆盖（scriptName 优先）
+                if (!map.containsKey(varCodeKey)) {
+                    map.put(varCodeKey, scriptName != null && !scriptName.trim().isEmpty()
+                            ? scriptName.trim() : v.getVarCode());
+                }
+            }
+        }
+        return map;
+    }
+
     @Override
     public boolean save(RuleVariable entity) {
         assertConstantHasDefault(entity);

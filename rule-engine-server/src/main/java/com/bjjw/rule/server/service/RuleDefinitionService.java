@@ -41,6 +41,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RuleDefinitionOutputFieldMapper outputFieldMapper;
 
+    @Resource
+    private RuleFieldAnalyzer fieldAnalyzer;
+
     public IPage<RuleDefinition> pageList(int pageNum, int pageSize, Long projectId, String modelType, String keyword, String projectName, String scope, String status, String ruleCode, String ruleName, String projectCode, String publishedVersion, String createBeginTime, String createEndTime, String updateBeginTime, String updateEndTime) {
         LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null) {
@@ -174,7 +177,20 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         if (definition != null) {
             definition.setCurrentVersion(definition.getCurrentVersion() + 1);
             updateById(definition);
+            // 从模型内容中解析输入/输出字段并持久化到独立字段表
+            // 从变量管理表补充真实元信息（varLabel / varType / scriptName）
+            fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, definition.getModelType(), definition.getProjectId());
         }
+    }
+
+    /**
+     * 从模型内容重新解析输入/输出字段并持久化。
+     * 用于刷新规则详情页的字段列表。
+     */
+    public void refreshFields(Long definitionId, String modelJson, String modelType) {
+        RuleDefinition definition = getById(definitionId);
+        Long projectId = (definition != null) ? definition.getProjectId() : null;
+        fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, modelType, projectId);
     }
 
     /**

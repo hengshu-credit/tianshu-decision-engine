@@ -276,4 +276,21 @@ public class RuleDefinitionController {
         }
         return R.ok(java.util.Collections.singletonMap("migratedCount", count));
     }
+
+    /**
+     * 刷新规则的输入/输出字段（从当前模型内容解析并持久化）
+     */
+    @PostMapping("/refreshFields/{definitionId}")
+    public R<RuleDefinition> refreshFields(@PathVariable Long definitionId) {
+        RuleDefinitionContent content = definitionService.getContent(definitionId);
+        if (content == null || content.getModelJson() == null) {
+            return R.fail("规则内容不存在");
+        }
+        RuleDefinition definition = definitionService.getById(definitionId);
+        if (definition == null) {
+            return R.fail("规则不存在");
+        }
+        definitionService.refreshFields(definitionId, content.getModelJson(), definition.getModelType());
+        return R.ok(definitionService.getDetail(definitionId));
+    }
 }

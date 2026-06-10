@@ -328,7 +328,7 @@ import {
   applyGlobalEdgeTypeToInheritedEdges,
   mergeEdgePropertiesFromForm
 } from '@/components/flow/edgeLineType'
-import { saveContent, compileRule, executeRule, getContent } from '@/api/definition'
+import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import { generateScript } from '@/utils/actionDataCodegen'
 import { graphContainsDirectedCycle } from '@/utils/flowGraphCycle'
 import varPickerMixin from '@/mixins/varPickerMixin'
@@ -852,6 +852,7 @@ export default {
     async handleSave() {
       const modelJson = JSON.stringify(this.buildBackendModel())
       await saveContent({ definitionId: this.definitionId, modelJson })
+      await refreshFields(this.definitionId)
       this.refreshProjectRefs()
 
       this.$message.success('保存成功')

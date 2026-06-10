@@ -153,7 +153,9 @@ router.beforeEach(async (to, from, next) => {
       const cfgRes = await authAxios.get('/auth/console/config')
       const body = cfgRes.data
       if (body && body.code === 200 && body.data && !body.data.loginEnabled) {
-        return next('/project')
+        // 登录已禁用，直接重定向到目标页面（使用 location 避免嵌套路由导航）
+        window.location.replace(to.query.redirect || '/project')
+        return
       }
     } catch (e) {
       /* 无法拉取配置时仍展示登录页 */
