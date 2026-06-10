@@ -48,11 +48,11 @@
         >
           <template v-if="grouped">
             <el-option-group v-for="group in groupedOptions" :key="group.label" :label="group.label">
-              <el-option v-for="v in group.vars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getOptionLabel(v)" />
+              <el-option v-for="v in group.vars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getVarLabel(v)" />
             </el-option-group>
           </template>
           <template v-if="!grouped">
-            <el-option v-for="v in filteredVars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getOptionLabel(v)" />
+            <el-option v-for="v in filteredVars" :key="v.id || v.varCode" :value="getOptionValue(v)" :label="getVarLabel(v)" />
             <div v-if="filteredVars.length === 0" class="var-empty">
               <i class="el-icon-warning-outline" /> {{ loading ? '加载中...' : '暂无可用变量，请先在变量管理中创建' }}
             </div>
@@ -80,6 +80,7 @@
 
 <script>
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
+import { formatVarDisplay } from '@/utils/varDisplay'
 
 export default {
   name: 'VarPicker',
@@ -146,7 +147,29 @@ export default {
     },
     cascaderValue() {
       if (!this.value) return null
+      // valueKey='id' 时，this.value 是 numeric id（字符串），查找 id→path 映射
+      if (this.valueKey === 'id') {
+        return this.idToPath[this.value] || null
+      }
+      // valueKey='code' 时，this.value 是 varCode，查找 refCode→path 映射
       return this.refCodeToPath[this.value] || null
+    },
+    /** id（字符串）→ cascader path 的映射 */
+    idToPath() {
+      const map = {}
+      const walk = (nodes, path) => {
+        (nodes || []).forEach(n => {
+          const p = [...path, n.value]
+          if (n.children && n.children.length) {
+            walk(n.children, p)
+          } else {
+            // 叶节点的 value 即为 id
+            map[String(n.value)] = p
+          }
+        })
+      }
+      walk(this.cascaderOptions, [])
+      return map
     },
     refCodeToPath() {
       const map = {}
@@ -179,12 +202,14 @@ export default {
       if (useTypeFilter) {
         standalone = standalone.filter(v => v.varType === this.typeFilter)
       }
+      // valueKey='id' 时叶子节点使用 id（数值），否则使用 varCode（字符串）
+      const useIdValue = this.valueKey === 'id'
       const options = []
       if (standalone.length) {
         options.push({
           value: '__standalone__',
           label: '普通变量',
-          children: standalone.map(v => ({ value: v.varCode, label: v.varLabel }))
+          children: standalone.map(v => ({ value: useIdValue ? v.id : v.varCode, label: this.getVarLabel(v) }))
         })
       }
       if (constantRefs.length) {
@@ -194,7 +219,7 @@ export default {
           options.push({
             value: '__constant__',
             label: '常量',
-            children: filtered.map(v => ({ value: v.varCode, label: v.varLabel }))
+            children: filtered.map(v => ({ value: useIdValue ? v.id : v.varCode, label: this.getVarLabel(v) }))
           })
         }
       }
@@ -213,7 +238,7 @@ export default {
         return {
           value: g.objectCode,
           label: g.objectLabel || g.objectCode,
-          children: items.map(v => ({ value: v.varCode, label: v.varLabel }))
+          children: items.map(v => ({ value: useIdValue ? v.id : v.varCode, label: this.getVarLabel(v) }))
         }
       }).filter(Boolean)
       if (objChildren.length) {
@@ -242,9 +267,17 @@ export default {
     getOptionValue(v) {
       return this.valueKey === 'id' ? v.id : (v.varCode || v.varLabel)
     },
-    /** 获取选项的显示文本 */
-    getOptionLabel(v) {
-      return `${v.varLabel || v.varCode} (${v.varCode || v.varLabel})`
+    /** 统一变量展示文本（变量类型 / 标签(编码) 或 对象时：类型 / 对象标签 / 字段名(编码)） */
+    getVarLabel(v) {
+      const ref = v._ref || {}
+      const objLabel = ref.category === 'object' ? (ref.objectLabel || '') : ''
+      return formatVarDisplay({
+        varLabel: v.varLabel,
+        varCode: v.varCode,
+        varType: v.varType,
+        sourceType: ref.category === 'object' ? 'dataObject' : (ref.category === 'constant' ? 'constant' : 'variable'),
+        objectLabel: objLabel
+      })
     },
     onCascaderChange(path) {
       if (!path || !path.length) {

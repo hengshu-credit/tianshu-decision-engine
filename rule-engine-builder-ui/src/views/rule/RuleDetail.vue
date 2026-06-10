@@ -69,10 +69,9 @@
                     <el-option
                       v-for="v in group.options"
                       :key="v.id" :value="v.id"
-                      :label="v.varLabel + ' (' + v.varCode + ')'"
+                      :label="v.varLabel"
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
                       <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
                         {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
                       </el-tag>
@@ -82,7 +81,7 @@
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }} ({{ varMap[row.varId].varCode }})
+                  {{ varMap[row.varId].varLabel }}
                 </span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -157,10 +156,9 @@
                     <el-option
                       v-for="v in group.options"
                       :key="v.id" :value="v.id"
-                      :label="v.varLabel + ' (' + v.varCode + ')'"
+                      :label="v.varLabel"
                     >
                       <span style="font-weight:500;">{{ v.varLabel }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCode }}</span>
                       <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
                         {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
                       </el-tag>
@@ -170,7 +168,7 @@
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }} ({{ varMap[row.varId].varCode }})
+                  {{ varMap[row.varId].varLabel }}
                 </span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -293,6 +291,7 @@
 import * as api from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
+import { formatVarDisplay } from '@/utils/varDisplay'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -422,7 +421,7 @@ export default {
         const item = {
           id: v.id,
           varCode: v.scriptName || v.varCode,
-          varLabel: v.varLabel || v.varCode,
+          varLabel: formatVarDisplay({ varLabel: v.varLabel, varCode: v.scriptName || v.varCode, varType: v.varType, sourceType: 'variable' }),
           varType: v.varType,
           varSource: v.varSource,
           sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
@@ -444,7 +443,7 @@ export default {
           const item = {
             id: f.id,
             varCode: f.scriptName || f.varCode,
-            varLabel: f.varLabel || f.varCode,
+            varLabel: formatVarDisplay({ varLabel: f.varLabel, varCode: f.scriptName || f.varCode, varType: f.varType, sourceType: 'dataObject', objectLabel: obj.objectLabel || obj.objectCode || '数据对象' }),
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',

@@ -70,7 +70,7 @@
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }} ({{ varMap[row.varId].varCode }})
+                  {{ varMap[row.varId].varLabel }}
                 </span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -146,7 +146,7 @@
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }} ({{ varMap[row.varId].varCode }})
+                  {{ varMap[row.varId].varLabel }}
                 </span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -282,6 +282,7 @@ import * as api from '@/api/model'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import VarPicker from '@/components/common/VarPicker.vue'
+import { formatVarDisplay } from '@/utils/varDisplay'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -405,13 +406,13 @@ export default {
       vars.forEach(v => {
         if (!v.id || seenIds.has(v.id)) return
         seenIds.add(v.id)
-        this.varMap[v.id] = v
         const refCode = v.scriptName || v.varCode
         const isConst = v.varSource === 'CONSTANT'
-        options.push({
+        const varLabel = formatVarDisplay({ varLabel: v.varLabel, varCode: refCode, varType: v.varType, sourceType: isConst ? 'constant' : 'variable' })
+        const item = {
           id: v.id,
           varCode: refCode,
-          varLabel: v.varLabel || v.varCode,
+          varLabel,
           varType: v.varType,
           varSource: v.varSource,
           sourceType: isConst ? 'constant' : 'variable',
@@ -421,11 +422,13 @@ export default {
           _ref: {
             category: isConst ? 'constant' : 'standalone',
             refCode,
-            refLabel: v.varLabel || v.varCode,
+            refLabel: varLabel,
             varType: v.varType,
             varObj: v
           }
-        })
+        }
+        this.varMap[v.id] = item
+        options.push(item)
       })
       doTree.forEach(group => {
         const obj = group.object || {}
@@ -433,16 +436,17 @@ export default {
         fields.forEach(f => {
           if (!f.id || seenIds.has(f.id)) return
           seenIds.add(f.id)
-          this.varMap[f.id] = f
           const refCode = f.scriptName || f.varCode
-          options.push({
+          const objLabel = obj.objectName || obj.objectCode || '数据对象'
+          const varLabel = formatVarDisplay({ varLabel: f.varLabel, varCode: refCode, varType: f.varType, sourceType: 'dataObject', objectLabel: objLabel })
+          const item = {
             id: f.id,
             varCode: refCode,
-            varLabel: f.varLabel || f.varCode,
+            varLabel,
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',
-            sourceLabel: obj.objectName || obj.objectCode || '数据对象',
+            sourceLabel: objLabel,
             varObj: f,
             // _ref 供 VarPicker 级联结构使用
             _ref: {
@@ -450,11 +454,13 @@ export default {
               objectCode: obj.objectCode,
               objectLabel: obj.objectName || obj.objectCode,
               refCode,
-              refLabel: f.varLabel || f.varCode,
+              refLabel: varLabel,
               varType: f.varType,
               varObj: f
             }
-          })
+          }
+          this.varMap[f.id] = item
+          options.push(item)
         })
       })
       // 替换数组引用，确保 Vue 响应式更新
@@ -503,7 +509,7 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, missingValue: row.missingValue })
+      this.$set(row, '_origin', { varId: row.varId, fieldLabel: row.fieldLabel, scriptName: row.scriptName, missingValue: row.missingValue })
     },
     async saveInputField(row) {
       this.$set(row, '_saving', true)
@@ -530,6 +536,8 @@ export default {
     cancelEditInput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, 'fieldLabel', row._origin.fieldLabel)
+        this.$set(row, 'scriptName', row._origin.scriptName)
         this.$set(row, 'missingValue', row._origin.missingValue)
       }
       this.$set(row, '_editing', false)
@@ -546,7 +554,7 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, transformType: row.transformType })
+      this.$set(row, '_origin', { varId: row.varId, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformType: row.transformType })
     },
     async saveOutputField(row) {
       this.$set(row, '_saving', true)
@@ -570,6 +578,8 @@ export default {
     cancelEditOutput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, 'fieldLabel', row._origin.fieldLabel)
+        this.$set(row, 'scriptName', row._origin.scriptName)
         this.$set(row, 'transformType', row._origin.transformType)
       }
       this.$set(row, '_editing', false)

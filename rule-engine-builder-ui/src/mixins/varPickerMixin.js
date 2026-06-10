@@ -20,6 +20,12 @@ import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { varTypeLabel as varTypeLabelFn, varTypeTagColor } from '@/constants/varTypes'
+import { formatVarDisplay } from '@/utils/varDisplay'
+
+/** 格式化变量引用展示文本（统一风格：类型 / 标签(编码)） */
+function makeRefLabel(v, sourceType, objectLabel) {
+  return formatVarDisplay({ varLabel: v.varLabel, varCode: v.scriptName || v.varCode, varType: v.varType, sourceType, objectLabel })
+}
 
 export default {
   data() {
@@ -96,7 +102,12 @@ export default {
         const allVars = (varRes && varRes.data ? varRes.data : varRes) || []
         const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
 
-        this.projectVars = allVars
+        // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
+        this.projectVars = allVars.map(v => ({
+          ...v,
+          varCode: v.scriptName || v.varCode,
+          varLabel: makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
+        }))
 
         const refs = []
 
@@ -104,7 +115,7 @@ export default {
         allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
           refs.push({
             refCode: v.scriptName || v.varCode,
-            refLabel: `${v.varLabel} (${v.scriptName || v.varCode})`,
+            refLabel: makeRefLabel(v, 'variable', ''),
             varType: v.varType,
             varObj: v,
             category: 'standalone'
@@ -116,7 +127,7 @@ export default {
           const constScriptName = c.scriptName || c.varCode
           refs.push({
             refCode: constScriptName,
-            refLabel: `${c.varLabel || c.varCode} (${constScriptName})`,
+            refLabel: makeRefLabel(c, 'constant', ''),
             varType: c.varType,
             varObj: c,
             category: 'constant'
@@ -134,7 +145,7 @@ export default {
             const refCode = `${objScriptName}.${varScriptName}`
             refs.push({
               refCode,
-              refLabel: `${v.varLabel || v.varCode} (${refCode})`,
+              refLabel: makeRefLabel(v, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
               varObj: v,
               category: 'object',
@@ -195,13 +206,18 @@ export default {
         const allVars = (varRes && varRes.data ? varRes.data : varRes) || []
         const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
 
-        this.projectVars = allVars
+        // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
+        this.projectVars = allVars.map(v => ({
+          ...v,
+          varCode: v.scriptName || v.varCode,
+          varLabel: makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
+        }))
 
         const refs = []
         allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
           refs.push({
             refCode: v.scriptName || v.varCode,
-            refLabel: `${v.varLabel} (${v.scriptName || v.varCode})`,
+            refLabel: makeRefLabel(v, 'variable', ''),
             varType: v.varType,
             varObj: v,
             category: 'standalone'
@@ -211,7 +227,7 @@ export default {
           const constScriptName = c.scriptName || c.varCode
           refs.push({
             refCode: constScriptName,
-            refLabel: `${c.varLabel || c.varCode} (${constScriptName})`,
+            refLabel: makeRefLabel(c, 'constant', ''),
             varType: c.varType,
             varObj: c,
             category: 'constant'
@@ -226,7 +242,7 @@ export default {
             const refCode = `${objScriptName}.${varScriptName}`
             refs.push({
               refCode,
-              refLabel: `${v.varLabel || v.varCode} (${refCode})`,
+              refLabel: makeRefLabel(v, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
               varObj: v,
               category: 'object',

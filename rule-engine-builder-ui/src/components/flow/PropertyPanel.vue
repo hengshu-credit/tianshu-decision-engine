@@ -124,7 +124,7 @@
                   <el-option
                     v-for="v in projectVars"
                     :key="'pv_' + v.varCode"
-                    :label="v.varLabel + ' (' + v.varCode + ')'"
+                    :label="v.varLabel"
                     :value="v.varCode"
                   />
                 </el-option-group>
