@@ -71,7 +71,8 @@
                       :key="v.id" :value="v.id"
                       :label="v.varLabel"
                     >
-                      <span style="font-weight:500;">{{ v.varLabel }}</span>
+                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
+                      <span style="color:#999;font-size:11px;font-family:monospace;margin-left:6px;">{{ v.varCodeText }}</span>
                       <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
                         {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
                       </el-tag>
@@ -158,7 +159,8 @@
                       :key="v.id" :value="v.id"
                       :label="v.varLabel"
                     >
-                      <span style="font-weight:500;">{{ v.varLabel }}</span>
+                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
+                      <span style="color:#999;font-size:11px;font-family:monospace;margin-left:6px;">{{ v.varCodeText }}</span>
                       <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
                         {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
                       </el-tag>
@@ -291,7 +293,6 @@
 import * as api from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import { formatVarDisplay } from '@/utils/varDisplay'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -418,10 +419,14 @@ export default {
       vars.forEach(v => {
         if (!v.id || seenIds.has(v.id)) return
         seenIds.add(v.id)
+        const labelText = v.varLabel || ''
+        const codeText = v.scriptName || v.varCode || ''
         const item = {
           id: v.id,
-          varCode: v.scriptName || v.varCode,
-          varLabel: formatVarDisplay({ varLabel: v.varLabel, varCode: v.scriptName || v.varCode, varType: v.varType, sourceType: 'variable' }),
+          varCode: codeText,
+          varLabel: labelText + (codeText ? ' ' + codeText : ''),
+          varLabelText: labelText,
+          varCodeText: codeText,
           varType: v.varType,
           varSource: v.varSource,
           sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
@@ -440,10 +445,14 @@ export default {
         fields.forEach(f => {
           if (!f.id || seenIds.has(f.id)) return
           seenIds.add(f.id)
+          const labelText = f.varLabel || ''
+          const codeText = f.scriptName || f.varCode || ''
           const item = {
             id: f.id,
-            varCode: f.scriptName || f.varCode,
-            varLabel: formatVarDisplay({ varLabel: f.varLabel, varCode: f.scriptName || f.varCode, varType: f.varType, sourceType: 'dataObject', objectLabel: obj.objectLabel || obj.objectCode || '数据对象' }),
+            varCode: codeText,
+            varLabel: labelText + (codeText ? ' ' + codeText : ''),
+            varLabelText: labelText,
+            varCodeText: codeText,
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',

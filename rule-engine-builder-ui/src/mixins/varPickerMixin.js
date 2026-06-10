@@ -19,13 +19,10 @@ import { getDefinition } from '@/api/definition'
 import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
-import { varTypeLabel as varTypeLabelFn, varTypeTagColor } from '@/constants/varTypes'
-import { formatVarDisplay } from '@/utils/varDisplay'
+import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
+import { makeRefLabel } from '@/utils/varDisplay'
 
-/** 格式化变量引用展示文本（统一风格：类型 / 标签(编码)） */
-function makeRefLabel(v, sourceType, objectLabel) {
-  return formatVarDisplay({ varLabel: v.varLabel, varCode: v.scriptName || v.varCode, varType: v.varType, sourceType, objectLabel })
-}
+// 变量选择 Mixin
 
 export default {
   data() {
@@ -46,7 +43,9 @@ export default {
     varPickerOptions() {
       return this.projectRefs.map(r => ({
         varCode: r.refCode,
-        varLabel: r.refLabel,
+        varLabel: r.refLabel.label + ' ' + r.refLabel.code,
+        varLabelText: r.refLabel.label,
+        varCodeText: r.refLabel.code,
         varType: r.varType,
         varObj: r.varObj,
         _ref: r
@@ -103,11 +102,16 @@ export default {
         const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
-        this.projectVars = allVars.map(v => ({
-          ...v,
-          varCode: v.scriptName || v.varCode,
-          varLabel: makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
-        }))
+        this.projectVars = allVars.map(v => {
+          const refLabel = makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
+          return {
+            ...v,
+            varCode: v.scriptName || v.varCode,
+            varLabel: refLabel.label + ' ' + refLabel.code,
+            varLabelText: refLabel.label,
+            varCodeText: refLabel.code
+          }
+        })
 
         const refs = []
 
@@ -207,11 +211,16 @@ export default {
         const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
-        this.projectVars = allVars.map(v => ({
-          ...v,
-          varCode: v.scriptName || v.varCode,
-          varLabel: makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
-        }))
+        this.projectVars = allVars.map(v => {
+          const refLabel = makeRefLabel(v, v.varSource === 'CONSTANT' ? 'constant' : 'variable', '')
+          return {
+            ...v,
+            varCode: v.scriptName || v.varCode,
+            varLabel: refLabel.label + ' ' + refLabel.code,
+            varLabelText: refLabel.label,
+            varCodeText: refLabel.code
+          }
+        })
 
         const refs = []
         allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
@@ -280,7 +289,7 @@ export default {
 
     /** 与变量管理中类型中文名一致 */
     varTypeLabel(varType) {
-      return varTypeLabelFn(varType)
+      return _varTypeLabel(varType)
     },
 
     /**
@@ -314,7 +323,12 @@ export default {
         if (ref) {
           let changed = false
           if (item.varCode !== ref.refCode) { item.varCode = ref.refCode; changed = true }
-          if (item.varLabel !== ref.refLabel) { item.varLabel = ref.refLabel; changed = true }
+          if (typeof ref.refLabel === 'object') {
+            const newLabel = ref.refLabel.label + ' ' + ref.refLabel.code
+            if (item.varLabel !== newLabel) { item.varLabel = newLabel; changed = true }
+          } else {
+            if (item.varLabel !== ref.refLabel) { item.varLabel = ref.refLabel; changed = true }
+          }
           if (ref.varType && item.varType !== ref.varType) { item.varType = ref.varType; changed = true }
           return changed
         }
@@ -331,8 +345,11 @@ export default {
         if (candidates.length === 1) {
           const ref = candidates[0]
           item.varCode = ref.refCode
-          item.varLabel = ref.refLabel
-          item._varId = ref.varObj && ref.varObj.id
+          if (typeof ref.refLabel === 'object') {
+            item.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
+          } else {
+            item.varLabel = ref.refLabel
+          }
           if (ref.varType) item.varType = ref.varType
           return true
         }

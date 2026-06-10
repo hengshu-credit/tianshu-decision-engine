@@ -50,23 +50,35 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
-          <!-- 对应变量（通过 varId 关联变量管理） -->
-          <el-table-column label="对应变量" min-width="260">
+          <!-- 对应变量 -->
+          <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing">
-                <VarPicker
-                  :value="row.varId ? String(row.varId) : ''"
-                  :vars="varPickerOptions"
-                  value-key="id"
+                <el-select
+                  v-model="row.varId"
+                  filterable clearable
                   placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini"
-                  style="width:100%;"
-                  @input="val => onVarChange(row, val)"
-                  @select="opt => onVarSelect(row, opt)"
-                />
+                  size="mini" style="width:100%;"
+                  popper-append-to-body
+                  @change="val => onVarChange(row, val)"
+                  @clear="onVarClear(row)"
+                >
+                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
+                    <el-option
+                      v-for="v in group.options"
+                      :key="v.id" :value="v.id"
+                      :label="v.varLabel"
+                    >
+                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
+                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCodeText }}</span>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
+                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
+                      </el-tag>
+                    </el-option>
+                  </el-option-group>
+                </el-select>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -126,23 +138,35 @@
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
             <template slot-scope="{row}">
               <span style="font-weight:500;">{{ row.fieldName }}</span>
-              <!-- <span v-if="row.fieldLabel" style="color:#909399;font-size:11px;margin-left:4px;">{{ row.fieldLabel }}</span> -->
             </template>
           </el-table-column>
-          <!-- 对应变量（通过 varId 关联变量管理） -->
-          <el-table-column label="对应变量" min-width="260">
+          <!-- 对应变量 -->
+          <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing">
-                <VarPicker
-                  :value="row.varId ? String(row.varId) : ''"
-                  :vars="varPickerOptions"
-                  value-key="id"
+                <el-select
+                  v-model="row.varId"
+                  filterable clearable
                   placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini"
-                  style="width:100%;"
-                  @input="val => onVarChange(row, val)"
-                  @select="opt => onVarSelect(row, opt)"
-                />
+                  size="mini" style="width:100%;"
+                  popper-append-to-body
+                  @change="val => onVarChange(row, val)"
+                  @clear="onVarClear(row)"
+                >
+                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
+                    <el-option
+                      v-for="v in group.options"
+                      :key="v.id" :value="v.id"
+                      :label="v.varLabel"
+                    >
+                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
+                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCodeText }}</span>
+                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
+                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
+                      </el-tag>
+                    </el-option>
+                  </el-option-group>
+                </el-select>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
@@ -281,8 +305,6 @@
 import * as api from '@/api/model'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import VarPicker from '@/components/common/VarPicker.vue'
-import { formatVarDisplay } from '@/utils/varDisplay'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -300,15 +322,18 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelDetail',
-  components: { VarPicker },
   data() {
     return {
       loading: false,
       model: {},
       /** varId -> 变量对象映射（从变量管理加载） */
       varMap: {},
-      /** VarPicker 下拉选项列表（含 _ref / varObj，供级联选择器使用） */
-      varPickerOptions: [],
+      /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段） */
+      varPickerGroups: [
+        { label: '普通变量', options: [] },
+        { label: '常量', options: [] },
+        { label: '数据对象字段', options: [] }
+      ],
       // 测试相关
       testVisible: false,
       testReady: false,
@@ -368,7 +393,6 @@ export default {
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(projectId)
         ])
-        // listByProject 返回数组，listVariables 返回分页 { records: [] }
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
@@ -376,7 +400,12 @@ export default {
         const tree = Array.isArray(treeRes.data) ? treeRes.data : []
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
-        this.varMap = {}; this.varPickerOptions = []
+        this.varMap = {}
+        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+          { label: '普通变量', options: [] },
+          { label: '常量', options: [] },
+          { label: '数据对象字段', options: [] }
+        ])
       }
     },
     async loadGlobalVars() {
@@ -386,7 +415,6 @@ export default {
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(0)
         ])
-        // listVariables 返回分页 { records: [] }
         const vars = (varsRes.data && Array.isArray(varsRes.data.records))
           ? varsRes.data.records
           : (Array.isArray(varsRes.data) ? varsRes.data : [])
@@ -396,39 +424,43 @@ export default {
         const tree = Array.isArray(treeRes.data) ? treeRes.data : []
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
-        this.varMap = {}; this.varPickerOptions = []
+        this.varMap = {}
+        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+          { label: '普通变量', options: [] },
+          { label: '常量', options: [] },
+          { label: '数据对象字段', options: [] }
+        ])
       }
     },
     buildVarOptions(vars, doTree) {
       this.varMap = {}
       const seenIds = new Set()
-      const options = []
+      const varOptions = []
+      const constOptions = []
+      const objOptions = []
       vars.forEach(v => {
         if (!v.id || seenIds.has(v.id)) return
         seenIds.add(v.id)
-        const refCode = v.scriptName || v.varCode
+        const labelText = v.varLabel || ''
+        const codeText = v.scriptName || v.varCode || ''
         const isConst = v.varSource === 'CONSTANT'
-        const varLabel = formatVarDisplay({ varLabel: v.varLabel, varCode: refCode, varType: v.varType, sourceType: isConst ? 'constant' : 'variable' })
         const item = {
           id: v.id,
-          varCode: refCode,
-          varLabel,
+          varCode: codeText,
+          varLabel: labelText + (codeText ? ' ' + codeText : ''),
+          varLabelText: labelText,
+          varCodeText: codeText,
           varType: v.varType,
           varSource: v.varSource,
           sourceType: isConst ? 'constant' : 'variable',
-          sourceLabel: isConst ? '常量' : '变量',
-          varObj: v,
-          // _ref 供 VarPicker 级联结构使用
-          _ref: {
-            category: isConst ? 'constant' : 'standalone',
-            refCode,
-            refLabel: varLabel,
-            varType: v.varType,
-            varObj: v
-          }
+          varObj: v
         }
         this.varMap[v.id] = item
-        options.push(item)
+        if (isConst) {
+          constOptions.push(item)
+        } else {
+          varOptions.push(item)
+        }
       })
       doTree.forEach(group => {
         const obj = group.object || {}
@@ -436,60 +468,48 @@ export default {
         fields.forEach(f => {
           if (!f.id || seenIds.has(f.id)) return
           seenIds.add(f.id)
-          const refCode = f.scriptName || f.varCode
-          const objLabel = obj.objectName || obj.objectCode || '数据对象'
-          const varLabel = formatVarDisplay({ varLabel: f.varLabel, varCode: refCode, varType: f.varType, sourceType: 'dataObject', objectLabel: objLabel })
+          const labelText = f.varLabel || ''
+          const codeText = f.scriptName || f.varCode || ''
+          const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
           const item = {
             id: f.id,
-            varCode: refCode,
-            varLabel,
+            varCode: codeText,
+            varLabel: labelText + (codeText ? ' ' + codeText : ''),
+            varLabelText: labelText,
+            varCodeText: codeText,
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',
             sourceLabel: objLabel,
-            varObj: f,
-            // _ref 供 VarPicker 级联结构使用
-            _ref: {
-              category: 'object',
-              objectCode: obj.objectCode,
-              objectLabel: obj.objectName || obj.objectCode,
-              refCode,
-              refLabel: varLabel,
-              varType: f.varType,
-              varObj: f
-            }
+            varObj: f
           }
           this.varMap[f.id] = item
-          options.push(item)
+          objOptions.push(item)
         })
       })
-      // 替换数组引用，确保 Vue 响应式更新
-      this.varPickerOptions.splice(0, this.varPickerOptions.length, ...options)
+      this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+        { label: '普通变量', options: varOptions },
+        { label: '常量', options: constOptions },
+        { label: '数据对象字段', options: objOptions }
+      ])
     },
-    /** 按变量来源分组的下拉选项（已弃用，下拉直接使用 varPickerOptions） */
-    varSelectGroups() {
+    onVarClear(row) {
+      this.$set(row, 'varId', null)
+      this.$set(row, 'fieldLabel', '')
+      this.$set(row, 'scriptName', '')
     },
-    /** 选择变量后，自动带出变量编码和名称填充到字段信息 */
-    onVarSelect(row, opt) {
-      if (!opt) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-        return
+    onVarChange(row, varId) {
+      if (!varId) return
+      let opt = null
+      for (const group of this.varPickerGroups) {
+        const found = group.options.find(o => o.id === varId)
+        if (found) { opt = found; break }
       }
-      this.$set(row, 'fieldLabel', opt.varLabel)
-      this.$set(row, 'scriptName', opt.varCode)
-    },
-    /** VarPicker 清空或值变化时，清除关联信息 */
-    onVarChange(row, val) {
-      if (!val) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-      } else {
-        // VarPicker valueKey="id"，val 是字符串 id
-        this.$set(row, 'varId', val ? Number(val) : null)
-      }
+      if (!opt) return
+      // v-model 已通过 @input 更新了 row.varId，此处只需同步关联字段
+      this.$set(row, 'fieldLabel', opt.varLabelText)
+      this.$set(row, 'scriptName', opt.varCodeText)
+      this.$set(row, 'varSource', opt.sourceType)
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
