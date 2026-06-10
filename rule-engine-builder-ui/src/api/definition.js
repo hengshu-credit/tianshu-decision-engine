@@ -89,7 +89,11 @@ export function migrateFields(body) {
   return request({ url: '/rule/definition/migrateFields', method: 'post', data: body })
 }
 
-/** 刷新规则的输入/输出字段（从模型内容重新解析） */
-export function refreshFields(definitionId) {
-  return request({ url: `/rule/definition/refreshFields/${definitionId}`, method: 'post' })
+/** 刷新规则的输入/输出字段（从模型内容重新解析）。可选传入 modelJson 避免后端事务未提交的脏读。 */
+export function refreshFields(definitionId, modelJson) {
+  const config = { url: `/rule/definition/refreshFields/${definitionId}`, method: 'post' }
+  if (modelJson !== undefined) {
+    config.data = modelJson
+  }
+  return request(config)
 }

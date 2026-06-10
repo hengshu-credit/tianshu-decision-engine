@@ -81,16 +81,6 @@
       <el-table-column prop="currentVersion" label="设计版本" min-width="80" align="center" />
       <el-table-column prop="publishedVersion" label="发布版本" min-width="80" align="center" />
       <el-table-column prop="description" label="描述" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="inputFields" label="输入字段" min-width="150">
-        <template slot-scope="{ row }">
-          <span>{{ fieldTagsLabel(row.inputFields) }}</span>
-        </template>
-      </el-table-column>
-      <el-table-column prop="outputFields" label="输出字段" min-width="150">
-        <template slot-scope="{ row }">
-          <span>{{ fieldTagsLabel(row.outputFields) }}</span>
-        </template>
-      </el-table-column>
       <el-table-column prop="updateTime" label="更新时间" min-width="160" />
       <el-table-column label="操作" width="230" align="center">
         <template slot-scope="{ row }">

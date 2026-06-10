@@ -135,7 +135,7 @@ public class RuleVariableController {
     }
 
     @GetMapping("/tree/{projectId:\\d+}")
-    public R<List<Map<String, Object>>> tree(@PathVariable Long projectId) {
+    public R<Map<String, Object>> tree(@PathVariable Long projectId) {
         return R.ok(dataObjectService.getVariableTree(projectId));
     }
 

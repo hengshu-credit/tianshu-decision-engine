@@ -10,10 +10,12 @@ import java.util.LinkedHashSet;
  * 复杂评分卡编译器：支持分组维度 + 结构化条件。
  * 同一维度内的规则互斥（if/else if），维度间得分累加。
  * 通过 {@link VarContext} 将 varCode 解析为正确的 scriptName。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class AdvancedScorecardCompiler implements RuleCompiler {
 
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+    private VarContext varContext;
 
     @Override
     public CompileResult compile(String modelJson) {
@@ -22,12 +24,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
 
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        this.varContext = varContext;
+        return doCompile(modelJson);
     }
 
     private CompileResult doCompile(String modelJson) {
@@ -160,10 +158,9 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
         }
     }
 
-    private static String resolveVar(Long varId, String varCode) {
-        VarContext ctx = CTX.get();
-        if (ctx != null) {
-            return ctx.resolveVar(varId, varCode);
+    private String resolveVar(Long varId, String varCode) {
+        if (this.varContext != null) {
+            return this.varContext.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }

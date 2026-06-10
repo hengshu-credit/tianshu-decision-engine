@@ -42,68 +42,51 @@
         </div>
 
         <el-table :data="rule.inputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
-          <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
             <template slot-scope="{ $index }">{{ $index + 1 }}</template>
           </el-table-column>
-          <!-- 字段名称 -->
-          <el-table-column prop="fieldName" label="字段名称" min-width="130">
+          <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldName }}</span>
+              <span v-if="row.varId && varMap[row.varId]" class="script-name-text">{{ varMap[row.varId].varCode }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
-          <!-- 对应变量 -->
-          <el-table-column label="对应变量" min-width="280">
+          <el-table-column label="变量名称" min-width="130">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select
-                  v-model="row._varId"
-                  filterable clearable
-                  placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini" style="width:100%;"
-                  popper-append-to-body
-                  @change="val => onVarChange(row, val)"
-                  @clear="onVarClear(row)"
-                >
-                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
-                    <el-option
-                      v-for="v in group.options"
-                      :key="v.id" :value="v.id"
-                      :label="v.varLabel"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
-                      <span style="color:#999;font-size:11px;font-family:monospace;margin-left:6px;">{{ v.varCodeText }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
-                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
-                      </el-tag>
-                    </el-option>
-                  </el-option-group>
-                </el-select>
-              </div>
-              <div v-else>
-                <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }}
-                </span>
-                <span v-else class="script-name-text script-unbound">（未关联）</span>
-              </div>
+              <span style="font-weight:500;">{{ row.fieldLabel || '—' }}</span>
             </template>
           </el-table-column>
-          <!-- 字段类型 -->
-          <el-table-column prop="fieldType" label="字段类型" width="100" align="center">
+          <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
+              <span v-if="row.varId && varMap[row.varId]">{{ varMap[row.varId].varCodeText }}</span>
+              <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
-          <!-- 缺失值 -->
-          <el-table-column label="缺失值" min-width="130">
+          <el-table-column prop="fieldType" label="类型" width="90" align="center">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-input v-model="row.missingValue" size="mini" placeholder="默认值" />
-              </div>
-              <span v-else style="color:#909399;font-size:12px;">{{ row.missingValue || '-' }}</span>
+              <el-tag size="mini" type="info">{{ typeLabel(row.fieldType) }}</el-tag>
             </template>
           </el-table-column>
-          <!-- 操作 -->
+          <el-table-column label="默认值" min-width="130">
+            <template slot-scope="{row}">
+              <span v-if="row.defaultValue" style="color:#606266;">{{ row.defaultValue }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="取值范围" min-width="130">
+            <template slot-scope="{row}">
+              <span v-if="row.validValues" style="color:#606266;">{{ row.validValues }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="修改时间" width="140" align="center">
+            <template slot-scope="{row}">
+              <span v-if="row.updateTime">{{ row.updateTime.replace('T',' ') }}</span>
+              <span v-else-if="row.createTime">{{ row.createTime.replace('T',' ') }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="140" align="center" fixed="right">
             <template slot-scope="{row, $index}">
               <template v-if="row._editing">
@@ -130,74 +113,48 @@
         </div>
 
         <el-table :data="rule.outputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
-          <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
             <template slot-scope="{ $index }">{{ $index + 1 }}</template>
           </el-table-column>
-          <!-- 字段名称 -->
-          <el-table-column prop="fieldName" label="字段名称" min-width="130">
+          <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldName }}</span>
+              <span v-if="row.varId && varMap[row.varId]" class="script-name-text">{{ varMap[row.varId].varCode }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
-          <!-- 对应变量 -->
-          <el-table-column label="对应变量" min-width="280">
+          <el-table-column label="变量名称" min-width="130">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select
-                  v-model="row._varId"
-                  filterable clearable
-                  placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini" style="width:100%;"
-                  popper-append-to-body
-                  @change="val => onVarChange(row, val, 'output')"
-                  @clear="onVarClear(row)"
-                >
-                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
-                    <el-option
-                      v-for="v in group.options"
-                      :key="v.id" :value="v.id"
-                      :label="v.varLabel"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
-                      <span style="color:#999;font-size:11px;font-family:monospace;margin-left:6px;">{{ v.varCodeText }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
-                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
-                      </el-tag>
-                    </el-option>
-                  </el-option-group>
-                </el-select>
-              </div>
-              <div v-else>
-                <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }}
-                </span>
-                <span v-else class="script-name-text script-unbound">（未关联）</span>
-              </div>
+              <span style="font-weight:500;">{{ row.fieldLabel || '—' }}</span>
             </template>
           </el-table-column>
-          <!-- 字段类型 -->
-          <el-table-column prop="fieldType" label="字段类型" width="100" align="center">
+          <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
+              <span v-if="row.varId && varMap[row.varId]">{{ varMap[row.varId].varCodeText }}</span>
+              <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
-          <!-- 转换方法 -->
-          <el-table-column label="转换方法" min-width="160">
+          <el-table-column prop="fieldType" label="类型" width="90" align="center">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select v-model="row.transformType" size="mini" style="width:100%;" popper-append-to-body placeholder="选择">
-                  <el-option label="（无）" value="" />
-                  <el-option label="NONE - 不转换" value="NONE" />
-                  <el-option label="RENAME - 重命名" value="RENAME" />
-                  <el-option label="SCALE - 缩放" value="SCALE" />
-                  <el-option label="OHE - 独热编码" value="OHE" />
-                </el-select>
-              </div>
-              <span v-else style="color:#606266;font-size:12px;">{{ row.transformType || '-' }}</span>
+              <el-tag size="mini" type="info">{{ typeLabel(row.fieldType) }}</el-tag>
             </template>
           </el-table-column>
-          <!-- 操作 -->
+          <el-table-column label="默认值" min-width="120">
+            <span style="color:#c0c4cc;">—</span>
+          </el-table-column>
+          <el-table-column label="取值范围" min-width="130">
+            <template slot-scope="{row}">
+              <span v-if="row.validValues" style="color:#606266;">{{ row.validValues }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="修改时间" width="140" align="center">
+            <template slot-scope="{row}">
+              <span v-if="row.updateTime">{{ row.updateTime.replace('T',' ') }}</span>
+              <span v-else-if="row.createTime">{{ row.createTime.replace('T',' ') }}</span>
+              <span v-else style="color:#c0c4cc;">—</span>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="140" align="center" fixed="right">
             <template slot-scope="{row, $index}">
               <template v-if="row._editing">
@@ -423,10 +380,11 @@ export default {
         const codeText = v.scriptName || v.varCode || ''
         const item = {
           id: v.id,
-          varCode: codeText,
+          varCode: v.varCode || '',
+          varCodeText: v.scriptName || v.varCode || '',
+          scriptName: codeText,
           varLabel: labelText + (codeText ? ' ' + codeText : ''),
           varLabelText: labelText,
-          varCodeText: codeText,
           varType: v.varType,
           varSource: v.varSource,
           sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
@@ -449,10 +407,11 @@ export default {
           const codeText = f.scriptName || f.varCode || ''
           const item = {
             id: f.id,
-            varCode: codeText,
+            varCode: f.varCode || '',
+            varCodeText: f.scriptName || f.varCode || '',
+            scriptName: codeText,
             varLabel: labelText + (codeText ? ' ' + codeText : ''),
             varLabelText: labelText,
-            varCodeText: codeText,
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',
@@ -497,6 +456,9 @@ export default {
     },
     statusType(s) {
       return { 0: 'info', 1: 'success', 2: 'warning' }[s] || 'info'
+    },
+    typeLabel(t) {
+      return { NUMBER: '数字', INTEGER: '整数', DOUBLE: '浮点', STRING: '字符串', BOOLEAN: '布尔', ENUM: '枚举', DATE: '日期', OBJECT: '对象', LIST: '列表' }[t] || t || '—'
     },
 
     // ========== 输入字段编辑 ==========

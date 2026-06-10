@@ -8,12 +8,25 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 
+/**
+ * 将 JSON 样本解析为数据对象结构。
+ *
+ * <p>铁律四实现：单个数据对象直接支持嵌套逻辑，嵌套字段（varType=OBJECT/LIST with genericType=OBJECT）
+ * 通过 refObjectCode 表达引用关系（refObjectId 由服务层解析为数据库 ID）。</p>
+ */
 @Component
 public class JsonSchemaParser {
 
     /**
-     * Parse a JSON sample into a ParsedObject tree.
-     * Nested objects become child ParsedObjects; arrays become LIST fields.
+     * Parse a JSON sample into a ParsedObject.
+     *
+     * <p>铁律四：不再为每个嵌套 JSONObject 创建独立 ParsedObject（平级子对象），而是将嵌套字段
+     * 直接放在根对象的 fields 列表中，varType 设为 OBJECT/LIST，refObjectCode 设为嵌套对象编码。
+     * 服务层在写入数据库时将 refObjectCode 解析为 refObjectId。</p>
+     *
+     * <p>示例：输入 {"code":200,"data":{"score":0.67}}
+     * → 根对象字段：[code(NUMBER), data(OBJECT,refObjectCode=data)]
+     * → 不再生成 data 子对象，所有 data 内部字段平铺到根对象</p>
      */
     public ParsedObject parseObject(String jsonContent, String objectCode) {
         JSONObject json = JSON.parseObject(jsonContent);
@@ -56,11 +69,16 @@ public class JsonSchemaParser {
         return group;
     }
 
+    /**
+     * 铁律四：所有字段（包括嵌套）均放在根对象 fields 中，通过 refObjectCode 表达引用。
+     * 不再创建 nestedObjects —— 嵌套关系通过字段的 varType=OBJECT/LIST + refObjectCode 表达。
+     */
     private ParsedObject parseJsonObject(JSONObject json, String objectCode) {
         ParsedObject obj = new ParsedObject();
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
         obj.setScriptName(objectCode);
+        // 铁律四：不再递归生成子对象，所有字段（含嵌套）均放在根对象 fields 中
 
         for (Map.Entry<String, Object> entry : json.entrySet()) {
             String key = entry.getKey();
@@ -72,10 +90,10 @@ public class JsonSchemaParser {
             field.setScriptName(key);
 
             if (value instanceof JSONObject) {
+                // 铁律四：字段直接引用嵌套对象编码，不再递归创建子 ParsedObject
                 field.setVarType("OBJECT");
                 field.setRefObjectCode(key);
-                ParsedObject nested = parseJsonObject((JSONObject) value, key);
-                obj.getNestedObjects().add(nested);
+                // 注意：不再添加 nestedObjects，嵌套结构由 refObjectCode + 服务层 refObjectId 表达
             } else if (value instanceof JSONArray) {
                 field.setVarType("LIST");
                 JSONArray arr = (JSONArray) value;
@@ -83,9 +101,9 @@ public class JsonSchemaParser {
                     Object first = arr.get(0);
                     if (first instanceof JSONObject) {
                         field.setGenericType("OBJECT");
+                        // 铁律四：数组泛型为对象时，refObjectCode 指向嵌套对象编码
                         field.setRefObjectCode(key);
-                        ParsedObject nested = parseJsonObject((JSONObject) first, key);
-                        obj.getNestedObjects().add(nested);
+                        // 不再为数组元素创建子对象
                     } else {
                         field.setGenericType(inferPrimitiveType(first));
                     }

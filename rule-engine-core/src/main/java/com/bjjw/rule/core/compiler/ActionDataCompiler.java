@@ -11,8 +11,6 @@ import com.alibaba.fastjson.JSONObject;
  */
 public class ActionDataCompiler {
 
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
-
     /**
      * 无变量上下文的编译（兼容旧调用）。
      */
@@ -22,37 +20,33 @@ public class ActionDataCompiler {
 
     /**
      * 带变量上下文的编译，condVar / checkVar / matchVar 等将通过 VarContext 解析为 scriptName。
+     * VarContext 通过参数传递，不使用 ThreadLocal。
      */
     public static String compile(JSONArray actionData, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            if (actionData == null || actionData.isEmpty()) return "";
-            StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < actionData.size(); i++) {
-                String code = compileBlock(actionData.getJSONObject(i), 0);
-                if (code != null && !code.isEmpty()) {
-                    if (sb.length() > 0) sb.append("\n");
-                    sb.append(code);
-                }
+        if (actionData == null || actionData.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < actionData.size(); i++) {
+            String code = compileBlock(actionData.getJSONObject(i), 0, varContext);
+            if (code != null && !code.isEmpty()) {
+                if (sb.length() > 0) sb.append("\n");
+                sb.append(code);
             }
-            return sb.toString();
-        } finally {
-            CTX.remove();
         }
+        return sb.toString();
     }
 
-    private static String compileBlock(JSONObject block, int indent) {
+    private static String compileBlock(JSONObject block, int indent, VarContext varContext) {
         if (block == null) return "";
         String type = block.getString("type");
         if (type == null) return "";
         switch (type) {
             case "assign": return compileAssign(block, indent);
-            case "if-block": return compileIfBlock(block, indent);
-            case "switch-block": return compileSwitchBlock(block, indent);
+            case "if-block": return compileIfBlock(block, indent, varContext);
+            case "switch-block": return compileSwitchBlock(block, indent, varContext);
             case "func-call": return compileFuncCall(block, indent);
-            case "foreach": return compileForeach(block, indent);
-            case "ternary": return compileTernary(block, indent);
-            case "in-check": return compileInCheck(block, indent);
+            case "foreach": return compileForeach(block, indent, varContext);
+            case "ternary": return compileTernary(block, indent, varContext);
+            case "in-check": return compileInCheck(block, indent, varContext);
             case "template-str": return compileTemplateStr(block, indent);
             default: return "";
         }
@@ -79,28 +73,28 @@ public class ActionDataCompiler {
         return sb.toString();
     }
 
-    private static String compileIfBlock(JSONObject b, int indent) {
+    private static String compileIfBlock(JSONObject b, int indent, VarContext varContext) {
         JSONArray branches = b.getJSONArray("branches");
         if (branches == null || branches.isEmpty()) return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < branches.size(); i++) {
             JSONObject br = branches.getJSONObject(i);
             String bt = br.getString("type");
-            if ("if".equals(bt)) sb.append(pad(indent)).append("if (").append(buildCond(br)).append(") {\n");
-            else if ("elseif".equals(bt)) sb.append(pad(indent)).append("} else if (").append(buildCond(br)).append(") {\n");
+            if ("if".equals(bt)) sb.append(pad(indent)).append("if (").append(buildCond(br, varContext)).append(") {\n");
+            else if ("elseif".equals(bt)) sb.append(pad(indent)).append("} else if (").append(buildCond(br, varContext)).append(") {\n");
             else sb.append(pad(indent)).append("} else {\n");
-            sb.append(compileActions(br.getJSONArray("actions"), indent + 1));
+            sb.append(compileActions(br.getJSONArray("actions"), indent + 1, varContext));
         }
         sb.append(pad(indent)).append("}");
         return sb.toString();
     }
 
-    private static String compileSwitchBlock(JSONObject b, int indent) {
+    private static String compileSwitchBlock(JSONObject b, int indent, VarContext varContext) {
         String matchVar = b.getString("matchVar");
         if (empty(matchVar)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, matchVar)).append(") {\n");
+        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, matchVar, varContext)).append(") {\n");
         JSONArray cases = b.getJSONArray("cases");
         if (cases != null) {
             for (int i = 0; i < cases.size(); i++) {
@@ -108,14 +102,14 @@ public class ActionDataCompiler {
                 String val = c.getString("value");
                 if (empty(val)) continue;
                 sb.append(pad(indent + 1)).append("case ").append(wrapValue(val)).append(" -> {\n");
-                sb.append(compileActions(c.getJSONArray("actions"), indent + 2));
+                sb.append(compileActions(c.getJSONArray("actions"), indent + 2, varContext));
                 sb.append(pad(indent + 1)).append("}\n");
             }
         }
         JSONArray defaults = b.getJSONArray("defaultActions");
         if (defaults != null && !defaults.isEmpty()) {
             sb.append(pad(indent + 1)).append("default -> {\n");
-            sb.append(compileActions(defaults, indent + 2));
+            sb.append(compileActions(defaults, indent + 2, varContext));
             sb.append(pad(indent + 1)).append("}\n");
         }
         sb.append(pad(indent)).append("}");
@@ -138,32 +132,32 @@ public class ActionDataCompiler {
         return pad(indent) + (!empty(target) ? target + " = " + call : call);
     }
 
-    private static String compileForeach(JSONObject b, int indent) {
+    private static String compileForeach(JSONObject b, int indent, VarContext varContext) {
         String itemVar = b.getString("itemVar");
         String listExpr = b.getString("listExpr");
         if (empty(itemVar) || empty(listExpr)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("for (").append(resolveVar(varId, itemVar)).append(" : ").append(listExpr).append(") {\n");
-        sb.append(compileActions(b.getJSONArray("actions"), indent + 1));
+        sb.append(pad(indent)).append("for (").append(resolveVar(varId, itemVar, varContext)).append(" : ").append(listExpr).append(") {\n");
+        sb.append(compileActions(b.getJSONArray("actions"), indent + 1, varContext));
         sb.append(pad(indent)).append("}");
         return sb.toString();
     }
 
-    private static String compileTernary(JSONObject b, int indent) {
+    private static String compileTernary(JSONObject b, int indent, VarContext varContext) {
         String target = b.getString("target");
         String condVar = b.getString("condVar");
         if (empty(target) || empty(condVar)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
         String op = b.getString("condOp");
         if (empty(op)) op = "==";
-        String cond = resolveVar(varId, condVar) + " " + op + " " + wrapValue(b.getString("condValue"));
+        String cond = resolveVar(varId, condVar, varContext) + " " + op + " " + wrapValue(b.getString("condValue"));
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
         return pad(indent) + target + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv);
     }
 
-    private static String compileInCheck(JSONObject b, int indent) {
+    private static String compileInCheck(JSONObject b, int indent, VarContext varContext) {
         String target = b.getString("target");
         String checkVar = b.getString("checkVar");
         if (empty(target) || empty(checkVar)) return "";
@@ -181,7 +175,7 @@ public class ActionDataCompiler {
         }
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
-        return pad(indent) + target + " = " + resolveVar(varId, checkVar) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
+        return pad(indent) + target + " = " + resolveVar(varId, checkVar, varContext) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
     }
 
     private static String compileTemplateStr(JSONObject b, int indent) {
@@ -197,11 +191,11 @@ public class ActionDataCompiler {
         return pad(indent) + target + " = \"" + sb.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
-    private static String compileActions(JSONArray actions, int indent) {
+    private static String compileActions(JSONArray actions, int indent, VarContext varContext) {
         if (actions == null) return "";
         StringBuilder sb = new StringBuilder();
         for (int i = 0; i < actions.size(); i++) {
-            String code = compileBlock(actions.getJSONObject(i), indent);
+            String code = compileBlock(actions.getJSONObject(i), indent, varContext);
             if (code != null && !code.isEmpty()) {
                 sb.append(code).append("\n");
             }
@@ -209,29 +203,22 @@ public class ActionDataCompiler {
         return sb.toString();
     }
 
-    private static String buildCond(JSONObject branch) {
+    private static String buildCond(JSONObject branch, VarContext varContext) {
         Long varId = branch.containsKey("_varId") ? branch.getLong("_varId") : null;
         String v = branch.getString("condVar");
         if (empty(v)) return "true";
         String op = branch.getString("condOp");
         if (empty(op)) op = "==";
-        return resolveVar(varId, v) + " " + op + " " + wrapValue(branch.getString("condValue"));
+        return resolveVar(varId, v, varContext) + " " + op + " " + wrapValue(branch.getString("condValue"));
     }
 
     /**
-     * 根据 varId 解析脚本变量名：优先通过 varContext 查 scriptName，回退到 varCode。
-     * 支持 varId 为 null 的情况（直接用 varCode）。
+     * 通过 VarContext 解析脚本变量名。
+     * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
      */
-    private static String resolveVar(Long varId, String varCode) {
-        VarContext ctx = CTX.get();
-        if (ctx != null && varId != null) {
-            String s = ctx.getScriptName(varId);
-            if (s != null) return s;
-        }
-        // varId 为 null 时，通过 varCode 在 VarContext 中查找 scriptName（设计器未保存 _varId 时兜底）
-        if (ctx != null && varCode != null) {
-            String s = ctx.getScriptNameByVarCode(varCode);
-            if (s != null) return s;
+    private static String resolveVar(Long varId, String varCode, VarContext varContext) {
+        if (varContext != null) {
+            return varContext.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }

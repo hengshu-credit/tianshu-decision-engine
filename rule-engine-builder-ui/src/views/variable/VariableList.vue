@@ -91,6 +91,7 @@
               </template>
             </el-table-column>
             <el-table-column prop="defaultValue" label="默认值" min-width="90" show-overflow-tooltip />
+            <el-table-column prop="valueRange" label="取值范围" min-width="120" show-overflow-tooltip />
             <el-table-column prop="status" label="状态" min-width="60" align="center">
               <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
             </el-table-column>
@@ -176,7 +177,11 @@
                   <template slot-scope="{row}"><el-tag size="mini" :type="typeTagColor(row.varType)">{{ typeLabel(row.varType) }}</el-tag></template>
                 </el-table-column>
                 <el-table-column prop="refObjectCode" label="引用对象" min-width="110" show-overflow-tooltip>
-                  <template slot-scope="{row}"><span v-if="row.refObjectCode" class="badge badge-obj">{{ row.refObjectCode }}</span><span v-else style="color:#ccc;">—</span></template>
+                  <template slot-scope="{row}">
+                    <span v-if="row.refObjectId && objectIdMap[row.refObjectId]" class="badge badge-obj">{{ objectIdMap[row.refObjectId] }}</span>
+                    <span v-else-if="row.refObjectCode" class="badge badge-obj">{{ row.refObjectCode }}</span>
+                    <span v-else style="color:#ccc;">—</span>
+                  </template>
                 </el-table-column>
                 <el-table-column label="操作" width="140" align="center">
                   <template slot-scope="{ row }">
@@ -694,6 +699,8 @@ export default {
       objPageSize: 10,
       objExpanded: {},
       objQp: { scope: '', projectCode: '', projectName: '', sourceType: '', objectCode: '' },
+      /** 铁律四：id → objectCode 映射，供 refObjectId 展示引用对象名 */
+      objectIdMap: {},
 
     }
   },
@@ -917,7 +924,11 @@ export default {
           return p
         }
         let res = await request.get('/rule/dataobject/tree', { params: buildParams() })
-        let tree = res.data || []
+        // 铁律四：API 返回 { tree, objectIdMap } 结构
+        let rawData = res.data || {}
+        let tree = rawData.tree || []
+        // 铁律四：构建 id→objectCode 映射，供前端展示 refObjectId 对应的对象名
+        this.objectIdMap = rawData.objectIdMap || {}
         // 前端额外过滤 sourceType 和 objectCode（如果后端不支持）
         if (this.objQp.sourceType) {
           tree = tree.filter(n => n.object.sourceType === this.objQp.sourceType)
@@ -933,7 +944,7 @@ export default {
         tree.forEach(n => { if (n.object.objectCode) nameSet.add(n.object.objectCode) })
         this.allObjectNames = Array.from(nameSet)
         this.filteredObjectNames = this.allObjectNames.slice(0, 20)
-      } catch (e) { this.objectTree = [] }
+      } catch (e) { this.objectTree = []; this.objectIdMap = {} }
       finally { this.objLoading = false }
     },
     async onObjectTypeChange(obj) {
@@ -1062,6 +1073,7 @@ export default {
         scriptName: row.scriptName,
         varType: row.varType || 'STRING',
         refObjectCode: row.refObjectCode || '',
+        refObjectId: row.refObjectId || null,
         sortOrder: row.sortOrder != null ? row.sortOrder : 0,
         status: row.status != null ? row.status : 1
       }

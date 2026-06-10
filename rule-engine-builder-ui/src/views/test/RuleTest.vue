@@ -120,12 +120,32 @@
             </div>
 
             <div v-if="result.traces && result.traces.length > 0">
-              <div class="result-section-title">执行追踪</div>
-              <el-collapse>
-                <el-collapse-item v-for="(trace, idx) in result.traces" :key="idx" :title="'步骤 ' + (idx + 1)">
-                  <pre class="result-pre">{{ formatJson(trace) }}</pre>
-                </el-collapse-item>
-              </el-collapse>
+              <el-tabs v-model="traceTab" style="margin-top: 8px;">
+                <el-tab-pane label="执行追踪（JSON）" name="json">
+                  <el-collapse>
+                    <el-collapse-item v-for="(trace, idx) in result.traces" :key="idx" :title="'步骤 ' + (idx + 1)">
+                      <pre class="result-pre">{{ formatJson(trace) }}</pre>
+                    </el-collapse-item>
+                  </el-collapse>
+                </el-tab-pane>
+                <el-tab-pane label="表达式追踪树" name="tree">
+                  <div class="trace-tree-wrap">
+                    <trace-tree
+                      :trace-info="traceInfoJson"
+                      :var-map="varMap"
+                      :function-name-map="functionNameMap"
+                      :model-type="selectedRule ? selectedRule.modelType : ''"
+                      :input-params="inputParamsJson"
+                      :output-result="outputResultJson"
+                      :rule-name="selectedRule ? selectedRule.ruleName : ''"
+                      :rule-version="selectedRule ? selectedRule.currentVersion : ''"
+                      :execute-time-ms="result.executeTimeMs"
+                      :model-data="modelData"
+                      :definition-model="definitionModel"
+                    />
+                  </div>
+                </el-tab-pane>
+              </el-tabs>
             </div>
           </div>
         </div>
@@ -137,9 +157,12 @@
 import { listProjects } from '@/api/project'
 import { listDefinitions, executeRule, getContent } from '@/api/definition'
 import { listVariablesByProject, getVariableOptions, listVariables } from '@/api/variable'
+import { listAllFunctionsByProject } from '@/api/function'
+import TraceTree from '@/components/common/TraceTree.vue'
 
 export default {
   name: 'RuleTest',
+  components: { TraceTree },
   data() {
     return {
       projects: [],
@@ -150,12 +173,47 @@ export default {
       selectedRule: null,
       params: [],
       executing: false,
-      result: null
+      result: null,
+      traceTab: 'tree',
+      varMap: {},
+      functionNameMap: {},
+      modelData: null,
+      definitionModel: null
     }
   },
   created() {
     this.loadProjects()
     this.loadRulesByScope()
+    this.loadVarMap()
+    this.loadFunctionNameMap()
+  },
+  computed: {
+    traceInfoJson: function () {
+      if (!this.result || !this.result.traces || this.result.traces.length === 0) return ''
+      return JSON.stringify(this.result.traces[0])
+    },
+    inputParamsJson: function () {
+      if (!this.result) return ''
+      var params = {}
+      for (var i = 0; i < this.params.length; i++) {
+        var p = this.params[i]
+        if (!p.key) continue
+        var val = p.value
+        if (p.type === 'NUMBER' && val !== '' && val !== null) val = Number(val)
+        else if (p.type === 'BOOLEAN') val = val === 'true'
+        params[p.key] = val
+      }
+      return JSON.stringify(params)
+    },
+    outputResultJson: function () {
+      if (!this.result || !this.result.result) return ''
+      return JSON.stringify(this.result.result)
+    }
+  },
+  watch: {
+    selectedRuleId: function () {
+      this.loadModelJson()
+    }
   },
   methods: {
     async loadRulesByScope() {
@@ -177,6 +235,52 @@ export default {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 1000 })
         this.projects = res.data.records || []
+      } catch (e) { /* ignore */ }
+    },
+    async loadVarMap() {
+      try {
+        var r = await listVariables({ pageNum: 1, pageSize: 10000 })
+        var vars = r.data && r.data.records ? r.data.records : []
+        var map = {}
+        for (var i = 0; i < vars.length; i++) {
+          if (vars[i].varCode && vars[i].varLabel) {
+            map[vars[i].varCode] = vars[i].varLabel
+          }
+        }
+        this.varMap = map
+      } catch (e) { /* ignore */ }
+    },
+    async loadFunctionNameMap() {
+      this.functionNameMap = {}
+      if (!this.selectedRule) return
+      var pid = this.selectedRule.projectId
+      if (!pid) return
+      try {
+        var r = await listAllFunctionsByProject(pid)
+        var funcData = (r && r.data) ? r.data : r
+        var list = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
+        var map = {}
+        for (var j = 0; j < list.length; j++) {
+          var f = list[j]
+          if (f && f.funcCode && f.funcName) map[f.funcCode] = f.funcName
+        }
+        this.functionNameMap = map
+      } catch (e) { /* ignore */ }
+    },
+    async loadModelJson() {
+      this.modelData = null
+      this.definitionModel = null
+      if (!this.selectedRuleId || !this.selectedRule) return
+      try {
+        var r = await getContent(this.selectedRuleId)
+        var content = r && r.data ? r.data : r
+        if (content && content.modelJson) {
+          var model = JSON.parse(content.modelJson)
+          this.definitionModel = model
+          if (model.nodes && model.edges) {
+            this.modelData = { nodes: model.nodes, edges: model.edges }
+          }
+        }
       } catch (e) { /* ignore */ }
     },
     async onScopeChange() {
@@ -216,57 +320,49 @@ export default {
     onRuleChange() {
       this.selectedRule = this.rules.find(r => r.id === this.selectedRuleId) || null
       this.result = null
+      this.loadModelJson()
+      this.loadFunctionNameMap()
     },
     async loadVariables() {
       if (!this.selectedRule) return  // 未选择规则，提前返回
       try {
-        // 根据规则的 scope 决定加载哪种变量：GLOBAL 规则加载全局变量，项目级规则加载项目变量
-        // projectId 直接从 selectedRule 取，不依赖 selectedProjectId（切换范围时会被清空）
-        let res
+        // 步骤1：解析 modelJson 中的变量 ID → varCode 映射
+        var ruleVarIdMap = await this.getRuleVarInfos()
+        var varIds = Object.keys(ruleVarIdMap)
+        console.log('[变量加载] 规则引用的变量 ID:', varIds)
+
+        if (varIds.length === 0) {
+          this.$message.info('无法解析规则中的变量引用，请检查规则配置')
+          return
+        }
+
+        // 步骤2：根据规则的 scope 加载项目中的所有变量
+        var res
         if (this.selectedRule.scope === 'GLOBAL') {
           res = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
         } else {
-          const ruleProjectId = this.selectedRule.projectId
+          var ruleProjectId = this.selectedRule.projectId
           if (!ruleProjectId) {
             this.$message.warning('无法获取规则所属项目，加载变量失败')
             return
           }
           res = await listVariablesByProject(ruleProjectId)
         }
-        console.log('[变量加载] API 响应原始数据:', res)
+
         // listVariables 返回分页 { records, total }；listVariablesByProject 返回数组
-        const vars = res.data && res.data.records !== undefined ? res.data.records : (res.data || [])
-        console.log('[变量加载] API 返回的变量列表:', vars)
-        console.log('[变量加载] API 变量代码列表:', vars.map(v => v.varCode))
+        var allVars = res.data && res.data.records !== undefined ? res.data.records : (res.data || [])
+        console.log('[变量加载] 项目变量总数:', allVars.length)
 
-        // 获取规则内容中使用的变量代码
-        let ruleVarCodes = new Set()
-        if (this.selectedRule) {
-          ruleVarCodes = await this.getRuleVarCodes()
-        }
-        console.log('[变量加载] 规则需要的变量代码:', Array.from(ruleVarCodes))
-
-        // 如果有规则且解析到变量，则只加载规则需要的变量（不限类型）
-        // 否则加载项目中所有 INPUT 类型的变量
-        let targetVars = vars
-        if (ruleVarCodes.size > 0) {
-          // 规范化函数：去除下划线转为驼峰，或反向转换，进行模糊匹配
-          const normalize = s => s.replace(/_/g, '').toLowerCase()
-          const ruleNormMap = {}
-          Array.from(ruleVarCodes).forEach(code => { ruleNormMap[normalize(code)] = code })
-          targetVars = vars.filter(v => {
-            const vNorm = normalize(v.varCode)
-            return vNorm in ruleNormMap
-          })
-        } else {
-          targetVars = vars.filter(v => v.varSource === 'INPUT')
-        }
-        console.log('[变量加载] 过滤后匹配的变量:', targetVars.map(v => v.varCode))
-
-        const existingKeys = new Set(this.params.map(p => p.key))
-        for (const v of targetVars) {
+        // 步骤3：通过 varId 精确匹配，过滤出规则需要的变量
+        var existingKeys = new Set(this.params.map(function (p) { return p.key }))
+        var loadedCount = 0
+        for (var i = 0; i < allVars.length; i++) {
+          var v = allVars[i]
+          // 通过 varId 精确关联（modelJson 中 _varId → 变量表的 id）
+          var info = ruleVarIdMap[v.id]
+          if (!info) continue
           if (existingKeys.has(v.varCode)) continue
-          const param = {
+          var param = {
             key: v.varCode,
             label: v.varLabel,
             value: v.defaultValue || '',
@@ -277,405 +373,238 @@ export default {
           }
           if (v.varType === 'ENUM') {
             try {
-              const optRes = await getVariableOptions(v.id)
+              var optRes = await getVariableOptions(v.id)
               param.options = optRes.data || []
             } catch (e) { /* ignore */ }
           }
           this.params.push(param)
+          existingKeys.add(v.varCode)
+          loadedCount++
         }
-        if (targetVars.length === 0) {
-          this.$message.info('该项目暂无符合条件的变量')
+        console.log('[变量加载] 成功加载变量数:', loadedCount)
+        if (loadedCount === 0) {
+          this.$message.info('未匹配到规则引用的变量（检查变量 ID 是否一致）')
         }
       } catch (e) {
+        console.error('[变量加载] 失败:', e)
         this.$message.error('加载变量失败')
       }
     },
     /**
-     * 从规则内容中解析出实际使用的变量代码集合
+     * 从规则内容中解析出实际使用的变量信息（通过 varId 精确关联，避免 varCode 模糊匹配）
+     * 返回 { varId → { varCode, varLabel, varType, defaultValue, exampleValue } }
      */
-    async getRuleVarCodes() {
-      const codes = new Set()
-      if (!this.selectedRuleId || !this.selectedRule) return codes
+    async getRuleVarInfos() {
+      if (!this.selectedRuleId || !this.selectedRule) return {}
       try {
         const res = await getContent(this.selectedRuleId)
         const content = res.data
         if (!content || !content.modelJson) {
           console.warn('[变量加载] 规则内容为空或无 modelJson')
-          return codes
+          return {}
         }
         const model = JSON.parse(content.modelJson)
         const modelType = this.selectedRule.modelType
         console.log('[变量加载] 开始解析规则:', this.selectedRule.ruleCode, '模型类型:', modelType)
-        console.log('[变量加载] modelJson 结构:', JSON.stringify(model, null, 2))
-        this.collectVarCodes(model, modelType, codes)
-        console.log('[变量加载] 解析到的变量代码:', Array.from(codes))
+
+        // 用 Map 收集，varId 相同时只保留第一个（兼容同一变量多处引用）
+        const varIdMap = {}
+        this.collectVarIds(model, modelType, varIdMap)
+        console.log('[变量加载] 解析到的变量 ID 列表:', Object.keys(varIdMap))
+        return varIdMap
       } catch (e) {
         console.error('[变量加载] 解析规则变量失败:', e)
+        return {}
       }
-      return codes
     },
     /**
-     * 根据模型类型收集变量代码
+     * 根据模型类型收集变量 ID 到 varIdMap
+     * 仅收集带 _varId 的变量（精确关联）
      */
-    collectVarCodes(model, modelType, codes) {
+    collectVarIds(model, modelType, varIdMap) {
       if (!model) return
       switch (modelType) {
         case 'TABLE': {
-          // 决策表：从 rules 中的 conditionRoot 和 actions 提取
-          (model.rules || []).forEach(rule => {
-            // 从条件树提取
-            this.extractFromConditionRoot(rule.conditionRoot, codes)
-            // 从条件数组提取（兼容旧格式）
-            this.extractFromConditions(rule.conditions, codes)
-            // 从动作提取输出变量
+          ;(model.rules || []).forEach(rule => {
+            this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
+            this.extractVarIdsFromConditions(rule.conditions, varIdMap)
             ;(rule.actions || []).forEach(a => {
-              if (a.varCode) codes.add(a.varCode)
-              if (a.target) codes.add(a.target)
+              if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
             })
           })
-          // 兼容旧格式：顶层 conditions 和 actions
-          this.extractFromConditions(model.conditions, codes)
+          this.extractVarIdsFromConditions(model.conditions, varIdMap)
           ;(model.actions || []).forEach(a => {
-            if (a.varCode) codes.add(a.varCode)
-            if (a.target) codes.add(a.target)
+            if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
           })
           break
         }
         case 'TREE': {
-          this.extractFromTreeNodes(model.nodes, model.edges, codes)
-          // 顶层 conditionRoot 也可能被使用
-          this.extractFromConditionRoot(model.conditionRoot, codes)
+          this.extractVarIdsFromTreeNodes(model.nodes, model.edges, varIdMap)
+          this.extractVarIdsFromConditionRoot(model.conditionRoot, varIdMap)
           break
         }
         case 'FLOW': {
-          this.extractFromFlowNodes(model.nodes, model.edges, codes)
-          // 顶层 conditionRoot 也可能被使用
-          this.extractFromConditionRoot(model.conditionRoot, codes)
+          this.extractVarIdsFromFlowNodes(model.nodes, model.edges, varIdMap)
+          this.extractVarIdsFromConditionRoot(model.conditionRoot, varIdMap)
           break
         }
         case 'CROSS': {
           // 交叉表：行变量、列变量、结果变量
-          if (model.rowVar && model.rowVar.varCode) codes.add(model.rowVar.varCode)
-          if (model.colVar && model.colVar.varCode) codes.add(model.colVar.varCode)
-          if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
+          if (model.rowVar && model.rowVar._varId) varIdMap[model.rowVar._varId] = { varCode: model.rowVar.varCode }
+          if (model.colVar && model.colVar._varId) varIdMap[model.colVar._varId] = { varCode: model.colVar.varCode }
+          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
           break
         }
         case 'CROSS_ADV': {
-          // 复杂交叉表：行维度变量、列维度变量、结果变量
-          (model.rowDimensions || []).forEach(dim => {
-            if (dim.varCode) codes.add(dim.varCode)
-            // 从维度条件树中提取变量
-            this.extractFromConditionRoot(dim.conditionRoot, codes)
+          ;(model.rowDimensions || []).forEach(dim => {
+            if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
+            this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
           ;(model.colDimensions || []).forEach(dim => {
-            if (dim.varCode) codes.add(dim.varCode)
-            // 从维度条件树中提取变量
-            this.extractFromConditionRoot(dim.conditionRoot, codes)
+            if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
+            this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
-          if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
+          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
           break
         }
         case 'SCORE': {
-          // 评分卡：评分项条件变量、结果变量
-          (model.scoreItems || []).forEach(item => {
-            // 从 conditionRoot（树形条件）提取
-            this.extractFromConditionRoot(item.conditionRoot, codes)
-            // 从 condition 表达式中提取变量（字符串格式）
-            if (item.condition && typeof item.condition === 'string') {
-              this.extractFromConditionExpression(item.condition, codes)
-            }
-            // 从 condVar 直接提取（主要输入变量）
-            if (item.condVar) codes.add(item.condVar)
+          // 评分卡：condVar 对应的 _varId 从评分项中提取
+          ;(model.scoreItems || []).forEach(item => {
+            this.extractVarIdsFromConditionRoot(item.conditionRoot, varIdMap)
+            // 优先使用 item._varId（由 var-picker 选择时填充）
+            if (item._varId && item.condVar) varIdMap[item._varId] = { varCode: item.condVar }
           })
-          if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
+          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
           break
         }
         case 'SCORE_ADV': {
-          // 复杂评分卡：维度变量、结果变量
-          (model.dimensionGroups || []).forEach(group => {
-            (group.dimensions || []).forEach(dim => {
-              if (dim.varCode) codes.add(dim.varCode)
-              // 从维度规则中提取变量
+          ;(model.dimensionGroups || []).forEach(group => {
+            ;(group.dimensions || []).forEach(dim => {
+              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
               ;(dim.rules || []).forEach(rule => {
-                if (rule.condVar) codes.add(rule.condVar)
-                if (rule.condition && typeof rule.condition === 'string') {
-                  this.extractFromConditionExpression(rule.condition, codes)
-                }
-                this.extractFromConditionRoot(rule.conditionRoot, codes)
+                if (rule._varId && rule.condVar) varIdMap[rule._varId] = { varCode: rule.condVar }
               })
             })
           })
-          if (model.resultVar && model.resultVar.varCode) codes.add(model.resultVar.varCode)
+          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
           break
         }
         case 'SCRIPT': {
-          // QL脚本：inputVars + 从 script 内容提取变量引用
-          (model.inputVars || []).forEach(v => { if (v.varCode) codes.add(v.varCode) })
-          if (model.script) {
-            // 从脚本内容中提取变量引用（简单匹配）
-            const scriptVars = model.script.match(/[a-zA-Z_]\w*(?=\s*[!=<>+\-*/%()[\]{}]|;|$)/g) || []
-            scriptVars.forEach(v => codes.add(v))
-          }
+          ;(model.inputVars || []).forEach(v => {
+            if (v._varId && v.varCode) varIdMap[v._varId] = { varCode: v.varCode }
+          })
           break
         }
-        default:
-          // 兜底：从整个 model 中递归搜索所有 varCode 字段
-          this.extractAllVarCodes(model, codes)
+        default: {
+          // 兜底：递归搜索所有 _varId 字段
+          this.extractAllVarIds(model, varIdMap)
+        }
       }
     },
     /**
-     * 兜底：递归搜索所有 varCode
+     * 兜底：递归搜索所有 _varId
      */
-    extractAllVarCodes(obj, codes) {
+    extractAllVarIds(obj, varIdMap) {
       if (!obj || typeof obj !== 'object') return
       if (Array.isArray(obj)) {
-        obj.forEach(item => this.extractAllVarCodes(item, codes))
+        obj.forEach(item => this.extractAllVarIds(item, varIdMap))
       } else {
-        if (obj.varCode) codes.add(obj.varCode)
-        if (obj.conditionExpression) {
-          // 从条件表达式中提取变量名（支持复杂表达式）
-          if (typeof obj.conditionExpression === 'string') {
-            this.extractFromConditionExpression(obj.conditionExpression, codes)
-          } else {
-            this.extractAllVarCodes(obj.conditionExpression, codes)
-          }
-        }
-        if (obj.condition) {
-          if (typeof obj.condition === 'string') {
-            this.extractFromConditionExpression(obj.condition, codes)
-          } else {
-            this.extractAllVarCodes(obj.condition, codes)
-          }
-        }
-        if (obj.actions) {
-          obj.actions.forEach(a => {
-            if (a.varCode) codes.add(a.varCode)
-            if (a.target) codes.add(a.target)
-          })
+        if (obj._varId && obj.varCode && !varIdMap[obj._varId]) {
+          varIdMap[obj._varId] = { varCode: obj.varCode }
         }
         for (const key in obj) {
-          if (key !== 'varCode' && key !== 'condition' && key !== 'conditionExpression' && key !== 'actions') {
-            this.extractAllVarCodes(obj[key], codes)
+          if (key !== '_varId' && key !== 'varCode') {
+            this.extractAllVarIds(obj[key], varIdMap)
           }
         }
       }
     },
     /**
-     * 从 conditions 数组提取变量代码
+     * 从 conditions 数组提取变量 ID
      */
-    extractFromConditions(conditions, codes) {
+    extractVarIdsFromConditions(conditions, varIdMap) {
       if (!conditions) return
       conditions.forEach(c => {
-        if (c.varCode) codes.add(c.varCode)
-        if (c.conditionExpression) {
-          const match = c.conditionExpression.match(/^([a-zA-Z_]\w*)\s*[!=<>]/)
-          if (match) codes.add(match[1])
+        if (c._varId && c.varCode && !varIdMap[c._varId]) {
+          varIdMap[c._varId] = { varCode: c.varCode }
         }
       })
     },
     /**
-     * 从 conditionRoot 递归提取变量代码
-     * conditionRoot 是一个树形结构，type=leaf 时为叶子条件节点
+     * 从 conditionRoot 递归提取变量 ID
      */
-    extractFromConditionRoot(root, codes) {
+    extractVarIdsFromConditionRoot(root, varIdMap) {
       if (!root) return
-      // 叶子节点直接添加 varCode
-      if (root.type === 'leaf' && root.varCode) {
-        codes.add(root.varCode)
+      if (root._varId && root.varCode && !varIdMap[root._varId]) {
+        varIdMap[root._varId] = { varCode: root.varCode }
       }
-      if (root.varCode) codes.add(root.varCode)
-      // conditionExpression：可能是完整表达式（如 "creditLevel >= 3"），用改进后的方法提取
-      if (root.conditionExpression) {
-        if (typeof root.conditionExpression === 'string') {
-          this.extractFromConditionExpression(root.conditionExpression, codes)
-        } else {
-          this.extractAllVarCodes(root.conditionExpression, codes)
-        }
-      }
-      // condition：可能是字符串表达式或对象结构
-      if (root.condition) {
-        if (typeof root.condition === 'string') {
-          this.extractFromConditionExpression(root.condition, codes)
-        } else {
-          this.extractAllVarCodes(root.condition, codes)
-        }
-      }
-      // 递归处理子节点
       if (root.children) {
-        root.children.forEach(child => this.extractFromConditionRoot(child, codes))
+        root.children.forEach(child => this.extractVarIdsFromConditionRoot(child, varIdMap))
       }
     },
     /**
-     * 从条件表达式（如 "creditLevel == \"A\"" 或 "annualRevenue >= 1000 && annualRevenue < 5000"）提取变量代码
+     * 从决策树 nodes + edges 递归提取变量 ID
      */
-    extractFromConditionExpression(expr, codes) {
-      if (!expr || typeof expr !== 'string') return
-      // 匹配变量名：字母或下划线开头，后面是字母数字下划线
-      // 使用 \b 词边界避免匹配操作符片段（如 "ge" 来自 ">="，"le" 来自 "<="）
-      const keywords = [
-        'true', 'false', 'null', 'undefined', 'NaN', 'Infinity',
-        'and', 'or', 'not',
-        // QLExpress 比较操作符关键字
-        'lt', 'le', 'gt', 'ge', 'eq', 'ne',
-        // QLExpress 算术/逻辑关键字
-        'div', 'mod', 'in', 'between'
-      ]
-      const regex = /\b[a-zA-Z_][a-zA-Z0-9_]*\b/g
-      const matches = expr.match(regex) || []
-      matches.forEach(v => {
-        if (!keywords.includes(v)) {
-          codes.add(v)
-        }
-      })
-    },
-    /**
-     * 从决策树 nodes + edges 递归提取变量代码
-     */
-    extractFromTreeNodes(nodes, edges, codes) {
+    extractVarIdsFromTreeNodes(nodes, edges, varIdMap) {
       if (!nodes) return
-      // 1. 从 nodes 中提取
       nodes.forEach(node => {
-        // 优先从 varCode 提取
-        if (node.varCode) codes.add(node.varCode)
-        // 从 conditionExpression 提取（如 "taxComplianceScore >= 80 && annualRevenue >= 3000"）
-        if (node.conditionExpression) {
-          if (typeof node.conditionExpression === 'string') {
-            this.extractFromConditionExpression(node.conditionExpression, codes)
-          } else {
-            this.extractAllVarCodes(node.conditionExpression, codes)
-          }
+        if (node._varId && node.varCode && !varIdMap[node._varId]) {
+          varIdMap[node._varId] = { varCode: node.varCode }
         }
-        // 从 condition 提取（可能是字符串或对象）
-        if (node.condition) {
-          if (typeof node.condition === 'string') {
-            this.extractFromConditionExpression(node.condition, codes)
-          } else {
-            this.extractAllVarCodes(node.condition, codes)
-          }
-        }
-        // 从 actionData 提取变量
         if (node.actionData) {
-          this.extractFromActionData(node.actionData, codes)
+          this.extractVarIdsFromActionData(node.actionData, varIdMap)
         }
-        // 递归处理子节点
         if (node.children) {
-          this.extractFromTreeNodes(node.children, null, codes)
+          this.extractVarIdsFromTreeNodes(node.children, null, varIdMap)
         }
       })
-      // 2. 从 edges 中提取条件表达式变量（如 "hasViolation == true"、"taxComplianceScore >= 80 && annualRevenue >= 3000"）
-      if (edges) {
-        edges.forEach(edge => {
-          if (edge.conditionExpression) {
-            if (typeof edge.conditionExpression === 'string') {
-              this.extractFromConditionExpression(edge.conditionExpression, codes)
-            } else {
-              this.extractAllVarCodes(edge.conditionExpression, codes)
-            }
-          }
-        })
-      }
     },
     /**
-     * 从决策流 nodes + edges 递归提取变量代码
+     * 从决策流 nodes + edges 递归提取变量 ID
      */
-    extractFromFlowNodes(nodes, edges, codes) {
+    extractVarIdsFromFlowNodes(nodes, edges, varIdMap) {
       if (!nodes) return
       nodes.forEach(node => {
-        if (node.varCode) codes.add(node.varCode)
-        // 从 conditionExpression 提取（如 "age >= 18 && age < 60"）
-        if (node.conditionExpression) {
-          if (typeof node.conditionExpression === 'string') {
-            this.extractFromConditionExpression(node.conditionExpression, codes)
-          } else {
-            this.extractAllVarCodes(node.conditionExpression, codes)
-          }
-        }
-        if (node.condition) {
-          if (typeof node.condition === 'string') {
-            this.extractFromConditionExpression(node.condition, codes)
-          } else {
-            this.extractAllVarCodes(node.condition, codes)
-          }
+        if (node._varId && node.varCode && !varIdMap[node._varId]) {
+          varIdMap[node._varId] = { varCode: node.varCode }
         }
         if (node.properties && node.properties.inputVars) {
-          node.properties.inputVars.forEach(v => { if (v.varCode) codes.add(v.varCode) })
+          node.properties.inputVars.forEach(v => {
+            if (v._varId && v.varCode && !varIdMap[v._varId]) {
+              varIdMap[v._varId] = { varCode: v.varCode }
+            }
+          })
         }
-        // 从 actionData 提取变量
         if (node.actionData) {
-          this.extractFromActionData(node.actionData, codes)
+          this.extractVarIdsFromActionData(node.actionData, varIdMap)
         }
-        // 兼容 logicflow 中的 properties.actionData
         if (node.properties && node.properties.actionData) {
-          this.extractFromActionData(node.properties.actionData, codes)
+          this.extractVarIdsFromActionData(node.properties.actionData, varIdMap)
         }
         if (node.children) {
-          this.extractFromFlowNodes(node.children, null, codes)
+          this.extractVarIdsFromFlowNodes(node.children, null, varIdMap)
         }
       })
-      // 从 edges 中提取条件表达式变量
-      if (edges) {
-        edges.forEach(edge => {
-          if (edge.conditionExpression) {
-            if (typeof edge.conditionExpression === 'string') {
-              this.extractFromConditionExpression(edge.conditionExpression, codes)
-            } else {
-              this.extractAllVarCodes(edge.conditionExpression, codes)
-            }
-          }
-        })
-      }
     },
     /**
-     * 从 actionData 数组提取变量代码
-     * 支持：assign, func-call, if-block 等类型
+     * 从 actionData 数组提取变量 ID
      */
-    extractFromActionData(actionData, codes) {
+    extractVarIdsFromActionData(actionData, varIdMap) {
       if (!actionData || !Array.isArray(actionData)) return
       actionData.forEach(a => {
-        // 赋值动作：target 是输出变量，value 中可能包含输入变量
-        if (a.type === 'assign') {
-          if (a.target) codes.add(a.target)
-          if (a.value && typeof a.value === 'string') {
-            // 跳过字符串字面量（如 "\"D\""、"\"A\"" 等），避免将 "D"、"A" 等误提取为变量
-            if (/^["'].*["']$/.test(a.value.trim())) return
-            // 从 value 表达式中提取变量名（如 "totalAmount / (1 + taxRate)"）
-            const vars = a.value.match(/\b[a-zA-Z_]\w*\b/g) || []
-            vars.forEach(v => {
-              if (!['true', 'false', 'null', 'undefined', 'NaN', 'Infinity', 'and', 'or', 'not', 'lt', 'le', 'gt', 'ge', 'eq', 'ne', 'div', 'mod', 'in', 'between'].includes(v)) {
-                codes.add(v)
-              }
-            })
-          }
+        if (a._varId && a.varCode && !varIdMap[a._varId]) {
+          varIdMap[a._varId] = { varCode: a.varCode }
         }
-        // 函数调用：target 是输出变量，args 是输入参数
-        else if (a.type === 'func-call') {
-          if (a.target) codes.add(a.target)
-          if (a.args && Array.isArray(a.args)) {
-            a.args.forEach(arg => {
-              if (typeof arg === 'string' && /^[a-zA-Z_]\w*$/.test(arg)) {
-                codes.add(arg)
-              }
-            })
-          }
+        if (a.type === 'assign' && a.target && a._targetVarId) {
+          varIdMap[a._targetVarId] = { varCode: a.target }
         }
-        // if-block：处理分支中的条件变量和动作
-        else if (a.type === 'if-block' && a.branches && Array.isArray(a.branches)) {
+        if (a.type === 'func-call' && a.target && a._targetVarId) {
+          varIdMap[a._targetVarId] = { varCode: a.target }
+        }
+        if (a.type === 'if-block' && a.branches) {
           a.branches.forEach(branch => {
-            // 条件变量（if/elseif 分支）
-            if (branch.condVar) codes.add(branch.condVar)
-            // 分支中的动作
-            if (branch.actions && Array.isArray(branch.actions)) {
-              branch.actions.forEach(action => {
-                if (action.target) codes.add(action.target)
-                if (action.value && typeof action.value === 'string') {
-                  const vars = action.value.match(/[a-zA-Z_]\w*/g) || []
-                  vars.forEach(v => {
-                    if (!['true', 'false', 'null', 'undefined', 'NaN', 'Infinity'].includes(v)) {
-                      codes.add(v)
-                    }
-                  })
-                }
-              })
+            if (branch._varId && branch.condVar && !varIdMap[branch._varId]) {
+              varIdMap[branch._varId] = { varCode: branch.condVar }
             }
           })
         }
@@ -702,6 +631,8 @@ export default {
       try {
         const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap })
         this.result = res.data
+        // 执行完成后切换到追踪树标签页
+        this.traceTab = 'tree'
       } catch (e) {
         this.result = { success: false, errorMessage: e.message || '执行异常', executeTimeMs: 0 }
       } finally {
@@ -793,6 +724,11 @@ export default {
   max-height: 300px;
   white-space: pre-wrap;
   word-break: break-all;
+}
+.trace-tree-wrap {
+  padding: 8px 0;
+  max-height: 500px;
+  overflow: auto;
 }
 @media screen and (max-width: 1000px) {
   .test-layout {

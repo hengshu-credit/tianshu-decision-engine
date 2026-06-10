@@ -11,10 +11,12 @@ import java.util.List;
  * 复杂交叉表编译器：支持多维行/列交叉 + 区间匹配。
  * 将多维分段的笛卡尔积生成 if/else if 链，每条为所有维度条件的 AND 组合。
  * 通过 {@link VarContext} 将 varCode 解析为正确的 scriptName。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class AdvancedCrossTableCompiler implements RuleCompiler {
 
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+    private VarContext varContext;
 
     @Override
     public CompileResult compile(String modelJson) {
@@ -23,12 +25,8 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        this.varContext = varContext;
+        return doCompile(modelJson);
     }
 
     private CompileResult doCompile(String modelJson) {
@@ -39,21 +37,23 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             JSONObject resultVar = model.getJSONObject("resultVar");
             JSONArray cells = model.getJSONArray("cells");
 
+            if (resultVar == null) {
+                return CompileResult.fail("复杂交叉表缺少结果变量定义");
+            }
+            Long resVarId = resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String resCode = resultVar.getString("varCode");
+            String resType = resultVar.getString("varType");
+            String resolvedResCode = resolveVar(resVarId, resCode);
+
             if (rowDims == null || rowDims.isEmpty()) {
                 return CompileResult.fail("复杂交叉表缺少行维度定义");
             }
             if (colDims == null || colDims.isEmpty()) {
                 return CompileResult.fail("复杂交叉表缺少列维度定义");
             }
-            if (resultVar == null) {
-                return CompileResult.fail("复杂交叉表缺少结果变量定义");
-            }
             if (cells == null) {
                 return CompileResult.fail("复杂交叉表缺少单元格数据");
             }
-
-            String resCode = resultVar.getString("varCode");
-            String resType = resultVar.getString("varType");
 
             List<List<SegmentInfo>> rowProduct = cartesianProduct(rowDims);
             List<List<SegmentInfo>> colProduct = cartesianProduct(colDims);
@@ -160,10 +160,9 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         }
     }
 
-    private static String resolveVar(Long varId, String varCode) {
-        VarContext ctx = CTX.get();
-        if (ctx != null) {
-            return ctx.resolveVar(varId, varCode);
+    private String resolveVar(Long varId, String varCode) {
+        if (this.varContext != null) {
+            return this.varContext.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }

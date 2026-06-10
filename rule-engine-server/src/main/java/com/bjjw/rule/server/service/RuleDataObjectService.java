@@ -57,6 +57,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         m.put("scriptName", f.getScriptName());
         m.put("varType", f.getVarType());
         m.put("refObjectCode", f.getRefObjectCode());
+        m.put("refObjectId", f.getRefObjectId());
         m.put("varSource", "INPUT");
         m.put("sortOrder", f.getSortOrder());
         m.put("status", f.getStatus());
@@ -80,7 +81,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 ParsedObject po = parsed.get(i);
                 String src = (i == 0) ? ddlSource : null;
                 RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "DDL", src);
-                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
+                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null, null);
                 objectCount++;
             }
             result.put("success", true);
@@ -107,13 +108,13 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             int varCount = 0;
             for (ParsedObject po : parsed) {
                 RuleDataObject obj = findOrCreateObject(projectId, scope, po.getObjectCode(), po.getScriptName(), objectType, "JAVA", javaSource);
-                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null);
+                varCount += batchCreateFields(projectId, scope, obj.getId(), po, null, null);
                 objectCount++;
                 for (ParsedObject nested : po.getNestedObjects()) {
                     RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JAVA", null);
                     nestedObj.setParentObjectId(obj.getId());
                     updateById(nestedObj);
-                    varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
+                    varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null, null);
                     objectCount++;
                 }
             }
@@ -138,18 +139,12 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 return result;
             }
             RuleDataObject obj = findOrCreateObject(projectId, scope, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
-            int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null);
-            int objectCount = 1;
+            int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null, null);
+            // 铁律四：嵌套字段的 refObjectCode 已写入字段，现在解析为 refObjectId
+            resolveRefObjectIds(obj.getId(), scope, projectId);
 
-            for (ParsedObject nested : parsed.getNestedObjects()) {
-                RuleDataObject nestedObj = findOrCreateObject(projectId, scope, nested.getObjectCode(), nested.getScriptName(), objectType, "JSON", null);
-                nestedObj.setParentObjectId(obj.getId());
-                updateById(nestedObj);
-                varCount += batchCreateFields(projectId, scope, nestedObj.getId(), nested, null);
-                objectCount++;
-            }
             result.put("success", true);
-            result.put("objectCount", objectCount);
+            result.put("objectCount", 1);
             result.put("variableCount", varCount);
         } catch (Exception e) {
             result.put("success", false);
@@ -287,18 +282,22 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     }
 
     /**
-     * 获取指定项目的变量树（包含全局和项目级）
+     * 获取指定项目的变量树（包含全局和项目级）。返回结构包含变量树和对象 ID→编码映射。
+     * 铁律四：objectIdMap 供前端通过 refObjectId 展示引用对象名。
      */
-    public List<Map<String, Object>> getVariableTree(Long projectId) {
+    public Map<String, Object> getVariableTree(Long projectId) {
         List<RuleDataObject> objects = listByProject(projectId);
         List<RuleDataObjectField> allFields = collectFieldsByProject(projectId);
-        return buildVariableTree(objects, allFields);
+        Map<String, Object> result = new HashMap<>();
+        result.put("tree", buildVariableTree(objects, allFields));
+        result.put("objectIdMap", buildObjectIdMap(objects));
+        return result;
     }
 
     /**
      * 获取所有项目的数据对象树（未选项目时使用，显示所有项目的数据对象）
      */
-    public List<Map<String, Object>> getVariableTreeAll() {
+    public Map<String, Object> getVariableTreeAll() {
         List<RuleDataObject> objects = getBaseMapper().selectList(
                 new LambdaQueryWrapper<RuleDataObject>()
                         .orderByAsc(RuleDataObject::getProjectId)
@@ -307,7 +306,17 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 new LambdaQueryWrapper<RuleDataObjectField>()
                         .orderByAsc(RuleDataObjectField::getProjectId)
                         .orderByAsc(RuleDataObjectField::getSortOrder));
-        return buildVariableTree(objects, allFields);
+        Map<String, Object> result = new HashMap<>();
+        result.put("tree", buildVariableTree(objects, allFields));
+        result.put("objectIdMap", buildObjectIdMap(objects));
+        return result;
+    }
+
+    /**
+     * 铁律四：构建 id → objectCode 映射，供前端展示 refObjectId 对应的对象名。
+     */
+    private Map<Long, String> buildObjectIdMap(List<RuleDataObject> objects) {
+        return objects.stream().collect(Collectors.toMap(RuleDataObject::getId, RuleDataObject::getObjectCode));
     }
 
     /**
@@ -474,7 +483,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         return obj;
     }
 
-    private int batchCreateFields(Long projectId, String scope, Long objectId, ParsedObject parsed, Long parentFieldId) {
+    private int batchCreateFields(Long projectId, String scope, Long objectId, ParsedObject parsed, Long parentFieldId, Map<String, Long> objectCodeToId) {
         int count = 0;
         int order = 0;
         // GLOBAL 场景 projectId 可能为 null，统一转为 0 保持与对象一致
@@ -486,10 +495,14 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                         .eq(RuleDataObjectField::getVarCode, varCode);
             RuleDataObjectField existing = objectFieldMapper.selectOne(existWrapper);
 
+            // 铁律四：优先使用 refObjectId，其次使用 refObjectCode
+            Long resolvedRefObjectId = resolveRefObjectId(field.getRefObjectCode(), field.getRefObjectId(), scope, normProjectId, objectCodeToId);
+
             if (existing != null) {
                 existing.setVarType(field.getVarType());
                 existing.setParentFieldId(parentFieldId);
                 existing.setRefObjectCode(field.getRefObjectCode());
+                existing.setRefObjectId(resolvedRefObjectId);
                 if (field.getFieldLabel() != null && !field.getFieldLabel().isEmpty()) {
                     existing.setVarLabel(field.getFieldLabel());
                 }
@@ -507,6 +520,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 f.setScriptName(field.getScriptName() != null ? field.getScriptName() : varCode);
                 f.setVarType(field.getVarType());
                 f.setRefObjectCode(field.getRefObjectCode());
+                f.setRefObjectId(resolvedRefObjectId);
                 f.setParentFieldId(parentFieldId);
                 f.setSortOrder(order);
                 f.setStatus(1);
@@ -516,5 +530,100 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             order++;
         }
         return count;
+    }
+
+    /**
+     * 铁律四：解析字段的引用对象 ID。
+     * 优先级：refObjectId（已设置） > refObjectCode（需查询/创建目标对象）
+     *
+     * @param refObjectCode  字段中记录的引用对象编码
+     * @param refObjectId    字段中记录的引用对象 ID（可能已由解析器设置）
+     * @param scope          作用域
+     * @param normProjectId  归一化的项目 ID
+     * @param objectCodeToId 可选的缓存映射（避免重复查询）
+     * @return 解析后的 refObjectId，找不到时返回 null
+     */
+    private Long resolveRefObjectId(String refObjectCode, Long refObjectId, String scope, Long normProjectId, Map<String, Long> objectCodeToId) {
+        // 已有 ID 直接返回
+        if (refObjectId != null && refObjectId > 0) {
+            return refObjectId;
+        }
+        if (refObjectCode == null || refObjectCode.isEmpty()) {
+            return null;
+        }
+        // 尝试从缓存获取
+        if (objectCodeToId != null && objectCodeToId.containsKey(refObjectCode)) {
+            return objectCodeToId.get(refObjectCode);
+        }
+        // 查询目标对象
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RuleDataObject::getScope, scope)
+               .eq(RuleDataObject::getProjectId, normProjectId)
+               .eq(RuleDataObject::getObjectCode, refObjectCode);
+        RuleDataObject target = getOne(wrapper, false);
+        if (target != null) {
+            if (objectCodeToId != null) {
+                objectCodeToId.put(refObjectCode, target.getId());
+            }
+            return target.getId();
+        }
+        return null;
+    }
+
+    /**
+     * 铁律四：批量将字段的 refObjectCode 解析为 refObjectId。
+     * 对于引用了不存在的对象编码，先创建目标数据对象，再更新字段的 refObjectId。
+     */
+    private void resolveRefObjectIds(Long objectId, String scope, Long projectId) {
+        Long normProjectId = (projectId == null || projectId == 0L) ? 0L : projectId;
+
+        // 查询所有 varType 为 OBJECT/LIST 且有 refObjectCode 但无 refObjectId 的字段
+        LambdaQueryWrapper<RuleDataObjectField> fieldWrapper = new LambdaQueryWrapper<>();
+        fieldWrapper.eq(RuleDataObjectField::getObjectId, objectId)
+                    .in(RuleDataObjectField::getVarType, "OBJECT", "LIST")
+                    .isNotNull(RuleDataObjectField::getRefObjectCode)
+                    .isNull(RuleDataObjectField::getRefObjectId);
+        List<RuleDataObjectField> fieldsToResolve = objectFieldMapper.selectList(fieldWrapper);
+        if (fieldsToResolve.isEmpty()) {
+            return;
+        }
+
+        // 收集所有需要的目标对象编码
+        Map<String, Long> objectCodeToId = new HashMap<>();
+        for (RuleDataObjectField f : fieldsToResolve) {
+            String code = f.getRefObjectCode();
+            if (code != null && !code.isEmpty()) {
+                LambdaQueryWrapper<RuleDataObject> objWrapper = new LambdaQueryWrapper<>();
+                objWrapper.eq(RuleDataObject::getScope, scope)
+                          .eq(RuleDataObject::getProjectId, normProjectId)
+                          .eq(RuleDataObject::getObjectCode, code);
+                RuleDataObject target = getOne(objWrapper, false);
+                if (target != null) {
+                    objectCodeToId.put(code, target.getId());
+                } else {
+                    // 铁律四：目标对象不存在时，按需创建（延迟创建，避免导入空对象）
+                    RuleDataObject newObj = new RuleDataObject();
+                    newObj.setProjectId(projectId);
+                    newObj.setScope(scope);
+                    newObj.setObjectCode(code);
+                    newObj.setObjectLabel(code);
+                    newObj.setScriptName(code);
+                    newObj.setObjectType("INPUT");
+                    newObj.setSourceType("JSON");
+                    newObj.setStatus(1);
+                    save(newObj);
+                    objectCodeToId.put(code, newObj.getId());
+                }
+            }
+        }
+
+        // 更新字段的 refObjectId
+        for (RuleDataObjectField f : fieldsToResolve) {
+            Long resolvedId = objectCodeToId.get(f.getRefObjectCode());
+            if (resolvedId != null) {
+                f.setRefObjectId(resolvedId);
+                objectFieldMapper.updateById(f);
+            }
+        }
     }
 }

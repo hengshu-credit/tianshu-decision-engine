@@ -11,10 +11,10 @@ import java.util.*;
  *
  * 校验 nodes/edges 图结构的合法性，将图编译为单一 QLExpress 脚本。
  * 支持分支汇合（join 节点），适用于分叉后有公共后续逻辑的场景。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class DecisionFlowCompiler implements RuleCompiler {
-
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
 
     @Override
     public CompileResult compile(String modelJson) {
@@ -23,15 +23,10 @@ public class DecisionFlowCompiler implements RuleCompiler {
 
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        return doCompile(modelJson, varContext);
     }
 
-    private CompileResult doCompile(String modelJson) {
+    private CompileResult doCompile(String modelJson, VarContext varContext) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             JSONArray nodes = model.getJSONArray("nodes");
@@ -102,7 +97,6 @@ public class DecisionFlowCompiler implements RuleCompiler {
                 outEdgeMap.computeIfAbsent(src, k -> new ArrayList<>()).add(e);
             }
 
-            VarContext varContext = CTX.get();
             String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();

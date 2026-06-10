@@ -123,6 +123,10 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         content.setModelJson("{}");
         content.setCompileStatus(0);
         contentMapper.insert(content);
+
+        // 创建时触发一次字段解析，确保规则详情页能正确展示出入参
+        fieldAnalyzer.analyzeAndPersist(definition.getId(), "{}", definition.getModelType(), definition.getProjectId());
+
         return definition;
     }
 

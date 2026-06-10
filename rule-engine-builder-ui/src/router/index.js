@@ -14,6 +14,34 @@ const authAxios = axios.create({
   withCredentials: true
 })
 
+/**
+ * 控制台登录配置缓存（模块级，整个页面生命周期只请求一次）
+ */
+var _consoleConfigPromise = null
+
+function fetchConsoleConfig() {
+  if (!_consoleConfigPromise) {
+    _consoleConfigPromise = authAxios.get('/auth/console/config')
+      .then(function (res) { return res.data })
+      .catch(function () { return null })
+  }
+  return _consoleConfigPromise
+}
+
+/**
+ * 会话校验结果缓存（模块级，整个页面生命周期只请求一次）
+ */
+var _mePromise = null
+
+function fetchMe() {
+  if (!_mePromise) {
+    _mePromise = authAxios.get('/auth/console/me')
+      .then(function (res) { return res.data })
+      .catch(function () { return null })
+  }
+  return _mePromise
+}
+
 const routes = [
   {
     path: '/login',
@@ -147,36 +175,32 @@ const router = new VueRouter({
 /**
  * 若后端启用控制台登录，则校验会话；未启用时与改造前行为一致。
  */
+var _checked = false // 是否已完成登录校验（首次校验后不再重复触发重定向）
 router.beforeEach(async (to, from, next) => {
+  var body = await fetchConsoleConfig()
   if (to.path === '/login') {
-    try {
-      const cfgRes = await authAxios.get('/auth/console/config')
-      const body = cfgRes.data
-      if (body && body.code === 200 && body.data && !body.data.loginEnabled) {
-        // 登录已禁用，直接重定向到目标页面（使用 location 避免嵌套路由导航）
-        window.location.replace(to.query.redirect || '/project')
-        return
-      }
-    } catch (e) {
-      /* 无法拉取配置时仍展示登录页 */
+    if (body && body.code === 200 && body.data && !body.data.loginEnabled) {
+      // 登录已禁用，直接跳转（使用 Vue Router 而非 location 避免页面刷新）
+      return next({ path: to.query.redirect || '/project', replace: true })
     }
+    return next()
+  }
+  if (!body || body.code !== 200 || !body.data || !body.data.loginEnabled) {
+    return next()
+  }
+  if (_checked) {
+    // 首次校验后不再重复触发重定向，直接放行
     return next()
   }
   try {
-    const cfgRes = await authAxios.get('/auth/console/config')
-    const body = cfgRes.data
-    if (!body || body.code !== 200 || !body.data || !body.data.loginEnabled) {
-      return next()
-    }
-    const meRes = await authAxios.get('/auth/console/me')
-    const me = meRes.data
+    var me = await fetchMe()
     if (me && me.code === 200 && me.data && me.data.username) {
       return next()
     }
-    window.location.replace('/login?redirect=' + encodeURIComponent(to.fullPath))
-  } catch (e) {
-    return next()
-  }
+  } catch (e) { /* ignore */ }
+  // 记录已触发重定向，防止刷新后再次重定向形成循环
+  _checked = true
+  return next({ path: '/login?redirect=' + encodeURIComponent(to.fullPath), replace: true })
 })
 
 export default router

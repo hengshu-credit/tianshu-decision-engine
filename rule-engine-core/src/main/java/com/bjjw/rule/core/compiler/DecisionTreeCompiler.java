@@ -11,10 +11,10 @@ import java.util.*;
  *
  * 校验图必须是树形结构（禁止聚合节点、禁止多入边汇合），
  * 然后将 nodes/edges 编译为单一 QLExpress 脚本。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class DecisionTreeCompiler implements RuleCompiler {
-
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
 
     @Override
     public CompileResult compile(String modelJson) {
@@ -23,15 +23,10 @@ public class DecisionTreeCompiler implements RuleCompiler {
 
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        return doCompile(modelJson, varContext);
     }
 
-    private CompileResult doCompile(String modelJson) {
+    private CompileResult doCompile(String modelJson, VarContext varContext) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
             JSONArray nodes = model.getJSONArray("nodes");
@@ -95,7 +90,6 @@ public class DecisionTreeCompiler implements RuleCompiler {
                 return CompileResult.fail("缺少开始节点");
             }
 
-            VarContext varContext = CTX.get();
             String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();

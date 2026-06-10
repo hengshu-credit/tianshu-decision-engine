@@ -104,7 +104,7 @@ public class RuleDataObjectController {
      * 获取所有项目的数据对象树（未选项目时使用）
      */
     @GetMapping("/tree")
-    public R<List<Map<String, Object>>> treeAll() {
+    public R<Map<String, Object>> treeAll() {
         return R.ok(dataObjectService.getVariableTreeAll());
     }
 
@@ -115,7 +115,7 @@ public class RuleDataObjectController {
     }
 
     @GetMapping("/tree/{projectId:\\d+}")
-    public R<List<Map<String, Object>>> tree(@PathVariable Long projectId) {
+    public R<Map<String, Object>> tree(@PathVariable Long projectId) {
         return R.ok(dataObjectService.getVariableTree(projectId));
     }
 

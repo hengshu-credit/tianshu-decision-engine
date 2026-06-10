@@ -30,6 +30,9 @@ public class RuleDefinitionOutputField {
 
     private String transformParams;
 
+    /** 有效值列表（JSON数组，分类变量） */
+    private String validValues;
+
     private Integer sortOrder;
     private Integer status;
 

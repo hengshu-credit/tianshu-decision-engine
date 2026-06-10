@@ -23,6 +23,8 @@ public class RuleDataObjectField {
     private String scriptName;
     private String varType;
     private String refObjectCode;
+    /** 引用对象 ID（铁律四：指向 rule_data_object.id，优先于 refObjectCode） */
+    private Long refObjectId;
     private Long parentFieldId;
     private Integer sortOrder;
     private Integer status;

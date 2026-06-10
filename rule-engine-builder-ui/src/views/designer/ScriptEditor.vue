@@ -338,7 +338,7 @@ export default {
     async handleSave() {
       const modelJson = JSON.stringify({ script: this.script })
       await saveContent({ definitionId: this.definitionId, modelJson })
-      await refreshFields(this.definitionId)
+      await refreshFields(this.definitionId, modelJson)
       this.$message.success('保存成功')
       this.refreshProjectRefs()
     },

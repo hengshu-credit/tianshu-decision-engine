@@ -13,14 +13,10 @@ import java.util.LinkedHashSet;
  *
  * <p>通过 {@link VarContext} 将模型 JSON 中的 varCode 解析为正确的 scriptName，
  * 解决变量管理中 varCode 与 scriptName 大小写不一致导致的运行时找不到变量问题。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class DecisionTableCompiler implements RuleCompiler {
-
-    /**
-     * ThreadLocal 传递 VarContext，使 static 工具方法（compileConditionNode / compileLeaf）
-     * 也能访问变量映射而不必修改所有方法签名。
-     */
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
 
     private VarContext varContext;
 
@@ -32,12 +28,7 @@ public class DecisionTableCompiler implements RuleCompiler {
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
         this.varContext = varContext;
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        return doCompile(modelJson);
     }
 
     private CompileResult doCompile(String modelJson) {
@@ -74,7 +65,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                     script.append(" else if (");
                 }
 
-                script.append(buildRulePredicate(rule, ruleConditions, legacyColumnDefs));
+                script.append(buildRulePredicate(rule, ruleConditions, legacyColumnDefs, this.varContext));
                 script.append(") {\n");
 
                 appendRuleAssignments(script, ruleActions, globalActionDefs, this.varContext);
@@ -135,7 +126,7 @@ public class DecisionTableCompiler implements RuleCompiler {
      * 同上，无 VarContext 的兼容重载。
      */
     static LinkedHashSet<String> collectOutputVarCodes(JSONArray rules, JSONArray globalActionDefs) {
-        return collectOutputVarCodes(rules, globalActionDefs, CTX.get());
+        return collectOutputVarCodes(rules, globalActionDefs, null);
     }
 
     /**
@@ -188,19 +179,19 @@ public class DecisionTableCompiler implements RuleCompiler {
      * 同上，无 VarContext 的兼容重载。
      */
     static void appendRuleAssignments(StringBuilder script, JSONArray ruleActions, JSONArray globalActionDefs) {
-        appendRuleAssignments(script, ruleActions, globalActionDefs, CTX.get());
+        appendRuleAssignments(script, ruleActions, globalActionDefs, null);
     }
 
     /**
      * 生成单条规则的条件布尔表达式：优先 {@code conditionRoot}，否则旧版列对齐的 AND。
      */
-    static String buildRulePredicate(JSONObject rule, JSONArray legacyRuleConditions, JSONArray legacyColumnDefs) {
+    static String buildRulePredicate(JSONObject rule, JSONArray legacyRuleConditions, JSONArray legacyColumnDefs, VarContext varContext) {
         JSONObject root = rule.getJSONObject("conditionRoot");
         if (root != null && !root.isEmpty()) {
             // compileConditionNode 同时处理 group 和 leaf 类型
-            return compileConditionNode(root, CTX.get());
+            return compileConditionNode(root, varContext);
         }
-        return compileLegacyFlatAnd(legacyRuleConditions, legacyColumnDefs);
+        return compileLegacyFlatAnd(legacyRuleConditions, legacyColumnDefs, varContext);
     }
 
     /**
@@ -234,13 +225,6 @@ public class DecisionTableCompiler implements RuleCompiler {
             return compileLeaf(node, varContext);
         }
         return "true";
-    }
-
-    /**
-     * 同上，使用 ThreadLocal 中的 VarContext。
-     */
-    static String compileConditionNode(JSONObject node) {
-        return compileConditionNode(node, CTX.get());
     }
 
     /**
@@ -282,13 +266,6 @@ public class DecisionTableCompiler implements RuleCompiler {
     }
 
     /**
-     * 同上，使用 ThreadLocal 中的 VarContext。
-     */
-    static String compileLeaf(JSONObject leaf) {
-        return compileLeaf(leaf, CTX.get());
-    }
-
-    /**
      * 通过 VarContext 解析变量引用名。
      * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
      */
@@ -311,8 +288,9 @@ public class DecisionTableCompiler implements RuleCompiler {
 
     /**
      * 旧版：多列条件，全部 AND。
+     * 通过 VarContext 将 varCode 解析为正确的 scriptName。
      */
-    static String compileLegacyFlatAnd(JSONArray ruleConditions, JSONArray conditions) {
+    static String compileLegacyFlatAnd(JSONArray ruleConditions, JSONArray conditions, VarContext varContext) {
         if (ruleConditions == null || ruleConditions.isEmpty()) {
             return "true";
         }
@@ -321,6 +299,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             if (j > 0) script.append(" && ");
             JSONObject cond = ruleConditions.getJSONObject(j);
             JSONObject condDef = j < conditions.size() ? conditions.getJSONObject(j) : null;
+            Long varId = condDef != null && condDef.containsKey("_varId") ? condDef.getLong("_varId") : null;
             String varCode = condDef != null ? condDef.getString("varCode") : "var" + j;
             String operator = cond.getString("operator");
             String value = cond.getString("value");
@@ -331,7 +310,8 @@ public class DecisionTableCompiler implements RuleCompiler {
             }
 
             String varType = condDef != null ? condDef.getString("varType") : "STRING";
-            script.append(varCode).append(" ").append(operator).append(" ");
+            String resolvedVar = resolveVar(varId, varCode, varContext);
+            script.append(resolvedVar).append(" ").append(operator).append(" ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 script.append("\"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
             } else {

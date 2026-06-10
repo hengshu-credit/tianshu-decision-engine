@@ -10,10 +10,12 @@ import java.util.LinkedHashSet;
  * 评分卡编译器：将特征分段打分模型编译为 QLExpress 脚本。
  * 支持初始分数 + 评分项命中加分 + 权重配置 + 等级阈值判定。
  * 通过 {@link VarContext} 将条件中的 varCode 解析为正确的 scriptName。
+ *
+ * <p>VarContext 通过参数传递，不使用 ThreadLocal。
  */
 public class ScorecardCompiler implements RuleCompiler {
 
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
+    private VarContext varContext;
 
     @Override
     public CompileResult compile(String modelJson) {
@@ -22,12 +24,8 @@ public class ScorecardCompiler implements RuleCompiler {
 
     @Override
     public CompileResult compile(String modelJson, VarContext varContext) {
-        CTX.set(varContext);
-        try {
-            return doCompile(modelJson);
-        } finally {
-            CTX.remove();
-        }
+        this.varContext = varContext;
+        return doCompile(modelJson);
     }
 
     private CompileResult doCompile(String modelJson) {
@@ -38,10 +36,12 @@ public class ScorecardCompiler implements RuleCompiler {
             JSONArray scoreItems = model.getJSONArray("scoreItems");
             JSONArray thresholds = model.getJSONArray("thresholds");
 
-            String resCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
+            Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
+            String resolvedResultVar = resolveVar(resVarId, varCode);
 
             StringBuilder script = new StringBuilder();
-            script.append(resCode).append(" = ").append(initialScore).append(";\n");
+            script.append(resolvedResultVar).append(" = ").append(initialScore).append(";\n");
 
             if (scoreItems != null) {
                 for (int i = 0; i < scoreItems.size(); i++) {
@@ -55,7 +55,7 @@ public class ScorecardCompiler implements RuleCompiler {
                     if (rawCondition != null && !rawCondition.isEmpty()) {
                         // 旧版：直接使用 condition 脚本表达式
                         script.append("if (").append(rawCondition).append(") {\n");
-                        script.append("    ").append(resCode).append(" = ").append(resCode)
+                        script.append("    ").append(resolvedResultVar).append(" = ").append(resolvedResultVar)
                               .append(" + ").append(score * weight).append(";\n");
                         script.append("}\n");
                     } else {
@@ -69,7 +69,7 @@ public class ScorecardCompiler implements RuleCompiler {
                             String scriptName = resolveVar(varId, condVar);
                             script.append("if (").append(scriptName).append(" ").append(condOp).append(" ");
                             script.append(formatRhs(condValue)).append(") {\n");
-                            script.append("    ").append(resCode).append(" = ").append(resCode)
+                            script.append("    ").append(resolvedResultVar).append(" = ").append(resolvedResultVar)
                                   .append(" + ").append(score * weight).append(";\n");
                             script.append("}\n");
                         }
@@ -95,21 +95,21 @@ public class ScorecardCompiler implements RuleCompiler {
                     String result = th.getString("result");
 
                     script.append(i == 0 ? "if (" : " else if (");
-                    script.append(resCode).append(" >= ").append(min).append(" && ")
-                          .append(resCode).append(" < ").append(max).append(") {\n");
+                    script.append(resolvedResultVar).append(" >= ").append(min).append(" && ")
+                          .append(resolvedResultVar).append(" < ").append(max).append(") {\n");
                     script.append("    ").append(levelVar).append(" = \"")
                           .append(escapeForQlDoubleQuotedString(result)).append("\"\n}");
                 }
                 script.append("\n");
 
                 LinkedHashSet<String> outVars = new LinkedHashSet<>();
-                outVars.add(resCode);
+                outVars.add(resolvedResultVar);
                 outVars.add(levelVar);
                 RuleScriptResultCollector.prependOutputNullInits(script, outVars);
                 RuleScriptResultCollector.appendResultMapReturn(script, outVars);
             } else {
                 LinkedHashSet<String> outVars = new LinkedHashSet<>();
-                outVars.add(resCode);
+                outVars.add(resolvedResultVar);
                 RuleScriptResultCollector.prependOutputNullInits(script, outVars);
                 RuleScriptResultCollector.appendResultMapReturn(script, outVars);
             }
@@ -120,10 +120,9 @@ public class ScorecardCompiler implements RuleCompiler {
         }
     }
 
-    private static String resolveVar(Long varId, String varCode) {
-        VarContext ctx = CTX.get();
-        if (ctx != null) {
-            return ctx.resolveVar(varId, varCode);
+    private String resolveVar(Long varId, String varCode) {
+        if (this.varContext != null) {
+            return this.varContext.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }

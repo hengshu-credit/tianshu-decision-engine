@@ -296,19 +296,27 @@ public class RuleDefinitionController {
 
 
     /**
-     * 刷新规则的输入/输出字段（从当前模型内容解析并持久化）
+     * 刷新规则的输入/输出字段（从当前模型内容解析并持久化）。
+     * 支持传入 modelJson（用于设计器保存后立即刷新，避免事务未提交导致的脏读）；
+     * 不传 modelJson 时从数据库读取（用于技术人员手动刷新场景）。
      */
     @PostMapping("/refreshFields/{definitionId}")
-    public R<RuleDefinition> refreshFields(@PathVariable Long definitionId) {
-        RuleDefinitionContent content = definitionService.getContent(definitionId);
-        if (content == null || content.getModelJson() == null) {
-            return R.fail("规则内容不存在");
-        }
+    public R<RuleDefinition> refreshFields(@PathVariable Long definitionId,
+                                          @RequestBody(required = false) String modelJson) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
             return R.fail("规则不存在");
         }
-        definitionService.refreshFields(definitionId, content.getModelJson(), definition.getModelType());
+        // 优先使用传入的 modelJson（设计器场景）；无传入则从数据库读取（手动刷新场景）
+        String jsonToParse = modelJson;
+        if (jsonToParse == null || jsonToParse.isEmpty()) {
+            RuleDefinitionContent content = definitionService.getContent(definitionId);
+            if (content == null || content.getModelJson() == null) {
+                return R.fail("规则内容不存在");
+            }
+            jsonToParse = content.getModelJson();
+        }
+        definitionService.refreshFields(definitionId, jsonToParse, definition.getModelType());
         return R.ok(definitionService.getDetail(definitionId));
     }
 }
