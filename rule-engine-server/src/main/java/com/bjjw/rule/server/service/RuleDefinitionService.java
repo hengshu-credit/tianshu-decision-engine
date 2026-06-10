@@ -2,6 +2,7 @@ package com.bjjw.rule.server.service;
 
 import com.bjjw.rule.model.entity.*;
 import com.bjjw.rule.model.dto.RulePushMessage;
+import com.bjjw.rule.model.dto.RuleQueryDTO;
 import com.bjjw.rule.server.mapper.*;
 import com.bjjw.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -44,54 +45,59 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RuleFieldAnalyzer fieldAnalyzer;
 
-    public IPage<RuleDefinition> pageList(int pageNum, int pageSize, Long projectId, String modelType, String keyword, String projectName, String scope, String status, String ruleCode, String ruleName, String projectCode, String publishedVersion, String createBeginTime, String createEndTime, String updateBeginTime, String updateEndTime) {
-        LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
-        if (projectId != null) {
-            wrapper.eq(RuleDefinition::getProjectId, projectId);
-        }
-        if (modelType != null && !modelType.isEmpty()) {
-            wrapper.eq(RuleDefinition::getModelType, modelType);
-        }
-        if (projectName != null && !projectName.isEmpty()) {
-            wrapper.like(RuleDefinition::getProjectName, projectName);
-        }
-        if (scope != null && !scope.isEmpty()) {
-            wrapper.eq(RuleDefinition::getScope, scope);
-        }
-        if (status != null && !status.isEmpty()) {
-            wrapper.eq(RuleDefinition::getStatus, status);
-        }
-        if (ruleCode != null && !ruleCode.isEmpty()) {
-            wrapper.eq(RuleDefinition::getRuleCode, ruleCode);
-        }
-        if (ruleName != null && !ruleName.isEmpty()) {
-            wrapper.like(RuleDefinition::getRuleName, ruleName);
-        }
-        if (projectCode != null && !projectCode.isEmpty()) {
-            wrapper.eq(RuleDefinition::getProjectCode, projectCode);
-        }
-        if (publishedVersion != null && !publishedVersion.isEmpty()) {
-            wrapper.eq(RuleDefinition::getPublishedVersion, publishedVersion);
-        }
-        if (createBeginTime != null && !createBeginTime.isEmpty()) {
-            wrapper.ge(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        }
-        if (createEndTime != null && !createEndTime.isEmpty()) {
-            wrapper.le(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(createEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        }
-        if (updateBeginTime != null && !updateBeginTime.isEmpty()) {
-            wrapper.ge(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateBeginTime + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        }
-        if (updateEndTime != null && !updateEndTime.isEmpty()) {
-            wrapper.le(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(updateEndTime + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
-        }
-        if (keyword != null && !keyword.isEmpty()) {
-            wrapper.and(w -> w.like(RuleDefinition::getRuleName, keyword)
-                              .or()
-                              .like(RuleDefinition::getRuleCode, keyword));
-        }
+    public IPage<RuleDefinition> pageList(RuleQueryDTO query) {
+        LambdaQueryWrapper<RuleDefinition> wrapper = buildWrapper(query);
         wrapper.orderByDesc(RuleDefinition::getCreateTime);
-        return page(new Page<>(pageNum, pageSize), wrapper);
+        return page(new Page<>(query.getPageNumOrDefault(), query.getPageSizeOrDefault()), wrapper);
+    }
+
+    private LambdaQueryWrapper<RuleDefinition> buildWrapper(RuleQueryDTO query) {
+        LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
+        if (query.getProjectId() != null) {
+            wrapper.eq(RuleDefinition::getProjectId, query.getProjectId());
+        }
+        if (query.getModelType() != null && !query.getModelType().isEmpty()) {
+            wrapper.eq(RuleDefinition::getModelType, query.getModelType());
+        }
+        if (query.getProjectName() != null && !query.getProjectName().isEmpty()) {
+            wrapper.like(RuleDefinition::getProjectName, query.getProjectName());
+        }
+        if (query.getScope() != null && !query.getScope().isEmpty()) {
+            wrapper.eq(RuleDefinition::getScope, query.getScope());
+        }
+        if (query.getStatus() != null && !query.getStatus().isEmpty()) {
+            wrapper.eq(RuleDefinition::getStatus, query.getStatus());
+        }
+        if (query.getRuleCode() != null && !query.getRuleCode().isEmpty()) {
+            wrapper.eq(RuleDefinition::getRuleCode, query.getRuleCode());
+        }
+        if (query.getRuleName() != null && !query.getRuleName().isEmpty()) {
+            wrapper.like(RuleDefinition::getRuleName, query.getRuleName());
+        }
+        if (query.getProjectCode() != null && !query.getProjectCode().isEmpty()) {
+            wrapper.eq(RuleDefinition::getProjectCode, query.getProjectCode());
+        }
+        if (query.getPublishedVersion() != null && !query.getPublishedVersion().isEmpty()) {
+            wrapper.eq(RuleDefinition::getPublishedVersion, query.getPublishedVersion());
+        }
+        if (query.getCreateBeginTime() != null && !query.getCreateBeginTime().isEmpty()) {
+            wrapper.ge(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(query.getCreateBeginTime() + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (query.getCreateEndTime() != null && !query.getCreateEndTime().isEmpty()) {
+            wrapper.le(RuleDefinition::getCreateTime, java.time.LocalDateTime.parse(query.getCreateEndTime() + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (query.getUpdateBeginTime() != null && !query.getUpdateBeginTime().isEmpty()) {
+            wrapper.ge(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(query.getUpdateBeginTime() + " 00:00:00", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (query.getUpdateEndTime() != null && !query.getUpdateEndTime().isEmpty()) {
+            wrapper.le(RuleDefinition::getUpdateTime, java.time.LocalDateTime.parse(query.getUpdateEndTime() + " 23:59:59", java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")));
+        }
+        if (query.getKeyword() != null && !query.getKeyword().isEmpty()) {
+            wrapper.and(w -> w.like(RuleDefinition::getRuleName, query.getKeyword())
+                              .or()
+                              .like(RuleDefinition::getRuleCode, query.getKeyword()));
+        }
+        return wrapper;
     }
 
     @Transactional
@@ -437,118 +443,6 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         deleteWithContent(definitionId);
     }
 
-    /**
-     * 迁移规则旧 JSON 字段到独立表
-     * 仅迁移关联了变量（varId 非空）的字段
-     */
-    @Transactional
-    public int migrateFields(Long definitionId) {
-        RuleDefinition definition = getById(definitionId);
-        if (definition == null) return 0;
 
-        int count = 0;
 
-        // 迁移输入字段
-        String inputJson = definition.getInputFields();
-        if (inputJson != null && !inputJson.isEmpty()) {
-            try {
-                List<?> rawList = JSON.parseArray(inputJson);
-                int order = 0;
-                for (Object item : rawList) {
-                    if (!(item instanceof java.util.Map)) continue;
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> f = (java.util.Map<String, Object>) item;
-                    Long varId = parseVarId(f.get("varId"));
-                    if (varId == null) {
-                        order++;
-                        continue; // 跳过未关联变量的字段
-                    }
-                    RuleDefinitionInputField field = new RuleDefinitionInputField();
-                    field.setDefinitionId(definitionId);
-                    field.setVarId(varId);
-                    field.setFieldName(str(f.get("fieldName")));
-                    field.setFieldLabel(str(f.get("fieldLabel")));
-                    field.setScriptName(str(f.get("scriptName")));
-                    field.setFieldType(str(f.get("fieldType")));
-                    field.setMissingValue(str(f.get("missingValue")));
-                    field.setDefaultValue(str(f.get("defaultValue")));
-                    field.setValidValues(str(f.get("validValues")));
-                    field.setTransformType(str(f.get("transformType")));
-                    field.setTransformParams(str(f.get("transformParams")));
-                    field.setSortOrder(order++);
-                    field.setStatus(1);
-                    field.setCreateTime(LocalDateTime.now());
-                    inputFieldMapper.insert(field);
-                    count++;
-                }
-            } catch (Exception e) {
-                // 解析失败，跳过
-            }
-        }
-
-        // 迁移输出字段
-        String outputJson = definition.getOutputFields();
-        if (outputJson != null && !outputJson.isEmpty()) {
-            try {
-                List<?> rawList = JSON.parseArray(outputJson);
-                int order = 0;
-                for (Object item : rawList) {
-                    if (!(item instanceof java.util.Map)) continue;
-                    @SuppressWarnings("unchecked")
-                    java.util.Map<String, Object> f = (java.util.Map<String, Object>) item;
-                    Long varId = parseVarId(f.get("varId"));
-                    if (varId == null) {
-                        order++;
-                        continue; // 跳过未关联变量的字段
-                    }
-                    RuleDefinitionOutputField field = new RuleDefinitionOutputField();
-                    field.setDefinitionId(definitionId);
-                    field.setVarId(varId);
-                    field.setFieldName(str(f.get("fieldName")));
-                    field.setFieldLabel(str(f.get("fieldLabel")));
-                    field.setScriptName(str(f.get("scriptName")));
-                    field.setFieldType(str(f.get("fieldType")));
-                    field.setTransformType(str(f.get("transformType")));
-                    field.setTransformParams(str(f.get("transformParams")));
-                    field.setSortOrder(order++);
-                    field.setStatus(1);
-                    field.setCreateTime(LocalDateTime.now());
-                    outputFieldMapper.insert(field);
-                    count++;
-                }
-            } catch (Exception e) {
-                // 解析失败，跳过
-            }
-        }
-
-        return count;
     }
-
-    /**
-     * 全量迁移所有规则的旧 JSON 字段到独立表
-     */
-    @Transactional
-    public int migrateAllFields() {
-        List<RuleDefinition> all = list();
-        int total = 0;
-        for (RuleDefinition def : all) {
-            total += migrateFields(def.getId());
-        }
-        return total;
-    }
-
-    private Long parseVarId(Object val) {
-        if (val == null) return null;
-        if (val instanceof Number) return ((Number) val).longValue();
-        try {
-            return Long.parseLong(val.toString().trim());
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private String str(Object val) {
-        if (val == null) return null;
-        return val.toString();
-    }
-}

@@ -173,7 +173,7 @@ router.beforeEach(async (to, from, next) => {
     if (me && me.code === 200 && me.data && me.data.username) {
       return next()
     }
-    return next({ path: '/login', query: { redirect: to.fullPath } })
+    window.location.replace('/login?redirect=' + encodeURIComponent(to.fullPath))
   } catch (e) {
     return next()
   }

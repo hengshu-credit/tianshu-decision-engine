@@ -1,6 +1,7 @@
 package com.bjjw.rule.server.controller.mgmt;
 
 import com.bjjw.rule.core.compiler.CompileResult;
+import com.bjjw.rule.model.dto.RuleQueryDTO;
 import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.*;
 import com.bjjw.rule.server.common.R;
@@ -50,7 +51,24 @@ public class RuleDefinitionController {
             @RequestParam(required = false) String updateBeginTime,
             @RequestParam(required = false) String updateEndTime,
             @RequestParam(required = false) String keyword) {
-        return R.ok(definitionService.pageList(pageNum, pageSize, projectId, modelType, keyword, projectName, scope, status, ruleCode, ruleName, projectCode, publishedVersion, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
+        RuleQueryDTO query = new RuleQueryDTO();
+        query.setPageNum(pageNum);
+        query.setPageSize(pageSize);
+        query.setProjectId(projectId);
+        query.setModelType(modelType);
+        query.setKeyword(keyword);
+        query.setProjectName(projectName);
+        query.setScope(scope);
+        query.setStatus(status);
+        query.setRuleCode(ruleCode);
+        query.setRuleName(ruleName);
+        query.setProjectCode(projectCode);
+        query.setPublishedVersion(publishedVersion);
+        query.setCreateBeginTime(createBeginTime);
+        query.setCreateEndTime(createEndTime);
+        query.setUpdateBeginTime(updateBeginTime);
+        query.setUpdateEndTime(updateEndTime);
+        return R.ok(definitionService.pageList(query));
     }
 
     /**
@@ -68,7 +86,20 @@ public class RuleDefinitionController {
             @RequestParam(required = false) String updateBeginTime,
             @RequestParam(required = false) String updateEndTime,
             @RequestParam(required = false) String keyword) {
-        return R.ok(definitionService.pageList(pageNum, pageSize, 0L, modelType, keyword, null, "GLOBAL", null, ruleCode, ruleName, null, null, createBeginTime, createEndTime, updateBeginTime, updateEndTime));
+        RuleQueryDTO query = new RuleQueryDTO();
+        query.setPageNum(pageNum);
+        query.setPageSize(pageSize);
+        query.setProjectId(0L);
+        query.setModelType(modelType);
+        query.setKeyword(keyword);
+        query.setScope("GLOBAL");
+        query.setRuleCode(ruleCode);
+        query.setRuleName(ruleName);
+        query.setCreateBeginTime(createBeginTime);
+        query.setCreateEndTime(createEndTime);
+        query.setUpdateBeginTime(updateBeginTime);
+        query.setUpdateEndTime(updateEndTime);
+        return R.ok(definitionService.pageList(query));
     }
 
     /**
@@ -263,19 +294,6 @@ public class RuleDefinitionController {
         return R.ok();
     }
 
-    /**
-     * 迁移所有规则的旧 JSON 字段到独立表
-     */
-    @PostMapping("/migrateFields")
-    public R<Map<String, Object>> migrateFields(@RequestBody(required = false) Map<String, Long> body) {
-        int count;
-        if (body != null && body.get("definitionId") != null) {
-            count = definitionService.migrateFields(body.get("definitionId"));
-        } else {
-            count = definitionService.migrateAllFields();
-        }
-        return R.ok(java.util.Collections.singletonMap("migratedCount", count));
-    }
 
     /**
      * 刷新规则的输入/输出字段（从当前模型内容解析并持久化）

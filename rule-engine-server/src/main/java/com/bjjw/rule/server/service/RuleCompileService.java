@@ -1,7 +1,7 @@
 package com.bjjw.rule.server.service;
 
 import com.bjjw.rule.core.compiler.*;
-import com.bjjw.rule.core.function.AggregateBuiltinFunctionRegistry;
+import com.bjjw.rule.core.engine.QLExpressEngineFactory;
 import com.bjjw.rule.model.entity.RuleDefinition;
 import com.bjjw.rule.model.entity.RuleDefinitionContent;
 import com.bjjw.rule.server.mapper.RuleDefinitionContentMapper;
@@ -82,12 +82,7 @@ public class RuleCompileService {
      */
     public CompileResult validateScript(String script) {
         try {
-            com.alibaba.qlexpress4.Express4Runner runner =
-                    new com.alibaba.qlexpress4.Express4Runner(
-                            com.alibaba.qlexpress4.InitOptions.builder()
-                                    .securityStrategy(com.alibaba.qlexpress4.security.QLSecurityStrategy.open())
-                                    .build());
-            AggregateBuiltinFunctionRegistry.register(runner);
+            com.alibaba.qlexpress4.Express4Runner runner = QLExpressEngineFactory.getInstance();
             runner.execute(script, Collections.emptyMap(),
                     com.alibaba.qlexpress4.QLOptions.builder().cache(false).build());
             return CompileResult.ok(script, "QLEXPRESS");

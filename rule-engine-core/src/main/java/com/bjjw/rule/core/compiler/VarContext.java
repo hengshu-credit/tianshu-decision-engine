@@ -82,6 +82,29 @@ public class VarContext {
         return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty();
     }
 
+    /**
+     * 根据变量 ID 和编码解析脚本引用名。
+     * 解析优先级：varId 精确匹配 → varCode 回退查找 → 返回原 varCode
+     *
+     * <p>等价于：
+     * {@code varId != null ? orDefault(getScriptName(varId), varCode) : orDefault(getScriptNameByVarCode(varCode), varCode)}
+     *
+     * @param varId   变量数据库 ID（可为 null）
+     * @param varCode 变量编码（来自设计器 modelJson，可为 null）
+     * @return 脚本中实际使用的引用名，永不为 null
+     */
+    public String resolveVar(Long varId, String varCode) {
+        if (varId != null) {
+            String name = varIdToScriptName.get(varId);
+            if (name != null) return name;
+        }
+        if (varCode != null) {
+            String name = varCodeToScriptName.get(varCode.toLowerCase());
+            if (name != null) return name;
+        }
+        return varCode != null ? varCode : "";
+    }
+
     /** 返回只读映射快照，便于调试和日志输出 */
     public Map<Long, String> getSnapshot() {
         return Collections.unmodifiableMap(varIdToScriptName);

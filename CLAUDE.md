@@ -227,45 +227,96 @@ public void example() {
 - **变量选择 Mixin**: `src/mixins/varPickerMixin.js`
 - 侧边栏菜单: `src/layout/index.vue`（el-menu 组件，新建页面需在此添加菜单项）
 
-## 引用关联核心约束：全部通过 ID 关联
+## Monaco Editor 加载方式
 
-> ⚠️ **铁律**：变量、模型、规则的引用关联**必须通过 ID**，禁止通过变量名称、变量编码、模型名称等业务字段进行关联。原因：这些字段由客户自填且可随时修改，通过名称/编码关联会导致引用关系断裂。
+前端使用 **AMD loader 方式**加载 monaco-editor，不依赖 `monaco-editor-webpack-plugin`：
 
-### 出入参与依赖关系设计（待实现）
+- `vue.config.js` 通过 `CopyWebpackPlugin` 将 `node_modules/monaco-editor/min/vs` 复制到输出目录的 `vs/`
+- `src/main.js` 中手动配置 `window.MonacoEnvironment.getWorkerUrl`，指向各语言 worker 文件
+- `src/components/MonacoEditor.vue` 使用 `<base>` 配置动态加载 worker
+
+## 核心设计约束
+
+### 铁律一：所有引用关联必须通过 ID
+
+> ⚠️ 变量、模型、规则的引用关联**必须通过 ID**，禁止通过变量名称、变量编码、模型名称等业务字段进行关联。这些字段由客户自填且可随时修改，通过名称/编码关联会导致引用关系断裂。
+
+| 引用方向 | 正确关联方式 | 禁止方式 |
+|----------|-------------|----------|
+| 规则引用变量 | `rule_definition_input_field.var_id` → `rule_variable.id` | `varCode` / `varLabel` |
+| 规则引用模型 | `rule_definition_output_field.var_id` + `ref_type=MODEL` → `rule_model.id` | `modelCode` / `modelName` |
+| 变量引用数据对象 | `rule_data_object_field.ref_object_id` → `rule_data_object.id` | `ref_object_code` |
+| 设计器引用变量 | `_varId` 持久化到 modelJson | 仅保存 `varCode` |
+| 函数引用变量 | 参数定义中关联 `rule_variable.id` | 变量名称回溯 |
+
+### 铁律二：输出字段通过 `ref_type` 区分类型
+
+> ⚠️ `rule_definition_output_field.var_id` 和 `rule_model_output_field.var_id` 可能是变量 ID 也可能是模型 ID，从值本身无法区分。**必须通过 `ref_type` 字段显式标注**，禁止仅凭 var_id 值猜测类型。
+
+| 字段 | ref_type 值 | var_id 指向 |
+|------|------------|------------|
+| `rule_definition_output_field` | `VARIABLE` | `rule_variable.id` |
+| `rule_definition_output_field` | `MODEL` | `rule_model.id` |
+| `rule_model_output_field` | `VARIABLE` | `rule_variable.id` |
+| `rule_model_output_field` | `MODEL` | `rule_model.id` |
+| 输入字段（`*_input_field`） | 固定为 `VARIABLE`，无需 `ref_type` | - |
+
+### 铁律三：变量、模型、导入内容原样保留
+
+> ⚠️ **铁律**：变量编码（varCode）、模型编码（modelCode）、导入的 Java 实体/JSON/DDL 中的字段名等，用户输入什么就原样保存什么。**禁止**对名称做任何自动转换（驼峰、下划线、大小写等），**禁止**自动填充 scriptName、修改内容或生成派生字段。
+
+具体约束：
+- 变量编码 `varCode` → 用户输入什么就保存什么，数据库原样落库
+- 脚本名称 `scriptName` → 由用户手动填写或从导入内容中原样提取，不自动生成
+- Java 实体类字段名 → 从 `.java` 源码中解析出的字段名原样保存为 `varCode`，不转驼峰
+- JSON / DDL 导入字段名 → 原样保存为 `varCode`，不转驼峰
+- `rule_data_object.object_code` → 用户输入什么就保存什么，不自动转换
+
+> ⚠️ **注意**：QLExpress 脚本中引用变量时使用 `scriptName`（由用户填写或原样提取），与 `varCode` 的格式无关，两者各自独立。用户可自行决定是否使用驼峰式命名，代码层面不做任何强制转换。
+
+### 铁律四：数据对象导入与嵌套结构
+
+> ⚠️ **铁律**：单个数据对象应直接支持嵌套逻辑，而非生成多个平级子对象。
+
+**当前实现问题（待改进）**：
+- Java 实体导入：每个类（含嵌套类）生成一个独立 `RuleDataObject`，通过 `parentObjectId` 关联
+- JSON 导入：嵌套 `JSONObject` 递归生成子 `ParsedObject`，每个子对象创建独立 `RuleDataObject`
+- DDL 导入：不支持嵌套（每个表对应一个独立对象）
+- 同名对象通过 `objectCode` 去重只生成一条记录，无法表达"同一类型在不同位置有不同嵌套结构"
+
+**改进设计目标**：
+- 单个 `RuleDataObject` 的 `rule_data_object_field` 字段中，嵌套字段（`varType=OBJECT`）通过 `ref_object_id` 关联到被引用的另一个 `RuleDataObject`（而非 `ref_object_code`）
+- `RuleDataObjectField` 新增字段：`ref_object_id`（指向 `rule_data_object.id`），替代 `ref_object_code`
+- 同一对象类型可被多个字段引用，支持"不同入口有不同嵌套"场景
+- JSON/Java 导入时，若嵌套对象已在数据库中存在，直接引用（通过 `ref_object_id`）；若不存在则创建新对象
+- DDL 导入支持外键 `REFERENCES` 语法，自动解析表间关联生成嵌套引用
+
+**涉及改动**：
+- `RuleDataObjectField` 新增 `ref_object_id` 字段（Long），与 `ref_object_code` 共存，过渡期兼容
+- `ParsedField` 新增 `refObjectId` 字段
+- `JavaEntityParser` / `JsonSchemaParser` 支持嵌套时填充 `refObjectId`
+- `RuleDataObjectService.batchCreateFields()` 写入字段时解析 `refObjectId`
+- 前端展示时，`ref_object_id` 优先展示关联对象名，无 `ref_object_id` 时回退 `ref_object_code`
+
+### 铁律五：出入参与依赖关系
 
 规则、模型、项目均需记录完整的出入参信息和依赖图/血缘图。
 
 **项目（`rule_project`）需记录**：
 - 引用规则 ID 列表 → `rule_project_ref`（项目关联全局规则）
-- 出入参通过 `rule_variable` 中的 `scope=PROJECT` + `projectId` 隐式关联
 
 **规则（`rule_definition`）需记录**：
-- 输入变量 ID 列表 → `rule_definition_input_field.var_id`（通过 `rule_variable.id` 关联）
-- 输出变量 ID 列表 → `rule_definition_output_field.var_id`（通过 `rule_variable.id` 或 `rule_model.id` 关联）
+- 输入变量 ID 列表 → `rule_definition_input_field.var_id`（`ref_type=VARIABLE`）
+- 输出引用 ID 列表 → `rule_definition_output_field.var_id`（`ref_type=VARIABLE` 或 `ref_type=MODEL`）
 - 中间过程变量（仅在规则内部计算，不出参）→ 在 modelJson 中以 `_varId` 保存但不出参
 - 引用的项目 ID → `rule_definition.project_id`
-- 引用的数据对象 ID → `rule_definition_output_field` 中间接关联
 
 **模型（`rule_model`）需记录**：
-- 输入变量 ID 列表 → `rule_model_input_field.var_id`（通过 `rule_variable.id` 关联）
-- 输出变量 ID 列表 → `rule_model_output_field.var_id`（通过 `rule_variable.id` 关联）
+- 输入变量 ID 列表 → `rule_model_input_field.var_id`（`ref_type=VARIABLE`）
+- 输出引用 ID 列表 → `rule_model_output_field.var_id`（`ref_type=VARIABLE` 或 `ref_type=MODEL`）
 - 引用的规则 ID 列表 → `rule_model_ref`（模型关联全局规则）
 
-**依赖图/血缘图字段**：
-
-| 字段 | 说明 |
-|------|------|
-| `rule_definition_input_field.var_id` | 规则输入变量 ID（`ref_type=VARIABLE` 固定） |
-| `rule_definition_output_field.var_id` | 规则输出引用 ID（`ref_type=VARIABLE` 时指向 `rule_variable.id`，`ref_type=MODEL` 时指向 `rule_model.id`） |
-| `rule_definition_output_field.ref_type` | 引用类型：`VARIABLE` / `MODEL`（必填，用于区分 var_id 指向哪个表） |
-| `rule_model_input_field.var_id` | 模型输入变量 ID（`ref_type=VARIABLE` 固定） |
-| `rule_model_output_field.var_id` | 模型输出引用 ID（`ref_type=VARIABLE` 时指向 `rule_variable.id`，`ref_type=MODEL` 时指向 `rule_model.id`） |
-| `rule_model_output_field.ref_type` | 引用类型：`VARIABLE` / `MODEL`（必填） |
-| `rule_data_object_field.ref_object_id` | 字段引用的数据对象 ID（替代 `ref_object_code`） |
-
-> ⚠️ `rule_definition_output_field` 和 `rule_model_output_field` 中的 `var_id` 可能是变量 ID 也可能是模型 ID，同一字段无法从值本身区分。**必须通过 `ref_type` 字段显式标注**，禁止仅凭 var_id 值猜测类型。 |
-
-### 设计器中的变量引用链路
+## 设计器变量引用链路
 
 `varPickerMixin.js` 是设计器页面的核心 mixin，统一加载项目变量/常量/对象字段到 `projectRefs`。
 
@@ -278,28 +329,12 @@ public void example() {
 | `object` | 数据对象字段 | `对象scriptName.字段scriptName` | `TaxRequest.amount` |
 
 变量引用链路（**唯一正确方式**）：
-1. 设计器中通过 `varPicker` 选择变量 → 持久化 `_varId`（`rule_variable.id`）到 modelJson
+1. 设计器中通过 `varPicker` 选择变量 → **必须同时持久化 `_varId`（`rule_variable.id`）**到 modelJson
 2. 加载设计器数据时通过 `_varId` 查询变量元信息，同步填充 `varCode` / `varLabel` / `varType` 等展示字段
 3. 后端编译时通过 `VarContext`（`varId → scriptName` 映射）解析变量引用
-4. **禁止**在步骤 1 中仅保存 `varCode` 而不保存 `_varId`；**禁止**在步骤 2 中通过 `varLabel` 回溯匹配（`varLabel` 可改，ID 不变）
+4. **禁止**在步骤 1 中仅保存 `varCode` 而不保存 `_varId`；**禁止**在步骤 2 中通过 `varLabel` 回溯匹配
 
-> ⚠️ **已知问题**：部分设计器（DecisionTree / DecisionFlow / AdvancedCrossTable / ScriptEditor）的 var-picker 选择时仅保存 `varCode`，未持久化 `_varId`，会导致客户修改变量编码后引用断裂。此为待修复项。
-
-### 模型引用的 ID 关联
-
-模型（`rule_model`）通过 `rule_model_input_field.var_id` / `rule_model_output_field.var_id` 关联到 `rule_variable.id`。编译 PMML/ONNX 等模型时，通过 `VarContext` 将变量 ID 映射到脚本名称供引擎使用。禁止通过 `modelCode` 或 `fieldName` 做关联回溯。
-
-### 规则引用模型
-
-`rule_definition_output_field` 中 `var_id` 关联到 `rule_model.id`（通过 `rule_model_output_field` 表间接引用），确保模型重命名后引用不丢失。
-
-## Monaco Editor 加载方式
-
-前端使用 **AMD loader 方式**加载 monaco-editor，不依赖 `monaco-editor-webpack-plugin`：
-
-- `vue.config.js` 通过 `CopyWebpackPlugin` 将 `node_modules/monaco-editor/min/vs` 复制到输出目录的 `vs/`
-- `src/main.js` 中手动配置 `window.MonacoEnvironment.getWorkerUrl`，指向各语言 worker 文件
-- `src/components/MonacoEditor.vue` 使用 `<base>` 配置动态加载 worker
+> ⚠️ **已知问题**：DecisionTree / DecisionFlow / AdvancedCrossTable / ScriptEditor 的 var-picker 选择时仅保存 `varCode`，未持久化 `_varId`，会导致客户修改变量编码后引用断裂。此为待修复项。
 
 ## 已知注意事项
 
@@ -307,13 +342,19 @@ public void example() {
 
 `element-override.scss` 中定义了 `$secondary-color` 等 SCSS 变量，全局生效。在 Vue SFC 的 `<style scoped lang="scss">` 中可直接使用这些变量。
 
-### scriptName 大小写敏感
-
-QLExpress 脚本中需保持一致。生成规则：将 `varCode` 转为 camelCase（首字母小写）。常量通过 `scriptName || varCode` 直接引用（不再使用 `组.常量` 两段式）。
-
 ### router beforeEach 中避免嵌套导航
 
 在 `beforeEach` 守卫中若检测到需要重定向（如 `loginEnabled=false`），应使用 `window.location.replace()` 而非 `next(path)`，否则 Vue Router 3 会报错 "Navigation cancelled"。
+
+### `scope` 字段与 `projectId` 的对应关系
+
+- `scope = GLOBAL` 时，`projectId = 0`，表示全局资源
+- `scope = PROJECT` 时，`projectId > 0`，表示项目级资源
+- 查询时：GLOBAL 资源对所有项目可见；PROJECT 资源仅对所属项目可见
+
+### 规则编译结果缓存
+
+`rule_definition_content.compiled_script` 字段存储编译产物（QLExpress 脚本），发布时复制到 `rule_published.compiled_script`。编译时依赖 `VarContext` 将 `varId` 映射为 `scriptName`，生成的脚本中所有变量引用均使用 `scriptName`。
 
 ## 技术栈
 
@@ -426,11 +467,19 @@ QLExpress 脚本中需保持一致。生成规则：将 `varCode` 转为 camelCa
 - `src/api/billing.js` 新建 API 层
 - `src/layout/index.vue` 侧边栏添加「账单管理」菜单项
 
+### 规则影响分析（血缘图）
+
+基于 ID 关联字段构建依赖图/血缘图，支持以下查询能力：
+- 给定变量 ID → 查询所有引用了该变量的规则和模型
+- 给定规则 ID → 查询该规则的输入输出变量及引用的模型
+- 给定项目 ID → 查询该项目的所有规则及规则间的调用关系
+
+当前已有 `rule_definition_ref` 但无血缘图 API/UI，待实现完整的血缘图服务。
+
 ### 其他待实现
 
 - **规则版本回滚** — `rule_definition_version` 表已存储历史版本，但前端无回滚入口，后端无回滚 API
 - **执行日志过期清理** — `rule_execution_log` 按月分区，分区需手动添加（已预定义到 2032 年）
-- **规则影响分析** — 需基于上述 ID 关联字段构建依赖图/血缘图，支持查看"哪些规则依赖此变量/函数"（当前已有 `rule_definition_ref` 但无血缘图 API/UI）
 - **版本对比** — `rule_definition_version` 有历史数据，但无 Diff UI 和对比 API
 - **批量导入错误处理** — 后端已返回详细错误信息，但前端未展示具体失败行和错误原因
 

@@ -291,59 +291,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
      */
     public List<Map<String, Object>> getVariableTree(Long projectId) {
         List<RuleDataObject> objects = listByProject(projectId);
-        List<RuleDataObjectField> allFields = new ArrayList<>();
-
-        if (projectId != null && projectId > 0) {
-            // 获取项目级字段
-            allFields = objectFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDataObjectField>()
-                            .eq(RuleDataObjectField::getScope, SCOPE_PROJECT)
-                            .eq(RuleDataObjectField::getProjectId, projectId)
-                            .orderByAsc(RuleDataObjectField::getSortOrder));
-            // 获取全局字段
-            List<RuleDataObjectField> globalFields = objectFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDataObjectField>()
-                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
-                            .orderByAsc(RuleDataObjectField::getSortOrder));
-            allFields.addAll(globalFields);
-        } else {
-            // 只查询全局字段
-            allFields = objectFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleDataObjectField>()
-                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
-                            .orderByAsc(RuleDataObjectField::getSortOrder));
-        }
-
-        Map<Long, List<RuleDataObjectField>> byObject = allFields.stream()
-                .collect(Collectors.groupingBy(RuleDataObjectField::getObjectId));
-
-        List<Map<String, Object>> tree = new ArrayList<>();
-        for (RuleDataObject obj : objects) {
-            Map<String, Object> node = new HashMap<>();
-            node.put("object", obj);
-            String objScriptName = obj.getScriptName();
-            List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
-                    .map(RuleDataObjectService::toVariableRow)
-                    .peek(m -> {
-                        // 前缀对象路径，使 varCode/varLabel 展示为 "User.age" 而非 "age"
-                        String fieldVarCode = (String) m.get("varCode");
-                        String fieldScriptName = (String) m.get("scriptName");
-                        String fieldVarLabel = (String) m.get("varLabel");
-                        if (objScriptName != null && fieldVarCode != null) {
-                            m.put("varCode", objScriptName + "." + fieldVarCode);
-                        }
-                        if (objScriptName != null && fieldScriptName != null) {
-                            m.put("scriptName", objScriptName + "." + fieldScriptName);
-                        }
-                        if (objScriptName != null && fieldVarLabel != null) {
-                            m.put("varLabel", objScriptName + "." + fieldVarLabel);
-                        }
-                    })
-                    .collect(Collectors.toList());
-            node.put("variables", vars);
-            tree.add(node);
-        }
-        return tree;
+        List<RuleDataObjectField> allFields = collectFieldsByProject(projectId);
+        return buildVariableTree(objects, allFields);
     }
 
     /**
@@ -357,8 +306,42 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         List<RuleDataObjectField> allFields = objectFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectField>()
                         .orderByAsc(RuleDataObjectField::getProjectId)
-                        .orderByAsc(RuleDataObjectField::getId));
+                        .orderByAsc(RuleDataObjectField::getSortOrder));
+        return buildVariableTree(objects, allFields);
+    }
 
+    /**
+     * 收集指定项目的字段（含全局和项目级）。
+     */
+    private List<RuleDataObjectField> collectFieldsByProject(Long projectId) {
+        List<RuleDataObjectField> allFields = new ArrayList<>();
+        if (projectId != null && projectId > 0) {
+            List<RuleDataObjectField> projectFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_PROJECT)
+                            .eq(RuleDataObjectField::getProjectId, projectId)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+            List<RuleDataObjectField> globalFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+            allFields.addAll(projectFields);
+            allFields.addAll(globalFields);
+        } else {
+            allFields = objectFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getScope, SCOPE_GLOBAL)
+                            .orderByAsc(RuleDataObjectField::getSortOrder));
+        }
+        return allFields;
+    }
+
+    /**
+     * 将对象列表和字段列表构建为变量树。
+     * 每个对象节点包含 object 元信息和 variables 子列表。
+     * 字段的 varCode/scriptName/varLabel 自动前缀对象路径（如 "User.age"）。
+     */
+    private List<Map<String, Object>> buildVariableTree(List<RuleDataObject> objects, List<RuleDataObjectField> allFields) {
         Map<Long, List<RuleDataObjectField>> byObject = allFields.stream()
                 .collect(Collectors.groupingBy(RuleDataObjectField::getObjectId));
 
@@ -369,26 +352,31 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             String objScriptName = obj.getScriptName();
             List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
                     .map(RuleDataObjectService::toVariableRow)
-                    .peek(m -> {
-                        // 前缀对象路径，使 varCode/varLabel 展示为 "User.age" 而非 "age"
-                        String fieldVarCode = (String) m.get("varCode");
-                        String fieldScriptName = (String) m.get("scriptName");
-                        String fieldVarLabel = (String) m.get("varLabel");
-                        if (objScriptName != null && fieldVarCode != null) {
-                            m.put("varCode", objScriptName + "." + fieldVarCode);
-                        }
-                        if (objScriptName != null && fieldScriptName != null) {
-                            m.put("scriptName", objScriptName + "." + fieldScriptName);
-                        }
-                        if (objScriptName != null && fieldVarLabel != null) {
-                            m.put("varLabel", objScriptName + "." + fieldVarLabel);
-                        }
-                    })
+                    .peek(m -> prefixObjectPath(m, objScriptName))
                     .collect(Collectors.toList());
             node.put("variables", vars);
             tree.add(node);
         }
         return tree;
+    }
+
+    /**
+     * 为字段的 varCode/scriptName/varLabel 前缀对象路径，使展示为 "对象.字段" 而非 "字段"。
+     */
+    private static void prefixObjectPath(Map<String, Object> m, String objScriptName) {
+        if (objScriptName == null) return;
+        String fieldVarCode = (String) m.get("varCode");
+        String fieldScriptName = (String) m.get("scriptName");
+        String fieldVarLabel = (String) m.get("varLabel");
+        if (fieldVarCode != null) {
+            m.put("varCode", objScriptName + "." + fieldVarCode);
+        }
+        if (fieldScriptName != null) {
+            m.put("scriptName", objScriptName + "." + fieldScriptName);
+        }
+        if (fieldVarLabel != null) {
+            m.put("varLabel", objScriptName + "." + fieldVarLabel);
+        }
     }
 
     @Transactional

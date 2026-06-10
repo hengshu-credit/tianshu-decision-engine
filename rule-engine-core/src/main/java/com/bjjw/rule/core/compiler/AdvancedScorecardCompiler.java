@@ -162,15 +162,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
 
     private static String resolveVar(Long varId, String varCode) {
         VarContext ctx = CTX.get();
-        if (ctx != null && varId != null) {
-            String s = ctx.getScriptName(varId);
-            if (s != null) return s;
-        }
-        // varId 为 null 时，也尝试通过 varCode 在 VarContext 中查找 scriptName
-        //（设计器未保存 _varId 时，通过 varCode 回溯解决大小写/命名不一致）
-        if (ctx != null && varCode != null) {
-            String s = ctx.getScriptNameByVarCode(varCode);
-            if (s != null) return s;
+        if (ctx != null) {
+            return ctx.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }

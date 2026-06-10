@@ -103,8 +103,7 @@ public class DecisionFlowCompiler implements RuleCompiler {
             }
 
             VarContext varContext = CTX.get();
-            GraphScriptGenerator.setVarContext(varContext);
-            String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId);
+            String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();
             ActionDataOutputVarCollector.collectFromGraphTaskNodes(nodes, outputVars);
@@ -118,8 +117,6 @@ public class DecisionFlowCompiler implements RuleCompiler {
 
         } catch (Exception e) {
             return CompileResult.fail("决策流编译失败: " + e.getMessage());
-        } finally {
-            GraphScriptGenerator.setVarContext(null);
         }
     }
 }

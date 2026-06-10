@@ -14,37 +14,38 @@ import java.util.*;
  */
 public class GraphScriptGenerator {
 
-    private static final ThreadLocal<VarContext> CTX = new ThreadLocal<>();
-
     /**
-     * 设置当前编译上下文的变量映射（由 DecisionTreeCompiler / DecisionFlowCompiler 在调用前设置）。
-     * ActionDataCompiler 会读取此 ThreadLocal 中的 VarContext。
-     */
-    public static void setVarContext(VarContext varContext) {
-        CTX.set(varContext);
-    }
-
-    /**
-     * 根据图结构生成 QLExpress 脚本
+     * 根据图结构生成 QLExpress 脚本。
      *
      * @param nodeMap    节点 id → 节点 JSON
      * @param outEdgeMap 节点 id → 出边列表
      * @param startId    开始节点 id
+     * @param varContext 变量上下文（用于解析 varCode → scriptName），可为 null
      * @return 生成的 QLExpress 脚本
      */
     public static String generate(Map<String, JSONObject> nodeMap,
                                   Map<String, List<JSONObject>> outEdgeMap,
-                                  String startId) {
+                                  String startId, VarContext varContext) {
         StringBuilder script = new StringBuilder();
         Set<String> visited = new HashSet<>();
-        generateScript(startId, null, nodeMap, outEdgeMap, script, visited, 0);
+        generateScript(startId, null, nodeMap, outEdgeMap, script, visited, 0, varContext);
         return script.toString().trim();
+    }
+
+    /**
+     * 同上，兼容无 VarContext 的旧调用。
+     */
+    public static String generate(Map<String, JSONObject> nodeMap,
+                                  Map<String, List<JSONObject>> outEdgeMap,
+                                  String startId) {
+        return generate(nodeMap, outEdgeMap, startId, null);
     }
 
     private static void generateScript(String nodeId, String stopAt,
                                        Map<String, JSONObject> nodeMap,
                                        Map<String, List<JSONObject>> outEdgeMap,
-                                       StringBuilder script, Set<String> visited, int indent) {
+                                       StringBuilder script, Set<String> visited, int indent,
+                                       VarContext varContext) {
         if (nodeId == null || nodeId.equals(stopAt)) return;
         if (visited.contains(nodeId)) return;
         visited.add(nodeId);
@@ -57,13 +58,13 @@ public class GraphScriptGenerator {
         if ("start".equals(type) || "join".equals(type)) {
             List<JSONObject> out = outEdgeMap.getOrDefault(nodeId, Collections.emptyList());
             if (!out.isEmpty()) {
-                generateScript(out.get(0).getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent);
+                generateScript(out.get(0).getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent, varContext);
             }
         } else if ("task".equals(type)) {
             JSONArray actionData = node.getJSONArray("actionData");
             String qlScript;
             if (actionData != null && !actionData.isEmpty()) {
-                qlScript = ActionDataCompiler.compile(actionData);
+                qlScript = ActionDataCompiler.compile(actionData, varContext);
             } else {
                 qlScript = node.getString("qlExpressScript");
             }
@@ -78,7 +79,7 @@ public class GraphScriptGenerator {
             }
             List<JSONObject> out = outEdgeMap.getOrDefault(nodeId, Collections.emptyList());
             if (!out.isEmpty()) {
-                generateScript(out.get(0).getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent);
+                generateScript(out.get(0).getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent, varContext);
             }
         } else if ("decision".equals(type)) {
             List<JSONObject> out = outEdgeMap.getOrDefault(nodeId, Collections.emptyList());
@@ -98,7 +99,7 @@ public class GraphScriptGenerator {
             }
 
             if (condEdges.isEmpty() && defaultEdge != null) {
-                generateScript(defaultEdge.getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent);
+                generateScript(defaultEdge.getString("target"), stopAt, nodeMap, outEdgeMap, script, visited, indent, varContext);
             } else {
                 for (int i = 0; i < condEdges.size(); i++) {
                     JSONObject edge = condEdges.get(i);
@@ -110,20 +111,20 @@ public class GraphScriptGenerator {
                         script.append("} else if (").append(condExpr).append(") {\n");
                     }
                     Set<String> branchVisited = new HashSet<>(visited);
-                    generateScript(edge.getString("target"), mergeNode, nodeMap, outEdgeMap, script, branchVisited, indent + 1);
+                    generateScript(edge.getString("target"), mergeNode, nodeMap, outEdgeMap, script, branchVisited, indent + 1, varContext);
                 }
                 if (defaultEdge != null) {
                     appendIndent(script, indent);
                     script.append("} else {\n");
                     Set<String> branchVisited = new HashSet<>(visited);
-                    generateScript(defaultEdge.getString("target"), mergeNode, nodeMap, outEdgeMap, script, branchVisited, indent + 1);
+                    generateScript(defaultEdge.getString("target"), mergeNode, nodeMap, outEdgeMap, script, branchVisited, indent + 1, varContext);
                 }
                 appendIndent(script, indent);
                 script.append("}\n\n");
             }
 
             if (mergeNode != null) {
-                generateScript(mergeNode, stopAt, nodeMap, outEdgeMap, script, visited, indent);
+                generateScript(mergeNode, stopAt, nodeMap, outEdgeMap, script, visited, indent, varContext);
             }
         }
     }

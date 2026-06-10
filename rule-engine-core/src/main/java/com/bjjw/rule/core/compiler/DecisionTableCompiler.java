@@ -55,7 +55,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                 return CompileResult.fail("决策表模型缺少必要字段: rules");
             }
 
-            LinkedHashSet<String> outputVarCodes = collectOutputVarCodes(rules, globalActionDefs);
+            LinkedHashSet<String> outputVarCodes = collectOutputVarCodes(rules, globalActionDefs, this.varContext);
 
             StringBuilder script = new StringBuilder();
             boolean isFirst = "FIRST".equals(hitPolicy);
@@ -77,7 +77,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                 script.append(buildRulePredicate(rule, ruleConditions, legacyColumnDefs));
                 script.append(") {\n");
 
-                appendRuleAssignments(script, ruleActions, globalActionDefs);
+                appendRuleAssignments(script, ruleActions, globalActionDefs, this.varContext);
 
                 script.append("}");
                 if (!isFirst) script.append("\n");
@@ -97,9 +97,10 @@ public class DecisionTableCompiler implements RuleCompiler {
 
     /**
      * 汇总所有规则中会出现的输出变量（用于结果 Map 与初始化）。
-     * 输出变量名直接使用 varCode（因为输出变量通常是用户定义的输出字段，不依赖脚本引用名）。
+     * 输出变量名通过 {@link VarContext} 解析为 scriptName（与条件解析一致），
+     * 保证结果 Map 的键名与 QLExpress 上下文中实际使用的变量名一致。
      */
-    static LinkedHashSet<String> collectOutputVarCodes(JSONArray rules, JSONArray globalActionDefs) {
+    static LinkedHashSet<String> collectOutputVarCodes(JSONArray rules, JSONArray globalActionDefs, VarContext varContext) {
         LinkedHashSet<String> set = new LinkedHashSet<>();
         for (int i = 0; i < rules.size(); i++) {
             JSONObject rule = rules.getJSONObject(i);
@@ -109,14 +110,21 @@ public class DecisionTableCompiler implements RuleCompiler {
                 JSONObject act = ruleActions.getJSONObject(k);
                 if (act == null) continue;
                 String vc = null;
+                Long varId = act.containsKey("_varId") ? act.getLong("_varId") : null;
                 if (act.containsKey("varCode")) {
                     vc = act.getString("varCode");
                 } else if (globalActionDefs != null && k < globalActionDefs.size()) {
                     JSONObject def = globalActionDefs.getJSONObject(k);
-                    vc = def != null ? def.getString("varCode") : null;
+                    if (def != null) {
+                        vc = def.getString("varCode");
+                        if (varId == null && def.containsKey("_varId")) {
+                            varId = def.getLong("_varId");
+                        }
+                    }
                 }
                 if (vc != null && !vc.trim().isEmpty()) {
-                    set.add(vc.trim());
+                    String resolved = resolveVar(varId, vc, varContext);
+                    set.add(resolved);
                 }
             }
         }
@@ -124,11 +132,18 @@ public class DecisionTableCompiler implements RuleCompiler {
     }
 
     /**
-     * 输出单条规则 then 体内的赋值语句。
-     * 输出变量名使用 varCode（而非 scriptName），因为输出变量是用户定义的输出字段，
-     * 在 QLExpress 中赋值的变量名应与脚本输出期望一致。
+     * 同上，无 VarContext 的兼容重载。
      */
-    static void appendRuleAssignments(StringBuilder script, JSONArray ruleActions, JSONArray globalActionDefs) {
+    static LinkedHashSet<String> collectOutputVarCodes(JSONArray rules, JSONArray globalActionDefs) {
+        return collectOutputVarCodes(rules, globalActionDefs, CTX.get());
+    }
+
+    /**
+     * 输出单条规则 then 体内的赋值语句。
+     * 输出变量名通过 {@link VarContext} 解析为 scriptName（与条件解析一致），
+     * 保证 QLExpress 中赋值的变量名与脚本输出期望一致。
+     */
+    static void appendRuleAssignments(StringBuilder script, JSONArray ruleActions, JSONArray globalActionDefs, VarContext varContext) {
         for (int k = 0; k < ruleActions.size(); k++) {
             JSONObject act = ruleActions.getJSONObject(k);
             JSONObject actDef = k < globalActionDefs.size() ? globalActionDefs.getJSONObject(k) : null;
@@ -136,16 +151,19 @@ public class DecisionTableCompiler implements RuleCompiler {
             String varCode;
             String varType;
             String value;
+            Long varId = null;
 
             if (act != null && act.containsKey("varCode")) {
                 varCode = act.getString("varCode");
                 varType = act.getString("varType");
                 if (varType == null) varType = "STRING";
                 value = act.getString("value");
+                varId = act.containsKey("_varId") ? act.getLong("_varId") : null;
             } else {
                 varCode = actDef != null ? actDef.getString("varCode") : "out" + k;
                 varType = actDef != null ? actDef.getString("varType") : "NUMBER";
                 value = act != null ? act.getString("value") : null;
+                varId = actDef != null && actDef.containsKey("_varId") ? actDef.getLong("_varId") : null;
             }
 
             if (varCode == null || varCode.trim().isEmpty()) {
@@ -155,7 +173,8 @@ public class DecisionTableCompiler implements RuleCompiler {
                 continue;
             }
 
-            script.append("    ").append(varCode.trim()).append(" = ");
+            String resolvedVar = resolveVar(varId, varCode.trim(), varContext);
+            script.append("    ").append(resolvedVar).append(" = ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 script.append("\"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
             } else {
@@ -166,12 +185,20 @@ public class DecisionTableCompiler implements RuleCompiler {
     }
 
     /**
+     * 同上，无 VarContext 的兼容重载。
+     */
+    static void appendRuleAssignments(StringBuilder script, JSONArray ruleActions, JSONArray globalActionDefs) {
+        appendRuleAssignments(script, ruleActions, globalActionDefs, CTX.get());
+    }
+
+    /**
      * 生成单条规则的条件布尔表达式：优先 {@code conditionRoot}，否则旧版列对齐的 AND。
      */
     static String buildRulePredicate(JSONObject rule, JSONArray legacyRuleConditions, JSONArray legacyColumnDefs) {
         JSONObject root = rule.getJSONObject("conditionRoot");
-        if (root != null && !root.isEmpty() && "group".equals(root.getString("type"))) {
-            return compileConditionNode(root);
+        if (root != null && !root.isEmpty()) {
+            // compileConditionNode 同时处理 group 和 leaf 类型
+            return compileConditionNode(root, CTX.get());
         }
         return compileLegacyFlatAnd(legacyRuleConditions, legacyColumnDefs);
     }
@@ -179,7 +206,7 @@ public class DecisionTableCompiler implements RuleCompiler {
     /**
      * 递归编译条件树节点（组或叶）。
      */
-    static String compileConditionNode(JSONObject node) {
+    static String compileConditionNode(JSONObject node, VarContext varContext) {
         if (node == null || node.isEmpty()) {
             return "true";
         }
@@ -198,21 +225,28 @@ public class DecisionTableCompiler implements RuleCompiler {
                     sb.append("AND".equals(op) ? " && " : " || ");
                 }
                 JSONObject ch = children.getJSONObject(i);
-                sb.append(compileConditionNode(ch));
+                sb.append(compileConditionNode(ch, varContext));
             }
             sb.append(")");
             return sb.toString();
         }
         if ("leaf".equals(type)) {
-            return compileLeaf(node);
+            return compileLeaf(node, varContext);
         }
         return "true";
     }
 
     /**
+     * 同上，使用 ThreadLocal 中的 VarContext。
+     */
+    static String compileConditionNode(JSONObject node) {
+        return compileConditionNode(node, CTX.get());
+    }
+
+    /**
      * 编译叶条件：比较左侧变量与常量或其它变量。
      */
-    static String compileLeaf(JSONObject leaf) {
+    static String compileLeaf(JSONObject leaf, VarContext varContext) {
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
         String varCode = leaf.getString("varCode");
         if (varCode == null || varCode.trim().isEmpty()) {
@@ -232,7 +266,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             if (right == null || right.trim().isEmpty()) {
                 return "true";
             }
-            return resolveScriptName(varId, varCode) + " " + operator + " " + right.trim();
+            return resolveVar(varId, varCode, varContext) + " " + operator + " " + right.trim();
         }
 
         String value = leaf.getString("value");
@@ -244,22 +278,25 @@ public class DecisionTableCompiler implements RuleCompiler {
         if (varType == null) varType = "STRING";
 
         String rhs = formatConstantRhs(varType, value);
-        return resolveScriptName(varId, varCode) + " " + operator + " " + rhs;
+        return resolveVar(varId, varCode, varContext) + " " + operator + " " + rhs;
     }
 
     /**
-     * 通过 VarContext（ThreadLocal 传递）将 varId 解析为 scriptName，
-     * 若无上下文或未查到则回退到 varCode。
+     * 同上，使用 ThreadLocal 中的 VarContext。
      */
-    private static String resolveScriptName(Long varId, String varCode) {
-        VarContext ctx = CTX.get();
-        if (ctx != null && varId != null) {
-            String scriptName = ctx.getScriptName(varId);
-            if (scriptName != null) {
-                return scriptName;
-            }
+    static String compileLeaf(JSONObject leaf) {
+        return compileLeaf(leaf, CTX.get());
+    }
+
+    /**
+     * 通过 VarContext 解析变量引用名。
+     * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
+     */
+    private static String resolveVar(Long varId, String varCode, VarContext varContext) {
+        if (varContext != null) {
+            return varContext.resolveVar(varId, varCode);
         }
-        return varCode;
+        return varCode != null ? varCode : "";
     }
 
     /**

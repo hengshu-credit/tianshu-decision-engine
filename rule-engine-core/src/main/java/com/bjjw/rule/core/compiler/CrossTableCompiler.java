@@ -62,11 +62,12 @@ public class CrossTableCompiler implements RuleCompiler {
                     if (varType == null) varType = "STRING";
 
                     script.append("// 行条件: ").append(varCode).append("\n");
-                    // 输出变量初始化（交叉表命中时赋值）
+                    // 输出变量初始化（交叉表命中时赋值），通过 VarContext 解析为正确的 scriptName
                     String outVar = rd.getString("resultVar");
                     if (outVar != null && !outVar.isEmpty()) {
-                        outputVarCodes.add(outVar);
-                        script.append(outVar).append(" = null;\n");
+                        String resolved = resolveOutputVar(varId, outVar);
+                        outputVarCodes.add(resolved);
+                        script.append(resolved).append(" = null;\n");
                     }
 
                     JSONArray conditions = rd.getJSONArray("conditions");
@@ -127,13 +128,15 @@ public class CrossTableCompiler implements RuleCompiler {
                         if (varCode != null && value != null) {
                             String varType = action.getString("varType");
                             if (varType == null) varType = "STRING";
+                            Long varId = action.containsKey("_varId") ? action.getLong("_varId") : null;
+                            String resolved = resolveOutputVar(varId, varCode);
                             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
-                                script.append(varCode).append(" = \"")
+                                script.append(resolved).append(" = \"")
                                       .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\";\n");
                             } else {
-                                script.append(varCode).append(" = ").append(value).append(";\n");
+                                script.append(resolved).append(" = ").append(value).append(";\n");
                             }
-                            outputVarCodes.add(varCode);
+                            outputVarCodes.add(resolved);
                         }
                     }
                     script.append("}\n");
@@ -148,17 +151,20 @@ public class CrossTableCompiler implements RuleCompiler {
                 if (varCode != null && value != null) {
                     String varType = defaultAction.getString("varType");
                     if (varType == null) varType = "STRING";
+                    Long varId = defaultAction.containsKey("_varId") ? defaultAction.getLong("_varId") : null;
+                    String resolved = resolveOutputVar(varId, varCode);
                     if ("STRING".equals(varType) || "ENUM".equals(varType)) {
-                        script.append(varCode).append(" = \"")
+                        script.append(resolved).append(" = \"")
                               .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\";\n");
                     } else {
-                        script.append(varCode).append(" = ").append(value).append(";\n");
+                        script.append(resolved).append(" = ").append(value).append(";\n");
                     }
-                    outputVarCodes.add(varCode);
+                    outputVarCodes.add(resolved);
                 }
             }
 
             if (!outputVarCodes.isEmpty()) {
+                RuleScriptResultCollector.prependOutputNullInits(script, outputVarCodes);
                 RuleScriptResultCollector.appendResultMapReturn(script, outputVarCodes);
             }
 
@@ -285,14 +291,16 @@ public class CrossTableCompiler implements RuleCompiler {
 
     private static String resolveVar(Long varId, String varCode) {
         VarContext ctx = CTX.get();
-        if (ctx != null && varId != null) {
-            String s = ctx.getScriptName(varId);
-            if (s != null) return s;
+        if (ctx != null) {
+            return ctx.resolveVar(varId, varCode);
         }
-        // varId 为 null 时，通过 varCode 在 VarContext 中查找 scriptName（设计器未保存 _varId 时兜底）
-        if (ctx != null && varCode != null) {
-            String s = ctx.getScriptNameByVarCode(varCode);
-            if (s != null) return s;
+        return varCode != null ? varCode : "";
+    }
+
+    private static String resolveOutputVar(Long varId, String varCode) {
+        VarContext ctx = CTX.get();
+        if (ctx != null) {
+            return ctx.resolveVar(varId, varCode);
         }
         return varCode != null ? varCode : "";
     }
