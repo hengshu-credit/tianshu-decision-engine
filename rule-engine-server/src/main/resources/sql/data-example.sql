@@ -14,6 +14,35 @@ USE `rule_engine`;
 SET NAMES utf8mb4;
 SET character_set_connection = utf8mb4;
 
+
+-- ============================================================
+-- 数据库结构升级（向后兼容：已存在的列不会重复添加）
+-- ============================================================
+
+-- 为 rule_data_object_field 添加 ref_object_id 字段（铁律四：指向 rule_data_object.id）
+SET @exist := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+               WHERE TABLE_SCHEMA = DATABASE()
+                 AND TABLE_NAME = 'rule_data_object_field'
+                 AND COLUMN_NAME = 'ref_object_id');
+SET @sqlstmt := IF(@exist = 0,
+    'ALTER TABLE `rule_data_object_field` ADD COLUMN `ref_object_id` BIGINT DEFAULT NULL COMMENT \'OBJECT 时引用的对象ID（铁律四：指向 rule_data_object.id）\' AFTER `ref_object_code`',
+    'SELECT 1');
+PREPARE stmt FROM @sqlstmt;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- 添加 ref_object_id 索引（如果不存在）
+SET @exist_idx := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+                   WHERE TABLE_SCHEMA = DATABASE()
+                     AND TABLE_NAME = 'rule_data_object_field'
+                     AND INDEX_NAME = 'idx_ref_object_id');
+SET @sqlstmt2 := IF(@exist_idx = 0,
+    'ALTER TABLE `rule_data_object_field` ADD INDEX `idx_ref_object_id` (`ref_object_id`)',
+    'SELECT 1');
+PREPARE stmt2 FROM @sqlstmt2;
+EXECUTE stmt2;
+DEALLOCATE PREPARE stmt2;
+
 -- ============================================================
 -- 1. 创建示例项目
 -- ============================================================
@@ -201,15 +230,15 @@ ON DUPLICATE KEY UPDATE `compiled_script` = VALUES(`compiled_script`), `compiled
 -- ============================================================
 -- 6. 版本历史（记录第一次发布）
 -- ============================================================
-INSERT INTO `rule_definition_version` (`definition_id`, `version`, `model_json`, `compiled_script`, `compiled_type`, `change_log`, `publish_by`, `publish_time`) VALUES
-(1, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 1), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 1), 'QLEXPRESS', '初始发布 - 客商×产品总线定价决策表', 'system', NOW()),
-(2, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 2), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 2), 'QLEXPRESS', '初始发布 - 客户信用分层决策树', 'system', NOW()),
-(3, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 3), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 3), 'QLEXPRESS', '初始发布 - 敞口与费用试算流程', 'system', NOW()),
-(4, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 4), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 4), 'QLEXPRESS', '初始发布 - 风险定价交叉表（客商类型×产品总线）', 'system', NOW()),
-(5, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 5), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 5), 'QLEXPRESS', '初始发布 - 综合风险评分卡', 'system', NOW()),
-(6, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 6), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 6), 'QLEXPRESS', '初始发布 - 对象上下文定价示例', 'system', NOW()),
-(7, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 7), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 7), 'QLEXPRESS', '初始发布 - Java 函数费用试算', 'system', NOW()),
-(8, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 8), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 8), 'QLEXPRESS', '初始发布 - Spring Bean 费用试算', 'system', NOW())
+INSERT INTO `rule_definition_version` (`id`, `definition_id`, `version`, `model_json`, `compiled_script`, `compiled_type`, `change_log`, `publish_by`, `publish_time`) VALUES
+(1,  1, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 1), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 1), 'QLEXPRESS', '初始发布 - 客商×产品总线定价决策表', 'system', NOW()),
+(2,  2, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 2), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 2), 'QLEXPRESS', '初始发布 - 客户信用分层决策树', 'system', NOW()),
+(3,  3, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 3), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 3), 'QLEXPRESS', '初始发布 - 敞口与费用试算流程', 'system', NOW()),
+(4,  4, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 4), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 4), 'QLEXPRESS', '初始发布 - 风险定价交叉表（客商类型×产品总线）', 'system', NOW()),
+(5,  5, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 5), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 5), 'QLEXPRESS', '初始发布 - 综合风险评分卡', 'system', NOW()),
+(6,  6, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 6), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 6), 'QLEXPRESS', '初始发布 - 对象上下文定价示例', 'system', NOW()),
+(7,  7, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 7), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 7), 'QLEXPRESS', '初始发布 - Java 函数费用试算', 'system', NOW()),
+(8,  8, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 8), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 8), 'QLEXPRESS', '初始发布 - Spring Bean 费用试算', 'system', NOW())
 ON DUPLICATE KEY UPDATE `change_log` = VALUES(`change_log`), `publish_time` = NOW();
 
 -- ============================================================
@@ -314,8 +343,8 @@ ON DUPLICATE KEY UPDATE `compiled_script` = VALUES(`compiled_script`), `compiled
 -- ============================================================
 -- 11. 扩展风控示例 —— 版本历史
 -- ============================================================
-INSERT INTO `rule_definition_version` (`definition_id`, `version`, `model_json`, `compiled_script`, `compiled_type`, `change_log`, `publish_by`, `publish_time`) VALUES
-(9,  1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 9),  (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 9),  'QLEXPRESS', '初始发布 - 交叉矩阵多维定价 8×6（复杂交叉表）', 'system', NOW()),
-(10, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 10), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 10), 'QLEXPRESS', '初始发布 - 交易票据异常评分（复杂评分卡）', 'system', NOW()),
-(11, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 11), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 11), 'QLEXPRESS', '初始发布 - 混业组合计费脚本（QL脚本）', 'system', NOW())
+INSERT INTO `rule_definition_version` (`id`, `definition_id`, `version`, `model_json`, `compiled_script`, `compiled_type`, `change_log`, `publish_by`, `publish_time`) VALUES
+(9,  9,  1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 9),  (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 9),  'QLEXPRESS', '初始发布 - 交叉矩阵多维定价 8×6（复杂交叉表）', 'system', NOW()),
+(10, 10, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 10), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 10), 'QLEXPRESS', '初始发布 - 交易票据异常评分（复杂评分卡）', 'system', NOW()),
+(11, 11, 1, (SELECT `model_json` FROM `rule_definition_content` WHERE `definition_id` = 11), (SELECT `compiled_script` FROM `rule_definition_content` WHERE `definition_id` = 11), 'QLEXPRESS', '初始发布 - 混业组合计费脚本（QL脚本）', 'system', NOW())
 ON DUPLICATE KEY UPDATE `change_log` = VALUES(`change_log`), `publish_time` = NOW();

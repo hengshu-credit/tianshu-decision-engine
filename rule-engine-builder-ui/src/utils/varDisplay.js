@@ -23,9 +23,9 @@ export function formatVarDisplay(item) {
   const label = item.varLabel || ''
   const code = item.varCode || ''
   if (item.objectLabel) {
-    return code ? `${label} ${item.objectLabel}.${code}` : label
+    return code ? `${label}${label ? ' ' : ''}${item.objectLabel}.${code}` : label
   }
-  return code ? `${label} ${code}` : label
+  return code ? `${label}${label ? ' ' : ''}${code}` : label
 }
 
 /**
@@ -34,6 +34,7 @@ export function formatVarDisplay(item) {
  * @returns {{ label: string, code: string }}
  */
 export function makeRefLabel(v) {
+  if (!v) return { label: '', code: '' }
   const label = v.varLabel || ''
   const code = v.scriptName || v.varCode || ''
   return { label, code }

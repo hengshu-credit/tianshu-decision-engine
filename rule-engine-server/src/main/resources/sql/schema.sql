@@ -526,9 +526,3 @@ CREATE TABLE IF NOT EXISTS `rule_model_ref` (
   UNIQUE KEY `uk_model_project` (`model_id`, `project_id`),
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型关联表（用于项目关联全局模型）';
-
--- ============================================================
--- 增量 ALTER（兼容已有数据库）
--- ============================================================
--- rule_definition_output_field 新增 valid_values 列（2025-06-10）
-ALTER TABLE `rule_definition_output_field` ADD COLUMN IF NOT EXISTS `valid_values` TEXT DEFAULT NULL COMMENT '有效值列表（JSON数组，分类变量）' AFTER `transform_params`;

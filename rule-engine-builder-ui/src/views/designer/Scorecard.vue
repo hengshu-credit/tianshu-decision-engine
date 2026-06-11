@@ -261,7 +261,7 @@
       <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载编辑器...</div>
       <template v-else>
         <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式），包含评分条件中使用的变量</p>
-        <monaco-editor v-model="testParamsJson" language="json" height="260px" :key="testDialogKey" @change="onJsonInput" />
+        <monaco-editor v-model="testParamsJson" language="json" height="260px" :key="testDialogKey" @input="onJsonInput" />
         <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
         <div v-if="testResult" class="test-result">
           <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:10px;" />
@@ -484,12 +484,12 @@ export default {
       this.testReady = false
       this.testResult = null
       this.jsonError = ''
-      // 首次打开时自动填充已保存的测试样例
-      if (!this.testParamsJson || this.testParamsJson === '{}') {
-        const saved = this.model.testParams
-        if (saved && saved !== '{}') {
-          try { JSON.parse(saved); this.testParamsJson = saved } catch (e) { /* ignore */ }
-        }
+      // 已有保存样例时自动填充，否则用空 JSON
+      const saved = this.model.testParams
+      if (saved && saved !== '{}' && saved !== '{}') {
+        try { JSON.parse(saved); this.testParamsJson = saved } catch (e) { this.testParamsJson = '{}' }
+      } else {
+        this.testParamsJson = '{}'
       }
       this.testVisible = true
       // 等 monaco 加载完成后标记 ready（通过 nextTick 让 :key 生效）

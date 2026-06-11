@@ -425,7 +425,7 @@ export default {
       if (!model) return
       switch (modelType) {
         case 'TABLE': {
-          ;(model.rules || []).forEach(rule => {
+          (model.rules || []).forEach(rule => {
             this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
             this.extractVarIdsFromConditions(rule.conditions, varIdMap)
             ;(rule.actions || []).forEach(a => {
@@ -456,7 +456,7 @@ export default {
           break
         }
         case 'CROSS_ADV': {
-          ;(model.rowDimensions || []).forEach(dim => {
+          (model.rowDimensions || []).forEach(dim => {
             if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
             this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
@@ -469,7 +469,7 @@ export default {
         }
         case 'SCORE': {
           // 评分卡：condVar 对应的 _varId 从评分项中提取
-          ;(model.scoreItems || []).forEach(item => {
+          (model.scoreItems || []).forEach(item => {
             this.extractVarIdsFromConditionRoot(item.conditionRoot, varIdMap)
             // 优先使用 item._varId（由 var-picker 选择时填充）
             if (item._varId && item.condVar) varIdMap[item._varId] = { varCode: item.condVar }
@@ -478,10 +478,10 @@ export default {
           break
         }
         case 'SCORE_ADV': {
-          ;(model.dimensionGroups || []).forEach(group => {
-            ;(group.dimensions || []).forEach(dim => {
-              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
-              ;(dim.rules || []).forEach(rule => {
+          (model.dimensionGroups || []).forEach(group => {
+            (group.dimensions || []).forEach(dim => {
+              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode };
+              (dim.rules || []).forEach(rule => {
                 if (rule._varId && rule.condVar) varIdMap[rule._varId] = { varCode: rule.condVar }
               })
             })
@@ -490,7 +490,7 @@ export default {
           break
         }
         case 'SCRIPT': {
-          ;(model.inputVars || []).forEach(v => {
+          (model.inputVars || []).forEach(v => {
             if (v._varId && v.varCode) varIdMap[v._varId] = { varCode: v.varCode }
           })
           break

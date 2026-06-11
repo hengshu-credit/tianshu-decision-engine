@@ -90,16 +90,18 @@ export default {
         this._projectId = def.projectId
         const pid = def.projectId
 
+        // request 拦截器已返回 res.data，无需再访问 .data
         const [varRes, objRes, funcRes] = await Promise.all([
-          listVariablesByProject(pid).catch(() => ({ data: [] })),
-          getVariableTree(pid).catch(() => ({ data: [] })),
-          listAllFunctionsByProject(pid).catch(() => ({ data: [] }))
+          listVariablesByProject(pid).catch(() => []),
+          getVariableTree(pid).catch(() => []),
+          listAllFunctionsByProject(pid).catch(() => [])
         ])
-        const funcData = (funcRes && funcRes.data ? funcRes.data : funcRes) || []
+        const funcData = funcRes || []
         this.projectFunctions = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
 
-        const allVars = (varRes && varRes.data ? varRes.data : varRes) || []
-        const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
+        // request 拦截器已返回 res.data，varRes / objRes 直接是数组，无需 .data
+        const allVars = varRes || []
+        const objectTree = objRes || []
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
@@ -182,7 +184,8 @@ export default {
       try {
         const api = varObj.objectField ? getDataObjectFieldOptions : getVariableOptions
         const res = await api(varObj.id)
-        const opts = (res && res.data ? res.data : res) || []
+        // request 拦截器已返回 res.data，直接使用
+        const opts = res || []
         this.$set(this.varOptionsByCode, refCode, opts)
       } catch (e) {
         this.$set(this.varOptionsByCode, refCode, [])
@@ -200,15 +203,16 @@ export default {
       try {
         const pid = this._projectId
         const [varRes, objRes, funcRes] = await Promise.all([
-          listVariablesByProject(pid).catch(() => ({ data: [] })),
-          getVariableTree(pid).catch(() => ({ data: [] })),
-          listAllFunctionsByProject(pid).catch(() => ({ data: [] }))
+          listVariablesByProject(pid).catch(() => []),
+          getVariableTree(pid).catch(() => []),
+          listAllFunctionsByProject(pid).catch(() => [])
         ])
-        const funcData = (funcRes && funcRes.data ? funcRes.data : funcRes) || []
+        // request 拦截器已返回 res.data，直接使用
+        const funcData = funcRes || []
         this.projectFunctions = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
 
-        const allVars = (varRes && varRes.data ? varRes.data : varRes) || []
-        const objectTree = (objRes && objRes.data ? objRes.data : objRes) || []
+        const allVars = varRes || []
+        const objectTree = objRes || []
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
