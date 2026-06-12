@@ -21,7 +21,7 @@ public class VarContext {
     /** varId → scriptName 映射 */
     private final Map<Long, String> varIdToScriptName;
 
-    /** varCode（小写）→ scriptName 映射，用于 varId 缺失时的兜底查找 */
+    /** varCode → scriptName 映射，用于 varId 缺失时的兜底查找（大小写敏感） */
     private final Map<String, String> varCodeToScriptName;
 
     /**
@@ -36,7 +36,7 @@ public class VarContext {
      * 构造函数，同时构建两种映射。
      *
      * @param varIdToScriptName   varId → scriptName
-     * @param varCodeToScriptName varCode（小写）→ scriptName
+     * @param varCodeToScriptName varCode → scriptName（大小写敏感）
      */
     public VarContext(Map<Long, String> varIdToScriptName, Map<String, String> varCodeToScriptName) {
         this.varIdToScriptName = varIdToScriptName != null ? varIdToScriptName : Collections.emptyMap();
@@ -66,7 +66,7 @@ public class VarContext {
 
     /**
      * 根据 varCode 查找脚本引用名。
-     * 忽略大小写，优先精确匹配，未命中时返回 null。
+     * 严格区分大小写，精确匹配后返回。
      * 用于设计器未保存 _varId 时的兜底回溯。
      *
      * @param varCode 变量编码（来自设计器 modelJson）
@@ -74,7 +74,7 @@ public class VarContext {
      */
     public String getScriptNameByVarCode(String varCode) {
         if (varCode == null) return null;
-        return varCodeToScriptName.get(varCode.toLowerCase());
+        return varCodeToScriptName.get(varCode);
     }
 
     /** 是否为空（无任何映射） */
@@ -99,7 +99,7 @@ public class VarContext {
             if (name != null) return name;
         }
         if (varCode != null) {
-            String name = varCodeToScriptName.get(varCode.toLowerCase());
+            String name = varCodeToScriptName.get(varCode);
             if (name != null) return name;
         }
         return varCode != null ? varCode : "";

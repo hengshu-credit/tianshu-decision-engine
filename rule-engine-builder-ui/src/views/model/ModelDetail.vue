@@ -55,35 +55,40 @@
           <!-- 对应变量 -->
           <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select
-                  v-model="row.varId"
-                  filterable clearable
-                  placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini" style="width:100%;"
-                  popper-append-to-body
-                  @change="val => onVarChange(row, val)"
-                  @clear="onVarClear(row)"
-                >
-                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
-                    <el-option
-                      v-for="v in group.options"
-                      :key="v.id" :value="v.id"
-                      :label="v.varLabel"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCodeText }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
-                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
-                      </el-tag>
-                    </el-option>
-                  </el-option-group>
-                </el-select>
+              <div v-if="row._editing" class="var-picker-cell">
+                <var-picker
+                  v-if="!isCustomVarMode(row) && varPickerOptions.length"
+                  :vars="varPickerOptions"
+                  :value="getRowVarCode(row)"
+                  placeholder="选择变量、常量或对象字段..."
+                  width="100%"
+                  value-key="code"
+                  @select="v => onVarPickerSelect(row, v)"
+                />
+                <div v-else class="custom-var-input">
+                  <el-input
+                    :value="row.scriptName || ''"
+                    size="mini"
+                    placeholder="输入变量编码"
+                    clearable
+                    @input="val => onVarCodeInput(row, val)"
+                  />
+                </div>
+                <el-tooltip :content="isCustomVarMode(row) ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
+                  <el-button
+                    size="mini"
+                    type="text"
+                    :icon="isCustomVarMode(row) ? 'el-icon-collection' : 'el-icon-edit'"
+                    class="var-switch-btn"
+                    @click="toggleCustomVarMode(row)"
+                  />
+                </el-tooltip>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
                   {{ varMap[row.varId].varLabel }}
                 </span>
+                <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
             </template>
@@ -143,35 +148,40 @@
           <!-- 对应变量 -->
           <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select
-                  v-model="row.varId"
-                  filterable clearable
-                  placeholder="搜索变量、常量、数据对象字段..."
-                  size="mini" style="width:100%;"
-                  popper-append-to-body
-                  @change="val => onVarChange(row, val)"
-                  @clear="onVarClear(row)"
-                >
-                  <el-option-group v-for="group in varPickerGroups" :key="group.label" :label="group.label">
-                    <el-option
-                      v-for="v in group.options"
-                      :key="v.id" :value="v.id"
-                      :label="v.varLabel"
-                    >
-                      <span style="font-weight:500;">{{ v.varLabelText }}</span>
-                      <span style="color:#999;font-size:11px;margin-left:6px;font-family:monospace;">{{ v.varCodeText }}</span>
-                      <el-tag size="mini" :type="v.sourceType === 'dataObject' ? 'warning' : (v.sourceType === 'constant' ? 'success' : 'info')" style="margin-left:6px;float:right;">
-                        {{ v.sourceType === 'dataObject' ? 'DO' : (v.sourceType === 'constant' ? 'CONST' : 'VAR') }}
-                      </el-tag>
-                    </el-option>
-                  </el-option-group>
-                </el-select>
+              <div v-if="row._editing" class="var-picker-cell">
+                <var-picker
+                  v-if="!isCustomVarMode(row) && varPickerOptions.length"
+                  :vars="varPickerOptions"
+                  :value="getRowVarCode(row)"
+                  placeholder="选择变量、常量或对象字段..."
+                  width="100%"
+                  value-key="code"
+                  @select="v => onVarPickerSelect(row, v)"
+                />
+                <div v-else class="custom-var-input">
+                  <el-input
+                    :value="row.scriptName || ''"
+                    size="mini"
+                    placeholder="输入变量编码"
+                    clearable
+                    @input="val => onVarCodeInput(row, val)"
+                  />
+                </div>
+                <el-tooltip :content="isCustomVarMode(row) ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
+                  <el-button
+                    size="mini"
+                    type="text"
+                    :icon="isCustomVarMode(row) ? 'el-icon-collection' : 'el-icon-edit'"
+                    class="var-switch-btn"
+                    @click="toggleCustomVarMode(row)"
+                  />
+                </el-tooltip>
               </div>
               <div v-else>
                 <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
                   {{ varMap[row.varId].varLabel }}
                 </span>
+                <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
             </template>
@@ -305,6 +315,7 @@
 import * as api from '@/api/model'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
+import VarPicker from '@/components/common/VarPicker.vue'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -322,6 +333,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelDetail',
+  components: { VarPicker },
   data() {
     return {
       loading: false,
@@ -346,7 +358,31 @@ export default {
       jsonError: '',
       testExecuting: false,
       testResult: null,
-      testDialogKey: 1
+      testDialogKey: 1,
+      /** 各行是否处于手动输入模式 */
+      customVarModes: {}
+    }
+  },
+  computed: {
+    /** 构建 VarPicker 需要的 vars 数组格式 */
+    varPickerOptions() {
+      const options = []
+      this.varPickerGroups.forEach(group => {
+        group.options.forEach(v => {
+          options.push({
+            varCode: v.varCode,
+            varLabel: v.varLabelText || v.varCode,
+            varType: v.varType,
+            varObj: v.varObj,
+            _ref: {
+              category: v.sourceType === 'dataObject' ? 'object' : (v.sourceType === 'constant' ? 'constant' : 'standalone'),
+              objectCode: v.sourceLabel || '',
+              objectLabel: v.sourceLabel || ''
+            }
+          })
+        })
+      })
+      return options
     }
   },
   created() {
@@ -497,6 +533,60 @@ export default {
       this.$set(row, 'varId', null)
       this.$set(row, 'fieldLabel', '')
       this.$set(row, 'scriptName', '')
+    },
+    /** 获取行对应的变量编码（用于 VarPicker 的 value） */
+    getRowVarCode(row) {
+      if (!row.varId) return ''
+      const v = this.varMap[row.varId]
+      return v ? v.varCode : ''
+    },
+    /** 获取行是否处于手动输入模式 */
+    isCustomVarMode(row) {
+      return this.customVarModes[row.id] || false
+    },
+    /** 切换手动输入模式 */
+    toggleCustomVarMode(row) {
+      this.$set(this.customVarModes, row.id, !this.customVarModes[row.id])
+    },
+    /** 处理 VarPicker 选择结果 */
+    onVarPickerSelect(row, v) {
+      if (!v) {
+        this.$set(row, 'varId', null)
+        this.$set(row, 'fieldLabel', '')
+        this.$set(row, 'scriptName', '')
+        this.$set(row, 'varSource', '')
+        return
+      }
+      // v 是 VarPicker 返回的选项对象
+      const varObj = v.varObj
+      const varId = varObj && varObj.id ? varObj.id : null
+      this.$set(row, 'varId', varId)
+      this.$set(row, 'fieldLabel', v.varLabel || v.varCode)
+      this.$set(row, 'scriptName', v.varCode)
+      this.$set(row, 'varSource', v._ref ? v._ref.category : 'variable')
+    },
+    /** 手动输入变量编码时自动关联 */
+    onVarCodeInput(row, val) {
+      if (!val) {
+        this.$set(row, 'varId', null)
+        this.$set(row, 'fieldLabel', '')
+        this.$set(row, 'scriptName', '')
+        this.$set(row, 'varSource', '')
+        return
+      }
+      // 在 varMap 中查找匹配的变量
+      const found = Object.values(this.varMap).find(v => v.varCode === val)
+      if (found) {
+        this.$set(row, 'varId', found.id)
+        this.$set(row, 'fieldLabel', found.varLabelText || found.varCode)
+        this.$set(row, 'scriptName', found.varCode)
+        this.$set(row, 'varSource', found.sourceType)
+      } else {
+        this.$set(row, 'varId', null)
+        this.$set(row, 'fieldLabel', '')
+        this.$set(row, 'scriptName', val)
+        this.$set(row, 'varSource', 'custom')
+      }
     },
     onVarChange(row, varId) {
       if (!varId) return
@@ -851,6 +941,29 @@ export default {
 .script-unbound {
   color: #c0c4cc;
   font-style: italic;
+}
+/* 变量选择单元格 */
+.var-picker-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.var-picker-cell ::v-deep .var-picker-wrap {
+  flex: 1;
+  min-width: 0;
+}
+.custom-var-input {
+  flex: 1;
+  min-width: 0;
+}
+.var-switch-btn {
+  padding: 4px 6px;
+  color: #909399;
+  flex-shrink: 0;
+}
+.var-switch-btn:hover {
+  color: #1890ff;
 }
 /* 编辑行高亮 */
 ::v-deep .editing-row {

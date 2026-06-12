@@ -27,19 +27,35 @@
         </div>
         <div class="base-config-item">
           <span class="base-config-label">结果变量</span>
-          <var-picker
-            v-if="varPickerOptions.length"
-            :vars="varPickerOptions"
-            :value="model.resultVar.varCode"
-            placeholder="选择结果变量..."
-            width="200px"
-            @select="onResultVarSelect"
-          />
-          <template v-else>
-            <el-input v-model="model.resultVar.varCode" size="small" placeholder="如 totalScore" style="width:160px;" />
-            <span style="margin:0 4px;color:#999;">|</span>
-            <el-input v-model="model.resultVar.varLabel" size="small" placeholder="如 总评分" style="width:140px;" />
-          </template>
+          <div class="result-var-picker">
+            <var-picker
+              v-if="!customResultVarMode && varPickerOptions.length"
+              :vars="varPickerOptions"
+              :value="model.resultVar.varCode"
+              placeholder="选择结果变量..."
+              width="200px"
+              @select="onResultVarSelect"
+            />
+            <el-input
+              v-else
+              v-model="model.resultVar.varCode"
+              size="small"
+              placeholder="输入变量编码"
+              style="width:200px;"
+              clearable
+              @input="onResultVarCustomInput"
+            />
+            <el-tooltip :content="customResultVarMode ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
+              <el-button
+                size="small"
+                type="text"
+                :icon="customResultVarMode ? 'el-icon-collection' : 'el-icon-edit'"
+                class="result-var-switch-btn"
+                @click="customResultVarMode = !customResultVarMode"
+              />
+            </el-tooltip>
+          </div>
+          <span v-if="model.resultVar.varLabel" class="result-var-label">{{ model.resultVar.varLabel }}</span>
         </div>
       </div>
     </div>
@@ -343,7 +359,9 @@ export default {
       scriptMode: 'visual',
       testVisible: false,
       testParamsJson: '{}',
-      testResult: null
+      testResult: null,
+      /** 结果变量手动输入模式 */
+      customResultVarMode: false
     }
   },
   computed: {
@@ -406,6 +424,22 @@ export default {
         varLabel: v.varLabel || v.varCode,
         _varId: (v.varObj && v.varObj.id) || null
       })
+    },
+    /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
+    onResultVarCustomInput(val) {
+      if (!val) {
+        this.$set(this.model.resultVar, 'varLabel', '')
+        this.$set(this.model.resultVar, '_varId', null)
+        return
+      }
+      const ref = this.projectRefs.find(r => r.refCode === val)
+      if (ref) {
+        this.$set(this.model.resultVar, 'varLabel', ref.refLabel.label || ref.refLabel)
+        this.$set(this.model.resultVar, '_varId', ref.varObj && ref.varObj.id ? ref.varObj.id : null)
+      } else {
+        this.$set(this.model.resultVar, 'varLabel', '')
+        this.$set(this.model.resultVar, '_varId', null)
+      }
     },
     onDimVarSelect(gi, di, v) {
       if (!v) return
@@ -523,6 +557,21 @@ export default {
 .base-config-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: center; }
 .base-config-item { display: flex; align-items: center; gap: 10px; }
 .base-config-label { font-size: 13px; color: #666; white-space: nowrap; }
+.result-var-picker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.result-var-switch-btn {
+  padding: 4px 8px;
+  color: #909399;
+  &:hover { color: #1890ff; }
+}
+.result-var-label {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 4px;
+}
 
 /* 维度组 */
 .asc-group { padding: 0; overflow: hidden; }

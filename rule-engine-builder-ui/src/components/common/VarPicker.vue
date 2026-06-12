@@ -58,8 +58,8 @@
                   <thead>
                     <tr>
                       <th class="vp-th vp-th--type">类型</th>
-                      <th class="vp-th vp-th--code">字段编码</th>
-                      <th class="vp-th vp-th--name">字段名称</th>
+                      <th class="vp-th vp-th--code">{{ codeColumnLabel }}</th>
+                      <th class="vp-th vp-th--name">{{ nameColumnLabel }}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -71,7 +71,7 @@
                         @click="onItemClick(v)"
                       >
                         <td class="vp-td vp-td--type">
-                          <el-tag size="mini" :type="typeColor(v.varType)">{{ typeShortLabel(v.varType) }}</el-tag>
+                          <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)">{{ typeChar(v.varType) }}</span>
                         </td>
                         <td class="vp-td vp-td--code">{{ v.varCode }}</td>
                         <td class="vp-td vp-td--name">{{ v.varLabel || v.varCode }}</td>
@@ -95,7 +95,7 @@
                                 @click.stop="onItemClick(child)"
                               >
                                 <span class="vp-child-path">{{ v._ref && v._ref.objectCode ? v._ref.objectCode : v.objectCode }}.{{ child.varCode }}</span>
-                                <el-tag size="mini" :type="typeColor(child.varType)">{{ typeShortLabel(child.varType) }}</el-tag>
+                                <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)">{{ typeChar(child.varType) }}</span>
                                 <span class="vp-child-name">{{ child.varLabel || child.varCode }}</span>
                               </div>
                             </div>
@@ -170,7 +170,15 @@ export default {
      * - 'code'（默认）：使用 varCode 作为 option value
      * - 'id'：使用 var.id 作为 option value（用于模型出入参关联变量）
      */
-    valueKey: { type: String, default: 'code' }
+    valueKey: { type: String, default: 'code' },
+    /**
+     * 表头标签配置，支持不同选择场景：
+     * - 'variable': 变量编码 | 变量名称（默认）
+     * - 'dataObject': 属性字段路径 | 属性名称
+     * - 'model': 模型编码 | 模型名称
+     * 或直接传入对象 { codeLabel, nameLabel }
+     */
+    columnLabels: { type: [String, Object], default: 'variable' }
   },
   data() {
     return {
@@ -412,6 +420,40 @@ export default {
     },
     typeLabel(t) {
       return varTypeLabel(t)
+    },
+    /** 根据配置获取编码列标签 */
+    codeColumnLabel() {
+      if (typeof this.columnLabels === 'object') return this.columnLabels.codeLabel || '字段编码'
+      const labels = {
+        variable: '变量编码',
+        dataObject: '属性字段路径',
+        model: '模型编码'
+      }
+      return labels[this.columnLabels] || '字段编码'
+    },
+    /** 根据配置获取名称列标签 */
+    nameColumnLabel() {
+      if (typeof this.columnLabels === 'object') return this.columnLabels.nameLabel || '字段名称'
+      const labels = {
+        variable: '变量名称',
+        dataObject: '属性名称',
+        model: '模型名称'
+      }
+      return labels[this.columnLabels] || '字段名称'
+    },
+    /** 获取类型单字符标识（带颜色） */
+    typeChar(varType) {
+      const map = {
+        STRING: 's',
+        NUMBER: 'i',
+        BOOLEAN: 'b',
+        DATE: 'd',
+        ENUM: 'e',
+        OBJECT: 'o',
+        LIST: 'l',
+        MAP: 'm'
+      }
+      return map[varType] || '?'
     }
   }
 }
@@ -537,7 +579,7 @@ export default {
   top: 0;
   z-index: 1;
 }
-.vp-th--type { width: 48px; text-align: center; }
+.vp-th--type { width: 36px; text-align: center; padding: 8px 4px; }
 .vp-th--code { width: 130px; }
 .vp-th--name { min-width: 80px; }
 .vp-row {
@@ -552,7 +594,7 @@ export default {
   border-bottom: 1px solid #f5f5f5;
   color: #303133;
 }
-.vp-td--type { text-align: center; }
+.vp-td--type { text-align: center; padding: 7px 4px; }
 .vp-td--code {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
@@ -607,4 +649,43 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ── 类型单字符标识 ── */
+.vp-type-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: 'Consolas', 'Monaco', monospace;
+  color: #fff;
+  flex-shrink: 0;
+}
+.vp-type-badge--sm {
+  width: 16px;
+  height: 16px;
+  font-size: 10px;
+  border-radius: 3px;
+}
+/* 字符串 s - 蓝色 */
+.vp-type-badge--s { background: #409EFF; }
+/* 整数 i - 橙色 */
+.vp-type-badge--i { background: #E6A23C; }
+/* 布尔 b - 绿色 */
+.vp-type-badge--b { background: #67C23A; }
+/* 日期 d - 紫色 */
+.vp-type-badge--d { background: #9C27B0; }
+/* 枚举 e - 红色 */
+.vp-type-badge--e { background: #F56C6C; }
+/* 对象 o - 青色 */
+.vp-type-badge--o { background: #00BCD4; }
+/* 列表 l - 黄色 */
+.vp-type-badge--l { background: #FF9800; }
+/* 映射 m - 灰色 */
+.vp-type-badge--m { background: #909399; }
+/* 默认 ? - 浅灰 */
+.vp-type-badge--? { background: #C0C4CC; }
 </style>

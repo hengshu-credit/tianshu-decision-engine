@@ -1,25 +1,9 @@
 // tests/unit/views/ruleDetail.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
+import { shallowMount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
 
-// 直接 mock API 模块（避免真实 axios 依赖链）
-jest.mock('@/api/definition', () => ({
-  getDefinitionDetail: jest.fn(),
-  updateInputField: jest.fn(),
-  updateOutputField: jest.fn(),
-  executeRule: jest.fn()
-}))
-
-jest.mock('@/api/variable', () => ({
-  listVariablesByProject: jest.fn(),
-  listVariables: jest.fn()
-}))
-
-jest.mock('@/api/dataObject', () => ({
-  getVariableTree: jest.fn()
-}))
-
+// 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import RuleDetail from '@/views/rule/RuleDetail.vue'
@@ -65,39 +49,55 @@ function createTestVue() {
   return localVue
 }
 
+function makeStub(tag) {
+  return { render: h => h(tag) }
+}
+
+async function mountAndWait() {
+  definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
+  variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+  variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
+
+  const wrapper = shallowMount(RuleDetail, {
+    localVue: createTestVue(),
+    propsData: { id: '1' },
+    mocks: {
+      $route: { params: { id: 1 } },
+      $router: { push: jest.fn(), replace: jest.fn() }
+    },
+    stubs: {
+      'el-descriptions': makeStub('div'),
+      'el-descriptions-item': makeStub('div'),
+      'el-form': makeStub('form'),
+      'el-form-item': makeStub('div'),
+      'el-select': makeStub('select'),
+      'el-option': makeStub('option'),
+      'el-input': makeStub('input'),
+      'el-button': makeStub('button'),
+      'el-tag': makeStub('span'),
+      'el-alert': makeStub('div'),
+      'el-tabs': makeStub('div'),
+      'el-tab-pane': makeStub('div'),
+      'el-table': makeStub('table'),
+      'el-table-column': makeStub('td'),
+      'el-input-number': makeStub('input'),
+      'el-date-picker': makeStub('div'),
+      'el-divider': makeStub('hr'),
+      'el-tooltip': makeStub('span'),
+      'el-loading': makeStub('div'),
+      'monaco-editor': makeStub('div')
+    }
+  })
+
+  await Vue.nextTick()
+  await new Promise(r => setTimeout(r, 100))
+  return wrapper
+}
+
 describe('RuleDetail — 初始化与数据加载', () => {
   let wrapper
 
-  beforeEach(async () => {
-    definitionApi.getDefinitionDetail.mockResolvedValue({ data: mockRuleDetail(1) })
-    variableApi.listVariablesByProject.mockResolvedValue({ data: mockVariables() })
-    variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
-
-    wrapper = mount(RuleDetail, {
-      localVue: createTestVue(),
-      propsData: { id: '1' },
-      mocks: {
-        $route: { params: { id: 1 } },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-descriptions': true, 'el-descriptions-item': true,
-        'el-form': true, 'el-form-item': true,
-        'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-alert': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-table': true, 'el-table-column': true,
-        'el-input-number': true, 'el-date-picker': true,
-        'el-divider': true, 'el-tooltip': true,
-        'el-loading': true,
-        'monaco-editor': true
-      }
-    })
-
-    await Vue.nextTick()
-    await new Promise(r => setTimeout(r, 100))
-  })
-
+  beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('mounted 后调用 getDefinitionDetail', () => {
@@ -138,36 +138,7 @@ describe('RuleDetail — 初始化与数据加载', () => {
 describe('RuleDetail — 辅助方法', () => {
   let wrapper
 
-  beforeEach(async () => {
-    definitionApi.getDefinitionDetail.mockResolvedValue({ data: mockRuleDetail(1) })
-    variableApi.listVariablesByProject.mockResolvedValue({ data: mockVariables() })
-    variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
-
-    wrapper = mount(RuleDetail, {
-      localVue: createTestVue(),
-      propsData: { id: '1' },
-      mocks: {
-        $route: { params: { id: 1 } },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-descriptions': true, 'el-descriptions-item': true,
-        'el-form': true, 'el-form-item': true,
-        'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-alert': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-table': true, 'el-table-column': true,
-        'el-input-number': true, 'el-date-picker': true,
-        'el-divider': true, 'el-tooltip': true,
-        'el-loading': true,
-        'monaco-editor': true
-      }
-    })
-
-    await Vue.nextTick()
-    await new Promise(r => setTimeout(r, 100))
-  })
-
+  beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('modelTypeLabel 返回正确的中文标签', () => {
@@ -208,37 +179,13 @@ describe('RuleDetail — 出入参字段管理', () => {
   let wrapper
 
   beforeEach(async () => {
-    definitionApi.getDefinitionDetail.mockResolvedValue({ data: mockRuleDetail(1) })
-    variableApi.listVariablesByProject.mockResolvedValue({ data: mockVariables() })
-    variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
-    definitionApi.updateInputField.mockResolvedValue({ data: { success: true } })
-    definitionApi.updateOutputField.mockResolvedValue({ data: { success: true } })
-
-    wrapper = mount(RuleDetail, {
-      localVue: createTestVue(),
-      propsData: { id: '1' },
-      mocks: {
-        $route: { params: { id: 1 } },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-descriptions': true, 'el-descriptions-item': true,
-        'el-form': true, 'el-form-item': true,
-        'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-alert': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-table': true, 'el-table-column': true,
-        'el-input-number': true, 'el-date-picker': true,
-        'el-divider': true, 'el-tooltip': true,
-        'el-loading': true,
-        'monaco-editor': true
-      }
-    })
-
-    await Vue.nextTick()
-    await new Promise(r => setTimeout(r, 100))
+    definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
+    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
+    definitionApi.updateInputField.mockResolvedValueOnce({ data: { success: true } })
+    definitionApi.updateOutputField.mockResolvedValueOnce({ data: { success: true } })
+    wrapper = await mountAndWait()
   })
-
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('inputFieldsJson 每项包含 varId 和 fieldType', () => {
@@ -279,36 +226,7 @@ describe('RuleDetail — 出入参字段管理', () => {
 describe('RuleDetail — 测试弹窗', () => {
   let wrapper
 
-  beforeEach(async () => {
-    definitionApi.getDefinitionDetail.mockResolvedValue({ data: mockRuleDetail(1) })
-    variableApi.listVariablesByProject.mockResolvedValue({ data: mockVariables() })
-    variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
-
-    wrapper = mount(RuleDetail, {
-      localVue: createTestVue(),
-      propsData: { id: '1' },
-      mocks: {
-        $route: { params: { id: 1 } },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-descriptions': true, 'el-descriptions-item': true,
-        'el-form': true, 'el-form-item': true,
-        'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-alert': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-table': true, 'el-table-column': true,
-        'el-input-number': true, 'el-date-picker': true,
-        'el-divider': true, 'el-tooltip': true,
-        'el-loading': true,
-        'monaco-editor': true
-      }
-    })
-
-    await Vue.nextTick()
-    await new Promise(r => setTimeout(r, 100))
-  })
-
+  beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('openTestDialog 打开测试弹窗', async () => {

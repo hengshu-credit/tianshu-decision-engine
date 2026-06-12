@@ -2,7 +2,6 @@ package com.bjjw.rule.server.service.parser;
 
 import com.bjjw.rule.model.dto.ParsedField;
 import com.bjjw.rule.model.dto.ParsedObject;
-import com.bjjw.rule.core.util.ScriptNameUtil;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -90,18 +89,14 @@ public class DdlTableParser {
     }
 
     /**
-     * 将 {@code snake_case} / {@code t_snake} 表名转为 PascalCase，作为数据对象编码（与 Java 实体导入风格一致）。
+     * 直接使用原表名作为数据对象编码，不做任何转换（铁律三）。
      */
     private String tableNameToPascalCode(String table) {
-        String t = table.replace('`', ' ').trim();
-        if (t.isEmpty()) {
+        String t = table == null ? null : table.replace('`', ' ').trim();
+        if (t == null || t.isEmpty()) {
             return "Unknown";
         }
-        String camel = ScriptNameUtil.toCamelCase(t);
-        if (camel.isEmpty()) {
-            return "Unknown";
-        }
-        return Character.toUpperCase(camel.charAt(0)) + camel.substring(1);
+        return t;
     }
 
     /**

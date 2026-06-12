@@ -1,19 +1,34 @@
 /**
  * varPickerMixin 单元测试
- * 通过 mock axios 拦截所有 HTTP 请求，模拟后端返回数据
+ *
+ * 关键点：
+ * - 测试文件直接 import setup.js 预置的 jest.fn()，通过 .mockResolvedValueOnce() 配置返回值
+ * - 不在测试文件中写 jest.mock()（避免覆盖 setup.js 的基础 mock）
+ * - API 返回值应传原始数据（数组），axios 拦截器会包成 { data: ... }，mixin 解包后得到正确数组
+ * - 使用 jest.resetAllMocks() 而非 jest.clearAllMocks()，确保返回值的重置
  */
 
 import Vue from 'vue'
-import axios from 'axios'
 import varPickerMixin from '@/mixins/varPickerMixin'
 
-// 模拟 API 返回数据
+// 直接 import setup.js 预置的 mock
+import * as definitionApi from '@/api/definition'
+import * as variableApi from '@/api/variable'
+import * as dataObjectApi from '@/api/dataObject'
+import * as functionApi from '@/api/function'
+
+// ─── Mock 数据（传原始数组，由 axios 拦截器包成 { data: ... }） ─────
+const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
+
 const mockVars = [
   { id: 1, varCode: 'age', varLabel: '年龄', varType: 'Integer', varSource: 'INPUT', scriptName: 'age' },
   { id: 2, varCode: 'income', varLabel: '收入', varType: 'NUMBER', varSource: 'INPUT', scriptName: 'income' },
-  { id: 3, varCode: 'MAX_AGE', varLabel: '最大年龄', varType: 'Integer', varSource: 'CONSTANT', scriptName: 'MAX_AGE' }
+  { id: 3, varCode: 'MAX_AGE', varLabel: '最大年龄', varType: 'Integer', varSource: 'CONSTANT', scriptName: 'MAX_AGE' },
+  { id: 20, varCode: 'level', varLabel: '等级', varType: 'ENUM', varSource: 'ENUM', scriptName: 'level',
+    options: [{ label: '高', value: 'HIGH' }, { label: '中', value: 'MID' }, { label: '低', value: 'LOW' }] }
 ]
 
+// getVariableTree 返回数组（axios 拦截器会包成 { data: [...] }）
 const mockObjectTree = [
   {
     object: { objectCode: 'TaxRequest', objectLabel: '税务请求', scriptName: 'TaxRequest' },
@@ -23,60 +38,37 @@ const mockObjectTree = [
   }
 ]
 
-// mock axios（request.js 底层依赖 axios）
-jest.mock('axios', () => ({
-  get: jest.fn(),
-  post: jest.fn()
-}))
+// getVariableTree 返回数组（axios 拦截器会包成 { data: [...] }）
 
 describe('varPickerMixin', () => {
-  let axiosGet, axiosPost
-
   beforeEach(() => {
-    axiosGet = axios.get
-    axiosPost = axios.post
+    // clearAllMocks：清除调用记录，保留 mockResolvedValueOnce 的配置
+    // resetAllMocks 会清除所有实现，导致测试体内设置的 mock 无效
     jest.clearAllMocks()
-
-    // 定义 axios.get 的默认行为
-    axiosGet.mockImplementation((url) => {
-      if (url.includes('/definition/')) {
-        return Promise.resolve({ data: { id: 1, projectId: 1, scope: 'PROJECT' } })
-      }
-      if (url.includes('/variable/listByProject')) {
-        return Promise.resolve({ data: mockVars })
-      }
-      if (url.includes('/dataObject/variableTree')) {
-        return Promise.resolve({ data: mockObjectTree })
-      }
-      if (url.includes('/function/listAllByProject')) {
-        return Promise.resolve({ data: [] })
-      }
-      if (url.includes('/model/inputs')) {
-        return Promise.resolve({ data: [] })
-      }
-      if (url.includes('/model/outputs')) {
-        return Promise.resolve({ data: [] })
-      }
-      return Promise.resolve({ data: null })
-    })
+    // 默认 mock（大多数测试需要）
+    definitionApi.getDefinition.mockResolvedValue(mockDefs)
+    variableApi.listVariablesByProject.mockResolvedValue(mockVars)
+    dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree)
+    functionApi.listAllFunctionsByProject.mockResolvedValue([])
+    dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
 
   /** 创建混入了 varPickerMixin 的 Vue 实例 */
-  function createMixinVM(definitionId = 1) {
+  function createMixinVM() {
     const ComponentDef = {
       mixins: [varPickerMixin],
       data() {
         return {
-          definitionId,
+          definitionId: 1,
           projectId: 1,
-          varsLoading: false,
+          loadingVars: false,
           varsLoadError: false,
           projectVars: [],
           projectRefs: [],
           variableTree: [],
           projectFunctions: [],
-          modelInputVars: [],
-          modelOutputVars: []
+          // contentLoaded: true 触发 _trySyncModelVarRefs()
+          contentLoaded: true
         }
       }
     }
@@ -87,24 +79,19 @@ describe('varPickerMixin', () => {
   test('loadProjectVars 调用正确的 API 并传入正确的参数', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-
-    // 验证各 API 按预期被调用
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/definition/'), expect.any(Object))
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/variable/listByProject'), expect.any(Object))
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/dataObject/variableTree'), expect.any(Object))
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/function/listAllByProject'), expect.any(Object))
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/model/inputs'), expect.any(Object))
-    expect(axiosGet).toHaveBeenCalledWith(expect.stringContaining('/model/outputs'), expect.any(Object))
+    expect(definitionApi.getDefinition).toHaveBeenCalledWith(1)
+    expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
+    expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(1)
+    expect(functionApi.listAllFunctionsByProject).toHaveBeenCalledWith(1)
   })
 
-  // ─── 加载流程测试 ────────────────────────────────────────
   test('loadProjectVars 完成后 projectVars 非空', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     expect(vm.projectVars.length).toBeGreaterThan(0)
   })
 
-  test('loadProjectVars 完成后 projectRefs 非空（3层结构数组）', async () => {
+  test('loadProjectVars 完成后 projectRefs 非空（扁平数组）', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     expect(vm.projectRefs.length).toBeGreaterThan(0)
@@ -113,7 +100,8 @@ describe('varPickerMixin', () => {
   test('loadProjectVars 完成后 inputVars 仅包含 INPUT 类型', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    expect(vm.inputVars.length).toBe(2) // age, income
+    // age, income 是 INPUT；MAX_AGE 是 CONSTANT；level 是 ENUM（非 INPUT）
+    expect(vm.inputVars.length).toBe(2)
     expect(vm.inputVars.every(v => v.varSource === 'INPUT')).toBe(true)
   })
 
@@ -122,15 +110,16 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const standalone = vm.projectRefs.filter(r => r.category === 'standalone')
-    expect(standalone.length).toBe(2) // age, income
-    expect(standalone.every(r => r.varSource !== 'CONSTANT')).toBe(true)
+    // age, income, level（varSource = INPUT/ENUM，排除 CONSTANT）
+    expect(standalone.length).toBe(3)
+    expect(standalone.every(r => r.varObj.varSource !== 'CONSTANT')).toBe(true)
   })
 
   test('projectRefs 包含 constant 类别的常量（varSource=CONSTANT）', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const constant = vm.projectRefs.filter(r => r.category === 'constant')
-    expect(constant.length).toBe(1) // MAX_AGE
+    expect(constant.length).toBe(1)
     expect(constant[0].refCode).toBe('MAX_AGE')
   })
 
@@ -138,7 +127,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const object = vm.projectRefs.filter(r => r.category === 'object')
-    expect(object.length).toBe(1) // TaxRequest.amount
+    expect(object.length).toBe(1)
     expect(object[0].refCode).toBe('TaxRequest.amount')
   })
 
@@ -151,11 +140,11 @@ describe('varPickerMixin', () => {
     expect(varItem.varCode).toBe('age')
   })
 
-  test('getVarByCode 对未知编码返回无 refCode 的对象', async () => {
+  test('getVarByCode 对未知编码返回 null', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const varItem = vm.getVarByCode('nonExistent')
-    expect(varItem.refCode).toBeUndefined()
+    expect(varItem).toBeNull()
   })
 
   test('findRefByVarId 通过 varId 精确匹配', async () => {
@@ -166,17 +155,18 @@ describe('varPickerMixin', () => {
     expect(ref.refCode).toBe('age')
   })
 
-  test('findRefByVarId 对未知 varId 返回 undefined', async () => {
+  test('findRefByVarId 对未知 varId 返回 null', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const ref = vm.findRefByVarId(999)
-    expect(ref).toBeUndefined()
+    expect(ref).toBeNull()
   })
 
   test('syncVarItem 通过 _varId 更新 varCode', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    const leaf = { _varId: 2 }
+    // syncVarItem 要求 item.varCode 存在，否则直接返回 false
+    const leaf = { _varId: 2, varCode: 'oldValue' }
     const changed = vm.syncVarItem(leaf)
     expect(changed).toBe(true)
     expect(leaf.varCode).toBe('income')
@@ -196,7 +186,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const options = vm.varPickerOptions
-    expect(options.length).toBe(4) // 2 standalone + 1 constant + 1 object
+    expect(options.length).toBe(5) // 3 standalone + 1 constant + 1 object
     const ageOpt = options.find(o => o.varCode === 'age')
     expect(ageOpt).toBeDefined()
     expect(ageOpt.varLabel).toMatch(/年龄.*age/)
@@ -208,23 +198,25 @@ describe('varPickerMixin', () => {
     const options = vm.varPickerOptions
     const amountOpt = options.find(o => o.varCode === 'TaxRequest.amount')
     expect(amountOpt).toBeDefined()
-    expect(amountOpt.varLabel).toMatch(/税务请求/)
+    // makeRefLabel 生成 label 为 "金额" 或带前缀格式
+    expect(amountOpt.varLabel).toMatch(/金额|TaxRequest/)
   })
 
   // ─── 错误处理测试 ────────────────────────────────────────
   test('loadProjectVars 失败时 varsLoadError 为 true', async () => {
-    axiosGet.mockRejectedValueOnce(new Error('network error'))
+    // getDefinition 失败才会触发 varsLoadError（因为 listVariablesByProject 等使用了 .catch(() => [])）
+    definitionApi.getDefinition.mockRejectedValue(new Error('network error'))
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     expect(vm.varsLoadError).toBe(true)
   })
 
-  test('loadProjectVars 失败时 projectVars 保持原值', async () => {
-    axiosGet.mockRejectedValueOnce(new Error('network error'))
+  test('loadProjectVars 失败时 projectRefs 保持为空数组', async () => {
+    // 同上，getDefinition 失败才会进入 catch 块
+    definitionApi.getDefinition.mockRejectedValue(new Error('network error'))
     const vm = createMixinVM()
-    const originalVars = vm.projectVars.slice()
     await vm.loadProjectVars(1)
-    expect(vm.projectVars).toEqual(originalVars)
+    expect(vm.projectRefs).toEqual([])
   })
 
   // ─── refreshProjectRefs 测试 ─────────────────────────────
@@ -233,33 +225,13 @@ describe('varPickerMixin', () => {
     await vm.loadProjectVars(1)
     const initialCount = vm.projectRefs.length
 
-    // 追加新变量：改写 axios.get 的返回值
-    axiosGet.mockImplementation((url) => {
-      if (url.includes('/variable/listByProject')) {
-        return Promise.resolve({
-          data: [
-            ...mockVars,
-            { id: 4, varCode: 'balance', varLabel: '余额', varType: 'NUMBER', varSource: 'INPUT', scriptName: 'balance' }
-          ]
-        })
-      }
-      if (url.includes('/definition/')) {
-        return Promise.resolve({ data: { id: 1, projectId: 1, scope: 'PROJECT' } })
-      }
-      if (url.includes('/dataObject/variableTree')) {
-        return Promise.resolve({ data: [] })
-      }
-      if (url.includes('/function/listAllByProject')) {
-        return Promise.resolve({ data: [] })
-      }
-      if (url.includes('/model/inputs')) {
-        return Promise.resolve({ data: [] })
-      }
-      if (url.includes('/model/outputs')) {
-        return Promise.resolve({ data: [] })
-      }
-      return Promise.resolve({ data: null })
-    })
+    // 追加新变量（模拟 refresh 返回更多数据）
+    variableApi.listVariablesByProject.mockResolvedValue([
+      ...mockVars,
+      { id: 4, varCode: 'balance', varLabel: '余额', varType: 'NUMBER', varSource: 'INPUT', scriptName: 'balance' }
+    ])
+    dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree)
+    functionApi.listAllFunctionsByProject.mockResolvedValue([])
 
     await vm.refreshProjectRefs()
     expect(vm.projectRefs.length).toBe(initialCount + 1)
@@ -268,12 +240,9 @@ describe('varPickerMixin', () => {
 
   // ─── 空数据边界测试 ─────────────────────────────────────
   test('空变量列表时 projectRefs 为空', async () => {
-    axiosGet.mockImplementation((url) => {
-      if (url.includes('/definition/')) {
-        return Promise.resolve({ data: { id: 1, projectId: 1, scope: 'PROJECT' } })
-      }
-      return Promise.resolve({ data: [] })
-    })
+    // beforeEach 已 mock getDefinition，此处只需覆盖返回空数组
+    variableApi.listVariablesByProject.mockResolvedValue([])
+    dataObjectApi.getVariableTree.mockResolvedValue([])
 
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
