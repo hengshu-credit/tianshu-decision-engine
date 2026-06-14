@@ -25,6 +25,8 @@ public class RuleDataObjectField {
     private String refObjectCode;
     /** 引用对象 ID（铁律四：指向 rule_data_object.id，优先于 refObjectCode） */
     private Long refObjectId;
+    /** 泛型类型（LIST 类型字段的元素类型，如 OBJECT / STRING / NUMBER） */
+    private String genericType;
     private Long parentFieldId;
     private Integer sortOrder;
     private Integer status;

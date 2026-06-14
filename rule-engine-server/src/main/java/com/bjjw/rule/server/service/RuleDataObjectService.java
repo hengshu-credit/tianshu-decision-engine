@@ -139,9 +139,9 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                 return result;
             }
             RuleDataObject obj = findOrCreateObject(projectId, scope, objectCode, parsed.getScriptName(), objectType, "JSON", jsonContent);
-            int varCount = batchCreateFields(projectId, scope, obj.getId(), parsed, null, null);
-            // 铁律四：嵌套字段的 refObjectCode 已写入字段，现在解析为 refObjectId
-            resolveRefObjectIds(obj.getId(), scope, projectId);
+            // JSON 导入：先清除该对象下所有旧字段，再按层级重建
+            deleteAllFieldsByObjectId(obj.getId());
+            int varCount = batchCreateFieldsRecursive(projectId, scope, obj.getId(), parsed.getFields(), null);
 
             result.put("success", true);
             result.put("objectCount", 1);
@@ -425,6 +425,22 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         objectFieldMapper.deleteById(fieldId);
     }
 
+    /**
+     * 删除指定对象下的所有字段（不含子对象字段，仅删除 objectId 对应的字段）。
+     * JSON 导入时用于先清空旧字段再重建，避免同名字段 + parentFieldId 组合冲突。
+     */
+    private void deleteAllFieldsByObjectId(Long objectId) {
+        // 先删枚举选项
+        List<RuleDataObjectField> fields = objectFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDataObjectField>().eq(RuleDataObjectField::getObjectId, objectId));
+        for (RuleDataObjectField f : fields) {
+            objectFieldOptionMapper.delete(new LambdaQueryWrapper<RuleDataObjectFieldOption>()
+                    .eq(RuleDataObjectFieldOption::getFieldId, f.getId()));
+        }
+        objectFieldMapper.delete(new LambdaQueryWrapper<RuleDataObjectField>()
+                .eq(RuleDataObjectField::getObjectId, objectId));
+    }
+
     public List<RuleDataObjectFieldOption> getFieldOptions(Long fieldId) {
         return objectFieldOptionMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectFieldOption>()
@@ -483,10 +499,12 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         return obj;
     }
 
+        /**
+     * 按 ParsedObject.fields 批量创建/更新字段（用于 Java/DDL 导入，parentFieldId 均为 null）。
+     */
     private int batchCreateFields(Long projectId, String scope, Long objectId, ParsedObject parsed, Long parentFieldId, Map<String, Long> objectCodeToId) {
         int count = 0;
         int order = 0;
-        // GLOBAL 场景 projectId 可能为 null，统一转为 0 保持与对象一致
         Long normProjectId = (projectId == null || projectId == 0L) ? 0L : projectId;
         for (ParsedField field : parsed.getFields()) {
             String varCode = field.getFieldName();
@@ -495,7 +513,6 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                         .eq(RuleDataObjectField::getVarCode, varCode);
             RuleDataObjectField existing = objectFieldMapper.selectOne(existWrapper);
 
-            // 铁律四：优先使用 refObjectId，其次使用 refObjectCode
             Long resolvedRefObjectId = resolveRefObjectId(field.getRefObjectCode(), field.getRefObjectId(), scope, normProjectId, objectCodeToId);
 
             if (existing != null) {
@@ -528,6 +545,65 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             }
             count++;
             order++;
+        }
+        return count;
+    }
+
+    /**
+     * 按层级递归写入字段列表。
+     * 通过 ParsedField.parentFieldId 确定父子关系——当遇到 OBJECT/LIST 字段时，
+     * 先将其插入数据库获取真实 ID，再递归处理其子字段。
+     *
+     * @param projectId   项目 ID
+     * @param scope      作用域
+     * @param objectId    所属数据对象 ID
+     * @param fields      待写入的字段列表（来自 ParsedObject.fields）
+     * @param parentId    父字段数据库 ID（顶层为 null）
+     * @return 写入的字段总数（含所有层级）
+     */
+    private int batchCreateFieldsRecursive(Long projectId, String scope, Long objectId,
+                                           List<ParsedField> fields, Long parentId) {
+        Long normProjectId = (projectId == null || projectId == 0L) ? 0L : projectId;
+        // tempId → 真实数据库 ID，用于将 ParsedField.parentFieldId（tempId）转换为 DB ID
+        Map<Long, Long> tempIdToDbId = new HashMap<>();
+        int order = 0;
+        int count = 0;
+
+        for (ParsedField field : fields) {
+            // 只处理当前层级的字段（parentFieldId 匹配）
+            if (!java.util.Objects.equals(field.getParentFieldId(), parentId)) {
+                continue;
+            }
+
+            RuleDataObjectField f = new RuleDataObjectField();
+            f.setProjectId(normProjectId);
+            f.setScope(scope);
+            f.setObjectId(objectId);
+            f.setVarCode(field.getFieldName());
+            f.setVarLabel(field.getFieldLabel() != null && !field.getFieldLabel().isEmpty() ? field.getFieldLabel() : field.getFieldName());
+            f.setScriptName(field.getScriptName() != null ? field.getScriptName() : field.getFieldName());
+            f.setVarType(field.getVarType());
+            f.setRefObjectCode(field.getRefObjectCode());
+            f.setRefObjectId(field.getRefObjectId());
+            f.setGenericType(field.getGenericType());
+            f.setParentFieldId(parentId);
+            f.setSortOrder(order);
+            f.setStatus(1);
+            objectFieldMapper.insert(f);
+
+            Long dbId = f.getId();
+            // 记录 tempId → dbId（若 ParsedField.parentFieldId 为 tempId 的话）
+            if (field.getParentFieldId() != null && field.getParentFieldId() < 0) {
+                tempIdToDbId.put(field.getParentFieldId(), dbId);
+            }
+
+            // 若是 OBJECT/LIST 类型，先写入当前字段，再递归写入子字段
+            if ("OBJECT".equals(field.getVarType()) || "LIST".equals(field.getVarType())) {
+                count += batchCreateFieldsRecursive(projectId, scope, objectId, fields, dbId);
+            }
+
+            order++;
+            count++;
         }
         return count;
     }

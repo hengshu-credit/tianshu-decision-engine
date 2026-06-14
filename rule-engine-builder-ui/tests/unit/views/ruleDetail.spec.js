@@ -54,6 +54,8 @@ function makeStub(tag) {
 }
 
 async function mountAndWait() {
+  // load() 先调用 refreshFields 重新解析字段，再调用 getDefinitionDetail 获取详情
+  definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
   definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
   variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
   variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })

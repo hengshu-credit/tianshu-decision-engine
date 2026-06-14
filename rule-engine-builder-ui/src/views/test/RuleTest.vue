@@ -193,7 +193,7 @@ export default {
       return JSON.stringify(this.result.traces[0])
     },
     inputParamsJson: function () {
-      if (!this.result) return ''
+      // inputParamsJson 供 TraceTree 组件渲染入参，始终基于当前 params 构建
       var params = {}
       for (var i = 0; i < this.params.length; i++) {
         var p = this.params[i]
@@ -354,8 +354,10 @@ export default {
         console.log('[变量加载] 项目变量总数:', allVars.length)
 
         // 步骤3：通过 varId 精确匹配，过滤出规则需要的变量
+        // 步骤3.5：若 varId 匹配数为 0，改用 varCode 回退匹配（兼容交叉表/复杂交叉表等旧数据）
         var existingKeys = new Set(this.params.map(function (p) { return p.key }))
         var loadedCount = 0
+        var idMatchedCount = 0
         for (var i = 0; i < allVars.length; i++) {
           var v = allVars[i]
           // 通过 varId 精确关联（modelJson 中 _varId → 变量表的 id）
@@ -380,8 +382,40 @@ export default {
           this.params.push(param)
           existingKeys.add(v.varCode)
           loadedCount++
+          idMatchedCount++
         }
-        console.log('[变量加载] 成功加载变量数:', loadedCount)
+        console.log('[变量加载] varId 精确匹配变量数:', idMatchedCount)
+        // varId 匹配为 0 时，通过 varCode 回退匹配（交叉表/复杂交叉表等旧数据）
+        if (idMatchedCount === 0) {
+          console.log('[变量加载] varId 匹配数为 0，尝试通过 varCode 回退匹配')
+          for (var vi = 0; vi < allVars.length; vi++) {
+            var vv = allVars[vi]
+            var vCode = vv.varCode || (vv.scriptName || '')
+            if (!vCode) continue
+            var vInfo = ruleVarIdMap[vCode]
+            if (!vInfo) continue
+            if (existingKeys.has(vCode)) continue
+            var vparam = {
+              key: vCode,
+              label: vv.varLabel || vCode,
+              value: vv.defaultValue || '',
+              type: vv.varType,
+              example: vv.exampleValue,
+              fromVar: true,
+              options: []
+            }
+            if (vv.varType === 'ENUM') {
+              try {
+                var vOptRes = await getVariableOptions(vv.id)
+                vparam.options = vOptRes.data || []
+              } catch (e) { /* ignore */ }
+            }
+            this.params.push(vparam)
+            existingKeys.add(vCode)
+            loadedCount++
+          }
+          console.log('[变量加载] varCode 回退匹配后总变量数:', loadedCount)
+        }
         if (loadedCount === 0) {
           this.$message.info('未匹配到规则引用的变量（检查变量 ID 是否一致）')
         }
@@ -392,7 +426,9 @@ export default {
     },
     /**
      * 从规则内容中解析出实际使用的变量信息（通过 varId 精确关联，避免 varCode 模糊匹配）
+     * 回退策略：当 _varId 不存在时，通过 varCode 匹配
      * 返回 { varId → { varCode, varLabel, varType, defaultValue, exampleValue } }
+     * 注意：varId 可能是字符串类型（如 "1"、"2"），匹配时需做类型兼容
      */
     async getRuleVarInfos() {
       if (!this.selectedRuleId || !this.selectedRule) return {}
@@ -408,9 +444,10 @@ export default {
         console.log('[变量加载] 开始解析规则:', this.selectedRule.ruleCode, '模型类型:', modelType)
 
         // 用 Map 收集，varId 相同时只保留第一个（兼容同一变量多处引用）
+        // 注意：当无 _varId 时，也会将 varCode 作为 key 存入（用于回退匹配）
         const varIdMap = {}
         this.collectVarIds(model, modelType, varIdMap)
-        console.log('[变量加载] 解析到的变量 ID 列表:', Object.keys(varIdMap))
+        console.log('[变量加载] 解析到的变量映射 keys:', Object.keys(varIdMap))
         return varIdMap
       } catch (e) {
         console.error('[变量加载] 解析规则变量失败:', e)
@@ -418,8 +455,10 @@ export default {
       }
     },
     /**
-     * 根据模型类型收集变量 ID 到 varIdMap
-     * 仅收集带 _varId 的变量（精确关联）
+     * 根据模型类型收集变量 ID / varCode 到 varIdMap
+     * - 有 _varId 时：varIdMap[_varId] = { varCode }
+     * - 无 _varId 但有 varCode 时：varIdMap[varCode] = { varCode }（用于回退匹配）
+     * 仅收集带 _varId 或 varCode 的变量
      */
     collectVarIds(model, modelType, varIdMap) {
       if (!model) return
@@ -430,11 +469,13 @@ export default {
             this.extractVarIdsFromConditions(rule.conditions, varIdMap)
             ;(rule.actions || []).forEach(a => {
               if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
+              else if (!a._varId && a.varCode) varIdMap[a.varCode] = { varCode: a.varCode }
             })
           })
           this.extractVarIdsFromConditions(model.conditions, varIdMap)
           ;(model.actions || []).forEach(a => {
             if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
+            else if (!a._varId && a.varCode) varIdMap[a.varCode] = { varCode: a.varCode }
           })
           break
         }
@@ -450,21 +491,36 @@ export default {
         }
         case 'CROSS': {
           // 交叉表：行变量、列变量、结果变量
-          if (model.rowVar && model.rowVar._varId) varIdMap[model.rowVar._varId] = { varCode: model.rowVar.varCode }
-          if (model.colVar && model.colVar._varId) varIdMap[model.colVar._varId] = { varCode: model.colVar.varCode }
-          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+          // 优先用 _varId（精确匹配），回退用 varCode
+          if (model.rowVar) {
+            if (model.rowVar._varId && model.rowVar.varCode) varIdMap[model.rowVar._varId] = { varCode: model.rowVar.varCode }
+            else if (model.rowVar.varCode) varIdMap[model.rowVar.varCode] = { varCode: model.rowVar.varCode }
+          }
+          if (model.colVar) {
+            if (model.colVar._varId && model.colVar.varCode) varIdMap[model.colVar._varId] = { varCode: model.colVar.varCode }
+            else if (model.colVar.varCode) varIdMap[model.colVar.varCode] = { varCode: model.colVar.varCode }
+          }
+          if (model.resultVar) {
+            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
+          }
           break
         }
         case 'CROSS_ADV': {
           (model.rowDimensions || []).forEach(dim => {
             if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
+            else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
             this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
           ;(model.colDimensions || []).forEach(dim => {
             if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
+            else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
             this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
-          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+          if (model.resultVar) {
+            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
+          }
           break
         }
         case 'SCORE': {
@@ -473,30 +529,40 @@ export default {
             this.extractVarIdsFromConditionRoot(item.conditionRoot, varIdMap)
             // 优先使用 item._varId（由 var-picker 选择时填充）
             if (item._varId && item.condVar) varIdMap[item._varId] = { varCode: item.condVar }
+            else if (!item._varId && item.condVar) varIdMap[item.condVar] = { varCode: item.condVar }
           })
-          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+          if (model.resultVar) {
+            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
+          }
           break
         }
         case 'SCORE_ADV': {
           (model.dimensionGroups || []).forEach(group => {
             (group.dimensions || []).forEach(dim => {
-              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode };
-              (dim.rules || []).forEach(rule => {
+              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
+              else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
+              ;(dim.rules || []).forEach(rule => {
                 if (rule._varId && rule.condVar) varIdMap[rule._varId] = { varCode: rule.condVar }
+                else if (!rule._varId && rule.condVar) varIdMap[rule.condVar] = { varCode: rule.condVar }
               })
             })
           })
-          if (model.resultVar && model.resultVar._varId) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+          if (model.resultVar) {
+            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
+            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
+          }
           break
         }
         case 'SCRIPT': {
           (model.inputVars || []).forEach(v => {
             if (v._varId && v.varCode) varIdMap[v._varId] = { varCode: v.varCode }
+            else if (v.varCode) varIdMap[v.varCode] = { varCode: v.varCode }
           })
           break
         }
         default: {
-          // 兜底：递归搜索所有 _varId 字段
+          // 兜底：递归搜索所有 _varId 和 varCode
           this.extractAllVarIds(model, varIdMap)
         }
       }

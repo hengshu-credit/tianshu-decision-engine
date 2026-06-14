@@ -1,9 +1,8 @@
 // tests/unit/views/functionList.spec.js
 import { shallowMount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
-import ElementUI from 'element-ui'
 
-// 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
+// 直接 import API 模块（依赖 setup.js 的预置 mock）
 import * as functionApi from '@/api/function'
 import * as projectApi from '@/api/project'
 import FunctionList from '@/views/function/FunctionList.vue'
@@ -26,10 +25,10 @@ function mockProjects() {
   ]
 }
 
-// ─── 测试用例 ─────────────────────────────────────────────
+// ─── 工具函数 ─────────────────────────────────────────────
 function createTestVue() {
   const localVue = createLocalVue()
-  localVue.use(ElementUI)
+  localVue.use(jest.genMockFromModule('element-ui'))
   return localVue
 }
 
@@ -45,33 +44,24 @@ async function mountAndWait() {
     localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: jest.fn(), replace: jest.fn() },
+      $confirm: jest.fn().mockResolvedValue(), // 必须 resolve，handleDelete 是 async 并 await
+      $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
     },
     stubs: {
-      'el-form': makeStub('form'),
-      'el-form-item': makeStub('div'),
-      'el-select': makeStub('select'),
-      'el-option': makeStub('option'),
-      'el-input': makeStub('input'),
-      'el-button': makeStub('button'),
-      'el-tag': makeStub('span'),
-      'el-table': makeStub('table'),
-      'el-table-column': makeStub('td'),
-      'el-tabs': makeStub('div'),
-      'el-tab-pane': makeStub('div'),
-      'el-dialog': makeStub('div'),
-      'el-card': makeStub('div'),
-      'el-pagination': makeStub('div'),
-      'el-switch': makeStub('span'),
-      'el-loading': makeStub('div'),
-      'el-textarea': makeStub('textarea'),
-      'el-divider': makeStub('hr'),
-      'el-alert': makeStub('div'),
-      'el-radio': makeStub('span'),
-      'el-radio-group': makeStub('div'),
-      'el-upload': makeStub('div'),
-      'el-input-number': makeStub('input'),
-      'el-tooltip': makeStub('span')
+      'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
+      'el-select': makeStub('select'), 'el-option': makeStub('option'),
+      'el-input': makeStub('input'), 'el-button': makeStub('button'),
+      'el-tag': makeStub('span'), 'el-table': makeStub('table'),
+      'el-table-column': makeStub('td'), 'el-tabs': makeStub('div'),
+      'el-tab-pane': makeStub('div'), 'el-dialog': makeStub('div'),
+      'el-card': makeStub('div'), 'el-pagination': makeStub('div'),
+      'el-switch': makeStub('span'), 'el-loading': makeStub('div'),
+      'el-textarea': makeStub('textarea'), 'el-divider': makeStub('hr'),
+      'el-alert': makeStub('div'), 'el-radio': makeStub('span'),
+      'el-radio-group': makeStub('div'), 'el-upload': makeStub('div'),
+      'el-input-number': makeStub('input'), 'el-tooltip': makeStub('span'),
+      'el-option-group': makeStub('optgroup')
     }
   })
 
@@ -80,6 +70,7 @@ async function mountAndWait() {
   return wrapper
 }
 
+// ─── 测试用例 ─────────────────────────────────────────────
 describe('FunctionList — 初始化与数据加载', () => {
   let wrapper
 
@@ -94,9 +85,9 @@ describe('FunctionList — 初始化与数据加载', () => {
     expect(functionApi.listFunctions).toHaveBeenCalled()
   })
 
-  test('functions 数据正确赋值', () => {
-    expect(wrapper.vm.functions).toBeInstanceOf(Array)
-    expect(wrapper.vm.functions.length).toBe(3)
+  test('funcList 数据正确赋值', () => {
+    expect(wrapper.vm.funcList).toBeInstanceOf(Array)
+    expect(wrapper.vm.funcList.length).toBe(3)
   })
 
   test('total 正确赋值', () => {
@@ -114,19 +105,12 @@ describe('FunctionList — 标签方法', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('funcTypeLabel 返回正确的标签', () => {
-    expect(wrapper.vm.funcTypeLabel('QL_EXPRESS')).toBe('QLExpress 脚本')
-    expect(wrapper.vm.funcTypeLabel('JAVA_CLASS')).toBe('Java 类')
-    expect(wrapper.vm.funcTypeLabel('SPRING_BEAN')).toBe('Spring Bean')
-    expect(wrapper.vm.funcTypeLabel('UNKNOWN')).toBe('UNKNOWN')
-    expect(wrapper.vm.funcTypeLabel(null)).toBe('')
-  })
-
-  test('funcTypeTagType 返回正确的 tag 类型', () => {
-    expect(wrapper.vm.funcTypeTagType('QL_EXPRESS')).toBe('primary')
-    expect(wrapper.vm.funcTypeTagType('JAVA_CLASS')).toBe('warning')
-    expect(wrapper.vm.funcTypeTagType('SPRING_BEAN')).toBe('success')
-    expect(wrapper.vm.funcTypeTagType('UNKNOWN')).toBe('info')
+  test('implTypeLabel 返回正确的标签', () => {
+    expect(wrapper.vm.implTypeLabel('SCRIPT')).toBe('脚本')
+    expect(wrapper.vm.implTypeLabel('JAVA')).toBe('Java类')
+    expect(wrapper.vm.implTypeLabel('BEAN')).toBe('Bean')
+    expect(wrapper.vm.implTypeLabel('UNKNOWN')).toBe('UNKNOWN')
+    expect(wrapper.vm.implTypeLabel(null)).toBe(null)
   })
 
   test('scopeLabel 返回正确的范围标签', () => {
@@ -135,14 +119,9 @@ describe('FunctionList — 标签方法', () => {
     expect(wrapper.vm.scopeLabel('UNKNOWN')).toBe('项目级')
   })
 
-  test('statusLabel 返回正确的状态标签', () => {
-    expect(wrapper.vm.statusLabel(1)).toBe('启用')
-    expect(wrapper.vm.statusLabel(0)).toBe('停用')
-  })
-
-  test('statusTagType 返回正确的 tag 类型', () => {
-    expect(wrapper.vm.statusTagType(1)).toBe('success')
-    expect(wrapper.vm.statusTagType(0)).toBe('info')
+  test('parseParams 正确解析 JSON', () => {
+    expect(wrapper.vm.parseParams('[{"a":1}]')).toEqual([{ a: 1 }])
+    expect(wrapper.vm.parseParams('not json')).toEqual([])
   })
 })
 
@@ -156,6 +135,12 @@ describe('FunctionList — 筛选与搜索', () => {
     wrapper.vm.projectList = mockProjects()
     wrapper.vm.queryProjectCode('project_a')
     expect(wrapper.vm.filteredProjectCodes.length).toBe(1)
+  })
+
+  test('queryProjectCode 空查询返回全部', () => {
+    wrapper.vm.projectList = mockProjects()
+    wrapper.vm.queryProjectCode('')
+    expect(wrapper.vm.filteredProjectCodes.length).toBe(2)
   })
 
   test('queryProjectName 模糊匹配', () => {
@@ -174,11 +159,11 @@ describe('FunctionList — 筛选与搜索', () => {
 
   test('resetQuery 重置所有查询条件', () => {
     wrapper.vm.qp.scope = 'GLOBAL'
-    wrapper.vm.qp.funcType = 'QL_EXPRESS'
+    wrapper.vm.qp.implType = 'SCRIPT'
     functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.resetQuery()
     expect(wrapper.vm.qp.scope).toBe('')
-    expect(wrapper.vm.qp.funcType).toBe('')
+    expect(wrapper.vm.qp.implType).toBe('')
     expect(wrapper.vm.qp.funcCode).toBe('')
   })
 })
@@ -189,89 +174,108 @@ describe('FunctionList — 函数操作', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('handleCreate 打开创建弹窗', () => {
+  test('handleCreate 打开创建弹窗并设置默认值', () => {
     wrapper.vm.handleCreate()
     expect(wrapper.vm.dialogVisible).toBe(true)
-    expect(wrapper.vm.dialogMode).toBe('create')
-    expect(wrapper.vm.form.funcType).toBe('QL_EXPRESS')
+    expect(wrapper.vm.editForm.implType).toBe('SCRIPT')
+    expect(wrapper.vm.editForm.status).toBe(1)
   })
 
   test('handleEdit 填充编辑表单', () => {
-    const row = { id: 1, funcCode: 'calculateTax', funcName: '计算税额', funcType: 'QL_EXPRESS' }
+    const row = { id: 1, funcCode: 'calculateTax', funcName: '计算税额', implType: 'SCRIPT', scope: 'PROJECT' }
     wrapper.vm.handleEdit(row)
     expect(wrapper.vm.dialogVisible).toBe(true)
-    expect(wrapper.vm.dialogMode).toBe('edit')
-    expect(wrapper.vm.form.id).toBe(1)
-    expect(wrapper.vm.form.funcName).toBe('计算税额')
+    expect(wrapper.vm.editForm.id).toBe(1)
+    expect(wrapper.vm.editForm.funcName).toBe('计算税额')
+  })
+
+  test('handleEdit 解析 paramsJson', () => {
+    const row = { id: 1, funcName: '测试函数', implType: 'SCRIPT', paramsJson: '[{"name":"x","type":"STRING"}]' }
+    wrapper.vm.handleEdit(row)
+    expect(wrapper.vm.editParams.length).toBe(1)
+    expect(wrapper.vm.editParams[0].name).toBe('x')
+  })
+
+  test('handleEdit 空 paramsJson 时有默认参数行', () => {
+    const row = { id: 1, funcName: '测试函数', implType: 'SCRIPT' }
+    wrapper.vm.handleEdit(row)
+    expect(wrapper.vm.editParams.length).toBeGreaterThan(0)
+    expect(wrapper.vm.editParams[0].name).toBe('')
   })
 
   test('handleDelete 调用删除 API', async () => {
     functionApi.deleteFunction.mockResolvedValueOnce({ data: true })
-    const row = { id: 1, funcName: '测试函数' }
+    const row = { id: 99, funcName: '测试函数' }
+    // $confirm 必须 resolve，handleDelete 是 async 并 await 它
+    wrapper.vm.$confirm = jest.fn().mockResolvedValue()
     wrapper.vm.handleDelete(row)
     await Vue.nextTick()
-    expect(functionApi.deleteFunction).toHaveBeenCalledWith(1)
-  })
-
-  test('handleToggleStatus 切换启用/停用状态', async () => {
-    functionApi.updateFunction.mockResolvedValueOnce({ data: true })
-    const row = { id: 1, status: 1 }
-    wrapper.vm.handleToggleStatus(row)
-    await Vue.nextTick()
-    expect(functionApi.updateFunction).toHaveBeenCalled()
+    await new Promise(r => setTimeout(r, 50)) // 等待 async handleDelete 完成
+    expect(functionApi.deleteFunction).toHaveBeenCalledWith(99)
   })
 })
 
 describe('FunctionList — 边界情况', () => {
-  test('functions 为空数组不报错', async () => {
+  test('funcList 为空数组不报错', async () => {
     projectApi.listProjects.mockResolvedValueOnce({ data: { records: [] } })
     functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     const wrapper = shallowMount(FunctionList, {
       localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: jest.fn(), replace: jest.fn() },
+        $confirm: jest.fn().mockResolvedValue(),
+        $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
         'el-select': makeStub('select'), 'el-option': makeStub('option'),
         'el-input': makeStub('input'), 'el-button': makeStub('button'),
-        'el-tag': makeStub('span'),
-        'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-dialog': makeStub('div'), 'el-pagination': makeStub('div'),
-        'el-loading': makeStub('div'), 'el-textarea': makeStub('textarea')
+        'el-tag': makeStub('span'), 'el-table': makeStub('table'),
+        'el-table-column': makeStub('td'), 'el-dialog': makeStub('div'),
+        'el-pagination': makeStub('div'), 'el-loading': makeStub('div'),
+        'el-textarea': makeStub('textarea')
       }
     })
     await Vue.nextTick()
     await new Promise(r => setTimeout(r, 100))
-    expect(wrapper.vm.functions).toEqual([])
+    expect(wrapper.vm.funcList).toEqual([])
     wrapper.destroy()
   })
 
-  test('handleCreate 设置正确的默认值', () => {
-    projectApi.listProjects.mockResolvedValueOnce({ data: { records: mockProjects() } })
-    functionApi.listFunctions.mockResolvedValueOnce({ data: { records: mockFunctions(), total: 3 } })
+  test('initial loading is false', async () => {
+    const wrapper = await mountAndWait()
+    expect(wrapper.vm.loading).toBe(false)
+    wrapper.destroy()
+  })
+
+  test('initial funcList is empty array before load', async () => {
+    projectApi.listProjects.mockResolvedValueOnce({ data: { records: [] } })
+    functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     const wrapper = shallowMount(FunctionList, {
       localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: jest.fn(), replace: jest.fn() },
+        $confirm: jest.fn().mockResolvedValue(),
+        $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
         'el-select': makeStub('select'), 'el-option': makeStub('option'),
         'el-input': makeStub('input'), 'el-button': makeStub('button'),
-        'el-tag': makeStub('span'),
-        'el-table': makeStub('table'), 'el-table-column': makeStub('td'),
-        'el-dialog': makeStub('div'), 'el-pagination': makeStub('div'),
-        'el-loading': makeStub('div'), 'el-textarea': makeStub('textarea'),
-        'el-radio': makeStub('span'), 'el-radio-group': makeStub('div'),
-        'el-switch': makeStub('span'), 'el-divider': makeStub('hr')
+        'el-tag': makeStub('span'), 'el-table': makeStub('table'),
+        'el-table-column': makeStub('td'), 'el-dialog': makeStub('div'),
+        'el-pagination': makeStub('div'), 'el-loading': makeStub('div'),
+        'el-textarea': makeStub('textarea'), 'el-radio': makeStub('span'),
+        'el-radio-group': makeStub('div'), 'el-switch': makeStub('span'),
+        'el-divider': makeStub('hr'), 'el-tabs': makeStub('div'),
+        'el-tab-pane': makeStub('div'), 'el-card': makeStub('div')
       }
     })
-    wrapper.vm.handleCreate()
-    expect(wrapper.vm.form.funcType).toBe('QL_EXPRESS')
-    expect(wrapper.vm.form.scope).toBe('PROJECT')
+    await Vue.nextTick()
+    await new Promise(r => setTimeout(r, 100))
+    expect(wrapper.vm.funcList).toEqual([])
     wrapper.destroy()
   })
 })

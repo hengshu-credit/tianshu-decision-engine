@@ -1,19 +1,6 @@
 // tests/unit/views/projectList.spec.js
 import { mount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
-import ElementUI from 'element-ui'
-
-// Mock API 模块
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn(),
-  createProject: jest.fn(),
-  updateProject: jest.fn(),
-  deleteProject: jest.fn(),
-  getProject: jest.fn(),
-  generateToken: jest.fn(),
-  exportApiDoc: jest.fn()
-}))
-
 import * as projectApi from '@/api/project'
 import ProjectList from '@/views/project/ProjectList.vue'
 
@@ -28,10 +15,20 @@ function mockProjects() {
   ]
 }
 
+// ─── 测试辅助：带 validate 方法的 form ref mock ─────────────────────────
+function withFormRef(wrapper, validateResult = true) {
+  wrapper.vm.$refs.form = {
+    validate: jest.fn(cb => cb(validateResult))
+  }
+  return wrapper
+}
+
 // ─── 测试用例 ─────────────────────────────────────────────
 function createTestVue() {
   const localVue = createLocalVue()
-  localVue.use(ElementUI)
+  localVue.prototype.$confirm = jest.fn().mockResolvedValue(true)
+  localVue.prototype.$message = { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() }
+  localVue.prototype.$notify = jest.fn()
   return localVue
 }
 
@@ -124,16 +121,16 @@ describe('ProjectList — 筛选与搜索', () => {
 
   test('onCreateTimeChange 设置时间范围', () => {
     wrapper.vm.onCreateTimeChange(['2024-01-01', '2024-01-31'])
-    expect(wrapper.vm.qp.createTimeStart).toBe('2024-01-01')
-    expect(wrapper.vm.qp.createTimeEnd).toBe('2024-01-31')
+    expect(wrapper.vm.qp.createBeginTime).toBe('2024-01-01')
+    expect(wrapper.vm.qp.createEndTime).toBe('2024-01-31')
   })
 
   test('onCreateTimeChange 空值清空范围', () => {
-    wrapper.vm.qp.createTimeStart = '2024-01-01'
-    wrapper.vm.qp.createTimeEnd = '2024-01-31'
+    wrapper.vm.qp.createBeginTime = '2024-01-01'
+    wrapper.vm.qp.createEndTime = '2024-01-31'
     wrapper.vm.onCreateTimeChange(null)
-    expect(wrapper.vm.qp.createTimeStart).toBe('')
-    expect(wrapper.vm.qp.createTimeEnd).toBe('')
+    expect(wrapper.vm.qp.createBeginTime).toBe('')
+    expect(wrapper.vm.qp.createEndTime).toBe('')
   })
 
   test('handleQuery 重置页码并重新加载', async () => {
@@ -148,15 +145,17 @@ describe('ProjectList — 筛选与搜索', () => {
     wrapper.vm.qp.status = '1'
     wrapper.vm.qp.projectCode = 'test'
     wrapper.vm.qp.projectName = '测试项目'
-    wrapper.vm.qp.createTimeStart = '2024-01-01'
-    wrapper.vm.qp.createTimeEnd = '2024-01-31'
+    wrapper.vm.qp.createBeginTime = '2024-01-01'
+    wrapper.vm.qp.createEndTime = '2024-01-31'
+    wrapper.vm.createTimeRange = ['2024-01-01', '2024-01-31']
     projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.resetQuery()
     expect(wrapper.vm.qp.status).toBe('')
     expect(wrapper.vm.qp.projectCode).toBe('')
     expect(wrapper.vm.qp.projectName).toBe('')
-    expect(wrapper.vm.qp.createTimeStart).toBe('')
-    expect(wrapper.vm.qp.createTimeEnd).toBe('')
+    expect(wrapper.vm.qp.createBeginTime).toBe('')
+    expect(wrapper.vm.qp.createEndTime).toBe('')
+    expect(wrapper.vm.createTimeRange).toEqual([])
   })
 
   test('loadData 删除空参数', async () => {
@@ -198,21 +197,27 @@ describe('ProjectList — 项目操作', () => {
     const row = { id: 1, projectCode: 'project_a', projectName: '项目A', status: 1 }
     wrapper.vm.handleEdit(row)
     expect(wrapper.vm.form.projectCode).toBe('project_a')
-    expect(wrapper.vm.form.id).toBe(1) // id 存在时编码字段在模板中被 disabled
+    expect(wrapper.vm.form.id).toBe(1)
   })
 
-  test('handleViewToken 打开令牌弹窗', () => {
+  test('handleViewToken 打开令牌弹窗', async () => {
+    projectApi.getFullToken.mockResolvedValue({ code: 200, data: 'secret-token-12345678' })
     const row = { id: 1, projectName: '项目A', maskedToken: '****abc' }
     wrapper.vm.handleViewToken(row)
+    // API 调用是异步的，等待 Promise resolve
+    await new Promise(r => setTimeout(r, 50))
+    await Vue.nextTick()
     expect(wrapper.vm.tokenDialogVisible).toBe(true)
-    expect(wrapper.vm.currentProjectName).toBe('项目A')
-    expect(wrapper.vm.currentToken).toBe('****abc')
+    expect(wrapper.vm.currentTokenProject).toBe('项目A')
+    expect(wrapper.vm.fullToken).toBe('secret-token-12345678')
   })
 
   test('handleDelete 调用删除 API', async () => {
     projectApi.deleteProject.mockResolvedValue({ data: true })
     const row = { id: 1, projectName: '测试项目' }
     wrapper.vm.handleDelete(row)
+    // $confirm 是异步的，等待用户确认后 deleteProject 被调用
+    await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(projectApi.deleteProject).toHaveBeenCalledWith(1)
   })
@@ -226,25 +231,32 @@ describe('ProjectList — 项目操作', () => {
   })
 
   test('handleSubmit 新建项目时调用 createProject', async () => {
-    projectApi.createProject.mockResolvedValue({ data: true })
+    projectApi.createProject.mockResolvedValue({ code: 200, data: { accessToken: 'tok' } })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', description: '', status: 1 }
+    withFormRef(wrapper)
     wrapper.vm.handleSubmit()
+    // validate 回调是异步的
+    await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(projectApi.createProject).toHaveBeenCalled()
   })
 
   test('handleSubmit 编辑项目时调用 updateProject', async () => {
-    projectApi.updateProject.mockResolvedValue({ data: true })
+    projectApi.updateProject.mockResolvedValue({ code: 200, data: true })
     wrapper.vm.form = { id: 1, projectCode: 'project_a', projectName: '项目A已更新', description: '', status: 1 }
+    withFormRef(wrapper)
     wrapper.vm.handleSubmit()
+    await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(projectApi.updateProject).toHaveBeenCalled()
   })
 
   test('handleSubmit 成功后关闭弹窗并刷新', async () => {
-    projectApi.createProject.mockResolvedValue({ data: true })
+    projectApi.createProject.mockResolvedValue({ code: 200, data: { accessToken: 'tok' } })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }
+    withFormRef(wrapper)
     wrapper.vm.handleSubmit()
+    await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(wrapper.vm.dialogVisible).toBe(false)
   })
@@ -264,7 +276,8 @@ describe('ProjectList — 边界情况', () => {
         'el-input': true, 'el-button': true, 'el-tag': true,
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
-        'el-date-picker': true, 'el-switch': true
+        'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,
+        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true
       }
     })
     await Vue.nextTick()
@@ -274,26 +287,49 @@ describe('ProjectList — 边界情况', () => {
   })
 
   test('handleDelete 无项目名称时不报错', async () => {
+    // 独立的 wrapper，避免与外层 describe 的 beforeEach 冲突
+    projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
+    const wrapper = mount(ProjectList, {
+      localVue: createTestVue(),
+      mocks: {
+        $route: { params: {} },
+        $router: { push: jest.fn(), replace: jest.fn() }
+      },
+      stubs: {
+        'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
+        'el-input': true, 'el-button': true, 'el-tag': true,
+        'el-table': true, 'el-table-column': true,
+        'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
+        'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,
+        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true
+      }
+    })
+    await Vue.nextTick()
     projectApi.deleteProject.mockResolvedValue({ data: true })
     const row = { id: 99 }
-    expect(() => wrapper.vm.handleDelete(row)).not.toThrow()
+    wrapper.vm.handleDelete(row)
+    await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(projectApi.deleteProject).toHaveBeenCalledWith(99)
+    wrapper.destroy()
   })
 
-  test('分页切换保持 pageSize', () => {
-    wrapper.vm.qp.pageSize = 30
-    wrapper.vm.qp.pageNum = 1
-    expect(wrapper.vm.qp.pageSize).toBe(30)
-    expect(wrapper.vm.qp.pageNum).toBe(1)
+  test('分页切换保持 pageSize', async () => {
+    const w = await mountAndWait()
+    w.vm.qp.pageSize = 30
+    w.vm.qp.pageNum = 1
+    expect(w.vm.qp.pageSize).toBe(30)
+    expect(w.vm.qp.pageNum).toBe(1)
+    w.destroy()
   })
 
   test('allProjectCodes 和 allProjectNames 从响应中提取', async () => {
-    projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects(), total: 3 } })
-    await wrapper.vm.loadData()
-    expect(wrapper.vm.allProjectCodes.length).toBe(3)
-    expect(wrapper.vm.allProjectNames.length).toBe(3)
-    expect(wrapper.vm.allProjectCodes).toContain('project_a')
-    expect(wrapper.vm.allProjectNames).toContain('项目A')
+    const w = await mountAndWait()
+    await w.vm.loadData()
+    expect(w.vm.allProjectCodes.length).toBe(3)
+    expect(w.vm.allProjectNames.length).toBe(3)
+    expect(w.vm.allProjectCodes).toContain('project_a')
+    expect(w.vm.allProjectNames).toContain('项目A')
+    w.destroy()
   })
 })

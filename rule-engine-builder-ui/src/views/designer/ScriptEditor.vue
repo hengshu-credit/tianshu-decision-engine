@@ -60,7 +60,7 @@
                     :key="v.varCode"
                     class="se-var-item"
                     :title="'双击插入: ' + v.varCode"
-                    @dblclick="insertVar(v.varCode)"
+                    @dblclick="insertVar(v)"
                   >
                     <el-tag :type="varTypeColor(v.varType)" size="mini" class="var-type-tag">{{ varTypeLabel(v.varType) }}</el-tag>
                     <span class="var-code">{{ v.varCode }}</span>
@@ -81,7 +81,7 @@
                         :key="v.varCode"
                         class="se-var-item se-var-indent"
                         :title="'双击插入: ' + v.varCode"
-                        @dblclick="insertVar(v.varCode)"
+                        @dblclick="insertVar(v)"
                       >
                         <el-tag :type="varTypeColor(v.varType)" size="mini" class="var-type-tag">{{ varTypeLabel(v.varType) }}</el-tag>
                         <span class="var-code">{{ v.varCode }}</span>
@@ -115,20 +115,12 @@
 
         <!-- 编辑器 -->
         <div class="se-editor-container">
-          <div class="se-line-numbers" ref="lineNums">
-            <div v-for="n in lineCount" :key="n" class="se-line-num">{{ n }}</div>
-          </div>
-          <textarea
-            ref="editorRef"
+          <MonacoEditor
             v-model="script"
-            class="se-editor"
-            placeholder="// 在此编写 QLExpress 脚本&#10;// 双击左侧变量可快速插入&#10;&#10;result = 0"
-            spellcheck="false"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            @scroll="syncScroll"
-            @keydown="handleTab"
+            language="ql"
+            height="100%"
+            @editor-ready="onEditorReady"
+            :options="editorOptions"
           />
         </div>
 
@@ -177,10 +169,12 @@
 <script>
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'ScriptEditor',
   mixins: [varPickerMixin],
+  components: { MonacoEditor },
   data() {
     return {
       definitionId: null,
@@ -192,12 +186,29 @@ export default {
       varSearchKey: '',
       expandedCats: {},
       expandedGroups: {},
+      /** 脚本中引用的变量映射：{refCode, varId}，与 modelJson.scriptVarRefs 保持同步 */
+      scriptVarRefs: [],
       testVisible: false,
       testParamsJson: '{}',
-      testResult: null
+      testResult: null,
+      monacoEditor: null
     }
   },
   computed: {
+    editorOptions() {
+      return {
+        fontSize: 13,
+        fontFamily: "'Courier New', Consolas, monospace",
+        lineNumbers: 'on',
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        wordWrap: 'on',
+        tabSize: 2,
+        insertSpaces: true,
+        formatOnPaste: true,
+        automaticLayout: true
+      }
+    },
     lineCount() {
       return (this.script.match(/\n/g) || []).length + 1
     },
@@ -322,6 +333,10 @@ export default {
             try {
               const model = JSON.parse(content.modelJson)
               if (model.script) this.script = model.script
+              // 加载脚本变量引用映射（用于通过 varId 同步变量编码变更）
+              if (Array.isArray(model.scriptVarRefs)) {
+                this.scriptVarRefs = model.scriptVarRefs
+              }
             } catch (e) {
               this.script = content.modelJson
             }
@@ -336,7 +351,12 @@ export default {
       }
     },
     async handleSave() {
-      const modelJson = JSON.stringify({ script: this.script })
+      // 保存前：从脚本中提取实际引用的变量，更新 scriptVarRefs
+      this.syncScriptVarRefsFromScript()
+      const modelJson = JSON.stringify({
+        script: this.script,
+        scriptVarRefs: this.scriptVarRefs
+      })
       await saveContent({ definitionId: this.definitionId, modelJson })
       await refreshFields(this.definitionId, modelJson)
       this.$message.success('保存成功')
@@ -370,28 +390,75 @@ export default {
       const res = await executeRule({ definitionId: this.definitionId, params })
       this.testResult = res && res.data ? res.data : res
     },
-    insertVar(code) {
-      const el = this.$refs.editorRef
-      if (!el) return
-      const start = el.selectionStart
-      const end = el.selectionEnd
-      this.script = this.script.substring(0, start) + code + this.script.substring(end)
-      this.$nextTick(() => {
-        el.focus()
-        el.selectionStart = el.selectionEnd = start + code.length
+    insertVar(v) {
+      if (!this.monacoEditor || !v) return
+      const code = v.varCode
+      const editor = this.monacoEditor
+      const selection = editor.getSelection()
+      editor.executeEdits('insert-var', [{
+        range: selection,
+        text: code,
+        forceMoveMarkers: true
+      }])
+      // 同步记录引用的 varId（以最后一次插入同名变量时的 _varId 为准）
+      if (v._varId != null) {
+        const existing = this.scriptVarRefs.find(r => r.refCode === code)
+        if (existing) {
+          existing.varId = v._varId
+        } else {
+          this.scriptVarRefs.push({ refCode: code, varId: v._varId })
+        }
+      }
+      this.$nextTick(() => editor.focus())
+    },
+    onEditorReady(editor) {
+      this.monacoEditor = editor
+    },
+    /**
+     * 从脚本内容中提取实际引用的变量，同步更新 scriptVarRefs。
+     * 遍历 projectRefs 中所有 refCode，检查是否在脚本中出现，
+     * 出现则说明被引用，保留对应的 varId。
+     */
+    syncScriptVarRefsFromScript() {
+      if (!this.script) return
+      const script = this.script
+      const matched = []
+      // 遍历所有已知引用，检查脚本中是否出现
+      ;(this.projectRefs || []).forEach(ref => {
+        // 使用 word boundary 匹配，防止 "amount" 匹配到 "billingAmount"
+        const regex = new RegExp('\\b' + this.escapeRegex(ref.refCode) + '\\b')
+        if (regex.test(script)) {
+          // 尝试从旧映射中获取 varId
+          const old = this.scriptVarRefs.find(r => r.refCode === ref.refCode)
+          matched.push({
+            refCode: ref.refCode,
+            varId: old && old.varId ? old.varId : (ref.varObj && ref.varObj.id ? ref.varObj.id : null)
+          })
+        }
       })
+      this.scriptVarRefs = matched
     },
-    handleTab(e) {
-      if (e.key === 'Tab') {
-        e.preventDefault()
-        this.insertVar('    ')
-      }
+    escapeRegex(str) {
+      return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     },
-    syncScroll(e) {
-      if (this.$refs.lineNums) {
-        this.$refs.lineNums.scrollTop = e.target.scrollTop
-      }
-    }
+    /**
+     * 同步 modelJson.scriptVarRefs 中的变量引用。
+     * 当 projectRefs 加载完成后，用 varId 在 projectRefs 中查找最新的 refCode，
+     * 若 refCode 与脚本中实际使用的不同，说明变量编码被修改了，同步更新 scriptVarRefs。
+     */
+    _syncModelVarRefs() {
+      if (!this.scriptVarRefs || !this.scriptVarRefs.length) return
+      let changed = false
+      this.scriptVarRefs.forEach(ref => {
+        if (!ref.varId) return
+        const newRef = this.findRefByVarId(ref.varId)
+        if (newRef && newRef.refCode !== ref.refCode) {
+          ref.refCode = newRef.refCode
+          changed = true
+        }
+      })
+      if (changed) this.$forceUpdate()
+    },
   }
 }
 </script>
@@ -571,43 +638,7 @@ $editor-border: #313244;
   flex: 1;
   min-height: 400px;
   overflow: hidden;
-}
-.se-line-numbers {
-  padding: 12px 8px 12px 12px;
-  background: $editor-line-bg;
-  border-right: 1px solid $editor-border;
-  overflow: hidden;
-  flex-shrink: 0;
-  min-width: 42px;
-  text-align: right;
-}
-.se-line-num {
-  font-family: 'Consolas', 'Monaco', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  color: $editor-line-text;
-  user-select: none;
-}
-.se-editor {
-  flex: 1;
-  padding: 12px 16px;
   background: $editor-bg;
-  color: $editor-text;
-  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
-  line-height: 1.6;
-  border: none;
-  outline: none;
-  resize: none;
-  width: 100%;
-  overflow-y: auto;
-  tab-size: 4;
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow-x: auto;
-  caret-color: #89dceb;
-  &::placeholder { color: #45475a; font-style: italic; }
-  &:focus { background: #1a1a2e; }
 }
 
 .se-footer {

@@ -307,6 +307,7 @@ export default {
   },
   created() {
     this.definitionId = this.$route.params.id
+    this.loadProjectVars(this.definitionId)
     this.loadContent()
   },
   methods: {
@@ -322,7 +323,6 @@ export default {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
       } finally {
         this.contentLoaded = true
-        this._trySyncModelVarRefs()
       }
     },
 
@@ -544,12 +544,16 @@ export default {
     },
 
     async handleSave() {
-      this.normalizeModel()
-      await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
-      await refreshFields(this.definitionId, JSON.stringify(this.model))
-      this.refreshProjectRefs()
-
-      this.$message.success('保存成功')
+      try {
+        this.normalizeModel()
+        await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+        await refreshFields(this.definitionId, JSON.stringify(this.model))
+        this.refreshProjectRefs()
+        this.$message.success('保存成功')
+      } catch (e) {
+        this.$message.error('保存失败: ' + (e && e.message ? e.message : '未知错误'))
+        throw e
+      }
     },
 
     async handleCompile() {

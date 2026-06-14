@@ -337,9 +337,9 @@ export default {
       nodeProps: {},
       edgeProps: {},
       nodeCondMode: 'visual',
-      nodeCondVisual: { leftVar: '', leftLabel: '', operator: '>', rightValue: '', rightType: 'value', rightVar: '' },
+      nodeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, operator: '>', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null },
       edgeCondMode: 'visual',
-      edgeCondVisual: { leftVar: '', leftLabel: '', operator: '==', rightValue: '', rightType: 'value', rightVar: '' },
+      edgeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null },
       actionMode: 'visual',
       currentActionData: [],
       testVisible: false,
@@ -498,6 +498,8 @@ export default {
       if (model.type === 'exclusive-gateway') {
         const scriptContent = (this.activeElement.properties.scriptContent) || ''
         this.nodeCondVisual = this.syncCondVisualFromExpr(scriptContent)
+        this.nodeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
+        this.nodeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
         this.nodeCondMode = scriptContent && !this.nodeCondVisual.leftVar ? 'script' : 'visual'
       }
       if (model.type === 'script-task') {
@@ -521,6 +523,8 @@ export default {
         edgeLineType: (this.activeElement.properties.edgeLineType) || ''
       }
       this.edgeCondVisual = this.syncCondVisualFromExpr(this.edgeProps.conditionExpr)
+      this.edgeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
+      this.edgeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
       this.edgeCondMode = this.edgeProps.conditionExpr && !this.edgeCondVisual.leftVar ? 'script' : 'visual'
       this.hasSelection = true
     },
@@ -738,11 +742,56 @@ export default {
           this.lf.render(getDefaultFlowData())
         }
         this.updateZoom()
+        this.$nextTick(() => this._syncModelVarRefs())
       } catch (e) {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
         this.globalEdgeLineType = 'polyline'
         this.lf.setDefaultEdgeType('polyline')
         this.lf.render(getDefaultFlowData())
+      }
+    },
+
+    /**
+     * 同步节点/连线条件中引用变量的 varLabel。
+     * 通过 _varId 从 projectRefs 查找最新变量信息，回填到 leftLabel。
+     */
+    _syncModelVarRefs() {
+      if (!this.projectRefs || !this.projectRefs.length) return
+      const findById = id => {
+        if (!id) return null
+        for (const item of this.projectRefs) {
+          const vid = item.varObj && item.varObj.id
+          if (String(vid) === String(id)) return item
+        }
+        return null
+      }
+      const nodes = this.lf.getGraphData().nodes || []
+      for (const node of nodes) {
+        const props = node.properties || {}
+        let changed = false
+        if (props.leftVarId) {
+          const info = findById(props.leftVarId)
+          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+        }
+        if (props.rightVarId) {
+          const info = findById(props.rightVarId)
+          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+        }
+        if (changed) this.lf.setProperties(node.id, props)
+      }
+      const edges = this.lf.getGraphData().edges || []
+      for (const edge of edges) {
+        const props = edge.properties || {}
+        let changed = false
+        if (props.leftVarId) {
+          const info = findById(props.leftVarId)
+          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+        }
+        if (props.rightVarId) {
+          const info = findById(props.rightVarId)
+          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+        }
+        if (changed) this.lf.setEdgeData(edge.id, { properties: props })
       }
     },
 
@@ -800,25 +849,35 @@ export default {
       const graphData = this.lf.getGraphData()
 
       const nodes = (graphData.nodes || []).map(n => {
-        const actionData = (n.properties && n.properties.actionData) || []
+        const props = n.properties || {}
+        const actionData = props.actionData || []
         return {
           id: n.id,
           type: this.lfTypeToBackend(n.type),
-          name: (n.properties && n.properties.nodeName) || '',
+          name: props.nodeName || '',
           x: Math.round(n.x),
           y: Math.round(n.y),
           actionData: Array.isArray(actionData) ? actionData : [],
-          gatewayDirection: (n.properties && n.properties.gatewayDirection) || ''
+          gatewayDirection: props.gatewayDirection || '',
+          // 变量引用 ID（用于 script-task / exclusive-gateway 的变量选择器）
+          leftVarId: props.leftVarId || null,
+          rightVarId: props.rightVarId || null
         }
       })
 
-      const edges = (graphData.edges || []).map(e => ({
-        id: e.id,
-        source: e.sourceNodeId,
-        target: e.targetNodeId,
-        conditionExpression: (e.properties && e.properties.conditionExpr) || '',
-        name: (e.properties && e.properties.conditionName) || ''
-      }))
+      const edges = (graphData.edges || []).map(e => {
+        const props = e.properties || {}
+        return {
+          id: e.id,
+          source: e.sourceNodeId,
+          target: e.targetNodeId,
+          conditionExpression: props.conditionExpr || '',
+          name: props.conditionName || '',
+          // 变量引用 ID（用于连线条件的变量选择器）
+          leftVarId: props.leftVarId || null,
+          rightVarId: props.rightVarId || null
+        }
+      })
 
       // 确保 logicflow 中的节点包含完整的 actionData（与 nodes 一致）
       const logicflowNodes = (graphData.nodes || []).map(n => {
@@ -887,8 +946,10 @@ export default {
       if (side === 'left') {
         this.nodeCondVisual.leftVar = v.varCode
         this.nodeCondVisual.leftLabel = label
+        this.nodeCondVisual.leftVarId = v._varId || null
       } else {
         this.nodeCondVisual.rightVar = v.varCode
+        this.nodeCondVisual.rightVarId = v._varId || null
       }
     },
     onEdgeCondVarSelect(v, side) {
@@ -897,8 +958,10 @@ export default {
       if (side === 'left') {
         this.edgeCondVisual.leftVar = v.varCode
         this.edgeCondVisual.leftLabel = label
+        this.edgeCondVisual.leftVarId = v._varId || null
       } else {
         this.edgeCondVisual.rightVar = v.varCode
+        this.edgeCondVisual.rightVarId = v._varId || null
       }
     },
     buildCondExpr(visual) {
@@ -916,6 +979,8 @@ export default {
       const expr = this.buildCondExpr(this.nodeCondVisual)
       if (expr === null) return
       this.nodeProps.scriptContent = expr
+      this.nodeProps.leftVarId = this.nodeCondVisual.leftVarId || null
+      this.nodeProps.rightVarId = this.nodeCondVisual.rightVarId || null
       this.onNodeChange()
 
       this.$message.success('已生成: ' + expr)
@@ -924,6 +989,8 @@ export default {
       const expr = this.buildCondExpr(this.edgeCondVisual)
       if (expr === null) return
       this.edgeProps.conditionExpr = expr
+      this.edgeProps.leftVarId = this.edgeCondVisual.leftVarId || null
+      this.edgeProps.rightVarId = this.edgeCondVisual.rightVarId || null
       if (!this.edgeProps.conditionName) {
         this.edgeProps.conditionName = (this.edgeCondVisual.leftLabel || this.edgeCondVisual.leftVar) + this.edgeCondVisual.operator + (this.edgeCondVisual.rightType === 'var' ? this.edgeCondVisual.rightVar : this.edgeCondVisual.rightValue)
       }
@@ -935,9 +1002,9 @@ export default {
     syncCondVisualFromExpr(expr) {
       const m = (expr || '').match(/^(\S+)\s*(==|!=|>=|<=|>|<|in)\s*(.+)$/)
       if (m) {
-        return { leftVar: m[1], leftLabel: '', operator: m[2], rightValue: m[3].replace(/^'|'$/g, ''), rightType: 'value', rightVar: '' }
+        return { leftVar: m[1], leftLabel: '', leftVarId: null, operator: m[2], rightValue: m[3].replace(/^'|'$/g, ''), rightType: 'value', rightVar: '', rightVarId: null }
       }
-      return { leftVar: '', leftLabel: '', operator: '==', rightValue: '', rightType: 'value', rightVar: '' }
+      return { leftVar: '', leftLabel: '', leftVarId: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null }
     },
     insertVarCode(code) {
       if (navigator.clipboard) {

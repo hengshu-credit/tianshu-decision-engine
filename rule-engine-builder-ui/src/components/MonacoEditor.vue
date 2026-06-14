@@ -110,6 +110,7 @@ export default {
     }
 
     this.editor = window.monaco.editor.create(this.$refs.container, options)
+    this.$emit('editor-ready', this.editor)
 
     // 内容变化时同步到父组件（使用 _internalChangeFlag 标记区分用户输入）
     this.editor.onDidChangeModelContent(() => {

@@ -31,11 +31,17 @@ export function formatVarDisplay(item) {
 /**
  * 构建变量引用元数据（返回 { label, code } 对象，供组件模板分开渲染）。
  * @param {Object} v 变量对象
+ * @param {string} [category] 类别（variable | constant | dataObject），目前仅用于占位
+ * @param {string} [objectLabel] 数据对象标签（dataObject 类别时使用）
  * @returns {{ label: string, code: string }}
  */
-export function makeRefLabel(v) {
+export function makeRefLabel(v, category, objectLabel) {
   if (!v) return { label: '', code: '' }
   const label = v.varLabel || ''
   const code = v.scriptName || v.varCode || ''
+  // dataObject 类别时，label 应包含对象路径前缀
+  if (category === 'dataObject' && objectLabel) {
+    return { label: objectLabel + '/' + label, code }
+  }
   return { label, code }
 }

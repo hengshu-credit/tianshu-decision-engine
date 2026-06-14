@@ -16,7 +16,7 @@ jest.mock('@/router', () => ({
   }
 }))
 
-// 2. mock element-ui（Message / Notification / Loading / MessageBox）
+// 2. mock element-ui（Message / Notification / Loading / MessageBox / v-loading directive）
 jest.mock('element-ui', () => ({
   Message: {
     success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn()
@@ -31,45 +31,57 @@ jest.mock('element-ui', () => ({
   Loading: {
     service: jest.fn(() => ({ close: jest.fn() }))
   },
-  directive: (name, definition) => {}
+  directive: (name, definition) => {
+    if (name === 'loading') {
+      return { bind: jest.fn(), update: jest.fn(), unbind: jest.fn() }
+    }
+  }
 }))
 
 // 3. mock axios（支持 axios.create() 实例）
 jest.mock('axios', () => {
+  const mockRequest = jest.fn((config) => {
+    return Promise.resolve({ data: { code: 200, data: [] } })
+  })
   const mockInstance = {
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
-    request: jest.fn()
+    get: mockRequest,
+    post: mockRequest,
+    put: mockRequest,
+    delete: mockRequest,
+    request: mockRequest
   }
   return {
     create: jest.fn(() => mockInstance),
-    get: jest.fn(),
-    post: jest.fn(),
-    put: jest.fn(),
-    delete: jest.fn(),
+    get: mockRequest,
+    post: mockRequest,
+    put: mockRequest,
+    delete: mockRequest,
     interceptors: {
       request: { use: jest.fn(), handlers: [] },
       response: { use: jest.fn(), handlers: [] }
     },
-    __mockInstance: mockInstance
+    __mockInstance: mockInstance,
+    __mockRequest: mockRequest
   }
 })
 
-// 4. mock @/api/request（所有 API 的基础模块）
-//    提供 .get / .post / .put / .delete 方法，供组件直接调用 request.get(...) 时使用
-//    测试文件通过 request.get.mockResolvedValueOnce(...) 配置返回值
-jest.mock('@/api/request', () => ({
-  default: jest.fn(),
-  get: jest.fn(),
-  post: jest.fn(),
-  put: jest.fn(),
-  delete: jest.fn(),
-  __esModule: true
-}))
+// 4. mock @/api/request
+// request.js 实际导出的是一个 axios 实例（可调用函数 + get/post/put/delete 方法）。
+// mock 需要模拟两种用法：request(config) 和 request.get(url, config) 等。
+const mockRequestFn = jest.fn(config => {
+  return Promise.resolve({ data: { code: 200, data: [] } })
+})
+mockRequestFn.get = mockRequestFn
+mockRequestFn.post = mockRequestFn
+mockRequestFn.put = mockRequestFn
+mockRequestFn.delete = mockRequestFn
+mockRequestFn.interceptors = {
+  request: { use: jest.fn(), handlers: [] },
+  response: { use: jest.fn(), handlers: [] }
+}
+jest.mock('@/api/request', () => mockRequestFn)
 
-// 5. mock 各 API 模块（基础 jest.fn()，无默认值，测试文件配置返回值）
+// 5. mock 各 API 模块
 jest.mock('@/api/definition', () => ({
   getDefinition: jest.fn(),
   getContent: jest.fn(),
@@ -78,6 +90,13 @@ jest.mock('@/api/definition', () => ({
   updateDefinition: jest.fn(),
   deleteDefinition: jest.fn(),
   saveContent: jest.fn(),
+  refreshFields: jest.fn(),
+  getDetail: jest.fn(),
+  inputFields: jest.fn(),
+  outputFields: jest.fn(),
+  publish: jest.fn(),
+  unpublish: jest.fn(),
+  copyRule: jest.fn(),
   compileRule: jest.fn(),
   publishRule: jest.fn(),
   unpublishRule: jest.fn(),
@@ -91,7 +110,6 @@ jest.mock('@/api/definition', () => ({
   updateInputField: jest.fn(),
   updateOutputField: jest.fn(),
   migrateFields: jest.fn(),
-  refreshFields: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/variable', () => ({
@@ -111,7 +129,9 @@ jest.mock('@/api/dataObject', () => ({
 }))
 jest.mock('@/api/function', () => ({
   listAllFunctionsByProject: jest.fn(),
+  listFunctionsByProject: jest.fn(),
   listFunctions: jest.fn(),
+  getFunctionById: jest.fn(),
   createFunction: jest.fn(),
   updateFunction: jest.fn(),
   deleteFunction: jest.fn(),
@@ -145,7 +165,7 @@ jest.mock('@/api/project', () => ({
   __esModule: true
 }))
 
-// 6. mock @/layout/index.vue（layout 组件导入了 router/index.js）
+// 6. mock @/layout/index.vue
 jest.mock('@/layout/index.vue', () => ({
   default: { name: 'Layout', template: '<div><slot /></div>' }
 }))
@@ -154,7 +174,7 @@ jest.mock('@/layout/index.vue', () => ({
 jest.mock('@/styles/variables.scss', () => ({}))
 jest.mock('@/styles/element-override.scss', () => ({}))
 
-// 8. mock trace-tree 等组件（路径已与 moduleNameMapper 对齐）
+// 8. mock trace-tree 等组件
 jest.mock('@/components/common/TraceTree.vue', () => ({ name: 'TraceTree', template: '<div />' }))
 jest.mock('@/components/flow/ActionBlockEditor.vue', () => ({ name: 'ActionBlockEditor', template: '<div />' }))
 jest.mock('@/components/common/VarPicker.vue', () => ({ name: 'VarPicker', template: '<div />', props: ['vars', 'value'] }))
@@ -177,7 +197,7 @@ function createVueMock(mixins = []) {
     watch: {},
     methods: {},
     created() {},
-    mounted() {},
+    mounted: {},
     $watch: jest.fn(),
     $set: jest.fn((obj, key, val) => { obj[key] = val }),
     $delete: jest.fn(),

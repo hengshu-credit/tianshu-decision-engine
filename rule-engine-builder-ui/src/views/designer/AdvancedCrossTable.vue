@@ -125,7 +125,7 @@
           placeholder="选择结果变量..."
           width="100%"
           class="result-field-var"
-          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode }"
+          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode; model.resultVar._varId = (v._varId != null) ? v._varId : null }"
         />
         <el-input v-else v-model="model.resultVar.varCode" size="mini" placeholder="变量编码" class="result-field-var" />
         <el-input v-model="model.resultVar.varLabel" size="mini" placeholder="结果名称" class="result-field-label" />
@@ -252,7 +252,7 @@ export default {
       model: {
         rowDimensions: [],
         colDimensions: [],
-        resultVar: { varCode: '', varLabel: '', varType: 'NUMBER' },
+        resultVar: { varCode: '', varLabel: '', varType: 'NUMBER', _varId: null },
         cells: []
       },
       cellData: [],
@@ -394,6 +394,7 @@ export default {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
       } finally {
         this.normalizeModel()
+        this._syncModelVarRefs()
         this.syncCellData()
         this.contentLoaded = true
       }
@@ -411,7 +412,27 @@ export default {
     normalizeModel() {
       if (!this.model.rowDimensions) this.$set(this.model, 'rowDimensions', [])
       if (!this.model.colDimensions) this.$set(this.model, 'colDimensions', [])
-      if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', varType: 'NUMBER' })
+      if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', varType: 'NUMBER', _varId: null })
+    },
+    /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
+    _syncModelVarRefs() {
+      const refs = this.projectRefs || []
+      const findRef = (varId) => {
+        if (varId == null) return null
+        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId)) || null
+      }
+      const fillRef = (v) => {
+        if (!v) return
+        const ref = findRef(v._varId)
+        if (ref) {
+          v.varCode = ref.refCode
+          v.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
+          v.varType = ref.varType
+        }
+      }
+      if (this.model.resultVar) fillRef(this.model.resultVar)
+      ;(this.model.rowDimensions || []).forEach(d => fillRef(d))
+      ;(this.model.colDimensions || []).forEach(d => fillRef(d))
     },
     applyVarToDim(variable, dimKey, di) {
       if (!variable) return
@@ -419,6 +440,7 @@ export default {
       dim.varCode = variable.varCode
       dim.varLabel = variable.varLabel || variable.varCode
       dim.varType = variable.varType || 'STRING'
+      dim._varId = (variable._varId != null) ? variable._varId : null
       if (variable.varType === 'ENUM') {
         const options = this.getVarOptions(variable.varCode)
         if (options.length > 0) {
@@ -428,7 +450,7 @@ export default {
     },
     addDimension(type) {
       const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions
-      dims.push({ varCode: '', varLabel: '', varType: 'STRING', segments: [{ label: '', operator: '==', value: '' }] })
+      dims.push({ varCode: '', varLabel: '', varType: 'STRING', _varId: null, segments: [{ label: '', operator: '==', value: '' }] })
     },
     removeDimension(type, index) {
       const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions

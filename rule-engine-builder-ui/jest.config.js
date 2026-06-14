@@ -7,7 +7,6 @@ module.exports = {
   moduleNameMapper: {
     // @ 别名（用函数形式避免 $1 捕获组在部分 Jest 版本 Windows 上不展开）
     '^@/router$': path.join(rootDir, 'src/router/index.js'),
-    '^@/api/request$': path.join(rootDir, 'src/api/request.js'),
     '^@/layout/index\\.vue$': path.join(rootDir, 'src/layout/index.vue'),
     '^@/styles/variables\\.scss$': path.join(rootDir, 'src/styles/variables.scss'),
     '^@/styles/element-override\\.scss$': path.join(rootDir, 'src/styles/element-override.scss'),

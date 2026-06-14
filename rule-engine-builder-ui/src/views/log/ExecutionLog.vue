@@ -69,7 +69,7 @@
         </template>
       </el-table-column>
       <el-table-column label="操作" min-width="70" align="center">
-        <template slot-scope="{row}"><el-button type="text" size="small" @click="detail=row;detailVis=true">详情</el-button></template>
+        <template slot-scope="{row}"><el-button type="text" size="small" @click="handleViewDetail(row)">详情</el-button></template>
       </el-table-column>
     </el-table>
     <el-pagination style="margin-top:16px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
@@ -135,6 +135,7 @@ export default {
       },
       detailVis: false,
       detail: null,
+      detailLoading: false,
       detailTab: 'basic',
       varMap: {},
       ruleMap: {},
@@ -307,12 +308,33 @@ export default {
         console.warn('加载规则模型失败:', e)
       }
     },
+    async handleViewDetail (row) {
+      if (!row.ruleDefinitionId) return
+      this.detailLoading = true
+      this.detail = null
+      this.detailVis = true
+      try {
+        var r = await getContent(row.ruleDefinitionId)
+        this.detail = r.data || null
+      } catch (e) {
+        this.$message.error('加载日志详情失败')
+      } finally {
+        this.detailLoading = false
+      }
+    },
+    /** formatParams: formatParams 的别名，内部实现委托给 fj */
+    formatParams: function (s) { return this.fj(s) },
     onSourceChange: function () {
       this.qp.projectCode = ''
       this.qp.ruleCode = ''
     },
     onProjectChange: function () {
       this.qp.ruleCode = ''
+    },
+    /** handleQuery: 保留方法（别名），内部调用 load() */
+    handleQuery: function () {
+      this.qp.pageNum = 1
+      this.load()
     },
     resetQuery: function () {
       this.qp.source = ''
@@ -337,10 +359,11 @@ export default {
       this.timeRange = [fmt(start), fmt(end)]
     },
     fj: function (s) {
+      if (s == null || s === '') return '-'
       try {
         return JSON.stringify(JSON.parse(s), null, 2)
       } catch (e) {
-        return s || '(空)'
+        return s
       }
     },
     formatTime: function (time) {

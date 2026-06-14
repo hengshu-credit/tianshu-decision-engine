@@ -352,7 +352,7 @@ export default {
       contentLoaded: false,
       model: {
         initialScore: 100,
-        resultVar: { varCode: '', varLabel: '' },
+        resultVar: { varCode: '', varLabel: '', _varId: null },
         dimensionGroups: [],
         thresholds: []
       },
@@ -402,12 +402,13 @@ export default {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
       } finally {
         this.normalizeModel()
+        this._syncModelVarRefs()
         this.contentLoaded = true
       }
     },
     normalizeModel() {
       if (this.model.initialScore == null) this.$set(this.model, 'initialScore', 100)
-      if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '' })
+      if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', _varId: null })
       if (!this.model.dimensionGroups) this.$set(this.model, 'dimensionGroups', [])
       if (!this.model.thresholds) this.$set(this.model, 'thresholds', [])
       this.model.dimensionGroups.forEach(g => {
@@ -417,12 +418,33 @@ export default {
         })
       })
     },
+    /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
+    _syncModelVarRefs() {
+      const refs = this.projectRefs || []
+      const findRef = (varId) => {
+        if (varId == null) return null
+        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId)) || null
+      }
+      const fillRef = (v) => {
+        if (!v) return
+        const ref = findRef(v._varId)
+        if (ref) {
+          v.varCode = ref.refCode
+          v.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
+          v.varType = ref.varType
+        }
+      }
+      if (this.model.resultVar) fillRef(this.model.resultVar)
+      ;(this.model.dimensionGroups || []).forEach(g =>
+        (g.dimensions || []).forEach(d => fillRef(d))
+      )
+    },
     onResultVarSelect(v) {
       if (!v) return
       this.$set(this.model, 'resultVar', {
         varCode: v.varCode,
         varLabel: v.varLabel || v.varCode,
-        _varId: (v.varObj && v.varObj.id) || null
+        _varId: (v._varId != null) ? v._varId : null
       })
     },
     /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
@@ -446,6 +468,7 @@ export default {
       const dim = this.model.dimensionGroups[gi].dimensions[di]
       dim.varCode = v.varCode
       dim.varLabel = v.varLabel || v.varCode
+      dim._varId = (v._varId != null) ? v._varId : null
     },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
@@ -461,7 +484,7 @@ export default {
       this.model.dimensionGroups.splice(gi, 1)
     },
     addDimension(gi) {
-      this.model.dimensionGroups[gi].dimensions.push({ varCode: '', varLabel: '', weight: 1.0, rules: [] })
+      this.model.dimensionGroups[gi].dimensions.push({ varCode: '', varLabel: '', _varId: null, weight: 1.0, rules: [] })
     },
     removeDimension(gi, di) {
       this.model.dimensionGroups[gi].dimensions.splice(di, 1)

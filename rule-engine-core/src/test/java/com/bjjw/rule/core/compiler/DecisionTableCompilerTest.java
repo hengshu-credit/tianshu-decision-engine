@@ -292,4 +292,287 @@ public class DecisionTableCompilerTest {
         assertTrue(r.isSuccess());
         assertEquals("QLEXPRESS", r.getCompiledType());
     }
+
+    // ========== conditionRoot leaf 类型（buildRulePredicate 支持）==========
+
+    /** conditionRoot 为单个 leaf 节点，生成简单条件 */
+    @Test
+    public void testConditionRoot单个叶节点_生成条件() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"age\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("age"));
+        assertTrue(script.contains("if ("));
+    }
+
+    /** conditionRoot leaf 含 _varId，通过 VarContext 解析为 scriptName */
+    @Test
+    public void testConditionRoot叶节点带varId_通过VarContext解析() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(500L, "customerAge");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":500,\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        // 应使用 VarContext 解析后的 customerAge，而非原始 varCode
+        assertTrue(script.contains("customerAge"));
+        assertFalse(script.contains("ageTmp"));
+    }
+
+    /** conditionRoot leaf 的 operator=* 生成 true（恒真跳过） */
+    @Test
+    public void testConditionRoot叶节点操作符通配_生成true() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"x\",\"operator\":\"*\",\"value\":\"any\"},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        assertTrue(r.getCompiledScript().contains("true"));
+    }
+
+    /** conditionRoot leaf valueKind=VAR（变量比较），右侧也是变量 */
+    @Test
+    public void testConditionRoot叶节点变量比较_valueKind为VAR() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(600L, "maxAge");
+        varIdMap.put(601L, "customerAge");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":601,\"varCode\":\"ageIn\",\"operator\":\">=\",\"valueKind\":\"VAR\",\"value\":\"ageThreshold\"},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        // 左侧用 VarContext 解析为 customerAge，右侧保持原始 value
+        assertTrue(script.contains("customerAge"));
+        assertTrue(script.contains("ageThreshold"));
+    }
+
+    /** conditionRoot 嵌套 group（OR）生成正确括号与 OR */
+    @Test
+    public void testConditionRoot嵌套OR组_生成正确表达式() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"group\",\"op\":\"OR\",\"children\":[\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"score\",\"operator\":\">=\",\"value\":\"90\"},\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"level\",\"operator\":\"==\",\"value\":\"VIP\"}\n" +
+                "    ]},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains(" || "));
+        assertFalse(script.contains(" && "));
+    }
+
+    /** conditionRoot 空 children 生成 true */
+    @Test
+    public void testConditionRoot空组_生成true() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"group\",\"op\":\"AND\",\"children\":[]},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        assertTrue(r.getCompiledScript().contains("true"));
+    }
+
+    /** conditionRoot 为 null 时回退到旧版 conditions 格式 */
+    @Test
+    public void testConditionRoot为null_回退旧版条件() {
+        CompileResult r = compile("{\n" +
+                "  \"conditions\": [{\"varCode\":\"amount\",\"varType\":\"NUMBER\"}],\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": null,\n" +
+                "    \"conditions\": [{\"operator\":\">\",\"value\":\"10000\"}],\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        assertTrue(r.getCompiledScript().contains("amount"));
+        assertTrue(r.getCompiledScript().contains("10000"));
+    }
+
+    // ========== 动作列 _varId 持久化（outputVarCodes + appendRuleAssignments）==========
+
+    /** 动作带 _varId，通过 VarContext 解析输出变量名 */
+    @Test
+    public void test动作带varId_通过VarContext解析输出() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(700L, "taxAmount");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditions\": [],\n" +
+                "    \"actions\": [{\"_varId\":700,\"varCode\":\"taxTmp\",\"varType\":\"DOUBLE\",\"value\":\"1500.0\"}]\n" +
+                "  }]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("taxAmount = 1500.0"));
+        assertFalse(script.contains("taxTmp"));
+    }
+
+    /** 多条规则内各自带 _varId 的动作，输出变量汇总正确 */
+    @Test
+    public void test多规则动作varId_输出变量汇总正确() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(800L, "rate");
+        varIdMap.put(801L, "discount");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [\n" +
+                "    {\"conditions\": [], \"actions\": [{\"_varId\":800,\"varCode\":\"r1\",\"varType\":\"DOUBLE\",\"value\":\"0.05\"}]},\n" +
+                "    {\"conditions\": [], \"actions\": [{\"_varId\":801,\"varCode\":\"r2\",\"varType\":\"DOUBLE\",\"value\":\"0.1\"}]}\n" +
+                "  ]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("rate = 0.05"));
+        assertTrue(script.contains("discount = 0.1"));
+    }
+
+    /** 全局 actions 列含 _varId，行内 actions 无 varCode 时回退到全局定义 */
+    @Test
+    public void test全局动作列varId_行内回退全局定义() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(900L, "finalScore");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"actions\": [{\"_varId\":900,\"varCode\":\"fsTmp\",\"varType\":\"NUMBER\"}],\n" +
+                "  \"rules\": [\n" +
+                "    {\"conditions\": [], \"actions\": [{\"value\":\"100\"}]}\n" +
+                "  ]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("finalScore = 100"));
+        assertFalse(script.contains("fsTmp"));
+    }
+
+    /** 动作 varCode 为空时跳过（不生成赋值语句） */
+    @Test
+    public void test动作varCode为空_跳过赋值() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditions\": [],\n" +
+                "    \"actions\": [{\"varCode\":\"\",\"varType\":\"STRING\",\"value\":\"test\"}]\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        // 空 varCode 的动作不生成任何赋值
+        assertFalse(r.getCompiledScript().contains("= \"test\""));
+    }
+
+    /**
+     * 动作 value 缺失时跳过规则体内的赋值。
+     * 注意：outputVarCodes 会为 result 生成顶层 `result = null`（初始化），
+     * 但规则 if 块内不应出现 `result = "xxx"` 或 `result = xxx`。
+     */
+    @Test
+    public void test动作value为空_跳过规则内赋值() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditions\": [],\n" +
+                "    \"actions\": [{\"varCode\":\"result\",\"varType\":\"STRING\"}]\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        // output 初始化生成 result = null 是正常的（输出预初始化）
+        // 但 if 块内不应出现 result = ... 赋值（value 缺失应跳过）
+        // if 块内是 { 后到 } 之间的内容
+        int ifBlockStart = script.indexOf("{");
+        int ifBlockEnd = script.indexOf("}");
+        if (ifBlockStart >= 0 && ifBlockEnd >= 0) {
+            String ruleBody = script.substring(ifBlockStart, ifBlockEnd);
+            assertFalse("规则体内不应生成赋值（value 缺失）", ruleBody.contains("result ="));
+        }
+    }
+
+    /** 字符串类型动作值含引号时正确转义 */
+    @Test
+    public void test字符串动作值含引号_正确转义() {
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditions\": [],\n" +
+                "    \"actions\": [{\"varCode\":\"msg\",\"varType\":\"STRING\",\"value\":\"他说：\\\"你好\\\"\"}]\n" +
+                "  }]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("msg = \"他说：\\\"你好\\\"\""));
+    }
+
+    // ========== 混合场景：conditionRoot + 每规则独立动作 ==========
+
+    /** conditionRoot + 每规则独立动作，完整编译链 */
+    @Test
+    public void testConditionRoot加每规则独立动作_完整编译() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(100L, "age");
+        varIdMap.put(200L, "result");
+        VarContext ctx = new VarContext(varIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\": \"FIRST\",\n" +
+                "  \"rules\": [\n" +
+                "    {\n" +
+                "      \"conditionRoot\": {\"type\":\"group\",\"op\":\"AND\",\"children\":[\n" +
+                "        {\"type\":\"leaf\",\"_varId\":100,\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "        {\"type\":\"leaf\",\"varCode\":\"income\",\"operator\":\">=\",\"value\":\"5000\"}\n" +
+                "      ]},\n" +
+                "      \"actions\": [{\"_varId\":200,\"varCode\":\"resultTmp\",\"varType\":\"STRING\",\"value\":\"PASS\"}]\n" +
+                "    }\n" +
+                "  ]\n" +
+                "}", ctx);
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        // age 通过 VarContext 解析为 age，result 通过 VarContext 解析
+        assertTrue(script.contains("age"));
+        assertTrue(script.contains("result"));
+        assertTrue(script.contains("PASS"));
+        assertTrue(script.contains(" && "));
+    }
+
+    /**
+     * hitPolicy=UNIQUE 目前与 ALL 等效：生成顺序 if 语句（各自独立，不级联 else if）。
+     * 此行为由编译器中 `isFirst = "FIRST".equals(hitPolicy)` 决定。
+     */
+    @Test
+    public void testHitPolicyUnique_生成顺序if() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\": \"UNIQUE\",\n" +
+                "  \"rules\": [\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"x\",\"operator\":\">\",\"value\":\"0\"}, \"actions\": []},\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"y\",\"operator\":\">\",\"value\":\"0\"}, \"actions\": []}\n" +
+                "  ]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("if ("));
+        // UNIQUE 与 ALL 等效，生成顺序 if 而非 else if 链
+        assertFalse(script.contains(" else if ("));
+    }
 }

@@ -16,6 +16,10 @@ afterEach(() => { jest.clearAllMocks() })
 // ─── Mock 数据 ───────────────────────────────────────────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
 
+/**
+ * 决策表规则内容。
+ * 叶节点 type='leaf'（非 group），conditionRoot.children 直接包含叶节点。
+ */
 function mockRuleContent(id) {
   return {
     id,
@@ -28,13 +32,14 @@ function mockRuleContent(id) {
           id: 'rule-1',
           conditionRoot: {
             id: 'cond-root-1',
-            type: 'AND',
+            type: 'group',
+            op: 'AND',
             children: [
-              { id: 'leaf-1', _varId: 1, varCode: 'age', varLabel: '年龄', varType: 'Integer', operator: '==', value: '1' }
+              { id: 'leaf-1', _varId: 1, varCode: 'age', varLabel: '年龄 age', varType: 'STRING', operator: '==', value: '1', type: 'leaf' }
             ]
           },
           actions: [
-            { id: 'act-1', _varId: 5, varCode: 'result', varLabel: '结果', varType: 'STRING', actionDataType: 'ASSIGN', value: '100' }
+            { id: 'act-1', _varId: 5, varCode: 'result', varLabel: '结果 result', varType: 'STRING', actionDataType: 'ASSIGN', value: '100' }
           ]
         }
       ]
@@ -44,10 +49,12 @@ function mockRuleContent(id) {
 
 function mockProjectVars() {
   return [
-    { id: 1, varCode: 'age', varLabel: '年龄', varType: 'Integer', varSource: 'INPUT', scriptName: 'age' },
+    { id: 1, varCode: 'age', varLabel: '年龄', varType: 'STRING', varSource: 'INPUT', scriptName: 'age' },
     { id: 2, varCode: 'income', varLabel: '收入', varType: 'NUMBER', varSource: 'INPUT', scriptName: 'income' },
     { id: 3, varCode: 'cityCode', varLabel: '城市编码', varType: 'STRING', varSource: 'INPUT', scriptName: 'cityCode' },
-    { id: 4, varCode: 'MAX_AGE', varLabel: '最大年龄', varType: 'Integer', varSource: 'CONSTANT', scriptName: 'MAX_AGE' },
+    {
+      id: 4, varCode: 'MAX_AGE', varLabel: '最大年龄', varType: 'NUMBER', varSource: 'CONSTANT', scriptName: 'MAX_AGE'
+    },
     {
       id: 10, varCode: 'TaxRequest', varLabel: '税务请求', varType: 'OBJECT', varSource: 'OBJECT',
       scriptName: 'TaxRequest', objectCode: 'TaxRequest', objectLabel: '税务请求',
@@ -91,6 +98,7 @@ async function mountAndWaitForRefs(propsData = { id: '1' }) {
   modelApi.listModelOutputs.mockResolvedValueOnce([])
   dataObjectApi.getVariableTree.mockResolvedValueOnce(mockObjectTree())
   functionApi.listAllFunctionsByProject.mockResolvedValueOnce([])
+  definitionApi.refreshFields.mockResolvedValueOnce({})
 
   const wrapper = shallowMount(DecisionTable, {
     localVue: createTestVue(),
@@ -232,16 +240,18 @@ describe('DecisionTable — 模型加载与同步', () => {
     expect(rule.actions).toBeInstanceOf(Array)
   })
 
-  test('conditionRoot.children 包含叶节点', () => {
+  test('conditionRoot.children 是非空数组', () => {
     const rule = wrapper.vm.model.rules[0]
     expect(rule.conditionRoot.children).toBeInstanceOf(Array)
     expect(rule.conditionRoot.children.length).toBeGreaterThan(0)
   })
 
-  test('syncVarItem 通过 _varId 同步 varCode', () => {
-    const leaf = { _varId: 2 }
-    wrapper.vm.syncVarItem(leaf)
-    expect(leaf.varCode).toBe('income')
+  test('syncVarItem 通过 varCode 精确匹配更新 varLabel', () => {
+    // mockRuleContent 中叶节点已含 varCode='age'，syncVarItem 补充 varLabel
+    const leaf = { _varId: 1, varCode: 'age' }
+    const result = wrapper.vm.syncVarItem(leaf)
+    expect(result).toBe(true)
+    expect(leaf.varLabel).toBe('年龄 age')
   })
 })
 
@@ -271,10 +281,12 @@ describe('DecisionTable — 变量选择器使用流程', () => {
     expect(ref.refCode).toBe('age')
   })
 
-  test('syncVarItem 通过 _varId 精确匹配更新 varCode', () => {
-    const leaf = { _varId: 2 }
-    wrapper.vm.syncVarItem(leaf)
-    expect(leaf.varCode).toBe('income')
+  test('syncVarItem 对仅有 varCode 的叶节点补充 varLabel', () => {
+    // 模拟旧数据场景：叶节点只有 varCode，通过 syncVarItem 补充 varLabel
+    const leaf = { _varId: 2, varCode: 'income' }
+    const result = wrapper.vm.syncVarItem(leaf)
+    expect(result).toBe(true)
+    expect(leaf.varLabel).toBe('收入 income')
   })
 })
 
@@ -315,12 +327,14 @@ describe('DecisionTable — 操作方法', () => {
     expect(rule.actions.length).toBe(2)
   })
 
-  test('removeRuleAction 删除指定规则的动作（至少保留一条）', () => {
+  test('removeRuleAction 删除指定规则的动作（至少保留一条）', async () => {
+    wrapper.vm.$confirm = jest.fn().mockResolvedValue()
     wrapper.vm.addRuleAction(0)
     wrapper.vm.addRuleAction(0)
     wrapper.vm.addRuleAction(0)
-    wrapper.vm.removeRuleAction(0, 0)
-    expect(wrapper.vm.model.rules[0].actions.length).toBe(2)
+    // 初始1条 + 新增3条 = 4条，删除1条后剩3条
+    await wrapper.vm.removeRuleAction(0, 0)
+    expect(wrapper.vm.model.rules[0].actions.length).toBe(3)
   })
 
   test('removeRuleAction 动作只剩一条时提示至少保留一条', () => {
@@ -367,23 +381,25 @@ describe('DecisionTable — 保存功能', () => {
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('handleSave 保存内容后触发回调', async () => {
+  test('handleSave 保存内容后显示成功提示', async () => {
     definitionApi.saveContent.mockResolvedValueOnce({ success: true })
+    definitionApi.refreshFields.mockResolvedValueOnce({})
     definitionApi.compileRule.mockResolvedValueOnce({ success: true })
-    const callback = jest.fn()
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
-    await wrapper.vm.handleSave(callback)
+    await wrapper.vm.handleSave()
     expect(definitionApi.saveContent).toHaveBeenCalled()
-    expect(callback).toHaveBeenCalled()
+    expect(definitionApi.refreshFields).toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('保存成功')
   })
 
-  test('handleSave 失败时不触发回调', async () => {
+  test('handleSave 失败时显示错误提示并抛出异常', async () => {
     definitionApi.saveContent.mockRejectedValueOnce(new Error('保存失败'))
-    const callback = jest.fn()
+    definitionApi.refreshFields.mockRejectedValueOnce(new Error('refresh失败'))
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
-    await wrapper.vm.handleSave(callback)
-    expect(callback).not.toHaveBeenCalled()
+    await expect(wrapper.vm.handleSave()).rejects.toThrow('保存失败')
+    expect(definitionApi.saveContent).toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalled()
     consoleSpy.mockRestore()
   })
 })

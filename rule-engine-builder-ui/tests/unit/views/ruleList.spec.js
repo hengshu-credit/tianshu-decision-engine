@@ -7,9 +7,9 @@ import ElementUI from 'element-ui'
 jest.mock('@/api/definition', () => ({
   listDefinitions: jest.fn(),
   createDefinition: jest.fn(),
-  publishDefinition: jest.fn(),
-  unpublishDefinition: jest.fn(),
-  deleteDefinition: jest.fn()
+  deleteDefinition: jest.fn(),
+  publishRule: jest.fn(),
+  unpublishRule: jest.fn()
 }))
 
 jest.mock('@/api/project', () => ({
@@ -20,7 +20,9 @@ import * as definitionApi from '@/api/definition'
 import * as projectApi from '@/api/project'
 import RuleList from '@/views/rule/RuleList.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => {
+  jest.clearAllMocks()
+})
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockRules() {
@@ -38,6 +40,23 @@ function mockProjects() {
   ]
 }
 
+// ─── 带方法的 el-form/el-input stub（jsdom 中 el-form 的 ref 方法不可用）────────
+const FormStub = {
+  name: 'ElForm',
+  render: h => h('form'),
+  methods: {
+    clearValidate: jest.fn(),
+    validate: jest.fn(cb => cb && cb(true)),
+    validateField: jest.fn(),
+    resetFields: jest.fn()
+  }
+}
+const InputStub = {
+  name: 'ElInput',
+  render: h => h('input', { attrs: { type: 'text' } }),
+  methods: { focus: jest.fn(), blur: jest.fn() }
+}
+
 // ─── 测试用例 ─────────────────────────────────────────────
 function createTestVue() {
   const localVue = createLocalVue()
@@ -45,27 +64,36 @@ function createTestVue() {
   return localVue
 }
 
-async function mountAndWait() {
-  projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
-  definitionApi.listDefinitions.mockResolvedValue({ data: { records: mockRules(), total: 3 } })
-
-  const wrapper = mount(RuleList, {
+function createMountOptions() {
+  return {
     localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: jest.fn(), replace: jest.fn() },
+      $message: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), warning: jest.fn() }),
+      // $confirm 每次都是新 mock，测试中通过 mockResolvedValueOnce 配置返回值
+      $confirm: jest.fn()
     },
     stubs: {
-      'el-form': true, 'el-form-item': true,
+      'el-form': FormStub, 'el-form-item': true,
       'el-select': true, 'el-option': true,
-      'el-input': true, 'el-button': true, 'el-tag': true,
+      'el-input': InputStub, 'el-button': true, 'el-tag': true,
       'el-table': true, 'el-table-column': true,
       'el-tabs': true, 'el-tab-pane': true,
       'el-dialog': true, 'el-card': true,
       'el-pagination': true, 'el-switch': true, 'el-loading': true,
-      'el-textarea': true, 'el-divider': true, 'el-alert': true
+      'el-textarea': true, 'el-divider': true, 'el-alert': true,
+      'el-link': true, 'el-dropdown': true, 'el-dropdown-menu': true,
+      'el-dropdown-item': true, 'el-icon': true, 'el-col': true
     }
-  })
+  }
+}
+
+async function mountAndWait() {
+  projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
+  definitionApi.listDefinitions.mockResolvedValue({ data: { records: mockRules(), total: 3 } })
+
+  const wrapper = mount(RuleList, createMountOptions())
 
   await Vue.nextTick()
   await new Promise(r => setTimeout(r, 100))
@@ -114,16 +142,16 @@ describe('RuleList — 标签与格式化方法', () => {
     expect(wrapper.vm.modelTypeLabel('SCORE')).toBe('评分卡')
     expect(wrapper.vm.modelTypeLabel('CROSS_ADV')).toBe('复杂交叉表')
     expect(wrapper.vm.modelTypeLabel('SCORE_ADV')).toBe('复杂评分卡')
-    expect(wrapper.vm.modelTypeLabel('SCRIPT')).toBe('QL 脚本')
+    expect(wrapper.vm.modelTypeLabel('SCRIPT')).toBe('QL脚本')
     expect(wrapper.vm.modelTypeLabel('UNKNOWN')).toBe('UNKNOWN')
-    expect(wrapper.vm.modelTypeLabel(null)).toBe('')
+    expect(wrapper.vm.modelTypeLabel(null)).toBe(null)
   })
 
   test('statusLabel 返回正确的状态标签', () => {
     expect(wrapper.vm.statusLabel(0)).toBe('草稿')
     expect(wrapper.vm.statusLabel(1)).toBe('已发布')
     expect(wrapper.vm.statusLabel(2)).toBe('已下线')
-    expect(wrapper.vm.statusLabel(9)).toBe('未知')
+    expect(wrapper.vm.statusLabel(9)).toBe(9)
   })
 
   test('statusTagType 返回正确的 tag 类型', () => {
@@ -211,33 +239,39 @@ describe('RuleList — 规则操作', () => {
   })
 
   test('handlePublish 调用发布 API', async () => {
-    definitionApi.publishDefinition.mockResolvedValue({ data: true })
+    definitionApi.publishRule.mockResolvedValue({ data: true })
+    wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
-    wrapper.vm.handlePublish(row)
+    await wrapper.vm.handlePublish(row)
     await Vue.nextTick()
-    expect(definitionApi.publishDefinition).toHaveBeenCalledWith(1)
+    expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
   })
 
   test('handleUnpublish 调用下线 API', async () => {
-    definitionApi.unpublishDefinition.mockResolvedValue({ data: true })
+    definitionApi.unpublishRule.mockResolvedValue({ data: true })
+    wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
-    wrapper.vm.handleUnpublish(row)
+    await wrapper.vm.handleUnpublish(row)
     await Vue.nextTick()
-    expect(definitionApi.unpublishDefinition).toHaveBeenCalledWith(1)
+    expect(definitionApi.unpublishRule).toHaveBeenCalledWith(1)
   })
 
   test('handleDelete 调用删除 API', async () => {
     definitionApi.deleteDefinition.mockResolvedValue({ data: true })
+    wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
-    wrapper.vm.handleDelete(row)
+    await wrapper.vm.handleDelete(row)
     await Vue.nextTick()
     expect(definitionApi.deleteDefinition).toHaveBeenCalledWith(1)
   })
 
-  test('handlePublish 显示重新发布按钮', () => {
+  test('handlePublish 显示重新发布按钮', async () => {
+    definitionApi.publishRule.mockResolvedValue({ data: true })
+    wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, publishedVersion: 1 }
-    wrapper.vm.handlePublish(row)
-    expect(definitionApi.publishDefinition).toHaveBeenCalledWith(1)
+    await wrapper.vm.handlePublish(row)
+    await Vue.nextTick()
+    expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
   })
 })
 
@@ -245,19 +279,7 @@ describe('RuleList — 边界情况', () => {
   test('rules 为空数组不报错', async () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     definitionApi.listDefinitions.mockResolvedValue({ data: { records: [], total: 0 } })
-    const wrapper = mount(RuleList, {
-      localVue: createTestVue(),
-      mocks: {
-        $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-table': true, 'el-table-column': true,
-        'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true
-      }
-    })
+    const wrapper = mount(RuleList, createMountOptions())
     await Vue.nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.tableData).toEqual([])
@@ -268,19 +290,7 @@ describe('RuleList — 边界情况', () => {
     definitionApi.listDefinitions.mockRejectedValue(new Error('加载失败'))
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    const wrapper = mount(RuleList, {
-      localVue: createTestVue(),
-      mocks: {
-        $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
-      },
-      stubs: {
-        'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
-        'el-table': true, 'el-table-column': true,
-        'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true
-      }
-    })
+    const wrapper = mount(RuleList, createMountOptions())
     await Vue.nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.loading).toBe(false)

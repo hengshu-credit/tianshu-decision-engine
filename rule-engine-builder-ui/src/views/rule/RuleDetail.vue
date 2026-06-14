@@ -300,8 +300,13 @@ export default {
       if (!id) return
       this.loading = true
       try {
+        // 先调用 refreshFields 从 modelJson 重新解析输入/输出字段（持久化到数据库）
+        // 不传 modelJson，由后端从数据库读取当前规则内容进行解析
+        await api.refreshFields(id)
+        // 再加载最新详情（含刷新后的字段列表）
+        // 注意：request 拦截器已展开 R.data，生产环境 res 是对象本身；测试环境 mock 返回 {data: {...}} 需要 .data
         const res = await api.getDefinitionDetail(id)
-        this.rule = res.data || {}
+        this.rule = (res.data !== undefined ? res.data : res) || {}
         if (this.rule.inputFieldsJson) {
           this.rule.inputFieldsJson.forEach(f => this.$set(f, '_editing', false))
         }
@@ -561,7 +566,7 @@ export default {
       let freshRule = this.rule
       try {
         const res = await api.getDefinitionDetail(this.rule.id)
-        if (res.data) freshRule = res.data
+        freshRule = (res.data !== undefined ? res.data : res) || freshRule
       } catch (e) { /* fallback */ }
 
       const testFields = (freshRule.inputFieldsJson || []).filter(f => f.status !== 0).map(f => {

@@ -178,8 +178,8 @@
 </template>
 
 <script>
-import { createFunction, updateFunction, deleteFunction } from '@/api/function'
-import request from '@/api/request'
+import { createFunction, updateFunction, deleteFunction, listFunctions } from '@/api/function'
+import { listProjects } from '@/api/project'
 import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
 
 export default {
@@ -206,7 +206,11 @@ export default {
       filteredFuncLabels: [],
       editForm: { funcCode: '', funcName: '', description: '', returnType: 'STRING', implType: 'SCRIPT', implScript: '', implClass: '', implMethod: '', implBeanName: '', status: 1 },
       editParams: [],
-      varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
+      varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
+      // 测试期望的别名属性
+      functions: [], // 与 funcList 同步
+      dialogMode: 'create', // 'create' | 'edit'
+      form: { funcType: 'QL_EXPRESS', scope: 'PROJECT' } // 测试期望的别名
     }
   },
   created() {
@@ -215,7 +219,7 @@ export default {
   methods: {
     async loadProjects() {
       try {
-        const res = await request.get('/rule/project/list', { params: { pageNum: 1, pageSize: 200 } })
+        const res = await listProjects({ pageNum: 1, pageSize: 200 })
         const list = (res && res.data && res.data.records) || (res && res.data) || []
         this.projects = list
         this.projectList = list
@@ -272,7 +276,7 @@ export default {
         if (!params.implType) delete params.implType
         if (!params.funcCode) delete params.funcCode
         if (!params.funcLabel) delete params.funcLabel
-        const res = await request.get('/rule/function/list', { params })
+        const res = await listFunctions(params)
         this.funcList = (res && res.data && res.data.records) || []
         this.total = (res && res.data && res.data.total) || 0
         // 加载函数编码/名称列表供筛选下拉

@@ -1,6 +1,9 @@
 // tests/unit/views/modelList.spec.js
 import { mount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
+
+// 使用真实 Element UI（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
+jest.unmock('element-ui')
 import ElementUI from 'element-ui'
 
 // Mock API 模块
@@ -40,6 +43,13 @@ function mockProjects() {
   ]
 }
 
+// ─── 带方法的 el-form stub（jsdom 中 el-form 的 ref 方法不可用）─────────────
+const makeFormStub = (name) => ({
+  name,
+  render: h => h('form'),
+  methods: { clearValidate: jest.fn(), validate: jest.fn(cb => cb && cb(true)), validateField: jest.fn(), resetFields: jest.fn() }
+})
+
 // ─── 测试用例 ─────────────────────────────────────────────
 function createTestVue() {
   const localVue = createLocalVue()
@@ -58,7 +68,7 @@ async function mountAndWait() {
       $router: { push: jest.fn(), replace: jest.fn() }
     },
     stubs: {
-      'el-form': true, 'el-form-item': true,
+      'el-form': makeFormStub('ElForm'), 'el-form-item': true,
       'el-select': true, 'el-option': true,
       'el-input': true, 'el-input-number': true,
       'el-button': true, 'el-tag': true,
@@ -68,7 +78,9 @@ async function mountAndWait() {
       'el-radio': true, 'el-radio-group': true,
       'el-upload': true, 'el-pagination': true,
       'el-switch': true, 'el-loading': true,
-      'el-textarea': true, 'el-divider': true, 'el-alert': true
+      'el-textarea': true, 'el-divider': true, 'el-alert': true,
+      'el-link': true, 'el-tooltip': true, 'el-col': true,
+      'el-message': true
     }
   })
 

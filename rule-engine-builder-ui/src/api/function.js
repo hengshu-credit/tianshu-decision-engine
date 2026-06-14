@@ -9,6 +9,11 @@ export function listAllFunctionsByProject(projectId) {
   return request.get('/rule/function/project/' + projectId + '/all')
 }
 
+/** 查询函数列表（支持全局查询） */
+export function listFunctions(params) {
+  return request.get('/rule/function/list', { params })
+}
+
 export function getFunctionById(id) {
   return request.get('/rule/function/' + id)
 }
