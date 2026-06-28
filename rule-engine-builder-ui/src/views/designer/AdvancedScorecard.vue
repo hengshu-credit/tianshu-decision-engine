@@ -35,6 +35,7 @@
               placeholder="选择结果变量..."
               width="200px"
               @select="onResultVarSelect"
+              @clear="onResultVarClear"
             />
             <el-input
               v-else
@@ -158,7 +159,8 @@
                       placeholder="变量"
                       width="100%"
                       class="cond-var"
-                      @select="v => { cond.varCode = v.varCode }"
+                      @select="v => onCondVarSelect(cond, v)"
+                      @clear="() => onCondVarClear(cond)"
                     />
                     <el-input v-else v-model="cond.varCode" size="mini" placeholder="变量" class="cond-var" />
                     <el-select v-model="cond.operator" size="mini" class="cond-op">
@@ -447,6 +449,14 @@ export default {
         _varId: (v._varId != null) ? v._varId : null
       })
     },
+    /** 清除结果变量选择 */
+    onResultVarClear() {
+      this.$set(this.model, 'resultVar', {
+        varCode: '',
+        varLabel: '',
+        _varId: null
+      })
+    },
     /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
     onResultVarCustomInput(val) {
       if (!val) {
@@ -469,6 +479,19 @@ export default {
       dim.varCode = v.varCode
       dim.varLabel = v.varLabel || v.varCode
       dim._varId = (v._varId != null) ? v._varId : null
+    },
+    /** 条件变量选择 */
+    onCondVarSelect(cond, v) {
+      if (!v) return
+      cond.varCode = v.varCode
+      cond.varLabel = v.varLabel || v.varCode
+      cond._varId = (v._varId != null) ? v._varId : null
+    },
+    /** 条件变量清除 */
+    onCondVarClear(cond) {
+      cond.varCode = ''
+      cond.varLabel = ''
+      cond._varId = null
     },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]

@@ -208,6 +208,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `var_type`         VARCHAR(32)  NOT NULL                COMMENT '数据类型：STRING/NUMBER/BOOLEAN/DATE/ENUM/OBJECT/LIST/MAP',
   `ref_object_code`  VARCHAR(128) DEFAULT NULL             COMMENT 'OBJECT 时引用的对象编码（兼容旧逻辑，铁律四后以 ref_object_id 为准）',
   `ref_object_id`    BIGINT       DEFAULT NULL             COMMENT 'OBJECT 时引用的对象ID（铁律四：指向 rule_data_object.id）',
+  `generic_type`      VARCHAR(32)  DEFAULT NULL             COMMENT '泛型类型（LIST 类型字段的元素类型，如 OBJECT/STRING/NUMBER）',
   `parent_field_id`  BIGINT       DEFAULT NULL             COMMENT '父字段ID（嵌套预留）',
   `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
   `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',

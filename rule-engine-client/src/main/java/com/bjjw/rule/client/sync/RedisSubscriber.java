@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 
 /**
  * Redis订阅器 - 使用Spring Data Redis实现
@@ -45,6 +46,7 @@ public class RedisSubscriber {
     private final String appName;
     private final String channel;
     private final List<Topic> topics;
+    private final Function<String, CachedRule> ruleFetcher;
 
     private RedisMessageListenerContainer container;
     private ClientFunctionRegistrar functionRegistrar;
@@ -54,10 +56,16 @@ public class RedisSubscriber {
     private Thread healthCheckThread;
 
     public RedisSubscriber(L1MemoryCache cache, RedisConnectionFactory connectionFactory, String appName) {
+        this(cache, connectionFactory, appName, null);
+    }
+
+    public RedisSubscriber(L1MemoryCache cache, RedisConnectionFactory connectionFactory, String appName,
+                           Function<String, CachedRule> ruleFetcher) {
         this.cache = cache;
         this.connectionFactory = connectionFactory;
         this.appName = appName;
         this.channel = "rule:push:" + appName;
+        this.ruleFetcher = ruleFetcher;
         this.topics = Arrays.asList(
                 new ChannelTopic(channel),
                 new ChannelTopic("rule:push:broadcast"));
@@ -211,15 +219,11 @@ public class RedisSubscriber {
             String action = push.getAction();
 
             if ("PUBLISH".equals(action)) {
-                CachedRule cached = new CachedRule();
-                cached.setRuleCode(push.getRuleCode());
-                cached.setProjectCode(push.getProjectCode());
-                cached.setVersion(push.getVersion() != null ? push.getVersion() : 0);
-                cached.setModelType(push.getModelType());
-                cached.setCompiledScript(push.getCompiledScript());
-                cached.setCompiledType(push.getCompiledType());
-                cached.setModelJson(push.getModelJson());
-                cached.setLastUpdateTime(System.currentTimeMillis());
+                CachedRule cached = resolvePublishedRule(push);
+                if (cached == null) {
+                    log.debug("Ignored rule push outside authorized scope or unavailable: {}", push.getRuleCode());
+                    return;
+                }
                 cache.put(cached);
                 log.info("Rule updated via Redis push: {} v{}", push.getRuleCode(), push.getVersion());
 
@@ -244,5 +248,21 @@ public class RedisSubscriber {
         } catch (Exception e) {
             log.warn("Failed to handle Redis push message: {}", e.getMessage());
         }
+    }
+
+    private CachedRule resolvePublishedRule(RulePushMessage push) {
+        if (ruleFetcher != null) {
+            return ruleFetcher.apply(push.getRuleCode());
+        }
+        CachedRule cached = new CachedRule();
+        cached.setRuleCode(push.getRuleCode());
+        cached.setProjectCode(push.getProjectCode());
+        cached.setVersion(push.getVersion() != null ? push.getVersion() : 0);
+        cached.setModelType(push.getModelType());
+        cached.setCompiledScript(push.getCompiledScript());
+        cached.setCompiledType(push.getCompiledType());
+        cached.setModelJson(push.getModelJson());
+        cached.setLastUpdateTime(System.currentTimeMillis());
+        return cached;
     }
 }

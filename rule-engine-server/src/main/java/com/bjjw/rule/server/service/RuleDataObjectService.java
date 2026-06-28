@@ -285,8 +285,10 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
      * 获取指定项目的变量树（包含全局和项目级）。返回结构包含变量树和对象 ID→编码映射。
      * 铁律四：objectIdMap 供前端通过 refObjectId 展示引用对象名。
      */
+    @Transactional
     public Map<String, Object> getVariableTree(Long projectId) {
         List<RuleDataObject> objects = listByProject(projectId);
+        materializeJsonFieldsIfMissing(objects);
         List<RuleDataObjectField> allFields = collectFieldsByProject(projectId);
         Map<String, Object> result = new HashMap<>();
         result.put("tree", buildVariableTree(objects, allFields));
@@ -297,11 +299,13 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     /**
      * 获取所有项目的数据对象树（未选项目时使用，显示所有项目的数据对象）
      */
+    @Transactional
     public Map<String, Object> getVariableTreeAll() {
         List<RuleDataObject> objects = getBaseMapper().selectList(
                 new LambdaQueryWrapper<RuleDataObject>()
                         .orderByAsc(RuleDataObject::getProjectId)
                         .orderByAsc(RuleDataObject::getId));
+        materializeJsonFieldsIfMissing(objects);
         List<RuleDataObjectField> allFields = objectFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObjectField>()
                         .orderByAsc(RuleDataObjectField::getProjectId)
@@ -310,6 +314,35 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         result.put("tree", buildVariableTree(objects, allFields));
         result.put("objectIdMap", buildObjectIdMap(objects));
         return result;
+    }
+
+    /**
+     * Older seed data may contain a JSON data object with sourceContent but no
+     * rows in rule_data_object_field. Lazily materialize those fields so picker
+     * APIs expose selectable object properties and callers can persist varId.
+     */
+    private void materializeJsonFieldsIfMissing(List<RuleDataObject> objects) {
+        if (objects == null || objects.isEmpty()) return;
+        for (RuleDataObject obj : objects) {
+            if (obj == null || obj.getId() == null) continue;
+            String sourceType = obj.getSourceType();
+            String sourceContent = obj.getSourceContent();
+            if (!"JSON".equalsIgnoreCase(sourceType) || sourceContent == null || sourceContent.trim().isEmpty()) {
+                continue;
+            }
+            Long count = objectFieldMapper.selectCount(
+                    new LambdaQueryWrapper<RuleDataObjectField>()
+                            .eq(RuleDataObjectField::getObjectId, obj.getId()));
+            if (count != null && count > 0) continue;
+            try {
+                ParsedObject parsed = jsonSchemaParser.parseObject(sourceContent, obj.getObjectCode());
+                if (parsed != null && parsed.getFields() != null && !parsed.getFields().isEmpty()) {
+                    batchCreateFieldsRecursive(obj.getProjectId(), obj.getScope(), obj.getId(), parsed.getFields(), null);
+                }
+            } catch (Exception ignored) {
+                // Keep the tree endpoint tolerant; invalid sourceContent should not break the page.
+            }
+        }
     }
 
     /**

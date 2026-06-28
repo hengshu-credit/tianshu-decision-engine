@@ -73,6 +73,27 @@ export default {
   },
 
   methods: {
+    normalizeObjectFieldScriptName(field, objScriptName) {
+      const raw = (field && (field.scriptName || field.varCode)) || ''
+      return this.stripObjectPrefix(raw, objScriptName)
+    },
+    stripObjectPrefix(raw, objScriptName) {
+      const prefix = objScriptName ? objScriptName + '.' : ''
+      return prefix && raw.indexOf(prefix) === 0 ? raw.substring(prefix.length) : raw
+    },
+    normalizeVariableTreeResponse(res) {
+      const data = res && res.data ? res.data : res
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.tree)) return data.tree
+      return []
+    },
+    normalizeListResponse(res) {
+      const data = res && res.data ? res.data : res
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.records)) return data.records
+      return []
+    },
+
     /**
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
      */
@@ -96,12 +117,13 @@ export default {
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => [])
         ])
-        const funcData = funcRes || []
-        this.projectFunctions = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
+        this.projectFunctions = this.normalizeListResponse(funcRes)
 
-        // request 拦截器已返回 res.data，varRes / objRes 直接是数组，无需 .data
-        const allVars = varRes || []
-        const objectTree = objRes || []
+        // request 拦截器已返回 res.data，varRes 直接是数组，无需 .data
+        const allVars = this.normalizeListResponse(varRes)
+
+        // objRes 是 { tree: [...], objectIdMap: {...} }，需要取 tree 属性
+        const objectTree = this.normalizeVariableTreeResponse(objRes)
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
@@ -147,15 +169,21 @@ export default {
           const objScriptName = obj.scriptName || objectCode
           const objectLabel = obj.objectLabel || objectCode
           ;(node.variables || []).forEach(v => {
-            const varScriptName = v.scriptName || v.varCode
+            const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
             const refCode = `${objScriptName}.${varScriptName}`
+            const labelSource = Object.assign({}, v, {
+              scriptName: varScriptName,
+              varCode: varScriptName,
+              varLabel: this.stripObjectPrefix(v.varLabel || '', objScriptName)
+            })
             refs.push({
               refCode,
-              refLabel: makeRefLabel(v, 'dataObject', obj.objectLabel || objectCode),
+              refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
               varObj: v,
               category: 'object',
-              objectCode,
+              objectCode: objScriptName,
+              objectRawCode: objectCode,
               objectLabel
             })
           })
@@ -208,11 +236,12 @@ export default {
           listAllFunctionsByProject(pid).catch(() => [])
         ])
         // request 拦截器已返回 res.data，直接使用
-        const funcData = funcRes || []
-        this.projectFunctions = Array.isArray(funcData) ? funcData : (funcData && Array.isArray(funcData.records) ? funcData.records : [])
+        this.projectFunctions = this.normalizeListResponse(funcRes)
 
-        const allVars = varRes || []
-        const objectTree = objRes || []
+        const allVars = this.normalizeListResponse(varRes)
+
+        // objRes 是 { tree: [...], objectIdMap: {...} }，需要取 tree 属性
+        const objectTree = this.normalizeVariableTreeResponse(objRes)
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
@@ -251,15 +280,21 @@ export default {
           const objectCode = obj.objectCode || ''
           const objScriptName = obj.scriptName || objectCode
           ;(node.variables || []).forEach(v => {
-            const varScriptName = v.scriptName || v.varCode
+            const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
             const refCode = `${objScriptName}.${varScriptName}`
+            const labelSource = Object.assign({}, v, {
+              scriptName: varScriptName,
+              varCode: varScriptName,
+              varLabel: this.stripObjectPrefix(v.varLabel || '', objScriptName)
+            })
             refs.push({
               refCode,
-              refLabel: makeRefLabel(v, 'dataObject', obj.objectLabel || objectCode),
+              refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
               varObj: v,
               category: 'object',
-              objectCode,
+              objectCode: objScriptName,
+              objectRawCode: objectCode,
               objectLabel: obj.objectLabel || objectCode
             })
           })

@@ -22,6 +22,7 @@
       <div class="select-input-row">
         <el-popover
           v-if="groupedByCategory && hasVarOptions"
+          ref="popover"
           v-model="popoverVisible"
           placement="bottom-start"
           :width="popoverWidth"
@@ -58,14 +59,14 @@
                   <thead>
                     <tr>
                       <th class="vp-th vp-th--type">类型</th>
-                      <th class="vp-th vp-th--code">{{ codeColumnLabel }}</th>
-                      <th class="vp-th vp-th--name">{{ nameColumnLabel }}</th>
+                      <th class="vp-th vp-th--code">{{ codeColumnLabel() }}</th>
+                      <th class="vp-th vp-th--name">{{ nameColumnLabel() }}</th>
                     </tr>
                   </thead>
                   <tbody>
                     <template v-for="v in filteredRightItems">
                       <tr
-                        :key="v.varCode"
+                        :key="v._objectGroupKey || v.varCode"
                         class="vp-row"
                         :class="{ 'vp-row--selected': v.varCode === currentValue }"
                         @click="onItemClick(v)"
@@ -73,13 +74,13 @@
                         <td class="vp-td vp-td--type">
                           <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)">{{ typeChar(v.varType) }}</span>
                         </td>
-                        <td class="vp-td vp-td--code">{{ v.varCode }}</td>
-                        <td class="vp-td vp-td--name">{{ v.varLabel || v.varCode }}</td>
+                        <td class="vp-td vp-td--code">{{ v._objectGroup ? objectGroupCode(v) : v.varCode }}</td>
+                        <td class="vp-td vp-td--name">{{ v._objectGroup ? objectGroupLabel(v) : (v.varLabel || v.varCode) }}</td>
                       </tr>
                       <!-- 数据对象嵌套行：点击展开显示字段路径 -->
                       <tr
-                        v-if="v.children && expandedObject === v.varCode"
-                        :key="v.varCode + '-children'"
+                        v-if="v.children && expandedObject === v._objectGroupKey"
+                        :key="(v._objectGroupKey || v.varCode) + '-children'"
                         class="vp-children-row"
                       >
                         <td colspan="3" class="vp-children-td">
@@ -90,13 +91,13 @@
                             <div class="vp-children-list">
                               <div
                                 v-for="child in v.children"
-                                :key="child.varCode"
+                                :key="(v._objectGroupKey || '') + '.' + child.varCode"
                                 class="vp-child-item"
                                 @click.stop="onItemClick(child)"
                               >
-                                <span class="vp-child-path">{{ v._ref && v._ref.objectCode ? v._ref.objectCode : v.objectCode }}.{{ child.varCode }}</span>
+                                <span class="vp-child-path">{{ objectFieldPath(child) }}</span>
                                 <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)">{{ typeChar(child.varType) }}</span>
-                                <span class="vp-child-name">{{ child.varLabel || child.varCode }}</span>
+                                <span class="vp-child-name">{{ optionLabel(child) || child.varCode }}</span>
                               </div>
                             </div>
                           </div>
@@ -120,8 +121,11 @@
               :placeholder="placeholder || '选择变量/常量/对象字段'"
               readonly
               style="width:100%"
+              @focus="onInputFocus"
+              @click.native="onInputClick"
             >
               <i slot="suffix" class="el-input__icon el-icon-arrow-down" />
+              <i v-if="value && allowCustom" slot="suffix" class="el-input__icon el-icon-close vp-clear-btn" @click.stop="onClearValue" />
             </el-input>
           </div>
         </el-popover>
@@ -133,6 +137,7 @@
           :size="size"
           :placeholder="placeholder || '输入变量编码'"
           clearable
+          @focus="onInputFocus"
           @input="onCustomInput"
           @clear="onCustomClear"
         />
@@ -204,6 +209,16 @@ export default {
         this._autoSwitchIfUnmatched()
       }
     },
+    categoryList: {
+      immediate: true,
+      handler(list) {
+        if (!list || list.length === 0) return
+        var exists = list.some(function (cat) { return cat.key === this.activeCategory }.bind(this))
+        if (!exists) {
+          this.activeCategory = list[0].key
+        }
+      }
+    },
     value(newVal) {
       this.localCustomValue = newVal || ''
       this._autoSwitchIfUnmatched()
@@ -243,21 +258,22 @@ export default {
         var found = this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
         return found ? found.varCode : null
       }
+      var matched = this.findOptionByCode(this.value)
+      if (matched) return matched.varCode
       return this.value
     },
     /** 显示文本 */
     displayValue() {
       if (!this.value) return ''
-      var v = this.vars.find(function (item) {
-        if (this.valueKey === 'id') return String(item.id) === String(this.value)
-        return item.varCode === this.value
-      }.bind(this))
+      var v = this.valueKey === 'id'
+        ? this.vars.find(function (item) { return String(item.id) === String(this.value) }.bind(this))
+        : this.findOptionByCode(this.value)
       if (!v) return this.value
       var ref = v._ref || {}
-      var label = v.varLabel || ''
+      var label = this.optionLabel(v)
       var code = v.varCode || ''
       if (ref.category === 'object') {
-        return code ? label + ' ' + ref.objectCode + '.' + code : label
+        return code ? label + ' ' + this.objectFieldPath(v) : label
       }
       return code ? label + ' ' + code : label
     },
@@ -293,7 +309,7 @@ export default {
       if (this.activeCategory === 'object') {
         var byObj = {}
         list.forEach(function (v) {
-          var key = v._ref ? v._ref.objectCode : 'unknown'
+          var key = self.objectGroupCode(v)
           if (!byObj[key]) byObj[key] = []
           byObj[key].push(v)
         })
@@ -302,7 +318,7 @@ export default {
         for (var i = 0; i < keys.length; i++) {
           var group = byObj[keys[i]]
           group.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
-          var first = Object.assign({}, group[0], { children: group })
+          var first = Object.assign({}, group[0], { children: group, _objectGroup: true, _objectGroupKey: keys[i] })
           result.push(first)
         }
         return result
@@ -316,11 +332,51 @@ export default {
       var s = this.searchText.toLowerCase()
       return this.rightItems.filter(function (v) {
         return (v.varCode && v.varCode.toLowerCase().indexOf(s) !== -1) ||
-          (v.varLabel && v.varLabel.toLowerCase().indexOf(s) !== -1)
+          (v.varLabel && v.varLabel.toLowerCase().indexOf(s) !== -1) ||
+          (v.children && v.children.some(function (child) {
+            return (child.varCode && child.varCode.toLowerCase().indexOf(s) !== -1) ||
+              (child.varLabel && child.varLabel.toLowerCase().indexOf(s) !== -1)
+          }))
       })
     }
   },
   methods: {
+    objectGroupCode(item) {
+      var ref = (item && item._ref) || {}
+      if (ref.objectCode) return ref.objectCode
+      var code = item && item.varCode ? item.varCode : ''
+      return code.indexOf('.') !== -1 ? code.split('.')[0] : (item && item.objectCode) || 'unknown'
+    },
+    objectGroupLabel(item) {
+      var ref = (item && item._ref) || {}
+      return ref.objectLabel || ref.objectCode || (item && item.objectLabel) || this.objectGroupCode(item)
+    },
+    objectFieldPath(item) {
+      if (!item) return ''
+      var code = item.varCode || ''
+      if (code.indexOf('.') !== -1) return code
+      var ref = item._ref || {}
+      var objectCode = ref.objectScriptName || ref.objectCode || item.objectCode || ''
+      return objectCode ? objectCode + '.' + code : code
+    },
+    fieldCodeWithoutObject(item) {
+      var code = item && item.varCode ? item.varCode : ''
+      if (code.indexOf('.') === -1) return code
+      return code.substring(code.lastIndexOf('.') + 1)
+    },
+    findOptionByCode(code) {
+      if (!code) return null
+      var exact = this.vars.find(function (v) { return v.varCode === code })
+      if (exact) return exact
+      var matches = this.vars.filter(function (v) {
+        return v && v._ref && v._ref.category === 'object' && this.fieldCodeWithoutObject(v) === code
+      }.bind(this))
+      return matches.length === 1 ? matches[0] : null
+    },
+    optionLabel(item) {
+      if (!item) return ''
+      return item.varLabelText || item.labelText || item.varName || item.varLabel || ''
+    },
     /** 类型短标签（一字符） */
     typeShortLabel(t) {
       var map = {
@@ -340,18 +396,39 @@ export default {
     },
     /** 行点击：数据对象展开嵌套，其他直接选中 */
     onItemClick(item) {
-      if (item._ref && item._ref.category === 'object') {
-        if (this.expandedObject === item.varCode) {
+      if (item._objectGroup) {
+        var groupKey = item._objectGroupKey || item.varCode
+        if (this.expandedObject === groupKey) {
           this.expandedObject = null
         } else {
-          this.expandedObject = item.varCode
+          this.expandedObject = groupKey
         }
         return
       }
       var val = this.valueKey === 'id' ? item.id : item.varCode
       this.$emit('input', val)
       this.$emit('select', item)
-      this.popoverVisible = false
+      this.closePopover()
+    },
+    closePopover() {
+      var doClose = function () {
+        this.popoverVisible = false
+        var popover = this.$refs.popover
+        if (popover && typeof popover.doClose === 'function') {
+          popover.doClose()
+        }
+        this.hidePickerPoppers()
+      }.bind(this)
+      doClose()
+      this.$nextTick(doClose)
+      setTimeout(doClose, 0)
+    },
+    hidePickerPoppers() {
+      if (typeof document === 'undefined') return
+      var poppers = document.querySelectorAll('.var-picker-popover')
+      for (var i = 0; i < poppers.length; i++) {
+        poppers[i].style.display = 'none'
+      }
     },
     /** 获取选项的实际值（varCode 或 id） */
     getOptionValue(v) {
@@ -379,6 +456,25 @@ export default {
       this.$emit('input', refCode)
       var varObj = this.vars.find(function (v) { return v.varCode === refCode }) || null
       this.$emit('select', varObj)
+    },
+    /** 输入框获得焦点时自动弹出选择器面板 */
+    onInputFocus() {
+      if (this.groupedByCategory && this.hasVarOptions) {
+        this.popoverVisible = true
+      }
+    },
+    /** 点击输入框时弹出选择器面板 */
+    onInputClick() {
+      if (this.groupedByCategory && this.hasVarOptions) {
+        this.popoverVisible = true
+      }
+    },
+    /** 清除选中的值 */
+    onClearValue() {
+      this.$emit('input', '')
+      this.$emit('select', null)
+      this.$emit('clear')
+      this.closePopover()
     },
     onChange(val) {
       this.$emit('input', val)
@@ -411,7 +507,7 @@ export default {
       if (this.valueKey === 'id') {
         found = this.vars.some(function (v) { return String(v.id) === String(this.value) }.bind(this))
       } else {
-        found = this.vars.some(function (v) { return v.varCode === this.value }.bind(this))
+        found = !!this.findOptionByCode(this.value)
       }
       if (!found) {
         this.customMode = true
@@ -493,6 +589,14 @@ export default {
 .mode-switch:hover {
   background: #e6f7ff;
   color: #096dd9;
+}
+.vp-clear-btn {
+  cursor: pointer;
+  color: #909399;
+  margin-right: 4px;
+}
+.vp-clear-btn:hover {
+  color: #409EFF;
 }
 .var-empty {
   padding: 8px 12px;

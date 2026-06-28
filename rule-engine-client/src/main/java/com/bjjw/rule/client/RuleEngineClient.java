@@ -41,7 +41,8 @@ public class RuleEngineClient {
         this.config = config;
         this.l1Cache = new L1MemoryCache(config.getL1CacheMaxSize());
         this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), config.getToken());
-        this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, config.getAppName());
+        this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, config.getAppName(),
+                httpSyncClient::fetchRule);
         this.engine = new QLExpressEngine();
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext);
 

@@ -22,8 +22,9 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     private RuleProjectService projectService;
     
     // 需要验证Token的路径（同步API）
-    private static final String[] PROTECTED_PATHS = {
-        "/api/sync/"
+    private static final String[] PROTECTED_PATH_PREFIXES = {
+        "/api/sync",
+        "/api/rule/sync"
     };
     
     @Override
@@ -31,13 +32,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         String uri = request.getRequestURI();
         
         // 检查是否是需要保护的路径
-        boolean needAuth = false;
-        for (String path : PROTECTED_PATHS) {
-            if (uri.startsWith(path)) {
-                needAuth = true;
-                break;
-            }
-        }
+        boolean needAuth = isProtectedPath(uri);
         
         // 不需要认证的路径直接放行
         if (!needAuth) {
@@ -67,6 +62,18 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         request.setAttribute("projectCode", project.getProjectCode());
         
         return true;
+    }
+
+    static boolean isProtectedPath(String uri) {
+        if (uri == null) {
+            return false;
+        }
+        for (String path : PROTECTED_PATH_PREFIXES) {
+            if (uri.equals(path) || uri.startsWith(path + "/")) {
+                return true;
+            }
+        }
+        return false;
     }
     
     /**

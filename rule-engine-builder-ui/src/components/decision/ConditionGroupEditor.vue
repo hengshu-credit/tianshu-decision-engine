@@ -49,6 +49,7 @@
                 placeholder="选择字段..."
                 size="mini"
                 width="100%"
+                :allow-custom="false"
                 @select="v => onLeafLeftSelect(child, v)"
               />
             </div>
@@ -71,6 +72,7 @@
                   placeholder="右侧变量"
                   size="mini"
                   width="100%"
+                  :allow-custom="false"
                   @select="v => onLeafRightSelect(child, v)"
                 />
               </div>

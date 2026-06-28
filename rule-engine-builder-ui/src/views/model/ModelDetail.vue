@@ -63,6 +63,7 @@
                   placeholder="选择变量、常量或对象字段..."
                   width="100%"
                   value-key="code"
+                  :allow-custom="false"
                   @select="v => onVarPickerSelect(row, v)"
                 />
                 <div v-else class="custom-var-input">
@@ -156,6 +157,7 @@
                   placeholder="选择变量、常量或对象字段..."
                   width="100%"
                   value-key="code"
+                  :allow-custom="false"
                   @select="v => onVarPickerSelect(row, v)"
                 />
                 <div v-else class="custom-var-input">
@@ -376,7 +378,8 @@ export default {
             varObj: v.varObj,
             _ref: {
               category: v.sourceType === 'dataObject' ? 'object' : (v.sourceType === 'constant' ? 'constant' : 'standalone'),
-              objectCode: v.sourceLabel || '',
+              objectCode: v.sourceCode || '',
+              objectScriptName: v.sourceCode || '',
               objectLabel: v.sourceLabel || ''
             }
           })
@@ -433,7 +436,7 @@ export default {
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
-        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
+        const tree = this.normalizeVariableTree(treeRes.data)
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}
@@ -457,7 +460,7 @@ export default {
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
-        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
+        const tree = this.normalizeVariableTree(treeRes.data)
         this.buildVarOptions([...vars, ...consts], tree)
       } catch (e) {
         this.varMap = {}
@@ -467,6 +470,16 @@ export default {
           { label: '数据对象字段', options: [] }
         ])
       }
+    },
+    normalizeVariableTree(data) {
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.tree)) return data.tree
+      return []
+    },
+    stripObjectPrefix(text, objectCode) {
+      if (!text || !objectCode) return text || ''
+      var prefix = objectCode + '.'
+      return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
     },
     buildVarOptions(vars, doTree) {
       this.varMap = {}
@@ -504,7 +517,8 @@ export default {
         fields.forEach(f => {
           if (!f.id || seenIds.has(f.id)) return
           seenIds.add(f.id)
-          const labelText = f.varLabel || ''
+          const objCode = obj.scriptName || obj.objectCode || ''
+          const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
           const codeText = f.scriptName || f.varCode || ''
           const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
           const item = {
@@ -517,6 +531,7 @@ export default {
             varSource: 'INPUT',
             sourceType: 'dataObject',
             sourceLabel: objLabel,
+            sourceCode: objCode,
             varObj: f
           }
           this.varMap[f.id] = item
@@ -968,6 +983,9 @@ export default {
 /* 编辑行高亮 */
 ::v-deep .editing-row {
   background-color: #f0f9eb;
+}
+::v-deep .el-loading-mask.el-loading-fade-leave-active {
+  pointer-events: none;
 }
 ::v-deep .el-table .editing-row td {
   background-color: #f0f9eb;
