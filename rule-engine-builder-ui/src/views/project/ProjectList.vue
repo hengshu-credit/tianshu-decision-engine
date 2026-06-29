@@ -671,7 +671,7 @@ console.log('ExecuteTime:', result.executeTimeMs, 'ms');</code></pre>
       html += '::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:#f1f1f1}::-webkit-scrollbar-thumb{background:#c1c1c1;border-radius:3px}::-webkit-scrollbar-thumb:hover{background:#a1a1a1}'
       html += '@media(max-width:768px){.sidebar{width:240px}.main{margin-left:240px}}'
       html += '</style></head><body>'
-      html += '<div class="container"><div class="sidebar"><div class="sidebar-header"><div class="logo-title"><div class="logo">衡</div><span class="brand">衡枢决策引擎</span></div><h1>' + escapeHtml(doc.project.projectName) + '</h1><p>' + escapeHtml(doc.project.projectCode) + ' | ' + (doc.project.status === 1 ? '启用' : '停用') + '</p></div>'
+      html += '<div class="container"><div class="sidebar"><div class="sidebar-header"><div class="logo-title"><div class="logo">天</div><span class="brand">天枢决策引擎</span></div><h1>' + escapeHtml(doc.project.projectName) + '</h1><p>天工开物，枢衡定策</p><p>' + escapeHtml(doc.project.projectCode) + ' | ' + (doc.project.status === 1 ? '启用' : '停用') + '</p></div>'
       html += '<div class="sidebar-search"><input type="text" placeholder="搜索接口..." oninput="filterSidebar(this.value)"></div><div class="sidebar-nav">' + sidebarItems + '</div></div>'
       html += '<div class="main">' + contentPanels + '</div></div>'
       html += '<script>'

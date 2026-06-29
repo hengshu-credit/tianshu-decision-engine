@@ -34,7 +34,8 @@ const LABELS = {
   ENUM: '枚举',
   OBJECT: '对象',
   LIST: '列表',
-  MAP: '映射'
+  MAP: '映射',
+  MODEL: '模型'
 }
 
 /** 与 VariableList 表格中 el-tag 配色一致 */
@@ -46,7 +47,8 @@ const TAG_COLORS = {
   ENUM: 'danger',
   OBJECT: '',
   LIST: 'warning',
-  MAP: 'info'
+  MAP: 'info',
+  MODEL: 'success'
 }
 
 /**

@@ -19,6 +19,9 @@ function mountPicker(propsData = {}) {
       },
       'el-tooltip': {
         template: '<span><slot /></span>'
+      },
+      'el-pagination': {
+        template: '<div />'
       }
     }
   })
@@ -41,6 +44,23 @@ function objectFieldOptions() {
       _ref: { category: 'object', objectCode: 'LoanApply', objectLabel: '贷款申请' }
     }
   ]
+}
+
+function standaloneOptions(count = 3) {
+  const list = []
+  for (let i = 1; i <= count; i++) {
+    list.push({
+      id: i,
+      varCode: 'v' + i,
+      varLabel: '变量' + i,
+      varType: 'STRING',
+      varObj: { id: i, refType: 'VARIABLE' },
+      _varId: i,
+      _refType: 'VARIABLE',
+      _ref: { category: 'standalone', refType: 'VARIABLE' }
+    })
+  }
+  return list
 }
 
 describe('VarPicker', () => {
@@ -78,6 +98,65 @@ describe('VarPicker', () => {
     expect(typeof wrapper.vm.nameColumnLabel()).toBe('string')
   })
 
+  test('数据对象子字段展示对象内相对路径和简短名称', async () => {
+    const wrapper = mountPicker({
+      vars: [
+        {
+          varCode: 'request.params.taxpayerType',
+          varLabel: 'request/纳税人类型 request.params.taxpayerType',
+          varLabelText: 'request/纳税人类型',
+          varType: 'STRING',
+          _ref: {
+            category: 'object',
+            objectCode: 'request',
+            objectScriptName: 'request',
+            objectLabel: 'request'
+          }
+        }
+      ]
+    })
+    await Vue.nextTick()
+
+    const child = wrapper.vm.rightItems[0].children[0]
+    expect(wrapper.vm.objectFieldPath(child)).toBe('request.params.taxpayerType')
+    expect(wrapper.vm.objectFieldRelativePath(child)).toBe('params.taxpayerType')
+    expect(wrapper.vm.objectFieldDisplayName(child)).toBe('纳税人类型')
+    wrapper.vm.onCategoryClick('object')
+    expect(wrapper.vm.codeColumnLabel()).toBe('字段编码')
+  })
+
+  test('模型字段显示明确的数据类型', () => {
+    const wrapper = mountPicker({
+      vars: [
+        {
+          varCode: 'creditModel',
+          varLabel: '信用模型 creditModel',
+          varType: 'MODEL',
+          _ref: { category: 'model', refType: 'MODEL' }
+        }
+      ]
+    })
+
+    wrapper.vm.onCategoryClick('model')
+    expect(wrapper.vm.typeChar('MODEL')).toBe('M')
+    expect(wrapper.vm.typeLabel('MODEL')).toBe('模型')
+    expect(wrapper.vm.codeColumnLabel()).toBe('模型编码')
+  })
+
+  test('传入 selectedVars 后显示已选字段分类并去重', async () => {
+    const vars = standaloneOptions(3)
+    const wrapper = mountPicker({
+      vars,
+      selectedVars: [vars[1], 'v2', vars[2]]
+    })
+    await Vue.nextTick()
+
+    expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', label: '已选字段', count: 2 })
+
+    wrapper.vm.onCategoryClick('selected')
+    expect(wrapper.vm.rightItems.map(v => v.varCode)).toEqual(['v2', 'v3'])
+  })
+
   test('点击输入框后弹层保持打开，点击弹层内部不关闭', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     const popper = document.createElement('div')
@@ -112,6 +191,22 @@ describe('VarPicker', () => {
 
     document.body.removeChild(outside)
     wrapper.destroy()
+  })
+
+  test('打开已有字段时自动定位到字段所在分页', async () => {
+    const wrapper = mountPicker({
+      vars: standaloneOptions(150),
+      value: 'v99'
+    })
+    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+
+    wrapper.vm.openPopover()
+    await Vue.nextTick()
+    await Vue.nextTick()
+
+    expect(wrapper.vm.popoverVisible).toBe(true)
+    expect(wrapper.vm.activeCategory).toBe('standalone')
+    expect(wrapper.vm.rightPage).toBe(2)
   })
 
   test('object field short code value matches full object option without duplicate display code', async () => {

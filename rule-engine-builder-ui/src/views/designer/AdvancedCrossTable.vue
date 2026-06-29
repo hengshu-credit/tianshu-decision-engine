@@ -30,6 +30,7 @@
             <var-picker
               v-if="varPickerOptions.length"
               :vars="varPickerOptions"
+              :selected-vars="selectedVarPickerOptions"
               :value="dim.varCode"
               placeholder="选择变量..."
               width="100%"
@@ -76,6 +77,7 @@
             <var-picker
               v-if="varPickerOptions.length"
               :vars="varPickerOptions"
+              :selected-vars="selectedVarPickerOptions"
               :value="dim.varCode"
               placeholder="选择变量..."
               width="100%"
@@ -121,6 +123,7 @@
         <var-picker
           v-if="varPickerOptions.length"
           :vars="varPickerOptions"
+          :selected-vars="selectedVarPickerOptions"
           :value="model.resultVar.varCode"
           placeholder="选择结果变量..."
           width="100%"
@@ -349,6 +352,13 @@ export default {
     this.loadContent()
   },
   methods: {
+    collectSelectedVarItems() {
+      return [
+        this.model.resultVar,
+        ...(this.model.rowDimensions || []),
+        ...(this.model.colDimensions || [])
+      ]
+    },
     cartesianProduct(dimensions) {
       if (!dimensions || dimensions.length === 0) return []
       let result = [[]]

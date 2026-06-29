@@ -13,8 +13,8 @@
             <img src="/images/hengshucredit_animated.svg" alt="logo" class="login-logo-img">
           </div>
           <div class="login-brand__text">
-            <h1 class="login-brand__title">衡枢决策引擎</h1>
-            <p class="login-brand__subtitle">可视化编排 · 管理控制台</p>
+            <h1 class="login-brand__title">天枢决策引擎</h1>
+            <p class="login-brand__subtitle">天工开物，枢衡定策</p>
           </div>
         </header>
 

@@ -32,6 +32,7 @@
             <var-picker
               v-if="!customResultVarMode && varPickerOptions.length"
               :vars="varPickerOptions"
+              :selected-vars="selectedVarPickerOptions"
               :value="model.resultVar.varCode"
               placeholder="选择变量、常量或对象字段..."
               width="200px"
@@ -109,6 +110,7 @@
                 <var-picker
                   v-if="varPickerOptions.length"
                   :vars="varPickerOptions"
+                  :selected-vars="selectedVarPickerOptions"
                   :value="item.condVar"
                   placeholder="选择变量"
                   width="100%"
@@ -365,6 +367,19 @@ export default {
     this.loadContent()
   },
   methods: {
+    collectSelectedVarItems() {
+      const items = [this.model.resultVar]
+      ;(this.model.scoreItems || []).forEach(item => {
+        items.push({
+          varCode: item.condVar,
+          varLabel: item.conditionLabel,
+          varType: item.condVarType,
+          _varId: item._varId,
+          _refType: item._refType
+        })
+      })
+      return items
+    },
     async loadContent() {
       try {
         const res = await getContent(this.definitionId)

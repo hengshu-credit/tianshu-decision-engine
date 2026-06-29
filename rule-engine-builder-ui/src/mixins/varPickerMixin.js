@@ -59,6 +59,20 @@ export default {
         })
       }))
     },
+    selectedVarPickerOptions() {
+      if (typeof this.collectSelectedVarItems !== 'function') return []
+      const result = []
+      const seen = {}
+      ;(this.collectSelectedVarItems() || []).forEach(item => {
+        const option = this.findVarPickerOptionByModelItem(item)
+        if (!option || !option.varCode) return
+        const key = this.varPickerOptionKey(option)
+        if (seen[key]) return
+        seen[key] = true
+        result.push(option)
+      })
+      return result
+    },
     inputVars() {
       return this.projectVars.filter(v => v.varSource === 'INPUT' || !v.varSource)
     },
@@ -104,7 +118,8 @@ export default {
     flattenObjectVariables(vars) {
       const result = []
       const visit = (rows) => {
-        ;(rows || []).forEach(row => {
+        const list = rows || []
+        list.forEach(row => {
           result.push(row)
           if (row.children && row.children.length) visit(row.children)
         })
@@ -375,6 +390,60 @@ export default {
     getVarByCode(code) {
       const ref = this.projectRefs.find(r => r.refCode === code)
       return ref ? ref.varObj : (this.projectVars.find(v => v.varCode === code) || null)
+    },
+
+    varPickerOptionKey(option) {
+      if (!option) return ''
+      const refType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType) || ''
+      const id = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
+      if (id != null && id !== '') return `${refType || 'REF'}:${id}`
+      return `${refType || (option._ref && option._ref.category) || 'CODE'}:${option.varCode || option.refCode || ''}`
+    },
+
+    findVarPickerOptionByModelItem(item) {
+      if (item == null || item === '') return null
+      const source = typeof item === 'string' || typeof item === 'number' ? { varCode: item } : item
+      const id = source._varId != null ? source._varId : (source.id != null ? source.id : (source.varObj && source.varObj.id))
+      const refType = source._refType || source.refType || (source.varObj && source.varObj.refType) || (source._ref && source._ref.refType)
+      if (id != null && id !== '') {
+        const byId = this.varPickerOptions.find(option => {
+          const optionId = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
+          const optionType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType)
+          return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+        })
+        if (byId) return byId
+      }
+      const code = source.varCode || source.refCode || source.condVar || source.target || source.matchVar || source.checkVar
+      if (!code) return null
+      return this.varPickerOptions.find(option => option.varCode === code) || Object.assign({}, source, { varCode: code })
+    },
+
+    collectActionDataVarItems(actionData) {
+      const result = []
+      const pushValue = value => {
+        if (!value) return
+        if (typeof value === 'string') result.push({ varCode: value })
+        else result.push(value)
+      }
+      const walkActions = actions => {
+        const list = actions || []
+        list.forEach(action => {
+          pushValue(action.target)
+          pushValue(action.condVar)
+          pushValue(action.matchVar)
+          pushValue(action.checkVar)
+          if (action.varCode || action._varId) pushValue(action)
+          if (Array.isArray(action.actions)) walkActions(action.actions)
+          if (Array.isArray(action.defaultActions)) walkActions(action.defaultActions)
+          ;(action.branches || []).forEach(branch => {
+            pushValue(branch.condVar)
+            walkActions(branch.actions)
+          })
+          ;(action.cases || []).forEach(item => walkActions(item.actions))
+        })
+      }
+      walkActions(actionData)
+      return result
     },
 
     getVarOptions(refCode) {

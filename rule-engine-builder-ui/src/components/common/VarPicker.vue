@@ -72,7 +72,8 @@
                         @click="onItemClick(v)"
                       >
                         <td class="vp-td vp-td--type">
-                          <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)">{{ typeChar(v.varType) }}</span>
+                          <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)" :title="typeLabel(v.varType)">{{ typeChar(v.varType) }}</span>
+                          <span class="vp-type-label">{{ typeLabel(v.varType) }}</span>
                         </td>
                         <td class="vp-td vp-td--code">{{ v._objectGroup ? objectGroupCode(v) : v.varCode }}</td>
                         <td class="vp-td vp-td--name">{{ v._objectGroup ? objectGroupLabel(v) : (v.varLabel || v.varCode) }}</td>
@@ -86,18 +87,20 @@
                         <td colspan="3" class="vp-children-td">
                           <div class="vp-children-wrap">
                             <div class="vp-children-title">
-                              <i class="el-icon-document" /> {{ v._ref && v._ref.objectLabel ? v._ref.objectLabel : v.objectCode }} 字段路径
+                              <i class="el-icon-document" /> {{ v._ref && v._ref.objectLabel ? v._ref.objectLabel : v.objectCode }} 字段列表
                             </div>
                             <div class="vp-children-list">
                               <div
                                 v-for="child in pagedObjectChildren(v)"
                                 :key="(v._objectGroupKey || '') + '.' + child.varCode"
                                 class="vp-child-item"
+                                :class="{ 'vp-child-item--selected': child.varCode === currentValue }"
                                 @click.stop="onItemClick(child)"
                               >
-                                <span class="vp-child-path">{{ objectFieldPath(child) }}</span>
-                                <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)">{{ typeChar(child.varType) }}</span>
-                                <span class="vp-child-name">{{ optionLabel(child) || child.varCode }}</span>
+                                <span class="vp-child-path">{{ objectFieldRelativePath(child) }}</span>
+                                <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)" :title="typeLabel(child.varType)">{{ typeChar(child.varType) }}</span>
+                                <span class="vp-child-type">{{ typeLabel(child.varType) }}</span>
+                                <span class="vp-child-name">{{ objectFieldDisplayName(child) }}</span>
                               </div>
                             </div>
                             <el-pagination
@@ -143,7 +146,6 @@
           <div
             slot="reference"
             class="vp-reference"
-            @mousedown.prevent.stop="openPopover"
             @click.stop="openPopover"
           >
             <el-input
@@ -197,6 +199,8 @@ export default {
     /** 绑定值：varCode（默认）或 id（数字） */
     value: { type: [String, Number], default: '' },
     vars: { type: Array, default: () => [] },
+    /** 当前设计器页面已选择过的字段，用于快速复用 */
+    selectedVars: { type: Array, default: () => [] },
     typeFilter: { type: String, default: '' },
     showAllWhenFilterEmpty: { type: Boolean, default: false },
     placeholder: { type: String, default: '' },
@@ -347,12 +351,13 @@ export default {
     /** 分类列表（仅显示有数据的分类） */
     categoryList() {
       var list = [
+        { key: 'selected', label: '已选字段', count: 0 },
         { key: 'standalone', label: '普通变量', count: 0 },
         { key: 'constant', label: '常量', count: 0 },
         { key: 'object', label: '数据对象', count: 0 },
         { key: 'model', label: '模型', count: 0 }
       ]
-      var counts = { standalone: 0, constant: 0, object: 0, model: 0 }
+      var counts = { selected: this.selectedItems.length, standalone: 0, constant: 0, object: 0, model: 0 }
       this.vars.forEach(function (v) {
         var cat = (v._ref && v._ref.category) || 'standalone'
         if (counts[cat] !== undefined) counts[cat]++
@@ -362,9 +367,25 @@ export default {
       })
       return list.filter(function (item) { return item.count > 0 })
     },
+    selectedItems() {
+      var result = []
+      var seen = {}
+      ;(this.selectedVars || []).forEach(function (item) {
+        var option = this.resolveSelectedOption(item)
+        if (!option || !option.varCode) return
+        var key = this.optionIdentityKey(option)
+        if (seen[key]) return
+        seen[key] = true
+        result.push(Object.assign({}, option, { _selected: true }))
+      }.bind(this))
+      return result
+    },
     /** 右侧项列表（按当前分类过滤 + 排序）。对象字段自动附加同对象下的所有字段 children） */
     rightItems() {
       var self = this
+      if (this.activeCategory === 'selected') {
+        return this.selectedItems
+      }
       var list = this.vars.filter(function (v) {
         var cat = (v._ref && v._ref.category) || 'standalone'
         if (cat !== self.activeCategory) return false
@@ -434,6 +455,34 @@ export default {
       var objectCode = ref.objectScriptName || ref.objectCode || item.objectCode || ''
       return objectCode ? objectCode + '.' + code : code
     },
+    objectFieldRelativePath(item) {
+      if (!item) return ''
+      var code = item.varCode || ''
+      var ref = item._ref || {}
+      var objectCode = ref.objectScriptName || ref.objectCode || item.objectCode || ''
+      if (objectCode && code.indexOf(objectCode + '.') === 0) {
+        return code.substring(objectCode.length + 1)
+      }
+      return code
+    },
+    objectFieldDisplayName(item) {
+      var label = this.optionLabel(item)
+      var relativeCode = this.objectFieldRelativePath(item)
+      var ref = (item && item._ref) || {}
+      var objectLabel = ref.objectLabel || ''
+      if (objectLabel && label.indexOf(objectLabel + '/') === 0) {
+        label = label.substring(objectLabel.length + 1)
+      } else if (label.indexOf('/') !== -1) {
+        label = label.substring(label.lastIndexOf('/') + 1)
+      }
+      if (relativeCode && label.indexOf(relativeCode + ' ') === 0) {
+        label = label.substring(relativeCode.length + 1)
+      }
+      if (relativeCode && label.lastIndexOf(' ' + relativeCode) === label.length - relativeCode.length - 1) {
+        label = label.substring(0, label.length - relativeCode.length - 1)
+      }
+      return label || relativeCode
+    },
     fieldCodeWithoutObject(item) {
       var code = item && item.varCode ? item.varCode : ''
       if (code.indexOf('.') === -1) return code
@@ -447,6 +496,35 @@ export default {
         return v && v._ref && v._ref.category === 'object' && this.fieldCodeWithoutObject(v) === code
       }.bind(this))
       return matches.length === 1 ? matches[0] : null
+    },
+    findOptionByIdentity(id, refType) {
+      if (id == null || id === '') return null
+      return this.vars.find(function (v) {
+        var optionId = v.id != null ? v.id : (v._varId != null ? v._varId : (v.varObj && v.varObj.id))
+        var optionType = v._refType || v.refType || (v.varObj && v.varObj.refType) || (v._ref && v._ref.refType)
+        return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+      }) || null
+    },
+    resolveSelectedOption(item) {
+      if (item == null || item === '') return null
+      if (typeof item === 'string' || typeof item === 'number') {
+        return this.findOptionByCode(item) || this.findOptionByIdentity(item, null)
+      }
+      var id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
+      var refType = item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType)
+      return this.findOptionByIdentity(id, refType) ||
+        this.findOptionByCode(item.varCode || item.refCode) ||
+        (item.varCode || item.refCode ? Object.assign({}, item, { varCode: item.varCode || item.refCode }) : null)
+    },
+    optionIdentityKey(item) {
+      var id = item && (item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id)))
+      var refType = item && (item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType))
+      if (id != null && id !== '') return (refType || 'REF') + ':' + id
+      var cat = (item && item._ref && item._ref.category) || ''
+      return cat + ':' + (item && item.varCode ? item.varCode : '')
+    },
+    optionCategory(item) {
+      return (item && item._ref && item._ref.category) || 'standalone'
     },
     optionLabel(item) {
       if (!item) return ''
@@ -568,8 +646,70 @@ export default {
     },
     openPopover() {
       if (this.groupedByCategory && this.hasVarOptions) {
+        var wasVisible = this.popoverVisible
         this.popoverVisible = true
+        if (!wasVisible) this.$nextTick(this.focusCurrentValueInPicker)
       }
+    },
+    focusCurrentValueInPicker() {
+      var option = this.valueKey === 'id'
+        ? this.findOptionByIdentity(this.value, null)
+        : this.findOptionByCode(this.value)
+      if (!option) return
+
+      var category = this.optionCategory(option)
+      this.activeCategory = category
+      this.expandedObject = null
+      this.rightPage = 1
+
+      this.$nextTick(function () {
+        if (category === 'object') {
+          this.focusObjectOption(option)
+        } else {
+          this.focusFlatOption(option)
+        }
+        this.scrollCurrentValueIntoView()
+      }.bind(this))
+    },
+    focusFlatOption(option) {
+      var list = this.filteredRightItems
+      var index = list.findIndex(function (item) {
+        return this.optionIdentityKey(item) === this.optionIdentityKey(option) || item.varCode === option.varCode
+      }.bind(this))
+      if (index >= 0) {
+        this.rightPage = Math.floor(index / this.fieldPageSize) + 1
+      }
+    },
+    focusObjectOption(option) {
+      var groupKey = this.objectGroupCode(option)
+      var groups = this.filteredRightItems
+      var groupIndex = groups.findIndex(function (item) {
+        return item._objectGroupKey === groupKey || this.objectGroupCode(item) === groupKey
+      }.bind(this))
+      if (groupIndex >= 0) {
+        this.rightPage = Math.floor(groupIndex / this.fieldPageSize) + 1
+      }
+      this.expandedObject = groupKey
+      var group = groups[groupIndex]
+      if (group && group.children && group.children.length) {
+        var childIndex = group.children.findIndex(function (child) {
+          return this.optionIdentityKey(child) === this.optionIdentityKey(option) || child.varCode === option.varCode
+        }.bind(this))
+        if (childIndex >= 0) {
+          this.$set(this.objectChildPages, groupKey, Math.floor(childIndex / this.fieldPageSize) + 1)
+        }
+      }
+    },
+    scrollCurrentValueIntoView() {
+      this.$nextTick(function () {
+        var popover = this.$refs.popover
+        var popper = popover && popover.popperElm
+        if (!popper) return
+        var target = popper.querySelector('.vp-row--selected, .vp-child-item--selected')
+        if (target && target.scrollIntoView) {
+          target.scrollIntoView({ block: 'nearest' })
+        }
+      })
     },
     updateDocumentListener(visible) {
       if (typeof document === 'undefined') return
@@ -691,6 +831,8 @@ export default {
     /** 根据配置获取编码列标签 */
     codeColumnLabel() {
       if (typeof this.columnLabels === 'object') return this.columnLabels.codeLabel || '字段编码'
+      if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段编码'
+      if (this.activeCategory === 'model') return '模型编码'
       const labels = {
         variable: '变量编码',
         dataObject: '属性字段路径',
@@ -701,6 +843,8 @@ export default {
     /** 根据配置获取名称列标签 */
     nameColumnLabel() {
       if (typeof this.columnLabels === 'object') return this.columnLabels.nameLabel || '字段名称'
+      if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段名称'
+      if (this.activeCategory === 'model') return '模型名称'
       const labels = {
         variable: '变量名称',
         dataObject: '属性名称',
@@ -726,6 +870,13 @@ export default {
   }
 }
 </script>
+
+<style>
+.var-picker-popover {
+  box-sizing: content-box !important;
+  padding: 0 !important;
+}
+</style>
 
 <style scoped>
 .var-picker-wrap {
@@ -800,6 +951,8 @@ export default {
   display: flex;
   user-select: none;
   position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
   min-width: 520px;
   min-height: 300px;
   max-width: 960px;
@@ -878,7 +1031,7 @@ export default {
   top: 0;
   z-index: 1;
 }
-.vp-th--type { width: 36px; text-align: center; padding: 8px 4px; }
+.vp-th--type { width: 72px; text-align: center; padding: 8px 4px; }
 .vp-th--code { width: 130px; }
 .vp-th--name { min-width: 80px; }
 .vp-row {
@@ -893,7 +1046,14 @@ export default {
   border-bottom: 1px solid #f5f5f5;
   color: #303133;
 }
-.vp-td--type { text-align: center; padding: 7px 4px; }
+.vp-td--type {
+  text-align: center;
+  padding: 7px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
 .vp-td--code {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
@@ -935,11 +1095,22 @@ export default {
   transition: background 0.1s;
 }
 .vp-child-item:hover { background: #e6f7ff; }
+.vp-child-item--selected { background: #d0e8ff; }
 .vp-child-path {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
   color: #909399;
   flex-shrink: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.vp-type-label,
+.vp-child-type {
+  font-size: 11px;
+  color: #606266;
+  white-space: nowrap;
 }
 .vp-child-name {
   color: #303133;
@@ -963,18 +1134,19 @@ export default {
 }
 .vp-resize-handle {
   position: absolute;
-  right: 2px;
-  bottom: 2px;
-  width: 14px;
-  height: 14px;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
   cursor: nwse-resize;
-  z-index: 3;
+  touch-action: none;
+  z-index: 5;
 }
 .vp-resize-handle::after {
   content: '';
   position: absolute;
-  right: 2px;
-  bottom: 2px;
+  right: 3px;
+  bottom: 3px;
   width: 8px;
   height: 8px;
   border-right: 2px solid #c0c4cc;
@@ -1020,6 +1192,8 @@ export default {
 .vp-type-badge--l { background: #FF9800; }
 /* 映射 m - 灰色 */
 .vp-type-badge--m { background: #909399; }
+/* 模型 M - 绿色 */
+.vp-type-badge--M { background: #13C2C2; }
 /* 默认 ? - 浅灰 */
 .vp-type-badge--? { background: #C0C4CC; }
 </style>

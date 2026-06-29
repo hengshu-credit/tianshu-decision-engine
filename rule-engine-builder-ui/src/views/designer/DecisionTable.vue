@@ -54,6 +54,7 @@
                 v-if="row.conditionRoot"
                 :group="row.conditionRoot"
                 :vars="varPickerOptions"
+                :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
               />
             </div>
@@ -137,6 +138,7 @@
             :value="activeColDef.varCode"
             placeholder="选择变量、常量或对象字段..."
             size="small"
+            :selected-vars="selectedVarPickerOptions"
             @select="onColConfigVarSelect"
           />
           <span v-else style="color:#999;font-size:12px;">暂无变量库数据</span>
@@ -303,6 +305,35 @@ export default {
         collectVarCodesFromConditionTree(r.conditionRoot, s)
       })
       return Array.from(s)
+    },
+    selectedVarPickerOptions() {
+      const result = []
+      const seen = new Set()
+      const addItem = item => {
+        const option = this.findVarPickerOptionByModelItem(item)
+        if (!option) return
+        const key = this.varPickerOptionKey(option)
+        if (seen.has(key)) return
+        seen.add(key)
+        result.push(option)
+      }
+
+      ;(this.model.rules || []).forEach(rule => {
+        walkConditionLeaves(rule.conditionRoot, leaf => {
+          addItem(leaf)
+          if (leaf.valueKind === 'VAR' && leaf.value) {
+            addItem({
+              varCode: leaf.value,
+              varLabel: leaf.rightVarLabel,
+              _varId: leaf._rightVarId,
+              _refType: leaf._rightRefType || leaf._refType,
+              varType: leaf.rightVarType
+            })
+          }
+        })
+        ;(rule.actions || []).forEach(addItem)
+      })
+      return result
     }
   },
   created() {
@@ -473,6 +504,37 @@ export default {
       this.colConfigRuleIndex = ruleIndex
       this.colConfigActionIndex = actionIndex
       this.colConfigVisible = true
+    },
+
+    varPickerOptionKey(option) {
+      const id = option && (option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id)))
+      const refType = option && (option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType))
+      if (id != null && id !== '') return (refType || 'REF') + ':' + id
+      return (option && option.varCode) || ''
+    },
+
+    findVarPickerOptionByModelItem(item) {
+      if (!item) return null
+      const id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
+      const refType = item._refType || item.refType || (item.varObj && item.varObj.refType)
+      if (id != null && id !== '') {
+        const byId = this.varPickerOptions.find(option => {
+          const optionId = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
+          const optionType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType)
+          return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+        })
+        if (byId) return byId
+      }
+      const code = item.varCode || item.refCode || ''
+      if (!code) return null
+      const exact = this.varPickerOptions.find(option => option.varCode === code)
+      if (exact) return exact
+      const leafMatches = this.varPickerOptions.filter(option => {
+        if (!option._ref || option._ref.category !== 'object') return false
+        const optionCode = option.varCode || ''
+        return optionCode.substring(optionCode.lastIndexOf('.') + 1) === code
+      })
+      return leafMatches.length === 1 ? leafMatches[0] : null
     },
 
     onColConfigVarSelect(variable) {

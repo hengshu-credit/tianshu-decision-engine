@@ -109,6 +109,7 @@
                   <span class="cond-label">变量</span>
                   <var-picker
                     :vars="varPickerOptions"
+                    :selected-vars="selectedVarPickerOptions"
                     :value="edgeCondVisual.leftVar"
                     placeholder="选择或输入变量..."
                     size="mini"
@@ -140,6 +141,7 @@
                   <span class="cond-label">右变量</span>
                   <var-picker
                     :vars="varPickerOptions"
+                    :selected-vars="selectedVarPickerOptions"
                     :value="edgeCondVisual.rightVar"
                     placeholder="选择或输入比较变量..."
                     size="mini"
@@ -236,6 +238,7 @@
                   <action-block-editor
                     :action-data="currentActionData"
                     :vars="varPickerOptions"
+                    :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
                     @update="onActionDataUpdate"
                   />
@@ -413,6 +416,29 @@ export default {
     }
   },
   methods: {
+    collectSelectedVarItems() {
+      const items = []
+      const pushVisual = visual => {
+        if (!visual) return
+        items.push({ varCode: visual.leftVar, _varId: visual.leftVarId, _refType: visual.leftRefType })
+        items.push({ varCode: visual.rightVar, _varId: visual.rightVarId, _refType: visual.rightRefType })
+      }
+      const pushProps = props => {
+        if (!props) return
+        items.push({ _varId: props.leftVarId, _refType: props.leftRefType })
+        items.push({ _varId: props.rightVarId, _refType: props.rightRefType })
+        items.push(...this.collectActionDataVarItems(props.actionData || []))
+      }
+      pushVisual(this.nodeCondVisual)
+      pushVisual(this.edgeCondVisual)
+      items.push(...this.collectActionDataVarItems(this.currentActionData || []))
+      if (this.lf && typeof this.lf.getGraphData === 'function') {
+        const graph = this.lf.getGraphData() || {}
+        ;(graph.nodes || []).forEach(node => pushProps(node.properties || node))
+        ;(graph.edges || []).forEach(edge => pushProps(edge.properties || edge))
+      }
+      return items
+    },
     initLogicFlow() {
       LogicFlow.use(SelectionSelect)
       LogicFlow.use(Menu)

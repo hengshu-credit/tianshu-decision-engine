@@ -29,6 +29,7 @@
         <var-picker
           v-if="varPickerOptions.length"
           :vars="varPickerOptions"
+          :selected-vars="selectedVarPickerOptions"
           :value="model.rowVar.varCode"
           placeholder="选择变量、常量或对象字段..."
           style="margin-bottom:6px;"
@@ -46,6 +47,7 @@
         <var-picker
           v-if="varPickerOptions.length"
           :vars="varPickerOptions"
+          :selected-vars="selectedVarPickerOptions"
           :value="model.colVar.varCode"
           placeholder="选择变量、常量或对象字段..."
           style="margin-bottom:6px;"
@@ -59,6 +61,7 @@
         <var-picker
           v-if="varPickerOptions.length"
           :vars="varPickerOptions"
+          :selected-vars="selectedVarPickerOptions"
           :value="model.resultVar.varCode"
           placeholder="选择变量、常量或对象字段..."
           style="margin-bottom:6px;"
@@ -262,6 +265,9 @@ export default {
     this.loadContent()
   },
   methods: {
+    collectSelectedVarItems() {
+      return [this.model.rowVar, this.model.colVar, this.model.resultVar]
+    },
     applyVarToDim(variable, dimKey) {
       if (!variable) return
       const varLabel = variable.varLabel || variable.varCode

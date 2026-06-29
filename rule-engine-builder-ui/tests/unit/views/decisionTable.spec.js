@@ -52,6 +52,7 @@ function mockProjectVars() {
     { id: 1, varCode: 'age', varLabel: '年龄', varType: 'STRING', varSource: 'INPUT', scriptName: 'age' },
     { id: 2, varCode: 'income', varLabel: '收入', varType: 'NUMBER', varSource: 'INPUT', scriptName: 'income' },
     { id: 3, varCode: 'cityCode', varLabel: '城市编码', varType: 'STRING', varSource: 'INPUT', scriptName: 'cityCode' },
+    { id: 5, varCode: 'result', varLabel: '结果', varType: 'STRING', varSource: 'COMPUTED', scriptName: 'result' },
     {
       id: 4, varCode: 'MAX_AGE', varLabel: '最大年龄', varType: 'NUMBER', varSource: 'CONSTANT', scriptName: 'MAX_AGE'
     },
@@ -228,6 +229,13 @@ describe('DecisionTable — 变量选择器加载', () => {
     const amountOpt = options.find(o => o.varCode === 'TaxRequest.amount')
     expect(amountOpt).toBeDefined()
     expect(amountOpt.varLabel).toMatch(/税务请求/)
+  })
+
+  test('selectedVarPickerOptions 汇总当前规则已选择的条件和动作字段', () => {
+    const selected = wrapper.vm.selectedVarPickerOptions.map(o => o.varCode)
+    expect(selected).toContain('age')
+    expect(selected).toContain('result')
+    expect(new Set(selected).size).toBe(selected.length)
   })
 })
 

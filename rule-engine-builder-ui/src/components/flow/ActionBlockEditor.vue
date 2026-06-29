@@ -15,7 +15,7 @@
         <!-- ===== 赋值 ===== -->
         <template v-if="block.type === 'assign'">
           <div class="inline-row">
-            <var-picker :vars="vars" :value="block.target" placeholder="目标变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="目标变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
             <span class="eq">=</span>
             <el-input v-model="block.value" size="mini" placeholder="值/表达式" @input="sync" />
           </div>
@@ -44,7 +44,7 @@
               <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="removeBranch(block, bri)" />
             </div>
             <div v-if="br.type !== 'else'" class="cond-area">
-              <var-picker :vars="vars" :value="br.condVar" placeholder="条件变量" size="mini" @select="v => { br.condVar = v.varCode; sync() }" />
+              <var-picker :vars="vars" :selected-vars="selectedVars" :value="br.condVar" placeholder="条件变量" size="mini" @select="v => { br.condVar = v.varCode; sync() }" />
               <el-select v-model="br.condOp" size="mini" style="width:68px" @change="sync">
                 <el-option label="==" value="==" /><el-option label="!=" value="!=" />
                 <el-option label=">" value=">" /><el-option label=">=" value=">=" />
@@ -54,7 +54,7 @@
             </div>
             <div class="branch-body">
               <div v-for="(a, ai) in br.actions" :key="ai" class="inline-row">
-                <var-picker :vars="vars" :value="a.target" placeholder="变量" size="mini" @select="v => { a.target = v.varCode; sync() }" />
+                <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => { a.target = v.varCode; sync() }" />
                 <span class="eq">=</span>
                 <el-input v-model="a.value" size="mini" placeholder="值" @input="sync" />
                 <el-button v-if="br.actions.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="br.actions.splice(ai,1); sync()" />
@@ -72,7 +72,7 @@
         <template v-if="block.type === 'switch-block'">
           <div class="inline-row" style="margin-bottom:6px">
             <span class="mini-label">匹配变量</span>
-            <var-picker :vars="vars" :value="block.matchVar" placeholder="变量" size="mini" @select="v => { block.matchVar = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.matchVar" placeholder="变量" size="mini" @select="v => { block.matchVar = v.varCode; sync() }" />
           </div>
           <div v-for="(c, ci) in block.cases" :key="ci" class="case-card">
             <div class="case-head">
@@ -144,7 +144,7 @@
         <template v-if="block.type === 'ternary'">
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">结果</span>
-            <var-picker :vars="vars" :value="block.target" placeholder="变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
           </div>
           <div class="cond-area" style="margin-bottom:4px">
             <el-input v-model="block.condVar" size="mini" placeholder="条件变量" @input="sync" style="width:80px" />
@@ -167,7 +167,7 @@
             <span class="mini-label">结果</span>
             <el-input v-model="block.target" size="mini" placeholder="变量" @input="sync" />
             <span class="mini-label">检测</span>
-            <var-picker :vars="vars" :value="block.checkVar" placeholder="变量" size="mini" @select="v => { block.checkVar = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.checkVar" placeholder="变量" size="mini" @select="v => { block.checkVar = v.varCode; sync() }" />
           </div>
           <div class="inline-row" style="flex-wrap:wrap;gap:4px;margin-bottom:4px">
             <span class="mini-label">值列表</span>
@@ -223,6 +223,7 @@ export default {
   props: {
     actionData: { type: Array, default: () => [] },
     vars: { type: Array, default: () => [] },
+    selectedVars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] }
   },
   data() {

@@ -218,6 +218,45 @@ describe('varPickerMixin', () => {
     expect(amountOpt.varLabel).toMatch(/金额|TaxRequest/)
   })
 
+  test('selectedVarPickerOptions 从页面模型字段中按引用去重汇总已选字段', async () => {
+    const ComponentDef = {
+      mixins: [varPickerMixin],
+      data() {
+        return {
+          contentLoaded: true,
+          selectedModelItems: [
+            { _varId: 1, _refType: 'VARIABLE', varCode: 'legacyAge' },
+            { varCode: 'TaxRequest.amount' },
+            { _varId: 101, _refType: 'MODEL' },
+            { varCode: 'age' }
+          ],
+          selectedActionData: [
+            { type: 'assign', target: 'income', value: '1' },
+            { type: 'switch-block', matchVar: 'level', cases: [{ actions: [{ target: 'TaxRequest.amount' }] }] }
+          ]
+        }
+      },
+      methods: {
+        collectSelectedVarItems() {
+          return [
+            ...this.selectedModelItems,
+            ...this.collectActionDataVarItems(this.selectedActionData)
+          ]
+        }
+      }
+    }
+    const vm = new (Vue.extend(ComponentDef))()
+    await vm.loadProjectVars(1)
+
+    expect(vm.selectedVarPickerOptions.map(o => o.varCode)).toEqual([
+      'age',
+      'TaxRequest.amount',
+      'creditModel',
+      'income',
+      'level'
+    ])
+  })
+
   // ─── 错误处理测试 ────────────────────────────────────────
   test('loadProjectVars 失败时 varsLoadError 为 true', async () => {
     // getDefinition 失败才会触发 varsLoadError（因为 listVariablesByProject 等使用了 .catch(() => [])）

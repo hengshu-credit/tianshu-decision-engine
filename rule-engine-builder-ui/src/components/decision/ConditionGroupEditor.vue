@@ -38,6 +38,7 @@
             :vars="vars"
             :depth="depth + 1"
             :get-var-options-fn="getVarOptionsFn"
+            :selected-vars="selectedVars"
             @remove-group="removeChild(idx)"
           />
           <!-- 单条条件叶：整行铺满容器，字段按比例伸缩 -->
@@ -50,6 +51,7 @@
                 size="mini"
                 width="100%"
                 :allow-custom="false"
+                :selected-vars="selectedVars"
                 @select="v => onLeafLeftSelect(child, v)"
               />
             </div>
@@ -73,6 +75,7 @@
                   size="mini"
                   width="100%"
                   :allow-custom="false"
+                  :selected-vars="selectedVars"
                   @select="v => onLeafRightSelect(child, v)"
                 />
               </div>
@@ -133,6 +136,8 @@ export default {
     group: { type: Object, required: true },
     /** VarPicker 选项列表 */
     vars: { type: Array, default: () => [] },
+    /** 当前设计器页面已经选择过的字段，传给 VarPicker 的「已选字段」分类 */
+    selectedVars: { type: Array, default: () => [] },
     /** 嵌套深度，根为 0 */
     depth: { type: Number, default: 0 },
     /** 父组件提供的 (varCode) => options[]，用于枚举选项 */

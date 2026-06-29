@@ -31,6 +31,7 @@
             <var-picker
               v-if="!customResultVarMode && varPickerOptions.length"
               :vars="varPickerOptions"
+              :selected-vars="selectedVarPickerOptions"
               :value="model.resultVar.varCode"
               placeholder="选择结果变量..."
               width="200px"
@@ -110,6 +111,7 @@
             <var-picker
               v-if="varPickerOptions.length"
               :vars="varPickerOptions"
+              :selected-vars="selectedVarPickerOptions"
               :value="dim.varCode"
               placeholder="主变量..."
               width="180px"
@@ -155,6 +157,7 @@
                     <var-picker
                       v-if="varPickerOptions.length"
                       :vars="varPickerOptions"
+                      :selected-vars="selectedVarPickerOptions"
                       :value="cond.varCode"
                       placeholder="变量"
                       width="100%"
@@ -393,6 +396,18 @@ export default {
     this.loadContent()
   },
   methods: {
+    collectSelectedVarItems() {
+      const items = [this.model.resultVar]
+      ;(this.model.dimensionGroups || []).forEach(group => {
+        ;(group.dimensions || []).forEach(dim => {
+          items.push(dim)
+          ;(dim.rules || []).forEach(rule => {
+            ;(rule.conditions || []).forEach(cond => items.push(cond))
+          })
+        })
+      })
+      return items
+    },
     async loadContent() {
       try {
         const res = await getContent(this.definitionId)

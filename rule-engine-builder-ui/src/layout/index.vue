@@ -3,7 +3,10 @@
     <el-header height="50px" class="layout-header">
       <div class="header-title">
         <img src="/images/hengshucredit_animated.svg" alt="logo" class="header-logo">
-        <span>衡枢决策引擎</span>
+        <div class="header-text">
+          <span class="header-main-text">天枢决策引擎</span>
+          <span class="header-sub-text">天工开物, 枢衡定策</span>
+        </div>
       </div>
       <div v-if="loginEnabled" class="header-actions">
         <span class="user-label">{{ username }}</span>
@@ -129,17 +132,37 @@ export default {
   padding: 0 20px;
 
   .header-title {
-    font-size: 18px;
-    font-weight: bold;
-    color: #FFFFFF;
-    line-height: 1;
     display: flex;
     align-items: center;
+    gap: 8px;
+    transform: scale(0.8);
+    transform-origin: center left;
 
     .header-logo {
-      height: 24px;
-      width: 24px;
-      vertical-align: text-top;
+      height: 40px;
+      width: 40px;
+    }
+
+    .header-text {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: flex-start;
+    }
+
+    .header-main-text {
+      font-size: 18px;
+      font-weight: bold;
+      color: #FFFFFF;
+      line-height: 1.25;
+      white-space: nowrap;
+    }
+
+    .header-sub-text {
+      font-size: 12px;
+      color: #22d3ee;
+      line-height: 1;
+      white-space: nowrap;
       margin-top: 2px;
     }
   }
