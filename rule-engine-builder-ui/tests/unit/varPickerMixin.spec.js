@@ -16,6 +16,7 @@ import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
+import * as modelApi from '@/api/model'
 
 // ─── Mock 数据（传原始数组，由 axios 拦截器包成 { data: ... }） ─────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
@@ -38,6 +39,10 @@ const mockObjectTree = [
   }
 ]
 
+const mockModels = [
+  { id: 101, modelCode: 'creditModel', modelName: '信用模型', modelType: 'LR', status: 1 }
+]
+
 // getVariableTree 返回数组（axios 拦截器会包成 { data: [...] }）
 
 describe('varPickerMixin', () => {
@@ -50,6 +55,7 @@ describe('varPickerMixin', () => {
     variableApi.listVariablesByProject.mockResolvedValue(mockVars)
     dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree)
     functionApi.listAllFunctionsByProject.mockResolvedValue([])
+    modelApi.listAllModelsByProject.mockResolvedValue(mockModels)
     dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
 
@@ -83,6 +89,7 @@ describe('varPickerMixin', () => {
     expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
     expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(1)
     expect(functionApi.listAllFunctionsByProject).toHaveBeenCalledWith(1)
+    expect(modelApi.listAllModelsByProject).toHaveBeenCalledWith(1)
   })
 
   test('loadProjectVars 完成后 projectVars 非空', async () => {
@@ -129,6 +136,15 @@ describe('varPickerMixin', () => {
     const object = vm.projectRefs.filter(r => r.category === 'object')
     expect(object.length).toBe(1)
     expect(object[0].refCode).toBe('TaxRequest.amount')
+  })
+
+  test('projectRefs 包含 model 类别的模型', async () => {
+    const vm = createMixinVM()
+    await vm.loadProjectVars(1)
+    const models = vm.projectRefs.filter(r => r.category === 'model')
+    expect(models.length).toBe(1)
+    expect(models[0].refCode).toBe('creditModel')
+    expect(models[0].refType).toBe('MODEL')
   })
 
   // ─── 方法测试 ────────────────────────────────────────────
@@ -186,7 +202,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const options = vm.varPickerOptions
-    expect(options.length).toBe(5) // 3 standalone + 1 constant + 1 object
+    expect(options.length).toBe(6) // 3 standalone + 1 constant + 1 object + 1 model
     const ageOpt = options.find(o => o.varCode === 'age')
     expect(ageOpt).toBeDefined()
     expect(ageOpt.varLabel).toMatch(/年龄.*age/)
@@ -232,6 +248,7 @@ describe('varPickerMixin', () => {
     ])
     dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree)
     functionApi.listAllFunctionsByProject.mockResolvedValue([])
+    modelApi.listAllModelsByProject.mockResolvedValue(mockModels)
 
     await vm.refreshProjectRefs()
     expect(vm.projectRefs.length).toBe(initialCount + 1)
@@ -243,6 +260,7 @@ describe('varPickerMixin', () => {
     // beforeEach 已 mock getDefinition，此处只需覆盖返回空数组
     variableApi.listVariablesByProject.mockResolvedValue([])
     dataObjectApi.getVariableTree.mockResolvedValue([])
+    modelApi.listAllModelsByProject.mockResolvedValue([])
 
     const vm = createMixinVM()
     await vm.loadProjectVars(1)

@@ -771,6 +771,7 @@ public class RuleModelService {
             throw new IllegalArgumentException("输入字段不存在");
         }
         existing.setVarId(field.getVarId());
+        existing.setRefType(field.getRefType());
         existing.setScriptName(field.getScriptName());
         existing.setFieldLabel(field.getFieldLabel());
         existing.setFieldType(field.getFieldType());
@@ -791,6 +792,7 @@ public class RuleModelService {
             throw new IllegalArgumentException("输出字段不存在");
         }
         existing.setVarId(field.getVarId());
+        existing.setRefType(field.getRefType());
         existing.setScriptName(field.getScriptName());
         existing.setFieldLabel(field.getFieldLabel());
         existing.setFieldType(field.getFieldType());

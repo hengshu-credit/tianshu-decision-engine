@@ -457,7 +457,7 @@ export default {
       var self = this
       return this.ruleCols.map(function (c) {
         var label = self.varMap[c] || c
-        var val = self.parsedInput[c]
+        var val = self.getInputValue(c)
         return val !== undefined ? label + ' = ' + val : label
       }).join(' + ')
     },
@@ -1337,11 +1337,26 @@ export default {
       var first = comps[0]
       if (first.children && first.children[0]) {
         var vn = first.children[0].token
-        var val = this.parsedInput[vn]
+        var val = this.getInputValue(vn)
         if (val !== undefined) return this._fv(val)
         if (first.children[0].value !== undefined) return this._fv(first.children[0].value)
       }
       return '-'
+    },
+    getInputValue: function (key) {
+      if (!key) return undefined
+      if (this.parsedInput && Object.prototype.hasOwnProperty.call(this.parsedInput, key)) {
+        return this.parsedInput[key]
+      }
+      if (key.indexOf('.') < 0) return undefined
+      var parts = key.split('.').filter(Boolean)
+      var cur = this.parsedInput
+      for (var i = 0; i < parts.length; i++) {
+        if (cur === null || cur === undefined || typeof cur !== 'object') return undefined
+        if (!Object.prototype.hasOwnProperty.call(cur, parts[i])) return undefined
+        cur = cur[parts[i]]
+      }
+      return cur
     },
     _condTextSimple: function (node) {
       if (!node) return '-'

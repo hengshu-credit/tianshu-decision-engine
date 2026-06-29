@@ -19,6 +19,7 @@ import { getDefinition } from '@/api/definition'
 import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
+import { listAllModelsByProject } from '@/api/model'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
 
@@ -42,13 +43,20 @@ export default {
     /** VarPicker 使用的选项列表（分层：普通变量 / 常量 / 对象字段） */
     varPickerOptions() {
       return this.projectRefs.map(r => ({
+        id: r.varObj && r.varObj.id,
         varCode: r.refCode,
         varLabel: r.refLabel.label + ' ' + r.refLabel.code,
         varLabelText: r.refLabel.label,
         varCodeText: r.refLabel.code,
         varType: r.varType,
         varObj: r.varObj,
-        _ref: r
+        refType: r.refType,
+        _varId: r.varObj && r.varObj.id,
+        _refType: r.refType,
+        _ref: Object.assign({}, r, {
+          id: r.varObj && r.varObj.id,
+          refType: r.refType
+        })
       }))
     },
     inputVars() {
@@ -93,6 +101,20 @@ export default {
       if (data && Array.isArray(data.records)) return data.records
       return []
     },
+    flattenObjectVariables(vars) {
+      const result = []
+      const visit = (rows) => {
+        ;(rows || []).forEach(row => {
+          result.push(row)
+          if (row.children && row.children.length) visit(row.children)
+        })
+      }
+      visit(vars)
+      return result
+    },
+    refTypeForVar(v) {
+      return v && v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
+    },
 
     /**
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
@@ -112,10 +134,11 @@ export default {
         const pid = def.projectId
 
         // request 拦截器已返回 res.data，无需再访问 .data
-        const [varRes, objRes, funcRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
-          listAllFunctionsByProject(pid).catch(() => [])
+          listAllFunctionsByProject(pid).catch(() => []),
+          listAllModelsByProject(pid).catch(() => [])
         ])
         this.projectFunctions = this.normalizeListResponse(funcRes)
 
@@ -124,6 +147,7 @@ export default {
 
         // objRes 是 { tree: [...], objectIdMap: {...} }，需要取 tree 属性
         const objectTree = this.normalizeVariableTreeResponse(objRes)
+        const models = this.normalizeListResponse(modelRes)
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
@@ -145,8 +169,9 @@ export default {
             refCode: v.scriptName || v.varCode,
             refLabel: makeRefLabel(v, 'variable', ''),
             varType: v.varType,
-            varObj: v,
-            category: 'standalone'
+            varObj: Object.assign({ refType: this.refTypeForVar(v) }, v),
+            category: 'standalone',
+            refType: this.refTypeForVar(v)
           })
         })
 
@@ -157,8 +182,9 @@ export default {
             refCode: constScriptName,
             refLabel: makeRefLabel(c, 'constant', ''),
             varType: c.varType,
-            varObj: c,
-            category: 'constant'
+            varObj: Object.assign({ refType: 'CONSTANT' }, c),
+            category: 'constant',
+            refType: 'CONSTANT'
           })
         })
 
@@ -168,7 +194,8 @@ export default {
           const objectCode = obj.objectCode || ''
           const objScriptName = obj.scriptName || objectCode
           const objectLabel = obj.objectLabel || objectCode
-          ;(node.variables || []).forEach(v => {
+          const fields = node.flatVariables || this.flattenObjectVariables(node.variables)
+          ;(fields || []).forEach(v => {
             const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
             const refCode = `${objScriptName}.${varScriptName}`
             const labelSource = Object.assign({}, v, {
@@ -180,12 +207,27 @@ export default {
               refCode,
               refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
-              varObj: v,
+              varObj: Object.assign({ refType: 'DATA_OBJECT' }, v),
               category: 'object',
+              refType: 'DATA_OBJECT',
               objectCode: objScriptName,
               objectRawCode: objectCode,
               objectLabel
             })
+          })
+        })
+
+        models.forEach(m => {
+          const modelCode = m.modelCode || ''
+          if (!modelCode) return
+          const modelRef = Object.assign({ refType: 'MODEL', varCode: modelCode, varLabel: m.modelName || modelCode, scriptName: modelCode, varType: 'MODEL' }, m)
+          refs.push({
+            refCode: modelCode,
+            refLabel: makeRefLabel(modelRef, 'model', ''),
+            varType: 'MODEL',
+            varObj: modelRef,
+            category: 'model',
+            refType: 'MODEL'
           })
         })
 
@@ -230,10 +272,11 @@ export default {
       this.varsLoadError = false
       try {
         const pid = this._projectId
-        const [varRes, objRes, funcRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
-          listAllFunctionsByProject(pid).catch(() => [])
+          listAllFunctionsByProject(pid).catch(() => []),
+          listAllModelsByProject(pid).catch(() => [])
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)
@@ -242,6 +285,7 @@ export default {
 
         // objRes 是 { tree: [...], objectIdMap: {...} }，需要取 tree 属性
         const objectTree = this.normalizeVariableTreeResponse(objRes)
+        const models = this.normalizeListResponse(modelRes)
 
         // 兼容旧逻辑：projectVars 扁平存储，同时格式化 varLabel 供 PropertyPanel 等直接引用
         this.projectVars = allVars.map(v => {
@@ -261,8 +305,9 @@ export default {
             refCode: v.scriptName || v.varCode,
             refLabel: makeRefLabel(v, 'variable', ''),
             varType: v.varType,
-            varObj: v,
-            category: 'standalone'
+            varObj: Object.assign({ refType: this.refTypeForVar(v) }, v),
+            category: 'standalone',
+            refType: this.refTypeForVar(v)
           })
         })
         allVars.filter(v => v.varSource === 'CONSTANT').forEach(c => {
@@ -271,15 +316,17 @@ export default {
             refCode: constScriptName,
             refLabel: makeRefLabel(c, 'constant', ''),
             varType: c.varType,
-            varObj: c,
-            category: 'constant'
+            varObj: Object.assign({ refType: 'CONSTANT' }, c),
+            category: 'constant',
+            refType: 'CONSTANT'
           })
         })
         objectTree.forEach(node => {
           const obj = node.object || node
           const objectCode = obj.objectCode || ''
           const objScriptName = obj.scriptName || objectCode
-          ;(node.variables || []).forEach(v => {
+          const fields = node.flatVariables || this.flattenObjectVariables(node.variables)
+          ;(fields || []).forEach(v => {
             const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
             const refCode = `${objScriptName}.${varScriptName}`
             const labelSource = Object.assign({}, v, {
@@ -291,12 +338,26 @@ export default {
               refCode,
               refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
               varType: v.varType,
-              varObj: v,
+              varObj: Object.assign({ refType: 'DATA_OBJECT' }, v),
               category: 'object',
+              refType: 'DATA_OBJECT',
               objectCode: objScriptName,
               objectRawCode: objectCode,
               objectLabel: obj.objectLabel || objectCode
             })
+          })
+        })
+        models.forEach(m => {
+          const modelCode = m.modelCode || ''
+          if (!modelCode) return
+          const modelRef = Object.assign({ refType: 'MODEL', varCode: modelCode, varLabel: m.modelName || modelCode, scriptName: modelCode, varType: 'MODEL' }, m)
+          refs.push({
+            refCode: modelCode,
+            refLabel: makeRefLabel(modelRef, 'model', ''),
+            varType: 'MODEL',
+            varObj: modelRef,
+            category: 'model',
+            refType: 'MODEL'
           })
         })
 
@@ -344,9 +405,9 @@ export default {
     /**
      * 根据变量数据库 ID 在最新的 projectRefs 中查找对应引用
      */
-    findRefByVarId(varId) {
+    findRefByVarId(varId, refType) {
       if (!varId) return null
-      return this.projectRefs.find(r => r.varObj && String(r.varObj.id) === String(varId)) || null
+      return this.projectRefs.find(r => r.varObj && String(r.varObj.id) === String(varId) && (!refType || r.refType === refType)) || null
     },
 
     /**
@@ -358,7 +419,7 @@ export default {
       if (!item || !item.varCode) return false
       // 1. 优先使用 _varId 精确匹配
       if (item._varId) {
-        const ref = this.findRefByVarId(item._varId)
+        const ref = this.findRefByVarId(item._varId, item._refType)
         if (ref) {
           let changed = false
           if (item.varCode !== ref.refCode) { item.varCode = ref.refCode; changed = true }
@@ -369,6 +430,7 @@ export default {
             if (item.varLabel !== ref.refLabel) { item.varLabel = ref.refLabel; changed = true }
           }
           if (ref.varType && item.varType !== ref.varType) { item.varType = ref.varType; changed = true }
+          if (item._refType !== ref.refType) { item._refType = ref.refType; changed = true }
           return changed
         }
       }

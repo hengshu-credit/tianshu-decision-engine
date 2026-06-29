@@ -41,13 +41,13 @@
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="rule.inputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
+        <el-table :data="pagedRuleInputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ $index + 1 }}</template>
+            <template slot-scope="{ $index }">{{ inputFieldOffset + $index + 1 }}</template>
           </el-table-column>
           <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span v-if="row.varId && varMap[row.varId]" class="script-name-text">{{ varMap[row.varId].varCode }}</span>
+              <span v-if="row.varId && getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
@@ -58,7 +58,7 @@
           </el-table-column>
           <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <span v-if="row.varId && varMap[row.varId]">{{ varMap[row.varId].varCodeText }}</span>
+              <span v-if="row.varId && getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
@@ -99,6 +99,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="inputFieldNeedsPaging"
+          style="margin-top:12px;text-align:right;"
+          :current-page="inputFieldPage"
+          :page-size="fieldPageSize"
+          :total="inputFieldsTotal"
+          layout="total,prev,pager,next"
+          @current-change="inputFieldPage = $event"
+        />
         <div v-if="!rule.inputFieldsJson || rule.inputFieldsJson.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输入字段</div>
       </el-tab-pane>
 
@@ -112,13 +121,13 @@
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="rule.outputFieldsJson" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
+        <el-table :data="pagedRuleOutputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ $index + 1 }}</template>
+            <template slot-scope="{ $index }">{{ outputFieldOffset + $index + 1 }}</template>
           </el-table-column>
           <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span v-if="row.varId && varMap[row.varId]" class="script-name-text">{{ varMap[row.varId].varCode }}</span>
+              <span v-if="row.varId && getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
@@ -129,7 +138,7 @@
           </el-table-column>
           <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <span v-if="row.varId && varMap[row.varId]">{{ varMap[row.varId].varCodeText }}</span>
+              <span v-if="row.varId && getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
@@ -167,6 +176,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="outputFieldNeedsPaging"
+          style="margin-top:12px;text-align:right;"
+          :current-page="outputFieldPage"
+          :page-size="fieldPageSize"
+          :total="outputFieldsTotal"
+          layout="total,prev,pager,next"
+          @current-change="outputFieldPage = $event"
+        />
         <div v-if="!rule.outputFieldsJson || rule.outputFieldsJson.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
       </el-tab-pane>
     </el-tabs>
@@ -188,11 +206,11 @@
 
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
-            <div v-for="field in testFields" :key="field.fieldName" class="test-field-cell">
+            <div v-for="field in testFields" :key="fieldParamKey(field)" class="test-field-cell">
               <div class="test-field-label">{{ field.fieldLabel || field.fieldName }}</div>
               <el-input-number
                 v-if="field.fieldType === 'NUMBER' || field.fieldType === 'DOUBLE' || field.fieldType === 'INTEGER'"
-                v-model="testParams[field.fieldName]"
+                v-model="testParams[fieldParamKey(field)]"
                 placeholder="输入值"
                 controls-position="right"
                 :precision="field.fieldType === 'INTEGER' ? 0 : undefined"
@@ -201,23 +219,23 @@
               />
               <el-select
                 v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
-                v-model="testParams[field.fieldName]"
+                v-model="testParams[fieldParamKey(field)]"
                 style="width:100%;" clearable filterable placeholder="选择值"
               >
                 <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
               </el-select>
-              <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[field.fieldName]" style="width:100%;">
+              <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[fieldParamKey(field)]" style="width:100%;">
                 <el-option label="true" :value="true" />
                 <el-option label="false" :value="false" />
               </el-select>
               <el-date-picker
                 v-else-if="field.fieldType === 'DATE'"
-                v-model="testParams[field.fieldName]"
+                v-model="testParams[fieldParamKey(field)]"
                 type="date" placeholder="选择日期"
                 style="width:100%;" format="yyyy-MM-dd" value-format="yyyy-MM-dd"
               />
-              <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
-              <div class="test-field-hint">{{ field.fieldName }}</div>
+              <el-input v-else v-model="testParams[fieldParamKey(field)]" placeholder="输入值" />
+              <div class="test-field-hint">{{ fieldParamKey(field) }}</div>
             </div>
           </div>
           <div v-else style="text-align:center;padding:30px 0;color:#909399;">暂无输入字段，请切换到 JSON 模式手动编辑参数</div>
@@ -250,6 +268,7 @@
 import * as api from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
+import { listAllModelsByProject } from '@/api/model'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -275,8 +294,12 @@ export default {
       varPickerGroups: [
         { label: '普通变量', options: [] },
         { label: '常量', options: [] },
-        { label: '数据对象字段', options: [] }
+        { label: '数据对象字段', options: [] },
+        { label: '模型', options: [] }
       ],
+      fieldPageSize: 100,
+      inputFieldPage: 1,
+      outputFieldPage: 1,
       // 测试相关
       testVisible: false,
       testReady: false,
@@ -291,8 +314,47 @@ export default {
       testDialogKey: 1
     }
   },
+  computed: {
+    inputFieldsTotal() {
+      return this.rule && this.rule.inputFieldsJson ? this.rule.inputFieldsJson.length : 0
+    },
+    outputFieldsTotal() {
+      return this.rule && this.rule.outputFieldsJson ? this.rule.outputFieldsJson.length : 0
+    },
+    inputFieldNeedsPaging() {
+      return this.inputFieldsTotal > this.fieldPageSize
+    },
+    outputFieldNeedsPaging() {
+      return this.outputFieldsTotal > this.fieldPageSize
+    },
+    inputFieldOffset() {
+      return this.inputFieldNeedsPaging ? (this.inputFieldPage - 1) * this.fieldPageSize : 0
+    },
+    outputFieldOffset() {
+      return this.outputFieldNeedsPaging ? (this.outputFieldPage - 1) * this.fieldPageSize : 0
+    },
+    pagedRuleInputFields() {
+      const fields = (this.rule && this.rule.inputFieldsJson) || []
+      if (!this.inputFieldNeedsPaging) return fields
+      return fields.slice(this.inputFieldOffset, this.inputFieldOffset + this.fieldPageSize)
+    },
+    pagedRuleOutputFields() {
+      const fields = (this.rule && this.rule.outputFieldsJson) || []
+      if (!this.outputFieldNeedsPaging) return fields
+      return fields.slice(this.outputFieldOffset, this.outputFieldOffset + this.fieldPageSize)
+    }
+  },
   created() {
     this.load()
+  },
+  watch: {
+    '$route.params.id'(id, oldId) {
+      if (id && id !== oldId) {
+        this.inputFieldPage = 1
+        this.outputFieldPage = 1
+        this.load()
+      }
+    }
   },
   methods: {
     async load() {
@@ -313,6 +375,7 @@ export default {
         if (this.rule.outputFieldsJson) {
           this.rule.outputFieldsJson.forEach(f => this.$set(f, '_editing', false))
         }
+        this.normalizeFieldPages()
         await this.loadVars()
       } catch (e) {
         this.$message.error(e.message || '加载规则详情失败')
@@ -330,27 +393,36 @@ export default {
     },
     async loadVarsByProject(projectId) {
       try {
-        const [varsRes, constRes, treeRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariablesByProject(projectId),
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(projectId)
+          getVariableTree(projectId),
+          listAllModelsByProject(projectId)
         ])
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
-        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
-        this.buildVarOptions([...vars, ...consts], tree)
+        const tree = this.normalizeVariableTree(treeRes.data)
+        const models = this.normalizeListResponse(modelRes)
+        this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
-        this.varMap = {}; this.varPickerOptions = []
+        this.varMap = {}
+        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
+          { label: '普通变量', options: [] },
+          { label: '常量', options: [] },
+          { label: '数据对象字段', options: [] },
+          { label: '模型', options: [] }
+        ])
       }
     },
     async loadGlobalVars() {
       try {
-        const [varsRes, constRes, treeRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(0)
+          getVariableTree(0),
+          listAllModelsByProject(0)
         ])
         const vars = (varsRes.data && Array.isArray(varsRes.data.records))
           ? varsRes.data.records
@@ -358,18 +430,60 @@ export default {
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
-        const tree = Array.isArray(treeRes.data) ? treeRes.data : []
-        this.buildVarOptions([...vars, ...consts], tree)
+        const tree = this.normalizeVariableTree(treeRes.data)
+        const models = this.normalizeListResponse(modelRes)
+        this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
         this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
           { label: '普通变量', options: [] },
           { label: '常量', options: [] },
-          { label: '数据对象字段', options: [] }
+          { label: '数据对象字段', options: [] },
+          { label: '模型', options: [] }
         ])
       }
     },
-    buildVarOptions(vars, doTree) {
+    normalizeVariableTree(data) {
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.tree)) return data.tree
+      return []
+    },
+    normalizeListResponse(res) {
+      const data = res && res.data ? res.data : res
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.records)) return data.records
+      return []
+    },
+    flattenObjectVariables(vars) {
+      const result = []
+      const visit = rows => {
+        const list = rows || []
+        list.forEach(row => {
+          result.push(row)
+          if (row.children && row.children.length) visit(row.children)
+        })
+      }
+      visit(vars)
+      return result
+    },
+    stripObjectPrefix(text, objectCode) {
+      if (!text || !objectCode) return text || ''
+      const prefix = objectCode + '.'
+      return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
+    },
+    refKey(id, refType) {
+      if (!id) return ''
+      return (refType || 'VARIABLE') + ':' + id
+    },
+    putVarMap(item) {
+      this.$set(this.varMap, this.refKey(item.id, item.refType), item)
+      if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
+    },
+    getFieldVarMap(row) {
+      if (!row || !row.varId) return null
+      return this.varMap[this.refKey(row.varId, row.refType)] || this.varMap[String(row.varId)] || null
+    },
+    buildVarOptions(vars, doTree, models = []) {
       this.varMap = {}
       const seenIds = new Set()
       /** @type {Array} 普通变量选项 */
@@ -378,13 +492,17 @@ export default {
       const constOptions = []
       /** @type {Array} 数据对象字段选项 */
       const objOptions = []
+      const modelOptions = []
       vars.forEach(v => {
-        if (!v.id || seenIds.has(v.id)) return
-        seenIds.add(v.id)
+        const refType = v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
+        const seenKey = this.refKey(v.id, refType)
+        if (!v.id || seenIds.has(seenKey)) return
+        seenIds.add(seenKey)
         const labelText = v.varLabel || ''
         const codeText = v.scriptName || v.varCode || ''
         const item = {
           id: v.id,
+          refType,
           varCode: v.varCode || '',
           varCodeText: v.scriptName || v.varCode || '',
           scriptName: codeText,
@@ -393,9 +511,9 @@ export default {
           varType: v.varType,
           varSource: v.varSource,
           sourceType: v.varSource === 'CONSTANT' ? 'constant' : 'variable',
-          varObj: v
+          varObj: { ...v, refType }
         }
-        this.varMap[v.id] = item
+        this.putVarMap(item)
         if (v.varSource === 'CONSTANT') {
           constOptions.push(item)
         } else {
@@ -404,15 +522,20 @@ export default {
       })
       doTree.forEach(group => {
         const obj = group.object || {}
-        const fields = group.variables || []
+        const fields = group.flatVariables || this.flattenObjectVariables(group.variables)
         fields.forEach(f => {
-          if (!f.id || seenIds.has(f.id)) return
-          seenIds.add(f.id)
-          const labelText = f.varLabel || ''
+          const refType = 'DATA_OBJECT'
+          const seenKey = this.refKey(f.id, refType)
+          if (!f.id || seenIds.has(seenKey)) return
+          seenIds.add(seenKey)
+          const objCode = obj.scriptName || obj.objectCode || ''
+          const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
           const codeText = f.scriptName || f.varCode || ''
+          const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
           const item = {
             id: f.id,
-            varCode: f.varCode || '',
+            refType,
+            varCode: codeText,
             varCodeText: f.scriptName || f.varCode || '',
             scriptName: codeText,
             varLabel: labelText + (codeText ? ' ' + codeText : ''),
@@ -420,22 +543,55 @@ export default {
             varType: f.varType,
             varSource: 'INPUT',
             sourceType: 'dataObject',
-            sourceLabel: obj.objectLabel || obj.objectCode || '数据对象',
-            varObj: f
+            sourceLabel: objLabel,
+            sourceCode: objCode,
+            varObj: { ...f, refType }
           }
-          this.varMap[f.id] = item
+          this.putVarMap(item)
           objOptions.push(item)
         })
+      })
+      models.forEach(m => {
+        const refType = 'MODEL'
+        const seenKey = this.refKey(m.id, refType)
+        if (!m.id || seenIds.has(seenKey)) return
+        seenIds.add(seenKey)
+        const codeText = m.modelCode || ''
+        if (!codeText) return
+        const labelText = m.modelName || codeText
+        const item = {
+          id: m.id,
+          refType,
+          varCode: codeText,
+          varCodeText: codeText,
+          scriptName: codeText,
+          varLabel: labelText + ' ' + codeText,
+          varLabelText: labelText,
+          varType: 'MODEL',
+          varSource: 'MODEL',
+          sourceType: 'model',
+          varObj: { ...m, id: m.id, varCode: codeText, varLabel: labelText, scriptName: codeText, varType: 'MODEL', refType }
+        }
+        this.putVarMap(item)
+        modelOptions.push(item)
       })
       this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
         { label: '普通变量', options: varOptions },
         { label: '常量', options: constOptions },
-        { label: '数据对象字段', options: objOptions }
+        { label: '数据对象字段', options: objOptions },
+        { label: '模型', options: modelOptions }
       ])
+    },
+    normalizeFieldPages() {
+      const inputMax = Math.max(1, Math.ceil(this.inputFieldsTotal / this.fieldPageSize))
+      const outputMax = Math.max(1, Math.ceil(this.outputFieldsTotal / this.fieldPageSize))
+      if (this.inputFieldPage > inputMax) this.inputFieldPage = inputMax
+      if (this.outputFieldPage > outputMax) this.outputFieldPage = outputMax
     },
     onVarClear(row) {
       this.$set(row, 'varId', null)
       this.$set(row, '_varId', null)
+      this.$set(row, 'refType', '')
       this.$set(row, 'fieldLabel', '')
       this.$set(row, 'scriptName', '')
     },
@@ -444,7 +600,7 @@ export default {
       // 从 varPickerGroups 所有选项中查找
       let opt = null
       for (const group of this.varPickerGroups) {
-        const found = group.options.find(o => o.id === varId)
+        const found = group.options.find(o => o.id === varId && (!row.refType || o.refType === row.refType))
         if (found) { opt = found; break }
       }
       if (!opt) return
@@ -452,6 +608,7 @@ export default {
       this.$set(row, 'fieldLabel', opt.varLabel)
       this.$set(row, 'scriptName', opt.varCode)
       this.$set(row, 'varSource', opt.sourceType)
+      this.$set(row, 'refType', opt.refType || '')
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
@@ -464,6 +621,9 @@ export default {
     },
     typeLabel(t) {
       return { NUMBER: '数字', INTEGER: '整数', DOUBLE: '浮点', STRING: '字符串', BOOLEAN: '布尔', ENUM: '枚举', DATE: '日期', OBJECT: '对象', LIST: '列表' }[t] || t || '—'
+    },
+    fieldParamKey(field) {
+      return (field && (field.scriptName || field.fieldName)) || ''
     },
 
     // ========== 输入字段编辑 ==========
@@ -482,6 +642,7 @@ export default {
       try {
         await api.updateInputField(row.id, {
           varId: row.varId,
+          refType: row.refType,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
@@ -527,6 +688,7 @@ export default {
       try {
         await api.updateOutputField(row.id, {
           varId: row.varId,
+          refType: row.refType,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
@@ -579,19 +741,20 @@ export default {
 
       const testParams = {}
       testFields.forEach(f => {
+        const key = this.fieldParamKey(f)
         if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
-          testParams[f.fieldName] = f.defaultValue
+          testParams[key] = f.defaultValue
         } else if (f.fieldType === 'BOOLEAN') {
-          testParams[f.fieldName] = false
+          testParams[key] = false
         } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
-          testParams[f.fieldName] = 0
+          testParams[key] = 0
         } else {
-          testParams[f.fieldName] = ''
+          testParams[key] = ''
         }
       })
 
       const jsonObj = {}
-      testFields.forEach(f => { jsonObj[f.fieldName] = testParams[f.fieldName] })
+      testFields.forEach(f => { jsonObj[this.fieldParamKey(f)] = testParams[this.fieldParamKey(f)] })
       const testJsonStr = JSON.stringify(jsonObj, null, 2)
 
       this.testFields = testFields
@@ -612,8 +775,9 @@ export default {
     syncParamsToJson() {
       const obj = {}
       this.testFields.forEach(f => {
-        const val = this.testParams[f.fieldName]
-        obj[f.fieldName] = (val !== '' && val !== null) ? val : null
+        const key = this.fieldParamKey(f)
+        const val = this.testParams[key]
+        obj[key] = (val !== '' && val !== null) ? val : null
       })
       this.testJsonStr = JSON.stringify(obj, null, 2)
       this.jsonEdited = false
@@ -627,7 +791,7 @@ export default {
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
-        const inputFieldNames = new Set(this.testFields.map(f => f.fieldName))
+        const inputFieldNames = new Set(this.testFields.map(f => this.fieldParamKey(f)))
         Object.keys(obj).forEach(k => {
           if (inputFieldNames.has(k) && this.testParams[k] === undefined) {
             this.testParams[k] = obj[k]
@@ -666,12 +830,13 @@ export default {
     handleClearParams() {
       this.testParams = {}
       this.testFields.forEach(f => {
-        if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
-        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = 0
-        else this.testParams[f.fieldName] = ''
+        const key = this.fieldParamKey(f)
+        if (f.fieldType === 'BOOLEAN') this.testParams[key] = false
+        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[key] = 0
+        else this.testParams[key] = ''
       })
       const jsonObj = {}
-      this.testFields.forEach(f => { jsonObj[f.fieldName] = this.testParams[f.fieldName] })
+      this.testFields.forEach(f => { jsonObj[this.fieldParamKey(f)] = this.testParams[this.fieldParamKey(f)] })
       this.testJsonStr = JSON.stringify(jsonObj, null, 2)
       this.jsonEdited = false
       this.testResult = null

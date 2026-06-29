@@ -9,6 +9,7 @@ import ElementUI from 'element-ui'
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
+import * as modelApi from '@/api/model'
 import RuleTest from '@/views/test/RuleTest.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -235,6 +236,47 @@ describe('RuleTest — 辅助方法', () => {
 
   test('formatJson 处理 null', () => {
     expect(wrapper.vm.formatJson(null)).toBe('(空)')
+  })
+
+  test('buildParamMap 将点号路径组装为嵌套数据对象入参', () => {
+    wrapper.vm.params = [
+      { key: 'request.definitionId', value: '1', type: 'NUMBER' },
+      { key: 'request.params.taxpayerType', value: '一般纳税人', type: 'STRING' },
+      { key: 'request.params.goodsCategory', value: '货物', type: 'STRING' },
+      { key: 'mockModelScore', value: '88', type: 'NUMBER' }
+    ]
+
+    expect(wrapper.vm.buildParamMap()).toEqual({
+      request: {
+        definitionId: 1,
+        params: {
+          taxpayerType: '一般纳税人',
+          goodsCategory: '货物'
+        }
+      },
+      mockModelScore: 88
+    })
+  })
+
+  test('applyInputFieldsToParams 根据模型输出字段类型转换模型引用入参', async () => {
+    modelApi.getModel.mockResolvedValueOnce({
+      data: {
+        id: 2,
+        modelCode: 's',
+        outputFields: [
+          { fieldName: 'score', fieldType: 'DOUBLE' }
+        ]
+      }
+    })
+
+    await wrapper.vm.applyInputFieldsToParams([
+      { scriptName: 's', fieldLabel: 'ss', fieldType: 'MODEL', refType: 'MODEL', varId: 2 }
+    ])
+    wrapper.vm.params[0].value = '1'
+
+    expect(modelApi.getModel).toHaveBeenCalledWith(2)
+    expect(wrapper.vm.params[0].type).toBe('DOUBLE')
+    expect(wrapper.vm.buildParamMap()).toEqual({ s: 1 })
   })
 })
 

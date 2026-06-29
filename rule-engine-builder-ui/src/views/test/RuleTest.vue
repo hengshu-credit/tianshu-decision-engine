@@ -155,9 +155,11 @@
 </template>
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions, executeRule, getContent } from '@/api/definition'
+import { listDefinitions, executeRule, getContent, listInputFields, refreshFields } from '@/api/definition'
 import { listVariablesByProject, getVariableOptions, listVariables } from '@/api/variable'
+import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
+import { listAllModelsByProject, getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
 
 export default {
@@ -194,25 +196,11 @@ export default {
     },
     inputParamsJson: function () {
       // inputParamsJson 供 TraceTree 组件渲染入参，始终基于当前 params 构建
-      var params = {}
-      for (var i = 0; i < this.params.length; i++) {
-        var p = this.params[i]
-        if (!p.key) continue
-        var val = p.value
-        if (p.type === 'NUMBER' && val !== '' && val !== null) val = Number(val)
-        else if (p.type === 'BOOLEAN') val = val === 'true'
-        params[p.key] = val
-      }
-      return JSON.stringify(params)
+      return JSON.stringify(this.buildParamMap())
     },
     outputResultJson: function () {
-      if (!this.result || !this.result.result) return ''
+      if (!this.result || this.result.result === null || this.result.result === undefined) return ''
       return JSON.stringify(this.result.result)
-    }
-  },
-  watch: {
-    selectedRuleId: function () {
-      this.loadModelJson()
     }
   },
   methods: {
@@ -239,12 +227,11 @@ export default {
     },
     async loadVarMap() {
       try {
-        var r = await listVariables({ pageNum: 1, pageSize: 10000 })
-        var vars = r.data && r.data.records ? r.data.records : []
+        var refs = await this.loadAllRuleRefs()
         var map = {}
-        for (var i = 0; i < vars.length; i++) {
-          if (vars[i].varCode && vars[i].varLabel) {
-            map[vars[i].varCode] = vars[i].varLabel
+        for (var i = 0; i < refs.length; i++) {
+          if (refs[i].code && refs[i].label) {
+            map[refs[i].code] = refs[i].label
           }
         }
         this.varMap = map
@@ -322,17 +309,24 @@ export default {
       this.result = null
       this.loadModelJson()
       this.loadFunctionNameMap()
+      this.loadVarMap()
     },
     async loadVariables() {
       if (!this.selectedRule) return  // 未选择规则，提前返回
       try {
+        var fields = await this.loadInputFieldsFromServer()
+        if (fields.length > 0) {
+          await this.applyInputFieldsToParams(fields)
+          return
+        }
+
         // 步骤1：解析 modelJson 中的变量 ID → varCode 映射
         var ruleVarIdMap = await this.getRuleVarInfos()
         var varIds = Object.keys(ruleVarIdMap)
         console.log('[变量加载] 规则引用的变量 ID:', varIds)
 
         if (varIds.length === 0) {
-          this.$message.info('无法解析规则中的变量引用，请检查规则配置')
+          this.notifyInfo('无法解析规则中的变量引用，请检查规则配置')
           return
         }
 
@@ -343,14 +337,15 @@ export default {
         } else {
           var ruleProjectId = this.selectedRule.projectId
           if (!ruleProjectId) {
-            this.$message.warning('无法获取规则所属项目，加载变量失败')
+            this.notifyWarning('无法获取规则所属项目，加载变量失败')
             return
           }
           res = await listVariablesByProject(ruleProjectId)
         }
 
         // listVariables 返回分页 { records, total }；listVariablesByProject 返回数组
-        var allVars = res.data && res.data.records !== undefined ? res.data.records : (res.data || [])
+        var varPayload = this.unwrapResponse(res)
+        var allVars = varPayload && varPayload.records !== undefined ? varPayload.records : (varPayload || [])
         console.log('[变量加载] 项目变量总数:', allVars.length)
 
         // 步骤3：通过 varId 精确匹配，过滤出规则需要的变量
@@ -376,7 +371,7 @@ export default {
           if (v.varType === 'ENUM') {
             try {
               var optRes = await getVariableOptions(v.id)
-              param.options = optRes.data || []
+              param.options = this.unwrapResponse(optRes) || []
             } catch (e) { /* ignore */ }
           }
           this.params.push(param)
@@ -407,7 +402,7 @@ export default {
             if (vv.varType === 'ENUM') {
               try {
                 var vOptRes = await getVariableOptions(vv.id)
-                vparam.options = vOptRes.data || []
+                vparam.options = this.unwrapResponse(vOptRes) || []
               } catch (e) { /* ignore */ }
             }
             this.params.push(vparam)
@@ -417,12 +412,144 @@ export default {
           console.log('[变量加载] varCode 回退匹配后总变量数:', loadedCount)
         }
         if (loadedCount === 0) {
-          this.$message.info('未匹配到规则引用的变量（检查变量 ID 是否一致）')
+          this.notifyInfo('未匹配到规则引用的变量（检查变量 ID 是否一致）')
         }
       } catch (e) {
         console.error('[变量加载] 失败:', e)
-        this.$message.error('加载变量失败')
+        this.notifyError('加载变量失败')
       }
+    },
+    async loadInputFieldsFromServer() {
+      try {
+        await refreshFields(this.selectedRuleId)
+      } catch (e) {
+        // 旧数据或保存中状态下可能刷新失败，继续尝试读取已有字段/回退解析 modelJson
+      }
+      try {
+        var res = await listInputFields(this.selectedRuleId)
+        var fields = this.unwrapResponse(res)
+        return Array.isArray(fields) ? fields.filter(function (f) { return f && f.scriptName }) : []
+      } catch (e) {
+        return []
+      }
+    },
+    async applyInputFieldsToParams(fields) {
+      var existingKeys = new Set(this.params.map(function (p) { return p.key }))
+      var loadedCount = 0
+      for (var i = 0; i < fields.length; i++) {
+        var f = fields[i]
+        var key = f.scriptName || f.fieldName
+        if (!key || existingKeys.has(key)) continue
+        var param = {
+          key: key,
+          label: f.fieldLabel || f.fieldName || key,
+          value: f.defaultValue || '',
+          type: await this.resolveInputFieldType(f),
+          refType: f.refType || '',
+          example: '',
+          fromVar: true,
+          options: []
+        }
+        if (param.type === 'ENUM') {
+          try {
+            if (f.refType === 'DATA_OBJECT') {
+              var objOptRes = await getDataObjectFieldOptions(f.varId)
+              param.options = this.unwrapResponse(objOptRes) || []
+            } else {
+              var optRes = await getVariableOptions(f.varId)
+              param.options = this.unwrapResponse(optRes) || []
+            }
+          } catch (e) { /* ignore */ }
+        }
+        this.params.push(param)
+        existingKeys.add(key)
+        loadedCount++
+      }
+      if (loadedCount === 0) {
+        this.notifyInfo('未匹配到规则引用的输入字段')
+      }
+    },
+    async resolveInputFieldType(field) {
+      var fieldType = field && field.fieldType ? field.fieldType : 'STRING'
+      if (!field || field.refType !== 'MODEL' || !field.varId) return fieldType
+      try {
+        var res = await getModel(field.varId)
+        var model = this.unwrapResponse(res)
+        var outputs = model && Array.isArray(model.outputFields) ? model.outputFields : []
+        if (outputs.length === 1 && outputs[0].fieldType) {
+          return outputs[0].fieldType
+        }
+      } catch (e) { /* ignore */ }
+      return fieldType
+    },
+    async loadAllRuleRefs() {
+      var refs = []
+      var pid = this.selectedRule && this.selectedRule.projectId != null ? this.selectedRule.projectId : 0
+      try {
+        var varRes
+        if (this.selectedRule && this.selectedRule.scope === 'GLOBAL') {
+          varRes = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
+        } else if (pid) {
+          varRes = await listVariablesByProject(pid)
+        } else {
+          varRes = await listVariables({ pageNum: 1, pageSize: 10000 })
+        }
+        var varData = this.unwrapResponse(varRes)
+        var vars = Array.isArray(varData) ? varData : (varData && varData.records ? varData.records : [])
+        vars.forEach(function (v) {
+          refs.push({
+            code: v.scriptName || v.varCode,
+            label: v.varLabel || v.varCode,
+            type: v.varType,
+            refType: v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
+          })
+        })
+      } catch (e) { /* ignore */ }
+
+      try {
+        var treeRes = await getVariableTree(pid || 0)
+        var treeData = this.unwrapResponse(treeRes)
+        var tree = Array.isArray(treeData) ? treeData : (treeData && treeData.tree ? treeData.tree : [])
+        this.collectDataObjectRefs(tree, refs)
+      } catch (e) { /* ignore */ }
+
+      try {
+        var modelRes = await listAllModelsByProject(pid || 0)
+        var modelData = this.unwrapResponse(modelRes)
+        var models = Array.isArray(modelData) ? modelData : (modelData && modelData.records ? modelData.records : [])
+        models.forEach(function (m) {
+          if (!m.modelCode) return
+          refs.push({ code: m.modelCode, label: m.modelName || m.modelCode, type: 'MODEL', refType: 'MODEL' })
+        })
+      } catch (e) { /* ignore */ }
+      return refs
+    },
+    collectDataObjectRefs(tree, refs) {
+      var visit = function (rows, objScriptName, objectLabel) {
+        (rows || []).forEach(function (row) {
+          var scriptName = row.scriptName || row.varCode || ''
+          var code = scriptName
+          if (objScriptName && code.indexOf(objScriptName + '.') !== 0) {
+            code = objScriptName + '.' + scriptName
+          }
+          refs.push({
+            code: code,
+            label: row.varLabel || row.varCode || code,
+            type: row.varType,
+            refType: 'DATA_OBJECT',
+            objectLabel: objectLabel
+          })
+          if (row.children && row.children.length) visit(row.children, objScriptName, objectLabel)
+        })
+      }
+      var rootNodes = tree || []
+      rootNodes.forEach(function (node) {
+        var obj = node.object || node
+        var objScriptName = obj.scriptName || obj.objectCode || ''
+        var objectLabel = obj.objectLabel || obj.objectCode || objScriptName
+        var rows = node.flatVariables || node.variables || []
+        visit(rows, objScriptName, objectLabel)
+      })
     },
     /**
      * 从规则内容中解析出实际使用的变量信息（通过 varId 精确关联，避免 varCode 模糊匹配）
@@ -434,7 +561,7 @@ export default {
       if (!this.selectedRuleId || !this.selectedRule) return {}
       try {
         const res = await getContent(this.selectedRuleId)
-        const content = res.data
+        const content = this.unwrapResponse(res)
         if (!content || !content.modelJson) {
           console.warn('[变量加载] 规则内容为空或无 modelJson')
           return {}
@@ -681,22 +808,12 @@ export default {
     },
     async handleExecute() {
       if (!this.selectedRuleId) return
-      const paramMap = {}
-      for (const p of this.params) {
-        if (!p.key) continue
-        let val = p.value
-        if (p.type === 'NUMBER' && val !== '' && val !== null) {
-          val = Number(val)
-        } else if (p.type === 'BOOLEAN') {
-          val = val === 'true'
-        }
-        paramMap[p.key] = val
-      }
+      const paramMap = this.buildParamMap()
       this.executing = true
       this.result = null
       try {
         const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap })
-        this.result = res.data
+        this.result = this.unwrapResponse(res)
         // 执行完成后切换到追踪树标签页
         this.traceTab = 'tree'
       } catch (e) {
@@ -711,6 +828,52 @@ export default {
     },
     handleClearParams() {
       this.params = []
+    },
+    unwrapResponse(res) {
+      if (res && Object.prototype.hasOwnProperty.call(res, 'data')) return res.data
+      return res
+    },
+    notifyInfo(message) {
+      if (this.$message && this.$message.info) this.$message.info(message)
+    },
+    notifyWarning(message) {
+      if (this.$message && this.$message.warning) this.$message.warning(message)
+    },
+    notifyError(message) {
+      if (this.$message && this.$message.error) this.$message.error(message)
+    },
+    buildParamMap() {
+      const paramMap = {}
+      for (const p of this.params) {
+        if (!p.key) continue
+        let val = p.value
+        if (this.isNumberType(p.type) && val !== '' && val !== null) {
+          val = Number(val)
+        } else if (p.type === 'BOOLEAN') {
+          val = val === true || val === 'true'
+        }
+        this.setParamValue(paramMap, p.key, val)
+      }
+      return paramMap
+    },
+    isNumberType(type) {
+      return ['NUMBER', 'INTEGER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'LONG', 'PROBABILITY'].indexOf(type) >= 0
+    },
+    setParamValue(target, key, value) {
+      if (!key || key.indexOf('.') < 0) {
+        target[key] = value
+        return
+      }
+      var parts = key.split('.').filter(Boolean)
+      if (parts.length === 0) return
+      var cur = target
+      for (var i = 0; i < parts.length - 1; i++) {
+        if (!cur[parts[i]] || typeof cur[parts[i]] !== 'object' || Array.isArray(cur[parts[i]])) {
+          cur[parts[i]] = {}
+        }
+        cur = cur[parts[i]]
+      }
+      cur[parts[parts.length - 1]] = value
     },
     mtl(t) {
       return { TABLE: '决策表', TREE: '决策树', FLOW: '决策流', CROSS: '交叉表', SCORE: '评分卡', CROSS_ADV: '复杂交叉表', SCORE_ADV: '复杂评分卡', SCRIPT: 'QL脚本' }[t] || t

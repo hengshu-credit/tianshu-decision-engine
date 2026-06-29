@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 图结构 → QLExpress 脚本生成器（共享工具类）
@@ -103,7 +105,7 @@ public class GraphScriptGenerator {
             } else {
                 for (int i = 0; i < condEdges.size(); i++) {
                     JSONObject edge = condEdges.get(i);
-                    String condExpr = edge.getString("conditionExpression");
+                    String condExpr = resolveConditionExpression(edge, varContext);
                     appendIndent(script, indent);
                     if (i == 0) {
                         script.append("if (").append(condExpr).append(") {\n");
@@ -173,5 +175,26 @@ public class GraphScriptGenerator {
 
     private static void appendIndent(StringBuilder sb, int indent) {
         for (int i = 0; i < indent; i++) sb.append("    ");
+    }
+
+    private static String resolveConditionExpression(JSONObject edge, VarContext varContext) {
+        String expr = edge.getString("conditionExpression");
+        if (expr == null || expr.trim().isEmpty() || varContext == null) {
+            return expr;
+        }
+        Matcher matcher = Pattern.compile("^(\\S+)\\s*(==|!=|>=|<=|>|<|in)\\s*(.+)$").matcher(expr.trim());
+        if (!matcher.matches()) {
+            return expr;
+        }
+        Long leftId = edge.containsKey("leftVarId") ? edge.getLong("leftVarId") : null;
+        String leftRefType = edge.getString("leftRefType");
+        String left = varContext.resolveVar(leftId, leftRefType, matcher.group(1));
+        String right = matcher.group(3);
+        Long rightId = edge.containsKey("rightVarId") ? edge.getLong("rightVarId") : null;
+        String rightRefType = edge.getString("rightRefType");
+        if (rightId != null) {
+            right = varContext.resolveVar(rightId, rightRefType, right);
+        }
+        return left + " " + matcher.group(2) + " " + right;
     }
 }

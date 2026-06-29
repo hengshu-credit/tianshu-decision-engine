@@ -423,17 +423,18 @@ export default {
     /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
     _syncModelVarRefs() {
       const refs = this.projectRefs || []
-      const findRef = (varId) => {
+      const findRef = (varId, refType) => {
         if (varId == null) return null
-        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId)) || null
+        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId) && (!refType || r.refType === refType)) || null
       }
       const fillRef = (v) => {
         if (!v) return
-        const ref = findRef(v._varId)
+        const ref = findRef(v._varId, v._refType)
         if (ref) {
           v.varCode = ref.refCode
           v.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
           v.varType = ref.varType
+          v._refType = ref.refType
         }
       }
       if (this.model.resultVar) fillRef(this.model.resultVar)
@@ -446,7 +447,8 @@ export default {
       this.$set(this.model, 'resultVar', {
         varCode: v.varCode,
         varLabel: v.varLabel || v.varCode,
-        _varId: (v._varId != null) ? v._varId : null
+        _varId: (v._varId != null) ? v._varId : null,
+        _refType: v._refType || v.refType || (v.varObj && v.varObj.refType) || null
       })
     },
     /** 清除结果变量选择 */
@@ -454,7 +456,8 @@ export default {
       this.$set(this.model, 'resultVar', {
         varCode: '',
         varLabel: '',
-        _varId: null
+        _varId: null,
+        _refType: null
       })
     },
     /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
@@ -462,15 +465,18 @@ export default {
       if (!val) {
         this.$set(this.model.resultVar, 'varLabel', '')
         this.$set(this.model.resultVar, '_varId', null)
+        this.$set(this.model.resultVar, '_refType', null)
         return
       }
       const ref = this.projectRefs.find(r => r.refCode === val)
       if (ref) {
         this.$set(this.model.resultVar, 'varLabel', ref.refLabel.label || ref.refLabel)
         this.$set(this.model.resultVar, '_varId', ref.varObj && ref.varObj.id ? ref.varObj.id : null)
+        this.$set(this.model.resultVar, '_refType', ref.refType || null)
       } else {
         this.$set(this.model.resultVar, 'varLabel', '')
         this.$set(this.model.resultVar, '_varId', null)
+        this.$set(this.model.resultVar, '_refType', null)
       }
     },
     onDimVarSelect(gi, di, v) {
@@ -479,6 +485,7 @@ export default {
       dim.varCode = v.varCode
       dim.varLabel = v.varLabel || v.varCode
       dim._varId = (v._varId != null) ? v._varId : null
+      dim._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
     },
     /** 条件变量选择 */
     onCondVarSelect(cond, v) {
@@ -486,12 +493,14 @@ export default {
       cond.varCode = v.varCode
       cond.varLabel = v.varLabel || v.varCode
       cond._varId = (v._varId != null) ? v._varId : null
+      cond._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
     },
     /** 条件变量清除 */
     onCondVarClear(cond) {
       cond.varCode = ''
       cond.varLabel = ''
       cond._varId = null
+      cond._refType = null
     },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]

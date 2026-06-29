@@ -12,8 +12,11 @@ public class RuleDefinitionOutputField {
 
     private Long definitionId;
 
-    /** 关联的变量ID（外键 -> rule_variable.id），关联后其他字段可忽略 */
+    /** 关联字段ID，需结合 refType 判断所属资源表 */
     private Long varId;
+
+    /** 引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL */
+    private String refType;
 
     private String fieldName;
 

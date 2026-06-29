@@ -219,6 +219,7 @@
 <script>
 import * as api from '@/api/model'
 import { listProjects } from '@/api/project'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -312,12 +313,20 @@ export default {
     }
   },
   created() {
+    this.restoreCachedState()
     this.loadProjects()
   },
   mounted() {
     this.load()
   },
   methods: {
+    restoreCachedState() {
+      const state = restorePageState('ModelList')
+      if (state.qp) this.qp = { ...this.qp, ...state.qp }
+    },
+    saveCachedState() {
+      savePageState('ModelList', { qp: this.qp })
+    },
     async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 1000 })
@@ -343,6 +352,7 @@ export default {
     async load() {
       this.loading = true
       try {
+        this.saveCachedState()
         const params = { ...this.qp }
         Object.keys(params).forEach(k => { if (!params[k]) delete params[k] })
         const res = await api.listModels(params)
@@ -361,6 +371,7 @@ export default {
     handleQuery() { this.qp.pageNum = 1; this.load() },
     resetQuery() {
       this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', modelType: '', modelFormat: '', modelCode: '', modelName: '', projectCode: '', projectName: '' }
+      clearPageState('ModelList')
       this.load()
     },
     queryModelCode(q) {

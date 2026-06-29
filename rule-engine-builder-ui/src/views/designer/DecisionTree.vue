@@ -337,9 +337,9 @@ export default {
       nodeProps: {},
       edgeProps: {},
       nodeCondMode: 'visual',
-      nodeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, operator: '>', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null },
+      nodeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '>', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
       edgeCondMode: 'visual',
-      edgeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null },
+      edgeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
       actionMode: 'visual',
       currentActionData: [],
       testVisible: false,
@@ -499,7 +499,9 @@ export default {
         const scriptContent = (this.activeElement.properties.scriptContent) || ''
         this.nodeCondVisual = this.syncCondVisualFromExpr(scriptContent)
         this.nodeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
+        this.nodeCondVisual.leftRefType = this.activeElement.properties.leftRefType || null
         this.nodeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
+        this.nodeCondVisual.rightRefType = this.activeElement.properties.rightRefType || null
         this.nodeCondMode = scriptContent && !this.nodeCondVisual.leftVar ? 'script' : 'visual'
       }
       if (model.type === 'script-task') {
@@ -524,7 +526,9 @@ export default {
       }
       this.edgeCondVisual = this.syncCondVisualFromExpr(this.edgeProps.conditionExpr)
       this.edgeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
+      this.edgeCondVisual.leftRefType = this.activeElement.properties.leftRefType || null
       this.edgeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
+      this.edgeCondVisual.rightRefType = this.activeElement.properties.rightRefType || null
       this.edgeCondMode = this.edgeProps.conditionExpr && !this.edgeCondVisual.leftVar ? 'script' : 'visual'
       this.hasSelection = true
     },
@@ -546,7 +550,8 @@ export default {
 
     onNodeChange() {
       if (!this.lf || !this.activeElement) return
-      this.lf.setProperties(this.activeElement.id, { ...this.nodeProps })
+      const curProps = this.lf.getProperties(this.activeElement.id) || {}
+      this.lf.setProperties(this.activeElement.id, { ...curProps, ...this.nodeProps })
     },
     onActionDataUpdate(data) {
       this.currentActionData = data
@@ -757,11 +762,12 @@ export default {
      */
     _syncModelVarRefs() {
       if (!this.projectRefs || !this.projectRefs.length) return
-      const findById = id => {
+      const findById = (id, refType) => {
         if (!id) return null
         for (const item of this.projectRefs) {
           const vid = item.varObj && item.varObj.id
-          if (String(vid) === String(id)) return item
+          const typeMatches = !refType || !item.refType || String(item.refType) === String(refType)
+          if (String(vid) === String(id) && typeMatches) return item
         }
         return null
       }
@@ -770,12 +776,12 @@ export default {
         const props = node.properties || {}
         let changed = false
         if (props.leftVarId) {
-          const info = findById(props.leftVarId)
-          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+          const info = findById(props.leftVarId, props.leftRefType)
+          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.leftRefType = info.refType; changed = true }
         }
         if (props.rightVarId) {
-          const info = findById(props.rightVarId)
-          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+          const info = findById(props.rightVarId, props.rightRefType)
+          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
         }
         if (changed) this.lf.setProperties(node.id, props)
       }
@@ -784,12 +790,12 @@ export default {
         const props = edge.properties || {}
         let changed = false
         if (props.leftVarId) {
-          const info = findById(props.leftVarId)
-          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+          const info = findById(props.leftVarId, props.leftRefType)
+          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.leftRefType = info.refType; changed = true }
         }
         if (props.rightVarId) {
-          const info = findById(props.rightVarId)
-          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; changed = true }
+          const info = findById(props.rightVarId, props.rightRefType)
+          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
         }
         if (changed) this.lf.setEdgeData(edge.id, { properties: props })
       }
@@ -861,7 +867,9 @@ export default {
           gatewayDirection: props.gatewayDirection || '',
           // 变量引用 ID（用于 script-task / exclusive-gateway 的变量选择器）
           leftVarId: props.leftVarId || null,
-          rightVarId: props.rightVarId || null
+          leftRefType: props.leftRefType || null,
+          rightVarId: props.rightVarId || null,
+          rightRefType: props.rightRefType || null
         }
       })
 
@@ -875,7 +883,9 @@ export default {
           name: props.conditionName || '',
           // 变量引用 ID（用于连线条件的变量选择器）
           leftVarId: props.leftVarId || null,
-          rightVarId: props.rightVarId || null
+          leftRefType: props.leftRefType || null,
+          rightVarId: props.rightVarId || null,
+          rightRefType: props.rightRefType || null
         }
       })
 
@@ -947,9 +957,11 @@ export default {
         this.nodeCondVisual.leftVar = v.varCode
         this.nodeCondVisual.leftLabel = label
         this.nodeCondVisual.leftVarId = v._varId || null
+        this.nodeCondVisual.leftRefType = v._refType || v.refType || null
       } else {
         this.nodeCondVisual.rightVar = v.varCode
         this.nodeCondVisual.rightVarId = v._varId || null
+        this.nodeCondVisual.rightRefType = v._refType || v.refType || null
       }
     },
     onEdgeCondVarSelect(v, side) {
@@ -959,9 +971,11 @@ export default {
         this.edgeCondVisual.leftVar = v.varCode
         this.edgeCondVisual.leftLabel = label
         this.edgeCondVisual.leftVarId = v._varId || null
+        this.edgeCondVisual.leftRefType = v._refType || v.refType || null
       } else {
         this.edgeCondVisual.rightVar = v.varCode
         this.edgeCondVisual.rightVarId = v._varId || null
+        this.edgeCondVisual.rightRefType = v._refType || v.refType || null
       }
     },
     buildCondExpr(visual) {
@@ -980,7 +994,9 @@ export default {
       if (expr === null) return
       this.nodeProps.scriptContent = expr
       this.nodeProps.leftVarId = this.nodeCondVisual.leftVarId || null
+      this.nodeProps.leftRefType = this.nodeCondVisual.leftRefType || null
       this.nodeProps.rightVarId = this.nodeCondVisual.rightVarId || null
+      this.nodeProps.rightRefType = this.nodeCondVisual.rightRefType || null
       this.onNodeChange()
 
       this.$message.success('已生成: ' + expr)
@@ -990,7 +1006,9 @@ export default {
       if (expr === null) return
       this.edgeProps.conditionExpr = expr
       this.edgeProps.leftVarId = this.edgeCondVisual.leftVarId || null
+      this.edgeProps.leftRefType = this.edgeCondVisual.leftRefType || null
       this.edgeProps.rightVarId = this.edgeCondVisual.rightVarId || null
+      this.edgeProps.rightRefType = this.edgeCondVisual.rightRefType || null
       if (!this.edgeProps.conditionName) {
         this.edgeProps.conditionName = (this.edgeCondVisual.leftLabel || this.edgeCondVisual.leftVar) + this.edgeCondVisual.operator + (this.edgeCondVisual.rightType === 'var' ? this.edgeCondVisual.rightVar : this.edgeCondVisual.rightValue)
       }
@@ -1002,9 +1020,9 @@ export default {
     syncCondVisualFromExpr(expr) {
       const m = (expr || '').match(/^(\S+)\s*(==|!=|>=|<=|>|<|in)\s*(.+)$/)
       if (m) {
-        return { leftVar: m[1], leftLabel: '', leftVarId: null, operator: m[2], rightValue: m[3].replace(/^'|'$/g, ''), rightType: 'value', rightVar: '', rightVarId: null }
+        return { leftVar: m[1], leftLabel: '', leftVarId: null, leftRefType: null, operator: m[2], rightValue: m[3].replace(/^'|'$/g, ''), rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null }
       }
-      return { leftVar: '', leftLabel: '', leftVarId: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null }
+      return { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null }
     },
     insertVarCode(code) {
       if (navigator.clipboard) {

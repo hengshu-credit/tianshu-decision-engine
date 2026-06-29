@@ -107,10 +107,13 @@
 <script>
 import request from '@/api/request'
 import { listVariables } from '@/api/variable'
+import { getVariableTree } from '@/api/dataObject'
 import { listDefinitions as listRules, getContent } from '@/api/definition'
 import { listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
+import { listAllModelsByProject } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'ExecutionLog',
@@ -187,14 +190,27 @@ export default {
   },
   created: function () {
     this.initDefaultTimeRange()
+    this.restoreCachedState()
     this.load()
     this.loadProjects()
     this.loadRules()
   },
   methods: {
+    restoreCachedState: function () {
+      var state = restorePageState('ExecutionLog')
+      if (state.qp) this.qp = Object.assign({}, this.qp, state.qp)
+      if (state.timeRange) this.timeRange = state.timeRange
+    },
+    saveCachedState: function () {
+      savePageState('ExecutionLog', {
+        qp: this.qp,
+        timeRange: this.timeRange
+      })
+    },
     async load () {
       this.loading = true
       try {
+        this.saveCachedState()
         var params = Object.assign({}, this.qp)
         if (this.timeRange && this.timeRange.length === 2) {
           params.startTime = this.timeRange[0]
@@ -245,14 +261,61 @@ export default {
         var vars = r.data && r.data.records ? r.data.records : []
         var map = {}
         for (var i = 0; i < vars.length; i++) {
-          if (vars[i].varCode && vars[i].varLabel) {
-            map[vars[i].varCode] = vars[i].varLabel
+          var code = vars[i].scriptName || vars[i].varCode
+          if (code && vars[i].varLabel) {
+            map[code] = vars[i].varLabel
           }
         }
+        var pid = this.currentDetailProjectId()
+        await this.appendDataObjectVarMap(map, pid)
+        await this.appendModelVarMap(map, pid)
         this.varMap = map
       } catch (e) {
         console.warn('加载变量映射失败:', e)
       }
+    },
+    currentDetailProjectId () {
+      if (!this.detail || !this.detail.projectCode) return 0
+      for (var i = 0; i < this.projectList.length; i++) {
+        if (this.projectList[i].projectCode === this.detail.projectCode) {
+          return this.projectList[i].id || 0
+        }
+      }
+      return 0
+    },
+    async appendDataObjectVarMap (map, projectId) {
+      try {
+        var r = await getVariableTree(projectId || 0)
+        var data = r && r.data ? r.data : r
+        var tree = Array.isArray(data) ? data : (data && data.tree ? data.tree : [])
+        var visit = function (rows, objScriptName) {
+          ;(rows || []).forEach(function (row) {
+            var scriptName = row.scriptName || row.varCode || ''
+            var code = scriptName
+            if (objScriptName && code.indexOf(objScriptName + '.') !== 0) {
+              code = objScriptName + '.' + scriptName
+            }
+            if (code) map[code] = row.varLabel || row.varCode || code
+            if (row.children && row.children.length) visit(row.children, objScriptName)
+          })
+        }
+        ;(tree || []).forEach(function (node) {
+          var obj = node.object || node
+          var objScriptName = obj.scriptName || obj.objectCode || ''
+          var rows = node.flatVariables || node.variables || []
+          visit(rows, objScriptName)
+        })
+      } catch (e) { /* ignore */ }
+    },
+    async appendModelVarMap (map, projectId) {
+      try {
+        var r = await listAllModelsByProject(projectId || 0)
+        var data = r && r.data ? r.data : r
+        var list = Array.isArray(data) ? data : (data && data.records ? data.records : [])
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].modelCode) map[list[i].modelCode] = list[i].modelName || list[i].modelCode
+        }
+      } catch (e) { /* ignore */ }
     },
     /**
      * 按当前日志所属项目加载启用函数列表，构建编码→中文名映射
@@ -309,13 +372,13 @@ export default {
       }
     },
     async handleViewDetail (row) {
-      if (!row.ruleDefinitionId) return
       this.detailLoading = true
-      this.detail = null
+      this.detail = Object.assign({}, row)
       this.detailVis = true
       try {
-        var r = await getContent(row.ruleDefinitionId)
-        this.detail = r.data || null
+        await this.loadVarMap()
+        await this.loadFunctionNameMap()
+        await this.loadModelJson()
       } catch (e) {
         this.$message.error('加载日志详情失败')
       } finally {
@@ -343,6 +406,7 @@ export default {
       this.qp.modelType = ''
       this.qp.pageNum = 1
       this.initDefaultTimeRange()
+      clearPageState('ExecutionLog')
       this.load()
     },
     /** 初始化默认时间范围为最近三个月 */

@@ -39,8 +39,9 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             JSONArray thresholds = model.getJSONArray("thresholds");
 
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
             String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
-            String resCode = resolveVar(resVarId, varCode);
+            String resCode = resolveVar(resVarId, resRefType, varCode);
 
             StringBuilder script = new StringBuilder();
             script.append(resCode).append(" = ").append(initialScore).append(";\n");
@@ -92,7 +93,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                 if (firstThreshold.containsKey("resultVar")) {
                     String rawLevelVar = firstThreshold.getString("resultVar");
                     this.levelVarId = firstThreshold.containsKey("_varId") ? firstThreshold.getLong("_varId") : null;
-                    levelVar = resolveVar(this.levelVarId, rawLevelVar);
+                    String levelRefType = firstThreshold.getString("_refType");
+                    levelVar = resolveVar(this.levelVarId, levelRefType, rawLevelVar);
                 }
 
                 script.append(levelVar).append(" = \"未知\";\n");
@@ -118,7 +120,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                 if (firstTh.containsKey("resultVar")) {
                     String rawLevelVar = firstTh.getString("resultVar");
                     Long lvId = firstTh.containsKey("_varId") ? firstTh.getLong("_varId") : null;
-                    levelVarForResult = resolveVar(lvId, rawLevelVar);
+                    String levelRefType = firstTh.getString("_refType");
+                    levelVarForResult = resolveVar(lvId, levelRefType, rawLevelVar);
                 }
             }
             LinkedHashSet<String> outVars = new LinkedHashSet<>();
@@ -153,11 +156,12 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             if (i > 0) sb.append(" && ");
             JSONObject cond = conditions.getJSONObject(i);
             Long varId = cond.containsKey("_varId") ? cond.getLong("_varId") : null;
+            String refType = cond.getString("_refType");
             String varCode = cond.getString("varCode");
             String operator = cond.getString("operator");
             String value = cond.getString("value");
 
-            String scriptName = resolveVar(varId, varCode);
+            String scriptName = resolveVar(varId, refType, varCode);
             sb.append(scriptName).append(" ").append(operator).append(" ");
             if (isNumericValue(value)) {
                 sb.append(value);
@@ -168,8 +172,12 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
     }
 
     private String resolveVar(Long varId, String varCode) {
+        return resolveVar(varId, null, varCode);
+    }
+
+    private String resolveVar(Long varId, String refType, String varCode) {
         if (this.varContext != null) {
-            return this.varContext.resolveVar(varId, varCode);
+            return this.varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }

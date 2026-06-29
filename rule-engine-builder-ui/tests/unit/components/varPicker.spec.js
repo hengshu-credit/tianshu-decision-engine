@@ -77,6 +77,43 @@ describe('VarPicker', () => {
     expect(typeof wrapper.vm.codeColumnLabel()).toBe('string')
     expect(typeof wrapper.vm.nameColumnLabel()).toBe('string')
   })
+
+  test('点击输入框后弹层保持打开，点击弹层内部不关闭', async () => {
+    const wrapper = mountPicker({ vars: objectFieldOptions() })
+    const popper = document.createElement('div')
+    const inside = document.createElement('button')
+    popper.appendChild(inside)
+    document.body.appendChild(popper)
+    wrapper.vm.$refs.popover = { popperElm: popper, doClose: jest.fn() }
+
+    wrapper.vm.openPopover()
+    await Vue.nextTick()
+    expect(wrapper.vm.popoverVisible).toBe(true)
+
+    wrapper.vm.onDocumentMouseDown({ target: inside })
+    expect(wrapper.vm.popoverVisible).toBe(true)
+
+    document.body.removeChild(popper)
+    wrapper.destroy()
+  })
+
+  test('字段选择器打开后点击组件外部才关闭', async () => {
+    const wrapper = mountPicker({ vars: objectFieldOptions() })
+    const outside = document.createElement('div')
+    document.body.appendChild(outside)
+    wrapper.vm.$refs.popover = { doClose: jest.fn() }
+
+    wrapper.vm.openPopover()
+    await Vue.nextTick()
+    wrapper.vm.onDocumentMouseDown({ target: outside })
+
+    expect(wrapper.vm.popoverVisible).toBe(false)
+    expect(wrapper.vm.$refs.popover.doClose).toHaveBeenCalled()
+
+    document.body.removeChild(outside)
+    wrapper.destroy()
+  })
+
   test('object field short code value matches full object option without duplicate display code', async () => {
     const wrapper = mountPicker({
       value: 'taxpayerType',

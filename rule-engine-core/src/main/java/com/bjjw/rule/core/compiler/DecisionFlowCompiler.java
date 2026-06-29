@@ -100,7 +100,7 @@ public class DecisionFlowCompiler implements RuleCompiler {
             String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext);
 
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();
-            ActionDataOutputVarCollector.collectFromGraphTaskNodes(nodes, outputVars);
+            ActionDataOutputVarCollector.collectFromGraphTaskNodes(nodes, outputVars, varContext);
             StringBuilder sb = new StringBuilder(script);
             if (!outputVars.isEmpty()) {
                 RuleScriptResultCollector.prependOutputNullInits(sb, outputVars);

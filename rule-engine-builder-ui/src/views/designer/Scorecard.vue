@@ -113,7 +113,7 @@
                   placeholder="选择变量"
                   width="100%"
                   class="cond-var"
-                  @select="v => { item.condVar = v.varCode; item.condVarType = v.varType; item._varId = (v.varObj && v.varObj.id) || null }"
+                  @select="v => { item.condVar = v.varCode; item.condVarType = v.varType; item._varId = v._varId || (v.varObj && v.varObj.id) || null; item._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null }"
                 />
                 <el-input v-else v-model="item.condVar" size="small" placeholder="变量编码" class="cond-var" />
                 <el-select v-model="item.condOperator" size="small" class="cond-op">
@@ -441,7 +441,8 @@ export default {
     onResultVarSelect(v) {
       if (!v) return
       const varLabel = v.varLabel || v.varCode
-      const _varId = v.varObj && v.varObj.id ? v.varObj.id : null
+      const _varId = v._varId || (v.varObj && v.varObj.id) || null
+      const _refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
       const newCode = v.varCode
       // 检测结果变量是否与已有条件变量同名（评分卡中结果变量应为输出变量，不应与输入条件变量同名）
       const conflictItem = this.model.scoreItems.find(item => item.condVar === newCode)
@@ -455,7 +456,8 @@ export default {
         ...this.model.resultVar,
         varCode: newCode,
         varLabel,
-        _varId
+        _varId,
+        _refType
       })
     },
     /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
@@ -463,6 +465,7 @@ export default {
       if (!val) {
         this.$set(this.model.resultVar, 'varLabel', '')
         this.$set(this.model.resultVar, '_varId', null)
+        this.$set(this.model.resultVar, '_refType', null)
         return
       }
       // 在已加载的变量列表中查找匹配的变量
@@ -470,10 +473,12 @@ export default {
       if (ref) {
         this.$set(this.model.resultVar, 'varLabel', ref.refLabel.label || ref.refLabel)
         this.$set(this.model.resultVar, '_varId', ref.varObj && ref.varObj.id ? ref.varObj.id : null)
+        this.$set(this.model.resultVar, '_refType', ref.refType || null)
       } else {
         // 未找到匹配时，只保留 varCode
         this.$set(this.model.resultVar, 'varLabel', '')
         this.$set(this.model.resultVar, '_varId', null)
+        this.$set(this.model.resultVar, '_refType', null)
       }
     },
     addScoreItem() {

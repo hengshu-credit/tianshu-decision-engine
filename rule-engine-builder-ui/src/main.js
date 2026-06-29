@@ -16,23 +16,9 @@ import './styles/element-override.scss'
 const isProd = process.env.NODE_ENV === 'production'
 const base = isProd ? './' : '/'
 window.MonacoEnvironment = {
-  getWorkerUrl: function (moduleId, label) {
-    if (isProd) {
-      // 生产：直接使用相对路径
-      if (label === 'json') return base + 'vs/language/json/json.worker.js'
-      if (label === 'javascript' || label === 'typescript') return base + 'vs/language/typescript/ts.worker.js'
-      if (label === 'python') return base + 'vs/language/python/python.worker.js'
-      if (label === 'java') return base + 'vs/language/java/java.worker.js'
-      if (label === 'yaml') return base + 'vs/language/yaml/yaml.worker.js'
-      return base + 'vs/editor/editor.worker.js'
-    }
-    // 开发：worker 文件由 devServer.before 中间件提供，路径指向 node_modules 源目录
-    if (label === 'json') return '/vs/language/json/json.worker.js'
-    if (label === 'javascript' || label === 'typescript') return '/vs/language/typescript/ts.worker.js'
-    if (label === 'python') return '/vs/language/python/python.worker.js'
-    if (label === 'java') return '/vs/language/java/java.worker.js'
-    if (label === 'yaml') return '/vs/language/yaml/yaml.worker.js'
-    return '/vs/editor/editor.worker.js'
+  getWorkerUrl: function () {
+    // AMD 版本的 monaco-editor 使用统一 workerMain 入口，不能指向 ESM worker 文件。
+    return base + 'vs/base/worker/workerMain.js'
   }
 }
 

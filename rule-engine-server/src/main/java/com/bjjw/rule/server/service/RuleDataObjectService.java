@@ -58,10 +58,13 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         m.put("varType", f.getVarType());
         m.put("refObjectCode", f.getRefObjectCode());
         m.put("refObjectId", f.getRefObjectId());
+        m.put("genericType", f.getGenericType());
+        m.put("parentFieldId", f.getParentFieldId());
         m.put("varSource", "INPUT");
         m.put("sortOrder", f.getSortOrder());
         m.put("status", f.getStatus());
         m.put("objectField", Boolean.TRUE);
+        m.put("refType", "DATA_OBJECT");
         return m;
     }
 
@@ -380,8 +383,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     /**
      * 将对象列表和字段列表构建为变量树。
-     * 每个对象节点包含 object 元信息和 variables 子列表。
-     * 字段的 varCode/scriptName/varLabel 自动前缀对象路径（如 "User.age"）。
+     * 每个对象节点包含 object 元信息、可逐级展开的 variables，以及供选择器兼容使用的 flatVariables。
+     * 字段的 varCode/varLabel 保留叶子名称，scriptName 规范为完整脚本路径（如 "User.age"）。
      */
     private List<Map<String, Object>> buildVariableTree(List<RuleDataObject> objects, List<RuleDataObjectField> allFields) {
         Map<Long, List<RuleDataObjectField>> byObject = allFields.stream()
@@ -392,32 +395,134 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             Map<String, Object> node = new HashMap<>();
             node.put("object", obj);
             String objScriptName = obj.getScriptName();
-            List<Map<String, Object>> vars = byObject.getOrDefault(obj.getId(), Collections.emptyList()).stream()
-                    .map(RuleDataObjectService::toVariableRow)
-                    .peek(m -> prefixObjectPath(m, objScriptName))
-                    .collect(Collectors.toList());
+            List<Map<String, Object>> vars = buildNestedVariableRows(byObject.getOrDefault(obj.getId(), Collections.emptyList()), objScriptName);
             node.put("variables", vars);
+            node.put("flatVariables", flattenRows(vars));
             tree.add(node);
         }
         return tree;
     }
 
     /**
-     * 为字段的 varCode/scriptName/varLabel 前缀对象路径，使展示为 "对象.字段" 而非 "字段"。
+     * 按 parentFieldId 组装对象字段树。
      */
-    private static void prefixObjectPath(Map<String, Object> m, String objScriptName) {
-        if (objScriptName == null) return;
-        String fieldVarCode = (String) m.get("varCode");
-        String fieldScriptName = (String) m.get("scriptName");
-        String fieldVarLabel = (String) m.get("varLabel");
-        if (fieldVarCode != null) {
-            m.put("varCode", objScriptName + "." + fieldVarCode);
+    private static List<Map<String, Object>> buildNestedVariableRows(List<RuleDataObjectField> fields, String objScriptName) {
+        if (fields == null || fields.isEmpty()) {
+            return Collections.emptyList();
         }
-        if (fieldScriptName != null) {
-            m.put("scriptName", objScriptName + "." + fieldScriptName);
+        List<RuleDataObjectField> sorted = new ArrayList<>(fields);
+        sorted.sort(Comparator
+                .comparing((RuleDataObjectField f) -> f.getSortOrder() == null ? 0 : f.getSortOrder())
+                .thenComparing(f -> f.getId() == null ? 0L : f.getId()));
+
+        Map<Long, Map<String, Object>> rowById = new LinkedHashMap<>();
+        Map<Long, List<Map<String, Object>>> childrenByParent = new HashMap<>();
+        for (RuleDataObjectField field : sorted) {
+            Map<String, Object> row = toVariableRow(field);
+            normalizeObjectFieldScriptName(row, objScriptName);
+            normalizeObjectFieldDisplay(row, objScriptName);
+            rowById.put(field.getId(), row);
+            if (field.getParentFieldId() != null) {
+                childrenByParent.computeIfAbsent(field.getParentFieldId(), k -> new ArrayList<>()).add(row);
+            }
         }
-        if (fieldVarLabel != null) {
-            m.put("varLabel", objScriptName + "." + fieldVarLabel);
+
+        List<Map<String, Object>> roots = new ArrayList<>();
+        for (RuleDataObjectField field : sorted) {
+            Map<String, Object> row = rowById.get(field.getId());
+            List<Map<String, Object>> children = childrenByParent.get(field.getId());
+            if (children != null && !children.isEmpty()) {
+                row.put("children", children);
+            }
+            Long parentId = field.getParentFieldId();
+            if (parentId == null || !rowById.containsKey(parentId)) {
+                roots.add(row);
+            }
+        }
+        return roots;
+    }
+
+    private static void normalizeObjectFieldScriptName(Map<String, Object> row, String objScriptName) {
+        if (objScriptName == null || objScriptName.trim().isEmpty()) return;
+        String fieldScriptName = (String) row.get("scriptName");
+        if (fieldScriptName == null || fieldScriptName.trim().isEmpty()) {
+            fieldScriptName = (String) row.get("varCode");
+        }
+        fieldScriptName = collapseDuplicateObjectPrefix(fieldScriptName, objScriptName);
+        if (fieldScriptName != null && !fieldScriptName.trim().isEmpty()
+                && !fieldScriptName.equals(objScriptName)
+                && !fieldScriptName.startsWith(objScriptName + ".")) {
+            row.put("scriptName", objScriptName + "." + fieldScriptName);
+        } else if (fieldScriptName != null && !fieldScriptName.trim().isEmpty()) {
+            row.put("scriptName", fieldScriptName);
+        }
+    }
+
+    private static void normalizeObjectFieldDisplay(Map<String, Object> row, String objScriptName) {
+        String scriptName = (String) row.get("scriptName");
+        String path = stripObjectPrefix(scriptName, objScriptName);
+        String displayCode = leafName(path);
+        if (displayCode == null || displayCode.isEmpty()) {
+            displayCode = leafName((String) row.get("varCode"));
+        }
+        if (displayCode == null || displayCode.isEmpty()) return;
+
+        String oldCode = (String) row.get("varCode");
+        row.put("varCode", displayCode);
+
+        String label = (String) row.get("varLabel");
+        if (label == null || label.trim().isEmpty()
+                || label.equals(oldCode)
+                || label.indexOf('.') >= 0) {
+            row.put("varLabel", displayCode);
+        }
+    }
+
+    private static String collapseDuplicateObjectPrefix(String value, String objScriptName) {
+        if (value == null || objScriptName == null || objScriptName.trim().isEmpty()) return value;
+        String prefix = objScriptName + ".";
+        String duplicatePrefix = objScriptName + "." + objScriptName + ".";
+        String result = value;
+        while (result.startsWith(duplicatePrefix)) {
+            result = prefix + result.substring(duplicatePrefix.length());
+        }
+        return result;
+    }
+
+    private static String stripObjectPrefix(String value, String objScriptName) {
+        if (value == null) return null;
+        if (objScriptName == null || objScriptName.trim().isEmpty()) return value;
+        String prefix = objScriptName + ".";
+        String result = value;
+        while (result.startsWith(prefix)) {
+            result = result.substring(prefix.length());
+        }
+        return result;
+    }
+
+    private static String leafName(String value) {
+        if (value == null) return null;
+        String text = value.trim();
+        if (text.isEmpty()) return text;
+        int idx = text.lastIndexOf('.');
+        return idx >= 0 ? text.substring(idx + 1) : text;
+    }
+
+    private static List<Map<String, Object>> flattenRows(List<Map<String, Object>> rows) {
+        List<Map<String, Object>> flat = new ArrayList<>();
+        flattenRows(rows, flat);
+        return flat;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void flattenRows(List<Map<String, Object>> rows, List<Map<String, Object>> flat) {
+        if (rows == null) return;
+        for (Map<String, Object> row : rows) {
+            flat.add(row);
+            Object children = row.get("children");
+            if (children instanceof List) {
+                flattenRows((List<Map<String, Object>>) children, flat);
+            }
         }
     }
 
@@ -453,6 +558,11 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     @Transactional
     public void deleteObjectField(Long fieldId) {
+        List<RuleDataObjectField> children = objectFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDataObjectField>().eq(RuleDataObjectField::getParentFieldId, fieldId));
+        for (RuleDataObjectField child : children) {
+            deleteObjectField(child.getId());
+        }
         objectFieldOptionMapper.delete(new LambdaQueryWrapper<RuleDataObjectFieldOption>()
                 .eq(RuleDataObjectFieldOption::getFieldId, fieldId));
         objectFieldMapper.deleteById(fieldId);
@@ -544,6 +654,11 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             LambdaQueryWrapper<RuleDataObjectField> existWrapper = new LambdaQueryWrapper<>();
             existWrapper.eq(RuleDataObjectField::getObjectId, objectId)
                         .eq(RuleDataObjectField::getVarCode, varCode);
+            if (parentFieldId == null) {
+                existWrapper.isNull(RuleDataObjectField::getParentFieldId);
+            } else {
+                existWrapper.eq(RuleDataObjectField::getParentFieldId, parentFieldId);
+            }
             RuleDataObjectField existing = objectFieldMapper.selectOne(existWrapper);
 
             Long resolvedRefObjectId = resolveRefObjectId(field.getRefObjectCode(), field.getRefObjectId(), scope, normProjectId, objectCodeToId);
@@ -591,20 +706,23 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
      * @param scope      作用域
      * @param objectId    所属数据对象 ID
      * @param fields      待写入的字段列表（来自 ParsedObject.fields）
-     * @param parentId    父字段数据库 ID（顶层为 null）
+     * @param parentTempId 父字段解析期临时 ID（顶层为 null）
      * @return 写入的字段总数（含所有层级）
      */
     private int batchCreateFieldsRecursive(Long projectId, String scope, Long objectId,
-                                           List<ParsedField> fields, Long parentId) {
+                                           List<ParsedField> fields, Long parentTempId) {
+        return batchCreateFieldsRecursive(projectId, scope, objectId, fields, parentTempId, null);
+    }
+
+    private int batchCreateFieldsRecursive(Long projectId, String scope, Long objectId,
+                                           List<ParsedField> fields, Long parentTempId, Long parentDbId) {
         Long normProjectId = (projectId == null || projectId == 0L) ? 0L : projectId;
-        // tempId → 真实数据库 ID，用于将 ParsedField.parentFieldId（tempId）转换为 DB ID
-        Map<Long, Long> tempIdToDbId = new HashMap<>();
         int order = 0;
         int count = 0;
 
         for (ParsedField field : fields) {
             // 只处理当前层级的字段（parentFieldId 匹配）
-            if (!java.util.Objects.equals(field.getParentFieldId(), parentId)) {
+            if (!java.util.Objects.equals(field.getParentFieldId(), parentTempId)) {
                 continue;
             }
 
@@ -619,20 +737,14 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             f.setRefObjectCode(field.getRefObjectCode());
             f.setRefObjectId(field.getRefObjectId());
             f.setGenericType(field.getGenericType());
-            f.setParentFieldId(parentId);
+            f.setParentFieldId(parentDbId);
             f.setSortOrder(order);
             f.setStatus(1);
             objectFieldMapper.insert(f);
 
-            Long dbId = f.getId();
-            // 记录 tempId → dbId（若 ParsedField.parentFieldId 为 tempId 的话）
-            if (field.getParentFieldId() != null && field.getParentFieldId() < 0) {
-                tempIdToDbId.put(field.getParentFieldId(), dbId);
-            }
-
             // 若是 OBJECT/LIST 类型，先写入当前字段，再递归写入子字段
             if ("OBJECT".equals(field.getVarType()) || "LIST".equals(field.getVarType())) {
-                count += batchCreateFieldsRecursive(projectId, scope, objectId, fields, dbId);
+                count += batchCreateFieldsRecursive(projectId, scope, objectId, fields, field.getTempId(), f.getId());
             }
 
             order++;

@@ -138,6 +138,7 @@ jest.mock('@/api/function', () => ({
   __esModule: true
 }))
 jest.mock('@/api/model', () => ({
+  listAllModelsByProject: jest.fn(),
   listModelInputs: jest.fn(),
   listModelOutputs: jest.fn(),
   listModels: jest.fn(),

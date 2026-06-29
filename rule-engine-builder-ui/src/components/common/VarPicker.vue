@@ -26,10 +26,10 @@
           v-model="popoverVisible"
           placement="bottom-start"
           :width="popoverWidth"
-          trigger="click"
+          trigger="manual"
           popper-class="var-picker-popover"
         >
-          <div class="vp-panel">
+          <div class="vp-panel" :style="panelStyle" @mousedown.stop @click.stop>
             <!-- 左侧：变量类型分类列表 -->
             <div class="vp-left">
               <div
@@ -64,7 +64,7 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="v in filteredRightItems">
+                    <template v-for="v in pagedRightItems">
                       <tr
                         :key="v._objectGroupKey || v.varCode"
                         class="vp-row"
@@ -90,7 +90,7 @@
                             </div>
                             <div class="vp-children-list">
                               <div
-                                v-for="child in v.children"
+                                v-for="child in pagedObjectChildren(v)"
                                 :key="(v._objectGroupKey || '') + '.' + child.varCode"
                                 class="vp-child-item"
                                 @click.stop="onItemClick(child)"
@@ -100,6 +100,16 @@
                                 <span class="vp-child-name">{{ optionLabel(child) || child.varCode }}</span>
                               </div>
                             </div>
+                            <el-pagination
+                              v-if="objectChildNeedsPaging(v)"
+                              class="vp-mini-pager"
+                              small
+                              layout="prev,pager,next"
+                              :current-page="objectChildPage(v)"
+                              :page-size="fieldPageSize"
+                              :total="v.children.length"
+                              @current-change="p => onObjectChildPageChange(v, p)"
+                            />
                           </div>
                         </td>
                       </tr>
@@ -112,9 +122,30 @@
                   </tbody>
                 </table>
               </div>
+              <el-pagination
+                v-if="rightNeedsPaging"
+                class="vp-pager"
+                small
+                layout="total,prev,pager,next"
+                :current-page="rightPage"
+                :page-size="fieldPageSize"
+                :total="filteredRightItems.length"
+                @current-change="onRightPageChange"
+              />
             </div>
+            <div
+              class="vp-resize-handle"
+              title="拖拽调整面板大小"
+              @mousedown.prevent.stop="startPanelResize"
+              @touchstart.prevent.stop="startPanelTouchResize"
+            />
           </div>
-          <div slot="reference" class="vp-reference">
+          <div
+            slot="reference"
+            class="vp-reference"
+            @mousedown.prevent.stop="openPopover"
+            @click.stop="openPopover"
+          >
             <el-input
               :value="displayValue"
               :size="size"
@@ -125,7 +156,13 @@
               @click.native="onInputClick"
             >
               <i slot="suffix" class="el-input__icon el-icon-arrow-down" />
-              <i v-if="value && allowCustom" slot="suffix" class="el-input__icon el-icon-close vp-clear-btn" @click.stop="onClearValue" />
+              <i
+                v-if="value && allowCustom"
+                slot="suffix"
+                class="el-input__icon el-icon-close vp-clear-btn"
+                @mousedown.stop
+                @click.stop="onClearValue"
+              />
             </el-input>
           </div>
         </el-popover>
@@ -198,7 +235,17 @@ export default {
       /** 搜索文本 */
       searchText: '',
       /** 展开的数据对象 varCode */
-      expandedObject: null
+      expandedObject: null,
+      /** 大字段集合分页 */
+      fieldPageSize: 100,
+      rightPage: 1,
+      objectChildPages: {},
+      /** 弹窗尺寸，可通过右下角拖拽调整 */
+      panelWidth: 560,
+      panelHeight: 360,
+      resizingPanel: false,
+      panelBodyCursor: '',
+      panelBodyUserSelect: ''
     }
   },
   watch: {
@@ -226,15 +273,29 @@ export default {
     customMode(val) {
       if (val) this.localCustomValue = this.value || ''
     },
+    activeCategory() {
+      this.rightPage = 1
+      this.expandedObject = null
+    },
+    searchText() {
+      this.rightPage = 1
+      this.objectChildPages = {}
+    },
     popoverVisible(val) {
+      this.updateDocumentListener(val)
       if (!val) {
         this.searchText = ''
         this.expandedObject = null
+        this.stopPanelResize()
       }
     }
   },
   mounted() {
     this._autoSwitchIfUnmatched()
+  },
+  beforeDestroy() {
+    this.updateDocumentListener(false)
+    this.stopPanelResize()
   },
   computed: {
     /** 是否有可选的变量选项 */
@@ -244,8 +305,14 @@ export default {
     /** 弹窗宽度：跟随容器，最小 520px */
     popoverWidth() {
       var el = this.$el
-      if (el && el.offsetWidth > 520) return el.offsetWidth
-      return 520
+      var base = el && el.offsetWidth > 520 ? el.offsetWidth : 520
+      return Math.max(base, this.panelWidth)
+    },
+    panelStyle() {
+      return {
+        width: this.popoverWidth + 'px',
+        height: this.panelHeight + 'px'
+      }
     },
     /** 是否显示搜索框（项数超过 10 时） */
     showSearch() {
@@ -338,6 +405,14 @@ export default {
               (child.varLabel && child.varLabel.toLowerCase().indexOf(s) !== -1)
           }))
       })
+    },
+    rightNeedsPaging() {
+      return this.filteredRightItems.length > this.fieldPageSize
+    },
+    pagedRightItems() {
+      if (!this.rightNeedsPaging) return this.filteredRightItems
+      var start = (this.rightPage - 1) * this.fieldPageSize
+      return this.filteredRightItems.slice(start, start + this.fieldPageSize)
     }
   },
   methods: {
@@ -393,6 +468,31 @@ export default {
     onCategoryClick(cat) {
       this.activeCategory = cat
       this.expandedObject = null
+      this.rightPage = 1
+    },
+    onRightPageChange(page) {
+      this.rightPage = page
+    },
+    objectChildPageKey(item) {
+      return item && (item._objectGroupKey || item.varCode) ? (item._objectGroupKey || item.varCode) : ''
+    },
+    objectChildPage(item) {
+      var key = this.objectChildPageKey(item)
+      return (key && this.objectChildPages[key]) || 1
+    },
+    objectChildNeedsPaging(item) {
+      return item && item.children && item.children.length > this.fieldPageSize
+    },
+    pagedObjectChildren(item) {
+      if (!item || !item.children) return []
+      if (!this.objectChildNeedsPaging(item)) return item.children
+      var page = this.objectChildPage(item)
+      var start = (page - 1) * this.fieldPageSize
+      return item.children.slice(start, start + this.fieldPageSize)
+    },
+    onObjectChildPageChange(item, page) {
+      var key = this.objectChildPageKey(item)
+      if (key) this.$set(this.objectChildPages, key, page)
     },
     /** 行点击：数据对象展开嵌套，其他直接选中 */
     onItemClick(item) {
@@ -402,6 +502,7 @@ export default {
           this.expandedObject = null
         } else {
           this.expandedObject = groupKey
+          if (!this.objectChildPages[groupKey]) this.$set(this.objectChildPages, groupKey, 1)
         }
         return
       }
@@ -459,15 +560,85 @@ export default {
     },
     /** 输入框获得焦点时自动弹出选择器面板 */
     onInputFocus() {
+      this.openPopover()
+    },
+    /** 点击输入框时弹出选择器面板 */
+    onInputClick() {
+      this.openPopover()
+    },
+    openPopover() {
       if (this.groupedByCategory && this.hasVarOptions) {
         this.popoverVisible = true
       }
     },
-    /** 点击输入框时弹出选择器面板 */
-    onInputClick() {
-      if (this.groupedByCategory && this.hasVarOptions) {
-        this.popoverVisible = true
+    updateDocumentListener(visible) {
+      if (typeof document === 'undefined') return
+      var method = visible ? 'addEventListener' : 'removeEventListener'
+      document[method]('mousedown', this.onDocumentMouseDown, true)
+    },
+    onDocumentMouseDown(event) {
+      if (!this.popoverVisible) return
+      var target = event.target
+      var root = this.$el
+      var popover = this.$refs.popover
+      var popper = popover && popover.popperElm
+      if ((root && root.contains(target)) || (popper && popper.contains(target))) {
+        return
       }
+      this.closePopover()
+    },
+    startPanelResize(event) {
+      this.beginPanelResize(event && event.clientX, event && event.clientY, event)
+    },
+    startPanelTouchResize(event) {
+      var touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      this.beginPanelResize(touch.clientX, touch.clientY, event)
+    },
+    beginPanelResize(clientX, clientY, event) {
+      if (clientX == null || clientY == null) return
+      if (event && event.preventDefault) event.preventDefault()
+      this.resizingPanel = true
+      this.panelBodyCursor = document.body.style.cursor
+      this.panelBodyUserSelect = document.body.style.userSelect
+      document.body.style.cursor = 'nwse-resize'
+      document.body.style.userSelect = 'none'
+      this.updatePanelSize(clientX, clientY)
+      window.addEventListener('mousemove', this.onPanelResize)
+      window.addEventListener('mouseup', this.stopPanelResize)
+      window.addEventListener('touchmove', this.onPanelTouchResize, { passive: false })
+      window.addEventListener('touchend', this.stopPanelResize)
+      window.addEventListener('touchcancel', this.stopPanelResize)
+    },
+    onPanelResize(event) {
+      this.updatePanelSize(event.clientX, event.clientY)
+    },
+    onPanelTouchResize(event) {
+      var touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      if (event && event.preventDefault) event.preventDefault()
+      this.updatePanelSize(touch.clientX, touch.clientY)
+    },
+    updatePanelSize(clientX, clientY) {
+      var popover = this.$refs.popover
+      var popper = popover && popover.popperElm
+      if (!popper) return
+      var rect = popper.getBoundingClientRect()
+      var width = Math.round(clientX - rect.left)
+      var height = Math.round(clientY - rect.top)
+      this.panelWidth = Math.min(Math.max(width, 520), 960)
+      this.panelHeight = Math.min(Math.max(height, 300), 720)
+    },
+    stopPanelResize() {
+      window.removeEventListener('mousemove', this.onPanelResize)
+      window.removeEventListener('mouseup', this.stopPanelResize)
+      window.removeEventListener('touchmove', this.onPanelTouchResize)
+      window.removeEventListener('touchend', this.stopPanelResize)
+      window.removeEventListener('touchcancel', this.stopPanelResize)
+      if (!this.resizingPanel) return
+      this.resizingPanel = false
+      document.body.style.cursor = this.panelBodyCursor || ''
+      document.body.style.userSelect = this.panelBodyUserSelect || ''
     },
     /** 清除选中的值 */
     onClearValue() {
@@ -547,7 +718,8 @@ export default {
         ENUM: 'e',
         OBJECT: 'o',
         LIST: 'l',
-        MAP: 'm'
+        MAP: 'm',
+        MODEL: 'M'
       }
       return map[varType] || '?'
     }
@@ -559,6 +731,13 @@ export default {
 .var-picker-wrap {
   display: inline-block;
   vertical-align: middle;
+  max-width: 100%;
+}
+.var-picker-wrap ::v-deep .el-popover__reference-wrapper {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
 }
 .custom-input-row,
 .select-input-row {
@@ -567,12 +746,23 @@ export default {
   gap: 4px;
   width: 100%;
 }
+.select-input-row > span:not(.mode-switch) {
+  display: block;
+  flex: 1;
+  min-width: 0;
+  width: 100%;
+}
 .custom-input-row .el-input,
 .select-input-row .el-popover,
+.select-input-row ::v-deep .el-popover__reference-wrapper,
 .select-input-row .el-select,
 .select-input-row .el-input {
   flex: 1;
   min-width: 0;
+  width: 100%;
+}
+.vp-reference {
+  width: 100%;
 }
 .mode-switch {
   flex-shrink: 0;
@@ -608,8 +798,12 @@ export default {
 /* ── 两列弹窗面板 ── */
 .vp-panel {
   display: flex;
-  height: 360px;
   user-select: none;
+  position: relative;
+  min-width: 520px;
+  min-height: 300px;
+  max-width: 960px;
+  max-height: 720px;
 }
 .vp-left {
   width: 100px;
@@ -665,6 +859,7 @@ export default {
 .vp-table-wrap {
   flex: 1;
   overflow-y: auto;
+  min-height: 0;
 }
 .vp-table {
   width: 100%;
@@ -752,6 +947,41 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.vp-pager {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border-top: 1px solid #ebeef5;
+  text-align: right;
+  background: #fff;
+}
+.vp-mini-pager {
+  padding: 4px 8px 6px;
+  text-align: right;
+  border-top: 1px solid #ebeef5;
+  background: #fff;
+}
+.vp-resize-handle {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 14px;
+  height: 14px;
+  cursor: nwse-resize;
+  z-index: 3;
+}
+.vp-resize-handle::after {
+  content: '';
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  width: 8px;
+  height: 8px;
+  border-right: 2px solid #c0c4cc;
+  border-bottom: 2px solid #c0c4cc;
+}
+.vp-resize-handle:hover::after {
+  border-color: #409EFF;
 }
 
 /* ── 类型单字符标识 ── */

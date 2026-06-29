@@ -202,7 +202,11 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         // ========== 1. 先构建变量列表和 Map ==========
         List<RuleVariable> variables = variableMapper.selectList(
                 new LambdaQueryWrapper<RuleVariable>()
-                        .eq(RuleVariable::getProjectId, projectId)
+                        .and(w -> w
+                                .eq(RuleVariable::getScope, "GLOBAL")
+                                .or()
+                                .eq(RuleVariable::getScope, "PROJECT")
+                                .eq(RuleVariable::getProjectId, projectId))
                         .eq(RuleVariable::getStatus, 1)
                         .orderByAsc(RuleVariable::getSortOrder));
         List<ApiDocDTO.VariableInfo> varInfos = new ArrayList<>();
@@ -229,7 +233,11 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         // ========== 2. 构建数据对象列表和 Map ==========
         List<RuleDataObject> dataObjects = dataObjectMapper.selectList(
                 new LambdaQueryWrapper<RuleDataObject>()
-                        .eq(RuleDataObject::getProjectId, projectId)
+                        .and(w -> w
+                                .eq(RuleDataObject::getScope, "GLOBAL")
+                                .or()
+                                .eq(RuleDataObject::getScope, "PROJECT")
+                                .eq(RuleDataObject::getProjectId, projectId))
                         .eq(RuleDataObject::getStatus, 1)
                         .orderByAsc(RuleDataObject::getCreateTime));
         List<ApiDocDTO.DataObjectInfo> doInfos = new ArrayList<>();

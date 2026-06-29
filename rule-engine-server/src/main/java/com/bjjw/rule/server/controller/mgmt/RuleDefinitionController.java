@@ -13,6 +13,8 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -173,7 +175,7 @@ public class RuleDefinitionController {
     @PostMapping("/save")
     public R<Void> saveContent(@RequestBody Map<String, Object> body) {
         Long definitionId = Long.valueOf(body.get("definitionId").toString());
-        String modelJson = body.get("modelJson").toString();
+        String modelJson = normalizeModelJson(body.get("modelJson").toString());
         definitionService.saveContent(definitionId, modelJson);
         return R.ok();
     }
@@ -308,7 +310,7 @@ public class RuleDefinitionController {
             return R.fail("规则不存在");
         }
         // 优先使用传入的 modelJson（设计器场景）；无传入则从数据库读取（手动刷新场景）
-        String jsonToParse = modelJson;
+        String jsonToParse = normalizeModelJson(modelJson);
         if (jsonToParse == null || jsonToParse.isEmpty()) {
             RuleDefinitionContent content = definitionService.getContent(definitionId);
             if (content == null || content.getModelJson() == null) {
@@ -318,5 +320,29 @@ public class RuleDefinitionController {
         }
         definitionService.refreshFields(definitionId, jsonToParse, definition.getModelType());
         return R.ok(definitionService.getDetail(definitionId));
+    }
+
+    private String normalizeModelJson(String modelJson) {
+        if (modelJson == null) {
+            return null;
+        }
+        String json = modelJson.trim();
+        if ((json.startsWith("\"") && json.endsWith("\""))
+                || (json.startsWith("'") && json.endsWith("'"))) {
+            json = json.substring(1, json.length() - 1);
+        }
+        if (json.startsWith("modelJson=")) {
+            json = json.substring("modelJson=".length());
+        }
+        if (json.contains("%7B") || json.contains("%7b")
+                || json.contains("%5B") || json.contains("%5b")
+                || json.contains("%22")) {
+            try {
+                json = URLDecoder.decode(json, StandardCharsets.UTF_8.name());
+            } catch (Exception e) {
+                throw new IllegalArgumentException("模型 JSON URL 解码失败: " + e.getMessage(), e);
+            }
+        }
+        return json;
     }
 }

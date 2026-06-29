@@ -57,7 +57,8 @@ public class ActionDataCompiler {
         String value = b.getString("value");
         if (empty(target) || empty(value)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
-        String resolvedTarget = resolveVar(varId, target, varContext);
+        String refType = b.getString("_refType");
+        String resolvedTarget = resolveVar(varId, refType, target, varContext);
         StringBuilder sb = new StringBuilder();
         sb.append(pad(indent)).append(resolvedTarget).append(" = ").append(value);
         Boolean enableRounding = b.getBoolean("enableRounding");
@@ -95,8 +96,9 @@ public class ActionDataCompiler {
         String matchVar = b.getString("matchVar");
         if (empty(matchVar)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
+        String refType = b.getString("_refType");
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, matchVar, varContext)).append(") {\n");
+        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, refType, matchVar, varContext)).append(") {\n");
         JSONArray cases = b.getJSONArray("cases");
         if (cases != null) {
             for (int i = 0; i < cases.size(); i++) {
@@ -139,8 +141,9 @@ public class ActionDataCompiler {
         String listExpr = b.getString("listExpr");
         if (empty(itemVar) || empty(listExpr)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
+        String refType = b.getString("_refType");
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("for (").append(resolveVar(varId, itemVar, varContext)).append(" : ").append(listExpr).append(") {\n");
+        sb.append(pad(indent)).append("for (").append(resolveVar(varId, refType, itemVar, varContext)).append(" : ").append(listExpr).append(") {\n");
         sb.append(compileActions(b.getJSONArray("actions"), indent + 1, varContext));
         sb.append(pad(indent)).append("}");
         return sb.toString();
@@ -151,9 +154,10 @@ public class ActionDataCompiler {
         String condVar = b.getString("condVar");
         if (empty(target) || empty(condVar)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
+        String refType = b.getString("_refType");
         String op = b.getString("condOp");
         if (empty(op)) op = "==";
-        String cond = resolveVar(varId, condVar, varContext) + " " + op + " " + wrapValue(b.getString("condValue"));
+        String cond = resolveVar(varId, refType, condVar, varContext) + " " + op + " " + wrapValue(b.getString("condValue"));
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
         return pad(indent) + target + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv);
@@ -164,6 +168,7 @@ public class ActionDataCompiler {
         String checkVar = b.getString("checkVar");
         if (empty(target) || empty(checkVar)) return "";
         Long varId = b.containsKey("_varId") ? b.getLong("_varId") : null;
+        String refType = b.getString("_refType");
         JSONArray vals = b.getJSONArray("inValues");
         StringBuilder vb = new StringBuilder();
         if (vals != null) {
@@ -177,7 +182,7 @@ public class ActionDataCompiler {
         }
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
-        return pad(indent) + target + " = " + resolveVar(varId, checkVar, varContext) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
+        return pad(indent) + target + " = " + resolveVar(varId, refType, checkVar, varContext) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
     }
 
     private static String compileTemplateStr(JSONObject b, int indent) {
@@ -207,11 +212,12 @@ public class ActionDataCompiler {
 
     private static String buildCond(JSONObject branch, VarContext varContext) {
         Long varId = branch.containsKey("_varId") ? branch.getLong("_varId") : null;
+        String refType = branch.getString("_refType");
         String v = branch.getString("condVar");
         if (empty(v)) return "true";
         String op = branch.getString("condOp");
         if (empty(op)) op = "==";
-        return resolveVar(varId, v, varContext) + " " + op + " " + wrapValue(branch.getString("condValue"));
+        return resolveVar(varId, refType, v, varContext) + " " + op + " " + wrapValue(branch.getString("condValue"));
     }
 
     /**
@@ -219,8 +225,12 @@ public class ActionDataCompiler {
      * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
      */
     private static String resolveVar(Long varId, String varCode, VarContext varContext) {
+        return resolveVar(varId, null, varCode, varContext);
+    }
+
+    private static String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {
         if (varContext != null) {
-            return varContext.resolveVar(varId, varCode);
+            return varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }

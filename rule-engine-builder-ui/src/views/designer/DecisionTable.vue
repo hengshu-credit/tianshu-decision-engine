@@ -480,10 +480,12 @@ export default {
       const act = this.activeColDef
       if (!act) return
       const varLabel = variable.varLabel || variable.varCode
-      const _varId = variable._ref && variable._ref.id ? variable._ref.id : null
+      const _varId = variable._varId || (variable._ref && variable._ref.id) || null
+      const _refType = variable._refType || (variable._ref && variable._ref.refType) || null
       this.$set(act, 'varCode', variable.varCode)
       this.$set(act, 'varLabel', varLabel)
       this.$set(act, '_varId', _varId)
+      this.$set(act, '_refType', _refType)
       this.$set(act, 'varType', variable.varType)
       this.$set(act, 'enumOptions', variable.varType === 'ENUM'
         ? this.getVarOptions(variable.varCode).map(o => o.value || o.optionValue).join(',')

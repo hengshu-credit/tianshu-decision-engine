@@ -159,13 +159,20 @@
               </el-select>
               <el-tag size="mini" :type="objTypeColor(node.object.objectType)">{{ objTypeLabel(node.object.objectType) }}</el-tag>
               <el-tag size="mini" type="info" v-if="node.object.sourceType">{{ node.object.sourceType }}</el-tag>
-              <span class="var-group-count">{{ node.variables.length }} 个字段</span>
+              <span class="var-group-count">{{ countObjectFields(node.variables) }} 个字段</span>
               <el-button type="text" size="small" icon="el-icon-edit" @click.stop="handleEditObject(node.object)">编辑</el-button>
               <el-button type="text" size="small" icon="el-icon-plus" style="margin-left:auto;" @click.stop="handleAddObjectField(node)">添加字段</el-button>
               <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click.stop="handleDeleteObject(node.object)" />
             </div>
             <div v-show="node._expanded" class="var-group-body">
-              <el-table :data="node.variables" size="mini" border style="width:100%;">
+              <el-table
+                :data="paginatedObjectFields(node)"
+                size="mini"
+                border
+                row-key="id"
+                :tree-props="{ children: 'children' }"
+                style="width:100%;"
+              >
                 <el-table-column prop="varCode" label="字段编码" min-width="140" show-overflow-tooltip />
                 <el-table-column prop="varLabel" label="名称" min-width="120" show-overflow-tooltip />
                 <el-table-column label="脚本名称" min-width="140">
@@ -191,6 +198,15 @@
                   </template>
                 </el-table-column>
               </el-table>
+              <el-pagination
+                v-if="objectFieldNeedsPaging(node)"
+                style="margin-top:8px;text-align:right;"
+                :current-page="objectFieldPage(node)"
+                :page-size="objectFieldPageSize"
+                :total="objectFieldTotal(node)"
+                layout="total,prev,pager,next"
+                @current-change="p => handleObjectFieldPageChange(node, p)"
+              />
             </div>
           </div>
           <el-pagination style="margin-top:12px;text-align:right;" :current-page="objPageNum" :page-size="objPageSize" :total="filteredObjectTree.length"
@@ -594,6 +610,7 @@ import { listProjects } from '@/api/project'
 import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'VariableList',
@@ -698,6 +715,8 @@ export default {
       objPageNum: 1,
       objPageSize: 10,
       objExpanded: {},
+      objectFieldPageMap: {},
+      objectFieldPageSize: 100,
       objQp: { scope: '', projectCode: '', projectName: '', sourceType: '', objectCode: '' },
       /** 铁律四：id → objectCode 映射，供 refObjectId 展示引用对象名 */
       objectIdMap: {},
@@ -705,6 +724,7 @@ export default {
     }
   },
   created() {
+    this.restoreCachedState()
     this.loadProjects()
   },
   mounted() {
@@ -764,8 +784,32 @@ export default {
   },
   methods: {
     onTabClick(tab) {
+      this.saveCachedState()
       if (tab.name === 'objects') this.loadObjectTree()
       if (tab.name === 'constants') this.loadConstants()
+    },
+    restoreCachedState() {
+      const state = restorePageState('VariableList')
+      if (state.activeTab) this.activeTab = state.activeTab
+      if (state.qp) this.qp = { ...this.qp, ...state.qp }
+      if (state.constQp) this.constQp = { ...this.constQp, ...state.constQp }
+      if (state.objQp) this.objQp = { ...this.objQp, ...state.objQp }
+      if (state.objPageNum) this.objPageNum = state.objPageNum
+      if (state.objPageSize) this.objPageSize = state.objPageSize
+      if (state.objectFieldPageMap) this.objectFieldPageMap = state.objectFieldPageMap
+      if (state.objExpanded) this.objExpanded = state.objExpanded
+    },
+    saveCachedState() {
+      savePageState('VariableList', {
+        activeTab: this.activeTab,
+        qp: this.qp,
+        constQp: this.constQp,
+        objQp: this.objQp,
+        objPageNum: this.objPageNum,
+        objPageSize: this.objPageSize,
+        objectFieldPageMap: this.objectFieldPageMap,
+        objExpanded: this.objExpanded
+      })
     },
     initForm() {
       return {
@@ -870,11 +914,69 @@ export default {
     },
     toggleObjectExpand(node) {
       this.$set(this.objExpanded, node.object.id, !this.objExpanded[node.object.id])
+      this.saveCachedState()
     },
-    handleObjPageChange(p) { this.objPageNum = p },
+    handleObjPageChange(p) { this.objPageNum = p; this.saveCachedState() },
+    objectFieldTotal(node) {
+      return this.countObjectFields(node && node.variables)
+    },
+    objectFieldNeedsPaging(node) {
+      return this.objectFieldTotal(node) > this.objectFieldPageSize
+    },
+    objectFieldPage(node) {
+      const id = node && node.object ? node.object.id : null
+      return (id && this.objectFieldPageMap[id]) || 1
+    },
+    paginatedObjectFields(node) {
+      const rows = node && Array.isArray(node.variables) ? node.variables : []
+      if (!this.objectFieldNeedsPaging(node)) return rows
+      const page = this.objectFieldPage(node)
+      const start = (page - 1) * this.objectFieldPageSize
+      return this.sliceObjectFieldTree(rows, start, start + this.objectFieldPageSize)
+    },
+    sliceObjectFieldTree(rows, start, end) {
+      let index = 0
+      const visit = list => {
+        return (list || []).map(row => {
+          const current = index++
+          const children = visit(row.children || [])
+          const includeSelf = current >= start && current < end
+          if (!includeSelf && !children.length) return null
+          return {
+            ...row,
+            children
+          }
+        }).filter(Boolean)
+      }
+      return visit(rows)
+    },
+    handleObjectFieldPageChange(node, page) {
+      const id = node && node.object ? node.object.id : null
+      if (!id) return
+      this.$set(this.objectFieldPageMap, id, page)
+      this.saveCachedState()
+    },
+    normalizeObjectFieldPages() {
+      const next = {}
+      const tree = this.objectTree || []
+      tree.forEach(node => {
+        const id = node && node.object ? node.object.id : null
+        if (!id) return
+        const total = this.objectFieldTotal(node)
+        const max = Math.max(1, Math.ceil(total / this.objectFieldPageSize))
+        const page = this.objectFieldPageMap[id] || 1
+        next[id] = Math.min(Math.max(page, 1), max)
+      })
+      this.objectFieldPageMap = next
+    },
+    countObjectFields(rows) {
+      if (!Array.isArray(rows)) return 0
+      return rows.reduce((sum, row) => sum + 1 + this.countObjectFields(row.children), 0)
+    },
     async loadData() {
       this.loading = true
       try {
+        this.saveCachedState()
         const params = { ...this.qp, standaloneOnly: true }
         if (!params.projectId) delete params.projectId
         if (!params.varType) delete params.varType
@@ -902,12 +1004,13 @@ export default {
       } finally { this.loading = false }
     },
     handleQuery() { this.qp.pageNum = 1; this.loadData() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: '', varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }; this.loadData() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectId: '', varType: '', varSource: '', keyword: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }; clearPageState('VariableList'); this.loadData() },
 
     // ── Objects ──
     async loadObjectTree() {
       this.objLoading = true
       try {
+        this.saveCachedState()
         const buildParams = () => {
           const p = {}
           const { scope, projectCode, projectName, sourceType, objectCode } = this.objQp
@@ -937,6 +1040,7 @@ export default {
           tree = tree.filter(n => n.object.objectCode && n.object.objectCode.toLowerCase().includes(this.objQp.objectCode.toLowerCase()))
         }
         this.objectTree = tree
+        this.normalizeObjectFieldPages()
         this.objectMap = {}
         this.objectTree.forEach(n => { this.objectMap[n.object.id] = n.object })
         // 加载对象名称列表供筛选下拉
@@ -961,7 +1065,7 @@ export default {
       if (row.objectField) {
         await this.onObjectFieldScriptNameBlur(row)
         return
-      }
+    }
       await updateVariable(row)
     },
     /**
@@ -977,6 +1081,9 @@ export default {
         scriptName: row.scriptName,
         varType: row.varType,
         refObjectCode: row.refObjectCode || null,
+        refObjectId: row.refObjectId || null,
+        genericType: row.genericType || null,
+        parentFieldId: row.parentFieldId || null,
         sortOrder: row.sortOrder,
         status: row.status
       })
@@ -1074,6 +1181,8 @@ export default {
         varType: row.varType || 'STRING',
         refObjectCode: row.refObjectCode || '',
         refObjectId: row.refObjectId || null,
+        genericType: row.genericType || '',
+        parentFieldId: row.parentFieldId || null,
         sortOrder: row.sortOrder != null ? row.sortOrder : 0,
         status: row.status != null ? row.status : 1
       }
@@ -1098,6 +1207,7 @@ export default {
     async loadConstants() {
       this.constLoading = true
       try {
+        this.saveCachedState()
         const buildParams = (extra) => {
           const p = { pageNum: this.constQp.pageNum, pageSize: this.constQp.pageSize, varSource: 'CONSTANT', ...extra }
           const { scope, projectCode, projectName, keyword, varType, varCode, varLabel } = this.constQp
@@ -1139,15 +1249,18 @@ export default {
     handleConstQuery() { this.constQp.pageNum = 1; this.loadConstants() },
     resetConstQuery() {
       this.constQp = { pageNum: 1, pageSize: this.constQp.pageSize, keyword: '', varType: '', scope: '', projectCode: '', projectName: '', varCode: '', varLabel: '' }
+      this.saveCachedState()
       this.loadConstants()
     },
     onObjFilterChange() {
       this.objPageNum = 1
+      this.saveCachedState()
       this.loadObjectTree()
     },
     resetObjQuery() {
       this.objQp = { scope: '', projectCode: '', projectName: '', sourceType: '', objectCode: '' }
       this.objPageNum = 1
+      this.saveCachedState()
       this.loadObjectTree()
     },
 
@@ -1219,6 +1332,9 @@ export default {
             scriptName: this.form.scriptName,
             varType: this.form.varType,
             refObjectCode: this.form.refObjectCode || null,
+            refObjectId: this.form.refObjectId || null,
+            genericType: this.form.genericType || null,
+            parentFieldId: this.form.parentFieldId || null,
             sortOrder: this.form.sortOrder,
             status: this.form.status
           }

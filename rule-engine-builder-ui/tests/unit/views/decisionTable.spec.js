@@ -78,6 +78,12 @@ function mockObjectTree() {
   ]
 }
 
+function mockModels() {
+  return [
+    { id: 30, modelCode: 'CreditModel', modelName: '信用模型' }
+  ]
+}
+
 // ─── 测试用例 ─────────────────────────────────────────────
 function createTestVue() {
   const localVue = createLocalVue()
@@ -91,14 +97,15 @@ function makeStub(tag) {
 
 // 挂载 DecisionTable 并等待 loadProjectVars 完成
 async function mountAndWaitForRefs(propsData = { id: '1' }) {
-  definitionApi.getDefinition.mockResolvedValueOnce(mockDefs)
-  definitionApi.getContent.mockResolvedValueOnce(mockRuleContent(1))
-  variableApi.listVariablesByProject.mockResolvedValueOnce(mockProjectVars())
-  modelApi.listModelInputs.mockResolvedValueOnce([])
-  modelApi.listModelOutputs.mockResolvedValueOnce([])
-  dataObjectApi.getVariableTree.mockResolvedValueOnce(mockObjectTree())
-  functionApi.listAllFunctionsByProject.mockResolvedValueOnce([])
-  definitionApi.refreshFields.mockResolvedValueOnce({})
+  definitionApi.getDefinition.mockResolvedValue(mockDefs)
+  definitionApi.getContent.mockResolvedValue(mockRuleContent(1))
+  variableApi.listVariablesByProject.mockResolvedValue(mockProjectVars())
+  modelApi.listModelInputs.mockResolvedValue([])
+  modelApi.listModelOutputs.mockResolvedValue([])
+  modelApi.listAllModelsByProject.mockResolvedValue(mockModels())
+  dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree())
+  functionApi.listAllFunctionsByProject.mockResolvedValue([])
+  definitionApi.refreshFields.mockResolvedValue({})
 
   const wrapper = shallowMount(DecisionTable, {
     localVue: createTestVue(),
@@ -178,6 +185,12 @@ describe('DecisionTable — 变量选择器加载', () => {
   test('projectRefs 包含 object 类别的对象字段', () => {
     const object = getRefsByCategory(wrapper, 'object')
     expect(object.length).toBeGreaterThan(0)
+  })
+
+  test('projectRefs 包含 model 类别的模型', () => {
+    const model = getRefsByCategory(wrapper, 'model')
+    expect(model.length).toBeGreaterThan(0)
+    expect(model[0].refType).toBe('MODEL')
   })
 
   test('standalone 变量的 refCode 使用 scriptName', () => {

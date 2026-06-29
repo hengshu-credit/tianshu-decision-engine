@@ -15,9 +15,9 @@
       </div>
     </div>
 
-    <div class="se-body">
+    <div ref="designerBody" class="se-body" :class="{ 'is-resizing': resizingVarPanel }">
       <!-- 左侧变量面板 -->
-      <div class="se-var-panel" :class="{ collapsed: varPanelCollapsed }">
+      <div class="se-var-panel" :class="{ collapsed: varPanelCollapsed }" :style="varPanelStyle">
         <div class="se-var-header" @click="varPanelCollapsed = !varPanelCollapsed">
           <span v-if="!varPanelCollapsed"><i class="el-icon-s-data" /> 项目变量</span>
           <i :class="varPanelCollapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-left'" />
@@ -56,7 +56,7 @@
                 <!-- 两级结构：一级分类 -> 直接叶子 -->
                 <template v-if="!cat.hasSubGroups">
                   <div
-                    v-for="v in cat.children"
+                    v-for="v in pagedScriptList(cat.key, cat.children)"
                     :key="v.varCode"
                     class="se-var-item"
                     :title="'双击插入: ' + v.varCode"
@@ -66,6 +66,16 @@
                     <span class="var-code">{{ v.varCode }}</span>
                     <span class="var-label">{{ v.varLabel }}</span>
                   </div>
+                  <el-pagination
+                    v-if="scriptListNeedsPaging(cat.children)"
+                    class="se-var-pager"
+                    small
+                    layout="prev,pager,next"
+                    :current-page="scriptListPage(cat.key)"
+                    :page-size="scriptVarPageSize"
+                    :total="cat.children.length"
+                    @current-change="p => onScriptListPageChange(cat.key, p)"
+                  />
                 </template>
                 <!-- 三级结构：一级分类 -> 二级组 -> 叶子 -->
                 <template v-else>
@@ -77,7 +87,7 @@
                     </div>
                     <div v-show="expandedGroups[cat.key + '.' + group.key]">
                       <div
-                        v-for="v in group.children"
+                        v-for="v in pagedScriptList(cat.key + '.' + group.key, group.children)"
                         :key="v.varCode"
                         class="se-var-item se-var-indent"
                         :title="'双击插入: ' + v.varCode"
@@ -87,6 +97,16 @@
                         <span class="var-code">{{ v.varCode }}</span>
                         <span class="var-label">{{ v.varLabel }}</span>
                       </div>
+                      <el-pagination
+                        v-if="scriptListNeedsPaging(group.children)"
+                        class="se-var-pager se-var-pager--group"
+                        small
+                        layout="prev,pager,next"
+                        :current-page="scriptListPage(cat.key + '.' + group.key)"
+                        :page-size="scriptVarPageSize"
+                        :total="group.children.length"
+                        @current-change="p => onScriptListPageChange(cat.key + '.' + group.key, p)"
+                      />
                     </div>
                   </div>
                 </template>
@@ -94,6 +114,22 @@
             </div>
           </template>
         </div>
+      </div>
+
+      <div
+        v-show="!varPanelCollapsed"
+        class="se-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="调整字段列表宽度"
+        :aria-valuemin="varPanelMinWidth"
+        :aria-valuemax="varPanelMaxWidth"
+        :aria-valuenow="varPanelWidth"
+        @mousedown="startVarPanelResize"
+        @touchstart.prevent="startVarPanelTouchResize"
+        @dblclick="resetVarPanelWidth"
+      >
+        <span class="se-resizer-handle" />
       </div>
 
       <!-- 主编辑区 -->
@@ -118,6 +154,7 @@
           <MonacoEditor
             v-model="script"
             language="ql"
+            theme="qlexpress-dark"
             height="100%"
             @editor-ready="onEditorReady"
             :options="editorOptions"
@@ -171,6 +208,9 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import varPickerMixin from '@/mixins/varPickerMixin'
 import MonacoEditor from '@/components/MonacoEditor'
 
+const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.varPanelWidth'
+const DEFAULT_VAR_PANEL_WIDTH = 300
+
 export default {
   name: 'ScriptEditor',
   mixins: [varPickerMixin],
@@ -191,10 +231,27 @@ export default {
       testVisible: false,
       testParamsJson: '{}',
       testResult: null,
-      monacoEditor: null
+      monacoEditor: null,
+      varPanelWidth: DEFAULT_VAR_PANEL_WIDTH,
+      varPanelMinWidth: 220,
+      varPanelMaxWidth: 560,
+      editorMinWidth: 420,
+      resizingVarPanel: false,
+      resizeBodyCursor: '',
+      resizeBodyUserSelect: '',
+      scriptVarPageSize: 100,
+      scriptVarPages: {}
     }
   },
   computed: {
+    varPanelStyle() {
+      if (this.varPanelCollapsed) return {}
+      return {
+        width: this.varPanelWidth + 'px',
+        minWidth: this.varPanelWidth + 'px',
+        maxWidth: this.varPanelWidth + 'px'
+      }
+    },
     editorOptions() {
       return {
         fontSize: 13,
@@ -286,6 +343,9 @@ export default {
     }
   },
   watch: {
+    varSearchKey() {
+      this.scriptVarPages = {}
+    },
     varTree: {
       immediate: true,
       handler(tree) {
@@ -310,7 +370,107 @@ export default {
     this.definitionId = this.$route.params.id
     this.loadContent()
   },
+  mounted() {
+    this.restoreVarPanelWidth()
+  },
+  beforeDestroy() {
+    this.stopVarPanelResize()
+  },
   methods: {
+    restoreVarPanelWidth() {
+      try {
+        const saved = Number(window.localStorage && window.localStorage.getItem(VAR_PANEL_WIDTH_KEY))
+        if (Number.isFinite(saved) && saved > 0) {
+          this.varPanelWidth = this.clampVarPanelWidth(saved)
+        }
+      } catch (e) {
+        // localStorage 不可用时保持默认宽度
+      }
+    },
+    persistVarPanelWidth() {
+      try {
+        if (window.localStorage) {
+          window.localStorage.setItem(VAR_PANEL_WIDTH_KEY, String(this.varPanelWidth))
+        }
+      } catch (e) {
+        // 忽略持久化失败，拖拽本身仍然生效
+      }
+    },
+    startVarPanelResize(event) {
+      this.beginVarPanelResize(event && event.clientX, event)
+    },
+    startVarPanelTouchResize(event) {
+      const touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      this.beginVarPanelResize(touch.clientX, event)
+    },
+    beginVarPanelResize(clientX, event) {
+      if (this.varPanelCollapsed || clientX == null) return
+      if (event && event.preventDefault) event.preventDefault()
+      this.resizingVarPanel = true
+      this.resizeBodyCursor = document.body.style.cursor
+      this.resizeBodyUserSelect = document.body.style.userSelect
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      this.updateVarPanelWidth(clientX)
+      window.addEventListener('mousemove', this.onVarPanelResize)
+      window.addEventListener('mouseup', this.stopVarPanelResize)
+      window.addEventListener('touchmove', this.onVarPanelTouchResize, { passive: false })
+      window.addEventListener('touchend', this.stopVarPanelResize)
+      window.addEventListener('touchcancel', this.stopVarPanelResize)
+    },
+    onVarPanelResize(event) {
+      this.updateVarPanelWidth(event.clientX)
+    },
+    onVarPanelTouchResize(event) {
+      const touch = event && event.touches && event.touches[0]
+      if (!touch) return
+      if (event && event.preventDefault) event.preventDefault()
+      this.updateVarPanelWidth(touch.clientX)
+    },
+    stopVarPanelResize() {
+      window.removeEventListener('mousemove', this.onVarPanelResize)
+      window.removeEventListener('mouseup', this.stopVarPanelResize)
+      window.removeEventListener('touchmove', this.onVarPanelTouchResize)
+      window.removeEventListener('touchend', this.stopVarPanelResize)
+      window.removeEventListener('touchcancel', this.stopVarPanelResize)
+      if (!this.resizingVarPanel) return
+      this.resizingVarPanel = false
+      document.body.style.cursor = this.resizeBodyCursor || ''
+      document.body.style.userSelect = this.resizeBodyUserSelect || ''
+      this.persistVarPanelWidth()
+      this.layoutEditor()
+    },
+    updateVarPanelWidth(clientX) {
+      const body = this.$refs.designerBody
+      if (!body || clientX == null) return
+      const rect = body.getBoundingClientRect()
+      const maxWidth = this.panelMaxWidthForBody(rect.width)
+      this.varPanelWidth = this.clampVarPanelWidth(clientX - rect.left, maxWidth)
+      this.layoutEditor()
+    },
+    panelMaxWidthForBody(bodyWidth) {
+      if (!bodyWidth) return this.varPanelMaxWidth
+      return Math.max(
+        this.varPanelMinWidth,
+        Math.min(this.varPanelMaxWidth, bodyWidth - this.editorMinWidth - 12)
+      )
+    },
+    clampVarPanelWidth(width, maxWidth = this.varPanelMaxWidth) {
+      return Math.min(Math.max(Math.round(width), this.varPanelMinWidth), maxWidth)
+    },
+    resetVarPanelWidth() {
+      this.varPanelWidth = this.clampVarPanelWidth(DEFAULT_VAR_PANEL_WIDTH)
+      this.persistVarPanelWidth()
+      this.layoutEditor()
+    },
+    layoutEditor() {
+      this.$nextTick(() => {
+        if (this.monacoEditor && this.monacoEditor.layout) {
+          this.monacoEditor.layout()
+        }
+      })
+    },
     toggleCat(key) {
       this.$set(this.expandedCats, key, !this.expandedCats[key])
     },
@@ -321,6 +481,21 @@ export default {
     countLeaves(cat) {
       if (!cat.hasSubGroups) return cat.children.length
       return cat.children.reduce((sum, g) => sum + g.children.length, 0)
+    },
+    scriptListNeedsPaging(list) {
+      return Array.isArray(list) && list.length > this.scriptVarPageSize
+    },
+    scriptListPage(key) {
+      return this.scriptVarPages[key] || 1
+    },
+    pagedScriptList(key, list) {
+      if (!this.scriptListNeedsPaging(list)) return list || []
+      const page = this.scriptListPage(key)
+      const start = (page - 1) * this.scriptVarPageSize
+      return list.slice(start, start + this.scriptVarPageSize)
+    },
+    onScriptListPageChange(key, page) {
+      this.$set(this.scriptVarPages, key, page)
     },
     async loadContent() {
       try {
@@ -405,8 +580,9 @@ export default {
         const existing = this.scriptVarRefs.find(r => r.refCode === code)
         if (existing) {
           existing.varId = v._varId
+          existing.refType = v._refType || v.refType || null
         } else {
-          this.scriptVarRefs.push({ refCode: code, varId: v._varId })
+          this.scriptVarRefs.push({ refCode: code, varId: v._varId, refType: v._refType || v.refType || null })
         }
       }
       this.$nextTick(() => editor.focus())
@@ -432,7 +608,8 @@ export default {
           const old = this.scriptVarRefs.find(r => r.refCode === ref.refCode)
           matched.push({
             refCode: ref.refCode,
-            varId: old && old.varId ? old.varId : (ref.varObj && ref.varObj.id ? ref.varObj.id : null)
+            varId: old && old.varId ? old.varId : (ref.varObj && ref.varObj.id ? ref.varObj.id : null),
+            refType: old && old.refType ? old.refType : ref.refType
           })
         }
       })
@@ -451,9 +628,13 @@ export default {
       let changed = false
       this.scriptVarRefs.forEach(ref => {
         if (!ref.varId) return
-        const newRef = this.findRefByVarId(ref.varId)
+        const newRef = this.findRefByVarId(ref.varId, ref.refType)
         if (newRef && newRef.refCode !== ref.refCode) {
           ref.refCode = newRef.refCode
+          ref.refType = newRef.refType
+          changed = true
+        } else if (newRef && ref.refType !== newRef.refType) {
+          ref.refType = newRef.refType
           changed = true
         }
       })
@@ -472,9 +653,13 @@ $editor-border: #313244;
 
 .se-designer {
   background: #f3f3f3;
-  min-height: 100%;
+  height: calc(100vh - 82px);
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
+  border-radius: 4px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
 }
 
 .se-header {
@@ -486,6 +671,7 @@ $editor-border: #313244;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   flex-wrap: wrap;
   gap: 8px;
+  flex-shrink: 0;
 }
 .se-title-area { display: flex; align-items: center; }
 .se-title-icon { font-size: 18px; color: #722ed1; margin-right: 8px; }
@@ -498,12 +684,13 @@ $editor-border: #313244;
   margin: 12px;
   gap: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 /* 变量面板 */
 .se-var-panel {
-  width: 260px;
-  min-width: 260px;
+  width: 300px;
+  min-width: 220px;
   background: #fff;
   border-radius: 6px 0 0 6px;
   border: 1px solid #e8e8e8;
@@ -511,7 +698,12 @@ $editor-border: #313244;
   display: flex;
   flex-direction: column;
   transition: width 0.2s, min-width 0.2s;
-  &.collapsed { width: 36px; min-width: 36px; }
+  overflow: hidden;
+  &.collapsed {
+    width: 36px !important;
+    min-width: 36px !important;
+    max-width: 36px !important;
+  }
 }
 .se-var-header {
   display: flex;
@@ -529,7 +721,10 @@ $editor-border: #313244;
 }
 .se-var-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
   padding: 0;
 }
 .se-var-search {
@@ -602,10 +797,49 @@ $editor-border: #313244;
 .var-type-tag { flex-shrink: 0; }
 .var-code { font-family: 'Consolas', monospace; color: #333; white-space: nowrap; }
 .var-label { color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-var-pager {
+  padding: 5px 8px;
+  text-align: right;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fff;
+}
+.se-var-pager--group {
+  padding-left: 28px;
+}
+
+.se-resizer {
+  flex: 0 0 8px;
+  cursor: col-resize;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff;
+  border-top: 1px solid #e8e8e8;
+  border-bottom: 1px solid #e8e8e8;
+  user-select: none;
+  z-index: 2;
+  transition: background 0.15s;
+  &:hover,
+  .se-body.is-resizing & {
+    background: #eef4ff;
+  }
+  &:hover .se-resizer-handle,
+  .se-body.is-resizing & .se-resizer-handle {
+    background: #2639e9;
+  }
+}
+.se-resizer-handle {
+  width: 2px;
+  height: 36px;
+  border-radius: 2px;
+  background: #d9d9d9;
+  transition: background 0.15s;
+}
 
 /* 编辑区 */
 .se-editor-area {
   flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   border-radius: 0 6px 6px 0;

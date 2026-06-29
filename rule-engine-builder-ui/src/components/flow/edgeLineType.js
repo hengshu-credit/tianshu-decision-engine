@@ -81,6 +81,11 @@ export function mergeEdgePropertiesFromForm(currentProps, form) {
   const next = { ...(currentProps || {}) }
   next.conditionName = form.conditionName != null ? form.conditionName : ''
   next.conditionExpr = form.conditionExpr != null ? form.conditionExpr : ''
+  ;['leftVarId', 'leftRefType', 'rightVarId', 'rightRefType'].forEach(key => {
+    if (Object.prototype.hasOwnProperty.call(form, key)) {
+      next[key] = form[key] || null
+    }
+  })
   if (form.edgeLineType) next.edgeLineType = form.edgeLineType
   else delete next.edgeLineType
   return next

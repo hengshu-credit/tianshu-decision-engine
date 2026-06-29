@@ -102,6 +102,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                 if (act == null) continue;
                 String vc = null;
                 Long varId = act.containsKey("_varId") ? act.getLong("_varId") : null;
+                String refType = act.getString("_refType");
                 if (act.containsKey("varCode")) {
                     vc = act.getString("varCode");
                 } else if (globalActionDefs != null && k < globalActionDefs.size()) {
@@ -111,10 +112,13 @@ public class DecisionTableCompiler implements RuleCompiler {
                         if (varId == null && def.containsKey("_varId")) {
                             varId = def.getLong("_varId");
                         }
+                        if (refType == null) {
+                            refType = def.getString("_refType");
+                        }
                     }
                 }
                 if (vc != null && !vc.trim().isEmpty()) {
-                    String resolved = resolveVar(varId, vc, varContext);
+                    String resolved = resolveVar(varId, refType, vc, varContext);
                     set.add(resolved);
                 }
             }
@@ -143,6 +147,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             String varType;
             String value;
             Long varId = null;
+            String refType = null;
 
             if (act != null && act.containsKey("varCode")) {
                 varCode = act.getString("varCode");
@@ -150,11 +155,13 @@ public class DecisionTableCompiler implements RuleCompiler {
                 if (varType == null) varType = "STRING";
                 value = act.getString("value");
                 varId = act.containsKey("_varId") ? act.getLong("_varId") : null;
+                refType = act.getString("_refType");
             } else {
                 varCode = actDef != null ? actDef.getString("varCode") : "out" + k;
                 varType = actDef != null ? actDef.getString("varType") : "NUMBER";
                 value = act != null ? act.getString("value") : null;
                 varId = actDef != null && actDef.containsKey("_varId") ? actDef.getLong("_varId") : null;
+                refType = actDef != null ? actDef.getString("_refType") : null;
             }
 
             if (varCode == null || varCode.trim().isEmpty()) {
@@ -164,7 +171,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                 continue;
             }
 
-            String resolvedVar = resolveVar(varId, varCode.trim(), varContext);
+            String resolvedVar = resolveVar(varId, refType, varCode.trim(), varContext);
             script.append("    ").append(resolvedVar).append(" = ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 script.append("\"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
@@ -232,6 +239,7 @@ public class DecisionTableCompiler implements RuleCompiler {
      */
     static String compileLeaf(JSONObject leaf, VarContext varContext) {
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
+        String refType = leaf.getString("_refType");
         String varCode = leaf.getString("varCode");
         if (varCode == null || varCode.trim().isEmpty()) {
             return "true";
@@ -250,7 +258,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             if (right == null || right.trim().isEmpty()) {
                 return "true";
             }
-            return resolveVar(varId, varCode, varContext) + " " + operator + " " + right.trim();
+            return resolveVar(varId, refType, varCode, varContext) + " " + operator + " " + right.trim();
         }
 
         String value = leaf.getString("value");
@@ -262,7 +270,7 @@ public class DecisionTableCompiler implements RuleCompiler {
         if (varType == null) varType = "STRING";
 
         String rhs = formatConstantRhs(varType, value);
-        return resolveVar(varId, varCode, varContext) + " " + operator + " " + rhs;
+        return resolveVar(varId, refType, varCode, varContext) + " " + operator + " " + rhs;
     }
 
     /**
@@ -270,8 +278,12 @@ public class DecisionTableCompiler implements RuleCompiler {
      * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
      */
     private static String resolveVar(Long varId, String varCode, VarContext varContext) {
+        return resolveVar(varId, null, varCode, varContext);
+    }
+
+    private static String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {
         if (varContext != null) {
-            return varContext.resolveVar(varId, varCode);
+            return varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }
@@ -300,6 +312,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             JSONObject cond = ruleConditions.getJSONObject(j);
             JSONObject condDef = j < conditions.size() ? conditions.getJSONObject(j) : null;
             Long varId = condDef != null && condDef.containsKey("_varId") ? condDef.getLong("_varId") : null;
+            String refType = condDef != null ? condDef.getString("_refType") : null;
             String varCode = condDef != null ? condDef.getString("varCode") : "var" + j;
             String operator = cond.getString("operator");
             String value = cond.getString("value");
@@ -310,7 +323,7 @@ public class DecisionTableCompiler implements RuleCompiler {
             }
 
             String varType = condDef != null ? condDef.getString("varType") : "STRING";
-            String resolvedVar = resolveVar(varId, varCode, varContext);
+            String resolvedVar = resolveVar(varId, refType, varCode, varContext);
             script.append(resolvedVar).append(" ").append(operator).append(" ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 script.append("\"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");

@@ -106,6 +106,7 @@
 </template>
 <script>
 import { listProjects, createProject, updateProject, deleteProject, getMaskedToken, getFullToken, regenerateToken, exportApiDoc } from '@/api/project'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 export default {
   name: 'ProjectList',
   data() {
@@ -130,11 +131,26 @@ export default {
       }
     }
   },
-  created() { this.loadData() },
+  created() {
+    this.restoreCachedState()
+    this.loadData()
+  },
   methods: {
+    restoreCachedState() {
+      const state = restorePageState('ProjectList')
+      if (state.qp) this.qp = { ...this.qp, ...state.qp }
+      if (state.createTimeRange) this.createTimeRange = state.createTimeRange
+    },
+    saveCachedState() {
+      savePageState('ProjectList', {
+        qp: this.qp,
+        createTimeRange: this.createTimeRange
+      })
+    },
     async loadData() {
       this.loading = true
       try {
+        this.saveCachedState()
         const params = { ...this.qp }
         if (!params.projectCode) delete params.projectCode
         if (!params.projectName) delete params.projectName
@@ -168,11 +184,13 @@ export default {
     resetQuery() {
       this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' }
       this.createTimeRange = []
+      clearPageState('ProjectList')
       this.handleQuery()
     },
     onCreateTimeChange(val) {
       this.qp.createBeginTime = val ? val[0] : ''
       this.qp.createEndTime = val ? val[1] : ''
+      this.saveCachedState()
     },
     queryProjectCode(query) {
       this.projectCodeLoading = true
@@ -289,6 +307,81 @@ export default {
         if (!str) return ''
         return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
       }
+      const leafName = (path) => {
+        if (!path) return ''
+        const text = String(path)
+        return text.indexOf('.') === -1 ? text : text.substring(text.lastIndexOf('.') + 1)
+      }
+      const stripObjectPrefix = (path, obj) => {
+        if (!path) return ''
+        const objectCode = (obj && (obj.scriptName || obj.objectCode)) || ''
+        const text = String(path)
+        return objectCode && text.indexOf(objectCode + '.') === 0 ? text.substring(objectCode.length + 1) : text
+      }
+      const fieldPath = (field, obj) => stripObjectPrefix(field.scriptName || field.varCode || '', obj)
+      const fieldDisplayName = (field, obj) => leafName(fieldPath(field, obj)) || field.varCode || field.scriptName || ''
+      const buildFieldTree = (fields, obj) => {
+        const rows = (fields || []).map(f => ({ ...f, _children: [], _displayName: fieldDisplayName(f, obj), _path: fieldPath(f, obj) }))
+        const byCode = {}
+        rows.forEach(f => {
+          if (f.varCode) byCode[f.varCode] = f
+          if (f.scriptName) byCode[f.scriptName] = f
+          if (f._path) byCode[f._path] = f
+          if (f._displayName) byCode[f._displayName] = f
+        })
+        const roots = []
+        rows.forEach(f => {
+          const parent = f.parentVarCode ? byCode[f.parentVarCode] : null
+          if (parent && parent !== f) parent._children.push(f)
+          else roots.push(f)
+        })
+        return roots
+      }
+      const buildExampleFromNodes = (nodes) => {
+        const obj = {}
+        ;(nodes || []).forEach(node => {
+          obj[node._displayName || node.varCode || node.scriptName] = exampleValueForField(node)
+        })
+        return obj
+      }
+      const exampleValueForField = (field) => {
+        if (field._children && field._children.length) return buildExampleFromNodes(field._children)
+        const type = field.varType || ''
+        if (type === 'STRING' || type === 'ENUM' || type === 'DATE') return ''
+        if (type === 'BOOLEAN') return false
+        if (type === 'OBJECT' || type === 'MAP') return {}
+        if (type === 'LIST') return []
+        return null
+      }
+      const buildObjectExample = (obj) => buildExampleFromNodes(buildFieldTree(obj.fields || [], obj))
+      const renderFieldNodes = (nodes) => {
+        if (!nodes || !nodes.length) return '<div class="field-empty">暂无字段</div>'
+        return '<ul class="field-tree">' + nodes.map(f => {
+          const name = escapeHtml(f._displayName || f.varCode || f.scriptName)
+          const type = escapeHtml(f.varTypeLabel || f.varType || '-')
+          const label = escapeHtml(f.varLabel || '-')
+          const ref = f.refObjectCode ? '<span class="field-ref">引用 ' + escapeHtml(f.refObjectCode) + '</span>' : ''
+          const row = '<span class="field-name"><code>' + name + '</code></span><span class="field-type">' + type + '</span><span class="field-label">' + label + '</span>' + ref
+          if (f._children && f._children.length) {
+            return '<li><details open><summary>' + row + '</summary>' + renderFieldNodes(f._children) + '</details></li>'
+          }
+          return '<li><div class="field-leaf">' + row + '</div></li>'
+        }).join('') + '</ul>'
+      }
+      const renderObjectFields = (obj) => {
+        const objectName = obj.scriptName || obj.objectCode
+        return `<div class="sub-title">${escapeHtml(obj.objectLabel || obj.objectCode)} <span class="code">${escapeHtml(objectName)}</span></div>
+          <div class="object-field-tree">${renderFieldNodes(buildFieldTree(obj.fields || [], obj))}</div>`
+      }
+      const renderProjectDataObjects = () => {
+        const objects = doc.dataObjects || []
+        if (!objects.length) return ''
+        return `<div class="section">
+            <h3>项目数据对象</h3>
+            <div class="desc-box"><p>以下为当前项目可引用的数据对象字段，嵌套字段按对象层级逐级展开，字段名仅展示当前层级名称。</p></div>
+            ${objects.map(obj => renderObjectFields(obj)).join('')}
+          </div>`
+      }
 
       // 生成每个规则的请求示例JSON（使用该规则的实际输入变量）
       const generateRequestExample = (rule) => {
@@ -303,11 +396,7 @@ export default {
         })
         // 收集输入数据对象字段
         ;(rule.inputDataObjects || []).forEach(obj => {
-          const nested = {}
-          ;(obj.fields || []).forEach(f => {
-            nested[f.varCode] = f.varType === 'STRING' ? '' : null
-          })
-          params[obj.objectCode] = nested
+          params[obj.objectCode] = buildObjectExample(obj)
         })
         return JSON.stringify({
           definitionId: rule.id,
@@ -319,11 +408,7 @@ export default {
       const generateResponseExample = (rule) => {
         const resultObj = {}
         ;(rule.outputDataObjects || []).forEach(obj => {
-          const nested = {}
-          ;(obj.fields || []).forEach(f => {
-            nested[f.varCode] = f.varType === 'STRING' ? '' : null
-          })
-          resultObj[obj.objectCode] = nested
+          resultObj[obj.objectCode] = buildObjectExample(obj)
         })
         return JSON.stringify({
           success: true,
@@ -344,6 +429,7 @@ export default {
       ).join('')
 
       // 生成右侧内容区HTML
+      const dataObjectCatalog = renderProjectDataObjects()
       const contentPanels = doc.rules.map((rule, idx) => {
         const requestExample = generateRequestExample(rule)
         const responseExample = generateResponseExample(rule)
@@ -362,30 +448,10 @@ export default {
         ).join('')
 
         // 收集输入数据对象
-        const inputObjRows = (rule.inputDataObjects || []).map(obj =>
-          `<div class="sub-title">${escapeHtml(obj.objectLabel || obj.objectCode)} <span class="code">${escapeHtml(obj.objectCode)}</span></div>
-          <table class="param-table">
-            <thead><tr><th>参数名</th><th>类型</th><th>说明</th></tr></thead>
-            <tbody>
-              ${(obj.fields || []).map(f =>
-                `<tr><td><code>params.${escapeHtml(obj.objectCode)}.${escapeHtml(f.varCode)}</code></td><td>${escapeHtml(f.varTypeLabel || f.varType)}</td><td>${escapeHtml(f.varLabel)}</td></tr>`
-              ).join('')}
-            </tbody>
-          </table>`
-        ).join('')
+        const inputObjRows = (rule.inputDataObjects || []).map(obj => renderObjectFields(obj)).join('')
 
         // 收集输出数据对象
-        const outputObjRows = (rule.outputDataObjects || []).map(obj =>
-          `<div class="sub-title">${escapeHtml(obj.objectLabel || obj.objectCode)} <span class="code">${escapeHtml(obj.objectCode)}</span></div>
-          <table class="param-table">
-            <thead><tr><th>参数名</th><th>类型</th><th>说明</th></tr></thead>
-            <tbody>
-              ${(obj.fields || []).map(f =>
-                `<tr><td><code>result.${escapeHtml(obj.objectCode)}.${escapeHtml(f.varCode)}</code></td><td>${escapeHtml(f.varTypeLabel || f.varType)}</td><td>${escapeHtml(f.varLabel)}</td></tr>`
-              ).join('')}
-            </tbody>
-          </table>`
-        ).join('')
+        const outputObjRows = (rule.outputDataObjects || []).map(obj => renderObjectFields(obj)).join('')
 
         return `<div class="content-panel ${idx === 0 ? 'active' : ''}" id="panel-${idx}">
           <div class="content-header">
@@ -430,6 +496,8 @@ export default {
               <p>请求成功后返回规则执行结果，包括决策输出和执行追踪信息。</p>
             </div>
           </div>
+
+          ${idx === 0 ? dataObjectCatalog : ''}
 
           <div class="section">
             <h3>请求参数</h3>
@@ -591,6 +659,11 @@ console.log('ExecuteTime:', result.executeTimeMs, 'ms');</code></pre>
       html += '.tag-success{background:#c6f6d5;color:#276749}.tag-warning{background:#feebc8;color:#c05621}.tag-default{background:#edf2f7;color:#4a5568}'
       html += '.sub-title{margin:16px 0 8px;font-size:14px;font-weight:600;color:var(--text)}'
       html += '.sub-title .code{margin-left:8px;font-size:12px;color:var(--text-muted);font-weight:normal}'
+      html += '.object-field-tree{background:#fff;border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:16px}'
+      html += '.field-tree{list-style:none;margin:0;padding-left:14px}.field-tree>li{margin:4px 0}'
+      html += '.field-tree details{border-left:2px solid #edf2f7;padding-left:8px}.field-tree summary{cursor:pointer;display:flex;align-items:center;gap:10px;min-height:28px}'
+      html += '.field-leaf{display:flex;align-items:center;gap:10px;min-height:28px;padding-left:14px}'
+      html += '.field-name{min-width:150px}.field-type{min-width:80px;color:var(--text-muted);font-size:12px}.field-label{color:var(--text);font-size:13px}.field-ref{font-size:12px;color:var(--primary)}.field-empty{color:var(--text-muted);font-size:13px;padding:8px}'
       html += '.code-block{background:var(--code-bg);color:#a0aec0;padding:16px;border-radius:8px;overflow-x:auto;font-family:\'Fira Code\',\'Consolas\',monospace;font-size:13px;line-height:1.6;margin-top:8px}'
       html += '.code-tabs{display:flex;gap:0;margin-bottom:0}'
       html += '.code-tab{padding:8px 16px;background:#e2e8f0;cursor:pointer;font-size:13px;border-radius:6px 6px 0 0;margin-right:4px;transition:all .2s}'

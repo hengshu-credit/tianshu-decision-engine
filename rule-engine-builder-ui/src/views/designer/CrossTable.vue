@@ -265,12 +265,14 @@ export default {
     applyVarToDim(variable, dimKey) {
       if (!variable) return
       const varLabel = variable.varLabel || variable.varCode
-      const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
+      const _varId = variable._varId || (variable.varObj && variable.varObj.id) || null
+      const _refType = variable._refType || variable.refType || (variable.varObj && variable.varObj.refType) || null
       this.model[dimKey] = {
         ...this.model[dimKey],
         varCode: variable.varCode,
         varLabel,
         _varId,
+        _refType,
         varType: variable.varType
       }
       // 如果是枚举行/列变量，自动填充表头

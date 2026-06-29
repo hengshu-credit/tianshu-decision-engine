@@ -195,6 +195,28 @@ public class DecisionTableCompilerTest {
         assertFalse(r.getCompiledScript().contains("resultCode"));
     }
 
+    /** VarContext 优先按 refType:id 精确解析，避免变量表和数据对象字段 ID 冲突 */
+    @Test
+    public void testVarContext按引用类型解析数据对象字段() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(32L, "plainVariable");
+        Map<String, String> refIdMap = new LinkedHashMap<>();
+        refIdMap.put("DATA_OBJECT:32", "request.params.taxpayerType");
+        VarContext ctx = new VarContext(varIdMap, new LinkedHashMap<>(), refIdMap);
+
+        CompileResult r = compile("{\n" +
+                "  \"rules\": [{\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":32,\"_refType\":\"DATA_OBJECT\",\"varCode\":\"request.params.taxpayerType\",\"operator\":\"==\",\"value\":\"一般纳税人\"},\n" +
+                "    \"actions\": []\n" +
+                "  }]\n" +
+                "}", ctx);
+
+        assertTrue(r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script.contains("request.params.taxpayerType"));
+        assertFalse(script.contains("plainVariable"));
+    }
+
     /** 规则内 conditionRoot 树结构 */
     @Test
     public void testConditionRoot树结构_正确编译() {

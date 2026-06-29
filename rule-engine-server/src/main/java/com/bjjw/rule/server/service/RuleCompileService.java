@@ -58,7 +58,8 @@ public class RuleCompileService {
         // 以及通过 varCode 回溯 scriptName（设计器未保存 _varId 时兜底）
         Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
         Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
-        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName);
+        Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
+        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName, refIdToScriptName);
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
 

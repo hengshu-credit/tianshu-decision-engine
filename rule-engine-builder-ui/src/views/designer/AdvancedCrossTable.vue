@@ -125,7 +125,7 @@
           placeholder="选择结果变量..."
           width="100%"
           class="result-field-var"
-          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode; model.resultVar._varId = (v._varId != null) ? v._varId : null }"
+          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode; model.resultVar._varId = (v._varId != null) ? v._varId : null; model.resultVar._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null }"
         />
         <el-input v-else v-model="model.resultVar.varCode" size="mini" placeholder="变量编码" class="result-field-var" />
         <el-input v-model="model.resultVar.varLabel" size="mini" placeholder="结果名称" class="result-field-label" />
@@ -417,17 +417,18 @@ export default {
     /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
     _syncModelVarRefs() {
       const refs = this.projectRefs || []
-      const findRef = (varId) => {
+      const findRef = (varId, refType) => {
         if (varId == null) return null
-        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId)) || null
+        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId) && (!refType || r.refType === refType)) || null
       }
       const fillRef = (v) => {
         if (!v) return
-        const ref = findRef(v._varId)
+        const ref = findRef(v._varId, v._refType)
         if (ref) {
           v.varCode = ref.refCode
           v.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
           v.varType = ref.varType
+          v._refType = ref.refType
         }
       }
       if (this.model.resultVar) fillRef(this.model.resultVar)
@@ -441,6 +442,7 @@ export default {
       dim.varLabel = variable.varLabel || variable.varCode
       dim.varType = variable.varType || 'STRING'
       dim._varId = (variable._varId != null) ? variable._varId : null
+      dim._refType = variable._refType || variable.refType || (variable.varObj && variable.varObj.refType) || null
       if (variable.varType === 'ENUM') {
         const options = this.getVarOptions(variable.varCode)
         if (options.length > 0) {

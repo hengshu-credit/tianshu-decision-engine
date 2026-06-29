@@ -2,9 +2,15 @@ package com.bjjw.rule.server.service;
 
 import com.bjjw.rule.model.dto.ParsedConstant;
 import com.bjjw.rule.model.dto.ParsedConstantGroup;
+import com.bjjw.rule.model.entity.RuleDataObject;
+import com.bjjw.rule.model.entity.RuleDataObjectField;
+import com.bjjw.rule.model.entity.RuleModel;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.model.entity.RuleVariable;
 import com.bjjw.rule.model.entity.RuleVariableOption;
+import com.bjjw.rule.server.mapper.RuleDataObjectFieldMapper;
+import com.bjjw.rule.server.mapper.RuleDataObjectMapper;
+import com.bjjw.rule.server.mapper.RuleModelMapper;
 import com.bjjw.rule.server.mapper.RuleProjectMapper;
 import com.bjjw.rule.server.mapper.RuleVariableMapper;
 import com.bjjw.rule.server.mapper.RuleVariableOptionMapper;
@@ -45,6 +51,15 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Resource
     private RuleProjectMapper projectMapper;
+
+    @Resource
+    private RuleDataObjectMapper dataObjectMapper;
+
+    @Resource
+    private RuleDataObjectFieldMapper dataObjectFieldMapper;
+
+    @Resource
+    private RuleModelMapper modelMapper;
 
     /** 填充变量列表的项目名称 */
     private void fillProjectName(List<RuleVariable> list) {
@@ -259,7 +274,131 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                 }
             }
         }
+        Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
+        for (RuleDataObjectField f : listObjectFields(projectId)) {
+            String scriptName = buildObjectFieldScriptName(f, objectMap);
+            addCodeMapping(map, f.getScriptName(), scriptName);
+            addCodeMapping(map, f.getVarCode(), scriptName);
+        }
+        for (RuleModel m : listModels(projectId)) {
+            String scriptName = trimToNull(m.getModelCode());
+            if (scriptName == null) {
+                continue;
+            }
+            addCodeMapping(map, m.getModelCode(), scriptName);
+        }
         return map;
+    }
+
+    /**
+     * 构建 refType:id → scriptName 映射。
+     * 用于编译时按字段 ID + 字段类型精确反查，避免不同资源表 ID 冲突。
+     */
+    public Map<String, String> buildRefScriptNameMap(Long projectId) {
+        Map<String, String> map = new HashMap<>();
+        List<RuleVariable> vars = projectId != null && projectId > 0 ? listByProject(projectId, null) : listGlobalOnly();
+        for (RuleVariable v : vars) {
+            String scriptName = resolveVariableScriptName(v);
+            if (v.getId() != null && scriptName != null) {
+                String refType = "CONSTANT".equals(v.getVarSource()) ? "CONSTANT" : "VARIABLE";
+                map.put(refKey(refType, v.getId()), scriptName);
+            }
+        }
+        Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
+        for (RuleDataObjectField f : listObjectFields(projectId)) {
+            String scriptName = buildObjectFieldScriptName(f, objectMap);
+            if (f.getId() != null && scriptName != null) {
+                map.put(refKey("DATA_OBJECT", f.getId()), scriptName);
+            }
+        }
+        for (RuleModel m : listModels(projectId)) {
+            String scriptName = trimToNull(m.getModelCode());
+            if (m.getId() != null && scriptName != null) {
+                map.put(refKey("MODEL", m.getId()), scriptName);
+            }
+        }
+        return map;
+    }
+
+    private List<RuleDataObjectField> listObjectFields(Long projectId) {
+        LambdaQueryWrapper<RuleDataObjectField> wrapper = new LambdaQueryWrapper<>();
+        appendScopeCondition(wrapper, RuleDataObjectField::getScope, RuleDataObjectField::getProjectId, projectId);
+        wrapper.eq(RuleDataObjectField::getStatus, 1);
+        return dataObjectFieldMapper.selectList(wrapper);
+    }
+
+    private Map<Long, RuleDataObject> buildObjectMap(Long projectId) {
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        appendScopeCondition(wrapper, RuleDataObject::getScope, RuleDataObject::getProjectId, projectId);
+        wrapper.eq(RuleDataObject::getStatus, 1);
+        return dataObjectMapper.selectList(wrapper).stream()
+                .filter(o -> o.getId() != null)
+                .collect(Collectors.toMap(RuleDataObject::getId, o -> o, (a, b) -> a));
+    }
+
+    private List<RuleModel> listModels(Long projectId) {
+        LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
+        appendScopeCondition(wrapper, RuleModel::getScope, RuleModel::getProjectId, projectId);
+        wrapper.eq(RuleModel::getStatus, 1);
+        return modelMapper.selectList(wrapper);
+    }
+
+    private <T> void appendScopeCondition(LambdaQueryWrapper<T> wrapper,
+                                          com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, String> scopeColumn,
+                                          com.baomidou.mybatisplus.core.toolkit.support.SFunction<T, Long> projectColumn,
+                                          Long projectId) {
+        if (projectId != null && projectId > 0) {
+            wrapper.and(w -> w.eq(scopeColumn, SCOPE_GLOBAL)
+                    .or()
+                    .eq(scopeColumn, SCOPE_PROJECT)
+                    .eq(projectColumn, projectId));
+        } else {
+            wrapper.eq(scopeColumn, SCOPE_GLOBAL);
+        }
+    }
+
+    private String buildObjectFieldScriptName(RuleDataObjectField field, Map<Long, RuleDataObject> objectMap) {
+        String fieldScript = trimToNull(field.getScriptName());
+        if (fieldScript == null) {
+            fieldScript = trimToNull(field.getVarCode());
+        }
+        if (fieldScript == null) {
+            return null;
+        }
+        RuleDataObject object = objectMap.get(field.getObjectId());
+        String objectScript = object != null ? trimToNull(object.getScriptName()) : null;
+        if (objectScript == null && object != null) {
+            objectScript = trimToNull(object.getObjectCode());
+        }
+        if (objectScript == null || fieldScript.equals(objectScript) || fieldScript.startsWith(objectScript + ".")) {
+            return fieldScript;
+        }
+        return objectScript + "." + fieldScript;
+    }
+
+    private String resolveVariableScriptName(RuleVariable v) {
+        String scriptName = trimToNull(v.getScriptName());
+        return scriptName != null ? scriptName : trimToNull(v.getVarCode());
+    }
+
+    private void addCodeMapping(Map<String, String> map, String key, String scriptName) {
+        String k = trimToNull(key);
+        String v = trimToNull(scriptName);
+        if (k != null && v != null && !map.containsKey(k)) {
+            map.put(k, v);
+        }
+    }
+
+    private String refKey(String refType, Long id) {
+        return refType + ":" + id;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     @Override

@@ -4,7 +4,7 @@ import java.util.Collections;
 import java.util.Map;
 
 /**
- * 变量上下文：提供 varId → scriptName 和 varCode → scriptName 的可靠映射，
+ * 变量上下文：提供 refType:id → scriptName、varId → scriptName 和 varCode → scriptName 的可靠映射，
  * 解决 varCode 与 scriptName 大小写不一致导致的脚本变量名错误问题。
  *
  * 编译时传入此上下文，所有编译器通过 {@link #getScriptName(Long)} 或
@@ -12,8 +12,8 @@ import java.util.Map;
  * 而不是直接使用 modelJson 中的 varCode。
  *
  * 设计原则：
- * - 优先通过 varId 精确查 scriptName（大小写正确）
- * - 若 varId 为 null 或未命中，回退到 varCode（兼容旧数据）
+ * - 优先通过 refType + varId 精确查 scriptName，避免不同资源表 ID 冲突
+ * - 若 refType 缺失或未命中，回退旧版 varId 映射（兼容存量变量数据）
  * - 进一步通过 varCode 在全局映射中查找 scriptName（设计器未保存 _varId 时兜底）
  */
 public class VarContext {
@@ -24,12 +24,15 @@ public class VarContext {
     /** varCode → scriptName 映射，用于 varId 缺失时的兜底查找（大小写敏感） */
     private final Map<String, String> varCodeToScriptName;
 
+    /** refType:id → scriptName 映射，用于跨变量/常量/数据对象/模型的精确引用 */
+    private final Map<String, String> refIdToScriptName;
+
     /**
      * 构造函数，仅构建 varId → scriptName 映射。
      * {@link #getScriptNameByVarCode(String)} 在此构造方式下恒返 null。
      */
     public VarContext(Map<Long, String> varIdToScriptName) {
-        this(varIdToScriptName, Collections.emptyMap());
+        this(varIdToScriptName, Collections.emptyMap(), Collections.emptyMap());
     }
 
     /**
@@ -39,8 +42,22 @@ public class VarContext {
      * @param varCodeToScriptName varCode → scriptName（大小写敏感）
      */
     public VarContext(Map<Long, String> varIdToScriptName, Map<String, String> varCodeToScriptName) {
+        this(varIdToScriptName, varCodeToScriptName, Collections.emptyMap());
+    }
+
+    /**
+     * 构造函数，同时构建三种映射。
+     *
+     * @param varIdToScriptName   旧版变量 ID → scriptName
+     * @param varCodeToScriptName varCode → scriptName（大小写敏感）
+     * @param refIdToScriptName   refType:id → scriptName
+     */
+    public VarContext(Map<Long, String> varIdToScriptName,
+                      Map<String, String> varCodeToScriptName,
+                      Map<String, String> refIdToScriptName) {
         this.varIdToScriptName = varIdToScriptName != null ? varIdToScriptName : Collections.emptyMap();
         this.varCodeToScriptName = varCodeToScriptName != null ? varCodeToScriptName : Collections.emptyMap();
+        this.refIdToScriptName = refIdToScriptName != null ? refIdToScriptName : Collections.emptyMap();
     }
 
     /**
@@ -77,9 +94,17 @@ public class VarContext {
         return varCodeToScriptName.get(varCode);
     }
 
+    /**
+     * 根据引用类型和 ID 获取脚本引用名。
+     */
+    public String getScriptName(String refType, Long refId) {
+        if (refId == null || refType == null || refType.trim().isEmpty()) return null;
+        return refIdToScriptName.get(refKey(refType, refId));
+    }
+
     /** 是否为空（无任何映射） */
     public boolean isEmpty() {
-        return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty();
+        return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty() && refIdToScriptName.isEmpty();
     }
 
     /**
@@ -94,6 +119,23 @@ public class VarContext {
      * @return 脚本中实际使用的引用名，永不为 null
      */
     public String resolveVar(Long varId, String varCode) {
+        return resolveVar(varId, null, varCode);
+    }
+
+    /**
+     * 根据引用类型、ID 和编码解析脚本引用名。
+     * 解析优先级：refType:id 精确匹配 → 旧 varId 映射 → varCode 回退查找 → 返回原 varCode
+     *
+     * @param varId   引用字段 ID（可为 null）
+     * @param refType 引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL（可为 null）
+     * @param varCode 变量编码或字段脚本名（来自设计器 modelJson，可为 null）
+     * @return 脚本中实际使用的引用名，永不为 null
+     */
+    public String resolveVar(Long varId, String refType, String varCode) {
+        if (varId != null && refType != null && !refType.trim().isEmpty()) {
+            String name = refIdToScriptName.get(refKey(refType, varId));
+            if (name != null) return name;
+        }
         if (varId != null) {
             String name = varIdToScriptName.get(varId);
             if (name != null) return name;
@@ -103,6 +145,10 @@ public class VarContext {
             if (name != null) return name;
         }
         return varCode != null ? varCode : "";
+    }
+
+    private String refKey(String refType, Long refId) {
+        return refType.trim().toUpperCase() + ":" + refId;
     }
 
     /** 返回只读映射快照，便于调试和日志输出 */

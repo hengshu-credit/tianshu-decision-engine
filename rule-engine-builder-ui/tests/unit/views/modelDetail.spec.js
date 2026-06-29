@@ -201,11 +201,12 @@ describe('ModelDetail — 变量关联加载', () => {
     expect(wrapper.vm.varMap[10]).toBeDefined()
     expect(wrapper.vm.varMap[10].varCode).toBe('age')
 
-    // varPickerGroups 三层结构
-    expect(wrapper.vm.varPickerGroups.length).toBe(3)
+    // varPickerGroups 四类结构
+    expect(wrapper.vm.varPickerGroups.length).toBe(4)
     expect(wrapper.vm.varPickerGroups[0].label).toBe('普通变量')
     expect(wrapper.vm.varPickerGroups[1].label).toBe('常量')
     expect(wrapper.vm.varPickerGroups[2].label).toBe('数据对象字段')
+    expect(wrapper.vm.varPickerGroups[3].label).toBe('模型')
   })
 
   test('buildVarOptions 中常量正确分组', async () => {
@@ -639,7 +640,7 @@ describe('ModelDetail — 边界情况', () => {
     })
     localWrapper.vm.buildVarOptions([], [])
     expect(localWrapper.vm.varMap).toEqual({})
-    expect(localWrapper.vm.varPickerGroups.length).toBe(3)
+    expect(localWrapper.vm.varPickerGroups.length).toBe(4)
     localWrapper.destroy()
   })
 })

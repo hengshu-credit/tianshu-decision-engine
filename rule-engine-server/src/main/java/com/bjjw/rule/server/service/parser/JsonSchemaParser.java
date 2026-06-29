@@ -46,8 +46,8 @@ public class JsonSchemaParser {
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
         obj.setScriptName(objectCode);
-        // 递归解析，parentFieldId 为 null 表示顶层字段
-        parseJsonRecursive(json, obj, null, objectCode, objectCode);
+        // 递归解析，parentFieldId 为 null 表示顶层字段；scriptName 保存对象内相对路径
+        parseJsonRecursive(json, obj, null, "");
         return obj;
     }
 
@@ -58,31 +58,26 @@ public class JsonSchemaParser {
      * @param root           根 ParsedObject，fields 均加入此对象
      * @param parentFieldId  父字段 ID（顶层为 null），用于表达嵌套关系
      * @param parentPath     父级路径前缀（如 "data.request"，用于生成 scriptName）
-     * @param objectCode     数据对象编码（用于 scriptName 生成）
      */
     private void parseJsonRecursive(JSONObject json, ParsedObject root,
-                                    Long parentFieldId, String parentPath, String objectCode) {
-        // 使用临时递增 ID 标记字段，用于子字段的 parentFieldId 引用
-        // 注意：最终写入数据库时这些 ID 会被数据库自增 ID 替换，但 parentFieldId 关系不变
-        Long tempFieldId = generateTempFieldId();
-
+                                    Long parentFieldId, String parentPath) {
         for (Map.Entry<String, Object> entry : json.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
+            Long tempFieldId = generateTempFieldId();
+            String fieldPath = parentPath == null || parentPath.isEmpty() ? key : parentPath + "." + key;
 
             ParsedField field = new ParsedField();
             field.setFieldName(key);
             field.setFieldLabel(key);
-            // scriptName 使用完整路径，保证同名嵌套字段不冲突
-            field.setScriptName(key);
+            field.setTempId(tempFieldId);
+            field.setScriptName(fieldPath);
             field.setParentFieldId(parentFieldId);
 
             if (value instanceof JSONObject) {
                 // 嵌套对象：类型为 OBJECT，递归解析子字段
                 field.setVarType("OBJECT");
-                // 子字段将 parentFieldId 指向当前字段，path 更新为 parentPath.key
-                String childPath = parentPath.isEmpty() ? key : parentPath + "." + key;
-                parseJsonRecursive((JSONObject) value, root, tempFieldId, childPath, objectCode);
+                parseJsonRecursive((JSONObject) value, root, tempFieldId, fieldPath);
             } else if (value instanceof JSONArray) {
                 field.setVarType("LIST");
                 JSONArray arr = (JSONArray) value;
@@ -91,8 +86,7 @@ public class JsonSchemaParser {
                     if (first instanceof JSONObject) {
                         field.setGenericType("OBJECT");
                         // 数组元素为对象时，递归解析第一个元素的结构
-                        String childPath = parentPath.isEmpty() ? key + "[0]" : parentPath + "." + key + "[0]";
-                        parseJsonRecursive((JSONObject) first, root, tempFieldId, childPath, objectCode);
+                        parseJsonRecursive((JSONObject) first, root, tempFieldId, fieldPath);
                     } else {
                         field.setGenericType(inferPrimitiveType(first));
                     }

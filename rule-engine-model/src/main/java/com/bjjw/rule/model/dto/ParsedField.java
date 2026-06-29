@@ -8,6 +8,8 @@ public class ParsedField {
     private String fieldLabel;
     /** 脚本中的字段名 */
     private String scriptName;
+    /** 解析阶段临时 ID，用于 JSON 嵌套字段落库时重建父子关系 */
+    private Long tempId;
     private String varType;
     /** 引用对象编码（兼容旧逻辑，铁律四改进后以 refObjectId 为准） */
     private String refObjectCode;

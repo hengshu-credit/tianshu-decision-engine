@@ -37,8 +37,9 @@ public class ScorecardCompiler implements RuleCompiler {
             JSONArray thresholds = model.getJSONArray("thresholds");
 
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
             String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
-            String resolvedResultVar = resolveVar(resVarId, varCode);
+            String resolvedResultVar = resolveVar(resVarId, resRefType, varCode);
 
             StringBuilder script = new StringBuilder();
             script.append(resolvedResultVar).append(" = ").append(initialScore).append(";\n");
@@ -66,7 +67,8 @@ public class ScorecardCompiler implements RuleCompiler {
                         if (condVar != null && !condVar.isEmpty() && condValue != null) {
                             if (condOp == null) condOp = "==";
                             Long varId = item.containsKey("_varId") ? item.getLong("_varId") : null;
-                            String scriptName = resolveVar(varId, condVar);
+                            String refType = item.getString("_refType");
+                            String scriptName = resolveVar(varId, refType, condVar);
                             script.append("if (").append(scriptName).append(" ").append(condOp).append(" ");
                             script.append(formatRhs(condValue)).append(") {\n");
                             script.append("    ").append(resolvedResultVar).append(" = ").append(resolvedResultVar)
@@ -121,8 +123,12 @@ public class ScorecardCompiler implements RuleCompiler {
     }
 
     private String resolveVar(Long varId, String varCode) {
+        return resolveVar(varId, null, varCode);
+    }
+
+    private String resolveVar(Long varId, String refType, String varCode) {
         if (this.varContext != null) {
-            return this.varContext.resolveVar(varId, varCode);
+            return this.varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }

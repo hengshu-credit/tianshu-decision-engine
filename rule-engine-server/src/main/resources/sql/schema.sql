@@ -58,7 +58,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition` (
 CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
-  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联字段ID，需结合 ref_type 判断所属资源表',
+  `ref_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（原始名称）',
   `field_label`      VARCHAR(128) DEFAULT NULL             COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
@@ -74,7 +75,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_definition_id` (`definition_id`),
-  KEY `idx_var_id` (`var_id`)
+  KEY `idx_var_id` (`var_id`),
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输入字段表';
 
 -- ============================================================
@@ -83,7 +85,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_input_field` (
 CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `definition_id`    BIGINT       NOT NULL                COMMENT '所属规则ID',
-  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联字段ID，需结合 ref_type 判断所属资源表',
+  `ref_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（输出变量名）',
   `field_label`      VARCHAR(128) DEFAULT NULL             COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
@@ -97,7 +100,8 @@ CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   KEY `idx_definition_id` (`definition_id`),
-  KEY `idx_var_id` (`var_id`)
+  KEY `idx_var_id` (`var_id`),
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输出字段表';
 
 -- ============================================================
@@ -215,7 +219,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `create_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_object_var_code` (`object_id`, `var_code`),
+  UNIQUE KEY `uk_object_var_code` (`object_id`, `parent_field_id`, `var_code`),
   KEY `idx_project_id` (`project_id`),
   KEY `idx_object_id` (`object_id`),
   KEY `idx_ref_object_id` (`ref_object_id`)
@@ -453,7 +457,8 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
 CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
-  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联字段ID，需结合 ref_type 判断所属资源表',
+  `ref_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（原始名称）',
   `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
@@ -472,7 +477,7 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   PRIMARY KEY (`id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_var_id` (`var_id`),
-  CONSTRAINT `fk_input_var` FOREIGN KEY (`var_id`) REFERENCES `rule_variable` (`id`) ON DELETE SET NULL
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输入字段表';
 
 -- ============================================================
@@ -481,7 +486,8 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
 CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
-  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联的变量ID（外键 -> rule_variable.id）',
+  `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联字段ID，需结合 ref_type 判断所属资源表',
+  `ref_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL',
   `field_name`       VARCHAR(128) NOT NULL                COMMENT '字段名称（输出变量名）',
   `field_label`      VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
@@ -496,7 +502,7 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   PRIMARY KEY (`id`),
   KEY `idx_model_id` (`model_id`),
   KEY `idx_var_id` (`var_id`),
-  CONSTRAINT `fk_output_var` FOREIGN KEY (`var_id`) REFERENCES `rule_variable` (`id`) ON DELETE SET NULL
+  KEY `idx_ref_type_var_id` (`ref_type`, `var_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='统一模型输出字段表';
 
 -- ============================================================

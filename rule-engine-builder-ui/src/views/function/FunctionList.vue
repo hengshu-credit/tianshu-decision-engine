@@ -181,6 +181,7 @@
 import { createFunction, updateFunction, deleteFunction, listFunctions } from '@/api/function'
 import { listProjects } from '@/api/project'
 import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'FunctionList',
@@ -214,9 +215,17 @@ export default {
     }
   },
   created() {
+    this.restoreCachedState()
     this.loadProjects().then(() => this.loadFunctions())
   },
   methods: {
+    restoreCachedState() {
+      const state = restorePageState('FunctionList')
+      if (state.qp) this.qp = { ...this.qp, ...state.qp }
+    },
+    saveCachedState() {
+      savePageState('FunctionList', { qp: this.qp })
+    },
     async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 200 })
@@ -264,10 +273,11 @@ export default {
       this.funcLabelLoading = false
     },
     handleQuery() { this.qp.pageNum = 1; this.loadFunctions() },
-    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' }; this.loadFunctions() },
+    resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' }; clearPageState('FunctionList'); this.loadFunctions() },
     async loadFunctions() {
       this.loading = true
       try {
+        this.saveCachedState()
         const params = { ...this.qp }
         if (this.currentProjectId) params.projectId = this.currentProjectId
         if (!params.scope) delete params.scope

@@ -147,6 +147,7 @@
 import variables from '@/styles/variables.scss'
 import { listDefinitions, createDefinition, deleteDefinition, publishRule, unpublishRule } from '@/api/definition'
 import { listProjects } from '@/api/project'
+import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'RuleList',
@@ -190,10 +191,18 @@ export default {
     }
   },
   created() {
+    this.restoreCachedState()
     this.loadData()
     this.loadProjectList()
   },
   methods: {
+    restoreCachedState() {
+      const state = restorePageState('RuleList')
+      if (state.queryParams) this.queryParams = { ...this.queryParams, ...state.queryParams }
+    },
+    saveCachedState() {
+      savePageState('RuleList', { queryParams: this.queryParams })
+    },
     async loadProjectList() {
       // 项目列表会话级缓存，避免每次进页面都请求
       const cached = sessionStorage.getItem('projectList')
@@ -244,6 +253,7 @@ export default {
     async loadData() {
       this.loading = true
       try {
+        this.saveCachedState()
         const params = { ...this.queryParams }
         Object.keys(params).forEach(key => {
           if (params[key] === '' || params[key] === null || params[key] === undefined) {
@@ -302,6 +312,7 @@ export default {
         ruleName: '',
         publishedVersion: ''
       }
+      clearPageState('RuleList')
       this.loadData()
     },
     onRuleScopeChange(val) {

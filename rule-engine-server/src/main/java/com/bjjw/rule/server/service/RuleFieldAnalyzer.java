@@ -3,13 +3,19 @@ package com.bjjw.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.bjjw.rule.model.entity.RuleDataObject;
 import com.bjjw.rule.model.entity.RuleDataObjectField;
 import com.bjjw.rule.model.entity.RuleDefinitionInputField;
 import com.bjjw.rule.model.entity.RuleDefinitionOutputField;
+import com.bjjw.rule.model.entity.RuleModel;
+import com.bjjw.rule.model.entity.RuleModelInputField;
 import com.bjjw.rule.model.entity.RuleVariable;
+import com.bjjw.rule.server.mapper.RuleDataObjectMapper;
 import com.bjjw.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.bjjw.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleDefinitionOutputFieldMapper;
+import com.bjjw.rule.server.mapper.RuleModelInputFieldMapper;
+import com.bjjw.rule.server.mapper.RuleModelMapper;
 import com.bjjw.rule.server.mapper.RuleVariableMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
@@ -18,6 +24,8 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 规则模型字段解析器。
@@ -25,6 +33,13 @@ import java.util.*;
  */
 @Service
 public class RuleFieldAnalyzer {
+
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)*");
+    private static final Set<String> SCRIPT_KEYWORDS = new HashSet<>(Arrays.asList(
+            "if", "else", "for", "while", "switch", "case", "default", "break", "continue", "return",
+            "true", "false", "null", "and", "or", "in", "new", "var", "let", "const", "do",
+            "try", "catch", "finally", "throw", "class", "import", "package"
+    ));
 
     @Resource
     private RuleDefinitionInputFieldMapper inputFieldMapper;
@@ -37,6 +52,15 @@ public class RuleFieldAnalyzer {
 
     @Resource
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
+
+    @Resource
+    private RuleDataObjectMapper dataObjectMapper;
+
+    @Resource
+    private RuleModelMapper modelMapper;
+
+    @Resource
+    private RuleModelInputFieldMapper modelInputFieldMapper;
 
     /**
      * 解析模型内容，提取输入/输出变量，持久化到字段表。
@@ -61,9 +85,28 @@ public class RuleFieldAnalyzer {
         // 收集已有的 varId 映射（保留用户关联的变量）
         Map<String, Long> existingInputVarMap = getExistingVarIdMap(definitionId, true);
         Map<String, Long> existingOutputVarMap = getExistingVarIdMap(definitionId, false);
+        Map<String, String> existingInputRefTypeMap = getExistingRefTypeMap(definitionId, true);
+        Map<String, String> existingOutputRefTypeMap = getExistingRefTypeMap(definitionId, false);
+        Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
 
         // 从变量管理表查询元信息：varCode -> {varLabel, varType, scriptName, id}
         Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
+
+        // 先补齐变量元信息，模型引用会展开为模型自身输入字段。
+        List<RuleDefinitionInputField> preparedInputFields = new ArrayList<>();
+        for (RuleDefinitionInputField field : inputFields) {
+            applyExplicitRef(field, explicitRefMap);
+            enrichFieldFromMeta(field, varMetaMap, existingInputVarMap, existingInputRefTypeMap);
+            preparedInputFields.add(field);
+        }
+        preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
+
+        List<RuleDefinitionOutputField> preparedOutputFields = new ArrayList<>();
+        for (RuleDefinitionOutputField field : outputFields) {
+            applyExplicitRef(field, explicitRefMap);
+            enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
+            preparedOutputFields.add(field);
+        }
 
         // 删除旧字段
         inputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionInputField>()
@@ -73,22 +116,20 @@ public class RuleFieldAnalyzer {
 
         // 写入新字段（补充变量元信息 + 恢复已有的 varId 关联）
         int inputOrder = 0;
-        for (RuleDefinitionInputField field : inputFields) {
+        for (RuleDefinitionInputField field : preparedInputFields) {
             field.setDefinitionId(definitionId);
             field.setSortOrder(inputOrder++);
             field.setStatus(1);
             field.setCreateTime(LocalDateTime.now());
-            enrichFieldFromMeta(field, varMetaMap, existingInputVarMap);
             inputFieldMapper.insert(field);
         }
 
         int outputOrder = 0;
-        for (RuleDefinitionOutputField field : outputFields) {
+        for (RuleDefinitionOutputField field : preparedOutputFields) {
             field.setDefinitionId(definitionId);
             field.setSortOrder(outputOrder++);
             field.setStatus(1);
             field.setCreateTime(LocalDateTime.now());
-            enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap);
             outputFieldMapper.insert(field);
         }
     }
@@ -104,11 +145,14 @@ public class RuleFieldAnalyzer {
         // 查询普通变量和常量（rule_variable）
         LambdaQueryWrapper<RuleVariable> varWrapper = new LambdaQueryWrapper<>();
         if (projectId != null && projectId > 0) {
-            varWrapper.eq(RuleVariable::getProjectId, projectId);
+            varWrapper.and(w -> w.eq(RuleVariable::getScope, RuleVariableService.SCOPE_GLOBAL)
+                    .or()
+                    .eq(RuleVariable::getScope, RuleVariableService.SCOPE_PROJECT)
+                    .eq(RuleVariable::getProjectId, projectId));
         } else {
-            varWrapper.eq(RuleVariable::getProjectId, 0);
+            varWrapper.eq(RuleVariable::getScope, RuleVariableService.SCOPE_GLOBAL);
         }
-        varWrapper.in(RuleVariable::getStatus, Arrays.asList(1, null));
+        varWrapper.eq(RuleVariable::getStatus, 1);
         List<RuleVariable> vars = ruleVariableMapper.selectList(varWrapper);
         for (RuleVariable v : vars) {
             String key = getVarKey(v);
@@ -120,30 +164,62 @@ public class RuleFieldAnalyzer {
                 meta.put("scriptName", v.getScriptName());
                 meta.put("varCode", v.getVarCode());
                 meta.put("varSource", v.getVarSource());
+                meta.put("refType", "CONSTANT".equals(v.getVarSource()) ? "CONSTANT" : "VARIABLE");
                 map.put(key, meta);
             }
         }
 
         // 查询数据对象字段（rule_data_object_field）
+        Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
         LambdaQueryWrapper<RuleDataObjectField> fieldWrapper = new LambdaQueryWrapper<>();
         if (projectId != null && projectId > 0) {
-            fieldWrapper.eq(RuleDataObjectField::getProjectId, projectId);
+            fieldWrapper.and(w -> w.eq(RuleDataObjectField::getScope, RuleVariableService.SCOPE_GLOBAL)
+                    .or()
+                    .eq(RuleDataObjectField::getScope, RuleVariableService.SCOPE_PROJECT)
+                    .eq(RuleDataObjectField::getProjectId, projectId));
         } else {
-            fieldWrapper.eq(RuleDataObjectField::getProjectId, 0);
+            fieldWrapper.eq(RuleDataObjectField::getScope, RuleVariableService.SCOPE_GLOBAL);
         }
-        fieldWrapper.in(RuleDataObjectField::getStatus, Arrays.asList(1, null));
+        fieldWrapper.eq(RuleDataObjectField::getStatus, 1);
         List<RuleDataObjectField> doFields = dataObjectFieldMapper.selectList(fieldWrapper);
         for (RuleDataObjectField f : doFields) {
-            String key = getFieldKey(f);
+            String scriptName = buildObjectFieldScriptName(f, objectMap);
+            String key = scriptName != null ? scriptName.toLowerCase() : null;
             if (key != null && !map.containsKey(key)) {
                 Map<String, Object> meta = new HashMap<>();
                 meta.put("id", f.getId());
                 meta.put("varLabel", f.getVarLabel());
                 meta.put("varType", f.getVarType());
-                meta.put("scriptName", f.getScriptName());
+                meta.put("scriptName", scriptName);
                 meta.put("varCode", f.getVarCode());
                 meta.put("varSource", "dataObject");
+                meta.put("refType", "DATA_OBJECT");
                 map.put(key, meta);
+            }
+        }
+
+        LambdaQueryWrapper<RuleModel> modelWrapper = new LambdaQueryWrapper<>();
+        if (projectId != null && projectId > 0) {
+            modelWrapper.and(w -> w.eq(RuleModel::getScope, RuleVariableService.SCOPE_GLOBAL)
+                    .or()
+                    .eq(RuleModel::getScope, RuleVariableService.SCOPE_PROJECT)
+                    .eq(RuleModel::getProjectId, projectId));
+        } else {
+            modelWrapper.eq(RuleModel::getScope, RuleVariableService.SCOPE_GLOBAL);
+        }
+        modelWrapper.eq(RuleModel::getStatus, 1);
+        for (RuleModel m : modelMapper.selectList(modelWrapper)) {
+            String modelCode = trimToNull(m.getModelCode());
+            if (modelCode != null && !map.containsKey(modelCode.toLowerCase())) {
+                Map<String, Object> meta = new HashMap<>();
+                meta.put("id", m.getId());
+                meta.put("varLabel", m.getModelName());
+                meta.put("varType", "MODEL");
+                meta.put("scriptName", modelCode);
+                meta.put("varCode", modelCode);
+                meta.put("varSource", "MODEL");
+                meta.put("refType", "MODEL");
+                map.put(modelCode.toLowerCase(), meta);
             }
         }
 
@@ -183,7 +259,8 @@ public class RuleFieldAnalyzer {
      */
     private void enrichFieldFromMeta(RuleDefinitionInputField field,
             Map<String, Map<String, Object>> varMetaMap,
-            Map<String, Long> existingVarMap) {
+            Map<String, Long> existingVarMap,
+            Map<String, String> existingRefTypeMap) {
         String fieldCode = field.getScriptName() != null ? field.getScriptName().toLowerCase() : null;
         if (fieldCode == null) return;
 
@@ -207,6 +284,7 @@ public class RuleFieldAnalyzer {
             // 自动关联 varId（若已有用户关联则保留）
             if (field.getVarId() == null && existingVarMap.containsKey(field.getScriptName())) {
                 field.setVarId(existingVarMap.get(field.getScriptName()));
+                field.setRefType(existingRefTypeMap.get(field.getScriptName()));
             }
             // 若无已有关联但 meta 中有 id，自动关联
             if (field.getVarId() == null) {
@@ -214,6 +292,9 @@ public class RuleFieldAnalyzer {
                 if (id instanceof Long) {
                     field.setVarId((Long) id);
                 }
+            }
+            if (field.getRefType() == null) {
+                field.setRefType((String) meta.get("refType"));
             }
         }
     }
@@ -223,7 +304,8 @@ public class RuleFieldAnalyzer {
      */
     private void enrichFieldFromMeta(RuleDefinitionOutputField field,
             Map<String, Map<String, Object>> varMetaMap,
-            Map<String, Long> existingVarMap) {
+            Map<String, Long> existingVarMap,
+            Map<String, String> existingRefTypeMap) {
         String fieldCode = field.getScriptName() != null ? field.getScriptName().toLowerCase() : null;
         if (fieldCode == null) return;
 
@@ -245,6 +327,7 @@ public class RuleFieldAnalyzer {
             }
             if (field.getVarId() == null && existingVarMap.containsKey(field.getScriptName())) {
                 field.setVarId(existingVarMap.get(field.getScriptName()));
+                field.setRefType(existingRefTypeMap.get(field.getScriptName()));
             }
             if (field.getVarId() == null) {
                 Object id = meta.get("id");
@@ -252,6 +335,72 @@ public class RuleFieldAnalyzer {
                     field.setVarId((Long) id);
                 }
             }
+            if (field.getRefType() == null) {
+                field.setRefType((String) meta.get("refType"));
+            }
+        }
+    }
+
+    private List<RuleDefinitionInputField> expandModelInputFields(List<RuleDefinitionInputField> inputFields,
+            Map<String, Map<String, Object>> varMetaMap) {
+        List<RuleDefinitionInputField> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (RuleDefinitionInputField field : inputFields) {
+            String refType = normalizeRefType(field.getRefType());
+            if (!"MODEL".equals(refType) || field.getVarId() == null || modelInputFieldMapper == null) {
+                addInputFieldIfAbsent(result, seen, field);
+                continue;
+            }
+
+            List<RuleModelInputField> modelFields = modelInputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleModelInputField>()
+                            .eq(RuleModelInputField::getModelId, field.getVarId())
+                            .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
+                            .orderByAsc(RuleModelInputField::getSortOrder)
+                            .orderByAsc(RuleModelInputField::getId));
+            if (modelFields == null || modelFields.isEmpty()) {
+                addInputFieldIfAbsent(result, seen, field);
+                continue;
+            }
+
+            for (RuleModelInputField modelField : modelFields) {
+                RuleDefinitionInputField expanded = copyModelInputField(modelField);
+                enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                addInputFieldIfAbsent(result, seen, expanded);
+            }
+        }
+        return result;
+    }
+
+    private RuleDefinitionInputField copyModelInputField(RuleModelInputField modelField) {
+        RuleDefinitionInputField field = new RuleDefinitionInputField();
+        String scriptName = firstNonBlank(modelField.getScriptName(), modelField.getFieldName());
+        String displayName = firstNonBlank(modelField.getFieldName(), leafName(scriptName));
+        field.setVarId(modelField.getVarId());
+        field.setRefType(normalizeRefType(modelField.getRefType()));
+        field.setFieldName(displayName);
+        field.setFieldLabel(firstNonBlank(modelField.getFieldLabel(), displayName, scriptName));
+        field.setScriptName(scriptName);
+        field.setFieldType(firstNonBlank(modelField.getFieldType(), "STRING"));
+        field.setMissingValue(modelField.getMissingValue());
+        field.setDefaultValue(modelField.getDefaultValue());
+        field.setValidValues(modelField.getValidValues());
+        field.setTransformType(modelField.getTransformType());
+        field.setTransformParams(modelField.getTransformParams());
+        field.setStatus(1);
+        field.setCreateTime(LocalDateTime.now());
+        return field;
+    }
+
+    private void addInputFieldIfAbsent(List<RuleDefinitionInputField> fields, Set<String> seen, RuleDefinitionInputField field) {
+        String key = normalizeRefType(field.getRefType()) + ":" + firstNonBlank(field.getScriptName(), field.getFieldName());
+        if (key == null || key.endsWith(":null")) {
+            key = firstNonBlank(field.getScriptName(), field.getFieldName());
+        }
+        if (key == null) return;
+        String normalized = key.toLowerCase();
+        if (seen.add(normalized)) {
+            fields.add(field);
         }
     }
 
@@ -282,6 +431,123 @@ public class RuleFieldAnalyzer {
             }
         }
         return map;
+    }
+
+    private Map<String, String> getExistingRefTypeMap(Long definitionId, boolean isInput) {
+        Map<String, String> map = new HashMap<>();
+        if (isInput) {
+            List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionInputField>()
+                            .eq(RuleDefinitionInputField::getDefinitionId, definitionId)
+                            .isNotNull(RuleDefinitionInputField::getVarId));
+            for (RuleDefinitionInputField f : fields) {
+                if (f.getScriptName() != null && f.getVarId() != null) {
+                    map.put(f.getScriptName(), normalizeRefType(f.getRefType()));
+                }
+            }
+        } else {
+            List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                            .eq(RuleDefinitionOutputField::getDefinitionId, definitionId)
+                            .isNotNull(RuleDefinitionOutputField::getVarId));
+            for (RuleDefinitionOutputField f : fields) {
+                if (f.getScriptName() != null && f.getVarId() != null) {
+                    map.put(f.getScriptName(), normalizeRefType(f.getRefType()));
+                }
+            }
+        }
+        return map;
+    }
+
+    private Map<String, FieldRef> collectExplicitRefs(String modelJson) {
+        Map<String, FieldRef> refs = new HashMap<>();
+        try {
+            Object root = JSON.parse(modelJson);
+            collectExplicitRefsRecursive(root, refs);
+        } catch (Exception ignored) {
+            // 字段提取后续会走原有解析异常路径，这里只作为引用信息补充。
+        }
+        return refs;
+    }
+
+    private void collectExplicitRefsRecursive(Object node, Map<String, FieldRef> refs) {
+        if (node instanceof JSONObject) {
+            JSONObject obj = (JSONObject) node;
+            Long refId = obj.containsKey("_varId") ? obj.getLong("_varId") : null;
+            if (refId == null && obj.containsKey("varId")) {
+                refId = obj.getLong("varId");
+            }
+            String refType = normalizeRefType(obj.getString("_refType"));
+            if (refType == null) {
+                refType = normalizeRefType(obj.getString("refType"));
+            }
+            if (refId != null) {
+                addExplicitRef(refs, obj.getString("varCode"), refId, refType);
+                addExplicitRef(refs, obj.getString("refCode"), refId, refType);
+                addExplicitRef(refs, obj.getString("condVar"), refId, refType);
+                addExplicitRef(refs, obj.getString("target"), refId, refType);
+                addExplicitRef(refs, obj.getString("matchVar"), refId, refType);
+                addExplicitRef(refs, obj.getString("itemVar"), refId, refType);
+                addExplicitRef(refs, obj.getString("checkVar"), refId, refType);
+                addExplicitRef(refs, obj.getString("resultVar"), refId, refType);
+            }
+            for (Object value : obj.values()) {
+                collectExplicitRefsRecursive(value, refs);
+            }
+        } else if (node instanceof JSONArray) {
+            JSONArray arr = (JSONArray) node;
+            for (Object value : arr) {
+                collectExplicitRefsRecursive(value, refs);
+            }
+        }
+    }
+
+    private void addExplicitRef(Map<String, FieldRef> refs, String code, Long refId, String refType) {
+        String key = trimToNull(code);
+        if (key != null && refId != null) {
+            refs.put(key, new FieldRef(refId, refType));
+            refs.put(key.toLowerCase(), new FieldRef(refId, refType));
+        }
+    }
+
+    private void applyExplicitRef(RuleDefinitionInputField field, Map<String, FieldRef> explicitRefMap) {
+        FieldRef ref = findExplicitRef(field, explicitRefMap);
+        if (ref != null) {
+            field.setVarId(ref.refId);
+            field.setRefType(ref.refType);
+        }
+    }
+
+    private void applyExplicitRef(RuleDefinitionOutputField field, Map<String, FieldRef> explicitRefMap) {
+        FieldRef ref = findExplicitRef(field, explicitRefMap);
+        if (ref != null) {
+            field.setVarId(ref.refId);
+            field.setRefType(ref.refType);
+        }
+    }
+
+    private FieldRef findExplicitRef(RuleDefinitionInputField field, Map<String, FieldRef> explicitRefMap) {
+        FieldRef ref = explicitRefMap.get(field.getScriptName());
+        if (ref == null && field.getScriptName() != null) {
+            ref = explicitRefMap.get(field.getScriptName().toLowerCase());
+        }
+        if (ref == null) ref = explicitRefMap.get(field.getFieldName());
+        if (ref == null && field.getFieldName() != null) {
+            ref = explicitRefMap.get(field.getFieldName().toLowerCase());
+        }
+        return ref;
+    }
+
+    private FieldRef findExplicitRef(RuleDefinitionOutputField field, Map<String, FieldRef> explicitRefMap) {
+        FieldRef ref = explicitRefMap.get(field.getScriptName());
+        if (ref == null && field.getScriptName() != null) {
+            ref = explicitRefMap.get(field.getScriptName().toLowerCase());
+        }
+        if (ref == null) ref = explicitRefMap.get(field.getFieldName());
+        if (ref == null && field.getFieldName() != null) {
+            ref = explicitRefMap.get(field.getFieldName().toLowerCase());
+        }
+        return ref;
     }
 
     /**
@@ -481,7 +747,6 @@ public class RuleFieldAnalyzer {
     // ==================== 决策树 / 决策流 ====================
 
     private void extractFromGraphModel(JSONObject model, Set<String> varCodes, boolean isInput) {
-        // 从 nodes 数组中提取变量
         JSONArray nodes = model.getJSONArray("nodes");
         if (nodes == null && model.containsKey("graph")) {
             nodes = model.getJSONObject("graph").getJSONArray("nodes");
@@ -489,129 +754,205 @@ public class RuleFieldAnalyzer {
         if (nodes != null) {
             for (int i = 0; i < nodes.size(); i++) {
                 JSONObject node = nodes.getJSONObject(i);
-                String type = getString(node, "type");
-                JSONObject properties = node.getJSONObject("properties");
-                if (properties == null) continue;
-
                 if (isInput) {
-                    // 输入变量：条件节点
-                    if ("condition".equals(type) || "CONDITION".equals(type) || "conditionNode".equals(type)) {
-                        extractVarFromConditionProps(properties, varCodes);
-                    }
+                    extractGraphInputVars(node, varCodes);
                 } else {
-                    // 输出变量：任务节点 / 动作节点
-                    if ("task".equals(type) || "TASK".equals(type) || "action".equals(type) || "ACTION".equals(type) || "taskNode".equals(type) || "actionNode".equals(type)) {
-                        extractVarFromActionProps(properties, varCodes);
-                    }
+                    extractGraphOutputVars(node, varCodes);
                 }
             }
         }
 
-        // 兼容 LogicFlow 格式：{ nodes: [...], edges: [...] }
-        JSONArray graphNodes = model.getJSONArray("nodes");
-        if (graphNodes != null) {
-            for (int i = 0; i < graphNodes.size(); i++) {
-                JSONObject node = graphNodes.getJSONObject(i);
-                extractVarFromNodeData(node, varCodes, isInput);
+        JSONArray edges = model.getJSONArray("edges");
+        if (edges == null && model.containsKey("graph")) {
+            edges = model.getJSONObject("graph").getJSONArray("edges");
+        }
+        if (edges != null) {
+            for (int i = 0; i < edges.size(); i++) {
+                JSONObject edge = edges.getJSONObject(i);
+                if (isInput) {
+                    extractGraphInputVars(edge, varCodes);
+                }
+            }
+        }
+
+        if (isInput && !varCodes.isEmpty()) {
+            Set<String> outputVars = new LinkedHashSet<>();
+            extractFromGraphModel(model, outputVars, false);
+            varCodes.removeAll(outputVars);
+        }
+    }
+
+    private void extractGraphInputVars(JSONObject obj, Set<String> varCodes) {
+        if (obj == null) return;
+        collectConditionRefs(obj, varCodes);
+        JSONArray actionData = obj.getJSONArray("actionData");
+        if (actionData != null) {
+            collectActionDataVars(actionData, varCodes, true);
+        }
+        JSONObject data = obj.getJSONObject("data");
+        if (data != null && data != obj) {
+            extractGraphInputVars(data, varCodes);
+        }
+        JSONObject properties = obj.getJSONObject("properties");
+        if (properties != null && properties != obj) {
+            extractGraphInputVars(properties, varCodes);
+        }
+    }
+
+    private void extractGraphOutputVars(JSONObject obj, Set<String> varCodes) {
+        if (obj == null) return;
+        String type = normalizeType(getString(obj, "type"));
+        boolean mayContainOutput = type == null || type.contains("task") || type.contains("action");
+        if (mayContainOutput) {
+            addVarName(varCodes, getString(obj, "target"));
+            addVarName(varCodes, getString(obj, "outputVar"));
+            JSONObject resultVar = obj.getJSONObject("resultVar");
+            if (resultVar != null) {
+                addVarName(varCodes, getString(resultVar, "varCode"));
+            }
+            JSONArray actionData = obj.getJSONArray("actionData");
+            if (actionData != null) {
+                collectActionDataVars(actionData, varCodes, false);
+            }
+        }
+        JSONObject data = obj.getJSONObject("data");
+        if (data != null && data != obj) {
+            extractGraphOutputVars(data, varCodes);
+        }
+        JSONObject properties = obj.getJSONObject("properties");
+        if (properties != null && properties != obj) {
+            extractGraphOutputVars(properties, varCodes);
+        }
+    }
+
+    private void collectActionDataVars(JSONArray actionData, Set<String> varCodes, boolean isInput) {
+        if (actionData == null) return;
+        for (int i = 0; i < actionData.size(); i++) {
+            Object item = actionData.get(i);
+            if (item instanceof JSONObject) {
+                collectActionBlockVars((JSONObject) item, varCodes, isInput);
             }
         }
     }
 
-    private void extractVarFromNodeData(JSONObject node, Set<String> varCodes, boolean isInput) {
-        // 兼容多种 LogicFlow 数据格式
-        JSONObject data = node.getJSONObject("data");
-        if (data == null) data = node;
-
-        String type = getString(data, "type");
-        if (type == null) type = getString(node, "type");
-
-        JSONObject props = data.getJSONObject("properties");
-        if (props == null) props = data;
+    private void collectActionBlockVars(JSONObject block, Set<String> varCodes, boolean isInput) {
+        if (block == null) return;
+        String type = getString(block, "type");
+        if (!isInput) {
+            addVarName(varCodes, getString(block, "target"));
+            addVarName(varCodes, getString(block, "outputVar"));
+            if (type == null || "action".equals(type)) {
+                addVarName(varCodes, getString(block, "varCode"));
+            }
+        }
 
         if (isInput) {
-            if (type != null && (type.contains("condition") || type.contains("Condition"))) {
-                extractVarFromConditionProps(props, varCodes);
+            if ("assign".equals(type)) {
+                extractIdentifiersFromExpression(getString(block, "value"), varCodes);
+            } else if ("func-call".equals(type)) {
+                JSONArray args = block.getJSONArray("args");
+                if (args != null) {
+                    for (int i = 0; i < args.size(); i++) {
+                        extractIdentifiersFromExpression(args.getString(i), varCodes);
+                    }
+                }
+            } else if ("foreach".equals(type)) {
+                extractIdentifiersFromExpression(getString(block, "listExpr"), varCodes);
+            } else if ("ternary".equals(type)) {
+                addVarName(varCodes, getString(block, "condVar"));
+                extractIdentifiersFromExpression(getString(block, "trueValue"), varCodes);
+                extractIdentifiersFromExpression(getString(block, "falseValue"), varCodes);
+            } else if ("in-check".equals(type)) {
+                addVarName(varCodes, getString(block, "checkVar"));
+            } else if ("template-str".equals(type)) {
+                JSONArray parts = block.getJSONArray("parts");
+                if (parts != null) {
+                    for (int i = 0; i < parts.size(); i++) {
+                        JSONObject part = parts.getJSONObject(i);
+                        if ("expr".equals(getString(part, "type"))) {
+                            extractIdentifiersFromExpression(getString(part, "content"), varCodes);
+                        }
+                    }
+                }
+            } else {
+                collectConditionRefs(block, varCodes);
+                extractIdentifiersFromExpression(getString(block, "value"), varCodes);
             }
-        } else {
-            if (type != null && (type.contains("task") || type.contains("action") || type.contains("Action") || type.contains("Task"))) {
-                extractVarFromActionProps(props, varCodes);
+        }
+
+        if ("if-block".equals(type)) {
+            JSONArray branches = block.getJSONArray("branches");
+            if (branches != null) {
+                for (int i = 0; i < branches.size(); i++) {
+                    JSONObject branch = branches.getJSONObject(i);
+                    if (isInput) {
+                        addVarName(varCodes, getString(branch, "condVar"));
+                        extractIdentifiersFromExpression(getString(branch, "condition"), varCodes);
+                    }
+                    collectActionDataVars(branch.getJSONArray("actions"), varCodes, isInput);
+                }
             }
+        } else if ("switch-block".equals(type)) {
+            if (isInput) {
+                addVarName(varCodes, getString(block, "matchVar"));
+            }
+            JSONArray cases = block.getJSONArray("cases");
+            if (cases != null) {
+                for (int i = 0; i < cases.size(); i++) {
+                    collectActionDataVars(cases.getJSONObject(i).getJSONArray("actions"), varCodes, isInput);
+                }
+            }
+            collectActionDataVars(block.getJSONArray("defaultActions"), varCodes, isInput);
+        } else if ("foreach".equals(type)) {
+            collectActionDataVars(block.getJSONArray("actions"), varCodes, isInput);
         }
     }
 
-    private void extractVarFromConditionProps(JSONObject props, Set<String> varCodes) {
-        // 条件节点的变量
-        String varCode = getString(props, "varCode");
-        if (varCode != null && !varCode.isEmpty()) varCodes.add(varCode);
+    private void collectConditionRefs(JSONObject obj, Set<String> varCodes) {
+        if (obj == null) return;
+        addVarName(varCodes, getString(obj, "varCode"));
+        addVarName(varCodes, getString(obj, "condVar"));
+        addVarName(varCodes, getString(obj, "leftVar"));
+        addVarName(varCodes, getString(obj, "matchVar"));
+        addVarName(varCodes, getString(obj, "checkVar"));
 
-        // 兼容 varCode 嵌套
-        JSONObject condVar = props.getJSONObject("condVar");
+        JSONObject condVar = obj.getJSONObject("condVar");
         if (condVar != null) {
-            String cv = getString(condVar, "varCode");
-            if (cv != null && !cv.isEmpty()) varCodes.add(cv);
+            addVarName(varCodes, getString(condVar, "varCode"));
         }
-
-        // 条件表达式中的变量引用
-        String condition = getString(props, "condition");
-        if (condition != null && !condition.isEmpty()) {
-            extractVarCodesFromConditionString(condition, varCodes);
+        JSONObject left = obj.getJSONObject("left");
+        if (left != null) {
+            collectConditionRefs(left, varCodes);
         }
-
-        // 兼容 leftVar
-        String leftVar = getString(props, "leftVar");
-        if (leftVar != null && !leftVar.isEmpty()) varCodes.add(leftVar);
-    }
-
-    private void extractVarFromActionProps(JSONObject props, Set<String> varCodes) {
-        // 动作节点的输出变量
-        String varCode = getString(props, "varCode");
-        if (varCode != null && !varCode.isEmpty()) varCodes.add(varCode);
-
-        // 兼容 resultVar
-        JSONObject resultVar = props.getJSONObject("resultVar");
-        if (resultVar != null) {
-            String rv = getString(resultVar, "varCode");
-            if (rv != null && !rv.isEmpty()) varCodes.add(rv);
+        JSONObject right = obj.getJSONObject("right");
+        if (right != null) {
+            collectConditionRefs(right, varCodes);
         }
-
-        // 动作数据中的变量引用
-        JSONArray actionData = props.getJSONArray("actionData");
-        if (actionData != null) {
-            for (int i = 0; i < actionData.size(); i++) {
-                JSONObject action = actionData.getJSONObject(i);
-                String av = getString(action, "varCode");
-                if (av != null && !av.isEmpty()) varCodes.add(av);
+        JSONObject conditionRoot = obj.getJSONObject("conditionRoot");
+        if (conditionRoot != null) {
+            collectVarCodesFromConditionTree(conditionRoot, varCodes);
+        }
+        String[] exprKeys = { "condition", "conditionExpression", "expression", "leftExpr", "rightExpr" };
+        for (String key : exprKeys) {
+            String expr = getString(obj, key);
+            if (expr != null && !expr.isEmpty()) {
+                extractIdentifiersFromExpression(expr, varCodes);
             }
         }
-
-        // 兼容 outputVar / outputVars
-        String outputVar = getString(props, "outputVar");
-        if (outputVar != null && !outputVar.isEmpty()) varCodes.add(outputVar);
+        JSONArray children = obj.getJSONArray("children");
+        if (children != null) {
+            for (int i = 0; i < children.size(); i++) {
+                Object child = children.get(i);
+                if (child instanceof JSONObject) {
+                    collectConditionRefs((JSONObject) child, varCodes);
+                }
+            }
+        }
     }
 
     private void extractVarCodesFromConditionString(String condition, Set<String> varCodes) {
-        // 简单解析：提取赋值语句左侧的变量
-        // 格式如: income > 10000, taxRate * 0.13, 等
         if (condition == null || condition.isEmpty()) return;
-        // 提取等号左侧变量: varCode = value
-        int eqIdx = condition.indexOf('=');
-        if (eqIdx > 0) {
-            String left = condition.substring(0, eqIdx).trim();
-            if (!left.isEmpty() && isValidVarName(left)) {
-                varCodes.add(left);
-            }
-        }
-        // 提取比较运算符左侧的变量
-        String[] ops = { ">= ", "<= ", "!= ", "== ", "> ", "< " };
-        for (String op : ops) {
-            int idx = condition.indexOf(op);
-            if (idx > 0) {
-                String left = condition.substring(0, idx).trim();
-                if (!left.isEmpty() && isValidVarName(left)) {
-                    varCodes.add(left);
-                }
-            }
-        }
+        extractIdentifiersFromExpression(condition, varCodes);
     }
 
     private boolean isValidVarName(String name) {
@@ -753,36 +1094,219 @@ public class RuleFieldAnalyzer {
         String script = getString(model, "script");
         if (script == null || script.isEmpty()) return;
 
-        // 简单解析：从脚本中提取变量
-        // 输入变量：赋值语句左侧（output = ...）的左侧操作数
-        // 输出变量：赋值语句左侧
-        String[] lines = script.split("\n");
-        Set<String> assignedVars = new HashSet<>();
-        for (String line : lines) {
-            line = line.trim();
-            if (line.isEmpty() || line.startsWith("//")) continue;
-
-            // 匹配赋值语句: var = expression 或 var.Prop = expression
-            int eqIdx = line.indexOf('=');
-            if (eqIdx > 0 && !line.substring(0, eqIdx).trim().contains("==")) {
-                String left = line.substring(0, eqIdx).trim();
-                // 清理可能的括号或运算
-                int parenIdx = left.indexOf('(');
-                if (parenIdx > 0) left = left.substring(0, parenIdx).trim();
-                if (isValidVarName(left)) {
-                    assignedVars.add(left);
+        Set<String> assignedVars = collectAssignedVars(script);
+        Set<String> explicitScriptRefs = collectScriptRefCodes(model);
+        if (!explicitScriptRefs.isEmpty()) {
+            Set<String> usedRefs = new LinkedHashSet<>();
+            for (String ref : explicitScriptRefs) {
+                if (scriptContainsIdentifier(script, ref)) {
+                    usedRefs.add(ref);
+                }
+            }
+            if (isInput) {
+                for (String ref : usedRefs) {
+                    if (!assignedVars.contains(ref)) {
+                        addVarName(varCodes, ref);
+                    }
+                }
+            } else {
+                for (String ref : usedRefs) {
+                    if (assignedVars.contains(ref)) {
+                        addVarName(varCodes, ref);
+                    }
                 }
             }
         }
 
         if (isInput) {
-            // 输入变量：从赋值右侧提取引用的变量
-            // 简单实现：排除已赋值的变量，剩余的都是输入变量
-            // 实际应用中需要更复杂的脚本分析，这里做简化处理
+            Set<String> identifiers = extractIdentifiersFromScript(script);
+            identifiers.removeAll(assignedVars);
+            varCodes.addAll(identifiers);
         } else {
-            // 输出变量：赋值语句左侧的变量
             varCodes.addAll(assignedVars);
         }
+    }
+
+    private Set<String> collectAssignedVars(String script) {
+        Set<String> assignedVars = new LinkedHashSet<>();
+        String[] lines = script.split("\\r?\\n");
+        for (String line : lines) {
+            line = line.trim();
+            if (line.isEmpty() || line.startsWith("//")) continue;
+
+            int eqIdx = findAssignmentIndex(line);
+            if (eqIdx <= 0) continue;
+            String left = extractAssignmentTarget(line.substring(0, eqIdx));
+            if (isValidVarName(left)) {
+                assignedVars.add(left);
+            }
+        }
+        return assignedVars;
+    }
+
+    private Set<String> collectScriptRefCodes(JSONObject model) {
+        Set<String> refs = new LinkedHashSet<>();
+        JSONArray scriptVarRefs = model.getJSONArray("scriptVarRefs");
+        if (scriptVarRefs == null) return refs;
+        for (int i = 0; i < scriptVarRefs.size(); i++) {
+            JSONObject ref = scriptVarRefs.getJSONObject(i);
+            addVarName(refs, getString(ref, "refCode"));
+        }
+        return refs;
+    }
+
+    private Set<String> extractIdentifiersFromScript(String script) {
+        Set<String> identifiers = new LinkedHashSet<>();
+        String sanitized = stripCommentsAndStrings(script);
+        Matcher matcher = IDENTIFIER_PATTERN.matcher(sanitized);
+        while (matcher.find()) {
+            String token = matcher.group();
+            if (isScriptKeyword(token)) continue;
+            if (isFunctionCall(sanitized, matcher.end())) continue;
+            if (token.startsWith("java.") || token.startsWith("com.") || token.startsWith("org.")) continue;
+            addVarName(identifiers, token);
+        }
+        return identifiers;
+    }
+
+    private void extractIdentifiersFromExpression(String expr, Set<String> varCodes) {
+        if (expr == null || expr.isEmpty()) return;
+        Set<String> identifiers = extractIdentifiersFromScript(expr);
+        varCodes.addAll(identifiers);
+    }
+
+    private boolean scriptContainsIdentifier(String script, String identifier) {
+        if (script == null || identifier == null || identifier.isEmpty()) return false;
+        String sanitized = stripCommentsAndStrings(script);
+        Matcher matcher = IDENTIFIER_PATTERN.matcher(sanitized);
+        while (matcher.find()) {
+            if (identifier.equals(matcher.group())) return true;
+        }
+        return false;
+    }
+
+    private boolean isFunctionCall(String source, int end) {
+        int i = end;
+        while (i < source.length() && Character.isWhitespace(source.charAt(i))) i++;
+        return i < source.length() && source.charAt(i) == '(';
+    }
+
+    private boolean isScriptKeyword(String token) {
+        if (token == null) return true;
+        return SCRIPT_KEYWORDS.contains(token.toLowerCase());
+    }
+
+    private String stripCommentsAndStrings(String script) {
+        StringBuilder sb = new StringBuilder(script.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        for (int i = 0; i < script.length(); i++) {
+            char c = script.charAt(i);
+            char next = i + 1 < script.length() ? script.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                    sb.append(c);
+                } else {
+                    sb.append(' ');
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    sb.append("  ");
+                    i++;
+                } else {
+                    sb.append(c == '\n' ? '\n' : ' ');
+                }
+                continue;
+            }
+            if (!inSingle && !inDouble && c == '/' && next == '/') {
+                inLineComment = true;
+                sb.append("  ");
+                i++;
+                continue;
+            }
+            if (!inSingle && !inDouble && c == '/' && next == '*') {
+                inBlockComment = true;
+                sb.append("  ");
+                i++;
+                continue;
+            }
+            if (!inDouble && c == '\'' && !isEscaped(script, i)) {
+                inSingle = !inSingle;
+                sb.append(' ');
+                continue;
+            }
+            if (!inSingle && c == '"' && !isEscaped(script, i)) {
+                inDouble = !inDouble;
+                sb.append(' ');
+                continue;
+            }
+            sb.append(inSingle || inDouble ? (c == '\n' ? '\n' : ' ') : c);
+        }
+        return sb.toString();
+    }
+
+    private boolean isEscaped(String text, int index) {
+        int slashCount = 0;
+        for (int i = index - 1; i >= 0 && text.charAt(i) == '\\'; i--) {
+            slashCount++;
+        }
+        return slashCount % 2 == 1;
+    }
+
+    private int findAssignmentIndex(String line) {
+        boolean inSingle = false;
+        boolean inDouble = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (!inDouble && c == '\'' && !isEscaped(line, i)) {
+                inSingle = !inSingle;
+                continue;
+            }
+            if (!inSingle && c == '"' && !isEscaped(line, i)) {
+                inDouble = !inDouble;
+                continue;
+            }
+            if (inSingle || inDouble || c != '=') continue;
+            char prev = i > 0 ? line.charAt(i - 1) : '\0';
+            char next = i + 1 < line.length() ? line.charAt(i + 1) : '\0';
+            if (prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '=' || next == '>') {
+                continue;
+            }
+            return i;
+        }
+        return -1;
+    }
+
+    private String extractAssignmentTarget(String left) {
+        String target = trimToNull(left);
+        if (target == null) return null;
+        int parenIdx = target.indexOf('(');
+        if (parenIdx > 0) {
+            target = target.substring(0, parenIdx).trim();
+        }
+        int spaceIdx = target.lastIndexOf(' ');
+        if (spaceIdx >= 0) {
+            target = target.substring(spaceIdx + 1).trim();
+        }
+        return target;
+    }
+
+    private void addVarName(Set<String> varCodes, String value) {
+        String name = trimToNull(value);
+        if (name != null && isValidVarName(name) && !isScriptKeyword(name)) {
+            varCodes.add(name);
+        }
+    }
+
+    private String normalizeType(String type) {
+        String t = trimToNull(type);
+        return t == null ? null : t.toLowerCase();
     }
 
     // ==================== 通用提取（兜底） ====================
@@ -836,5 +1360,89 @@ public class RuleFieldAnalyzer {
             return "BOOLEAN";
         }
         return "STRING";
+    }
+
+    private Map<Long, RuleDataObject> buildObjectMap(Long projectId) {
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        if (projectId != null && projectId > 0) {
+            wrapper.and(w -> w.eq(RuleDataObject::getScope, RuleVariableService.SCOPE_GLOBAL)
+                    .or()
+                    .eq(RuleDataObject::getScope, RuleVariableService.SCOPE_PROJECT)
+                    .eq(RuleDataObject::getProjectId, projectId));
+        } else {
+            wrapper.eq(RuleDataObject::getScope, RuleVariableService.SCOPE_GLOBAL);
+        }
+        wrapper.eq(RuleDataObject::getStatus, 1);
+        Map<Long, RuleDataObject> map = new HashMap<>();
+        for (RuleDataObject object : dataObjectMapper.selectList(wrapper)) {
+            if (object.getId() != null) {
+                map.put(object.getId(), object);
+            }
+        }
+        return map;
+    }
+
+    private String buildObjectFieldScriptName(RuleDataObjectField field, Map<Long, RuleDataObject> objectMap) {
+        String fieldScript = trimToNull(field.getScriptName());
+        if (fieldScript == null) {
+            fieldScript = trimToNull(field.getVarCode());
+        }
+        if (fieldScript == null) {
+            return null;
+        }
+        RuleDataObject object = objectMap.get(field.getObjectId());
+        String objectScript = object != null ? trimToNull(object.getScriptName()) : null;
+        if (objectScript == null && object != null) {
+            objectScript = trimToNull(object.getObjectCode());
+        }
+        if (objectScript == null || fieldScript.equals(objectScript) || fieldScript.startsWith(objectScript + ".")) {
+            return fieldScript;
+        }
+        return objectScript + "." + fieldScript;
+    }
+
+    private String normalizeRefType(String refType) {
+        String type = trimToNull(refType);
+        return type != null ? type.toUpperCase() : null;
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            String trimmed = trimToNull(value);
+            if (trimmed != null) {
+                return trimmed;
+            }
+        }
+        return null;
+    }
+
+    private String leafName(String path) {
+        String value = trimToNull(path);
+        if (value == null) {
+            return null;
+        }
+        int idx = value.lastIndexOf('.');
+        return idx >= 0 ? value.substring(idx + 1) : value;
+    }
+
+    private static class FieldRef {
+        private final Long refId;
+        private final String refType;
+
+        private FieldRef(Long refId, String refType) {
+            this.refId = refId;
+            this.refType = refType;
+        }
     }
 }

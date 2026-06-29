@@ -21,6 +21,10 @@ public final class ActionDataOutputVarCollector {
      * @param out   收集结果（去重、顺序大致为节点与块出现顺序）
      */
     public static void collectFromGraphTaskNodes(JSONArray nodes, LinkedHashSet<String> out) {
+        collectFromGraphTaskNodes(nodes, out, null);
+    }
+
+    public static void collectFromGraphTaskNodes(JSONArray nodes, LinkedHashSet<String> out, VarContext varContext) {
         if (nodes == null) {
             return;
         }
@@ -29,7 +33,7 @@ public final class ActionDataOutputVarCollector {
             if (n == null || !"task".equals(n.getString("type"))) {
                 continue;
             }
-            collectFromActionData(n.getJSONArray("actionData"), out);
+            collectFromActionData(n.getJSONArray("actionData"), out, varContext);
         }
     }
 
@@ -37,18 +41,22 @@ public final class ActionDataOutputVarCollector {
      * 递归遍历 actionData 数组，收集 assign/ternary/func-call 等块的目标变量。
      */
     public static void collectFromActionData(JSONArray actionData, LinkedHashSet<String> out) {
+        collectFromActionData(actionData, out, null);
+    }
+
+    public static void collectFromActionData(JSONArray actionData, LinkedHashSet<String> out, VarContext varContext) {
         if (actionData == null) {
             return;
         }
         for (int i = 0; i < actionData.size(); i++) {
-            collectBlock(actionData.getJSONObject(i), out);
+            collectBlock(actionData.getJSONObject(i), out, varContext);
         }
     }
 
     /**
      * 根据块类型递归收集子动作中的输出变量。
      */
-    private static void collectBlock(JSONObject block, LinkedHashSet<String> out) {
+    private static void collectBlock(JSONObject block, LinkedHashSet<String> out, VarContext varContext) {
         if (block == null) {
             return;
         }
@@ -58,13 +66,13 @@ public final class ActionDataOutputVarCollector {
         }
         switch (type) {
             case "assign":
-                addTarget(out, block.getString("target"));
+                addTarget(out, block, "target", varContext);
                 break;
             case "if-block":
                 JSONArray branches = block.getJSONArray("branches");
                 if (branches != null) {
                     for (int i = 0; i < branches.size(); i++) {
-                        collectFromActionData(branches.getJSONObject(i).getJSONArray("actions"), out);
+                        collectFromActionData(branches.getJSONObject(i).getJSONArray("actions"), out, varContext);
                     }
                 }
                 break;
@@ -72,25 +80,25 @@ public final class ActionDataOutputVarCollector {
                 JSONArray cases = block.getJSONArray("cases");
                 if (cases != null) {
                     for (int i = 0; i < cases.size(); i++) {
-                        collectFromActionData(cases.getJSONObject(i).getJSONArray("actions"), out);
+                        collectFromActionData(cases.getJSONObject(i).getJSONArray("actions"), out, varContext);
                     }
                 }
-                collectFromActionData(block.getJSONArray("defaultActions"), out);
+                collectFromActionData(block.getJSONArray("defaultActions"), out, varContext);
                 break;
             case "func-call":
-                addTarget(out, block.getString("target"));
+                addTarget(out, block, "target", varContext);
                 break;
             case "foreach":
-                collectFromActionData(block.getJSONArray("actions"), out);
+                collectFromActionData(block.getJSONArray("actions"), out, varContext);
                 break;
             case "ternary":
-                addTarget(out, block.getString("target"));
+                addTarget(out, block, "target", varContext);
                 break;
             case "in-check":
-                addTarget(out, block.getString("target"));
+                addTarget(out, block, "target", varContext);
                 break;
             case "template-str":
-                addTarget(out, block.getString("target"));
+                addTarget(out, block, "target", varContext);
                 break;
             default:
                 break;
@@ -104,5 +112,19 @@ public final class ActionDataOutputVarCollector {
         if (target != null && !target.trim().isEmpty()) {
             out.add(target.trim());
         }
+    }
+
+    private static void addTarget(LinkedHashSet<String> out, JSONObject block, String key, VarContext varContext) {
+        String target = block.getString(key);
+        if (target == null || target.trim().isEmpty()) {
+            return;
+        }
+        if (varContext == null) {
+            addTarget(out, target);
+            return;
+        }
+        Long varId = block.containsKey("_varId") ? block.getLong("_varId") : null;
+        String refType = block.getString("_refType");
+        addTarget(out, varContext.resolveVar(varId, refType, target));
     }
 }

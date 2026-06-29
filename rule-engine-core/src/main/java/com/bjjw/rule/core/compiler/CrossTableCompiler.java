@@ -55,6 +55,7 @@ public class CrossTableCompiler implements RuleCompiler {
                 for (int i = 0; i < rowDefs.size(); i++) {
                     JSONObject rd = rowDefs.getJSONObject(i);
                     Long varId = rd.containsKey("_varId") ? rd.getLong("_varId") : null;
+                    String refType = rd.getString("_refType");
                     String varCode = rd.getString("varCode");
                     String varType = rd.getString("varType");
                     if (varType == null) varType = "STRING";
@@ -63,14 +64,14 @@ public class CrossTableCompiler implements RuleCompiler {
                     // 输出变量初始化（交叉表命中时赋值），通过 VarContext 解析为正确的 scriptName
                     String outVar = rd.getString("resultVar");
                     if (outVar != null && !outVar.isEmpty()) {
-                        String resolved = resolveVar(varId, outVar, this.varContext);
+                        String resolved = resolveVar(varId, refType, outVar, this.varContext);
                         outputVarCodes.add(resolved);
                         script.append(resolved).append(" = null;\n");
                     }
 
                     JSONArray conditions = rd.getJSONArray("conditions");
                     if (conditions != null && !conditions.isEmpty()) {
-                        script.append(compileRowCondition(varId, varCode, varType, conditions, this.varContext));
+                        script.append(compileRowCondition(varId, refType, varCode, varType, conditions, this.varContext));
                     }
                 }
             }
@@ -79,6 +80,7 @@ public class CrossTableCompiler implements RuleCompiler {
                 for (int i = 0; i < colDefs.size(); i++) {
                     JSONObject cd = colDefs.getJSONObject(i);
                     Long varId = cd.containsKey("_varId") ? cd.getLong("_varId") : null;
+                    String refType = cd.getString("_refType");
                     String varCode = cd.getString("varCode");
                     String varType = cd.getString("varType");
                     if (varType == null) varType = "STRING";
@@ -86,7 +88,7 @@ public class CrossTableCompiler implements RuleCompiler {
                     script.append("// 列条件: ").append(varCode).append("\n");
                     JSONArray conditions = cd.getJSONArray("conditions");
                     if (conditions != null && !conditions.isEmpty()) {
-                        script.append(compileRowCondition(varId, varCode, varType, conditions, this.varContext));
+                        script.append(compileRowCondition(varId, refType, varCode, varType, conditions, this.varContext));
                     }
                 }
             }
@@ -127,7 +129,8 @@ public class CrossTableCompiler implements RuleCompiler {
                             String varType = action.getString("varType");
                             if (varType == null) varType = "STRING";
                             Long varId = action.containsKey("_varId") ? action.getLong("_varId") : null;
-                            String resolved = resolveVar(varId, varCode, this.varContext);
+                            String refType = action.getString("_refType");
+                            String resolved = resolveVar(varId, refType, varCode, this.varContext);
                             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                                 script.append(resolved).append(" = \"")
                                       .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\";\n");
@@ -150,7 +153,8 @@ public class CrossTableCompiler implements RuleCompiler {
                     String varType = defaultAction.getString("varType");
                     if (varType == null) varType = "STRING";
                     Long varId = defaultAction.containsKey("_varId") ? defaultAction.getLong("_varId") : null;
-                    String resolved = resolveVar(varId, varCode, this.varContext);
+                    String refType = defaultAction.getString("_refType");
+                    String resolved = resolveVar(varId, refType, varCode, this.varContext);
                     if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                         script.append(resolved).append(" = \"")
                               .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\";\n");
@@ -176,7 +180,7 @@ public class CrossTableCompiler implements RuleCompiler {
      * 编译行条件（条件段）：varCode op value AND ...。
      * 例如 age >= 18 && age < 60
      */
-    private static String compileRowCondition(Long varId, String varCode, String varType, JSONArray conditions, VarContext varContext) {
+    private static String compileRowCondition(Long varId, String refType, String varCode, String varType, JSONArray conditions, VarContext varContext) {
         if (conditions == null || conditions.isEmpty()) {
             return "";
         }
@@ -188,7 +192,7 @@ public class CrossTableCompiler implements RuleCompiler {
             String op = c.getString("operator");
             String val = c.getString("value");
             if (op == null) op = "==";
-            sb.append(resolveVar(varId, varCode, varContext)).append(" ").append(op).append(" ");
+            sb.append(resolveVar(varId, refType, varCode, varContext)).append(" ").append(op).append(" ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 sb.append("\"").append(val.replace("\"", "\\\"")).append("\"");
             } else {
@@ -206,6 +210,7 @@ public class CrossTableCompiler implements RuleCompiler {
         if (def == null) return "true";
 
         Long varId = def.containsKey("_varId") ? def.getLong("_varId") : null;
+        String refType = def.getString("_refType");
         String varCode = def.getString("varCode");
         String varType = def.getString("varType");
         if (varType == null) varType = "STRING";
@@ -233,7 +238,7 @@ public class CrossTableCompiler implements RuleCompiler {
                 sb.append("true");
                 continue;
             }
-            String scriptName = resolveVar(varId, varCode, varContext);
+            String scriptName = resolveVar(varId, refType, varCode, varContext);
             sb.append(scriptName).append(" ").append(op).append(" ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {
                 sb.append("\"").append(val.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
@@ -268,6 +273,7 @@ public class CrossTableCompiler implements RuleCompiler {
 
     private static String compileLeaf(JSONObject leaf, VarContext varContext) {
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
+        String refType = leaf.getString("_refType");
         String varCode = leaf.getString("varCode");
         if (varCode == null || varCode.trim().isEmpty()) return "true";
         String op = leaf.getString("operator");
@@ -277,7 +283,7 @@ public class CrossTableCompiler implements RuleCompiler {
         if (value == null || value.isEmpty()) return "true";
         String varType = leaf.getString("varType");
         if (varType == null) varType = "STRING";
-        String scriptName = resolveVar(varId, varCode, varContext);
+        String scriptName = resolveVar(varId, refType, varCode, varContext);
         String rhs;
         if ("STRING".equals(varType) || "ENUM".equals(varType) || "DATE".equals(varType)) {
             rhs = "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
@@ -291,8 +297,12 @@ public class CrossTableCompiler implements RuleCompiler {
      * 通过 VarContext 解析脚本变量名。
      */
     private static String resolveVar(Long varId, String varCode, VarContext varContext) {
+        return resolveVar(varId, null, varCode, varContext);
+    }
+
+    private static String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {
         if (varContext != null) {
-            return varContext.resolveVar(varId, varCode);
+            return varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }

@@ -12,8 +12,11 @@ public class RuleModelOutputField {
 
     private Long modelId;
 
-    /** 关联的变量ID（外键 -> rule_variable.id） */
+    /** 关联字段ID，需结合 refType 判断所属资源表 */
     private Long varId;
+
+    /** 引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL */
+    private String refType;
 
     private String fieldName;
     private String fieldLabel;

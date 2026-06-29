@@ -41,10 +41,10 @@
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="model.inputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
+        <el-table :data="pagedInputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ $index + 1 }}</template>
+            <template slot-scope="{ $index }">{{ inputFieldOffset + $index + 1 }}</template>
           </el-table-column>
           <!-- 字段名称 -->
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
@@ -86,8 +86,8 @@
                 </el-tooltip>
               </div>
               <div v-else>
-                <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }}
+                <span v-if="getRowVarMap(row)" class="script-name-text">
+                  {{ getRowVarMap(row).varLabel }}
                 </span>
                 <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
@@ -122,6 +122,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="inputFieldNeedsPaging"
+          style="margin-top:12px;text-align:right;"
+          :current-page="inputFieldPage"
+          :page-size="fieldPageSize"
+          :total="inputFieldsTotal"
+          layout="total,prev,pager,next"
+          @current-change="inputFieldPage = $event"
+        />
         <div v-if="!model.inputFields || model.inputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输入字段</div>
       </el-tab-pane>
 
@@ -135,10 +144,10 @@
           <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
         </div>
 
-        <el-table :data="model.outputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
+        <el-table :data="pagedOutputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ $index + 1 }}</template>
+            <template slot-scope="{ $index }">{{ outputFieldOffset + $index + 1 }}</template>
           </el-table-column>
           <!-- 字段名称 -->
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
@@ -180,8 +189,8 @@
                 </el-tooltip>
               </div>
               <div v-else>
-                <span v-if="row.varId && varMap[row.varId]" class="script-name-text">
-                  {{ varMap[row.varId].varLabel }}
+                <span v-if="getRowVarMap(row)" class="script-name-text">
+                  {{ getRowVarMap(row).varLabel }}
                 </span>
                 <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
@@ -222,6 +231,15 @@
             </template>
           </el-table-column>
         </el-table>
+        <el-pagination
+          v-if="outputFieldNeedsPaging"
+          style="margin-top:12px;text-align:right;"
+          :current-page="outputFieldPage"
+          :page-size="fieldPageSize"
+          :total="outputFieldsTotal"
+          layout="total,prev,pager,next"
+          @current-change="outputFieldPage = $event"
+        />
         <div v-if="!model.outputFields || model.outputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
       </el-tab-pane>
     </el-tabs>
@@ -340,13 +358,14 @@ export default {
     return {
       loading: false,
       model: {},
-      /** varId -> 变量对象映射（从变量管理加载） */
+      /** refType:id -> 字段对象映射（从变量管理/模型管理加载） */
       varMap: {},
-      /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段） */
+      /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段 / 模型） */
       varPickerGroups: [
         { label: '普通变量', options: [] },
         { label: '常量', options: [] },
-        { label: '数据对象字段', options: [] }
+        { label: '数据对象字段', options: [] },
+        { label: '模型', options: [] }
       ],
       // 测试相关
       testVisible: false,
@@ -362,10 +381,41 @@ export default {
       testResult: null,
       testDialogKey: 1,
       /** 各行是否处于手动输入模式 */
-      customVarModes: {}
+      customVarModes: {},
+      fieldPageSize: 100,
+      inputFieldPage: 1,
+      outputFieldPage: 1
     }
   },
   computed: {
+    inputFieldsTotal() {
+      return this.model && this.model.inputFields ? this.model.inputFields.length : 0
+    },
+    outputFieldsTotal() {
+      return this.model && this.model.outputFields ? this.model.outputFields.length : 0
+    },
+    inputFieldNeedsPaging() {
+      return this.inputFieldsTotal > this.fieldPageSize
+    },
+    outputFieldNeedsPaging() {
+      return this.outputFieldsTotal > this.fieldPageSize
+    },
+    inputFieldOffset() {
+      return this.inputFieldNeedsPaging ? (this.inputFieldPage - 1) * this.fieldPageSize : 0
+    },
+    outputFieldOffset() {
+      return this.outputFieldNeedsPaging ? (this.outputFieldPage - 1) * this.fieldPageSize : 0
+    },
+    pagedInputFields() {
+      const fields = (this.model && this.model.inputFields) || []
+      if (!this.inputFieldNeedsPaging) return fields
+      return fields.slice(this.inputFieldOffset, this.inputFieldOffset + this.fieldPageSize)
+    },
+    pagedOutputFields() {
+      const fields = (this.model && this.model.outputFields) || []
+      if (!this.outputFieldNeedsPaging) return fields
+      return fields.slice(this.outputFieldOffset, this.outputFieldOffset + this.fieldPageSize)
+    },
     /** 构建 VarPicker 需要的 vars 数组格式 */
     varPickerOptions() {
       const options = []
@@ -376,8 +426,11 @@ export default {
             varLabel: v.varLabelText || v.varCode,
             varType: v.varType,
             varObj: v.varObj,
+            _varId: v.id,
+            _refType: v.refType,
+            refType: v.refType,
             _ref: {
-              category: v.sourceType === 'dataObject' ? 'object' : (v.sourceType === 'constant' ? 'constant' : 'standalone'),
+              category: v.sourceType === 'dataObject' ? 'object' : (v.sourceType === 'constant' ? 'constant' : (v.sourceType === 'model' ? 'model' : 'standalone')),
               objectCode: v.sourceCode || '',
               objectScriptName: v.sourceCode || '',
               objectLabel: v.sourceLabel || ''
@@ -406,6 +459,7 @@ export default {
         if (this.model.outputFields) {
           this.model.outputFields.forEach(f => this.$set(f, '_editing', false))
         }
+        this.normalizeFieldPages()
         // 模型加载后加载变量库
         await this.loadVars()
       } catch (e) {
@@ -413,6 +467,12 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    normalizeFieldPages() {
+      const inputMax = Math.max(1, Math.ceil(this.inputFieldsTotal / this.fieldPageSize))
+      const outputMax = Math.max(1, Math.ceil(this.outputFieldsTotal / this.fieldPageSize))
+      if (this.inputFieldPage > inputMax) this.inputFieldPage = inputMax
+      if (this.outputFieldPage > outputMax) this.outputFieldPage = outputMax
     },
     /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
@@ -427,32 +487,36 @@ export default {
     },
     async loadVarsByProject(projectId) {
       try {
-        const [varsRes, constRes, treeRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariablesByProject(projectId),
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(projectId)
+          getVariableTree(projectId),
+          api.listAllModelsByProject(projectId)
         ])
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts = (constRes.data && Array.isArray(constRes.data.records))
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
         const tree = this.normalizeVariableTree(treeRes.data)
-        this.buildVarOptions([...vars, ...consts], tree)
+        const models = this.normalizeListResponse(modelRes)
+        this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
         this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
           { label: '普通变量', options: [] },
           { label: '常量', options: [] },
-          { label: '数据对象字段', options: [] }
+          { label: '数据对象字段', options: [] },
+          { label: '模型', options: [] }
         ])
       }
     },
     async loadGlobalVars() {
       try {
-        const [varsRes, constRes, treeRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
           listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(0)
+          getVariableTree(0),
+          api.listAllModelsByProject(0)
         ])
         const vars = (varsRes.data && Array.isArray(varsRes.data.records))
           ? varsRes.data.records
@@ -461,13 +525,15 @@ export default {
           ? constRes.data.records
           : (Array.isArray(constRes.data) ? constRes.data : [])
         const tree = this.normalizeVariableTree(treeRes.data)
-        this.buildVarOptions([...vars, ...consts], tree)
+        const models = this.normalizeListResponse(modelRes)
+        this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
         this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
           { label: '普通变量', options: [] },
           { label: '常量', options: [] },
-          { label: '数据对象字段', options: [] }
+          { label: '数据对象字段', options: [] },
+          { label: '模型', options: [] }
         ])
       }
     },
@@ -476,25 +542,59 @@ export default {
       if (data && Array.isArray(data.tree)) return data.tree
       return []
     },
+    normalizeListResponse(res) {
+      const data = res && res.data ? res.data : res
+      if (Array.isArray(data)) return data
+      if (data && Array.isArray(data.records)) return data.records
+      return []
+    },
+    flattenObjectVariables(vars) {
+      const result = []
+      const visit = rows => {
+        const list = rows || []
+        list.forEach(row => {
+          result.push(row)
+          if (row.children && row.children.length) visit(row.children)
+        })
+      }
+      visit(vars)
+      return result
+    },
     stripObjectPrefix(text, objectCode) {
       if (!text || !objectCode) return text || ''
       var prefix = objectCode + '.'
       return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
     },
-    buildVarOptions(vars, doTree) {
+    refKey(id, refType) {
+      if (!id) return ''
+      return (refType || 'VARIABLE') + ':' + id
+    },
+    getRowVarMap(row) {
+      if (!row || !row.varId) return null
+      return this.varMap[this.refKey(row.varId, row.refType)] || this.varMap[String(row.varId)] || null
+    },
+    putVarMap(item) {
+      this.$set(this.varMap, this.refKey(item.id, item.refType), item)
+      if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
+    },
+    buildVarOptions(vars, doTree, models = []) {
       this.varMap = {}
       const seenIds = new Set()
       const varOptions = []
       const constOptions = []
       const objOptions = []
+      const modelOptions = []
       vars.forEach(v => {
-        if (!v.id || seenIds.has(v.id)) return
-        seenIds.add(v.id)
+        const refType = v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
+        const seenKey = this.refKey(v.id, refType)
+        if (!v.id || seenIds.has(seenKey)) return
+        seenIds.add(seenKey)
         const labelText = v.varLabel || ''
         const codeText = v.scriptName || v.varCode || ''
         const isConst = v.varSource === 'CONSTANT'
         const item = {
           id: v.id,
+          refType,
           varCode: codeText,
           varLabel: labelText + (codeText ? ' ' + codeText : ''),
           varLabelText: labelText,
@@ -502,9 +602,9 @@ export default {
           varType: v.varType,
           varSource: v.varSource,
           sourceType: isConst ? 'constant' : 'variable',
-          varObj: v
+          varObj: { ...v, refType }
         }
-        this.varMap[v.id] = item
+        this.putVarMap(item)
         if (isConst) {
           constOptions.push(item)
         } else {
@@ -513,16 +613,19 @@ export default {
       })
       doTree.forEach(group => {
         const obj = group.object || {}
-        const fields = group.variables || []
+        const fields = group.flatVariables || this.flattenObjectVariables(group.variables)
         fields.forEach(f => {
-          if (!f.id || seenIds.has(f.id)) return
-          seenIds.add(f.id)
+          const refType = 'DATA_OBJECT'
+          const seenKey = this.refKey(f.id, refType)
+          if (!f.id || seenIds.has(seenKey)) return
+          seenIds.add(seenKey)
           const objCode = obj.scriptName || obj.objectCode || ''
           const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
           const codeText = f.scriptName || f.varCode || ''
           const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
           const item = {
             id: f.id,
+            refType,
             varCode: codeText,
             varLabel: labelText + (codeText ? ' ' + codeText : ''),
             varLabelText: labelText,
@@ -532,27 +635,52 @@ export default {
             sourceType: 'dataObject',
             sourceLabel: objLabel,
             sourceCode: objCode,
-            varObj: f
+            varObj: { ...f, refType }
           }
-          this.varMap[f.id] = item
+          this.putVarMap(item)
           objOptions.push(item)
         })
+      })
+      models.forEach(m => {
+        const refType = 'MODEL'
+        const seenKey = this.refKey(m.id, refType)
+        if (!m.id || seenIds.has(seenKey)) return
+        seenIds.add(seenKey)
+        const codeText = m.modelCode || ''
+        if (!codeText) return
+        const labelText = m.modelName || codeText
+        const item = {
+          id: m.id,
+          refType,
+          varCode: codeText,
+          varLabel: labelText + ' ' + codeText,
+          varLabelText: labelText,
+          varCodeText: codeText,
+          varType: 'MODEL',
+          varSource: 'MODEL',
+          sourceType: 'model',
+          varObj: { ...m, id: m.id, varCode: codeText, varLabel: labelText, scriptName: codeText, varType: 'MODEL', refType }
+        }
+        this.putVarMap(item)
+        modelOptions.push(item)
       })
       this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
         { label: '普通变量', options: varOptions },
         { label: '常量', options: constOptions },
-        { label: '数据对象字段', options: objOptions }
+        { label: '数据对象字段', options: objOptions },
+        { label: '模型', options: modelOptions }
       ])
     },
     onVarClear(row) {
       this.$set(row, 'varId', null)
+      this.$set(row, 'refType', '')
       this.$set(row, 'fieldLabel', '')
       this.$set(row, 'scriptName', '')
     },
     /** 获取行对应的变量编码（用于 VarPicker 的 value） */
     getRowVarCode(row) {
       if (!row.varId) return ''
-      const v = this.varMap[row.varId]
+      const v = this.getRowVarMap(row)
       return v ? v.varCode : ''
     },
     /** 获取行是否处于手动输入模式 */
@@ -567,6 +695,7 @@ export default {
     onVarPickerSelect(row, v) {
       if (!v) {
         this.$set(row, 'varId', null)
+        this.$set(row, 'refType', '')
         this.$set(row, 'fieldLabel', '')
         this.$set(row, 'scriptName', '')
         this.$set(row, 'varSource', '')
@@ -576,6 +705,7 @@ export default {
       const varObj = v.varObj
       const varId = varObj && varObj.id ? varObj.id : null
       this.$set(row, 'varId', varId)
+      this.$set(row, 'refType', v._refType || v.refType || (varObj && varObj.refType) || '')
       this.$set(row, 'fieldLabel', v.varLabel || v.varCode)
       this.$set(row, 'scriptName', v.varCode)
       this.$set(row, 'varSource', v._ref ? v._ref.category : 'variable')
@@ -584,6 +714,7 @@ export default {
     onVarCodeInput(row, val) {
       if (!val) {
         this.$set(row, 'varId', null)
+        this.$set(row, 'refType', '')
         this.$set(row, 'fieldLabel', '')
         this.$set(row, 'scriptName', '')
         this.$set(row, 'varSource', '')
@@ -593,11 +724,13 @@ export default {
       const found = Object.values(this.varMap).find(v => v.varCode === val)
       if (found) {
         this.$set(row, 'varId', found.id)
+        this.$set(row, 'refType', found.refType || '')
         this.$set(row, 'fieldLabel', found.varLabelText || found.varCode)
         this.$set(row, 'scriptName', found.varCode)
         this.$set(row, 'varSource', found.sourceType)
       } else {
         this.$set(row, 'varId', null)
+        this.$set(row, 'refType', '')
         this.$set(row, 'fieldLabel', '')
         this.$set(row, 'scriptName', val)
         this.$set(row, 'varSource', 'custom')
@@ -615,6 +748,7 @@ export default {
       this.$set(row, 'fieldLabel', opt.varLabelText)
       this.$set(row, 'scriptName', opt.varCodeText)
       this.$set(row, 'varSource', opt.sourceType)
+      this.$set(row, 'refType', opt.refType || '')
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
@@ -634,13 +768,14 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, fieldLabel: row.fieldLabel, scriptName: row.scriptName, missingValue: row.missingValue })
+      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, missingValue: row.missingValue })
     },
     async saveInputField(row) {
       this.$set(row, '_saving', true)
       try {
         await api.updateModelInputField(row.id, {
           varId: row.varId,
+          refType: row.refType,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
@@ -661,6 +796,7 @@ export default {
     cancelEditInput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, 'refType', row._origin.refType)
         this.$set(row, 'fieldLabel', row._origin.fieldLabel)
         this.$set(row, 'scriptName', row._origin.scriptName)
         this.$set(row, 'missingValue', row._origin.missingValue)
@@ -679,13 +815,14 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformType: row.transformType })
+      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformType: row.transformType })
     },
     async saveOutputField(row) {
       this.$set(row, '_saving', true)
       try {
         await api.updateModelOutputField(row.id, {
           varId: row.varId,
+          refType: row.refType,
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
@@ -703,6 +840,7 @@ export default {
     cancelEditOutput(row) {
       if (row._origin) {
         this.$set(row, 'varId', row._origin.varId)
+        this.$set(row, 'refType', row._origin.refType)
         this.$set(row, 'fieldLabel', row._origin.fieldLabel)
         this.$set(row, 'scriptName', row._origin.scriptName)
         this.$set(row, 'transformType', row._origin.transformType)

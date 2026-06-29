@@ -41,9 +41,10 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                 return CompileResult.fail("复杂交叉表缺少结果变量定义");
             }
             Long resVarId = resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
+            String resRefType = resultVar.getString("_refType");
             String resCode = resultVar.getString("varCode");
             String resType = resultVar.getString("varType");
-            String resolvedResCode = resolveVar(resVarId, resCode);
+            String resolvedResCode = resolveVar(resVarId, resRefType, resCode);
 
             if (rowDims == null || rowDims.isEmpty()) {
                 return CompileResult.fail("复杂交叉表缺少行维度定义");
@@ -111,6 +112,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             String varCode = dim.getString("varCode");
             String varType = dim.getString("varType");
             Long varId = dim.containsKey("_varId") ? dim.getLong("_varId") : null;
+            String refType = dim.getString("_refType");
             JSONArray segments = dim.getJSONArray("segments");
 
             List<List<SegmentInfo>> newResult = new ArrayList<>();
@@ -118,7 +120,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                 for (int s = 0; s < segments.size(); s++) {
                     JSONObject seg = segments.getJSONObject(s);
                     List<SegmentInfo> newList = new ArrayList<>(existing);
-                    newList.add(new SegmentInfo(varCode, varType, varId,
+                    newList.add(new SegmentInfo(varCode, varType, varId, refType,
                             seg.getString("operator"),
                             seg.getString("value"),
                             seg.getString("min"),
@@ -146,7 +148,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
     /** 将单个分段条件追加到脚本 */
     private void appendCondition(StringBuilder sb, SegmentInfo seg) {
-        String scriptName = resolveVar(seg.varId, seg.varCode);
+        String scriptName = resolveVar(seg.varId, seg.refType, seg.varCode);
         String op = seg.operator;
 
         if ("range".equals(op)) {
@@ -161,8 +163,12 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
     }
 
     private String resolveVar(Long varId, String varCode) {
+        return resolveVar(varId, null, varCode);
+    }
+
+    private String resolveVar(Long varId, String refType, String varCode) {
         if (this.varContext != null) {
-            return this.varContext.resolveVar(varId, varCode);
+            return this.varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
     }
@@ -180,15 +186,17 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         final String varCode;
         final String varType;
         final Long varId;
+        final String refType;
         final String operator;
         final String value;
         final String min;
         final String max;
 
-        SegmentInfo(String varCode, String varType, Long varId, String operator, String value, String min, String max) {
+        SegmentInfo(String varCode, String varType, Long varId, String refType, String operator, String value, String min, String max) {
             this.varCode = varCode;
             this.varType = varType;
             this.varId = varId;
+            this.refType = refType;
             this.operator = operator;
             this.value = value;
             this.min = min;

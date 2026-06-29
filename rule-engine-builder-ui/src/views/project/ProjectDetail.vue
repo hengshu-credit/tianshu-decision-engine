@@ -161,6 +161,7 @@
 import { createDefinition, deleteDefinition } from '@/api/definition'
 import { getProject } from '@/api/project'
 import request from '@/api/request'
+import { restorePageState, savePageState } from '@/utils/pageStateCache'
 export default {
   name: 'ProjectDetail',
   data() {
@@ -202,10 +203,29 @@ export default {
   },
   created() {
     this.pid = this.$route.params.id
+    this.restoreCachedState()
     getProject(this.pid).then(r => { this.project = r.data })
     this.load()
   },
   methods: {
+    cacheKey() {
+      return 'ProjectDetail:' + this.pid
+    },
+    restoreCachedState() {
+      const state = restorePageState(this.cacheKey())
+      if (state.qp) this.qp = { ...this.qp, ...state.qp }
+      if (state.globalQp) this.globalQp = { ...this.globalQp, ...state.globalQp }
+      if (state.createTimeRange) this.createTimeRange = state.createTimeRange
+      if (state.updateTimeRange) this.updateTimeRange = state.updateTimeRange
+    },
+    saveCachedState() {
+      savePageState(this.cacheKey(), {
+        qp: this.qp,
+        globalQp: this.globalQp,
+        createTimeRange: this.createTimeRange,
+        updateTimeRange: this.updateTimeRange
+      })
+    },
     async load() {
       this.loading = true
       try {
@@ -224,6 +244,7 @@ export default {
           this.qp.updateBeginTime = ''
           this.qp.updateEndTime = ''
         }
+        this.saveCachedState()
         const r = await request({
           url: '/rule/definition/project-list/' + this.pid,
           method: 'get',
@@ -254,6 +275,7 @@ export default {
       }
       this.createTimeRange = null
       this.updateTimeRange = null
+      this.saveCachedState()
       this.load()
     },
     mtl(t) {
@@ -335,6 +357,7 @@ export default {
     async loadGlobalRules() {
       this.globalLoading = true
       try {
+        this.saveCachedState()
         const r = await request({
           url: '/rule/definition/global-list',
           method: 'get',
@@ -354,6 +377,7 @@ export default {
         ruleCode: '',
         ruleName: ''
       }
+      this.saveCachedState()
       this.loadGlobalRules()
     },
     // 将全局规则添加到项目

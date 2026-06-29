@@ -19,6 +19,18 @@ SET character_set_connection = utf8mb4;
 -- 数据库结构升级（向后兼容：已存在的列不会重复添加）
 -- ============================================================
 
+-- 为 rule_data_object_field 添加 scope 字段（兼容早期 init.sql 初始化的库）
+SET @exist_scope := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                     WHERE TABLE_SCHEMA = DATABASE()
+                       AND TABLE_NAME = 'rule_data_object_field'
+                       AND COLUMN_NAME = 'scope');
+SET @sqlstmt_scope := IF(@exist_scope = 0,
+    'ALTER TABLE `rule_data_object_field` ADD COLUMN `scope` VARCHAR(16) NOT NULL DEFAULT \'PROJECT\' COMMENT \'作用范围：GLOBAL-全局，PROJECT-项目级\' AFTER `project_id`',
+    'SELECT 1');
+PREPARE stmt_scope FROM @sqlstmt_scope;
+EXECUTE stmt_scope;
+DEALLOCATE PREPARE stmt_scope;
+
 -- 为 rule_data_object_field 添加 ref_object_id 字段（铁律四：指向 rule_data_object.id）
 SET @exist := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
                WHERE TABLE_SCHEMA = DATABASE()
@@ -31,6 +43,18 @@ PREPARE stmt FROM @sqlstmt;
 EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
+-- 为 rule_data_object_field 添加 generic_type 字段（LIST 类型字段的元素类型）
+SET @exist_generic_type := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                            WHERE TABLE_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'rule_data_object_field'
+                              AND COLUMN_NAME = 'generic_type');
+SET @sqlstmt_generic_type := IF(@exist_generic_type = 0,
+    'ALTER TABLE `rule_data_object_field` ADD COLUMN `generic_type` VARCHAR(32) DEFAULT NULL COMMENT \'泛型类型（LIST 类型字段的元素类型，如 OBJECT/STRING/NUMBER）\' AFTER `ref_object_id`',
+    'SELECT 1');
+PREPARE stmt_generic_type FROM @sqlstmt_generic_type;
+EXECUTE stmt_generic_type;
+DEALLOCATE PREPARE stmt_generic_type;
+
 -- 添加 ref_object_id 索引（如果不存在）
 SET @exist_idx := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
                    WHERE TABLE_SCHEMA = DATABASE()
@@ -42,6 +66,102 @@ SET @sqlstmt2 := IF(@exist_idx = 0,
 PREPARE stmt2 FROM @sqlstmt2;
 EXECUTE stmt2;
 DEALLOCATE PREPARE stmt2;
+
+-- 嵌套 JSON 字段允许不同父字段下出现同名叶子，唯一键需包含 parent_field_id
+SET @exist_object_var_idx := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+                              WHERE TABLE_SCHEMA = DATABASE()
+                                AND TABLE_NAME = 'rule_data_object_field'
+                                AND INDEX_NAME = 'uk_object_var_code');
+SET @new_object_var_idx_cols := (SELECT COUNT(DISTINCT COLUMN_NAME) FROM INFORMATION_SCHEMA.STATISTICS
+                                 WHERE TABLE_SCHEMA = DATABASE()
+                                   AND TABLE_NAME = 'rule_data_object_field'
+                                   AND INDEX_NAME = 'uk_object_var_code'
+                                   AND COLUMN_NAME IN ('object_id', 'parent_field_id', 'var_code'));
+SET @sqlstmt_drop_object_var_idx := IF(@exist_object_var_idx > 0 AND @new_object_var_idx_cols < 3,
+    'ALTER TABLE `rule_data_object_field` DROP INDEX `uk_object_var_code`',
+    'SELECT 1');
+PREPARE stmt_drop_object_var_idx FROM @sqlstmt_drop_object_var_idx;
+EXECUTE stmt_drop_object_var_idx;
+DEALLOCATE PREPARE stmt_drop_object_var_idx;
+
+SET @exist_object_var_idx_after := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS
+                                    WHERE TABLE_SCHEMA = DATABASE()
+                                      AND TABLE_NAME = 'rule_data_object_field'
+                                      AND INDEX_NAME = 'uk_object_var_code');
+SET @sqlstmt_add_object_var_idx := IF(@exist_object_var_idx_after = 0,
+    'ALTER TABLE `rule_data_object_field` ADD UNIQUE KEY `uk_object_var_code` (`object_id`, `parent_field_id`, `var_code`)',
+    'SELECT 1');
+PREPARE stmt_add_object_var_idx FROM @sqlstmt_add_object_var_idx;
+EXECUTE stmt_add_object_var_idx;
+DEALLOCATE PREPARE stmt_add_object_var_idx;
+
+-- 为字段关联表添加 ref_type 字段（VARIABLE/CONSTANT/DATA_OBJECT/MODEL）
+SET @exist_rule_def_in_ref_type := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                    WHERE TABLE_SCHEMA = DATABASE()
+                                      AND TABLE_NAME = 'rule_definition_input_field'
+                                      AND COLUMN_NAME = 'ref_type');
+SET @sqlstmt_rule_def_in_ref_type := IF(@exist_rule_def_in_ref_type = 0,
+    'ALTER TABLE `rule_definition_input_field` ADD COLUMN `ref_type` VARCHAR(32) DEFAULT NULL COMMENT \'引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL\' AFTER `var_id`',
+    'SELECT 1');
+PREPARE stmt_rule_def_in_ref_type FROM @sqlstmt_rule_def_in_ref_type;
+EXECUTE stmt_rule_def_in_ref_type;
+DEALLOCATE PREPARE stmt_rule_def_in_ref_type;
+
+SET @exist_rule_def_out_ref_type := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                     WHERE TABLE_SCHEMA = DATABASE()
+                                       AND TABLE_NAME = 'rule_definition_output_field'
+                                       AND COLUMN_NAME = 'ref_type');
+SET @sqlstmt_rule_def_out_ref_type := IF(@exist_rule_def_out_ref_type = 0,
+    'ALTER TABLE `rule_definition_output_field` ADD COLUMN `ref_type` VARCHAR(32) DEFAULT NULL COMMENT \'引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL\' AFTER `var_id`',
+    'SELECT 1');
+PREPARE stmt_rule_def_out_ref_type FROM @sqlstmt_rule_def_out_ref_type;
+EXECUTE stmt_rule_def_out_ref_type;
+DEALLOCATE PREPARE stmt_rule_def_out_ref_type;
+
+SET @exist_rule_model_in_ref_type := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                      WHERE TABLE_SCHEMA = DATABASE()
+                                        AND TABLE_NAME = 'rule_model_input_field'
+                                        AND COLUMN_NAME = 'ref_type');
+SET @sqlstmt_rule_model_in_ref_type := IF(@exist_rule_model_in_ref_type = 0,
+    'ALTER TABLE `rule_model_input_field` ADD COLUMN `ref_type` VARCHAR(32) DEFAULT NULL COMMENT \'引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL\' AFTER `var_id`',
+    'SELECT 1');
+PREPARE stmt_rule_model_in_ref_type FROM @sqlstmt_rule_model_in_ref_type;
+EXECUTE stmt_rule_model_in_ref_type;
+DEALLOCATE PREPARE stmt_rule_model_in_ref_type;
+
+SET @exist_rule_model_out_ref_type := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                       WHERE TABLE_SCHEMA = DATABASE()
+                                         AND TABLE_NAME = 'rule_model_output_field'
+                                         AND COLUMN_NAME = 'ref_type');
+SET @sqlstmt_rule_model_out_ref_type := IF(@exist_rule_model_out_ref_type = 0,
+    'ALTER TABLE `rule_model_output_field` ADD COLUMN `ref_type` VARCHAR(32) DEFAULT NULL COMMENT \'引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL\' AFTER `var_id`',
+    'SELECT 1');
+PREPARE stmt_rule_model_out_ref_type FROM @sqlstmt_rule_model_out_ref_type;
+EXECUTE stmt_rule_model_out_ref_type;
+DEALLOCATE PREPARE stmt_rule_model_out_ref_type;
+
+-- 模型字段表 var_id 现在需结合 ref_type 指向变量/常量/数据对象/模型，移除旧的 rule_variable 外键约束
+SET @exist_fk_input_var := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+                            WHERE CONSTRAINT_SCHEMA = DATABASE()
+                              AND TABLE_NAME = 'rule_model_input_field'
+                              AND CONSTRAINT_NAME = 'fk_input_var');
+SET @sqlstmt_drop_fk_input_var := IF(@exist_fk_input_var > 0,
+    'ALTER TABLE `rule_model_input_field` DROP FOREIGN KEY `fk_input_var`',
+    'SELECT 1');
+PREPARE stmt_drop_fk_input_var FROM @sqlstmt_drop_fk_input_var;
+EXECUTE stmt_drop_fk_input_var;
+DEALLOCATE PREPARE stmt_drop_fk_input_var;
+
+SET @exist_fk_output_var := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.REFERENTIAL_CONSTRAINTS
+                             WHERE CONSTRAINT_SCHEMA = DATABASE()
+                               AND TABLE_NAME = 'rule_model_output_field'
+                               AND CONSTRAINT_NAME = 'fk_output_var');
+SET @sqlstmt_drop_fk_output_var := IF(@exist_fk_output_var > 0,
+    'ALTER TABLE `rule_model_output_field` DROP FOREIGN KEY `fk_output_var`',
+    'SELECT 1');
+PREPARE stmt_drop_fk_output_var FROM @sqlstmt_drop_fk_output_var;
+EXECUTE stmt_drop_fk_output_var;
+DEALLOCATE PREPARE stmt_drop_fk_output_var;
 
 -- ============================================================
 -- 1. 创建示例项目
