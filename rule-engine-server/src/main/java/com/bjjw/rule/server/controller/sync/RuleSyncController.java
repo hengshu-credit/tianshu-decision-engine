@@ -1,15 +1,18 @@
 package com.bjjw.rule.server.controller.sync;
 
+import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.RuleFunction;
 import com.bjjw.rule.model.entity.RulePublished;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.mapper.RulePublishedMapper;
+import com.bjjw.rule.server.service.RuleExecuteService;
 import com.bjjw.rule.server.service.RuleFunctionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -23,6 +26,9 @@ public class RuleSyncController {
 
     @Resource
     private RuleFunctionService functionService;
+
+    @Resource
+    private RuleExecuteService executeService;
 
     @GetMapping("/{ruleCode}")
     public R<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
@@ -62,6 +68,31 @@ public class RuleSyncController {
         Map<String, Integer> versions = list.stream()
                 .collect(Collectors.toMap(RulePublished::getRuleCode, RulePublished::getVersion));
         return R.ok(versions);
+    }
+
+    @PostMapping("/execute/{ruleCode}")
+    public R<RuleResult> execute(@PathVariable String ruleCode,
+                                 @RequestBody(required = false) Map<String, Object> body,
+                                 HttpServletRequest request) {
+        ProjectScope scope = resolveProjectScope(request);
+        if (scope == null) {
+            return R.fail(401, "Unauthorized project token");
+        }
+        RulePublished published = publishedMapper.selectOne(
+                appendProjectScope(new LambdaQueryWrapper<RulePublished>()
+                        .eq(RulePublished::getRuleCode, ruleCode)
+                        .eq(RulePublished::getStatus, 1), scope));
+        if (published == null) {
+            return R.fail(404, "Rule not found");
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> params = body != null && body.get("params") instanceof Map
+                ? (Map<String, Object>) body.get("params")
+                : Collections.emptyMap();
+        String clientAppName = body == null || body.get("clientAppName") == null
+                ? null
+                : String.valueOf(body.get("clientAppName"));
+        return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName));
     }
 
     /**

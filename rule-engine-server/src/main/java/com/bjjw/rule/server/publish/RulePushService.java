@@ -19,6 +19,11 @@ public class RulePushService {
     private StringRedisTemplate stringRedisTemplate;
 
     public void push(RulePushMessage message) {
+        String projectCode = trimToNull(message.getProjectCode());
+        if (projectCode != null) {
+            pushToApp(projectCode, message);
+            return;
+        }
         String json = JSON.toJSONString(message);
         try {
             stringRedisTemplate.convertAndSend(BROADCAST_CHANNEL, json);
@@ -36,5 +41,13 @@ public class RulePushService {
         } catch (Exception e) {
             log.error("Failed to push rule to app {}: {}", appName, e.getMessage(), e);
         }
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 }

@@ -100,6 +100,10 @@ jest.mock('@/api/definition', () => ({
   compileRule: jest.fn(),
   publishRule: jest.fn(),
   unpublishRule: jest.fn(),
+  listVersions: jest.fn(),
+  getVersion: jest.fn(),
+  compareVersions: jest.fn(),
+  rollbackVersion: jest.fn(),
   executeRule: jest.fn(),
   saveScript: jest.fn(),
   updateScriptMode: jest.fn(),
@@ -125,6 +129,7 @@ jest.mock('@/api/variable', () => ({
   __esModule: true
 }))
 jest.mock('@/api/dataObject', () => ({
+  listDataObjects: jest.fn(),
   getVariableTree: jest.fn(),
   getDataObjectFieldOptions: jest.fn(),
   __esModule: true

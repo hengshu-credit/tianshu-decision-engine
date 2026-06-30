@@ -425,18 +425,31 @@ export default {
         if (typeof value === 'string') result.push({ varCode: value })
         else result.push(value)
       }
+      const pushField = (holder, field) => {
+        if (!holder || !holder[field]) return
+        const keys = this.actionDataFieldRefKeys(field)
+        const item = { varCode: holder[field] }
+        if (keys && holder[keys.id]) {
+          item._varId = holder[keys.id]
+          item._refType = holder[keys.refType]
+        } else if (holder._varId) {
+          item._varId = holder._varId
+          item._refType = holder._refType
+        }
+        pushValue(item)
+      }
       const walkActions = actions => {
         const list = actions || []
         list.forEach(action => {
-          pushValue(action.target)
-          pushValue(action.condVar)
-          pushValue(action.matchVar)
-          pushValue(action.checkVar)
+          pushField(action, 'target')
+          pushField(action, 'condVar')
+          pushField(action, 'matchVar')
+          pushField(action, 'checkVar')
           if (action.varCode || action._varId) pushValue(action)
           if (Array.isArray(action.actions)) walkActions(action.actions)
           if (Array.isArray(action.defaultActions)) walkActions(action.defaultActions)
           ;(action.branches || []).forEach(branch => {
-            pushValue(branch.condVar)
+            pushField(branch, 'condVar')
             walkActions(branch.actions)
           })
           ;(action.cases || []).forEach(item => walkActions(item.actions))
@@ -444,6 +457,49 @@ export default {
       }
       walkActions(actionData)
       return result
+    },
+
+    actionDataFieldRefKeys(field) {
+      const map = {
+        target: { id: '_targetVarId', refType: '_targetRefType' },
+        condVar: { id: '_condVarId', refType: '_condVarRefType' },
+        matchVar: { id: '_matchVarId', refType: '_matchVarRefType' },
+        checkVar: { id: '_checkVarId', refType: '_checkVarRefType' }
+      }
+      return map[field] || null
+    },
+
+    syncActionDataVarRefs(actionData) {
+      if (!Array.isArray(actionData)) return false
+      let changed = false
+      const syncField = (holder, field) => {
+        if (!holder || !holder[field]) return
+        const keys = this.actionDataFieldRefKeys(field)
+        const id = keys && holder[keys.id] ? holder[keys.id] : holder._varId
+        const refType = keys && holder[keys.refType] ? holder[keys.refType] : holder._refType
+        if (!id) return
+        const ref = this.findRefByVarId(id, refType)
+        if (!ref) return
+        if (holder[field] !== ref.refCode) { holder[field] = ref.refCode; changed = true }
+        if (keys && holder[keys.refType] !== ref.refType) { holder[keys.refType] = ref.refType; changed = true }
+      }
+      const walk = actions => {
+        ;(actions || []).forEach(action => {
+          syncField(action, 'target')
+          syncField(action, 'condVar')
+          syncField(action, 'matchVar')
+          syncField(action, 'checkVar')
+          if (Array.isArray(action.actions)) walk(action.actions)
+          if (Array.isArray(action.defaultActions)) walk(action.defaultActions)
+          ;(action.branches || []).forEach(branch => {
+            syncField(branch, 'condVar')
+            walk(branch.actions)
+          })
+          ;(action.cases || []).forEach(item => walk(item.actions))
+        })
+      }
+      walk(actionData)
+      return changed
     },
 
     getVarOptions(refCode) {

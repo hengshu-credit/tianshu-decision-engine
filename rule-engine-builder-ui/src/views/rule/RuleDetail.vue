@@ -5,6 +5,7 @@
       <h2 style="margin:0;">{{ rule.ruleName || '规则详情' }}</h2>
       <div>
         <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">规则测试</el-button>
+        <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
         <el-button size="small" icon="el-icon-back" @click="$router.push('/rule')">返回</el-button>
       </div>
     </div>
@@ -261,6 +262,50 @@
         <el-button size="small" @click="testVisible = false">关闭</el-button>
       </div>
     </el-dialog>
+
+    <el-dialog title="版本历史" :visible.sync="versionVisible" width="960px" :close-on-click-modal="false">
+      <el-table :data="versions" border size="small" v-loading="versionLoading" max-height="360">
+        <el-table-column prop="version" label="版本" width="80" align="center">
+          <template slot-scope="{ row }">v{{ row.version }}</template>
+        </el-table-column>
+        <el-table-column prop="changeLog" label="变更说明" min-width="180">
+          <template slot-scope="{ row }">{{ row.changeLog || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="publishBy" label="发布人" width="120">
+          <template slot-scope="{ row }">{{ row.publishBy || '-' }}</template>
+        </el-table-column>
+        <el-table-column prop="publishTime" label="发布时间" width="170">
+          <template slot-scope="{ row }">{{ formatVersionTime(row.publishTime) }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="180" align="center">
+          <template slot-scope="{ row, $index }">
+            <el-button type="text" size="mini" :disabled="$index === versions.length - 1" @click="compareVersion(row, versions[$index + 1])">对比上一版</el-button>
+            <el-button type="text" size="mini" @click="rollbackVersion(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="versionCompare" style="margin-top:12px;">
+        <el-alert
+          :title="'v' + versionCompare.left.version + ' 与 v' + versionCompare.right.version + ' 对比'"
+          :type="versionCompare.modelJsonChanged || versionCompare.compiledScriptChanged ? 'warning' : 'success'"
+          :closable="false"
+          show-icon
+        />
+        <div class="version-compare-grid">
+          <div>
+            <div class="version-compare-title">左侧版本模型 JSON</div>
+            <pre>{{ formatVersionJson(versionCompare.left.modelJson) }}</pre>
+          </div>
+          <div>
+            <div class="version-compare-title">左侧版本编译脚本</div>
+            <pre>{{ versionCompare.left.compiledScript || '' }}</pre>
+          </div>
+        </div>
+      </div>
+      <div slot="footer">
+        <el-button size="small" @click="versionVisible = false">关闭</el-button>
+      </div>
+    </el-dialog>
   </div>
 </template>
 
@@ -311,7 +356,11 @@ export default {
       jsonError: '',
       testExecuting: false,
       testResult: null,
-      testDialogKey: 1
+      testDialogKey: 1,
+      versionVisible: false,
+      versionLoading: false,
+      versions: [],
+      versionCompare: null
     }
   },
   computed: {
@@ -716,6 +765,57 @@ export default {
     },
 
     // ========== 规则测试 ==========
+    async openVersionDialog() {
+      this.versionVisible = true
+      this.versionCompare = null
+      await this.loadVersions()
+    },
+    async loadVersions() {
+      if (!this.rule.id) return
+      this.versionLoading = true
+      try {
+        const res = await api.listVersions(this.rule.id)
+        this.versions = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])
+      } catch (e) {
+        this.$message.error(e.message || '加载版本历史失败')
+      } finally {
+        this.versionLoading = false
+      }
+    },
+    async compareVersion(left, right) {
+      if (!left || !right) return
+      try {
+        const res = await api.compareVersions(this.rule.id, left.version, right.version)
+        this.versionCompare = res.data || res
+      } catch (e) {
+        this.$message.error(e.message || '版本对比失败')
+      }
+    },
+    async rollbackVersion(row) {
+      if (!row || !row.version) return
+      try {
+        await this.$confirm('回滚会覆盖当前草稿内容，但不会自动发布，确认回滚到 v' + row.version + '？', '确认回滚', { type: 'warning' })
+        await api.rollbackVersion(this.rule.id, row.version)
+        this.$message.success('回滚成功')
+        await this.load()
+        await this.loadVersions()
+      } catch (e) {
+        if (e !== 'cancel') {
+          this.$message.error(e.message || '回滚失败')
+        }
+      }
+    },
+    formatVersionTime(value) {
+      return value ? String(value).replace('T', ' ') : '-'
+    },
+    formatVersionJson(value) {
+      if (!value) return ''
+      try {
+        return JSON.stringify(JSON.parse(value), null, 2)
+      } catch (e) {
+        return value
+      }
+    },
     async openTestDialog() {
       this.testVisible = true
       this.testReady = false
@@ -900,5 +1000,28 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.version-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.version-compare-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #303133;
+  margin-bottom: 6px;
+}
+.version-compare-grid pre {
+  margin: 0;
+  padding: 10px;
+  height: 220px;
+  overflow: auto;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
 }
 </style>

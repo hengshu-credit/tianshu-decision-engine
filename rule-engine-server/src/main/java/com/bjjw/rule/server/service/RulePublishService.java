@@ -170,6 +170,9 @@ public class RulePublishService {
 
         RulePushMessage pushMessage = new RulePushMessage();
         pushMessage.setRuleCode(definition.getRuleCode());
+        if (published != null) {
+            pushMessage.setProjectCode(published.getProjectCode());
+        }
         pushMessage.setAction("UNPUBLISH");
         pushMessage.setPublishTime(System.currentTimeMillis());
         pushService.push(pushMessage);

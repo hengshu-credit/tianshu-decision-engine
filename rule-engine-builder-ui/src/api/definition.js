@@ -68,6 +68,22 @@ export function unpublishRule(id) {
   return request({ url: `/rule/definition/unpublish/${id}`, method: 'post' })
 }
 
+export function listVersions(definitionId) {
+  return request({ url: `/rule/definition/versions/${definitionId}`, method: 'get' })
+}
+
+export function getVersion(definitionId, version) {
+  return request({ url: `/rule/definition/version/${definitionId}/${version}`, method: 'get' })
+}
+
+export function compareVersions(definitionId, leftVersion, rightVersion) {
+  return request({ url: `/rule/definition/versionCompare/${definitionId}`, method: 'get', params: { leftVersion, rightVersion } })
+}
+
+export function rollbackVersion(definitionId, version) {
+  return request({ url: `/rule/definition/rollback/${definitionId}/${version}`, method: 'post' })
+}
+
 export function executeRule(data) {
   return request({ url: '/rule/definition/execute', method: 'post', data })
 }

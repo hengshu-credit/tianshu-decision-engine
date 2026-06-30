@@ -24,6 +24,7 @@ public class RuleEngineClientConfig {
     private long projectId = 0;
     /** 是否开启表达式追踪，默认 true；关闭可提升执行性能 */
     private boolean traceEnabled = true;
+    private boolean serverSideExecution = false;
     private int logBufferSize = 500;
     private int logBatchSize = 50;
     private int logFlushIntervalMs = 5000;

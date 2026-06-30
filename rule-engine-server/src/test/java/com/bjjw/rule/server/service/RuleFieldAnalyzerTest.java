@@ -4,9 +4,12 @@ import com.bjjw.rule.model.entity.RuleDefinitionInputField;
 import com.bjjw.rule.model.entity.RuleDefinitionOutputField;
 import org.junit.Test;
 
+import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -69,5 +72,51 @@ public class RuleFieldAnalyzerTest {
         assertTrue(outputs.contains("result.level"));
         assertTrue(outputs.contains("result.hit"));
         assertTrue(outputs.contains("internalScore"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void fieldLevelActionRefsAreAppliedByFieldName() throws Exception {
+        String json = "{"
+                + "\"nodes\":[{\"id\":\"n1\",\"type\":\"task\",\"actionData\":["
+                + "{\"type\":\"ternary\",\"target\":\"decision\",\"_targetVarId\":200,\"_targetRefType\":\"VARIABLE\","
+                + "\"condVar\":\"score\",\"_condVarId\":100,\"_condVarRefType\":\"VARIABLE\",\"condOp\":\">=\",\"condValue\":\"60\"},"
+                + "{\"type\":\"in-check\",\"target\":\"hit\",\"_targetVarId\":300,\"_targetRefType\":\"DATA_OBJECT\","
+                + "\"checkVar\":\"riskLevel\",\"_checkVarId\":400,\"_checkVarRefType\":\"VARIABLE\",\"inValues\":[\"HIGH\"]}"
+                + "]}]}";
+
+        Method collectRefs = RuleFieldAnalyzer.class.getDeclaredMethod("collectExplicitRefs", String.class);
+        collectRefs.setAccessible(true);
+        Map<String, Object> refs = (Map<String, Object>) collectRefs.invoke(analyzer, json);
+
+        Method applyInputRef = RuleFieldAnalyzer.class.getDeclaredMethod("applyExplicitRef",
+                RuleDefinitionInputField.class, Map.class);
+        applyInputRef.setAccessible(true);
+        Method applyOutputRef = RuleFieldAnalyzer.class.getDeclaredMethod("applyExplicitRef",
+                RuleDefinitionOutputField.class, Map.class);
+        applyOutputRef.setAccessible(true);
+
+        RuleDefinitionInputField score = new RuleDefinitionInputField();
+        score.setScriptName("score");
+        applyInputRef.invoke(analyzer, score, refs);
+        assertEquals(Long.valueOf(100), score.getVarId());
+        assertEquals("VARIABLE", score.getRefType());
+
+        RuleDefinitionOutputField decision = new RuleDefinitionOutputField();
+        decision.setScriptName("decision");
+        applyOutputRef.invoke(analyzer, decision, refs);
+        assertEquals(Long.valueOf(200), decision.getVarId());
+        assertEquals("VARIABLE", decision.getRefType());
+
+        RuleDefinitionInputField riskLevel = new RuleDefinitionInputField();
+        riskLevel.setScriptName("riskLevel");
+        applyInputRef.invoke(analyzer, riskLevel, refs);
+        assertEquals(Long.valueOf(400), riskLevel.getVarId());
+
+        RuleDefinitionOutputField hit = new RuleDefinitionOutputField();
+        hit.setScriptName("hit");
+        applyOutputRef.invoke(analyzer, hit, refs);
+        assertEquals(Long.valueOf(300), hit.getVarId());
+        assertEquals("DATA_OBJECT", hit.getRefType());
     }
 }

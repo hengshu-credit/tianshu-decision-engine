@@ -256,7 +256,7 @@
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="所属数据源" prop="datasourceId">
-              <el-select v-model="apiForm.datasourceId" filterable placeholder="请选择数据源" style="width:100%">
+              <el-select v-model="apiForm.datasourceId" filterable placeholder="请选择数据源" style="width:100%" @change="onApiDatasourceChange">
                 <el-option v-for="item in datasourceOptions" :key="item.id" :label="item.datasourceName + ' / ' + item.datasourceCode" :value="item.id" />
               </el-select>
             </el-form-item>
@@ -303,13 +303,17 @@
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="请求对象ID">
-              <el-input-number v-model="apiForm.requestObjectId" :min="0" controls-position="right" style="width:100%" />
+            <el-form-item label="请求对象">
+              <el-select v-model="apiForm.requestObjectId" clearable filterable placeholder="选择请求数据对象" style="width:100%">
+                <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
-            <el-form-item label="响应对象ID">
-              <el-input-number v-model="apiForm.responseObjectId" :min="0" controls-position="right" style="width:100%" />
+            <el-form-item label="响应对象">
+              <el-select v-model="apiForm.responseObjectId" clearable filterable placeholder="选择响应数据对象" style="width:100%">
+                <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
@@ -466,6 +470,7 @@ import {
   updateDatasource
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
+import { listDataObjects } from '@/api/dataObject'
 
 export default {
   name: 'DatasourceList',
@@ -475,6 +480,7 @@ export default {
       projects: [],
       datasourceList: [],
       datasourceOptions: [],
+      dataObjectOptions: [],
       datasourceTotal: 0,
       datasourceLoading: false,
       datasourceDialogVisible: false,
@@ -536,6 +542,7 @@ export default {
     this.loadProjects()
     this.loadDatasources()
     this.loadDatasourceOptions()
+    this.loadDataObjectOptions(0)
   },
   methods: {
     emptyDatasourceForm() {
@@ -577,6 +584,14 @@ export default {
     async loadDatasourceOptions() {
       const res = await listDatasources({ pageNum: 1, pageSize: 500, status: 1 })
       this.datasourceOptions = (res.data && res.data.records) || []
+    },
+    async loadDataObjectOptions(projectId) {
+      try {
+        const res = await listDataObjects(projectId || 0)
+        this.dataObjectOptions = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])
+      } catch (e) {
+        this.dataObjectOptions = []
+      }
     },
     async loadApiConfigs() {
       this.apiLoading = true
@@ -621,16 +636,18 @@ export default {
       this.datasourceForm = { ...this.emptyDatasourceForm(), ...row }
       this.datasourceDialogVisible = true
     },
-    handleCreateApi(row) {
+    async handleCreateApi(row) {
       this.activeTab = 'api'
       this.apiForm = this.emptyApiForm()
       if (row && row.id) this.apiForm.datasourceId = row.id
-      this.loadDatasourceOptions()
+      await this.loadDatasourceOptions()
+      this.loadDataObjectOptions(row && row.projectId ? row.projectId : 0)
       this.apiDialogVisible = true
     },
-    handleEditApi(row) {
+    async handleEditApi(row) {
       this.apiForm = { ...this.emptyApiForm(), ...row }
-      this.loadDatasourceOptions()
+      await this.loadDatasourceOptions()
+      this.loadDataObjectOptions(this.resolveDatasourceProjectId(row.datasourceId))
       this.apiDialogVisible = true
     },
     handleInvokeApi(row) {
@@ -659,7 +676,13 @@ export default {
     handleSaveDatasource() {
       this.$refs.datasourceForm.validate(async valid => {
         if (!valid) return
-        const data = this.normalizeDatasource(this.datasourceForm)
+        let data
+        try {
+          data = this.normalizeDatasource(this.datasourceForm)
+        } catch (e) {
+          this.$message.error(e.message)
+          return
+        }
         if (data.id) {
           await updateDatasource(data)
           this.$message.success('更新成功')
@@ -675,7 +698,13 @@ export default {
     handleSaveApi() {
       this.$refs.apiForm.validate(async valid => {
         if (!valid) return
-        const data = this.normalizeApi(this.apiForm)
+        let data
+        try {
+          data = this.normalizeApi(this.apiForm)
+        } catch (e) {
+          this.$message.error(e.message)
+          return
+        }
         if (data.id) {
           await updateApiConfig(data)
           this.$message.success('更新成功')
@@ -705,21 +734,54 @@ export default {
     onDatasourceScopeChange(scope) {
       if (scope === 'GLOBAL') this.datasourceForm.projectId = 0
     },
+    onApiDatasourceChange(datasourceId) {
+      this.apiForm.requestObjectId = null
+      this.apiForm.responseObjectId = null
+      this.loadDataObjectOptions(this.resolveDatasourceProjectId(datasourceId))
+    },
+    resolveDatasourceProjectId(datasourceId) {
+      const datasource = this.datasourceOptions.find(item => item.id === datasourceId)
+      return datasource && datasource.projectId ? datasource.projectId : 0
+    },
     normalizeDatasource(form) {
       const data = { ...form }
       if (data.scope === 'GLOBAL') data.projectId = 0
       data.authConfig = this.blankToNull(data.authConfig)
+      this.assertJson(data.authConfig, '鉴权配置')
       return data
     },
     normalizeApi(form) {
       const data = { ...form }
       if (!data.requestObjectId) data.requestObjectId = null
       if (!data.responseObjectId) data.responseObjectId = null
-      const jsonFields = ['headerConfig', 'queryConfig', 'requestMapping', 'responseMapping', 'authApiConfig']
-      jsonFields.forEach(key => {
+      const jsonFields = {
+        headerConfig: 'Header配置',
+        queryConfig: 'Query配置',
+        requestMapping: '入参映射',
+        responseMapping: '响应映射',
+        authApiConfig: '接口鉴权配置',
+        bodyTemplate: '请求体模板',
+        fallbackValue: '兜底返回'
+      }
+      Object.keys(jsonFields).forEach(key => {
         data[key] = this.blankToNull(data[key])
+        this.assertJson(data[key], jsonFields[key])
       })
       return data
+    },
+    assertJson(value, label) {
+      if (value == null || value === '') return
+      try {
+        JSON.parse(value)
+      } catch (e) {
+        throw new Error(label + '不是合法 JSON：' + e.message)
+      }
+    },
+    dataObjectLabel(item) {
+      const code = item.scriptName || item.objectCode || ''
+      const name = item.objectName || item.objectLabel || ''
+      const type = item.objectType ? '[' + item.objectType + '] ' : ''
+      return type + (name || code) + (code && name !== code ? ' / ' + code : '')
     },
     blankToNull(value) {
       return value == null || String(value).trim() === '' ? null : value

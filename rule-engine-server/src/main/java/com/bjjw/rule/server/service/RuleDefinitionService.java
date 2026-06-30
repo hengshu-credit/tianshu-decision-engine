@@ -16,7 +16,9 @@ import org.springframework.transaction.annotation.Transactional;
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
@@ -44,6 +46,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     @Resource
     private RuleFieldAnalyzer fieldAnalyzer;
+
+    @Resource
+    private RuleDefinitionVersionMapper versionMapper;
 
     public IPage<RuleDefinition> pageList(RuleQueryDTO query) {
         LambdaQueryWrapper<RuleDefinition> wrapper = buildWrapper(query);
@@ -191,6 +196,73 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             // 从变量管理表补充真实元信息（varLabel / varType / scriptName）
             fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, definition.getModelType(), definition.getProjectId());
         }
+    }
+
+    public List<RuleDefinitionVersion> listVersions(Long definitionId) {
+        return versionMapper.selectList(new LambdaQueryWrapper<RuleDefinitionVersion>()
+                .eq(RuleDefinitionVersion::getDefinitionId, definitionId)
+                .orderByDesc(RuleDefinitionVersion::getVersion));
+    }
+
+    public RuleDefinitionVersion getVersion(Long definitionId, Integer version) {
+        return versionMapper.selectOne(new LambdaQueryWrapper<RuleDefinitionVersion>()
+                .eq(RuleDefinitionVersion::getDefinitionId, definitionId)
+                .eq(RuleDefinitionVersion::getVersion, version));
+    }
+
+    public Map<String, Object> compareVersions(Long definitionId, Integer leftVersion, Integer rightVersion) {
+        RuleDefinitionVersion left = getVersion(definitionId, leftVersion);
+        RuleDefinitionVersion right = getVersion(definitionId, rightVersion);
+        if (left == null || right == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("left", left);
+        result.put("right", right);
+        result.put("modelJsonChanged", !equalsText(left.getModelJson(), right.getModelJson()));
+        result.put("compiledScriptChanged", !equalsText(left.getCompiledScript(), right.getCompiledScript()));
+        return result;
+    }
+
+    @Transactional
+    public void rollbackToVersion(Long definitionId, Integer version) {
+        RuleDefinition definition = getById(definitionId);
+        if (definition == null) {
+            throw new IllegalArgumentException("Rule not found");
+        }
+        RuleDefinitionVersion snapshot = getVersion(definitionId, version);
+        if (snapshot == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+
+        RuleDefinitionContent content = getContent(definitionId);
+        boolean newContent = content == null;
+        if (newContent) {
+            content = new RuleDefinitionContent();
+            content.setDefinitionId(definitionId);
+        }
+        content.setModelJson(snapshot.getModelJson());
+        content.setCompiledScript(snapshot.getCompiledScript());
+        content.setCompiledType(snapshot.getCompiledType());
+        content.setCompileStatus(1);
+        content.setCompileMessage("rollback to v" + version);
+        content.setCompileTime(LocalDateTime.now());
+        if (newContent) {
+            contentMapper.insert(content);
+        } else {
+            contentMapper.updateById(content);
+        }
+
+        definition.setCurrentVersion((definition.getCurrentVersion() == null ? 0 : definition.getCurrentVersion()) + 1);
+        updateById(definition);
+        fieldAnalyzer.analyzeAndPersist(definitionId, snapshot.getModelJson(), definition.getModelType(), definition.getProjectId());
+    }
+
+    private boolean equalsText(String left, String right) {
+        if (left == null) {
+            return right == null;
+        }
+        return left.equals(right);
     }
 
     /**

@@ -1,5 +1,7 @@
 package com.bjjw.rule.core.compiler;
 
+import com.bjjw.rule.core.engine.QLExpressEngine;
+import com.bjjw.rule.model.dto.RuleResult;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -16,10 +18,12 @@ import static org.junit.Assert.*;
 public class DecisionTableCompilerTest {
 
     private DecisionTableCompiler compiler;
+    private QLExpressEngine engine;
 
     @Before
     public void setUp() {
         compiler = new DecisionTableCompiler();
+        engine = new QLExpressEngine();
     }
 
     private CompileResult compile(String json) {
@@ -578,23 +582,43 @@ public class DecisionTableCompilerTest {
         assertTrue(script.contains(" && "));
     }
 
-    /**
-     * hitPolicy=UNIQUE 目前与 ALL 等效：生成顺序 if 语句（各自独立，不级联 else if）。
-     * 此行为由编译器中 `isFirst = "FIRST".equals(hitPolicy)` 决定。
-     */
     @Test
-    public void testHitPolicyUnique_生成顺序if() {
+    public void testHitPolicyUnique_多条命中时执行失败() {
         CompileResult r = compile("{\n" +
                 "  \"hitPolicy\": \"UNIQUE\",\n" +
                 "  \"rules\": [\n" +
-                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"x\",\"operator\":\">\",\"value\":\"0\"}, \"actions\": []},\n" +
-                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"y\",\"operator\":\">\",\"value\":\"0\"}, \"actions\": []}\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"60\"}, \"actions\": [{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"REVIEW\"}]},\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"80\"}, \"actions\": [{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]}\n" +
                 "  ]\n" +
                 "}");
         assertTrue(r.isSuccess());
-        String script = r.getCompiledScript();
-        assertTrue(script.contains("if ("));
-        // UNIQUE 与 ALL 等效，生成顺序 if 而非 else if 链
-        assertFalse(script.contains(" else if ("));
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("score", 90);
+
+        RuleResult result = engine.execute(r.getCompiledScript(), params);
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("UNIQUE"));
+    }
+
+    @Test
+    public void testHitPolicyUnique_单条命中时返回结果() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\": \"UNIQUE\",\n" +
+                "  \"rules\": [\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"90\"}, \"actions\": [{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]},\n" +
+                "    {\"conditionRoot\": {\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\"<\",\"value\":\"60\"}, \"actions\": [{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"REJECT\"}]}\n" +
+                "  ]\n" +
+                "}");
+        assertTrue(r.isSuccess());
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("score", 95);
+
+        RuleResult result = engine.execute(r.getCompiledScript(), params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getResult() instanceof Map);
+        Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
+        assertEquals("PASS", resultMap.get("decision"));
     }
 }

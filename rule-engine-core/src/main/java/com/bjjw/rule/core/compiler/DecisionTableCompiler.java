@@ -50,6 +50,10 @@ public class DecisionTableCompiler implements RuleCompiler {
 
             StringBuilder script = new StringBuilder();
             boolean isFirst = "FIRST".equals(hitPolicy);
+            boolean isUnique = "UNIQUE".equals(hitPolicy);
+            if (isUnique) {
+                script.append("_uniqueHitCount = 0;\n");
+            }
 
             for (int i = 0; i < rules.size(); i++) {
                 JSONObject rule = rules.getJSONObject(i);
@@ -68,12 +72,20 @@ public class DecisionTableCompiler implements RuleCompiler {
                 script.append(buildRulePredicate(rule, ruleConditions, legacyColumnDefs, this.varContext));
                 script.append(") {\n");
 
+                if (isUnique) {
+                    script.append("    _uniqueHitCount = _uniqueHitCount + 1;\n");
+                }
                 appendRuleAssignments(script, ruleActions, globalActionDefs, this.varContext);
 
                 script.append("}");
                 if (!isFirst) script.append("\n");
             }
             script.append("\n");
+            if (isUnique) {
+                script.append("if (_uniqueHitCount > 1) {\n");
+                script.append("    UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES();\n");
+                script.append("}\n");
+            }
 
             if (!outputVarCodes.isEmpty()) {
                 RuleScriptResultCollector.prependOutputNullInits(script, outputVarCodes);

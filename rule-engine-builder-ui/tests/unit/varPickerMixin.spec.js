@@ -197,6 +197,30 @@ describe('varPickerMixin', () => {
     expect(leaf.varCode).toBe('original')
   })
 
+  test('syncActionDataVarRefs 通过字段级变量 ID 更新 actionData', async () => {
+    const vm = createMixinVM()
+    await vm.loadProjectVars(1)
+    const actionData = [{
+      type: 'ternary',
+      target: 'oldDecision',
+      _targetVarId: 2,
+      _targetRefType: 'VARIABLE',
+      condVar: 'oldAge',
+      _condVarId: 1,
+      _condVarRefType: 'VARIABLE',
+      condOp: '>=',
+      condValue: '18',
+      trueValue: '"PASS"',
+      falseValue: '"REJECT"'
+    }]
+
+    const changed = vm.syncActionDataVarRefs(actionData)
+
+    expect(changed).toBe(true)
+    expect(actionData[0].target).toBe('income')
+    expect(actionData[0].condVar).toBe('age')
+  })
+
   // ─── 变量选择器选项测试 ───────────────────────────────────
   test('varPickerOptions 包含所有选项', async () => {
     const vm = createMixinVM()

@@ -65,9 +65,16 @@ async function mountAndWait() {
     propsData: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: jest.fn(), replace: jest.fn() },
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
+      $confirm: jest.fn().mockResolvedValue('confirm')
+    },
+    directives: {
+      loading: jest.fn()
     },
     stubs: {
+      'el-dialog': makeStub('div'),
+      'el-card': makeStub('div'),
       'el-descriptions': makeStub('div'),
       'el-descriptions-item': makeStub('div'),
       'el-form': makeStub('form'),
@@ -262,5 +269,59 @@ describe('RuleDetail — 测试弹窗', () => {
     const formatted = wrapper.vm.formatResult(outputs)
     expect(formatted).toContain('result')
     expect(formatted).toContain('PASS')
+  })
+})
+
+describe('RuleDetail version history', () => {
+  let wrapper
+
+  beforeEach(async () => { wrapper = await mountAndWait() })
+  afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('openVersionDialog loads versions', async () => {
+    definitionApi.listVersions.mockResolvedValueOnce({
+      data: [
+        { version: 2, modelJson: '{"a":2}', compiledScript: 'a = 2' },
+        { version: 1, modelJson: '{"a":1}', compiledScript: 'a = 1' }
+      ]
+    })
+
+    await wrapper.vm.openVersionDialog()
+
+    expect(wrapper.vm.versionVisible).toBe(true)
+    expect(definitionApi.listVersions).toHaveBeenCalledWith(1)
+    expect(wrapper.vm.versions.length).toBe(2)
+  })
+
+  test('compareVersion stores compare result', async () => {
+    definitionApi.compareVersions.mockResolvedValueOnce({
+      data: {
+        left: { version: 2, modelJson: '{"a":2}', compiledScript: 'a = 2' },
+        right: { version: 1, modelJson: '{"a":1}', compiledScript: 'a = 1' },
+        modelJsonChanged: true,
+        compiledScriptChanged: true
+      }
+    })
+
+    await wrapper.vm.compareVersion({ version: 2 }, { version: 1 })
+
+    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 2, 1)
+    expect(wrapper.vm.versionCompare.modelJsonChanged).toBe(true)
+  })
+
+  test('rollbackVersion calls rollback and refreshes data', async () => {
+    wrapper.vm.$confirm = jest.fn().mockResolvedValue('confirm')
+    definitionApi.rollbackVersion.mockResolvedValueOnce({})
+    definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
+    definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
+    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
+    definitionApi.listVersions.mockResolvedValueOnce({ data: [{ version: 1 }] })
+
+    await wrapper.vm.rollbackVersion({ version: 1 })
+
+    expect(definitionApi.rollbackVersion).toHaveBeenCalledWith(1, 1)
+    expect(definitionApi.getDefinitionDetail).toHaveBeenCalled()
+    expect(definitionApi.listVersions).toHaveBeenCalled()
   })
 })

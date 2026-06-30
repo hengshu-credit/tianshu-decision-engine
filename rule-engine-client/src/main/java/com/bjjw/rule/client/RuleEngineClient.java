@@ -108,6 +108,9 @@ public class RuleEngineClient {
     }
 
     private RuleResult doExecute(String ruleCode, Map<String, Object> params) {
+        if (config.isServerSideExecution()) {
+            return httpSyncClient.executeRule(ruleCode, params, config.getAppName());
+        }
         long start = System.currentTimeMillis();
 
         CachedRule cached = l1Cache.get(ruleCode);
@@ -131,6 +134,9 @@ public class RuleEngineClient {
     }
 
     private RuleResult doExecute(String ruleCode, Object params) {
+        if (config.isServerSideExecution()) {
+            return httpSyncClient.executeRule(ruleCode, params, config.getAppName());
+        }
         long start = System.currentTimeMillis();
 
         CachedRule cached = l1Cache.get(ruleCode);
@@ -269,6 +275,8 @@ public class RuleEngineClient {
         public Builder projectId(long projectId) { config.setProjectId(projectId); return this; }
         /** 设置是否开启表达式追踪，默认 true */
         public Builder traceEnabled(boolean traceEnabled) { config.setTraceEnabled(traceEnabled); return this; }
+        /** Execute rules on server; use this for API/DB/LIST external variables. */
+        public Builder serverSideExecution(boolean serverSideExecution) { config.setServerSideExecution(serverSideExecution); return this; }
 
         public Builder connectionFactory(RedisConnectionFactory connectionFactory) {
             this.connectionFactory = connectionFactory;

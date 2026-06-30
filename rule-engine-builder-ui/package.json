@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "cross-env NODE_OPTIONS=--no-deprecation npx vue-cli-service serve",
+    "dev": "cross-env NODE_OPTIONS=--no-deprecation vue-cli-service serve",
     "build": "cross-env NODE_ENV=production vue-cli-service build",
     "lint": "vue-cli-service lint",
     "test": "jest",
@@ -14,6 +14,7 @@
     "@logicflow/core": "^1.2.27",
     "@logicflow/extension": "^1.2.27",
     "axios": "^0.21.4",
+    "core-js": "2.6.12",
     "element-ui": "^2.15.14",
     "monaco-editor": "^0.31.1",
     "vue": "^2.6.14",
@@ -22,6 +23,7 @@
   },
   "devDependencies": {
     "@babel/plugin-proposal-numeric-separator": "^7.18.6",
+    "@babel/preset-env": "7.12.17",
     "@vue/babel-preset-app": "^5.0.9",
     "@vue/cli-plugin-babel": "^4.5.19",
     "@vue/cli-plugin-eslint": "^4.5.19",
@@ -43,5 +45,8 @@
     "sass-loader": "^10.0.0",
     "vue-jest": "^3.0.7",
     "vue-template-compiler": "^2.6.14"
+  },
+  "overrides": {
+    "@babel/preset-env": "7.12.17"
   }
 }

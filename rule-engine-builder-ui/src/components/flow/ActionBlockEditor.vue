@@ -15,7 +15,7 @@
         <!-- ===== 赋值 ===== -->
         <template v-if="block.type === 'assign'">
           <div class="inline-row">
-            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="目标变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="目标变量" size="mini" @select="v => selectVar(block, 'target', v)" />
             <span class="eq">=</span>
             <el-input v-model="block.value" size="mini" placeholder="值/表达式" @input="sync" />
           </div>
@@ -44,7 +44,7 @@
               <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="removeBranch(block, bri)" />
             </div>
             <div v-if="br.type !== 'else'" class="cond-area">
-              <var-picker :vars="vars" :selected-vars="selectedVars" :value="br.condVar" placeholder="条件变量" size="mini" @select="v => { br.condVar = v.varCode; sync() }" />
+              <var-picker :vars="vars" :selected-vars="selectedVars" :value="br.condVar" placeholder="条件变量" size="mini" @select="v => selectVar(br, 'condVar', v)" />
               <el-select v-model="br.condOp" size="mini" style="width:68px" @change="sync">
                 <el-option label="==" value="==" /><el-option label="!=" value="!=" />
                 <el-option label=">" value=">" /><el-option label=">=" value=">=" />
@@ -54,7 +54,7 @@
             </div>
             <div class="branch-body">
               <div v-for="(a, ai) in br.actions" :key="ai" class="inline-row">
-                <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => { a.target = v.varCode; sync() }" />
+                <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => selectVar(a, 'target', v)" />
                 <span class="eq">=</span>
                 <el-input v-model="a.value" size="mini" placeholder="值" @input="sync" />
                 <el-button v-if="br.actions.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="br.actions.splice(ai,1); sync()" />
@@ -72,7 +72,7 @@
         <template v-if="block.type === 'switch-block'">
           <div class="inline-row" style="margin-bottom:6px">
             <span class="mini-label">匹配变量</span>
-            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.matchVar" placeholder="变量" size="mini" @select="v => { block.matchVar = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.matchVar" placeholder="变量" size="mini" @select="v => selectVar(block, 'matchVar', v)" />
           </div>
           <div v-for="(c, ci) in block.cases" :key="ci" class="case-card">
             <div class="case-head">
@@ -82,7 +82,7 @@
             </div>
             <div class="case-body">
               <div v-for="(a, ai) in c.actions" :key="ai" class="inline-row">
-                <el-input v-model="a.target" size="mini" placeholder="变量" @input="sync" />
+                <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => selectVar(a, 'target', v)" />
                 <span class="eq">=</span>
                 <el-input v-model="a.value" size="mini" placeholder="值" @input="sync" />
               </div>
@@ -92,7 +92,7 @@
             <div class="case-head"><span class="case-tag default-tag">DEFAULT</span></div>
             <div class="case-body">
               <div v-for="(a, ai) in block.defaultActions" :key="ai" class="inline-row">
-                <el-input v-model="a.target" size="mini" placeholder="变量" @input="sync" />
+                <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => selectVar(a, 'target', v)" />
                 <span class="eq">=</span>
                 <el-input v-model="a.value" size="mini" placeholder="值" @input="sync" />
               </div>
@@ -105,7 +105,7 @@
         <template v-if="block.type === 'func-call'">
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">结果</span>
-            <el-input v-model="block.target" size="mini" placeholder="结果变量（可空）" @input="sync" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="结果变量（可空）" size="mini" @select="v => selectVar(block, 'target', v)" />
           </div>
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">函数</span>
@@ -132,7 +132,7 @@
           </div>
           <div class="loop-body">
             <div v-for="(a, ai) in block.actions" :key="ai" class="inline-row">
-              <el-input v-model="a.target" size="mini" placeholder="变量" @input="sync" />
+              <var-picker :vars="vars" :selected-vars="selectedVars" :value="a.target" placeholder="变量" size="mini" @select="v => selectVar(a, 'target', v)" />
               <span class="eq">=</span>
               <el-input v-model="a.value" size="mini" placeholder="值/表达式" @input="sync" />
             </div>
@@ -144,10 +144,10 @@
         <template v-if="block.type === 'ternary'">
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">结果</span>
-            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="变量" size="mini" @select="v => { block.target = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="变量" size="mini" @select="v => selectVar(block, 'target', v)" />
           </div>
           <div class="cond-area" style="margin-bottom:4px">
-            <el-input v-model="block.condVar" size="mini" placeholder="条件变量" @input="sync" style="width:80px" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.condVar" placeholder="条件变量" size="mini" @select="v => selectVar(block, 'condVar', v)" />
             <el-select v-model="block.condOp" size="mini" style="width:60px" @change="sync">
               <el-option label="==" value="==" /><el-option label="!=" value="!=" /><el-option label=">" value=">" /><el-option label="<" value="<" />
             </el-select>
@@ -165,9 +165,9 @@
         <template v-if="block.type === 'in-check'">
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">结果</span>
-            <el-input v-model="block.target" size="mini" placeholder="变量" @input="sync" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="变量" size="mini" @select="v => selectVar(block, 'target', v)" />
             <span class="mini-label">检测</span>
-            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.checkVar" placeholder="变量" size="mini" @select="v => { block.checkVar = v.varCode; sync() }" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.checkVar" placeholder="变量" size="mini" @select="v => selectVar(block, 'checkVar', v)" />
           </div>
           <div class="inline-row" style="flex-wrap:wrap;gap:4px;margin-bottom:4px">
             <span class="mini-label">值列表</span>
@@ -186,7 +186,7 @@
         <template v-if="block.type === 'template-str'">
           <div class="inline-row" style="margin-bottom:4px">
             <span class="mini-label">结果</span>
-            <el-input v-model="block.target" size="mini" placeholder="变量" @input="sync" />
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="变量" size="mini" @select="v => selectVar(block, 'target', v)" />
           </div>
           <div v-for="(p, pi) in block.parts" :key="pi" class="inline-row" style="margin-bottom:2px">
             <el-select v-model="p.type" size="mini" style="width:65px" @change="sync">
@@ -261,6 +261,76 @@ export default {
   methods: {
     sync() {
       this.$emit('update', blocksToActionData(this.blocks))
+    },
+    selectVar(holder, field, v) {
+      if (!holder || !field) return
+      const value = v && v.varCode ? v.varCode : ''
+      this.$set(holder, field, value)
+      this.setFieldRef(holder, field, v)
+      if (this.shouldMirrorLegacyRef(holder, field)) {
+        this.setLegacyRef(holder, v)
+      }
+      this.sync()
+    },
+    setFieldRef(holder, field, v) {
+      const keys = this.fieldRefKeys(field)
+      if (!keys) return
+      const id = this.refIdOf(v)
+      const refType = this.refTypeOf(v)
+      if (id != null && id !== '') {
+        this.$set(holder, keys.id, id)
+      } else {
+        this.$delete(holder, keys.id)
+      }
+      if (refType) {
+        this.$set(holder, keys.refType, refType)
+      } else {
+        this.$delete(holder, keys.refType)
+      }
+    },
+    setLegacyRef(holder, v) {
+      const id = this.refIdOf(v)
+      const refType = this.refTypeOf(v)
+      if (id != null && id !== '') {
+        this.$set(holder, '_varId', id)
+      } else {
+        this.$delete(holder, '_varId')
+      }
+      if (refType) {
+        this.$set(holder, '_refType', refType)
+      } else {
+        this.$delete(holder, '_refType')
+      }
+    },
+    shouldMirrorLegacyRef(holder, field) {
+      if (field === 'target') {
+        return !holder || !['ternary', 'in-check'].includes(holder.type)
+      }
+      if (field === 'condVar') {
+        return !holder || !holder.type || holder.type === 'if' || holder.type === 'elseif'
+      }
+      return field === 'matchVar'
+    },
+    fieldRefKeys(field) {
+      const map = {
+        target: { id: '_targetVarId', refType: '_targetRefType' },
+        condVar: { id: '_condVarId', refType: '_condVarRefType' },
+        matchVar: { id: '_matchVarId', refType: '_matchVarRefType' },
+        checkVar: { id: '_checkVarId', refType: '_checkVarRefType' }
+      }
+      return map[field] || null
+    },
+    refIdOf(v) {
+      if (!v) return null
+      if (v._varId != null) return v._varId
+      if (v.id != null) return v.id
+      if (v.varObj && v.varObj.id != null) return v.varObj.id
+      if (v._ref && v._ref.id != null) return v._ref.id
+      return null
+    },
+    refTypeOf(v) {
+      if (!v) return ''
+      return v._refType || v.refType || (v.varObj && v.varObj.refType) || (v._ref && v._ref.refType) || ''
     },
     addBlock(type) {
       this.blocks.push(newBlock(type))

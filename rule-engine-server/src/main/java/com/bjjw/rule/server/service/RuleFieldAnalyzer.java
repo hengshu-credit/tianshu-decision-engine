@@ -547,6 +547,10 @@ public class RuleFieldAnalyzer {
                 addExplicitRef(refs, obj.getString("checkVar"), refId, refType);
                 addExplicitRef(refs, obj.getString("resultVar"), refId, refType);
             }
+            addExplicitFieldRef(refs, obj, "target", "_targetVarId", "_targetRefType");
+            addExplicitFieldRef(refs, obj, "condVar", "_condVarId", "_condVarRefType");
+            addExplicitFieldRef(refs, obj, "matchVar", "_matchVarId", "_matchVarRefType");
+            addExplicitFieldRef(refs, obj, "checkVar", "_checkVarId", "_checkVarRefType");
             for (Object value : obj.values()) {
                 collectExplicitRefsRecursive(value, refs);
             }
@@ -556,6 +560,13 @@ public class RuleFieldAnalyzer {
                 collectExplicitRefsRecursive(value, refs);
             }
         }
+    }
+
+    private void addExplicitFieldRef(Map<String, FieldRef> refs, JSONObject obj, String codeField,
+                                     String idField, String refTypeField) {
+        Long refId = obj.containsKey(idField) ? obj.getLong(idField) : null;
+        if (refId == null) return;
+        addExplicitRef(refs, obj.getString(codeField), refId, normalizeRefType(obj.getString(refTypeField)));
     }
 
     private void addExplicitRef(Map<String, FieldRef> refs, String code, Long refId, String refType) {

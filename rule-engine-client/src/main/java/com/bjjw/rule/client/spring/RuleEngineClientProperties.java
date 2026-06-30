@@ -23,4 +23,5 @@ public class RuleEngineClientProperties {
     private long projectId = 0;
     /** 是否开启表达式追踪，默认 true；关闭可提升执行性能 */
     private boolean traceEnabled = true;
+    private boolean serverSideExecution = false;
 }

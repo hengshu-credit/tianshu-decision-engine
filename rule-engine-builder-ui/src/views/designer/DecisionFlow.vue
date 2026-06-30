@@ -865,6 +865,7 @@ export default {
           const info = findById(rightId, rightRefType)
           if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
         }
+        if (this.syncActionDataVarRefs(props.actionData || [])) changed = true
         if (changed) this.lf.setProperties(node.id, props)
       }
       const edges = this.lf.getGraphData().edges || []

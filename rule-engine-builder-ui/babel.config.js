@@ -1,8 +1,9 @@
 module.exports = {
   presets: [
-    ['@vue/cli-plugin-babel/preset', {
+    ['@vue/babel-preset-app', {
       targets: { ie: '11' },
-      bugfixes: true
+      bugfixes: true,
+      polyfills: []
     }]
   ],
   plugins: [

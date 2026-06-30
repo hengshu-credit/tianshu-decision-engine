@@ -208,6 +208,39 @@ public class RuleDefinitionController {
         return error == null ? R.ok() : R.fail(error);
     }
 
+    @GetMapping("/versions/{definitionId}")
+    public R<List<RuleDefinitionVersion>> listVersions(@PathVariable Long definitionId) {
+        return R.ok(definitionService.listVersions(definitionId));
+    }
+
+    @GetMapping("/version/{definitionId}/{version}")
+    public R<RuleDefinitionVersion> getVersion(@PathVariable Long definitionId,
+                                               @PathVariable Integer version) {
+        RuleDefinitionVersion snapshot = definitionService.getVersion(definitionId, version);
+        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+    }
+
+    @GetMapping("/versionCompare/{definitionId}")
+    public R<Map<String, Object>> compareVersions(@PathVariable Long definitionId,
+                                                  @RequestParam Integer leftVersion,
+                                                  @RequestParam Integer rightVersion) {
+        try {
+            return R.ok(definitionService.compareVersions(definitionId, leftVersion, rightVersion));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/rollback/{definitionId}/{version}")
+    public R<Void> rollback(@PathVariable Long definitionId, @PathVariable Integer version) {
+        try {
+            definitionService.rollbackToVersion(definitionId, version);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
     /**
      * 技术人员直接保存脚本（脚本模式），跳过可视化编译器。
      * 请求体: { "script": "..." }

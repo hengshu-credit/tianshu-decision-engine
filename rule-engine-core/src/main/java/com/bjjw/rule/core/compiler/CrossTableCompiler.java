@@ -93,6 +93,10 @@ public class CrossTableCompiler implements RuleCompiler {
                 }
             }
 
+            if (defaultAction != null) {
+                script.append("_crossTableMatched = false;\n");
+            }
+
             // 交叉单元格
             if (cells != null && !cells.isEmpty()) {
                 for (int i = 0; i < cells.size(); i++) {
@@ -121,6 +125,7 @@ public class CrossTableCompiler implements RuleCompiler {
                         script.append("true");
                     }
                     script.append(") {\n");
+                    script.append("    _crossTableMatched = true;\n");
                     if (action != null) {
                         script.append("    ");
                         String varCode = action.getString("varCode");
@@ -150,17 +155,19 @@ public class CrossTableCompiler implements RuleCompiler {
                 String varCode = defaultAction.getString("varCode");
                 String value = defaultAction.getString("value");
                 if (varCode != null && value != null) {
+                    script.append("if (!_crossTableMatched) {\n");
                     String varType = defaultAction.getString("varType");
                     if (varType == null) varType = "STRING";
                     Long varId = defaultAction.containsKey("_varId") ? defaultAction.getLong("_varId") : null;
                     String refType = defaultAction.getString("_refType");
                     String resolved = resolveVar(varId, refType, varCode, this.varContext);
                     if ("STRING".equals(varType) || "ENUM".equals(varType)) {
-                        script.append(resolved).append(" = \"")
+                        script.append("    ").append(resolved).append(" = \"")
                               .append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\";\n");
                     } else {
-                        script.append(resolved).append(" = ").append(value).append(";\n");
+                        script.append("    ").append(resolved).append(" = ").append(value).append(";\n");
                     }
+                    script.append("}\n");
                     outputVarCodes.add(resolved);
                 }
             }

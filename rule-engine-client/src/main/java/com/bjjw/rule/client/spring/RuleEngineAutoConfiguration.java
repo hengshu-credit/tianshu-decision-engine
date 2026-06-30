@@ -58,7 +58,8 @@ public class RuleEngineAutoConfiguration {
                 .l1CacheMaxSize(props.getL1CacheMaxSize())
                 .httpTimeoutMs(props.getHttpTimeoutMs())
                 .projectId(props.getProjectId())
-                .traceEnabled(props.isTraceEnabled());
+                .traceEnabled(props.isTraceEnabled())
+                .serverSideExecution(props.isServerSideExecution());
 
         ExecutionLogReporter reporter = logReporterProvider.getIfAvailable();
         if (reporter != null) {

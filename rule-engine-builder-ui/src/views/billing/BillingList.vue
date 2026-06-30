@@ -215,7 +215,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item v-if="configForm.scope === 'PROJECT'" label="所属项目" prop="projectId">
-              <el-select v-model="configForm.projectId" filterable placeholder="请选择项目" style="width:100%">
+              <el-select v-model="configForm.projectId" filterable placeholder="请选择项目" style="width:100%" @change="onBillingProjectChange">
                 <el-option v-for="project in projects" :key="project.id" :label="project.projectName" :value="project.id" />
               </el-select>
             </el-form-item>
@@ -236,14 +236,16 @@
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="计费对象">
-              <el-select v-model="configForm.billingTarget" style="width:100%">
+              <el-select v-model="configForm.billingTarget" style="width:100%" @change="onBillingTargetChange">
                 <el-option v-for="item in billingTargetOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
             <el-form-item label="对象ID">
-              <el-input-number v-model="configForm.targetRefId" :min="0" controls-position="right" style="width:100%" />
+              <el-select v-model="configForm.targetRefId" clearable filterable :loading="targetLoading" placeholder="请选择计费对象" style="width:100%">
+                <el-option v-for="item in targetOptions" :key="item.id" :label="targetOptionLabel(item)" :value="item.id" />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -306,6 +308,9 @@ import {
   updateBillingConfig
 } from '@/api/billing'
 import { listProjects } from '@/api/project'
+import { listDefinitions } from '@/api/definition'
+import { listApiConfigs } from '@/api/datasource'
+import { listDbDatasources } from '@/api/database'
 
 export default {
   name: 'BillingList',
@@ -313,6 +318,8 @@ export default {
     return {
       activeTab: 'config',
       projects: [],
+      targetOptions: [],
+      targetLoading: false,
       configList: [],
       configTotal: 0,
       configLoading: false,
@@ -431,10 +438,14 @@ export default {
     },
     handleCreateConfig() {
       this.configForm = this.emptyConfigForm()
+      this.targetOptions = []
+      this.loadTargetOptions()
       this.configDialogVisible = true
     },
     handleEditConfig(row) {
       this.configForm = { ...this.emptyConfigForm(), ...row }
+      this.targetOptions = []
+      this.loadTargetOptions()
       this.configDialogVisible = true
     },
     handleSaveConfig() {
@@ -467,6 +478,43 @@ export default {
     },
     onConfigScopeChange(scope) {
       if (scope === 'GLOBAL') this.configForm.projectId = 0
+      this.resetTargetRefAndLoadOptions()
+    },
+    onBillingTargetChange() {
+      this.resetTargetRefAndLoadOptions()
+    },
+    onBillingProjectChange() {
+      this.resetTargetRefAndLoadOptions()
+    },
+    resetTargetRefAndLoadOptions() {
+      if (!this.configForm) return
+      this.configForm.targetRefId = null
+      this.loadTargetOptions()
+    },
+    async loadTargetOptions() {
+      if (!this.configForm) return
+      this.targetLoading = true
+      try {
+        const baseParams = { pageNum: 1, pageSize: 500, status: 1 }
+        if (this.configForm.scope === 'PROJECT' && this.configForm.projectId) {
+          baseParams.projectId = this.configForm.projectId
+        }
+        let res
+        if (this.configForm.billingTarget === 'ENGINE') {
+          res = await listDefinitions(baseParams)
+        } else if (this.configForm.billingTarget === 'API') {
+          res = await listApiConfigs({ pageNum: 1, pageSize: 500, status: 1 })
+        } else if (this.configForm.billingTarget === 'DB') {
+          res = await listDbDatasources(baseParams)
+        } else {
+          res = { data: { records: [] } }
+        }
+        this.targetOptions = (res.data && res.data.records) || []
+      } catch (e) {
+        this.targetOptions = []
+      } finally {
+        this.targetLoading = false
+      }
     },
     onRecordDateChange(val) {
       this.recordQuery.beginTime = val ? val[0] : ''
@@ -493,6 +541,11 @@ export default {
     optionLabel(options, value) {
       const item = options.find(opt => opt.value === value)
       return item ? item.label : (value || '—')
+    },
+    targetOptionLabel(item) {
+      const code = item.ruleCode || item.apiCode || item.datasourceCode || ''
+      const name = item.ruleName || item.apiName || item.datasourceName || ''
+      return (name || code || String(item.id)) + (code && name !== code ? ' / ' + code : '')
     }
   }
 }

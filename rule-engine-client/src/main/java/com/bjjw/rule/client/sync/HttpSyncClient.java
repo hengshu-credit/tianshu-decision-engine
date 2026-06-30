@@ -1,11 +1,14 @@
 package com.bjjw.rule.client.sync;
 
 import com.bjjw.rule.client.cache.CachedRule;
+import com.bjjw.rule.model.dto.RuleResult;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
+import okhttp3.RequestBody;
 import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -17,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 public class HttpSyncClient {
 
     private static final Logger log = LoggerFactory.getLogger(HttpSyncClient.class);
+    private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
     private final OkHttpClient httpClient;
     private final String serverUrl;
     private final String token;
@@ -124,6 +128,35 @@ public class HttpSyncClient {
         return functions;
     }
 
+    public RuleResult executeRule(String ruleCode, Object params, String clientAppName) {
+        try {
+            JSONObject body = new JSONObject();
+            body.put("params", params);
+            body.put("clientAppName", clientAppName);
+            RequestBody requestBody = RequestBody.create(JSON.toJSONString(body), JSON_MEDIA_TYPE);
+            Request.Builder requestBuilder = new Request.Builder()
+                    .url(serverUrl + "/api/rule/sync/execute/" + ruleCode)
+                    .post(requestBody);
+            if (token != null && !token.isEmpty()) {
+                requestBuilder.header("X-Rule-Token", token);
+            }
+            Request request = requestBuilder.build();
+            try (Response response = httpClient.newCall(request).execute()) {
+                if (response.body() == null) {
+                    return failure("Empty response from rule server");
+                }
+                JSONObject json = JSON.parseObject(response.body().string());
+                if (response.isSuccessful() && json.getIntValue("code") == 200 && json.get("data") != null) {
+                    return json.getJSONObject("data").toJavaObject(RuleResult.class);
+                }
+                return failure(json.getString("message"));
+            }
+        } catch (Exception e) {
+            log.warn("Failed to execute rule {} on server: {}", ruleCode, e.getMessage());
+            return failure(e.getMessage());
+        }
+    }
+
     private CachedRule toCachedRule(JSONObject obj) {
         if (obj == null) return null;
         CachedRule rule = new CachedRule();
@@ -136,5 +169,12 @@ public class HttpSyncClient {
         rule.setModelJson(obj.getString("modelJson"));
         rule.setLastUpdateTime(System.currentTimeMillis());
         return rule;
+    }
+
+    private RuleResult failure(String message) {
+        RuleResult result = new RuleResult();
+        result.setSuccess(false);
+        result.setErrorMessage(message == null || message.isEmpty() ? "Rule server execution failed" : message);
+        return result;
     }
 }
