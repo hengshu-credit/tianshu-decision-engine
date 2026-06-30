@@ -164,6 +164,7 @@ public class RuleFieldAnalyzer {
                 meta.put("scriptName", v.getScriptName());
                 meta.put("varCode", v.getVarCode());
                 meta.put("varSource", v.getVarSource());
+                meta.put("sourceConfig", v.getSourceConfig());
                 meta.put("refType", "CONSTANT".equals(v.getVarSource()) ? "CONSTANT" : "VARIABLE");
                 map.put(key, meta);
             }
@@ -347,6 +348,12 @@ public class RuleFieldAnalyzer {
         Set<String> seen = new LinkedHashSet<>();
         for (RuleDefinitionInputField field : inputFields) {
             String refType = normalizeRefType(field.getRefType());
+            RuleDefinitionInputField listDependency = buildListDependencyField(field, varMetaMap);
+            if (listDependency != null) {
+                enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                addInputFieldIfAbsent(result, seen, listDependency);
+                continue;
+            }
             if (!"MODEL".equals(refType) || field.getVarId() == null || modelInputFieldMapper == null) {
                 addInputFieldIfAbsent(result, seen, field);
                 continue;
@@ -370,6 +377,55 @@ public class RuleFieldAnalyzer {
             }
         }
         return result;
+    }
+
+    private RuleDefinitionInputField buildListDependencyField(RuleDefinitionInputField field,
+            Map<String, Map<String, Object>> varMetaMap) {
+        Map<String, Object> meta = findFieldMeta(field, varMetaMap);
+        if (meta == null || !"LIST".equals(meta.get("varSource"))) {
+            return null;
+        }
+        JSONObject config = parseObject((String) meta.get("sourceConfig"));
+        String queryField = firstNonBlank(config.getString("queryField"), config.getString("queryPath"), config.getString("field"));
+        if (queryField == null) {
+            return null;
+        }
+        if (queryField.startsWith("$.")) {
+            queryField = queryField.substring(2);
+        }
+        RuleDefinitionInputField dependency = new RuleDefinitionInputField();
+        dependency.setFieldName(firstNonBlank(config.getString("queryFieldName"), leafName(queryField), queryField));
+        dependency.setFieldLabel(firstNonBlank(config.getString("queryFieldLabel"), dependency.getFieldName()));
+        dependency.setScriptName(queryField);
+        dependency.setFieldType(firstNonBlank(config.getString("queryFieldType"), "STRING"));
+        dependency.setVarId(config.getLong("queryVarId"));
+        dependency.setRefType(normalizeRefType(config.getString("queryRefType")));
+        dependency.setStatus(1);
+        dependency.setCreateTime(LocalDateTime.now());
+        return dependency;
+    }
+
+    private Map<String, Object> findFieldMeta(RuleDefinitionInputField field, Map<String, Map<String, Object>> varMetaMap) {
+        String scriptName = trimToNull(field.getScriptName());
+        if (scriptName != null) {
+            Map<String, Object> meta = varMetaMap.get(scriptName.toLowerCase());
+            if (meta != null) {
+                return meta;
+            }
+        }
+        String fieldName = trimToNull(field.getFieldName());
+        return fieldName != null ? varMetaMap.get(fieldName.toLowerCase()) : null;
+    }
+
+    private JSONObject parseObject(String json) {
+        if (json == null || json.trim().isEmpty()) {
+            return new JSONObject();
+        }
+        try {
+            return JSON.parseObject(json);
+        } catch (Exception e) {
+            return new JSONObject();
+        }
     }
 
     private RuleDefinitionInputField copyModelInputField(RuleModelInputField modelField) {

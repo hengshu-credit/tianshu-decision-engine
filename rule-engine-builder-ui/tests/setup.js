@@ -120,6 +120,8 @@ jest.mock('@/api/variable', () => ({
   updateVariable: jest.fn(),
   deleteVariable: jest.fn(),
   batchValidateVariables: jest.fn(),
+  importJavaConstants: jest.fn(),
+  importJsonConstants: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/dataObject', () => ({
@@ -196,6 +198,22 @@ jest.mock('@/api/billing', () => ({
   listBillingRecords: jest.fn(),
   listBillingSummaries: jest.fn(),
   refreshBillingSummary: jest.fn(),
+  __esModule: true
+}))
+jest.mock('@/api/ruleList', () => ({
+  listLibraries: jest.fn(),
+  getLibrary: jest.fn(),
+  createLibrary: jest.fn(),
+  updateLibrary: jest.fn(),
+  deleteLibrary: jest.fn(),
+  listRecords: jest.fn(),
+  createRecord: jest.fn(),
+  updateRecord: jest.fn(),
+  deleteRecord: jest.fn(),
+  listRecordLogs: jest.fn(),
+  importRecords: jest.fn(),
+  listTemplateUrl: '/api/rule/list/template',
+  listExportUrl: jest.fn(id => `/api/rule/list/${id}/export`),
   __esModule: true
 }))
 

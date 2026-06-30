@@ -437,6 +437,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             case "CONSTANT": return "常量";
             case "DB": return "数据库查询";
             case "API": return "API调用";
+            case "LIST": return "名单查询";
             default: return varSource;
         }
     }

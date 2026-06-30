@@ -135,6 +135,18 @@ const routes = [
         meta: { title: '变量管理' }
       },
       {
+        path: 'list',
+        name: 'ListLibrary',
+        component: () => import('@/views/ruleList/ListLibrary.vue'),
+        meta: { title: '名单管理' }
+      },
+      {
+        path: 'list/:id',
+        name: 'ListDetail',
+        component: () => import('@/views/ruleList/ListDetail.vue'),
+        meta: { title: '名单详情' }
+      },
+      {
         path: 'datasource',
         name: 'DatasourceList',
         component: () => import('@/views/datasource/DatasourceList.vue'),

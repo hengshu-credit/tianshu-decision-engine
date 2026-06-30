@@ -34,6 +34,10 @@
             <i class="el-icon-collection-tag" />
             <span>变量管理</span>
           </el-menu-item>
+          <el-menu-item index="/list">
+            <i class="el-icon-tickets" />
+            <span>名单管理</span>
+          </el-menu-item>
           <el-menu-item index="/datasource">
             <i class="el-icon-link" />
             <span>外数管理</span>
@@ -98,6 +102,7 @@ export default {
       const path = this.$route.path
       if (path.startsWith('/designer/')) return '/rule'
       if (/^\/project\/\d+$/.test(path)) return '/project'
+      if (/^\/list\/\d+$/.test(path)) return '/list'
       return path
     }
   },

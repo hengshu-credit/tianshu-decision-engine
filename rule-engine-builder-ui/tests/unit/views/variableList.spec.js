@@ -34,9 +34,14 @@ jest.mock('@/api/database', () => ({
   listDbDatasources: jest.fn()
 }))
 
+jest.mock('@/api/ruleList', () => ({
+  listLibraries: jest.fn()
+}))
+
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
 import * as dataObjectApi from '@/api/dataObject'
+import * as ruleListApi from '@/api/ruleList'
 import VariableList from '@/views/variable/VariableList.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -73,6 +78,7 @@ function createTestVue() {
 async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockVars(), total: 3 } })
+  ruleListApi.listLibraries.mockResolvedValue({ data: { records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }], total: 1 } })
 
   const wrapper = mount(VariableList, {
     localVue: createTestVue(),
@@ -158,6 +164,7 @@ describe('VariableList — 标签方法', () => {
     expect(wrapper.vm.sourceLabel('COMPUTED')).toBe('计算')
     expect(wrapper.vm.sourceLabel('DB')).toBe('数据库')
     expect(wrapper.vm.sourceLabel('API')).toBe('接口')
+    expect(wrapper.vm.sourceLabel('LIST')).toBe('名单')
     expect(wrapper.vm.sourceLabel('UNKNOWN')).toBe('UNKNOWN')
   })
 
@@ -178,6 +185,7 @@ describe('VariableList — 标签方法', () => {
     expect(wrapper.vm.sourceTagColor('COMPUTED')).toBe('warning')
     expect(wrapper.vm.sourceTagColor('DB')).toBe('info')
     expect(wrapper.vm.sourceTagColor('API')).toBe('info')
+    expect(wrapper.vm.sourceTagColor('LIST')).toBe('danger')
     expect(wrapper.vm.sourceTagColor('UNKNOWN')).toBe('')
   })
 
@@ -310,6 +318,47 @@ describe('VariableList — 变量操作', () => {
     wrapper.vm.handleBatchValidate()
     expect(wrapper.vm.validateDialogVisible).toBe(true)
     // doBatchValidate 才调用 batchValidateRules
+  })
+
+  test('buildVariablePayload 生成名单查询配置', async () => {
+    wrapper.vm.form = {
+      ...wrapper.vm.initForm(),
+      varCode: 'mobileBlackHit',
+      varLabel: '手机号黑名单命中',
+      varType: 'NUMBER',
+      varSource: 'LIST',
+      listId: 9,
+      listQueryField: 'request.mobile',
+      listMatchMode: 'CONTAINED_IN_LIST',
+      listItemTypes: ['MOBILE'],
+      listReturnMode: 'NUMBER',
+      listForceRefresh: true
+    }
+    const payload = wrapper.vm.buildVariablePayload()
+    const config = JSON.parse(payload.sourceConfig)
+    expect(config.listId).toBe(9)
+    expect(config.queryField).toBe('request.mobile')
+    expect(config.matchMode).toBe('CONTAINED_IN_LIST')
+    expect(config.itemTypes).toEqual(['MOBILE'])
+    expect(config.forceRefresh).toBe(true)
+    expect(payload.listId).toBeUndefined()
+  })
+
+  test('applySourceConfigToForm 回显名单匹配方式', () => {
+    wrapper.vm.form = {
+      ...wrapper.vm.initForm(),
+      varSource: 'LIST',
+      sourceConfig: JSON.stringify({
+        listId: 9,
+        queryField: 'request.mobile',
+        matchMode: 'NOT_CONTAINED_IN_LIST',
+        itemTypes: ['MOBILE']
+      })
+    }
+    wrapper.vm.applySourceConfigToForm()
+
+    expect(wrapper.vm.form.listMatchMode).toBe('NOT_CONTAINED_IN_LIST')
+    expect(wrapper.vm.form.listItemTypes).toEqual(['MOBILE'])
   })
 })
 

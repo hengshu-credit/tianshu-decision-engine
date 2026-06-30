@@ -24,6 +24,9 @@ public class VariableSourceResolver {
     @Resource
     private DBConnectPools dbConnectPools;
 
+    @Resource
+    private RuleListService ruleListService;
+
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         Map<String, Object> resolvedParams = new LinkedHashMap<>();
         if (inputParams != null) {
@@ -38,7 +41,7 @@ public class VariableSourceResolver {
                 continue;
             }
             String varSource = variable.getVarSource();
-            if (!"API".equals(varSource) && !"DB".equals(varSource)) {
+            if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)) {
                 continue;
             }
             String scriptName = resolveScriptName(variable);
@@ -51,9 +54,14 @@ public class VariableSourceResolver {
                 continue;
             }
             try {
-                Object value = "API".equals(varSource)
-                        ? resolveApiVariable(config, resolvedParams)
-                        : resolveDbVariable(config, resolvedParams);
+                Object value;
+                if ("API".equals(varSource)) {
+                    value = resolveApiVariable(config, resolvedParams);
+                } else if ("DB".equals(varSource)) {
+                    value = resolveDbVariable(config, resolvedParams);
+                } else {
+                    value = resolveListVariable(config, resolvedParams);
+                }
                 if (value == null) {
                     value = parseDefaultValue(variable);
                 }
@@ -93,6 +101,44 @@ public class VariableSourceResolver {
             return readPath(rows, resultPath);
         }
         return defaultDbValue(rows, maxRows);
+    }
+
+    private Object resolveListVariable(Map<String, Object> config, Map<String, Object> params) {
+        Long listId = longValue(firstNonNull(config.get("listId"), config.get("listLibraryId")));
+        if (listId == null) {
+            throw new IllegalArgumentException("名单变量缺少 listId");
+        }
+        Object queryValue = resolveListQueryValue(config, params);
+        List<String> itemTypes = buildStringList(firstNonNull(config.get("itemTypes"), config.get("itemType")));
+        String matchMode = stringValue(firstNonNull(config.get("matchMode"), config.get("operator")));
+        if (!hasText(matchMode)) {
+            matchMode = "IN_LIST";
+        }
+        boolean hit = ruleListService.match(listId, queryValue, itemTypes, matchMode);
+        String returnMode = stringValue(config.get("returnMode"));
+        if ("BOOLEAN".equals(returnMode)) {
+            return hit;
+        }
+        if (config.containsKey("hitValue") || config.containsKey("missValue")) {
+            return hit ? parseConfiguredValue(config.get("hitValue"), params) : parseConfiguredValue(config.get("missValue"), params);
+        }
+        return hit ? 1 : 0;
+    }
+
+    private Object resolveListQueryValue(Map<String, Object> config, Map<String, Object> params) {
+        Object raw = firstNonNull(config.get("queryField"), config.get("queryPath"), config.get("field"));
+        if (raw == null) {
+            throw new IllegalArgumentException("名单变量缺少 queryField");
+        }
+        if (raw instanceof String) {
+            String text = (String) raw;
+            if (text.startsWith("$.")) {
+                return readPath(params, text.substring(2));
+            }
+            Object value = readPath(params, text);
+            return value != null ? value : parseConfiguredValue(raw, params);
+        }
+        return parseConfiguredValue(raw, params);
     }
 
     private void applyExceptionStrategy(RuleVariable variable, Map<String, Object> config, String scriptName,
@@ -138,6 +184,37 @@ public class VariableSourceResolver {
             int length = Array.getLength(configParams);
             for (int i = 0; i < length; i++) {
                 result.add(parseConfiguredValue(Array.get(configParams, i), params));
+            }
+        }
+        return result;
+    }
+
+    private List<String> buildStringList(Object configValue) {
+        List<String> result = new ArrayList<>();
+        if (configValue instanceof Iterable) {
+            for (Object value : (Iterable<?>) configValue) {
+                if (value != null && hasText(String.valueOf(value))) {
+                    result.add(String.valueOf(value));
+                }
+            }
+            return result;
+        }
+        if (configValue != null && configValue.getClass().isArray()) {
+            int length = Array.getLength(configValue);
+            for (int i = 0; i < length; i++) {
+                Object value = Array.get(configValue, i);
+                if (value != null && hasText(String.valueOf(value))) {
+                    result.add(String.valueOf(value));
+                }
+            }
+            return result;
+        }
+        if (configValue != null && hasText(String.valueOf(configValue))) {
+            String[] parts = String.valueOf(configValue).split(",");
+            for (String part : parts) {
+                if (hasText(part)) {
+                    result.add(part.trim());
+                }
             }
         }
         return result;
@@ -320,6 +397,18 @@ public class VariableSourceResolver {
 
     private String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private Object firstNonNull(Object... values) {
+        if (values == null) {
+            return null;
+        }
+        for (Object value : values) {
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
     }
 
     private boolean hasText(String value) {

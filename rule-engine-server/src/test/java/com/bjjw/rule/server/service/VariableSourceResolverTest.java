@@ -84,6 +84,39 @@ public class VariableSourceResolverTest {
         assertEquals(12.5, ((Number) resolved.get("rate")).doubleValue(), 0.000001);
     }
 
+    @Test
+    public void listVariableQueriesConfiguredFieldAndReturnsHitFlag() throws Exception {
+        RuleVariable variable = variable("mobileBlackHit", "LIST",
+                "{\"listId\":9,\"queryField\":\"request.mobile\",\"itemTypes\":[\"MOBILE\"]}");
+        FakeRuleListService listService = new FakeRuleListService(true);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
+
+        Map<String, Object> request = singletonMap("request", singletonMap("mobile", "13800138000"));
+        Map<String, Object> resolved = resolver.resolve(1L, request);
+
+        assertEquals(1, resolved.get("mobileBlackHit"));
+        assertEquals(9L, listService.lastListId.longValue());
+        assertEquals("13800138000", listService.lastContent);
+        assertEquals(Collections.singletonList("MOBILE"), listService.lastItemTypes);
+        assertEquals("IN_LIST", listService.lastMatchMode);
+    }
+
+    @Test
+    public void listVariablePassesConfiguredMatchMode() throws Exception {
+        RuleVariable variable = variable("mobileNotBlack", "LIST",
+                "{\"listId\":9,\"queryField\":\"mobile\",\"itemTypes\":[\"手机号\"],\"matchMode\":\"NOT_IN_LIST\"}");
+        FakeRuleListService listService = new FakeRuleListService(true);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
+
+        Map<String, Object> request = singletonMap("mobile", "13800138000");
+        Map<String, Object> resolved = resolver.resolve(1L, request);
+
+        assertEquals(1, resolved.get("mobileNotBlack"));
+        assertEquals("NOT_IN_LIST", listService.lastMatchMode);
+    }
+
     private RuleVariable variable(String scriptName, String source, String sourceConfig) {
         RuleVariable variable = new RuleVariable();
         variable.setId(1L);
@@ -101,10 +134,16 @@ public class VariableSourceResolverTest {
 
     private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
                                             DBConnectPools dbPools) throws Exception {
+        return resolver(variables, apiService, dbPools, new FakeRuleListService(false));
+    }
+
+    private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
+                                            DBConnectPools dbPools, RuleListService listService) throws Exception {
         VariableSourceResolver resolver = new VariableSourceResolver();
         setField(resolver, "variableService", new FakeVariableService(variables));
         setField(resolver, "externalApiInvokeService", apiService);
         setField(resolver, "dbConnectPools", dbPools);
+        setField(resolver, "ruleListService", listService);
         return resolver;
     }
 
@@ -182,6 +221,32 @@ public class VariableSourceResolverTest {
             this.lastDatasourceId = datasourceId;
             this.lastParams = params == null ? Collections.emptyList() : Arrays.asList(params.toArray());
             return rows;
+        }
+    }
+
+    private static class FakeRuleListService extends RuleListService {
+        private final boolean hit;
+        private Long lastListId;
+        private Object lastContent;
+        private List<String> lastItemTypes;
+        private String lastMatchMode;
+
+        private FakeRuleListService(boolean hit) {
+            this.hit = hit;
+        }
+
+        @Override
+        public boolean hit(Long listId, Object content, List<String> itemTypes) {
+            return match(listId, content, itemTypes, "IN_LIST");
+        }
+
+        @Override
+        public boolean match(Long listId, Object content, List<String> itemTypes, String matchMode) {
+            this.lastListId = listId;
+            this.lastContent = content;
+            this.lastItemTypes = itemTypes;
+            this.lastMatchMode = matchMode;
+            return hit;
         }
     }
 }

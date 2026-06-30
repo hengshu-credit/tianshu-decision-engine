@@ -53,6 +53,7 @@ public class SchemaSyncService {
         try {
             ensureRefTypeColumns();
             ensureVariableSourceConfigColumn();
+            ensureListTables();
             ensureDbDatasourceConnectionColumns();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldUniqueKey();
@@ -123,8 +124,72 @@ public class SchemaSyncService {
         String table = "rule_variable";
         if (!tableExists(table)) return;
         if (!columnExists(table, "source_config")) {
-            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD COLUMN `source_config` JSON DEFAULT NULL COMMENT '外部来源配置JSON：API/DB变量绑定接口、SQL、入参映射、结果路径等' AFTER `var_source`");
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD COLUMN `source_config` JSON DEFAULT NULL COMMENT '外部来源配置JSON：API/DB/LIST变量绑定接口、SQL、入参映射、结果路径等' AFTER `var_source`");
         }
+    }
+
+    private void ensureListTables() {
+        if (!tableExists("rule_list_library")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_list_library` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`project_id` BIGINT NOT NULL DEFAULT 0 COMMENT '所属项目ID，0 表示全局',"
+                    + "`scope` VARCHAR(16) NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',"
+                    + "`list_code` VARCHAR(128) NOT NULL COMMENT '名单库编码',"
+                    + "`list_name` VARCHAR(128) NOT NULL COMMENT '名单库名称',"
+                    + "`list_type` VARCHAR(32) NOT NULL DEFAULT 'BLACK' COMMENT '名单库类型：BLACK/GREY/WHITE/OTHER，仅用于标识',"
+                    + "`description` VARCHAR(512) DEFAULT NULL COMMENT '说明',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_list_scope_project_code` (`scope`, `project_id`, `list_code`),"
+                    + "KEY `idx_list_project_id` (`project_id`),"
+                    + "KEY `idx_list_type_status` (`list_type`, `status`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单库配置表'");
+        }
+        ensureUtf8mb4Table("rule_list_library");
+        if (!tableExists("rule_list_record")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_list_record` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`list_id` BIGINT NOT NULL COMMENT '名单库ID',"
+                    + "`item_type` VARCHAR(32) NOT NULL COMMENT '名单内容类型',"
+                    + "`item_content` VARCHAR(512) NOT NULL COMMENT '名单内容',"
+                    + "`effective_time` DATETIME DEFAULT NULL COMMENT '生效时间',"
+                    + "`expire_time` DATETIME DEFAULT NULL COMMENT '失效时间',"
+                    + "`reason` VARCHAR(512) DEFAULT NULL COMMENT '插入原因',"
+                    + "`remark` VARCHAR(512) DEFAULT NULL COMMENT '插入备注',"
+                    + "`last_operation` VARCHAR(16) NOT NULL DEFAULT 'ADD' COMMENT '最近一次操作：ADD/UPDATE/DELETE',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '插入时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_list_type_content` (`list_id`, `item_type`, `item_content`),"
+                    + "KEY `idx_list_record_lookup` (`list_id`, `item_type`, `item_content`, `status`),"
+                    + "KEY `idx_list_record_effective` (`effective_time`, `expire_time`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单当前记录表'");
+        }
+        ensureUtf8mb4Table("rule_list_record");
+        if (!tableExists("rule_list_record_log")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_list_record_log` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`list_id` BIGINT NOT NULL COMMENT '名单库ID',"
+                    + "`record_id` BIGINT DEFAULT NULL COMMENT '名单记录ID',"
+                    + "`item_type` VARCHAR(32) NOT NULL COMMENT '名单内容类型',"
+                    + "`item_content` VARCHAR(512) NOT NULL COMMENT '名单内容',"
+                    + "`effective_time` DATETIME DEFAULT NULL COMMENT '生效时间',"
+                    + "`expire_time` DATETIME DEFAULT NULL COMMENT '失效时间',"
+                    + "`reason` VARCHAR(512) DEFAULT NULL COMMENT '插入原因',"
+                    + "`remark` VARCHAR(512) DEFAULT NULL COMMENT '插入备注',"
+                    + "`operation` VARCHAR(16) NOT NULL COMMENT '执行操作：ADD/UPDATE/DELETE',"
+                    + "`operator` VARCHAR(64) DEFAULT NULL COMMENT '操作人',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '操作时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "KEY `idx_list_log_list_record` (`list_id`, `record_id`),"
+                    + "KEY `idx_list_log_content` (`list_id`, `item_type`, `item_content`),"
+                    + "KEY `idx_list_log_time` (`create_time`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='名单变更日志表'");
+        }
+        ensureUtf8mb4Table("rule_list_record_log");
     }
 
     private void ensureDbDatasourceConnectionColumns() {
@@ -196,6 +261,11 @@ public class SchemaSyncService {
         if (!columnExists(tableName, columnName)) {
             jdbcTemplate.execute("ALTER TABLE `" + tableName + "` ADD COLUMN " + definition);
         }
+    }
+
+    private void ensureUtf8mb4Table(String tableName) {
+        if (!tableExists(tableName)) return;
+        jdbcTemplate.execute("ALTER TABLE `" + tableName + "` CONVERT TO CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
     }
 
     private boolean indexExists(String tableName, String indexName) {

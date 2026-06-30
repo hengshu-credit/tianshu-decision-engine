@@ -45,6 +45,7 @@
             <el-option label="输入参数" value="INPUT" />
             <el-option label="数据库查询" value="DB" />
             <el-option label="接口调用" value="API" />
+            <el-option label="名单查询" value="LIST" />
             <el-option label="计算得出" value="COMPUTED" />
             <el-option label="常量" value="CONSTANT" />
           </el-select>
@@ -314,7 +315,8 @@
         <el-form-item v-if="!isObjectField" label="来源">
           <el-select v-model="form.varSource" :disabled="isConstantCreate" clearable placeholder="可选" style="width:100%;" @change="onVarSourceChange">
             <el-option label="输入参数" value="INPUT" /><el-option label="数据库查询" value="DB" />
-            <el-option label="接口调用" value="API" /><el-option label="计算得出" value="COMPUTED" /><el-option label="常量" value="CONSTANT" />
+            <el-option label="接口调用" value="API" /><el-option label="名单查询" value="LIST" />
+            <el-option label="计算得出" value="COMPUTED" /><el-option label="常量" value="CONSTANT" />
           </el-select>
         </el-form-item>
         <template v-if="!isObjectField && form.varSource === 'API'">
@@ -377,6 +379,38 @@
           </el-form-item>
           <el-form-item v-if="form.dbExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值">
             <el-input v-model="form.dbFallbackValue" placeholder="可为空" />
+          </el-form-item>
+        </template>
+        <template v-if="!isObjectField && form.varSource === 'LIST'">
+          <el-form-item label="名单库">
+            <el-select v-model="form.listId" filterable clearable placeholder="选择名单库" style="width:100%;">
+              <el-option
+                v-for="item in listLibraryOptions"
+                :key="item.id"
+                :label="item.listName ? item.listName + ' / ' + item.listCode : item.listCode"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="查询字段">
+            <el-input v-model="form.listQueryField" placeholder="如 request.mobile 或 mobile" />
+          </el-form-item>
+          <el-form-item label="匹配方式">
+            <el-select v-model="form.listMatchMode" style="width:100%;">
+              <el-option v-for="opt in listMatchModeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="内容类型">
+            <el-select v-model="form.listItemTypes" multiple clearable collapse-tags placeholder="不选表示任意类型" style="width:100%;">
+              <el-option v-for="opt in listItemTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="返回模式">
+            <el-select v-model="form.listReturnMode" style="width:180px;">
+              <el-option label="命中 1 / 未命中 0" value="NUMBER" />
+              <el-option label="布尔值 true/false" value="BOOLEAN" />
+            </el-select>
+            <el-switch v-model="form.listForceRefresh" active-text="强制刷新" style="margin-left:12px;" />
           </el-form-item>
         </template>
         <el-form-item v-if="!isObjectField" label="默认值">
@@ -673,6 +707,7 @@ import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
+import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
@@ -718,7 +753,26 @@ export default {
         form: this.initForm(),
         apiConfigOptions: [],
         dbDatasourceOptions: [],
-        sourceOptionsLoaded: { API: false, DB: false },
+        listLibraryOptions: [],
+        sourceOptionsLoaded: { API: false, DB: false, LIST: false },
+        listItemTypeOptions: [
+          { label: '手机号', value: 'MOBILE' },
+          { label: '身份证', value: 'ID_CARD' },
+          { label: '地址', value: 'ADDRESS' },
+          { label: 'IP', value: 'IP' },
+          { label: '设备号', value: 'DEVICE' },
+          { label: '姓名', value: 'NAME' },
+          { label: 'GPS', value: 'GPS' },
+          { label: '邮箱', value: 'EMAIL' },
+          { label: '银行卡', value: 'BANK_CARD' },
+          { label: '其他', value: 'OTHER' }
+        ],
+        listMatchModeOptions: [
+          { label: '在名单内（精确匹配）', value: 'IN_LIST' },
+          { label: '不在名单内（精确排除）', value: 'NOT_IN_LIST' },
+          { label: '被名单内容包含（名单内容包含输入值）', value: 'CONTAINED_IN_LIST' },
+          { label: '未被名单内容包含', value: 'NOT_CONTAINED_IN_LIST' }
+        ],
         rules: {
         varCode: [{ required: true, message: '请输入变量编码', trigger: 'blur' }],
         varLabel: [{ required: true, message: '请输入变量名称', trigger: 'blur' }],
@@ -902,6 +956,12 @@ export default {
           dbForceRefresh: false,
           dbExceptionStrategy: 'ERROR',
           dbFallbackValue: '',
+          listId: '',
+          listQueryField: '',
+          listMatchMode: 'IN_LIST',
+          listItemTypes: [],
+          listReturnMode: 'NUMBER',
+          listForceRefresh: false,
           refObjectCode: '',
           defaultValue: '',
           valueRange: '',
@@ -933,6 +993,15 @@ export default {
             this.dbDatasourceOptions = []
           }
         }
+        if (source === 'LIST' && !this.sourceOptionsLoaded.LIST) {
+          try {
+            const res = await listLibraries({ pageNum: 1, pageSize: 1000, status: 1 })
+            this.listLibraryOptions = (res.data && res.data.records) || []
+            this.sourceOptionsLoaded.LIST = true
+          } catch (e) {
+            this.listLibraryOptions = []
+          }
+        }
       },
       applySourceConfigToForm() {
         const config = this.parseJsonSafe(this.form.sourceConfig, {})
@@ -952,6 +1021,13 @@ export default {
           this.form.dbForceRefresh = config.forceRefresh === true
           this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
           this.form.dbFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
+        } else if (this.form.varSource === 'LIST') {
+          this.form.listId = config.listId || config.listLibraryId || ''
+          this.form.listQueryField = config.queryField || config.queryPath || config.field || ''
+          this.form.listMatchMode = config.matchMode || config.operator || 'IN_LIST'
+          this.form.listItemTypes = Array.isArray(config.itemTypes) ? config.itemTypes : (config.itemType ? [config.itemType] : [])
+          this.form.listReturnMode = config.returnMode || 'NUMBER'
+          this.form.listForceRefresh = config.forceRefresh === true
         }
       },
       parseJsonSafe(text, fallback) {
@@ -1007,6 +1083,23 @@ export default {
             exceptionStrategy: payload.dbExceptionStrategy || 'ERROR',
             fallbackValue: payload.dbFallbackValue || null
           })
+        } else if (payload.varSource === 'LIST') {
+          if (!payload.listId) {
+            this.$message.warning('请选择名单库')
+            return null
+          }
+          if (!payload.listQueryField || !payload.listQueryField.trim()) {
+            this.$message.warning('请输入名单查询字段')
+            return null
+          }
+          payload.sourceConfig = JSON.stringify({
+            listId: payload.listId,
+            queryField: payload.listQueryField.trim(),
+            matchMode: payload.listMatchMode || 'IN_LIST',
+            itemTypes: payload.listItemTypes || [],
+            returnMode: payload.listReturnMode || 'NUMBER',
+            forceRefresh: payload.listForceRefresh === true
+          })
         } else {
           payload.sourceConfig = null
         }
@@ -1024,7 +1117,8 @@ export default {
     },
     removeSourceFormFields(payload) {
       const sourceFormFields = ['apiConfigId', 'apiParamMapping', 'apiResultPath', 'apiForceRefresh', 'apiExceptionStrategy', 'apiFallbackValue',
-        'dbDatasourceId', 'dbSql', 'dbParams', 'dbResultPath', 'dbMaxRows', 'dbForceRefresh', 'dbExceptionStrategy', 'dbFallbackValue'
+        'dbDatasourceId', 'dbSql', 'dbParams', 'dbResultPath', 'dbMaxRows', 'dbForceRefresh', 'dbExceptionStrategy', 'dbFallbackValue',
+        'listId', 'listQueryField', 'listMatchMode', 'listItemTypes', 'listReturnMode', 'listForceRefresh'
       ]
       sourceFormFields.forEach(key => { delete payload[key] })
     },
@@ -1729,8 +1823,8 @@ export default {
     scopeTagLabel(scope) {
       return { GLOBAL: '全局', PROJECT: '项目级' }[scope] || '项目级'
     },
-    sourceLabel(s) { return { INPUT:'输入', COMPUTED:'计算', CONSTANT:'常量', DB:'数据库', API:'接口' }[s] || s },
-    sourceTagColor(s) { return { INPUT:'', COMPUTED:'warning', CONSTANT:'success', DB:'info', API:'info' }[s] || '' },
+    sourceLabel(s) { return { INPUT:'输入', COMPUTED:'计算', CONSTANT:'常量', DB:'数据库', API:'接口', LIST:'名单' }[s] || s },
+    sourceTagColor(s) { return { INPUT:'', COMPUTED:'warning', CONSTANT:'success', DB:'info', API:'info', LIST:'danger' }[s] || '' },
     objTypeLabel(t) { return { INPUT:'输入对象', OUTPUT:'输出对象', INOUT:'输入输出' }[t] || t },
     objTypeColor(t) { return { INPUT:'', OUTPUT:'success', INOUT:'warning' }[t] || '' }
   }

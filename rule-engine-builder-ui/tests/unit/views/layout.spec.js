@@ -19,6 +19,7 @@ afterEach(() => { jest.clearAllMocks() })
 function computeActiveMenuIndex(path) {
   if (path.startsWith('/designer/')) return '/rule'
   if (/^\/project\/\d+$/.test(path)) return '/project'
+  if (/^\/list\/\d+$/.test(path)) return '/list'
   return path
 }
 
@@ -60,8 +61,13 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
     expect(computeActiveMenuIndex('/project/123')).toBe('/project')
   })
 
+  test('路径为 /list/:id 时高亮「名单管理」', () => {
+    expect(computeActiveMenuIndex('/list/1')).toBe('/list')
+    expect(computeActiveMenuIndex('/list/123')).toBe('/list')
+  })
+
   test('普通路径直接匹配菜单 index', () => {
-    const paths = ['/variable', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing', '/rule', '/project']
+    const paths = ['/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing', '/rule', '/project']
     paths.forEach(path => {
       expect(computeActiveMenuIndex(path)).toBe(path)
     })
@@ -82,6 +88,7 @@ describe('Layout — 侧边栏菜单配置', () => {
     { index: '/project', label: '项目管理', icon: 'el-icon-folder' },
     { index: '/rule', label: '规则管理', icon: 'el-icon-document' },
     { index: '/variable', label: '变量管理', icon: 'el-icon-collection-tag' },
+    { index: '/list', label: '名单管理', icon: 'el-icon-tickets' },
     { index: '/datasource', label: '外数管理', icon: 'el-icon-link' },
     { index: '/database', label: '数据库管理', icon: 'el-icon-set-up' },
     { index: '/model', label: '模型管理', icon: 'el-icon-cpu' },
@@ -91,8 +98,8 @@ describe('Layout — 侧边栏菜单配置', () => {
     { index: '/billing', label: '账单管理', icon: 'el-icon-coin' }
   ]
 
-  test('侧边栏包含 10 个菜单项', () => {
-    expect(sidebarMenus).toHaveLength(10)
+  test('侧边栏包含 11 个菜单项', () => {
+    expect(sidebarMenus).toHaveLength(11)
   })
 
   sidebarMenus.forEach(({ index, label, icon }) => {
@@ -105,7 +112,7 @@ describe('Layout — 侧边栏菜单配置', () => {
   })
 
   test('所有菜单项的 index 都是有效的路由路径', () => {
-    const validRoutes = ['/project', '/rule', '/variable', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing']
+    const validRoutes = ['/project', '/rule', '/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing']
     sidebarMenus.forEach(menu => {
       expect(validRoutes).toContain(menu.index)
     })
@@ -122,6 +129,7 @@ describe('Layout — 路由导航模拟', () => {
     { label: '项目管理', index: '/project' },
     { label: '规则管理', index: '/rule' },
     { label: '变量管理', index: '/variable' },
+    { label: '名单管理', index: '/list' },
     { label: '外数管理', index: '/datasource' },
     { label: '数据库管理', index: '/database' },
     { label: '模型管理', index: '/model' },
