@@ -37,6 +37,12 @@ public class RuleExecuteService {
     @Resource
     private FunctionRegistrar functionRegistrar;
 
+    @Resource
+    private RuleBillingService billingService;
+
+    @Resource
+    private VariableSourceResolver variableSourceResolver;
+
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
@@ -71,7 +77,8 @@ public class RuleExecuteService {
         String fullScript = funcPrefix.isEmpty()
                 ? content.getCompiledScript()
                 : funcPrefix + "\n" + content.getCompiledScript();
-        RuleResult result = qlExpressEngine.execute(fullScript, params, true);
+        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), params);
+        RuleResult result = qlExpressEngine.execute(fullScript, executeParams, true);
 
         RuleExecutionLog log = new RuleExecutionLog();
         log.setRuleCode(definition.getRuleCode());
@@ -84,7 +91,7 @@ public class RuleExecuteService {
         log.setRuleVersion(definition.getCurrentVersion());
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
-        log.setInputParams(JSON.toJSONString(params));
+        log.setInputParams(JSON.toJSONString(executeParams));
         log.setOutputResult(JSON.toJSONString(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
@@ -93,6 +100,7 @@ public class RuleExecuteService {
             log.setTraceInfo(JSON.toJSONString(result.getTraces()));
         }
         logService.save(log);
+        billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
 
         return result;
     }

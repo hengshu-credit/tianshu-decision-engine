@@ -34,6 +34,14 @@
             <i class="el-icon-collection-tag" />
             <span>变量管理</span>
           </el-menu-item>
+          <el-menu-item index="/datasource">
+            <i class="el-icon-link" />
+            <span>外数管理</span>
+          </el-menu-item>
+          <el-menu-item index="/database">
+            <i class="el-icon-set-up" />
+            <span>数据库管理</span>
+          </el-menu-item>
           <el-menu-item index="/model">
             <i class="el-icon-cpu" />
             <span>模型管理</span>
@@ -49,6 +57,10 @@
           <el-menu-item index="/log">
             <i class="el-icon-document" />
             <span>执行日志</span>
+          </el-menu-item>
+          <el-menu-item index="/billing">
+            <i class="el-icon-coin" />
+            <span>账单管理</span>
           </el-menu-item>
         </el-menu>
       </el-aside>

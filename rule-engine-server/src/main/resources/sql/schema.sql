@@ -250,6 +250,7 @@ CREATE TABLE IF NOT EXISTS `rule_variable` (
   `script_name`       VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的变量名（默认驼峰）',
   `var_type`          VARCHAR(32)  NOT NULL                COMMENT '数据类型：STRING/NUMBER/BOOLEAN/DATE/ENUM/OBJECT/LIST/MAP',
   `var_source`        VARCHAR(32)  NOT NULL DEFAULT 'INPUT' COMMENT '来源：INPUT/COMPUTED/CONSTANT/DB/API',
+  `source_config`     JSON         DEFAULT NULL             COMMENT '外部来源配置JSON：API/DB变量绑定接口、SQL、入参映射、结果路径等',
   `default_value`     TEXT         DEFAULT NULL             COMMENT '默认值（常量必填，可为较长 JSON）',
   `value_range`       VARCHAR(512) DEFAULT NULL             COMMENT '取值范围描述',
   `example_value`     VARCHAR(256) DEFAULT NULL             COMMENT '示例值',
@@ -533,3 +534,193 @@ CREATE TABLE IF NOT EXISTS `rule_model_ref` (
   UNIQUE KEY `uk_model_project` (`model_id`, `project_id`),
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='模型关联表（用于项目关联全局模型）';
+
+-- ============================================================
+-- 18. rule_external_datasource - 外部 API 数据源定义表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
+  `id`                  BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`          BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `scope`               VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',
+  `datasource_code`     VARCHAR(128) NOT NULL                COMMENT '外数数据源编码',
+  `datasource_name`     VARCHAR(128) NOT NULL                COMMENT '外数数据源名称',
+  `provider_name`       VARCHAR(128) DEFAULT NULL            COMMENT '第三方服务提供方',
+  `protocol`            VARCHAR(16)  NOT NULL DEFAULT 'HTTP' COMMENT '协议类型：HTTP/HTTPS',
+  `base_url`            VARCHAR(512) NOT NULL                COMMENT '基础地址',
+  `auth_type`           VARCHAR(32)  NOT NULL DEFAULT 'NONE' COMMENT '默认鉴权方式：NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
+  `auth_config`         JSON         DEFAULT NULL            COMMENT '默认鉴权配置JSON',
+  `token_cache_seconds` INT          NOT NULL DEFAULT 0      COMMENT 'token缓存秒数，0表示不缓存',
+  `description`         VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `status`              TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`         DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ext_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
+  KEY `idx_ext_ds_project_id` (`project_id`),
+  KEY `idx_ext_ds_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API数据源定义表';
+
+-- ============================================================
+-- 19. rule_external_api_config - 外部 API 接口配置表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
+  `id`                   BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `datasource_id`        BIGINT       NOT NULL                COMMENT '外数数据源ID',
+  `api_code`             VARCHAR(128) NOT NULL                COMMENT '接口编码',
+  `api_name`             VARCHAR(128) NOT NULL                COMMENT '接口名称',
+  `request_method`       VARCHAR(16)  NOT NULL DEFAULT 'POST' COMMENT '请求方法：GET/POST/PUT/DELETE/PATCH',
+  `endpoint_url`         VARCHAR(512) NOT NULL                COMMENT '接口相对或完整地址',
+  `content_type`         VARCHAR(128) NOT NULL DEFAULT 'application/json' COMMENT '请求Content-Type',
+  `request_mode`         VARCHAR(16)  NOT NULL DEFAULT 'SYNC' COMMENT '调用模式：SYNC/ASYNC',
+  `request_object_id`    BIGINT       DEFAULT NULL            COMMENT '请求数据对象ID',
+  `response_object_id`   BIGINT       DEFAULT NULL            COMMENT '响应数据对象ID',
+  `header_config`        JSON         DEFAULT NULL            COMMENT '请求头配置JSON',
+  `query_config`         JSON         DEFAULT NULL            COMMENT 'Query参数配置JSON',
+  `request_mapping`      JSON         DEFAULT NULL            COMMENT '入参映射配置JSON',
+  `response_mapping`     JSON         DEFAULT NULL            COMMENT '响应映射配置JSON',
+  `body_template`        LONGTEXT     DEFAULT NULL            COMMENT '请求体模板',
+  `auth_mode`            VARCHAR(32)  NOT NULL DEFAULT 'INHERIT' COMMENT '接口鉴权：INHERIT/NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
+  `auth_api_config`      JSON         DEFAULT NULL            COMMENT '接口级鉴权与token获取配置JSON',
+  `token_cache_seconds`  INT          NOT NULL DEFAULT 0      COMMENT '接口token缓存秒数',
+  `timeout_ms`           INT          NOT NULL DEFAULT 3000   COMMENT '调用超时时间毫秒',
+  `retry_count`          INT          NOT NULL DEFAULT 0      COMMENT '重试次数',
+  `retry_interval_ms`    INT          NOT NULL DEFAULT 200    COMMENT '重试间隔毫秒',
+  `exception_strategy`   VARCHAR(32)  NOT NULL DEFAULT 'FAIL_FAST' COMMENT '异常策略：FAIL_FAST/RETURN_DEFAULT/IGNORE/USE_CACHE',
+  `fallback_value`       LONGTEXT     DEFAULT NULL            COMMENT '兜底返回值JSON',
+  `async_callback_url`   VARCHAR(512) DEFAULT NULL            COMMENT '异步回调地址',
+  `async_result_path`    VARCHAR(256) DEFAULT NULL            COMMENT '异步结果提取路径',
+  `billing_item_code`    VARCHAR(128) DEFAULT NULL            COMMENT '计费项目编码',
+  `unit_price`           DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '单次调用价格',
+  `description`          VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `status`               TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`          DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_ext_api_datasource_code` (`datasource_id`, `api_code`),
+  KEY `idx_ext_api_datasource_id` (`datasource_id`),
+  KEY `idx_ext_api_request_mode` (`request_mode`),
+  KEY `idx_ext_api_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
+
+-- ============================================================
+-- 20. rule_db_datasource - 外部数据库数据源定义表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
+  `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`            BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `scope`                 VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',
+  `datasource_code`       VARCHAR(128) NOT NULL                COMMENT '数据库数据源编码',
+  `datasource_name`       VARCHAR(128) NOT NULL                COMMENT '数据库数据源名称',
+  `db_type`               VARCHAR(32)  NOT NULL DEFAULT 'MYSQL' COMMENT '数据库类型：MYSQL/POSTGRESQL/ORACLE/SQLSERVER/OTHER',
+  `connection_mode`       VARCHAR(32)  NOT NULL DEFAULT 'DIRECT' COMMENT '连接方式：DIRECT-直连，SSH_TUNNEL-SSH隧道',
+  `host`                  VARCHAR(256) DEFAULT NULL            COMMENT '数据库主机（用于表单生成JDBC URL和SSH远端转发）',
+  `port`                  INT          DEFAULT NULL            COMMENT '数据库端口',
+  `database_name`         VARCHAR(128) DEFAULT NULL            COMMENT '数据库名/服务名',
+  `jdbc_params`           VARCHAR(1024) DEFAULT NULL           COMMENT 'JDBC扩展参数，不含前导问号',
+  `driver_class_name`     VARCHAR(256) DEFAULT 'com.mysql.cj.jdbc.Driver' COMMENT 'JDBC驱动类',
+  `jdbc_url`              VARCHAR(1024) NOT NULL               COMMENT 'JDBC连接串',
+  `username`              VARCHAR(128) DEFAULT NULL            COMMENT '用户名',
+  `password`              VARCHAR(512) DEFAULT NULL            COMMENT '密码',
+  `ssh_host`              VARCHAR(256) DEFAULT NULL            COMMENT 'SSH堡垒机主机',
+  `ssh_port`              INT          DEFAULT NULL            COMMENT 'SSH堡垒机端口',
+  `ssh_username`          VARCHAR(128) DEFAULT NULL            COMMENT 'SSH用户名',
+  `ssh_password`          VARCHAR(512) DEFAULT NULL            COMMENT 'SSH密码',
+  `ssh_private_key`       TEXT         DEFAULT NULL            COMMENT 'SSH私钥内容',
+  `ssh_passphrase`        VARCHAR(512) DEFAULT NULL            COMMENT 'SSH私钥口令',
+  `ssh_timeout_ms`        INT          NOT NULL DEFAULT 10000  COMMENT 'SSH连接超时时间毫秒',
+  `max_pool_size`         INT          NOT NULL DEFAULT 5      COMMENT '最大连接数',
+  `min_idle`              INT          NOT NULL DEFAULT 1      COMMENT '最小空闲连接数',
+  `connection_timeout_ms` INT          NOT NULL DEFAULT 3000   COMMENT '连接超时时间毫秒',
+  `idle_timeout_ms`       INT          NOT NULL DEFAULT 600000 COMMENT '空闲超时时间毫秒',
+  `validation_query`      VARCHAR(256) NOT NULL DEFAULT 'SELECT 1' COMMENT '连接校验SQL',
+  `description`           VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `status`                TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_db_ds_scope_project_code` (`scope`, `project_id`, `datasource_code`),
+  KEY `idx_db_ds_project_id` (`project_id`),
+  KEY `idx_db_ds_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部数据库数据源定义表';
+
+-- ============================================================
+-- 21. rule_billing_config - 计费配置表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_billing_config` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`      BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',
+  `scope`           VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',
+  `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
+  `billing_name`    VARCHAR(128) NOT NULL                COMMENT '计费项名称',
+  `billing_target`  VARCHAR(32)  NOT NULL DEFAULT 'ENGINE' COMMENT '计费对象：ENGINE/API/DB',
+  `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID，空表示同类型全部',
+  `charge_type`     VARCHAR(32)  NOT NULL DEFAULT 'COUNT' COMMENT '计费方式：COUNT/SUCCESS/DURATION/FIXED',
+  `unit_price`      DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '单价',
+  `currency`        VARCHAR(16)  NOT NULL DEFAULT 'CNY'  COMMENT '币种',
+  `effective_time`  DATETIME     DEFAULT NULL            COMMENT '生效时间',
+  `expire_time`     DATETIME     DEFAULT NULL            COMMENT '失效时间',
+  `description`     VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_billing_scope_project_code` (`scope`, `project_id`, `billing_code`),
+  KEY `idx_billing_target` (`billing_target`, `target_ref_id`),
+  KEY `idx_billing_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费配置表';
+
+-- ============================================================
+-- 22. rule_billing_record - 计费明细表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_billing_record` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
+  `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '项目编码',
+  `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
+  `billing_name`    VARCHAR(128) DEFAULT NULL            COMMENT '计费项名称',
+  `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象：ENGINE/API/DB',
+  `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
+  `request_id`      VARCHAR(128) DEFAULT NULL            COMMENT '请求ID',
+  `rule_code`       VARCHAR(128) DEFAULT NULL            COMMENT '规则编码',
+  `api_code`        VARCHAR(128) DEFAULT NULL            COMMENT 'API编码',
+  `datasource_code` VARCHAR(128) DEFAULT NULL            COMMENT '数据源编码',
+  `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '是否成功：0-失败，1-成功',
+  `quantity`        DECIMAL(18,6) NOT NULL DEFAULT 1.000000 COMMENT '计费数量',
+  `unit_price`      DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '单价',
+  `amount`          DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '金额',
+  `currency`        VARCHAR(16)  NOT NULL DEFAULT 'CNY'  COMMENT '币种',
+  `cost_time_ms`    BIGINT       DEFAULT NULL            COMMENT '耗时毫秒',
+  `error_message`   VARCHAR(1024) DEFAULT NULL           COMMENT '错误信息',
+  `occur_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_billing_record_occur` (`occur_time`),
+  KEY `idx_billing_record_target` (`billing_target`, `target_ref_id`),
+  KEY `idx_billing_record_project` (`project_code`, `occur_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费明细表';
+
+-- ============================================================
+-- 23. rule_billing_summary - 计费汇总表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `summary_date`    DATE         NOT NULL                COMMENT '汇总日期',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
+  `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '项目编码',
+  `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
+  `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象',
+  `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
+  `total_count`     BIGINT       NOT NULL DEFAULT 0      COMMENT '总调用次数',
+  `success_count`   BIGINT       NOT NULL DEFAULT 0      COMMENT '成功次数',
+  `fail_count`      BIGINT       NOT NULL DEFAULT 0      COMMENT '失败次数',
+  `total_quantity`  DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '总计费数量',
+  `total_amount`    DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '总金额',
+  `currency`        VARCHAR(16)  NOT NULL DEFAULT 'CNY'  COMMENT '币种',
+  `avg_cost_time_ms` DECIMAL(18,2) NOT NULL DEFAULT 0.00 COMMENT '平均耗时毫秒',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`),
+  KEY `idx_billing_summary_date` (`summary_date`),
+  KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';

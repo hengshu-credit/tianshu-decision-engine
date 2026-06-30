@@ -52,6 +52,8 @@ public class SchemaSyncService {
         if (jdbcTemplate == null) return;
         try {
             ensureRefTypeColumns();
+            ensureVariableSourceConfigColumn();
+            ensureDbDatasourceConnectionColumns();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldUniqueKey();
         } catch (Exception e) {
@@ -117,6 +119,43 @@ public class SchemaSyncService {
         }
     }
 
+    private void ensureVariableSourceConfigColumn() {
+        String table = "rule_variable";
+        if (!tableExists(table)) return;
+        if (!columnExists(table, "source_config")) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD COLUMN `source_config` JSON DEFAULT NULL COMMENT '外部来源配置JSON：API/DB变量绑定接口、SQL、入参映射、结果路径等' AFTER `var_source`");
+        }
+    }
+
+    private void ensureDbDatasourceConnectionColumns() {
+        String table = "rule_db_datasource";
+        if (!tableExists(table)) return;
+        addColumnIfMissing(table, "connection_mode",
+                "`connection_mode` VARCHAR(32) NOT NULL DEFAULT 'DIRECT' COMMENT '连接方式：DIRECT-直连，SSH_TUNNEL-SSH隧道' AFTER `db_type`");
+        addColumnIfMissing(table, "host",
+                "`host` VARCHAR(256) DEFAULT NULL COMMENT '数据库主机（用于表单生成JDBC URL和SSH远端转发）' AFTER `connection_mode`");
+        addColumnIfMissing(table, "port",
+                "`port` INT DEFAULT NULL COMMENT '数据库端口' AFTER `host`");
+        addColumnIfMissing(table, "database_name",
+                "`database_name` VARCHAR(128) DEFAULT NULL COMMENT '数据库名/服务名' AFTER `port`");
+        addColumnIfMissing(table, "jdbc_params",
+                "`jdbc_params` VARCHAR(1024) DEFAULT NULL COMMENT 'JDBC扩展参数，不含前导问号' AFTER `database_name`");
+        addColumnIfMissing(table, "ssh_host",
+                "`ssh_host` VARCHAR(256) DEFAULT NULL COMMENT 'SSH堡垒机主机' AFTER `password`");
+        addColumnIfMissing(table, "ssh_port",
+                "`ssh_port` INT DEFAULT NULL COMMENT 'SSH堡垒机端口' AFTER `ssh_host`");
+        addColumnIfMissing(table, "ssh_username",
+                "`ssh_username` VARCHAR(128) DEFAULT NULL COMMENT 'SSH用户名' AFTER `ssh_port`");
+        addColumnIfMissing(table, "ssh_password",
+                "`ssh_password` VARCHAR(512) DEFAULT NULL COMMENT 'SSH密码' AFTER `ssh_username`");
+        addColumnIfMissing(table, "ssh_private_key",
+                "`ssh_private_key` TEXT DEFAULT NULL COMMENT 'SSH私钥内容' AFTER `ssh_password`");
+        addColumnIfMissing(table, "ssh_passphrase",
+                "`ssh_passphrase` VARCHAR(512) DEFAULT NULL COMMENT 'SSH私钥口令' AFTER `ssh_private_key`");
+        addColumnIfMissing(table, "ssh_timeout_ms",
+                "`ssh_timeout_ms` INT NOT NULL DEFAULT 10000 COMMENT 'SSH连接超时时间毫秒' AFTER `ssh_passphrase`");
+    }
+
     private void ensureModelFieldForeignKeysRemoved() {
         dropForeignKeyIfExists("rule_model_input_field", "fk_input_var");
         dropForeignKeyIfExists("rule_model_output_field", "fk_output_var");
@@ -151,6 +190,12 @@ public class SchemaSyncService {
                 new Object[]{tableName, columnName},
                 Integer.class);
         return count != null && count > 0;
+    }
+
+    private void addColumnIfMissing(String tableName, String columnName, String definition) {
+        if (!columnExists(tableName, columnName)) {
+            jdbcTemplate.execute("ALTER TABLE `" + tableName + "` ADD COLUMN " + definition);
+        }
     }
 
     private boolean indexExists(String tableName, String indexName) {

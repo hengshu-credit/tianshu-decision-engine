@@ -165,6 +165,39 @@ jest.mock('@/api/project', () => ({
   exportApiDoc: jest.fn(),
   __esModule: true
 }))
+jest.mock('@/api/datasource', () => ({
+  listDatasources: jest.fn(),
+  getDatasource: jest.fn(),
+  createDatasource: jest.fn(),
+  updateDatasource: jest.fn(),
+  deleteDatasource: jest.fn(),
+  listApiConfigs: jest.fn(),
+  createApiConfig: jest.fn(),
+  updateApiConfig: jest.fn(),
+  deleteApiConfig: jest.fn(),
+  invokeApiConfig: jest.fn(),
+  __esModule: true
+}))
+jest.mock('@/api/database', () => ({
+  listDbDatasources: jest.fn(),
+  createDbDatasource: jest.fn(),
+  updateDbDatasource: jest.fn(),
+  deleteDbDatasource: jest.fn(),
+  testDbDatasource: jest.fn(),
+  testDbDatasourceDraft: jest.fn(),
+  queryDbDatasource: jest.fn(),
+  __esModule: true
+}))
+jest.mock('@/api/billing', () => ({
+  listBillingConfigs: jest.fn(),
+  createBillingConfig: jest.fn(),
+  updateBillingConfig: jest.fn(),
+  deleteBillingConfig: jest.fn(),
+  listBillingRecords: jest.fn(),
+  listBillingSummaries: jest.fn(),
+  refreshBillingSummary: jest.fn(),
+  __esModule: true
+}))
 
 // 6. mock @/layout/index.vue
 jest.mock('@/layout/index.vue', () => ({

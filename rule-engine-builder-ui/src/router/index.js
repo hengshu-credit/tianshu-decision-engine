@@ -135,6 +135,18 @@ const routes = [
         meta: { title: '变量管理' }
       },
       {
+        path: 'datasource',
+        name: 'DatasourceList',
+        component: () => import('@/views/datasource/DatasourceList.vue'),
+        meta: { title: '外数管理' }
+      },
+      {
+        path: 'database',
+        name: 'DatabaseList',
+        component: () => import('@/views/database/DatabaseList.vue'),
+        meta: { title: '数据库管理' }
+      },
+      {
         path: 'model',
         name: 'ModelList',
         component: () => import('@/views/model/ModelList.vue'),
@@ -163,6 +175,12 @@ const routes = [
         name: 'ExecutionLog',
         component: () => import('@/views/log/ExecutionLog.vue'),
         meta: { title: '执行日志' }
+      },
+      {
+        path: 'billing',
+        name: 'BillingList',
+        component: () => import('@/views/billing/BillingList.vue'),
+        meta: { title: '账单管理' }
       }
     ]
   }

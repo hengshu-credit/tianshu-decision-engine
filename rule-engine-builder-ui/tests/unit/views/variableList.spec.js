@@ -26,6 +26,14 @@ jest.mock('@/api/dataObject', () => ({
   batchValidateAll: jest.fn()
 }))
 
+jest.mock('@/api/datasource', () => ({
+  listApiConfigs: jest.fn()
+}))
+
+jest.mock('@/api/database', () => ({
+  listDbDatasources: jest.fn()
+}))
+
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
 import * as dataObjectApi from '@/api/dataObject'

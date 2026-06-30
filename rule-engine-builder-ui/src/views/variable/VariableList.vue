@@ -312,11 +312,73 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="!isObjectField" label="来源">
-          <el-select v-model="form.varSource" :disabled="isConstantCreate" clearable placeholder="可选" style="width:100%;">
+          <el-select v-model="form.varSource" :disabled="isConstantCreate" clearable placeholder="可选" style="width:100%;" @change="onVarSourceChange">
             <el-option label="输入参数" value="INPUT" /><el-option label="数据库查询" value="DB" />
             <el-option label="接口调用" value="API" /><el-option label="计算得出" value="COMPUTED" /><el-option label="常量" value="CONSTANT" />
           </el-select>
         </el-form-item>
+        <template v-if="!isObjectField && form.varSource === 'API'">
+          <el-form-item label="接口配置">
+            <el-select v-model="form.apiConfigId" filterable clearable placeholder="选择接口" style="width:100%;">
+              <el-option
+                v-for="api in apiConfigOptions"
+                :key="api.id"
+                :label="api.apiName ? api.apiName + ' / ' + api.apiCode : api.apiCode"
+                :value="api.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="入参映射">
+            <el-input v-model="form.apiParamMapping" type="textarea" :rows="3" placeholder='{"customerId":"$.customerId"}' />
+          </el-form-item>
+          <el-form-item label="结果路径">
+            <el-input v-model="form.apiResultPath" placeholder="body.data.score" />
+          </el-form-item>
+          <el-form-item label="异常策略">
+            <el-select v-model="form.apiExceptionStrategy" style="width:180px;">
+              <el-option label="抛出异常" value="ERROR" />
+              <el-option label="返回默认值" value="RETURN_DEFAULT" />
+              <el-option label="跳过补值" value="SKIP" />
+            </el-select>
+            <el-switch v-model="form.apiForceRefresh" active-text="强制刷新" style="margin-left:12px;" />
+          </el-form-item>
+          <el-form-item v-if="form.apiExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值">
+            <el-input v-model="form.apiFallbackValue" placeholder="可为空" />
+          </el-form-item>
+        </template>
+        <template v-if="!isObjectField && form.varSource === 'DB'">
+          <el-form-item label="数据库源">
+            <el-select v-model="form.dbDatasourceId" filterable clearable placeholder="选择数据库" style="width:100%;">
+              <el-option
+                v-for="db in dbDatasourceOptions"
+                :key="db.id"
+                :label="db.datasourceName ? db.datasourceName + ' / ' + db.datasourceCode : db.datasourceCode"
+                :value="db.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="查询 SQL">
+            <el-input v-model="form.dbSql" type="textarea" :rows="3" placeholder="select score from risk_user where user_id = ?" />
+          </el-form-item>
+          <el-form-item label="SQL 参数">
+            <el-input v-model="form.dbParams" type="textarea" :rows="2" placeholder='["$.customerId"]' />
+          </el-form-item>
+          <el-form-item label="结果路径">
+            <el-input v-model="form.dbResultPath" placeholder="0.score" />
+          </el-form-item>
+          <el-form-item label="异常策略">
+            <el-input-number v-model="form.dbMaxRows" :min="1" :max="500" />
+            <el-select v-model="form.dbExceptionStrategy" style="width:180px;margin-left:8px;">
+              <el-option label="抛出异常" value="ERROR" />
+              <el-option label="返回默认值" value="RETURN_DEFAULT" />
+              <el-option label="跳过补值" value="SKIP" />
+            </el-select>
+            <el-switch v-model="form.dbForceRefresh" active-text="强制刷新" style="margin-left:12px;" />
+          </el-form-item>
+          <el-form-item v-if="form.dbExceptionStrategy === 'RETURN_DEFAULT'" label="兜底值">
+            <el-input v-model="form.dbFallbackValue" placeholder="可为空" />
+          </el-form-item>
+        </template>
         <el-form-item v-if="!isObjectField" label="默认值">
           <el-input v-model="form.defaultValue" :placeholder="form.varSource==='CONSTANT' ? '常量必填' : '可选'" />
         </el-form-item>
@@ -609,6 +671,8 @@ import { listVariables, createVariable, updateVariable, deleteVariable, getVaria
 import { listProjects } from '@/api/project'
 import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
+import { listApiConfigs } from '@/api/datasource'
+import { listDbDatasources } from '@/api/database'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
@@ -650,9 +714,12 @@ export default {
       allObjectNames: [],
       filteredObjectNames: [],
 
-      dialogVisible: false,
-      form: this.initForm(),
-      rules: {
+        dialogVisible: false,
+        form: this.initForm(),
+        apiConfigOptions: [],
+        dbDatasourceOptions: [],
+        sourceOptionsLoaded: { API: false, DB: false },
+        rules: {
         varCode: [{ required: true, message: '请输入变量编码', trigger: 'blur' }],
         varLabel: [{ required: true, message: '请输入变量名称', trigger: 'blur' }],
         varType: [{ required: true, message: '请选择数据类型', trigger: 'change' }]
@@ -816,20 +883,152 @@ export default {
         id: null,
         scope: 'GLOBAL',
         projectId: '',
-        varCode: '',
-        varLabel: '',
-        varType: 'STRING',
-        varSource: 'INPUT',
-        refObjectCode: '',
-        defaultValue: '',
-        valueRange: '',
-        exampleValue: '',
+          varCode: '',
+          varLabel: '',
+          varType: 'STRING',
+          varSource: 'INPUT',
+          sourceConfig: '',
+          apiConfigId: '',
+          apiParamMapping: '{}',
+          apiResultPath: 'body',
+          apiForceRefresh: false,
+          apiExceptionStrategy: 'ERROR',
+          apiFallbackValue: '',
+          dbDatasourceId: '',
+          dbSql: '',
+          dbParams: '[]',
+          dbResultPath: '',
+          dbMaxRows: 1,
+          dbForceRefresh: false,
+          dbExceptionStrategy: 'ERROR',
+          dbFallbackValue: '',
+          refObjectCode: '',
+          defaultValue: '',
+          valueRange: '',
+          exampleValue: '',
         sortOrder: 0,
         status: 1,
         description: ''
-      }
+        }
+      },
+      async onVarSourceChange(source) {
+        await this.loadVariableSourceOptions(source)
+      },
+      async loadVariableSourceOptions(source) {
+        if (source === 'API' && !this.sourceOptionsLoaded.API) {
+          try {
+            const res = await listApiConfigs({ pageNum: 1, pageSize: 1000, status: 1 })
+            this.apiConfigOptions = (res.data && res.data.records) || []
+            this.sourceOptionsLoaded.API = true
+          } catch (e) {
+            this.apiConfigOptions = []
+          }
+        }
+        if (source === 'DB' && !this.sourceOptionsLoaded.DB) {
+          try {
+            const res = await listDbDatasources({ pageNum: 1, pageSize: 1000, status: 1 })
+            this.dbDatasourceOptions = (res.data && res.data.records) || []
+            this.sourceOptionsLoaded.DB = true
+          } catch (e) {
+            this.dbDatasourceOptions = []
+          }
+        }
+      },
+      applySourceConfigToForm() {
+        const config = this.parseJsonSafe(this.form.sourceConfig, {})
+        if (this.form.varSource === 'API') {
+          this.form.apiConfigId = config.apiConfigId || ''
+          this.form.apiParamMapping = this.stringifyConfig(config.paramMapping || {})
+          this.form.apiResultPath = config.resultPath || 'body'
+          this.form.apiForceRefresh = config.forceRefresh === true
+          this.form.apiExceptionStrategy = config.exceptionStrategy || 'ERROR'
+          this.form.apiFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
+        } else if (this.form.varSource === 'DB') {
+          this.form.dbDatasourceId = config.datasourceId || ''
+          this.form.dbSql = config.sql || ''
+          this.form.dbParams = this.stringifyConfig(config.params || [])
+          this.form.dbResultPath = config.resultPath || ''
+          this.form.dbMaxRows = config.maxRows || 1
+          this.form.dbForceRefresh = config.forceRefresh === true
+          this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
+          this.form.dbFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
+        }
+      },
+      parseJsonSafe(text, fallback) {
+        if (!text || !String(text).trim()) return fallback
+        try {
+          return JSON.parse(text)
+        } catch (e) {
+          return fallback
+        }
+      },
+      stringifyConfig(value) {
+        return JSON.stringify(value == null ? {} : value, null, 2)
+      },
+      buildVariablePayload() {
+        const payload = { ...this.form }
+        if (payload.varSource === 'API') {
+          if (!payload.apiConfigId) {
+            this.$message.warning('请选择接口配置')
+            return null
+          }
+          const paramMapping = this.parseSourceJson(payload.apiParamMapping, '入参映射')
+          if (paramMapping == null) return null
+          payload.sourceConfig = JSON.stringify({
+            apiConfigId: payload.apiConfigId,
+            paramMapping,
+            resultPath: payload.apiResultPath || 'body',
+            forceRefresh: payload.apiForceRefresh === true,
+            exceptionStrategy: payload.apiExceptionStrategy || 'ERROR',
+            fallbackValue: payload.apiFallbackValue || null
+          })
+        } else if (payload.varSource === 'DB') {
+          if (!payload.dbDatasourceId) {
+            this.$message.warning('请选择数据库源')
+            return null
+          }
+          if (!payload.dbSql || !payload.dbSql.trim()) {
+            this.$message.warning('请输入查询 SQL')
+            return null
+          }
+          const params = this.parseSourceJson(payload.dbParams, 'SQL 参数', [])
+          if (params == null) return null
+          if (!Array.isArray(params)) {
+            this.$message.warning('SQL 参数必须是 JSON 数组')
+            return null
+          }
+          payload.sourceConfig = JSON.stringify({
+            datasourceId: payload.dbDatasourceId,
+            sql: payload.dbSql,
+            params,
+            resultPath: payload.dbResultPath || '',
+            maxRows: payload.dbMaxRows || 1,
+            forceRefresh: payload.dbForceRefresh === true,
+            exceptionStrategy: payload.dbExceptionStrategy || 'ERROR',
+            fallbackValue: payload.dbFallbackValue || null
+          })
+        } else {
+          payload.sourceConfig = null
+        }
+        this.removeSourceFormFields(payload)
+        return payload
+      },
+      parseSourceJson(text, label, fallback = {}) {
+        if (!text || !String(text).trim()) return fallback
+        try {
+          return JSON.parse(text)
+        } catch (e) {
+          this.$message.warning(label + '必须是合法 JSON')
+          return null
+        }
     },
-    async loadProjects() {
+    removeSourceFormFields(payload) {
+      const sourceFormFields = ['apiConfigId', 'apiParamMapping', 'apiResultPath', 'apiForceRefresh', 'apiExceptionStrategy', 'apiFallbackValue',
+        'dbDatasourceId', 'dbSql', 'dbParams', 'dbResultPath', 'dbMaxRows', 'dbForceRefresh', 'dbExceptionStrategy', 'dbFallbackValue'
+      ]
+      sourceFormFields.forEach(key => { delete payload[key] })
+    },
+      async loadProjects() {
       try {
         const res = await listProjects({ pageNum: 1, pageSize: 1000 })
         const list = (res.data && res.data.records) ? res.data.records : []
@@ -1304,15 +1503,17 @@ export default {
       this.dialogVisible = true
       this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
     },
-    handleEdit(row) {
-      this.isObjectField = false
-      this.isConstantCreate = false
-      this.objectFieldParentId = null
-      this.form = { ...this.initForm(), ...row }
-      this.form.scope = this.form.scope || 'PROJECT'
-      this.dialogVisible = true
-      this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
-    },
+      handleEdit(row) {
+        this.isObjectField = false
+        this.isConstantCreate = false
+        this.objectFieldParentId = null
+        this.form = { ...this.initForm(), ...row }
+        this.form.scope = this.form.scope || 'PROJECT'
+        this.applySourceConfigToForm()
+        this.loadVariableSourceOptions(this.form.varSource)
+        this.dialogVisible = true
+        this.$nextTick(() => { if (this.$refs.form) this.$refs.form.clearValidate() })
+      },
     onVarScopeChange(val) {
       if (val === 'GLOBAL') {
         this.form.projectId = 0
@@ -1364,8 +1565,10 @@ export default {
             return
           }
         }
-        const wasConstant = this.form.varSource === 'CONSTANT' || this.isConstantCreate
-        if (this.form.id) { await updateVariable(this.form) } else { await createVariable(this.form) }
+          const payload = this.buildVariablePayload()
+          if (!payload) return
+          const wasConstant = payload.varSource === 'CONSTANT' || this.isConstantCreate
+          if (payload.id) { await updateVariable(payload) } else { await createVariable(payload) }
         this.$message.success('操作成功')
         this.dialogVisible = false
         this.isConstantCreate = false

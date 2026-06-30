@@ -19,6 +19,8 @@ public class RuleVariable {
     private String scriptName;
     private String varType;
     private String varSource;
+    /** API/DB 等外部来源的绑定配置JSON */
+    private String sourceConfig;
     private String defaultValue;
     private String valueRange;
     private String exampleValue;
