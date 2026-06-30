@@ -396,9 +396,13 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             case "TABLE": return "决策表";
             case "TREE": return "决策树";
             case "FLOW": return "决策流";
+            case "CROSS":
             case "CROSS_TABLE": return "交叉表";
+            case "SCORE":
             case "SCORE_CARD": return "评分卡";
+            case "CROSS_ADV":
             case "CROSS_TABLE_ADV": return "复杂交叉表";
+            case "SCORE_ADV":
             case "SCORE_CARD_ADV": return "复杂评分卡";
             case "SCRIPT": return "QL脚本";
             default: return modelType;

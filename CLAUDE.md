@@ -262,8 +262,6 @@ Jest 配置（`jest.config.js`）关键点：
 - 参考实现：`rule_examples/` 目录下的企业级/个人开源参考项目
 
 
-
-# CLAUDE.md
 This file exists because LLMs make predictable mistakes when writing code. Not random mistakes. The same ones, over and over. I've watched it happen enough times to write them down.
 These are not suggestions. These are rules. Follow them and you'll produce code that doesn't need to be rewritten. Ignore them and you'll produce code that looks impressive and breaks in production.
 ## 1. Read Before You Write

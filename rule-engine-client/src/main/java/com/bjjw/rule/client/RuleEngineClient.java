@@ -49,7 +49,7 @@ public class RuleEngineClient {
         if (externalReporter != null) {
             this.logReporter = externalReporter;
         } else if (config.isLogReportEnabled()) {
-            this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs());
+            this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs(), config.getToken());
         } else {
             this.logReporter = new NoOpLogReporter();
         }

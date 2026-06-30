@@ -8,12 +8,14 @@ import com.bjjw.rule.model.entity.RuleBillingConfig;
 import com.bjjw.rule.model.entity.RuleBillingRecord;
 import com.bjjw.rule.model.entity.RuleBillingSummary;
 import com.bjjw.rule.model.entity.RuleDefinition;
+import com.bjjw.rule.model.entity.RuleExecutionLog;
 import com.bjjw.rule.model.entity.RuleExternalApiConfig;
 import com.bjjw.rule.model.entity.RuleExternalDatasource;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.server.mapper.RuleBillingConfigMapper;
 import com.bjjw.rule.server.mapper.RuleBillingRecordMapper;
 import com.bjjw.rule.server.mapper.RuleBillingSummaryMapper;
+import com.bjjw.rule.server.mapper.RuleDefinitionMapper;
 import com.bjjw.rule.server.mapper.RuleProjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +43,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
 
     @Resource
     private RuleProjectMapper projectMapper;
+
+    @Resource
+    private RuleDefinitionMapper definitionMapper;
 
     public IPage<RuleBillingConfig> pageConfigs(int pageNum, int pageSize, String scope, Long projectId,
                                                 String billingTarget, String billingCode, Integer status) {
@@ -222,6 +227,19 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
             recordMapper.insert(record);
         }
+    }
+
+    public void recordEngineExecutionLog(RuleExecutionLog log) {
+        if (log == null || !hasText(log.getRuleCode())) {
+            return;
+        }
+        RuleDefinition definition = definitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, log.getRuleCode()));
+        if (definition == null) {
+            return;
+        }
+        boolean success = log.getSuccess() != null && log.getSuccess() == 1;
+        recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage());
     }
 
     public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,

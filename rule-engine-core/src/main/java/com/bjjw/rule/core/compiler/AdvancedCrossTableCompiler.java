@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -95,6 +96,10 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             if (!first) {
                 script.append("\n");
             }
+            LinkedHashSet<String> outVars = new LinkedHashSet<>();
+            outVars.add(resolvedResCode);
+            RuleScriptResultCollector.prependOutputNullInits(script, outVars);
+            RuleScriptResultCollector.appendResultMapReturn(script, outVars);
 
             return CompileResult.ok(script.toString(), "QLEXPRESS");
         } catch (Exception e) {

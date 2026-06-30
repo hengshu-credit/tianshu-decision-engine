@@ -12,6 +12,7 @@ public class TokenAuthInterceptorTest {
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/sync"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/sync/all"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/sync/functions/1"));
+        assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/log/report"));
     }
 
     @Test
@@ -24,6 +25,7 @@ public class TokenAuthInterceptorTest {
     public void doesNotProtectSimilarNonSyncPaths() {
         assertFalse(TokenAuthInterceptor.isProtectedPath("/api/rule/sync-all"));
         assertFalse(TokenAuthInterceptor.isProtectedPath("/api/rule/syncfoo"));
+        assertFalse(TokenAuthInterceptor.isProtectedPath("/api/rule/log/reporting"));
         assertFalse(TokenAuthInterceptor.isProtectedPath("/api/rule/definition"));
     }
 }

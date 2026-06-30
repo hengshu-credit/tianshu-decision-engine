@@ -149,17 +149,17 @@
           </el-radio-group>
         </el-form-item>
         <el-row :gutter="12">
-          <el-col :span="10">
+          <el-col :span="14">
             <el-form-item label="数据库主机">
               <el-input v-model="form.host" placeholder="如 mysql.internal" @input="onJdbcPartChange" />
             </el-form-item>
           </el-col>
-          <el-col :span="5">
+          <el-col :span="8">
             <el-form-item label="端口">
-              <el-input-number v-model="form.port" :min="1" :max="65535" controls-position="right" style="width:100%" @change="onJdbcPartChange" />
+              <el-input-number v-model="form.port" :min="1" :max="65535" controls-position="right" style="width:100%" :controls="false" @change="onJdbcPartChange" />
             </el-form-item>
           </el-col>
-          <el-col :span="9">
+          <el-col :span="14">
             <el-form-item label="库名/服务名">
               <el-input v-model="form.databaseName" placeholder="如 rule_engine" @input="onJdbcPartChange" />
             </el-form-item>
@@ -177,17 +177,17 @@
         <div v-if="form.connectionMode === 'SSH_TUNNEL'" class="form-section">
           <div class="section-title">SSH 隧道</div>
           <el-row :gutter="12">
-            <el-col :span="10">
+            <el-col :span="12">
               <el-form-item label="SSH主机">
                 <el-input v-model="form.sshHost" placeholder="堡垒机地址" />
               </el-form-item>
             </el-col>
-            <el-col :span="5">
+            <el-col :span="8">
               <el-form-item label="SSH端口">
-                <el-input-number v-model="form.sshPort" :min="1" :max="65535" controls-position="right" style="width:100%" />
+                <el-input-number v-model="form.sshPort" :min="1" :max="65535" controls-position="right" style="width:100%" :controls="false"/>
               </el-form-item>
             </el-col>
-            <el-col :span="9">
+            <el-col :span="12">
               <el-form-item label="SSH用户">
                 <el-input v-model="form.sshUsername" autocomplete="off" />
               </el-form-item>
@@ -231,22 +231,22 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="最大连接数">
               <el-input-number v-model="form.maxPoolSize" :min="1" :max="100" style="width:100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="最小空闲">
               <el-input-number v-model="form.minIdle" :min="0" :max="100" style="width:100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="连接超时">
               <el-input-number v-model="form.connectionTimeoutMs" :min="100" :step="500" style="width:100%" />
             </el-form-item>
           </el-col>
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="空闲超时">
               <el-input-number v-model="form.idleTimeoutMs" :min="10000" :step="60000" style="width:100%" />
             </el-form-item>

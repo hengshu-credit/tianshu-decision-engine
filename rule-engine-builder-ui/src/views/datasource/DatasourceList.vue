@@ -374,22 +374,22 @@
 
           <el-collapse-item title="超时、重试、异步与计费" name="runtime">
             <el-row :gutter="12">
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-form-item label="超时毫秒">
                   <el-input-number v-model="apiForm.timeoutMs" :min="100" :step="500" style="width:100%" />
                 </el-form-item>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-form-item label="重试次数">
                   <el-input-number v-model="apiForm.retryCount" :min="0" :max="10" style="width:100%" />
                 </el-form-item>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-form-item label="重试间隔">
                   <el-input-number v-model="apiForm.retryIntervalMs" :min="0" :step="100" style="width:100%" />
                 </el-form-item>
               </el-col>
-              <el-col :span="6">
+              <el-col :span="8">
                 <el-form-item label="单次价格">
                   <el-input-number v-model="apiForm.unitPrice" :min="0" :precision="6" :step="0.01" style="width:100%" />
                 </el-form-item>

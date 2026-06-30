@@ -4,6 +4,8 @@ import com.bjjw.rule.model.entity.RuleDbDatasource;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertTrue;
 
 public class DBConnectPoolsTest {
 
@@ -44,6 +46,15 @@ public class DBConnectPoolsTest {
                 45123);
 
         assertEquals("jdbc:mysql://127.0.0.1:45123/riskdb?useSSL=false&serverTimezone=Asia/Shanghai", rewritten);
+    }
+
+    @Test
+    public void readOnlySelectValidationRejectsUnsafeSql() {
+        assertTrue(DBConnectPools.isReadOnlySelectSql(" select score from risk_result where id = ?"));
+        assertFalse(DBConnectPools.isReadOnlySelectSql("update risk_result set score = 1"));
+        assertFalse(DBConnectPools.isReadOnlySelectSql("select score from risk_result; delete from risk_result"));
+        assertFalse(DBConnectPools.isReadOnlySelectSql("select score from risk_result for update"));
+        assertFalse(DBConnectPools.isReadOnlySelectSql("select score from risk_result lock in share mode"));
     }
 
     private RuleDbDatasource datasource(String dbType, String host, Integer port, String databaseName, String jdbcParams) {

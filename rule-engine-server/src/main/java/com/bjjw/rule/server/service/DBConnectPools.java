@@ -28,6 +28,9 @@ import java.util.regex.Pattern;
 @Service
 public class DBConnectPools implements DisposableBean {
 
+    private static final Pattern SELECT_QUERY_PATTERN = Pattern.compile("^select\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern LOCKING_SELECT_PATTERN = Pattern.compile("\\bfor\\s+update\\b|\\block\\s+in\\s+share\\s+mode\\b", Pattern.CASE_INSENSITIVE);
+
     @Resource
     private RuleDbDatasourceMapper datasourceMapper;
 
@@ -79,7 +82,7 @@ public class DBConnectPools implements DisposableBean {
     }
 
     public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params, int maxRows) throws Exception {
-        if (!hasText(sql) || !sql.trim().toLowerCase().startsWith("select")) {
+        if (!isReadOnlySelectSql(sql)) {
             throw new IllegalArgumentException("只允许执行 SELECT 查询");
         }
         int limit = maxRows <= 0 ? 100 : Math.min(maxRows, 500);
@@ -106,6 +109,16 @@ public class DBConnectPools implements DisposableBean {
                 return rows;
             }
         }
+    }
+
+    static boolean isReadOnlySelectSql(String sql) {
+        if (!hasText(sql)) {
+            return false;
+        }
+        String trimmed = sql.trim();
+        return SELECT_QUERY_PATTERN.matcher(trimmed).find()
+                && trimmed.indexOf(';') < 0
+                && !LOCKING_SELECT_PATTERN.matcher(trimmed).find();
     }
 
     private DbPoolHolder buildPool(RuleDbDatasource datasource) throws Exception {

@@ -70,6 +70,20 @@ public class VariableSourceResolverTest {
         assertEquals(12, resolved.get("riskScore"));
     }
 
+    @Test
+    public void decimalSourceVariableUsesNumericDefaultWhenLookupReturnsNull() throws Exception {
+        RuleVariable variable = variable("rate", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select rate from t\",\"maxRows\":1}");
+        variable.setVarType("DECIMAL");
+        variable.setDefaultValue("12.5");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap());
+
+        assertEquals(12.5, ((Number) resolved.get("rate")).doubleValue(), 0.000001);
+    }
+
     private RuleVariable variable(String scriptName, String source, String sourceConfig) {
         RuleVariable variable = new RuleVariable();
         variable.setId(1L);

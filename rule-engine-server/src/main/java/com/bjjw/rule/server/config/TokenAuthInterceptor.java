@@ -24,7 +24,8 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     // 需要验证Token的路径（同步API）
     private static final String[] PROTECTED_PATH_PREFIXES = {
         "/api/sync",
-        "/api/rule/sync"
+        "/api/rule/sync",
+        "/api/rule/log/report"
     };
     
     @Override

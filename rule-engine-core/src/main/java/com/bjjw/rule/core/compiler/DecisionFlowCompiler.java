@@ -81,6 +81,10 @@ public class DecisionFlowCompiler implements RuleCompiler {
             }
 
             // --- 构建图结构并生成脚本 ---
+            if (hasCycle(nodeIds, edges)) {
+                return CompileResult.fail("决策流不允许存在循环路径");
+            }
+
             Map<String, JSONObject> nodeMap = new LinkedHashMap<>();
             Map<String, List<JSONObject>> outEdgeMap = new LinkedHashMap<>();
 
@@ -112,5 +116,46 @@ public class DecisionFlowCompiler implements RuleCompiler {
         } catch (Exception e) {
             return CompileResult.fail("决策流编译失败: " + e.getMessage());
         }
+    }
+
+    private static boolean hasCycle(Set<String> nodeIds, JSONArray edges) {
+        Map<String, List<String>> adjacency = new HashMap<>();
+        for (String nodeId : nodeIds) {
+            adjacency.put(nodeId, new ArrayList<>());
+        }
+        for (int i = 0; i < edges.size(); i++) {
+            JSONObject edge = edges.getJSONObject(i);
+            adjacency.computeIfAbsent(edge.getString("source"), k -> new ArrayList<>())
+                    .add(edge.getString("target"));
+        }
+
+        Set<String> visiting = new HashSet<>();
+        Set<String> visited = new HashSet<>();
+        for (String nodeId : nodeIds) {
+            if (hasCycleFrom(nodeId, adjacency, visiting, visited)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean hasCycleFrom(String nodeId,
+                                        Map<String, List<String>> adjacency,
+                                        Set<String> visiting,
+                                        Set<String> visited) {
+        if (visited.contains(nodeId)) {
+            return false;
+        }
+        if (!visiting.add(nodeId)) {
+            return true;
+        }
+        for (String next : adjacency.getOrDefault(nodeId, Collections.emptyList())) {
+            if (hasCycleFrom(next, adjacency, visiting, visited)) {
+                return true;
+            }
+        }
+        visiting.remove(nodeId);
+        visited.add(nodeId);
+        return false;
     }
 }

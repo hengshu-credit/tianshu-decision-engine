@@ -189,7 +189,7 @@ public class VariableSourceResolver {
             if ("INTEGER".equals(type)) {
                 return Integer.valueOf(defaultValue);
             }
-            if ("NUMBER".equals(type) || "DOUBLE".equals(type)) {
+            if ("NUMBER".equals(type) || "DOUBLE".equals(type) || "DECIMAL".equals(type)) {
                 return Double.valueOf(defaultValue);
             }
             if ("BOOLEAN".equals(type)) {
