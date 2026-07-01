@@ -367,9 +367,9 @@ INSERT INTO `rule_variable` (`id`, `project_id`, `scope`, `var_code`, `var_label
 (9001, 1, 'PROJECT', 'demoApiTaxRate', '演示API定价费率', 'demoApiTaxRate', 'NUMBER', 'API', '{"apiConfigId":9001,"paramMapping":{"taxpayerType":"$.taxpayerType","goodsCategory":"$.goodsCategory"},"resultPath":"body.taxRate"}', NULL, '0.13', '接口变量样例：通过外数管理中的 demo_pricing_table_api 调用已发布规则并读取 body.taxRate。', 9001, 1, NOW(), NOW())
 ON DUPLICATE KEY UPDATE `var_label` = VALUES(`var_label`), `script_name` = VALUES(`script_name`), `var_source` = VALUES(`var_source`), `source_config` = VALUES(`source_config`), `description` = VALUES(`description`), `status` = 1;
 
-INSERT INTO `rule_experiment` (`id`, `project_id`, `project_code`, `experiment_code`, `experiment_name`, `description`, `routing_mode`, `condition_rule_code`, `request_key_path`, `test_exclusive`, `status`, `create_time`, `update_time`) VALUES
-(9001, 1, 'RISK_DEMO', 'EXP_DEMO_CHAMPION', '演示-定价冠军挑战与空跑', '生产分流：RC_PRICING_TABLE 70% 冠军组、RC_RATE_MATRIX 30% 挑战组；测试组空跑评分卡和敞口流程。', 'RATIO', NULL, 'requestId', 0, 1, NOW(), NOW())
-ON DUPLICATE KEY UPDATE `experiment_name` = VALUES(`experiment_name`), `description` = VALUES(`description`), `routing_mode` = VALUES(`routing_mode`), `test_exclusive` = VALUES(`test_exclusive`), `status` = 1;
+INSERT INTO `rule_experiment` (`id`, `project_id`, `project_code`, `experiment_code`, `experiment_name`, `description`, `routing_mode`, `test_routing_mode`, `condition_rule_code`, `request_key_path`, `test_exclusive`, `status`, `create_time`, `update_time`) VALUES
+(9001, 1, 'RISK_DEMO', 'EXP_DEMO_CHAMPION', '演示-定价冠军挑战与空跑', '生产分流：RC_PRICING_TABLE 70% 冠军组、RC_RATE_MATRIX 30% 挑战组；测试组空跑评分卡和敞口流程。', 'RATIO', 'CONDITION', NULL, 'requestId', 0, 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE `experiment_name` = VALUES(`experiment_name`), `description` = VALUES(`description`), `routing_mode` = VALUES(`routing_mode`), `test_routing_mode` = VALUES(`test_routing_mode`), `test_exclusive` = VALUES(`test_exclusive`), `status` = 1;
 
 INSERT INTO `rule_experiment_group` (`id`, `experiment_id`, `group_code`, `group_name`, `group_type`, `rule_code`, `traffic_ratio`, `condition_value`, `condition_expression`, `invoke_external_source`, `status`, `sort_order`, `create_time`, `update_time`) VALUES
 (9001, (SELECT `id` FROM `rule_experiment` WHERE `experiment_code` = 'EXP_DEMO_CHAMPION'), 'champion', '冠军组-定价表', 'CHAMPION', 'RC_PRICING_TABLE', 70.0000, 'champion', NULL, 1, 1, 0, NOW(), NOW()),

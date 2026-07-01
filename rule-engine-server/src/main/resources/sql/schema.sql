@@ -634,7 +634,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `api_name`             VARCHAR(128) NOT NULL                COMMENT '接口名称',
   `request_method`       VARCHAR(16)  NOT NULL DEFAULT 'POST' COMMENT '请求方法：GET/POST/PUT/DELETE/PATCH',
   `endpoint_url`         VARCHAR(512) NOT NULL                COMMENT '接口相对或完整地址',
-  `content_type`         VARCHAR(128) NOT NULL DEFAULT 'application/json' COMMENT '请求Content-Type',
+  `content_type`         VARCHAR(128) DEFAULT NULL            COMMENT '请求Content-Type，空表示不主动设置',
   `request_mode`         VARCHAR(16)  NOT NULL DEFAULT 'SYNC' COMMENT '调用模式：SYNC/ASYNC',
   `request_object_id`    BIGINT       DEFAULT NULL            COMMENT '请求数据对象ID',
   `response_object_id`   BIGINT       DEFAULT NULL            COMMENT '响应数据对象ID',
@@ -668,7 +668,36 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
 
 -- ============================================================
--- 19.1 rule_experiment - 分流实验定义表
+-- 19.1 rule_runtime_call_log - 运行时调用诊断日志表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `module_type`     VARCHAR(32)  NOT NULL                COMMENT '模块类型：DATASOURCE/DATABASE/LIST/MODEL',
+  `action_type`     VARCHAR(64)  NOT NULL                COMMENT '动作类型：API_INVOKE/AUTH_TEST/QUERY/EXECUTE等',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
+  `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '项目编码',
+  `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '目标配置ID',
+  `target_code`     VARCHAR(128) DEFAULT NULL            COMMENT '目标编码',
+  `target_name`     VARCHAR(128) DEFAULT NULL            COMMENT '目标名称',
+  `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '是否成功：0-失败，1-成功',
+  `request_method`  VARCHAR(16)  DEFAULT NULL            COMMENT '请求方法',
+  `request_url`     VARCHAR(1024) DEFAULT NULL           COMMENT '请求地址',
+  `request_headers` TEXT         DEFAULT NULL            COMMENT '请求头JSON（敏感值脱敏）',
+  `request_params`  LONGTEXT     DEFAULT NULL            COMMENT '请求入参JSON',
+  `request_body`    LONGTEXT     DEFAULT NULL            COMMENT '请求体JSON或文本',
+  `response_status` INT          DEFAULT NULL            COMMENT '响应状态码',
+  `response_body`   LONGTEXT     DEFAULT NULL            COMMENT '响应内容JSON或文本',
+  `error_message`   VARCHAR(2048) DEFAULT NULL           COMMENT '错误信息',
+  `cost_time_ms`    BIGINT       DEFAULT NULL            COMMENT '耗时毫秒',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_runtime_log_module_time` (`module_type`, `create_time`),
+  KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),
+  KEY `idx_runtime_log_success` (`success`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表';
+
+-- ============================================================
+-- 19.2 rule_experiment - 分流实验定义表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -677,7 +706,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
   `experiment_name` VARCHAR(128) NOT NULL                COMMENT '实验名称',
   `description`     VARCHAR(512) DEFAULT NULL            COMMENT '说明',
-  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '分流方式：RATIO/CONDITION',
+  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '冠军挑战分流方式：RATIO/CONDITION',
+  `test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式：RATIO/CONDITION',
   `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
   `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
   `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
@@ -699,7 +729,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
   `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
   `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
-  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '测试组命中表达式',
+  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '条件分流命中表达式',
+  `condition_config` TEXT DEFAULT NULL                   COMMENT '可视化条件配置JSON',
   `invoke_external_source` TINYINT NOT NULL DEFAULT 1    COMMENT '测试组是否调用API外数',
   `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
   `sort_order`      INT          NOT NULL DEFAULT 0      COMMENT '排序',
@@ -866,7 +897,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment` (
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
   `experiment_name` VARCHAR(128) NOT NULL                COMMENT '实验名称',
   `description`     VARCHAR(512) DEFAULT NULL            COMMENT '说明',
-  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '分流方式：RATIO/CONDITION',
+  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '冠军挑战分流方式：RATIO/CONDITION',
+  `test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式：RATIO/CONDITION',
   `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
   `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
   `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
@@ -888,7 +920,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
   `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
   `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
-  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '测试组命中表达式',
+  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '条件分流命中表达式',
+  `condition_config` TEXT DEFAULT NULL                   COMMENT '可视化条件配置JSON',
   `invoke_external_source` TINYINT NOT NULL DEFAULT 1    COMMENT '测试组是否调用API外数',
   `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
   `sort_order`      INT          NOT NULL DEFAULT 0      COMMENT '排序',

@@ -3,8 +3,10 @@ package com.bjjw.rule.server.controller;
 import com.bjjw.rule.model.entity.RuleModel;
 import com.bjjw.rule.model.entity.RuleModelInputField;
 import com.bjjw.rule.model.entity.RuleModelOutputField;
+import com.bjjw.rule.model.entity.RuleRuntimeCallLog;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleModelService;
+import com.bjjw.rule.server.service.RuleRuntimeCallLogService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
@@ -19,6 +21,9 @@ public class RuleModelController {
 
     @Resource
     private RuleModelService modelService;
+
+    @Resource
+    private RuleRuntimeCallLogService runtimeCallLogService;
 
     /**
      * 健康检查
@@ -162,14 +167,19 @@ public class RuleModelController {
      */
     @PostMapping("/execute/{id}")
     public R<Map<String, Object>> execute(@PathVariable Long id, @RequestBody Map<String, Object> params) {
+        long start = System.currentTimeMillis();
+        RuleModel model = modelService.getDetail(id);
         try {
             Map<String, Object> result = modelService.execute(id, params);
+            logModelExecute(model, params, result, null, System.currentTimeMillis() - start);
             return R.ok(result);
         } catch (IllegalArgumentException e) {
+            logModelExecute(model, params, null, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail(e.getMessage());
         } catch (RuntimeException e) {
             String msg = e.getMessage();
             if (msg == null || msg.isEmpty()) msg = e.toString();
+            logModelExecute(model, params, null, "模型执行失败: " + msg, System.currentTimeMillis() - start);
             return R.fail("模型执行失败: " + msg);
         }
     }
@@ -239,5 +249,28 @@ public class RuleModelController {
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
         }
+    }
+
+    private void logModelExecute(RuleModel model, Map<String, Object> params, Map<String, Object> result,
+                                 String errorMessage, long costTimeMs) {
+        if (runtimeCallLogService == null) {
+            return;
+        }
+        RuleRuntimeCallLog log = new RuleRuntimeCallLog();
+        log.setModuleType("MODEL");
+        log.setActionType("EXECUTE");
+        if (model != null) {
+            log.setProjectId(model.getProjectId());
+            log.setProjectCode(model.getProjectCode());
+            log.setTargetRefId(model.getId());
+            log.setTargetCode(model.getModelCode());
+            log.setTargetName(model.getModelName());
+        }
+        log.setSuccess(errorMessage == null ? 1 : 0);
+        log.setRequestBody(runtimeCallLogService.toJson(params));
+        log.setResponseBody(runtimeCallLogService.toJson(result));
+        log.setErrorMessage(errorMessage);
+        log.setCostTimeMs(costTimeMs);
+        runtimeCallLogService.safeSave(log);
     }
 }

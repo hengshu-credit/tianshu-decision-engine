@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertSame;
@@ -160,6 +161,63 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(88, ((Map<?, ?>) second.get("body")).get("data") instanceof Map
                     ? ((Map<?, ?>) ((Map<?, ?>) second.get("body")).get("data")).get("score")
                     : null);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void tokenApiCanReadTokenFromResponseHeader() throws Exception {
+        AtomicReference<String> authHeader = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            exchange.getResponseHeaders().add("Authorization", "Bearer header-token-123456");
+            exchange.getResponseHeaders().add("X-Expires-In", "120");
+            byte[] response = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/score", exchange -> {
+            authHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = "{\"data\":{\"score\":91}}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(8L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"method\":\"POST\",\"tokenPath\":\"headers.Authorization\",\"expiresInPath\":\"headers.X-Expires-In\"}");
+            datasource.setTokenCacheSeconds(0);
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(100L);
+            config.setDatasourceId(8L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setAuthMode("INHERIT");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            service.invoke(100L, new LinkedHashMap<>());
+
+            assertEquals("Bearer header-token-123456", authHeader.get());
         } finally {
             server.stop(0);
         }

@@ -2,6 +2,7 @@ package com.bjjw.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.bjjw.rule.model.entity.RuleRuntimeCallLog;
 import com.bjjw.rule.model.entity.RuleVariable;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +28,9 @@ public class VariableSourceResolver {
 
     @Resource
     private RuleListService ruleListService;
+
+    @Resource
+    private RuleRuntimeCallLogService runtimeCallLogService;
 
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         return resolve(projectId, inputParams, VariableResolveOptions.defaults());
@@ -74,9 +78,9 @@ public class VariableSourceResolver {
                     }
                     value = resolveApiVariable(config, resolvedParams, apiResponseCache);
                 } else if ("DB".equals(varSource)) {
-                    value = resolveDbVariable(config, resolvedParams);
+                    value = resolveDbVariable(variable, config, resolvedParams);
                 } else {
-                    value = resolveListVariable(config, resolvedParams, effectiveOptions);
+                    value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
                 }
                 if (value == null) {
                     value = parseDefaultValue(variable);
@@ -106,7 +110,7 @@ public class VariableSourceResolver {
         return hasText(resultPath) ? readPath(response, resultPath) : response.get("body");
     }
 
-    private Object resolveDbVariable(Map<String, Object> config, Map<String, Object> params) throws Exception {
+    private Object resolveDbVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params) throws Exception {
         Long datasourceId = longValue(config.get("datasourceId"));
         String sql = stringValue(config.get("sql"));
         if (datasourceId == null) {
@@ -117,15 +121,26 @@ public class VariableSourceResolver {
         }
         List<Object> queryParams = buildParamList(config.get("params"), params);
         int maxRows = intValue(config.get("maxRows"), 1);
-        List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
-        String resultPath = stringValue(config.get("resultPath"));
-        if (hasText(resultPath)) {
-            return readPath(rows, resultPath);
+        long start = System.currentTimeMillis();
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("sql", sql);
+        request.put("params", queryParams);
+        request.put("maxRows", maxRows);
+        try {
+            List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
+            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request, rows, null, System.currentTimeMillis() - start);
+            String resultPath = stringValue(config.get("resultPath"));
+            if (hasText(resultPath)) {
+                return readPath(rows, resultPath);
+            }
+            return defaultDbValue(rows, maxRows);
+        } catch (Exception e) {
+            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request, null, e.getMessage(), System.currentTimeMillis() - start);
+            throw e;
         }
-        return defaultDbValue(rows, maxRows);
     }
 
-    private Object resolveListVariable(Map<String, Object> config, Map<String, Object> params,
+    private Object resolveListVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params,
                                        VariableResolveOptions options) {
         Long listId = longValue(firstNonNull(config.get("listId"), config.get("listLibraryId")));
         if (listId == null) {
@@ -137,9 +152,20 @@ public class VariableSourceResolver {
         if (!hasText(matchMode)) {
             matchMode = "IN_LIST";
         }
+        long start = System.currentTimeMillis();
         boolean hit = options != null && options.getListMatchTime() != null
                 ? ruleListService.matchAt(listId, queryValue, itemTypes, matchMode, options.getListMatchTime())
                 : ruleListService.match(listId, queryValue, itemTypes, matchMode);
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("queryValue", queryValue);
+        request.put("itemTypes", itemTypes);
+        request.put("matchMode", matchMode);
+        if (options != null && options.getListMatchTime() != null) {
+            request.put("matchTime", options.getListMatchTime());
+        }
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("hit", hit);
+        logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listId, request, response, null, System.currentTimeMillis() - start);
         String returnMode = stringValue(config.get("returnMode"));
         if ("BOOLEAN".equals(returnMode)) {
             return hit;
@@ -148,6 +174,26 @@ public class VariableSourceResolver {
             return hit ? parseConfiguredValue(config.get("hitValue"), params) : parseConfiguredValue(config.get("missValue"), params);
         }
         return hit ? 1 : 0;
+    }
+
+    private void logVariableSource(String moduleType, String actionType, RuleVariable variable, Long targetId,
+                                   Object requestBody, Object responseBody, String errorMessage, long costTimeMs) {
+        if (runtimeCallLogService == null || variable == null) {
+            return;
+        }
+        RuleRuntimeCallLog log = new RuleRuntimeCallLog();
+        log.setModuleType(moduleType);
+        log.setActionType(actionType);
+        log.setProjectId(variable.getProjectId());
+        log.setTargetRefId(targetId);
+        log.setTargetCode(resolveScriptName(variable));
+        log.setTargetName(variable.getVarLabel());
+        log.setSuccess(errorMessage == null ? 1 : 0);
+        log.setRequestBody(runtimeCallLogService.toJson(requestBody));
+        log.setResponseBody(runtimeCallLogService.toJson(responseBody));
+        log.setErrorMessage(errorMessage);
+        log.setCostTimeMs(costTimeMs);
+        runtimeCallLogService.safeSave(log);
     }
 
     private Object resolveListQueryValue(Map<String, Object> config, Map<String, Object> params) {

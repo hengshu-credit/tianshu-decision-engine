@@ -175,6 +175,39 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
     }
 
     @Transactional
+    public RuleListRecord updateRecord(Long listId, RuleListRecord record) {
+        if (record == null || record.getId() == null) {
+            throw new IllegalArgumentException("名单记录ID不能为空");
+        }
+        RuleListRecord existing = recordMapper.selectById(record.getId());
+        if (existing == null || !listId.equals(existing.getListId())) {
+            throw new IllegalArgumentException("名单记录不存在");
+        }
+        record.setListId(listId);
+        normalizeRecord(record);
+        RuleListRecord duplicate = recordMapper.selectOne(new LambdaQueryWrapper<RuleListRecord>()
+                .eq(RuleListRecord::getListId, record.getListId())
+                .eq(RuleListRecord::getItemType, record.getItemType())
+                .eq(RuleListRecord::getItemContent, record.getItemContent())
+                .ne(RuleListRecord::getId, record.getId())
+                .last("LIMIT 1"));
+        if (duplicate != null) {
+            throw new IllegalArgumentException("名单内容已存在");
+        }
+        existing.setItemType(record.getItemType());
+        existing.setItemContent(record.getItemContent());
+        existing.setEffectiveTime(record.getEffectiveTime());
+        existing.setExpireTime(record.getExpireTime());
+        existing.setReason(record.getReason());
+        existing.setRemark(record.getRemark());
+        existing.setStatus(record.getStatus() == null ? existing.getStatus() : record.getStatus());
+        existing.setLastOperation("UPDATE");
+        recordMapper.updateById(existing);
+        writeLog(existing, "UPDATE", null);
+        return existing;
+    }
+
+    @Transactional
     public void deleteRecord(Long listId, Long recordId) {
         RuleListRecord existing = recordMapper.selectById(recordId);
         if (existing == null || !listId.equals(existing.getListId())) {
@@ -325,6 +358,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         target.setLastOperation(operation);
         target.setStatus("DELETE".equals(operation) ? 0 : 1);
         if (existing == null) {
+            target.setId(null);
             recordMapper.insert(target);
         } else {
             recordMapper.updateById(target);

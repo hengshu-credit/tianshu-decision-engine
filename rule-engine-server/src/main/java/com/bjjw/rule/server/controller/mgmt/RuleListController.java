@@ -101,7 +101,7 @@ public class RuleListController {
     @PutMapping("/{listId:\\d+}/record")
     public R<RuleListRecord> updateRecord(@PathVariable Long listId, @RequestBody RuleListRecord record) {
         try {
-            return R.ok(listService.saveRecord(listId, record));
+            return R.ok(listService.updateRecord(listId, record));
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
         }

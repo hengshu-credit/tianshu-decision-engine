@@ -74,9 +74,6 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         if (!hasText(config.getRequestMethod())) {
             config.setRequestMethod("POST");
         }
-        if (!hasText(config.getContentType())) {
-            config.setContentType("application/json");
-        }
         if (!hasText(config.getRequestMode())) {
             config.setRequestMode("SYNC");
         }

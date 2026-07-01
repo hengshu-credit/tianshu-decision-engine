@@ -55,6 +55,7 @@ public class SchemaSyncService {
             ensureVariableSourceConfigColumn();
             ensureListTables();
             ensureExperimentTables();
+            ensureRuntimeCallLogTable();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelFieldForeignKeysRemoved();
@@ -204,6 +205,7 @@ public class SchemaSyncService {
                     + "`experiment_name` VARCHAR(128) NOT NULL COMMENT '实验名称',"
                     + "`description` VARCHAR(512) DEFAULT NULL COMMENT '说明',"
                     + "`routing_mode` VARCHAR(32) NOT NULL DEFAULT 'RATIO' COMMENT '分流方式',"
+                    + "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式',"
                     + "`condition_rule_code` VARCHAR(128) DEFAULT NULL COMMENT '条件分流规则编码',"
                     + "`request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',"
                     + "`test_exclusive` TINYINT NOT NULL DEFAULT 1 COMMENT '测试组是否互斥',"
@@ -217,6 +219,8 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表'");
         }
         ensureUtf8mb4Table("rule_experiment");
+        addColumnIfMissing("rule_experiment", "test_routing_mode",
+                "`test_routing_mode` VARCHAR(32) NOT NULL DEFAULT 'CONDITION' COMMENT '测试组分流方式' AFTER `routing_mode`");
         if (!tableExists("rule_experiment_group")) {
             jdbcTemplate.execute("CREATE TABLE `rule_experiment_group` ("
                     + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
@@ -227,7 +231,8 @@ public class SchemaSyncService {
                     + "`rule_code` VARCHAR(128) NOT NULL COMMENT '执行规则编码',"
                     + "`traffic_ratio` DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',"
                     + "`condition_value` VARCHAR(128) DEFAULT NULL COMMENT '条件分流返回值',"
-                    + "`condition_expression` VARCHAR(1024) DEFAULT NULL COMMENT '测试组命中表达式',"
+                    + "`condition_expression` VARCHAR(1024) DEFAULT NULL COMMENT '条件分流命中表达式',"
+                    + "`condition_config` TEXT DEFAULT NULL COMMENT '可视化条件配置JSON',"
                     + "`invoke_external_source` TINYINT NOT NULL DEFAULT 1 COMMENT '测试组是否调用API外数',"
                     + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态',"
                     + "`sort_order` INT NOT NULL DEFAULT 0 COMMENT '排序',"
@@ -239,6 +244,8 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表'");
         }
         ensureUtf8mb4Table("rule_experiment_group");
+        addColumnIfMissing("rule_experiment_group", "condition_config",
+                "`condition_config` TEXT DEFAULT NULL COMMENT '可视化条件配置JSON' AFTER `condition_expression`");
         if (!tableExists("rule_experiment_execution_log")) {
             jdbcTemplate.execute("CREATE TABLE `rule_experiment_execution_log` ("
                     + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
@@ -266,6 +273,37 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表'");
         }
         ensureUtf8mb4Table("rule_experiment_execution_log");
+    }
+
+    private void ensureRuntimeCallLogTable() {
+        if (!tableExists("rule_runtime_call_log")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_runtime_call_log` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`module_type` VARCHAR(32) NOT NULL COMMENT '模块类型：DATASOURCE/DATABASE/LIST/MODEL',"
+                    + "`action_type` VARCHAR(64) NOT NULL COMMENT '动作类型：API_INVOKE/AUTH_TEST/QUERY/EXECUTE等',"
+                    + "`project_id` BIGINT DEFAULT NULL COMMENT '项目ID',"
+                    + "`project_code` VARCHAR(128) DEFAULT NULL COMMENT '项目编码',"
+                    + "`target_ref_id` BIGINT DEFAULT NULL COMMENT '目标配置ID',"
+                    + "`target_code` VARCHAR(128) DEFAULT NULL COMMENT '目标编码',"
+                    + "`target_name` VARCHAR(128) DEFAULT NULL COMMENT '目标名称',"
+                    + "`success` TINYINT NOT NULL DEFAULT 1 COMMENT '是否成功',"
+                    + "`request_method` VARCHAR(16) DEFAULT NULL COMMENT '请求方法',"
+                    + "`request_url` VARCHAR(1024) DEFAULT NULL COMMENT '请求地址',"
+                    + "`request_headers` TEXT DEFAULT NULL COMMENT '请求头JSON（敏感值脱敏）',"
+                    + "`request_params` LONGTEXT DEFAULT NULL COMMENT '请求入参JSON',"
+                    + "`request_body` LONGTEXT DEFAULT NULL COMMENT '请求体JSON或文本',"
+                    + "`response_status` INT DEFAULT NULL COMMENT '响应状态码',"
+                    + "`response_body` LONGTEXT DEFAULT NULL COMMENT '响应内容JSON或文本',"
+                    + "`error_message` VARCHAR(2048) DEFAULT NULL COMMENT '错误信息',"
+                    + "`cost_time_ms` BIGINT DEFAULT NULL COMMENT '耗时毫秒',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "KEY `idx_runtime_log_module_time` (`module_type`, `create_time`),"
+                    + "KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),"
+                    + "KEY `idx_runtime_log_success` (`success`, `create_time`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表'");
+        }
+        ensureUtf8mb4Table("rule_runtime_call_log");
     }
 
     private void ensureDbDatasourceConnectionColumns() {
@@ -300,6 +338,9 @@ public class SchemaSyncService {
     private void ensureExternalApiCacheColumns() {
         String table = "rule_external_api_config";
         if (!tableExists(table)) return;
+        if (columnExists(table, "content_type")) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` MODIFY COLUMN `content_type` VARCHAR(128) DEFAULT NULL COMMENT '请求Content-Type，空表示不主动设置'");
+        }
         addColumnIfMissing(table, "response_cache_seconds",
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
     }

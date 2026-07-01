@@ -40,6 +40,7 @@ public class ExternalConfigDefaultsTest {
         assertEquals("{\"customerId\":\"$.customerId\"}", config.getRequestMapping());
         assertNull(config.getResponseMapping());
         assertNull(config.getAuthApiConfig());
+        assertNull(config.getContentType());
         assertEquals(Integer.valueOf(0), config.getResponseCacheSeconds());
     }
 

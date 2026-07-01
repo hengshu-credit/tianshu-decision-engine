@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleListServiceTest {
@@ -95,6 +96,39 @@ public class RuleListServiceTest {
         assertTrue(content.contains("2026-07-01 00:00:00 至 2026-12-31 23:59:59"));
     }
 
+    @Test
+    public void updateRecordChangesContentByIdWithoutInsert() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeRecordMapper recordMapper = new FakeRecordMapper();
+        FakeLogMapper logMapper = new FakeLogMapper();
+        RuleListRecord existing = new RuleListRecord();
+        existing.setId(4L);
+        existing.setListId(9L);
+        existing.setItemType("MOBILE");
+        existing.setItemContent("13800138000");
+        existing.setStatus(1);
+        recordMapper.selectedById = existing;
+        setField(service, "recordMapper", recordMapper.proxy());
+        setField(service, "logMapper", logMapper.proxy());
+
+        RuleListRecord update = new RuleListRecord();
+        update.setId(4L);
+        update.setItemType("MOBILE");
+        update.setItemContent("13900139000");
+        update.setReason("换号");
+        update.setRemark("人工确认");
+        update.setStatus(1);
+
+        RuleListRecord result = service.updateRecord(9L, update);
+
+        assertEquals("13900139000", result.getItemContent());
+        assertEquals("13900139000", recordMapper.updated.getItemContent());
+        assertEquals("UPDATE", recordMapper.updated.getLastOperation());
+        assertEquals(4L, logMapper.inserted.getRecordId().longValue());
+        assertEquals("13900139000", logMapper.inserted.getItemContent());
+        assertNull(recordMapper.inserted);
+    }
+
     private byte[] workbookBytes() throws Exception {
         try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Sheet sheet = workbook.createSheet("名单内容");
@@ -125,18 +159,28 @@ public class RuleListServiceTest {
 
     private static class FakeRecordMapper {
         private RuleListRecord inserted;
+        private RuleListRecord updated;
+        private RuleListRecord selectedById;
+        private RuleListRecord duplicate;
 
         private RuleListRecordMapper proxy() {
             return (RuleListRecordMapper) Proxy.newProxyInstance(
                     RuleListRecordMapper.class.getClassLoader(),
                     new Class[]{RuleListRecordMapper.class},
                     (proxy, method, args) -> {
+                        if ("selectById".equals(method.getName())) {
+                            return selectedById;
+                        }
                         if ("selectOne".equals(method.getName())) {
-                            return null;
+                            return duplicate;
                         }
                         if ("insert".equals(method.getName())) {
                             inserted = (RuleListRecord) args[0];
                             inserted.setId(99L);
+                            return 1;
+                        }
+                        if ("updateById".equals(method.getName())) {
+                            updated = (RuleListRecord) args[0];
                             return 1;
                         }
                         return defaultValue(method.getReturnType());

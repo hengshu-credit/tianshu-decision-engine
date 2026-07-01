@@ -1,6 +1,7 @@
 package com.bjjw.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -142,11 +143,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
-        List<RuleExperimentGroup> testGroups = activeGroups(groups, GROUP_TEST);
-        for (RuleExperimentGroup testGroup : testGroups) {
-            if (!matchesTestGroup(testGroup, params)) {
-                continue;
-            }
+        List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey);
+        for (RouteChoice testChoice : testChoices) {
+            RuleExperimentGroup testGroup = testChoice.group;
             if (hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey)) {
                 RuleExperimentGroupResult skipped = skippedTestResult(testGroup, "同一请求已执行过测试组，跳过重复空跑");
                 result.getTestGroups().add(skipped);
@@ -154,12 +153,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
             boolean invokeExternal = testGroup.getInvokeExternalSource() == null || testGroup.getInvokeExternalSource() == 1;
             RuleExperimentGroupResult testResult = runGroup(experiment, testGroup, params,
-                    requestKey, requestTime, clientAppName, "TEST", "测试组条件命中", invokeExternal);
+                    requestKey, requestTime, clientAppName, "TEST", testChoice.reason, invokeExternal);
             result.getTestGroups().add(testResult);
             result.getTags().add(testGroup.getGroupCode());
-            if (experiment.getTestExclusive() != null && experiment.getTestExclusive() == 1) {
-                break;
-            }
         }
 
         result.setSuccess(productionResult.isSuccess());
@@ -173,6 +169,24 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                               String clientAppName) {
         List<RuleExperimentGroup> productionGroups = productionGroups(groups);
         RuleExperimentGroup champion = championGroup(groups);
+        if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasInlineConditionGroups(productionGroups)) {
+            RuleExperimentGroup fallback = null;
+            for (RuleExperimentGroup group : productionGroups) {
+                if (isFallbackGroup(group)) {
+                    if (fallback == null) {
+                        fallback = group;
+                    }
+                    continue;
+                }
+                if (matchesConditionGroup(group, params)) {
+                    return new RouteChoice(group, "冠军挑战条件分流命中: " + group.getGroupCode());
+                }
+            }
+            if (fallback != null) {
+                return new RouteChoice(fallback, "冠军挑战条件未命中，执行兜底动作");
+            }
+            return new RouteChoice(champion, "冠军挑战条件未命中，回退冠军组");
+        }
         if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasText(experiment.getConditionRuleCode())) {
             RulePublished routingRule = findPublishedRule(experiment, experiment.getConditionRuleCode());
             RuleExecuteService.ExecutionOutcome outcome = executeService.executePublishedWithOptions(
@@ -194,6 +208,56 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
         }
         return new RouteChoice(champion, "比例分流未命中有效区间，回退冠军组");
+    }
+
+    private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
+                                               Map<String, Object> params, String requestKey) {
+        List<RuleExperimentGroup> testGroups = activeGroups(groups, GROUP_TEST);
+        if (testGroups.isEmpty()) {
+            return Collections.emptyList();
+        }
+        if (ROUTING_RATIO.equals(experiment.getTestRoutingMode())) {
+            RuleExperimentGroup chosen = chooseRatioGroup(testGroups, experiment.getExperimentCode() + ":TEST", requestKey);
+            if (chosen == null) {
+                chosen = testGroups.get(0);
+            }
+            return Collections.singletonList(new RouteChoice(chosen, "测试组比例分流命中"));
+        }
+
+        List<RouteChoice> choices = new ArrayList<>();
+        RuleExperimentGroup fallback = null;
+        boolean exclusive = experiment.getTestExclusive() == null || experiment.getTestExclusive() == 1;
+        for (RuleExperimentGroup testGroup : testGroups) {
+            if (isFallbackGroup(testGroup)) {
+                if (fallback == null) {
+                    fallback = testGroup;
+                }
+                continue;
+            }
+            if (!matchesConditionGroup(testGroup, params)) {
+                continue;
+            }
+            choices.add(new RouteChoice(testGroup, "测试组条件命中"));
+            if (exclusive) {
+                break;
+            }
+        }
+        if (choices.isEmpty() && fallback != null) {
+            choices.add(new RouteChoice(fallback, "测试组条件未命中，执行兜底动作"));
+        }
+        return choices;
+    }
+
+    private RuleExperimentGroup chooseRatioGroup(List<RuleExperimentGroup> groups, String experimentCode, String requestKey) {
+        int bucket = routeBucket(experimentCode, requestKey);
+        BigDecimal cursor = BigDecimal.ZERO;
+        for (RuleExperimentGroup group : groups) {
+            cursor = cursor.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
+            if (new BigDecimal(bucket).compareTo(cursor) < 0) {
+                return group;
+            }
+        }
+        return null;
     }
 
     private RuleExperimentGroupResult runGroup(RuleExperiment experiment, RuleExperimentGroup group,
@@ -272,7 +336,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return result;
     }
 
-    private boolean matchesTestGroup(RuleExperimentGroup group, Map<String, Object> params) {
+    private boolean matchesConditionGroup(RuleExperimentGroup group, Map<String, Object> params) {
         if (!hasText(group.getConditionExpression())) {
             return true;
         }
@@ -333,6 +397,28 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 throw new IllegalArgumentException("冠军组和挑战组分流比例之和必须为100%");
             }
         }
+        if (ROUTING_CONDITION.equals(experiment.getRoutingMode())
+                && !hasText(experiment.getConditionRuleCode())
+                && hasInlineConditionGroups(productionGroups(groups))
+                && !hasFallbackGroup(productionGroups(groups))) {
+            throw new IllegalArgumentException("冠军挑战条件分流必须配置兜底动作");
+        }
+
+        List<RuleExperimentGroup> testGroups = activeGroups(groups, GROUP_TEST);
+        if (ROUTING_RATIO.equals(experiment.getTestRoutingMode()) && !testGroups.isEmpty()) {
+            BigDecimal total = BigDecimal.ZERO;
+            for (RuleExperimentGroup group : testGroups) {
+                total = total.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
+            }
+            if (total.compareTo(ONE_HUNDRED) != 0) {
+                throw new IllegalArgumentException("测试组分流比例之和必须为100%");
+            }
+        }
+        if (ROUTING_CONDITION.equals(experiment.getTestRoutingMode())
+                && hasVisualConditionGroups(testGroups)
+                && !hasFallbackGroup(testGroups)) {
+            throw new IllegalArgumentException("测试组条件分流必须配置兜底动作");
+        }
     }
 
     private List<RuleExperimentGroup> productionGroups(List<RuleExperimentGroup> groups) {
@@ -344,6 +430,33 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         result.sort(groupComparator());
         return result;
+    }
+
+    private boolean hasInlineConditionGroups(List<RuleExperimentGroup> groups) {
+        for (RuleExperimentGroup group : groups) {
+            if (hasText(group.getConditionConfig()) || hasText(group.getConditionExpression())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasVisualConditionGroups(List<RuleExperimentGroup> groups) {
+        for (RuleExperimentGroup group : groups) {
+            if (hasText(group.getConditionConfig())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasFallbackGroup(List<RuleExperimentGroup> groups) {
+        for (RuleExperimentGroup group : groups) {
+            if (isFallbackGroup(group)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<RuleExperimentGroup> activeGroups(List<RuleExperimentGroup> groups, String groupType) {
@@ -446,6 +559,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (experiment.getTestExclusive() == null) {
             experiment.setTestExclusive(1);
         }
+        if (!hasText(experiment.getTestRoutingMode())) {
+            experiment.setTestRoutingMode(ROUTING_CONDITION);
+        }
         if (!hasText(experiment.getRequestKeyPath())) {
             experiment.setRequestKeyPath("requestId");
         }
@@ -533,6 +649,18 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private boolean isFallbackGroup(RuleExperimentGroup group) {
+        if (group == null || !hasText(group.getConditionConfig())) {
+            return false;
+        }
+        try {
+            JSONObject json = JSON.parseObject(group.getConditionConfig());
+            return Boolean.TRUE.equals(json.getBoolean("fallback"));
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     private static class RouteChoice {

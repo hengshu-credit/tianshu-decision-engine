@@ -106,4 +106,13 @@ public class ExternalDatasourceController {
             return R.fail("调用失败：" + e.getMessage());
         }
     }
+
+    @PostMapping("/{id:\\d+}/auth-test")
+    public R<Map<String, Object>> testDatasourceAuth(@PathVariable Long id, @RequestBody(required = false) Map<String, Object> params) {
+        try {
+            return R.ok(externalApiInvokeService.testDatasourceAuth(id, params));
+        } catch (Exception e) {
+            return R.fail("鉴权测试失败：" + e.getMessage());
+        }
+    }
 }
