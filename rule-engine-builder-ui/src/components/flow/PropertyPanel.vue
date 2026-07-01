@@ -165,7 +165,7 @@
               v-model="nodeProps.scriptContent"
               type="textarea"
               :rows="8"
-              placeholder="// QLExpress 脚本&#10;taxRate = 0.13;&#10;result = &quot;一般税率&quot;;"
+              placeholder="// QLExpress 脚本&#10;taxRate = 0.13;&#10;result = &quot;一般税率&quot;"
               class="mono-textarea"
               @change="onNodeChange"
             />
