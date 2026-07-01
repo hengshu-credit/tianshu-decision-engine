@@ -64,7 +64,7 @@
       <el-table-column label="操作" width="190" align="center">
         <template slot-scope="{ row }">
           <el-button type="text" size="mini" @click="handleTest(row)">执行</el-button>
-          <el-button type="text" size="mini" @click="handleEdit(row)">编辑</el-button>
+          <el-button type="text" size="mini" @click="handleEdit(row)">详情</el-button>
           <el-button type="text" size="mini" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -387,17 +387,10 @@ export default {
       this.loadExperiments()
     },
     async handleCreate() {
-      this.form = this.emptyForm()
-      this.rulesForProject = []
-      this.projectRefs = []
-      this.projectVars = []
-      this.formVisible = true
+      this.$router.push('/experiment/new')
     },
     async handleEdit(row) {
-      this.form = { ...this.emptyForm(), ...JSON.parse(JSON.stringify(row)), groups: (row.groups || []).map(g => this.normalizeGroupForEdit(g)) }
-      await this.loadRules(this.form.projectId)
-      await this.loadExperimentRefs(this.form.projectId)
-      this.formVisible = true
+      this.$router.push('/experiment/detail/' + row.id)
     },
     async handleDelete(row) {
       await this.$confirm('确定删除实验 ' + row.experimentName + '？', '确认', { type: 'warning' })
@@ -678,7 +671,7 @@ export default {
       return (row.groups || []).filter(g => g.groupType === 'TEST')
     },
     routeModeLabel(mode) {
-      return mode === 'RATIO' ? '比例分流' : '条件分流'
+      return mode === 'RATIO' ? '随机分流' : '条件分流'
     },
     ruleLabel(rule) {
       return (rule.ruleName || rule.ruleCode) + ' / ' + rule.ruleCode

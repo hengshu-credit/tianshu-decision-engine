@@ -5,98 +5,104 @@
       <div class="hint-text">统一维护外部数据库连接池，供数据查询变量（var_source=DB）通过后端访问外部库。</div>
     </div>
 
-    <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
-        <el-form-item label="作用范围">
-          <el-select v-model="qp.scope" clearable placeholder="全部" style="width:110px;">
-            <el-option label="全局" value="GLOBAL" />
-            <el-option label="项目" value="PROJECT" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="数据源编码">
-          <el-input v-model="qp.datasourceCode" clearable placeholder="前缀筛选" style="width:150px;" />
-        </el-form-item>
-        <el-form-item label="数据源名称">
-          <el-input v-model="qp.datasourceName" clearable placeholder="名称筛选" style="width:150px;" />
-        </el-form-item>
-        <el-form-item label="数据库类型">
-          <el-select v-model="qp.dbType" clearable placeholder="全部" style="width:120px;">
-            <el-option v-for="item in dbTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select v-model="qp.status" clearable placeholder="全部" style="width:100px;">
-            <el-option label="启用" :value="1" />
-            <el-option label="停用" :value="0" />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleQuery">查询</el-button>
-          <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
-      </el-form>
-    </div>
+    <el-tabs v-model="activeTab">
+      <el-tab-pane label="数据源配置" name="datasource">
+        <div class="uiue-search-container">
+          <el-form :inline="true" size="small">
+            <el-form-item label="作用范围">
+              <el-select v-model="qp.scope" clearable placeholder="全部" style="width:110px;">
+                <el-option label="全局" value="GLOBAL" />
+                <el-option label="项目" value="PROJECT" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="数据源编码">
+              <el-input v-model="qp.datasourceCode" clearable placeholder="前缀筛选" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="数据源名称">
+              <el-input v-model="qp.datasourceName" clearable placeholder="名称筛选" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="数据库类型">
+              <el-select v-model="qp.dbType" clearable placeholder="全部" style="width:120px;">
+                <el-option v-for="item in dbTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="状态">
+              <el-select v-model="qp.status" clearable placeholder="全部" style="width:100px;">
+                <el-option label="启用" :value="1" />
+                <el-option label="停用" :value="0" />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button type="primary" @click="handleQuery">查询</el-button>
+              <el-button @click="resetQuery">重置</el-button>
+            </el-form-item>
+          </el-form>
+        </div>
 
-    <div class="uiue-btn-bar">
-      <div class="btn-right">
-        <el-button type="primary" size="small" icon="el-icon-plus" @click="handleCreate">新建数据库</el-button>
-      </div>
-    </div>
+        <div class="uiue-btn-bar">
+          <div class="btn-right">
+            <el-button type="primary" size="small" icon="el-icon-plus" @click="handleCreate">新建数据库</el-button>
+          </div>
+        </div>
 
-    <el-table :data="tableData" border size="small" v-loading="loading" style="width:100%;">
-      <el-table-column label="作用范围" width="90" align="center">
-        <template slot-scope="{ row }">
-          <el-tag :type="row.scope === 'GLOBAL' ? 'warning' : 'success'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="projectName" label="项目名称" min-width="120" show-overflow-tooltip>
-        <template slot-scope="{ row }">{{ row.projectName || '—' }}</template>
-      </el-table-column>
-      <el-table-column prop="datasourceCode" label="数据源编码" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="datasourceName" label="数据源名称" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="dbType" label="类型" width="100" align="center">
-        <template slot-scope="{ row }"><el-tag size="mini">{{ row.dbType }}</el-tag></template>
-      </el-table-column>
-      <el-table-column label="连接方式" width="100" align="center">
-        <template slot-scope="{ row }">
-          <el-tag :type="row.connectionMode === 'SSH_TUNNEL' ? 'warning' : 'success'" size="mini">{{ connectionModeLabel(row.connectionMode) }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="数据库地址" min-width="180" show-overflow-tooltip>
-        <template slot-scope="{ row }">{{ formatDbAddress(row) }}</template>
-      </el-table-column>
-      <el-table-column prop="jdbcUrl" label="JDBC URL" min-width="260" show-overflow-tooltip />
-      <el-table-column label="SSH隧道" min-width="150" show-overflow-tooltip>
-        <template slot-scope="{ row }">{{ formatSshAddress(row) }}</template>
-      </el-table-column>
-      <el-table-column label="连接池" width="120" align="center">
-        <template slot-scope="{ row }">{{ row.minIdle || 1 }} / {{ row.maxPoolSize || 5 }}</template>
-      </el-table-column>
-      <el-table-column prop="status" label="状态" width="70" align="center">
-        <template slot-scope="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="操作" width="180" align="center">
-        <template slot-scope="{ row }">
-          <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button type="text" size="small" @click="handleTest(row)">测试</el-button>
-          <el-button type="text" size="small" @click="openQuery(row)">查询</el-button>
-          <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
-        </template>
-      </el-table-column>
-    </el-table>
+        <el-table :data="tableData" border size="small" v-loading="loading" style="width:100%;">
+          <el-table-column label="作用范围" width="90" align="center">
+            <template slot-scope="{ row }">
+              <el-tag :type="row.scope === 'GLOBAL' ? 'warning' : 'success'" size="mini">{{ row.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="projectName" label="项目名称" min-width="120" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ row.projectName || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="datasourceCode" label="数据源编码" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="datasourceName" label="数据源名称" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="dbType" label="类型" width="100" align="center">
+            <template slot-scope="{ row }"><el-tag size="mini">{{ row.dbType }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="连接方式" width="100" align="center">
+            <template slot-scope="{ row }">
+              <el-tag :type="row.connectionMode === 'SSH_TUNNEL' ? 'warning' : 'success'" size="mini">{{ connectionModeLabel(row.connectionMode) }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="数据库地址" min-width="180" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ formatDbAddress(row) }}</template>
+          </el-table-column>
+          <el-table-column prop="jdbcUrl" label="JDBC URL" min-width="260" show-overflow-tooltip />
+          <el-table-column label="SSH隧道" min-width="150" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ formatSshAddress(row) }}</template>
+          </el-table-column>
+          <el-table-column label="连接池" width="120" align="center">
+            <template slot-scope="{ row }">{{ row.minIdle || 1 }} / {{ row.maxPoolSize || 5 }}</template>
+          </el-table-column>
+          <el-table-column prop="status" label="状态" width="70" align="center">
+            <template slot-scope="{ row }">
+              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="180" align="center">
+            <template slot-scope="{ row }">
+              <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button type="text" size="small" @click="handleTest(row)">测试</el-button>
+              <el-button type="text" size="small" @click="openQuery(row)">查询</el-button>
+              <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
 
-    <el-pagination
-      :current-page="qp.pageNum"
-      :page-size="qp.pageSize"
-      :total="total"
-      layout="total,sizes,prev,pager,next"
-      :page-sizes="[10,30,50,100,200,500]"
-      @current-change="p => { qp.pageNum = p; loadData() }"
-      @size-change="s => { qp.pageSize = s; qp.pageNum = 1; loadData() }"
-    />
-    <module-call-log module-type="DATABASE" title="数据库调用日志" />
+        <el-pagination
+          :current-page="qp.pageNum"
+          :page-size="qp.pageSize"
+          :total="total"
+          layout="total,sizes,prev,pager,next"
+          :page-sizes="[10,30,50,100,200,500]"
+          @current-change="p => { qp.pageNum = p; loadData() }"
+          @size-change="s => { qp.pageSize = s; qp.pageNum = 1; loadData() }"
+        />
+      </el-tab-pane>
+      <el-tab-pane label="调用日志" name="logs">
+        <module-call-log module-type="DATABASE" title="数据库调用日志" />
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog :title="form.id ? '编辑数据库数据源' : '新建数据库数据源'" :visible.sync="dialogVisible" width="900px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="120px" size="small">
@@ -320,6 +326,7 @@ export default {
   data() {
     return {
       projects: [],
+      activeTab: 'datasource',
       tableData: [],
       total: 0,
       loading: false,

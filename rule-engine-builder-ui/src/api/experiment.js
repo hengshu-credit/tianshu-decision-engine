@@ -8,6 +8,10 @@ export function getExperiment(id) {
   return request({ url: `/rule/experiment/${id}`, method: 'get' })
 }
 
+export function listExperimentLogs(params) {
+  return request({ url: '/rule/experiment/logs', method: 'get', params })
+}
+
 export function saveExperiment(data) {
   return request({ url: '/rule/experiment', method: 'post', data })
 }

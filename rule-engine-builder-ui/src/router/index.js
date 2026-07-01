@@ -189,6 +189,18 @@ const routes = [
         meta: { title: '分流实验' }
       },
       {
+        path: 'experiment/new',
+        name: 'ExperimentCreate',
+        component: () => import('@/views/experiment/ExperimentDetail.vue'),
+        meta: { title: '新建分流实验' }
+      },
+      {
+        path: 'experiment/detail/:experimentId',
+        name: 'ExperimentDetail',
+        component: () => import('@/views/experiment/ExperimentDetail.vue'),
+        meta: { title: '分流实验详情' }
+      },
+      {
         path: 'log',
         name: 'ExecutionLog',
         component: () => import('@/views/log/ExecutionLog.vue'),

@@ -107,6 +107,7 @@ export default {
       if (path.startsWith('/designer/')) return '/rule'
       if (/^\/project\/\d+$/.test(path)) return '/project'
       if (/^\/list\/\d+$/.test(path)) return '/list'
+      if (path.startsWith('/experiment/')) return '/experiment'
       return path
     }
   },

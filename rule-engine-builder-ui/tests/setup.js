@@ -213,6 +213,7 @@ jest.mock('@/api/billing', () => ({
 jest.mock('@/api/experiment', () => ({
   listExperiments: jest.fn(),
   getExperiment: jest.fn(),
+  listExperimentLogs: jest.fn(),
   saveExperiment: jest.fn(),
   deleteExperiment: jest.fn(),
   executeExperiment: jest.fn(),

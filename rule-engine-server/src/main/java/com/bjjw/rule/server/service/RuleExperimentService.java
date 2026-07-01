@@ -88,6 +88,32 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return experiment;
     }
 
+    public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
+                                                               String experimentCode, String requestKey,
+                                                               String stage, String groupCode, Integer success) {
+        LambdaQueryWrapper<RuleExperimentExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (experimentId != null) {
+            wrapper.eq(RuleExperimentExecutionLog::getExperimentId, experimentId);
+        }
+        if (hasText(experimentCode)) {
+            wrapper.eq(RuleExperimentExecutionLog::getExperimentCode, experimentCode);
+        }
+        if (hasText(requestKey)) {
+            wrapper.like(RuleExperimentExecutionLog::getRequestKey, requestKey);
+        }
+        if (hasText(stage)) {
+            wrapper.eq(RuleExperimentExecutionLog::getStage, stage);
+        }
+        if (hasText(groupCode)) {
+            wrapper.like(RuleExperimentExecutionLog::getGroupCode, groupCode);
+        }
+        if (success != null) {
+            wrapper.eq(RuleExperimentExecutionLog::getSuccess, success);
+        }
+        wrapper.orderByDesc(RuleExperimentExecutionLog::getCreateTime);
+        return executionLogMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+    }
+
     @Transactional
     public RuleExperiment saveExperiment(RuleExperiment experiment) {
         normalizeExperiment(experiment);

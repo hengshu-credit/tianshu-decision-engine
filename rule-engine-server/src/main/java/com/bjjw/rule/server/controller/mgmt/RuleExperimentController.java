@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.bjjw.rule.model.dto.RuleExperimentExecuteRequest;
 import com.bjjw.rule.model.dto.RuleExperimentExecuteResult;
 import com.bjjw.rule.model.entity.RuleExperiment;
+import com.bjjw.rule.model.entity.RuleExperimentExecutionLog;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleExperimentService;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -37,6 +38,19 @@ public class RuleExperimentController {
     public R<RuleExperiment> get(@PathVariable Long id) {
         RuleExperiment experiment = experimentService.getDetail(id);
         return experiment == null ? R.fail("分流实验不存在") : R.ok(experiment);
+    }
+
+    @GetMapping("/logs")
+    public R<IPage<RuleExperimentExecutionLog>> logs(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+                                                     @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
+                                                     @RequestParam(required = false) Long experimentId,
+                                                     @RequestParam(required = false) String experimentCode,
+                                                     @RequestParam(required = false) String requestKey,
+                                                     @RequestParam(required = false) String stage,
+                                                     @RequestParam(required = false) String groupCode,
+                                                     @RequestParam(required = false) Integer success) {
+        return R.ok(experimentService.pageExecutionLogs(pageNum, pageSize, experimentId, experimentCode,
+                requestKey, stage, groupCode, success));
     }
 
     @PostMapping
