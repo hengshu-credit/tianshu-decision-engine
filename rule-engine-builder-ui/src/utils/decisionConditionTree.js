@@ -93,3 +93,66 @@ export function walkConditionLeaves(node, fn) {
     node.children.forEach(c => walkConditionLeaves(c, fn))
   }
 }
+
+/**
+ * 判断条件树里是否至少有一条可执行的叶条件。
+ * @param {Object|null} node
+ * @returns {boolean}
+ */
+export function hasUsableConditionLeaf(node) {
+  let usable = false
+  walkConditionLeaves(node, leaf => {
+    if (usable) return
+    if (!leaf.varCode || leaf.operator === '*') return
+    if (leaf.valueKind === 'VAR') {
+      usable = !!leaf.value
+      return
+    }
+    usable = leaf.value !== undefined && leaf.value !== null && String(leaf.value) !== ''
+  })
+  return usable
+}
+
+/**
+ * 将决策表条件树编译为 QLExpress 布尔表达式。
+ * @param {Object|null} node
+ * @returns {string}
+ */
+export function compileConditionTreeExpression(node) {
+  if (!node || typeof node !== 'object') return 'true'
+  if (node.type === 'group') {
+    const children = Array.isArray(node.children) ? node.children : []
+    const expressions = children.map(compileConditionTreeExpression).filter(Boolean)
+    if (!expressions.length) return 'true'
+    const joiner = node.op === 'OR' ? ' || ' : ' && '
+    return '(' + expressions.join(joiner) + ')'
+  }
+  if (node.type === 'leaf') {
+    return compileConditionLeafExpression(node)
+  }
+  return 'true'
+}
+
+function compileConditionLeafExpression(leaf) {
+  if (!leaf || !leaf.varCode) return 'true'
+  const operator = leaf.operator || '=='
+  if (operator === '*') return 'true'
+
+  if (leaf.valueKind === 'VAR') {
+    if (!leaf.value) return 'true'
+    return leaf.varCode + ' ' + operator + ' ' + leaf.value
+  }
+
+  if (leaf.value === undefined || leaf.value === null || String(leaf.value) === '') {
+    return 'true'
+  }
+  return leaf.varCode + ' ' + operator + ' ' + formatConditionConstant(leaf.varType, leaf.value)
+}
+
+function formatConditionConstant(varType, value) {
+  const text = String(value)
+  if (varType === 'STRING' || varType === 'ENUM' || varType === 'DATE') {
+    return '"' + text.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+  }
+  return text
+}

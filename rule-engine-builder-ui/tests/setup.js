@@ -183,6 +183,11 @@ jest.mock('@/api/datasource', () => ({
   updateApiConfig: jest.fn(),
   deleteApiConfig: jest.fn(),
   invokeApiConfig: jest.fn(),
+  testDatasourceAuth: jest.fn(),
+  __esModule: true
+}))
+jest.mock('@/api/runtimeLog', () => ({
+  listRuntimeLogs: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/database', () => ({

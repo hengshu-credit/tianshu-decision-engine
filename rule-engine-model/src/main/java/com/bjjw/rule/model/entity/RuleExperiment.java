@@ -21,6 +21,7 @@ public class RuleExperiment {
     private String experimentName;
     private String description;
     private String routingMode;
+    private String testRoutingMode;
     private String conditionRuleCode;
     private String requestKeyPath;
     private Integer testExclusive;

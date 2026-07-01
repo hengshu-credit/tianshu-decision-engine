@@ -157,6 +157,18 @@ describe('VarPicker', () => {
     expect(wrapper.vm.rightItems.map(v => v.varCode)).toEqual(['v2', 'v3'])
   })
 
+  test('已选字段不展示当前作用域不可选的旧引用', async () => {
+    const vars = standaloneOptions(1)
+    const wrapper = mountPicker({
+      vars,
+      selectedVars: [vars[0], { varCode: 'projectOnlyVar', varLabel: '项目变量' }]
+    })
+    await Vue.nextTick()
+
+    expect(wrapper.vm.selectedItems.map(v => v.varCode)).toEqual(['v1'])
+    expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', count: 1 })
+  })
+
   test('点击输入框后弹层保持打开，点击弹层内部不关闭', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     const popper = document.createElement('div')

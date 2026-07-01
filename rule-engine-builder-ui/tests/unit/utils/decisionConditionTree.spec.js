@@ -5,7 +5,9 @@ import {
   createEmptyLeaf,
   migrateRuleConditionsToTree,
   collectVarCodesFromConditionTree,
-  walkConditionLeaves
+  walkConditionLeaves,
+  hasUsableConditionLeaf,
+  compileConditionTreeExpression
 } from '@/utils/decisionConditionTree'
 
 // ─── createEmptyGroup ──────────────────────────────────────
@@ -240,5 +242,62 @@ describe('walkConditionLeaves', () => {
 
   test('非条件树节点不报错', () => {
     expect(() => walkConditionLeaves({ type: 'unknown' }, () => {})).not.toThrow()
+  })
+})
+
+describe('hasUsableConditionLeaf', () => {
+  test('空树没有有效条件', () => {
+    expect(hasUsableConditionLeaf(createEmptyGroup())).toBe(false)
+  })
+
+  test('有左变量和常量值时认为有效', () => {
+    const tree = createEmptyGroup()
+    tree.children.push({ type: 'leaf', varCode: 'amount', operator: '>=', valueKind: 'CONST', value: '100' })
+    expect(hasUsableConditionLeaf(tree)).toBe(true)
+  })
+
+  test('任意运算符不作为有效条件', () => {
+    const tree = createEmptyGroup()
+    tree.children.push({ type: 'leaf', varCode: 'amount', operator: '*', valueKind: 'CONST', value: '' })
+    expect(hasUsableConditionLeaf(tree)).toBe(false)
+  })
+})
+
+describe('compileConditionTreeExpression', () => {
+  test('编译字符串常量并转义引号', () => {
+    const tree = {
+      type: 'group',
+      op: 'AND',
+      children: [
+        { type: 'leaf', varCode: 'customerLevel', varType: 'STRING', operator: '==', valueKind: 'CONST', value: '金"卡' }
+      ]
+    }
+
+    expect(compileConditionTreeExpression(tree)).toBe('(customerLevel == "金\\"卡")')
+  })
+
+  test('编译嵌套与或条件', () => {
+    const tree = {
+      type: 'group',
+      op: 'AND',
+      children: [
+        { type: 'leaf', varCode: 'amount', varType: 'NUMBER', operator: '>=', valueKind: 'CONST', value: '1000' },
+        {
+          type: 'group',
+          op: 'OR',
+          children: [
+            { type: 'leaf', varCode: 'level', varType: 'ENUM', operator: '==', valueKind: 'CONST', value: 'A' },
+            { type: 'leaf', varCode: 'score', operator: '>=', valueKind: 'VAR', value: 'threshold' }
+          ]
+        }
+      ]
+    }
+
+    expect(compileConditionTreeExpression(tree)).toBe('(amount >= 1000 && (level == "A" || score >= threshold))')
+  })
+
+  test('空条件编译为 true', () => {
+    expect(compileConditionTreeExpression(null)).toBe('true')
+    expect(compileConditionTreeExpression(createEmptyGroup())).toBe('true')
   })
 })

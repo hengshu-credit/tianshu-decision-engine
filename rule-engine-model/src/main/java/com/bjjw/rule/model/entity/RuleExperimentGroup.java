@@ -23,6 +23,7 @@ public class RuleExperimentGroup {
     private BigDecimal trafficRatio;
     private String conditionValue;
     private String conditionExpression;
+    private String conditionConfig;
     private Integer invokeExternalSource;
     private Integer status;
     private Integer sortOrder;

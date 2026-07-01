@@ -80,6 +80,7 @@
       @current-change="p => { query.pageNum = p; loadData() }"
       @size-change="s => { query.pageSize = s; query.pageNum = 1; loadData() }"
     />
+    <module-call-log module-type="LIST" title="名单匹配日志" />
 
     <el-dialog :title="form.id ? '编辑名单库' : '新建名单库'" :visible.sync="dialogVisible" width="640px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="100px" size="small">
@@ -133,9 +134,11 @@
 <script>
 import { listProjects } from '@/api/project'
 import { listLibraries, createLibrary, updateLibrary, deleteLibrary } from '@/api/ruleList'
+import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 
 export default {
   name: 'ListLibrary',
+  components: { ModuleCallLog },
   data() {
     return {
       loading: false,

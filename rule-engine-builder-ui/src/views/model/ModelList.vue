@@ -113,6 +113,7 @@
       <el-pagination style="margin-top:12px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
         layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
         @current-change="p=>{qp.pageNum=p;load()}" @size-change="s=>{qp.pageSize=s;qp.pageNum=1;load()}" />
+      <module-call-log module-type="MODEL" title="模型执行日志" />
 
     <!-- 上传模型对话框 -->
     <el-dialog title="上传模型" :visible.sync="uploadVisible" width="700px" :close-on-click-modal="false">
@@ -220,6 +221,7 @@
 import * as api from '@/api/model'
 import { listProjects } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -233,6 +235,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelList',
+  components: { ModuleCallLog },
   data() {
     return {
       loading: false,

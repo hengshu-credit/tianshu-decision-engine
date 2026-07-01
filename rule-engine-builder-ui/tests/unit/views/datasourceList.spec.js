@@ -44,10 +44,51 @@ describe('DatasourceList helpers', () => {
     const form = {
       ...ctx.emptyDatasourceForm(),
       baseUrl: 'https://api.example.com',
+      authType: 'CUSTOM',
       authConfig: '{bad json}'
     }
 
     expect(() => ctx.normalizeDatasource(form)).toThrow(/JSON/)
+  })
+
+  test('buildAuthConfig serializes token api fields including response header paths', () => {
+    const ctx = createContext({
+      datasourceAuthConfig: {
+        ...DatasourceList.methods.emptyAuthConfig('TOKEN_API'),
+        tokenUrl: '/oauth/token',
+        method: 'POST',
+        contentType: 'application/json',
+        headers: '{"X-App-Id":"${appId}"}',
+        body: '{"grant_type":"client_credentials"}',
+        tokenPath: 'headers.Authorization',
+        expiresInPath: 'headers.X-Expires-In'
+      }
+    })
+
+    expect(JSON.parse(ctx.buildAuthConfig('TOKEN_API'))).toEqual({
+      tokenUrl: '/oauth/token',
+      method: 'POST',
+      contentType: 'application/json',
+      headers: { 'X-App-Id': '${appId}' },
+      body: { grant_type: 'client_credentials' },
+      tokenPath: 'headers.Authorization',
+      expiresInPath: 'headers.X-Expires-In'
+    })
+  })
+
+  test('parseAuthConfig fills editable defaults from saved auth JSON', () => {
+    const ctx = createContext()
+
+    const config = ctx.parseAuthConfig(
+      '{"tokenUrl":"/token","method":"GET","headers":{"X-App":"app"},"body":{"grant_type":"client_credentials"},"tokenPath":"body.data.token"}',
+      'TOKEN_API'
+    )
+
+    expect(config.tokenUrl).toBe('/token')
+    expect(config.method).toBe('GET')
+    expect(config.headers).toContain('"X-App"')
+    expect(config.body).toContain('grant_type')
+    expect(config.tokenPath).toBe('body.data.token')
   })
 
   test('normalizeDatasource supplies local address for rule engine datasource', () => {

@@ -61,9 +61,10 @@
           <el-table-column label="状态" width="70" align="center">
             <template slot-scope="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="执行操作" width="120" align="center">
+          <el-table-column label="执行操作" width="160" align="center">
             <template slot-scope="{ row }">
               <el-button type="text" size="small" @click="handleEdit(row)">修改</el-button>
+              <el-button type="text" size="small" @click="handleTrace(row)">追踪</el-button>
               <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -79,6 +80,10 @@
         />
       </el-tab-pane>
       <el-tab-pane label="变更日志" name="logs">
+        <div class="uiue-btn-bar log-toolbar">
+          <span v-if="traceRecord" class="trace-title">正在追踪：{{ traceRecord.itemContent }}</span>
+          <el-button v-if="traceRecord" size="small" @click="clearTrace">查看全部日志</el-button>
+        </div>
         <el-table :data="logs" border size="small" v-loading="logLoading" style="width:100%;">
           <el-table-column prop="itemContent" label="名单内容" min-width="180" show-overflow-tooltip />
           <el-table-column label="内容类型" width="100" align="center">
@@ -147,6 +152,7 @@ export default {
       logLoading: false,
       records: [],
       logs: [],
+      traceRecord: null,
       total: 0,
       query: { pageNum: 1, pageSize: 10, itemType: '', status: '', keyword: '', effectiveOnly: false },
       dialogVisible: false,
@@ -198,7 +204,9 @@ export default {
     async loadLogs() {
       this.logLoading = true
       try {
-        const res = await listRecordLogs(this.listId, { pageNum: 1, pageSize: 100 })
+        const params = { pageNum: 1, pageSize: 100 }
+        if (this.traceRecord && this.traceRecord.id) params.recordId = this.traceRecord.id
+        const res = await listRecordLogs(this.listId, params)
         this.logs = (res.data && res.data.records) || []
       } finally {
         this.logLoading = false
@@ -220,6 +228,15 @@ export default {
         ? [this.normalizeDateTime(row.effectiveTime), this.normalizeDateTime(row.expireTime)]
         : []
       this.dialogVisible = true
+    },
+    handleTrace(row) {
+      this.traceRecord = row
+      this.activeTab = 'logs'
+      this.loadLogs()
+    },
+    clearTrace() {
+      this.traceRecord = null
+      this.loadLogs()
     },
     submit() {
       this.$refs.form.validate(async valid => {
@@ -295,4 +312,6 @@ export default {
 .detail-meta { color:#909399; font-size:12px; margin-top:2px; }
 .detail-actions { display:flex; align-items:center; gap:8px; }
 .hidden-file { display:none; }
+.log-toolbar { justify-content:flex-start; gap:12px; }
+.trace-title { color:#606266; font-size:13px; }
 </style>

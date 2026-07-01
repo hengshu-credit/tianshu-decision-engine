@@ -127,6 +127,25 @@ describe('ListDetail — 名单内容管理', () => {
     }))
   })
 
+  test('追踪记录时按 recordId 加载该 value 的历史变更', async () => {
+    ruleListApi.listRecordLogs.mockClear()
+    wrapper.vm.handleTrace({ id: 1, itemContent: '13800138000' })
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.vm.activeTab).toBe('logs')
+    expect(wrapper.vm.traceRecord.itemContent).toBe('13800138000')
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, { pageNum: 1, pageSize: 100, recordId: 1 })
+
+    ruleListApi.listRecordLogs.mockClear()
+    wrapper.vm.clearTrace()
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.vm.traceRecord).toBe(null)
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, { pageNum: 1, pageSize: 100 })
+  })
+
   test('删除记录调用删除接口并刷新数据', async () => {
     ruleListApi.deleteRecord.mockResolvedValue({ data: true })
     wrapper.vm.handleDelete({ id: 1, itemContent: '13800138000' })

@@ -513,8 +513,7 @@ export default {
       var id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
       var refType = item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType)
       return this.findOptionByIdentity(id, refType) ||
-        this.findOptionByCode(item.varCode || item.refCode) ||
-        (item.varCode || item.refCode ? Object.assign({}, item, { varCode: item.varCode || item.refCode }) : null)
+        this.findOptionByCode(item.varCode || item.refCode)
     },
     optionIdentityKey(item) {
       var id = item && (item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id)))

@@ -39,3 +39,7 @@ export function deleteApiConfig(id) {
 export function invokeApiConfig(id, data) {
   return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data })
 }
+
+export function testDatasourceAuth(id, data) {
+  return request({ url: `/rule/datasource/${id}/auth-test`, method: 'post', data })
+}

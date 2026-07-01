@@ -87,9 +87,10 @@
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="150" align="center">
+          <el-table-column label="操作" width="190" align="center">
             <template slot-scope="{ row }">
               <el-button type="text" size="small" @click="handleEditDatasource(row)">编辑</el-button>
+              <el-button type="text" size="small" @click="handleTestDatasource(row)">测试</el-button>
               <el-button type="text" size="small" @click="handleCreateApi(row)">加接口</el-button>
               <el-button type="text" size="small" class="btn-delete" @click="handleDeleteDatasource(row)">删除</el-button>
             </template>
@@ -192,6 +193,9 @@
           @size-change="s => { apiQuery.pageSize = s; apiQuery.pageNum = 1; loadApiConfigs() }"
         />
       </el-tab-pane>
+      <el-tab-pane label="调用日志" name="logs">
+        <module-call-log module-type="DATASOURCE" title="外数调用日志" />
+      </el-tab-pane>
     </el-tabs>
 
     <el-dialog :title="datasourceForm.id ? '编辑外数数据源' : '新建外数数据源'" :visible.sync="datasourceDialogVisible" width="720px" append-to-body>
@@ -233,7 +237,7 @@
           </el-col>
           <el-col :span="12">
             <el-form-item label="鉴权方式">
-              <el-select v-model="datasourceForm.authType" style="width:100%">
+              <el-select v-model="datasourceForm.authType" style="width:100%" @change="onDatasourceAuthTypeChange">
                 <el-option v-for="item in authTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
@@ -257,9 +261,105 @@
             </el-form-item>
           </el-col>
         </el-row>
-        <el-form-item label="鉴权配置">
-          <el-input v-model="datasourceForm.authConfig" class="json-input" type="textarea" :rows="5" placeholder='{"headerName":"Authorization","tokenPath":"data.token"}' />
-        </el-form-item>
+        <div v-if="datasourceForm.authType !== 'NONE'" class="form-section">
+          <div class="section-title">数据源鉴权配置</div>
+          <div class="section-help">这里配置数据源默认鉴权；API 接口选择“继承数据源”时会使用这些配置。路径可写 <code>body.data.token</code>，也可写 <code>headers.Authorization</code> 从响应头读取。</div>
+          <template v-if="datasourceForm.authType === 'BASIC'">
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="用户名">
+                  <el-input v-model="datasourceAuthConfig.username" autocomplete="off" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="密码">
+                  <el-input v-model="datasourceAuthConfig.password" type="password" autocomplete="new-password" show-password />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </template>
+          <template v-else-if="datasourceForm.authType === 'BEARER'">
+            <el-form-item label="Token">
+              <el-input v-model="datasourceAuthConfig.token" type="password" autocomplete="new-password" show-password placeholder="直接写固定 token；动态 token 请使用 Token接口" />
+            </el-form-item>
+          </template>
+          <template v-else-if="datasourceForm.authType === 'API_KEY'">
+            <el-row :gutter="12">
+              <el-col :span="8">
+                <el-form-item label="放置位置">
+                  <el-select v-model="datasourceAuthConfig.location" style="width:100%">
+                    <el-option v-for="item in authLocationOptions" :key="item.value" :label="item.label" :value="item.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="字段名">
+                  <el-input v-model="datasourceAuthConfig.name" placeholder="如 X-API-Key" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="字段值">
+                  <el-input v-model="datasourceAuthConfig.value" type="password" autocomplete="new-password" show-password />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </template>
+          <template v-else-if="datasourceForm.authType === 'TOKEN_API' || datasourceForm.authType === 'OAUTH2'">
+            <el-row :gutter="12">
+              <el-col :span="8">
+                <el-form-item label="请求方式">
+                  <el-select v-model="datasourceAuthConfig.method" style="width:100%">
+                    <el-option v-for="method in tokenHttpMethods" :key="method" :label="method" :value="method" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="16">
+                <el-form-item label="鉴权地址">
+                  <el-input v-model="datasourceAuthConfig.tokenUrl" placeholder="/oauth/token 或完整 URL" />
+                  <div class="field-help">相对路径会拼接数据源基础地址；测试数据源时会真实请求该地址获取 token。</div>
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :span="8">
+                <el-form-item label="Content-Type">
+                  <el-select v-model="datasourceAuthConfig.contentType" filterable allow-create clearable style="width:100%">
+                    <el-option v-for="item in contentTypeOptions" :key="item" :label="item" :value="item" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="Token路径">
+                  <el-input v-model="datasourceAuthConfig.tokenPath" placeholder="body.data.access_token 或 headers.Authorization" />
+                  <div class="field-help">响应体用 <code>body.</code> 开头，响应头用 <code>headers.</code> 开头。</div>
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="过期时间路径">
+                  <el-input v-model="datasourceAuthConfig.expiresInPath" placeholder="body.expires_in 或 headers.X-Expires-In" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :span="12">
+                <el-form-item label="鉴权请求头">
+                  <el-input v-model="datasourceAuthConfig.headers" class="json-input" type="textarea" :rows="4" placeholder='{"X-App-Id":"${appId}"}' />
+                  <div class="field-help"><code>${字段}</code> 会从测试参数或规则入参中取值。</div>
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="鉴权请求体">
+                  <el-input v-model="datasourceAuthConfig.body" class="json-input" type="textarea" :rows="4" placeholder='{"grant_type":"client_credentials","client_id":"${clientId}"}' />
+                </el-form-item>
+              </el-col>
+            </el-row>
+          </template>
+          <template v-else>
+            <el-form-item label="自定义JSON">
+              <el-input v-model="datasourceForm.authConfig" class="json-input" type="textarea" :rows="5" placeholder='{"headerName":"Authorization","value":"${token}"}' />
+            </el-form-item>
+          </template>
+        </div>
         <el-form-item label="说明">
           <el-input v-model="datasourceForm.description" type="textarea" :rows="2" />
         </el-form-item>
@@ -270,6 +370,28 @@
       <div slot="footer">
         <el-button size="small" @click="datasourceDialogVisible = false">取消</el-button>
         <el-button size="small" type="primary" @click="handleSaveDatasource">保存</el-button>
+      </div>
+    </el-dialog>
+
+    <el-dialog title="数据源鉴权测试" :visible.sync="authTestDialogVisible" width="780px" append-to-body>
+      <div class="invoke-target">当前数据源：{{ authTestTarget.datasourceName }} / {{ authTestTarget.datasourceCode }}</div>
+      <el-alert
+        type="info"
+        :closable="false"
+        title="测试会按数据源鉴权配置请求 Token 接口；Token 在响应头时，tokenPath 可写 headers.Authorization。"
+        style="margin-bottom:12px;"
+      />
+      <el-form label-width="90px" size="small">
+        <el-form-item label="测试参数">
+          <el-input v-model="authTestParamsText" class="json-input" type="textarea" :rows="6" placeholder='{"clientId":"app001","clientSecret":"secret"}' />
+        </el-form-item>
+        <el-form-item label="测试结果">
+          <el-input v-model="authTestResultText" class="json-input" type="textarea" :rows="10" readonly />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="authTestDialogVisible = false">关闭</el-button>
+        <el-button size="small" type="primary" :loading="authTestLoading" @click="runAuthTest">执行测试</el-button>
       </div>
     </el-dialog>
 
@@ -322,7 +444,10 @@
         <el-row :gutter="12">
           <el-col :span="8">
             <el-form-item label="Content-Type">
-              <el-input v-model="apiForm.contentType" />
+              <el-select v-model="apiForm.contentType" filterable allow-create clearable placeholder="不设置或选择类型" style="width:100%">
+                <el-option v-for="item in contentTypeOptions" :key="item" :label="item" :value="item" />
+              </el-select>
+              <div class="field-help">POST/PUT 常用 application/json；GET 或由三方自行判断时可留空。</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -330,6 +455,7 @@
               <el-select v-model="apiForm.requestObjectId" clearable filterable placeholder="选择请求数据对象" style="width:100%">
                 <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
               </el-select>
+              <div class="field-help">用于说明接口请求体结构；映射仍通过下方 <code>$.对象.字段</code> 或 <code>${对象.字段}</code> 取值。</div>
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -337,6 +463,7 @@
               <el-select v-model="apiForm.responseObjectId" clearable filterable placeholder="选择响应数据对象" style="width:100%">
                 <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
               </el-select>
+              <div class="field-help">用于说明三方返回结构；响应映射会把字段裁剪到返回结果的 <code>body</code> 中。</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -371,21 +498,29 @@
 
           <el-collapse-item title="入参、请求头与响应映射" name="mapping">
             <div class="mapping-toolbar">
-              <div class="field-help">路径支持 <code>$.customer.id</code>、<code>body.data.score</code>；响应映射保存后，接口变量默认从映射后的 <code>body</code> 取值。</div>
-              <div>
-                <el-button size="mini" @click="applyApiTemplate('HTTP')">HTTP 模板</el-button>
-                <el-button size="mini" @click="applyApiTemplate('RULE_ENGINE')">内部规则模板</el-button>
-              </div>
+              <div class="field-help">入参映射把规则引擎入参转换成接口入参；响应映射把三方返回转换成接口变量可读取的 <code>body</code>。</div>
             </div>
+            <el-tabs v-model="apiTemplateTab" type="card" class="template-tabs">
+              <el-tab-pane label="HTTP 接口模板" name="HTTP">
+                <div class="template-help">适用于第三方 HTTP/HTTPS 接口：Header/Query/请求体都可以从规则入参中取值，例如 <code>$.customer.idNo</code> 或 <code>${customer.idNo}</code>。</div>
+                <el-button size="mini" @click="applyApiTemplate('HTTP')">填入 HTTP 示例</el-button>
+              </el-tab-pane>
+              <el-tab-pane label="内部规则模板" name="RULE_ENGINE">
+                <div class="template-help">适用于协议为“内部规则引擎”的数据源：接口地址填写已发布规则编码，requestMapping.params 会作为被调用规则的入参。</div>
+                <el-button size="mini" @click="applyApiTemplate('RULE_ENGINE')">填入内部规则示例</el-button>
+              </el-tab-pane>
+            </el-tabs>
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="Header配置">
                   <el-input v-model="apiForm.headerConfig" class="json-input" type="textarea" :rows="5" placeholder='{"X-App-Id":"${appId}"}' />
+                  <div class="field-help">请求头名到取值表达式的 JSON；敏感头在日志中会脱敏。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="Query配置">
                   <el-input v-model="apiForm.queryConfig" class="json-input" type="textarea" :rows="5" placeholder='{"name":"$.customer.name"}' />
+                  <div class="field-help">URL Query 参数配置；值支持 <code>$.字段</code> 和 <code>${字段}</code>。</div>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -393,16 +528,19 @@
               <el-col :span="12">
                 <el-form-item label="入参映射">
                   <el-input v-model="apiForm.requestMapping" class="json-input" type="textarea" :rows="5" placeholder='{"idNo":"$.customer.idNo"}' />
+                  <div class="field-help">没有请求体模板时，会把该映射作为 JSON 请求体；GET/DELETE 时不会发送请求体。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="响应映射">
                   <el-input v-model="apiForm.responseMapping" class="json-input" type="textarea" :rows="5" placeholder='{"score":"body.data.score","riskLevel":"body.data.level"}' />
+                  <div class="field-help">左侧是引擎读取的字段名，右侧是响应路径；映射后接口变量默认从 <code>body.score</code> 等字段读取。</div>
                 </el-form-item>
               </el-col>
             </el-row>
             <el-form-item label="请求体模板">
-              <el-input v-model="apiForm.bodyTemplate" class="json-input" type="textarea" :rows="5" placeholder='{"certNo":"${Customer.idNo}","name":"${Customer.name}"}' />
+              <el-input v-model="apiForm.bodyTemplate" class="json-input" type="textarea" :rows="5" placeholder='{"certNo":"${customer.idNo}","name":"${customer.name}"}' />
+              <div class="field-help">优先级高于入参映射；适合三方字段名和内部对象字段名差异较大时使用。</div>
             </el-form-item>
           </el-collapse-item>
 
@@ -443,6 +581,7 @@
               <el-col :span="12">
                 <el-form-item label="异步结果路径">
                   <el-input v-model="apiForm.asyncResultPath" placeholder="如 data.result" />
+                  <div class="field-help">异步接口回调或轮询结果中，真正业务结果所在的 JSON 路径；同步接口可留空。</div>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -450,11 +589,13 @@
               <el-col :span="12">
                 <el-form-item label="计费项编码">
                   <el-input v-model="apiForm.billingItemCode" placeholder="如 EXT_CREDIT_REPORT" />
+                  <div class="field-help">用于账单汇总识别该接口的计费项目；不填则使用接口编码或默认 API 计费项。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="兜底返回">
                   <el-input v-model="apiForm.fallbackValue" class="json-input" type="textarea" :rows="3" placeholder='{"success":false}' />
+                  <div class="field-help">异常策略为“返回默认值”时使用，必须是合法 JSON；内容会作为返回结果的 <code>body</code>。</div>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -501,14 +642,17 @@ import {
   listApiConfigs,
   listDatasources,
   invokeApiConfig,
+  testDatasourceAuth,
   updateApiConfig,
   updateDatasource
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
 import { listDataObjects } from '@/api/dataObject'
+import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 
 export default {
   name: 'DatasourceList',
+  components: { ModuleCallLog },
   data() {
     return {
       activeTab: 'datasource',
@@ -521,6 +665,12 @@ export default {
       datasourceDialogVisible: false,
       datasourceQuery: { pageNum: 1, pageSize: 10, scope: '', datasourceCode: '', datasourceName: '', authType: '', status: '' },
       datasourceForm: this.emptyDatasourceForm(),
+      datasourceAuthConfig: this.emptyAuthConfig('NONE'),
+      authTestDialogVisible: false,
+      authTestLoading: false,
+      authTestTarget: {},
+      authTestParamsText: '{}',
+      authTestResultText: '',
       datasourceRules: {
         datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }],
         datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }],
@@ -547,6 +697,7 @@ export default {
       invokeTarget: {},
       invokeParamsText: '{}',
       invokeResultText: '',
+      apiTemplateTab: 'HTTP',
       apiRules: {
         datasourceId: [{ required: true, message: '请选择数据源', trigger: 'change' }],
         apiCode: [{ required: true, message: '请输入接口编码', trigger: 'blur' }],
@@ -555,6 +706,18 @@ export default {
       },
       apiCollapse: ['auth', 'mapping', 'runtime'],
       httpMethods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'],
+      tokenHttpMethods: ['GET', 'POST', 'PUT'],
+      contentTypeOptions: [
+        'application/json',
+        'application/x-www-form-urlencoded',
+        'multipart/form-data',
+        'text/plain',
+        'application/xml'
+      ],
+      authLocationOptions: [
+        { label: '请求头 Header', value: 'HEADER' },
+        { label: 'URL Query', value: 'QUERY' }
+      ],
       authTypeOptions: [
         { label: '无', value: 'NONE' },
         { label: 'Basic', value: 'BASIC' },
@@ -600,6 +763,20 @@ export default {
         protocol: 'HTTPS', baseUrl: '', authType: 'NONE', authConfig: '', tokenCacheSeconds: 0,
         description: '', status: 1
       }
+    },
+    emptyAuthConfig(type) {
+      const common = {
+        username: '', password: '', token: '', name: 'X-API-Key', value: '', location: 'HEADER',
+        tokenUrl: '/oauth/token', method: 'POST', contentType: 'application/json',
+        tokenPath: 'body.access_token', expiresInPath: 'body.expires_in',
+        headers: '{}', body: '{"grant_type":"client_credentials"}'
+      }
+      if (type === 'API_KEY') common.name = 'X-API-Key'
+      if (type === 'TOKEN_API' || type === 'OAUTH2') {
+        common.tokenPath = 'body.access_token'
+        common.expiresInPath = 'body.expires_in'
+      }
+      return common
     },
     emptyApiForm() {
       return {
@@ -657,7 +834,7 @@ export default {
       if (this.activeTab === 'api') {
         this.loadDatasourceOptions()
         this.loadApiConfigs()
-      } else {
+      } else if (this.activeTab === 'datasource') {
         this.loadDatasources()
       }
     },
@@ -679,11 +856,19 @@ export default {
     },
     handleCreateDatasource() {
       this.datasourceForm = this.emptyDatasourceForm()
+      this.datasourceAuthConfig = this.emptyAuthConfig(this.datasourceForm.authType)
       this.datasourceDialogVisible = true
     },
     handleEditDatasource(row) {
       this.datasourceForm = { ...this.emptyDatasourceForm(), ...row }
+      this.datasourceAuthConfig = this.parseAuthConfig(row.authConfig, this.datasourceForm.authType)
       this.datasourceDialogVisible = true
+    },
+    handleTestDatasource(row) {
+      this.authTestTarget = row
+      this.authTestParamsText = '{}'
+      this.authTestResultText = ''
+      this.authTestDialogVisible = true
     },
     async handleCreateApi(row) {
       this.activeTab = 'api'
@@ -720,6 +905,23 @@ export default {
         this.$message.success('调用完成')
       } finally {
         this.invokeLoading = false
+      }
+    },
+    async runAuthTest() {
+      let params
+      try {
+        params = this.authTestParamsText ? JSON.parse(this.authTestParamsText) : {}
+      } catch (e) {
+        this.$message.error('测试参数不是合法 JSON')
+        return
+      }
+      this.authTestLoading = true
+      try {
+        const res = await testDatasourceAuth(this.authTestTarget.id, params)
+        this.authTestResultText = JSON.stringify(res.data || {}, null, 2)
+        this.$message.success('鉴权测试完成')
+      } finally {
+        this.authTestLoading = false
       }
     },
     handleSaveDatasource() {
@@ -791,6 +993,10 @@ export default {
         this.datasourceForm.baseUrl = ''
       }
     },
+    onDatasourceAuthTypeChange(type) {
+      this.datasourceAuthConfig = this.emptyAuthConfig(type)
+      if (type === 'NONE') this.datasourceForm.authConfig = ''
+    },
     onApiDatasourceChange(datasourceId) {
       this.apiForm.requestObjectId = null
       this.apiForm.responseObjectId = null
@@ -805,7 +1011,7 @@ export default {
       if (data.scope === 'GLOBAL') data.projectId = 0
       if (data.protocol === 'RULE_ENGINE' && !data.baseUrl) data.baseUrl = 'rule-engine://local'
       if (data.protocol !== 'RULE_ENGINE' && !data.baseUrl) throw new Error('请输入基础地址')
-      data.authConfig = this.blankToNull(data.authConfig)
+      data.authConfig = this.buildAuthConfig(data.authType, data.authConfig)
       this.assertJson(data.authConfig, '鉴权配置')
       return data
     },
@@ -892,6 +1098,60 @@ export default {
     },
     stringifyJson(value) {
       return JSON.stringify(value, null, 2)
+    },
+    parseAuthConfig(text, type) {
+      const base = this.emptyAuthConfig(type)
+      if (!text) return base
+      try {
+        const parsed = JSON.parse(text)
+        const merged = { ...base, ...parsed }
+        if (parsed.headers && typeof parsed.headers !== 'string') merged.headers = this.stringifyJson(parsed.headers)
+        if (parsed.body && typeof parsed.body !== 'string') merged.body = this.stringifyJson(parsed.body)
+        return merged
+      } catch (e) {
+        return base
+      }
+    },
+    buildAuthConfig(type, rawAuthConfig) {
+      if (!type || type === 'NONE') return null
+      if (type === 'BASIC') {
+        return this.stringifyJson({
+          username: this.datasourceAuthConfig.username,
+          password: this.datasourceAuthConfig.password
+        })
+      }
+      if (type === 'BEARER') {
+        return this.stringifyJson({ token: this.datasourceAuthConfig.token })
+      }
+      if (type === 'API_KEY') {
+        return this.stringifyJson({
+          location: this.datasourceAuthConfig.location,
+          name: this.datasourceAuthConfig.name,
+          value: this.datasourceAuthConfig.value
+        })
+      }
+      if (type === 'TOKEN_API' || type === 'OAUTH2') {
+        const headers = this.parseJsonText(this.datasourceAuthConfig.headers, '鉴权请求头')
+        const body = this.parseJsonText(this.datasourceAuthConfig.body, '鉴权请求体')
+        return this.stringifyJson({
+          tokenUrl: this.datasourceAuthConfig.tokenUrl,
+          method: this.datasourceAuthConfig.method,
+          contentType: this.datasourceAuthConfig.contentType,
+          headers,
+          body,
+          tokenPath: this.datasourceAuthConfig.tokenPath,
+          expiresInPath: this.datasourceAuthConfig.expiresInPath
+        })
+      }
+      return this.blankToNull(rawAuthConfig)
+    },
+    parseJsonText(value, label) {
+      if (value == null || String(value).trim() === '') return {}
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        throw new Error(label + '不是合法 JSON：' + e.message)
+      }
     },
     assertJson(value, label) {
       if (value == null || value === '') return
@@ -988,6 +1248,38 @@ export default {
 
   .field-help {
     margin-top: 4px;
+  }
+
+  .form-section {
+    border: 1px solid #E5E7EB;
+    border-radius: 4px;
+    padding: 12px 12px 0;
+    margin-bottom: 12px;
+  }
+
+  .section-title {
+    color: #334155;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .section-help,
+  .template-help {
+    color: #64748B;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .section-help {
+    margin-bottom: 10px;
+  }
+
+  .template-tabs {
+    margin-bottom: 12px;
+  }
+
+  .template-help {
+    margin-bottom: 8px;
   }
 
   .mapping-toolbar {

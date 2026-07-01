@@ -96,6 +96,7 @@
       @current-change="p => { qp.pageNum = p; loadData() }"
       @size-change="s => { qp.pageSize = s; qp.pageNum = 1; loadData() }"
     />
+    <module-call-log module-type="DATABASE" title="数据库调用日志" />
 
     <el-dialog :title="form.id ? '编辑数据库数据源' : '新建数据库数据源'" :visible.sync="dialogVisible" width="900px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="120px" size="small">
@@ -311,9 +312,11 @@ import {
   updateDbDatasource
 } from '@/api/database'
 import { listProjects } from '@/api/project'
+import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 
 export default {
   name: 'DatabaseList',
+  components: { ModuleCallLog },
   data() {
     return {
       projects: [],

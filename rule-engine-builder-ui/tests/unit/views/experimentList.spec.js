@@ -32,6 +32,9 @@ function createContext(overrides = {}) {
   Object.defineProperty(ctx, 'ratioTotal', {
     get() { return ExperimentList.computed.ratioTotal.call(ctx) }
   })
+  Object.defineProperty(ctx, 'testRatioTotal', {
+    get() { return ExperimentList.computed.testRatioTotal.call(ctx) }
+  })
   return ctx
 }
 
@@ -58,6 +61,98 @@ describe('ExperimentList', () => {
     ctx.form.groups[1].ruleCode = 'challenger_rule'
 
     expect(ctx.validateGroups()).toBe('')
+  })
+
+  test('validateGroups rejects multiple champion groups after type edits', () => {
+    const ctx = createContext()
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups.push(ctx.newGroup('CHAMPION', 'champion_2', '冠军组2', 0))
+    ctx.form.groups[1].ruleCode = 'champion_rule_2'
+
+    expect(ctx.validateGroups()).toBe('必须且只能配置一组冠军组')
+  })
+
+  test('validateGroups checks test ratio separately from production ratio', () => {
+    const ctx = createContext()
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.testRoutingMode = 'RATIO'
+    ctx.form.groups.push(ctx.newGroup('TEST', 'test_1', '测试组1', 60))
+    ctx.form.groups[1].ruleCode = 'test_rule_1'
+    ctx.form.groups.push(ctx.newGroup('TEST', 'test_2', '测试组2', 30))
+    ctx.form.groups[2].ruleCode = 'test_rule_2'
+
+    expect(ctx.validateGroups()).toBe('测试组分流比例之和必须为100%')
+  })
+
+  test('validateGroups allows independent condition routing with fallback actions', () => {
+    const ctx = createContext()
+    ctx.form.routingMode = 'CONDITION'
+    ctx.form.testRoutingMode = 'CONDITION'
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].trafficRatio = 10
+    ctx.form.groups[0].conditionConfig.children[0] = {
+      type: 'leaf',
+      varCode: 'amount',
+      varType: 'NUMBER',
+      operator: '>=',
+      valueKind: 'CONST',
+      value: '1000'
+    }
+    ctx.addProductionFallback()
+    ctx.productionFormGroups[1].ruleCode = 'fallback_rule'
+    ctx.form.groups.push(ctx.newGroup('TEST', 'test_1', '测试组1', 0))
+    ctx.testFormGroups[0].ruleCode = 'test_rule_1'
+    ctx.testFormGroups[0].conditionConfig.children[0] = {
+      type: 'leaf',
+      varCode: 'score',
+      varType: 'NUMBER',
+      operator: '>=',
+      valueKind: 'CONST',
+      value: '80'
+    }
+    ctx.addTestFallback()
+    ctx.testFormGroups[1].ruleCode = 'test_fallback_rule'
+
+    expect(ctx.validateGroups()).toBe('')
+  })
+
+  test('validateGroups requires fallback for visual condition routing', () => {
+    const ctx = createContext()
+    ctx.form.routingMode = 'CONDITION'
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].conditionConfig.children[0] = {
+      type: 'leaf',
+      varCode: 'amount',
+      varType: 'NUMBER',
+      operator: '>',
+      valueKind: 'CONST',
+      value: '100'
+    }
+
+    expect(ctx.validateGroups()).toBe('冠军挑战条件分流必须配置兜底动作')
+  })
+
+  test('prepareGroupsForSave serializes visual conditions and fallback markers', () => {
+    const ctx = createContext()
+    ctx.form.routingMode = 'CONDITION'
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].conditionConfig.children[0] = {
+      type: 'leaf',
+      varCode: 'amount',
+      varType: 'NUMBER',
+      operator: '>=',
+      valueKind: 'CONST',
+      value: '1000'
+    }
+    ctx.addProductionFallback()
+    ctx.productionFormGroups[1].ruleCode = 'fallback_rule'
+
+    const groups = ctx.prepareGroupsForSave()
+
+    expect(groups[0].conditionExpression).toBe('(amount >= 1000)')
+    expect(JSON.parse(groups[0].conditionConfig).children[0].varCode).toBe('amount')
+    expect(groups[1].conditionExpression).toBe('')
+    expect(JSON.parse(groups[1].conditionConfig).fallback).toBe(true)
   })
 
   test('loadRules requests enabled rules for selected project', async () => {
@@ -87,6 +182,7 @@ describe('ExperimentList', () => {
     ctx.form.experimentCode = 'EXP_A'
     ctx.form.experimentName = '实验A'
     ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].conditionConfig = null
 
     await ctx.handleSave()
 
