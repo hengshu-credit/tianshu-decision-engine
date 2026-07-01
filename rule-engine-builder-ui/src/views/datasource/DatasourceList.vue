@@ -4,6 +4,20 @@
       <div class="hint-title">外数管理</div>
       <div class="hint-text">集中配置第三方 API、鉴权流程、入参与响应映射、同步/异步调用、超时和重试策略，供接口变量使用。</div>
     </div>
+    <div class="usage-guide">
+      <div class="guide-item">
+        <div class="guide-title">HTTP 外数</div>
+        <div class="guide-text">先建数据源基础地址，再建接口；入参映射用 <code>$.字段</code> 从进件取值，响应映射会把接口返回裁剪成变量可读取的 <code>body</code>。</div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-title">内部规则引擎</div>
+        <div class="guide-text">协议选择“内部规则引擎”，接口地址填写已发布规则编码，可把一个项目下的规则结果当作外数供其他规则复用。</div>
+      </div>
+      <div class="guide-item">
+        <div class="guide-title">接口变量</div>
+        <div class="guide-text">变量来源选择 API 后，在变量的 sourceConfig 中配置 <code>apiConfigId</code>、<code>paramMapping</code>、<code>resultPath</code> 即可读取外数结果。</div>
+      </div>
+    </div>
 
     <el-tabs v-model="activeTab" @tab-click="onTabChange">
       <el-tab-pane label="数据源" name="datasource">
@@ -57,6 +71,11 @@
           <el-table-column prop="datasourceCode" label="数据源编码" min-width="140" show-overflow-tooltip />
           <el-table-column prop="datasourceName" label="数据源名称" min-width="150" show-overflow-tooltip />
           <el-table-column prop="providerName" label="提供方" min-width="120" show-overflow-tooltip />
+          <el-table-column label="协议" width="110" align="center">
+            <template slot-scope="{ row }">
+              <el-tag size="mini" type="info">{{ optionLabel(protocolOptions, row.protocol) }}</el-tag>
+            </template>
+          </el-table-column>
           <el-table-column prop="baseUrl" label="基础地址" min-width="220" show-overflow-tooltip />
           <el-table-column label="鉴权方式" width="110" align="center">
             <template slot-scope="{ row }">
@@ -147,6 +166,9 @@
           <el-table-column label="超时/重试" width="120" align="center">
             <template slot-scope="{ row }">{{ row.timeoutMs }}ms / {{ row.retryCount || 0 }}次</template>
           </el-table-column>
+          <el-table-column label="响应缓存" width="100" align="center">
+            <template slot-scope="{ row }">{{ formatCacheSeconds(row.responseCacheSeconds) }}</template>
+          </el-table-column>
           <el-table-column prop="status" label="状态" width="70" align="center">
             <template slot-scope="{ row }">
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -218,14 +240,14 @@
           </el-col>
         </el-row>
         <el-form-item label="基础地址" prop="baseUrl">
-          <el-input v-model="datasourceForm.baseUrl" placeholder="https://api.example.com" />
+          <el-input v-model="datasourceForm.baseUrl" :placeholder="datasourceBaseUrlPlaceholder()" />
+          <div class="field-help">{{ datasourceBaseUrlHelp() }}</div>
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="12">
             <el-form-item label="协议">
-              <el-select v-model="datasourceForm.protocol" style="width:100%">
-                <el-option label="HTTP" value="HTTP" />
-                <el-option label="HTTPS" value="HTTPS" />
+              <el-select v-model="datasourceForm.protocol" style="width:100%" @change="onDatasourceProtocolChange">
+                <el-option v-for="item in protocolOptions" :key="item.value" :label="item.label" :value="item.value" />
               </el-select>
             </el-form-item>
           </el-col>
@@ -283,16 +305,17 @@
           </el-col>
         </el-row>
         <el-row :gutter="12">
-          <el-col :span="6">
+          <el-col :span="8">
             <el-form-item label="方法">
               <el-select v-model="apiForm.requestMethod" style="width:100%">
                 <el-option v-for="method in httpMethods" :key="method" :label="method" :value="method" />
               </el-select>
             </el-form-item>
           </el-col>
-          <el-col :span="18">
+          <el-col :span="16">
             <el-form-item label="接口地址" prop="endpointUrl">
-              <el-input v-model="apiForm.endpointUrl" placeholder="/v1/report/query 或完整 URL" />
+              <el-input v-model="apiForm.endpointUrl" :placeholder="apiEndpointPlaceholder()" />
+              <div class="field-help">{{ apiEndpointHelp() }}</div>
             </el-form-item>
           </el-col>
         </el-row>
@@ -347,6 +370,13 @@
           </el-collapse-item>
 
           <el-collapse-item title="入参、请求头与响应映射" name="mapping">
+            <div class="mapping-toolbar">
+              <div class="field-help">路径支持 <code>$.customer.id</code>、<code>body.data.score</code>；响应映射保存后，接口变量默认从映射后的 <code>body</code> 取值。</div>
+              <div>
+                <el-button size="mini" @click="applyApiTemplate('HTTP')">HTTP 模板</el-button>
+                <el-button size="mini" @click="applyApiTemplate('RULE_ENGINE')">内部规则模板</el-button>
+              </div>
+            </div>
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="Header配置">
@@ -362,12 +392,12 @@
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="入参映射">
-                  <el-input v-model="apiForm.requestMapping" class="json-input" type="textarea" :rows="5" placeholder='{"idNo":"Customer.idNo"}' />
+                  <el-input v-model="apiForm.requestMapping" class="json-input" type="textarea" :rows="5" placeholder='{"idNo":"$.customer.idNo"}' />
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="响应映射">
-                  <el-input v-model="apiForm.responseMapping" class="json-input" type="textarea" :rows="5" placeholder='{"score":"data.score","riskLevel":"data.level"}' />
+                  <el-input v-model="apiForm.responseMapping" class="json-input" type="textarea" :rows="5" placeholder='{"score":"body.data.score","riskLevel":"body.data.level"}' />
                 </el-form-item>
               </el-col>
             </el-row>
@@ -391,6 +421,11 @@
               <el-col :span="8">
                 <el-form-item label="重试间隔">
                   <el-input-number v-model="apiForm.retryIntervalMs" :min="0" :step="100" style="width:100%" />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="响应缓存秒">
+                  <el-input-number v-model="apiForm.responseCacheSeconds" :min="0" :step="60" style="width:100%" />
                 </el-form-item>
               </el-col>
               <el-col :span="8">
@@ -489,7 +524,16 @@ export default {
       datasourceRules: {
         datasourceCode: [{ required: true, message: '请输入数据源编码', trigger: 'blur' }],
         datasourceName: [{ required: true, message: '请输入数据源名称', trigger: 'blur' }],
-        baseUrl: [{ required: true, message: '请输入基础地址', trigger: 'blur' }],
+        baseUrl: [{
+          validator: (rule, value, callback) => {
+            if (this.datasourceForm.protocol === 'RULE_ENGINE' || (value != null && String(value).trim() !== '')) {
+              callback()
+              return
+            }
+            callback(new Error('请输入基础地址'))
+          },
+          trigger: 'blur'
+        }],
         projectId: [{ required: true, message: '请选择所属项目', trigger: 'change' }]
       },
       apiList: [],
@@ -535,6 +579,11 @@ export default {
         { label: '返回默认值', value: 'RETURN_DEFAULT' },
         { label: '忽略异常', value: 'IGNORE' },
         { label: '使用缓存', value: 'USE_CACHE' }
+      ],
+      protocolOptions: [
+        { label: 'HTTP', value: 'HTTP' },
+        { label: 'HTTPS', value: 'HTTPS' },
+        { label: '内部规则引擎', value: 'RULE_ENGINE' }
       ]
     }
   },
@@ -558,7 +607,7 @@ export default {
         contentType: 'application/json', requestMode: 'SYNC', requestObjectId: null, responseObjectId: null,
         headerConfig: '', queryConfig: '', requestMapping: '', responseMapping: '', bodyTemplate: '',
         authMode: 'INHERIT', authApiConfig: '', tokenCacheSeconds: 0, timeoutMs: 3000, retryCount: 0,
-        retryIntervalMs: 200, exceptionStrategy: 'FAIL_FAST', fallbackValue: '', asyncCallbackUrl: '',
+        retryIntervalMs: 200, responseCacheSeconds: 0, exceptionStrategy: 'FAIL_FAST', fallbackValue: '', asyncCallbackUrl: '',
         asyncResultPath: '', billingItemCode: '', unitPrice: 0, description: '', status: 1
       }
     },
@@ -734,6 +783,14 @@ export default {
     onDatasourceScopeChange(scope) {
       if (scope === 'GLOBAL') this.datasourceForm.projectId = 0
     },
+    onDatasourceProtocolChange(protocol) {
+      if (protocol === 'RULE_ENGINE' && !this.datasourceForm.baseUrl) {
+        this.datasourceForm.baseUrl = 'rule-engine://local'
+      }
+      if (protocol !== 'RULE_ENGINE' && this.datasourceForm.baseUrl === 'rule-engine://local') {
+        this.datasourceForm.baseUrl = ''
+      }
+    },
     onApiDatasourceChange(datasourceId) {
       this.apiForm.requestObjectId = null
       this.apiForm.responseObjectId = null
@@ -746,6 +803,8 @@ export default {
     normalizeDatasource(form) {
       const data = { ...form }
       if (data.scope === 'GLOBAL') data.projectId = 0
+      if (data.protocol === 'RULE_ENGINE' && !data.baseUrl) data.baseUrl = 'rule-engine://local'
+      if (data.protocol !== 'RULE_ENGINE' && !data.baseUrl) throw new Error('请输入基础地址')
       data.authConfig = this.blankToNull(data.authConfig)
       this.assertJson(data.authConfig, '鉴权配置')
       return data
@@ -768,6 +827,71 @@ export default {
         this.assertJson(data[key], jsonFields[key])
       })
       return data
+    },
+    applyApiTemplate(type) {
+      if (type === 'RULE_ENGINE') {
+        this.apiForm.requestMethod = 'POST'
+        this.apiForm.contentType = 'application/json'
+        this.apiForm.endpointUrl = this.apiForm.endpointUrl || 'RC_PRICING_TABLE'
+        this.apiForm.requestMapping = this.stringifyJson({
+          ruleCode: this.apiForm.endpointUrl || 'RC_PRICING_TABLE',
+          params: {
+            customerType: '$.customerType',
+            productLine: '$.productLine'
+          }
+        })
+        this.apiForm.responseMapping = this.stringifyJson({
+          decision: 'body.decision',
+          rate: 'body.rate',
+          score: 'body.score'
+        })
+        this.apiForm.bodyTemplate = ''
+        return
+      }
+      this.apiForm.requestMethod = 'POST'
+      this.apiForm.contentType = 'application/json'
+      this.apiForm.headerConfig = this.stringifyJson({
+        'X-Request-Id': '${requestId}'
+      })
+      this.apiForm.requestMapping = this.stringifyJson({
+        idNo: '$.customer.idNo',
+        mobile: '$.customer.mobile',
+        name: '$.customer.name'
+      })
+      this.apiForm.responseMapping = this.stringifyJson({
+        score: 'body.data.score',
+        riskLevel: 'body.data.riskLevel',
+        hitReason: 'body.data.reason'
+      })
+      this.apiForm.bodyTemplate = this.stringifyJson({
+        certNo: '${customer.idNo}',
+        mobile: '${customer.mobile}',
+        name: '${customer.name}'
+      })
+    },
+    datasourceBaseUrlPlaceholder() {
+      return this.datasourceForm.protocol === 'RULE_ENGINE' ? 'rule-engine://local' : 'https://api.example.com'
+    },
+    datasourceBaseUrlHelp() {
+      return this.datasourceForm.protocol === 'RULE_ENGINE'
+        ? '内部规则引擎数据源可留空，保存时会自动使用 rule-engine://local。'
+        : '填写第三方服务基础地址；接口地址为相对路径时会拼接到该地址后。'
+    },
+    apiEndpointPlaceholder() {
+      return this.isRuleEngineDatasource() ? '已发布规则编码，如 RC_PRICING_TABLE' : '/v1/report/query 或完整 URL'
+    },
+    apiEndpointHelp() {
+      return this.isRuleEngineDatasource()
+        ? '内部规则引擎接口会按规则编码查找已发布版本，不发起外部 HTTP 请求。'
+        : 'HTTP 接口可填写相对路径或完整 URL；完整 URL 会覆盖数据源基础地址。'
+    },
+    isRuleEngineDatasource(datasourceId) {
+      const id = datasourceId || this.apiForm.datasourceId
+      const datasource = this.datasourceOptions.find(item => item.id === id)
+      return datasource && datasource.protocol === 'RULE_ENGINE'
+    },
+    stringifyJson(value) {
+      return JSON.stringify(value, null, 2)
     },
     assertJson(value, label) {
       if (value == null || value === '') return
@@ -798,6 +922,14 @@ export default {
     optionLabel(options, value) {
       const item = options.find(opt => opt.value === value)
       return item ? item.label : (value || '—')
+    },
+    formatCacheSeconds(seconds) {
+      const value = Number(seconds || 0)
+      if (value <= 0) return '不缓存'
+      if (value % 86400 === 0) return (value / 86400) + '天'
+      if (value % 3600 === 0) return (value / 3600) + '小时'
+      if (value % 60 === 0) return (value / 60) + '分钟'
+      return value + '秒'
     }
   }
 }
@@ -827,6 +959,45 @@ export default {
     line-height: 1.5;
   }
 
+  .usage-guide {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .guide-item {
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: #FFFFFF;
+  }
+
+  .guide-title {
+    color: #0F172A;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .guide-text,
+  .field-help {
+    color: #64748B;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
+  .field-help {
+    margin-top: 4px;
+  }
+
+  .mapping-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
   .invoke-target {
     color: #475569;
     margin-bottom: 12px;
@@ -841,6 +1012,13 @@ export default {
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
+  }
+
+  code {
+    color: #1E40AF;
+    background: #EFF6FF;
+    border-radius: 3px;
+    padding: 0 4px;
   }
 }
 </style>

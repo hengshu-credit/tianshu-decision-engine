@@ -9,6 +9,7 @@ public final class AggregateBuiltinFunctionRegistry {
 
     private static final AggregateBuiltinFunctions DELEGATE = new AggregateBuiltinFunctions();
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
+    private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
 
     private AggregateBuiltinFunctionRegistry() {
     }
@@ -27,5 +28,10 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("max", DELEGATE, "max", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("min", DELEGATE, "min", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("avg", DELEGATE, "avg", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("isNull", DELEGATE, "isNull", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("isNotNull", DELEGATE, "isNotNull", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("isBlank", DELEGATE, "isBlank", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("isNotBlank", DELEGATE, "isNotBlank", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("nvl", DELEGATE, "nvl", TWO_OBJECTS);
     }
 }

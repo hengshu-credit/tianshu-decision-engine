@@ -108,6 +108,56 @@ public class AggregateBuiltinFunctions {
     }
 
     /**
+     * 判断值是否为 null。
+     */
+    public boolean isNull(Object value) {
+        return value == null;
+    }
+
+    /**
+     * 判断值是否非 null。
+     */
+    public boolean isNotNull(Object value) {
+        return value != null;
+    }
+
+    /**
+     * 判断值是否为空：null、空字符串、仅空白字符串、空集合、空数组均视为空。
+     */
+    public boolean isBlank(Object value) {
+        if (value == null) {
+            return true;
+        }
+        if (value instanceof CharSequence) {
+            return value.toString().trim().isEmpty();
+        }
+        if (value instanceof Collection) {
+            return ((Collection<?>) value).isEmpty();
+        }
+        if (value instanceof Map) {
+            return ((Map<?, ?>) value).isEmpty();
+        }
+        if (value.getClass().isArray()) {
+            return Array.getLength(value) == 0;
+        }
+        return false;
+    }
+
+    /**
+     * 判断值是否非空。
+     */
+    public boolean isNotBlank(Object value) {
+        return !isBlank(value);
+    }
+
+    /**
+     * 空值兜底：value 为 null 时返回 fallback。
+     */
+    public Object nvl(Object value, Object fallback) {
+        return value == null ? fallback : value;
+    }
+
+    /**
      * 将入参规范为元素列表：null 为空；{@link Map} 不按值展开（视为无法识别，返回空）。
      */
     private static List<Object> normalizeToElements(Object data) {

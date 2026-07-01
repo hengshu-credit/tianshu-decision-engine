@@ -2,17 +2,24 @@ package com.bjjw.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.RuleExternalApiConfig;
 import com.bjjw.rule.model.entity.RuleExternalDatasource;
+import com.bjjw.rule.model.entity.RulePublished;
 import com.bjjw.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.bjjw.rule.server.mapper.RuleExternalDatasourceMapper;
+import com.bjjw.rule.server.mapper.RulePublishedMapper;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
@@ -37,7 +44,18 @@ public class ExternalApiInvokeService {
     @Resource
     private RuleBillingService billingService;
 
+    @Resource
+    private RulePublishedMapper publishedMapper;
+
+    @Resource
+    @Lazy
+    private RuleExecuteService ruleExecuteService;
+
+    @Resource
+    private RuleProjectService projectService;
+
     private final ConcurrentMap<String, TokenCache> tokenCaches = new ConcurrentHashMap<>();
+    private final ConcurrentMap<String, ApiResponseCache> responseCaches = new ConcurrentHashMap<>();
 
     public Map<String, Object> invoke(Long apiConfigId, Map<String, Object> params) {
         RuleExternalApiConfig apiConfig = apiConfigMapper.selectById(apiConfigId);
@@ -50,13 +68,24 @@ public class ExternalApiInvokeService {
         }
         int retryCount = apiConfig.getRetryCount() == null ? 0 : Math.max(apiConfig.getRetryCount(), 0);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
-        Exception lastError = null;
+        int responseCacheSeconds = apiConfig.getResponseCacheSeconds() == null ? 0 : Math.max(apiConfig.getResponseCacheSeconds(), 0);
+        String responseCacheKey = buildResponseCacheKey(apiConfig.getId(), params == null ? new HashMap<>() : params);
+        ApiResponseCache cachedResponse = responseCacheSeconds > 0 ? responseCaches.get(responseCacheKey) : null;
         long start = System.currentTimeMillis();
+        if (cachedResponse != null && cachedResponse.expiresAt > start) {
+            return copyCachedResponse(cachedResponse.response, true, false, 0);
+        }
+        Exception lastError = null;
         for (int i = 0; i <= retryCount; i++) {
             try {
                 Map<String, Object> result = doInvoke(apiConfig, datasource, params == null ? new HashMap<>() : params);
                 long cost = System.currentTimeMillis() - start;
                 result.put("costTimeMs", cost);
+                result.put("cached", false);
+                if (responseCacheSeconds > 0) {
+                    responseCaches.put(responseCacheKey, new ApiResponseCache(copyResponse(result),
+                            System.currentTimeMillis() + responseCacheSeconds * 1000L));
+                }
                 billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
                 return result;
             } catch (Exception e) {
@@ -73,6 +102,9 @@ public class ExternalApiInvokeService {
         }
         long cost = System.currentTimeMillis() - start;
         String message = lastError == null ? "调用失败" : lastError.getMessage();
+        if ("USE_CACHE".equals(apiConfig.getExceptionStrategy()) && cachedResponse != null) {
+            return copyCachedResponse(cachedResponse.response, true, true, cost);
+        }
         billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
         if ("RETURN_DEFAULT".equals(apiConfig.getExceptionStrategy())) {
             Map<String, Object> fallback = new LinkedHashMap<>();
@@ -86,8 +118,31 @@ public class ExternalApiInvokeService {
         throw new IllegalStateException(message, lastError);
     }
 
+    String buildResponseCacheKey(Long apiConfigId, Map<String, Object> params) {
+        return apiConfigId + ":" + JSON.toJSONString(params == null ? new HashMap<>() : params);
+    }
+
+    Map<String, Object> copyCachedResponse(Map<String, Object> cached, boolean hit, boolean stale, long costTimeMs) {
+        Map<String, Object> response = copyResponse(cached);
+        response.put("cached", hit);
+        response.put("cacheStale", stale);
+        response.put("costTimeMs", costTimeMs);
+        return response;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> copyResponse(Map<String, Object> response) {
+        if (response == null) {
+            return new LinkedHashMap<>();
+        }
+        return JSON.parseObject(JSON.toJSONString(response), LinkedHashMap.class);
+    }
+
     private Map<String, Object> doInvoke(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                          Map<String, Object> params) throws Exception {
+        if ("RULE_ENGINE".equalsIgnoreCase(datasource.getProtocol())) {
+            return doInvokeRuleEngine(apiConfig, datasource, params);
+        }
         String url = buildUrl(datasource.getBaseUrl(), apiConfig.getEndpointUrl());
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType(apiConfig.getContentType()));
@@ -96,7 +151,7 @@ public class ExternalApiInvokeService {
         applyQueryParams(builder, apiConfig.getQueryConfig(), params);
         applyAuth(builder, headers, datasource, apiConfig, params);
 
-        Object body = buildBody(apiConfig, params);
+        Object requestBody = buildBody(apiConfig, params);
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         int timeout = apiConfig.getTimeoutMs() == null ? 3000 : apiConfig.getTimeoutMs();
         requestFactory.setConnectTimeout(timeout);
@@ -109,14 +164,53 @@ public class ExternalApiInvokeService {
         ResponseEntity<String> response = restTemplate.exchange(
                 builder.build(true).toUri(),
                 method,
-                new HttpEntity<>(body, headers),
+                new HttpEntity<>(requestBody, headers),
                 String.class);
 
         Map<String, Object> result = new LinkedHashMap<>();
+        Object responseBody = parseJsonOrRaw(response.getBody());
         result.put("success", response.getStatusCode().is2xxSuccessful());
         result.put("httpStatus", response.getStatusCodeValue());
-        result.put("body", parseJsonOrRaw(response.getBody()));
-        return result;
+        result.put("body", responseBody);
+        return applyResponseMapping(apiConfig, result);
+    }
+
+    private Map<String, Object> doInvokeRuleEngine(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
+                                                  Map<String, Object> params) {
+        Map<String, Object> config = parseJsonMap(apiConfig.getRequestMapping());
+        String ruleCode = firstText(config.get("ruleCode"), apiConfig.getEndpointUrl(), apiConfig.getApiCode());
+        if (ruleCode.startsWith("/")) {
+            ruleCode = ruleCode.substring(ruleCode.lastIndexOf('/') + 1);
+        }
+        LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getRuleCode, ruleCode)
+                .eq(RulePublished::getStatus, 1);
+        String projectCode = resolveProjectCode(datasource.getProjectId());
+        if (projectCode != null && !projectCode.trim().isEmpty()) {
+            wrapper.eq(RulePublished::getProjectCode, projectCode);
+        }
+        RulePublished published = publishedMapper.selectOne(wrapper);
+        if (published == null) {
+            throw new IllegalArgumentException("内部规则不存在或未发布: " + ruleCode);
+        }
+        Object mapped = config.get("params");
+        Map<String, Object> ruleParams = mapped == null ? params : parseNestedMap(resolveValue(mapped, params));
+        RuleResult result = ruleExecuteService.executePublished(published, ruleParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", result.isSuccess());
+        response.put("body", result.getResult());
+        response.put("errorMessage", result.getErrorMessage());
+        response.put("executeTimeMs", result.getExecuteTimeMs());
+        response.put("traces", result.getTraces());
+        return applyResponseMapping(apiConfig, response);
+    }
+
+    private String resolveProjectCode(Long projectId) {
+        if (projectId == null) {
+            return null;
+        }
+        com.bjjw.rule.model.entity.RuleProject project = projectService.getById(projectId);
+        return project == null ? null : project.getProjectCode();
     }
 
     private void applyJsonHeaders(HttpHeaders headers, String headerConfig, Map<String, Object> params) {
@@ -163,31 +257,33 @@ public class ExternalApiInvokeService {
             int cacheSeconds = apiConfig.getTokenCacheSeconds() != null && apiConfig.getTokenCacheSeconds() > 0
                     ? apiConfig.getTokenCacheSeconds()
                     : (datasource.getTokenCacheSeconds() == null ? 0 : datasource.getTokenCacheSeconds());
-            String cacheKey = apiConfig.getId() + ":" + authMode + ":" + stringValue(config.get("tokenUrl"));
-            String token = requestToken(config, params, cacheKey, cacheSeconds);
+            String tokenUrl = buildTokenUrl(datasource, stringValue(config.get("tokenUrl")));
+            String cacheKey = apiConfig.getId() + ":" + authMode + ":" + tokenUrl;
+            String token = requestToken(config, params, tokenUrl, cacheKey, cacheSeconds);
             if (token != null && !token.isEmpty()) {
                 headers.setBearerAuth(token);
             }
         }
     }
 
-    private String requestToken(Map<String, Object> config, Map<String, Object> params, String cacheKey, int cacheSeconds) {
+    private String requestToken(Map<String, Object> config, Map<String, Object> params, String tokenUrl,
+                                String cacheKey, int cacheSeconds) {
         TokenCache cached = tokenCaches.get(cacheKey);
         long now = System.currentTimeMillis();
         if (cached != null && cached.expiresAt > now && cached.token != null && !cached.token.isEmpty()) {
             return cached.token;
         }
-        String tokenUrl = stringValue(config.get("tokenUrl"));
         if (tokenUrl.isEmpty()) {
             return "";
         }
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        MediaType contentType = resolveTokenContentType(config);
+        headers.setContentType(contentType);
         Map<String, Object> tokenHeaders = parseNestedMap(config.get("headers"));
         for (Map.Entry<String, Object> entry : tokenHeaders.entrySet()) {
             headers.set(entry.getKey(), stringValue(resolveValue(entry.getValue(), params)));
         }
-        Object body = resolveValue(config.get("body"), params);
+        Object body = buildTokenRequestBody(config.get("body"), params, contentType);
         String methodText = stringValue(config.get("method"));
         HttpMethod method = methodText.isEmpty() ? HttpMethod.POST : HttpMethod.resolve(methodText);
         if (method == null) {
@@ -196,13 +292,54 @@ public class ExternalApiInvokeService {
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(tokenUrl, method, new HttpEntity<>(body, headers), String.class);
         Object parsed = parseJsonOrRaw(response.getBody());
-        Object token = readPath(parsed, stringValue(config.get("tokenPath")));
+        Object token = readToken(parsed, stringValue(config.get("tokenPath")));
         String tokenText = token == null ? "" : String.valueOf(token);
         int ttlSeconds = resolveTokenTtlSeconds(config, parsed, cacheSeconds);
         if (!tokenText.isEmpty() && ttlSeconds > 0) {
             tokenCaches.put(cacheKey, new TokenCache(tokenText, now + ttlSeconds * 1000L));
         }
         return tokenText;
+    }
+
+    private String buildTokenUrl(RuleExternalDatasource datasource, String tokenUrl) {
+        if (!hasText(tokenUrl)) {
+            return "";
+        }
+        if (tokenUrl.startsWith("http://") || tokenUrl.startsWith("https://")) {
+            return tokenUrl;
+        }
+        return buildUrl(datasource.getBaseUrl(), tokenUrl);
+    }
+
+    MediaType resolveTokenContentType(Map<String, Object> config) {
+        String contentType = firstText(config.get("contentType"), config.get("content_type"), "application/json");
+        return MediaType.parseMediaType(contentType);
+    }
+
+    Object buildTokenRequestBody(Object bodyConfig, Map<String, Object> params, MediaType contentType) {
+        Object body = resolveValue(bodyConfig, params);
+        if (MediaType.MULTIPART_FORM_DATA.includes(contentType)
+                || MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)) {
+            MultiValueMap<String, Object> form = new LinkedMultiValueMap<>();
+            Map<String, Object> bodyMap = parseNestedMap(body);
+            for (Map.Entry<String, Object> entry : bodyMap.entrySet()) {
+                form.add(entry.getKey(), entry.getValue());
+            }
+            return form;
+        }
+        return body;
+    }
+
+    private Object readToken(Object parsed, String tokenPath) {
+        if (hasText(tokenPath)) {
+            return readPath(parsed, tokenPath);
+        }
+        Object token = readPath(parsed, "data.access_token");
+        if (token != null) {
+            return token;
+        }
+        token = readPath(parsed, "access_token");
+        return token != null ? token : readPath(parsed, "token");
     }
 
     private int resolveTokenTtlSeconds(Map<String, Object> config, Object tokenResponse, int defaultCacheSeconds) {
@@ -284,6 +421,27 @@ public class ExternalApiInvokeService {
         }
     }
 
+    Map<String, Object> applyResponseMapping(RuleExternalApiConfig apiConfig, Map<String, Object> response) {
+        Map<String, Object> mapping = parseJsonMap(apiConfig.getResponseMapping());
+        if (mapping.isEmpty()) {
+            return response;
+        }
+        Object body = response.get("body");
+        Map<String, Object> mapped = new LinkedHashMap<>();
+        for (Map.Entry<String, Object> entry : mapping.entrySet()) {
+            Object path = entry.getValue();
+            Object value = readPath(response, stringValue(path));
+            if (value == null && body != null) {
+                value = readPath(body, stringValue(path));
+            }
+            mapped.put(entry.getKey(), value);
+        }
+        response.put("rawBody", body);
+        response.put("body", mapped);
+        response.put("mapped", mapped);
+        return response;
+    }
+
     private Object resolveValue(Object value, Map<String, Object> params) {
         if (value instanceof String) {
             String text = (String) value;
@@ -325,8 +483,9 @@ public class ExternalApiInvokeService {
         if (root == null || path == null || path.trim().isEmpty()) {
             return root;
         }
+        String normalized = path.startsWith("$.") ? path.substring(2) : path;
         Object current = root;
-        String[] parts = path.split("\\.");
+        String[] parts = normalized.split("\\.");
         for (String part : parts) {
             if (current instanceof JSONObject) {
                 current = ((JSONObject) current).get(part);
@@ -339,8 +498,24 @@ public class ExternalApiInvokeService {
         return current;
     }
 
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
+    }
+
     private String stringValue(Object value) {
         return value == null ? "" : String.valueOf(value);
+    }
+
+    private String firstText(Object... values) {
+        if (values == null) {
+            return "";
+        }
+        for (Object value : values) {
+            if (value != null && !String.valueOf(value).trim().isEmpty()) {
+                return String.valueOf(value).trim();
+            }
+        }
+        return "";
     }
 
     private static class TokenCache {
@@ -349,6 +524,16 @@ public class ExternalApiInvokeService {
 
         private TokenCache(String token, long expiresAt) {
             this.token = token;
+            this.expiresAt = expiresAt;
+        }
+    }
+
+    private static class ApiResponseCache {
+        private final Map<String, Object> response;
+        private final long expiresAt;
+
+        private ApiResponseCache(Map<String, Object> response, long expiresAt) {
+            this.response = response;
             this.expiresAt = expiresAt;
         }
     }

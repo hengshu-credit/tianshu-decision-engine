@@ -58,6 +58,10 @@
             <i class="el-icon-video-play" />
             <span>规则测试</span>
           </el-menu-item>
+          <el-menu-item index="/experiment">
+            <i class="el-icon-s-flag" />
+            <span>分流实验</span>
+          </el-menu-item>
           <el-menu-item index="/log">
             <i class="el-icon-document" />
             <span>执行日志</span>

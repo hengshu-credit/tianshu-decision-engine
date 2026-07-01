@@ -258,6 +258,30 @@ describe('RuleTest — 辅助方法', () => {
     })
   })
 
+  test('applyRiskDemoParams 填充完整综合风控演示样例', () => {
+    wrapper.vm.result = { success: true }
+
+    wrapper.vm.applyRiskDemoParams()
+
+    const keys = wrapper.vm.params.map(p => p.key)
+    expect(keys).toContain('taxpayerType')
+    expect(keys).toContain('yearsInBusiness')
+    expect(keys).toContain('taxBurdenDeviation')
+    expect(keys).toContain('serviceType')
+    expect(keys).toContain('taxpayerQualification')
+    expect(keys).toContain('billingAmount')
+    expect(wrapper.vm.result).toBeNull()
+    expect(wrapper.vm.buildParamMap()).toMatchObject({
+      taxpayerType: '一般纳税人',
+      goodsCategory: '货物',
+      totalAmount: 113000,
+      isExempt: false,
+      yearsInBusiness: 10,
+      serviceType: 'ICT服务',
+      taxpayerQualification: '一般纳税人'
+    })
+  })
+
   test('applyInputFieldsToParams 根据模型输出字段类型转换模型引用入参', async () => {
     modelApi.getModel.mockResolvedValueOnce({
       data: {

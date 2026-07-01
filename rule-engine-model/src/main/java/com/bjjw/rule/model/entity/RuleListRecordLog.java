@@ -26,6 +26,9 @@ public class RuleListRecordLog {
     private String operation;
     private String operator;
 
+    @TableField(exist = false)
+    private String changeContent;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 }

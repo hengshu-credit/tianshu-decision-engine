@@ -47,34 +47,17 @@ public class ScorecardCompiler implements RuleCompiler {
             if (scoreItems != null) {
                 for (int i = 0; i < scoreItems.size(); i++) {
                     JSONObject item = scoreItems.getJSONObject(i);
-                    String rawCondition = item.getString("condition");
                     double score = item.getDoubleValue("score");
                     double weight = item.containsKey("weight") ? item.getDoubleValue("weight") : 1.0;
 
                     script.append("// 评分项 #").append(i + 1).append("\n");
 
-                    if (rawCondition != null && !rawCondition.isEmpty()) {
-                        // 旧版：直接使用 condition 脚本表达式
-                        script.append("if (").append(rawCondition).append(") {\n");
+                    String condition = buildCondition(item);
+                    if (condition != null && !condition.isEmpty()) {
+                        script.append("if (").append(condition).append(") {\n");
                         script.append("    ").append(resolvedResultVar).append(" = ").append(resolvedResultVar)
                               .append(" + ").append(score * weight).append(";\n");
                         script.append("}\n");
-                    } else {
-                        // 新版：结构化字段 condVar / condOperator / condValue
-                        String condVar = item.getString("condVar");
-                        String condOp = item.getString("condOperator");
-                        String condValue = item.getString("condValue");
-                        if (condVar != null && !condVar.isEmpty() && condValue != null) {
-                            if (condOp == null) condOp = "==";
-                            Long varId = item.containsKey("_varId") ? item.getLong("_varId") : null;
-                            String refType = item.getString("_refType");
-                            String scriptName = resolveVar(varId, refType, condVar);
-                            script.append("if (").append(scriptName).append(" ").append(condOp).append(" ");
-                            script.append(formatRhs(condValue)).append(") {\n");
-                            script.append("    ").append(resolvedResultVar).append(" = ").append(resolvedResultVar)
-                                  .append(" + ").append(score * weight).append(";\n");
-                            script.append("}\n");
-                        }
                     }
                 }
             }
@@ -133,10 +116,34 @@ public class ScorecardCompiler implements RuleCompiler {
         return varCode != null ? varCode : "";
     }
 
-    private static String formatRhs(String value) {
+    private String buildCondition(JSONObject item) {
+        String condVar = item.getString("condVar");
+        String condOp = item.getString("condOperator");
+        String condValue = item.getString("condValue");
+        if (condVar != null && !condVar.trim().isEmpty() && condValue != null) {
+            if (condOp == null || condOp.trim().isEmpty()) condOp = "==";
+            Long varId = item.containsKey("_varId") ? item.getLong("_varId") : null;
+            String refType = item.getString("_refType");
+            String scriptName = resolveVar(varId, refType, condVar);
+            return scriptName + " " + condOp + " " + formatRhs(item.getString("condVarType"), condValue);
+        }
+        String rawCondition = item.getString("condition");
+        return rawCondition != null ? rawCondition : "";
+    }
+
+    private static String formatRhs(String varType, String value) {
         if (value == null || value.isEmpty()) return "\"\"";
-        try { Double.parseDouble(value); return value; } catch (NumberFormatException ignored) {}
-        return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        if ("STRING".equals(varType) || "ENUM".equals(varType) || "DATE".equals(varType)) {
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        }
+        if ("BOOLEAN".equals(varType)) {
+            return Boolean.parseBoolean(value) ? "true" : "false";
+        }
+        if (varType == null || varType.trim().isEmpty()) {
+            try { Double.parseDouble(value); return value; } catch (NumberFormatException ignored) {}
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        }
+        return value;
     }
 
     private static String escapeForQlDoubleQuotedString(String value) {

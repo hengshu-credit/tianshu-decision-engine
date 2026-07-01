@@ -615,7 +615,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_datasource` (
   `datasource_code`     VARCHAR(128) NOT NULL                COMMENT '外数数据源编码',
   `datasource_name`     VARCHAR(128) NOT NULL                COMMENT '外数数据源名称',
   `provider_name`       VARCHAR(128) DEFAULT NULL            COMMENT '第三方服务提供方',
-  `protocol`            VARCHAR(16)  NOT NULL DEFAULT 'HTTP' COMMENT '协议类型：HTTP/HTTPS',
+  `protocol`            VARCHAR(16)  NOT NULL DEFAULT 'HTTP' COMMENT '协议类型：HTTP/HTTPS/RULE_ENGINE',
   `base_url`            VARCHAR(512) NOT NULL                COMMENT '基础地址',
   `auth_type`           VARCHAR(32)  NOT NULL DEFAULT 'NONE' COMMENT '默认鉴权方式：NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
   `auth_config`         JSON         DEFAULT NULL            COMMENT '默认鉴权配置JSON',
@@ -652,6 +652,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `auth_mode`            VARCHAR(32)  NOT NULL DEFAULT 'INHERIT' COMMENT '接口鉴权：INHERIT/NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
   `auth_api_config`      JSON         DEFAULT NULL            COMMENT '接口级鉴权与token获取配置JSON',
   `token_cache_seconds`  INT          NOT NULL DEFAULT 0      COMMENT '接口token缓存秒数',
+  `response_cache_seconds` INT        NOT NULL DEFAULT 0      COMMENT '接口响应缓存秒数，0表示不缓存',
   `timeout_ms`           INT          NOT NULL DEFAULT 3000   COMMENT '调用超时时间毫秒',
   `retry_count`          INT          NOT NULL DEFAULT 0      COMMENT '重试次数',
   `retry_interval_ms`    INT          NOT NULL DEFAULT 200    COMMENT '重试间隔毫秒',
@@ -671,6 +672,74 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   KEY `idx_ext_api_request_mode` (`request_mode`),
   KEY `idx_ext_api_status` (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='外部API接口配置表';
+
+-- ============================================================
+-- 19.1 rule_experiment - 分流实验定义表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_experiment` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '所属项目ID',
+  `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '所属项目编码',
+  `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `experiment_name` VARCHAR(128) NOT NULL                COMMENT '实验名称',
+  `description`     VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '分流方式：RATIO/CONDITION',
+  `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
+  `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
+  `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
+  `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_code` (`experiment_code`),
+  KEY `idx_experiment_project` (`project_id`),
+  KEY `idx_experiment_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表';
+
+CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
+  `group_code`      VARCHAR(128) NOT NULL                COMMENT '组编码',
+  `group_name`      VARCHAR(128) NOT NULL                COMMENT '组名称',
+  `group_type`      VARCHAR(32)  NOT NULL                COMMENT '组类型：CHAMPION/CHALLENGER/TEST',
+  `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
+  `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
+  `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
+  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '测试组命中表达式',
+  `invoke_external_source` TINYINT NOT NULL DEFAULT 1    COMMENT '测试组是否调用API外数',
+  `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `sort_order`      INT          NOT NULL DEFAULT 0      COMMENT '排序',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_group_code` (`experiment_id`, `group_code`),
+  KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
+
+CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
+  `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `request_key`     VARCHAR(128) DEFAULT NULL            COMMENT '请求唯一键',
+  `stage`           VARCHAR(32)  NOT NULL                COMMENT '阶段：PRODUCTION/TEST',
+  `group_id`        BIGINT       DEFAULT NULL            COMMENT '实验组ID',
+  `group_code`      VARCHAR(128) DEFAULT NULL            COMMENT '实验组编码',
+  `group_name`      VARCHAR(128) DEFAULT NULL            COMMENT '实验组名称',
+  `group_type`      VARCHAR(32)  DEFAULT NULL            COMMENT '实验组类型',
+  `rule_code`       VARCHAR(128) DEFAULT NULL            COMMENT '执行规则编码',
+  `route_reason`    VARCHAR(512) DEFAULT NULL            COMMENT '分流原因',
+  `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '执行结果',
+  `input_params`    TEXT         DEFAULT NULL            COMMENT '解析后入参',
+  `output_result`   TEXT         DEFAULT NULL            COMMENT '执行结果',
+  `trace_info`      LONGTEXT     DEFAULT NULL            COMMENT '执行轨迹',
+  `error_message`   VARCHAR(1024) DEFAULT NULL           COMMENT '错误信息',
+  `execute_time_ms` BIGINT       DEFAULT NULL            COMMENT '执行耗时',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_exp_log_request` (`experiment_id`, `request_key`, `stage`),
+  KEY `idx_exp_log_group` (`group_id`, `create_time`),
+  KEY `idx_exp_log_create` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表';
 
 -- ============================================================
 -- 20. rule_db_datasource - 外部数据库数据源定义表
@@ -794,3 +863,69 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   KEY `idx_billing_summary_date` (`summary_date`),
   KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
+
+
+CREATE TABLE IF NOT EXISTS `rule_experiment` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '所属项目ID',
+  `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '所属项目编码',
+  `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `experiment_name` VARCHAR(128) NOT NULL                COMMENT '实验名称',
+  `description`     VARCHAR(512) DEFAULT NULL            COMMENT '说明',
+  `routing_mode`    VARCHAR(32)  NOT NULL DEFAULT 'RATIO' COMMENT '分流方式：RATIO/CONDITION',
+  `condition_rule_code` VARCHAR(128) DEFAULT NULL        COMMENT '条件分流规则编码',
+  `request_key_path` VARCHAR(128) NOT NULL DEFAULT 'requestId' COMMENT '请求唯一键路径',
+  `test_exclusive`  TINYINT      NOT NULL DEFAULT 1      COMMENT '测试组是否互斥',
+  `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_code` (`experiment_code`),
+  KEY `idx_experiment_project` (`project_id`),
+  KEY `idx_experiment_status` (`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验定义表';
+
+CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
+  `group_code`      VARCHAR(128) NOT NULL                COMMENT '组编码',
+  `group_name`      VARCHAR(128) NOT NULL                COMMENT '组名称',
+  `group_type`      VARCHAR(32)  NOT NULL                COMMENT '组类型：CHAMPION/CHALLENGER/TEST',
+  `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
+  `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
+  `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
+  `condition_expression` VARCHAR(1024) DEFAULT NULL      COMMENT '测试组命中表达式',
+  `invoke_external_source` TINYINT NOT NULL DEFAULT 1    COMMENT '测试组是否调用API外数',
+  `status`          TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `sort_order`      INT          NOT NULL DEFAULT 0      COMMENT '排序',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_group_code` (`experiment_id`, `group_code`),
+  KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
+
+CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
+  `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `request_key`     VARCHAR(128) DEFAULT NULL            COMMENT '请求唯一键',
+  `stage`           VARCHAR(32)  NOT NULL                COMMENT '阶段：PRODUCTION/TEST',
+  `group_id`        BIGINT       DEFAULT NULL            COMMENT '实验组ID',
+  `group_code`      VARCHAR(128) DEFAULT NULL            COMMENT '实验组编码',
+  `group_name`      VARCHAR(128) DEFAULT NULL            COMMENT '实验组名称',
+  `group_type`      VARCHAR(32)  DEFAULT NULL            COMMENT '实验组类型',
+  `rule_code`       VARCHAR(128) DEFAULT NULL            COMMENT '执行规则编码',
+  `route_reason`    VARCHAR(512) DEFAULT NULL            COMMENT '分流原因',
+  `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '执行结果',
+  `input_params`    TEXT         DEFAULT NULL            COMMENT '解析后入参',
+  `output_result`   TEXT         DEFAULT NULL            COMMENT '执行结果',
+  `trace_info`      LONGTEXT     DEFAULT NULL            COMMENT '执行轨迹',
+  `error_message`   VARCHAR(1024) DEFAULT NULL           COMMENT '错误信息',
+  `execute_time_ms` BIGINT       DEFAULT NULL            COMMENT '执行耗时',
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_exp_log_request` (`experiment_id`, `request_key`, `stage`),
+  KEY `idx_exp_log_group` (`group_id`, `create_time`),
+  KEY `idx_exp_log_create` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表';

@@ -85,7 +85,7 @@ public class FunctionRegistrar {
                 String methodName = resolveMethodName(func);
                 Object instance = javaInstanceCache.computeIfAbsent(className, k -> {
                     try {
-                        Class<?> clazz = Class.forName(k);
+                        Class<?> clazz = loadFunctionClass(k);
                         return clazz.getDeclaredConstructor().newInstance();
                     } catch (Exception e) {
                         throw new RuntimeException("无法实例化 Java 类: " + k, e);
@@ -97,6 +97,19 @@ public class FunctionRegistrar {
             } catch (Exception e) {
                 log.error("[FunctionRegistrar] 注册 JAVA 函数 {} 失败: {}", func.getFuncCode(), e.getMessage(), e);
             }
+        }
+    }
+
+    private Class<?> loadFunctionClass(String className) throws ClassNotFoundException {
+        try {
+            return Class.forName(className);
+        } catch (ClassNotFoundException e) {
+            String examplePrefix = "com.bjjw.rule.example.functions.";
+            if (className != null && className.startsWith(examplePrefix)) {
+                String simpleName = className.substring(examplePrefix.length());
+                return Class.forName("com.bjjw.rule.server.functions." + simpleName);
+            }
+            throw e;
         }
     }
 

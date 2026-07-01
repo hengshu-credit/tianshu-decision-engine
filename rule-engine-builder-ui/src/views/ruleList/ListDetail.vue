@@ -85,6 +85,10 @@
             <template slot-scope="{ row }">{{ itemTypeLabel(row.itemType) }}</template>
           </el-table-column>
           <el-table-column prop="operation" label="执行操作" width="90" />
+          <el-table-column label="有效期" min-width="230" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ formatPeriod(row) }}</template>
+          </el-table-column>
+          <el-table-column prop="changeContent" label="变更内容" min-width="260" show-overflow-tooltip />
           <el-table-column prop="reason" label="原因" min-width="150" show-overflow-tooltip />
           <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
           <el-table-column prop="createTime" label="操作时间" min-width="160" />
@@ -263,6 +267,12 @@ export default {
     },
     formatTime(value) {
       return value ? String(value).replace('T', ' ') : ''
+    },
+    formatPeriod(row) {
+      if (!row) return '立即 至 长期'
+      const start = this.formatTime(row.effectiveTime) || '立即'
+      const end = this.formatTime(row.expireTime) || '长期'
+      return `${start} 至 ${end}`
     },
     normalizeDateTime(value) {
       if (!value) return ''

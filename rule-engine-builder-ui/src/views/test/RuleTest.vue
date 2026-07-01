@@ -49,6 +49,9 @@
             <el-button type="text" size="small" style="margin-left: 8px;" @click="addParam">
               <i class="el-icon-plus" /> 手动添加
             </el-button>
+            <el-button type="text" size="small" style="margin-left: 8px;" @click="applyRiskDemoParams">
+              <i class="el-icon-magic-stick" /> 综合风控样例
+            </el-button>
           </div>
           <div v-if="params.length === 0" style="color: #999; padding: 12px 0; text-align: center;">
             请选择规则后加载变量，或手动添加参数
@@ -805,6 +808,45 @@ export default {
     },
     addParam() {
       this.params.push({ key: '', label: '', value: '', type: 'STRING', example: '', fromVar: false, options: [] })
+    },
+    applyRiskDemoParams() {
+      const demoParams = [
+        { key: 'requestId', label: '请求流水号', value: 'REQ_DEMO_001', type: 'STRING' },
+        { key: 'taxpayerType', label: '客商类型', value: '一般纳税人', type: 'STRING' },
+        { key: 'goodsCategory', label: '产品总线', value: '货物', type: 'STRING' },
+        { key: 'totalAmount', label: '交易金额', value: 113000, type: 'NUMBER' },
+        { key: 'isExempt', label: '是否减免', value: false, type: 'BOOLEAN' },
+        { key: 'annualRevenue', label: '年营收', value: 5000, type: 'NUMBER' },
+        { key: 'taxComplianceScore', label: '合规评分', value: 85, type: 'NUMBER' },
+        { key: 'yearsInBusiness', label: '经营年限', value: 10, type: 'NUMBER' },
+        { key: 'hasViolation', label: '严重违规', value: false, type: 'BOOLEAN' },
+        { key: 'creditLevel', label: '信用等级', value: 'A', type: 'STRING' },
+        { key: 'taxBurdenDeviation', label: '指标偏离度', value: 0.08, type: 'NUMBER' },
+        { key: 'violationCount', label: '历史风险事件次数', value: 0, type: 'NUMBER' },
+        { key: 'serviceType', label: '业务类型', value: 'ICT服务', type: 'ENUM' },
+        { key: 'paymentMode', label: '结算方式', value: '后付费', type: 'ENUM' },
+        { key: 'customerType', label: '客户类型', value: '企业客户', type: 'ENUM' },
+        { key: 'taxpayerQualification', label: '纳税人资格', value: '一般纳税人', type: 'ENUM' },
+        { key: 'customerLevel', label: '客户等级', value: '金', type: 'ENUM' },
+        { key: 'monthlyConsumption', label: '月消费金额', value: 5000, type: 'NUMBER' },
+        { key: 'invoiceDeviationRate', label: '开票偏差率', value: 0.05, type: 'NUMBER' },
+        { key: 'redInvoiceRatio', label: '红冲发票比例', value: 0.02, type: 'NUMBER' },
+        { key: 'zeroRateInvoiceRatio', label: '零税率发票占比', value: 0.01, type: 'NUMBER' },
+        { key: 'crossRegionInvoiceRatio', label: '跨地区开票比例', value: 0.08, type: 'NUMBER' },
+        { key: 'billingAmount', label: '含税账单金额', value: 100000, type: 'NUMBER' },
+        { key: 'basicServiceRatio', label: '基础通信占比', value: 0.6, type: 'NUMBER' },
+        { key: 'vasServiceRatio', label: '增值业务占比', value: 0.4, type: 'NUMBER' }
+      ]
+      this.params = demoParams.map(item => ({
+        key: item.key,
+        label: item.label,
+        value: item.value,
+        type: item.type,
+        example: String(item.value),
+        fromVar: false,
+        options: []
+      }))
+      this.result = null
     },
     async handleExecute() {
       if (!this.selectedRuleId) return

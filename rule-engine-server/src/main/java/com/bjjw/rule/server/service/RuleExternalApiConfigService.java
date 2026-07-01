@@ -91,6 +91,9 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         if (config.getTokenCacheSeconds() == null) {
             config.setTokenCacheSeconds(0);
         }
+        if (config.getResponseCacheSeconds() == null) {
+            config.setResponseCacheSeconds(0);
+        }
         if (config.getTimeoutMs() == null) {
             config.setTimeoutMs(3000);
         }

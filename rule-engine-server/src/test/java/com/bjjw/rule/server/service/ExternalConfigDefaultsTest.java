@@ -40,6 +40,7 @@ public class ExternalConfigDefaultsTest {
         assertEquals("{\"customerId\":\"$.customerId\"}", config.getRequestMapping());
         assertNull(config.getResponseMapping());
         assertNull(config.getAuthApiConfig());
+        assertEquals(Integer.valueOf(0), config.getResponseCacheSeconds());
     }
 
     private void invokeFillDefaults(Object service, Object target) throws Exception {

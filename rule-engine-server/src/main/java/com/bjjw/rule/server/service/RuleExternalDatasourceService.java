@@ -72,6 +72,9 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
         if (!hasText(datasource.getProtocol())) {
             datasource.setProtocol("HTTP");
         }
+        if ("RULE_ENGINE".equalsIgnoreCase(datasource.getProtocol()) && !hasText(datasource.getBaseUrl())) {
+            datasource.setBaseUrl("rule-engine://local");
+        }
         if (!hasText(datasource.getAuthType())) {
             datasource.setAuthType("NONE");
         }

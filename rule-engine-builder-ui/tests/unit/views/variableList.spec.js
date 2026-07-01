@@ -344,6 +344,35 @@ describe('VariableList — 变量操作', () => {
     expect(payload.listId).toBeUndefined()
   })
 
+  test('buildVariablePayload 生成接口变量配置', async () => {
+    wrapper.vm.form = {
+      ...wrapper.vm.initForm(),
+      varCode: 'hscreditScoreV1',
+      varLabel: '衡枢分V1',
+      varType: 'NUMBER',
+      varSource: 'API',
+      apiConfigId: 10001,
+      apiParamMapping: '{"request_id":"$.requestId","br_applyloanstr_v2":"$.br_applyloanstr_v2"}',
+      apiResultPath: 'body.v1',
+      apiForceRefresh: true,
+      apiExceptionStrategy: 'RETURN_DEFAULT',
+      apiFallbackValue: '0'
+    }
+
+    const payload = wrapper.vm.buildVariablePayload()
+    const config = JSON.parse(payload.sourceConfig)
+
+    expect(config.apiConfigId).toBe(10001)
+    expect(config.paramMapping).toEqual({
+      request_id: '$.requestId',
+      br_applyloanstr_v2: '$.br_applyloanstr_v2'
+    })
+    expect(config.resultPath).toBe('body.v1')
+    expect(config.forceRefresh).toBe(true)
+    expect(config.exceptionStrategy).toBe('RETURN_DEFAULT')
+    expect(payload.apiConfigId).toBeUndefined()
+  })
+
   test('applySourceConfigToForm 回显名单匹配方式', () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),
@@ -359,6 +388,30 @@ describe('VariableList — 变量操作', () => {
 
     expect(wrapper.vm.form.listMatchMode).toBe('NOT_CONTAINED_IN_LIST')
     expect(wrapper.vm.form.listItemTypes).toEqual(['MOBILE'])
+  })
+
+  test('applySourceConfigToForm 回显接口变量配置', () => {
+    wrapper.vm.form = {
+      ...wrapper.vm.initForm(),
+      varSource: 'API',
+      sourceConfig: JSON.stringify({
+        apiConfigId: 10001,
+        paramMapping: { request_id: '$.requestId' },
+        resultPath: 'body.v1',
+        forceRefresh: true,
+        exceptionStrategy: 'RETURN_DEFAULT',
+        fallbackValue: 0
+      })
+    }
+
+    wrapper.vm.applySourceConfigToForm()
+
+    expect(wrapper.vm.form.apiConfigId).toBe(10001)
+    expect(JSON.parse(wrapper.vm.form.apiParamMapping)).toEqual({ request_id: '$.requestId' })
+    expect(wrapper.vm.form.apiResultPath).toBe('body.v1')
+    expect(wrapper.vm.form.apiForceRefresh).toBe(true)
+    expect(wrapper.vm.form.apiExceptionStrategy).toBe('RETURN_DEFAULT')
+    expect(wrapper.vm.form.apiFallbackValue).toBe('0')
   })
 })
 

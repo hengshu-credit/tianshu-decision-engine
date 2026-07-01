@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class VariableSourceResolver {
@@ -28,6 +29,11 @@ public class VariableSourceResolver {
     private RuleListService ruleListService;
 
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
+        return resolve(projectId, inputParams, VariableResolveOptions.defaults());
+    }
+
+    public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams, VariableResolveOptions options) {
+        VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
         Map<String, Object> resolvedParams = new LinkedHashMap<>();
         if (inputParams != null) {
             resolvedParams.putAll(inputParams);
@@ -36,6 +42,7 @@ public class VariableSourceResolver {
         if (variables == null || variables.isEmpty()) {
             return resolvedParams;
         }
+        Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
         for (RuleVariable variable : variables) {
             if (variable == null || variable.getStatus() == null || variable.getStatus() != 1) {
                 continue;
@@ -48,6 +55,11 @@ public class VariableSourceResolver {
             if (!hasText(scriptName)) {
                 continue;
             }
+            Set<String> requiredScriptNames = effectiveOptions.getRequiredScriptNames();
+            if (requiredScriptNames != null && !requiredScriptNames.isEmpty()
+                    && !requiredScriptNames.contains(scriptName)) {
+                continue;
+            }
             Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
             boolean forceRefresh = booleanValue(config.get("forceRefresh"));
             if (!forceRefresh && resolvedParams.containsKey(scriptName)) {
@@ -56,11 +68,15 @@ public class VariableSourceResolver {
             try {
                 Object value;
                 if ("API".equals(varSource)) {
-                    value = resolveApiVariable(config, resolvedParams);
+                    if (effectiveOptions.isSkipApiSources()) {
+                        resolvedParams.put(scriptName, null);
+                        continue;
+                    }
+                    value = resolveApiVariable(config, resolvedParams, apiResponseCache);
                 } else if ("DB".equals(varSource)) {
                     value = resolveDbVariable(config, resolvedParams);
                 } else {
-                    value = resolveListVariable(config, resolvedParams);
+                    value = resolveListVariable(config, resolvedParams, effectiveOptions);
                 }
                 if (value == null) {
                     value = parseDefaultValue(variable);
@@ -73,13 +89,19 @@ public class VariableSourceResolver {
         return resolvedParams;
     }
 
-    private Object resolveApiVariable(Map<String, Object> config, Map<String, Object> params) {
+    private Object resolveApiVariable(Map<String, Object> config, Map<String, Object> params,
+                                      Map<String, Map<String, Object>> apiResponseCache) {
         Long apiConfigId = longValue(config.get("apiConfigId"));
         if (apiConfigId == null) {
             throw new IllegalArgumentException("API变量缺少 apiConfigId");
         }
         Map<String, Object> requestParams = buildMappedParams(config.get("paramMapping"), params);
-        Map<String, Object> response = externalApiInvokeService.invoke(apiConfigId, requestParams);
+        String cacheKey = apiConfigId + ":" + JSON.toJSONString(requestParams);
+        Map<String, Object> response = apiResponseCache.get(cacheKey);
+        if (response == null) {
+            response = externalApiInvokeService.invoke(apiConfigId, requestParams);
+            apiResponseCache.put(cacheKey, response);
+        }
         String resultPath = stringValue(config.get("resultPath"));
         return hasText(resultPath) ? readPath(response, resultPath) : response.get("body");
     }
@@ -103,7 +125,8 @@ public class VariableSourceResolver {
         return defaultDbValue(rows, maxRows);
     }
 
-    private Object resolveListVariable(Map<String, Object> config, Map<String, Object> params) {
+    private Object resolveListVariable(Map<String, Object> config, Map<String, Object> params,
+                                       VariableResolveOptions options) {
         Long listId = longValue(firstNonNull(config.get("listId"), config.get("listLibraryId")));
         if (listId == null) {
             throw new IllegalArgumentException("名单变量缺少 listId");
@@ -114,7 +137,9 @@ public class VariableSourceResolver {
         if (!hasText(matchMode)) {
             matchMode = "IN_LIST";
         }
-        boolean hit = ruleListService.match(listId, queryValue, itemTypes, matchMode);
+        boolean hit = options != null && options.getListMatchTime() != null
+                ? ruleListService.matchAt(listId, queryValue, itemTypes, matchMode, options.getListMatchTime())
+                : ruleListService.match(listId, queryValue, itemTypes, matchMode);
         String returnMode = stringValue(config.get("returnMode"));
         if ("BOOLEAN".equals(returnMode)) {
             return hit;

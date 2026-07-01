@@ -1,21 +1,24 @@
 package com.bjjw.rule.server.service;
 
-import com.bjjw.rule.core.function.AggregateBuiltinFunctionRegistry;
+import com.alibaba.fastjson.JSON;
 import com.bjjw.rule.core.engine.QLExpressEngine;
+import com.bjjw.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.RuleDefinition;
 import com.bjjw.rule.model.entity.RuleDefinitionContent;
+import com.bjjw.rule.model.entity.RuleDefinitionInputField;
 import com.bjjw.rule.model.entity.RuleExecutionLog;
 import com.bjjw.rule.model.entity.RuleFunction;
-import com.bjjw.rule.model.entity.RulePublished;
 import com.bjjw.rule.model.entity.RuleProject;
-import com.alibaba.fastjson.JSON;
+import com.bjjw.rule.model.entity.RulePublished;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -55,20 +58,19 @@ public class RuleExecuteService {
         }
 
         RuleDefinitionContent content = definitionService.getContent(definitionId);
-        if (content == null || content.getCompileStatus() != 1) {
+        if (content == null || content.getCompileStatus() == null || content.getCompileStatus() != 1) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
             r.setErrorMessage("规则尚未编译成功，请先编译");
             return r;
         }
 
-        // 加载项目自定义函数并注册到引擎
         String funcPrefix = prepareProjectFunctions(definition.getProjectId(), true);
-
         String fullScript = funcPrefix.isEmpty()
                 ? content.getCompiledScript()
                 : funcPrefix + "\n" + content.getCompiledScript();
-        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), params);
+        VariableResolveOptions resolveOptions = withDefinitionInputFields(VariableResolveOptions.defaults(), definitionId);
+        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), params, resolveOptions);
         RuleResult result = qlExpressEngine.execute(fullScript, executeParams, true);
 
         RuleExecutionLog log = new RuleExecutionLog();
@@ -98,11 +100,19 @@ public class RuleExecuteService {
 
     public RuleResult executePublished(RulePublished published, Map<String, Object> params,
                                        Long projectId, String clientAppName) {
+        return executePublishedWithOptions(published, params, projectId, clientAppName,
+                VariableResolveOptions.defaults(), "CLIENT_SERVER").getResult();
+    }
+
+    public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
+                                                        Long projectId, String clientAppName,
+                                                        VariableResolveOptions resolveOptions,
+                                                        String source) {
         if (published == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
-            r.setErrorMessage("瑙勫垯鏈壘鍒?");
-            return r;
+            r.setErrorMessage("已发布规则不存在");
+            return new ExecutionOutcome(r, Collections.emptyMap());
         }
 
         RuleDefinition definition = definitionService.getById(published.getDefinitionId());
@@ -110,7 +120,8 @@ public class RuleExecuteService {
         prepareProjectFunctions(executionProjectId, false);
 
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
-        Map<String, Object> executeParams = variableSourceResolver.resolve(executionProjectId, safeParams);
+        VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId());
+        Map<String, Object> executeParams = variableSourceResolver.resolve(executionProjectId, safeParams, effectiveOptions);
         RuleResult result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
 
         RuleExecutionLog log = new RuleExecutionLog();
@@ -124,7 +135,7 @@ public class RuleExecuteService {
         }
         log.setRuleVersion(published.getVersion());
         log.setModelType(published.getModelType());
-        log.setSource("CLIENT_SERVER");
+        log.setSource(source == null ? "CLIENT_SERVER" : source);
         log.setClientAppName(clientAppName);
         log.setInputParams(JSON.toJSONString(executeParams));
         log.setOutputResult(JSON.toJSONString(result.getResult()));
@@ -137,7 +148,28 @@ public class RuleExecuteService {
         logService.save(log);
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
 
-        return result;
+        return new ExecutionOutcome(result, executeParams);
+    }
+
+    private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId) {
+        VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
+        if (definitionId == null || (effective.getRequiredScriptNames() != null && !effective.getRequiredScriptNames().isEmpty())) {
+            return effective;
+        }
+        List<RuleDefinitionInputField> inputFields = definitionService.listInputFields(definitionId);
+        if (inputFields == null || inputFields.isEmpty()) {
+            return effective;
+        }
+        Set<String> names = new LinkedHashSet<>();
+        for (RuleDefinitionInputField field : inputFields) {
+            if (field != null && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
+                names.add(field.getScriptName().trim());
+            }
+        }
+        if (!names.isEmpty()) {
+            effective.setRequiredScriptNames(names);
+        }
+        return effective;
     }
 
     private String prepareProjectFunctions(Long projectId, boolean includeScriptPrefix) {
@@ -157,5 +189,23 @@ public class RuleExecuteService {
         List<RuleFunction> scriptFuncs = allFuncs.stream()
                 .filter(f -> "SCRIPT".equals(f.getImplType())).collect(Collectors.toList());
         return functionRegistrar.buildScriptFunctionPrefix(scriptFuncs);
+    }
+
+    public static class ExecutionOutcome {
+        private final RuleResult result;
+        private final Map<String, Object> executeParams;
+
+        public ExecutionOutcome(RuleResult result, Map<String, Object> executeParams) {
+            this.result = result;
+            this.executeParams = executeParams;
+        }
+
+        public RuleResult getResult() {
+            return result;
+        }
+
+        public Map<String, Object> getExecuteParams() {
+            return executeParams;
+        }
     }
 }

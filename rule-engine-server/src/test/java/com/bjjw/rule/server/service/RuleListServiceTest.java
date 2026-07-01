@@ -1,5 +1,7 @@
 package com.bjjw.rule.server.service;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bjjw.rule.model.entity.RuleListRecord;
 import com.bjjw.rule.model.entity.RuleListRecordLog;
 import com.bjjw.rule.server.mapper.RuleListRecordLogMapper;
@@ -15,6 +17,8 @@ import org.springframework.mock.web.MockMultipartFile;
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
+import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -54,6 +58,41 @@ public class RuleListServiceTest {
         assertEquals("测试原因", recordMapper.inserted.getReason());
         assertEquals("测试备注", recordMapper.inserted.getRemark());
         assertEquals("MOBILE", logMapper.inserted.getItemType());
+    }
+
+    @Test
+    public void pageLogsAddsEffectivePeriodChangeContent() throws Exception {
+        RuleListService service = new RuleListService();
+        RuleListRecordLog previous = new RuleListRecordLog();
+        previous.setId(1L);
+        previous.setListId(9L);
+        previous.setRecordId(99L);
+        previous.setItemType("MOBILE");
+        previous.setItemContent("13800138000");
+        previous.setEffectiveTime(LocalDateTime.of(2026, 6, 1, 0, 0));
+        previous.setExpireTime(LocalDateTime.of(2026, 6, 30, 23, 59, 59));
+        previous.setOperation("ADD");
+
+        RuleListRecordLog current = new RuleListRecordLog();
+        current.setId(2L);
+        current.setListId(9L);
+        current.setRecordId(99L);
+        current.setItemType("MOBILE");
+        current.setItemContent("13800138000");
+        current.setEffectiveTime(LocalDateTime.of(2026, 7, 1, 0, 0));
+        current.setExpireTime(LocalDateTime.of(2026, 12, 31, 23, 59, 59));
+        current.setOperation("UPDATE");
+
+        FakeLogMapper logMapper = new FakeLogMapper();
+        logMapper.pageRecord = current;
+        logMapper.previous = previous;
+        setField(service, "logMapper", logMapper.proxy());
+
+        IPage<RuleListRecordLog> page = service.pageLogs(9L, 1, 10, null);
+
+        String content = page.getRecords().get(0).getChangeContent();
+        assertTrue(content.contains("2026-06-01 00:00:00 至 2026-06-30 23:59:59"));
+        assertTrue(content.contains("2026-07-01 00:00:00 至 2026-12-31 23:59:59"));
     }
 
     private byte[] workbookBytes() throws Exception {
@@ -107,12 +146,23 @@ public class RuleListServiceTest {
 
     private static class FakeLogMapper {
         private RuleListRecordLog inserted;
+        private RuleListRecordLog pageRecord;
+        private RuleListRecordLog previous;
 
         private RuleListRecordLogMapper proxy() {
             return (RuleListRecordLogMapper) Proxy.newProxyInstance(
                     RuleListRecordLogMapper.class.getClassLoader(),
                     new Class[]{RuleListRecordLogMapper.class},
                     (proxy, method, args) -> {
+                        if ("selectPage".equals(method.getName())) {
+                            Page<RuleListRecordLog> page = (Page<RuleListRecordLog>) args[0];
+                            page.setRecords(pageRecord == null ? Collections.emptyList() : Collections.singletonList(pageRecord));
+                            page.setTotal(page.getRecords().size());
+                            return page;
+                        }
+                        if ("selectOne".equals(method.getName())) {
+                            return previous;
+                        }
                         if ("insert".equals(method.getName())) {
                             inserted = (RuleListRecordLog) args[0];
                             return 1;

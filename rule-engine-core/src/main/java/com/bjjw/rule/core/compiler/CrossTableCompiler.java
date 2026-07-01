@@ -31,6 +31,9 @@ public class CrossTableCompiler implements RuleCompiler {
     private CompileResult doCompile(String modelJson) {
         try {
             JSONObject model = JSON.parseObject(modelJson);
+            if (model.getJSONObject("rowVar") != null && model.getJSONObject("colVar") != null) {
+                return compileSimpleMatrix(model);
+            }
             JSONArray rowDefs = model.getJSONArray("rowDefs");
             JSONArray colDefs = model.getJSONArray("colDefs");
             JSONArray cells = model.getJSONArray("cells");
@@ -183,6 +186,67 @@ public class CrossTableCompiler implements RuleCompiler {
         }
     }
 
+    private CompileResult compileSimpleMatrix(JSONObject model) {
+        JSONObject rowVar = model.getJSONObject("rowVar");
+        JSONObject colVar = model.getJSONObject("colVar");
+        JSONObject resultVar = model.getJSONObject("resultVar");
+        JSONArray rowHeaders = model.getJSONArray("rowHeaders");
+        JSONArray colHeaders = model.getJSONArray("colHeaders");
+        JSONArray cells = model.getJSONArray("cells");
+        if (rowVar == null || colVar == null || resultVar == null
+                || rowHeaders == null || colHeaders == null || cells == null) {
+            return CompileResult.fail("交叉表模型缺少必要字段: rowVar/colVar/resultVar/rowHeaders/colHeaders/cells");
+        }
+
+        String rowScript = resolveVar(
+                rowVar.containsKey("_varId") ? rowVar.getLong("_varId") : null,
+                rowVar.getString("_refType"),
+                rowVar.getString("varCode"),
+                this.varContext);
+        String colScript = resolveVar(
+                colVar.containsKey("_varId") ? colVar.getLong("_varId") : null,
+                colVar.getString("_refType"),
+                colVar.getString("varCode"),
+                this.varContext);
+        String resultScript = resolveVar(
+                resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null,
+                resultVar.getString("_refType"),
+                resultVar.getString("varCode"),
+                this.varContext);
+
+        StringBuilder script = new StringBuilder();
+        boolean first = true;
+        for (int r = 0; r < rowHeaders.size(); r++) {
+            JSONArray rowCells = cells.getJSONArray(r);
+            if (rowCells == null) {
+                continue;
+            }
+            for (int c = 0; c < colHeaders.size(); c++) {
+                String cellValue = c < rowCells.size() ? rowCells.getString(c) : null;
+                if (cellValue == null || cellValue.trim().isEmpty()) {
+                    continue;
+                }
+                script.append(first ? "if (" : " else if (");
+                first = false;
+                script.append(rowScript).append(" == ");
+                appendValue(script, rowHeaders.getString(r), rowVar.getString("varType"));
+                script.append(" && ").append(colScript).append(" == ");
+                appendValue(script, colHeaders.getString(c), colVar.getString("varType"));
+                script.append(") {\n    ").append(resultScript).append(" = ");
+                appendValue(script, cellValue, resultVar.getString("varType"));
+                script.append(";\n}");
+            }
+        }
+        if (!first) {
+            script.append("\n");
+        }
+        LinkedHashSet<String> outVars = new LinkedHashSet<>();
+        outVars.add(resultScript);
+        RuleScriptResultCollector.prependOutputNullInits(script, outVars);
+        RuleScriptResultCollector.appendResultMapReturn(script, outVars);
+        return CompileResult.ok(script.toString(), "QLEXPRESS");
+    }
+
     /**
      * 编译行条件（条件段）：varCode op value AND ...。
      * 例如 age >= 18 && age < 60
@@ -312,5 +376,15 @@ public class CrossTableCompiler implements RuleCompiler {
             return varContext.resolveVar(varId, refType, varCode);
         }
         return varCode != null ? varCode : "";
+    }
+
+    private static void appendValue(StringBuilder sb, String value, String type) {
+        if ("STRING".equals(type) || "ENUM".equals(type) || "DATE".equals(type) || type == null || type.trim().isEmpty()) {
+            sb.append("\"").append((value == null ? "" : value).replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
+        } else if ("BOOLEAN".equals(type)) {
+            sb.append(Boolean.parseBoolean(value) ? "true" : "false");
+        } else {
+            sb.append(value);
+        }
     }
 }

@@ -323,10 +323,17 @@ public class DecisionTableCompiler implements RuleCompiler {
             if (j > 0) script.append(" && ");
             JSONObject cond = ruleConditions.getJSONObject(j);
             JSONObject condDef = j < conditions.size() ? conditions.getJSONObject(j) : null;
-            Long varId = condDef != null && condDef.containsKey("_varId") ? condDef.getLong("_varId") : null;
-            String refType = condDef != null ? condDef.getString("_refType") : null;
-            String varCode = condDef != null ? condDef.getString("varCode") : "var" + j;
+            JSONObject source = condDef != null ? condDef : cond;
+            Long varId = source != null && source.containsKey("_varId") ? source.getLong("_varId") : null;
+            String refType = source != null ? source.getString("_refType") : null;
+            String varCode = source != null ? source.getString("varCode") : "var" + j;
+            if (varCode == null || varCode.trim().isEmpty()) {
+                varCode = "var" + j;
+            }
             String operator = cond.getString("operator");
+            if (operator == null || operator.trim().isEmpty()) {
+                operator = "==";
+            }
             String value = cond.getString("value");
 
             if (value == null || value.isEmpty()) {
@@ -334,7 +341,10 @@ public class DecisionTableCompiler implements RuleCompiler {
                 continue;
             }
 
-            String varType = condDef != null ? condDef.getString("varType") : "STRING";
+            String varType = source != null ? source.getString("varType") : "STRING";
+            if (varType == null || varType.trim().isEmpty()) {
+                varType = "STRING";
+            }
             String resolvedVar = resolveVar(varId, refType, varCode, varContext);
             script.append(resolvedVar).append(" ").append(operator).append(" ");
             if ("STRING".equals(varType) || "ENUM".equals(varType)) {

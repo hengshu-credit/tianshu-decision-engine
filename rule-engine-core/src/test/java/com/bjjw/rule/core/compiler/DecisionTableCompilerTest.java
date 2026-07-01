@@ -621,4 +621,63 @@ public class DecisionTableCompilerTest {
         Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
         assertEquals("PASS", resultMap.get("decision"));
     }
+
+    @Test
+    public void test旧版行条件自带变量定义_正确执行() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\":\"FIRST\",\n" +
+                "  \"rules\":[{\n" +
+                "    \"conditions\":[{\"varCode\":\"taxpayerType\",\"varType\":\"STRING\",\"operator\":\"==\",\"value\":\"一般纳税人\"},{\"varCode\":\"goodsCategory\",\"varType\":\"STRING\",\"operator\":\"==\",\"value\":\"货物\"}],\n" +
+                "    \"actions\":[{\"varCode\":\"taxRate\",\"varType\":\"NUMBER\",\"value\":\"0.13\"}]\n" +
+                "  }]\n" +
+                "}");
+
+        assertTrue(r.getErrorMessage(), r.isSuccess());
+        String script = r.getCompiledScript();
+        assertTrue(script, script.contains("taxpayerType == \"一般纳税人\""));
+        assertTrue(script, script.contains("goodsCategory == \"货物\""));
+        assertFalse(script, script.contains("var0"));
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("taxpayerType", "一般纳税人");
+        params.put("goodsCategory", "货物");
+
+        RuleResult result = engine.execute(script, params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getResult() instanceof Map);
+        Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
+        assertEquals(0.13, ((Number) resultMap.get("taxRate")).doubleValue(), 0.000001);
+    }
+
+    @Test
+    public void test演示定价决策表_八行标准样例正确执行() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\":\"FIRST\",\n" +
+                "  \"conditions\":[{\"varCode\":\"taxpayerType\",\"varType\":\"STRING\"},{\"varCode\":\"goodsCategory\",\"varType\":\"STRING\"}],\n" +
+                "  \"actions\":[{\"varCode\":\"taxRate\",\"varType\":\"NUMBER\"}],\n" +
+                "  \"rules\":[\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"一般纳税人\"},{\"operator\":\"==\",\"value\":\"货物\"}],\"actions\":[{\"value\":\"0.13\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"一般纳税人\"},{\"operator\":\"==\",\"value\":\"服务\"}],\"actions\":[{\"value\":\"0.06\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"一般纳税人\"},{\"operator\":\"==\",\"value\":\"不动产\"}],\"actions\":[{\"value\":\"0.09\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"一般纳税人\"},{\"operator\":\"==\",\"value\":\"无形资产\"}],\"actions\":[{\"value\":\"0.06\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"小规模纳税人\"},{\"operator\":\"==\",\"value\":\"货物\"}],\"actions\":[{\"value\":\"0.03\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"小规模纳税人\"},{\"operator\":\"==\",\"value\":\"服务\"}],\"actions\":[{\"value\":\"0.03\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"小规模纳税人\"},{\"operator\":\"==\",\"value\":\"不动产\"}],\"actions\":[{\"value\":\"0.05\"}]},\n" +
+                "    {\"conditions\":[{\"operator\":\"==\",\"value\":\"小规模纳税人\"},{\"operator\":\"==\",\"value\":\"无形资产\"}],\"actions\":[{\"value\":\"0.03\"}]}\n" +
+                "  ]\n" +
+                "}");
+
+        assertTrue(r.getErrorMessage(), r.isSuccess());
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("taxpayerType", "小规模纳税人");
+        params.put("goodsCategory", "不动产");
+
+        RuleResult result = engine.execute(r.getCompiledScript(), params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
+        assertEquals(0.05, ((Number) resultMap.get("taxRate")).doubleValue(), 0.000001);
+    }
 }

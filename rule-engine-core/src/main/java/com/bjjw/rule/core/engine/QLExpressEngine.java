@@ -2,6 +2,7 @@ package com.bjjw.rule.core.engine;
 
 import com.bjjw.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.bjjw.rule.model.dto.RuleResult;
+import com.alibaba.fastjson.JSON;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.alibaba.qlexpress4.InitOptions;
 import com.alibaba.qlexpress4.QLOptions;
@@ -11,11 +12,14 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 public class QLExpressEngine {
 
     private static final Logger log = LoggerFactory.getLogger(QLExpressEngine.class);
+    private static final int MAX_TRACE_JSON_LENGTH = 100_000;
 
     private final Express4Runner runner;
 
@@ -48,7 +52,7 @@ public class QLExpressEngine {
             ruleResult.setResult(result.getResult());
             ruleResult.setSuccess(true);
             if (trace && result.getExpressionTraces() != null) {
-                ruleResult.setTraces(Collections.singletonList(result.getExpressionTraces()));
+                ruleResult.setTraces(buildBoundedTraces(result.getExpressionTraces()));
             }
         } catch (Exception e) {
             log.error("QLExpress execution error: {}", e.getMessage(), e);
@@ -72,7 +76,7 @@ public class QLExpressEngine {
             ruleResult.setResult(result.getResult());
             ruleResult.setSuccess(true);
             if (trace && result.getExpressionTraces() != null) {
-                ruleResult.setTraces(Collections.singletonList(result.getExpressionTraces()));
+                ruleResult.setTraces(buildBoundedTraces(result.getExpressionTraces()));
             }
         } catch (Exception e) {
             log.error("QLExpress execution error: {}", e.getMessage(), e);
@@ -86,5 +90,18 @@ public class QLExpressEngine {
 
     public Express4Runner getRunner() {
         return runner;
+    }
+
+    private List<Object> buildBoundedTraces(Object expressionTraces) {
+        String traceJson = JSON.toJSONString(expressionTraces);
+        if (traceJson.length() <= MAX_TRACE_JSON_LENGTH) {
+            return Collections.singletonList(expressionTraces);
+        }
+        Map<String, Object> summary = new LinkedHashMap<>();
+        summary.put("type", "TRACE_TRUNCATED");
+        summary.put("message", "执行轨迹过大，已截断。请结合执行结果、入参和模型矩阵分析命中路径。");
+        summary.put("originalJsonLength", traceJson.length());
+        summary.put("maxJsonLength", MAX_TRACE_JSON_LENGTH);
+        return Collections.<Object>singletonList(summary);
     }
 }

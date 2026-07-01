@@ -183,6 +183,12 @@ const routes = [
         meta: { title: '规则测试' }
       },
       {
+        path: 'experiment',
+        name: 'ExperimentList',
+        component: () => import('@/views/experiment/ExperimentList.vue'),
+        meta: { title: '分流实验' }
+      },
+      {
         path: 'log',
         name: 'ExecutionLog',
         component: () => import('@/views/log/ExecutionLog.vue'),

@@ -348,6 +348,37 @@ SELECT 8, 'RC_FLOW_BEAN_SAMPLE', 8, 'RISK_DEMO', 1, 'FLOW', c.compiled_script, c
 ON DUPLICATE KEY UPDATE `compiled_script` = VALUES(`compiled_script`), `compiled_type` = VALUES(`compiled_type`), `model_json` = VALUES(`model_json`), `project_code` = VALUES(`project_code`), `version` = 1, `status` = 1;
 
 -- ============================================================
+-- 5.1 外数与分流实验演示样例（前端可直接浏览和执行）
+-- ============================================================
+INSERT INTO `rule_external_datasource` (`id`, `project_id`, `scope`, `datasource_code`, `datasource_name`, `provider_name`, `protocol`, `base_url`, `auth_type`, `auth_config`, `token_cache_seconds`, `description`, `status`, `create_time`, `update_time`) VALUES
+(9001, 1, 'PROJECT', 'demo_rule_engine', '演示-内部规则引擎外数', 'Rule Engine', 'RULE_ENGINE', 'rule-engine://local', 'NONE', NULL, 0, '演示 API 数据源：把已发布规则 RC_PRICING_TABLE 当作外数接口调用。', 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE `datasource_name` = VALUES(`datasource_name`), `protocol` = VALUES(`protocol`), `base_url` = VALUES(`base_url`), `description` = VALUES(`description`), `status` = 1;
+
+INSERT INTO `rule_external_api_config` (`id`, `datasource_id`, `api_code`, `api_name`, `request_method`, `endpoint_url`, `content_type`, `request_mode`, `request_mapping`, `response_mapping`, `auth_mode`, `token_cache_seconds`, `response_cache_seconds`, `timeout_ms`, `retry_count`, `retry_interval_ms`, `exception_strategy`, `description`, `status`, `create_time`, `update_time`)
+SELECT 9001, ds.id, 'demo_pricing_table_api', '演示-调用定价决策表', 'POST', 'RC_PRICING_TABLE', 'application/json', 'SYNC',
+       '{"ruleCode":"RC_PRICING_TABLE","params":{"taxpayerType":"$.taxpayerType","goodsCategory":"$.goodsCategory"}}',
+       '{"taxRate":"body.taxRate"}',
+       'INHERIT', 0, 0, 3000, 0, 200, 'FAIL_FAST', '内部规则引擎 API 样例：输入 taxpayerType/goodsCategory，返回映射后的 body.taxRate。', 1, NOW(), NOW()
+FROM `rule_external_datasource` ds
+WHERE ds.`scope` = 'PROJECT' AND ds.`project_id` = 1 AND ds.`datasource_code` = 'demo_rule_engine'
+ON DUPLICATE KEY UPDATE `endpoint_url` = VALUES(`endpoint_url`), `request_mapping` = VALUES(`request_mapping`), `response_mapping` = VALUES(`response_mapping`), `description` = VALUES(`description`), `status` = 1;
+
+INSERT INTO `rule_variable` (`id`, `project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`, `source_config`, `default_value`, `example_value`, `description`, `sort_order`, `status`, `create_time`, `update_time`) VALUES
+(9001, 1, 'PROJECT', 'demoApiTaxRate', '演示API定价费率', 'demoApiTaxRate', 'NUMBER', 'API', '{"apiConfigId":9001,"paramMapping":{"taxpayerType":"$.taxpayerType","goodsCategory":"$.goodsCategory"},"resultPath":"body.taxRate"}', NULL, '0.13', '接口变量样例：通过外数管理中的 demo_pricing_table_api 调用已发布规则并读取 body.taxRate。', 9001, 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE `var_label` = VALUES(`var_label`), `script_name` = VALUES(`script_name`), `var_source` = VALUES(`var_source`), `source_config` = VALUES(`source_config`), `description` = VALUES(`description`), `status` = 1;
+
+INSERT INTO `rule_experiment` (`id`, `project_id`, `project_code`, `experiment_code`, `experiment_name`, `description`, `routing_mode`, `condition_rule_code`, `request_key_path`, `test_exclusive`, `status`, `create_time`, `update_time`) VALUES
+(9001, 1, 'RISK_DEMO', 'EXP_DEMO_CHAMPION', '演示-定价冠军挑战与空跑', '生产分流：RC_PRICING_TABLE 70% 冠军组、RC_RATE_MATRIX 30% 挑战组；测试组空跑评分卡和敞口流程。', 'RATIO', NULL, 'requestId', 0, 1, NOW(), NOW())
+ON DUPLICATE KEY UPDATE `experiment_name` = VALUES(`experiment_name`), `description` = VALUES(`description`), `routing_mode` = VALUES(`routing_mode`), `test_exclusive` = VALUES(`test_exclusive`), `status` = 1;
+
+INSERT INTO `rule_experiment_group` (`id`, `experiment_id`, `group_code`, `group_name`, `group_type`, `rule_code`, `traffic_ratio`, `condition_value`, `condition_expression`, `invoke_external_source`, `status`, `sort_order`, `create_time`, `update_time`) VALUES
+(9001, (SELECT `id` FROM `rule_experiment` WHERE `experiment_code` = 'EXP_DEMO_CHAMPION'), 'champion', '冠军组-定价表', 'CHAMPION', 'RC_PRICING_TABLE', 70.0000, 'champion', NULL, 1, 1, 0, NOW(), NOW()),
+(9002, (SELECT `id` FROM `rule_experiment` WHERE `experiment_code` = 'EXP_DEMO_CHAMPION'), 'challenger_matrix', '挑战组-交叉表', 'CHALLENGER', 'RC_RATE_MATRIX', 30.0000, 'challenger_matrix', NULL, 1, 1, 1, NOW(), NOW()),
+(9003, (SELECT `id` FROM `rule_experiment` WHERE `experiment_code` = 'EXP_DEMO_CHAMPION'), 'test_scorecard', '测试组-风险评分卡', 'TEST', 'RC_RISK_SCORECARD', 0.0000, 'test_scorecard', 'annualRevenue >= 1000', 1, 1, 2, NOW(), NOW()),
+(9004, (SELECT `id` FROM `rule_experiment` WHERE `experiment_code` = 'EXP_DEMO_CHAMPION'), 'test_flow', '测试组-敞口流程', 'TEST', 'RC_EXPOSURE_FLOW', 0.0000, 'test_flow', 'totalAmount >= 100000', 1, 1, 3, NOW(), NOW())
+ON DUPLICATE KEY UPDATE `group_name` = VALUES(`group_name`), `group_type` = VALUES(`group_type`), `rule_code` = VALUES(`rule_code`), `traffic_ratio` = VALUES(`traffic_ratio`), `condition_expression` = VALUES(`condition_expression`), `invoke_external_source` = VALUES(`invoke_external_source`), `sort_order` = VALUES(`sort_order`), `status` = 1;
+
+-- ============================================================
 -- 6. 版本历史（记录第一次发布）
 -- ============================================================
 INSERT INTO `rule_definition_version` (`id`, `definition_id`, `version`, `model_json`, `compiled_script`, `compiled_type`, `change_log`, `publish_by`, `publish_time`) VALUES

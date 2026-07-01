@@ -44,6 +44,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.stream.Collectors;
 
 @Service
@@ -149,7 +150,9 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
             wrapper.eq(RuleListRecordLog::getRecordId, recordId);
         }
         wrapper.orderByDesc(RuleListRecordLog::getCreateTime);
-        return logMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        IPage<RuleListRecordLog> page = logMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
+        fillLogChangeContent(page.getRecords());
+        return page;
     }
 
     @Transactional
@@ -188,6 +191,10 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
     }
 
     public boolean match(Long listId, Object content, List<String> itemTypes, String matchMode) {
+        return matchAt(listId, content, itemTypes, matchMode, LocalDateTime.now());
+    }
+
+    public boolean matchAt(Long listId, Object content, List<String> itemTypes, String matchMode, LocalDateTime matchTime) {
         String itemContent = content == null ? null : String.valueOf(content).trim();
         if (!hasText(itemContent) || listId == null) {
             return false;
@@ -209,7 +216,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (!normalizedTypes.isEmpty()) {
             wrapper.in(RuleListRecord::getItemType, normalizedTypes);
         }
-        appendEffectiveCondition(wrapper, LocalDateTime.now());
+        appendEffectiveCondition(wrapper, matchTime == null ? LocalDateTime.now() : matchTime);
         boolean matched = recordMapper.selectCount(wrapper) > 0;
         return MATCH_NOT_IN_LIST.equals(normalizedMatchMode) || MATCH_NOT_CONTAINED_IN_LIST.equals(normalizedMatchMode)
                 ? !matched
@@ -339,6 +346,84 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         log.setOperation(operation);
         log.setOperator(operator);
         logMapper.insert(log);
+    }
+
+    private void fillLogChangeContent(List<RuleListRecordLog> logs) {
+        if (logs == null || logs.isEmpty()) {
+            return;
+        }
+        for (RuleListRecordLog log : logs) {
+            RuleListRecordLog previous = findPreviousLog(log);
+            log.setChangeContent(buildLogChangeContent(log, previous));
+        }
+    }
+
+    private RuleListRecordLog findPreviousLog(RuleListRecordLog log) {
+        if (log == null || log.getId() == null || log.getRecordId() == null) {
+            return null;
+        }
+        return logMapper.selectOne(new LambdaQueryWrapper<RuleListRecordLog>()
+                .eq(RuleListRecordLog::getListId, log.getListId())
+                .eq(RuleListRecordLog::getRecordId, log.getRecordId())
+                .lt(RuleListRecordLog::getId, log.getId())
+                .orderByDesc(RuleListRecordLog::getId)
+                .last("LIMIT 1"));
+    }
+
+    private String buildLogChangeContent(RuleListRecordLog current, RuleListRecordLog previous) {
+        if (current == null) {
+            return "";
+        }
+        String operation = current.getOperation();
+        if ("ADD".equals(operation)) {
+            return "新增：" + snapshotText(current);
+        }
+        if ("DELETE".equals(operation)) {
+            return "删除：" + snapshotText(current);
+        }
+        if (previous == null) {
+            return snapshotText(current);
+        }
+        List<String> changes = new ArrayList<>();
+        appendChange(changes, "内容类型", itemTypeLabel(previous.getItemType()), itemTypeLabel(current.getItemType()));
+        appendChange(changes, "名单内容", previous.getItemContent(), current.getItemContent());
+        appendChange(changes, "有效期", effectivePeriod(previous), effectivePeriod(current));
+        appendChange(changes, "原因", previous.getReason(), current.getReason());
+        appendChange(changes, "备注", previous.getRemark(), current.getRemark());
+        return changes.isEmpty() ? "无字段变化" : "修改：" + String.join("；", changes);
+    }
+
+    private String snapshotText(RuleListRecordLog log) {
+        return "内容类型=" + itemTypeLabel(log.getItemType())
+                + "；名单内容=" + nullToDisplay(log.getItemContent())
+                + "；有效期=" + effectivePeriod(log)
+                + "；原因=" + nullToDisplay(log.getReason())
+                + "；备注=" + nullToDisplay(log.getRemark());
+    }
+
+    private void appendChange(List<String> changes, String label, Object before, Object after) {
+        if (!Objects.equals(before, after)) {
+            changes.add(label + "：" + nullToDisplay(before) + " -> " + nullToDisplay(after));
+        }
+    }
+
+    private String effectivePeriod(RuleListRecordLog log) {
+        if (log == null) {
+            return "立即 至 长期";
+        }
+        return formatEffectiveStart(log.getEffectiveTime()) + " 至 " + formatEffectiveEnd(log.getExpireTime());
+    }
+
+    private String formatEffectiveStart(LocalDateTime value) {
+        return value == null ? "立即" : DATE_TIME_FORMAT.format(value);
+    }
+
+    private String formatEffectiveEnd(LocalDateTime value) {
+        return value == null ? "长期" : DATE_TIME_FORMAT.format(value);
+    }
+
+    private String nullToDisplay(Object value) {
+        return value == null || String.valueOf(value).trim().isEmpty() ? "空" : String.valueOf(value);
     }
 
     private void fillLibraryExtras(List<RuleListLibrary> libraries) {

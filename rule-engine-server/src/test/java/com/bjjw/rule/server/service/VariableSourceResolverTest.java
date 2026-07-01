@@ -4,9 +4,11 @@ import com.bjjw.rule.model.entity.RuleVariable;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -30,6 +32,25 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void apiVariablesShareSameResponseWithinOneResolve() throws Exception {
+        RuleVariable scoreV1 = variable("hscreditScoreV1", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v1\"}");
+        RuleVariable scoreV2 = variable("hscreditScoreV2", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v2\"}");
+        Map<String, Object> score = new LinkedHashMap<>();
+        score.put("v1", 661.8);
+        score.put("v2", 0.064);
+        FakeApiService apiService = new FakeApiService(responseBody(score));
+        VariableSourceResolver resolver = resolver(Arrays.asList(scoreV1, scoreV2), apiService, new FakeDbPools(Collections.emptyList()));
+
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("requestId", "REQ001"));
+
+        assertEquals(661.8, ((Number) resolved.get("hscreditScoreV1")).doubleValue(), 0.000001);
+        assertEquals(0.064, ((Number) resolved.get("hscreditScoreV2")).doubleValue(), 0.000001);
+        assertEquals(1, apiService.callCount);
+    }
+
+    @Test
     public void sourceVariableDoesNotOverwriteExistingInputByDefault() throws Exception {
         RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
@@ -40,6 +61,20 @@ public class VariableSourceResolverTest {
         Map<String, Object> resolved = resolver.resolve(1L, params);
 
         assertEquals(99, resolved.get("riskScore"));
+        assertEquals(0, apiService.callCount);
+    }
+
+    @Test
+    public void sourceVariableIsSkippedWhenNotRequiredByCurrentRule() throws Exception {
+        RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("amount")));
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("amount", 100), options);
+
+        assertEquals(null, resolved.get("riskScore"));
         assertEquals(0, apiService.callCount);
     }
 
@@ -117,6 +152,38 @@ public class VariableSourceResolverTest {
         assertEquals("NOT_IN_LIST", listService.lastMatchMode);
     }
 
+    @Test
+    public void testGroupCanSkipApiSourceAndSetNull() throws Exception {
+        RuleVariable variable = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\",\"forceRefresh\":true}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setSkipApiSources(true);
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(null, resolved.get("riskScore"));
+        assertEquals(0, apiService.callCount);
+    }
+
+    @Test
+    public void testGroupListVariableUsesRequestTimeSnapshot() throws Exception {
+        RuleVariable variable = variable("mobileBlackHit", "LIST",
+                "{\"listId\":9,\"queryField\":\"mobile\",\"itemTypes\":[\"MOBILE\"]}");
+        FakeRuleListService listService = new FakeRuleListService(true);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
+
+        LocalDateTime requestTime = LocalDateTime.of(2026, 7, 1, 10, 30);
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setListMatchTime(requestTime);
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("mobile", "13800138000"), options);
+
+        assertEquals(1, resolved.get("mobileBlackHit"));
+        assertEquals(requestTime, listService.lastMatchTime);
+    }
+
     private RuleVariable variable(String scriptName, String source, String sourceConfig) {
         RuleVariable variable = new RuleVariable();
         variable.setId(1L);
@@ -156,6 +223,12 @@ public class VariableSourceResolverTest {
     private Map<String, Object> responseBody(String key, Object value) {
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("body", singletonMap(key, value));
+        return response;
+    }
+
+    private Map<String, Object> responseBody(Map<String, Object> body) {
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("body", body);
         return response;
     }
 
@@ -230,6 +303,7 @@ public class VariableSourceResolverTest {
         private Object lastContent;
         private List<String> lastItemTypes;
         private String lastMatchMode;
+        private LocalDateTime lastMatchTime;
 
         private FakeRuleListService(boolean hit) {
             this.hit = hit;
@@ -247,6 +321,12 @@ public class VariableSourceResolverTest {
             this.lastItemTypes = itemTypes;
             this.lastMatchMode = matchMode;
             return hit;
+        }
+
+        @Override
+        public boolean matchAt(Long listId, Object content, List<String> itemTypes, String matchMode, LocalDateTime matchTime) {
+            this.lastMatchTime = matchTime;
+            return match(listId, content, itemTypes, matchMode);
         }
     }
 }

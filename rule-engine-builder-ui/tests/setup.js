@@ -205,6 +205,14 @@ jest.mock('@/api/billing', () => ({
   refreshBillingSummary: jest.fn(),
   __esModule: true
 }))
+jest.mock('@/api/experiment', () => ({
+  listExperiments: jest.fn(),
+  getExperiment: jest.fn(),
+  saveExperiment: jest.fn(),
+  deleteExperiment: jest.fn(),
+  executeExperiment: jest.fn(),
+  __esModule: true
+}))
 jest.mock('@/api/ruleList', () => ({
   listLibraries: jest.fn(),
   getLibrary: jest.fn(),

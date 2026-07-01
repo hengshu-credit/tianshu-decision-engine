@@ -23,7 +23,19 @@ async function mountPage() {
   ruleListApi.listRecords.mockResolvedValue({
     data: { records: [{ id: 1, itemContent: '13800138000', itemType: 'MOBILE', status: 1, lastOperation: 'ADD' }], total: 1 }
   })
-  ruleListApi.listRecordLogs.mockResolvedValue({ data: { records: [{ id: 1, itemContent: '13800138000', operation: 'ADD' }], total: 1 } })
+  ruleListApi.listRecordLogs.mockResolvedValue({
+    data: {
+      records: [{
+        id: 1,
+        itemContent: '13800138000',
+        operation: 'UPDATE',
+        effectiveTime: '2026-07-01T00:00:00',
+        expireTime: '2026-12-31T23:59:59',
+        changeContent: '修改：有效期：2026-06-01 00:00:00 至 2026-06-30 23:59:59 -> 2026-07-01 00:00:00 至 2026-12-31 23:59:59'
+      }],
+      total: 1
+    }
+  })
   const wrapper = mount(ListDetail, {
     localVue: createTestVue(),
     mocks: {
@@ -67,6 +79,11 @@ describe('ListDetail — 名单内容管理', () => {
     expect(ruleListApi.listRecords).toHaveBeenCalled()
     expect(ruleListApi.listRecordLogs).toHaveBeenCalled()
     expect(wrapper.vm.records[0].itemContent).toBe('13800138000')
+  })
+
+  test('日志展示有效期和后端返回的变更内容', () => {
+    expect(wrapper.vm.formatPeriod(wrapper.vm.logs[0])).toBe('2026-07-01 00:00:00 至 2026-12-31 23:59:59')
+    expect(wrapper.vm.logs[0].changeContent).toContain('2026-06-01 00:00:00 至 2026-06-30 23:59:59')
   })
 
   test('保存新增记录时合并有效期并调用创建接口', async () => {
