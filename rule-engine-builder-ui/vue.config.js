@@ -34,6 +34,12 @@ module.exports = {
   productionSourceMap: false,
   devServer: {
     port: 9090,
+    watchOptions: {
+      ignored: [
+        path.resolve(__dirname, 'node_modules'),
+        path.resolve(__dirname, 'dist')
+      ]
+    },
     proxy: {
       '/api': {
         target: 'http://localhost:8080',

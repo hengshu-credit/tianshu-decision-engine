@@ -484,18 +484,21 @@ export default {
         if (keys && holder[keys.refType] !== ref.refType) { holder[keys.refType] = ref.refType; changed = true }
       }
       const walk = actions => {
-        ;(actions || []).forEach(action => {
+        const rows = actions || []
+        rows.forEach(action => {
           syncField(action, 'target')
           syncField(action, 'condVar')
           syncField(action, 'matchVar')
           syncField(action, 'checkVar')
           if (Array.isArray(action.actions)) walk(action.actions)
           if (Array.isArray(action.defaultActions)) walk(action.defaultActions)
-          ;(action.branches || []).forEach(branch => {
+          const branches = action.branches || []
+          branches.forEach(branch => {
             syncField(branch, 'condVar')
             walk(branch.actions)
           })
-          ;(action.cases || []).forEach(item => walk(item.actions))
+          const cases = action.cases || []
+          cases.forEach(item => walk(item.actions))
         })
       }
       walk(actionData)

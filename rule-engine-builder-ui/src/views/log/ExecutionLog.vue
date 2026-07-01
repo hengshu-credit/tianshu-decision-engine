@@ -289,7 +289,8 @@ export default {
         var data = r && r.data ? r.data : r
         var tree = Array.isArray(data) ? data : (data && data.tree ? data.tree : [])
         var visit = function (rows, objScriptName) {
-          ;(rows || []).forEach(function (row) {
+          var rowsToVisit = rows || []
+          rowsToVisit.forEach(function (row) {
             var scriptName = row.scriptName || row.varCode || ''
             var code = scriptName
             if (objScriptName && code.indexOf(objScriptName + '.') !== 0) {
@@ -299,7 +300,8 @@ export default {
             if (row.children && row.children.length) visit(row.children, objScriptName)
           })
         }
-        ;(tree || []).forEach(function (node) {
+        var treeToVisit = tree || []
+        treeToVisit.forEach(function (node) {
           var obj = node.object || node
           var objScriptName = obj.scriptName || obj.objectCode || ''
           var rows = node.flatVariables || node.variables || []

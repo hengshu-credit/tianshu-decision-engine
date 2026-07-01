@@ -398,11 +398,15 @@ export default {
   methods: {
     collectSelectedVarItems() {
       const items = [this.model.resultVar]
-      ;(this.model.dimensionGroups || []).forEach(group => {
-        ;(group.dimensions || []).forEach(dim => {
+      const groups = this.model.dimensionGroups || []
+      groups.forEach(group => {
+        const dimensions = group.dimensions || []
+        dimensions.forEach(dim => {
           items.push(dim)
-          ;(dim.rules || []).forEach(rule => {
-            ;(rule.conditions || []).forEach(cond => items.push(cond))
+          const rules = dim.rules || []
+          rules.forEach(rule => {
+            const conditions = rule.conditions || []
+            conditions.forEach(cond => items.push(cond))
           })
         })
       })

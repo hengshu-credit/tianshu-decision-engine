@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
+    "preinstall": "node scripts/check-node-version.cjs",
     "dev": "cross-env NODE_OPTIONS=--no-deprecation vue-cli-service serve",
     "build": "cross-env NODE_ENV=production vue-cli-service build",
     "lint": "vue-cli-service lint",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage"
+  },
+  "engines": {
+    "node": ">=14 <23"
   },
   "dependencies": {
     "@logicflow/core": "^1.2.27",
