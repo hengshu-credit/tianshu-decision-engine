@@ -13,6 +13,7 @@ jest.mock('@/api/variable', () => ({
   createVariable: jest.fn(),
   updateVariable: jest.fn(),
   deleteVariable: jest.fn(),
+  testVariable: jest.fn(),
   importJavaConstants: jest.fn(),
   importJsonConstants: jest.fn()
 }))
@@ -318,6 +319,31 @@ describe('VariableList — 变量操作', () => {
     wrapper.vm.handleBatchValidate()
     expect(wrapper.vm.validateDialogVisible).toBe(true)
     // doBatchValidate 才调用 batchValidateRules
+  })
+
+  test('API/DB/LIST 变量显示测试入口并执行变量测试', async () => {
+    const row = {
+      id: 10,
+      varCode: 'riskScore',
+      varLabel: '风险分',
+      scriptName: 'riskScore',
+      varType: 'NUMBER',
+      varSource: 'API',
+      sourceConfig: JSON.stringify({ paramMapping: { customerId: '$.customer.id' }, resultPath: 'body.score' })
+    }
+    expect(wrapper.vm.isTestableSource(row)).toBe(true)
+    expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
+
+    wrapper.vm.handleTestVariable(row)
+    expect(wrapper.vm.variableTestVisible).toBe(true)
+    expect(JSON.parse(wrapper.vm.variableTestParamsText)).toEqual({ customer: { id: '' } })
+
+    variableApi.testVariable.mockResolvedValueOnce({ data: { resolvedValue: 88 } })
+    wrapper.vm.variableTestParamsText = '{"customer":{"id":"C001"}}'
+    await wrapper.vm.doTestVariable()
+
+    expect(variableApi.testVariable).toHaveBeenCalledWith(10, { customer: { id: 'C001' } })
+    expect(wrapper.vm.variableTestResult.resolvedValue).toBe(88)
   })
 
   test('buildVariablePayload 生成名单查询配置', async () => {

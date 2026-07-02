@@ -46,6 +46,29 @@ function objectFieldOptions() {
   ]
 }
 
+function modelFieldOptions() {
+  return [
+    {
+      varCode: 'creditModel.score',
+      varLabel: '信用模型/评分 creditModel.score',
+      varType: 'NUMBER',
+      _ref: { category: 'model', refType: 'MODEL_OUTPUT', modelCode: 'creditModel', modelLabel: '信用模型' }
+    },
+    {
+      varCode: 'creditModel.level',
+      varLabel: '信用模型/等级 creditModel.level',
+      varType: 'STRING',
+      _ref: { category: 'model', refType: 'MODEL_OUTPUT', modelCode: 'creditModel', modelLabel: '信用模型' }
+    },
+    {
+      varCode: 'fraudModel.hit',
+      varLabel: '反欺诈模型/命中 fraudModel.hit',
+      varType: 'BOOLEAN',
+      _ref: { category: 'model', refType: 'MODEL_OUTPUT', modelCode: 'fraudModel', modelLabel: '反欺诈模型' }
+    }
+  ]
+}
+
 function standaloneOptions(count = 3) {
   const list = []
   for (let i = 1; i <= count; i++) {
@@ -127,14 +150,7 @@ describe('VarPicker', () => {
 
   test('模型字段显示明确的数据类型', () => {
     const wrapper = mountPicker({
-      vars: [
-        {
-          varCode: 'creditModel.score',
-          varLabel: '信用模型/评分 creditModel.score',
-          varType: 'NUMBER',
-          _ref: { category: 'model', refType: 'MODEL_OUTPUT' }
-        }
-      ]
+      vars: modelFieldOptions().slice(0, 1)
     })
 
     wrapper.vm.onCategoryClick('model')
@@ -142,6 +158,28 @@ describe('VarPicker', () => {
     expect(wrapper.vm.typeLabel('NUMBER')).toBe('数值')
     expect(wrapper.vm.codeColumnLabel()).toBe('模型输出字段')
     expect(wrapper.vm.nameColumnLabel()).toBe('输出字段名称')
+  })
+
+  test('点击模型分组只展开，点击输出字段才选择字段', async () => {
+    const wrapper = mountPicker({ vars: modelFieldOptions() })
+    await Vue.nextTick()
+
+    wrapper.vm.onCategoryClick('model')
+    const group = wrapper.vm.rightItems.find(item => item._modelGroupKey === 'creditModel')
+    expect(wrapper.vm.rightItems).toHaveLength(2)
+    expect(group._modelGroup).toBe(true)
+    expect(group.children.map(child => child.varCode)).toEqual(['creditModel.level', 'creditModel.score'])
+
+    wrapper.vm.onItemClick(group)
+    expect(wrapper.emitted().input).toBeUndefined()
+    expect(wrapper.vm.expandedObject).toBe('model:creditModel')
+
+    const child = group.children[1]
+    wrapper.vm.onItemClick(child)
+
+    expect(wrapper.emitted().input[0]).toEqual([child.varCode])
+    expect(wrapper.emitted().select[0]).toEqual([child])
+    expect(wrapper.vm.popoverVisible).toBe(false)
   })
 
   test('传入 selectedVars 后显示已选字段分类并去重', async () => {
@@ -242,7 +280,7 @@ describe('VarPicker', () => {
     const wrapper = mountPicker({
       vars: [
         { varCode: 'age', varLabel: '年龄', varType: 'NUMBER', _ref: { category: 'standalone' } },
-        { varCode: 'creditModel.score', varLabel: '信用模型/评分', varType: 'NUMBER', _ref: { category: 'model', refType: 'MODEL_OUTPUT' } }
+        ...modelFieldOptions().slice(0, 1)
       ]
     })
     await Vue.nextTick()
@@ -254,7 +292,10 @@ describe('VarPicker', () => {
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['model'])
     expect(wrapper.vm.activeCategory).toBe('model')
-    expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['creditModel.score'])
+    expect(wrapper.vm.filteredRightItems).toHaveLength(1)
+    expect(wrapper.vm.filteredRightItems[0]._modelGroup).toBe(true)
+    expect(wrapper.vm.expandedObject).toBe('model:creditModel')
+    expect(wrapper.vm.pagedObjectChildren(wrapper.vm.filteredRightItems[0]).map(v => v.varCode)).toEqual(['creditModel.score'])
   })
 
   test('数据对象分类搜索时只展示命中的子字段并自动展开单个对象组', async () => {

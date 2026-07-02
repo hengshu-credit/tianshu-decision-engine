@@ -344,6 +344,7 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
@@ -574,9 +575,25 @@ export default {
       }
     },
     handleTest() {
-      this.testParamsJson = '{}'
+      this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
+    },
+    buildTestParamsTemplate() {
+      const codes = new Set()
+      const groups = this.model.dimensionGroups || []
+      groups.forEach(group => {
+        const dimensions = group.dimensions || []
+        dimensions.forEach(dim => {
+          addCode(codes, dim.varCode)
+          const rules = dim.rules || []
+          rules.forEach(rule => {
+            const conditions = rule.conditions || []
+            conditions.forEach(cond => addCode(codes, cond.varCode))
+          })
+        })
+      })
+      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     async doTest() {
       let params = {}

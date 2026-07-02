@@ -10,7 +10,9 @@ import com.bjjw.rule.server.service.RuleRuntimeCallLogService;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -66,13 +68,16 @@ public class DbDatasourceController {
     @PostMapping("/{id:\\d+}/test")
     public R<String> testSavedConnection(@PathVariable Long id) {
         long start = System.currentTimeMillis();
+        LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = datasourceService.getById(id);
         try {
             datasourceService.testConnection(id);
-            logDatabaseCall(datasource, "TEST_CONNECTION", null, null, null, true, "连接成功", null, System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "TEST_CONNECTION", buildDatabaseRequest(datasource, null, null, null, null, startTime),
+                    buildDatabaseResponse("SUCCESS", "连接成功", null, null, null, startTime), true, null, System.currentTimeMillis() - start);
             return R.ok("连接成功");
         } catch (Exception e) {
-            logDatabaseCall(datasource, "TEST_CONNECTION", null, null, null, false, null, e.getMessage(), System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "TEST_CONNECTION", buildDatabaseRequest(datasource, null, null, null, null, startTime),
+                    buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail("连接失败：" + e.getMessage());
         }
     }
@@ -80,12 +85,15 @@ public class DbDatasourceController {
     @PostMapping("/test")
     public R<String> testConnection(@RequestBody RuleDbDatasource datasource) {
         long start = System.currentTimeMillis();
+        LocalDateTime startTime = LocalDateTime.now();
         try {
             datasourceService.testConnection(datasource);
-            logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", null, null, safeDatasourcePreview(datasource), true, "连接成功", null, System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", buildDatabaseRequest(datasource, null, null, null, safeDatasourcePreview(datasource), startTime),
+                    buildDatabaseResponse("SUCCESS", "连接成功", null, null, null, startTime), true, null, System.currentTimeMillis() - start);
             return R.ok("连接成功");
         } catch (Exception e) {
-            logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", null, null, safeDatasourcePreview(datasource), false, null, e.getMessage(), System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "TEST_CONNECTION_DRAFT", buildDatabaseRequest(datasource, null, null, null, safeDatasourcePreview(datasource), startTime),
+                    buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail("连接失败：" + e.getMessage());
         }
     }
@@ -93,22 +101,25 @@ public class DbDatasourceController {
     @PostMapping("/{id:\\d+}/query")
     public R<List<Map<String, Object>>> query(@PathVariable Long id, @RequestBody Map<String, Object> body) {
         long start = System.currentTimeMillis();
+        LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = datasourceService.getById(id);
         String sql = body.get("sql") == null ? null : String.valueOf(body.get("sql"));
         List<Object> params = body.get("params") instanceof List ? (List<Object>) body.get("params") : Collections.emptyList();
         Integer maxRows = body.get("maxRows") instanceof Number ? ((Number) body.get("maxRows")).intValue() : 100;
         try {
             List<Map<String, Object>> rows = dbConnectPools.query(id, sql, params, maxRows);
-            logDatabaseCall(datasource, "QUERY", null, body, null, true, rows, null, System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "QUERY", buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime),
+                    buildDatabaseResponse("SUCCESS", null, rows, null, null, startTime), true, null, System.currentTimeMillis() - start);
             return R.ok(rows);
         } catch (Exception e) {
-            logDatabaseCall(datasource, "QUERY", null, body, null, false, null, e.getMessage(), System.currentTimeMillis() - start);
+            logDatabaseCall(datasource, "QUERY", buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime),
+                    buildDatabaseResponse("FAILED", null, null, null, e.getMessage(), startTime), false, e.getMessage(), System.currentTimeMillis() - start);
             return R.fail("查询失败：" + e.getMessage());
         }
     }
 
-    private void logDatabaseCall(RuleDbDatasource datasource, String actionType, String requestUrl, Object requestParams,
-                                 Object requestBody, boolean success, Object responseBody, String errorMessage, long costTimeMs) {
+    private void logDatabaseCall(RuleDbDatasource datasource, String actionType, Object requestDetail,
+                                 Object responseDetail, boolean success, String errorMessage, long costTimeMs) {
         if (runtimeCallLogService == null) {
             return;
         }
@@ -120,17 +131,68 @@ public class DbDatasourceController {
             log.setTargetRefId(datasource.getId());
             log.setTargetCode(datasource.getDatasourceCode());
             log.setTargetName(datasource.getDatasourceName());
-            log.setRequestUrl(requestUrl != null ? requestUrl : datasource.getJdbcUrl());
+            log.setRequestUrl(datasource.getJdbcUrl());
         } else {
-            log.setRequestUrl(requestUrl);
+            log.setRequestUrl(null);
         }
-        log.setRequestParams(runtimeCallLogService.toJson(requestParams));
-        log.setRequestBody(runtimeCallLogService.toJson(requestBody));
-        log.setResponseBody(runtimeCallLogService.toJson(responseBody));
+        log.setRequestMethod("SQL");
+        log.setRequestBody(runtimeCallLogService.toJson(requestDetail));
+        log.setResponseStatus(success ? 200 : 500);
+        log.setResponseBody(runtimeCallLogService.toJson(responseDetail));
         log.setSuccess(success ? 1 : 0);
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
         runtimeCallLogService.safeSave(log);
+    }
+
+    private Map<String, Object> buildDatabaseRequest(RuleDbDatasource datasource, String sql, List<Object> params,
+                                                     Integer maxRows, Object draftConfig, LocalDateTime startTime) {
+        LinkedHashMap<String, Object> request = new LinkedHashMap<>();
+        request.put("connectionMode", datasource == null ? null : datasource.getConnectionMode());
+        request.put("dbType", datasource == null ? null : datasource.getDbType());
+        request.put("datasourceId", datasource == null ? null : datasource.getId());
+        request.put("datasourceCode", datasource == null ? null : datasource.getDatasourceCode());
+        request.put("datasourceName", datasource == null ? null : datasource.getDatasourceName());
+        request.put("queryStatus", "RUNNING");
+        request.put("startTime", startTime == null ? null : startTime.toString());
+        request.put("sql", sql);
+        request.put("params", params);
+        request.put("paramFields", buildParamFields(params));
+        request.put("maxRows", maxRows);
+        request.put("draftConfig", draftConfig);
+        return request;
+    }
+
+    private Map<String, Object> buildDatabaseResponse(String status, Object message,
+                                                      List<Map<String, Object>> rows, Object extractedValue,
+                                                      String errorMessage, LocalDateTime startTime) {
+        LinkedHashMap<String, Object> response = new LinkedHashMap<>();
+        response.put("queryStatus", status);
+        response.put("startTime", startTime == null ? null : startTime.toString());
+        response.put("endTime", LocalDateTime.now().toString());
+        response.put("message", message);
+        response.put("rowCount", rows == null ? 0 : rows.size());
+        response.put("rows", rows);
+        response.put("extractedValue", extractedValue);
+        if (errorMessage != null) {
+            response.put("errorMessage", errorMessage);
+        }
+        return response;
+    }
+
+    private List<Map<String, Object>> buildParamFields(List<Object> params) {
+        if (params == null || params.isEmpty()) {
+            return Collections.emptyList();
+        }
+        java.util.ArrayList<Map<String, Object>> fields = new java.util.ArrayList<>();
+        for (int i = 0; i < params.size(); i++) {
+            LinkedHashMap<String, Object> field = new LinkedHashMap<>();
+            field.put("index", i + 1);
+            field.put("field", "param" + (i + 1));
+            field.put("value", params.get(i));
+            fields.add(field);
+        }
+        return fields;
     }
 
     private Map<String, Object> safeDatasourcePreview(RuleDbDatasource datasource) {

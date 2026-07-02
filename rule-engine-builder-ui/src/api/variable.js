@@ -29,6 +29,10 @@ export function deleteVariable(id) {
   return request({ url: `/rule/variable/${id}`, method: 'delete' })
 }
 
+export function testVariable(id, params) {
+  return request({ url: `/rule/variable/${id}/test`, method: 'post', data: params || {} })
+}
+
 export function getVariableOptions(variableId) {
   return request({ url: `/rule/variable/${variableId}/options`, method: 'get' })
 }

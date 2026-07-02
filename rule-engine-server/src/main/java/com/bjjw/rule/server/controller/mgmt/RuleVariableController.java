@@ -8,6 +8,7 @@ import com.bjjw.rule.server.service.BatchTestService;
 import com.bjjw.rule.server.service.RuleDataObjectService;
 import com.bjjw.rule.server.service.RuleVariableService;
 import com.bjjw.rule.server.service.SchemaSyncService;
+import com.bjjw.rule.server.service.VariableSourceResolver;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,6 +31,9 @@ public class RuleVariableController {
 
     @Resource
     private SchemaSyncService schemaSyncService;
+
+    @Resource
+    private VariableSourceResolver variableSourceResolver;
 
     /** 健康检查，用于验证变量管理接口是否正常注册 */
     @GetMapping("/health")
@@ -92,6 +96,16 @@ public class RuleVariableController {
     @GetMapping("/{id:\\d+}")
     public R<RuleVariable> get(@PathVariable Long id) {
         return R.ok(variableService.getById(id));
+    }
+
+    @PostMapping("/{variableId:\\d+}/test")
+    public R<Map<String, Object>> testVariable(@PathVariable Long variableId,
+                                               @RequestBody(required = false) Map<String, Object> params) {
+        try {
+            return R.ok(variableSourceResolver.testVariable(variableId, params));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @PostMapping

@@ -360,10 +360,10 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
-    // 交叉表旧数据无 _varId，但有 varCode → 应通过 varCode 回退匹配到 3 个变量
-    expect(wrapper.vm.params.length).toBe(3)
+    // 交叉表旧数据无 _varId，但有 varCode → 应只回退匹配行/列输入变量
+    expect(wrapper.vm.params.length).toBe(2)
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
-    expect(varCodes).toEqual(['goodsCategory', 'taxRate', 'taxpayerType'])
+    expect(varCodes).toEqual(['goodsCategory', 'taxpayerType'])
   })
 
   test('决策表规则：通过 _varId 精确匹配加载变量', async () => {
@@ -382,10 +382,10 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
-    // 决策表有 _varId → 应精确匹配到 3 个变量
-    expect(wrapper.vm.params.length).toBe(3)
+    // 决策表有 _varId → 应只精确匹配条件输入变量
+    expect(wrapper.vm.params.length).toBe(2)
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
-    expect(varCodes).toEqual(['goodsCategory', 'taxRate', 'taxpayerType'])
+    expect(varCodes).toEqual(['goodsCategory', 'taxpayerType'])
   })
 
   test('规则集规则：从条件树和动作块提取变量', async () => {
@@ -410,7 +410,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     await Vue.nextTick()
 
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
-    expect(varCodes).toEqual(['taxRate', 'taxpayerType'])
+    expect(varCodes).toEqual(['taxpayerType'])
   })
 
   test('未选择规则时 loadVariables 不调用 API', async () => {
@@ -554,11 +554,11 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
-    // 3. 验证加载了 3 个参数（taxpayerType, goodsCategory, taxRate）
-    expect(wrapper.vm.params.length).toBe(3)
+    // 3. 验证只加载 2 个输入参数（taxpayerType, goodsCategory）
+    expect(wrapper.vm.params.length).toBe(2)
     expect(wrapper.vm.params.some(p => p.key === 'taxpayerType')).toBe(true)
     expect(wrapper.vm.params.some(p => p.key === 'goodsCategory')).toBe(true)
-    expect(wrapper.vm.params.some(p => p.key === 'taxRate')).toBe(true)
+    expect(wrapper.vm.params.some(p => p.key === 'taxRate')).toBe(false)
   })
 
   test('步骤2：填入测试数据并执行，验证 taxRate = 0.03', async () => {

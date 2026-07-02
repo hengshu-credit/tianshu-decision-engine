@@ -310,9 +310,16 @@ import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue
 import {
   createEmptyGroup,
   createEmptyLeaf,
+  collectVarCodesFromConditionTree,
   walkConditionLeaves,
   compileConditionTreeExpression
 } from '@/utils/decisionConditionTree'
+import {
+  addCode,
+  buildSampleParamsFromCodes,
+  collectActionDataInputCodes,
+  refCodeById
+} from '@/utils/testSampleParams'
 
 export default {
   name: 'DecisionFlow',
@@ -1149,9 +1156,26 @@ export default {
     },
 
     handleTest() {
-      this.testParamsJson = '{}'
+      this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
+    },
+    buildTestParamsTemplate() {
+      const codes = new Set()
+      const model = this.buildBackendModel()
+      const nodes = model.nodes || []
+      nodes.forEach(node => {
+        addCode(codes, refCodeById(this.projectRefs, node.leftVarId, node.leftRefType))
+        addCode(codes, refCodeById(this.projectRefs, node.rightVarId, node.rightRefType))
+        collectActionDataInputCodes(node.actionData, this.projectRefs, codes)
+      })
+      const edges = model.edges || []
+      edges.forEach(edge => {
+        collectVarCodesFromConditionTree(edge.conditionConfig, codes)
+        addCode(codes, refCodeById(this.projectRefs, edge.leftVarId, edge.leftRefType))
+        addCode(codes, refCodeById(this.projectRefs, edge.rightVarId, edge.rightRefType))
+      })
+      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     async doTest() {
       let params = {}

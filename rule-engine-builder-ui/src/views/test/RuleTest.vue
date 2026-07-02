@@ -597,16 +597,8 @@ export default {
           (model.rules || []).forEach(rule => {
             this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
             this.extractVarIdsFromConditions(rule.conditions, varIdMap)
-            ;(rule.actions || []).forEach(a => {
-              if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
-              else if (!a._varId && a.varCode) varIdMap[a.varCode] = { varCode: a.varCode }
-            })
           })
           this.extractVarIdsFromConditions(model.conditions, varIdMap)
-          ;(model.actions || []).forEach(a => {
-            if (a._varId && a.varCode) varIdMap[a._varId] = { varCode: a.varCode }
-            else if (!a._varId && a.varCode) varIdMap[a.varCode] = { varCode: a.varCode }
-          })
           break
         }
         case 'TREE': {
@@ -638,10 +630,6 @@ export default {
             if (model.colVar._varId && model.colVar.varCode) varIdMap[model.colVar._varId] = { varCode: model.colVar.varCode }
             else if (model.colVar.varCode) varIdMap[model.colVar.varCode] = { varCode: model.colVar.varCode }
           }
-          if (model.resultVar) {
-            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
-            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
-          }
           break
         }
         case 'CROSS_ADV': {
@@ -655,10 +643,6 @@ export default {
             else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
             this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
           })
-          if (model.resultVar) {
-            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
-            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
-          }
           break
         }
         case 'SCORE': {
@@ -669,10 +653,6 @@ export default {
             if (item._varId && item.condVar) varIdMap[item._varId] = { varCode: item.condVar }
             else if (!item._varId && item.condVar) varIdMap[item.condVar] = { varCode: item.condVar }
           })
-          if (model.resultVar) {
-            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
-            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
-          }
           break
         }
         case 'SCORE_ADV': {
@@ -686,10 +666,6 @@ export default {
               })
             })
           })
-          if (model.resultVar) {
-            if (model.resultVar._varId && model.resultVar.varCode) varIdMap[model.resultVar._varId] = { varCode: model.resultVar.varCode }
-            else if (model.resultVar.varCode) varIdMap[model.resultVar.varCode] = { varCode: model.resultVar.varCode }
-          }
           break
         }
         case 'SCRIPT': {
@@ -804,16 +780,9 @@ export default {
         if (a._varId && a.varCode && !varIdMap[a._varId]) {
           varIdMap[a._varId] = { varCode: a.varCode }
         }
-        addFieldRef('_targetVarId', 'target')
         addFieldRef('_condVarId', 'condVar')
         addFieldRef('_matchVarId', 'matchVar')
         addFieldRef('_checkVarId', 'checkVar')
-        if (a.type === 'assign' && a.target && a._targetVarId) {
-          varIdMap[a._targetVarId] = { varCode: a.target }
-        }
-        if (a.type === 'func-call' && a.target && a._targetVarId) {
-          varIdMap[a._targetVarId] = { varCode: a.target }
-        }
         if (a.type === 'if-block' && a.branches) {
           a.branches.forEach(branch => {
             if (branch._condVarId && branch.condVar) {

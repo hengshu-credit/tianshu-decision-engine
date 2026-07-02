@@ -125,6 +125,7 @@ jest.mock('@/api/variable', () => ({
   createVariable: jest.fn(),
   updateVariable: jest.fn(),
   deleteVariable: jest.fn(),
+  testVariable: jest.fn(),
   batchValidateVariables: jest.fn(),
   importJavaConstants: jest.fn(),
   importJsonConstants: jest.fn(),
@@ -194,6 +195,11 @@ jest.mock('@/api/datasource', () => ({
 }))
 jest.mock('@/api/runtimeLog', () => ({
   listRuntimeLogs: jest.fn(),
+  __esModule: true
+}))
+jest.mock('@/api/lineage', () => ({
+  listLineageOptions: jest.fn(),
+  getLineageGraph: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/database', () => ({

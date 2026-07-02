@@ -72,6 +72,31 @@
           <el-descriptions-item label="请求地址" :span="2">{{ detail.requestUrl || '-' }}</el-descriptions-item>
           <el-descriptions-item label="错误信息" :span="2">{{ detail.errorMessage || '-' }}</el-descriptions-item>
         </el-descriptions>
+        <template v-if="moduleType === 'DATABASE'">
+          <div class="detail-grid">
+            <div class="detail-kv"><span>连接方式</span><strong>{{ dbRequest.connectionMode || '-' }}</strong></div>
+            <div class="detail-kv"><span>查询状态</span><strong>{{ dbResponse.queryStatus || '-' }}</strong></div>
+            <div class="detail-kv"><span>开始时间</span><strong>{{ dbResponse.startTime || dbRequest.startTime || '-' }}</strong></div>
+            <div class="detail-kv"><span>结束时间</span><strong>{{ dbResponse.endTime || '-' }}</strong></div>
+          </div>
+          <div class="detail-block">
+            <div class="detail-title">查询代码</div>
+            <pre class="log-pre">{{ dbRequest.sql || '-' }}</pre>
+          </div>
+          <div class="detail-block">
+            <div class="detail-title">参数字段和值</div>
+            <pre class="log-pre">{{ pretty(dbRequest.paramFields || dbRequest.params) }}</pre>
+          </div>
+          <div class="detail-block">
+            <div class="detail-title">返回结果表内容</div>
+            <pre class="log-pre">{{ pretty(dbResponse.rows) }}</pre>
+          </div>
+          <div class="detail-block">
+            <div class="detail-title">解析提取变量字段和值</div>
+            <pre class="log-pre">{{ pretty({ resultPath: dbResponse.resultPath, extractedValue: dbResponse.extractedValue }) }}</pre>
+          </div>
+        </template>
+        <template v-else>
         <div class="detail-block">
           <div class="detail-title">请求头</div>
           <pre class="log-pre">{{ pretty(detail.requestHeaders) }}</pre>
@@ -88,6 +113,7 @@
           <div class="detail-title">响应内容</div>
           <pre class="log-pre">{{ pretty(detail.responseBody) }}</pre>
         </div>
+        </template>
       </div>
     </el-drawer>
   </div>
@@ -123,6 +149,12 @@ export default {
     }
   },
   computed: {
+    dbRequest() {
+      return this.parseJsonValue(this.detail && this.detail.requestBody)
+    },
+    dbResponse() {
+      return this.parseJsonValue(this.detail && this.detail.responseBody)
+    },
     actionOptions() {
       const datasource = [
         { label: 'API调用', value: 'API_INVOKE' },
@@ -176,10 +208,22 @@ export default {
     },
     pretty(value) {
       if (value == null || value === '') return '-'
+      if (typeof value === 'object') {
+        return JSON.stringify(value, null, 2)
+      }
       try {
         return JSON.stringify(JSON.parse(value), null, 2)
       } catch (e) {
         return String(value)
+      }
+    },
+    parseJsonValue(value) {
+      if (!value) return {}
+      if (typeof value === 'object') return value
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        return {}
       }
     },
     formatTime(time) {
@@ -236,6 +280,30 @@ export default {
   color: #334155;
   font-weight: 700;
   margin-bottom: 6px;
+}
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+.detail-kv {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+  padding: 8px 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+.detail-kv span {
+  color: #64748b;
+}
+.detail-kv strong {
+  color: #1f2937;
+  font-weight: 600;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .log-pre {
   background: #f8fafc;

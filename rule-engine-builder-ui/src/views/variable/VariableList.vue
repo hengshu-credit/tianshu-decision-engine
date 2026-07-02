@@ -99,6 +99,7 @@
             <el-table-column label="操作" min-width="140" align="center">
               <template slot-scope="{ row }">
                 <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+                <el-button v-if="isTestableSource(row)" type="text" size="small" @click="handleTestVariable(row)">测试</el-button>
                 <el-button type="text" size="small" @click="handleOptions(row)" v-if="row.varType==='ENUM'">选项</el-button>
                 <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
               </template>
@@ -503,6 +504,36 @@
       </div>
     </el-dialog>
 
+    <el-dialog title="变量取数测试" :visible.sync="variableTestVisible" width="760px" :close-on-click-modal="false">
+      <div v-if="testTarget" class="test-target">
+        <el-tag size="mini" :type="sourceTagColor(testTarget.varSource)">{{ sourceLabel(testTarget.varSource) }}</el-tag>
+        <span>{{ testTarget.varLabel || testTarget.varCode }}</span>
+        <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
+      </div>
+      <el-alert
+        title="请输入该变量取数所需的上下文字段，接口变量会按 paramMapping 映射，数据库变量会按 params 数组取值，名单变量会按 queryField 查询。"
+        type="info"
+        :closable="false"
+        show-icon
+        style="margin-bottom:12px;"
+      />
+      <el-input
+        v-model="variableTestParamsText"
+        type="textarea"
+        :rows="8"
+        class="json-input"
+        placeholder='{"customerId":"C001","mobile":"13800138000"}'
+      />
+      <div v-if="variableTestResult" class="test-result-block">
+        <div class="test-result-title">测试结果</div>
+        <pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre>
+      </div>
+      <div slot="footer">
+        <el-button size="small" @click="variableTestVisible=false">关闭</el-button>
+        <el-button size="small" type="primary" :loading="variableTesting" @click="doTestVariable">执行测试</el-button>
+      </div>
+    </el-dialog>
+
     <!-- Java Entity Import Dialog -->
     <el-dialog title="导入 Java 实体类" :visible.sync="importJavaEntityVisible" width="700px" :close-on-click-modal="false">
       <el-form size="small" label-width="100px">
@@ -701,7 +732,7 @@
 </template>
 
 <script>
-import { listVariables, createVariable, updateVariable, deleteVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
+import { listVariables, createVariable, updateVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
@@ -782,6 +813,11 @@ export default {
       optionDialogVisible: false,
       currentVar: null,
       optionList: [],
+      variableTestVisible: false,
+      variableTesting: false,
+      testTarget: null,
+      variableTestParamsText: '{}',
+      variableTestResult: null,
 
       // Data objects
       objLoading: false,
@@ -1679,6 +1715,95 @@ export default {
           if (row.varSource === 'CONSTANT') this.loadConstants()
         }).catch(() => {})
     },
+    isTestableSource(row) {
+      return row && ['API', 'DB', 'LIST'].indexOf(row.varSource) >= 0
+    },
+    handleTestVariable(row) {
+      this.testTarget = row
+      this.variableTestParamsText = this.buildTestParamTemplate(row)
+      this.variableTestResult = null
+      this.variableTestVisible = true
+    },
+    buildTestParamTemplate(row) {
+      const config = this.parseJson(row && row.sourceConfig, {})
+      const sample = {}
+      if (row && row.varSource === 'API') {
+        const mapping = config.paramMapping || {}
+        Object.keys(mapping).forEach(key => {
+          const path = this.pathFromMapping(mapping[key])
+          if (path) this.setPathValue(sample, path, '')
+          else sample[key] = ''
+        })
+      } else if (row && row.varSource === 'DB') {
+        const params = Array.isArray(config.params) ? config.params : []
+        params.forEach(item => {
+          const path = this.pathFromMapping(item)
+          if (path) this.setPathValue(sample, path, '')
+        })
+      } else if (row && row.varSource === 'LIST') {
+        const path = this.pathFromMapping(config.queryField || config.queryPath || config.field)
+        if (path) this.setPathValue(sample, path, '')
+      }
+      return this.formatJson(sample)
+    },
+    async doTestVariable() {
+      if (!this.testTarget) return
+      let params
+      try {
+        params = this.variableTestParamsText ? JSON.parse(this.variableTestParamsText) : {}
+      } catch (e) {
+        this.$message.error('测试入参不是合法 JSON')
+        return
+      }
+      this.variableTesting = true
+      this.variableTestResult = null
+      try {
+        const res = await testVariable(this.testTarget.id, params)
+        this.variableTestResult = res && res.data ? res.data : res
+      } catch (e) {
+        this.variableTestResult = { success: false, errorMessage: e.message || '测试失败' }
+      } finally {
+        this.variableTesting = false
+      }
+    },
+    parseJson(text, fallback) {
+      if (!text) return fallback
+      try {
+        return JSON.parse(text)
+      } catch (e) {
+        return fallback
+      }
+    },
+    pathFromMapping(value) {
+      if (typeof value !== 'string') return ''
+      const text = value.trim()
+      if (text.indexOf('$.') === 0) return text.substring(2)
+      if (text.indexOf('${') === 0 && text.lastIndexOf('}') === text.length - 1) return text.substring(2, text.length - 1)
+      return ''
+    },
+    setPathValue(target, path, value) {
+      if (!path) return
+      const parts = path.split('.').filter(Boolean)
+      let cur = target
+      for (let i = 0; i < parts.length; i++) {
+        const key = parts[i]
+        if (i === parts.length - 1) {
+          this.$set(cur, key, value)
+        } else {
+          if (!cur[key] || typeof cur[key] !== 'object' || Array.isArray(cur[key])) this.$set(cur, key, {})
+          cur = cur[key]
+        }
+      }
+    },
+    formatJson(value) {
+      if (value == null || value === '') return ''
+      try {
+        if (typeof value === 'string') return JSON.stringify(JSON.parse(value), null, 2)
+        return JSON.stringify(value, null, 2)
+      } catch (e) {
+        return String(value)
+      }
+    },
     /**
      * @param {boolean} isField - 是否为数据对象字段上的枚举
      */
@@ -1875,6 +2000,13 @@ export default {
 .badge { display:inline-block; padding:1px 6px; border-radius:3px; font-size:11px; font-family:Consolas,monospace; }
 .badge-obj { background:#e6f7ff; color:#1890ff; border:1px solid #91d5ff; }
 .badge-const { background:#f6ffed; color:#52c41a; border:1px solid #b7eb8f; }
+
+.test-target { display:flex; align-items:center; gap:8px; margin-bottom:12px; color:#303133; }
+.test-target code { color:#64748b; background:#f8fafc; border:1px solid #e2e8f0; border-radius:3px; padding:1px 6px; }
+.json-input ::v-deep textarea { font-family:Menlo, Monaco, Consolas, monospace; font-size:12px; line-height:1.5; }
+.test-result-block { margin-top:12px; }
+.test-result-title { font-weight:700; color:#334155; margin-bottom:6px; }
+.test-result-pre { margin:0; padding:10px; border:1px solid #e2e8f0; border-radius:4px; background:#f8fafc; max-height:260px; overflow:auto; font-size:12px; line-height:1.5; }
 
 /* Import result */
 .import-result-body { text-align:center; padding:20px 0; }

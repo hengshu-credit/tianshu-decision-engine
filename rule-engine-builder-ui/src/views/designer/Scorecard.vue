@@ -308,6 +308,7 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
@@ -545,11 +546,17 @@ export default {
       if (saved && saved !== '{}' && saved !== '{}') {
         try { JSON.parse(saved); this.testParamsJson = saved } catch (e) { this.testParamsJson = '{}' }
       } else {
-        this.testParamsJson = '{}'
+        this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       }
       this.testVisible = true
       // 等 monaco 加载完成后标记 ready（通过 nextTick 让 :key 生效）
       this.$nextTick(() => { setTimeout(() => { this.testReady = true }, 50) })
+    },
+    buildTestParamsTemplate() {
+      const codes = new Set()
+      const items = this.model.scoreItems || []
+      items.forEach(item => addCode(codes, item.condVar))
+      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     onJsonInput(val) {
       this.jsonError = ''

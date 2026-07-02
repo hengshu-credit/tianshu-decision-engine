@@ -292,8 +292,8 @@ export default {
   box-sizing: border-box;
 }
 .cg--nested {
-  margin-left: 8px;
-  padding-left: 12px;
+  margin-left: 4px;
+  padding-left: 8px;
   border-left: 2px solid #e8e8e8;
 }
 .cg-head {
@@ -333,6 +333,8 @@ export default {
 .cg-children {
   flex: 1 1 0;
   min-width: 0;
+  overflow-x: auto;
+  overflow-y: visible;
 }
 .cg-row {
   margin-bottom: 10px;
@@ -351,6 +353,7 @@ export default {
   gap: 8px;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
   box-sizing: border-box;
 }
 .cg-field {
@@ -421,6 +424,13 @@ export default {
   margin-top: 4px;
 }
 @media (max-width: 768px) {
+  .cg--nested {
+    margin-left: 0;
+    padding-left: 6px;
+  }
+  .cg-stem-line {
+    margin-right: 6px;
+  }
   .cg-field--var-left {
     flex: 1 1 100%;
     width: 100%;

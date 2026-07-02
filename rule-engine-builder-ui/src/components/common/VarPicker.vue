@@ -66,39 +66,39 @@
                   <tbody>
                     <template v-for="v in pagedRightItems">
                       <tr
-                        :key="v._objectGroupKey || v.varCode"
+                        :key="fieldGroupKey(v) || v.varCode"
                         class="vp-row"
-                        :class="{ 'vp-row--selected': v.varCode === currentValue }"
+                        :class="{ 'vp-row--selected': !isFieldGroup(v) && v.varCode === currentValue }"
                         @click="onItemClick(v)"
                       >
                         <td class="vp-td vp-td--type">
                           <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)" :title="typeLabel(v.varType)">{{ typeChar(v.varType) }}</span>
                         </td>
-                        <td class="vp-td vp-td--code">{{ v._objectGroup ? objectGroupCode(v) : v.varCode }}</td>
-                        <td class="vp-td vp-td--name">{{ v._objectGroup ? objectGroupLabel(v) : (v.varLabel || v.varCode) }}</td>
+                        <td class="vp-td vp-td--code">{{ isFieldGroup(v) ? fieldGroupCode(v) : v.varCode }}</td>
+                        <td class="vp-td vp-td--name">{{ isFieldGroup(v) ? fieldGroupLabel(v) : (v.varLabel || v.varCode) }}</td>
                       </tr>
-                      <!-- 数据对象嵌套行：点击展开显示字段路径 -->
+                      <!-- 数据对象/模型嵌套行：点击分组展开，点击子字段才选择 -->
                       <tr
-                        v-if="v.children && expandedObject === v._objectGroupKey"
-                        :key="(v._objectGroupKey || v.varCode) + '-children'"
+                        v-if="v.children && expandedObject === fieldGroupKey(v)"
+                        :key="(fieldGroupKey(v) || v.varCode) + '-children'"
                         class="vp-children-row"
                       >
                         <td colspan="3" class="vp-children-td">
                           <div class="vp-children-wrap">
                             <div class="vp-children-title">
-                              <i class="el-icon-document" /> {{ v._ref && v._ref.objectLabel ? v._ref.objectLabel : v.objectCode }} 字段列表
+                              <i class="el-icon-document" /> {{ fieldGroupLabel(v) }} 字段列表
                             </div>
                             <div class="vp-children-list">
                               <div
                                 v-for="child in pagedObjectChildren(v)"
-                                :key="(v._objectGroupKey || '') + '.' + child.varCode"
+                                :key="(fieldGroupKey(v) || '') + '.' + child.varCode"
                                 class="vp-child-item"
                                 :class="{ 'vp-child-item--selected': child.varCode === currentValue }"
                                 @click.stop="onItemClick(child)"
                               >
-                                <span class="vp-child-path">{{ objectFieldRelativePath(child) }}</span>
+                                <span class="vp-child-path">{{ fieldChildRelativePath(child) }}</span>
                                 <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)" :title="typeLabel(child.varType)">{{ typeChar(child.varType) }}</span>
-                                <span class="vp-child-name">{{ objectFieldDisplayName(child) }}</span>
+                                <span class="vp-child-name">{{ fieldChildDisplayName(child) }}</span>
                               </div>
                             </div>
                             <el-pagination
@@ -382,7 +382,7 @@ export default {
       }.bind(this))
       return result
     },
-    /** 右侧项列表（按当前分类过滤 + 排序）。对象字段自动附加同对象下的所有字段 children） */
+    /** 右侧项列表（按当前分类过滤 + 排序）。对象/模型字段自动附加同分组下的所有字段 children） */
     rightItems() {
       var self = this
       if (this.activeCategory === 'selected') {
@@ -395,23 +395,8 @@ export default {
         return true
       })
 
-      // 对象分类：按 objectCode 分组，每组的第一个 item 附加 children 数组
-      if (this.activeCategory === 'object') {
-        var byObj = {}
-        list.forEach(function (v) {
-          var key = self.objectGroupCode(v)
-          if (!byObj[key]) byObj[key] = []
-          byObj[key].push(v)
-        })
-        var result = []
-        var keys = Object.keys(byObj)
-        for (var i = 0; i < keys.length; i++) {
-          var group = byObj[keys[i]]
-          group.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
-          var first = Object.assign({}, group[0], { children: group, _objectGroup: true, _objectGroupKey: keys[i] })
-          result.push(first)
-        }
-        return result
+      if (this.isGroupedFieldCategory(this.activeCategory)) {
+        return this.groupFieldItems(list, this.activeCategory)
       }
 
       return list.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
@@ -442,25 +427,76 @@ export default {
         return true
       })
 
-      if (category === 'object') {
-        var byObj = {}
-        list.forEach(function (v) {
-          var key = self.objectGroupCode(v)
-          if (!byObj[key]) byObj[key] = []
-          byObj[key].push(v)
-        })
-        var result = []
-        var keys = Object.keys(byObj)
-        for (var i = 0; i < keys.length; i++) {
-          var group = byObj[keys[i]]
-          group.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
-          var first = Object.assign({}, group[0], { children: group, _objectGroup: true, _objectGroupKey: keys[i] })
-          result.push(first)
-        }
-        return result
+      if (this.isGroupedFieldCategory(category)) {
+        return this.groupFieldItems(list, category)
       }
 
       return list.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
+    },
+    isGroupedFieldCategory(category) {
+      return category === 'object' || category === 'model'
+    },
+    groupFieldItems(list, category) {
+      var byGroup = {}
+      list.forEach(function (v) {
+        var key = this.fieldGroupCodeByCategory(v, category)
+        if (!byGroup[key]) byGroup[key] = []
+        byGroup[key].push(v)
+      }.bind(this))
+      var result = []
+      var keys = Object.keys(byGroup).sort(function (a, b) { return a.localeCompare(b) })
+      for (var i = 0; i < keys.length; i++) {
+        var group = byGroup[keys[i]]
+        group.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
+        var first = Object.assign({}, group[0], {
+          children: group,
+          _fieldGroup: true,
+          _fieldGroupKey: this.fieldGroupKeyByCategory(keys[i], category),
+          _fieldGroupCategory: category
+        })
+        if (category === 'object') {
+          first._objectGroup = true
+          first._objectGroupKey = keys[i]
+          first.varType = 'OBJECT'
+        } else if (category === 'model') {
+          first._modelGroup = true
+          first._modelGroupKey = keys[i]
+          first.varType = 'MODEL'
+        }
+        result.push(first)
+      }
+      return result
+    },
+    isFieldGroup(item) {
+      return !!(item && (item._fieldGroup || item._objectGroup || item._modelGroup))
+    },
+    fieldGroupKey(item) {
+      if (!item) return ''
+      if (item._fieldGroupKey) return item._fieldGroupKey
+      if (item._objectGroupKey) return item._objectGroupKey
+      if (item._modelGroupKey) return 'model:' + item._modelGroupKey
+      return ''
+    },
+    fieldGroupKeyByCategory(code, category) {
+      return category === 'model' ? 'model:' + code : code
+    },
+    fieldGroupCode(item) {
+      var category = this.fieldGroupCategory(item)
+      return this.fieldGroupCodeByCategory(item, category)
+    },
+    fieldGroupCodeByCategory(item, category) {
+      if (category === 'model') return this.modelGroupCode(item)
+      return this.objectGroupCode(item)
+    },
+    fieldGroupLabel(item) {
+      var category = this.fieldGroupCategory(item)
+      if (category === 'model') return this.modelGroupLabel(item)
+      return this.objectGroupLabel(item)
+    },
+    fieldGroupCategory(item) {
+      if (item && item._fieldGroupCategory) return item._fieldGroupCategory
+      var ref = (item && item._ref) || {}
+      return ref.category || this.activeCategory
     },
     filterItemsByKeyword(items) {
       if (!this.searchText) return items
@@ -484,6 +520,17 @@ export default {
       var ref = (item && item._ref) || {}
       return ref.objectLabel || ref.objectCode || (item && item.objectLabel) || this.objectGroupCode(item)
     },
+    modelGroupCode(item) {
+      var ref = (item && item._ref) || {}
+      if (ref.modelCode) return ref.modelCode
+      if (item && item.modelCode) return item.modelCode
+      var code = item && item.varCode ? item.varCode : ''
+      return code.indexOf('.') !== -1 ? code.split('.')[0] : 'unknown'
+    },
+    modelGroupLabel(item) {
+      var ref = (item && item._ref) || {}
+      return ref.modelLabel || ref.modelName || (item && item.modelLabel) || this.modelGroupCode(item)
+    },
     objectFieldPath(item) {
       if (!item) return ''
       var code = item.varCode || ''
@@ -502,6 +549,20 @@ export default {
       }
       return code
     },
+    modelFieldRelativePath(item) {
+      if (!item) return ''
+      var code = item.varCode || ''
+      var modelCode = this.modelGroupCode(item)
+      if (modelCode && code.indexOf(modelCode + '.') === 0) {
+        return code.substring(modelCode.length + 1)
+      }
+      return code
+    },
+    fieldChildRelativePath(item) {
+      var ref = (item && item._ref) || {}
+      if (ref.category === 'model') return this.modelFieldRelativePath(item)
+      return this.objectFieldRelativePath(item)
+    },
     objectFieldDisplayName(item) {
       var label = this.optionLabel(item)
       var relativeCode = this.objectFieldRelativePath(item)
@@ -519,6 +580,28 @@ export default {
         label = label.substring(0, label.length - relativeCode.length - 1)
       }
       return label || relativeCode
+    },
+    modelFieldDisplayName(item) {
+      var label = this.optionLabel(item)
+      var relativeCode = this.modelFieldRelativePath(item)
+      var modelLabel = this.modelGroupLabel(item)
+      if (modelLabel && label.indexOf(modelLabel + '/') === 0) {
+        label = label.substring(modelLabel.length + 1)
+      } else if (label.indexOf('/') !== -1) {
+        label = label.substring(label.lastIndexOf('/') + 1)
+      }
+      if (relativeCode && label.indexOf(relativeCode + ' ') === 0) {
+        label = label.substring(relativeCode.length + 1)
+      }
+      if (relativeCode && label.lastIndexOf(' ' + relativeCode) === label.length - relativeCode.length - 1) {
+        label = label.substring(0, label.length - relativeCode.length - 1)
+      }
+      return label || relativeCode
+    },
+    fieldChildDisplayName(item) {
+      var ref = (item && item._ref) || {}
+      if (ref.category === 'model') return this.modelFieldDisplayName(item)
+      return this.objectFieldDisplayName(item)
     },
     fieldCodeWithoutObject(item) {
       var code = item && item.varCode ? item.varCode : ''
@@ -580,8 +663,11 @@ export default {
         ref.objectCode,
         ref.objectScriptName,
         ref.objectLabel,
-        this.objectFieldRelativePath(item),
-        this.objectFieldDisplayName(item)
+        ref.modelCode,
+        ref.modelLabel,
+        ref.modelName,
+        this.fieldChildRelativePath(item),
+        this.fieldChildDisplayName(item)
       ].filter(Boolean).map(function (text) { return String(text).toLowerCase() })
     },
     searchRank(item, keyword) {
@@ -616,7 +702,7 @@ export default {
       this.rightPage = page
     },
     objectChildPageKey(item) {
-      return item && (item._objectGroupKey || item.varCode) ? (item._objectGroupKey || item.varCode) : ''
+      return this.fieldGroupKey(item) || (item && item.varCode ? item.varCode : '')
     },
     objectChildPage(item) {
       var key = this.objectChildPageKey(item)
@@ -650,10 +736,10 @@ export default {
       var key = this.objectChildPageKey(item)
       if (key) this.$set(this.objectChildPages, key, page)
     },
-    /** 行点击：数据对象展开嵌套，其他直接选中 */
+    /** 行点击：字段分组展开嵌套，其他直接选中 */
     onItemClick(item) {
-      if (item._objectGroup) {
-        var groupKey = item._objectGroupKey || item.varCode
+      if (this.isFieldGroup(item)) {
+        var groupKey = this.fieldGroupKey(item) || item.varCode
         if (this.expandedObject === groupKey) {
           this.expandedObject = null
         } else {
@@ -723,8 +809,8 @@ export default {
       this.searchText = value || ''
       this.openPopover()
       this.$nextTick(function () {
-        if (this.activeCategory === 'object' && this.searchText && this.filteredRightItems.length === 1) {
-          this.expandedObject = this.filteredRightItems[0]._objectGroupKey || this.filteredRightItems[0].varCode
+        if (this.isGroupedFieldCategory(this.activeCategory) && this.searchText && this.filteredRightItems.length === 1) {
+          this.expandedObject = this.fieldGroupKey(this.filteredRightItems[0]) || this.filteredRightItems[0].varCode
         }
       })
     },
@@ -752,8 +838,8 @@ export default {
       this.rightPage = 1
 
       this.$nextTick(function () {
-        if (category === 'object') {
-          this.focusObjectOption(option)
+        if (this.isGroupedFieldCategory(category)) {
+          this.focusGroupedOption(option)
         } else {
           this.focusFlatOption(option)
         }
@@ -770,10 +856,15 @@ export default {
       }
     },
     focusObjectOption(option) {
-      var groupKey = this.objectGroupCode(option)
+      this.focusGroupedOption(option)
+    },
+    focusGroupedOption(option) {
+      var category = this.optionCategory(option)
+      var groupCode = this.fieldGroupCodeByCategory(option, category)
+      var groupKey = this.fieldGroupKeyByCategory(groupCode, category)
       var groups = this.filteredRightItems
       var groupIndex = groups.findIndex(function (item) {
-        return item._objectGroupKey === groupKey || this.objectGroupCode(item) === groupKey
+        return this.fieldGroupKey(item) === groupKey || this.fieldGroupCode(item) === groupCode
       }.bind(this))
       if (groupIndex >= 0) {
         this.rightPage = Math.floor(groupIndex / this.fieldPageSize) + 1

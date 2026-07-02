@@ -207,6 +207,7 @@
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import MonacoEditor from '@/components/MonacoEditor'
+import { buildSampleParamsFromCodes, collectScriptInputCodes } from '@/utils/testSampleParams'
 
 const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.varPanelWidth'
 const DEFAULT_VAR_PANEL_WIDTH = 300
@@ -552,7 +553,8 @@ export default {
       }
     },
     handleTest() {
-      this.testParamsJson = '{}'
+      const codes = collectScriptInputCodes(this.script, this.projectRefs)
+      this.testParamsJson = JSON.stringify(buildSampleParamsFromCodes(Array.from(codes), this.projectRefs), null, 2)
       this.testResult = null
       this.testVisible = true
     },

@@ -8,6 +8,7 @@ import java.util.Set;
 @Data
 public class VariableResolveOptions {
     private boolean skipApiSources;
+    private boolean forceRefreshSource;
     private LocalDateTime listMatchTime;
     private Set<String> requiredScriptNames;
 

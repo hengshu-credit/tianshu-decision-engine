@@ -225,6 +225,12 @@ const routes = [
         meta: { title: '规则测试' }
       },
       {
+        path: 'lineage',
+        name: 'LineageGraph',
+        component: () => import('@/views/lineage/LineageGraph.vue'),
+        meta: { title: '血缘分析' }
+      },
+      {
         path: 'experiment',
         name: 'ExperimentList',
         component: () => import('@/views/experiment/ExperimentList.vue'),

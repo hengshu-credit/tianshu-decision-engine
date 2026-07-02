@@ -243,6 +243,7 @@ import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 
 export default {
   name: 'AdvancedCrossTable',
@@ -495,9 +496,17 @@ export default {
       }
     },
     handleTest() {
-      this.testParamsJson = '{}'
+      this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
+    },
+    buildTestParamsTemplate() {
+      const codes = new Set()
+      const rowDimensions = this.model.rowDimensions || []
+      const colDimensions = this.model.colDimensions || []
+      rowDimensions.forEach(dim => addCode(codes, dim.varCode))
+      colDimensions.forEach(dim => addCode(codes, dim.varCode))
+      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     async doTest() {
       let params = {}

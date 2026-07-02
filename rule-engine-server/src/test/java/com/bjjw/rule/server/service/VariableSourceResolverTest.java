@@ -65,6 +65,20 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void testVariableForcesSourceLookupEvenWhenInputHasSameKey() throws Exception {
+        RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("riskScore", 99);
+        Map<String, Object> result = resolver.testVariable(1L, params);
+
+        assertEquals(88, result.get("resolvedValue"));
+        assertEquals(1, apiService.callCount);
+    }
+
+    @Test
     public void sourceVariableIsSkippedWhenNotRequiredByCurrentRule() throws Exception {
         RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
@@ -248,6 +262,16 @@ public class VariableSourceResolverTest {
         @Override
         public List<RuleVariable> listByProject(Long projectId, String varSource) {
             return variables;
+        }
+
+        @Override
+        public RuleVariable getById(java.io.Serializable id) {
+            for (RuleVariable variable : variables) {
+                if (variable.getId() != null && variable.getId().equals(id)) {
+                    return variable;
+                }
+            }
+            return null;
         }
     }
 

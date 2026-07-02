@@ -2,438 +2,298 @@
   <img src="https://hengshucredit.com/images/hengshucredit_animated.svg" alt="衡枢真信" width="200">
 </p>
 
-
-<h1 align="center">
-  <span style="color:#6366f1">▌</span> hscredit <span style="color:#6366f1">▌</span>
-</h1>
-
 <h3 align="center">
 
 🔍 鉴真伪 · 📊 斟信用 · ⚖️ 衡风险 · 🎯 枢定策
 
 </h3>
 
----
 
-# QLExpress 可视化规则引擎项目使用说明
 
----
+# 天枢决策引擎使用说明
 
-## 1. 项目简介
+天枢决策引擎是一套基于 Spring Boot 2.3、QLExpress 4、Vue 2 和 Element UI 的可视化风控决策平台。系统面向业务人员提供规则项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力；面向业务系统提供 `rule-engine-client` SDK，用于拉取、缓存并执行已发布规则。
 
-**qlexpress-rule** 是一套基于 **Spring Boot 2.3** 与 **QLExpress 4** 的可视化规则引擎：在 Web 控制台中编排 **决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本** 等模型，编译发布后由 **rule-engine-client** SDK 在业务系统中执行；支持 Redis 推送规则变更、可选 Kafka 执行日志等扩展。**部署拓扑与业务侧集成步骤见 §3。**
+## 交流
 
----
+|  微信 |  微信公众号 |
+| :---: | :----: |
+| <img src="https://itlubber.art/upload/itlubber.png" alt="itlubber.png" width="50%" border=0/> | <img src="https://itlubber.art/upload/hengshucredit-com.png" alt="hengshucredit-com.png" width="50%" border=0/> |
+|  itlubber  | hengshucredit-com |
 
-## 2. 模块说明
+## 1. 功能总览
 
-| 模块 | 说明 |
-|------|------|
-| `rule-engine-model` | 公共实体与 DTO |
-| `rule-engine-core` | 规则编译与执行核心 |
-| `rule-engine-server` | 管理端 **REST API**（规则同步、日志等），默认 **8080**；与前端工程解耦，**不再**将 Vue 构建结果输出到本模块目录 |
-| `rule-engine-builder-ui` | Vue 2 **独立前端**：**`npm run build`** |
-| `rule-engine-client` | 客户端 SDK（HTTP 拉取 + Redis 订阅） |
-| `rule-engine-example` | 集成示例服务，默认 **7070**，演示多种模型与函数类型调用 |
+| 模块 | 主要能力 |
+|------|----------|
+| 项目管理 | 管理规则项目、访问令牌和项目级接口说明 |
+| 规则管理 | 新建、设计、编译、发布、下线和版本回滚规则 |
+| 变量管理 | 管理输入、计算、常量、API、数据库、名单等变量；API/DB/名单变量支持在线测试 |
+| 名单管理 | 维护名单库、名单记录、导入导出和变更日志 |
+| 外数管理 | 配置外部 API 数据源、接口请求映射、响应映射、鉴权和调用日志 |
+| 数据库管理 | 配置外部数据库连接池、测试连接、只读查询和数据库调用日志 |
+| 模型管理 | 管理模型入参、出参、执行测试和模型调用日志 |
+| 函数管理 | 管理 QLExpress 脚本、Java 类、Spring Bean 等函数 |
+| 规则测试 | 按项目和规则加载输入字段，执行测试并查看追踪结果 |
+| 血缘分析 | 从项目、变量、规则、模型、API、DB、名单等节点查看上下游依赖图 |
+| 分流实验 | 配置冠军/挑战/测试组，按条件或流量执行实验 |
+| 执行日志 | 查看服务端和客户端规则执行记录、耗时、结果和追踪树 |
+| 账单管理 | 配置计费项、查看明细记录和聚合汇总 |
 
----
+## 2. 模块结构
 
-## 3. 系统架构与客户端集成
+| 模块 | 说明 | 默认端口 |
+|------|------|----------|
+| `rule-engine-model` | 公共实体、DTO 和数据库映射模型 | - |
+| `rule-engine-core` | 规则编译器和 QLExpress 执行核心 | - |
+| `rule-engine-server` | 管理端 REST API、同步接口、日志、外数和数据库服务 | 8080 |
+| `rule-engine-client` | 业务系统 SDK，负责规则同步、L1 缓存和本地执行 | - |
+| `rule-engine-example` | SDK 集成示例服务 | 7070 |
+| `rule-engine-builder-ui` | Vue 2 控制台，独立构建和部署 | 9090 |
+| `rule-engine-mysql` | MySQL 配置与初始化脚本 | 3306 |
+| `rule-engine-redis` | Redis Pub/Sub 配置 | 6379 |
 
-从部署拓扑与运行时行为说明 **管理端、MySQL、Redis、业务应用** 如何协作，以及如何在 Spring Boot 中引入 **rule-engine-client**。
-
-### 3.1 部署拓扑
+## 3. 架构与运行链路
 
 ```mermaid
 flowchart TB
-  subgraph User["使用方"]
-    Browser["浏览器"]
-  end
-  subgraph Frontend["rule-engine-builder-ui（独立前端）"]
-    UI["管理控制台\nnpm run build → dist"]
-  end
-  subgraph Server["rule-engine-server（默认 :8080）"]
-    API["REST API\n规则同步 / 日志等"]
-  end
-  subgraph Store["持久化"]
-    MySQL[("MySQL")]
-  end
-  subgraph Infra["消息与缓存"]
-    Redis[("Redis\nPub/Sub")]
-  end
-  subgraph Biz["业务应用（你的服务）"]
-    App["Spring Boot\n业务代码"]
-    SDK["rule-engine-client\n+ L1 规则缓存"]
-  end
-  Browser --> UI
-  Browser --> API
-  API --> MySQL
-  API --> Redis
-  SDK -->|HTTP：全量 / 单条拉取规则| API
-  SDK -->|SUBSCRIBE\nrule:push:appName| Redis
-  API -->|发布/下线/函数变更\nPUBLISH| Redis
-  SDK -->|可选：执行日志上报| API
-  App --> SDK
+  Browser["浏览器"] --> UI["rule-engine-builder-ui 控制台"]
+  UI --> Server["rule-engine-server API"]
+  Server --> MySQL[("MySQL")]
+  Server --> Redis[("Redis Pub/Sub")]
+  Biz["业务系统"] --> SDK["rule-engine-client SDK"]
+  SDK -->|HTTP 拉取已发布规则| Server
+  SDK -->|订阅 rule:push:{appName}| Redis
+  SDK -->|本地 QLExpress 执行| Biz
+  SDK -->|执行日志上报| Server
 ```
 
 要点：
 
-- **管理控制台**由 **`rule-engine-builder-ui`** 单独构建、单独部署（产物在 **`dist/`**），浏览器访问静态资源与 **`rule-engine-server`** API；开发环境可用前端 **`npm run dev`**（默认 **9090**）将 **`/api`** 代理到后端 **8080**。
-- 业务应用**不直连 MySQL** 读取规则定义；通过 **HTTP** 拉取服务端已编译规则，缓存在进程内 **L1**。
-- **Redis 必须与 rule-engine-server 使用同一实例**（含密码、database）。服务端在规则发布等事件时向频道 **`rule:push:{appName}`** 发布消息；客户端使用配置项 **`app-name`** 订阅对应频道，用于实时更新本地缓存。
-- **执行日志**：默认通过 **HTTP** 向服务端批量上报；若 classpath 中存在 **`KafkaTemplate`** Bean 且未自行提供 **`ExecutionLogReporter`** Bean，自动改用 **Kafka**（主题默认 **`rule-execution-log`**，可用 `rule-engine.client.kafka-log-topic` 覆盖）。
+- 前后端分离部署，`rule-engine-builder-ui` 的构建产物在 `dist/`，不混入 `rule-engine-server`。
+- 业务系统不直连 MySQL 获取规则，通过 SDK 调用服务端同步接口。
+- Redis 需要与 `rule-engine-server` 使用同一实例。规则发布、下线、函数变更会向 `rule:push:{appName}` 推送消息。
+- 执行日志默认 HTTP 上报；classpath 中存在 `KafkaTemplate` Bean 时可切换到 Kafka。
 
-### 3.2 启动、执行与推送（时序示意）
+## 4. 环境要求
 
-```mermaid
-sequenceDiagram
-  participant Biz as 业务代码
-  participant C as RuleEngineClient
-  participant L1 as L1 缓存
-  participant HTTP as Server 同步 API
-  participant Redis as Redis
-  Biz->>C: Spring 注入后 start()
-  C->>HTTP: 全量同步规则
-  HTTP-->>C: CachedRule 列表
-  C->>L1: 写入缓存
-  C->>Redis: 订阅 rule:push:appName
-  loop 定时心跳（默认 5 分钟）
-    C->>HTTP: 全量同步（兜底）
-  end
-  Biz->>C: execute(ruleCode, Map 或 DTO)
-  C->>L1: get(ruleCode)
-  alt 缓存未命中
-    C->>HTTP: 单条拉取
-    HTTP-->>C: CachedRule
-    C->>L1: put
-  end
-  C->>C: QLExpress 本地执行
-  C-->>Biz: RuleResult
-  C->>C: 异步上报执行日志（若启用）
-  Redis-->>C: 规则/函数变更消息
-  C->>C: 更新或失效缓存
+- JDK 8
+- Maven 3.6+
+- MySQL 8
+- Redis
+- Node.js 14+，建议 22.14.x
+
+## 5. 本地启动
+
+### 5.1 后端
+
+```bash
+mvn clean install -DskipTests
+cd rule-engine-server
+mvn spring-boot:run
 ```
 
-### 3.3 Maven 依赖与自动配置
+默认配置读取：
 
-在业务工程 `pom.xml` 中依赖 **`rule-engine-client`**，并引入 **`spring-boot-starter-data-redis`**（Lettuce 连接池需 **`commons-pool2`**），坐标与版本可参考 **`rule-engine-example/pom.xml`**。
+- MySQL: `jdbc:mysql://localhost:3306/rule_engine`
+- 用户名: `root`
+- 密码: `1qaz@WSX`
+- Redis: `localhost:6379`
 
-**`META-INF/spring.factories`** 注册 **`RuleEngineAutoConfiguration`**：当配置了 **`rule-engine.client.server-url`** 且存在 **`RedisConnectionFactory`** Bean 时，会创建 **`RuleEngineClient`** 并在启动时 **`start()`**（订阅 Redis、全量同步规则；若 **`project-id` > 0** 则同步控制台「函数管理」中的函数定义）。
+控制台登录默认启用，账号密码：
 
-### 3.4 application.yml 配置示例
+- 用户名: `admin`
+- 密码: `1qaz@WSX`
+
+可通过环境变量 `CONSOLE_USERNAME`、`CONSOLE_PASSWORD` 覆盖。
+
+### 5.2 前端
+
+```bash
+cd rule-engine-builder-ui
+npm install
+npm run dev
+```
+
+开发访问地址为 `http://localhost:9090/`，`/api` 会代理到 `http://localhost:8080`。
+
+## 6. 核心模型类型
+
+| 模型类型 | 设计器路由 | 说明 |
+|----------|------------|------|
+| 决策表 | `#/designer/table/{definitionId}` | 条件树加动作列，支持 FIRST、ALL、UNIQUE 命中策略 |
+| 决策树 | `#/designer/tree/{definitionId}` | 节点、连线条件和任务动作编排 |
+| 决策流 | `#/designer/flow/{definitionId}` | 流程节点、网关、连线和任务动作编排 |
+| 交叉表 | `#/designer/cross/{definitionId}` | 行变量、列变量和二维矩阵结果 |
+| 评分卡 | `#/designer/score/{definitionId}` | 评分项、权重、分数等级和结果变量 |
+| 复杂交叉表 | `#/designer/cross-adv/{definitionId}` | 多行维度、多列维度和矩阵结果 |
+| 复杂评分卡 | `#/designer/score-adv/{definitionId}` | 维度组、维度规则、权重和等级 |
+| QL 脚本 | `#/designer/script/{definitionId}` | 直接编辑 QLExpress 脚本并维护脚本变量引用 |
+
+各设计器的“测试”入口会按当前模型引用生成测试样例。决策表、规则集、树、流、交叉表、评分卡、复杂模型和脚本会优先使用规则实际输入字段，不把结果变量作为默认入参。
+
+## 7. 当前功能截图
+
+### 7.1 登录
+
+![控制台登录页](docs/project-usage/project-usage-01-login.png)
+
+### 7.2 项目管理
+
+![项目管理](docs/project-usage/project-usage-02-project-list.png)
+
+### 7.3 项目详情与规则列表
+
+![项目详情与规则列表](docs/project-usage/project-usage-07-project-detail.png)
+
+### 7.4 变量管理
+
+变量管理支持项目级和全局变量。变量来源包括输入、计算、常量、API、数据库和名单。API、数据库、名单来源变量可在列表操作中点击“测试”，输入上下文 JSON 后直接触发对应外部取数或匹配逻辑，并写入对应模块调用日志。
+
+![变量管理](docs/project-usage/project-usage-03-variable.png)
+
+### 7.5 名单管理
+
+![名单管理](docs/project-usage/project-usage-09-list.png)
+
+### 7.6 外数管理
+
+外数管理用于统一配置外部 API 数据源、接口、鉴权、请求映射、响应映射、超时、重试、缓存和计费项。
+
+![外数管理](docs/project-usage/project-usage-10-datasource.png)
+
+### 7.7 数据库管理
+
+数据库管理用于维护后端集中连接池。数据库变量执行时通过后端查询外部数据库，不由前端或客户端直连数据库。
+
+![数据库管理](docs/project-usage/project-usage-11-database.png)
+
+数据库日志按数据库语义记录连接方式、查询状态、开始结束时间、SQL、参数字段和值、返回结果表内容，以及解析后提取的变量字段和值。
+
+![数据库调用日志](docs/project-usage/project-usage-12-database-log.png)
+
+### 7.8 模型管理
+
+![模型管理](docs/project-usage/project-usage-13-model.png)
+
+### 7.9 函数管理
+
+![函数管理](docs/project-usage/project-usage-04-function.png)
+
+### 7.10 规则测试
+
+规则测试会读取规则输入字段，并可从规则内容兜底提取测试入参。页面执行后可查看结果、入参和追踪树。
+
+![规则测试](docs/project-usage/project-usage-05-rule-test.png)
+
+### 7.11 血缘分析
+
+血缘分析支持从项目、变量、规则、模型、API、数据库、名单和外数源出发，查看上游依赖、下游引用或全量关系。不同类型节点用不同颜色展示。
+
+![血缘分析](docs/project-usage/project-usage-14-lineage.png)
+
+### 7.12 分流实验
+
+![分流实验](docs/project-usage/project-usage-15-experiment.png)
+
+### 7.13 执行日志
+
+![执行日志](docs/project-usage/project-usage-06-execution-log.png)
+
+### 7.14 账单管理
+
+![账单管理](docs/project-usage/project-usage-16-billing.png)
+
+## 8. 设计器截图
+
+### 8.1 决策表
+
+![决策表设计器](docs/project-usage/project-usage-designer-table.png)
+
+### 8.2 决策树
+
+![决策树设计器](docs/project-usage/project-usage-designer-tree.png)
+
+### 8.3 决策流
+
+![决策流设计器](docs/project-usage/project-usage-designer-flow.png)
+
+### 8.4 交叉表
+
+![交叉表设计器](docs/project-usage/project-usage-designer-cross.png)
+
+### 8.5 评分卡
+
+![评分卡设计器](docs/project-usage/project-usage-designer-score.png)
+
+### 8.6 复杂交叉表
+
+![复杂交叉表设计器](docs/project-usage/project-usage-designer-cross-adv.png)
+
+### 8.7 复杂评分卡
+
+![复杂评分卡设计器](docs/project-usage/project-usage-designer-score-adv.png)
+
+### 8.8 QL 脚本
+
+![QL 脚本设计器](docs/project-usage/project-usage-designer-script.png)
+
+## 9. 业务系统 SDK 集成
+
+业务系统引入 `rule-engine-client` 后配置服务端地址、项目令牌和应用名即可同步规则。
 
 ```yaml
 rule-engine:
   client:
     server-url: http://localhost:8080
     app-name: your-service-name
-    token: <与控制台项目「访问令牌」一致>
+    token: <项目访问令牌>
     project-id: 1
-    # l1-cache-max-size: 1000
-    # http-timeout-ms: 3000
-    # trace-enabled: true
-    # kafka-log-topic: rule-execution-log  # 使用 Kafka 上报执行日志时（需存在 KafkaTemplate Bean）
-
-spring:
-  redis:
-    host: localhost
-    port: 6379
-    password: <与 server 一致>
+    trace-enabled: true
 ```
 
-**`token`、`project-id`** 在控制台 **「规则项目」** 中查看；HTTP 同步接口的鉴权方式见下文 **「客户端鉴权（Token）」**。
-
-### 3.5 代码中调用
-
-注入 **`com.bjjw.rule.client.RuleEngineClient`**，使用控制台中的 **规则编码** 与入参执行（Map 的 key 或 **DTO 字段名** 对应表达式变量名）：
+执行示例：
 
 ```java
-@Resource
-private RuleEngineClient ruleClient;
-
-public void example() {
-    Map<String, Object> params = new HashMap<>();
-    params.put("amount", 10000);
-    RuleResult r = ruleClient.execute("YOUR_RULE_CODE", params);
-    // 或：ruleClient.execute("YOUR_RULE_CODE", queryDto);
-}
+RuleResult result = ruleEngineClient.execute("RC_PRICING_TABLE", requestMap);
 ```
 
-常用方法：**`refreshRule` / `refreshAll`** 主动刷新缓存；**`getRuleInfo`** 查看本地缓存元数据；**`getEngine` / `getFunctionRegistrar`** 用于扩展自定义函数（高级用法）。
+SDK 行为：
 
-### 3.6 与示例工程的关系
+- 启动时全量同步规则到 L1 缓存。
+- 订阅 Redis 推送，规则发布或下线后刷新本地缓存。
+- 缓存未命中时可按规则编码单条拉取。
+- 本地使用 QLExpress 执行脚本。
+- 可异步上报执行日志。
 
-**`rule-engine-example`**（默认端口 **7070**）中的 **`RuleExampleController`**（`/api/example`）覆盖多种模型与函数类型的 REST 示例，可与本文 **§3** 对照阅读；启动前请按该模块的 **`application.yml`** 配置 **`server-url`、`token`、`project-id`** 以及与 server 一致的 **Redis**。
+## 10. 版本、日志和计费
 
----
+- 规则、函数、分流实验均有版本记录，可查看版本内容、对比差异并回滚。
+- 执行日志记录规则执行结果、耗时、输入输出和表达式追踪。
+- 外数 API、数据库查询、名单匹配和模型执行会写入模块调用日志。
+- 账单模块可对引擎执行、API 调用和数据库调用配置计费项，查看明细与汇总。
 
-## 4. 环境要求
+## 11. 开发校验命令
 
-- **JDK 8**
-- **Maven 3.6+**
-- **MySQL 8**（库名示例：`rule_engine`）
-- **Redis**（与 server、client 示例共用，用于规则推送）
-- 构建带前端时：**Node.js**（与 `rule-engine-server/pom.xml` 中 `frontend-maven-plugin` 一致时为 **22.14.x**；本地也可使用 **14+** 以满足 `vue-cli-service`）
-
----
-
-## 5. 数据库初始化
-
-1. 在 MySQL 中执行建表脚本：
-
-   `rule-engine-server/src/main/resources/sql/schema.sql`
-
-2. （可选）导入示例数据：
-
-   `rule-engine-server/src/main/resources/sql/data-example.sql`
-
-3. 修改服务端数据源（或使用环境变量覆盖），见 `rule-engine-server/src/main/resources/application.yml` 中的 `spring.datasource` 与 `spring.redis`。
-
----
-
-## 6. 启动规则引擎服务端与管理控制台
-
-后端与前端**分开启动、分开部署**：Vue **不**构建进 `rule-engine-server` 目录，**不**做混淆。
-
-### 6.1 后端 API（rule-engine-server）
-
-在仓库根目录执行：
+后端：
 
 ```bash
+mvn clean install -DskipTests
 cd rule-engine-server
 mvn spring-boot:run
+mvn test
 ```
 
-或直接运行主类：`com.bjjw.rule.server.RuleEngineApplication`。
-
-- 默认 **http://localhost:8080/**，对外主要是 **REST API**（规则同步、日志等）。
-- 当前约定下前端产物**不会**输出到本模块；**`rule-engine-server/pom.xml`** 中 **`skip.ui.build`** 默认为 **`true`**，Maven **不会**在 **`generate-resources`** 阶段执行 `rule-engine-builder-ui` 的 **`npm run build`**。若需在 CI 中由 Maven 触发前端打包，可将其改为 **`false`**（产物仍在 **`dist/`**，需自行部署）。
-
-### 6.2 管理控制台（rule-engine-builder-ui）
-
-源码目录：**`rule-engine-builder-ui/`**。
-
-| 场景 | 说明 |
-|------|------|
-| 本地开发 | **`npm install`** 后执行 **`npm run dev`**（默认 **9090**；**`/api`** 代理到 **http://localhost:8080**） |
-| 生产部署 | **`npm run build`**，将 **`dist/`** 交给 Nginx、静态站点或对象存储等托管；与后端**目录解耦**，**无** javascript-obfuscator 等混淆，仅 Vue CLI 默认压缩 |
-
-浏览器访问控制台时，确保静态站点能访问到后端 API（开发时由 devServer 代理；生产需按你的网关/域名配置接口地址或同源反代）。
-
----
-
-## 7. 控制台登录
-
-默认在 `application.yml` 中开启控制台登录（`rule-engine.console-login.enabled: true`），内置账号可通过环境变量修改：
-
-- **`CONSOLE_USERNAME`**（默认 `admin`）
-- **`CONSOLE_PASSWORD`**（默认 `admin`）
-
-本地开发时控制台入口为前端 devServer：**http://localhost:9090/**（见 **§6.2**）；未登录会跳转登录页。若你将 **`dist/`** 与 API 配成同源（例如统一域名反代），则入口以你的部署地址为准。
-
-![控制台登录页](docs/project-usage/project-usage-01-login.png)
-
----
-
-## 8. 规则项目列表
-
-登录后左侧菜单进入 **「规则项目」**：可检索、新建、编辑、删除项目，并通过 **「进入」** 打开项目内规则列表。项目上的 **访问令牌（Token）** 供客户端 SDK 调用同步接口时校验（见后文）。
-
-![规则项目列表](docs/project-usage/project-usage-02-project-list.png)
-
----
-
-## 9. 项目内规则管理
-
-在项目详情页可查看规则编码、名称、**模型类型**、发布状态、设计/发布版本；可对单条规则进行 **设计、重新发布、下线、删除**，或 **新建规则**。
-
-![项目内规则列表](docs/project-usage/project-usage-07-project-detail.png)
-
-**模型类型与路由对应关系（设计器路径）：**
-
-| 类型 | 前端路由示例 |
-|------|----------------|
-| 决策表 | `#/designer/table/{definitionId}` |
-| 决策树 | `#/designer/tree/{definitionId}` |
-| 决策流 | `#/designer/flow/{definitionId}` |
-| 交叉表 | `#/designer/cross/{definitionId}` |
-| 评分卡 | `#/designer/score/{definitionId}` |
-| 复杂交叉表 | `#/designer/cross-adv/{definitionId}` |
-| 复杂评分卡 | `#/designer/score-adv/{definitionId}` |
-| QL 脚本 | `#/designer/script/{definitionId}` |
-
----
-
-## 10. 各模型设计器（示例数据）
-
-在项目规则列表中点击 **「设计」** 进入对应类型的可视化编排界面；工具栏通常包含 **保存、编译、测试** 等能力。下列截图来自示例库 **`data-example.sql`** 中 **综合风控示例项目** 的已发布规则（`definition_id` 与路由见下表），本地环境需已导入该脚本，并启动 **rule-engine-server**（API）与 **`rule-engine-builder-ui`** 的 **`npm run dev`**（控制台，见 **§6.2**）。
-
-| 模型 | 示例规则（规则编码） | 设计器路由 |
-|------|----------------------|------------|
-| 决策表 | `RC_PRICING_TABLE`（客商×产品总线定价表） | `#/designer/table/1` |
-| 决策树 | `RC_CREDIT_TREE`（客户信用分层） | `#/designer/tree/2` |
-| 决策流 | `RC_EXPOSURE_FLOW`（敞口与费用试算流程） | `#/designer/flow/3` |
-| 交叉表 | `RC_RATE_MATRIX`（风险定价交叉表） | `#/designer/cross/4` |
-| 评分卡 | `RC_RISK_SCORECARD`（综合风险评分卡） | `#/designer/score/5` |
-| 复杂交叉表 | `RC_MULTI_DIM_RATE`（交叉矩阵多维定价 8×6） | `#/designer/cross-adv/9` |
-| 复杂评分卡 | `RC_INVOICE_FRAUD_SCORE`（交易票据异常评分） | `#/designer/score-adv/10` |
-| QL 脚本 | `RC_BLEND_CALC_SCRIPT`（混业组合计费脚本） | `#/designer/script/11` |
-
-仓库提供脚本 **`scripts/capture-designer-screenshots.cjs`**（依赖 **`scripts/`** 下已执行 `npm install` 与 `npx playwright install chromium`），请将脚本中的控制台基址配为与当前部署一致（开发时一般为 **http://localhost:9090**），再自动登录并批量导出截图至 **`docs/project-usage/project-usage-designer-*.png`**。
-
-### 10.1 决策表（TABLE）
-
-可维护命中策略、条件（IF）、动作（THEN）等。
-
-![决策表设计器](docs/project-usage/project-usage-designer-table.png)
-
-### 10.2 决策树（TREE）
-
-树形节点与分支条件编排。
-
-![决策树设计器](docs/project-usage/project-usage-designer-tree.png)
-
-### 10.3 决策流（FLOW）
-
-流程节点、连线与脚本/任务步骤。
-
-![决策流设计器](docs/project-usage/project-usage-designer-flow.png)
-
-### 10.4 交叉表（CROSS）
-
-行×列矩阵与交叉单元结果。
-
-![交叉表设计器](docs/project-usage/project-usage-designer-cross.png)
-
-### 10.5 评分卡（SCORE）
-
-指标、权重与评分汇总。
-
-![评分卡设计器](docs/project-usage/project-usage-designer-score.png)
-
-### 10.6 复杂交叉表（CROSS_ADV）
-
-多维度交叉（如 ICT 场景下的多维定价矩阵）。
-
-![复杂交叉表设计器](docs/project-usage/project-usage-designer-cross-adv.png)
-
-### 10.7 复杂评分卡（SCORE_ADV）
-
-分组指标与复杂加权策略。
-
-![复杂评分卡设计器](docs/project-usage/project-usage-designer-score-adv.png)
-
-### 10.8 QL 脚本（SCRIPT）
-
-脚本编辑与编译执行。
-
-![QL 脚本设计器](docs/project-usage/project-usage-designer-script.png)
-
----
-
-## 11. 变量管理
-
-菜单 **「变量管理」**：请先 **选择项目**，再维护变量列表、数据对象、常量等；支持批量导入（如 Java 实体、JSON、DDL 等，以页面实际选项为准）与 **验证规则**。
-
-![变量管理](docs/project-usage/project-usage-03-variable.png)
-
----
-
-## 12. 函数管理
-
-菜单 **「函数管理」**：按项目维护可在决策流/决策树脚本任务中调用的自定义函数，实现方式支持 **QLExpress 脚本、Java 类、Spring Bean** 等（见页面说明）。
-
-![函数管理](docs/project-usage/project-usage-04-function.png)
-
----
-
-## 13. 规则测试
-
-菜单 **「规则测试」**：选择 **项目** 与 **已发布规则**，可 **加载项目变量** 填充入参，编辑后点击 **「执行测试」** 查看返回结果与追踪信息。
-
-![规则测试](docs/project-usage/project-usage-05-rule-test.png)
-
----
-
-## 14. 执行日志
-
-菜单 **「执行日志」**：按来源（服务端/客户端）、项目、规则、时间范围筛选；列表中可查看耗时、结果、追踪摘要，**「详情」** 查看单次执行明细。
-
-![执行日志](docs/project-usage/project-usage-06-execution-log.png)
-
-### 14.1 日志详情与「表达式追踪树」
-
-在列表中点击某次执行的 **「详情」** 打开弹窗；默认在 **「基本信息」**，切换到 **「表达式追踪树」** 可查看逐步判定、赋值与汇总等追踪信息（与规则测试中的追踪类似，便于对照线上/客户端执行结果）。
-
-**推荐操作：** 在 **「全部规则」** 中输入规则名称关键字，用键盘 **↓** 选中后 **Enter** 确认，再点 **「查询」**，可避免下拉项被表格遮挡。若弹窗异常无法关闭，可尝试 **Esc** 或刷新 **#/log** 页面。
-
-下列截图按 **模型类型** 与示例数据中的规则名称对应（以你环境中的实际规则为准）。
-
-#### 决策表（TABLE）— 客群×产品线定价表
-
-![执行日志 · 表达式追踪树 · 决策表](docs/project-usage/project-usage-log-trace-TABLE.png)
-
-#### 决策树（TREE）— 客户信用分层
-
-![执行日志 · 表达式追踪树 · 决策树](docs/project-usage/project-usage-log-trace-TREE.png)
-
-#### 决策流（FLOW）— 敞口与费用试算流程
-
-![执行日志 · 表达式追踪树 · 决策流](docs/project-usage/project-usage-log-trace-FLOW.png)
-
-#### 交叉表（CROSS）— 二维风险参数矩阵
-
-![执行日志 · 表达式追踪树 · 交叉表](docs/project-usage/project-usage-log-trace-CROSS.png)
-
-#### 评分卡（SCORE）— 综合风险评分卡
-
-![执行日志 · 表达式追踪树 · 评分卡](docs/project-usage/project-usage-log-trace-SCORE.png)
-
-#### 复杂交叉表（CROSS_ADV）— 多维场景定价矩阵
-
-![执行日志 · 表达式追踪树 · 复杂交叉表](docs/project-usage/project-usage-log-trace-CROSS_ADV.png)
-
-#### 复杂评分卡（SCORE_ADV）— 交易票据异常评分
-
-![执行日志 · 表达式追踪树 · 复杂评分卡](docs/project-usage/project-usage-log-trace-SCORE_ADV.png)
-
-#### QL 脚本（SCRIPT）— 混业组合计费脚本
-
-![执行日志 · 表达式追踪树 · QL 脚本](docs/project-usage/project-usage-log-trace-SCRIPT.png)
-
----
-
-## 15. 客户端示例工程（rule-engine-example）
-
-**§3** 已说明架构、依赖与 **`RuleEngineClient`** 用法；本小节说明如何启动仓库自带的可运行示例：
-
-1. 确保 **rule-engine-server** 已启动，且 Redis、MySQL 可用，规则已发布。
-2. 配置 `rule-engine-example/src/main/resources/application.yml`：
-   - `rule-engine.client.server-url`：服务端地址（默认 `http://localhost:8080`）
-   - `rule-engine.client.token`：与项目 **访问令牌** 一致
-   - `rule-engine.client.project-id`：与控制台中的项目 ID 一致
-   - `spring.redis`：与 **server 使用同一 Redis**（示例中默认密码可能与 server 不同，请按环境统一修改）
-
-启动示例应用（主类 `com.bjjw.rule.example.RuleExampleApplication`），默认端口 **7070**。
-
-示例 REST 前缀为 **`/api/example`**，覆盖决策表/树/流/交叉表/评分卡、复杂模型、脚本、JAVA/BEAN/SCRIPT 函数、通用 `execute` 与缓存刷新等，详见 `RuleExampleController` 内注释与映射。
-
----
-
-## 16. 客户端鉴权（Token）
-
-`TokenAuthInterceptor` 对 **`/api/sync/`** 等路径校验令牌：请求头 **`X-Rule-Token`** 或 Query **`token`**，须与 `rule_project.access_token` 匹配。业务应用通过 SDK 同步规则时需配置与控制台一致的 Token。
-
----
-
-## 17. 关闭控制台登录（开发环境）
-
-将 `rule-engine-server` 的 `application.yml` 中 **`rule-engine.console-login.enabled`** 设为 `false` 后，前端路由守卫将不再强制跳转登录页（适用于内网调试；生产环境请保持开启并改用强密码或自定义认证）。
-
----
-
-## 18. 许可与声明
-
-项目根目录下的 `LICENSE`、`NOTICE` 等文件适用于本仓库；第三方组件以各模块 `pom.xml` 及构建产物为准。
-
-若文档与代码不一致，以当前分支源码与配置为准。
+前端：
+
+```bash
+cd rule-engine-builder-ui
+npm run dev
+npm test
+```
+
+## 12. 当前实现边界
+
+- 控制台以业务配置和规则编排为主，生产部署时需要按实际安全要求替换默认登录账号密码。
+- 数据库管理只应配置只读查询账号；数据库变量和测试查询均应限制为查询类 SQL。
+- 血缘图基于当前结构化字段和变量来源配置生成，脚本中极复杂的动态引用无法保证完全静态识别。
+- 外数、数据库、名单变量测试依赖对应数据源配置可用；测试失败会写入模块日志，便于排查配置、网络、SQL 或参数映射问题。

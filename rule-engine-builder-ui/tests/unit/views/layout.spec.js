@@ -86,7 +86,7 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
   })
 
   test('普通路径直接匹配菜单 index', () => {
-    const paths = ['/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing', '/rule', '/project']
+    const paths = ['/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/lineage', '/log', '/billing', '/rule', '/project']
     paths.forEach(path => {
       expect(computeActiveMenuIndex(path)).toBe(path)
     })
@@ -113,12 +113,13 @@ describe('Layout — 侧边栏菜单配置', () => {
     { index: '/model', label: '模型管理', icon: 'el-icon-cpu' },
     { index: '/function', label: '函数管理', icon: 'el-icon-s-operation' },
     { index: '/test', label: '规则测试', icon: 'el-icon-video-play' },
+    { index: '/lineage', label: '血缘分析', icon: 'el-icon-share' },
     { index: '/log', label: '执行日志', icon: 'el-icon-document' },
     { index: '/billing', label: '账单管理', icon: 'el-icon-coin' }
   ]
 
-  test('侧边栏包含 11 个菜单项', () => {
-    expect(sidebarMenus).toHaveLength(11)
+  test('侧边栏包含 12 个菜单项', () => {
+    expect(sidebarMenus).toHaveLength(12)
   })
 
   sidebarMenus.forEach(({ index, label, icon }) => {
@@ -131,7 +132,7 @@ describe('Layout — 侧边栏菜单配置', () => {
   })
 
   test('所有菜单项的 index 都是有效的路由路径', () => {
-    const validRoutes = ['/project', '/rule', '/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/log', '/billing']
+    const validRoutes = ['/project', '/rule', '/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/lineage', '/log', '/billing']
     sidebarMenus.forEach(menu => {
       expect(validRoutes).toContain(menu.index)
     })
@@ -154,6 +155,7 @@ describe('Layout — 路由导航模拟', () => {
     { label: '模型管理', index: '/model' },
     { label: '函数管理', index: '/function' },
     { label: '规则测试', index: '/test' },
+    { label: '血缘分析', index: '/lineage' },
     { label: '执行日志', index: '/log' },
     { label: '账单管理', index: '/billing' }
   ]

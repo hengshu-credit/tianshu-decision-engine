@@ -119,6 +119,34 @@ public class RuleFieldAnalyzerTest {
     }
 
     @Test
+    public void tableAndCrossDoNotTreatOutputsAsInputs() {
+        String table = "{"
+                + "\"conditions\":[{\"varCode\":\"age\"}],"
+                + "\"actions\":[{\"varCode\":\"riskLevel\"}],"
+                + "\"rules\":[{\"conditionRoot\":{\"type\":\"leaf\",\"varCode\":\"income\",\"operator\":\">\",\"value\":\"100\"},\"actions\":[{\"varCode\":\"approveFlag\"}]}]"
+                + "}";
+        List<String> tableInputs = analyzer.extractInputFields(table, "TABLE").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(tableInputs.contains("age"));
+        assertTrue(tableInputs.contains("income"));
+        assertFalse(tableInputs.contains("riskLevel"));
+        assertFalse(tableInputs.contains("approveFlag"));
+
+        String cross = "{"
+                + "\"rowVar\":{\"varCode\":\"taxpayerType\"},"
+                + "\"colVar\":{\"varCode\":\"goodsCategory\"},"
+                + "\"resultVar\":{\"varCode\":\"taxRate\"}"
+                + "}";
+        List<String> crossInputs = analyzer.extractInputFields(cross, "CROSS").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertEquals(java.util.Arrays.asList("taxpayerType", "goodsCategory"), crossInputs);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void fieldLevelActionRefsAreAppliedByFieldName() throws Exception {
         String json = "{"
@@ -162,5 +190,28 @@ public class RuleFieldAnalyzerTest {
         applyOutputRef.invoke(analyzer, hit, refs);
         assertEquals(Long.valueOf(300), hit.getVarId());
         assertEquals("DATA_OBJECT", hit.getRefType());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void rightSideConditionRefsAreAppliedByFieldName() throws Exception {
+        String json = "{"
+                + "\"rules\":[{\"conditionRoot\":{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,"
+                + "\"valueKind\":\"VAR\",\"value\":\"minAge\",\"_rightVarId\":2,\"_rightRefType\":\"VARIABLE\"}}]"
+                + "}";
+
+        Method collectRefs = RuleFieldAnalyzer.class.getDeclaredMethod("collectExplicitRefs", String.class);
+        collectRefs.setAccessible(true);
+        Map<String, Object> refs = (Map<String, Object>) collectRefs.invoke(analyzer, json);
+        Method applyInputRef = RuleFieldAnalyzer.class.getDeclaredMethod("applyExplicitRef",
+                RuleDefinitionInputField.class, Map.class);
+        applyInputRef.setAccessible(true);
+
+        RuleDefinitionInputField minAge = new RuleDefinitionInputField();
+        minAge.setScriptName("minAge");
+        applyInputRef.invoke(analyzer, minAge, refs);
+
+        assertEquals(Long.valueOf(2), minAge.getVarId());
+        assertEquals("VARIABLE", minAge.getRefType());
     }
 }

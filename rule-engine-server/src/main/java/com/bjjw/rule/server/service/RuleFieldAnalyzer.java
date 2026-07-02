@@ -602,6 +602,7 @@ public class RuleFieldAnalyzer {
             addExplicitFieldRef(refs, obj, "condVar", "_condVarId", "_condVarRefType");
             addExplicitFieldRef(refs, obj, "matchVar", "_matchVarId", "_matchVarRefType");
             addExplicitFieldRef(refs, obj, "checkVar", "_checkVarId", "_checkVarRefType");
+            addExplicitFieldRef(refs, obj, "value", "_rightVarId", "_rightRefType");
             for (Object value : obj.values()) {
                 collectExplicitRefsRecursive(value, refs);
             }
