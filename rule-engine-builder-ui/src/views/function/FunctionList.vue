@@ -158,7 +158,7 @@
           <el-input v-model="editForm.implScript" type="textarea" :rows="6" placeholder="QLExpress 脚本，参数可直接使用" class="mono-input" />
         </el-form-item>
         <el-form-item label="Java类名" v-if="editForm.implType === 'JAVA'">
-          <el-input v-model="editForm.implClass" placeholder="如 com.bjjw.rule.example.functions.TaxFunctions" />
+          <el-input v-model="editForm.implClass" placeholder="如 com.hengshucredit.rule.example.functions.TaxFunctions" />
         </el-form-item>
         <el-form-item label="方法名" v-if="editForm.implType === 'JAVA'">
           <el-input v-model="editForm.implMethod" placeholder="Java 方法名，如 calculateVAT（不填则默认使用函数编码）" />

@@ -50,5 +50,5 @@ management:
 
 logging:
   level:
-    com.bjjw.rule.client: DEBUG
-    com.bjjw.rule.example: DEBUG
+    com.hengshucredit.rule.client: DEBUG
+    com.hengshucredit.rule.example: DEBUG

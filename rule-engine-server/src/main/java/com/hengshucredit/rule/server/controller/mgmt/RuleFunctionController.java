@@ -1,0 +1,151 @@
+package com.hengshucredit.rule.server.controller.mgmt;
+
+import com.hengshucredit.rule.model.dto.RulePushMessage;
+import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.model.entity.RuleFunctionVersion;
+import com.hengshucredit.rule.server.common.Result;
+import com.hengshucredit.rule.server.publish.RulePushService;
+import com.hengshucredit.rule.server.service.RuleFunctionService;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import org.springframework.web.bind.annotation.*;
+
+import javax.annotation.Resource;
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/rule/function")
+public class RuleFunctionController {
+
+    @Resource
+    private RuleFunctionService functionService;
+
+    @Resource
+    private RulePushService pushService;
+
+    /**
+     * 按项目分页查询函数列表（管理页面）
+     * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
+     */
+    @GetMapping("/project/{projectId}")
+    public Result<IPage<RuleFunction>> listByProject(
+            @PathVariable Long projectId,
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String funcCode,
+            @RequestParam(required = false) String funcLabel) {
+        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName, funcCode, funcLabel));
+    }
+
+    /**
+     * 查询所有函数（分页，用于未选择项目时展示全部）
+     * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示全部
+     */
+    @GetMapping("/list")
+    public Result<IPage<RuleFunction>> pageAll(
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "20") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String funcCode,
+            @RequestParam(required = false) String funcLabel) {
+        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectId, projectCode, projectName, funcCode, funcLabel));
+    }
+
+    /**
+     * 按项目查询全部启用函数（设计器变量面板使用，非分页）
+     */
+    @GetMapping("/project/{projectId}/all")
+    public Result<List<RuleFunction>> listAllByProject(@PathVariable Long projectId) {
+        return Result.ok(functionService.listByProject(projectId));
+    }
+
+    @GetMapping("/{id}")
+    public Result<RuleFunction> getById(@PathVariable Long id) {
+        return Result.ok(functionService.getById(id));
+    }
+
+    @PostMapping
+    public Result<Void> create(@RequestBody RuleFunction func) {
+        functionService.create(func);
+        pushFuncUpdate(func);
+        return Result.ok();
+    }
+
+    @PutMapping
+    public Result<Void> update(@RequestBody RuleFunction func) {
+        functionService.update(func);
+        pushFuncUpdate(func);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/{id}")
+    public Result<Void> delete(@PathVariable Long id) {
+        RuleFunction func = functionService.getById(id);
+        functionService.delete(id);
+        if (func != null) {
+            RulePushMessage msg = new RulePushMessage();
+            msg.setAction("FUNC_DELETE");
+            msg.setFuncCode(func.getFuncCode());
+            msg.setPublishTime(System.currentTimeMillis());
+            pushService.push(msg);
+        }
+        return Result.ok();
+    }
+
+    /** 推送函数新增/更新消息 */
+    @GetMapping("/versions/{functionId}")
+    public Result<List<RuleFunctionVersion>> listVersions(@PathVariable Long functionId) {
+        return Result.ok(functionService.listVersions(functionId));
+    }
+
+    @GetMapping("/version/{functionId}/{version}")
+    public Result<RuleFunctionVersion> getVersion(@PathVariable Long functionId, @PathVariable Integer version) {
+        RuleFunctionVersion snapshot = functionService.getVersion(functionId, version);
+        return snapshot == null ? Result.fail("Version not found") : Result.ok(snapshot);
+    }
+
+    @GetMapping("/versionCompare/{functionId}")
+    public Result<Map<String, Object>> compareVersions(@PathVariable Long functionId,
+                                                       @RequestParam Integer leftVersion,
+                                                       @RequestParam Integer rightVersion) {
+        try {
+            return Result.ok(functionService.compareVersions(functionId, leftVersion, rightVersion));
+        } catch (IllegalArgumentException e) {
+            return Result.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/rollback/{functionId}/{version}")
+    public Result<Void> rollback(@PathVariable Long functionId, @PathVariable Integer version) {
+        try {
+            RuleFunction func = functionService.rollbackToVersion(functionId, version);
+            if (func != null) {
+                pushFuncUpdate(func);
+            }
+            return Result.ok();
+        } catch (IllegalArgumentException e) {
+            return Result.fail(e.getMessage());
+        }
+    }
+
+    private void pushFuncUpdate(RuleFunction func) {
+        RulePushMessage msg = new RulePushMessage();
+        msg.setAction("FUNC_UPDATE");
+        msg.setFuncCode(func.getFuncCode());
+        msg.setFuncName(func.getFuncName());
+        msg.setFuncImplType(func.getImplType());
+        msg.setFuncImplScript(func.getImplScript());
+        msg.setFuncImplClass(func.getImplClass());
+        msg.setFuncImplMethod(func.getImplMethod());
+        msg.setFuncImplBeanName(func.getImplBeanName());
+        msg.setFuncParamsJson(func.getParamsJson());
+        msg.setPublishTime(System.currentTimeMillis());
+        pushService.push(msg);
+    }
+}

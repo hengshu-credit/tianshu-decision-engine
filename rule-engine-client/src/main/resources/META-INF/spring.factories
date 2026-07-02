@@ -1,2 +1,2 @@
 org.springframework.boot.autoconfigure.EnableAutoConfiguration=\
-com.bjjw.rule.client.spring.RuleEngineAutoConfiguration
+com.hengshucredit.rule.client.spring.RuleEngineAutoConfiguration
