@@ -14,6 +14,7 @@
 
 天枢决策引擎是一套基于 Spring Boot 2.3、QLExpress 4、Vue 2 和 Element UI 的可视化风控决策平台。系统面向业务人员提供规则项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力；面向业务系统提供 `rule-engine-client` SDK，用于拉取、缓存并执行已发布规则。
 
+
 ## 交流
 
 |  微信 |  微信公众号 |
@@ -297,3 +298,10 @@ npm test
 - 数据库管理只应配置只读查询账号；数据库变量和测试查询均应限制为查询类 SQL。
 - 血缘图基于当前结构化字段和变量来源配置生成，脚本中极复杂的动态引用无法保证完全静态识别。
 - 外数、数据库、名单变量测试依赖对应数据源配置可用；测试失败会写入模块日志，便于排查配置、网络、SQL 或参数映射问题。
+
+
+## 13. 参考引用
+
+> `QLExpress` 脚本表达式: https://github.com/alibaba/QLExpress
+>
+> `qlexpress-rule`规则引擎: https://github.com/xiachongbu/qlexpress-rule
