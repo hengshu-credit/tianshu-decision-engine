@@ -154,19 +154,19 @@
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="鉴权请求头">
-                <el-input v-model="authConfig.headers" class="json-input" type="textarea" :rows="4" placeholder='{"X-App-Id":"${appId}"}' />
+                <monaco-editor v-model="authConfig.headers" language="json" height="130px" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="鉴权请求体">
-                <el-input v-model="authConfig.body" class="json-input" type="textarea" :rows="4" placeholder='{"grant_type":"client_credentials","client_id":"${clientId}"}' />
+                <monaco-editor v-model="authConfig.body" language="json" height="130px" />
               </el-form-item>
             </el-col>
           </el-row>
         </template>
         <template v-else>
           <el-form-item label="自定义JSON">
-            <el-input v-model="form.authConfig" class="json-input" type="textarea" :rows="5" placeholder='{"headerName":"Authorization","value":"${token}"}' />
+            <monaco-editor v-model="form.authConfig" language="json" height="150px" />
           </el-form-item>
         </template>
       </div>
@@ -187,9 +187,11 @@ import {
   updateDatasource
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'DatasourceDetail',
+  components: { MonacoEditor },
   data() {
     return {
       projects: [],

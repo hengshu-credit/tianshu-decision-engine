@@ -9,6 +9,28 @@ export function sampleValueForRef(ref) {
   return ''
 }
 
+export function coerceSampleValue(value, ref) {
+  if (value === undefined || value === null) {
+    return sampleValueForRef(ref)
+  }
+  let raw = String(value).trim()
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    raw = raw.slice(1, -1)
+  }
+  if (raw === 'true') return true
+  if (raw === 'false') return false
+  const variable = ref && ref.varObj ? ref.varObj : {}
+  const type = (ref && ref.varType) || variable.varType || 'STRING'
+  if (type === 'NUMBER') {
+    const n = Number(raw)
+    if (!Number.isNaN(n)) return n
+  }
+  if (type === 'BOOLEAN') {
+    return raw === '1' || raw.toLowerCase() === 'true'
+  }
+  return raw
+}
+
 export function buildSampleParamsFromCodes(codes, projectRefs) {
   const params = {}
   const list = codes || []
@@ -106,6 +128,54 @@ export function collectScriptInputCodes(script, projectRefs, out) {
   return collectKnownCodesFromText(script, projectRefs, out, { skipAssignmentLeft: true })
 }
 
+export function applyConditionExpressionSamples(params, expression, projectRefs) {
+  if (!params || !expression) return params
+  const refs = projectRefs || []
+  refs.forEach(ref => {
+    const code = ref && ref.refCode
+    if (!code) return
+    const regex = new RegExp('\\b' + escapeRegex(code) + "\\b\\s*(==|>=|<=|>|<)\\s*(\"[^\"]*\"|'[^']*'|true|false|-?\\d+(?:\\.\\d+)?)")
+    const match = regex.exec(String(expression))
+    if (!match) return
+    params[code] = sampleValueForOperator(match[2], match[1], ref)
+  })
+  return params
+}
+
+export function applyActionDataSampleValues(params, actionData, projectRefs) {
+  if (!params || !actionData) return params
+  if (Array.isArray(actionData)) {
+    actionData.forEach(item => applyActionDataSampleValues(params, item, projectRefs))
+    return params
+  }
+  if (typeof actionData !== 'object') return params
+  if (actionData.type === 'if-block') {
+    const branch = (actionData.branches || []).find(item => item && item.condVar && item.condValue !== undefined)
+    if (branch) {
+      const ref = findRefByCode(projectRefs, branch.condVar)
+      params[branch.condVar] = coerceSampleValue(branch.condValue, ref)
+      applyActionDataSampleValues(params, branch.actions, projectRefs)
+    }
+  } else if (actionData.type === 'switch-block') {
+    const firstCase = (actionData.cases || []).find(item => item && item.caseValue !== undefined)
+    if (actionData.matchVar && firstCase) {
+      const ref = findRefByCode(projectRefs, actionData.matchVar)
+      params[actionData.matchVar] = coerceSampleValue(firstCase.caseValue, ref)
+      applyActionDataSampleValues(params, firstCase.actions, projectRefs)
+    }
+  } else if (actionData.type === 'ternary' && actionData.condVar && actionData.condValue !== undefined) {
+    const ref = findRefByCode(projectRefs, actionData.condVar)
+    params[actionData.condVar] = coerceSampleValue(actionData.condValue, ref)
+  } else if (actionData.type === 'in-check' && actionData.checkVar) {
+    const first = (actionData.inValues || [])[0]
+    if (first !== undefined) {
+      const ref = findRefByCode(projectRefs, actionData.checkVar)
+      params[actionData.checkVar] = coerceSampleValue(first, ref)
+    }
+  }
+  return params
+}
+
 export function addCode(out, code) {
   if (code) out.add(code)
 }
@@ -121,6 +191,14 @@ export function refCodeById(projectRefs, varId, refType) {
 
 function findRefByCode(projectRefs, code) {
   return (projectRefs || []).find(ref => ref && ref.refCode === code) || null
+}
+
+function sampleValueForOperator(value, operator, ref) {
+  const sample = coerceSampleValue(value, ref)
+  if (typeof sample !== 'number') return sample
+  if (operator === '>') return sample + 1
+  if (operator === '<') return sample - 1
+  return sample
 }
 
 function escapeRegex(text) {

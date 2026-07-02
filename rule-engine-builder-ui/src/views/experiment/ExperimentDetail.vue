@@ -101,7 +101,7 @@
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
-              <el-input v-else v-model="row.conditionExpression" size="mini" placeholder="兼容旧表达式，例如 amount > 10000" />
+              <monaco-editor v-else v-model="row.conditionExpression" language="ql" theme="qlexpress-dark" height="70px" />
             </div>
             <div class="route-action">
               <div class="route-panel-title">命中动作</div>
@@ -185,7 +185,7 @@
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
-              <el-input v-else v-model="row.conditionExpression" size="mini" placeholder="兼容旧表达式，例如 score >= 80" />
+              <monaco-editor v-else v-model="row.conditionExpression" language="ql" theme="qlexpress-dark" height="70px" />
             </div>
             <div class="route-action">
               <div class="route-panel-title">空跑动作</div>
@@ -350,6 +350,7 @@ import { listDefinitions, listInputFields, listOutputFields } from '@/api/defini
 import { getExperiment, listExperimentLogs, saveExperiment, listVersions, compareVersions, rollbackVersion } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import MonacoEditor from '@/components/MonacoEditor'
 import GroupActionForm from './GroupActionForm.vue'
 import {
   createEmptyGroup,
@@ -361,7 +362,7 @@ import {
 
 export default {
   name: 'ExperimentDetail',
-  components: { ConditionGroupEditor, GroupActionForm },
+  components: { ConditionGroupEditor, MonacoEditor, GroupActionForm },
   mixins: [varPickerMixin],
   data() {
     return {

@@ -347,12 +347,32 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         log.setRuleCode(group.getRuleCode());
         log.setRouteReason(routeReason);
         log.setSuccess(result.isSuccess() ? 1 : 0);
-        log.setInputParams(JSON.toJSONString(inputParams));
-        log.setOutputResult(JSON.toJSONString(result.getResult()));
-        log.setTraceInfo(JSON.toJSONString(result.getTraces()));
+        log.setInputParams(toJsonSafely(inputParams));
+        log.setOutputResult(toJsonSafely(result.getResult()));
+        log.setTraceInfo(toJsonSafely(result.getTraces()));
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         executionLogMapper.insert(log);
+    }
+
+    private String toJsonSafely(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return JSON.toJSONString(value);
+        } catch (StackOverflowError e) {
+            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
+        } catch (Exception e) {
+            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
+        }
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     private RuleExperimentGroupResult skippedTestResult(RuleExperimentGroup group, String reason) {

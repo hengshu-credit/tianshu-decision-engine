@@ -77,6 +77,7 @@ export default {
     }
     if (!window.monaco || !this.$refs.container) return
     this.registerQlExpressLanguage(window.monaco)
+    this.registerSqlLanguage(window.monaco)
 
     const options = {
       value: this.value,
@@ -291,6 +292,124 @@ export default {
           }
         })
         monaco.__qlexpressThemeRegistered = true
+      }
+    },
+    registerSqlLanguage(monaco) {
+      if (!monaco || this.language !== 'sql') return
+
+      if (!monaco.__ruleEngineSqlLanguageRegistered) {
+        const exists = monaco.languages.getLanguages().some(lang => lang.id === 'sql')
+        if (!exists) {
+          monaco.languages.register({
+            id: 'sql',
+            aliases: ['SQL']
+          })
+        }
+
+        monaco.languages.setLanguageConfiguration('sql', {
+          comments: {
+            lineComment: '--',
+            blockComment: ['/*', '*/']
+          },
+          brackets: [
+            ['(', ')']
+          ],
+          autoClosingPairs: [
+            { open: '(', close: ')' },
+            { open: "'", close: "'" },
+            { open: '"', close: '"' }
+          ]
+        })
+
+        monaco.languages.setMonarchTokensProvider('sql', {
+          defaultToken: '',
+          tokenPostfix: '.sql',
+          keywords: [
+            'select', 'from', 'where', 'and', 'or', 'not', 'insert', 'update', 'delete',
+            'join', 'left', 'right', 'inner', 'outer', 'on', 'group', 'by', 'order',
+            'having', 'limit', 'offset', 'as', 'case', 'when', 'then', 'else', 'end',
+            'distinct', 'union', 'all', 'is', 'null', 'like', 'in', 'between', 'exists'
+          ],
+          operators: [
+            '=', '>', '<', '!', '~', '?', ':', '==', '<=', '>=', '!=',
+            '<>', '+', '-', '*', '/', '%'
+          ],
+          symbols: /[=><!~?:+*%/-]+/,
+          tokenizer: {
+            root: [
+              { include: '@whitespace' },
+              { include: '@numbers' },
+              { include: '@strings' },
+              [/[(),.;]/, 'delimiter'],
+              [/@symbols/, {
+                cases: {
+                  '@operators': 'operator',
+                  '@default': ''
+                }
+              }],
+              [/[a-zA-Z_][\w$]*/, {
+                cases: {
+                  '@keywords': 'keyword',
+                  '@default': 'identifier'
+                }
+              }]
+            ],
+            whitespace: [
+              [/[ \t\r\n]+/, 'white'],
+              [/--.*$/, 'comment'],
+              [/\/\*/, 'comment', '@comment']
+            ],
+            comment: [
+              [/[^*/]+/, 'comment'],
+              [/\*\//, 'comment', '@pop'],
+              [/./, 'comment']
+            ],
+            numbers: [
+              [/\d+(\.\d+)?([eE][+-]?\d+)?/, 'number']
+            ],
+            strings: [
+              [/"([^"\\]|\\.)*$/, 'string.invalid'],
+              [/'([^'\\]|\\.)*$/, 'string.invalid'],
+              [/"/, 'string', '@stringDouble'],
+              [/'/, 'string', '@stringSingle']
+            ],
+            stringDouble: [
+              [/[^\\"]+/, 'string'],
+              [/\\./, 'string.escape'],
+              [/"/, 'string', '@pop']
+            ],
+            stringSingle: [
+              [/[^\\']+/, 'string'],
+              [/\\./, 'string.escape'],
+              [/'/, 'string', '@pop']
+            ]
+          }
+        })
+
+        monaco.__ruleEngineSqlLanguageRegistered = true
+      }
+
+      if (!monaco.__ruleEngineSqlThemeRegistered) {
+        monaco.editor.defineTheme('rule-sql-light', {
+          base: 'vs',
+          inherit: true,
+          rules: [
+            { token: 'keyword', foreground: '0F766E', fontStyle: 'bold' },
+            { token: 'identifier', foreground: '1F2937' },
+            { token: 'number', foreground: 'B45309' },
+            { token: 'string', foreground: 'B91C1C' },
+            { token: 'comment', foreground: '64748B', fontStyle: 'italic' },
+            { token: 'operator', foreground: '7C3AED' },
+            { token: 'delimiter', foreground: '475569' }
+          ],
+          colors: {
+            'editor.background': '#FBFDFF',
+            'editorLineNumber.foreground': '#94A3B8',
+            'editorLineNumber.activeForeground': '#334155',
+            'editor.selectionBackground': '#BFDBFE'
+          }
+        })
+        monaco.__ruleEngineSqlThemeRegistered = true
       }
     },
     format() {

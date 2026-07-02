@@ -116,60 +116,11 @@
       <span>脚本覆盖模式已激活，可视化编辑暂停。如需恢复请在脚本面板切换回「可视化模式」。</span>
     </div>
 
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="620px" append-to-body>
-      <el-form label-width="130px" size="small">
-        <el-form-item
-          v-for="code in testVarCodeList"
-          :key="'tc-' + code"
-          :label="testVarLabel(code)"
-        >
-          <el-select
-            v-if="testVarMeta(code).varType === 'ENUM' && testVarMeta(code).enumOptions"
-            v-model="testParams[code]"
-            style="width:100%"
-            clearable
-          >
-            <el-option v-for="opt in testEnumOpts(code)" :key="opt" :label="opt" :value="opt" />
-          </el-select>
-          <el-select
-            v-else-if="testVarMeta(code).varType === 'BOOLEAN'"
-            v-model="testParams[code]"
-            style="width:100%"
-          >
-            <el-option label="true" :value="true" />
-            <el-option label="false" :value="false" />
-          </el-select>
-          <el-input-number
-            v-else-if="testVarMeta(code).varType === 'NUMBER'"
-            v-model="testParams[code]"
-            style="width:100%"
-          />
-          <el-input v-else v-model="testParams[code]" />
-        </el-form-item>
-      </el-form>
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false"
-          show-icon
-          class="test-alert"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="返回值">
-            <pre class="result-pre">{{ formatResult(testResult.result) }}</pre>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误信息">
-            <span class="text-danger">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
 
     <el-dialog title="规则集版本历史" :visible.sync="versionVisible" width="920px" append-to-body>
       <el-table :data="versions" border size="small" v-loading="versionLoading" max-height="360">
@@ -225,6 +176,7 @@ import {
 } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
 import { newBlock } from '@/utils/actionDataCodegen'
@@ -238,7 +190,7 @@ import {
 
 export default {
   name: 'RuleSet',
-  components: { ScriptPanel, ConditionGroupEditor, ActionBlockEditor },
+  components: { DesignerTestDialog, ScriptPanel, ConditionGroupEditor, ActionBlockEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -251,6 +203,7 @@ export default {
       contentLoaded: false,
       draggedIndex: -1,
       testVisible: false,
+      testParamsTemplate: {},
       testParams: {},
       testResult: null,
       versionVisible: false,
@@ -476,6 +429,7 @@ export default {
       return template
     },
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       const template = this.buildTestParamsTemplate()
       const params = {}
       this.testVarCodeList.forEach(code => {

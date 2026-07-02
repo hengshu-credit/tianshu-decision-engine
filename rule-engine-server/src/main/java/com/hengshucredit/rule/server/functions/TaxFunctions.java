@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.functions;
 
 import org.springframework.stereotype.Component;
 
+import java.text.DecimalFormat;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 
@@ -41,5 +42,9 @@ public class TaxFunctions {
         return new BigDecimal(String.valueOf(result))
                 .setScale(2, RoundingMode.HALF_UP)
                 .doubleValue();
+    }
+
+    public String formatAmount(double amount) {
+        return new DecimalFormat("#,##0.00").format(amount);
     }
 }

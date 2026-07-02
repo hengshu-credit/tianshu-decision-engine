@@ -163,8 +163,7 @@
           <el-input v-model="uploadForm.changeLog" type="textarea" :rows="2" placeholder="简要描述本次变更内容" />
         </el-form-item>
         <el-form-item label="测试参数">
-          <el-input v-model="uploadForm.testParams" type="textarea" :rows="3"
-            placeholder='输入 JSON 测试参数，如 {"age": 30, "income": 5000}&#10;创建后可在此模型的测试对话框中自动加载' />
+          <monaco-editor v-model="uploadForm.testParams" language="json" height="130px" />
           <div style="color:#909399;font-size:11px;margin-top:2px;">可选。用于在模型测试时自动填充默认参数（JSON 格式）</div>
         </el-form-item>
         <el-form-item label="描述">
@@ -228,6 +227,7 @@ import * as api from '@/api/model'
 import { listProjects } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
+import MonacoEditor from '@/components/MonacoEditor'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -241,7 +241,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelList',
-  components: { ModuleCallLog },
+  components: { ModuleCallLog, MonacoEditor },
   data() {
     return {
       loading: false,

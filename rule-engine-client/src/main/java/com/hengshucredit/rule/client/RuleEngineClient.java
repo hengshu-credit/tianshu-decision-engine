@@ -185,13 +185,13 @@ public class RuleEngineClient {
             entry.setModelType(cached.getModelType());
             entry.setSource("CLIENT");
             entry.setClientAppName(config.getAppName());
-            entry.setInputParams(JSON.toJSONString(params));
-            entry.setOutputResult(JSON.toJSONString(result.getResult()));
+            entry.setInputParams(toJsonSafely(params));
+            entry.setOutputResult(toJsonSafely(result.getResult()));
             entry.setSuccess(result.isSuccess() ? 1 : 0);
             entry.setErrorMessage(result.getErrorMessage());
             entry.setExecuteTimeMs(costMs);
             if (result.getTraces() != null) {
-                entry.setTraceInfo(JSON.toJSONString(result.getTraces()));
+                entry.setTraceInfo(toJsonSafely(result.getTraces()));
             }
             logReporter.report(Collections.singletonList(entry));
         } catch (Exception e) {
@@ -209,18 +209,38 @@ public class RuleEngineClient {
             entry.setModelType(cached.getModelType());
             entry.setSource("CLIENT");
             entry.setClientAppName(config.getAppName());
-            entry.setInputParams(JSON.toJSONString(params));
-            entry.setOutputResult(JSON.toJSONString(result.getResult()));
+            entry.setInputParams(toJsonSafely(params));
+            entry.setOutputResult(toJsonSafely(result.getResult()));
             entry.setSuccess(result.isSuccess() ? 1 : 0);
             entry.setErrorMessage(result.getErrorMessage());
             entry.setExecuteTimeMs(costMs);
             if (result.getTraces() != null) {
-                entry.setTraceInfo(JSON.toJSONString(result.getTraces()));
+                entry.setTraceInfo(toJsonSafely(result.getTraces()));
             }
             logReporter.report(Collections.singletonList(entry));
         } catch (Exception e) {
             log.debug("Log report failed: {}", e.getMessage());
         }
+    }
+
+    private String toJsonSafely(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return JSON.toJSONString(value);
+        } catch (StackOverflowError e) {
+            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
+        } catch (Exception e) {
+            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
+        }
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public void refreshRule(String ruleCode) {

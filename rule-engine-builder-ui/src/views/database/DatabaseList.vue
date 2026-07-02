@@ -260,7 +260,7 @@
           </el-col>
         </el-row>
         <el-form-item label="校验 SQL">
-          <el-input v-model="form.validationQuery" placeholder="SELECT 1" />
+          <monaco-editor v-model="form.validationQuery" language="sql" theme="rule-sql-light" height="90px" />
         </el-form-item>
         <el-form-item label="说明">
           <el-input v-model="form.description" type="textarea" :rows="2" />
@@ -280,12 +280,12 @@
       <div class="query-target">当前数据源：{{ queryTarget.datasourceName }} / {{ queryTarget.datasourceCode }}</div>
       <el-form label-width="90px" size="small">
         <el-form-item label="SQL">
-          <el-input v-model="queryForm.sql" class="sql-input" type="textarea" :rows="5" placeholder="SELECT * FROM table_name LIMIT 20" />
+          <monaco-editor v-model="queryForm.sql" language="sql" theme="rule-sql-light" height="170px" />
         </el-form-item>
         <el-row :gutter="12">
           <el-col :span="16">
             <el-form-item label="参数数组">
-              <el-input v-model="queryForm.paramsText" class="sql-input" type="textarea" :rows="2" placeholder='["C001", 100]' />
+              <monaco-editor v-model="queryForm.paramsText" language="json" height="90px" />
             </el-form-item>
           </el-col>
           <el-col :span="8">
@@ -319,10 +319,11 @@ import {
 } from '@/api/database'
 import { listProjects } from '@/api/project'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'DatabaseList',
-  components: { ModuleCallLog },
+  components: { ModuleCallLog, MonacoEditor },
   data() {
     return {
       projects: [],

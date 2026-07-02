@@ -1,5 +1,5 @@
 <template>
-  <el-container style="height: 100vh;">
+  <el-container class="layout-shell">
     <el-header height="50px" class="layout-header">
       <div class="header-title">
         <img src="/images/hengshucredit_animated.svg" alt="logo" class="header-logo">
@@ -13,7 +13,7 @@
         <el-button type="text" @click="doLogout">退出</el-button>
       </div>
     </el-header>
-    <el-container>
+    <el-container class="layout-body">
       <el-aside :width="sideBarWidth + 'px'" class="layout-aside">
         <el-menu
           :default-active="activeMenuIndex"
@@ -214,9 +214,21 @@ export default {
   }
 }
 
+.layout-shell {
+  height: 100vh;
+  overflow: hidden;
+}
+
+.layout-body {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .layout-aside {
   background: $menuBg;
-  overflow: hidden;
+  overflow-y: auto;
+  overflow-x: hidden;
   border-right: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -241,8 +253,10 @@ export default {
 .layout-main {
   background: #F3F4F6;
   padding: 16px;
+  height: 100%;
   overflow-y: auto;
   overflow-x: hidden;
   min-width: 0;
+  min-height: 0;
 }
 </style>

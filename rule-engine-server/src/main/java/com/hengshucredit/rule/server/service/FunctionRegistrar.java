@@ -104,10 +104,15 @@ public class FunctionRegistrar {
         try {
             return Class.forName(className);
         } catch (ClassNotFoundException e) {
-            String examplePrefix = "com.hengshucredit.rule.example.functions.";
-            if (className != null && className.startsWith(examplePrefix)) {
-                String simpleName = className.substring(examplePrefix.length());
-                return Class.forName("com.hengshucredit.rule.server.functions." + simpleName);
+            String[] legacyPrefixes = {
+                    "com.hengshucredit.rule.example.functions.",
+                    "com.bjjw.rule.example.functions."
+            };
+            for (String legacyPrefix : legacyPrefixes) {
+                if (className != null && className.startsWith(legacyPrefix)) {
+                    String simpleName = className.substring(legacyPrefix.length());
+                    return Class.forName("com.hengshucredit.rule.server.functions." + simpleName);
+                }
             }
             throw e;
         }

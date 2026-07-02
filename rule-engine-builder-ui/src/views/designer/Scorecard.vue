@@ -274,38 +274,18 @@
       <i class="el-icon-warning" /> 脚本覆盖模式已激活，可视化编辑暂停。
     </div>
 
-    <!-- 测试执行弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="680px" append-to-body :close-on-click-modal="false">
-      <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载编辑器...</div>
-      <template v-else>
-        <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式），包含评分条件中使用的变量</p>
-        <monaco-editor v-model="testParamsJson" language="json" height="260px" :key="testDialogKey" @input="onJsonInput" />
-        <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
-        <div v-if="testResult" class="test-result">
-          <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:10px;" />
-          <el-descriptions :column="1" border size="small">
-            <el-descriptions-item v-if="isResultMap" label="执行结果">
-              <div v-for="(val, key) in testResult.result" :key="key"><strong style="font-size:15px;color:#1890ff;">{{ key }}: {{ val }}</strong></div>
-            </el-descriptions-item>
-            <el-descriptions-item v-else :label="model.resultVar.varLabel || '评分结果'"><strong style="font-size:16px;color:#1890ff;">{{ testResult.result }}</strong></el-descriptions-item>
-            <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-            <el-descriptions-item v-if="testResult.errorMessage" label="错误"><span style="color:#f56c6c;">{{ testResult.errorMessage }}</span></el-descriptions-item>
-          </el-descriptions>
-        </div>
-      </template>
-      <div slot="footer">
-        <el-button size="small" icon="el-icon-document" @click="saveTestParams" :disabled="!testParamsJson || testParamsJson === '{}'">保存样例</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
-        <el-button size="small" @click="handleClearParams">清空</el-button>
-        <el-button size="small" @click="testVisible = false">关闭</el-button>
-      </div>
-    </el-dialog>
+    <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
 <script>
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
@@ -314,7 +294,7 @@ const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1',
 
 export default {
   name: 'Scorecard',
-  components: { VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, VarPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -329,6 +309,7 @@ export default {
       },
       scriptMode: 'visual',
       testVisible: false,
+      testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
       testJsonError: '',
@@ -536,21 +517,13 @@ export default {
       }
     },
     openTestDialog() {
-      // 强制重新挂载 monaco-editor，解决编辑器内容/光标异常
-      this.testDialogKey++
-      this.testReady = false
-      this.testResult = null
-      this.jsonError = ''
-      // 已有保存样例时自动填充，否则用空 JSON
       const saved = this.model.testParams
-      if (saved && saved !== '{}' && saved !== '{}') {
-        try { JSON.parse(saved); this.testParamsJson = saved } catch (e) { this.testParamsJson = '{}' }
+      if (saved && saved !== '{}') {
+        this.testParamsTemplate = saved
       } else {
-        this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
+        this.testParamsTemplate = this.buildTestParamsTemplate()
       }
       this.testVisible = true
-      // 等 monaco 加载完成后标记 ready（通过 nextTick 让 :key 生效）
-      this.$nextTick(() => { setTimeout(() => { this.testReady = true }, 50) })
     },
     buildTestParamsTemplate() {
       const codes = new Set()

@@ -104,7 +104,7 @@
             </el-col>
           </el-row>
           <el-form-item label="鉴权配置">
-            <el-input v-model="form.authApiConfig" class="json-input" type="textarea" :rows="5" placeholder='{"tokenUrl":"/oauth/token","method":"POST","tokenPath":"data.access_token","expiresInPath":"data.expires_in"}' />
+            <monaco-editor v-model="form.authApiConfig" language="json" height="150px" />
           </el-form-item>
         </el-collapse-item>
 
@@ -122,29 +122,29 @@
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="Header配置">
-                <el-input v-model="form.headerConfig" class="json-input" type="textarea" :rows="5" placeholder='{"X-App-Id":"${appId}"}' />
+                <monaco-editor v-model="form.headerConfig" language="json" height="150px" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="Query配置">
-                <el-input v-model="form.queryConfig" class="json-input" type="textarea" :rows="5" placeholder='{"name":"$.customer.name"}' />
+                <monaco-editor v-model="form.queryConfig" language="json" height="150px" />
               </el-form-item>
             </el-col>
           </el-row>
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="入参映射">
-                <el-input v-model="form.requestMapping" class="json-input" type="textarea" :rows="5" placeholder='{"idNo":"$.customer.idNo"}' />
+                <monaco-editor v-model="form.requestMapping" language="json" height="150px" />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="响应映射">
-                <el-input v-model="form.responseMapping" class="json-input" type="textarea" :rows="5" placeholder='{"score":"body.data.score","riskLevel":"body.data.level"}' />
+                <monaco-editor v-model="form.responseMapping" language="json" height="150px" />
               </el-form-item>
             </el-col>
           </el-row>
           <el-form-item label="请求体模板">
-            <el-input v-model="form.bodyTemplate" class="json-input" type="textarea" :rows="5" placeholder='{"certNo":"${customer.idNo}","name":"${customer.name}"}' />
+            <monaco-editor v-model="form.bodyTemplate" language="json" height="150px" />
           </el-form-item>
         </el-collapse-item>
 
@@ -196,7 +196,7 @@
             </el-col>
             <el-col :span="12">
               <el-form-item label="兜底返回">
-                <el-input v-model="form.fallbackValue" class="json-input" type="textarea" :rows="3" placeholder='{"success":false}' />
+                <monaco-editor v-model="form.fallbackValue" language="json" height="110px" />
               </el-form-item>
             </el-col>
           </el-row>
@@ -221,9 +221,11 @@ import {
   updateApiConfig
 } from '@/api/datasource'
 import { listDataObjects } from '@/api/dataObject'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'ApiDetail',
+  components: { MonacoEditor },
   data() {
     return {
       datasourceOptions: [],

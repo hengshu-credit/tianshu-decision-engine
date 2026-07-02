@@ -96,9 +96,10 @@
             <el-table-column prop="status" label="状态" min-width="60" align="center">
               <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" min-width="140" align="center">
+            <el-table-column label="操作" min-width="190" align="center">
               <template slot-scope="{ row }">
                 <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+                <el-button v-if="isTestableSource(row)" type="text" size="small" @click="handleViewSourceDetail(row)">详情</el-button>
                 <el-button v-if="isTestableSource(row)" type="text" size="small" @click="handleTestVariable(row)">测试</el-button>
                 <el-button type="text" size="small" @click="handleOptions(row)" v-if="row.varType==='ENUM'">选项</el-button>
                 <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
@@ -332,7 +333,7 @@
             </el-select>
           </el-form-item>
           <el-form-item label="入参映射">
-            <el-input v-model="form.apiParamMapping" type="textarea" :rows="3" placeholder='{"customerId":"$.customerId"}' />
+            <monaco-editor v-model="form.apiParamMapping" language="json" height="130px" />
           </el-form-item>
           <el-form-item label="结果路径">
             <el-input v-model="form.apiResultPath" placeholder="body.data.score" />
@@ -361,10 +362,10 @@
             </el-select>
           </el-form-item>
           <el-form-item label="查询 SQL">
-            <el-input v-model="form.dbSql" type="textarea" :rows="3" placeholder="select score from risk_user where user_id = ?" />
+            <monaco-editor v-model="form.dbSql" language="sql" theme="rule-sql-light" height="130px" />
           </el-form-item>
           <el-form-item label="SQL 参数">
-            <el-input v-model="form.dbParams" type="textarea" :rows="2" placeholder='["$.customerId"]' />
+            <monaco-editor v-model="form.dbParams" language="json" height="90px" />
           </el-form-item>
           <el-form-item label="结果路径">
             <el-input v-model="form.dbResultPath" placeholder="0.score" />
@@ -517,13 +518,7 @@
         show-icon
         style="margin-bottom:12px;"
       />
-      <el-input
-        v-model="variableTestParamsText"
-        type="textarea"
-        :rows="8"
-        class="json-input"
-        placeholder='{"customerId":"C001","mobile":"13800138000"}'
-      />
+      <monaco-editor v-model="variableTestParamsText" language="json" height="220px" />
       <div v-if="variableTestResult" class="test-result-block">
         <div class="test-result-title">测试结果</div>
         <pre class="test-result-pre">{{ formatJson(variableTestResult) }}</pre>
@@ -531,6 +526,32 @@
       <div slot="footer">
         <el-button size="small" @click="variableTestVisible=false">关闭</el-button>
         <el-button size="small" type="primary" :loading="variableTesting" @click="doTestVariable">执行测试</el-button>
+      </div>
+    </el-dialog>
+
+    <el-dialog title="变量取数详情" :visible.sync="sourceDetailVisible" width="800px" :close-on-click-modal="false">
+      <template v-if="sourceDetailTarget">
+        <el-descriptions :column="2" border size="small">
+          <el-descriptions-item label="变量编码">{{ sourceDetailTarget.varCode }}</el-descriptions-item>
+          <el-descriptions-item label="变量名称">{{ sourceDetailTarget.varLabel }}</el-descriptions-item>
+          <el-descriptions-item label="来源">{{ sourceLabel(sourceDetailTarget.varSource) }}</el-descriptions-item>
+          <el-descriptions-item label="脚本名">{{ sourceDetailTarget.scriptName || sourceDetailTarget.varCode }}</el-descriptions-item>
+        </el-descriptions>
+        <div class="source-detail-section">
+          <div class="source-detail-title">依赖输入字段</div>
+          <el-table :data="sourceInputFields(sourceDetailTarget)" border size="small" empty-text="未配置依赖输入字段">
+            <el-table-column prop="field" label="输入字段" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="usage" label="用途" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="expression" label="配置表达式" min-width="220" show-overflow-tooltip />
+          </el-table>
+        </div>
+        <div class="source-detail-section">
+          <div class="source-detail-title">原始取数配置</div>
+          <monaco-editor :value="formatJson(parseJson(sourceDetailTarget.sourceConfig, {}))" language="json" height="220px" read-only />
+        </div>
+      </template>
+      <div slot="footer">
+        <el-button size="small" @click="sourceDetailVisible=false">关闭</el-button>
       </div>
     </el-dialog>
 
@@ -554,7 +575,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="Java 源码">
-          <el-input v-model="importForm.javaSource" type="textarea" :rows="14" placeholder="粘贴 Java 实体类源码，支持多个 class 定义..." style="font-family:Consolas,monospace;" />
+          <monaco-editor v-model="importForm.javaSource" language="java" height="320px" />
         </el-form-item>
         <el-form-item label="或上传文件">
           <el-upload action="" :before-upload="handleJavaFileSelect" :show-file-list="false" accept=".java">
@@ -589,7 +610,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="JSON 样本">
-          <el-input v-model="importForm.jsonContent" type="textarea" :rows="14" placeholder='粘贴 JSON 样本数据，如：{"name":"张三","age":30,"address":{"city":"北京"}}' style="font-family:Consolas,monospace;" />
+          <monaco-editor v-model="importForm.jsonContent" language="json" height="320px" />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -618,7 +639,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="建表 DDL">
-          <el-input v-model="importForm.ddlSource" type="textarea" :rows="14" placeholder="粘贴 CREATE TABLE ... 语句；支持多张表。列 COMMENT 将解析为变量名称（中文名）。" style="font-family:Consolas,monospace;" />
+          <monaco-editor v-model="importForm.ddlSource" language="sql" theme="rule-sql-light" height="320px" />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -642,7 +663,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="Java 源码">
-          <el-input v-model="importForm.javaSource" type="textarea" :rows="14" placeholder="粘贴包含 static final 字段的 Java 类源码..." style="font-family:Consolas,monospace;" />
+          <monaco-editor v-model="importForm.javaSource" language="java" height="320px" />
         </el-form-item>
         <el-form-item label="或上传文件">
           <el-upload action="" :before-upload="handleJavaFileSelect" :show-file-list="false" accept=".java">
@@ -671,7 +692,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="JSON 数据">
-          <el-input v-model="importForm.jsonContent" type="textarea" :rows="14" placeholder='扁平 JSON 键值对，如：{"riskScore":72,"creditLevel":"A","channel":"ONLINE"}' style="font-family:Consolas,monospace;" />
+          <monaco-editor v-model="importForm.jsonContent" language="json" height="320px" />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -741,9 +762,11 @@ import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'VariableList',
+  components: { MonacoEditor },
   data() {
     return {
       activeTab: 'list',
@@ -818,6 +841,8 @@ export default {
       testTarget: null,
       variableTestParamsText: '{}',
       variableTestResult: null,
+      sourceDetailVisible: false,
+      sourceDetailTarget: null,
 
       // Data objects
       objLoading: false,
@@ -1718,6 +1743,30 @@ export default {
     isTestableSource(row) {
       return row && ['API', 'DB', 'LIST'].indexOf(row.varSource) >= 0
     },
+    handleViewSourceDetail(row) {
+      this.sourceDetailTarget = row
+      this.sourceDetailVisible = true
+    },
+    sourceInputFields(row) {
+      const config = this.parseJson(row && row.sourceConfig, {})
+      const rows = []
+      if (row && row.varSource === 'API') {
+        const mapping = config.paramMapping || {}
+        Object.keys(mapping).forEach(key => {
+          const expression = mapping[key]
+          rows.push({ field: this.pathFromMapping(expression) || key, usage: 'API参数 ' + key, expression: String(expression || '') })
+        })
+      } else if (row && row.varSource === 'DB') {
+        const params = Array.isArray(config.params) ? config.params : []
+        params.forEach((item, index) => {
+          rows.push({ field: this.pathFromMapping(item) || ('参数' + (index + 1)), usage: 'SQL占位参数 #' + (index + 1), expression: String(item || '') })
+        })
+      } else if (row && row.varSource === 'LIST') {
+        const expression = config.queryField || config.queryPath || config.field || ''
+        if (expression) rows.push({ field: this.pathFromMapping(expression) || expression, usage: '名单匹配字段', expression: String(expression) })
+      }
+      return rows
+    },
     handleTestVariable(row) {
       this.testTarget = row
       this.variableTestParamsText = this.buildTestParamTemplate(row)
@@ -2007,6 +2056,8 @@ export default {
 .test-result-block { margin-top:12px; }
 .test-result-title { font-weight:700; color:#334155; margin-bottom:6px; }
 .test-result-pre { margin:0; padding:10px; border:1px solid #e2e8f0; border-radius:4px; background:#f8fafc; max-height:260px; overflow:auto; font-size:12px; line-height:1.5; }
+.source-detail-section { margin-top:14px; }
+.source-detail-title { font-weight:700; color:#334155; margin-bottom:8px; }
 
 /* Import result */
 .import-result-body { text-align:center; padding:20px 0; }

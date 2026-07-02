@@ -167,7 +167,7 @@
         </el-col>
       </el-row>
       <el-form-item label="校验 SQL">
-        <el-input v-model="form.validationQuery" placeholder="SELECT 1" />
+        <monaco-editor v-model="form.validationQuery" language="sql" theme="rule-sql-light" height="90px" />
       </el-form-item>
       <el-form-item label="说明">
         <el-input v-model="form.description" type="textarea" :rows="2" />
@@ -187,9 +187,11 @@ import {
   updateDbDatasource
 } from '@/api/database'
 import { listProjects } from '@/api/project'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'DatabaseDetail',
+  components: { MonacoEditor },
   data() {
     return {
       projects: [],

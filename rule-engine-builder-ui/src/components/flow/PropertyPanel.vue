@@ -15,11 +15,11 @@
           <el-input v-model="edgeProps.conditionName" placeholder="如：金额大于500" @change="onEdgeChange" />
         </el-form-item>
         <el-form-item label="条件表达式">
-          <el-input
+          <monaco-editor
             v-model="edgeProps.conditionExpr"
-            type="textarea"
-            :rows="3"
-            placeholder="如：amount > 500"
+            language="ql"
+            theme="qlexpress-dark"
+            height="90px"
             @change="onEdgeChange"
           />
         </el-form-item>
@@ -161,12 +161,11 @@
               >{{ v.varCode }}</el-tag>
             </div>
             <div class="script-lang">QLExpress 脚本</div>
-            <el-input
+            <monaco-editor
               v-model="nodeProps.scriptContent"
-              type="textarea"
-              :rows="8"
-              placeholder="// QLExpress 脚本&#10;taxRate = 0.13;&#10;result = &quot;一般税率&quot;"
-              class="mono-textarea"
+              language="ql"
+              theme="qlexpress-dark"
+              height="180px"
               @change="onNodeChange"
             />
           </div>
@@ -178,9 +177,11 @@
 
 <script>
 import { varTypeTagColor } from '@/constants/varTypes'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'PropertyPanel',
+  components: { MonacoEditor },
   props: {
     activeElement: { type: Object, default: null },
     lf: { type: Object, default: null },

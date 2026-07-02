@@ -184,60 +184,11 @@
     </div>
 
     <!-- 测试执行弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <el-form label-width="130px" size="small">
-        <el-form-item
-          v-for="code in testVarCodeList"
-          :key="'tc-' + code"
-          :label="testVarLabel(code)"
-        >
-          <el-select
-            v-if="testVarMeta(code).varType === 'ENUM' && testVarMeta(code).enumOptions"
-            v-model="testParams[code]"
-            style="width:100%"
-            clearable
-          >
-            <el-option v-for="opt in testEnumOpts(code)" :key="opt" :label="opt" :value="opt" />
-          </el-select>
-          <el-select
-            v-else-if="testVarMeta(code).varType === 'BOOLEAN'"
-            v-model="testParams[code]"
-            style="width:100%"
-          >
-            <el-option label="true" :value="true" />
-            <el-option label="false" :value="false" />
-          </el-select>
-          <el-input-number
-            v-else-if="testVarMeta(code).varType === 'NUMBER'"
-            v-model="testParams[code]"
-            style="width:100%"
-          />
-          <el-input v-else v-model="testParams[code]" />
-        </el-form-item>
-      </el-form>
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false"
-          show-icon
-          style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="返回值">
-            <pre class="result-pre">{{ formatResult(testResult.result) }}</pre>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误信息">
-            <span class="text-danger">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
@@ -247,6 +198,7 @@ import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import {
   createEmptyLeaf,
@@ -255,10 +207,11 @@ import {
   collectVarCodesFromConditionTree,
   walkConditionLeaves
 } from '@/utils/decisionConditionTree'
+import { coerceSampleValue } from '@/utils/testSampleParams'
 
 export default {
   name: 'DecisionTable',
-  components: { VarPicker, ScriptPanel, ConditionGroupEditor },
+  components: { DesignerTestDialog, VarPicker, ScriptPanel, ConditionGroupEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -271,6 +224,7 @@ export default {
       },
       scriptMode: 'visual',
       testVisible: false,
+      testParamsTemplate: {},
       testParams: {},
       testResult: null,
       contentLoaded: false,
@@ -650,10 +604,29 @@ export default {
           else template[code] = ''
         }
       })
+      const firstRule = (this.model.rules || []).find(rule => rule && rule.conditions && rule.conditions.length)
+      if (firstRule) {
+        (this.model.conditions || []).forEach((condition, index) => {
+          const code = condition && condition.varCode
+          const ruleCondition = firstRule.conditions[index]
+          if (!code || !ruleCondition || ruleCondition.value === undefined || ruleCondition.value === '') return
+          const ref = this.projectRefs.find(r => r.refCode === code)
+          template[code] = coerceSampleValue(ruleCondition.value, ref)
+        })
+      }
+      const firstTreeRule = (this.model.rules || []).find(rule => rule && rule.conditionRoot)
+      if (firstTreeRule) {
+        walkConditionLeaves(firstTreeRule.conditionRoot, leaf => {
+          if (!leaf.varCode || leaf.valueKind === 'VAR' || leaf.value === undefined || leaf.value === '') return
+          const ref = this.projectRefs.find(r => r.refCode === leaf.varCode)
+          template[leaf.varCode] = coerceSampleValue(leaf.value, ref)
+        })
+      }
       return template
     },
 
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       const template = this.buildTestParamsTemplate()
       const params = {}
       this.testVarCodeList.forEach(code => {

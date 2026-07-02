@@ -95,13 +95,13 @@ public class RuleExecuteService {
         log.setRuleVersion(definition.getCurrentVersion());
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
-        log.setInputParams(JSON.toJSONString(executeParams));
-        log.setOutputResult(JSON.toJSONString(result.getResult()));
+        log.setInputParams(toJsonSafely(executeParams));
+        log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         if (result.getTraces() != null) {
-            log.setTraceInfo(JSON.toJSONString(result.getTraces()));
+            log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
         logService.save(log);
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
@@ -155,13 +155,13 @@ public class RuleExecuteService {
         log.setModelType(published.getModelType());
         log.setSource(source == null ? "CLIENT_SERVER" : source);
         log.setClientAppName(clientAppName);
-        log.setInputParams(JSON.toJSONString(executeParams));
-        log.setOutputResult(JSON.toJSONString(result.getResult()));
+        log.setInputParams(toJsonSafely(executeParams));
+        log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         if (result.getTraces() != null) {
-            log.setTraceInfo(JSON.toJSONString(result.getTraces()));
+            log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
         logService.save(log);
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
@@ -208,6 +208,26 @@ public class RuleExecuteService {
         List<RuleFunction> scriptFuncs = allFuncs.stream()
                 .filter(f -> "SCRIPT".equals(f.getImplType())).collect(Collectors.toList());
         return functionRegistrar.buildScriptFunctionPrefix(scriptFuncs);
+    }
+
+    private String toJsonSafely(Object value) {
+        if (value == null) {
+            return null;
+        }
+        try {
+            return JSON.toJSONString(value);
+        } catch (StackOverflowError e) {
+            return "{\"error\":\"JSON_SERIALIZE_STACK_OVERFLOW\"}";
+        } catch (Exception e) {
+            return "{\"error\":\"JSON_SERIALIZE_FAILED\",\"message\":\"" + escapeJson(e.getMessage()) + "\"}";
+        }
+    }
+
+    private String escapeJson(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
     public static class ExecutionOutcome {

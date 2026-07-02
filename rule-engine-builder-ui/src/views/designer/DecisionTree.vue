@@ -235,37 +235,11 @@
     </div>
 
     <!-- 测试执行弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <p class="test-hint"><i class="el-icon-info" /> 请输入测试参数（JSON 格式）</p>
-      <el-input
-        v-model="testParamsJson"
-        type="textarea"
-        :rows="6"
-        placeholder='{"income": 100000, "taxRate": 0.13}'
-      />
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false"
-          show-icon
-          style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="返回值">
-            <pre class="result-pre">{{ formatJson(testResult.result) }}</pre>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span class="text-danger">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
@@ -287,6 +261,7 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import { generateScript } from '@/utils/actionDataCodegen'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import {
@@ -298,14 +273,17 @@ import {
 } from '@/utils/decisionConditionTree'
 import {
   addCode,
+  applyActionDataSampleValues,
+  applyConditionExpressionSamples,
   buildSampleParamsFromCodes,
   collectActionDataInputCodes,
+  collectScriptInputCodes,
   refCodeById
 } from '@/utils/testSampleParams'
 
 export default {
   name: 'DecisionTree',
-  components: { ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
+  components: { DesignerTestDialog, ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -325,6 +303,7 @@ export default {
       actionMode: 'visual',
       currentActionData: [],
       testVisible: false,
+      testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
       /** 工具栏全局默认连线类型（折线/直线/贝塞尔），新连线与「跟随全局」的边使用 */
@@ -1038,6 +1017,7 @@ export default {
     },
 
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
@@ -1054,10 +1034,14 @@ export default {
       const edges = model.edges || []
       edges.forEach(edge => {
         collectVarCodesFromConditionTree(edge.conditionConfig, codes)
+        collectScriptInputCodes(edge.conditionExpression, this.projectRefs, codes)
         addCode(codes, refCodeById(this.projectRefs, edge.leftVarId, edge.leftRefType))
         addCode(codes, refCodeById(this.projectRefs, edge.rightVarId, edge.rightRefType))
       })
-      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      nodes.forEach(node => applyActionDataSampleValues(params, node.actionData, this.projectRefs))
+      edges.forEach(edge => applyConditionExpressionSamples(params, edge.conditionExpression, this.projectRefs))
+      return params
     },
     async doTest() {
       let params = {}

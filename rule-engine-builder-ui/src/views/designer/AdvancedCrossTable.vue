@@ -210,30 +210,11 @@
     />
 
     <!-- 测试弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式）</p>
-      <el-input v-model="testParamsJson" type="textarea" :rows="6" placeholder='{}' />
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false" show-icon style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="model.resultVar.varLabel || '返回值'">
-            <strong>{{ testResult.result }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span style="color:#F76E6C">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
@@ -243,11 +224,12 @@ import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
-import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
+import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 
 export default {
   name: 'AdvancedCrossTable',
-  components: { VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, VarPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -262,6 +244,7 @@ export default {
       cellData: [],
       scriptMode: 'visual',
       testVisible: false,
+      testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
@@ -496,6 +479,7 @@ export default {
       }
     },
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
@@ -506,7 +490,14 @@ export default {
       const colDimensions = this.model.colDimensions || []
       rowDimensions.forEach(dim => addCode(codes, dim.varCode))
       colDimensions.forEach(dim => addCode(codes, dim.varCode))
-      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      ;[...rowDimensions, ...colDimensions].forEach(dim => {
+        const segment = (dim.segments || []).find(item => item && item.value !== undefined && item.value !== '')
+        if (!dim.varCode || !segment) return
+        const ref = this.projectRefs.find(r => r.refCode === dim.varCode)
+        params[dim.varCode] = coerceSampleValue(segment.value, ref)
+      })
+      return params
     },
     async doTest() {
       let params = {}

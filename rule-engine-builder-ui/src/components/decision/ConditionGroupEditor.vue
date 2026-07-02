@@ -292,7 +292,7 @@ export default {
   box-sizing: border-box;
 }
 .cg--nested {
-  margin-left: 4px;
+  margin-left: 0;
   padding-left: 8px;
   border-left: 2px solid #e8e8e8;
 }
@@ -333,13 +333,17 @@ export default {
 .cg-children {
   flex: 1 1 0;
   min-width: 0;
-  overflow-x: auto;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow-x: hidden;
   overflow-y: visible;
 }
 .cg-row {
   margin-bottom: 10px;
   width: 100%;
   max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 .cg-row > .cg {
   width: 100%;
@@ -347,9 +351,9 @@ export default {
 }
 /* 条件行：主字段吃掉右侧留白 */
 .cg-leaf {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(86px, 108px) minmax(76px, 92px) minmax(0, 2fr) auto;
+  align-items: center;
   gap: 8px;
   width: 100%;
   max-width: 100%;
@@ -363,36 +367,29 @@ export default {
 }
 /* 左侧变量选择：优先变宽 */
 .cg-field--var-left {
-  flex: 3 1 220px;
-  min-width: 160px;
+  min-width: 0;
 }
 /* 运算符、常量/变量切换：固定宽度 */
 .cg-field--op {
-  flex: 0 0 108px;
   width: 108px;
 }
 .cg-field--kind {
-  flex: 0 0 92px;
   width: 92px;
 }
 /* 右侧比较值或变量 */
 .cg-field--var-right {
-  flex: 2 1 180px;
-  min-width: 140px;
+  min-width: 0;
 }
 .cg-field--value {
-  flex: 2 1 180px;
-  min-width: 120px;
+  min-width: 0;
 }
 .cg-field--any {
-  flex: 1 1 120px;
-  min-width: 80px;
+  min-width: 0;
   color: #999;
   font-size: 12px;
 }
 .cg-field--actions {
-  flex: 0 0 auto;
-  margin-left: auto;
+  justify-content: flex-end;
 }
 .cg-sel-full {
   width: 100%;
@@ -432,16 +429,16 @@ export default {
     margin-right: 6px;
   }
   .cg-field--var-left {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
     width: 100%;
   }
   .cg-field--value,
   .cg-field--var-right {
-    flex: 1 1 100%;
+    grid-column: 1 / -1;
     width: 100%;
   }
   .cg-field--actions {
-    margin-left: 0;
+    grid-column: 1 / -1;
     width: 100%;
     justify-content: flex-end;
   }

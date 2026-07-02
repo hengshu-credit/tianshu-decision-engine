@@ -312,30 +312,11 @@
     />
 
     <!-- 测试弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式）</p>
-      <el-input v-model="testParamsJson" type="textarea" :rows="6" placeholder='{}' />
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false" show-icon style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="model.resultVar.varLabel || '评分结果'">
-            <strong style="font-size:16px;color:#1890ff;">{{ testResult.result }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span class="text-danger">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
@@ -344,13 +325,14 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
-import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
+import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
 export default {
   name: 'AdvancedScorecard',
-  components: { VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, VarPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -364,6 +346,7 @@ export default {
       },
       scriptMode: 'visual',
       testVisible: false,
+      testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
       /** 结果变量手动输入模式 */
@@ -575,6 +558,7 @@ export default {
       }
     },
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
       this.testResult = null
       this.testVisible = true
@@ -593,7 +577,20 @@ export default {
           })
         })
       })
-      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
+      groups.forEach(group => {
+        const dimensions = group.dimensions || []
+        dimensions.forEach(dim => {
+          const firstRule = (dim.rules || []).find(rule => rule && rule.conditions && rule.conditions.length)
+          if (!firstRule) return
+          firstRule.conditions.forEach(cond => {
+            if (!cond.varCode || cond.value === undefined || cond.value === '') return
+            const ref = this.projectRefs.find(r => r.refCode === cond.varCode)
+            params[cond.varCode] = coerceSampleValue(cond.value, ref)
+          })
+        })
+      })
+      return params
     },
     async doTest() {
       let params = {}

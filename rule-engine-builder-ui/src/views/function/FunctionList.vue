@@ -155,7 +155,7 @@
           </el-radio-group>
         </el-form-item>
         <el-form-item label="实现脚本" v-if="editForm.implType === 'SCRIPT'">
-          <el-input v-model="editForm.implScript" type="textarea" :rows="6" placeholder="QLExpress 脚本，参数可直接使用" class="mono-input" />
+          <monaco-editor v-model="editForm.implScript" language="ql" theme="qlexpress-dark" height="180px" />
         </el-form-item>
         <el-form-item label="Java类名" v-if="editForm.implType === 'JAVA'">
           <el-input v-model="editForm.implClass" placeholder="如 com.hengshucredit.rule.example.functions.TaxFunctions" />
@@ -205,9 +205,11 @@ import { createFunction, updateFunction, deleteFunction, listFunctions, listVers
 import { listProjects } from '@/api/project'
 import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'FunctionList',
+  components: { MonacoEditor },
   data() {
     return {
       projects: [],

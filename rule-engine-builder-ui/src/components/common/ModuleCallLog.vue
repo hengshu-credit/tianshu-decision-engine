@@ -2,11 +2,12 @@
   <div class="module-call-log">
     <div class="log-header">
       <div>
-        <div class="log-title">{{ title || '调用日志' }}</div>
-        <div class="log-subtitle">记录模块测试、变量解析和执行调用的请求、响应、耗时与错误。</div>
+        <div class="log-title">{{ title || profile.title }}</div>
+        <div class="log-subtitle">{{ profile.subtitle }}</div>
       </div>
       <el-button size="small" icon="el-icon-refresh" @click="load">刷新</el-button>
     </div>
+
     <div class="log-filter">
       <el-form :inline="true" size="small">
         <el-form-item label="动作">
@@ -14,7 +15,7 @@
             <el-option v-for="item in actionOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
         </el-form-item>
-        <el-form-item label="目标编码">
+        <el-form-item :label="profile.targetLabel">
           <el-input v-model="query.targetCode" clearable placeholder="前缀筛选" style="width:150px" />
         </el-form-item>
         <el-form-item label="结果">
@@ -29,13 +30,21 @@
         </el-form-item>
       </el-form>
     </div>
+
     <el-table :data="rows" border size="small" v-loading="loading" style="width:100%;">
       <el-table-column prop="actionType" label="动作" width="140">
         <template slot-scope="{ row }">{{ actionLabel(row.actionType) }}</template>
       </el-table-column>
-      <el-table-column prop="targetCode" label="目标编码" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="targetName" label="目标名称" min-width="150" show-overflow-tooltip />
-      <el-table-column prop="requestUrl" label="请求地址/资源" min-width="220" show-overflow-tooltip />
+      <el-table-column prop="targetCode" :label="profile.targetLabel" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="targetName" label="名称" min-width="150" show-overflow-tooltip />
+      <el-table-column v-if="profile.showMethod" prop="requestMethod" :label="profile.methodLabel" width="90" align="center" />
+      <el-table-column v-if="profile.showResource" prop="requestUrl" :label="profile.resourceLabel" min-width="220" show-overflow-tooltip>
+        <template slot-scope="{ row }">{{ row.requestUrl || profile.emptyResource }}</template>
+      </el-table-column>
+      <el-table-column v-if="profile.showProject" prop="projectCode" label="项目编码" min-width="120" show-overflow-tooltip />
+      <el-table-column :label="profile.summaryLabel" min-width="180" show-overflow-tooltip>
+        <template slot-scope="{ row }">{{ rowSummary(row) }}</template>
+      </el-table-column>
       <el-table-column label="结果" width="70" align="center">
         <template slot-scope="{ row }">
           <el-tag :type="row.success === 1 ? 'success' : 'danger'" size="mini">{{ row.success === 1 ? '成功' : '失败' }}</el-tag>
@@ -51,6 +60,7 @@
         </template>
       </el-table-column>
     </el-table>
+
     <el-pagination
       class="log-pager"
       :current-page="query.pageNum"
@@ -62,16 +72,19 @@
       @size-change="s => { query.pageSize = s; query.pageNum = 1; load() }"
     />
 
-    <el-drawer title="调用日志详情" :visible.sync="detailVisible" size="70%">
+    <el-drawer :title="profile.detailTitle" :visible.sync="detailVisible" size="70%">
       <div v-if="detail" class="log-detail">
         <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="模块">{{ moduleType }}</el-descriptions-item>
+          <el-descriptions-item label="模块">{{ profile.title }}</el-descriptions-item>
           <el-descriptions-item label="动作">{{ actionLabel(detail.actionType) }}</el-descriptions-item>
-          <el-descriptions-item label="目标">{{ detail.targetName || detail.targetCode || '-' }}</el-descriptions-item>
+          <el-descriptions-item :label="profile.targetLabel">{{ detail.targetCode || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="名称">{{ detail.targetName || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="profile.showProject" label="项目编码">{{ detail.projectCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="结果">{{ detail.success === 1 ? '成功' : '失败' }}</el-descriptions-item>
-          <el-descriptions-item label="请求地址" :span="2">{{ detail.requestUrl || '-' }}</el-descriptions-item>
+          <el-descriptions-item v-if="detail.requestUrl" :label="profile.resourceLabel" :span="2">{{ detail.requestUrl }}</el-descriptions-item>
           <el-descriptions-item label="错误信息" :span="2">{{ detail.errorMessage || '-' }}</el-descriptions-item>
         </el-descriptions>
+
         <template v-if="moduleType === 'DATABASE'">
           <div class="detail-grid">
             <div class="detail-kv"><span>连接方式</span><strong>{{ dbRequest.connectionMode || '-' }}</strong></div>
@@ -79,40 +92,37 @@
             <div class="detail-kv"><span>开始时间</span><strong>{{ dbResponse.startTime || dbRequest.startTime || '-' }}</strong></div>
             <div class="detail-kv"><span>结束时间</span><strong>{{ dbResponse.endTime || '-' }}</strong></div>
           </div>
-          <div class="detail-block">
-            <div class="detail-title">查询代码</div>
-            <pre class="log-pre">{{ dbRequest.sql || '-' }}</pre>
-          </div>
-          <div class="detail-block">
-            <div class="detail-title">参数字段和值</div>
-            <pre class="log-pre">{{ pretty(dbRequest.paramFields || dbRequest.params) }}</pre>
-          </div>
-          <div class="detail-block">
-            <div class="detail-title">返回结果表内容</div>
-            <pre class="log-pre">{{ pretty(dbResponse.rows) }}</pre>
-          </div>
-          <div class="detail-block">
-            <div class="detail-title">解析提取变量字段和值</div>
-            <pre class="log-pre">{{ pretty({ resultPath: dbResponse.resultPath, extractedValue: dbResponse.extractedValue }) }}</pre>
-          </div>
+          <detail-block title="SQL" :content="dbRequest.sql || '-'" />
+          <detail-block title="SQL 参数" :content="pretty(dbRequest.paramFields || dbRequest.params)" />
+          <detail-block title="返回结果行" :content="pretty(dbResponse.rows)" />
+          <detail-block title="结果提取" :content="pretty({ resultPath: dbResponse.resultPath, extractedValue: dbResponse.extractedValue })" />
         </template>
+
+        <template v-else-if="moduleType === 'LIST'">
+          <div class="detail-grid">
+            <div class="detail-kv"><span>匹配值</span><strong>{{ listRequest.queryValue || '-' }}</strong></div>
+            <div class="detail-kv"><span>匹配模式</span><strong>{{ listRequest.matchMode || '-' }}</strong></div>
+            <div class="detail-kv"><span>内容类型</span><strong>{{ prettyInline(listRequest.itemTypes) }}</strong></div>
+            <div class="detail-kv"><span>是否命中</span><strong>{{ listResponse.hit === true ? '命中' : '未命中' }}</strong></div>
+          </div>
+          <detail-block title="名单匹配请求" :content="pretty(listRequest)" />
+          <detail-block title="名单匹配结果" :content="pretty(listResponse)" />
+        </template>
+
+        <template v-else-if="moduleType === 'MODEL'">
+          <detail-block title="模型输入参数" :content="pretty(modelRequest)" />
+          <detail-block title="模型输出结果" :content="pretty(modelResponse)" />
+        </template>
+
         <template v-else>
-        <div class="detail-block">
-          <div class="detail-title">请求头</div>
-          <pre class="log-pre">{{ pretty(detail.requestHeaders) }}</pre>
-        </div>
-        <div class="detail-block">
-          <div class="detail-title">请求入参</div>
-          <pre class="log-pre">{{ pretty(detail.requestParams) }}</pre>
-        </div>
-        <div class="detail-block">
-          <div class="detail-title">请求体</div>
-          <pre class="log-pre">{{ pretty(detail.requestBody) }}</pre>
-        </div>
-        <div class="detail-block">
-          <div class="detail-title">响应内容</div>
-          <pre class="log-pre">{{ pretty(detail.responseBody) }}</pre>
-        </div>
+          <div class="detail-grid">
+            <div class="detail-kv"><span>请求方法</span><strong>{{ detail.requestMethod || '-' }}</strong></div>
+            <div class="detail-kv"><span>响应状态</span><strong>{{ detail.responseStatus || '-' }}</strong></div>
+          </div>
+          <detail-block title="请求头" :content="pretty(detail.requestHeaders)" />
+          <detail-block title="请求参数" :content="pretty(detail.requestParams)" />
+          <detail-block title="请求体" :content="pretty(detail.requestBody)" />
+          <detail-block title="响应内容" :content="pretty(detail.responseBody)" />
         </template>
       </div>
     </el-drawer>
@@ -122,11 +132,81 @@
 <script>
 import { listRuntimeLogs } from '@/api/runtimeLog'
 
+const PROFILES = {
+  DATASOURCE: {
+    title: 'API外数调用日志',
+    subtitle: '展示三方 API 鉴权、请求头、请求参数、请求体、响应状态和响应内容。',
+    targetLabel: '接口编码',
+    methodLabel: 'HTTP',
+    resourceLabel: '请求地址',
+    summaryLabel: '响应摘要',
+    detailTitle: 'API外数调用详情',
+    showMethod: true,
+    showResource: true,
+    showProject: false,
+    emptyResource: '-'
+  },
+  DATABASE: {
+    title: '数据源查询日志',
+    subtitle: '展示数据库连接测试、只读 SQL、占位参数、返回结果行和变量提取结果。',
+    targetLabel: '数据源/变量',
+    methodLabel: '类型',
+    resourceLabel: '数据库资源',
+    summaryLabel: 'SQL摘要',
+    detailTitle: '数据源查询详情',
+    showMethod: true,
+    showResource: false,
+    showProject: false,
+    emptyResource: '-'
+  },
+  LIST: {
+    title: '名单匹配日志',
+    subtitle: '展示名单变量匹配值、内容类型、匹配模式和命中结果。',
+    targetLabel: '名单变量',
+    methodLabel: '类型',
+    resourceLabel: '名单库',
+    summaryLabel: '匹配摘要',
+    detailTitle: '名单匹配详情',
+    showMethod: true,
+    showResource: false,
+    showProject: false,
+    emptyResource: '-'
+  },
+  MODEL: {
+    title: '模型执行日志',
+    subtitle: '展示模型测试和执行时的输入参数、输出结果、错误信息和耗时。',
+    targetLabel: '模型编码',
+    methodLabel: '类型',
+    resourceLabel: '模型资源',
+    summaryLabel: '输出摘要',
+    detailTitle: '模型执行详情',
+    showMethod: false,
+    showResource: false,
+    showProject: true,
+    emptyResource: '-'
+  }
+}
+
 export default {
   name: 'ModuleCallLog',
+  components: {
+    DetailBlock: {
+      functional: true,
+      props: {
+        title: String,
+        content: String
+      },
+      render(h, ctx) {
+        return h('div', { class: 'detail-block' }, [
+          h('div', { class: 'detail-title' }, ctx.props.title),
+          h('pre', { class: 'log-pre' }, ctx.props.content || '-')
+        ])
+      }
+    }
+  },
   props: {
     moduleType: { type: String, required: true },
-    title: { type: String, default: '调用日志' }
+    title: { type: String, default: '' }
   },
   data() {
     return {
@@ -149,10 +229,25 @@ export default {
     }
   },
   computed: {
+    profile() {
+      return PROFILES[this.moduleType] || PROFILES.DATASOURCE
+    },
     dbRequest() {
       return this.parseJsonValue(this.detail && this.detail.requestBody)
     },
     dbResponse() {
+      return this.parseJsonValue(this.detail && this.detail.responseBody)
+    },
+    listRequest() {
+      return this.parseJsonValue(this.detail && this.detail.requestBody)
+    },
+    listResponse() {
+      return this.parseJsonValue(this.detail && this.detail.responseBody)
+    },
+    modelRequest() {
+      return this.parseJsonValue(this.detail && this.detail.requestBody)
+    },
+    modelResponse() {
       return this.parseJsonValue(this.detail && this.detail.responseBody)
     },
     actionOptions() {
@@ -206,6 +301,21 @@ export default {
     actionLabel(value) {
       return this.actionMap[value] || value || '-'
     },
+    rowSummary(row) {
+      if (this.moduleType === 'DATABASE') {
+        const request = this.parseJsonValue(row.requestBody)
+        return request.sql || this.prettyInline(request.params || request.paramFields)
+      }
+      if (this.moduleType === 'LIST') {
+        const request = this.parseJsonValue(row.requestBody)
+        const response = this.parseJsonValue(row.responseBody)
+        return '值=' + (request.queryValue || '-') + '，' + (response.hit ? '命中' : '未命中')
+      }
+      if (this.moduleType === 'MODEL') {
+        return this.prettyInline(this.parseJsonValue(row.responseBody))
+      }
+      return row.responseStatus ? 'HTTP ' + row.responseStatus : this.prettyInline(this.parseJsonValue(row.responseBody))
+    },
     pretty(value) {
       if (value == null || value === '') return '-'
       if (typeof value === 'object') {
@@ -216,6 +326,10 @@ export default {
       } catch (e) {
         return String(value)
       }
+    },
+    prettyInline(value) {
+      const text = this.pretty(value)
+      return text.replace(/\s+/g, ' ').slice(0, 140)
     },
     parseJsonValue(value) {
       if (!value) return {}

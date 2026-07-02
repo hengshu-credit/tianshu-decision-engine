@@ -343,20 +343,20 @@
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="鉴权请求头">
-                  <el-input v-model="datasourceAuthConfig.headers" class="json-input" type="textarea" :rows="4" placeholder='{"X-App-Id":"${appId}"}' />
+                  <monaco-editor v-model="datasourceAuthConfig.headers" language="json" height="130px" />
                   <div class="field-help"><code>${字段}</code> 会从测试参数或规则入参中取值。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="鉴权请求体">
-                  <el-input v-model="datasourceAuthConfig.body" class="json-input" type="textarea" :rows="4" placeholder='{"grant_type":"client_credentials","client_id":"${clientId}"}' />
+                  <monaco-editor v-model="datasourceAuthConfig.body" language="json" height="130px" />
                 </el-form-item>
               </el-col>
             </el-row>
           </template>
           <template v-else>
             <el-form-item label="自定义JSON">
-              <el-input v-model="datasourceForm.authConfig" class="json-input" type="textarea" :rows="5" placeholder='{"headerName":"Authorization","value":"${token}"}' />
+              <monaco-editor v-model="datasourceForm.authConfig" language="json" height="150px" />
             </el-form-item>
           </template>
         </div>
@@ -383,10 +383,10 @@
       />
       <el-form label-width="90px" size="small">
         <el-form-item label="测试参数">
-          <el-input v-model="authTestParamsText" class="json-input" type="textarea" :rows="6" placeholder='{"clientId":"app001","clientSecret":"secret"}' />
+          <monaco-editor v-model="authTestParamsText" language="json" height="170px" />
         </el-form-item>
         <el-form-item label="测试结果">
-          <el-input v-model="authTestResultText" class="json-input" type="textarea" :rows="10" readonly />
+          <monaco-editor v-model="authTestResultText" language="json" height="240px" read-only />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -492,7 +492,7 @@
               </el-col>
             </el-row>
             <el-form-item label="鉴权配置">
-              <el-input v-model="apiForm.authApiConfig" class="json-input" type="textarea" :rows="5" placeholder='{"tokenUrl":"/oauth/token","method":"POST","tokenPath":"data.access_token","expiresInPath":"data.expires_in"}' />
+              <monaco-editor v-model="apiForm.authApiConfig" language="json" height="150px" />
             </el-form-item>
           </el-collapse-item>
 
@@ -513,13 +513,13 @@
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="Header配置">
-                  <el-input v-model="apiForm.headerConfig" class="json-input" type="textarea" :rows="5" placeholder='{"X-App-Id":"${appId}"}' />
+                  <monaco-editor v-model="apiForm.headerConfig" language="json" height="150px" />
                   <div class="field-help">请求头名到取值表达式的 JSON；敏感头在日志中会脱敏。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="Query配置">
-                  <el-input v-model="apiForm.queryConfig" class="json-input" type="textarea" :rows="5" placeholder='{"name":"$.customer.name"}' />
+                  <monaco-editor v-model="apiForm.queryConfig" language="json" height="150px" />
                   <div class="field-help">URL Query 参数配置；值支持 <code>$.字段</code> 和 <code>${字段}</code>。</div>
                 </el-form-item>
               </el-col>
@@ -527,19 +527,19 @@
             <el-row :gutter="12">
               <el-col :span="12">
                 <el-form-item label="入参映射">
-                  <el-input v-model="apiForm.requestMapping" class="json-input" type="textarea" :rows="5" placeholder='{"idNo":"$.customer.idNo"}' />
+                  <monaco-editor v-model="apiForm.requestMapping" language="json" height="150px" />
                   <div class="field-help">没有请求体模板时，会把该映射作为 JSON 请求体；GET/DELETE 时不会发送请求体。</div>
                 </el-form-item>
               </el-col>
               <el-col :span="12">
                 <el-form-item label="响应映射">
-                  <el-input v-model="apiForm.responseMapping" class="json-input" type="textarea" :rows="5" placeholder='{"score":"body.data.score","riskLevel":"body.data.level"}' />
+                  <monaco-editor v-model="apiForm.responseMapping" language="json" height="150px" />
                   <div class="field-help">左侧是引擎读取的字段名，右侧是响应路径；映射后接口变量默认从 <code>body.score</code> 等字段读取。</div>
                 </el-form-item>
               </el-col>
             </el-row>
             <el-form-item label="请求体模板">
-              <el-input v-model="apiForm.bodyTemplate" class="json-input" type="textarea" :rows="5" placeholder='{"certNo":"${customer.idNo}","name":"${customer.name}"}' />
+              <monaco-editor v-model="apiForm.bodyTemplate" language="json" height="150px" />
               <div class="field-help">优先级高于入参映射；适合三方字段名和内部对象字段名差异较大时使用。</div>
             </el-form-item>
           </el-collapse-item>
@@ -594,7 +594,7 @@
               </el-col>
               <el-col :span="12">
                 <el-form-item label="兜底返回">
-                  <el-input v-model="apiForm.fallbackValue" class="json-input" type="textarea" :rows="3" placeholder='{"success":false}' />
+                  <monaco-editor v-model="apiForm.fallbackValue" language="json" height="110px" />
                   <div class="field-help">异常策略为“返回默认值”时使用，必须是合法 JSON；内容会作为返回结果的 <code>body</code>。</div>
                 </el-form-item>
               </el-col>
@@ -619,10 +619,10 @@
       <div class="invoke-target">当前接口：{{ invokeTarget.apiName }} / {{ invokeTarget.apiCode }}</div>
       <el-form label-width="90px" size="small">
         <el-form-item label="请求参数">
-          <el-input v-model="invokeParamsText" class="json-input" type="textarea" :rows="8" placeholder='{"customer":{"idNo":"110101199001010000","name":"张三"}}' />
+          <monaco-editor v-model="invokeParamsText" language="json" height="220px" />
         </el-form-item>
         <el-form-item label="调用结果">
-          <el-input v-model="invokeResultText" class="json-input" type="textarea" :rows="8" readonly />
+          <monaco-editor v-model="invokeResultText" language="json" height="220px" read-only />
         </el-form-item>
       </el-form>
       <div slot="footer">
@@ -649,10 +649,11 @@ import {
 import { listProjects } from '@/api/project'
 import { listDataObjects } from '@/api/dataObject'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
+import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
   name: 'DatasourceList',
-  components: { ModuleCallLog },
+  components: { ModuleCallLog, MonacoEditor },
   data() {
     return {
       activeTab: 'datasource',

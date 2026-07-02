@@ -171,35 +171,11 @@
     </div>
 
     <!-- 测试弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="600px" append-to-body>
-      <p class="test-hint"><i class="el-icon-info" /> 输入测试参数（JSON 格式），包含脚本中使用的变量</p>
-      <el-input
-        v-model="testParamsJson"
-        type="textarea"
-        :rows="6"
-        placeholder='{"taxpayerQualification": "一般纳税人", "billingAmount": 10000}'
-      />
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false" show-icon style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item label="返回值">
-            <strong style="font-size:16px;color:#1890ff;">{{ testResult.result }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span class="err-text">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+        <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
@@ -207,6 +183,7 @@
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import MonacoEditor from '@/components/MonacoEditor'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { buildSampleParamsFromCodes, collectScriptInputCodes } from '@/utils/testSampleParams'
 
 const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.varPanelWidth'
@@ -215,7 +192,7 @@ const DEFAULT_VAR_PANEL_WIDTH = 300
 export default {
   name: 'ScriptEditor',
   mixins: [varPickerMixin],
-  components: { MonacoEditor },
+  components: { DesignerTestDialog, MonacoEditor },
   data() {
     return {
       definitionId: null,
@@ -230,6 +207,7 @@ export default {
       /** 脚本中引用的变量映射：{refCode, varId}，与 modelJson.scriptVarRefs 保持同步 */
       scriptVarRefs: [],
       testVisible: false,
+      testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
       monacoEditor: null,
@@ -553,10 +531,15 @@ export default {
       }
     },
     handleTest() {
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       const codes = collectScriptInputCodes(this.script, this.projectRefs)
       this.testParamsJson = JSON.stringify(buildSampleParamsFromCodes(Array.from(codes), this.projectRefs), null, 2)
       this.testResult = null
       this.testVisible = true
+    },
+    buildTestParamsTemplate() {
+      const codes = collectScriptInputCodes(this.script, this.projectRefs)
+      return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     async doTest() {
       let params = {}

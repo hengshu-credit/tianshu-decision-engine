@@ -54,6 +54,10 @@ public class QLExpressEngine {
             if (trace && result.getExpressionTraces() != null) {
                 ruleResult.setTraces(buildBoundedTraces(result.getExpressionTraces()));
             }
+        } catch (StackOverflowError e) {
+            log.error("QLExpress execution stack overflow", e);
+            ruleResult.setSuccess(false);
+            ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
@@ -78,6 +82,10 @@ public class QLExpressEngine {
             if (trace && result.getExpressionTraces() != null) {
                 ruleResult.setTraces(buildBoundedTraces(result.getExpressionTraces()));
             }
+        } catch (StackOverflowError e) {
+            log.error("QLExpress execution stack overflow", e);
+            ruleResult.setSuccess(false);
+            ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
@@ -93,7 +101,24 @@ public class QLExpressEngine {
     }
 
     private List<Object> buildBoundedTraces(Object expressionTraces) {
-        String traceJson = JSON.toJSONString(expressionTraces);
+        String traceJson;
+        try {
+            traceJson = JSON.toJSONString(expressionTraces);
+        } catch (StackOverflowError e) {
+            log.warn("QLExpress trace serialization stack overflow", e);
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("type", "TRACE_SERIALIZE_FAILED");
+            summary.put("message", "Execution trace is too complex to serialize. Use input and output data for diagnosis.");
+            summary.put("maxJsonLength", MAX_TRACE_JSON_LENGTH);
+            return Collections.<Object>singletonList(summary);
+        } catch (Exception e) {
+            log.warn("QLExpress trace serialization failed: {}", e.getMessage());
+            Map<String, Object> summary = new LinkedHashMap<>();
+            summary.put("type", "TRACE_SERIALIZE_FAILED");
+            summary.put("message", "Execution trace serialization failed: " + e.getMessage());
+            summary.put("maxJsonLength", MAX_TRACE_JSON_LENGTH);
+            return Collections.<Object>singletonList(summary);
+        }
         if (traceJson.length() <= MAX_TRACE_JSON_LENGTH) {
             return Collections.singletonList(expressionTraces);
         }

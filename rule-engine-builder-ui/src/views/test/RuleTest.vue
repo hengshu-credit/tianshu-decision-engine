@@ -307,12 +307,14 @@ export default {
         this.rules = res.data.records || []
       } catch (e) { /* ignore */ }
     },
-    onRuleChange() {
+    async onRuleChange() {
       this.selectedRule = this.rules.find(r => r.id === this.selectedRuleId) || null
+      this.params = []
       this.result = null
-      this.loadModelJson()
-      this.loadFunctionNameMap()
-      this.loadVarMap()
+      await this.loadModelJson()
+      await this.loadFunctionNameMap()
+      await this.loadVarMap()
+      await this.loadVariables()
     },
     async loadVariables() {
       if (!this.selectedRule) return  // 未选择规则，提前返回

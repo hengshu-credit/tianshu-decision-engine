@@ -187,58 +187,25 @@
       <i class="el-icon-warning" /> 脚本覆盖模式已激活，可视化编辑暂停。
     </div>
 
-    <!-- 测试执行弹窗 -->
-    <el-dialog title="测试执行" :visible.sync="testVisible" width="500px" append-to-body>
-      <el-form label-width="130px" size="small">
-        <el-form-item :label="model.rowVar.varLabel || '行变量'">
-          <el-select v-if="model.rowHeaders.length" v-model="testParams[model.rowVar.varCode]" style="width:100%" clearable>
-            <el-option v-for="r in model.rowHeaders" :key="r" :label="r" :value="r" />
-          </el-select>
-          <el-input v-else v-model="testParams[model.rowVar.varCode]" :placeholder="model.rowVar.varCode" />
-        </el-form-item>
-        <el-form-item :label="model.colVar.varLabel || '列变量'">
-          <el-select v-if="model.colHeaders.length" v-model="testParams[model.colVar.varCode]" style="width:100%" clearable>
-            <el-option v-for="c in model.colHeaders" :key="c" :label="c" :value="c" />
-          </el-select>
-          <el-input v-else v-model="testParams[model.colVar.varCode]" :placeholder="model.colVar.varCode" />
-        </el-form-item>
-      </el-form>
-      <template slot="footer">
-        <el-button size="small" @click="testVisible = false">取消</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="doTest">执行</el-button>
-      </template>
-      <div v-if="testResult" class="test-result">
-        <el-alert
-          :title="testResult.success ? '执行成功' : '执行失败'"
-          :type="testResult.success ? 'success' : 'error'"
-          :closable="false"
-          show-icon
-          style="margin-bottom:10px;"
-        />
-        <el-descriptions :column="1" border size="small">
-          <el-descriptions-item :label="model.resultVar.varLabel || '返回值'">
-            <strong>{{ testResult.result }}</strong>
-          </el-descriptions-item>
-          <el-descriptions-item label="耗时">{{ testResult.executeTimeMs }}ms</el-descriptions-item>
-          <el-descriptions-item v-if="testResult.errorMessage" label="错误">
-            <span class="text-danger">{{ testResult.errorMessage }}</span>
-          </el-descriptions-item>
-        </el-descriptions>
-      </div>
-    </el-dialog>
+    <designer-test-dialog
+      :visible.sync="testVisible"
+      :definition-id="definitionId"
+      :params-template="testParamsTemplate"
+    />
   </div>
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
+import { saveContent, compileRule, getContent, refreshFields } from '@/api/definition'
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 
 export default {
   name: 'CrossTable',
-  components: { VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, VarPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -255,8 +222,7 @@ export default {
       focusedCell: null,
       scriptMode: 'visual',
       testVisible: false,
-      testParams: {},
-      testResult: null,
+      testParamsTemplate: {},
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
     }
   },
@@ -394,16 +360,18 @@ export default {
       }
     },
     handleTest() {
-      this.testParams = {
-        [this.model.rowVar.varCode]: '',
-        [this.model.colVar.varCode]: ''
-      }
-      this.testResult = null
+      this.testParamsTemplate = this.buildTestParamsTemplate()
       this.testVisible = true
     },
-    async doTest() {
-      const res = await executeRule({ definitionId: this.definitionId, params: this.testParams })
-      this.testResult = res && res.data ? res.data : res
+    buildTestParamsTemplate() {
+      const params = {}
+      if (this.model.rowVar && this.model.rowVar.varCode) {
+        params[this.model.rowVar.varCode] = (this.model.rowHeaders || []).filter(Boolean)[0] || ''
+      }
+      if (this.model.colVar && this.model.colVar.varCode) {
+        params[this.model.colVar.varCode] = (this.model.colHeaders || []).filter(Boolean)[0] || ''
+      }
+      return params
     }
   }
 }

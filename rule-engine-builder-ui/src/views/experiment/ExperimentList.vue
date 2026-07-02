@@ -137,7 +137,7 @@
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
-              <el-input v-else v-model="row.conditionExpression" size="mini" placeholder="兼容旧表达式，例如 amount > 10000" />
+              <monaco-editor v-else v-model="row.conditionExpression" language="ql" theme="qlexpress-dark" height="70px" />
             </template>
           </el-table-column>
           <el-table-column label="类型" width="120">
@@ -182,7 +182,7 @@
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
-              <el-input v-else v-model="row.conditionExpression" size="mini" placeholder="兼容旧表达式，例如 amount > 10000" />
+              <monaco-editor v-else v-model="row.conditionExpression" language="ql" theme="qlexpress-dark" height="70px" />
             </template>
           </el-table-column>
           <el-table-column label="组编码" width="150"><template slot-scope="{ row }"><el-input v-model="row.groupCode" /></template></el-table-column>
@@ -218,7 +218,7 @@
           <el-date-picker v-model="testRequest.requestTime" type="datetime" value-format="yyyy-MM-ddTHH:mm:ss" placeholder="用于测试组名单时点" style="width:100%;" />
         </el-form-item>
         <el-form-item label="入参JSON">
-          <el-input v-model="testJson" type="textarea" :rows="8" />
+          <monaco-editor v-model="testJson" language="json" height="240px" />
         </el-form-item>
       </el-form>
       <div v-if="testResult" class="result-panel">
@@ -239,6 +239,7 @@ import { listDefinitions } from '@/api/definition'
 import { deleteExperiment, executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import MonacoEditor from '@/components/MonacoEditor'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -249,7 +250,7 @@ import {
 
 export default {
   name: 'ExperimentList',
-  components: { ConditionGroupEditor },
+  components: { ConditionGroupEditor, MonacoEditor },
   mixins: [varPickerMixin],
   data() {
     return {
