@@ -42,6 +42,10 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
     expect(computeActiveMenuIndex('/designer/flow/3')).toBe('/rule')
   })
 
+  test('路径为 /designer/ruleset/* 时高亮「规则管理」', () => {
+    expect(computeActiveMenuIndex('/designer/ruleset/9')).toBe('/rule')
+  })
+
   test('路径为 /designer/cross/* 时高亮「规则管理」', () => {
     expect(computeActiveMenuIndex('/designer/cross/4')).toBe('/rule')
   })
@@ -76,8 +80,8 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
     expect(computeActiveMenuIndex('/rule/new')).toBe('/rule')
     expect(computeActiveMenuIndex('/model/123')).toBe('/model')
     expect(computeActiveMenuIndex('/function/version/1')).toBe('/function')
-    expect(computeActiveMenuIndex('/datasource/api/edit/1')).toBe('/datasource')
-    expect(computeActiveMenuIndex('/database/edit/1')).toBe('/database')
+    expect(computeActiveMenuIndex('/datasource/api/1')).toBe('/datasource')
+    expect(computeActiveMenuIndex('/database/1')).toBe('/database')
     expect(computeActiveMenuIndex('/experiment/detail/1')).toBe('/experiment')
   })
 
@@ -180,6 +184,7 @@ describe('Layout — 设计器页面路由覆盖', () => {
     { path: '/designer/table/1', expectedMenu: '/rule' },
     { path: '/designer/tree/1', expectedMenu: '/rule' },
     { path: '/designer/flow/1', expectedMenu: '/rule' },
+    { path: '/designer/ruleset/1', expectedMenu: '/rule' },
     { path: '/designer/cross/1', expectedMenu: '/rule' },
     { path: '/designer/score/1', expectedMenu: '/rule' },
     { path: '/designer/cross-adv/1', expectedMenu: '/rule' },

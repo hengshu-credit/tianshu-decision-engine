@@ -306,6 +306,16 @@ describe('generateScript', () => {
     expect(script).toBe('')
   })
 
+  test('rule-call: 调用整条规则结果', () => {
+    const script = generateScript([{ type: 'rule-call', target: 'riskResult', ruleCode: 'credit_flow' }])
+    expect(script).toBe('riskResult = executeRule("credit_flow")')
+  })
+
+  test('rule-call: 调用规则具体输出字段', () => {
+    const script = generateScript([{ type: 'rule-call', target: 'score', ruleCode: 'score_card', outputField: 'score' }])
+    expect(script).toBe('score = executeRuleField("score_card", "score")')
+  })
+
   // -------- 多块组合 --------
   test('多块按顺序拼接', () => {
     const script = generateScript([
@@ -479,6 +489,11 @@ describe('newBlock', () => {
     expect(b.parts).toEqual([{ type: 'text', content: '' }])
   })
 
+  test('rule-call: 初始化规则调用块', () => {
+    const b = newBlock('rule-call')
+    expect(b).toMatchObject({ type: 'rule-call', target: '', ruleId: null, ruleCode: '', outputField: '' })
+  })
+
   test('未知类型默认为 assign', () => {
     const b = newBlock('unknown')
     expect(b.type).toBe('assign')
@@ -489,7 +504,7 @@ describe('newBlock', () => {
 // BLOCK_TYPES 常量
 // ============================================================
 describe('BLOCK_TYPES', () => {
-  test('包含全部 8 种块类型', () => {
+  test('包含全部 9 种块类型', () => {
     const types = BLOCK_TYPES.map(b => b.type)
     expect(types).toContain('assign')
     expect(types).toContain('if-block')
@@ -499,7 +514,8 @@ describe('BLOCK_TYPES', () => {
     expect(types).toContain('ternary')
     expect(types).toContain('in-check')
     expect(types).toContain('template-str')
-    expect(types.length).toBe(8)
+    expect(types).toContain('rule-call')
+    expect(types.length).toBe(9)
   })
 
   test('每种类型有 label 和 color', () => {

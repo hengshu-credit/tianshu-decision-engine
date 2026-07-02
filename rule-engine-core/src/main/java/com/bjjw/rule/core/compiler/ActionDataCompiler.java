@@ -48,6 +48,7 @@ public class ActionDataCompiler {
             case "ternary": return compileTernary(block, indent, varContext);
             case "in-check": return compileInCheck(block, indent, varContext);
             case "template-str": return compileTemplateStr(block, indent, varContext);
+            case "rule-call": return compileRuleCall(block, indent, varContext);
             default: return "";
         }
     }
@@ -215,6 +216,22 @@ public class ActionDataCompiler {
         return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = \"" + sb.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
+    private static String compileRuleCall(JSONObject b, int indent, VarContext varContext) {
+        String ruleCode = b.getString("ruleCode");
+        if (empty(ruleCode)) return "";
+        String outputField = b.getString("outputField");
+        String call = empty(outputField)
+                ? "executeRule(" + quoteString(ruleCode) + ")"
+                : "executeRuleField(" + quoteString(ruleCode) + ", " + quoteString(outputField) + ")";
+        String target = b.getString("target");
+        if (empty(target)) {
+            return pad(indent) + call;
+        }
+        Long targetVarId = fieldVarId(b, "target");
+        String targetRefType = fieldRefType(b, "target");
+        return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = " + call;
+    }
+
     private static String compileActions(JSONArray actions, int indent, VarContext varContext) {
         if (actions == null) return "";
         StringBuilder sb = new StringBuilder();
@@ -293,6 +310,10 @@ public class ActionDataCompiler {
         if (s.startsWith("\"") || s.startsWith("'")) return s;
         if (s.matches(".*[+\\-*/()><=!&|,\\[\\]{}].*")) return s;
         return "\"" + s.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+    }
+
+    private static String quoteString(String value) {
+        return "\"" + (value == null ? "" : value).replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
     }
 
     private static boolean empty(String s) { return s == null || s.trim().isEmpty(); }

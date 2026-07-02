@@ -99,6 +99,12 @@ const routes = [
         meta: { title: '决策流设计器' }
       },
       {
+        path: 'designer/ruleset/:id',
+        name: 'RuleSet',
+        component: () => import('@/views/designer/RuleSet.vue'),
+        meta: { title: '规则集设计器' }
+      },
+      {
         path: 'designer/cross/:id',
         name: 'CrossTable',
         component: () => import('@/views/designer/CrossTable.vue'),
@@ -153,10 +159,46 @@ const routes = [
         meta: { title: '外数管理' }
       },
       {
+        path: 'datasource/source/new',
+        name: 'DatasourceCreate',
+        component: () => import('@/views/datasource/DatasourceDetail.vue'),
+        meta: { title: '新建外数数据源' }
+      },
+      {
+        path: 'datasource/source/:id',
+        name: 'DatasourceDetail',
+        component: () => import('@/views/datasource/DatasourceDetail.vue'),
+        meta: { title: '外数数据源详情' }
+      },
+      {
+        path: 'datasource/api/new',
+        name: 'ApiCreate',
+        component: () => import('@/views/datasource/ApiDetail.vue'),
+        meta: { title: '新建外数 API' }
+      },
+      {
+        path: 'datasource/api/:id',
+        name: 'ApiDetail',
+        component: () => import('@/views/datasource/ApiDetail.vue'),
+        meta: { title: '外数 API 详情' }
+      },
+      {
         path: 'database',
         name: 'DatabaseList',
         component: () => import('@/views/database/DatabaseList.vue'),
         meta: { title: '数据库管理' }
+      },
+      {
+        path: 'database/new',
+        name: 'DatabaseCreate',
+        component: () => import('@/views/database/DatabaseDetail.vue'),
+        meta: { title: '新建数据库数据源' }
+      },
+      {
+        path: 'database/:id',
+        name: 'DatabaseDetail',
+        component: () => import('@/views/database/DatabaseDetail.vue'),
+        meta: { title: '数据库数据源详情' }
       },
       {
         path: 'model',

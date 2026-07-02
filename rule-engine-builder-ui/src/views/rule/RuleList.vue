@@ -32,6 +32,7 @@
             <el-option label="决策表" value="TABLE" />
             <el-option label="决策树" value="TREE" />
             <el-option label="决策流" value="FLOW" />
+            <el-option label="规则集" value="RULE_SET" />
             <el-option label="交叉表" value="CROSS" />
             <el-option label="评分卡" value="SCORE" />
             <el-option label="复杂交叉表" value="CROSS_ADV" />
@@ -117,6 +118,7 @@
             <el-option label="决策表" value="TABLE" />
             <el-option label="决策树" value="TREE" />
             <el-option label="决策流" value="FLOW" />
+            <el-option label="规则集" value="RULE_SET" />
             <el-option label="交叉表" value="CROSS" />
             <el-option label="评分卡" value="SCORE" />
             <el-option label="复杂交叉表" value="CROSS_ADV" />
@@ -357,6 +359,7 @@ export default {
         TABLE: '/designer/table',
         TREE: '/designer/tree',
         FLOW: '/designer/flow',
+        RULE_SET: '/designer/ruleset',
         CROSS: '/designer/cross',
         SCORE: '/designer/score',
         CROSS_ADV: '/designer/cross-adv',
@@ -408,6 +411,7 @@ export default {
     modelTypeLabel(type) {
       return {
         TABLE: '决策表', TREE: '决策树', FLOW: '决策流',
+        RULE_SET: '规则集',
         CROSS: '交叉表', SCORE: '评分卡',
         CROSS_ADV: '复杂交叉表', SCORE_ADV: '复杂评分卡',
         SCRIPT: 'QL脚本'

@@ -619,6 +619,14 @@ export default {
           this.extractVarIdsFromConditionRoot(model.conditionRoot, varIdMap)
           break
         }
+        case 'RULE_SET': {
+          (model.rules || []).forEach(rule => {
+            this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
+            this.extractVarIdsFromConditions(rule.conditions, varIdMap)
+            this.extractVarIdsFromActionData(rule.actionData, varIdMap)
+          })
+          break
+        }
         case 'CROSS': {
           // 交叉表：行变量、列变量、结果变量
           // 优先用 _varId（精确匹配），回退用 varCode
@@ -788,9 +796,18 @@ export default {
     extractVarIdsFromActionData(actionData, varIdMap) {
       if (!actionData || !Array.isArray(actionData)) return
       actionData.forEach(a => {
+        const addFieldRef = (idKey, codeKey) => {
+          if (a[idKey] && a[codeKey]) {
+            varIdMap[a[idKey]] = { varCode: a[codeKey] }
+          }
+        }
         if (a._varId && a.varCode && !varIdMap[a._varId]) {
           varIdMap[a._varId] = { varCode: a.varCode }
         }
+        addFieldRef('_targetVarId', 'target')
+        addFieldRef('_condVarId', 'condVar')
+        addFieldRef('_matchVarId', 'matchVar')
+        addFieldRef('_checkVarId', 'checkVar')
         if (a.type === 'assign' && a.target && a._targetVarId) {
           varIdMap[a._targetVarId] = { varCode: a.target }
         }
@@ -799,11 +816,19 @@ export default {
         }
         if (a.type === 'if-block' && a.branches) {
           a.branches.forEach(branch => {
-            if (branch._varId && branch.condVar && !varIdMap[branch._varId]) {
+            if (branch._condVarId && branch.condVar) {
+              varIdMap[branch._condVarId] = { varCode: branch.condVar }
+            } else if (branch._varId && branch.condVar && !varIdMap[branch._varId]) {
               varIdMap[branch._varId] = { varCode: branch.condVar }
             }
+            this.extractVarIdsFromActionData(branch.actions, varIdMap)
           })
         }
+        if (a.cases) {
+          a.cases.forEach(item => this.extractVarIdsFromActionData(item.actions, varIdMap))
+        }
+        this.extractVarIdsFromActionData(a.actions, varIdMap)
+        this.extractVarIdsFromActionData(a.defaultActions, varIdMap)
       })
     },
     addParam() {
@@ -918,7 +943,7 @@ export default {
       cur[parts[parts.length - 1]] = value
     },
     mtl(t) {
-      return { TABLE: '决策表', TREE: '决策树', FLOW: '决策流', CROSS: '交叉表', SCORE: '评分卡', CROSS_ADV: '复杂交叉表', SCORE_ADV: '复杂评分卡', SCRIPT: 'QL脚本' }[t] || t
+      return { TABLE: '决策表', TREE: '决策树', FLOW: '决策流', RULE_SET: '规则集', CROSS: '交叉表', SCORE: '评分卡', CROSS_ADV: '复杂交叉表', SCORE_ADV: '复杂评分卡', SCRIPT: 'QL脚本' }[t] || t
     },
     formatJson(obj) {
       if (obj === null || obj === undefined) return '(空)'

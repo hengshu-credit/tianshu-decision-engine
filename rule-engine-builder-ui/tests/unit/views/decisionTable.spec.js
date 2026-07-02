@@ -81,7 +81,14 @@ function mockObjectTree() {
 
 function mockModels() {
   return [
-    { id: 30, modelCode: 'CreditModel', modelName: '信用模型' }
+    {
+      id: 30,
+      modelCode: 'CreditModel',
+      modelName: '信用模型',
+      outputFields: [
+        { id: 301, fieldName: 'score', fieldLabel: '评分', fieldType: 'NUMBER', scriptName: 'score' }
+      ]
+    }
   ]
 }
 
@@ -188,10 +195,12 @@ describe('DecisionTable — 变量选择器加载', () => {
     expect(object.length).toBeGreaterThan(0)
   })
 
-  test('projectRefs 包含 model 类别的模型', () => {
+  test('projectRefs 包含 model 类别的模型输出字段', () => {
     const model = getRefsByCategory(wrapper, 'model')
     expect(model.length).toBeGreaterThan(0)
-    expect(model[0].refType).toBe('MODEL')
+    expect(model[0].refType).toBe('MODEL_OUTPUT')
+    expect(model[0].refCode).toBe('CreditModel.score')
+    expect(model[0].varObj.id).toBe(301)
   })
 
   test('standalone 变量的 refCode 使用 scriptName', () => {

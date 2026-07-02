@@ -50,6 +50,9 @@ public class RulePublishService {
     @Resource
     private FunctionRegistrar functionRegistrar;
 
+    @Resource
+    private RuleCallCycleService ruleCallCycleService;
+
     /**
      * 将 SCRIPT 函数定义拼接到编译脚本前面，使客户端同步后可直接执行
      */
@@ -75,6 +78,11 @@ public class RulePublishService {
         RuleDefinitionContent content = definitionService.getContent(definitionId);
         if (content == null) {
             return "规则内容不存在";
+        }
+
+        String cycleError = ruleCallCycleService.validateNoCycle(definitionId, content.getModelJson());
+        if (cycleError != null) {
+            return cycleError;
         }
 
         if (content.getCompileStatus() != 1) {

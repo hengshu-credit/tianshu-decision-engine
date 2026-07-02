@@ -751,6 +751,9 @@ export default {
     }
   },
   created() {
+    if (this.$route && this.$route.query && this.$route.query.tab === 'api') {
+      this.activeTab = 'api'
+    }
     this.loadProjects()
     this.loadDatasources()
     this.loadDatasourceOptions()
@@ -855,14 +858,10 @@ export default {
       this.loadApiConfigs()
     },
     handleCreateDatasource() {
-      this.datasourceForm = this.emptyDatasourceForm()
-      this.datasourceAuthConfig = this.emptyAuthConfig(this.datasourceForm.authType)
-      this.datasourceDialogVisible = true
+      this.$router.push('/datasource/source/new')
     },
     handleEditDatasource(row) {
-      this.datasourceForm = { ...this.emptyDatasourceForm(), ...row }
-      this.datasourceAuthConfig = this.parseAuthConfig(row.authConfig, this.datasourceForm.authType)
-      this.datasourceDialogVisible = true
+      this.$router.push('/datasource/source/' + row.id)
     },
     handleTestDatasource(row) {
       this.authTestTarget = row
@@ -871,18 +870,11 @@ export default {
       this.authTestDialogVisible = true
     },
     async handleCreateApi(row) {
-      this.activeTab = 'api'
-      this.apiForm = this.emptyApiForm()
-      if (row && row.id) this.apiForm.datasourceId = row.id
-      await this.loadDatasourceOptions()
-      this.loadDataObjectOptions(row && row.projectId ? row.projectId : 0)
-      this.apiDialogVisible = true
+      const query = row && row.id ? { datasourceId: row.id } : {}
+      this.$router.push({ path: '/datasource/api/new', query })
     },
     async handleEditApi(row) {
-      this.apiForm = { ...this.emptyApiForm(), ...row }
-      await this.loadDatasourceOptions()
-      this.loadDataObjectOptions(this.resolveDatasourceProjectId(row.datasourceId))
-      this.apiDialogVisible = true
+      this.$router.push('/datasource/api/' + row.id)
     },
     handleInvokeApi(row) {
       this.invokeTarget = row

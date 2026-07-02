@@ -212,6 +212,7 @@ describe('RuleTest — 辅助方法', () => {
     expect(wrapper.vm.mtl('TABLE')).toBe('决策表')
     expect(wrapper.vm.mtl('TREE')).toBe('决策树')
     expect(wrapper.vm.mtl('FLOW')).toBe('决策流')
+    expect(wrapper.vm.mtl('RULE_SET')).toBe('规则集')
     expect(wrapper.vm.mtl('SCORE')).toBe('评分卡')
     expect(wrapper.vm.mtl('CROSS')).toBe('交叉表')
     expect(wrapper.vm.mtl('SCRIPT')).toBe('QL脚本')
@@ -385,6 +386,31 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     expect(wrapper.vm.params.length).toBe(3)
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
     expect(varCodes).toEqual(['goodsCategory', 'taxRate', 'taxpayerType'])
+  })
+
+  test('规则集规则：从条件树和动作块提取变量', async () => {
+    wrapper.vm.selectedRuleId = 9
+    wrapper.vm.selectedRule = { id: 9, ruleCode: 'RS_RISK', ruleName: '风险规则集', modelType: 'RULE_SET', projectId: 1 }
+
+    definitionApi.getContent.mockResolvedValueOnce({
+      data: {
+        modelJson: JSON.stringify({
+          executionMode: 'SERIAL',
+          rules: [{
+            ruleCode: 'R0001',
+            conditionRoot: { type: 'leaf', varCode: 'taxpayerType', _varId: 1, operator: '==', value: '一般纳税人' },
+            actionData: [{ type: 'assign', target: 'taxRate', _targetVarId: 3, value: '0.13' }]
+          }]
+        })
+      }
+    })
+    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+
+    await wrapper.vm.loadVariables()
+    await Vue.nextTick()
+
+    const varCodes = wrapper.vm.params.map(p => p.key).sort()
+    expect(varCodes).toEqual(['taxRate', 'taxpayerType'])
   })
 
   test('未选择规则时 loadVariables 不调用 API', async () => {

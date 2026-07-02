@@ -404,13 +404,10 @@ export default {
       this.loadData()
     },
     handleCreate() {
-      this.form = this.emptyForm()
-      this.dialogVisible = true
-      this.$nextTick(() => this.generateJdbcUrl(false))
+      this.$router.push('/database/new')
     },
     handleEdit(row) {
-      this.form = { ...this.emptyForm(), ...row, jdbcAutoBuild: false }
-      this.dialogVisible = true
+      this.$router.push('/database/' + row.id)
     },
     handleSubmit() {
       this.$refs.form.validate(async valid => {

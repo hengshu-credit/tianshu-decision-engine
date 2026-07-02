@@ -131,6 +131,60 @@
           <el-button size="mini" icon="el-icon-plus" @click="addArg(block)" style="width:100%;margin-top:2px">添加参数</el-button>
         </template>
 
+        <!-- ===== Rule Call ===== -->
+        <template v-if="block.type === 'rule-call'">
+          <div class="inline-row" style="margin-bottom:4px">
+            <span class="mini-label">结果</span>
+            <var-picker :vars="vars" :selected-vars="selectedVars" :value="block.target" placeholder="结果变量（可空）" size="mini" @select="v => selectVar(block, 'target', v)" />
+          </div>
+          <div class="inline-row" style="margin-bottom:4px">
+            <span class="mini-label">规则</span>
+            <el-select
+              v-model="block.ruleCode"
+              size="mini"
+              filterable
+              placeholder="选择要执行的规则"
+              style="flex:1"
+              @visible-change="visible => rememberRuleCallSnapshot(block, visible)"
+              @change="onRuleSelect(block, $event)"
+            >
+              <el-option
+                v-for="rule in rules"
+                :key="rule.id || rule.ruleCode"
+                :label="ruleLabel(rule)"
+                :value="rule.ruleCode"
+              />
+            </el-select>
+          </div>
+          <div class="inline-row">
+            <span class="mini-label">输出字段</span>
+            <el-select
+              v-if="ruleOutputFields(block).length"
+              v-model="block.outputField"
+              size="mini"
+              filterable
+              clearable
+              placeholder="选择具体输出字段（可空）"
+              style="flex:1"
+              @change="sync"
+            >
+              <el-option
+                v-for="field in ruleOutputFields(block)"
+                :key="field.id || field.scriptName || field.fieldName"
+                :label="fieldLabel(field)"
+                :value="field.scriptName || field.fieldName"
+              />
+            </el-select>
+            <el-input
+              v-else
+              v-model="block.outputField"
+              size="mini"
+              placeholder="输出字段名（可空，空则返回整条规则结果）"
+              @input="sync"
+            />
+          </div>
+        </template>
+
         <!-- ===== ForEach ===== -->
         <template v-if="block.type === 'foreach'">
           <div class="inline-row" style="margin-bottom:4px">
@@ -233,7 +287,11 @@ export default {
     actionData: { type: Array, default: () => [] },
     vars: { type: Array, default: () => [] },
     selectedVars: { type: Array, default: () => [] },
-    functions: { type: Array, default: () => [] }
+    functions: { type: Array, default: () => [] },
+    rules: { type: Array, default: () => [] },
+    currentRuleId: { type: [String, Number], default: null },
+    currentRuleCode: { type: String, default: '' },
+    validateRuleCallCycle: { type: Function, default: null }
   },
   data() {
     return {
@@ -432,6 +490,107 @@ export default {
         } catch (e) { /* ignore */ }
       }
       this.sync()
+    },
+    rememberRuleCallSnapshot(block, visible) {
+      if (!visible || !block) return
+      Object.defineProperty(block, '__ruleCallSnapshot', {
+        value: {
+          ruleId: block.ruleId == null ? null : block.ruleId,
+          ruleCode: block.ruleCode || '',
+          ruleName: block.ruleName || '',
+          modelType: block.modelType || '',
+          outputField: block.outputField || ''
+        },
+        enumerable: false,
+        configurable: true,
+        writable: true
+      })
+    },
+    restoreRuleCallSnapshot(block) {
+      if (!block) return
+      const snapshot = block.__ruleCallSnapshot || {
+        ruleId: null,
+        ruleCode: '',
+        ruleName: '',
+        modelType: '',
+        outputField: ''
+      }
+      this.$set(block, 'ruleId', snapshot.ruleId == null ? null : snapshot.ruleId)
+      this.$set(block, 'ruleCode', snapshot.ruleCode || '')
+      this.$set(block, 'ruleName', snapshot.ruleName || '')
+      this.$set(block, 'modelType', snapshot.modelType || '')
+      this.$set(block, 'outputField', snapshot.outputField || '')
+      this.clearRuleCallSnapshot(block)
+    },
+    clearRuleCallSnapshot(block) {
+      if (block && Object.prototype.hasOwnProperty.call(block, '__ruleCallSnapshot')) {
+        delete block.__ruleCallSnapshot
+      }
+    },
+    async validateSelectedRuleCall(block) {
+      if (typeof this.validateRuleCallCycle !== 'function') return true
+      try {
+        const result = await this.validateRuleCallCycle(block)
+        return result === false ? '规则调用存在环路' : (result || true)
+      } catch (e) {
+        return (e && e.message) || '规则调用环校验失败'
+      }
+    },
+    async onRuleSelect(block, ruleCode) {
+      if (!block) return
+      const rule = (this.rules || []).find(item => String(item.ruleCode) === String(ruleCode))
+      if (!rule) {
+        this.$set(block, 'ruleId', null)
+        this.$set(block, 'ruleName', '')
+        this.$set(block, 'modelType', '')
+        this.clearRuleCallSnapshot(block)
+        this.sync()
+        return
+      }
+      if (this.isCurrentRule(rule)) {
+        if (this.$message) this.$message.warning('不能调用当前规则自身，会形成规则调用环')
+        this.restoreRuleCallSnapshot(block)
+        this.sync()
+        return
+      }
+      this.$set(block, 'ruleId', rule.id || null)
+      this.$set(block, 'ruleName', rule.ruleName || '')
+      this.$set(block, 'modelType', rule.modelType || '')
+      if (!this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) {
+        this.$set(block, 'outputField', '')
+      }
+      this.sync()
+      const validation = await this.validateSelectedRuleCall(block)
+      if (validation !== true) {
+        if (this.$message) this.$message.warning(validation)
+        this.restoreRuleCallSnapshot(block)
+        this.sync()
+        return
+      }
+      this.clearRuleCallSnapshot(block)
+    },
+    isCurrentRule(rule) {
+      if (!rule) return false
+      if (this.currentRuleId != null && String(rule.id) === String(this.currentRuleId)) return true
+      return !!this.currentRuleCode && String(rule.ruleCode) === String(this.currentRuleCode)
+    },
+    ruleLabel(rule) {
+      if (!rule) return ''
+      const name = rule.ruleName || rule.ruleCode || ''
+      const code = rule.ruleCode && rule.ruleCode !== name ? ' (' + rule.ruleCode + ')' : ''
+      const type = rule.modelType ? ' - ' + rule.modelType : ''
+      return name + code + type
+    },
+    ruleOutputFields(block) {
+      if (!block || !block.ruleCode) return []
+      const rule = (this.rules || []).find(item => String(item.ruleCode) === String(block.ruleCode))
+      return rule ? (rule.outputFieldsJson || rule.outputFields || []) : []
+    },
+    fieldLabel(field) {
+      if (!field) return ''
+      const name = field.fieldLabel || field.fieldName || field.scriptName || ''
+      const code = field.scriptName || field.fieldName || ''
+      return code && code !== name ? name + ' (' + code + ')' : name
     },
     typeLabel(type) {
       const t = BLOCK_TYPES.find(b => b.type === type)

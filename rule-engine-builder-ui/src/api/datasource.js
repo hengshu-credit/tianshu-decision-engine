@@ -24,6 +24,10 @@ export function listApiConfigs(params) {
   return request({ url: '/rule/datasource/api-config/list', method: 'get', params })
 }
 
+export function getApiConfig(id) {
+  return request({ url: `/rule/datasource/api-config/${id}`, method: 'get' })
+}
+
 export function createApiConfig(data) {
   return request({ url: '/rule/datasource/api-config', method: 'post', data })
 }

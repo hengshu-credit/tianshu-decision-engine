@@ -48,6 +48,9 @@ public class RuleExecuteService {
     @Resource
     private VariableSourceResolver variableSourceResolver;
 
+    @Resource
+    private RuleRuntimeInvoker runtimeRuleInvoker;
+
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
@@ -71,16 +74,24 @@ public class RuleExecuteService {
                 : funcPrefix + "\n" + content.getCompiledScript();
         VariableResolveOptions resolveOptions = withDefinitionInputFields(VariableResolveOptions.defaults(), definitionId);
         Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), params, resolveOptions);
-        RuleResult result = qlExpressEngine.execute(fullScript, executeParams, true);
-
-        RuleExecutionLog log = new RuleExecutionLog();
-        log.setRuleCode(definition.getRuleCode());
+        String projectCode = null;
         if (definition.getProjectId() != null) {
             RuleProject project = projectService.getById(definition.getProjectId());
             if (project != null) {
-                log.setProjectCode(project.getProjectCode());
+                projectCode = project.getProjectCode();
             }
         }
+        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams);
+        RuleResult result;
+        try {
+            result = qlExpressEngine.execute(fullScript, executeParams, true);
+        } finally {
+            runtimeRuleInvoker.exit();
+        }
+
+        RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode(definition.getRuleCode());
+        log.setProjectCode(projectCode);
         log.setRuleVersion(definition.getCurrentVersion());
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
@@ -122,17 +133,24 @@ public class RuleExecuteService {
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
         VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId());
         Map<String, Object> executeParams = variableSourceResolver.resolve(executionProjectId, safeParams, effectiveOptions);
-        RuleResult result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
+        String projectCode = published.getProjectCode();
+        if (projectCode == null && executionProjectId != null) {
+            RuleProject project = projectService.getById(executionProjectId);
+            if (project != null) {
+                projectCode = project.getProjectCode();
+            }
+        }
+        runtimeRuleInvoker.enter(published.getRuleCode(), executionProjectId, projectCode, executeParams);
+        RuleResult result;
+        try {
+            result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
+        } finally {
+            runtimeRuleInvoker.exit();
+        }
 
         RuleExecutionLog log = new RuleExecutionLog();
         log.setRuleCode(published.getRuleCode());
-        log.setProjectCode(published.getProjectCode());
-        if (log.getProjectCode() == null && executionProjectId != null) {
-            RuleProject project = projectService.getById(executionProjectId);
-            if (project != null) {
-                log.setProjectCode(project.getProjectCode());
-            }
-        }
+        log.setProjectCode(projectCode);
         log.setRuleVersion(published.getVersion());
         log.setModelType(published.getModelType());
         log.setSource(source == null ? "CLIENT_SERVER" : source);
@@ -182,6 +200,7 @@ public class RuleExecuteService {
         functionRegistrar.registerJavaFunctions(javaFuncs, qlExpressEngine.getRunner());
         functionRegistrar.registerBeanFunctions(beanFuncs, qlExpressEngine.getRunner());
         AggregateBuiltinFunctionRegistry.register(qlExpressEngine.getRunner());
+        runtimeRuleInvoker.register(qlExpressEngine.getRunner());
 
         if (!includeScriptPrefix) {
             return "";

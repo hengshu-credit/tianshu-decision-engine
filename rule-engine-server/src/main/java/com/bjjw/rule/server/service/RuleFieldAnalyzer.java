@@ -9,6 +9,7 @@ import com.bjjw.rule.model.entity.RuleDefinitionInputField;
 import com.bjjw.rule.model.entity.RuleDefinitionOutputField;
 import com.bjjw.rule.model.entity.RuleModel;
 import com.bjjw.rule.model.entity.RuleModelInputField;
+import com.bjjw.rule.model.entity.RuleModelOutputField;
 import com.bjjw.rule.model.entity.RuleVariable;
 import com.bjjw.rule.server.mapper.RuleDataObjectMapper;
 import com.bjjw.rule.server.mapper.RuleDataObjectFieldMapper;
@@ -16,6 +17,7 @@ import com.bjjw.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleModelInputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleModelMapper;
+import com.bjjw.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleVariableMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
@@ -61,6 +63,9 @@ public class RuleFieldAnalyzer {
 
     @Resource
     private RuleModelInputFieldMapper modelInputFieldMapper;
+
+    @Resource
+    private RuleModelOutputFieldMapper modelOutputFieldMapper;
 
     /**
      * 解析模型内容，提取输入/输出变量，持久化到字段表。
@@ -209,7 +214,8 @@ public class RuleFieldAnalyzer {
             modelWrapper.eq(RuleModel::getScope, RuleVariableService.SCOPE_GLOBAL);
         }
         modelWrapper.eq(RuleModel::getStatus, 1);
-        for (RuleModel m : modelMapper.selectList(modelWrapper)) {
+        List<RuleModel> models = modelMapper.selectList(modelWrapper);
+        for (RuleModel m : models) {
             String modelCode = trimToNull(m.getModelCode());
             if (modelCode != null && !map.containsKey(modelCode.toLowerCase())) {
                 Map<String, Object> meta = new HashMap<>();
@@ -223,8 +229,53 @@ public class RuleFieldAnalyzer {
                 map.put(modelCode.toLowerCase(), meta);
             }
         }
+        appendModelOutputMeta(map, models);
 
         return map;
+    }
+
+    private void appendModelOutputMeta(Map<String, Map<String, Object>> map, List<RuleModel> models) {
+        if (models == null || models.isEmpty() || modelOutputFieldMapper == null) {
+            return;
+        }
+        Map<Long, String> modelCodeMap = new HashMap<>();
+        Map<Long, String> modelNameMap = new HashMap<>();
+        for (RuleModel model : models) {
+            String modelCode = trimToNull(model.getModelCode());
+            if (model.getId() != null && modelCode != null) {
+                modelCodeMap.put(model.getId(), modelCode);
+                modelNameMap.put(model.getId(), trimToNull(model.getModelName()));
+            }
+        }
+        if (modelCodeMap.isEmpty()) {
+            return;
+        }
+        List<RuleModelOutputField> fields = modelOutputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelOutputField>()
+                        .in(RuleModelOutputField::getModelId, modelCodeMap.keySet())
+                        .orderByAsc(RuleModelOutputField::getSortOrder)
+                        .orderByAsc(RuleModelOutputField::getId));
+        for (RuleModelOutputField field : fields) {
+            String modelCode = modelCodeMap.get(field.getModelId());
+            String outputScript = firstNonBlank(field.getScriptName(), field.getFieldName());
+            if (modelCode == null || outputScript == null) {
+                continue;
+            }
+            String scriptName = modelCode + "." + outputScript;
+            if (map.containsKey(scriptName.toLowerCase())) {
+                continue;
+            }
+            Map<String, Object> meta = new HashMap<>();
+            meta.put("id", field.getId());
+            meta.put("varLabel", firstNonBlank(modelNameMap.get(field.getModelId()), modelCode)
+                    + "/" + firstNonBlank(field.getFieldLabel(), field.getFieldName(), outputScript));
+            meta.put("varType", firstNonBlank(field.getFieldType(), "STRING"));
+            meta.put("scriptName", scriptName);
+            meta.put("varCode", outputScript);
+            meta.put("varSource", "MODEL_OUTPUT");
+            meta.put("refType", "MODEL_OUTPUT");
+            map.put(scriptName.toLowerCase(), meta);
+        }
     }
 
     /**
@@ -636,6 +687,9 @@ public class RuleFieldAnalyzer {
             case "FLOW":
                 extractFromGraphModel(model, varCodes, true);
                 break;
+            case "RULE_SET":
+                extractFromRuleSet(model, varCodes, true);
+                break;
             case "CROSS":
                 extractFromCrossTable(model, varCodes);
                 break;
@@ -689,6 +743,9 @@ public class RuleFieldAnalyzer {
             case "TREE":
             case "FLOW":
                 extractFromGraphModel(model, varCodes, false);
+                break;
+            case "RULE_SET":
+                extractFromRuleSet(model, varCodes, false);
                 break;
             case "CROSS":
                 extractOutputFromCrossTable(model, varCodes);
@@ -814,6 +871,39 @@ public class RuleFieldAnalyzer {
                     }
                 }
             }
+        }
+    }
+
+    // ==================== 规则集 ====================
+
+    private void extractFromRuleSet(JSONObject model, Set<String> varCodes, boolean isInput) {
+        JSONArray rules = model.getJSONArray("rules");
+        if (rules == null) {
+            return;
+        }
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null) {
+                continue;
+            }
+            if (isInput) {
+                JSONObject condRoot = rule.getJSONObject("conditionRoot");
+                if (condRoot != null) {
+                    collectVarCodesFromConditionTree(condRoot, varCodes);
+                }
+                JSONArray conditions = rule.getJSONArray("conditions");
+                if (conditions != null) {
+                    for (int j = 0; j < conditions.size(); j++) {
+                        collectVarCodesFromConditionTree(conditions.getJSONObject(j), varCodes);
+                    }
+                }
+            }
+            collectActionDataVars(rule.getJSONArray("actionData"), varCodes, isInput);
+        }
+        if (isInput && !varCodes.isEmpty()) {
+            Set<String> outputVars = new LinkedHashSet<>();
+            extractFromRuleSet(model, outputVars, false);
+            varCodes.removeAll(outputVars);
         }
     }
 

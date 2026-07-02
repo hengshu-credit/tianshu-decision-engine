@@ -50,6 +50,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RuleDefinitionVersionMapper versionMapper;
 
+    @Resource
+    private RuleCallCycleService ruleCallCycleService;
+
     public IPage<RuleDefinition> pageList(RuleQueryDTO query) {
         LambdaQueryWrapper<RuleDefinition> wrapper = buildWrapper(query);
         wrapper.orderByDesc(RuleDefinition::getCreateTime);
@@ -182,13 +185,19 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     }
 
     public void saveContent(Long definitionId, String modelJson) {
+        RuleDefinition definition = getById(definitionId);
+        if (definition != null) {
+            String cycleError = ruleCallCycleService.validateNoCycle(definitionId, modelJson);
+            if (cycleError != null) {
+                throw new IllegalArgumentException(cycleError);
+            }
+        }
         RuleDefinitionContent content = getContent(definitionId);
         if (content != null) {
             content.setModelJson(modelJson);
             content.setCompileStatus(0);
             contentMapper.updateById(content);
         }
-        RuleDefinition definition = getById(definitionId);
         if (definition != null) {
             definition.setCurrentVersion(definition.getCurrentVersion() + 1);
             updateById(definition);

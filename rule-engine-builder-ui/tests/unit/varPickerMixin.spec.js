@@ -40,7 +40,16 @@ const mockObjectTree = [
 ]
 
 const mockModels = [
-  { id: 101, modelCode: 'creditModel', modelName: '信用模型', modelType: 'LR', status: 1 }
+  {
+    id: 101,
+    modelCode: 'creditModel',
+    modelName: '信用模型',
+    modelType: 'LR',
+    status: 1,
+    outputFields: [
+      { id: 201, modelId: 101, fieldName: 'score', scriptName: 'score', fieldLabel: '评分', fieldType: 'NUMBER' }
+    ]
+  }
 ]
 
 // getVariableTree 返回数组（axios 拦截器会包成 { data: [...] }）
@@ -138,13 +147,14 @@ describe('varPickerMixin', () => {
     expect(object[0].refCode).toBe('TaxRequest.amount')
   })
 
-  test('projectRefs 包含 model 类别的模型', async () => {
+  test('projectRefs 包含 model 类别的模型输出字段', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     const models = vm.projectRefs.filter(r => r.category === 'model')
     expect(models.length).toBe(1)
-    expect(models[0].refCode).toBe('creditModel')
-    expect(models[0].refType).toBe('MODEL')
+    expect(models[0].refCode).toBe('creditModel.score')
+    expect(models[0].refType).toBe('MODEL_OUTPUT')
+    expect(models[0].varObj.id).toBe(201)
   })
 
   // ─── 方法测试 ────────────────────────────────────────────
@@ -251,7 +261,7 @@ describe('varPickerMixin', () => {
           selectedModelItems: [
             { _varId: 1, _refType: 'VARIABLE', varCode: 'legacyAge' },
             { varCode: 'TaxRequest.amount' },
-            { _varId: 101, _refType: 'MODEL' },
+            { _varId: 201, _refType: 'MODEL_OUTPUT' },
             { varCode: 'age' }
           ],
           selectedActionData: [
@@ -275,7 +285,7 @@ describe('varPickerMixin', () => {
     expect(vm.selectedVarPickerOptions.map(o => o.varCode)).toEqual([
       'age',
       'TaxRequest.amount',
-      'creditModel',
+      'creditModel.score',
       'income',
       'level'
     ])

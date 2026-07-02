@@ -98,6 +98,23 @@ public class RuleModelService {
         });
     }
 
+    private void fillOutputFields(List<RuleModel> list) {
+        if (list == null || list.isEmpty()) return;
+        List<Long> modelIds = list.stream()
+                .map(RuleModel::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (modelIds.isEmpty()) return;
+        List<RuleModelOutputField> fields = outputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelOutputField>()
+                        .in(RuleModelOutputField::getModelId, modelIds)
+                        .orderByAsc(RuleModelOutputField::getSortOrder)
+                        .orderByAsc(RuleModelOutputField::getId));
+        Map<Long, List<RuleModelOutputField>> byModel = fields.stream()
+                .collect(Collectors.groupingBy(RuleModelOutputField::getModelId, LinkedHashMap::new, Collectors.toList()));
+        list.forEach(model -> model.setOutputFields(byModel.getOrDefault(model.getId(), Collections.emptyList())));
+    }
+
     /**
      * 填充模型的项目编码
      */
@@ -432,7 +449,9 @@ public class RuleModelService {
         }
         wrapper.eq(RuleModel::getStatus, 1)
                .orderByAsc(RuleModel::getModelCode);
-        return modelMapper.selectList(wrapper);
+        List<RuleModel> models = modelMapper.selectList(wrapper);
+        fillOutputFields(models);
+        return models;
     }
 
     /**

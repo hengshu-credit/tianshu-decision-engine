@@ -27,6 +27,9 @@ public class RuleCompileService {
     @Resource
     private RuleVariableService variableService;
 
+    @Resource
+    private RuleCallCycleService ruleCallCycleService;
+
     public RuleCompileService() {
         compilers.put("TABLE", new DecisionTableCompiler());
         compilers.put("TREE", new DecisionTreeCompiler());
@@ -36,6 +39,7 @@ public class RuleCompileService {
         compilers.put("CROSS_ADV", new AdvancedCrossTableCompiler());
         compilers.put("SCORE_ADV", new AdvancedScorecardCompiler());
         compilers.put("SCRIPT", new ScriptPassthroughCompiler());
+        compilers.put("RULE_SET", new RuleSetCompiler());
     }
 
     public CompileResult compile(Long definitionId) {
@@ -52,6 +56,11 @@ public class RuleCompileService {
         RuleCompiler compiler = compilers.get(definition.getModelType());
         if (compiler == null) {
             return CompileResult.fail("暂不支持的模型类型: " + definition.getModelType());
+        }
+
+        String cycleError = ruleCallCycleService.validateNoCycle(definitionId, content.getModelJson());
+        if (cycleError != null) {
+            return CompileResult.fail(cycleError);
         }
 
         // 构建变量上下文：通过 varId 查询正确的 scriptName，

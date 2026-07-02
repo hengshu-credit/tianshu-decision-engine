@@ -88,6 +88,9 @@ public final class ActionDataOutputVarCollector {
             case "func-call":
                 addTarget(out, block, "target", varContext);
                 break;
+            case "rule-call":
+                addTarget(out, block, "target", varContext);
+                break;
             case "foreach":
                 collectFromActionData(block.getJSONArray("actions"), out, varContext);
                 break;

@@ -5,12 +5,14 @@ import com.bjjw.rule.model.dto.ParsedConstantGroup;
 import com.bjjw.rule.model.entity.RuleDataObject;
 import com.bjjw.rule.model.entity.RuleDataObjectField;
 import com.bjjw.rule.model.entity.RuleModel;
+import com.bjjw.rule.model.entity.RuleModelOutputField;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.model.entity.RuleVariable;
 import com.bjjw.rule.model.entity.RuleVariableOption;
 import com.bjjw.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.bjjw.rule.server.mapper.RuleDataObjectMapper;
 import com.bjjw.rule.server.mapper.RuleModelMapper;
+import com.bjjw.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.bjjw.rule.server.mapper.RuleProjectMapper;
 import com.bjjw.rule.server.mapper.RuleVariableMapper;
 import com.bjjw.rule.server.mapper.RuleVariableOptionMapper;
@@ -60,6 +62,9 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Resource
     private RuleModelMapper modelMapper;
+
+    @Resource
+    private RuleModelOutputFieldMapper modelOutputFieldMapper;
 
     /** 填充变量列表的项目名称 */
     private void fillProjectName(List<RuleVariable> list) {
@@ -317,6 +322,19 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                 map.put(refKey("MODEL", m.getId()), scriptName);
             }
         }
+        Map<Long, String> modelCodeMap = listModels(projectId).stream()
+                .filter(m -> m.getId() != null && trimToNull(m.getModelCode()) != null)
+                .collect(Collectors.toMap(RuleModel::getId, m -> trimToNull(m.getModelCode()), (a, b) -> a));
+        for (RuleModelOutputField f : listModelOutputFields(modelCodeMap.keySet())) {
+            String modelCode = modelCodeMap.get(f.getModelId());
+            String outputScript = trimToNull(f.getScriptName());
+            if (outputScript == null) {
+                outputScript = trimToNull(f.getFieldName());
+            }
+            if (f.getId() != null && modelCode != null && outputScript != null) {
+                map.put(refKey("MODEL_OUTPUT", f.getId()), modelCode + "." + outputScript);
+            }
+        }
         return map;
     }
 
@@ -341,6 +359,16 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         appendScopeCondition(wrapper, RuleModel::getScope, RuleModel::getProjectId, projectId);
         wrapper.eq(RuleModel::getStatus, 1);
         return modelMapper.selectList(wrapper);
+    }
+
+    private List<RuleModelOutputField> listModelOutputFields(java.util.Set<Long> modelIds) {
+        if (modelIds == null || modelIds.isEmpty()) {
+            return java.util.Collections.emptyList();
+        }
+        return modelOutputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
+                .in(RuleModelOutputField::getModelId, modelIds)
+                .orderByAsc(RuleModelOutputField::getSortOrder)
+                .orderByAsc(RuleModelOutputField::getId));
     }
 
     private <T> void appendScopeCondition(LambdaQueryWrapper<T> wrapper,

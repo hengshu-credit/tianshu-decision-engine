@@ -10,7 +10,12 @@
  *   ternary:      三元表达式    { type:'ternary', target, condVar, condOp, condValue, trueValue, falseValue }
  *   in-check:     in判断赋值    { type:'in-check', target, checkVar, inValues:[], trueValue, falseValue }
  *   template-str: 动态字符串    { type:'template-str', target, parts:[{type:'text'|'expr', content}] }
+ *   rule-call:    执行规则      { type:'rule-call', target, ruleCode, outputField }
  */
+
+function quoteString(value) {
+  return '"' + String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+}
 
 function wrapValue(val) {
   if (val === null || val === undefined || val === '') return '""'
@@ -107,6 +112,14 @@ function generateBlock(block, indent) {
       return pad + block.target + ' = "' + segs.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
     }
 
+    case 'rule-call': {
+      if (!block.ruleCode) return ''
+      const call = block.outputField
+        ? 'executeRuleField(' + quoteString(block.ruleCode) + ', ' + quoteString(block.outputField) + ')'
+        : 'executeRule(' + quoteString(block.ruleCode) + ')'
+      return block.target ? pad + block.target + ' = ' + call : pad + call
+    }
+
     default:
       return ''
   }
@@ -175,6 +188,8 @@ export function newBlock(type) {
       return { type: 'in-check', target: '', checkVar: '', inValues: [], trueValue: 'true', falseValue: 'false' }
     case 'template-str':
       return { type: 'template-str', target: '', parts: [{ type: 'text', content: '' }] }
+    case 'rule-call':
+      return { type: 'rule-call', target: '', ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '' }
     default:
       return { type: 'assign', target: '', value: '' }
   }
@@ -188,5 +203,6 @@ export const BLOCK_TYPES = [
   { type: 'foreach', label: 'ForEach 循环', icon: 'el-icon-refresh', color: '#52c41a' },
   { type: 'ternary', label: '三元表达式', icon: 'el-icon-question', color: '#eb2f96' },
   { type: 'in-check', label: 'IN 判断', icon: 'el-icon-finished', color: '#2f54eb' },
-  { type: 'template-str', label: '动态字符串', icon: 'el-icon-document', color: '#8c8c8c' }
+  { type: 'template-str', label: '动态字符串', icon: 'el-icon-document', color: '#8c8c8c' },
+  { type: 'rule-call', label: '执行规则', icon: 'el-icon-position', color: '#096dd9' }
 ]

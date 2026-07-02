@@ -4,6 +4,10 @@ export function listDbDatasources(params) {
   return request({ url: '/rule/database/list', method: 'get', params })
 }
 
+export function getDbDatasource(id) {
+  return request({ url: `/rule/database/${id}`, method: 'get' })
+}
+
 export function createDbDatasource(data) {
   return request({ url: '/rule/database', method: 'post', data })
 }

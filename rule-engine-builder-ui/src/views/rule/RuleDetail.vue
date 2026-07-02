@@ -319,6 +319,7 @@ const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
   TREE: '决策树',
   FLOW: '决策流',
+  RULE_SET: '规则集',
   CROSS: '交叉表',
   SCORE: '评分卡',
   CROSS_ADV: '复杂交叉表',

@@ -205,6 +205,10 @@
                     :vars="varPickerOptions"
                     :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
+                    :rules="projectRules"
+                    :current-rule-id="definitionId"
+                    :current-rule-code="currentRuleCode"
+                    :validate-rule-call-cycle="validateRuleCallCycle"
                     @update="onActionDataUpdate"
                   />
                 </div>
@@ -214,7 +218,7 @@
                 </div>
 
                 <div class="hint-box" style="margin-top:6px;">
-                  <i class="el-icon-info" /> 支持赋值、条件分支、Switch、函数调用、循环、三元、IN判断、动态字符串
+                  <i class="el-icon-info" /> 支持赋值、条件分支、Switch、函数调用、执行规则、循环、三元、IN判断、动态字符串
                 </div>
               </div>
             </template>
@@ -296,7 +300,7 @@ import {
   applyGlobalEdgeTypeToInheritedEdges,
   mergeEdgePropertiesFromForm
 } from '@/components/flow/edgeLineType'
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
+import { saveContent, compileRule, executeRule, getContent, refreshFields, getDefinition, listProjectDefinitions, validateCallCycle } from '@/api/definition'
 import { generateScript } from '@/utils/actionDataCodegen'
 import { graphContainsDirectedCycle } from '@/utils/flowGraphCycle'
 import varPickerMixin from '@/mixins/varPickerMixin'
@@ -334,6 +338,8 @@ export default {
       testVisible: false,
       testParamsJson: '{}',
       testResult: null,
+      projectRules: [],
+      currentRuleCode: '',
       /** 工具栏全局默认连线类型（折线/直线/贝塞尔），新连线与「跟随全局」的边使用 */
       globalEdgeLineType: 'polyline',
       propertyPanelWidth: 640,
@@ -376,6 +382,7 @@ export default {
   },
   mounted() {
     this.initLogicFlow()
+    this.loadRuleOptions()
     this.loadContent()
   },
   beforeDestroy() {
@@ -411,6 +418,47 @@ export default {
       this.resizingPropertyPanel = false
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
+    },
+    async loadRuleOptions() {
+      try {
+        const defRes = await getDefinition(this.definitionId)
+        const def = defRes && defRes.data ? defRes.data : defRes
+        if (!def) {
+          this.projectRules = []
+          return
+        }
+        this.currentRuleCode = def.ruleCode || ''
+        if (def.projectId == null) {
+          this.projectRules = []
+          return
+        }
+        this._projectId = def.projectId
+        const res = await listProjectDefinitions(def.projectId, { pageNum: 1, pageSize: 1000 })
+        const page = res && res.data ? res.data : res
+        const records = Array.isArray(page) ? page : (page && page.records) || []
+        const supportedTypes = ['TABLE', 'TREE', 'FLOW', 'CROSS', 'SCORE', 'CROSS_ADV', 'SCORE_ADV', 'SCRIPT', 'RULE_SET']
+        this.projectRules = records
+          .filter(rule => rule && supportedTypes.includes(rule.modelType))
+          .map(rule => ({
+            id: rule.id,
+            ruleCode: rule.ruleCode,
+            ruleName: rule.ruleName,
+            modelType: rule.modelType,
+            outputFieldsJson: rule.outputFieldsJson || rule.outputFields || []
+          }))
+      } catch (e) {
+        this.projectRules = []
+      }
+    },
+    async validateRuleCallCycle() {
+      if (!this.definitionId) return true
+      const model = this.buildBackendModel()
+      const res = await validateCallCycle(this.definitionId, JSON.stringify(model))
+      const data = res && res.data ? res.data : res
+      if (data && data.valid === false) {
+        return data.message || '规则调用存在环路'
+      }
+      return true
     },
     collectSelectedVarItems() {
       const items = []
@@ -794,6 +842,41 @@ export default {
     undo() { this.lf.undo() },
     redo() { this.lf.redo() },
 
+    collectRuleCallBlocks(actions, out) {
+      const rows = Array.isArray(actions) ? actions : []
+      rows.forEach(action => {
+        if (!action) return
+        if (action.type === 'rule-call') out.push(action)
+        if (Array.isArray(action.actions)) this.collectRuleCallBlocks(action.actions, out)
+        if (Array.isArray(action.defaultActions)) this.collectRuleCallBlocks(action.defaultActions, out)
+        ;(action.branches || []).forEach(branch => this.collectRuleCallBlocks(branch.actions, out))
+        ;(action.cases || []).forEach(item => this.collectRuleCallBlocks(item.actions, out))
+      })
+    },
+
+    validateRuleCallsInModel(model) {
+      const errors = []
+      const calls = []
+      ;((model && model.nodes) || []).forEach(node => this.collectRuleCallBlocks(node.actionData, calls))
+      calls.forEach(call => {
+        if (!call.ruleCode && !call.ruleId) {
+          errors.push('执行规则动作未选择要调用的规则')
+          return
+        }
+        const sameId = call.ruleId != null && this.definitionId != null && String(call.ruleId) === String(this.definitionId)
+        const sameCode = call.ruleCode && this.currentRuleCode && String(call.ruleCode) === String(this.currentRuleCode)
+        if (sameId || sameCode) {
+          errors.push('不能调用当前规则自身，会形成规则调用环')
+        }
+      })
+      return errors
+    },
+
+    showRuleCallErrors(errors) {
+      if (!errors || !errors.length) return
+      this.$alert(errors.map((e, i) => (i + 1) + '. ' + e).join('\n'), '规则调用配置错误', { type: 'warning' })
+    },
+
     handleValidate() {
       const errors = []
       const graphData = this.lf.getGraphData()
@@ -823,6 +906,8 @@ export default {
       if (graphContainsDirectedCycle(edges, nodeIds)) {
         errors.push('存在有向环路：决策流仅支持 DAG，请删除或调整形成回路的连线')
       }
+
+      errors.push(...this.validateRuleCallsInModel(this.buildBackendModel()))
 
       if (errors.length === 0) {
         this.$message.success('验证通过！')
@@ -1034,7 +1119,13 @@ export default {
     },
 
     async handleSave() {
-      const modelJson = JSON.stringify(this.buildBackendModel())
+      const model = this.buildBackendModel()
+      const ruleCallErrors = this.validateRuleCallsInModel(model)
+      if (ruleCallErrors.length) {
+        this.showRuleCallErrors(ruleCallErrors)
+        throw new Error(ruleCallErrors.join('; '))
+      }
+      const modelJson = JSON.stringify(model)
       await saveContent({ definitionId: this.definitionId, modelJson })
       await refreshFields(this.definitionId, modelJson)
       this.refreshProjectRefs()

@@ -921,11 +921,11 @@ export default {
     codeColumnLabel() {
       if (typeof this.columnLabels === 'object') return this.columnLabels.codeLabel || '字段编码'
       if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段编码'
-      if (this.activeCategory === 'model') return '模型编码'
+      if (this.activeCategory === 'model') return '模型输出字段'
       const labels = {
         variable: '变量编码',
         dataObject: '属性字段路径',
-        model: '模型编码'
+        model: '模型输出字段'
       }
       return labels[this.columnLabels] || '字段编码'
     },
@@ -933,11 +933,11 @@ export default {
     nameColumnLabel() {
       if (typeof this.columnLabels === 'object') return this.columnLabels.nameLabel || '字段名称'
       if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段名称'
-      if (this.activeCategory === 'model') return '模型名称'
+      if (this.activeCategory === 'model') return '输出字段名称'
       const labels = {
         variable: '变量名称',
         dataObject: '属性名称',
-        model: '模型名称'
+        model: '输出字段名称'
       }
       return labels[this.columnLabels] || '字段名称'
     },
@@ -946,6 +946,9 @@ export default {
       const map = {
         STRING: 's',
         NUMBER: 'i',
+        INTEGER: 'i',
+        DOUBLE: 'i',
+        PROBABILITY: 'i',
         BOOLEAN: 'b',
         DATE: 'd',
         ENUM: 'e',

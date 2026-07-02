@@ -6,6 +6,7 @@ import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.*;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleCompileService;
+import com.bjjw.rule.server.service.RuleCallCycleService;
 import com.bjjw.rule.server.service.RuleDefinitionService;
 import com.bjjw.rule.server.service.RuleExecuteService;
 import com.bjjw.rule.server.service.RulePublishService;
@@ -16,6 +17,7 @@ import javax.annotation.Resource;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -34,6 +36,9 @@ public class RuleDefinitionController {
 
     @Resource
     private RulePublishService publishService;
+
+    @Resource
+    private RuleCallCycleService ruleCallCycleService;
 
     @GetMapping("/list")
     public R<IPage<RuleDefinition>> list(
@@ -183,6 +188,26 @@ public class RuleDefinitionController {
     @PostMapping("/compile/{definitionId}")
     public R<CompileResult> compile(@PathVariable Long definitionId) {
         return R.ok(compileService.compile(definitionId));
+    }
+
+    @PostMapping("/validateCallCycle/{definitionId}")
+    public R<Map<String, Object>> validateCallCycle(@PathVariable Long definitionId,
+                                                    @RequestBody(required = false) String modelJson) {
+        String jsonToCheck = normalizeModelJson(modelJson);
+        if (jsonToCheck == null || jsonToCheck.isEmpty()) {
+            RuleDefinitionContent content = definitionService.getContent(definitionId);
+            if (content == null || content.getModelJson() == null) {
+                return R.fail("规则内容不存在");
+            }
+            jsonToCheck = content.getModelJson();
+        }
+        String error = ruleCallCycleService.validateNoCycle(definitionId, jsonToCheck);
+        Map<String, Object> result = new HashMap<>();
+        result.put("valid", error == null);
+        if (error != null) {
+            result.put("message", error);
+        }
+        return R.ok(result);
     }
 
     @PostMapping("/execute")

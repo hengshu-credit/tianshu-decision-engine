@@ -61,13 +61,29 @@
         </div>
 
         <el-alert v-if="form.routingMode === 'RATIO' && ratioTotal !== 100" type="warning" :closable="false" show-icon :title="'当前随机分流比例合计 ' + ratioTotal + '%，必须等于 100%'" />
+        <div v-if="form.routingMode === 'RATIO'" class="ratio-config-panel">
+          <div class="ratio-config-head">
+            <div class="ratio-config-title">随机分流比例</div>
+            <el-tag size="mini" :type="ratioTotal === 100 ? 'success' : 'warning'">合计 {{ ratioTotal }}%</el-tag>
+          </div>
+          <div class="ratio-config-grid">
+            <div v-for="row in productionFormGroups" :key="'ratio-' + row._uid" class="ratio-config-item">
+              <div class="ratio-group-meta">
+                <el-tag size="mini" :type="row.groupType === 'CHAMPION' ? 'success' : 'info'">{{ groupTypeLabel(row.groupType) }}</el-tag>
+                <span class="ratio-group-name">{{ row.groupName || row.groupCode }}</span>
+                <span class="ratio-group-code">{{ row.groupCode }}</span>
+              </div>
+              <el-input-number v-model="row.trafficRatio" :min="0" :max="100" :precision="2" size="mini" class="ratio-input" />
+            </div>
+          </div>
+        </div>
         <div v-if="form.routingMode === 'RATIO'" class="ratio-list">
           <div v-for="row in productionFormGroups" :key="row._uid" class="action-card">
             <group-action-form
               :row="row"
               :rules-for-project="rulesForProject"
               :show-type="true"
-              :show-ratio="true"
+              :show-ratio="false"
               :show-invoke="false"
               @remove="removeGroup(row)"
             />
@@ -129,13 +145,29 @@
         </div>
 
         <el-alert v-if="form.testRoutingMode === 'RATIO' && testFormGroups.length > 0 && testRatioTotal !== 100" type="warning" :closable="false" show-icon :title="'当前测试组随机比例合计 ' + testRatioTotal + '%，必须等于 100%'" />
+        <div v-if="form.testRoutingMode === 'RATIO' && testFormGroups.length > 0" class="ratio-config-panel">
+          <div class="ratio-config-head">
+            <div class="ratio-config-title">测试组随机比例</div>
+            <el-tag size="mini" :type="testRatioTotal === 100 ? 'success' : 'warning'">合计 {{ testRatioTotal }}%</el-tag>
+          </div>
+          <div class="ratio-config-grid">
+            <div v-for="row in testFormGroups" :key="'test-ratio-' + row._uid" class="ratio-config-item">
+              <div class="ratio-group-meta">
+                <el-tag size="mini" type="info">{{ groupTypeLabel(row.groupType) }}</el-tag>
+                <span class="ratio-group-name">{{ row.groupName || row.groupCode }}</span>
+                <span class="ratio-group-code">{{ row.groupCode }}</span>
+              </div>
+              <el-input-number v-model="row.trafficRatio" :min="0" :max="100" :precision="2" size="mini" class="ratio-input" />
+            </div>
+          </div>
+        </div>
         <div v-if="form.testRoutingMode === 'RATIO'" class="ratio-list">
           <div v-for="row in testFormGroups" :key="row._uid" class="action-card">
             <group-action-form
               :row="row"
               :rules-for-project="rulesForProject"
               :show-type="false"
-              :show-ratio="true"
+              :show-ratio="false"
               :show-invoke="true"
               @remove="removeGroup(row)"
             />
@@ -956,6 +988,72 @@ export default {
     margin-top: 3px;
     color: #64748b;
     font-size: 12px;
+  }
+
+  .ratio-config-panel {
+    margin-top: 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 4px;
+    background: #f8fbff;
+    padding: 12px;
+  }
+
+  .ratio-config-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .ratio-config-title {
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .ratio-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 10px;
+  }
+
+  .ratio-config-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 122px;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #fff;
+  }
+
+  .ratio-group-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .ratio-group-name {
+    color: #334155;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ratio-group-code {
+    color: #94a3b8;
+    font-size: 12px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ratio-input {
+    width: 122px;
   }
 
   .ratio-list {

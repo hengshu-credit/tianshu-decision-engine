@@ -138,6 +138,7 @@ describe('RuleList — 标签与格式化方法', () => {
     expect(wrapper.vm.modelTypeLabel('TABLE')).toBe('决策表')
     expect(wrapper.vm.modelTypeLabel('TREE')).toBe('决策树')
     expect(wrapper.vm.modelTypeLabel('FLOW')).toBe('决策流')
+    expect(wrapper.vm.modelTypeLabel('RULE_SET')).toBe('规则集')
     expect(wrapper.vm.modelTypeLabel('CROSS')).toBe('交叉表')
     expect(wrapper.vm.modelTypeLabel('SCORE')).toBe('评分卡')
     expect(wrapper.vm.modelTypeLabel('CROSS_ADV')).toBe('复杂交叉表')
@@ -236,6 +237,12 @@ describe('RuleList — 规则操作', () => {
     const row = { id: 1, modelType: 'TABLE' }
     wrapper.vm.handleDesign(row)
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/designer/table/1')
+  })
+
+  test('handleDesign 跳转到规则集设计器', () => {
+    const row = { id: 4, modelType: 'RULE_SET' }
+    wrapper.vm.handleDesign(row)
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/designer/ruleset/4')
   })
 
   test('handlePublish 调用发布 API', async () => {

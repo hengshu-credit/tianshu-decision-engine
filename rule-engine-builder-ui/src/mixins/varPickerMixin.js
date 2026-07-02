@@ -130,6 +130,42 @@ export default {
     refTypeForVar(v) {
       return v && v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
     },
+    appendModelOutputRefs(refs, models) {
+      (models || []).forEach(m => {
+        const modelCode = m.modelCode || ''
+        if (!modelCode) return
+        const modelLabel = m.modelName || modelCode
+        const outputFields = m.outputFields || []
+        outputFields.forEach(field => {
+          const outputCode = (field && (field.scriptName || field.fieldName)) || ''
+          if (!outputCode) return
+          const refCode = `${modelCode}.${outputCode}`
+          const fieldLabel = (field.fieldLabel || field.fieldName || outputCode)
+          const labelSource = {
+            id: field.id,
+            modelId: m.id,
+            modelCode,
+            modelName: modelLabel,
+            varCode: outputCode,
+            scriptName: outputCode,
+            varLabel: modelLabel + '/' + fieldLabel,
+            varType: field.fieldType || 'STRING',
+            refType: 'MODEL_OUTPUT'
+          }
+          refs.push({
+            refCode,
+            refLabel: makeRefLabel(labelSource, 'model', ''),
+            varType: labelSource.varType,
+            varObj: Object.assign({}, field, labelSource),
+            category: 'model',
+            refType: 'MODEL_OUTPUT',
+            modelCode,
+            modelId: m.id,
+            modelLabel
+          })
+        })
+      })
+    },
 
     /**
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
@@ -232,19 +268,7 @@ export default {
           })
         })
 
-        models.forEach(m => {
-          const modelCode = m.modelCode || ''
-          if (!modelCode) return
-          const modelRef = Object.assign({ refType: 'MODEL', varCode: modelCode, varLabel: m.modelName || modelCode, scriptName: modelCode, varType: 'MODEL' }, m)
-          refs.push({
-            refCode: modelCode,
-            refLabel: makeRefLabel(modelRef, 'model', ''),
-            varType: 'MODEL',
-            varObj: modelRef,
-            category: 'model',
-            refType: 'MODEL'
-          })
-        })
+        this.appendModelOutputRefs(refs, models)
 
         this.projectRefs = refs
 
@@ -362,19 +386,7 @@ export default {
             })
           })
         })
-        models.forEach(m => {
-          const modelCode = m.modelCode || ''
-          if (!modelCode) return
-          const modelRef = Object.assign({ refType: 'MODEL', varCode: modelCode, varLabel: m.modelName || modelCode, scriptName: modelCode, varType: 'MODEL' }, m)
-          refs.push({
-            refCode: modelCode,
-            refLabel: makeRefLabel(modelRef, 'model', ''),
-            varType: 'MODEL',
-            varObj: modelRef,
-            category: 'model',
-            refType: 'MODEL'
-          })
-        })
+        this.appendModelOutputRefs(refs, models)
 
         this.projectRefs = refs
         this._trySyncModelVarRefs()

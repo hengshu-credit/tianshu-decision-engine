@@ -43,4 +43,20 @@ public class ActionDataCompilerTest {
 
         assertTrue(script.contains("risk = max(applicant.score, 100)"));
     }
+
+    @Test
+    public void compileRuleCallSupportsWholeResultAndOutputField() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(5L, "risk.decision");
+        VarContext context = new VarContext(varIdMap);
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"rule-call\",\"target\":\"decision\",\"_targetVarId\":5,\"ruleCode\":\"credit_flow\"},"
+                + "{\"type\":\"rule-call\",\"target\":\"score\",\"ruleCode\":\"score_card\",\"outputField\":\"score\"}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData, context);
+
+        assertTrue(script.contains("risk.decision = executeRule(\"credit_flow\")"));
+        assertTrue(script.contains("score = executeRuleField(\"score_card\", \"score\")"));
+    }
 }

@@ -4,6 +4,10 @@ export function listDefinitions(params) {
   return request({ url: '/rule/definition/list', method: 'get', params })
 }
 
+export function listProjectDefinitions(projectId, params) {
+  return request({ url: `/rule/definition/project-list/${projectId}`, method: 'get', params })
+}
+
 export function getDefinition(id) {
   return request({ url: `/rule/definition/${id}`, method: 'get' })
 }
@@ -58,6 +62,10 @@ export function copyRule(id) {
 
 export function compileRule(id) {
   return request({ url: `/rule/definition/compile/${id}`, method: 'post' })
+}
+
+export function validateCallCycle(definitionId, modelJson) {
+  return request({ url: `/rule/definition/validateCallCycle/${definitionId}`, method: 'post', data: modelJson })
 }
 
 export function publishRule(id, data) {

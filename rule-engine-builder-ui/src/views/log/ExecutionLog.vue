@@ -23,6 +23,7 @@
             <el-option label="决策表" value="TABLE" />
             <el-option label="决策树" value="TREE" />
             <el-option label="决策流" value="FLOW" />
+            <el-option label="规则集" value="RULE_SET" />
             <el-option label="交叉表" value="CROSS" />
             <el-option label="评分卡" value="SCORE" />
             <el-option label="复杂交叉表" value="CROSS_ADV" />
@@ -149,6 +150,7 @@ export default {
         'TABLE': '决策表',
         'TREE': '决策树',
         'FLOW': '决策流',
+        'RULE_SET': '规则集',
         'CROSS': '交叉表',
         'SCORE': '评分卡',
         'CROSS_ADV': '复杂交叉表',

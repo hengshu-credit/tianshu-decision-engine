@@ -129,18 +129,19 @@ describe('VarPicker', () => {
     const wrapper = mountPicker({
       vars: [
         {
-          varCode: 'creditModel',
-          varLabel: '信用模型 creditModel',
-          varType: 'MODEL',
-          _ref: { category: 'model', refType: 'MODEL' }
+          varCode: 'creditModel.score',
+          varLabel: '信用模型/评分 creditModel.score',
+          varType: 'NUMBER',
+          _ref: { category: 'model', refType: 'MODEL_OUTPUT' }
         }
       ]
     })
 
     wrapper.vm.onCategoryClick('model')
-    expect(wrapper.vm.typeChar('MODEL')).toBe('M')
-    expect(wrapper.vm.typeLabel('MODEL')).toBe('模型')
-    expect(wrapper.vm.codeColumnLabel()).toBe('模型编码')
+    expect(wrapper.vm.typeChar('NUMBER')).toBe('i')
+    expect(wrapper.vm.typeLabel('NUMBER')).toBe('数值')
+    expect(wrapper.vm.codeColumnLabel()).toBe('模型输出字段')
+    expect(wrapper.vm.nameColumnLabel()).toBe('输出字段名称')
   })
 
   test('传入 selectedVars 后显示已选字段分类并去重', async () => {
@@ -241,7 +242,7 @@ describe('VarPicker', () => {
     const wrapper = mountPicker({
       vars: [
         { varCode: 'age', varLabel: '年龄', varType: 'NUMBER', _ref: { category: 'standalone' } },
-        { varCode: 'creditModel', varLabel: '信用模型', varType: 'MODEL', _ref: { category: 'model', refType: 'MODEL' } }
+        { varCode: 'creditModel.score', varLabel: '信用模型/评分', varType: 'NUMBER', _ref: { category: 'model', refType: 'MODEL_OUTPUT' } }
       ]
     })
     await Vue.nextTick()
@@ -253,7 +254,7 @@ describe('VarPicker', () => {
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['model'])
     expect(wrapper.vm.activeCategory).toBe('model')
-    expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['creditModel'])
+    expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['creditModel.score'])
   })
 
   test('数据对象分类搜索时只展示命中的子字段并自动展开单个对象组', async () => {

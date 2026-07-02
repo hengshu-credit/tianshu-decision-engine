@@ -154,6 +154,7 @@ describe('RuleDetail — 辅助方法', () => {
     expect(wrapper.vm.modelTypeLabel('TABLE')).toBe('决策表')
     expect(wrapper.vm.modelTypeLabel('TREE')).toBe('决策树')
     expect(wrapper.vm.modelTypeLabel('FLOW')).toBe('决策流')
+    expect(wrapper.vm.modelTypeLabel('RULE_SET')).toBe('规则集')
     expect(wrapper.vm.modelTypeLabel('SCORE')).toBe('评分卡')
     expect(wrapper.vm.modelTypeLabel('CROSS')).toBe('交叉表')
     expect(wrapper.vm.modelTypeLabel('CROSS_ADV')).toBe('复杂交叉表')

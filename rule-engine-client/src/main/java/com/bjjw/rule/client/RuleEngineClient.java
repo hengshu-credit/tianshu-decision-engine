@@ -34,6 +34,7 @@ public class RuleEngineClient {
     private final QLExpressEngine engine;
     private final ExecutionLogReporter logReporter;
     private final ClientFunctionRegistrar functionRegistrar;
+    private final ClientRuleRuntimeInvoker runtimeRuleInvoker;
     private ScheduledExecutorService scheduler;
 
     private RuleEngineClient(RuleEngineClientConfig config, RedisConnectionFactory connectionFactory,
@@ -44,6 +45,8 @@ public class RuleEngineClient {
         this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, config.getAppName(),
                 httpSyncClient::fetchRule);
         this.engine = new QLExpressEngine();
+        this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config);
+        this.runtimeRuleInvoker.register(engine.getRunner());
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext);
 
         if (externalReporter != null) {
@@ -127,7 +130,13 @@ public class RuleEngineClient {
             return r;
         }
 
-        RuleResult result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+        runtimeRuleInvoker.enter(ruleCode, params);
+        RuleResult result;
+        try {
+            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+        } finally {
+            runtimeRuleInvoker.exit();
+        }
 
         reportLog(ruleCode, cached, params, result, System.currentTimeMillis() - start);
         return result;
@@ -153,7 +162,13 @@ public class RuleEngineClient {
             return r;
         }
 
-        RuleResult result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+        runtimeRuleInvoker.enter(ruleCode, params);
+        RuleResult result;
+        try {
+            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+        } finally {
+            runtimeRuleInvoker.exit();
+        }
 
         reportLog(ruleCode, cached, params, result, System.currentTimeMillis() - start);
         return result;
