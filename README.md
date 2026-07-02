@@ -56,16 +56,32 @@
 ## 3. 架构与运行链路
 
 ```mermaid
-flowchart TB
-  Browser["浏览器"] --> UI["rule-engine-builder-ui 控制台"]
-  UI --> Server["rule-engine-server API"]
-  Server --> MySQL[("MySQL")]
-  Server --> Redis[("Redis Pub/Sub")]
-  Biz["业务系统"] --> SDK["rule-engine-client SDK"]
-  SDK -->|HTTP 拉取已发布规则| Server
-  SDK -->|订阅 rule:push:{appName}| Redis
-  SDK -->|本地 QLExpress 执行| Biz
-  SDK -->|执行日志上报| Server
+sequenceDiagram
+  participant Biz as 业务代码
+  participant C as RuleEngineClient
+  participant L1 as L1 缓存
+  participant HTTP as Server 同步 API
+  participant Redis as Redis
+  Biz->>C: Spring 注入后 start()
+  C->>HTTP: 全量同步规则
+  HTTP-->>C: CachedRule 列表
+  C->>L1: 写入缓存
+  C->>Redis: 订阅 rule:push:appName
+  loop 定时心跳（默认 5 分钟）
+    C->>HTTP: 全量同步（兜底）
+  end
+  Biz->>C: execute(ruleCode, Map 或 DTO)
+  C->>L1: get(ruleCode)
+  alt 缓存未命中
+    C->>HTTP: 单条拉取
+    HTTP-->>C: CachedRule
+    C->>L1: put
+  end
+  C->>C: QLExpress 本地执行
+  C-->>Biz: RuleResult
+  C->>C: 异步上报执行日志（若启用）
+  Redis-->>C: 规则/函数变更消息
+  C->>C: 更新或失效缓存
 ```
 
 要点：
