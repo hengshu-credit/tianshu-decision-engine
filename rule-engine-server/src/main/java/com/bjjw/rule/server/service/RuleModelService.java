@@ -281,6 +281,51 @@ public class RuleModelService {
         modelMapper.updateById(model);
     }
 
+    public List<RuleModelVersion> listVersions(Long modelId) {
+        return versionMapper.selectList(new LambdaQueryWrapper<RuleModelVersion>()
+                .eq(RuleModelVersion::getModelId, modelId)
+                .orderByDesc(RuleModelVersion::getVersion));
+    }
+
+    public RuleModelVersion getVersion(Long modelId, Integer version) {
+        return versionMapper.selectOne(new LambdaQueryWrapper<RuleModelVersion>()
+                .eq(RuleModelVersion::getModelId, modelId)
+                .eq(RuleModelVersion::getVersion, version));
+    }
+
+    public Map<String, Object> compareVersions(Long modelId, Integer leftVersion, Integer rightVersion) {
+        RuleModelVersion left = getVersion(modelId, leftVersion);
+        RuleModelVersion right = getVersion(modelId, rightVersion);
+        if (left == null || right == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("left", left);
+        result.put("right", right);
+        result.put("modelContentChanged", !equalsText(left.getModelContent(), right.getModelContent()));
+        result.put("modelConfigChanged", !equalsText(left.getModelConfig(), right.getModelConfig()));
+        return result;
+    }
+
+    public void rollbackToVersion(Long modelId, Integer version) {
+        RuleModel model = modelMapper.selectById(modelId);
+        if (model == null) throw new IllegalArgumentException("模型不存在");
+        RuleModelVersion snapshot = getVersion(modelId, version);
+        if (snapshot == null) throw new IllegalArgumentException("Version not found");
+
+        model.setModelContent(snapshot.getModelContent());
+        model.setModelConfig(snapshot.getModelConfig());
+        model.setCurrentVersion((model.getCurrentVersion() == null ? 0 : model.getCurrentVersion()) + 1);
+        modelMapper.updateById(model);
+    }
+
+    private boolean equalsText(String left, String right) {
+        if (left == null) {
+            return right == null;
+        }
+        return left.equals(right);
+    }
+
     /**
      * 分页查询模型列表
      */

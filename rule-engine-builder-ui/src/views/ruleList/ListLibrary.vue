@@ -5,6 +5,8 @@
       <div class="hint-text">管理黑名单、灰名单、白名单及其他名单库，名单类型仅用于标识和筛选，规则执行通过名单查询变量命中有效期内记录。</div>
     </div>
 
+    <el-tabs v-model="activeTab" type="border-card" class="page-tabs">
+      <el-tab-pane label="名单管理" name="list">
     <div class="uiue-search-container">
       <el-form :inline="true" size="small">
         <el-form-item label="作用范围">
@@ -80,7 +82,11 @@
       @current-change="p => { query.pageNum = p; loadData() }"
       @size-change="s => { query.pageSize = s; query.pageNum = 1; loadData() }"
     />
-    <module-call-log module-type="LIST" title="名单匹配日志" />
+      </el-tab-pane>
+      <el-tab-pane label="名单日志" name="logs">
+        <module-call-log module-type="LIST" title="名单匹配日志" />
+      </el-tab-pane>
+    </el-tabs>
 
     <el-dialog :title="form.id ? '编辑名单库' : '新建名单库'" :visible.sync="dialogVisible" width="640px" append-to-body>
       <el-form ref="form" :model="form" :rules="rules" label-width="100px" size="small">
@@ -142,6 +148,7 @@ export default {
   data() {
     return {
       loading: false,
+      activeTab: 'list',
       tableData: [],
       total: 0,
       projects: [],

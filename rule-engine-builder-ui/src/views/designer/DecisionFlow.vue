@@ -67,7 +67,8 @@
 
       <!-- 右侧属性面板 -->
       <transition name="panel-slide">
-        <div v-if="activeElement" class="flow-property">
+        <div v-if="activeElement" class="flow-property" :style="{ width: propertyPanelWidth + 'px' }">
+          <div class="property-resize-handle" @mousedown.prevent="startPropertyResize" />
           <div class="prop-header">
             <span class="prop-title">
               <i :class="propIcon" />
@@ -105,49 +106,13 @@
 
               <!-- 可视化条件构建 -->
               <div v-if="edgeCondMode === 'visual'" class="cond-builder">
-                <div class="cond-row">
-                  <span class="cond-label">变量</span>
-                  <var-picker
-                    :vars="varPickerOptions"
-                    :selected-vars="selectedVarPickerOptions"
-                    :value="edgeCondVisual.leftVar"
-                    placeholder="选择或输入变量..."
-                    size="mini"
-                    @select="v => onEdgeCondVarSelect(v, 'left')"
-                  />
-                </div>
-                <div class="cond-row">
-                  <span class="cond-label">运算符</span>
-                  <el-select v-model="edgeCondVisual.operator" size="mini" style="width:100%">
-                    <el-option label="等于 (==)" value="==" />
-                    <el-option label="不等于 (!=)" value="!=" />
-                    <el-option label="大于 (>)" value=">" />
-                    <el-option label="大于等于 (>=)" value=">=" />
-                    <el-option label="小于 (<)" value="<" />
-                    <el-option label="小于等于 (<=)" value="<=" />
-                    <el-option label="包含 (in)" value="in" />
-                  </el-select>
-                </div>
-                <div class="cond-row">
-                  <span class="cond-label">值</span>
-                  <el-input v-model="edgeCondVisual.rightValue" size="mini" placeholder="比较值，如：100000">
-                    <el-select v-model="edgeCondVisual.rightType" slot="prepend" style="width:70px" size="mini">
-                      <el-option label="值" value="value" />
-                      <el-option label="变量" value="var" />
-                    </el-select>
-                  </el-input>
-                </div>
-                <div v-if="edgeCondVisual.rightType === 'var'" class="cond-row">
-                  <span class="cond-label">右变量</span>
-                  <var-picker
-                    :vars="varPickerOptions"
-                    :selected-vars="selectedVarPickerOptions"
-                    :value="edgeCondVisual.rightVar"
-                    placeholder="选择或输入比较变量..."
-                    size="mini"
-                    @select="v => onEdgeCondVarSelect(v, 'right')"
-                  />
-                </div>
+                <condition-group-editor
+                  v-if="edgeConditionRoot"
+                  :group="edgeConditionRoot"
+                  :vars="varPickerOptions"
+                  :get-var-options-fn="getVarOptions"
+                  :selected-vars="selectedVarPickerOptions"
+                />
                 <el-button type="primary" size="mini" icon="el-icon-check" style="width:100%;margin-top:8px;" @click="applyEdgeCondVisual">
                   生成表达式
                 </el-button>
@@ -335,13 +300,19 @@ import { saveContent, compileRule, executeRule, getContent, refreshFields } from
 import { generateScript } from '@/utils/actionDataCodegen'
 import { graphContainsDirectedCycle } from '@/utils/flowGraphCycle'
 import varPickerMixin from '@/mixins/varPickerMixin'
-import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
+import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import {
+  createEmptyGroup,
+  createEmptyLeaf,
+  walkConditionLeaves,
+  compileConditionTreeExpression
+} from '@/utils/decisionConditionTree'
 
 export default {
   name: 'DecisionFlow',
-  components: { VarPicker, ScriptPanel, ActionBlockEditor },
+  components: { ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -357,6 +328,7 @@ export default {
       nodeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '>', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
       edgeCondMode: 'visual',
       edgeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
+      edgeConditionRoot: null,
       actionMode: 'visual',
       currentActionData: [],
       testVisible: false,
@@ -364,6 +336,8 @@ export default {
       testResult: null,
       /** 工具栏全局默认连线类型（折线/直线/贝塞尔），新连线与「跟随全局」的边使用 */
       globalEdgeLineType: 'polyline',
+      propertyPanelWidth: 640,
+      resizingPropertyPanel: false,
       /** contentLoaded 标志：当 model 内容与 projectRefs 均加载完成后解锁变量引用同步 */
       contentLoaded: false
     }
@@ -414,8 +388,30 @@ export default {
         this.lf.off('connection:not-allowed', this._connectionNotAllowedHandler)
       }
     }
+    this.stopPropertyResize()
   },
   methods: {
+    startPropertyResize(event) {
+      this.resizingPropertyPanel = true
+      document.body.style.cursor = 'col-resize'
+      document.body.style.userSelect = 'none'
+      window.addEventListener('mousemove', this.onPropertyResize)
+      window.addEventListener('mouseup', this.stopPropertyResize)
+      this.onPropertyResize(event)
+    },
+    onPropertyResize(event) {
+      if (!this.resizingPropertyPanel || !event) return
+      const width = window.innerWidth - event.clientX
+      this.propertyPanelWidth = Math.min(Math.max(width, 320), 1080)
+    },
+    stopPropertyResize() {
+      window.removeEventListener('mousemove', this.onPropertyResize)
+      window.removeEventListener('mouseup', this.stopPropertyResize)
+      if (!this.resizingPropertyPanel) return
+      this.resizingPropertyPanel = false
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    },
     collectSelectedVarItems() {
       const items = []
       const pushVisual = visual => {
@@ -427,10 +423,12 @@ export default {
         if (!props) return
         items.push({ _varId: props.leftVarId, _refType: props.leftRefType })
         items.push({ _varId: props.rightVarId, _refType: props.rightRefType })
+        items.push(...this.collectConditionVarItems(props.conditionConfig))
         items.push(...this.collectActionDataVarItems(props.actionData || []))
       }
       pushVisual(this.nodeCondVisual)
       pushVisual(this.edgeCondVisual)
+      items.push(...this.collectConditionVarItems(this.edgeConditionRoot))
       items.push(...this.collectActionDataVarItems(this.currentActionData || []))
       if (this.lf && typeof this.lf.getGraphData === 'function') {
         const graph = this.lf.getGraphData() || {}
@@ -438,6 +436,73 @@ export default {
         ;(graph.edges || []).forEach(edge => pushProps(edge.properties || edge))
       }
       return items
+    },
+    createConditionRootFromVisual(visual) {
+      const root = createEmptyGroup('AND')
+      const leaf = createEmptyLeaf()
+      if (visual && visual.leftVar) {
+        leaf.varCode = visual.leftVar
+        leaf.varLabel = visual.leftLabel || visual.leftVar
+        leaf._varId = visual.leftVarId || undefined
+        leaf._refType = visual.leftRefType || undefined
+        leaf.operator = visual.operator || '=='
+        leaf.valueKind = visual.rightType === 'var' ? 'VAR' : 'CONST'
+        leaf.value = visual.rightType === 'var' ? visual.rightVar : visual.rightValue
+        if (visual.rightType === 'var') {
+          leaf._rightVarId = visual.rightVarId || undefined
+          leaf._rightRefType = visual.rightRefType || undefined
+        }
+      }
+      root.children.push(leaf)
+      return root
+    },
+    parseConditionConfig(config, expr) {
+      if (config) {
+        if (typeof config === 'object') return JSON.parse(JSON.stringify(config))
+        try { return JSON.parse(config) } catch (e) { /* ignore */ }
+      }
+      return this.createConditionRootFromVisual(this.syncCondVisualFromExpr(expr))
+    },
+    collectConditionVarItems(config) {
+      const items = []
+      const root = this.parseConditionConfig(config, '')
+      walkConditionLeaves(root, leaf => {
+        items.push(leaf)
+        if (leaf.valueKind === 'VAR' && leaf.value) {
+          items.push({
+            varCode: leaf.value,
+            varLabel: leaf.rightVarLabel,
+            _varId: leaf._rightVarId,
+            _refType: leaf._rightRefType || leaf._refType,
+            varType: leaf.rightVarType
+          })
+        }
+      })
+      return items
+    },
+    syncConditionConfigVarRefs(config) {
+      if (!config || typeof config !== 'object') return false
+      let changed = false
+      walkConditionLeaves(config, leaf => {
+        if (leaf.varCode && this.syncVarItem(leaf)) changed = true
+        if (leaf.valueKind === 'VAR' && leaf.value) {
+          const fake = {
+            varCode: leaf.value,
+            varLabel: leaf.rightVarLabel,
+            _varId: leaf._rightVarId,
+            _refType: leaf._rightRefType || leaf._refType,
+            varType: leaf.rightVarType
+          }
+          if (this.syncVarItem(fake)) {
+            leaf.value = fake.varCode
+            leaf.rightVarLabel = fake.varLabel
+            leaf._rightVarId = fake._varId
+            leaf.rightVarType = fake.varType
+            changed = true
+          }
+        }
+      })
+      return changed
     },
     initLogicFlow() {
       LogicFlow.use(SelectionSelect)
@@ -567,6 +632,7 @@ export default {
       this.edgeProps = {
         conditionName: (this.activeElement.properties.conditionName) || '',
         conditionExpr: (this.activeElement.properties.conditionExpr) || '',
+        conditionConfig: (this.activeElement.properties.conditionConfig) || null,
         edgeLineType: (this.activeElement.properties.edgeLineType) || ''
       }
       this.edgeCondVisual = this.syncCondVisualFromExpr(this.edgeProps.conditionExpr)
@@ -574,7 +640,8 @@ export default {
       this.edgeCondVisual.leftRefType = this.activeElement.properties.leftRefType || null
       this.edgeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
       this.edgeCondVisual.rightRefType = this.activeElement.properties.rightRefType || null
-      this.edgeCondMode = this.edgeProps.conditionExpr && !this.edgeCondVisual.leftVar ? 'script' : 'visual'
+      this.edgeConditionRoot = this.parseConditionConfig(this.edgeProps.conditionConfig, this.edgeProps.conditionExpr)
+      this.edgeCondMode = this.edgeProps.conditionExpr && !this.edgeCondVisual.leftVar && !this.edgeProps.conditionConfig ? 'script' : 'visual'
       this.hasSelection = true
     },
 
@@ -884,6 +951,7 @@ export default {
           const info = findById(rightId, rightRefType)
           if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
         }
+        if (this.syncConditionConfigVarRefs(props.conditionConfig)) changed = true
         if (changed) this.lf.setEdgeData(edge.id, { properties: props })
       }
     },
@@ -905,6 +973,12 @@ export default {
         const model = this.lf.getNodeModelById(this.activeElement.id)
         const currentProps = model ? (model.properties || {}) : {}
         this.lf.setProperties(this.activeElement.id, { ...currentProps, actionData: this.currentActionData || [] })
+      }
+      if (this.activeElement && this.activeElement.baseType === 'edge' && this.edgeCondMode === 'visual' && this.edgeConditionRoot) {
+        const expr = compileConditionTreeExpression(this.edgeConditionRoot)
+        this.edgeProps.conditionExpr = expr
+        this.edgeProps.conditionConfig = JSON.parse(JSON.stringify(this.edgeConditionRoot))
+        this.onEdgeChange()
       }
       const graphData = this.lf.getGraphData()
 
@@ -934,6 +1008,7 @@ export default {
           source: e.sourceNodeId,
           target: e.targetNodeId,
           conditionExpression: props.conditionExpr || '',
+          conditionConfig: props.conditionConfig || null,
           name: props.conditionName || '',
           // 变量引用 ID（用于连线条件的变量选择器）
           leftVarId: props.leftVarId || null,
@@ -1055,15 +1130,18 @@ export default {
       this.$message.success('已生成: ' + expr)
     },
     applyEdgeCondVisual() {
-      const expr = this.buildCondExpr(this.edgeCondVisual)
-      if (expr === null) return
+      if (!this.edgeConditionRoot) {
+        this.edgeConditionRoot = this.createConditionRootFromVisual(this.edgeCondVisual)
+      }
+      const expr = compileConditionTreeExpression(this.edgeConditionRoot)
       this.edgeProps.conditionExpr = expr
-      this.edgeProps.leftVarId = this.edgeCondVisual.leftVarId || null
-      this.edgeProps.leftRefType = this.edgeCondVisual.leftRefType || null
-      this.edgeProps.rightVarId = this.edgeCondVisual.rightVarId || null
-      this.edgeProps.rightRefType = this.edgeCondVisual.rightRefType || null
+      this.edgeProps.conditionConfig = JSON.parse(JSON.stringify(this.edgeConditionRoot))
+      this.edgeProps.leftVarId = null
+      this.edgeProps.leftRefType = null
+      this.edgeProps.rightVarId = null
+      this.edgeProps.rightRefType = null
       if (!this.edgeProps.conditionName) {
-        this.edgeProps.conditionName = (this.edgeCondVisual.leftLabel || this.edgeCondVisual.leftVar) + this.edgeCondVisual.operator + (this.edgeCondVisual.rightType === 'var' ? this.edgeCondVisual.rightVar : this.edgeCondVisual.rightValue)
+        this.edgeProps.conditionName = expr
       }
       this.onEdgeChange()
 
@@ -1201,7 +1279,6 @@ export default {
 
 /* 属性面板 - 右侧 */
 .flow-property {
-  width: 640px;
   height: 100%;
   background: #fff;
   border-left: 1px solid #e8e8e8;
@@ -1209,6 +1286,21 @@ export default {
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
+  position: relative;
+  min-width: 320px;
+  max-width: 720px;
+}
+.property-resize-handle {
+  position: absolute;
+  left: -4px;
+  top: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.property-resize-handle:hover {
+  background: rgba(64, 158, 255, 0.12);
 }
 .prop-header {
   display: flex;

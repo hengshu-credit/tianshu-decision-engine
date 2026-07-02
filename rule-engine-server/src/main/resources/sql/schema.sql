@@ -367,6 +367,19 @@ CREATE TABLE IF NOT EXISTS `rule_function` (
   KEY `idx_project_id` (`project_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='自定义函数定义表';
 
+CREATE TABLE IF NOT EXISTS `rule_function_version` (
+  `id`            BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',
+  `function_id`   BIGINT       NOT NULL                COMMENT 'function id',
+  `version`       INT          NOT NULL                COMMENT 'version',
+  `function_json` TEXT         NOT NULL                COMMENT 'function snapshot',
+  `change_log`    VARCHAR(512) DEFAULT NULL            COMMENT 'change log',
+  `publish_by`    VARCHAR(64)  DEFAULT NULL            COMMENT 'operator',
+  `publish_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'snapshot time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_function_version` (`function_id`, `version`),
+  KEY `idx_function_version_time` (`function_id`, `publish_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='function version history';
+
 -- ============================================================
 -- 12. rule_execution_log - 规则执行日志表（按月RANGE分区）
 -- ============================================================
@@ -769,6 +782,20 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
 -- ============================================================
 -- 20. rule_db_datasource - 外部数据库数据源定义表
 -- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',
+  `experiment_id`   BIGINT       NOT NULL                COMMENT 'experiment id',
+  `version`         INT          NOT NULL                COMMENT 'version',
+  `experiment_json` TEXT         NOT NULL                COMMENT 'experiment snapshot',
+  `groups_json`     TEXT         NOT NULL                COMMENT 'group snapshot',
+  `change_log`      VARCHAR(512) DEFAULT NULL            COMMENT 'change log',
+  `publish_by`      VARCHAR(64)  DEFAULT NULL            COMMENT 'operator',
+  `publish_time`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT 'snapshot time',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_version` (`experiment_id`, `version`),
+  KEY `idx_experiment_version_time` (`experiment_id`, `publish_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='experiment version history';
+
 CREATE TABLE IF NOT EXISTS `rule_db_datasource` (
   `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`            BIGINT       NOT NULL DEFAULT 0      COMMENT '所属项目ID，0表示全局',

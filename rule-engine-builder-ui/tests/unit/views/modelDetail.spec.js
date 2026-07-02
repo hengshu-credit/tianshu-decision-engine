@@ -13,7 +13,10 @@ jest.mock('@/api/model', () => ({
   updateModelOutputField: jest.fn(),
   executeModel: jest.fn(),
   getTestParams: jest.fn(),
-  saveTestParams: jest.fn()
+  saveTestParams: jest.fn(),
+  listVersions: jest.fn(),
+  compareVersions: jest.fn(),
+  rollbackVersion: jest.fn()
 }))
 
 jest.mock('@/api/variable', () => ({
@@ -104,7 +107,9 @@ async function mountAndWait(modelData = mockModel()) {
     propsData: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: jest.fn(), replace: jest.fn() },
+      $message: { success: jest.fn(), error: jest.fn() },
+      $confirm: jest.fn().mockResolvedValue(true)
     },
     stubs: {
       'el-descriptions': true, 'el-descriptions-item': true,
@@ -525,6 +530,33 @@ describe('ModelDetail — 模型测试弹窗', () => {
 
   test('formatResult 非对象直接返回', () => {
     expect(wrapper.vm.formatResult('plain string')).toBe('plain string')
+  })
+})
+
+describe('ModelDetail — 版本管理', () => {
+  let wrapper
+
+  beforeEach(async () => { wrapper = await mountAndWait() })
+  afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('openVersionDialog 加载模型版本历史', async () => {
+    modelApi.listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
+
+    await wrapper.vm.openVersionDialog()
+
+    expect(wrapper.vm.versionVisible).toBe(true)
+    expect(modelApi.listVersions).toHaveBeenCalledWith(1)
+    expect(wrapper.vm.versionList.map(v => v.version)).toEqual([2, 1])
+  })
+
+  test('compareWithNext 调用版本对比接口', async () => {
+    wrapper.vm.versionList = [{ version: 2 }, { version: 1 }]
+    modelApi.compareVersions.mockResolvedValue({ data: { left: { version: 2 }, right: { version: 1 }, modelConfigChanged: true } })
+
+    await wrapper.vm.compareWithNext(wrapper.vm.versionList[0], 0)
+
+    expect(modelApi.compareVersions).toHaveBeenCalledWith(1, 2, 1)
+    expect(wrapper.vm.versionCompare.modelConfigChanged).toBe(true)
   })
 })
 

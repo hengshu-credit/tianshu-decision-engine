@@ -63,6 +63,7 @@ describe('ListLibrary — 名单库管理', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
     expect(ruleListApi.listLibraries).toHaveBeenCalled()
     expect(wrapper.vm.tableData[0].listCode).toBe('mobile_black')
+    expect(wrapper.vm.activeTab).toBe('list')
   })
 
   test('保存新名单库时校验项目并调用创建接口', async () => {

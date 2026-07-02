@@ -1,23 +1,29 @@
 import ExperimentDetail from '@/views/experiment/ExperimentDetail.vue'
-import { listExperimentLogs, saveExperiment } from '@/api/experiment'
+import { listExperimentLogs, saveExperiment, listVersions, compareVersions } from '@/api/experiment'
 
 function createContext(overrides = {}) {
   const ctx = {
     $set(target, key, value) { target[key] = value },
     $forceUpdate: jest.fn(),
     $message: { success: jest.fn(), error: jest.fn() },
+    $confirm: jest.fn().mockResolvedValue(),
     $router: { replace: jest.fn(), push: jest.fn() },
     $route: { params: {} },
     $refs: { form: { validate: cb => cb(true) } },
     projectRefs: [],
     projectVars: [],
     rulesForProject: [],
+    ruleFieldMap: {},
     nextUid: 1,
     logs: [],
     logTotal: 0,
     logLoading: false,
     logQuery: { pageNum: 1, pageSize: 10, requestKey: '', stage: '', groupCode: '', success: '' },
     saving: false,
+    versionVisible: false,
+    versionList: [],
+    versionCompare: null,
+    versionPreview: '',
     ...overrides
   }
   Object.keys(ExperimentDetail.methods).forEach(name => {
@@ -35,6 +41,12 @@ function createContext(overrides = {}) {
   })
   Object.defineProperty(ctx, 'testRatioTotal', {
     get() { return ExperimentDetail.computed.testRatioTotal.call(ctx) }
+  })
+  Object.defineProperty(ctx, 'experimentInputFields', {
+    get() { return ExperimentDetail.computed.experimentInputFields.call(ctx) }
+  })
+  Object.defineProperty(ctx, 'experimentOutputFields', {
+    get() { return ExperimentDetail.computed.experimentOutputFields.call(ctx) }
   })
   return ctx
 }
@@ -112,6 +124,31 @@ describe('ExperimentDetail', () => {
     expect(ctx.logTotal).toBe(1)
   })
 
+  test('输入输出字段归集条件字段和执行规则字段', () => {
+    const ctx = createContext({
+      ruleFieldMap: {
+        champion_rule: {
+          input: [{ scriptName: 'age', fieldLabel: '年龄', fieldType: 'NUMBER' }],
+          output: [{ scriptName: 'riskLevel', fieldLabel: '风险等级', fieldType: 'STRING' }]
+        }
+      }
+    })
+    ctx.form.routingMode = 'CONDITION'
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].conditionConfig.children[0] = {
+      type: 'leaf',
+      varCode: 'amount',
+      varLabel: '申请金额',
+      varType: 'NUMBER',
+      operator: '>=',
+      valueKind: 'CONST',
+      value: '1000'
+    }
+
+    expect(ctx.experimentInputFields.map(f => f.fieldName)).toEqual(['amount', 'age'])
+    expect(ctx.experimentOutputFields.map(f => f.fieldName)).toEqual(['riskLevel'])
+  })
+
   test('新建保存成功后跳转到详情页', async () => {
     saveExperiment.mockResolvedValue({ data: { id: 12 } })
     const ctx = createContext()
@@ -125,5 +162,20 @@ describe('ExperimentDetail', () => {
 
     expect(saveExperiment).toHaveBeenCalled()
     expect(ctx.$router.replace).toHaveBeenCalledWith('/experiment/detail/12')
+  })
+
+  test('openVersionDialog loads versions and compareWithNext compares adjacent versions', async () => {
+    listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
+    compareVersions.mockResolvedValue({ data: { left: { version: 2 }, right: { version: 1 }, groupsChanged: true } })
+    const ctx = createContext()
+    ctx.form.id = 9
+
+    await ctx.openVersionDialog()
+    await ctx.compareWithNext(ctx.versionList[0], 0)
+
+    expect(ctx.versionVisible).toBe(true)
+    expect(listVersions).toHaveBeenCalledWith(9)
+    expect(compareVersions).toHaveBeenCalledWith(9, 2, 1)
+    expect(ctx.versionCompare.groupsChanged).toBe(true)
   })
 })

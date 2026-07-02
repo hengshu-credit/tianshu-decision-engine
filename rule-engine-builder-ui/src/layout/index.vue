@@ -105,8 +105,13 @@ export default {
     activeMenuIndex() {
       const path = this.$route.path
       if (path.startsWith('/designer/')) return '/rule'
-      if (/^\/project\/\d+$/.test(path)) return '/project'
-      if (/^\/list\/\d+$/.test(path)) return '/list'
+      if (path.startsWith('/project/')) return '/project'
+      if (path.startsWith('/rule/')) return '/rule'
+      if (path.startsWith('/list/')) return '/list'
+      if (path.startsWith('/model/')) return '/model'
+      if (path.startsWith('/function/')) return '/function'
+      if (path.startsWith('/datasource/')) return '/datasource'
+      if (path.startsWith('/database/')) return '/database'
       if (path.startsWith('/experiment/')) return '/experiment'
       return path
     }

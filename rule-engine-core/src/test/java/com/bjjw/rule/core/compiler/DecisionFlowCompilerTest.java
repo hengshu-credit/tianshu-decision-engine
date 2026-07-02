@@ -3,6 +3,9 @@ package com.bjjw.rule.core.compiler;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.util.HashMap;
+import java.util.Map;
+
 import static org.junit.Assert.*;
 
 public class DecisionFlowCompilerTest {
@@ -51,5 +54,44 @@ public class DecisionFlowCompilerTest {
 
         assertFalse(result.isSuccess());
         assertTrue(result.getErrorMessage().contains("循环"));
+    }
+
+    @Test
+    public void compileNestedConditionConfigWithVarContext() {
+        Map<Long, String> vars = new HashMap<>();
+        vars.put(1L, "applicant.age");
+        vars.put(2L, "policy.maxAge");
+        VarContext varContext = new VarContext(vars);
+
+        CompileResult result = compiler.compile("{"
+                + "\"nodes\":["
+                + "{\"id\":\"start\",\"type\":\"start\"},"
+                + "{\"id\":\"decision\",\"type\":\"decision\"},"
+                + "{\"id\":\"hit\",\"type\":\"task\",\"name\":\"Hit\",\"qlExpressScript\":\"result = 1\"},"
+                + "{\"id\":\"miss\",\"type\":\"task\",\"name\":\"Miss\",\"qlExpressScript\":\"result = 0\"},"
+                + "{\"id\":\"end\",\"type\":\"end\"}"
+                + "],"
+                + "\"edges\":["
+                + "{\"source\":\"start\",\"target\":\"decision\"},"
+                + "{\"source\":\"decision\",\"target\":\"hit\",\"conditionConfig\":{"
+                + "\"type\":\"group\",\"op\":\"AND\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"operator\":\">=\",\"valueKind\":\"CONST\",\"value\":18,\"varType\":\"NUMBER\"},"
+                + "{\"type\":\"group\",\"op\":\"OR\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"operator\":\"<=\",\"valueKind\":\"VAR\",\"value\":\"maxAge\",\"_rightVarId\":2},"
+                + "{\"type\":\"leaf\",\"varCode\":\"status\",\"operator\":\"==\",\"valueKind\":\"CONST\",\"value\":\"ACTIVE\",\"varType\":\"STRING\"}"
+                + "]}"
+                + "]}},"
+                + "{\"source\":\"decision\",\"target\":\"miss\"},"
+                + "{\"source\":\"hit\",\"target\":\"end\"},"
+                + "{\"source\":\"miss\",\"target\":\"end\"}"
+                + "]"
+                + "}", varContext);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("if ("));
+        assertTrue(result.getCompiledScript().contains("applicant.age >= 18"));
+        assertTrue(result.getCompiledScript().contains("applicant.age <= policy.maxAge"));
+        assertTrue(result.getCompiledScript().contains("status == \"ACTIVE\""));
+        assertTrue(result.getCompiledScript().contains("||"));
     }
 }

@@ -91,9 +91,10 @@
           <el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="140" align="center">
+      <el-table-column label="操作" width="190" align="center">
         <template slot-scope="{ row }">
           <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+          <el-button type="text" size="small" @click="openVersionDialog(row)">版本</el-button>
           <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -174,11 +175,33 @@
         <el-button size="small" type="primary" @click="handleSave">保存</el-button>
       </template>
     </el-dialog>
+
+    <el-dialog title="函数版本管理" :visible.sync="versionVisible" width="900px" append-to-body>
+      <el-table :data="versionList" border size="mini" style="width:100%;">
+        <el-table-column prop="version" label="版本" width="80" align="center" />
+        <el-table-column prop="changeLog" label="变更说明" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="publishTime" label="时间" width="170" />
+        <el-table-column label="操作" width="220" align="center">
+          <template slot-scope="{ row, $index }">
+            <el-button type="text" size="mini" @click="viewVersion(row)">查看</el-button>
+            <el-button v-if="$index < versionList.length - 1" type="text" size="mini" @click="compareWithNext(row, $index)">对比</el-button>
+            <el-button type="text" size="mini" @click="rollbackFunctionVersion(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="versionCompare" class="version-compare">
+        <div class="version-compare-title">版本对比：v{{ versionCompare.left.version }} / v{{ versionCompare.right.version }}</div>
+        <el-tag size="mini" :type="versionCompare.functionChanged ? 'warning' : 'success'">
+          {{ versionCompare.functionChanged ? '函数配置有变化' : '函数配置无变化' }}
+        </el-tag>
+      </div>
+      <pre v-if="versionPreview" class="version-preview">{{ versionPreview }}</pre>
+    </el-dialog>
   </div>
 </template>
 
 <script>
-import { createFunction, updateFunction, deleteFunction, listFunctions } from '@/api/function'
+import { createFunction, updateFunction, deleteFunction, listFunctions, listVersions, compareVersions, rollbackVersion } from '@/api/function'
 import { listProjects } from '@/api/project'
 import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
@@ -194,6 +217,11 @@ export default {
       qp: { pageNum: 1, pageSize: 10, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' },
       loading: false,
       dialogVisible: false,
+      versionVisible: false,
+      versionRow: null,
+      versionList: [],
+      versionCompare: null,
+      versionPreview: '',
       projectList: [],
       projectListLoading: false,
       filteredProjectCodes: [],
@@ -368,6 +396,41 @@ export default {
         this.$message.error('保存失败')
       }
     },
+    async openVersionDialog(row) {
+      this.versionRow = row
+      this.versionVisible = true
+      this.versionCompare = null
+      this.versionPreview = ''
+      const res = await listVersions(row.id)
+      this.versionList = (res && res.data) || []
+    },
+    viewVersion(row) {
+      this.versionCompare = null
+      this.versionPreview = this.prettyVersionJson(row.functionJson)
+    },
+    async compareWithNext(row, index) {
+      const right = this.versionList[index + 1]
+      if (!this.versionRow || !right) return
+      const res = await compareVersions(this.versionRow.id, row.version, right.version)
+      this.versionCompare = (res && res.data) || null
+      this.versionPreview = ''
+    },
+    async rollbackFunctionVersion(row) {
+      if (!this.versionRow || !row) return
+      await this.$confirm('确认回滚到 v' + row.version + '？', '提示', { type: 'warning' })
+      await rollbackVersion(this.versionRow.id, row.version)
+      this.$message.success('已回滚')
+      await this.loadFunctions()
+      await this.openVersionDialog(this.versionRow)
+    },
+    prettyVersionJson(text) {
+      if (!text) return ''
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2)
+      } catch (e) {
+        return String(text)
+      }
+    },
     async handleDelete(row) {
       try {
         await this.$confirm('确认删除函数「' + row.funcName + '」？', '提示', { type: 'warning' })
@@ -384,4 +447,7 @@ export default {
 .uiue-list-page { padding: 16px; }
 .linkage-hint { font-size: 13px; color: #909399; margin-bottom: 12px; background: #fafafa; padding: 8px 12px; border-radius: 4px; }
 .mono-input ::v-deep textarea { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; }
+.version-compare { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
+.version-compare-title { font-weight: 600; color: #303133; }
+.version-preview { margin-top: 10px; padding: 10px; max-height: 320px; overflow: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px; line-height: 1.5; }
 </style>

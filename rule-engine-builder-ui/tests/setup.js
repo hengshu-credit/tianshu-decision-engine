@@ -142,6 +142,10 @@ jest.mock('@/api/function', () => ({
   createFunction: jest.fn(),
   updateFunction: jest.fn(),
   deleteFunction: jest.fn(),
+  listVersions: jest.fn(),
+  getVersion: jest.fn(),
+  compareVersions: jest.fn(),
+  rollbackVersion: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/model', () => ({
@@ -217,6 +221,10 @@ jest.mock('@/api/experiment', () => ({
   saveExperiment: jest.fn(),
   deleteExperiment: jest.fn(),
   executeExperiment: jest.fn(),
+  listVersions: jest.fn(),
+  getVersion: jest.fn(),
+  compareVersions: jest.fn(),
+  rollbackVersion: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/ruleList', () => ({

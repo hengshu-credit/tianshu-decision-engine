@@ -92,11 +92,10 @@ public class GraphScriptGenerator {
             JSONObject defaultEdge = null;
             List<JSONObject> condEdges = new ArrayList<>();
             for (JSONObject edge : out) {
-                String condExpr = edge.getString("conditionExpression");
-                if (condExpr == null || condExpr.trim().isEmpty()) {
-                    defaultEdge = edge;
-                } else {
+                if (isConditionalEdge(edge)) {
                     condEdges.add(edge);
+                } else {
+                    defaultEdge = edge;
                 }
             }
 
@@ -178,6 +177,10 @@ public class GraphScriptGenerator {
     }
 
     private static String resolveConditionExpression(JSONObject edge, VarContext varContext) {
+        JSONObject conditionConfig = getConditionConfig(edge);
+        if (hasUsableCondition(conditionConfig)) {
+            return compileConditionNode(conditionConfig, varContext);
+        }
         String expr = edge.getString("conditionExpression");
         if (expr == null || expr.trim().isEmpty() || varContext == null) {
             return expr;
@@ -196,5 +199,127 @@ public class GraphScriptGenerator {
             right = varContext.resolveVar(rightId, rightRefType, right);
         }
         return left + " " + matcher.group(2) + " " + right;
+    }
+
+    private static boolean isConditionalEdge(JSONObject edge) {
+        JSONObject conditionConfig = getConditionConfig(edge);
+        if (hasUsableCondition(conditionConfig)) return true;
+        String condExpr = edge.getString("conditionExpression");
+        return condExpr != null && !condExpr.trim().isEmpty();
+    }
+
+    private static JSONObject getConditionConfig(JSONObject edge) {
+        if (edge == null) return null;
+        Object raw = edge.get("conditionConfig");
+        if (raw instanceof JSONObject) {
+            return (JSONObject) raw;
+        }
+        if (raw instanceof String) {
+            String text = ((String) raw).trim();
+            if (text.startsWith("{") && text.endsWith("}")) {
+                return JSONObject.parseObject(text);
+            }
+        }
+        return null;
+    }
+
+    private static boolean hasUsableCondition(JSONObject node) {
+        if (node == null) return false;
+        if (Boolean.TRUE.equals(node.getBoolean("fallback"))) return false;
+        String type = node.getString("type");
+        if ("leaf".equals(type)) {
+            String op = node.getString("operator");
+            if (op == null || op.trim().isEmpty()) op = "==";
+            if ("*".equals(op)) return false;
+            String left = node.getString("varCode");
+            if (left == null || left.trim().isEmpty()) return false;
+            String valueKind = node.getString("valueKind");
+            Object value = node.get("value");
+            return value != null && !String.valueOf(value).trim().isEmpty();
+        }
+        if ("group".equals(type)) {
+            JSONArray children = node.getJSONArray("children");
+            if (children == null) return false;
+            for (int i = 0; i < children.size(); i++) {
+                JSONObject child = children.getJSONObject(i);
+                if (hasUsableCondition(child)) return true;
+            }
+        }
+        return false;
+    }
+
+    private static String compileConditionNode(JSONObject node, VarContext varContext) {
+        if (node == null) return "true";
+        String type = node.getString("type");
+        if ("leaf".equals(type)) {
+            return compileConditionLeaf(node, varContext);
+        }
+        if ("group".equals(type)) {
+            JSONArray children = node.getJSONArray("children");
+            List<String> expressions = new ArrayList<>();
+            if (children != null) {
+                for (int i = 0; i < children.size(); i++) {
+                    String expr = compileConditionNode(children.getJSONObject(i), varContext);
+                    if (expr != null && !expr.trim().isEmpty()) {
+                        expressions.add(expr);
+                    }
+                }
+            }
+            if (expressions.isEmpty()) return "true";
+            String joiner = "OR".equals(node.getString("op")) ? " || " : " && ";
+            return "(" + String.join(joiner, expressions) + ")";
+        }
+        return "true";
+    }
+
+    private static String compileConditionLeaf(JSONObject leaf, VarContext varContext) {
+        String leftCode = leaf.getString("varCode");
+        if (leftCode == null || leftCode.trim().isEmpty()) return "true";
+        String op = leaf.getString("operator");
+        if (op == null || op.trim().isEmpty()) op = "==";
+        if ("*".equals(op)) return "true";
+
+        Long leftId = getLongAny(leaf, "_varId", "varId", "leftVarId");
+        String leftRefType = firstNotEmpty(leaf.getString("_refType"), leaf.getString("refType"), leaf.getString("leftRefType"));
+        String left = varContext != null ? varContext.resolveVar(leftId, leftRefType, leftCode) : leftCode;
+
+        String right;
+        if ("VAR".equals(leaf.getString("valueKind"))) {
+            String rightCode = leaf.getString("value");
+            if (rightCode == null || rightCode.trim().isEmpty()) return "true";
+            Long rightId = getLongAny(leaf, "_rightVarId", "rightVarId");
+            String rightRefType = firstNotEmpty(leaf.getString("_rightRefType"), leaf.getString("rightRefType"));
+            right = varContext != null ? varContext.resolveVar(rightId, rightRefType, rightCode) : rightCode;
+        } else {
+            Object value = leaf.get("value");
+            if (value == null || String.valueOf(value).trim().isEmpty()) return "true";
+            right = formatConditionConstant(leaf.getString("varType"), value);
+        }
+        return left + " " + op + " " + right;
+    }
+
+    private static Long getLongAny(JSONObject obj, String... keys) {
+        for (String key : keys) {
+            if (obj.containsKey(key) && obj.get(key) != null) {
+                return obj.getLong(key);
+            }
+        }
+        return null;
+    }
+
+    private static String firstNotEmpty(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.trim().isEmpty()) return value;
+        }
+        return null;
+    }
+
+    private static String formatConditionConstant(String varType, Object value) {
+        String text = String.valueOf(value);
+        if ("STRING".equals(varType) || "ENUM".equals(varType) || "DATE".equals(varType)) {
+            return "\"" + text.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        }
+        return text;
     }
 }

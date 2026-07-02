@@ -5,6 +5,8 @@
       <i class="el-icon-info" /> 模型支持从 PMML、PICKLE、DILL、ONNX 等格式文件导入，用于在规则设计时调用机器学习模型进行预测。
     </div>
 
+    <el-tabs v-model="activeTab" type="border-card" class="page-tabs">
+      <el-tab-pane label="模型管理" name="list">
     <!-- 操作按钮栏 -->
     <div class="uiue-btn-bar">
       <div class="btn-right">
@@ -113,7 +115,11 @@
       <el-pagination style="margin-top:12px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
         layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
         @current-change="p=>{qp.pageNum=p;load()}" @size-change="s=>{qp.pageSize=s;qp.pageNum=1;load()}" />
-      <module-call-log module-type="MODEL" title="模型执行日志" />
+      </el-tab-pane>
+      <el-tab-pane label="模型执行日志" name="logs">
+        <module-call-log module-type="MODEL" title="模型执行日志" />
+      </el-tab-pane>
+    </el-tabs>
 
     <!-- 上传模型对话框 -->
     <el-dialog title="上传模型" :visible.sync="uploadVisible" width="700px" :close-on-click-modal="false">
@@ -239,6 +245,7 @@ export default {
   data() {
     return {
       loading: false,
+      activeTab: 'list',
       models: [],
       total: 0,
       projects: [],

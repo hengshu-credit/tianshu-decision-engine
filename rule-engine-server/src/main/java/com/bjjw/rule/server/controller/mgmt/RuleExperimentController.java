@@ -5,6 +5,7 @@ import com.bjjw.rule.model.dto.RuleExperimentExecuteRequest;
 import com.bjjw.rule.model.dto.RuleExperimentExecuteResult;
 import com.bjjw.rule.model.entity.RuleExperiment;
 import com.bjjw.rule.model.entity.RuleExperimentExecutionLog;
+import com.bjjw.rule.model.entity.RuleExperimentVersion;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleExperimentService;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -17,6 +18,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rule/experiment")
@@ -66,6 +69,38 @@ public class RuleExperimentController {
     public R<Void> delete(@PathVariable Long id) {
         experimentService.deleteExperiment(id);
         return R.ok();
+    }
+
+    @GetMapping("/versions/{experimentId}")
+    public R<List<RuleExperimentVersion>> listVersions(@PathVariable Long experimentId) {
+        return R.ok(experimentService.listVersions(experimentId));
+    }
+
+    @GetMapping("/version/{experimentId}/{version}")
+    public R<RuleExperimentVersion> getVersion(@PathVariable Long experimentId, @PathVariable Integer version) {
+        RuleExperimentVersion snapshot = experimentService.getVersion(experimentId, version);
+        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+    }
+
+    @GetMapping("/versionCompare/{experimentId}")
+    public R<Map<String, Object>> compareVersions(@PathVariable Long experimentId,
+                                                  @RequestParam Integer leftVersion,
+                                                  @RequestParam Integer rightVersion) {
+        try {
+            return R.ok(experimentService.compareVersions(experimentId, leftVersion, rightVersion));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/rollback/{experimentId}/{version}")
+    public R<Void> rollback(@PathVariable Long experimentId, @PathVariable Integer version) {
+        try {
+            experimentService.rollbackToVersion(experimentId, version);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     @PostMapping("/execute/{experimentCode}")

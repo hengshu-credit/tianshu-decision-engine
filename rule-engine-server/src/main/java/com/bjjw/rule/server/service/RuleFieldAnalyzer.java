@@ -760,6 +760,12 @@ public class RuleFieldAnalyzer {
         if (varCode != null && !varCode.isEmpty()) {
             inputVars.add(varCode);
         }
+        if ("VAR".equals(getString(node, "valueKind"))) {
+            String rightVarCode = getString(node, "value");
+            if (rightVarCode != null && !rightVarCode.isEmpty()) {
+                inputVars.add(rightVarCode);
+            }
+        }
         // 处理子条件（AND/OR 组）
         JSONArray children = node.getJSONArray("children");
         if (children != null) {
@@ -999,6 +1005,10 @@ public class RuleFieldAnalyzer {
         if (conditionRoot != null) {
             collectVarCodesFromConditionTree(conditionRoot, varCodes);
         }
+        JSONObject conditionConfig = obj.getJSONObject("conditionConfig");
+        if (conditionConfig != null) {
+            collectVarCodesFromConditionTree(conditionConfig, varCodes);
+        }
         String[] exprKeys = { "condition", "conditionExpression", "expression", "leftExpr", "rightExpr" };
         for (String key : exprKeys) {
             String expr = getString(obj, key);
@@ -1162,6 +1172,11 @@ public class RuleFieldAnalyzer {
         if (script == null || script.isEmpty()) return;
 
         Set<String> assignedVars = collectAssignedVars(script);
+        Set<String> explicitResultKeys = collectExplicitResultKeys(script);
+        if (!isInput && !explicitResultKeys.isEmpty()) {
+            varCodes.addAll(explicitResultKeys);
+            return;
+        }
         Set<String> explicitScriptRefs = collectScriptRefCodes(model);
         if (!explicitScriptRefs.isEmpty()) {
             Set<String> usedRefs = new LinkedHashSet<>();
@@ -1190,7 +1205,11 @@ public class RuleFieldAnalyzer {
             identifiers.removeAll(assignedVars);
             varCodes.addAll(identifiers);
         } else {
-            varCodes.addAll(assignedVars);
+            for (String assignedVar : assignedVars) {
+                if (!"_result".equals(assignedVar)) {
+                    varCodes.add(assignedVar);
+                }
+            }
         }
     }
 
@@ -1220,6 +1239,22 @@ public class RuleFieldAnalyzer {
             addVarName(refs, getString(ref, "refCode"));
         }
         return refs;
+    }
+
+    private Set<String> collectExplicitResultKeys(String script) {
+        Set<String> keys = new LinkedHashSet<>();
+        String sanitized = stripComments(script);
+        Pattern resultPattern = Pattern.compile("_result\\s*=\\s*\\{([\\s\\S]*?)\\}");
+        Matcher resultMatcher = resultPattern.matcher(sanitized);
+        while (resultMatcher.find()) {
+            String body = resultMatcher.group(1);
+            Matcher keyMatcher = Pattern.compile("\"([^\"]+)\"\\s*:|'([^']+)'\\s*:|([A-Za-z_][A-Za-z0-9_.]*)\\s*:").matcher(body);
+            while (keyMatcher.find()) {
+                String key = firstNonBlank(keyMatcher.group(1), keyMatcher.group(2), keyMatcher.group(3));
+                addVarName(keys, key);
+            }
+        }
+        return keys;
     }
 
     private Set<String> extractIdentifiersFromScript(String script) {
@@ -1314,6 +1349,56 @@ public class RuleFieldAnalyzer {
                 continue;
             }
             sb.append(inSingle || inDouble ? (c == '\n' ? '\n' : ' ') : c);
+        }
+        return sb.toString();
+    }
+
+    private String stripComments(String script) {
+        StringBuilder sb = new StringBuilder(script.length());
+        boolean inSingle = false;
+        boolean inDouble = false;
+        boolean inLineComment = false;
+        boolean inBlockComment = false;
+        for (int i = 0; i < script.length(); i++) {
+            char c = script.charAt(i);
+            char next = i + 1 < script.length() ? script.charAt(i + 1) : '\0';
+            if (inLineComment) {
+                if (c == '\n') {
+                    inLineComment = false;
+                    sb.append(c);
+                } else {
+                    sb.append(' ');
+                }
+                continue;
+            }
+            if (inBlockComment) {
+                if (c == '*' && next == '/') {
+                    inBlockComment = false;
+                    sb.append("  ");
+                    i++;
+                } else {
+                    sb.append(c == '\n' ? '\n' : ' ');
+                }
+                continue;
+            }
+            if (!inSingle && !inDouble && c == '/' && next == '/') {
+                inLineComment = true;
+                sb.append("  ");
+                i++;
+                continue;
+            }
+            if (!inSingle && !inDouble && c == '/' && next == '*') {
+                inBlockComment = true;
+                sb.append("  ");
+                i++;
+                continue;
+            }
+            if (!inDouble && c == '\'' && !isEscaped(script, i)) {
+                inSingle = !inSingle;
+            } else if (!inSingle && c == '"' && !isEscaped(script, i)) {
+                inDouble = !inDouble;
+            }
+            sb.append(c);
         }
         return sb.toString();
     }

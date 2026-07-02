@@ -44,6 +44,30 @@ public class RuleFieldAnalyzerTest {
     }
 
     @Test
+    public void scriptExplicitResultMapExtractsReturnedKeysAsOutputs() {
+        String json = "{"
+                + "\"script\":\"score = request.score + offset\\n_result = {\\\"riskScore\\\": score, \\\"riskLevel\\\": level}\\n_result\","
+                + "\"scriptVarRefs\":["
+                + "{\"refCode\":\"request.score\",\"varId\":10,\"refType\":\"DATA_OBJECT\"},"
+                + "{\"refCode\":\"offset\",\"varId\":20,\"refType\":\"VARIABLE\"}"
+                + "]"
+                + "}";
+
+        List<String> inputs = analyzer.extractInputFields(json, "SCRIPT").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+        List<String> outputs = analyzer.extractOutputFields(json, "SCRIPT").stream()
+                .map(RuleDefinitionOutputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(inputs.contains("request.score"));
+        assertTrue(inputs.contains("offset"));
+        assertEquals(java.util.Arrays.asList("riskScore", "riskLevel"), outputs);
+        assertFalse(outputs.contains("_result"));
+        assertFalse(outputs.contains("score"));
+    }
+
+    @Test
     public void graphExtractsConditionAndActionDataFields() {
         String json = "{"
                 + "\"nodes\":["
@@ -72,6 +96,26 @@ public class RuleFieldAnalyzerTest {
         assertTrue(outputs.contains("result.level"));
         assertTrue(outputs.contains("result.hit"));
         assertTrue(outputs.contains("internalScore"));
+    }
+
+    @Test
+    public void graphExtractsConditionConfigFieldsFromEdges() {
+        String json = "{"
+                + "\"nodes\":[{\"id\":\"n1\",\"type\":\"decision\"},{\"id\":\"n2\",\"type\":\"task\",\"actionData\":[{\"type\":\"assign\",\"target\":\"result.hit\",\"value\":\"1\"}]}],"
+                + "\"edges\":[{\"source\":\"n1\",\"target\":\"n2\",\"conditionConfig\":{"
+                + "\"type\":\"group\",\"op\":\"AND\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"request.age\",\"operator\":\">=\",\"valueKind\":\"CONST\",\"value\":\"18\"},"
+                + "{\"type\":\"leaf\",\"varCode\":\"request.city\",\"operator\":\"==\",\"valueKind\":\"VAR\",\"value\":\"targetCity\"}"
+                + "]}}]"
+                + "}";
+
+        List<String> inputs = analyzer.extractInputFields(json, "FLOW").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(inputs.contains("request.age"));
+        assertTrue(inputs.contains("request.city"));
+        assertTrue(inputs.contains("targetCity"));
     }
 
     @Test

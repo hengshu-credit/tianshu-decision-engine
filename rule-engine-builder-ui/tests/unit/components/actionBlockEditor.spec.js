@@ -51,4 +51,20 @@ describe('ActionBlockEditor', () => {
     expect(payload._condVarId).toBe(1)
     expect(payload._varId).toBeUndefined()
   })
+
+  test('selectArgVar writes function argument reference', () => {
+    const ctx = createEditorContext([{ type: 'func-call', target: '', funcName: 'max', args: [''] }])
+    const block = ctx.blocks[0]
+
+    ctx.selectArgVar(block, 0, { varCode: 'score', _varId: 1, _refType: 'VARIABLE' })
+
+    const payload = ctx.emitted[0].payload[0]
+    expect(payload.args).toEqual(['score'])
+    expect(payload._argRefs).toEqual([{ _varId: 1, _refType: 'VARIABLE' }])
+
+    ctx.setArgValue(block, 0, 'score + 1')
+    const nextPayload = ctx.emitted[1].payload[0]
+    expect(nextPayload.args).toEqual(['score + 1'])
+    expect(nextPayload._argRefs).toEqual([null])
+  })
 })

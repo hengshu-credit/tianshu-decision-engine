@@ -221,6 +221,88 @@ describe('VarPicker', () => {
     expect(wrapper.vm.rightPage).toBe(2)
   })
 
+  test('输入框输入关键字后按编码和名称筛选字段，前缀命中优先', async () => {
+    const wrapper = mountPicker({
+      vars: [
+        { varCode: 'riskScore', varLabel: '风险分', varType: 'NUMBER', _ref: { category: 'standalone' } },
+        { varCode: 'creditScore', varLabel: '信用评分', varType: 'NUMBER', _ref: { category: 'standalone' } },
+        { varCode: 'scoreLevel', varLabel: '评分等级', varType: 'STRING', _ref: { category: 'standalone' } }
+      ]
+    })
+    await Vue.nextTick()
+
+    wrapper.vm.onReferenceInput('score')
+
+    expect(wrapper.vm.popoverVisible).toBe(true)
+    expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['scoreLevel', 'creditScore', 'riskScore'])
+  })
+
+  test('reference search switches to the matching category', async () => {
+    const wrapper = mountPicker({
+      vars: [
+        { varCode: 'age', varLabel: '年龄', varType: 'NUMBER', _ref: { category: 'standalone' } },
+        { varCode: 'creditModel', varLabel: '信用模型', varType: 'MODEL', _ref: { category: 'model', refType: 'MODEL' } }
+      ]
+    })
+    await Vue.nextTick()
+
+    expect(wrapper.vm.activeCategory).toBe('standalone')
+
+    wrapper.vm.onReferenceInput('credit')
+    await Vue.nextTick()
+
+    expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['model'])
+    expect(wrapper.vm.activeCategory).toBe('model')
+    expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['creditModel'])
+  })
+
+  test('数据对象分类搜索时只展示命中的子字段并自动展开单个对象组', async () => {
+    const wrapper = mountPicker({
+      vars: [
+        ...objectFieldOptions(),
+        {
+          varCode: 'homeAddress',
+          varLabel: '家庭地址',
+          varType: 'STRING',
+          varObj: { id: 103, varCode: 'homeAddress' },
+          _ref: { category: 'object', objectCode: 'Profile', objectLabel: '客户档案' }
+        }
+      ]
+    })
+    await Vue.nextTick()
+
+    wrapper.vm.onCategoryClick('object')
+    wrapper.vm.onReferenceInput('am')
+    await Vue.nextTick()
+
+    expect(wrapper.vm.filteredRightItems).toHaveLength(1)
+    expect(wrapper.vm.expandedObject).toBe('LoanApply')
+    expect(wrapper.vm.pagedObjectChildren(wrapper.vm.filteredRightItems[0]).map(v => v.varCode)).toEqual(['amount'])
+  })
+
+  test('弹层宽度和面板宽度一致，拖拽宽度不会留下右侧空白', () => {
+    const wrapper = mountPicker({ vars: standaloneOptions(1) })
+
+    wrapper.vm.panelWidth = 720
+
+    expect(wrapper.vm.popoverWidth).toBe(720)
+    expect(wrapper.vm.panelStyle.width).toBe('720px')
+  })
+
+  test('popover resize supports larger panel bounds', () => {
+    const wrapper = mountPicker({ vars: standaloneOptions(1) })
+    wrapper.vm.$refs.popover = {
+      popperElm: {
+        getBoundingClientRect: () => ({ left: 0, top: 0 })
+      }
+    }
+
+    wrapper.vm.updatePanelSize(2000, 1200)
+
+    expect(wrapper.vm.panelWidth).toBe(1440)
+    expect(wrapper.vm.panelHeight).toBe(960)
+  })
+
   test('object field short code value matches full object option without duplicate display code', async () => {
     const wrapper = mountPicker({
       value: 'taxpayerType',
@@ -245,5 +327,18 @@ describe('VarPicker', () => {
     expect(wrapper.vm.customMode).toBe(false)
     expect(wrapper.vm.currentValue).toBe('taxContext.taxpayerType')
     expect(wrapper.vm.displayValue).toBe('fengkong/taxpayerType taxContext.taxpayerType')
+  })
+
+  test('autoSwitchCustom=false keeps unmatched values in picker mode', async () => {
+    const wrapper = mountPicker({
+      value: 'paramName',
+      autoSwitchCustom: false,
+      vars: standaloneOptions(1)
+    })
+    await Vue.nextTick()
+
+    expect(wrapper.vm.customMode).toBe(false)
+    wrapper.vm.openPopover()
+    expect(wrapper.vm.popoverVisible).toBe(true)
   })
 })

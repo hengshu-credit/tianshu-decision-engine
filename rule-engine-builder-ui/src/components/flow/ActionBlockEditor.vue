@@ -116,10 +116,19 @@
           </div>
           <div class="inline-row" v-for="(arg, ai) in block.args" :key="ai" style="margin-bottom:2px">
             <span class="mini-label">参数{{ai+1}}</span>
-            <el-input v-model="block.args[ai]" size="mini" placeholder="参数表达式" @input="sync" />
-            <el-button v-if="block.args.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="block.args.splice(ai,1); sync()" />
+            <var-picker
+              :vars="vars"
+              :selected-vars="selectedVars"
+              :value="arg"
+              placeholder="参数表达式/字段"
+              size="mini"
+              :auto-switch-custom="false"
+              @input="value => setArgValue(block, ai, value)"
+              @select="v => selectArgVar(block, ai, v)"
+            />
+            <el-button v-if="block.args.length > 1" type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C" @click="removeArg(block, ai)" />
           </div>
-          <el-button size="mini" icon="el-icon-plus" @click="block.args.push(''); sync()" style="width:100%;margin-top:2px">添加参数</el-button>
+          <el-button size="mini" icon="el-icon-plus" @click="addArg(block)" style="width:100%;margin-top:2px">添加参数</el-button>
         </template>
 
         <!-- ===== ForEach ===== -->
@@ -334,6 +343,46 @@ export default {
     },
     addBlock(type) {
       this.blocks.push(newBlock(type))
+      this.sync()
+    },
+    setArgValue(block, index, value) {
+      if (!block || !Array.isArray(block.args)) return
+      this.$set(block.args, index, value || '')
+      this.clearArgRef(block, index)
+      this.sync()
+    },
+    selectArgVar(block, index, variable) {
+      if (!variable) return
+      if (!block || !Array.isArray(block.args)) return
+      this.$set(block.args, index, variable.varCode || '')
+      this.setArgRef(block, index, variable)
+      this.sync()
+    },
+    setArgRef(block, index, variable) {
+      if (!block) return
+      if (!Array.isArray(block._argRefs)) this.$set(block, '_argRefs', [])
+      const id = this.refIdOf(variable)
+      const refType = this.refTypeOf(variable)
+      if (id != null && id !== '') {
+        this.$set(block._argRefs, index, { _varId: id, _refType: refType || undefined })
+      } else {
+        this.$set(block._argRefs, index, null)
+      }
+    },
+    clearArgRef(block, index) {
+      if (!block || !Array.isArray(block._argRefs)) return
+      this.$set(block._argRefs, index, null)
+    },
+    addArg(block) {
+      if (!block || !Array.isArray(block.args)) return
+      block.args.push('')
+      if (Array.isArray(block._argRefs)) block._argRefs.push(null)
+      this.sync()
+    },
+    removeArg(block, index) {
+      if (!block || !Array.isArray(block.args)) return
+      block.args.splice(index, 1)
+      if (Array.isArray(block._argRefs)) block._argRefs.splice(index, 1)
       this.sync()
     },
     removeBlock(bi) {

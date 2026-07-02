@@ -1,15 +1,20 @@
 package com.bjjw.rule.server.service;
 
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.bjjw.rule.model.entity.RuleFunction;
+import com.bjjw.rule.model.entity.RuleFunctionVersion;
 import com.bjjw.rule.model.entity.RuleProject;
 import com.bjjw.rule.server.mapper.RuleFunctionMapper;
+import com.bjjw.rule.server.mapper.RuleFunctionVersionMapper;
 import com.bjjw.rule.server.mapper.RuleProjectMapper;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -24,6 +29,9 @@ public class RuleFunctionService {
 
     @Resource
     private RuleFunctionMapper functionMapper;
+
+    @Resource
+    private RuleFunctionVersionMapper functionVersionMapper;
 
     @Resource
     private RuleProjectMapper projectMapper;
@@ -228,13 +236,77 @@ public class RuleFunctionService {
             func.setScope(SCOPE_PROJECT);
         }
         functionMapper.insert(func);
+        saveVersionSnapshot(func.getId(), "create");
     }
 
     public void update(RuleFunction func) {
         functionMapper.updateById(func);
+        saveVersionSnapshot(func.getId(), "update");
     }
 
     public void delete(Long id) {
         functionMapper.deleteById(id);
+    }
+
+    public List<RuleFunctionVersion> listVersions(Long functionId) {
+        return functionVersionMapper.selectList(new LambdaQueryWrapper<RuleFunctionVersion>()
+                .eq(RuleFunctionVersion::getFunctionId, functionId)
+                .orderByDesc(RuleFunctionVersion::getVersion));
+    }
+
+    public RuleFunctionVersion getVersion(Long functionId, Integer version) {
+        return functionVersionMapper.selectOne(new LambdaQueryWrapper<RuleFunctionVersion>()
+                .eq(RuleFunctionVersion::getFunctionId, functionId)
+                .eq(RuleFunctionVersion::getVersion, version));
+    }
+
+    public Map<String, Object> compareVersions(Long functionId, Integer leftVersion, Integer rightVersion) {
+        RuleFunctionVersion left = getVersion(functionId, leftVersion);
+        RuleFunctionVersion right = getVersion(functionId, rightVersion);
+        if (left == null || right == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("left", left);
+        result.put("right", right);
+        result.put("functionChanged", !sameText(left.getFunctionJson(), right.getFunctionJson()));
+        return result;
+    }
+
+    public RuleFunction rollbackToVersion(Long functionId, Integer version) {
+        RuleFunctionVersion snapshot = getVersion(functionId, version);
+        if (snapshot == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        RuleFunction restored = JSON.parseObject(snapshot.getFunctionJson(), RuleFunction.class);
+        restored.setId(functionId);
+        functionMapper.updateById(restored);
+        saveVersionSnapshot(functionId, "rollback to v" + version);
+        return functionMapper.selectById(functionId);
+    }
+
+    private void saveVersionSnapshot(Long functionId, String changeLog) {
+        if (functionId == null) return;
+        RuleFunction function = functionMapper.selectById(functionId);
+        if (function == null) return;
+        RuleFunctionVersion version = new RuleFunctionVersion();
+        version.setFunctionId(functionId);
+        version.setVersion(nextVersion(functionId));
+        version.setFunctionJson(JSON.toJSONString(function));
+        version.setChangeLog(changeLog);
+        version.setPublishTime(LocalDateTime.now());
+        functionVersionMapper.insert(version);
+    }
+
+    private int nextVersion(Long functionId) {
+        List<RuleFunctionVersion> versions = listVersions(functionId);
+        if (versions == null || versions.isEmpty()) return 1;
+        Integer current = versions.get(0).getVersion();
+        return (current == null ? 0 : current) + 1;
+    }
+
+    private boolean sameText(String left, String right) {
+        if (left == null) return right == null;
+        return left.equals(right);
     }
 }

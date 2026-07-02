@@ -4,6 +4,7 @@
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
       <h2 style="margin:0;">{{ model.modelName || '模型详情' }}</h2>
       <div>
+        <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
         <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">模型测试</el-button>
         <el-button size="small" icon="el-icon-back" @click="$router.push('/model')">返回</el-button>
       </div>
@@ -244,6 +245,43 @@
       </el-tab-pane>
     </el-tabs>
 
+    <el-dialog title="版本历史" :visible.sync="versionVisible" width="960px" :close-on-click-modal="false">
+      <el-table :data="versionList" border size="small" v-loading="versionLoading" style="width:100%;">
+        <el-table-column prop="version" label="版本" width="80" align="center">
+          <template slot-scope="{ row }">v{{ row.version }}</template>
+        </el-table-column>
+        <el-table-column prop="changeLog" label="变更说明" min-width="180" show-overflow-tooltip />
+        <el-table-column prop="publishBy" label="发布人" width="110" />
+        <el-table-column prop="publishTime" label="发布时间" width="170">
+          <template slot-scope="{ row }">{{ row.publishTime ? String(row.publishTime).replace('T', ' ') : '-' }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="170" align="center">
+          <template slot-scope="{ row, $index }">
+            <el-button type="text" size="mini" :disabled="$index >= versionList.length - 1" @click="compareWithNext(row, $index)">对比上一版</el-button>
+            <el-button type="text" size="mini" @click="rollbackVersion(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="versionCompare" style="margin-top:12px;">
+        <el-alert
+          :title="'v' + versionCompare.left.version + ' 与 v' + versionCompare.right.version + ' 对比'"
+          :type="versionCompare.modelContentChanged || versionCompare.modelConfigChanged ? 'warning' : 'success'"
+          :closable="false"
+          show-icon
+        />
+        <div class="version-compare-grid">
+          <div>
+            <div class="version-compare-title">左侧模型配置</div>
+            <pre>{{ formatVersionJson(versionCompare.left.modelConfig) }}</pre>
+          </div>
+          <div>
+            <div class="version-compare-title">右侧模型配置</div>
+            <pre>{{ formatVersionJson(versionCompare.right.modelConfig) }}</pre>
+          </div>
+        </div>
+      </div>
+    </el-dialog>
+
     <!-- 模型测试对话框 -->
     <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false">
       <!-- 数据未就绪时显示加载中，防止旧数据闪烁 -->
@@ -384,7 +422,11 @@ export default {
       customVarModes: {},
       fieldPageSize: 100,
       inputFieldPage: 1,
-      outputFieldPage: 1
+      outputFieldPage: 1,
+      versionVisible: false,
+      versionLoading: false,
+      versionList: [],
+      versionCompare: null
     }
   },
   computed: {
@@ -851,6 +893,55 @@ export default {
       return row._editing ? 'editing-row' : ''
     },
 
+    // ========== 版本管理 ==========
+    async openVersionDialog() {
+      this.versionVisible = true
+      this.versionCompare = null
+      await this.loadVersions()
+    },
+    async loadVersions() {
+      if (!this.model.id) return
+      this.versionLoading = true
+      try {
+        const res = await api.listVersions(this.model.id)
+        this.versionList = res.data || res || []
+      } catch (e) {
+        this.$message.error(e.message || '加载版本历史失败')
+      } finally {
+        this.versionLoading = false
+      }
+    },
+    async compareWithNext(row, index) {
+      const right = this.versionList[index + 1]
+      if (!row || !right) return
+      try {
+        const res = await api.compareVersions(this.model.id, row.version, right.version)
+        this.versionCompare = res.data || res
+      } catch (e) {
+        this.$message.error(e.message || '版本对比失败')
+      }
+    },
+    async rollbackVersion(row) {
+      if (!row) return
+      try {
+        await this.$confirm('确定回滚模型到 v' + row.version + ' 吗？当前模型内容会被该版本快照覆盖。', '确认回滚', { type: 'warning' })
+        await api.rollbackVersion(this.model.id, row.version)
+        this.$message.success('回滚成功')
+        this.versionVisible = false
+        await this.load()
+      } catch (e) {
+        if (e !== 'cancel') this.$message.error(e.message || '回滚失败')
+      }
+    },
+    formatVersionJson(text) {
+      if (!text) return ''
+      try {
+        return JSON.stringify(JSON.parse(text), null, 2)
+      } catch (e) {
+        return text
+      }
+    },
+
     // ========== 模型测试 ==========
     async openTestDialog() {
       // 1. 先打开弹窗，此时 testReady=false，内容显示"正在加载..."，旧数据被隐藏
@@ -1117,6 +1208,31 @@ export default {
 }
 .var-switch-btn:hover {
   color: #1890ff;
+}
+.version-compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.version-compare-title {
+  color: #334155;
+  font-weight: 700;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.version-compare-grid pre {
+  margin: 0;
+  padding: 10px;
+  min-height: 180px;
+  max-height: 360px;
+  overflow: auto;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  font-family: Menlo, Monaco, Consolas, monospace;
 }
 /* 编辑行高亮 */
 ::v-deep .editing-row {

@@ -124,11 +124,20 @@ public class ActionDataCompiler {
         String funcName = b.getString("funcName");
         if (empty(funcName)) return "";
         JSONArray args = b.getJSONArray("args");
+        JSONArray argRefs = b.getJSONArray("_argRefs");
         StringBuilder ab = new StringBuilder();
         if (args != null) {
             for (int i = 0; i < args.size(); i++) {
                 if (i > 0) ab.append(", ");
-                ab.append(args.getString(i));
+                String arg = args.getString(i);
+                JSONObject ref = argRefs != null && i < argRefs.size() ? argRefs.getJSONObject(i) : null;
+                if (ref != null) {
+                    Long argVarId = fieldVarId(ref, "arg");
+                    String argRefType = fieldRefType(ref, "arg");
+                    ab.append(resolveVar(argVarId, argRefType, arg, varContext));
+                } else {
+                    ab.append(arg);
+                }
             }
         }
         String call = funcName + "(" + ab + ")";
@@ -247,6 +256,7 @@ public class ActionDataCompiler {
         if ("condVar".equals(field)) return "_condVarId";
         if ("matchVar".equals(field)) return "_matchVarId";
         if ("checkVar".equals(field)) return "_checkVarId";
+        if ("arg".equals(field)) return "_varId";
         return null;
     }
 
@@ -255,6 +265,7 @@ public class ActionDataCompiler {
         if ("condVar".equals(field)) return "_condVarRefType";
         if ("matchVar".equals(field)) return "_matchVarRefType";
         if ("checkVar".equals(field)) return "_checkVarRefType";
+        if ("arg".equals(field)) return "_refType";
         return null;
     }
 

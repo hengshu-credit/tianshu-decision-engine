@@ -190,6 +190,7 @@ export default {
       this.$set(leaf, 'rightVarType', '')
       this.$set(leaf, 'rightVarLabel', '')
       this.$set(leaf, '_rightVarId', undefined)
+      this.$set(leaf, '_rightRefType', undefined)
     },
 
     /**
@@ -202,14 +203,16 @@ export default {
         this.$set(leaf, 'varType', 'STRING')
         this.$set(leaf, 'enumOptions', '')
         this.$set(leaf, '_varId', undefined)
+        this.$set(leaf, '_refType', undefined)
         return
       }
       const varLabel = variable.varLabel || variable.varCode
-      const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
+      const _varId = this.refIdOf(variable)
       this.$set(leaf, 'varCode', variable.varCode)
       this.$set(leaf, 'varLabel', varLabel)
       this.$set(leaf, 'varType', variable.varType || 'STRING')
       this.$set(leaf, '_varId', _varId)
+      this.$set(leaf, '_refType', this.refTypeOf(variable) || undefined)
       if (variable.varType === 'ENUM' && this.getVarOptionsFn) {
         const opts = this.getVarOptionsFn(variable.varCode) || []
         this.$set(leaf, 'enumOptions', opts.map(o => o.value || o.optionValue).filter(Boolean).join(','))
@@ -227,14 +230,30 @@ export default {
         this.$set(leaf, 'rightVarType', '')
         this.$set(leaf, 'rightVarLabel', '')
         this.$set(leaf, '_rightVarId', undefined)
+        this.$set(leaf, '_rightRefType', undefined)
         return
       }
       const varLabel = variable.varLabel || variable.varCode
-      const _varId = variable.varObj && variable.varObj.id ? variable.varObj.id : null
+      const _varId = this.refIdOf(variable)
       this.$set(leaf, 'value', variable.varCode)
       this.$set(leaf, 'rightVarType', variable.varType || 'STRING')
       this.$set(leaf, 'rightVarLabel', varLabel)
       this.$set(leaf, '_rightVarId', _varId)
+      this.$set(leaf, '_rightRefType', this.refTypeOf(variable) || undefined)
+    },
+
+    refIdOf(variable) {
+      if (!variable) return null
+      if (variable._varId != null) return variable._varId
+      if (variable.id != null) return variable.id
+      if (variable.varObj && variable.varObj.id != null) return variable.varObj.id
+      if (variable._ref && variable._ref.id != null) return variable._ref.id
+      return null
+    },
+
+    refTypeOf(variable) {
+      if (!variable) return ''
+      return variable._refType || variable.refType || (variable.varObj && variable.varObj.refType) || (variable._ref && variable._ref.refType) || ''
     },
 
     /**

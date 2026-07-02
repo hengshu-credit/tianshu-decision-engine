@@ -106,6 +106,7 @@ describe('ModelList — 初始化与数据加载', () => {
   test('models 数据正确赋值', () => {
     expect(wrapper.vm.models).toBeInstanceOf(Array)
     expect(wrapper.vm.models.length).toBe(3)
+    expect(wrapper.vm.activeTab).toBe('list')
   })
 
   test('projects 数据正确赋值', () => {

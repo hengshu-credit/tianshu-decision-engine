@@ -29,3 +29,19 @@ export function updateFunction(data) {
 export function deleteFunction(id) {
   return request.delete('/rule/function/' + id)
 }
+
+export function listVersions(functionId) {
+  return request.get('/rule/function/versions/' + functionId)
+}
+
+export function getVersion(functionId, version) {
+  return request.get('/rule/function/version/' + functionId + '/' + version)
+}
+
+export function compareVersions(functionId, leftVersion, rightVersion) {
+  return request.get('/rule/function/versionCompare/' + functionId, { params: { leftVersion, rightVersion } })
+}
+
+export function rollbackVersion(functionId, version) {
+  return request.post('/rule/function/rollback/' + functionId + '/' + version)
+}

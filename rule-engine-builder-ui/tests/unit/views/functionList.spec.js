@@ -213,6 +213,19 @@ describe('FunctionList — 函数操作', () => {
     await new Promise(r => setTimeout(r, 50)) // 等待 async handleDelete 完成
     expect(functionApi.deleteFunction).toHaveBeenCalledWith(99)
   })
+
+  test('openVersionDialog loads versions and compareWithNext compares adjacent versions', async () => {
+    functionApi.listVersions.mockResolvedValueOnce({ data: [{ version: 2, functionJson: '{"a":2}' }, { version: 1, functionJson: '{"a":1}' }] })
+    functionApi.compareVersions.mockResolvedValueOnce({ data: { left: { version: 2 }, right: { version: 1 }, functionChanged: true } })
+
+    await wrapper.vm.openVersionDialog({ id: 1 })
+    await wrapper.vm.compareWithNext(wrapper.vm.versionList[0], 0)
+
+    expect(wrapper.vm.versionVisible).toBe(true)
+    expect(functionApi.listVersions).toHaveBeenCalledWith(1)
+    expect(functionApi.compareVersions).toHaveBeenCalledWith(1, 2, 1)
+    expect(wrapper.vm.versionCompare.functionChanged).toBe(true)
+  })
 })
 
 describe('FunctionList — 边界情况', () => {

@@ -7,6 +7,7 @@
       </div>
       <div class="detail-actions">
         <el-button size="small" @click="$router.push('/experiment')">返回</el-button>
+        <el-button v-if="form.id" size="small" @click="openVersionDialog">版本</el-button>
         <el-button size="small" type="primary" :loading="saving" @click="handleSave">保存</el-button>
       </div>
     </div>
@@ -60,7 +61,7 @@
         </div>
 
         <el-alert v-if="form.routingMode === 'RATIO' && ratioTotal !== 100" type="warning" :closable="false" show-icon :title="'当前随机分流比例合计 ' + ratioTotal + '%，必须等于 100%'" />
-        <div v-if="form.routingMode === 'RATIO'" class="ratio-grid">
+        <div v-if="form.routingMode === 'RATIO'" class="ratio-list">
           <div v-for="row in productionFormGroups" :key="row._uid" class="action-card">
             <group-action-form
               :row="row"
@@ -128,7 +129,7 @@
         </div>
 
         <el-alert v-if="form.testRoutingMode === 'RATIO' && testFormGroups.length > 0 && testRatioTotal !== 100" type="warning" :closable="false" show-icon :title="'当前测试组随机比例合计 ' + testRatioTotal + '%，必须等于 100%'" />
-        <div v-if="form.testRoutingMode === 'RATIO'" class="ratio-grid">
+        <div v-if="form.testRoutingMode === 'RATIO'" class="ratio-list">
           <div v-for="row in testFormGroups" :key="row._uid" class="action-card">
             <group-action-form
               :row="row"
@@ -171,6 +172,30 @@
           <el-button size="mini" icon="el-icon-plus" @click="addTestGroup">添加测试组</el-button>
           <el-button v-if="form.testRoutingMode === 'CONDITION'" size="mini" @click="addTestFallback">添加兜底动作</el-button>
         </div>
+      </el-tab-pane>
+
+      <el-tab-pane label="输入字段" name="inputFields">
+        <div class="field-tab-summary">共 {{ experimentInputFields.length }} 个输入字段，包含条件分流字段和实验组执行规则入参。</div>
+        <el-table :data="experimentInputFields" border size="small" style="width:100%;">
+          <el-table-column prop="source" label="来源" width="110" />
+          <el-table-column prop="groupName" label="实验组" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="ruleCode" label="规则编码" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="fieldName" label="字段编码" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="fieldLabel" label="字段名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="fieldType" label="类型" width="100" align="center" />
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="输出字段" name="outputFields">
+        <div class="field-tab-summary">共 {{ experimentOutputFields.length }} 个输出字段，来自实验组执行规则出参。</div>
+        <el-table :data="experimentOutputFields" border size="small" style="width:100%;">
+          <el-table-column prop="source" label="来源" width="110" />
+          <el-table-column prop="groupName" label="实验组" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="ruleCode" label="规则编码" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="fieldName" label="字段编码" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="fieldLabel" label="字段名称" min-width="160" show-overflow-tooltip />
+          <el-table-column prop="fieldType" label="类型" width="100" align="center" />
+        </el-table>
       </el-tab-pane>
 
       <el-tab-pane label="分流日志" name="logs">
@@ -262,13 +287,35 @@
         </div>
       </div>
     </el-drawer>
+
+    <el-dialog title="分流实验版本管理" :visible.sync="versionVisible" width="900px" append-to-body>
+      <el-table :data="versionList" border size="mini" style="width:100%;">
+        <el-table-column prop="version" label="版本" width="80" align="center" />
+        <el-table-column prop="changeLog" label="变更说明" min-width="140" show-overflow-tooltip />
+        <el-table-column prop="publishTime" label="时间" width="170" />
+        <el-table-column label="操作" width="220" align="center">
+          <template slot-scope="{ row, $index }">
+            <el-button type="text" size="mini" @click="viewVersion(row)">查看</el-button>
+            <el-button v-if="$index < versionList.length - 1" type="text" size="mini" @click="compareWithNext(row, $index)">对比</el-button>
+            <el-button type="text" size="mini" @click="rollbackExperimentVersion(row)">回滚</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="versionCompare" class="version-compare">
+        <div class="version-compare-title">版本对比：v{{ versionCompare.left.version }} / v{{ versionCompare.right.version }}</div>
+        <el-tag size="mini" :type="versionCompare.experimentChanged || versionCompare.groupsChanged ? 'warning' : 'success'">
+          {{ versionCompare.experimentChanged || versionCompare.groupsChanged ? '实验配置有变化' : '实验配置无变化' }}
+        </el-tag>
+      </div>
+      <pre v-if="versionPreview" class="version-preview">{{ versionPreview }}</pre>
+    </el-dialog>
   </div>
 </template>
 
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions } from '@/api/definition'
-import { getExperiment, listExperimentLogs, saveExperiment } from '@/api/experiment'
+import { listDefinitions, listInputFields, listOutputFields } from '@/api/definition'
+import { getExperiment, listExperimentLogs, saveExperiment, listVersions, compareVersions, rollbackVersion } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import GroupActionForm from './GroupActionForm.vue'
@@ -291,6 +338,7 @@ export default {
       contentLoaded: true,
       projects: [],
       rulesForProject: [],
+      ruleFieldMap: {},
       form: this.emptyForm(),
       rules: {
         projectId: [{ required: true, message: '请选择项目', trigger: 'change' }],
@@ -303,6 +351,10 @@ export default {
       logQuery: { pageNum: 1, pageSize: 10, requestKey: '', stage: '', groupCode: '', success: '' },
       logDetailVisible: false,
       logDetail: null,
+      versionVisible: false,
+      versionList: [],
+      versionCompare: null,
+      versionPreview: '',
       nextUid: 1
     }
   },
@@ -324,12 +376,68 @@ export default {
     },
     testRatioTotal() {
       return Number(this.testFormGroups.reduce((sum, g) => sum + Number(g.trafficRatio || 0), 0).toFixed(2))
+    },
+    experimentInputFields() {
+      const rows = []
+      const seen = {}
+      const push = field => {
+        const key = [field.source, field.groupName, field.ruleCode, field.fieldName, field.fieldLabel, field.fieldType].join('|')
+        if (seen[key]) return
+        seen[key] = true
+        rows.push(field)
+      }
+      ;(this.form.groups || []).forEach(group => {
+        if (group.conditionConfig && !this.isFallbackGroup(group)) {
+          walkConditionLeaves(group.conditionConfig, leaf => {
+            if (!leaf.varCode) return
+            push(this.normalizeExperimentField({
+              source: '分流条件',
+              groupName: group.groupName || group.groupCode,
+              ruleCode: '',
+              fieldName: leaf.varCode,
+              fieldLabel: leaf.varLabel,
+              fieldType: leaf.varType
+            }))
+            if (leaf.valueKind === 'VAR' && leaf.value) {
+              push(this.normalizeExperimentField({
+                source: '分流条件',
+                groupName: group.groupName || group.groupCode,
+                ruleCode: '',
+                fieldName: leaf.value,
+                fieldLabel: leaf.rightVarLabel,
+                fieldType: leaf.rightVarType
+              }))
+            }
+          })
+        }
+        this.ruleFieldsForGroup(group, 'input').forEach(push)
+      })
+      return rows
+    },
+    experimentOutputFields() {
+      const rows = []
+      const seen = {}
+      ;(this.form.groups || []).forEach(group => {
+        this.ruleFieldsForGroup(group, 'output').forEach(field => {
+          const key = [field.groupName, field.ruleCode, field.fieldName, field.fieldLabel, field.fieldType].join('|')
+          if (seen[key]) return
+          seen[key] = true
+          rows.push(field)
+        })
+      })
+      return rows
     }
   },
   async created() {
     await this.loadProjects()
     if (this.isCreateMode) {
       this.form = this.emptyForm()
+      if (this.projects.length > 0) {
+        this.form.projectId = this.projects[0].id
+        this.form.projectCode = this.projects[0].projectCode || ''
+        await this.loadRules(this.form.projectId)
+        await this.loadExperimentRefs(this.form.projectId)
+      }
       return
     }
     await this.loadDetail()
@@ -417,10 +525,53 @@ export default {
     async loadRules(projectId) {
       if (!projectId) {
         this.rulesForProject = []
+        this.ruleFieldMap = {}
         return
       }
       const res = await listDefinitions({ pageNum: 1, pageSize: 1000, projectId, status: 1 })
       this.rulesForProject = (res.data && res.data.records) || []
+      await this.loadRuleFieldMap()
+    },
+    async loadRuleFieldMap() {
+      const map = {}
+      await Promise.all((this.rulesForProject || []).map(async rule => {
+        if (!rule.id) return
+        const [inputRes, outputRes] = await Promise.all([
+          listInputFields(rule.id).catch(() => []),
+          listOutputFields(rule.id).catch(() => [])
+        ])
+        map[rule.ruleCode] = {
+          input: this.normalizeFieldListResponse(inputRes),
+          output: this.normalizeFieldListResponse(outputRes)
+        }
+      }))
+      this.ruleFieldMap = map
+    },
+    normalizeFieldListResponse(res) {
+      const data = res && res.data ? res.data : res
+      return Array.isArray(data) ? data : []
+    },
+    ruleFieldsForGroup(group, direction) {
+      if (!group || !group.ruleCode) return []
+      const entry = this.ruleFieldMap[group.ruleCode] || {}
+      return ((entry && entry[direction]) || []).map(field => this.normalizeExperimentField({
+        source: direction === 'input' ? '执行规则' : '执行规则',
+        groupName: group.groupName || group.groupCode,
+        ruleCode: group.ruleCode,
+        fieldName: field.scriptName || field.fieldName || field.varCode,
+        fieldLabel: field.fieldLabel || field.varLabel || field.fieldName,
+        fieldType: field.fieldType || field.varType
+      }))
+    },
+    normalizeExperimentField(field) {
+      return {
+        source: field.source || '-',
+        groupName: field.groupName || '-',
+        ruleCode: field.ruleCode || '-',
+        fieldName: field.fieldName || '-',
+        fieldLabel: field.fieldLabel || '-',
+        fieldType: field.fieldType || '-'
+      }
     },
     onProjectChange(projectId) {
       const project = this.projects.find(p => p.id === projectId)
@@ -648,6 +799,52 @@ export default {
       })
       if (changed) this.$forceUpdate()
     },
+    async openVersionDialog() {
+      if (!this.form.id) return
+      this.versionVisible = true
+      this.versionCompare = null
+      this.versionPreview = ''
+      const res = await listVersions(this.form.id)
+      this.versionList = (res && res.data) || []
+    },
+    viewVersion(row) {
+      this.versionCompare = null
+      this.versionPreview = this.prettyVersionJson({
+        experiment: this.parseVersionJson(row.experimentJson, null),
+        groups: this.parseVersionJson(row.groupsJson, [])
+      })
+    },
+    async compareWithNext(row, index) {
+      const right = this.versionList[index + 1]
+      if (!this.form.id || !right) return
+      const res = await compareVersions(this.form.id, row.version, right.version)
+      this.versionCompare = (res && res.data) || null
+      this.versionPreview = ''
+    },
+    async rollbackExperimentVersion(row) {
+      if (!this.form.id || !row) return
+      await this.$confirm('确认回滚到 v' + row.version + '？', '提示', { type: 'warning' })
+      await rollbackVersion(this.form.id, row.version)
+      this.$message.success('已回滚')
+      await this.loadDetail()
+      await this.openVersionDialog()
+    },
+    prettyVersionJson(value) {
+      if (!value) return ''
+      try {
+        return JSON.stringify(value, null, 2)
+      } catch (e) {
+        return String(value)
+      }
+    },
+    parseVersionJson(text, fallback) {
+      if (!text) return fallback
+      try {
+        return JSON.parse(text)
+      } catch (e) {
+        return fallback
+      }
+    },
     async loadLogs() {
       if (!this.form.id) {
         this.logs = []
@@ -761,9 +958,9 @@ export default {
     font-size: 12px;
   }
 
-  .ratio-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  .ratio-list {
+    display: flex;
+    flex-direction: column;
     gap: 12px;
     margin-top: 12px;
   }
@@ -843,6 +1040,12 @@ export default {
     margin-bottom: 10px;
   }
 
+  .field-tab-summary {
+    color: #64748b;
+    font-size: 12px;
+    margin-bottom: 10px;
+  }
+
   .log-pager {
     margin-top: 12px;
     text-align: right;
@@ -860,6 +1063,31 @@ export default {
     margin: 0;
     padding: 10px;
     max-height: 260px;
+    overflow: auto;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    font-size: 12px;
+    line-height: 1.5;
+    font-family: Menlo, Monaco, Consolas, monospace;
+  }
+
+  .version-compare {
+    margin-top: 10px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .version-compare-title {
+    font-weight: 600;
+    color: #303133;
+  }
+
+  .version-preview {
+    margin-top: 10px;
+    padding: 10px;
+    max-height: 320px;
     overflow: auto;
     background: #f8fafc;
     border: 1px solid #e2e8f0;

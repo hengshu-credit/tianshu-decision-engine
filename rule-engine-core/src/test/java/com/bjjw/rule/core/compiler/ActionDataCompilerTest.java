@@ -29,4 +29,18 @@ public class ActionDataCompilerTest {
         assertTrue(script.contains("decisionOutput = scoreInput >="));
         assertTrue(script.contains("flagOutput = statusInput in"));
     }
+
+    @Test
+    public void compileFunctionArgsUseArgRefs() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(1L, "applicant.score");
+        VarContext context = new VarContext(varIdMap);
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"func-call\",\"target\":\"risk\",\"funcName\":\"max\",\"args\":[\"score\",\"100\"],\"_argRefs\":[{\"_varId\":1},null]}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData, context);
+
+        assertTrue(script.contains("risk = max(applicant.score, 100)"));
+    }
 }

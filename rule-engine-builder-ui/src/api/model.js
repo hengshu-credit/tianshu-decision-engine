@@ -88,3 +88,19 @@ export function updateModelOutputField(id, data) {
 export function toGlobalModel(id, modelCode) {
   return request({ url: `/rule/model/toGlobal/${id}`, method: 'post', data: { modelCode } })
 }
+
+export function listVersions(modelId) {
+  return request({ url: `/rule/model/versions/${modelId}`, method: 'get' })
+}
+
+export function getVersion(modelId, version) {
+  return request({ url: `/rule/model/version/${modelId}/${version}`, method: 'get' })
+}
+
+export function compareVersions(modelId, leftVersion, rightVersion) {
+  return request({ url: `/rule/model/versionCompare/${modelId}`, method: 'get', params: { leftVersion, rightVersion } })
+}
+
+export function rollbackVersion(modelId, version) {
+  return request({ url: `/rule/model/rollback/${modelId}/${version}`, method: 'post' })
+}

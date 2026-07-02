@@ -2,6 +2,7 @@ package com.bjjw.rule.server.controller.mgmt;
 
 import com.bjjw.rule.model.dto.RulePushMessage;
 import com.bjjw.rule.model.entity.RuleFunction;
+import com.bjjw.rule.model.entity.RuleFunctionVersion;
 import com.bjjw.rule.server.common.Result;
 import com.bjjw.rule.server.publish.RulePushService;
 import com.bjjw.rule.server.service.RuleFunctionService;
@@ -10,6 +11,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rule/function")
@@ -97,6 +99,41 @@ public class RuleFunctionController {
     }
 
     /** 推送函数新增/更新消息 */
+    @GetMapping("/versions/{functionId}")
+    public Result<List<RuleFunctionVersion>> listVersions(@PathVariable Long functionId) {
+        return Result.ok(functionService.listVersions(functionId));
+    }
+
+    @GetMapping("/version/{functionId}/{version}")
+    public Result<RuleFunctionVersion> getVersion(@PathVariable Long functionId, @PathVariable Integer version) {
+        RuleFunctionVersion snapshot = functionService.getVersion(functionId, version);
+        return snapshot == null ? Result.fail("Version not found") : Result.ok(snapshot);
+    }
+
+    @GetMapping("/versionCompare/{functionId}")
+    public Result<Map<String, Object>> compareVersions(@PathVariable Long functionId,
+                                                       @RequestParam Integer leftVersion,
+                                                       @RequestParam Integer rightVersion) {
+        try {
+            return Result.ok(functionService.compareVersions(functionId, leftVersion, rightVersion));
+        } catch (IllegalArgumentException e) {
+            return Result.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/rollback/{functionId}/{version}")
+    public Result<Void> rollback(@PathVariable Long functionId, @PathVariable Integer version) {
+        try {
+            RuleFunction func = functionService.rollbackToVersion(functionId, version);
+            if (func != null) {
+                pushFuncUpdate(func);
+            }
+            return Result.ok();
+        } catch (IllegalArgumentException e) {
+            return Result.fail(e.getMessage());
+        }
+    }
+
     private void pushFuncUpdate(RuleFunction func) {
         RulePushMessage msg = new RulePushMessage();
         msg.setAction("FUNC_UPDATE");

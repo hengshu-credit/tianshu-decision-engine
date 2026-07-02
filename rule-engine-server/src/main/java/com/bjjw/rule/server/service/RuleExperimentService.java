@@ -14,10 +14,12 @@ import com.bjjw.rule.model.dto.RuleResult;
 import com.bjjw.rule.model.entity.RuleExperiment;
 import com.bjjw.rule.model.entity.RuleExperimentExecutionLog;
 import com.bjjw.rule.model.entity.RuleExperimentGroup;
+import com.bjjw.rule.model.entity.RuleExperimentVersion;
 import com.bjjw.rule.model.entity.RulePublished;
 import com.bjjw.rule.server.mapper.RuleExperimentExecutionLogMapper;
 import com.bjjw.rule.server.mapper.RuleExperimentGroupMapper;
 import com.bjjw.rule.server.mapper.RuleExperimentMapper;
+import com.bjjw.rule.server.mapper.RuleExperimentVersionMapper;
 import com.bjjw.rule.server.mapper.RulePublishedMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +33,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -50,6 +53,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     @Resource
     private RuleExperimentExecutionLogMapper executionLogMapper;
+
+    @Resource
+    private RuleExperimentVersionMapper experimentVersionMapper;
 
     @Resource
     private RulePublishedMapper publishedMapper;
@@ -132,6 +138,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 groupMapper.insert(group);
             }
         }
+        saveVersionSnapshot(experiment.getId(), "save");
         return getDetail(experiment.getId());
     }
 
@@ -687,6 +694,82 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         } catch (Exception ignored) {
             return false;
         }
+    }
+
+    public List<RuleExperimentVersion> listVersions(Long experimentId) {
+        return experimentVersionMapper.selectList(new LambdaQueryWrapper<RuleExperimentVersion>()
+                .eq(RuleExperimentVersion::getExperimentId, experimentId)
+                .orderByDesc(RuleExperimentVersion::getVersion));
+    }
+
+    public RuleExperimentVersion getVersion(Long experimentId, Integer version) {
+        return experimentVersionMapper.selectOne(new LambdaQueryWrapper<RuleExperimentVersion>()
+                .eq(RuleExperimentVersion::getExperimentId, experimentId)
+                .eq(RuleExperimentVersion::getVersion, version));
+    }
+
+    public Map<String, Object> compareVersions(Long experimentId, Integer leftVersion, Integer rightVersion) {
+        RuleExperimentVersion left = getVersion(experimentId, leftVersion);
+        RuleExperimentVersion right = getVersion(experimentId, rightVersion);
+        if (left == null || right == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        Map<String, Object> result = new HashMap<>();
+        result.put("left", left);
+        result.put("right", right);
+        result.put("experimentChanged", !sameText(left.getExperimentJson(), right.getExperimentJson()));
+        result.put("groupsChanged", !sameText(left.getGroupsJson(), right.getGroupsJson()));
+        return result;
+    }
+
+    @Transactional
+    public void rollbackToVersion(Long experimentId, Integer version) {
+        RuleExperimentVersion snapshot = getVersion(experimentId, version);
+        if (snapshot == null) {
+            throw new IllegalArgumentException("Version not found");
+        }
+        RuleExperiment experiment = JSON.parseObject(snapshot.getExperimentJson(), RuleExperiment.class);
+        experiment.setId(experimentId);
+        experiment.setGroups(null);
+        updateById(experiment);
+        groupMapper.delete(new LambdaQueryWrapper<RuleExperimentGroup>()
+                .eq(RuleExperimentGroup::getExperimentId, experimentId));
+        List<RuleExperimentGroup> groups = JSON.parseArray(snapshot.getGroupsJson(), RuleExperimentGroup.class);
+        if (groups != null) {
+            for (RuleExperimentGroup group : groups) {
+                group.setId(null);
+                group.setExperimentId(experimentId);
+                groupMapper.insert(group);
+            }
+        }
+        saveVersionSnapshot(experimentId, "rollback to v" + version);
+    }
+
+    private void saveVersionSnapshot(Long experimentId, String changeLog) {
+        if (experimentId == null) return;
+        RuleExperiment experiment = getById(experimentId);
+        if (experiment == null) return;
+        List<RuleExperimentGroup> groups = listGroups(experimentId);
+        RuleExperimentVersion version = new RuleExperimentVersion();
+        version.setExperimentId(experimentId);
+        version.setVersion(nextVersion(experimentId));
+        version.setExperimentJson(JSON.toJSONString(experiment));
+        version.setGroupsJson(JSON.toJSONString(groups));
+        version.setChangeLog(changeLog);
+        version.setPublishTime(LocalDateTime.now());
+        experimentVersionMapper.insert(version);
+    }
+
+    private int nextVersion(Long experimentId) {
+        List<RuleExperimentVersion> versions = listVersions(experimentId);
+        if (versions == null || versions.isEmpty()) return 1;
+        Integer current = versions.get(0).getVersion();
+        return (current == null ? 0 : current) + 1;
+    }
+
+    private boolean sameText(String left, String right) {
+        if (left == null) return right == null;
+        return left.equals(right);
     }
 
     private static class RouteChoice {

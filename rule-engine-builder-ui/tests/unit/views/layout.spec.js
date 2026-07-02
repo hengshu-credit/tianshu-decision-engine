@@ -18,8 +18,14 @@ afterEach(() => { jest.clearAllMocks() })
  */
 function computeActiveMenuIndex(path) {
   if (path.startsWith('/designer/')) return '/rule'
-  if (/^\/project\/\d+$/.test(path)) return '/project'
-  if (/^\/list\/\d+$/.test(path)) return '/list'
+  if (path.startsWith('/project/')) return '/project'
+  if (path.startsWith('/rule/')) return '/rule'
+  if (path.startsWith('/list/')) return '/list'
+  if (path.startsWith('/model/')) return '/model'
+  if (path.startsWith('/function/')) return '/function'
+  if (path.startsWith('/datasource/')) return '/datasource'
+  if (path.startsWith('/database/')) return '/database'
+  if (path.startsWith('/experiment/')) return '/experiment'
   return path
 }
 
@@ -64,6 +70,15 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
   test('路径为 /list/:id 时高亮「名单管理」', () => {
     expect(computeActiveMenuIndex('/list/1')).toBe('/list')
     expect(computeActiveMenuIndex('/list/123')).toBe('/list')
+  })
+
+  test('child routes keep the owning module menu active', () => {
+    expect(computeActiveMenuIndex('/rule/new')).toBe('/rule')
+    expect(computeActiveMenuIndex('/model/123')).toBe('/model')
+    expect(computeActiveMenuIndex('/function/version/1')).toBe('/function')
+    expect(computeActiveMenuIndex('/datasource/api/edit/1')).toBe('/datasource')
+    expect(computeActiveMenuIndex('/database/edit/1')).toBe('/database')
+    expect(computeActiveMenuIndex('/experiment/detail/1')).toBe('/experiment')
   })
 
   test('普通路径直接匹配菜单 index', () => {

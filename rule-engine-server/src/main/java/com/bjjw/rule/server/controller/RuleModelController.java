@@ -3,6 +3,7 @@ package com.bjjw.rule.server.controller;
 import com.bjjw.rule.model.entity.RuleModel;
 import com.bjjw.rule.model.entity.RuleModelInputField;
 import com.bjjw.rule.model.entity.RuleModelOutputField;
+import com.bjjw.rule.model.entity.RuleModelVersion;
 import com.bjjw.rule.model.entity.RuleRuntimeCallLog;
 import com.bjjw.rule.server.common.R;
 import com.bjjw.rule.server.service.RuleModelService;
@@ -146,6 +147,38 @@ public class RuleModelController {
     public R<Void> unpublish(@PathVariable Long id) {
         try {
             modelService.unpublish(id);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/versions/{modelId}")
+    public R<List<RuleModelVersion>> listVersions(@PathVariable Long modelId) {
+        return R.ok(modelService.listVersions(modelId));
+    }
+
+    @GetMapping("/version/{modelId}/{version}")
+    public R<RuleModelVersion> getVersion(@PathVariable Long modelId, @PathVariable Integer version) {
+        RuleModelVersion snapshot = modelService.getVersion(modelId, version);
+        return snapshot == null ? R.fail("Version not found") : R.ok(snapshot);
+    }
+
+    @GetMapping("/versionCompare/{modelId}")
+    public R<Map<String, Object>> compareVersions(@PathVariable Long modelId,
+            @RequestParam Integer leftVersion,
+            @RequestParam Integer rightVersion) {
+        try {
+            return R.ok(modelService.compareVersions(modelId, leftVersion, rightVersion));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/rollback/{modelId}/{version}")
+    public R<Void> rollback(@PathVariable Long modelId, @PathVariable Integer version) {
+        try {
+            modelService.rollbackToVersion(modelId, version);
             return R.ok();
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
