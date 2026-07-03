@@ -22,5 +22,6 @@ public class RuleProjectServiceTest {
         assertEquals("复杂交叉表", method.invoke(service, "CROSS_TABLE_ADV"));
         assertEquals("复杂评分卡", method.invoke(service, "SCORE_ADV"));
         assertEquals("复杂评分卡", method.invoke(service, "SCORE_CARD_ADV"));
+        assertEquals("规则集", method.invoke(service, "RULE_SET"));
     }
 }

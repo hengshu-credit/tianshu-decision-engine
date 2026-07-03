@@ -399,24 +399,41 @@ export default {
           params[obj.objectCode] = buildObjectExample(obj)
         })
         return JSON.stringify({
-          definitionId: rule.id,
-          params: params
+          clientAppName: 'your-service-name',
+          params
         }, null, 2)
       }
 
       // 生成响应示例JSON（使用该规则的实际输出数据对象）
       const generateResponseExample = (rule) => {
-        const resultObj = {}
-        ;(rule.outputDataObjects || []).forEach(obj => {
-          resultObj[obj.objectCode] = buildObjectExample(obj)
-        })
+        const resultObj = rule.modelType === 'RULE_SET'
+          ? [
+              { ruleCode: 'R0001', ruleName: '命中规则', priority: 1, order: 1 }
+            ]
+          : {}
+        if (rule.modelType !== 'RULE_SET') {
+          const outputDataObjects = rule.outputDataObjects || []
+          const outputVariables = rule.outputVariables || []
+          outputDataObjects.forEach(obj => {
+            resultObj[obj.objectCode] = buildObjectExample(obj)
+          })
+          outputVariables.forEach(v => {
+            if (v.varCode && !Object.prototype.hasOwnProperty.call(resultObj, v.varCode)) {
+              resultObj[v.varCode] = exampleValueForField(v)
+            }
+          })
+        }
         return JSON.stringify({
-          success: true,
-          result: resultObj,
-          executeTimeMs: 15,
-          traces: [
-            { nodeName: '开始', expression: null, result: null }
-          ]
+          code: 200,
+          message: 'success',
+          data: {
+            success: true,
+            result: resultObj,
+            executeTimeMs: 15,
+            traces: [
+              { nodeName: '开始', expression: null, result: null }
+            ]
+          }
         }, null, 2)
       }
 
@@ -433,6 +450,11 @@ export default {
       const contentPanels = doc.rules.map((rule, idx) => {
         const requestExample = generateRequestExample(rule)
         const responseExample = generateResponseExample(rule)
+        const executePath = `/api/rule/sync/execute/${escapeHtml(rule.ruleCode)}`
+        const resultType = rule.modelType === 'RULE_SET' ? 'Array' : 'Object'
+        const resultDesc = rule.modelType === 'RULE_SET'
+          ? '规则集命中列表，元素包含 ruleCode、ruleName、priority、order 等命中规则信息。规则集动作仍会执行，但当前对外 result 契约以命中列表为准。'
+          : '决策结果（输出对象），字段来自规则动作、评分卡结果或脚本返回值。'
 
         // 收集输入参数（使用该规则解析出的 inputVariables）
         const inputVars = rule.inputVariables || []
@@ -460,7 +482,7 @@ export default {
                 <h2>${escapeHtml(rule.ruleName)}</h2>
                 <div class="content-meta">
                   <span class="method-badge">POST</span>
-                  <code class="url">/api/rule/definition/execute</code>
+                  <code class="url">${executePath}</code>
                   <span class="tag tag-info">${escapeHtml(rule.modelTypeLabel || rule.modelType)}</span>
                   <span class="tag ${rule.status === 1 ? 'tag-success' : 'tag-warning'}">${escapeHtml(rule.statusLabel)}</span>
                 </div>
@@ -492,8 +514,9 @@ export default {
           <div class="section">
             <h3>接口描述</h3>
             <div class="desc-box">
-              <p>该接口用于执行已发布的决策规则，支持决策表、决策树、决策流、交叉表、评分卡等多种模型类型。</p>
-              <p>请求成功后返回规则执行结果，包括决策输出和执行追踪信息。</p>
+              <p>该接口用于执行已发布的决策规则，支持决策表、决策树、决策流、规则集、交叉表、评分卡、复杂交叉表、复杂评分卡和 QL 脚本。</p>
+              <p>接口按规则编码执行，访问令牌决定项目范围；请先发布规则后再由业务系统调用。</p>
+              <p>包含 API、数据库或名单来源变量的规则建议使用本服务端执行接口，避免客户端本地执行时缺少外部取数结果。</p>
             </div>
           </div>
 
@@ -504,7 +527,7 @@ export default {
             <table class="param-table">
               <thead><tr><th>参数名</th><th>类型</th><th>必填</th><th>说明</th><th>示例值</th><th>备注</th></tr></thead>
               <tbody>
-                <tr><td><code>definitionId</code></td><td>Long</td><td><span class="tag tag-required">必填</span></td><td>规则定义ID</td><td>${rule.id || '1'}</td><td>规则唯一标识</td></tr>
+                <tr><td><code>clientAppName</code></td><td>String</td><td><span class="tag">选填</span></td><td>调用方应用名</td><td>your-service-name</td><td>用于执行日志和调用来源识别</td></tr>
                 <tr><td><code>params</code></td><td>Object</td><td><span class="tag">选填</span></td><td>输入参数</td><td>{...}</td><td>包含所有输入变量和数据对象</td></tr>
               </tbody>
             </table>
@@ -523,7 +546,7 @@ export default {
               <thead><tr><th>参数名</th><th>类型</th><th>说明</th></tr></thead>
               <tbody>
                 <tr><td><code>success</code></td><td>Boolean</td><td>执行是否成功</td></tr>
-                <tr><td><code>result</code></td><td>Object</td><td>决策结果（输出对象）</td></tr>
+                <tr><td><code>result</code></td><td>${resultType}</td><td>${resultDesc}</td></tr>
                 <tr><td><code>executeTimeMs</code></td><td>Long</td><td>执行耗时（毫秒）</td></tr>
                 <tr><td><code>errorMessage</code></td><td>String</td><td>错误信息（执行失败时返回）</td></tr>
                 <tr><td><code>traces</code></td><td>Array</td><td>执行追踪信息（可选）</td></tr>
@@ -552,17 +575,25 @@ export default {
           </div>
 
           <div class="section">
-            <h3>SDK调用示例</h3>
+            <h3>调用示例</h3>
             <div class="code-tabs">
-              <div class="code-tab active" data-lang="java">Java</div>
-              <div class="code-tab" data-lang="python">Python</div>
-              <div class="code-tab" data-lang="go">Go</div>
-              <div class="code-tab" data-lang="js">JavaScript</div>
+              <div class="code-tab active" data-lang="curl">HTTP</div>
+              <div class="code-tab" data-lang="java">Java SDK</div>
+              <div class="code-tab" data-lang="spring">Spring Boot</div>
             </div>
-            <pre class="code-block java"><code>RuleEngineClient client = new RuleEngineClient();
-client.setServerUrl("http://localhost:8080");
-client.setAppName("${escapeHtml(doc.project.projectCode)}");
-client.setToken("&lt;your_token&gt;");
+            <pre class="code-block curl"><code>curl -X POST "http://localhost:8080${executePath}" \\
+  -H "Content-Type: application/json" \\
+  -H "X-Rule-Token: &lt;项目访问令牌&gt;" \\
+  -d '${escapeHtml(requestExample)}'</code></pre>
+            <pre class="code-block java" style="display:none"><code>RuleEngineClient client = RuleEngineClient.builder()
+    .serverUrl("http://localhost:8080")
+    .appName("your-service-name")
+    .projectCode("${escapeHtml(doc.project.projectCode)}")
+    .token("&lt;项目访问令牌&gt;")
+    .connectionFactory(redisConnectionFactory)
+    // 规则依赖 API/DB/名单变量时必须开启服务端执行
+    .serverSideExecution(true)
+    .build();
 
 // 构建请求参数（参考规则测试中的输入参数）
 Map&lt;String, Object&gt; params = new HashMap&lt;&gt;();
@@ -571,38 +602,16 @@ Map&lt;String, Object&gt; params = new HashMap&lt;&gt;();
 RuleResult result = client.execute("${rule.ruleCode}", params);
 System.out.println("Result: " + result.getResult());
 System.out.println("ExecuteTime: " + result.getExecuteTimeMs() + "ms");</code></pre>
-            <pre class="code-block python" style="display:none"><code>from rule_engine_client import RuleEngineClient
-
-client = RuleEngineClient(
-    server_url="http://localhost:8080",
-    app_name="${escapeHtml(doc.project.projectCode)}",
-    token="&lt;your_token&gt;"
-)
-
-params = {
-${inputVars.slice(0, 5).map(v => `    "${v.varCode}": ${v.exampleValue || v.defaultValue || 'None'},`).join('\n')}
-}
-result = client.execute("${rule.ruleCode}", params)
-print(f"Result: {result.result}")
-print(f"ExecuteTime: {result.execute_time_ms}ms")</code></pre>
-            <pre class="code-block go" style="display:none"><code>client := NewRuleEngineClient("http://localhost:8080", "${escapeHtml(doc.project.projectCode)}", "&lt;your_token&gt;")
-
-params := map[string]interface{}{
-${inputVars.slice(0, 5).map(v => `    "${v.varCode}": ${v.exampleValue || v.defaultValue || 'nil'},`).join('\n')}
-}
-result, err := client.Execute("${rule.ruleCode}", params)</code></pre>
-            <pre class="code-block js" style="display:none"><code>const client = new RuleEngineClient({
-  serverUrl: 'http://localhost:8080',
-  appName: '${escapeHtml(doc.project.projectCode)}',
-  token: '&lt;your_token&gt;'
-});
-
-const params = {
-${inputVars.slice(0, 5).map(v => `  ${v.varCode}: ${v.exampleValue || v.defaultValue || 'null'},`).join('\n')}
-};
-const result = await client.execute('${rule.ruleCode}', params);
-console.log('Result:', result.result);
-console.log('ExecuteTime:', result.executeTimeMs, 'ms');</code></pre>
+            <pre class="code-block spring" style="display:none"><code>rule-engine:
+  client:
+    server-url: http://localhost:8080
+    app-name: your-service-name
+    project-code: ${escapeHtml(doc.project.projectCode)}
+    token: &lt;项目访问令牌&gt;
+    project-id: ${doc.project.id || 0}
+    trace-enabled: true
+    # 规则依赖 API/DB/名单变量时必须开启
+    server-side-execution: true</code></pre>
           </div>
         </div>`
       }).join('')
@@ -676,7 +685,7 @@ console.log('ExecuteTime:', result.executeTimeMs, 'ms');</code></pre>
       html += '<div class="main">' + contentPanels + '</div></div>'
       html += '<script>'
       html += "document.querySelectorAll('.sidebar-item').forEach(function(item){item.addEventListener('click',function(){document.querySelectorAll('.sidebar-item').forEach(function(i){i.classList.remove('active')});item.classList.add('active');var id=item.dataset.id;document.querySelectorAll('.content-panel').forEach(function(p){p.classList.remove('active')});document.getElementById('panel-'+id).classList.add('active')})});"
-      html += "document.querySelectorAll('.code-tab').forEach(function(tab){tab.addEventListener('click',function(){var lang=tab.dataset.lang;var panel=tab.closest('.content-panel');panel.querySelectorAll('.code-tab').forEach(function(t){t.classList.remove('active')});tab.classList.add('active');panel.querySelectorAll('.code-block').forEach(function(b){b.style.display='none'});panel.querySelector('.code-block.'+lang).style.display='block'})});"
+      html += "document.querySelectorAll('.code-tab').forEach(function(tab){tab.addEventListener('click',function(){var lang=tab.dataset.lang;var section=tab.closest('.section');section.querySelectorAll('.code-tab').forEach(function(t){t.classList.remove('active')});tab.classList.add('active');section.querySelectorAll('.code-block').forEach(function(b){b.style.display='none'});section.querySelector('.code-block.'+lang).style.display='block'})});"
       html += "function filterSidebar(keyword){document.querySelectorAll('.sidebar-item').forEach(function(item){var text=item.textContent.toLowerCase();item.style.display=text.includes(keyword.toLowerCase())?'':'none'})}"
       html += '</scr' + 'ipt></body></html>'
       return html

@@ -10,6 +10,7 @@ import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.MultiValueMap;
 
+import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -48,6 +49,68 @@ public class ExternalApiInvokeServiceTest {
         assertEquals(Boolean.TRUE, mapped.get("ok"));
         assertEquals(null, mapped.get("missing"));
         assertSame(mapped, mappedResponse.get("mapped"));
+    }
+
+    @Test
+    public void responseMappingUsesFirstAvailablePathForDynamicStructures() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setResponseMapping("{\"score\":[\"body.data.score\",\"body.model_params.br_applyloanstr_v2.score\",\"body.score\"],\"firstReason\":\"body.reasons.0.code\"}");
+
+        Map<String, Object> v1 = new LinkedHashMap<>();
+        v1.put("score", 661.8);
+        Map<String, Object> modelParams = new LinkedHashMap<>();
+        modelParams.put("br_applyloanstr_v2", v1);
+        Map<String, Object> reason = new LinkedHashMap<>();
+        reason.put("code", "R001");
+        ArrayList<Object> reasons = new ArrayList<>();
+        reasons.add(reason);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("model_params", modelParams);
+        body.put("reasons", reasons);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("body", body);
+
+        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+
+        Map<?, ?> mapped = (Map<?, ?>) mappedResponse.get("body");
+        assertEquals(661.8, ((Number) mapped.get("score")).doubleValue(), 0.000001);
+        assertEquals("R001", mapped.get("firstReason"));
+    }
+
+    @Test
+    public void responseMappingSupportsConditionalCasesAndDefaultValue() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setResponseMapping("{\"riskScore\":{\"cases\":[{\"when\":{\"path\":\"body.code\",\"operator\":\"==\",\"value\":\"00\"},\"path\":\"body.data.score\"},{\"when\":{\"path\":\"body.code\",\"operator\":\"!=\",\"value\":\"00\"},\"path\":\"body.error.score\"}],\"default\":-1}}");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "E001");
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("score", 0);
+        body.put("error", error);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("body", body);
+
+        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+
+        assertEquals(0, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
+    }
+
+    @Test
+    public void responseMappingUsesDefaultWhenConditionalCasesHaveNoValue() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setResponseMapping("{\"riskScore\":{\"cases\":[{\"when\":{\"path\":\"body.code\",\"value\":\"00\"},\"path\":\"body.data.score\"}],\"default\":-1}}");
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "00");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("body", body);
+
+        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+
+        assertEquals(-1, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
     }
 
     @Test
@@ -190,6 +253,70 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(88, ((Map<?, ?>) second.get("body")).get("data") instanceof Map
                     ? ((Map<?, ?>) ((Map<?, ?>) second.get("body")).get("data")).get("score")
                     : null);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void invokeBuildsNestedRequestBodyFromRequestMapping() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[1024];
+            int len;
+            while ((len = exchange.getRequestBody().read(chunk)) >= 0) {
+                buffer.write(chunk, 0, len);
+            }
+            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+            byte[] response = "{\"code\":\"00\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(7L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(99L);
+            config.setDatasourceId(7L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setRequestMapping("{\"request_id\":\"$.request_id\",\"model_id\":\"$.model_id\",\"model_params\":{\"br_applyloanstr_v2\":\"$.model_params.br_applyloanstr_v2\"}}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            Map<String, Object> scoreParams = new LinkedHashMap<>();
+            scoreParams.put("swift_number", "3010685_20240221073528_32822730A");
+            Map<String, Object> modelParams = new LinkedHashMap<>();
+            modelParams.put("br_applyloanstr_v2", scoreParams);
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("request_id", "20a22af66cafc72a64a4e91b53fdda81");
+            params.put("model_id", "20a22af66cafc72a64a4e91b53fdda81");
+            params.put("model_params", modelParams);
+
+            service.invoke(99L, params);
+
+            assertTrue(requestBody.get().contains("\"request_id\":\"20a22af66cafc72a64a4e91b53fdda81\""));
+            assertTrue(requestBody.get().contains("\"model_params\":{\"br_applyloanstr_v2\""));
+            assertTrue(requestBody.get().contains("\"swift_number\":\"3010685_20240221073528_32822730A\""));
         } finally {
             server.stop(0);
         }

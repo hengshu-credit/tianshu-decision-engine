@@ -155,12 +155,7 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             String value = cond.getString("value");
 
             String scriptName = resolveVar(varId, refType, varCode, varContext);
-            sb.append(scriptName).append(" ").append(operator).append(" ");
-            if (isNumericValue(value)) {
-                sb.append(value);
-            } else {
-                sb.append("\"").append(value != null ? value.replace("\"", "\\\"") : "").append("\"");
-            }
+            sb.append(ConditionExpressionBuilder.build(scriptName, cond.getString("varType"), operator, value, false));
         }
     }
 
@@ -175,13 +170,4 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
         return varCode != null ? varCode : "";
     }
 
-    private static boolean isNumericValue(String value) {
-        if (value == null) return false;
-        try {
-            Double.parseDouble(value);
-            return true;
-        } catch (NumberFormatException e) {
-            return false;
-        }
-    }
 }

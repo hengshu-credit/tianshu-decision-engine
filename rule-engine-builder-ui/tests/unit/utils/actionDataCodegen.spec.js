@@ -65,6 +65,12 @@ describe('generateScript', () => {
     expect(script).toBe('x = "hello"')
   })
 
+  test('assign: 精度配置生成 roundScale 调用', () => {
+    const script = generateScript([{ type: 'assign', target: 'amount', value: '10 / 3', enableRounding: true, decimalPlaces: 2, roundingMode: 'HALF_UP' }])
+    expect(script).toContain('amount = 10 / 3')
+    expect(script).toContain('amount = roundScale(amount, 2, "HALF_UP")')
+  })
+
   // -------- if-block --------
   test('if-block: 单 if 分支', () => {
     const script = generateScript([{
@@ -133,9 +139,8 @@ describe('generateScript', () => {
       ],
       defaultActions: [{ type: 'assign', target: 'msg', value: '"unknown"' }]
     }])
-    expect(script).toContain('switch (status) {')
-    expect(script).toContain('case 1 -> {')
-    expect(script).toContain('default -> {')
+    expect(script).toContain('if (status == 1) {')
+    expect(script).toContain('} else {')
   })
 
   test('switch-block: 多 case', () => {
@@ -147,8 +152,8 @@ describe('generateScript', () => {
         { value: 2, actions: [{ type: 'assign', target: 'x', value: '2' }] }
       ]
     }])
-    expect(script).toContain('case 1 -> {')
-    expect(script).toContain('case 2 -> {')
+    expect(script).toContain('if (code == 1) {')
+    expect(script).toContain('} else if (code == 2) {')
   })
 
   test('switch-block: 空 matchVar 不生成代码', () => {
@@ -162,7 +167,7 @@ describe('generateScript', () => {
       matchVar: 'flag',
       cases: [{ value: 0, actions: [{ type: 'assign', target: 'x', value: '0' }] }]
     }])
-    expect(script).toContain('case 0 -> {')
+    expect(script).toContain('if (flag == 0) {')
   })
 
   test('switch-block: value 为空字符串时不生成', () => {
@@ -171,7 +176,7 @@ describe('generateScript', () => {
       matchVar: 'x',
       cases: [{ value: '', actions: [] }]
     }])
-    expect(script).not.toContain('case "" ->')
+    expect(script).not.toContain('if (x == ""')
   })
 
   // -------- func-call --------

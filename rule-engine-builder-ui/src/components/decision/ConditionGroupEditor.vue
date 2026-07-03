@@ -3,35 +3,16 @@
     <div class="cg-head">
       <span v-if="depth === 0" class="cg-title">条件</span>
       <el-button-group class="cg-op">
-        <el-button
-          size="mini"
-          :type="group.op === 'AND' ? 'primary' : 'default'"
-          @click="setGroupOp('AND')"
-        >与</el-button>
-        <el-button
-          size="mini"
-          :type="group.op === 'OR' ? 'primary' : 'default'"
-          @click="setGroupOp('OR')"
-        >或</el-button>
+        <el-button size="mini" :type="group.op === 'AND' ? 'primary' : 'default'" @click="setGroupOp('AND')">且</el-button>
+        <el-button size="mini" :type="group.op === 'OR' ? 'primary' : 'default'" @click="setGroupOp('OR')">或</el-button>
       </el-button-group>
-      <el-button
-        v-if="depth > 0"
-        type="text"
-        size="mini"
-        class="cg-remove-group"
-        @click="$emit('remove-group')"
-      >删除组</el-button>
+      <el-button v-if="depth > 0" type="text" size="mini" class="cg-remove-group" @click="$emit('remove-group')">删除组</el-button>
     </div>
 
     <div class="cg-stem">
       <div class="cg-stem-line" aria-hidden="true" />
       <div class="cg-children">
-        <div
-          v-for="(child, idx) in group.children"
-          :key="'n-' + depth + '-' + idx"
-          class="cg-row"
-        >
-          <!-- 嵌套条件组 -->
+        <div v-for="(child, idx) in group.children" :key="'n-' + depth + '-' + idx" class="cg-row">
           <condition-group-editor
             v-if="child.type === 'group'"
             :group="child"
@@ -41,7 +22,6 @@
             :selected-vars="selectedVars"
             @remove-group="removeChild(idx)"
           />
-          <!-- 单条条件叶：整行铺满容器，字段按比例伸缩 -->
           <div v-else class="cg-leaf">
             <div class="cg-field cg-field--var-left">
               <var-picker
@@ -57,16 +37,16 @@
             </div>
             <div class="cg-field cg-field--op">
               <el-select v-model="child.operator" size="mini" class="cg-sel-full" @change="onOpChange(child)">
-                <el-option v-for="o in opOptions" :key="o.v" :label="o.l" :value="o.v" />
+                <el-option v-for="o in operatorOptions(child)" :key="o.value" :label="o.label" :value="o.value" />
               </el-select>
             </div>
-            <div class="cg-field cg-field--kind">
+            <div v-if="operatorRequiresValue(child)" class="cg-field cg-field--kind">
               <el-select v-model="child.valueKind" size="mini" class="cg-sel-full" @change="onValueKindChange(child)">
                 <el-option label="常量" value="CONST" />
-                <el-option label="变量" value="VAR" />
+                <el-option label="变量" value="VAR" :disabled="!operatorAllowsVarValue(child)" />
               </el-select>
             </div>
-            <template v-if="child.operator !== '*'">
+            <template v-if="operatorRequiresValue(child)">
               <div v-if="child.valueKind === 'VAR'" class="cg-field cg-field--var-right">
                 <var-picker
                   :vars="vars"
@@ -81,7 +61,7 @@
               </div>
               <div v-else class="cg-field cg-field--value">
                 <el-select
-                  v-if="child.varType === 'ENUM' && enumOpts(child).length"
+                  v-if="child.varType === 'ENUM' && enumOpts(child).length && !isMultiValueOperator(child)"
                   v-model="child.value"
                   size="mini"
                   class="cg-sel-full"
@@ -89,26 +69,14 @@
                 >
                   <el-option v-for="opt in enumOpts(child)" :key="opt" :label="opt" :value="opt" />
                 </el-select>
-                <el-select
-                  v-else-if="child.varType === 'BOOLEAN'"
-                  v-model="child.value"
-                  size="mini"
-                  class="cg-sel-full"
-                >
+                <el-select v-else-if="child.varType === 'BOOLEAN'" v-model="child.value" size="mini" class="cg-sel-full">
                   <el-option label="true" value="true" />
                   <el-option label="false" value="false" />
                 </el-select>
-                <el-input
-                  v-else-if="child.varType === 'NUMBER'"
-                  v-model="child.value"
-                  size="mini"
-                  class="cg-input-full"
-                  placeholder="数值"
-                />
-                <el-input v-else v-model="child.value" size="mini" class="cg-input-full" placeholder="值" />
+                <el-input v-else v-model="child.value" size="mini" class="cg-input-full" :placeholder="valuePlaceholder(child)" />
               </div>
             </template>
-            <span v-else class="cg-field cg-field--any">任意</span>
+            <span v-else class="cg-field cg-field--any">无需输入值</span>
             <div class="cg-field cg-field--actions">
               <el-button type="text" size="mini" class="cg-del" @click="removeChild(idx)">删除</el-button>
             </div>
@@ -126,76 +94,74 @@
 
 <script>
 import VarPicker from '@/components/common/VarPicker.vue'
-import { createEmptyGroup, createEmptyLeaf } from '@/utils/decisionConditionTree'
+import { createEmptyGroup, createEmptyLeaf, normalizeConditionLeafOperator } from '@/utils/decisionConditionTree'
+import {
+  conditionOperatorAllowsVarValue,
+  conditionOperatorRequiresValue,
+  conditionValuePlaceholder,
+  getConditionOperatorOptions
+} from '@/constants/conditionOperators'
 
 export default {
   name: 'ConditionGroupEditor',
   components: { VarPicker },
   props: {
-    /** 组节点 { type:'group', op, children } */
     group: { type: Object, required: true },
-    /** VarPicker 选项列表 */
     vars: { type: Array, default: () => [] },
-    /** 当前设计器页面已经选择过的字段，传给 VarPicker 的「已选字段」分类 */
     selectedVars: { type: Array, default: () => [] },
-    /** 嵌套深度，根为 0 */
     depth: { type: Number, default: 0 },
-    /** 父组件提供的 (varCode) => options[]，用于枚举选项 */
     getVarOptionsFn: { type: Function, default: null }
   },
-  data() {
-    return {
-      opOptions: [
-        { l: '等于', v: '==' },
-        { l: '不等于', v: '!=' },
-        { l: '大于', v: '>' },
-        { l: '大于等于', v: '>=' },
-        { l: '小于', v: '<' },
-        { l: '小于等于', v: '<=' },
-        { l: '包含', v: 'in' },
-        { l: '任意', v: '*' }
-      ]
-    }
-  },
   methods: {
-    /**
-     * 切换组内与/或。
-     */
     setGroupOp(op) {
       this.$set(this.group, 'op', op)
     },
 
-    /**
-     * 枚举叶子的可选项字符串列表。
-     */
+    operatorOptions(leaf) {
+      return getConditionOperatorOptions(leaf && leaf.varType)
+    },
+
+    operatorRequiresValue(leaf) {
+      return conditionOperatorRequiresValue(leaf && leaf.operator, leaf && leaf.varType)
+    },
+
+    operatorAllowsVarValue(leaf) {
+      return conditionOperatorAllowsVarValue(leaf && leaf.operator, leaf && leaf.varType)
+    },
+
+    valuePlaceholder(leaf) {
+      return conditionValuePlaceholder(leaf && leaf.operator, leaf && leaf.varType)
+    },
+
+    isMultiValueOperator(leaf) {
+      return ['in', 'not_in', 'between', 'not_between', 'contains_any', 'contains_all'].includes(leaf && leaf.operator)
+    },
+
     enumOpts(leaf) {
       if (!leaf.enumOptions) return []
       return leaf.enumOptions.split(',').map(s => s.trim()).filter(Boolean)
     },
 
-    /**
-     * 运算符变更：任意通配时清空右侧。
-     */
     onOpChange(leaf) {
-      if (leaf.operator === '*') {
+      normalizeConditionLeafOperator(leaf)
+      if (!this.operatorRequiresValue(leaf)) {
+        this.$set(leaf, 'valueKind', 'CONST')
         this.$set(leaf, 'value', '')
+        this.clearRightVarRef(leaf)
+        return
+      }
+      if (!this.operatorAllowsVarValue(leaf) && leaf.valueKind === 'VAR') {
+        this.$set(leaf, 'valueKind', 'CONST')
+        this.$set(leaf, 'value', '')
+        this.clearRightVarRef(leaf)
       }
     },
 
-    /**
-     * 常量/变量切换时重置右侧。
-     */
     onValueKindChange(leaf) {
       this.$set(leaf, 'value', '')
-      this.$set(leaf, 'rightVarType', '')
-      this.$set(leaf, 'rightVarLabel', '')
-      this.$set(leaf, '_rightVarId', undefined)
-      this.$set(leaf, '_rightRefType', undefined)
+      this.clearRightVarRef(leaf)
     },
 
-    /**
-     * 选择左侧比较字段。
-     */
     onLeafLeftSelect(leaf, variable) {
       if (!variable) {
         this.$set(leaf, 'varCode', '')
@@ -204,6 +170,7 @@ export default {
         this.$set(leaf, 'enumOptions', '')
         this.$set(leaf, '_varId', undefined)
         this.$set(leaf, '_refType', undefined)
+        normalizeConditionLeafOperator(leaf)
         return
       }
       const varLabel = variable.varLabel || variable.varCode
@@ -219,18 +186,14 @@ export default {
       } else {
         this.$set(leaf, 'enumOptions', '')
       }
+      normalizeConditionLeafOperator(leaf)
+      this.onOpChange(leaf)
     },
 
-    /**
-     * 变量比较时选择右侧变量。
-     */
     onLeafRightSelect(leaf, variable) {
       if (!variable) {
         this.$set(leaf, 'value', '')
-        this.$set(leaf, 'rightVarType', '')
-        this.$set(leaf, 'rightVarLabel', '')
-        this.$set(leaf, '_rightVarId', undefined)
-        this.$set(leaf, '_rightRefType', undefined)
+        this.clearRightVarRef(leaf)
         return
       }
       const varLabel = variable.varLabel || variable.varCode
@@ -240,6 +203,13 @@ export default {
       this.$set(leaf, 'rightVarLabel', varLabel)
       this.$set(leaf, '_rightVarId', _varId)
       this.$set(leaf, '_rightRefType', this.refTypeOf(variable) || undefined)
+    },
+
+    clearRightVarRef(leaf) {
+      this.$set(leaf, 'rightVarType', '')
+      this.$set(leaf, 'rightVarLabel', '')
+      this.$set(leaf, '_rightVarId', undefined)
+      this.$set(leaf, '_rightRefType', undefined)
     },
 
     refIdOf(variable) {
@@ -256,17 +226,11 @@ export default {
       return variable._refType || variable.refType || (variable.varObj && variable.varObj.refType) || (variable._ref && variable._ref.refType) || ''
     },
 
-    /**
-     * 追加一条叶条件。
-     */
     addLeaf() {
       if (!Array.isArray(this.group.children)) this.$set(this.group, 'children', [])
       this.group.children.push(createEmptyLeaf())
     },
 
-    /**
-     * 追加嵌套的与/或组。
-     */
     addSubGroup() {
       if (!Array.isArray(this.group.children)) this.$set(this.group, 'children', [])
       const g = createEmptyGroup('AND')
@@ -274,9 +238,6 @@ export default {
       this.group.children.push(g)
     },
 
-    /**
-     * 删除子项（叶或组）。
-     */
     removeChild(idx) {
       this.group.children.splice(idx, 1)
     }
@@ -349,10 +310,9 @@ export default {
   width: 100%;
   max-width: 100%;
 }
-/* 条件行：主字段吃掉右侧留白 */
 .cg-leaf {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(86px, 108px) minmax(76px, 92px) minmax(0, 2fr) auto;
+  grid-template-columns: minmax(0, 2fr) minmax(96px, 122px) minmax(76px, 92px) minmax(0, 2fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
@@ -365,23 +325,11 @@ export default {
   display: flex;
   align-items: center;
 }
-/* 左侧变量选择：优先变宽 */
-.cg-field--var-left {
-  min-width: 0;
-}
-/* 运算符、常量/变量切换：固定宽度 */
 .cg-field--op {
-  width: 108px;
+  width: 122px;
 }
 .cg-field--kind {
   width: 92px;
-}
-/* 右侧比较值或变量 */
-.cg-field--var-right {
-  min-width: 0;
-}
-.cg-field--value {
-  min-width: 0;
 }
 .cg-field--any {
   min-width: 0;
@@ -391,9 +339,7 @@ export default {
 .cg-field--actions {
   justify-content: flex-end;
 }
-.cg-sel-full {
-  width: 100%;
-}
+.cg-sel-full,
 .cg-input-full {
   width: 100%;
 }
@@ -405,9 +351,7 @@ export default {
   width: 100%;
   display: block;
 }
-.cg-field ::v-deep .el-select > .el-input {
-  width: 100%;
-}
+.cg-field ::v-deep .el-select > .el-input,
 .cg-field ::v-deep .el-input {
   width: 100%;
 }
@@ -428,18 +372,14 @@ export default {
   .cg-stem-line {
     margin-right: 6px;
   }
-  .cg-field--var-left {
-    grid-column: 1 / -1;
-    width: 100%;
-  }
+  .cg-field--var-left,
   .cg-field--value,
-  .cg-field--var-right {
+  .cg-field--var-right,
+  .cg-field--actions {
     grid-column: 1 / -1;
     width: 100%;
   }
   .cg-field--actions {
-    grid-column: 1 / -1;
-    width: 100%;
     justify-content: flex-end;
   }
 }

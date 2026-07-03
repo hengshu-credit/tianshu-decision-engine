@@ -230,6 +230,35 @@ describe('ProjectList — 项目操作', () => {
     expect(projectApi.exportApiDoc).toHaveBeenCalledWith(1)
   })
 
+  test('generateDocHtml 使用外部同步执行接口和真实 Java SDK 示例', () => {
+    const html = wrapper.vm.generateDocHtml({
+      project: { id: 1, projectCode: 'project_a', projectName: '项目A', status: 1 },
+      dataObjects: [],
+      rules: [{
+        id: 10,
+        ruleCode: 'RULE_SET_001',
+        ruleName: '规则集示例',
+        modelType: 'RULE_SET',
+        modelTypeLabel: '规则集',
+        status: 1,
+        statusLabel: '启用',
+        inputVariables: [{ varCode: 'score', varType: 'INTEGER', varSource: 'INPUT', varLabel: '评分' }],
+        outputVariables: [{ varCode: 'decision', varType: 'STRING', varLabel: '决策' }],
+        inputDataObjects: [],
+        outputDataObjects: []
+      }]
+    })
+
+    expect(html).toContain('/api/rule/sync/execute/RULE_SET_001')
+    expect(html).not.toContain('/api/rule/definition/execute')
+    expect(html).toContain('clientAppName')
+    expect(html).toContain('RuleEngineClient.builder()')
+    expect(html).toContain('.serverSideExecution(true)')
+    expect(html).toContain('规则集命中列表')
+    expect(html).toContain('&quot;result&quot;: [')
+    expect(html).not.toContain('from rule_engine_client import RuleEngineClient')
+  })
+
   test('handleSubmit 新建项目时调用 createProject', async () => {
     projectApi.createProject.mockResolvedValue({ code: 200, data: { accessToken: 'tok' } })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', description: '', status: 1 }

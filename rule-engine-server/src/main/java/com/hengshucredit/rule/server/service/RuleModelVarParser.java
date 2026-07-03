@@ -43,7 +43,7 @@ public class RuleModelVarParser {
     /**
      * 解析规则模型的输入/输出变量代码
      * @param modelJson 模型 JSON 字符串
-     * @param modelType 模型类型：TABLE/TREE/FLOW/CROSS/CROSS_ADV/SCORE/SCORE_ADV/SCRIPT
+     * @param modelType 模型类型：TABLE/TREE/FLOW/RULE_SET/CROSS/CROSS_ADV/SCORE/SCORE_ADV/SCRIPT
      * @return 解析结果
      */
     public ParseResult parse(String modelJson, String modelType) {
@@ -65,6 +65,9 @@ public class RuleModelVarParser {
                     break;
                 case "FLOW":
                     parseFlowModel(model, result);
+                    break;
+                case "RULE_SET":
+                    parseRuleSetModel(model, result);
                     break;
                 case "CROSS":
                     parseCrossModel(model, result);
@@ -228,6 +231,24 @@ public class RuleModelVarParser {
             for (int i = 0; i < children.size(); i++) {
                 extractFromFlowNode(children.getJSONObject(i), result);
             }
+        }
+    }
+
+    // ==================== 规则集 ====================
+
+    private void parseRuleSetModel(JSONObject model, ParseResult result) {
+        JSONArray rules = model.getJSONArray("rules");
+        if (rules == null) {
+            return;
+        }
+        for (int i = 0; i < rules.size(); i++) {
+            JSONObject rule = rules.getJSONObject(i);
+            if (rule == null) {
+                continue;
+            }
+            extractFromConditionRoot(rule.getJSONObject("conditionRoot"), result.getInputCodes());
+            extractFromConditions(rule.getJSONArray("conditions"), result.getInputCodes());
+            extractFromActionData(rule.getJSONArray("actionData"), result);
         }
     }
 
@@ -490,7 +511,53 @@ public class RuleModelVarParser {
                         }
                     }
                 }
+            } else if ("if-block".equals(type)) {
+                JSONArray branches = a.getJSONArray("branches");
+                if (branches != null) {
+                    for (int j = 0; j < branches.size(); j++) {
+                        JSONObject branch = branches.getJSONObject(j);
+                        addCode(branch.getString("condVar"), result.getInputCodes());
+                        extractFromActionData(branch.getJSONArray("actions"), result);
+                    }
+                }
+            } else if ("switch-block".equals(type)) {
+                addCode(a.getString("matchVar"), result.getInputCodes());
+                JSONArray cases = a.getJSONArray("cases");
+                if (cases != null) {
+                    for (int j = 0; j < cases.size(); j++) {
+                        extractFromActionData(cases.getJSONObject(j).getJSONArray("actions"), result);
+                    }
+                }
+                extractFromActionData(a.getJSONArray("defaultActions"), result);
+            } else if ("foreach".equals(type)) {
+                extractIdentifiers(a.getString("listExpr"), result.getInputCodes());
+                extractFromActionData(a.getJSONArray("actions"), result);
+            } else if ("ternary".equals(type)) {
+                addCode(a.getString("condVar"), result.getInputCodes());
+                addCode(a.getString("target"), result.getOutputCodes());
+            } else if ("in-check".equals(type)) {
+                addCode(a.getString("checkVar"), result.getInputCodes());
+                addCode(a.getString("target"), result.getOutputCodes());
+            } else if ("template-str".equals(type)) {
+                addCode(a.getString("target"), result.getOutputCodes());
+                JSONArray parts = a.getJSONArray("parts");
+                if (parts != null) {
+                    for (int j = 0; j < parts.size(); j++) {
+                        JSONObject part = parts.getJSONObject(j);
+                        if ("expr".equals(part.getString("type"))) {
+                            extractIdentifiers(part.getString("content"), result.getInputCodes());
+                        }
+                    }
+                }
+            } else if ("rule-call".equals(type)) {
+                addCode(a.getString("target"), result.getOutputCodes());
             }
+        }
+    }
+
+    private void addCode(String code, Set<String> codes) {
+        if (code != null && !code.isEmpty()) {
+            codes.add(code);
         }
     }
 

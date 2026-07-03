@@ -69,6 +69,7 @@
             <el-select v-model="form.requestObjectId" clearable filterable placeholder="选择请求数据对象" style="width:100%">
               <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
             </el-select>
+            <div class="field-help">用于标记该接口期望的入参结构，便于配置人员对照字段；实际发送内容仍由 Header、Query、入参映射和请求体模板决定。</div>
           </el-form-item>
         </el-col>
         <el-col :span="8">
@@ -76,6 +77,7 @@
             <el-select v-model="form.responseObjectId" clearable filterable placeholder="选择响应数据对象" style="width:100%">
               <el-option v-for="item in dataObjectOptions" :key="item.id" :label="dataObjectLabel(item)" :value="item.id" />
             </el-select>
+            <div class="field-help">用于标记该接口的标准响应结构；同一接口有多种返回结构时，在响应映射中配置候选路径或条件分支。</div>
           </el-form-item>
         </el-col>
       </el-row>
@@ -109,10 +111,26 @@
         </el-collapse-item>
 
         <el-collapse-item title="入参、请求头与响应映射" name="mapping">
+          <div class="mapping-guide">
+            <div class="guide-title">配置顺序</div>
+            <div class="guide-text">
+              先选择请求对象/响应对象作为字段参照，再配置 Header、Query 和请求体。没有请求体模板时，入参映射会作为 JSON 请求体；填写请求体模板后，以请求体模板为准。
+            </div>
+            <div class="guide-text">
+              路径写法：<code>$.customer.idNo</code> 从测试参数或规则入参读取；<code>${customer.idNo}</code> 用于字符串模板替换。响应路径从接口返回包装对象读取，常用 <code>body.data.score</code>。
+            </div>
+            <div class="guide-text">
+              动态响应：字段值可写路径数组按顺序兜底，也可写 <code>{"cases":[{"when":{"path":"body.code","value":"00"},"path":"body.data.score"}],"default":0}</code>。
+            </div>
+          </div>
           <el-tabs v-model="templateTab" type="card" class="template-tabs">
             <el-tab-pane label="HTTP 接口模板" name="HTTP">
               <div class="template-help">适用于第三方 HTTP/HTTPS 接口，Header/Query/请求体都可以从规则入参中取值。</div>
               <el-button size="mini" @click="applyTemplate('HTTP')">填入 HTTP 示例</el-button>
+            </el-tab-pane>
+            <el-tab-pane label="衡枢分V1模板" name="HSCREDIT_V1">
+              <div class="template-help">适用于附件这种请求体：根对象包含 <code>request_id</code>、<code>model_id</code>、<code>model_params.br_applyloanstr_v2</code>，测试调用时把完整 JSON 放进请求参数。</div>
+              <el-button size="mini" @click="applyTemplate('HSCREDIT_V1')">填入衡枢分V1示例</el-button>
             </el-tab-pane>
             <el-tab-pane label="内部规则模板" name="RULE_ENGINE">
               <div class="template-help">适用于协议为“内部规则引擎”的数据源，接口地址填写已发布规则编码。</div>
@@ -123,11 +141,13 @@
             <el-col :span="12">
               <el-form-item label="Header配置">
                 <monaco-editor v-model="form.headerConfig" language="json" height="150px" />
+                <div class="field-help">请求头名到取值表达式的 JSON，例如 <code>{"X-Request-Id":"${request_id}"}</code>。</div>
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="Query配置">
                 <monaco-editor v-model="form.queryConfig" language="json" height="150px" />
+                <div class="field-help">URL Query 参数配置；值支持 <code>$.字段</code> 和 <code>${字段}</code>。</div>
               </el-form-item>
             </el-col>
           </el-row>
@@ -135,16 +155,19 @@
             <el-col :span="12">
               <el-form-item label="入参映射">
                 <monaco-editor v-model="form.requestMapping" language="json" height="150px" />
+                <div class="field-help">接口字段名到规则入参路径的映射；没有请求体模板时会作为 JSON 请求体，适合保留嵌套对象。</div>
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="响应映射">
                 <monaco-editor v-model="form.responseMapping" language="json" height="150px" />
+                <div class="field-help">左侧是统一输出字段，右侧可写字符串路径、路径数组或条件分支；映射后接口变量可读取 <code>body.score</code>。</div>
               </el-form-item>
             </el-col>
           </el-row>
           <el-form-item label="请求体模板">
             <monaco-editor v-model="form.bodyTemplate" language="json" height="150px" />
+            <div class="field-help">仅在三方要求固定报文外壳或字符串拼接时填写；会覆盖入参映射生成的请求体。</div>
           </el-form-item>
         </el-collapse-item>
 
@@ -381,6 +404,41 @@ export default {
       })
     },
     applyTemplate(type) {
+      if (type === 'HSCREDIT_V1') {
+        this.form.requestMethod = 'POST'
+        this.form.contentType = 'application/json'
+        this.form.endpointUrl = this.form.endpointUrl || '/hscredit-score/v1'
+        this.form.headerConfig = this.stringifyJson({ 'X-Request-Id': '${request_id}' })
+        this.form.requestMapping = this.stringifyJson({
+          request_id: '$.request_id',
+          model_id: '$.model_id',
+          model_params: {
+            br_applyloanstr_v2: '$.model_params.br_applyloanstr_v2'
+          }
+        })
+        this.form.responseMapping = this.stringifyJson({
+          code: ['body.code', 'body.result.code'],
+          swiftNumber: [
+            'body.model_params.br_applyloanstr_v2.swift_number',
+            'body.data.swift_number',
+            'body.swift_number'
+          ],
+          applyLoanFlag: [
+            'body.model_params.br_applyloanstr_v2.flag_applyloanstr',
+            'body.data.flag_applyloanstr',
+            'body.flag_applyloanstr'
+          ],
+          alsM12CellNbankAllnum: {
+            paths: [
+              'body.model_params.br_applyloanstr_v2.als_m12_cell_nbank_allnum',
+              'body.data.als_m12_cell_nbank_allnum'
+            ],
+            default: null
+          }
+        })
+        this.form.bodyTemplate = ''
+        return
+      }
       if (type === 'RULE_ENGINE') {
         this.form.requestMethod = 'POST'
         this.form.contentType = 'application/json'
@@ -494,6 +552,23 @@ export default {
   .template-tabs {
     margin-bottom: 12px;
   }
+  .mapping-guide {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
+  }
+  .guide-title {
+    color: #334155;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .guide-text {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.6;
+  }
   .description-item {
     margin-top: 12px;
   }
@@ -501,6 +576,12 @@ export default {
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
+  }
+  code {
+    color: #1e40af;
+    background: #eff6ff;
+    border-radius: 3px;
+    padding: 0 4px;
   }
 }
 </style>

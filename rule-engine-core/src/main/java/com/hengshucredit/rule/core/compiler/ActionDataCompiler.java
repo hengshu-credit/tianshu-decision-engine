@@ -69,9 +69,9 @@ public class ActionDataCompiler {
                 String rm = b.getString("roundingMode");
                 if (empty(rm)) rm = "HALF_UP";
                 sb.append("\n").append(pad(indent))
-                  .append(resolvedTarget).append(" = (new java.math.BigDecimal(\"\" + ")
-                  .append(resolvedTarget).append(")).setScale(").append(dp)
-                  .append(", java.math.RoundingMode.").append(rm).append(").doubleValue()");
+                  .append(resolvedTarget).append(" = roundScale(")
+                  .append(resolvedTarget).append(", ").append(dp).append(", ")
+                  .append(quoteString(rm)).append(")");
             }
         }
         return sb.toString();
@@ -98,26 +98,30 @@ public class ActionDataCompiler {
         if (empty(matchVar)) return "";
         Long varId = fieldVarId(b, "matchVar");
         String refType = fieldRefType(b, "matchVar");
+        String resolvedMatchVar = resolveVar(varId, refType, matchVar, varContext);
         StringBuilder sb = new StringBuilder();
-        sb.append(pad(indent)).append("switch (").append(resolveVar(varId, refType, matchVar, varContext)).append(") {\n");
         JSONArray cases = b.getJSONArray("cases");
+        boolean hasCase = false;
         if (cases != null) {
             for (int i = 0; i < cases.size(); i++) {
                 JSONObject c = cases.getJSONObject(i);
                 String val = c.getString("value");
                 if (empty(val)) continue;
-                sb.append(pad(indent + 1)).append("case ").append(wrapValue(val)).append(" -> {\n");
-                sb.append(compileActions(c.getJSONArray("actions"), indent + 2, varContext));
-                sb.append(pad(indent + 1)).append("}\n");
+                if (hasCase) sb.append(" else ");
+                else sb.append(pad(indent));
+                sb.append("if (").append(resolvedMatchVar).append(" == ").append(wrapSwitchCaseValue(val)).append(") {\n");
+                sb.append(compileActions(c.getJSONArray("actions"), indent + 1, varContext));
+                sb.append(pad(indent)).append("}");
+                hasCase = true;
             }
         }
         JSONArray defaults = b.getJSONArray("defaultActions");
         if (defaults != null && !defaults.isEmpty()) {
-            sb.append(pad(indent + 1)).append("default -> {\n");
-            sb.append(compileActions(defaults, indent + 2, varContext));
-            sb.append(pad(indent + 1)).append("}\n");
+            if (hasCase) sb.append(" else {\n");
+            else sb.append(pad(indent)).append("if (true) {\n");
+            sb.append(compileActions(defaults, indent + 1, varContext));
+            sb.append(pad(indent)).append("}");
         }
-        sb.append(pad(indent)).append("}");
         return sb.toString();
     }
 
@@ -171,7 +175,8 @@ public class ActionDataCompiler {
         String condRefType = fieldRefType(b, "condVar");
         String op = b.getString("condOp");
         if (empty(op)) op = "==";
-        String cond = resolveVar(condVarId, condRefType, condVar, varContext) + " " + op + " " + wrapValue(b.getString("condValue"));
+        String cond = ConditionExpressionBuilder.build(resolveVar(condVarId, condRefType, condVar, varContext),
+                b.getString("condVarType"), op, b.getString("condValue"), false);
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
         return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv);
@@ -251,7 +256,8 @@ public class ActionDataCompiler {
         if (empty(v)) return "true";
         String op = branch.getString("condOp");
         if (empty(op)) op = "==";
-        return resolveVar(varId, refType, v, varContext) + " " + op + " " + wrapValue(branch.getString("condValue"));
+        return ConditionExpressionBuilder.build(resolveVar(varId, refType, v, varContext),
+                branch.getString("condVarType"), op, branch.getString("condValue"), false);
     }
 
     private static Long fieldVarId(JSONObject block, String field) {
@@ -317,6 +323,15 @@ public class ActionDataCompiler {
     }
 
     private static boolean empty(String s) { return s == null || s.trim().isEmpty(); }
+
+    private static String wrapSwitchCaseValue(String val) {
+        if (val == null || val.isEmpty()) return "\"\"";
+        String s = val.trim();
+        if ("true".equals(s) || "false".equals(s) || "null".equals(s)) return s;
+        try { Double.parseDouble(s); return s; } catch (NumberFormatException ignored) {}
+        if (s.startsWith("\"") || s.startsWith("'")) return s;
+        return quoteString(s);
+    }
 
     private static String pad(int indent) {
         StringBuilder sb = new StringBuilder();

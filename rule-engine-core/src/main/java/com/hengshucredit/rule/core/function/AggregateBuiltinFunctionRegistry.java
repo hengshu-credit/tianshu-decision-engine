@@ -10,6 +10,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final AggregateBuiltinFunctions DELEGATE = new AggregateBuiltinFunctions();
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
     private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
+    private static final Class<?>[] THREE_OBJECTS = {Object.class, Object.class, Object.class};
 
     private AggregateBuiltinFunctionRegistry() {
     }
@@ -32,6 +33,13 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("isNotNull", DELEGATE, "isNotNull", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("isBlank", DELEGATE, "isBlank", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("isNotBlank", DELEGATE, "isNotBlank", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("containsValue", DELEGATE, "containsValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("containsAnyValue", DELEGATE, "containsAnyValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("containsAllValues", DELEGATE, "containsAllValues", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("startsWithValue", DELEGATE, "startsWithValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("endsWithValue", DELEGATE, "endsWithValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("hasKey", DELEGATE, "hasKey", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("nvl", DELEGATE, "nvl", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("roundScale", DELEGATE, "roundScale", THREE_OBJECTS);
     }
 }

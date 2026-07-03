@@ -505,6 +505,10 @@
                 <div class="template-help">适用于第三方 HTTP/HTTPS 接口：Header/Query/请求体都可以从规则入参中取值，例如 <code>$.customer.idNo</code> 或 <code>${customer.idNo}</code>。</div>
                 <el-button size="mini" @click="applyApiTemplate('HTTP')">填入 HTTP 示例</el-button>
               </el-tab-pane>
+              <el-tab-pane label="衡枢分V1模板" name="HSCREDIT_V1">
+                <div class="template-help">适用于根对象包含 <code>request_id</code>、<code>model_id</code>、<code>model_params.br_applyloanstr_v2</code> 的请求；测试调用时把完整 JSON 放入请求参数。</div>
+                <el-button size="mini" @click="applyApiTemplate('HSCREDIT_V1')">填入衡枢分V1示例</el-button>
+              </el-tab-pane>
               <el-tab-pane label="内部规则模板" name="RULE_ENGINE">
                 <div class="template-help">适用于协议为“内部规则引擎”的数据源：接口地址填写已发布规则编码，requestMapping.params 会作为被调用规则的入参。</div>
                 <el-button size="mini" @click="applyApiTemplate('RULE_ENGINE')">填入内部规则示例</el-button>
@@ -1033,6 +1037,43 @@ export default {
       return data
     },
     applyApiTemplate(type) {
+      if (type === 'HSCREDIT_V1') {
+        this.apiForm.requestMethod = 'POST'
+        this.apiForm.contentType = 'application/json'
+        this.apiForm.endpointUrl = this.apiForm.endpointUrl || '/hscredit-score/v1'
+        this.apiForm.headerConfig = this.stringifyJson({
+          'X-Request-Id': '${request_id}'
+        })
+        this.apiForm.requestMapping = this.stringifyJson({
+          request_id: '$.request_id',
+          model_id: '$.model_id',
+          model_params: {
+            br_applyloanstr_v2: '$.model_params.br_applyloanstr_v2'
+          }
+        })
+        this.apiForm.responseMapping = this.stringifyJson({
+          code: ['body.code', 'body.result.code'],
+          swiftNumber: [
+            'body.model_params.br_applyloanstr_v2.swift_number',
+            'body.data.swift_number',
+            'body.swift_number'
+          ],
+          applyLoanFlag: [
+            'body.model_params.br_applyloanstr_v2.flag_applyloanstr',
+            'body.data.flag_applyloanstr',
+            'body.flag_applyloanstr'
+          ],
+          alsM12CellNbankAllnum: {
+            paths: [
+              'body.model_params.br_applyloanstr_v2.als_m12_cell_nbank_allnum',
+              'body.data.als_m12_cell_nbank_allnum'
+            ],
+            default: null
+          }
+        })
+        this.apiForm.bodyTemplate = ''
+        return
+      }
       if (type === 'RULE_ENGINE') {
         this.apiForm.requestMethod = 'POST'
         this.apiForm.contentType = 'application/json'

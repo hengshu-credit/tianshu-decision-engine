@@ -122,25 +122,14 @@ public class ScorecardCompiler implements RuleCompiler {
             Long varId = item.containsKey("_varId") ? item.getLong("_varId") : null;
             String refType = item.getString("_refType");
             String scriptName = resolveVar(varId, refType, condVar, varContext);
-            return scriptName + " " + condOp + " " + formatRhs(item.getString("condVarType"), condValue);
+            return ConditionExpressionBuilder.build(scriptName, item.getString("condVarType"), condOp, condValue, false);
         }
         String rawCondition = item.getString("condition");
         return rawCondition != null ? rawCondition : "";
     }
 
     private static String formatRhs(String varType, String value) {
-        if (value == null || value.isEmpty()) return "\"\"";
-        if ("STRING".equals(varType) || "ENUM".equals(varType) || "DATE".equals(varType)) {
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-        }
-        if ("BOOLEAN".equals(varType)) {
-            return Boolean.parseBoolean(value) ? "true" : "false";
-        }
-        if (varType == null || varType.trim().isEmpty()) {
-            try { Double.parseDouble(value); return value; } catch (NumberFormatException ignored) {}
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-        }
-        return value;
+        return ConditionExpressionBuilder.formatConstant(varType, value);
     }
 
     private static String escapeForQlDoubleQuotedString(String value) {

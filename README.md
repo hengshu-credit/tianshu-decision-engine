@@ -283,9 +283,12 @@ rule-engine:
   client:
     server-url: http://localhost:8080
     app-name: your-service-name
+    project-code: your-project-code
     token: <项目访问令牌>
     project-id: 1
     trace-enabled: true
+    # 规则依赖 API/DB/名单变量时必须开启服务端执行
+    server-side-execution: true
 ```
 
 执行示例：
@@ -299,7 +302,8 @@ SDK 行为：
 - 启动时全量同步规则到 L1 缓存。
 - 订阅 Redis 推送，规则发布或下线后刷新本地缓存。
 - 缓存未命中时可按规则编码单条拉取。
-- 本地使用 QLExpress 执行脚本。
+- 默认本地使用 QLExpress 执行脚本，适合只依赖入参、常量、计算变量和已同步函数的规则。
+- 如果规则依赖 API 变量、数据库变量或名单变量，必须开启 `server-side-execution: true`，或直接调用服务端接口 `POST /api/rule/sync/execute/{ruleCode}`。这些外部变量只在服务端通过 `VariableSourceResolver` 解析，本地 SDK 不会直连外部 API、数据库或名单库。
 - 可异步上报执行日志。
 
 ## 10. 版本、日志和计费

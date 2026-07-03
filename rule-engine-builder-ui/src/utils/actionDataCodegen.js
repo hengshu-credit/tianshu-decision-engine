@@ -13,6 +13,8 @@
  *   rule-call:    执行规则      { type:'rule-call', target, ruleCode, outputField }
  */
 
+import { compileConditionExpression } from '@/constants/conditionOperators'
+
 function quoteString(value) {
   return '"' + String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
@@ -28,13 +30,35 @@ function wrapValue(val) {
   return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 
+function wrapSwitchCaseValue(val) {
+  if (val === null || val === undefined || val === '') return '""'
+  const s = String(val).trim()
+  if (s === 'true' || s === 'false' || s === 'null') return s
+  if (!isNaN(s) && s !== '') return s
+  if (s.startsWith('"') || s.startsWith("'")) return s
+  return quoteString(s)
+}
+
+function inferConstType(value) {
+  const text = String(value == null ? '' : value).trim()
+  if (text !== '' && !isNaN(text)) return 'NUMBER'
+  if (text === 'true' || text === 'false') return 'BOOLEAN'
+  return 'STRING'
+}
+
 function generateBlock(block, indent) {
   const pad = '    '.repeat(indent)
   if (!block || !block.type) return ''
 
   switch (block.type) {
-    case 'assign':
-      return (!block.target || !block.value) ? '' : pad + block.target + ' = ' + block.value
+    case 'assign': {
+      if (!block.target || !block.value) return ''
+      const lines = [pad + block.target + ' = ' + block.value]
+      if (block.enableRounding && block.decimalPlaces !== null && block.decimalPlaces !== undefined && Number(block.decimalPlaces) >= 0) {
+        lines.push(pad + block.target + ' = roundScale(' + block.target + ', ' + Number(block.decimalPlaces) + ', ' + quoteString(block.roundingMode || 'HALF_UP') + ')')
+      }
+      return lines.join('\n')
+    }
 
     case 'if-block': {
       const branches = block.branches || []
@@ -53,23 +77,23 @@ function generateBlock(block, indent) {
 
     case 'switch-block': {
       if (!block.matchVar) return ''
-      const lines = [pad + 'switch (' + block.matchVar + ') {']
+      const lines = []
+      let hasCase = false
       for (const c of (block.cases || [])) {
         if (!c.value && c.value !== 0) continue
-        lines.push(pad + '    case ' + wrapValue(c.value) + ' -> {')
+        lines.push((hasCase ? pad + '} else ' : pad) + 'if (' + block.matchVar + ' == ' + wrapSwitchCaseValue(c.value) + ') {')
         for (const a of (c.actions || [])) {
-          const code = generateBlock(a, indent + 2)
+          const code = generateBlock(a, indent + 1)
           if (code) lines.push(code)
         }
-        lines.push(pad + '    }')
+        hasCase = true
       }
       if (block.defaultActions && block.defaultActions.length > 0) {
-        lines.push(pad + '    default -> {')
+        lines.push(hasCase ? pad + '} else {' : pad + 'if (true) {')
         for (const a of block.defaultActions) {
-          const code = generateBlock(a, indent + 2)
+          const code = generateBlock(a, indent + 1)
           if (code) lines.push(code)
         }
-        lines.push(pad + '    }')
       }
       lines.push(pad + '}')
       return lines.join('\n')
@@ -127,7 +151,7 @@ function generateBlock(block, indent) {
 
 function buildCondExpr(branch) {
   if (!branch.condVar) return 'true'
-  return branch.condVar + ' ' + (branch.condOp || '==') + ' ' + wrapValue(branch.condValue)
+  return compileConditionExpression(branch.condVar, branch.condVarType || inferConstType(branch.condValue), branch.condOp || '==', branch.condValue, 'CONST')
 }
 
 export function generateScript(actionData) {

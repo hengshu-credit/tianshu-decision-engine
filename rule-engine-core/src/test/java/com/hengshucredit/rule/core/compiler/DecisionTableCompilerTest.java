@@ -680,4 +680,57 @@ public class DecisionTableCompilerTest {
         Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
         assertEquals(0.05, ((Number) resultMap.get("taxRate")).doubleValue(), 0.000001);
     }
+    @Test
+    public void testConditionRootTypedOperatorsExecuteSuccessfully() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\":\"FIRST\",\n" +
+                "  \"rules\":[{\n" +
+                "    \"conditionRoot\":{\"type\":\"group\",\"op\":\"AND\",\"children\":[\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"customerName\",\"varType\":\"STRING\",\"operator\":\"contains\",\"valueKind\":\"CONST\",\"value\":\"VIP\"},\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"age\",\"varType\":\"NUMBER\",\"operator\":\"between\",\"valueKind\":\"CONST\",\"value\":\"18,60\"},\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"tags\",\"varType\":\"LIST\",\"operator\":\"contains\",\"valueKind\":\"CONST\",\"value\":\"A\"}\n" +
+                "    ]},\n" +
+                "    \"actions\":[{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]\n" +
+                "  }]\n" +
+                "}");
+
+        assertTrue(r.getErrorMessage(), r.isSuccess());
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("customerName", "VIP客户");
+        params.put("age", 30);
+        params.put("tags", java.util.Arrays.asList("A", "B"));
+
+        RuleResult result = engine.execute(r.getCompiledScript(), params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
+        assertEquals("PASS", resultMap.get("decision"));
+    }
+
+    @Test
+    public void testConditionRootNoValueOperatorsExecuteSuccessfully() {
+        CompileResult r = compile("{\n" +
+                "  \"hitPolicy\":\"FIRST\",\n" +
+                "  \"rules\":[{\n" +
+                "    \"conditionRoot\":{\"type\":\"group\",\"op\":\"AND\",\"children\":[\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"payload\",\"varType\":\"OBJECT\",\"operator\":\"not_null\",\"valueKind\":\"CONST\",\"value\":\"\"},\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"items\",\"varType\":\"LIST\",\"operator\":\"not_empty\",\"valueKind\":\"CONST\",\"value\":\"\"},\n" +
+                "      {\"type\":\"leaf\",\"varCode\":\"approved\",\"varType\":\"BOOLEAN\",\"operator\":\"is_true\",\"valueKind\":\"CONST\",\"value\":\"\"}\n" +
+                "    ]},\n" +
+                "    \"actions\":[{\"varCode\":\"decision\",\"varType\":\"STRING\",\"value\":\"PASS\"}]\n" +
+                "  }]\n" +
+                "}");
+
+        assertTrue(r.getErrorMessage(), r.isSuccess());
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("payload", new LinkedHashMap<>());
+        params.put("items", java.util.Arrays.asList("x"));
+        params.put("approved", true);
+
+        RuleResult result = engine.execute(r.getCompiledScript(), params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
+        assertEquals("PASS", resultMap.get("decision"));
+    }
 }

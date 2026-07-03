@@ -25,6 +25,7 @@ import org.springframework.web.client.RestTemplate;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.annotation.Resource;
+import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -576,17 +577,87 @@ public class ExternalApiInvokeService {
         Object body = response.get("body");
         Map<String, Object> mapped = new LinkedHashMap<>();
         for (Map.Entry<String, Object> entry : mapping.entrySet()) {
-            Object path = entry.getValue();
-            Object value = readPath(response, stringValue(path));
-            if (value == null && body != null) {
-                value = readPath(body, stringValue(path));
-            }
-            mapped.put(entry.getKey(), value);
+            mapped.put(entry.getKey(), resolveResponseMappingValue(entry.getValue(), response, body));
         }
         response.put("rawBody", body);
         response.put("body", mapped);
         response.put("mapped", mapped);
         return response;
+    }
+
+    private Object resolveResponseMappingValue(Object rule, Map<String, Object> response, Object body) {
+        if (rule instanceof List) {
+            return firstReadableValue((List<?>) rule, response, body);
+        }
+        if (rule instanceof Map) {
+            Map<String, Object> config = parseNestedMap(rule);
+            Object cases = config.get("cases");
+            if (cases instanceof Iterable) {
+                for (Object item : (Iterable<?>) cases) {
+                    Map<String, Object> caseConfig = parseNestedMap(item);
+                    if (caseConfig.isEmpty() || responseConditionMatches(caseConfig.get("when"), response, body)) {
+                        Object value = resolveResponseMappingCase(caseConfig, response, body);
+                        if (value != null || caseConfig.containsKey("default")) {
+                            return value;
+                        }
+                    }
+                }
+                return config.containsKey("default") ? config.get("default") : null;
+            }
+            if (config.containsKey("path") || config.containsKey("paths")) {
+                return resolveResponseMappingCase(config, response, body);
+            }
+            return resolveValue(config, response);
+        }
+        return readMappedPath(response, body, stringValue(rule));
+    }
+
+    private Object resolveResponseMappingCase(Map<String, Object> config, Map<String, Object> response, Object body) {
+        Object value = null;
+        if (config.get("paths") instanceof List) {
+            value = firstReadableValue((List<?>) config.get("paths"), response, body);
+        }
+        if (value == null && config.containsKey("path")) {
+            value = readMappedPath(response, body, stringValue(config.get("path")));
+        }
+        return value == null && config.containsKey("default") ? config.get("default") : value;
+    }
+
+    private Object firstReadableValue(List<?> paths, Map<String, Object> response, Object body) {
+        for (Object path : paths) {
+            Object value = readMappedPath(response, body, stringValue(path));
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private Object readMappedPath(Map<String, Object> response, Object body, String path) {
+        Object value = readPath(response, path);
+        if (value == null && body != null) {
+            value = readPath(body, path);
+        }
+        return value;
+    }
+
+    private boolean responseConditionMatches(Object conditionObject, Map<String, Object> response, Object body) {
+        if (conditionObject == null) {
+            return true;
+        }
+        Map<String, Object> condition = parseNestedMap(conditionObject);
+        String path = firstText(condition.get("path"), condition.get("field"));
+        if (!hasText(path)) {
+            return true;
+        }
+        Object actual = readMappedPath(response, body, path);
+        Object expected = condition.get("value");
+        String operator = firstText(condition.get("operator"), "==").toLowerCase();
+        boolean equal = valuesEqual(actual, expected);
+        if ("!=".equals(operator) || "<>".equals(operator) || "ne".equals(operator)) {
+            return !equal;
+        }
+        return equal;
     }
 
     boolean matchesBillingCondition(String billingCondition, Map<String, Object> response) {
@@ -680,11 +751,31 @@ public class ExternalApiInvokeService {
                 current = ((JSONObject) current).get(part);
             } else if (current instanceof Map) {
                 current = ((Map<?, ?>) current).get(part);
+            } else if (current instanceof List) {
+                Integer index = parseIndex(part);
+                if (index == null || index < 0 || index >= ((List<?>) current).size()) {
+                    return null;
+                }
+                current = ((List<?>) current).get(index);
+            } else if (current != null && current.getClass().isArray()) {
+                Integer index = parseIndex(part);
+                if (index == null || index < 0 || index >= Array.getLength(current)) {
+                    return null;
+                }
+                current = Array.get(current, index);
             } else {
                 return null;
             }
         }
         return current;
+    }
+
+    private Integer parseIndex(String text) {
+        try {
+            return Integer.valueOf(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     private boolean hasText(String value) {

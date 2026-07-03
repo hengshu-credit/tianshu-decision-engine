@@ -150,11 +150,80 @@ public class AggregateBuiltinFunctions {
         return !isBlank(value);
     }
 
+    public boolean containsValue(Object target, Object value) {
+        if (target == null) {
+            return false;
+        }
+        if (target instanceof CharSequence) {
+            return target.toString().contains(value == null ? "" : String.valueOf(value));
+        }
+        if (target instanceof Map) {
+            return ((Map<?, ?>) target).containsKey(value);
+        }
+        for (Object item : normalizeToElements(target)) {
+            if (valueEquals(item, value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean containsAnyValue(Object target, Object values) {
+        for (Object value : normalizeToElements(values)) {
+            if (containsValue(target, value)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public boolean containsAllValues(Object target, Object values) {
+        List<Object> valueList = normalizeToElements(values);
+        if (valueList.isEmpty()) {
+            return false;
+        }
+        for (Object value : valueList) {
+            if (!containsValue(target, value)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    public boolean startsWithValue(Object target, Object prefix) {
+        return target != null && String.valueOf(target).startsWith(prefix == null ? "" : String.valueOf(prefix));
+    }
+
+    public boolean endsWithValue(Object target, Object suffix) {
+        return target != null && String.valueOf(target).endsWith(suffix == null ? "" : String.valueOf(suffix));
+    }
+
+    public boolean hasKey(Object target, Object key) {
+        return target instanceof Map && ((Map<?, ?>) target).containsKey(key);
+    }
+
     /**
      * 空值兜底：value 为 null 时返回 fallback。
      */
     public Object nvl(Object value, Object fallback) {
         return value == null ? fallback : value;
+    }
+
+    /**
+     * 按指定小数位和进位规则做数值舍入。
+     */
+    public BigDecimal roundScale(Object value, Object decimalPlaces, Object roundingMode) {
+        BigDecimal number = toBigDecimal(value);
+        if (number == null) {
+            return null;
+        }
+        BigDecimal places = toBigDecimal(decimalPlaces);
+        int scale = places == null ? 0 : places.intValue();
+        if (scale < 0) {
+            scale = 0;
+        }
+        RoundingMode mode = parseRoundingMode(roundingMode);
+        return number.setScale(scale, mode);
     }
 
     /**
@@ -217,5 +286,31 @@ public class AggregateBuiltinFunctions {
             return BigDecimal.valueOf(n.doubleValue());
         }
         return null;
+    }
+
+    private static boolean valueEquals(Object left, Object right) {
+        if (left == right) {
+            return true;
+        }
+        if (left == null || right == null) {
+            return false;
+        }
+        BigDecimal l = toBigDecimal(left);
+        BigDecimal r = toBigDecimal(right);
+        if (l != null && r != null) {
+            return l.compareTo(r) == 0;
+        }
+        return left.equals(right) || String.valueOf(left).equals(String.valueOf(right));
+    }
+
+    private static RoundingMode parseRoundingMode(Object roundingMode) {
+        if (roundingMode == null) {
+            return RoundingMode.HALF_UP;
+        }
+        try {
+            return RoundingMode.valueOf(String.valueOf(roundingMode));
+        } catch (IllegalArgumentException e) {
+            return RoundingMode.HALF_UP;
+        }
     }
 }

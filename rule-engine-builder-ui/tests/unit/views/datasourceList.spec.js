@@ -180,6 +180,31 @@ describe('DatasourceList helpers', () => {
     expect(JSON.parse(ctx.apiForm.bodyTemplate).certNo).toBe('${customer.idNo}')
   })
 
+  test('applyApiTemplate fills hscredit v1 nested request mapping', () => {
+    const ctx = createContext({
+      apiForm: DatasourceList.methods.emptyApiForm()
+    })
+
+    ctx.applyApiTemplate('HSCREDIT_V1')
+
+    const requestMapping = JSON.parse(ctx.apiForm.requestMapping)
+    expect(requestMapping).toEqual({
+      request_id: '$.request_id',
+      model_id: '$.model_id',
+      model_params: {
+        br_applyloanstr_v2: '$.model_params.br_applyloanstr_v2'
+      }
+    })
+    const responseMapping = JSON.parse(ctx.apiForm.responseMapping)
+    expect(responseMapping.swiftNumber).toEqual([
+      'body.model_params.br_applyloanstr_v2.swift_number',
+      'body.data.swift_number',
+      'body.swift_number'
+    ])
+    expect(responseMapping.alsM12CellNbankAllnum.paths[0]).toBe('body.model_params.br_applyloanstr_v2.als_m12_cell_nbank_allnum')
+    expect(ctx.apiForm.bodyTemplate).toBe('')
+  })
+
   test('isRuleEngineDatasource checks selected datasource protocol', () => {
     const ctx = createContext({
       datasourceOptions: [

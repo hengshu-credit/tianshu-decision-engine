@@ -404,6 +404,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             case "CROSS_TABLE_ADV": return "复杂交叉表";
             case "SCORE_ADV":
             case "SCORE_CARD_ADV": return "复杂评分卡";
+            case "RULE_SET": return "规则集";
             case "SCRIPT": return "QL脚本";
             default: return modelType;
         }

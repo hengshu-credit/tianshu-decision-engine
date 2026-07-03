@@ -267,19 +267,16 @@ public class DecisionTableCompiler implements RuleCompiler {
             if (right == null || right.trim().isEmpty()) {
                 return "true";
             }
-            return resolveVar(varId, refType, varCode, varContext) + " " + operator + " " + right.trim();
+            Long rightVarId = leaf.containsKey("_rightVarId") ? leaf.getLong("_rightVarId") : null;
+            String rightRefType = leaf.getString("_rightRefType");
+            String rightResolved = resolveVar(rightVarId, rightRefType, right.trim(), varContext);
+            return ConditionExpressionBuilder.build(resolveVar(varId, refType, varCode, varContext),
+                    leaf.getString("varType"), operator, rightResolved, true);
         }
 
         String value = leaf.getString("value");
-        if (value == null || value.isEmpty()) {
-            return "true";
-        }
-
-        String varType = leaf.getString("varType");
-        if (varType == null) varType = "STRING";
-
-        String rhs = formatConstantRhs(varType, value);
-        return resolveVar(varId, refType, varCode, varContext) + " " + operator + " " + rhs;
+        return ConditionExpressionBuilder.build(resolveVar(varId, refType, varCode, varContext),
+                leaf.getString("varType"), operator, value, false);
     }
 
     /**
@@ -301,10 +298,7 @@ public class DecisionTableCompiler implements RuleCompiler {
      * 按类型格式化常量右侧（引号与转义）。
      */
     static String formatConstantRhs(String varType, String value) {
-        if ("STRING".equals(varType) || "ENUM".equals(varType) || "DATE".equals(varType)) {
-            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
-        }
-        return value;
+        return ConditionExpressionBuilder.formatConstant(varType, value);
     }
 
     /**
@@ -343,12 +337,7 @@ public class DecisionTableCompiler implements RuleCompiler {
                 varType = "STRING";
             }
             String resolvedVar = resolveVar(varId, refType, varCode, varContext);
-            script.append(resolvedVar).append(" ").append(operator).append(" ");
-            if ("STRING".equals(varType) || "ENUM".equals(varType)) {
-                script.append("\"").append(value.replace("\\", "\\\\").replace("\"", "\\\"")).append("\"");
-            } else {
-                script.append(value);
-            }
+            script.append(ConditionExpressionBuilder.build(resolvedVar, varType, operator, value, false));
         }
         return script.toString();
     }
