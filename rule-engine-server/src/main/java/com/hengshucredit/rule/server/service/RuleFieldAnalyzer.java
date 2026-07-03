@@ -401,6 +401,7 @@ public class RuleFieldAnalyzer {
             String refType = normalizeRefType(field.getRefType());
             RuleDefinitionInputField listDependency = buildListDependencyField(field, varMetaMap);
             if (listDependency != null) {
+                addInputFieldIfAbsent(result, seen, field);
                 enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
                 addInputFieldIfAbsent(result, seen, listDependency);
                 continue;

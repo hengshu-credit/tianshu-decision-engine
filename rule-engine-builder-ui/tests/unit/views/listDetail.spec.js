@@ -155,3 +155,31 @@ describe('ListDetail — 名单内容管理', () => {
     expect(ruleListApi.deleteRecord).toHaveBeenCalledWith(9, 1)
   })
 })
+
+describe('ListDetail route id change', () => {
+  let wrapper
+
+  beforeEach(async () => { wrapper = await mountPage() })
+  afterEach(() => { if (wrapper) wrapper.destroy(); jest.clearAllMocks() })
+
+  test('uses the latest listId when saving after a reused-route change', async () => {
+    ruleListApi.createRecord.mockResolvedValue({ data: { id: 3 } })
+    wrapper.vm.$options.watch['$route.params.id'].call(wrapper.vm, 12, 9)
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    wrapper.vm.handleCreate()
+    wrapper.vm.form.itemContent = '110101199001010011'
+    wrapper.vm.form.itemType = 'ID_CARD'
+    wrapper.vm.submit()
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(wrapper.vm.listId).toBe(12)
+    expect(ruleListApi.createRecord).toHaveBeenLastCalledWith(12, expect.objectContaining({
+      itemContent: '110101199001010011',
+      itemType: 'ID_CARD',
+      lastOperation: 'ADD'
+    }))
+  })
+})

@@ -195,6 +195,14 @@
               </el-form-item>
             </el-col>
             <el-col :span="12">
+              <el-form-item label="计费条件">
+                <monaco-editor v-model="form.billingCondition" language="json" height="110px" />
+                <div class="field-help">空表示正常计费；示例 {"path":"body.status","operator":"==","value":0}</div>
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12">
               <el-form-item label="兜底返回">
                 <monaco-editor v-model="form.fallbackValue" language="json" height="110px" />
               </el-form-item>
@@ -292,7 +300,7 @@ export default {
         headerConfig: '', queryConfig: '', requestMapping: '', responseMapping: '', bodyTemplate: '',
         authMode: 'INHERIT', authApiConfig: '', tokenCacheSeconds: 0, timeoutMs: 3000, retryCount: 0,
         retryIntervalMs: 200, responseCacheSeconds: 0, exceptionStrategy: 'FAIL_FAST', fallbackValue: '', asyncCallbackUrl: '',
-        asyncResultPath: '', billingItemCode: '', unitPrice: 0, description: '', status: 1
+        asyncResultPath: '', billingItemCode: '', billingCondition: '', unitPrice: 0, description: '', status: 1
       }
     },
     async loadDatasourceOptions() {
@@ -338,6 +346,7 @@ export default {
         responseMapping: '响应映射',
         authApiConfig: '接口鉴权配置',
         bodyTemplate: '请求体模板',
+        billingCondition: '计费条件',
         fallbackValue: '兜底返回'
       }
       Object.keys(jsonFields).forEach(key => {

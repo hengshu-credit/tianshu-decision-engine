@@ -96,7 +96,9 @@ public class ExternalApiInvokeService {
                     responseCaches.put(responseCacheKey, new ApiResponseCache(copyResponse(result),
                             System.currentTimeMillis() + responseCacheSeconds * 1000L));
                 }
-                billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
+                if (matchesBillingCondition(apiConfig.getBillingCondition(), result)) {
+                    billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
+                }
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
                 return result;
             } catch (Exception e) {
@@ -585,6 +587,48 @@ public class ExternalApiInvokeService {
         response.put("body", mapped);
         response.put("mapped", mapped);
         return response;
+    }
+
+    boolean matchesBillingCondition(String billingCondition, Map<String, Object> response) {
+        if (!hasText(billingCondition)) {
+            return true;
+        }
+        Map<String, Object> condition = parseJsonMap(billingCondition);
+        String path = firstText(condition.get("path"), condition.get("field"));
+        if (!hasText(path)) {
+            return true;
+        }
+        Object actual = readPath(response, path);
+        Object expected = condition.get("value");
+        String operator = firstText(condition.get("operator"), "==").toLowerCase();
+        boolean equal = valuesEqual(actual, expected);
+        if ("!=".equals(operator) || "<>".equals(operator) || "ne".equals(operator)) {
+            return !equal;
+        }
+        return equal;
+    }
+
+    private boolean valuesEqual(Object actual, Object expected) {
+        if (actual == null || expected == null) {
+            return actual == expected;
+        }
+        java.math.BigDecimal actualNumber = toBigDecimal(actual);
+        java.math.BigDecimal expectedNumber = toBigDecimal(expected);
+        if (actualNumber != null && expectedNumber != null) {
+            return actualNumber.compareTo(expectedNumber) == 0;
+        }
+        return String.valueOf(actual).equals(String.valueOf(expected));
+    }
+
+    private java.math.BigDecimal toBigDecimal(Object value) {
+        if (value instanceof Number || value instanceof String) {
+            try {
+                return new java.math.BigDecimal(String.valueOf(value));
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private Object resolveValue(Object value, Map<String, Object> params) {

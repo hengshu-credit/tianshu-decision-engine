@@ -668,6 +668,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `async_callback_url`   VARCHAR(512) DEFAULT NULL            COMMENT '异步回调地址',
   `async_result_path`    VARCHAR(256) DEFAULT NULL            COMMENT '异步结果提取路径',
   `billing_item_code`    VARCHAR(128) DEFAULT NULL            COMMENT '计费项目编码',
+  `billing_condition`    JSON         DEFAULT NULL            COMMENT '计费条件JSON，空表示正常计费',
   `unit_price`           DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '单次调用价格',
   `description`          VARCHAR(512) DEFAULT NULL            COMMENT '说明',
   `status`               TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',

@@ -41,6 +41,7 @@ public class RuleExternalApiConfig {
     private String asyncCallbackUrl;
     private String asyncResultPath;
     private String billingItemCode;
+    private String billingCondition;
     private BigDecimal unitPrice;
     private String description;
     private Integer status;

@@ -113,6 +113,34 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void billingConditionMatchesMappedResponsePath() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", "0");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("body", body);
+
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+
+        assertTrue(service.matchesBillingCondition(
+                "{\"path\":\"body.status\",\"operator\":\"==\",\"value\":0}", response));
+        assertTrue(service.matchesBillingCondition(
+                "{\"path\":\"body.status\",\"operator\":\"!=\",\"value\":1}", response));
+    }
+
+    @Test
+    public void billingConditionRejectsUnmatchedResponsePath() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("status", 1);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("body", body);
+
+        boolean matched = new ExternalApiInvokeService().matchesBillingCondition(
+                "{\"path\":\"body.status\",\"operator\":\"==\",\"value\":0}", response);
+
+        assertEquals(false, matched);
+    }
+
+    @Test
     public void invokeUsesResponseCacheWithinTtl() throws Exception {
         AtomicInteger callCount = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);

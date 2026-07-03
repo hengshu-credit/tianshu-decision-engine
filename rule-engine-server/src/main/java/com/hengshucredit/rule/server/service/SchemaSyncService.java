@@ -343,6 +343,8 @@ public class SchemaSyncService {
         }
         addColumnIfMissing(table, "response_cache_seconds",
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
+        addColumnIfMissing(table, "billing_condition",
+                "`billing_condition` JSON DEFAULT NULL COMMENT '计费条件JSON，空表示正常计费' AFTER `billing_item_code`");
     }
 
     private void ensureModelFieldForeignKeysRemoved() {

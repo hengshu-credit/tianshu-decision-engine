@@ -29,6 +29,12 @@ describe('DatasourceList helpers', () => {
     expect(ctx.emptyApiForm().responseCacheSeconds).toBe(0)
   })
 
+  test('emptyApiForm defaults billing condition to blank', () => {
+    const ctx = createContext()
+
+    expect(ctx.emptyApiForm().billingCondition).toBe('')
+  })
+
   test('normalizeApi keeps response cache seconds', () => {
     const ctx = createContext()
     const form = {
@@ -37,6 +43,16 @@ describe('DatasourceList helpers', () => {
     }
 
     expect(ctx.normalizeApi(form).responseCacheSeconds).toBe(86400)
+  })
+
+  test('normalizeApi keeps valid billing condition JSON', () => {
+    const ctx = createContext()
+    const form = {
+      ...ctx.emptyApiForm(),
+      billingCondition: '{"path":"body.status","operator":"==","value":0}'
+    }
+
+    expect(ctx.normalizeApi(form).billingCondition).toContain('body.status')
   })
 
   test('normalizeDatasource rejects invalid auth JSON', () => {

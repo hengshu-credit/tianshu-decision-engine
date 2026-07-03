@@ -181,6 +181,23 @@ export default {
     this.loadRecords()
     this.loadLogs()
   },
+  watch: {
+    '$route.params.id'(id) {
+      if (String(id || '') === String(this.listId || '')) return
+      this.listId = id
+      this.library = {}
+      this.records = []
+      this.logs = []
+      this.traceRecord = null
+      this.activeTab = 'records'
+      this.dialogVisible = false
+      this.form = this.emptyForm()
+      this.validRange = []
+      this.loadLibrary()
+      this.loadRecords()
+      this.loadLogs()
+    }
+  },
   methods: {
     emptyForm() {
       return { id: null, itemContent: '', itemType: 'MOBILE', effectiveTime: '', expireTime: '', reason: '', remark: '', lastOperation: 'ADD', status: 1 }

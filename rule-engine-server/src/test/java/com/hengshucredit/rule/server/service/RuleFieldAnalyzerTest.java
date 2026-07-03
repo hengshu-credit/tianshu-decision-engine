@@ -214,4 +214,37 @@ public class RuleFieldAnalyzerTest {
         assertEquals(Long.valueOf(2), minAge.getVarId());
         assertEquals("VARIABLE", minAge.getRefType());
     }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void listSourceExpansionKeepsSourceVariableAndDependency() throws Exception {
+        RuleDefinitionInputField listHit = new RuleDefinitionInputField();
+        listHit.setFieldName("riskHit");
+        listHit.setScriptName("riskHit");
+        listHit.setFieldType("INTEGER");
+        listHit.setVarId(9L);
+        listHit.setRefType("VARIABLE");
+
+        Map<String, Object> meta = new java.util.HashMap<>();
+        meta.put("varSource", "LIST");
+        meta.put("sourceConfig", "{\"queryField\":\"mobile\"}");
+        Map<String, Map<String, Object>> varMetaMap = new java.util.HashMap<>();
+        varMetaMap.put("riskhit", meta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        List<RuleDefinitionInputField> fields = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(listHit), varMetaMap);
+        List<String> names = fields.stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(names.contains("riskHit"));
+        assertTrue(names.contains("mobile"));
+        assertEquals(Long.valueOf(9), fields.stream()
+                .filter(field -> "riskHit".equals(field.getScriptName()))
+                .findFirst()
+                .get()
+                .getVarId());
+    }
 }
