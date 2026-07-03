@@ -5,9 +5,10 @@ services:
     image: mysql:8.4.6
     container_name: rule-engine-mysql
     restart: always
-    privileged: true
     environment:
       MYSQL_ROOT_PASSWORD: 1qaz@WSX
+      MYSQL_ROOT_HOST: "%"
+      MYSQL_DATABASE: rule_engine
       TZ: Asia/Shanghai
     ports:
       - "3306:3306"
@@ -33,13 +34,17 @@ services:
         condition: service_healthy
     environment:
       MYSQL_ROOT_PASSWORD: 1qaz@WSX
+      MYSQL_PWD: 1qaz@WSX
       TZ: Asia/Shanghai
     volumes:
       - ./rule-engine-mysql/init.sql:/init.sql:ro
     command: >
-      sh -c 'mysql -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}"
+      sh -c 'until mysqladmin ping -hmysql -uroot --silent; do
+      sleep 2;
+      done;
+      mysql -hmysql -uroot
       -e "CREATE DATABASE IF NOT EXISTS rule_engine DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
-      && mysql --force -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" < /init.sql'
+      && mysql --force -hmysql -uroot < /init.sql'
     restart: "no"
     networks:
       - rule-engine

@@ -1,6 +1,6 @@
 -- 开启root远程登录
-USE mysql;
-ALTER USER 'root'@'%' IDENTIFIED WITH mysql_native_password BY '1qaz@WSX';
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '1qaz@WSX';
+ALTER USER 'root'@'%' IDENTIFIED BY '1qaz@WSX';
 GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
 FLUSH PRIVILEGES;
 
