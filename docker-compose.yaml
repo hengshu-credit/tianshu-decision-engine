@@ -1,0 +1,71 @@
+name: rule-engine
+
+services:
+  mysql:
+    image: mysql:8.4.6
+    container_name: rule-engine-mysql
+    restart: always
+    privileged: true
+    environment:
+      MYSQL_ROOT_PASSWORD: 1qaz@WSX
+      TZ: Asia/Shanghai
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./rule-engine-mysql/logs:/var/log/mysql
+      - ./rule-engine-mysql/data:/var/lib/mysql
+      - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d
+      - ./rule-engine-mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - rule-engine
+
+  mysql-init:
+    image: mysql:8.4.6
+    container_name: rule-engine-mysql-init
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      MYSQL_ROOT_PASSWORD: 1qaz@WSX
+      TZ: Asia/Shanghai
+    volumes:
+      - ./rule-engine-mysql/init.sql:/init.sql:ro
+    command: >
+      sh -c 'mysql -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}"
+      -e "CREATE DATABASE IF NOT EXISTS rule_engine DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;"
+      && mysql --force -hmysql -uroot -p"$${MYSQL_ROOT_PASSWORD}" < /init.sql'
+    restart: "no"
+    networks:
+      - rule-engine
+
+  redis:
+    image: redis:8.2.1
+    container_name: rule-engine-redis
+    restart: always
+    environment:
+      REDIS_PASSWORD: 1qaz@WSX
+      TZ: Asia/Shanghai
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./rule-engine-redis/data:/data
+      - ./rule-engine-redis/redis.conf:/usr/local/etc/redis/redis.conf
+      - ./rule-engine-redis/logs:/logs
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 5
+    networks:
+      - rule-engine
+
+networks:
+  rule-engine:
+    driver: bridge
