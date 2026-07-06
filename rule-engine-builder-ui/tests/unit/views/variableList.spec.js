@@ -346,6 +346,32 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.variableTestResult.resolvedValue).toBe(88)
   })
 
+  test('变量测试模板支持模板表达式和名单裸字段路径', () => {
+    const apiRow = {
+      varSource: 'API',
+      sourceConfig: JSON.stringify({
+        paramMapping: {
+          requestId: '${requestId}',
+          certNo: 'prefix-${customer.idNo}-${customer.mobile}'
+        }
+      })
+    }
+    expect(JSON.parse(wrapper.vm.buildTestParamTemplate(apiRow))).toEqual({
+      requestId: '',
+      customer: { idNo: '', mobile: '' }
+    })
+
+    const listRow = {
+      varSource: 'LIST',
+      sourceConfig: JSON.stringify({ queryField: 'request.mobile' })
+    }
+    expect(JSON.parse(wrapper.vm.buildTestParamTemplate(listRow))).toEqual({
+      request: { mobile: '' }
+    })
+
+    expect(wrapper.vm.sourceInputFields(listRow)[0].field).toBe('request.mobile')
+  })
+
   test('buildVariablePayload 生成名单查询配置', async () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),

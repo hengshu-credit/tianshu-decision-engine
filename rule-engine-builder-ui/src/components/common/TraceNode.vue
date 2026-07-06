@@ -129,7 +129,7 @@ export default {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 0 8px;
+  padding: 0 10px;
 }
 .nd.is-dim { opacity: 0.7; }
 .nd.is-dim > .nd-box { border-style: dashed; }
@@ -138,35 +138,38 @@ export default {
 .nd-box {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
+  gap: 8px;
+  min-height: 34px;
+  padding: 6px 12px;
   background: #fff;
-  border: 1px solid #DCDFE6;
-  border-radius: 4px;
+  border: 1px solid #D8DEE9;
+  border-radius: 6px;
   font-size: 12px;
   white-space: nowrap;
   color: #303133;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
 }
 .nd-box:hover {
-  border-color: #C0C4CC;
+  border-color: #A8C8F0;
+  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.12);
 }
 
 .nd-txt {
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* 内联比较 */
 .c-name { color: #303133; }
-.c-op   { color: #909399; margin: 0 2px; }
+.c-op   { color: #6B7280; margin: 0 2px; font-weight: 600; }
 
 /* 结果标记 — 纯文字，不是 badge */
 .nd-res {
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   flex-shrink: 0;
 }
-.nd-res.is-true  { color: #67C23A; }
-.nd-res.is-false { color: #F76E6C; }
+.nd-res.is-true  { color: #529B2E; }
+.nd-res.is-false { color: #C45656; }
 .nd-res.is-val   { color: #409EFF; }
 .nd-res.is-skip  { color: #C0C4CC; font-weight: 400; }
 
@@ -175,40 +178,40 @@ export default {
   display: flex;
   justify-content: center;
   position: relative;
-  padding-top: 24px;
+  padding-top: 28px;
 }
 .nd-kids:not(.no-stem)::before {
   content: '';
   position: absolute;
   top: 0; left: 50%;
-  width: 1px; height: 12px;
-  background: #DCDFE6;
+  width: 1px; height: 14px;
+  background: #CBD5E1;
 }
 .nd-kids > .nd { position: relative; }
 .nd-kids > .nd::before {
   content: '';
   position: absolute;
-  top: -12px; left: 50%;
-  width: 1px; height: 12px;
-  background: #DCDFE6;
+  top: -14px; left: 50%;
+  width: 1px; height: 14px;
+  background: #CBD5E1;
 }
 .nd-kids > .nd:first-child:not(:last-child)::after {
   content: '';
   position: absolute;
-  top: -12px; left: 50%; right: 0;
-  height: 1px; background: #DCDFE6;
+  top: -14px; left: 50%; right: 0;
+  height: 1px; background: #CBD5E1;
 }
 .nd-kids > .nd:last-child:not(:first-child)::after {
   content: '';
   position: absolute;
-  top: -12px; left: 0; right: 50%;
-  height: 1px; background: #DCDFE6;
+  top: -14px; left: 0; right: 50%;
+  height: 1px; background: #CBD5E1;
 }
 .nd-kids > .nd:not(:first-child):not(:last-child)::after {
   content: '';
   position: absolute;
-  top: -12px; left: 0; right: 0;
-  height: 1px; background: #DCDFE6;
+  top: -14px; left: 0; right: 0;
+  height: 1px; background: #CBD5E1;
 }
 
 /* 已执行路径连线加粗 */

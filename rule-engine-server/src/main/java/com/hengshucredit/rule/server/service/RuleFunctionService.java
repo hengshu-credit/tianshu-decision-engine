@@ -1,9 +1,13 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleFunctionVersion;
 import com.hengshucredit.rule.model.entity.RuleProject;
@@ -14,9 +18,13 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -26,6 +34,7 @@ public class RuleFunctionService {
     public static final String SCOPE_GLOBAL = "GLOBAL";
     /** 作用域：项目级 */
     public static final String SCOPE_PROJECT = "PROJECT";
+    private static final Pattern IDENTIFIER_PATTERN = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
 
     @Resource
     private RuleFunctionMapper functionMapper;
@@ -35,6 +44,12 @@ public class RuleFunctionService {
 
     @Resource
     private RuleProjectMapper projectMapper;
+
+    @Resource
+    private QLExpressEngine qlExpressEngine;
+
+    @Resource
+    private FunctionRegistrar functionRegistrar;
 
     /** 填充函数列表的项目名称 */
     private void fillProjectName(List<RuleFunction> list) {
@@ -230,6 +245,29 @@ public class RuleFunctionService {
         return functionMapper.selectById(id);
     }
 
+    public Map<String, Object> testFunction(Long functionId, Map<String, Object> params) {
+        RuleFunction function = getById(functionId);
+        if (function == null) {
+            throw new IllegalArgumentException("Function not found");
+        }
+        Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+        String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
+        registerFunctionIfNeeded(function, implType);
+        RuleResult ruleResult = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, true);
+
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("success", ruleResult.isSuccess());
+        result.put("result", ruleResult.getResult());
+        result.put("errorMessage", ruleResult.getErrorMessage());
+        result.put("executeTimeMs", ruleResult.getExecuteTimeMs());
+        result.put("params", context);
+        result.put("functionCode", function.getFuncCode());
+        if (ruleResult.getTraces() != null) {
+            result.put("traces", ruleResult.getTraces());
+        }
+        return result;
+    }
+
     public void create(RuleFunction func) {
         // 确保 scope 有默认值
         if (func.getScope() == null || func.getScope().isEmpty()) {
@@ -308,5 +346,59 @@ public class RuleFunctionService {
     private boolean sameText(String left, String right) {
         if (left == null) return right == null;
         return left.equals(right);
+    }
+
+    private void registerFunctionIfNeeded(RuleFunction function, String implType) {
+        if ("JAVA".equals(implType)) {
+            functionRegistrar.registerJavaFunctions(Collections.singletonList(function), qlExpressEngine.getRunner());
+        } else if ("BEAN".equals(implType)) {
+            functionRegistrar.registerBeanFunctions(Collections.singletonList(function), qlExpressEngine.getRunner());
+        }
+    }
+
+    private String buildFunctionTestScript(RuleFunction function, String implType) {
+        String functionCode = requireIdentifier(function.getFuncCode(), "函数编码");
+        List<String> paramNames = parseParamNames(function.getParamsJson());
+        StringBuilder script = new StringBuilder();
+        if ("SCRIPT".equals(implType)) {
+            script.append(functionRegistrar.buildScriptFunctionPrefix(Collections.singletonList(function)));
+        }
+        script.append("__function_test_result = ")
+                .append(functionCode)
+                .append("(")
+                .append(String.join(", ", paramNames))
+                .append(");\n");
+        script.append("__function_test_result");
+        return script.toString();
+    }
+
+    private List<String> parseParamNames(String paramsJson) {
+        List<String> names = new ArrayList<>();
+        if (paramsJson == null || paramsJson.trim().isEmpty()) {
+            return names;
+        }
+        try {
+            JSONArray array = JSON.parseArray(paramsJson);
+            for (int i = 0; i < array.size(); i++) {
+                JSONObject item = array.getJSONObject(i);
+                if (item == null) continue;
+                String name = item.getString("name");
+                if (name != null && !name.trim().isEmpty()) {
+                    names.add(requireIdentifier(name.trim(), "函数参数名"));
+                }
+            }
+            return names;
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("函数参数配置不是合法 JSON");
+        }
+    }
+
+    private String requireIdentifier(String value, String label) {
+        if (value == null || !IDENTIFIER_PATTERN.matcher(value.trim()).matches()) {
+            throw new IllegalArgumentException(label + "不是合法标识符: " + value);
+        }
+        return value.trim();
     }
 }

@@ -184,6 +184,36 @@ describe('DatasourceList helpers', () => {
     expect(JSON.parse(ctx.apiForm.bodyTemplate).certNo).toBe('${customer.idNo}')
   })
 
+  test('buildApiInvokeParamTemplate extracts request references for http api test', () => {
+    const ctx = createContext()
+    const row = {
+      headerConfig: '{"X-Request-Id":"${requestId}"}',
+      queryConfig: '{"trace":"${trace.id}"}',
+      requestMapping: '{"certNo":"$.customer.idNo","fixed":"ONLINE"}',
+      bodyTemplate: '{"mobile":"${customer.mobile}","name":"${customer.name}"}',
+      authApiConfig: '{"headers":{"X-App-Id":"${appId}"},"body":{"grant_type":"client_credentials"}}'
+    }
+
+    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
+      requestId: '',
+      trace: { id: '' },
+      customer: { idNo: '', mobile: '', name: '' },
+      appId: ''
+    })
+  })
+
+  test('buildApiInvokeParamTemplate extracts rule engine params without ruleCode literal', () => {
+    const ctx = createContext()
+    const row = {
+      requestMapping: '{"ruleCode":"RC_PRICING_TABLE","params":{"customerType":"$.customerType","productLine":"$.productLine"}}'
+    }
+
+    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
+      customerType: '',
+      productLine: ''
+    })
+  })
+
   test('isRuleEngineDatasource checks selected datasource protocol', () => {
     const ctx = createContext({
       datasourceOptions: [

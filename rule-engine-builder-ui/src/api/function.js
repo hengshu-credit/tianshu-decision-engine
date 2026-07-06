@@ -30,6 +30,10 @@ export function deleteFunction(id) {
   return request.delete('/rule/function/' + id)
 }
 
+export function testFunction(id, params) {
+  return request.post('/rule/function/' + id + '/test', params)
+}
+
 export function listVersions(functionId) {
   return request.get('/rule/function/versions/' + functionId)
 }

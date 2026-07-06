@@ -1,0 +1,71 @@
+package com.hengshucredit.rule.server.service;
+
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.model.entity.RuleFunction;
+import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import java.util.LinkedHashMap;
+import java.util.Map;
+
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+
+public class RuleFunctionServiceTest {
+
+    @Test
+    public void testFunctionExecutesScriptFunctionWithContextParams() {
+        RuleFunction function = scriptFunction("roundTax", "[{\"name\":\"amount\",\"type\":\"NUMBER\"}]",
+                "scaled = amount * 100 + 0.5; return (scaled - scaled % 1) / 100;");
+        function.setId(1L);
+
+        RuleFunctionService service = serviceWithFunction(function);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("amount", 12.345);
+
+        Map<String, Object> result = service.testFunction(1L, params);
+
+        assertEquals(true, result.get("success"));
+        assertEquals("roundTax", result.get("functionCode"));
+        assertEquals(12.35, ((Number) result.get("result")).doubleValue(), 0.000001);
+    }
+
+    @Test
+    public void testFunctionRejectsInvalidParamName() {
+        RuleFunction function = scriptFunction("roundTax", "[{\"name\":\"bad-name\",\"type\":\"NUMBER\"}]",
+                "return 1;");
+        function.setId(1L);
+
+        RuleFunctionService service = serviceWithFunction(function);
+
+        try {
+            service.testFunction(1L, new LinkedHashMap<>());
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("函数参数名"));
+            return;
+        }
+        throw new AssertionError("Expected IllegalArgumentException");
+    }
+
+    private static RuleFunctionService serviceWithFunction(RuleFunction function) {
+        RuleFunctionService service = new RuleFunctionService() {
+            @Override
+            public RuleFunction getById(Long id) {
+                return function.getId().equals(id) ? function : null;
+            }
+        };
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        return service;
+    }
+
+    private static RuleFunction scriptFunction(String funcCode, String paramsJson, String implScript) {
+        RuleFunction function = new RuleFunction();
+        function.setFuncCode(funcCode);
+        function.setFuncName(funcCode);
+        function.setImplType("SCRIPT");
+        function.setParamsJson(paramsJson);
+        function.setImplScript(implScript);
+        return function;
+    }
+}

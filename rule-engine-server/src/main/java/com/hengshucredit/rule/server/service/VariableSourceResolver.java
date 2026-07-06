@@ -59,50 +59,100 @@ public class VariableSourceResolver {
         List<RuleModel> models = loadProjectModels(projectId);
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(), variables, models);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
-        resolveSourceVariables(variables, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
-        resolveModelVariables(models, requiredScriptNames, resolvedParams, effectiveOptions);
+        resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
         return resolvedParams;
     }
 
-    private void resolveSourceVariables(List<RuleVariable> variables, Set<String> requiredScriptNames,
-                                        Map<String, Object> resolvedParams, VariableResolveOptions effectiveOptions,
-                                        Map<String, Map<String, Object>> apiResponseCache) {
+    private void resolveVariablesAndModels(List<RuleVariable> variables, List<RuleModel> models,
+                                           Set<String> requiredScriptNames, Map<String, Object> resolvedParams,
+                                           VariableResolveOptions effectiveOptions,
+                                           Map<String, Map<String, Object>> apiResponseCache) {
         Map<String, RuleVariable> variableMap = buildVariableMap(variables);
-        List<RuleVariable> pending = new ArrayList<>(variables);
-        while (!pending.isEmpty()) {
+        Map<String, RuleModel> modelMap = buildModelMap(models);
+        List<RuleVariable> pendingVariables = collectPendingVariables(variables, requiredScriptNames, resolvedParams, effectiveOptions);
+        List<RuleModel> pendingModels = collectPendingModels(models, requiredScriptNames, resolvedParams, effectiveOptions);
+        while (!pendingVariables.isEmpty() || !pendingModels.isEmpty()) {
             boolean progressed = false;
-            List<RuleVariable> delayed = new ArrayList<>();
-            for (RuleVariable variable : pending) {
+            List<RuleVariable> delayedVariables = new ArrayList<>();
+            for (RuleVariable variable : pendingVariables) {
                 String scriptName = resolveScriptName(variable);
-                if (!shouldResolveSourceVariable(variable, scriptName, requiredScriptNames)) {
-                    progressed = true;
+                if (hasUnresolvedResolvableDependency(scriptName, collectVariableDependencies(variable),
+                        variableMap, modelMap, requiredScriptNames, resolvedParams, effectiveOptions)) {
+                    delayedVariables.add(variable);
                     continue;
                 }
-                Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
-                boolean forceRefresh = effectiveOptions.isForceRefreshSource() || booleanValue(config.get("forceRefresh"));
-                if (!forceRefresh && resolvedParams.containsKey(scriptName)) {
-                    progressed = true;
-                    continue;
-                }
-                if (hasUnresolvedSourceDependency(variable, variableMap, resolvedParams)) {
-                    delayed.add(variable);
-                    continue;
-                }
-                resolveOneSourceVariable(variable, scriptName, config, resolvedParams, effectiveOptions, apiResponseCache);
+                resolveOneVariable(variable, scriptName, resolvedParams, effectiveOptions, apiResponseCache);
                 progressed = true;
             }
-            if (!progressed) {
-                for (RuleVariable variable : delayed) {
-                    String scriptName = resolveScriptName(variable);
-                    if (hasText(scriptName)) {
-                        Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
-                        resolveOneSourceVariable(variable, scriptName, config, resolvedParams, effectiveOptions, apiResponseCache);
-                    }
+            pendingVariables = delayedVariables;
+
+            List<RuleModel> delayedModels = new ArrayList<>();
+            for (RuleModel model : pendingModels) {
+                String modelCode = trimToNull(model.getModelCode());
+                if (hasUnresolvedResolvableDependency(modelCode, collectModelInputNames(model),
+                        variableMap, modelMap, requiredScriptNames, resolvedParams, effectiveOptions)) {
+                    delayedModels.add(model);
+                    continue;
                 }
-                break;
+                resolveOneModel(model, modelCode, resolvedParams);
+                progressed = true;
             }
-            pending = delayed;
+            pendingModels = delayedModels;
+
+            if (!progressed) {
+                throw new IllegalStateException("变量/模型依赖存在循环或无法解析：" + pendingNames(pendingVariables, pendingModels));
+            }
         }
+    }
+
+    private List<RuleVariable> collectPendingVariables(List<RuleVariable> variables, Set<String> requiredScriptNames,
+                                                       Map<String, Object> resolvedParams, VariableResolveOptions options) {
+        List<RuleVariable> pending = new ArrayList<>();
+        if (variables == null || variables.isEmpty()) {
+            return pending;
+        }
+        for (RuleVariable variable : variables) {
+            String scriptName = resolveScriptName(variable);
+            if (!shouldResolveVariable(variable, scriptName, requiredScriptNames)) {
+                continue;
+            }
+            if (!shouldRefreshVariable(variable, scriptName, resolvedParams, options)) {
+                continue;
+            }
+            pending.add(variable);
+        }
+        return pending;
+    }
+
+    private List<RuleModel> collectPendingModels(List<RuleModel> models, Set<String> requiredScriptNames,
+                                                 Map<String, Object> resolvedParams, VariableResolveOptions options) {
+        List<RuleModel> pending = new ArrayList<>();
+        if (ruleModelService == null || models == null || models.isEmpty()
+                || requiredScriptNames == null || requiredScriptNames.isEmpty()) {
+            return pending;
+        }
+        for (RuleModel model : models) {
+            String modelCode = trimToNull(model.getModelCode());
+            if (modelCode == null || !isModelRequired(modelCode, requiredScriptNames)) {
+                continue;
+            }
+            if (!shouldRefreshModel(modelCode, resolvedParams, options)) {
+                continue;
+            }
+            pending.add(model);
+        }
+        return pending;
+    }
+
+    private void resolveOneVariable(RuleVariable variable, String scriptName, Map<String, Object> resolvedParams,
+                                    VariableResolveOptions effectiveOptions,
+                                    Map<String, Map<String, Object>> apiResponseCache) {
+        if ("CONSTANT".equals(variable.getVarSource())) {
+            resolvedParams.put(scriptName, parseDefaultValue(variable));
+            return;
+        }
+        resolveOneSourceVariable(variable, scriptName, parseJsonMap(variable.getSourceConfig()),
+                resolvedParams, effectiveOptions, apiResponseCache);
     }
 
     private void resolveOneSourceVariable(RuleVariable variable, String scriptName, Map<String, Object> config,
@@ -131,28 +181,54 @@ public class VariableSourceResolver {
         }
     }
 
-    private boolean shouldResolveSourceVariable(RuleVariable variable, String scriptName, Set<String> requiredScriptNames) {
+    private boolean shouldResolveVariable(RuleVariable variable, String scriptName, Set<String> requiredScriptNames) {
         if (variable == null || variable.getStatus() == null || variable.getStatus() != 1 || !hasText(scriptName)) {
             return false;
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)) {
+        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource) && !"CONSTANT".equals(varSource)) {
             return false;
         }
         return requiredScriptNames == null || requiredScriptNames.isEmpty() || requiredScriptNames.contains(scriptName);
     }
 
-    private boolean hasUnresolvedSourceDependency(RuleVariable variable, Map<String, RuleVariable> variableMap,
-                                                  Map<String, Object> resolvedParams) {
-        String ownName = resolveScriptName(variable);
-        for (String dependency : collectVariableDependencies(variable)) {
-            RuleVariable dependencyVariable = variableMap.get(dependency);
-            if (dependencyVariable == null || dependency.equals(ownName)) {
+    private boolean shouldRefreshVariable(RuleVariable variable, String scriptName, Map<String, Object> resolvedParams,
+                                          VariableResolveOptions options) {
+        if (variable == null || scriptName == null) {
+            return false;
+        }
+        if (options != null && options.isForceRefreshSource()) {
+            return true;
+        }
+        Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
+        if (booleanValue(config.get("forceRefresh"))) {
+            return true;
+        }
+        return !resolvedParams.containsKey(scriptName);
+    }
+
+    private boolean hasUnresolvedResolvableDependency(String ownName, Set<String> dependencies,
+                                                      Map<String, RuleVariable> variableMap,
+                                                      Map<String, RuleModel> modelMap,
+                                                      Set<String> requiredScriptNames,
+                                                      Map<String, Object> resolvedParams,
+                                                      VariableResolveOptions options) {
+        for (String dependency : dependencies) {
+            if (!hasText(dependency) || dependency.equals(ownName)) {
                 continue;
             }
-            String dependencySource = dependencyVariable.getVarSource();
-            if (("API".equals(dependencySource) || "DB".equals(dependencySource) || "LIST".equals(dependencySource))
-                    && !resolvedParams.containsKey(dependency)) {
+            RuleVariable dependencyVariable = variableMap.get(dependency);
+            if (dependencyVariable != null) {
+                String scriptName = resolveScriptName(dependencyVariable);
+                if (shouldResolveVariable(dependencyVariable, scriptName, requiredScriptNames)
+                        && shouldRefreshVariable(dependencyVariable, scriptName, resolvedParams, options)) {
+                    return true;
+                }
+            }
+            RuleModel dependencyModel = findRequiredModel(dependency, modelMap);
+            String modelCode = dependencyModel == null ? null : trimToNull(dependencyModel.getModelCode());
+            if (modelCode != null && !modelCode.equals(ownName) && isModelRequired(modelCode, requiredScriptNames)
+                    && shouldRefreshModel(modelCode, resolvedParams, options)) {
                 return true;
             }
         }
@@ -168,6 +244,20 @@ public class VariableSourceResolver {
             String scriptName = resolveScriptName(variable);
             if (hasText(scriptName)) {
                 map.put(scriptName, variable);
+            }
+        }
+        return map;
+    }
+
+    private Map<String, RuleModel> buildModelMap(List<RuleModel> models) {
+        Map<String, RuleModel> map = new LinkedHashMap<>();
+        if (models == null) {
+            return map;
+        }
+        for (RuleModel model : models) {
+            String modelCode = trimToNull(model.getModelCode());
+            if (modelCode != null) {
+                map.put(modelCode, model);
             }
         }
         return map;
@@ -264,6 +354,18 @@ public class VariableSourceResolver {
         return names;
     }
 
+    private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams) {
+        RuleModel detail = loadModelDetail(model);
+        Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
+        Map<String, Object> modelResult = ruleModelService.execute(model.getId(), modelParams);
+        if (!modelSucceeded(modelResult)) {
+            throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
+        }
+        Object outputs = modelResult.get("outputs");
+        Object modelValue = outputs instanceof Map ? outputs : modelResult;
+        resolvedParams.put(modelCode, modelValue);
+    }
+
     private void collectDependencyValues(Object value, Set<String> dependencies) {
         if (value == null) {
             return;
@@ -317,35 +419,30 @@ public class VariableSourceResolver {
             }
             start = value.indexOf("${", end + 1);
         }
-        if (value.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*")) {
+        if (isReferencePathText(value)) {
             dependencies.add(value);
         }
     }
 
-    private void resolveModelVariables(List<RuleModel> models, Set<String> requiredScriptNames,
-                                       Map<String, Object> resolvedParams, VariableResolveOptions options) {
-        if (ruleModelService == null || models == null || models.isEmpty()
-                || requiredScriptNames == null || requiredScriptNames.isEmpty()) {
-            return;
+    private String pendingNames(List<RuleVariable> variables, List<RuleModel> models) {
+        List<String> names = new ArrayList<>();
+        if (variables != null) {
+            for (RuleVariable variable : variables) {
+                String scriptName = resolveScriptName(variable);
+                if (hasText(scriptName)) {
+                    names.add(scriptName);
+                }
+            }
         }
-        for (RuleModel model : models) {
-            String modelCode = trimToNull(model.getModelCode());
-            if (modelCode == null || !isModelRequired(modelCode, requiredScriptNames)) {
-                continue;
+        if (models != null) {
+            for (RuleModel model : models) {
+                String modelCode = trimToNull(model.getModelCode());
+                if (modelCode != null) {
+                    names.add(modelCode);
+                }
             }
-            if (!shouldRefreshModel(modelCode, resolvedParams, options)) {
-                continue;
-            }
-            RuleModel detail = loadModelDetail(model);
-            Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
-            Map<String, Object> modelResult = ruleModelService.execute(model.getId(), modelParams);
-            if (!modelSucceeded(modelResult)) {
-                throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
-            }
-            Object outputs = modelResult.get("outputs");
-            Object modelValue = outputs instanceof Map ? outputs : modelResult;
-            resolvedParams.put(modelCode, modelValue);
         }
+        return names.toString();
     }
 
     private boolean isModelRequired(String modelCode, Set<String> requiredScriptNames) {
@@ -777,6 +874,10 @@ public class VariableSourceResolver {
             if (text.contains("${")) {
                 return resolveTemplate(text, params);
             }
+            String path = trimToNull(text);
+            if (isReferencePathText(path) && containsPath(params, path)) {
+                return readPath(params, path);
+            }
             return parseJsonOrRaw(text);
         }
         if (value instanceof Map) {
@@ -892,6 +993,49 @@ public class VariableSourceResolver {
             }
         }
         return current;
+    }
+
+    private boolean containsPath(Object root, String path) {
+        if (root == null || !hasText(path)) {
+            return false;
+        }
+        String normalized = path.startsWith("$.") ? path.substring(2) : path;
+        Object current = root;
+        String[] parts = normalized.split("\\.");
+        for (String part : parts) {
+            if (current instanceof JSONObject) {
+                JSONObject object = (JSONObject) current;
+                if (!object.containsKey(part)) {
+                    return false;
+                }
+                current = object.get(part);
+            } else if (current instanceof Map) {
+                Map<?, ?> map = (Map<?, ?>) current;
+                if (!map.containsKey(part)) {
+                    return false;
+                }
+                current = map.get(part);
+            } else if (current instanceof List) {
+                Integer index = parseIndex(part);
+                if (index == null || index < 0 || index >= ((List<?>) current).size()) {
+                    return false;
+                }
+                current = ((List<?>) current).get(index);
+            } else if (current != null && current.getClass().isArray()) {
+                Integer index = parseIndex(part);
+                if (index == null || index < 0 || index >= Array.getLength(current)) {
+                    return false;
+                }
+                current = Array.get(current, index);
+            } else {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean isReferencePathText(String value) {
+        return value != null && value.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*");
     }
 
     private Integer parseIndex(String text) {

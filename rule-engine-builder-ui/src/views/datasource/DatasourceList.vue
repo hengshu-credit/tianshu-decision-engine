@@ -652,6 +652,7 @@ import {
 } from '@/api/datasource'
 import { listProjects } from '@/api/project'
 import { listDataObjects } from '@/api/dataObject'
+import { collectReferencePaths, setPathValue } from '@/utils/testParamTemplate'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 
@@ -884,9 +885,43 @@ export default {
     },
     handleInvokeApi(row) {
       this.invokeTarget = row
-      this.invokeParamsText = '{}'
+      this.invokeParamsText = this.buildApiInvokeParamTemplate(row)
       this.invokeResultText = ''
       this.invokeDialogVisible = true
+    },
+    buildApiInvokeParamTemplate(row) {
+      const sample = {}
+      const paths = []
+      const addPaths = value => {
+        collectReferencePaths(this.parseConfigForTemplate(value), { allowBarePath: false }).forEach(path => {
+          if (paths.indexOf(path) < 0) paths.push(path)
+        })
+      }
+
+      addPaths(row && row.headerConfig)
+      addPaths(row && row.queryConfig)
+      addPaths(row && row.requestMapping)
+      addPaths(row && row.bodyTemplate)
+
+      const authConfig = this.parseConfigForTemplate(row && row.authApiConfig)
+      if (authConfig && typeof authConfig === 'object') {
+        addPaths(authConfig.headers)
+        addPaths(authConfig.body)
+        addPaths(authConfig.query)
+        addPaths(authConfig.params)
+      }
+
+      paths.forEach(path => setPathValue(sample, path, ''))
+      return this.stringifyJson(sample)
+    },
+    parseConfigForTemplate(value) {
+      if (!value) return null
+      if (typeof value !== 'string') return value
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        return value
+      }
     },
     async runInvokeApi() {
       let params

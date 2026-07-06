@@ -7,7 +7,6 @@ import com.alibaba.qlexpress4.Express4Runner;
 import com.alibaba.qlexpress4.InitOptions;
 import com.alibaba.qlexpress4.QLOptions;
 import com.alibaba.qlexpress4.QLResult;
-import com.alibaba.qlexpress4.security.QLSecurityStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -26,7 +25,7 @@ public class QLExpressEngine {
     public QLExpressEngine() {
         this.runner = new Express4Runner(InitOptions.builder()
                 .traceExpression(true)
-                .securityStrategy(QLSecurityStrategy.isolation())
+                .securityStrategy(QLExpressScriptSecurity.standardFunctionWhitelist())
                 .build());
         AggregateBuiltinFunctionRegistry.register(this.runner);
     }

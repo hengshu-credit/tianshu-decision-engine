@@ -34,6 +34,19 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void apiVariableCanUseBareParamMappingFieldName() throws Exception {
+        RuleVariable variable = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"cust\":\"customerId\"},\"resultPath\":\"body.score\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
+
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("customerId", "C001"));
+
+        assertEquals(88, resolved.get("riskScore"));
+        assertEquals("C001", apiService.lastParams.get("cust"));
+    }
+
+    @Test
     public void apiVariablesShareSameResponseWithinOneResolve() throws Exception {
         RuleVariable scoreV1 = variable("hscreditScoreV1", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v1\"}");
@@ -134,6 +147,72 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void sourceVariableWaitsForRequiredModelOutput() throws Exception {
+        RuleVariable riskBand = variable("riskBand", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.score_f1.score\"},\"resultPath\":\"body.band\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("band", "A"));
+        SequencedModelService modelService = new SequencedModelService(
+                Collections.singletonList(model(100L, "score_f1")),
+                Collections.singletonMap(100L, modelDetail(100L, "score_f1")),
+                Collections.singletonMap(100L, singletonMap("score", 660)));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(riskBand),
+                apiService, new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false), modelService);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("riskBand")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals("A", resolved.get("riskBand"));
+        assertEquals(660, apiService.lastParams.get("score"));
+        assertEquals(Collections.singletonList("score_f1"), modelService.executeOrder);
+    }
+
+    @Test
+    public void modelDependencyExecutesBeforeDependentModel() throws Exception {
+        SequencedModelService modelService = new SequencedModelService(
+                Arrays.asList(model(200L, "final_model"), model(100L, "score_f1")),
+                mapOf(
+                        200L, modelDetail(200L, "final_model", input("upstreamScore", "score_f1.score")),
+                        100L, modelDetail(100L, "score_f1")
+                ),
+                mapOf(
+                        200L, singletonMap("finalScore", 760),
+                        100L, singletonMap("score", 660)
+                ));
+        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), modelService);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("final_model.finalScore")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(Arrays.asList("score_f1", "final_model"), modelService.executeOrder);
+        assertEquals(660, modelService.paramsByModelId.get(200L).get("upstreamScore"));
+        assertEquals(760, ((Map<?, ?>) resolved.get("final_model")).get("finalScore"));
+    }
+
+    @Test
+    public void apiVariableCanUseConstantDefaultAsMappedParam() throws Exception {
+        RuleVariable threshold = variable("riskThreshold", "CONSTANT", null);
+        threshold.setVarType("INTEGER");
+        threshold.setDefaultValue("700");
+        RuleVariable riskBand = variable("riskBand", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"threshold\":\"$.riskThreshold\"},\"resultPath\":\"body.band\"}");
+        FakeApiService apiService = new FakeApiService(responseBody("band", "A"));
+        VariableSourceResolver resolver = resolver(Arrays.asList(riskBand, threshold),
+                apiService, new FakeDbPools(Collections.emptyList()));
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("riskBand")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(700, resolved.get("riskThreshold"));
+        assertEquals(700, apiService.lastParams.get("threshold"));
+        assertEquals("A", resolved.get("riskBand"));
+    }
+
+    @Test
     public void dbVariableUsesPreparedParamsAndFirstColumnByDefault() throws Exception {
         RuleVariable variable = variable("riskScore", "DB",
                 "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[\"$.customerId\"],\"maxRows\":1}");
@@ -145,6 +224,19 @@ public class VariableSourceResolverTest {
 
         assertEquals(72, resolved.get("riskScore"));
         assertEquals(3L, dbPools.lastDatasourceId.longValue());
+        assertEquals(Collections.singletonList("C002"), dbPools.lastParams);
+    }
+
+    @Test
+    public void dbVariableCanUseBareParamFieldName() throws Exception {
+        RuleVariable variable = variable("riskScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t where id = ?\",\"params\":[\"customerId\"],\"maxRows\":1}");
+        FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("score", 72)));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()), dbPools);
+
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("customerId", "C002"));
+
+        assertEquals(72, resolved.get("riskScore"));
         assertEquals(Collections.singletonList("C002"), dbPools.lastParams);
     }
 
@@ -300,6 +392,35 @@ public class VariableSourceResolverTest {
         return map;
     }
 
+    private <K, V> Map<K, V> mapOf(K key1, V value1, K key2, V value2) {
+        Map<K, V> map = new LinkedHashMap<>();
+        map.put(key1, value1);
+        map.put(key2, value2);
+        return map;
+    }
+
+    private RuleModel model(Long id, String code) {
+        RuleModel model = new RuleModel();
+        model.setId(id);
+        model.setModelCode(code);
+        model.setStatus(1);
+        return model;
+    }
+
+    private RuleModel modelDetail(Long id, String code, RuleModelInputField... inputs) {
+        RuleModel model = model(id, code);
+        model.setInputFields(inputs == null ? Collections.emptyList() : Arrays.asList(inputs));
+        return model;
+    }
+
+    private RuleModelInputField input(String fieldName, String scriptName) {
+        RuleModelInputField input = new RuleModelInputField();
+        input.setFieldName(fieldName);
+        input.setScriptName(scriptName);
+        input.setStatus(1);
+        return input;
+    }
+
     private static class FakeVariableService extends RuleVariableService {
         private final List<RuleVariable> variables;
 
@@ -435,6 +556,42 @@ public class VariableSourceResolverTest {
             Map<String, Object> result = new LinkedHashMap<>();
             result.put("success", true);
             result.put("outputs", outputs);
+            return result;
+        }
+    }
+
+    private static class SequencedModelService extends RuleModelService {
+        private final List<RuleModel> models;
+        private final Map<Long, RuleModel> details;
+        private final Map<Long, Map<String, Object>> outputs;
+        private final List<String> executeOrder = new java.util.ArrayList<>();
+        private final Map<Long, Map<String, Object>> paramsByModelId = new LinkedHashMap<>();
+
+        private SequencedModelService(List<RuleModel> models, Map<Long, RuleModel> details,
+                                      Map<Long, Map<String, Object>> outputs) {
+            this.models = models;
+            this.details = details;
+            this.outputs = outputs;
+        }
+
+        @Override
+        public List<RuleModel> listByProject(Long projectId) {
+            return models;
+        }
+
+        @Override
+        public RuleModel getDetail(Long modelId) {
+            return details.get(modelId);
+        }
+
+        @Override
+        public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+            RuleModel detail = details.get(modelId);
+            executeOrder.add(detail == null ? String.valueOf(modelId) : detail.getModelCode());
+            paramsByModelId.put(modelId, params);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("outputs", outputs.get(modelId));
             return result;
         }
     }

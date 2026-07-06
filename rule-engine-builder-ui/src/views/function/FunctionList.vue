@@ -91,8 +91,9 @@
           <el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="190" align="center">
+      <el-table-column label="操作" width="230" align="center">
         <template slot-scope="{ row }">
+          <el-button type="text" size="small" @click="handleTestFunction(row)">测试</el-button>
           <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button type="text" size="small" @click="openVersionDialog(row)">版本</el-button>
           <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
@@ -176,6 +177,22 @@
       </template>
     </el-dialog>
 
+    <el-dialog title="函数测试" :visible.sync="functionTestVisible" width="760px" append-to-body>
+      <div class="function-test-target">当前函数：{{ functionTestTarget.funcName }} / {{ functionTestTarget.funcCode }}</div>
+      <el-form label-width="90px" size="small">
+        <el-form-item label="测试入参">
+          <monaco-editor v-model="functionTestParamsText" language="json" height="220px" />
+        </el-form-item>
+        <el-form-item label="执行结果">
+          <monaco-editor v-model="functionTestResultText" language="json" height="220px" read-only />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="functionTestVisible = false">关闭</el-button>
+        <el-button size="small" type="primary" :loading="functionTesting" @click="doTestFunction">执行测试</el-button>
+      </div>
+    </el-dialog>
+
     <el-dialog title="函数版本管理" :visible.sync="versionVisible" width="900px" append-to-body>
       <el-table :data="versionList" border size="mini" style="width:100%;">
         <el-table-column prop="version" label="版本" width="80" align="center" />
@@ -201,10 +218,11 @@
 </template>
 
 <script>
-import { createFunction, updateFunction, deleteFunction, listFunctions, listVersions, compareVersions, rollbackVersion } from '@/api/function'
+import { createFunction, updateFunction, deleteFunction, listFunctions, listVersions, compareVersions, rollbackVersion, testFunction } from '@/api/function'
 import { listProjects } from '@/api/project'
 import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
@@ -237,6 +255,11 @@ export default {
       filteredFuncLabels: [],
       editForm: { funcCode: '', funcName: '', description: '', returnType: 'STRING', implType: 'SCRIPT', implScript: '', implClass: '', implMethod: '', implBeanName: '', status: 1 },
       editParams: [],
+      functionTestVisible: false,
+      functionTesting: false,
+      functionTestTarget: {},
+      functionTestParamsText: '{}',
+      functionTestResultText: '',
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
       // 测试期望的别名属性
       functions: [], // 与 funcList 同步
@@ -366,6 +389,40 @@ export default {
       if (this.editParams.length === 0) this.editParams = [{ name: '', type: 'STRING', label: '' }]
       this.dialogVisible = true
     },
+    handleTestFunction(row) {
+      this.functionTestTarget = row || {}
+      this.functionTestParamsText = this.buildFunctionTestParamsTemplate(row)
+      this.functionTestResultText = ''
+      this.functionTestVisible = true
+    },
+    buildFunctionTestParamsTemplate(row) {
+      const params = this.parseParams(row && row.paramsJson)
+      const sample = {}
+      params.forEach(item => {
+        if (item && item.name) sample[item.name] = sampleValueForVarType(item.type)
+      })
+      return JSON.stringify(sample, null, 2)
+    },
+    async doTestFunction() {
+      if (!this.functionTestTarget || !this.functionTestTarget.id) return
+      let params
+      try {
+        params = this.functionTestParamsText ? JSON.parse(this.functionTestParamsText) : {}
+      } catch (e) {
+        this.$message.error('测试入参不是合法 JSON')
+        return
+      }
+      this.functionTesting = true
+      try {
+        const res = await testFunction(this.functionTestTarget.id, params)
+        this.functionTestResultText = JSON.stringify((res && res.data) || res || {}, null, 2)
+        this.$message.success('测试完成')
+      } catch (e) {
+        this.functionTestResultText = JSON.stringify({ success: false, errorMessage: e.message || '测试失败' }, null, 2)
+      } finally {
+        this.functionTesting = false
+      }
+    },
     onScopeChange(val) {
       if (val === 'GLOBAL') {
         this.editForm.projectId = 0
@@ -449,6 +506,7 @@ export default {
 .uiue-list-page { padding: 16px; }
 .linkage-hint { font-size: 13px; color: #909399; margin-bottom: 12px; background: #fafafa; padding: 8px 12px; border-radius: 4px; }
 .mono-input ::v-deep textarea { font-family: 'Consolas', 'Monaco', monospace; font-size: 13px; }
+.function-test-target { margin-bottom: 12px; color: #606266; font-size: 13px; }
 .version-compare { margin-top: 10px; display: flex; align-items: center; gap: 10px; }
 .version-compare-title { font-weight: 600; color: #303133; }
 .version-preview { margin-top: 10px; padding: 10px; max-height: 320px; overflow: auto; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 4px; font-size: 12px; line-height: 1.5; }

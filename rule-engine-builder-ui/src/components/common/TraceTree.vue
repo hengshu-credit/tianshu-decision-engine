@@ -267,6 +267,73 @@
         </table>
       </div>
 
+      <!-- ========== 规则集追踪：一行一规则，规则之间独立展示 ========== -->
+      <div v-else-if="effectiveType === 'RULE_SET'" class="mv-ruleset">
+        <div class="rs-trace-summary" :class="{ 'is-empty': ruleSetHitRows.length === 0 }">
+          <span class="rs-summary-label">命中规则</span>
+          <template v-if="ruleSetHitRows.length">
+            <span v-for="row in ruleSetHitRows" :key="row.key" class="rs-hit-pill">
+              {{ row.ruleCode }} {{ row.ruleName }}
+            </span>
+          </template>
+          <span v-else class="rs-summary-empty">无命中</span>
+        </div>
+        <table class="rt-table rs-table">
+          <thead><tr>
+            <th>规则</th>
+            <th>条件明细</th>
+            <th>动作</th>
+            <th>状态</th>
+          </tr></thead>
+          <tbody>
+            <tr
+              v-for="row in ruleSetRows"
+              :key="row.key"
+              :class="{ 'rt-hit': row.hit, 'rs-row-skipped': row.status === 'skipped' }"
+            >
+              <td class="rs-rule-cell">
+                <div class="rs-rule-code">{{ row.ruleCode }}</div>
+                <div class="rs-rule-name">{{ row.ruleName }}</div>
+                <div class="rs-rule-meta">优先级 {{ row.priority }} / 顺序 {{ row.order }}</div>
+              </td>
+              <td class="rs-cond-cell">
+                <div v-if="row.conditions.length" class="rs-cond-tree">
+                  <template v-for="(item, idx) in row.conditions">
+                    <div v-if="item.kind === 'join'" :key="row.key + '-join-' + idx" class="rs-cond-join">{{ item.text }}</div>
+                    <div v-else :key="row.key + '-cond-' + idx" class="rs-cond-line" :class="{ 'is-pass': item.result === true, 'is-fail': item.result === false }">
+                      <div class="rs-cond-var">
+                        <code>{{ item.varCode }}</code>
+                        <span>{{ item.varName }}</span>
+                      </div>
+                      <span class="rs-cond-part">实际值 <strong>{{ item.actualText }}</strong></span>
+                      <span class="rs-cond-op">{{ item.operatorText }}</span>
+                      <span class="rs-cond-part">阈值 <strong>{{ item.thresholdText }}</strong></span>
+                      <span class="rs-cond-result" :class="{ 'is-pass': item.result === true, 'is-fail': item.result === false, 'is-skip': item.result === null }">
+                        {{ item.result === true ? '满足' : item.result === false ? '不满足' : '未执行' }}
+                      </span>
+                    </div>
+                  </template>
+                </div>
+                <span v-else>-</span>
+              </td>
+              <td class="rs-action-cell">
+                <div v-if="row.actions.length" class="rs-action-list">
+                  <div v-for="(action, ai) in row.actions" :key="row.key + '-act-' + ai" class="rs-action-line">
+                    <code>{{ action.targetCode }}</code>
+                    <span>{{ action.targetName }}</span>
+                    <strong>= {{ action.valueText }}</strong>
+                  </div>
+                </div>
+                <span v-else>-</span>
+              </td>
+              <td class="rs-status-cell">
+                <span class="rs-status" :class="'rs-status--' + row.status">{{ row.statusText }}</span>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
       <!-- ========== 默认：表达式追踪树 ========== -->
       <template v-else>
         <div class="t-sec" v-if="usedVariables.length > 0">
@@ -279,15 +346,35 @@
           </div>
         </div>
         <div class="t-sec">
-          <div class="t-hd">
-            求值过程
+          <div class="t-hd t-hd--process">
+            <span>求值过程</span>
+            <span v-if="rootTreeItems.length > 1" class="trace-count">{{ rootTreeItems.length }} 个步骤</span>
             <el-button class="fullscreen-btn" type="text" size="mini" @click="fullscreen = true">
               <i class="el-icon-full-screen"></i> 全屏查看
             </el-button>
           </div>
-          <div class="tree-viewport">
-            <div class="tree-canvas">
-              <trace-node v-for="(nd, i) in rootNodes" :key="i" :node="nd" :var-map="varMap" />
+          <div class="trace-step-list">
+            <div
+              v-for="item in rootTreeItems"
+              :key="item.key"
+              class="trace-step"
+              :class="item.statusClass"
+            >
+              <div class="trace-step-index">{{ item.indexText }}</div>
+              <div class="trace-step-main">
+                <div class="trace-step-head">
+                  <div>
+                    <div class="trace-step-title">{{ item.title }}</div>
+                    <div v-if="item.subtitle" class="trace-step-subtitle">{{ item.subtitle }}</div>
+                  </div>
+                  <span v-if="item.resultText" class="trace-step-result" :class="item.resultClass">{{ item.resultText }}</span>
+                </div>
+                <div class="tree-viewport">
+                  <div class="tree-canvas">
+                    <trace-node :node="item.node" :var-map="varMap" />
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -298,8 +385,29 @@
               <el-button type="text" class="fs-close" @click="fullscreen = false"><i class="el-icon-close"></i></el-button>
             </div>
             <div class="fs-body">
-              <div class="tree-canvas">
-                <trace-node v-for="(nd, i) in rootNodes" :key="i" :node="nd" :var-map="varMap" />
+              <div class="trace-step-list trace-step-list--fullscreen">
+                <div
+                  v-for="item in rootTreeItems"
+                  :key="'fs-' + item.key"
+                  class="trace-step"
+                  :class="item.statusClass"
+                >
+                  <div class="trace-step-index">{{ item.indexText }}</div>
+                  <div class="trace-step-main">
+                    <div class="trace-step-head">
+                      <div>
+                        <div class="trace-step-title">{{ item.title }}</div>
+                        <div v-if="item.subtitle" class="trace-step-subtitle">{{ item.subtitle }}</div>
+                      </div>
+                      <span v-if="item.resultText" class="trace-step-result" :class="item.resultClass">{{ item.resultText }}</span>
+                    </div>
+                    <div class="tree-viewport">
+                      <div class="tree-canvas">
+                        <trace-node :node="item.node" :var-map="varMap" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -372,13 +480,17 @@ export default {
     document.removeEventListener('keydown', this._onEsc)
   },
   computed: {
-    traceData: function () {
+    rawTraceData: function () {
       if (!this.traceInfo) return null
       try {
-        var d = JSON.parse(this.traceInfo)
-        while (Array.isArray(d) && d.length > 0 && Array.isArray(d[0])) d = d.flat()
-        return d
+        return JSON.parse(this.traceInfo)
       } catch (e) { return null }
+    },
+    traceData: function () {
+      var d = this.rawTraceData
+      if (!d) return null
+      while (Array.isArray(d) && d.length > 0 && Array.isArray(d[0])) d = d.flat()
+      return d
     },
     hasTraceData: function () {
       return this.traceData && (Array.isArray(this.traceData) ? this.traceData.length > 0 : true)
@@ -401,6 +513,27 @@ export default {
       if (nodes.length === 1 && nodes[0] && nodes[0].type === 'BLOCK' && nodes[0].children) nodes = nodes[0].children
       if (nodes.length === 1 && nodes[0] && nodes[0].type === 'STATEMENT' && nodes[0].children) nodes = nodes[0].children
       return nodes.filter(function (n) { return n && typeof n === 'object' })
+    },
+    rootTreeItems: function () {
+      var self = this
+      return this.rootNodes.map(function (node, idx) {
+        var value = self._nodeResultValue(node)
+        var evaluated = node && node.evaluated !== false
+        return {
+          key: idx + '-' + (node.type || 'node') + '-' + (node.token || ''),
+          node: node,
+          indexText: String(idx + 1),
+          title: self._traceNodeTitle(node),
+          subtitle: self._traceNodeSubtitle(node),
+          resultText: evaluated && value !== undefined ? self.fmtVal(value) : (evaluated ? '' : '未执行'),
+          resultClass: self.valCls(value),
+          statusClass: {
+            'is-false': value === false,
+            'is-true': value === true,
+            'is-skipped': !evaluated
+          }
+        }
+      })
     },
     /** 解析后的输入参数 */
     parsedInput: function () {
@@ -460,6 +593,75 @@ export default {
         var val = self.getInputValue(c)
         return val !== undefined ? label + ' = ' + val : label
       }).join(' + ')
+    },
+    ruleSetModelRules: function () {
+      var m = this.definitionModel
+      var rules = m && Array.isArray(m.rules) ? m.rules : []
+      var list = []
+      for (var i = 0; i < rules.length; i++) {
+        var rule = rules[i]
+        if (!rule) continue
+        if (rule.enabled === false || rule.status === 0) continue
+        list.push(Object.assign({ _originOrder: i + 1 }, rule))
+      }
+      list.sort(function (a, b) {
+        var pa = a.priority === undefined || a.priority === null ? 1 : Number(a.priority)
+        var pb = b.priority === undefined || b.priority === null ? 1 : Number(b.priority)
+        if (pb !== pa) return pb - pa
+        return (a._originOrder || 0) - (b._originOrder || 0)
+      })
+      return list
+    },
+    ruleSetIfNodes: function () {
+      var stmts = this._getStatements()
+      var nodes = []
+      for (var i = 0; i < stmts.length; i++) {
+        if (stmts[i] && stmts[i].type === 'IF') nodes.push(stmts[i])
+      }
+      return nodes
+    },
+    ruleSetRows: function () {
+      var rules = this.ruleSetModelRules
+      var rows = []
+      for (var i = 0; i < rules.length; i++) {
+        var rule = rules[i]
+        var ifNode = this.ruleSetIfNodes[i] || null
+        var status = this._ruleSetRowStatus(ifNode)
+        var ruleCode = rule.ruleCode || ('R' + String(i + 1).padStart(4, '0'))
+        rows.push({
+          key: ruleCode + '-' + i,
+          ruleCode: ruleCode,
+          ruleName: rule.ruleName || ruleCode,
+          priority: rule.priority === undefined || rule.priority === null ? 1 : rule.priority,
+          order: rule._originOrder || i + 1,
+          status: status,
+          statusText: status === 'hit' ? '命中' : status === 'skipped' ? '跳过' : '未命中',
+          hit: status === 'hit',
+          conditions: this._buildRuleSetConditionItems(rule.conditionRoot, this._ruleSetConditionNode(ifNode)),
+          actions: this._buildRuleSetActionItems(rule.actionData)
+        })
+      }
+      return rows
+    },
+    ruleSetHitRows: function () {
+      var result = []
+      for (var i = 0; i < this.ruleSetRows.length; i++) {
+        if (this.ruleSetRows[i].hit) result.push(this.ruleSetRows[i])
+      }
+      if (result.length > 0) return result
+      var po = this.parsedOutput
+      if (!Array.isArray(po)) return []
+      for (var j = 0; j < po.length; j++) {
+        var hit = po[j]
+        if (hit && hit.ruleCode) {
+          result.push({
+            key: 'output-' + j + '-' + hit.ruleCode,
+            ruleCode: hit.ruleCode,
+            ruleName: hit.ruleName || hit.ruleCode
+          })
+        }
+      }
+      return result
     },
 
     // ─── 评分卡 ───
@@ -955,7 +1157,15 @@ export default {
     },
     finalResult: function () {
       if (!this.rootNodes || this.rootNodes.length === 0) return undefined
-      return this.rootNodes[this.rootNodes.length - 1].value
+      var po = this.parsedOutput
+      if (po !== null && po !== undefined && !this._isTraceJsonRefStub(po)) return po
+      var value = this.rootNodes[this.rootNodes.length - 1].value
+      if (this._isTraceJsonRefStub(value)) {
+        var resolved = this._resolveTraceRef(value.$ref)
+        if (resolved !== undefined && !this._isTraceJsonRefStub(resolved)) return resolved
+        return undefined
+      }
+      return value
     },
     finalText: function () { return this.fmtVal(this.finalResult) },
     finalCls: function () {
@@ -1072,10 +1282,59 @@ export default {
       return order
     },
     _onEsc: function (e) { if (e.keyCode === 27) this.fullscreen = false },
+    _nodeResultValue: function (node) {
+      if (!node || node.value === undefined) return undefined
+      if (this._isTraceJsonRefStub(node.value)) {
+        var resolved = this._resolveTraceRef(node.value.$ref)
+        return resolved === undefined ? undefined : resolved
+      }
+      return node.value
+    },
+    _traceNodeTitle: function (node) {
+      if (!node) return '表达式'
+      if (node.type === 'OPERATOR') {
+        if (node.token === '=') {
+          var target = node.children && node.children[0] && node.children[0].token
+          return '赋值：' + (this.varMap[target] || target || '变量')
+        }
+        return (OP_CN[node.token] || node.token || '运算') + ' 运算'
+      }
+      if (node.type === 'IF') return '条件判断'
+      if (node.type === 'FUNCTION' || node.type === 'METHOD') return '调用函数：' + this.funcDisplayName(node.token)
+      if (node.type === 'VARIABLE') return this.varMap[node.token] || node.token || '变量'
+      if (node.type === 'VALUE' || node.type === 'PRIMARY') return '常量值'
+      return node.token || node.type || '表达式'
+    },
+    _traceNodeSubtitle: function (node) {
+      if (!node) return ''
+      if (node.type === 'OPERATOR' && node.token === '=') {
+        var rhs = node.children && node.children[1]
+        if (rhs) return this._formatExprReadable(rhs)
+      }
+      if (node.type === 'IF') return '按条件结果选择执行分支'
+      return ''
+    },
+    _resolveTraceRef: function (path) {
+      if (!path || path.charAt(0) !== '$') return undefined
+      var cur = this.rawTraceData
+      var re = /(?:\[(\d+)\])|(?:\.([A-Za-z_$][\w$]*))/g
+      var m
+      while ((m = re.exec(path)) !== null) {
+        if (cur === null || cur === undefined) return undefined
+        if (m[1] !== undefined) cur = cur[Number(m[1])]
+        else cur = cur[m[2]]
+      }
+      return cur
+    },
     fmtVal: function (v) {
       if (v === true) return '真'
       if (v === false) return '假'
       if (v === null || v === undefined) return '空'
+      if (this._isTraceJsonRefStub(v)) {
+        var resolved = this._resolveTraceRef(v.$ref)
+        if (resolved !== undefined && !this._isTraceJsonRefStub(resolved)) return this.fmtVal(resolved)
+        return '空'
+      }
       if (typeof v === 'object') {
         try { return JSON.stringify(v) } catch (e) { return String(v) }
       }
@@ -1221,6 +1480,262 @@ export default {
       }
       walk(block)
       return acts
+    },
+    _ruleSetConditionNode: function (ifNode) {
+      if (!ifNode || !ifNode.children) return null
+      var cond = ifNode.children[0]
+      if (cond && cond.type === 'OPERATOR' && cond.token === '&&' && cond.children && cond.children.length === 2) {
+        var left = cond.children[0]
+        if (this._ruleSetIsMatchedGuard(left)) return cond.children[1]
+      }
+      return cond || null
+    },
+    _ruleSetIsMatchedGuard: function (node) {
+      if (!node) return false
+      if (node.type === 'OPERATOR' && node.token === '!' && node.children && node.children[0]) {
+        return node.children[0].token === '_ruleSetMatched'
+      }
+      return node.token === '_ruleSetMatched'
+    },
+    _ruleSetRowStatus: function (ifNode) {
+      if (!ifNode) return 'skipped'
+      if (this._ruleSetHasEvaluatedHitAssign(ifNode.children && ifNode.children[1])) return 'hit'
+      var cond = this._ruleSetConditionNode(ifNode)
+      if (!cond || cond.evaluated === false || cond.value === undefined) return 'skipped'
+      return cond.value === true ? 'hit' : 'miss'
+    },
+    _ruleSetHasEvaluatedHitAssign: function (node) {
+      var hit = false
+      var walk = function (n) {
+        if (!n || hit) return
+        if (n.type === 'OPERATOR' && n.token === '=' && n.evaluated !== false) {
+          var ch = n.children || []
+          if (ch[0] && ch[0].token === '_ruleSetHit') hit = true
+          return
+        }
+        if (n.children) {
+          for (var i = 0; i < n.children.length; i++) walk(n.children[i])
+        }
+      }
+      walk(node)
+      return hit
+    },
+    _buildRuleSetConditionItems: function (root, traceNode) {
+      if (!root || !root.children || root.children.length === 0) return []
+      var items = []
+      this._appendRuleSetConditionItems(root, traceNode, items)
+      return items
+    },
+    _appendRuleSetConditionItems: function (node, traceNode, items) {
+      if (!node) return
+      if (node.type === 'group') {
+        var children = node.children || []
+        for (var i = 0; i < children.length; i++) {
+          if (i > 0) items.push({ kind: 'join', text: node.op === 'OR' ? '或' : '且' })
+          this._appendRuleSetConditionItems(children[i], traceNode, items)
+        }
+        return
+      }
+      if (node.type !== 'leaf') return
+      items.push(this._buildRuleSetConditionLeaf(node, traceNode))
+    },
+    _buildRuleSetConditionLeaf: function (leaf, traceNode) {
+      var actual = this._actualFromTraceOrInput(leaf.varCode, traceNode)
+      var matched = this._findRuleSetConditionTrace(leaf, traceNode)
+      var result = matched && matched.value !== undefined ? this._ruleSetConditionTraceResult(leaf.operator, matched.value) : null
+      if (result === null && actual !== undefined) result = this._evalRuleSetLeaf(leaf, actual)
+      return {
+        kind: 'condition',
+        varCode: leaf.varCode || '?',
+        varName: this._ruleSetVarName(leaf),
+        actualText: actual === undefined ? '未取值' : this.fmtVal(actual),
+        operatorText: this._ruleSetOperatorText(leaf.operator, leaf.varType),
+        thresholdText: this._ruleSetThresholdText(leaf),
+        result: result
+      }
+    },
+    _actualFromTraceOrInput: function (varCode, traceNode) {
+      var fromTrace = this._findTraceVariableValue(traceNode, varCode)
+      if (fromTrace !== undefined) return fromTrace
+      return this.getInputValue(varCode)
+    },
+    _findTraceVariableValue: function (node, varCode) {
+      if (!node || !varCode) return undefined
+      if (node.type === 'VARIABLE' && node.token === varCode && node.value !== undefined) return node.value
+      if (node.children) {
+        for (var i = 0; i < node.children.length; i++) {
+          var v = this._findTraceVariableValue(node.children[i], varCode)
+          if (v !== undefined) return v
+        }
+      }
+      return undefined
+    },
+    _findRuleSetConditionTrace: function (leaf, traceNode) {
+      if (!leaf || !traceNode) return null
+      var direct = this._findBinaryConditionTrace(traceNode, leaf.varCode, leaf.operator)
+      if (direct) return direct
+      return this._findFunctionConditionTrace(traceNode, leaf.varCode, leaf.operator)
+    },
+    _findBinaryConditionTrace: function (node, varCode, operator) {
+      if (!node) return null
+      var op = this._ruleSetTraceOperator(operator)
+      if (node.type === 'OPERATOR' && node.token === op && node.children && node.children.length >= 1) {
+        var left = node.children[0]
+        if (left && left.token === varCode) return node
+      }
+      if (node.children) {
+        for (var i = 0; i < node.children.length; i++) {
+          var found = this._findBinaryConditionTrace(node.children[i], varCode, operator)
+          if (found) return found
+        }
+      }
+      return null
+    },
+    _findFunctionConditionTrace: function (node, varCode, operator) {
+      if (!node) return null
+      var func = this._ruleSetTraceFunction(operator)
+      if (func && (node.type === 'FUNCTION' || node.type === 'METHOD') && node.token === func && node.children && node.children[0] && node.children[0].token === varCode) {
+        return node
+      }
+      if (node.children) {
+        for (var i = 0; i < node.children.length; i++) {
+          var found = this._findFunctionConditionTrace(node.children[i], varCode, operator)
+          if (found) return found
+        }
+      }
+      return null
+    },
+    _ruleSetTraceOperator: function (operator) {
+      if (operator === 'is_null' || operator === 'is_true' || operator === 'is_false') return '=='
+      if (operator === 'not_null') return '!='
+      return operator || '=='
+    },
+    _ruleSetConditionTraceResult: function (operator, value) {
+      var result = value === true
+      if (operator === 'not_contains' || operator === 'not_starts_with' || operator === 'not_ends_with' || operator === 'not_has_key') {
+        return !result
+      }
+      return result
+    },
+    _ruleSetTraceFunction: function (operator) {
+      var map = {
+        is_empty: 'isBlank',
+        not_empty: 'isNotBlank',
+        contains: 'containsValue',
+        not_contains: 'containsValue',
+        starts_with: 'startsWithValue',
+        not_starts_with: 'startsWithValue',
+        ends_with: 'endsWithValue',
+        not_ends_with: 'endsWithValue',
+        contains_any: 'containsAnyValue',
+        contains_all: 'containsAllValues',
+        has_key: 'hasKey',
+        not_has_key: 'hasKey'
+      }
+      return map[operator] || ''
+    },
+    _ruleSetVarName: function (leaf) {
+      var code = leaf && leaf.varCode ? leaf.varCode : ''
+      var label = leaf && leaf.varLabel ? leaf.varLabel : (this.varMap[code] || '')
+      if (!label) return code || '?'
+      var text = String(label).replace(new RegExp('\\s*' + this._escapeRegExp(code) + '$'), '').trim()
+      return text || label || code || '?'
+    },
+    _ruleSetThresholdText: function (leaf) {
+      var op = leaf && leaf.operator
+      if (op === '*' || op === 'is_null' || op === 'not_null' || op === 'is_empty' || op === 'not_empty' || op === 'is_true' || op === 'is_false') {
+        return this._ruleSetOperatorText(op, leaf && leaf.varType)
+      }
+      if (leaf && leaf.valueKind === 'VAR') {
+        var label = leaf.rightVarLabel || this.varMap[leaf.value] || leaf.value || '?'
+        var val = this.getInputValue(leaf.value)
+        return label + (val !== undefined ? ' = ' + this.fmtVal(val) : '')
+      }
+      return this.fmtVal(leaf ? leaf.value : '')
+    },
+    _ruleSetOperatorText: function (operator) {
+      var map = {
+        '==': '等于',
+        '!=': '不等于',
+        '>': '大于',
+        '>=': '大于等于',
+        '<': '小于',
+        '<=': '小于等于',
+        '*': '任意',
+        is_null: '为空',
+        not_null: '不为空',
+        is_empty: '为空',
+        not_empty: '非空',
+        is_true: '为真',
+        is_false: '为假',
+        contains: '包含',
+        not_contains: '不包含',
+        starts_with: '以...开头',
+        not_starts_with: '不以...开头',
+        ends_with: '以...结尾',
+        not_ends_with: '不以...结尾',
+        in: '在列表中',
+        not_in: '不在列表中',
+        between: '介于',
+        not_between: '不介于',
+        contains_any: '包含任一',
+        contains_all: '包含全部',
+        has_key: '包含键',
+        not_has_key: '不包含键'
+      }
+      return map[operator] || operator || '等于'
+    },
+    _evalRuleSetLeaf: function (leaf, actual) {
+      var op = leaf.operator || '=='
+      var raw = leaf.valueKind === 'VAR' ? this.getInputValue(leaf.value) : leaf.value
+      if (op === '*') return true
+      if (op === 'is_null') return actual === null || actual === undefined
+      if (op === 'not_null') return !(actual === null || actual === undefined)
+      if (op === 'is_empty') return actual === null || actual === undefined || actual === '' || (Array.isArray(actual) && actual.length === 0)
+      if (op === 'not_empty') return !(actual === null || actual === undefined || actual === '' || (Array.isArray(actual) && actual.length === 0))
+      if (op === 'is_true') return actual === true || actual === 'true'
+      if (op === 'is_false') return actual === false || actual === 'false'
+      if (raw === undefined || raw === null || raw === '') return null
+      var av = this._coerceCompareValue(actual)
+      var bv = this._coerceCompareValue(raw)
+      if (op === '==') return av == bv
+      if (op === '!=') return av != bv
+      if (op === '>') return Number(av) > Number(bv)
+      if (op === '>=') return Number(av) >= Number(bv)
+      if (op === '<') return Number(av) < Number(bv)
+      if (op === '<=') return Number(av) <= Number(bv)
+      if (op === 'contains') return String(actual).indexOf(String(raw)) !== -1
+      if (op === 'not_contains') return String(actual).indexOf(String(raw)) === -1
+      return null
+    },
+    _coerceCompareValue: function (v) {
+      if (v === true || v === 'true') return true
+      if (v === false || v === 'false') return false
+      if (v !== null && v !== undefined && v !== '' && !isNaN(Number(v))) return Number(v)
+      return v
+    },
+    _buildRuleSetActionItems: function (actionData) {
+      var actions = Array.isArray(actionData) ? actionData : []
+      var result = []
+      for (var i = 0; i < actions.length; i++) {
+        var a = actions[i]
+        if (!a || a.type !== 'assign') continue
+        result.push({
+          targetCode: a.target || '?',
+          targetName: this._actionTargetName(a),
+          valueText: this._displayVal(a.value)
+        })
+      }
+      return result
+    },
+    _actionTargetName: function (action) {
+      var code = action && action.target ? action.target : ''
+      var label = this.varMap[code] || action.varLabel || ''
+      if (!label) return code || '?'
+      return String(label).replace(new RegExp('\\s*' + this._escapeRegExp(code) + '$'), '').trim() || label
+    },
+    _escapeRegExp: function (s) {
+      return String(s || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     },
 
     // ─── 评分卡解析 ───
@@ -2213,22 +2728,120 @@ export default {
 .trace-wrap { font-size: 13px; color: #303133; line-height: 1.5; }
 
 /* ── 区块（默认视图） ── */
-.t-sec { padding: 14px 0; }
+.t-sec { padding: 16px 0; }
 .t-sec + .t-sec { border-top: 1px solid #EBEEF5; }
-.t-hd { font-size: 12px; color: #909399; margin-bottom: 10px; font-weight: 500; letter-spacing: 0.5px; }
+.t-hd { font-size: 12px; color: #909399; margin-bottom: 12px; font-weight: 600; }
+.t-hd--process { display: flex; align-items: center; gap: 8px; min-height: 24px; }
+.trace-count {
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #F2F6FC;
+  color: #606266;
+  font-size: 11px;
+  font-weight: 500;
+}
 .var-list { display: flex; flex-wrap: wrap; gap: 8px; }
-.var-tag { display: inline-flex; align-items: center; height: 28px; padding: 0 10px; background: #F2F6FC; border: 1px solid #EBEEF5; border-radius: 4px; font-size: 12px; gap: 4px; }
+.var-tag { display: inline-flex; align-items: center; min-height: 30px; padding: 0 10px; background: #F6F8FB; border: 1px solid #E4E7ED; border-radius: 6px; font-size: 12px; gap: 6px; }
 .var-k { color: #606266; }
 .var-v { font-weight: 600; }
 .var-v.is-true { color: #67C23A; } .var-v.is-false { color: #F76E6C; } .var-v.is-val { color: #409EFF; }
-.tree-viewport { overflow-x: auto; padding: 8px 0 16px; }
+.trace-step-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.trace-step {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
+  align-items: stretch;
+}
+.trace-step-index {
+  width: 32px;
+  height: 32px;
+  margin-top: 10px;
+  border-radius: 50%;
+  background: #ECF5FF;
+  border: 1px solid #B3D8FF;
+  color: #1677D2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+.trace-step.is-true .trace-step-index {
+  background: #F0F9EB;
+  border-color: #C2E7B0;
+  color: #529B2E;
+}
+.trace-step.is-false .trace-step-index {
+  background: #FEF0F0;
+  border-color: #FBC4C4;
+  color: #C45656;
+}
+.trace-step.is-skipped .trace-step-index {
+  background: #F4F4F5;
+  border-color: #DCDFE6;
+  color: #909399;
+}
+.trace-step-main {
+  min-width: 0;
+  border: 1px solid #E4E7ED;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+.trace-step-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #EEF2F7;
+  background: #FAFBFC;
+}
+.trace-step-title {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 600;
+}
+.trace-step-subtitle {
+  margin-top: 2px;
+  color: #909399;
+  font-size: 12px;
+  word-break: break-all;
+}
+.trace-step-result {
+  max-width: 45%;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #F2F6FC;
+  color: #409EFF;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  white-space: normal;
+  word-break: break-word;
+  text-align: right;
+}
+.trace-step-result.is-true {
+  background: #F0F9EB;
+  color: #529B2E;
+}
+.trace-step-result.is-false {
+  background: #FEF0F0;
+  color: #C45656;
+}
+.tree-viewport { overflow-x: auto; padding: 18px 14px 20px; }
 .tree-canvas { display: inline-flex; justify-content: center; min-width: 100%; }
 .t-sec--result { display: flex; align-items: center; gap: 10px; }
 .result-label { font-size: 12px; color: #909399; flex-shrink: 0; }
-.result-val { font-size: 15px; font-weight: 600; }
+.result-val { font-size: 15px; font-weight: 600; word-break: break-word; min-width: 0; }
 .result-val.is-true { color: #67C23A; } .result-val.is-false { color: #F76E6C; } .result-val.is-val { color: #409EFF; }
 .t-empty { text-align: center; padding: 36px 0; color: #C0C4CC; font-size: 13px; }
-.fullscreen-btn { float: right; padding: 0; font-size: 12px; color: #909399; }
+.fullscreen-btn { margin-left: auto; padding: 0; font-size: 12px; color: #909399; }
 .fullscreen-btn:hover { color: #409EFF; }
 .fs-mask { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.45); z-index: 3000; display: flex; align-items: center; justify-content: center; }
 .fs-panel { background: #fff; border-radius: 6px; width: 94vw; height: 90vh; display: flex; flex-direction: column; box-shadow: 0 4px 20px rgba(0,0,0,0.15); }
@@ -2236,7 +2849,8 @@ export default {
 .fs-title { font-size: 14px; font-weight: 500; color: #303133; }
 .fs-close { padding: 0; font-size: 18px; color: #909399; }
 .fs-close:hover { color: #303133; }
-.fs-body { flex: 1; overflow: auto; padding: 24px; }
+.fs-body { flex: 1; overflow: auto; padding: 24px; background: #F6F8FB; }
+.trace-step-list--fullscreen .trace-step-main { box-shadow: 0 2px 8px rgba(15, 23, 42, 0.06); }
 
 /* ═══════ 决策流 - 卡片式 ═══════ */
 .fc-wrap { }
@@ -2526,6 +3140,199 @@ export default {
   background: #d9f7be;
   border: 2px solid #52c41a;
   flex-shrink: 0;
+}
+
+/* ═══════ 规则集追踪 ═══════ */
+.mv-ruleset { padding: 12px 0; }
+.rs-trace-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid #D9ECFF;
+  border-radius: 8px;
+  background: #F5FAFF;
+}
+.rs-trace-summary.is-empty {
+  border-color: #EBEEF5;
+  background: #FAFAFA;
+}
+.rs-summary-label {
+  color: #606266;
+  font-size: 12px;
+  font-weight: 600;
+}
+.rs-hit-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 10px;
+  border-radius: 12px;
+  background: #F0F9EB;
+  border: 1px solid #C2E7B0;
+  color: #529B2E;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rs-summary-empty {
+  color: #909399;
+  font-size: 12px;
+}
+.rs-table th:nth-child(1) { width: 180px; }
+.rs-table th:nth-child(3) { width: 220px; }
+.rs-table th:nth-child(4) { width: 96px; }
+.rs-table td { vertical-align: top; }
+.rs-rule-cell,
+.rs-cond-cell,
+.rs-action-cell {
+  text-align: left !important;
+}
+.rs-rule-code {
+  color: #303133;
+  font-size: 13px;
+  font-weight: 700;
+}
+.rs-rule-name {
+  margin-top: 2px;
+  color: #606266;
+  font-size: 12px;
+}
+.rs-rule-meta {
+  margin-top: 6px;
+  color: #909399;
+  font-size: 11px;
+}
+.rs-cond-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rs-cond-join {
+  width: 28px;
+  height: 20px;
+  border-radius: 10px;
+  background: #F2F6FC;
+  color: #606266;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-cond-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 7px 8px;
+  border: 1px solid #E4E7ED;
+  border-radius: 6px;
+  background: #fff;
+}
+.rs-cond-line.is-pass {
+  border-color: #D9F2CE;
+  background: #FBFFF8;
+}
+.rs-cond-line.is-fail {
+  border-color: #FDE2E2;
+  background: #FFF9F9;
+}
+.rs-cond-var {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 180px;
+}
+.rs-cond-var code,
+.rs-action-line code {
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #F2F6FC;
+  color: #1F6FBF;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 12px;
+}
+.rs-cond-var span,
+.rs-action-line span {
+  color: #606266;
+  font-size: 12px;
+}
+.rs-cond-part {
+  color: #909399;
+  font-size: 12px;
+}
+.rs-cond-part strong {
+  color: #303133;
+  font-weight: 700;
+}
+.rs-cond-op {
+  color: #303133;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rs-cond-result {
+  margin-left: auto;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: #F4F4F5;
+  color: #909399;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rs-cond-result.is-pass {
+  background: #F0F9EB;
+  color: #529B2E;
+}
+.rs-cond-result.is-fail {
+  background: #FEF0F0;
+  color: #C45656;
+}
+.rs-action-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.rs-action-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.rs-action-line strong {
+  color: #303133;
+  font-size: 12px;
+}
+.rs-status-cell {
+  text-align: center !important;
+  vertical-align: middle !important;
+}
+.rs-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  height: 24px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rs-status--hit {
+  background: #F0F9EB;
+  color: #529B2E;
+}
+.rs-status--miss {
+  background: #FEF0F0;
+  color: #C45656;
+}
+.rs-status--skipped {
+  background: #F4F4F5;
+  color: #909399;
+}
+.rs-row-skipped td {
+  color: #909399;
+  background: #FAFAFA;
 }
 
 /* ═══════ 决策表 / 交叉表 ═══════ */

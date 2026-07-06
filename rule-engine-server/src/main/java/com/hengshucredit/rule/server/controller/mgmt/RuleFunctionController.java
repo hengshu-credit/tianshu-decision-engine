@@ -98,6 +98,16 @@ public class RuleFunctionController {
         return Result.ok();
     }
 
+    @PostMapping("/{id}/test")
+    public Result<Map<String, Object>> test(@PathVariable Long id,
+                                            @RequestBody(required = false) Map<String, Object> params) {
+        try {
+            return Result.ok(functionService.testFunction(id, params));
+        } catch (IllegalArgumentException e) {
+            return Result.fail(e.getMessage());
+        }
+    }
+
     /** 推送函数新增/更新消息 */
     @GetMapping("/versions/{functionId}")
     public Result<List<RuleFunctionVersion>> listVersions(@PathVariable Long functionId) {

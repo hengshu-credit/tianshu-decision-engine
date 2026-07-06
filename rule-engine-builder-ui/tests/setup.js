@@ -145,6 +145,7 @@ jest.mock('@/api/function', () => ({
   createFunction: jest.fn(),
   updateFunction: jest.fn(),
   deleteFunction: jest.fn(),
+  testFunction: jest.fn(),
   listVersions: jest.fn(),
   getVersion: jest.fn(),
   compareVersions: jest.fn(),

@@ -203,6 +203,29 @@ describe('FunctionList — 函数操作', () => {
     expect(wrapper.vm.editParams[0].name).toBe('')
   })
 
+  test('handleTestFunction 生成测试入参并调用测试 API', async () => {
+    const row = {
+      id: 5,
+      funcCode: 'calculateTax',
+      funcName: '计算税额',
+      paramsJson: '[{"name":"amount","type":"NUMBER"},{"name":"enabled","type":"BOOLEAN"},{"name":"tags","type":"LIST"}]'
+    }
+    wrapper.vm.handleTestFunction(row)
+
+    expect(wrapper.vm.functionTestVisible).toBe(true)
+    expect(JSON.parse(wrapper.vm.functionTestParamsText)).toEqual({
+      amount: 0,
+      enabled: false,
+      tags: []
+    })
+
+    functionApi.testFunction.mockResolvedValueOnce({ data: { success: true, result: 12.3 } })
+    await wrapper.vm.doTestFunction()
+
+    expect(functionApi.testFunction).toHaveBeenCalledWith(5, { amount: 0, enabled: false, tags: [] })
+    expect(JSON.parse(wrapper.vm.functionTestResultText).result).toBe(12.3)
+  })
+
   test('handleDelete 调用删除 API', async () => {
     functionApi.deleteFunction.mockResolvedValueOnce({ data: true })
     const row = { id: 99, funcName: '测试函数' }

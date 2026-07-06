@@ -762,6 +762,7 @@ import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import { collectReferencePaths, collectReferencePathsFromText, setPathValue } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
 
 export default {
@@ -1754,16 +1755,19 @@ export default {
         const mapping = config.paramMapping || {}
         Object.keys(mapping).forEach(key => {
           const expression = mapping[key]
-          rows.push({ field: this.pathFromMapping(expression) || key, usage: 'API参数 ' + key, expression: String(expression || '') })
+          const paths = collectReferencePaths(expression, { allowBarePath: true })
+          rows.push({ field: paths.length ? paths.join(', ') : key, usage: 'API参数 ' + key, expression: String(expression || '') })
         })
       } else if (row && row.varSource === 'DB') {
         const params = Array.isArray(config.params) ? config.params : []
         params.forEach((item, index) => {
-          rows.push({ field: this.pathFromMapping(item) || ('参数' + (index + 1)), usage: 'SQL占位参数 #' + (index + 1), expression: String(item || '') })
+          const paths = collectReferencePaths(item, { allowBarePath: true })
+          rows.push({ field: paths.length ? paths.join(', ') : ('参数' + (index + 1)), usage: 'SQL占位参数 #' + (index + 1), expression: String(item || '') })
         })
       } else if (row && row.varSource === 'LIST') {
         const expression = config.queryField || config.queryPath || config.field || ''
-        if (expression) rows.push({ field: this.pathFromMapping(expression) || expression, usage: '名单匹配字段', expression: String(expression) })
+        const paths = collectReferencePaths(expression, { allowBarePath: true })
+        if (expression) rows.push({ field: paths.length ? paths.join(', ') : expression, usage: '名单匹配字段', expression: String(expression) })
       }
       return rows
     },
@@ -1779,19 +1783,17 @@ export default {
       if (row && row.varSource === 'API') {
         const mapping = config.paramMapping || {}
         Object.keys(mapping).forEach(key => {
-          const path = this.pathFromMapping(mapping[key])
-          if (path) this.setPathValue(sample, path, '')
+          const paths = collectReferencePaths(mapping[key], { allowBarePath: true })
+          if (paths.length) paths.forEach(path => setPathValue(sample, path, ''))
           else sample[key] = ''
         })
       } else if (row && row.varSource === 'DB') {
         const params = Array.isArray(config.params) ? config.params : []
         params.forEach(item => {
-          const path = this.pathFromMapping(item)
-          if (path) this.setPathValue(sample, path, '')
+          collectReferencePaths(item, { allowBarePath: true }).forEach(path => setPathValue(sample, path, ''))
         })
       } else if (row && row.varSource === 'LIST') {
-        const path = this.pathFromMapping(config.queryField || config.queryPath || config.field)
-        if (path) this.setPathValue(sample, path, '')
+        collectReferencePaths(config.queryField || config.queryPath || config.field, { allowBarePath: true }).forEach(path => setPathValue(sample, path, ''))
       }
       return this.formatJson(sample)
     },
@@ -1824,25 +1826,10 @@ export default {
       }
     },
     pathFromMapping(value) {
-      if (typeof value !== 'string') return ''
-      const text = value.trim()
-      if (text.indexOf('$.') === 0) return text.substring(2)
-      if (text.indexOf('${') === 0 && text.lastIndexOf('}') === text.length - 1) return text.substring(2, text.length - 1)
-      return ''
+      return collectReferencePathsFromText(value, { allowBarePath: true })[0] || ''
     },
     setPathValue(target, path, value) {
-      if (!path) return
-      const parts = path.split('.').filter(Boolean)
-      let cur = target
-      for (let i = 0; i < parts.length; i++) {
-        const key = parts[i]
-        if (i === parts.length - 1) {
-          this.$set(cur, key, value)
-        } else {
-          if (!cur[key] || typeof cur[key] !== 'object' || Array.isArray(cur[key])) this.$set(cur, key, {})
-          cur = cur[key]
-        }
-      }
+      setPathValue(target, path, value)
     },
     formatJson(value) {
       if (value == null || value === '') return ''
