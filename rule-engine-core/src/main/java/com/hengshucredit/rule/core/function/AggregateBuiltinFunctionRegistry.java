@@ -3,11 +3,12 @@ package com.hengshucredit.rule.core.function;
 import com.alibaba.qlexpress4.Express4Runner;
 
 /**
- * 将内置聚合函数注册到 {@link Express4Runner}，使用 addOrReplace 语义以便重复调用。
+ * 注册 QLExpress 的内置函数。
  */
 public final class AggregateBuiltinFunctionRegistry {
 
     private static final AggregateBuiltinFunctions DELEGATE = new AggregateBuiltinFunctions();
+    private static final IdentityStringBuiltinFunctions IDENTITY_STRING_DELEGATE = new IdentityStringBuiltinFunctions();
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
     private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
     private static final Class<?>[] THREE_OBJECTS = {Object.class, Object.class, Object.class};
@@ -16,7 +17,7 @@ public final class AggregateBuiltinFunctionRegistry {
     }
 
     /**
-     * 注册 sum、count、max、min、avg；同名已存在则覆盖。
+     * 注册聚合、空值、集合、字符串和身份证辅助函数。
      *
      * @param runner QLExpress 执行器
      */
@@ -41,5 +42,19 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("hasKey", DELEGATE, "hasKey", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("nvl", DELEGATE, "nvl", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("roundScale", DELEGATE, "roundScale", THREE_OBJECTS);
+
+        // 仅供 rule_function 中 SCRIPT 类型函数调用的安全桥接函数。
+        runner.addFunctionOfServiceMethod("idCardGenderValue", IDENTITY_STRING_DELEGATE,
+                "idCardGenderValue", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("idCardBirthDateValue", IDENTITY_STRING_DELEGATE,
+                "idCardBirthDateValue", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("leftStringValue", IDENTITY_STRING_DELEGATE,
+                "leftStringValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("rightStringValue", IDENTITY_STRING_DELEGATE,
+                "rightStringValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("idCardAgeValue", IDENTITY_STRING_DELEGATE,
+                "idCardAgeValue", THREE_OBJECTS);
+        runner.addFunctionOfServiceMethod("regexMatchValue", IDENTITY_STRING_DELEGATE,
+                "regexMatchValue", TWO_OBJECTS);
     }
 }
