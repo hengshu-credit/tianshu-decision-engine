@@ -34,6 +34,9 @@ spring:
       shutdown-timeout: 200ms
 
 rule-engine:
+  # 启动时创建缺失的全局 SCRIPT 函数模板；不会覆盖用户已维护的同名函数
+  builtin-functions:
+    enabled: ${RULE_ENGINE_BUILTIN_FUNCTIONS_ENABLED:true}
   # 启用 Kafka 消费执行日志时，与 spring.kafka 一并配置；参见 README
   kafka:
     log-topic: rule-execution-log
