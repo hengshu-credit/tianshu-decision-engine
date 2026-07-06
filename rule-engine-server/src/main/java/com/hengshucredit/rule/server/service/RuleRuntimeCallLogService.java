@@ -25,7 +25,7 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
             wrapper.eq(RuleRuntimeCallLog::getActionType, actionType);
         }
         if (hasText(targetCode)) {
-            wrapper.likeRight(RuleRuntimeCallLog::getTargetCode, targetCode);
+            wrapper.like(RuleRuntimeCallLog::getTargetCode, targetCode);
         }
         if (success != null) {
             wrapper.eq(RuleRuntimeCallLog::getSuccess, success);

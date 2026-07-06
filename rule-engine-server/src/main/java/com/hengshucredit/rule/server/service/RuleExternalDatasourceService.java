@@ -32,7 +32,7 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
             wrapper.eq(RuleExternalDatasource::getProjectId, projectId);
         }
         if (hasText(datasourceCode)) {
-            wrapper.likeRight(RuleExternalDatasource::getDatasourceCode, datasourceCode);
+            wrapper.like(RuleExternalDatasource::getDatasourceCode, datasourceCode);
         }
         if (hasText(datasourceName)) {
             wrapper.like(RuleExternalDatasource::getDatasourceName, datasourceName);

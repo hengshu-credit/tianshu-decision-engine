@@ -60,7 +60,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             wrapper.eq(RuleBillingConfig::getBillingTarget, billingTarget);
         }
         if (hasText(billingCode)) {
-            wrapper.likeRight(RuleBillingConfig::getBillingCode, billingCode);
+            wrapper.like(RuleBillingConfig::getBillingCode, billingCode);
         }
         if (status != null) {
             wrapper.eq(RuleBillingConfig::getStatus, status);
@@ -78,10 +78,10 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             wrapper.eq(RuleBillingRecord::getBillingTarget, billingTarget);
         }
         if (hasText(billingCode)) {
-            wrapper.likeRight(RuleBillingRecord::getBillingCode, billingCode);
+            wrapper.like(RuleBillingRecord::getBillingCode, billingCode);
         }
         if (hasText(projectCode)) {
-            wrapper.eq(RuleBillingRecord::getProjectCode, projectCode);
+            wrapper.like(RuleBillingRecord::getProjectCode, projectCode);
         }
         if (hasText(beginTime)) {
             wrapper.ge(RuleBillingRecord::getOccurTime, beginTime + " 00:00:00");
@@ -101,10 +101,10 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             wrapper.eq(RuleBillingSummary::getBillingTarget, billingTarget);
         }
         if (hasText(billingCode)) {
-            wrapper.likeRight(RuleBillingSummary::getBillingCode, billingCode);
+            wrapper.like(RuleBillingSummary::getBillingCode, billingCode);
         }
         if (hasText(projectCode)) {
-            wrapper.eq(RuleBillingSummary::getProjectCode, projectCode);
+            wrapper.like(RuleBillingSummary::getProjectCode, projectCode);
         }
         if (hasText(beginDate)) {
             wrapper.ge(RuleBillingSummary::getSummaryDate, beginDate);

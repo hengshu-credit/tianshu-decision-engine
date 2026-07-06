@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import org.junit.Test;
 
@@ -90,6 +92,45 @@ public class VariableSourceResolverTest {
 
         assertEquals(null, resolved.get("riskScore"));
         assertEquals(0, apiService.callCount);
+    }
+
+    @Test
+    public void sourceVariableDependenciesResolveBeforeDependentApi() throws Exception {
+        RuleVariable apiScore = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
+        RuleVariable dbScore = variable("dbScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\",\"maxRows\":1}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("score", 72)));
+        VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, dbScore), apiService, dbPools);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("riskScore")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(72, resolved.get("dbScore"));
+        assertEquals(88, resolved.get("riskScore"));
+        assertEquals(72, apiService.lastParams.get("score"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelOutputExecutesWithResolvedSourceInputs() throws Exception {
+        RuleVariable hyField = variable("HY001", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select hy001 from t\",\"maxRows\":1}");
+        FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("hy001", 12.5)));
+        FakeModelService modelService = new FakeModelService();
+        VariableSourceResolver resolver = resolver(Collections.singletonList(hyField),
+                new FakeApiService(Collections.emptyMap()), dbPools, new FakeRuleListService(false), modelService);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("score_f1.score")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(12.5, ((Number) resolved.get("HY001")).doubleValue(), 0.000001);
+        assertEquals(12.5, ((Number) modelService.lastParams.get("HY001")).doubleValue(), 0.000001);
+        Map<String, Object> modelOutput = (Map<String, Object>) resolved.get("score_f1");
+        assertEquals(660, modelOutput.get("score"));
     }
 
     @Test
@@ -220,11 +261,18 @@ public class VariableSourceResolverTest {
 
     private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
                                             DBConnectPools dbPools, RuleListService listService) throws Exception {
+        return resolver(variables, apiService, dbPools, listService, null);
+    }
+
+    private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
+                                            DBConnectPools dbPools, RuleListService listService,
+                                            RuleModelService modelService) throws Exception {
         VariableSourceResolver resolver = new VariableSourceResolver();
         setField(resolver, "variableService", new FakeVariableService(variables));
         setField(resolver, "externalApiInvokeService", apiService);
         setField(resolver, "dbConnectPools", dbPools);
         setField(resolver, "ruleListService", listService);
+        setField(resolver, "ruleModelService", modelService);
         return resolver;
     }
 
@@ -351,6 +399,43 @@ public class VariableSourceResolverTest {
         public boolean matchAt(Long listId, Object content, List<String> itemTypes, String matchMode, LocalDateTime matchTime) {
             this.lastMatchTime = matchTime;
             return match(listId, content, itemTypes, matchMode);
+        }
+    }
+
+    private static class FakeModelService extends RuleModelService {
+        private Map<String, Object> lastParams;
+
+        @Override
+        public List<RuleModel> listByProject(Long projectId) {
+            RuleModel model = new RuleModel();
+            model.setId(100L);
+            model.setModelCode("score_f1");
+            model.setStatus(1);
+            return Collections.singletonList(model);
+        }
+
+        @Override
+        public RuleModel getDetail(Long modelId) {
+            RuleModel model = new RuleModel();
+            model.setId(modelId);
+            model.setModelCode("score_f1");
+            RuleModelInputField input = new RuleModelInputField();
+            input.setFieldName("HY001");
+            input.setScriptName("HY001");
+            input.setStatus(1);
+            model.setInputFields(Collections.singletonList(input));
+            return model;
+        }
+
+        @Override
+        public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+            this.lastParams = params;
+            Map<String, Object> outputs = new LinkedHashMap<>();
+            outputs.put("score", 660);
+            Map<String, Object> result = new LinkedHashMap<>();
+            result.put("success", true);
+            result.put("outputs", outputs);
+            return result;
         }
     }
 }

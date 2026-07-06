@@ -15,21 +15,29 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
-  test('applyTemplate fills hscredit v1 mapping without body template', () => {
-    const ctx = createContext()
+  test('applyTemplate fills rule engine mapping template', () => {
+    const ctx = createContext({
+      form: {
+        ...ApiDetail.methods.emptyForm(),
+        endpointUrl: 'RC_PRICING_TABLE'
+      }
+    })
 
-    ctx.applyTemplate('HSCREDIT_V1')
+    ctx.applyTemplate('RULE_ENGINE')
 
-    const requestMapping = JSON.parse(ctx.form.requestMapping)
-    expect(requestMapping.model_params.br_applyloanstr_v2).toBe('$.model_params.br_applyloanstr_v2')
-    const responseMapping = JSON.parse(ctx.form.responseMapping)
-    expect(responseMapping.swiftNumber).toEqual([
-      'body.model_params.br_applyloanstr_v2.swift_number',
-      'body.data.swift_number',
-      'body.swift_number'
-    ])
-    expect(responseMapping.alsM12CellNbankAllnum.default).toBeNull()
-    expect(ctx.form.bodyTemplate).toBe('')
+    expect(ctx.form.requestMethod).toBe('POST')
+    expect(JSON.parse(ctx.form.requestMapping)).toEqual({
+      ruleCode: 'RC_PRICING_TABLE',
+      params: {
+        customerType: '$.customerType',
+        productLine: '$.productLine'
+      }
+    })
+    expect(JSON.parse(ctx.form.responseMapping)).toEqual({
+      decision: 'body.decision',
+      rate: 'body.rate',
+      score: 'body.score'
+    })
   })
 
   test('normalizeForm accepts dynamic response mapping JSON', () => {

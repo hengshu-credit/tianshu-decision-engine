@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import org.springframework.stereotype.Service;
@@ -39,6 +41,9 @@ public class VariableSourceResolver {
     @Resource
     private RuleDbDatasourceService dbDatasourceService;
 
+    @Resource
+    private RuleModelService ruleModelService;
+
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         return resolve(projectId, inputParams, VariableResolveOptions.defaults());
     }
@@ -50,54 +55,371 @@ public class VariableSourceResolver {
             resolvedParams.putAll(inputParams);
         }
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
-        if (variables == null || variables.isEmpty()) {
-            return resolvedParams;
-        }
+        if (variables == null) variables = Collections.emptyList();
+        List<RuleModel> models = loadProjectModels(projectId);
+        Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(), variables, models);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
-        for (RuleVariable variable : variables) {
-            if (variable == null || variable.getStatus() == null || variable.getStatus() != 1) {
-                continue;
+        resolveSourceVariables(variables, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
+        resolveModelVariables(models, requiredScriptNames, resolvedParams, effectiveOptions);
+        return resolvedParams;
+    }
+
+    private void resolveSourceVariables(List<RuleVariable> variables, Set<String> requiredScriptNames,
+                                        Map<String, Object> resolvedParams, VariableResolveOptions effectiveOptions,
+                                        Map<String, Map<String, Object>> apiResponseCache) {
+        Map<String, RuleVariable> variableMap = buildVariableMap(variables);
+        List<RuleVariable> pending = new ArrayList<>(variables);
+        while (!pending.isEmpty()) {
+            boolean progressed = false;
+            List<RuleVariable> delayed = new ArrayList<>();
+            for (RuleVariable variable : pending) {
+                String scriptName = resolveScriptName(variable);
+                if (!shouldResolveSourceVariable(variable, scriptName, requiredScriptNames)) {
+                    progressed = true;
+                    continue;
+                }
+                Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
+                boolean forceRefresh = effectiveOptions.isForceRefreshSource() || booleanValue(config.get("forceRefresh"));
+                if (!forceRefresh && resolvedParams.containsKey(scriptName)) {
+                    progressed = true;
+                    continue;
+                }
+                if (hasUnresolvedSourceDependency(variable, variableMap, resolvedParams)) {
+                    delayed.add(variable);
+                    continue;
+                }
+                resolveOneSourceVariable(variable, scriptName, config, resolvedParams, effectiveOptions, apiResponseCache);
+                progressed = true;
             }
-            String varSource = variable.getVarSource();
-            if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)) {
-                continue;
-            }
-            String scriptName = resolveScriptName(variable);
-            if (!hasText(scriptName)) {
-                continue;
-            }
-            Set<String> requiredScriptNames = effectiveOptions.getRequiredScriptNames();
-            if (requiredScriptNames != null && !requiredScriptNames.isEmpty()
-                    && !requiredScriptNames.contains(scriptName)) {
-                continue;
-            }
-            Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
-            boolean forceRefresh = effectiveOptions.isForceRefreshSource() || booleanValue(config.get("forceRefresh"));
-            if (!forceRefresh && resolvedParams.containsKey(scriptName)) {
-                continue;
-            }
-            try {
-                Object value;
-                if ("API".equals(varSource)) {
-                    if (effectiveOptions.isSkipApiSources()) {
-                        resolvedParams.put(scriptName, null);
-                        continue;
+            if (!progressed) {
+                for (RuleVariable variable : delayed) {
+                    String scriptName = resolveScriptName(variable);
+                    if (hasText(scriptName)) {
+                        Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
+                        resolveOneSourceVariable(variable, scriptName, config, resolvedParams, effectiveOptions, apiResponseCache);
                     }
-                    value = resolveApiVariable(config, resolvedParams, apiResponseCache);
-                } else if ("DB".equals(varSource)) {
-                    value = resolveDbVariable(variable, config, resolvedParams);
-                } else {
-                    value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
                 }
-                if (value == null) {
-                    value = parseDefaultValue(variable);
+                break;
+            }
+            pending = delayed;
+        }
+    }
+
+    private void resolveOneSourceVariable(RuleVariable variable, String scriptName, Map<String, Object> config,
+                                          Map<String, Object> resolvedParams, VariableResolveOptions effectiveOptions,
+                                          Map<String, Map<String, Object>> apiResponseCache) {
+        try {
+            Object value;
+            String varSource = variable.getVarSource();
+            if ("API".equals(varSource)) {
+                if (effectiveOptions.isSkipApiSources()) {
+                    resolvedParams.put(scriptName, null);
+                    return;
                 }
-                resolvedParams.put(scriptName, value);
-            } catch (Exception e) {
-                applyExceptionStrategy(variable, config, scriptName, resolvedParams, e);
+                value = resolveApiVariable(config, resolvedParams, apiResponseCache);
+            } else if ("DB".equals(varSource)) {
+                value = resolveDbVariable(variable, config, resolvedParams);
+            } else {
+                value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
+            }
+            if (value == null) {
+                value = parseDefaultValue(variable);
+            }
+            resolvedParams.put(scriptName, value);
+        } catch (Exception e) {
+            applyExceptionStrategy(variable, config, scriptName, resolvedParams, e);
+        }
+    }
+
+    private boolean shouldResolveSourceVariable(RuleVariable variable, String scriptName, Set<String> requiredScriptNames) {
+        if (variable == null || variable.getStatus() == null || variable.getStatus() != 1 || !hasText(scriptName)) {
+            return false;
+        }
+        String varSource = variable.getVarSource();
+        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)) {
+            return false;
+        }
+        return requiredScriptNames == null || requiredScriptNames.isEmpty() || requiredScriptNames.contains(scriptName);
+    }
+
+    private boolean hasUnresolvedSourceDependency(RuleVariable variable, Map<String, RuleVariable> variableMap,
+                                                  Map<String, Object> resolvedParams) {
+        String ownName = resolveScriptName(variable);
+        for (String dependency : collectVariableDependencies(variable)) {
+            RuleVariable dependencyVariable = variableMap.get(dependency);
+            if (dependencyVariable == null || dependency.equals(ownName)) {
+                continue;
+            }
+            String dependencySource = dependencyVariable.getVarSource();
+            if (("API".equals(dependencySource) || "DB".equals(dependencySource) || "LIST".equals(dependencySource))
+                    && !resolvedParams.containsKey(dependency)) {
+                return true;
             }
         }
-        return resolvedParams;
+        return false;
+    }
+
+    private Map<String, RuleVariable> buildVariableMap(List<RuleVariable> variables) {
+        Map<String, RuleVariable> map = new LinkedHashMap<>();
+        if (variables == null) {
+            return map;
+        }
+        for (RuleVariable variable : variables) {
+            String scriptName = resolveScriptName(variable);
+            if (hasText(scriptName)) {
+                map.put(scriptName, variable);
+            }
+        }
+        return map;
+    }
+
+    private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables, List<RuleModel> models) {
+        if (initial == null || initial.isEmpty()) {
+            return initial;
+        }
+        Map<String, RuleVariable> variableMap = new LinkedHashMap<>();
+        for (RuleVariable variable : variables) {
+            String scriptName = resolveScriptName(variable);
+            if (hasText(scriptName)) {
+                variableMap.put(scriptName, variable);
+            }
+        }
+        Map<String, RuleModel> modelMap = new LinkedHashMap<>();
+        for (RuleModel model : models) {
+            String modelCode = trimToNull(model.getModelCode());
+            if (modelCode != null) {
+                modelMap.put(modelCode, model);
+            }
+        }
+        Set<String> expanded = new LinkedHashSet<>(initial);
+        List<String> queue = new ArrayList<>(initial);
+        int index = 0;
+        while (index < queue.size()) {
+            String name = queue.get(index++);
+            RuleVariable variable = variableMap.get(name);
+            if (variable != null) {
+                for (String dependency : collectVariableDependencies(variable)) {
+                    if (expanded.add(dependency)) {
+                        queue.add(dependency);
+                    }
+                }
+            }
+            RuleModel model = findRequiredModel(name, modelMap);
+            if (model != null) {
+                for (String dependency : collectModelInputNames(model)) {
+                    if (expanded.add(dependency)) {
+                        queue.add(dependency);
+                    }
+                }
+            }
+        }
+        return expanded;
+    }
+
+    private RuleModel findRequiredModel(String requiredName, Map<String, RuleModel> modelMap) {
+        if (!hasText(requiredName) || modelMap == null || modelMap.isEmpty()) {
+            return null;
+        }
+        RuleModel exact = modelMap.get(requiredName);
+        if (exact != null) {
+            return exact;
+        }
+        int dotIndex = requiredName.indexOf('.');
+        if (dotIndex > 0) {
+            return modelMap.get(requiredName.substring(0, dotIndex));
+        }
+        return null;
+    }
+
+    private Set<String> collectVariableDependencies(RuleVariable variable) {
+        Set<String> dependencies = new LinkedHashSet<>();
+        if (variable == null) {
+            return dependencies;
+        }
+        Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
+        String varSource = variable.getVarSource();
+        if ("API".equals(varSource)) {
+            collectDependencyValues(config.get("paramMapping"), dependencies);
+        } else if ("DB".equals(varSource)) {
+            collectDependencyValues(config.get("params"), dependencies);
+        } else if ("LIST".equals(varSource)) {
+            collectDependencyValues(firstNonNull(config.get("queryField"), config.get("queryPath"), config.get("field")), dependencies);
+        }
+        return dependencies;
+    }
+
+    private Set<String> collectModelInputNames(RuleModel model) {
+        Set<String> names = new LinkedHashSet<>();
+        RuleModel detail = loadModelDetail(model);
+        List<RuleModelInputField> fields = detail == null ? null : detail.getInputFields();
+        if (fields == null || fields.isEmpty()) {
+            return names;
+        }
+        for (RuleModelInputField field : fields) {
+            String scriptName = firstText(field.getScriptName(), field.getFieldName());
+            if (scriptName != null) {
+                names.add(scriptName);
+            }
+        }
+        return names;
+    }
+
+    private void collectDependencyValues(Object value, Set<String> dependencies) {
+        if (value == null) {
+            return;
+        }
+        if (value instanceof Map) {
+            for (Object nested : ((Map<?, ?>) value).values()) {
+                collectDependencyValues(nested, dependencies);
+            }
+            return;
+        }
+        if (value instanceof Iterable) {
+            for (Object nested : (Iterable<?>) value) {
+                collectDependencyValues(nested, dependencies);
+            }
+            return;
+        }
+        if (value.getClass().isArray()) {
+            int length = Array.getLength(value);
+            for (int i = 0; i < length; i++) {
+                collectDependencyValues(Array.get(value, i), dependencies);
+            }
+            return;
+        }
+        if (value instanceof String) {
+            collectDependencyText((String) value, dependencies);
+        }
+    }
+
+    private void collectDependencyText(String text, Set<String> dependencies) {
+        String value = trimToNull(text);
+        if (value == null) {
+            return;
+        }
+        if (value.startsWith("$.")) {
+            dependencies.add(value.substring(2));
+            return;
+        }
+        if (value.startsWith("${") && value.endsWith("}")) {
+            dependencies.add(value.substring(2, value.length() - 1));
+            return;
+        }
+        int start = value.indexOf("${");
+        while (start >= 0) {
+            int end = value.indexOf("}", start);
+            if (end < 0) {
+                break;
+            }
+            String path = value.substring(start + 2, end).trim();
+            if (!path.isEmpty()) {
+                dependencies.add(path);
+            }
+            start = value.indexOf("${", end + 1);
+        }
+        if (value.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*")) {
+            dependencies.add(value);
+        }
+    }
+
+    private void resolveModelVariables(List<RuleModel> models, Set<String> requiredScriptNames,
+                                       Map<String, Object> resolvedParams, VariableResolveOptions options) {
+        if (ruleModelService == null || models == null || models.isEmpty()
+                || requiredScriptNames == null || requiredScriptNames.isEmpty()) {
+            return;
+        }
+        for (RuleModel model : models) {
+            String modelCode = trimToNull(model.getModelCode());
+            if (modelCode == null || !isModelRequired(modelCode, requiredScriptNames)) {
+                continue;
+            }
+            if (!shouldRefreshModel(modelCode, resolvedParams, options)) {
+                continue;
+            }
+            RuleModel detail = loadModelDetail(model);
+            Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
+            Map<String, Object> modelResult = ruleModelService.execute(model.getId(), modelParams);
+            if (!modelSucceeded(modelResult)) {
+                throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
+            }
+            Object outputs = modelResult.get("outputs");
+            Object modelValue = outputs instanceof Map ? outputs : modelResult;
+            resolvedParams.put(modelCode, modelValue);
+        }
+    }
+
+    private boolean isModelRequired(String modelCode, Set<String> requiredScriptNames) {
+        for (String required : requiredScriptNames) {
+            if (modelCode.equals(required) || (required != null && required.startsWith(modelCode + "."))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean shouldRefreshModel(String modelCode, Map<String, Object> resolvedParams, VariableResolveOptions options) {
+        if (options != null && options.isForceRefreshSource()) {
+            return true;
+        }
+        return !resolvedParams.containsKey(modelCode);
+    }
+
+    private boolean modelSucceeded(Map<String, Object> result) {
+        Object success = result == null ? null : result.get("success");
+        return Boolean.TRUE.equals(success) || (success instanceof Number && ((Number) success).intValue() == 1);
+    }
+
+    private String modelError(Map<String, Object> result) {
+        if (result == null) {
+            return "返回为空";
+        }
+        Object error = firstNonNull(result.get("error"), result.get("message"));
+        return error == null ? "未知错误" : String.valueOf(error);
+    }
+
+    private Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> resolvedParams) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        List<RuleModelInputField> fields = model == null ? null : model.getInputFields();
+        if (fields == null || fields.isEmpty()) {
+            params.putAll(resolvedParams);
+            return params;
+        }
+        for (RuleModelInputField field : fields) {
+            String fieldName = firstText(field.getFieldName(), field.getScriptName());
+            String scriptName = firstText(field.getScriptName(), field.getFieldName());
+            if (fieldName == null || scriptName == null) {
+                continue;
+            }
+            Object value = readPath(resolvedParams, scriptName);
+            if (value == null && !fieldName.equals(scriptName)) {
+                value = readPath(resolvedParams, fieldName);
+            }
+            if (value == null && hasText(field.getDefaultValue())) {
+                value = parseJsonOrRaw(field.getDefaultValue());
+            }
+            params.put(fieldName, value);
+        }
+        return params;
+    }
+
+    private RuleModel loadModelDetail(RuleModel model) {
+        if (ruleModelService == null || model == null || model.getId() == null) {
+            return model;
+        }
+        RuleModel detail = ruleModelService.getDetail(model.getId());
+        return detail == null ? model : detail;
+    }
+
+    private List<RuleModel> loadProjectModels(Long projectId) {
+        if (ruleModelService == null) {
+            return Collections.emptyList();
+        }
+        try {
+            List<RuleModel> models = ruleModelService.listByProject(projectId);
+            return models == null ? Collections.emptyList() : models;
+        } catch (Exception e) {
+            return Collections.emptyList();
+        }
     }
 
     public Map<String, Object> testVariable(Long variableId, Map<String, Object> inputParams) {
@@ -618,6 +940,19 @@ public class VariableSourceResolver {
         for (Object value : values) {
             if (value != null) {
                 return value;
+            }
+        }
+        return null;
+    }
+
+    private String firstText(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            String text = trimToNull(value);
+            if (text != null) {
+                return text;
             }
         }
         return null;

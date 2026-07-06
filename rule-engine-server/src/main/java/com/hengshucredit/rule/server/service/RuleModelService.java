@@ -385,7 +385,7 @@ public class RuleModelService {
 
         if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectCode, projectCode))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleModel::getProjectId, projectIds)
@@ -396,7 +396,7 @@ public class RuleModelService {
             }
         } else if (projectName != null && !projectName.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectName, projectName))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleModel::getProjectId, projectIds)

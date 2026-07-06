@@ -35,7 +35,7 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
             wrapper.eq(RuleDbDatasource::getProjectId, projectId);
         }
         if (hasText(datasourceCode)) {
-            wrapper.likeRight(RuleDbDatasource::getDatasourceCode, datasourceCode);
+            wrapper.like(RuleDbDatasource::getDatasourceCode, datasourceCode);
         }
         if (hasText(datasourceName)) {
             wrapper.like(RuleDbDatasource::getDatasourceName, datasourceName);

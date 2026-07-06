@@ -248,7 +248,11 @@ public class ExternalApiInvokeService {
                 .eq(RulePublished::getStatus, 1);
         String projectCode = resolveProjectCode(datasource.getProjectId());
         if (projectCode != null && !projectCode.trim().isEmpty()) {
-            wrapper.eq(RulePublished::getProjectCode, projectCode);
+            wrapper.and(w -> w.eq(RulePublished::getProjectCode, projectCode)
+                    .or()
+                    .exists(buildLinkedGlobalRuleExistsSql(datasource.getProjectId())));
+        } else if (datasource.getProjectId() != null && datasource.getProjectId() > 0) {
+            wrapper.exists(buildLinkedGlobalRuleExistsSql(datasource.getProjectId()));
         }
         RulePublished published = publishedMapper.selectOne(wrapper);
         if (published == null) {
@@ -269,6 +273,12 @@ public class ExternalApiInvokeService {
         trace.responseStatus = result.isSuccess() ? 200 : 500;
         trace.responseBody = response;
         return applyResponseMapping(apiConfig, response);
+    }
+
+    private String buildLinkedGlobalRuleExistsSql(Long projectId) {
+        return "SELECT 1 FROM rule_definition_ref rdr " +
+                "WHERE rdr.definition_id = rule_published.definition_id " +
+                "AND rdr.project_id = " + projectId;
     }
 
     private String resolveProjectCode(Long projectId) {

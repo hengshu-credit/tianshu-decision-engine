@@ -30,7 +30,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         }
         // 项目编码精确匹配
         if (projectCode != null && !projectCode.isEmpty()) {
-            wrapper.eq(RuleProject::getProjectCode, projectCode);
+            wrapper.like(RuleProject::getProjectCode, projectCode);
         }
         // 项目名称模糊匹配
         if (projectName != null && !projectName.isEmpty()) {
@@ -178,6 +178,12 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     private com.hengshucredit.rule.server.mapper.RuleFunctionMapper functionMapper;
 
     @Resource
+    private RuleDefinitionInputFieldMapper inputFieldMapper;
+
+    @Resource
+    private RuleDefinitionOutputFieldMapper outputFieldMapper;
+
+    @Resource
     private RuleModelVarParser ruleModelVarParser;
 
     /**
@@ -227,6 +233,9 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             varInfo.setScriptName(var.getScriptName());
             varInfos.add(varInfo);
             varCodeMap.put(var.getVarCode(), varInfo);
+            if (var.getScriptName() != null && !var.getScriptName().trim().isEmpty()) {
+                varCodeMap.put(var.getScriptName(), varInfo);
+            }
         }
         doc.setVariables(varInfos);
 
@@ -277,11 +286,11 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         doc.setDataObjects(doInfos);
 
         // ========== 3. 处理规则列表 ==========
-        List<RuleDefinition> definitions = definitionMapper.selectList(
-                new LambdaQueryWrapper<RuleDefinition>()
-                        .eq(RuleDefinition::getProjectId, projectId)
-                        .eq(RuleDefinition::getStatus, 1)
-                        .orderByDesc(RuleDefinition::getCreateTime));
+        LambdaQueryWrapper<RuleDefinition> definitionWrapper = new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getStatus, 1);
+        appendProjectRuleScope(definitionWrapper, projectId);
+        definitionWrapper.orderByDesc(RuleDefinition::getCreateTime);
+        List<RuleDefinition> definitions = definitionMapper.selectList(definitionWrapper);
         List<ApiDocDTO.RuleInfo> ruleInfos = new ArrayList<>();
         for (RuleDefinition def : definitions) {
             ApiDocDTO.RuleInfo ruleInfo = new ApiDocDTO.RuleInfo();
@@ -310,6 +319,32 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             RuleModelVarParser.ParseResult parseResult = ruleModelVarParser.parse(modelJson, def.getModelType());
             Set<String> inputCodes = parseResult.getInputCodes();
             Set<String> outputCodes = parseResult.getOutputCodes();
+            List<RuleDefinitionInputField> persistedInputFields = inputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionInputField>()
+                            .eq(RuleDefinitionInputField::getDefinitionId, def.getId())
+                            .orderByAsc(RuleDefinitionInputField::getSortOrder));
+            if (persistedInputFields != null && !persistedInputFields.isEmpty()) {
+                inputCodes = new LinkedHashSet<>();
+                for (RuleDefinitionInputField field : persistedInputFields) {
+                    ApiDocDTO.VariableInfo fieldInfo = toVariableInfo(field, varCodeMap);
+                    addFieldCodes(inputCodes, field.getScriptName(), field.getFieldName());
+                    putFieldInfo(varCodeMap, field.getScriptName(), fieldInfo);
+                    putFieldInfo(varCodeMap, field.getFieldName(), fieldInfo);
+                }
+            }
+            List<RuleDefinitionOutputField> persistedOutputFields = outputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                            .eq(RuleDefinitionOutputField::getDefinitionId, def.getId())
+                            .orderByAsc(RuleDefinitionOutputField::getSortOrder));
+            if (persistedOutputFields != null && !persistedOutputFields.isEmpty()) {
+                outputCodes = new LinkedHashSet<>();
+                for (RuleDefinitionOutputField field : persistedOutputFields) {
+                    ApiDocDTO.VariableInfo fieldInfo = toVariableInfo(field, varCodeMap);
+                    addFieldCodes(outputCodes, field.getScriptName(), field.getFieldName());
+                    putFieldInfo(varCodeMap, field.getScriptName(), fieldInfo);
+                    putFieldInfo(varCodeMap, field.getFieldName(), fieldInfo);
+                }
+            }
 
             // 根据代码匹配完整的变量信息（输入）
             List<ApiDocDTO.VariableInfo> inputVars = new ArrayList<>();
@@ -388,6 +423,79 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         doc.setFunctions(funcInfos);
 
         return doc;
+    }
+
+    private void appendProjectRuleScope(LambdaQueryWrapper<RuleDefinition> wrapper, Long projectId) {
+        if (projectId != null && projectId > 0) {
+            wrapper.and(w -> w.eq(RuleDefinition::getProjectId, projectId)
+                    .or()
+                    .exists("SELECT 1 FROM rule_definition_ref rdr WHERE rdr.definition_id = rule_definition.id AND rdr.project_id = " + projectId));
+        } else {
+            wrapper.eq(RuleDefinition::getProjectId, 0L);
+        }
+    }
+
+    private void addFieldCodes(Set<String> codes, String scriptName, String fieldName) {
+        if (scriptName != null && !scriptName.trim().isEmpty()) {
+            codes.add(scriptName);
+        }
+        if (fieldName != null && !fieldName.trim().isEmpty()) {
+            codes.add(fieldName);
+        }
+    }
+
+    private void putFieldInfo(java.util.Map<String, ApiDocDTO.VariableInfo> map, String key, ApiDocDTO.VariableInfo info) {
+        if (key != null && !key.trim().isEmpty() && info != null && !map.containsKey(key)) {
+            map.put(key, info);
+        }
+    }
+
+    private ApiDocDTO.VariableInfo toVariableInfo(RuleDefinitionInputField field,
+            java.util.Map<String, ApiDocDTO.VariableInfo> varCodeMap) {
+        ApiDocDTO.VariableInfo matched = firstMatchedVarInfo(varCodeMap, field.getScriptName(), field.getFieldName());
+        if (matched != null) {
+            return matched;
+        }
+        ApiDocDTO.VariableInfo info = new ApiDocDTO.VariableInfo();
+        info.setId(field.getVarId());
+        info.setVarCode(field.getFieldName());
+        info.setVarLabel(field.getFieldLabel());
+        info.setVarType(field.getFieldType());
+        info.setVarTypeLabel(getVarTypeLabel(field.getFieldType()));
+        info.setVarSource(field.getRefType());
+        info.setVarSourceLabel(field.getRefType());
+        info.setDefaultValue(field.getDefaultValue());
+        info.setScriptName(field.getScriptName());
+        return info;
+    }
+
+    private ApiDocDTO.VariableInfo toVariableInfo(RuleDefinitionOutputField field,
+            java.util.Map<String, ApiDocDTO.VariableInfo> varCodeMap) {
+        ApiDocDTO.VariableInfo matched = firstMatchedVarInfo(varCodeMap, field.getScriptName(), field.getFieldName());
+        if (matched != null) {
+            return matched;
+        }
+        ApiDocDTO.VariableInfo info = new ApiDocDTO.VariableInfo();
+        info.setId(field.getVarId());
+        info.setVarCode(field.getFieldName());
+        info.setVarLabel(field.getFieldLabel());
+        info.setVarType(field.getFieldType());
+        info.setVarTypeLabel(getVarTypeLabel(field.getFieldType()));
+        info.setVarSource(field.getRefType());
+        info.setVarSourceLabel(field.getRefType());
+        info.setScriptName(field.getScriptName());
+        return info;
+    }
+
+    private ApiDocDTO.VariableInfo firstMatchedVarInfo(java.util.Map<String, ApiDocDTO.VariableInfo> varCodeMap,
+            String scriptName, String fieldName) {
+        if (scriptName != null && varCodeMap.containsKey(scriptName)) {
+            return varCodeMap.get(scriptName);
+        }
+        if (fieldName != null && varCodeMap.containsKey(fieldName)) {
+            return varCodeMap.get(fieldName);
+        }
+        return null;
     }
 
     private String getModelTypeLabel(String modelType) {

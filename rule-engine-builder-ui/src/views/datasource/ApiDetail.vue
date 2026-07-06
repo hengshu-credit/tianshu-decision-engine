@@ -128,10 +128,6 @@
               <div class="template-help">适用于第三方 HTTP/HTTPS 接口，Header/Query/请求体都可以从规则入参中取值。</div>
               <el-button size="mini" @click="applyTemplate('HTTP')">填入 HTTP 示例</el-button>
             </el-tab-pane>
-            <el-tab-pane label="衡枢分V1模板" name="HSCREDIT_V1">
-              <div class="template-help">适用于附件这种请求体：根对象包含 <code>request_id</code>、<code>model_id</code>、<code>model_params.br_applyloanstr_v2</code>，测试调用时把完整 JSON 放进请求参数。</div>
-              <el-button size="mini" @click="applyTemplate('HSCREDIT_V1')">填入衡枢分V1示例</el-button>
-            </el-tab-pane>
             <el-tab-pane label="内部规则模板" name="RULE_ENGINE">
               <div class="template-help">适用于协议为“内部规则引擎”的数据源，接口地址填写已发布规则编码。</div>
               <el-button size="mini" @click="applyTemplate('RULE_ENGINE')">填入内部规则示例</el-button>
@@ -404,41 +400,6 @@ export default {
       })
     },
     applyTemplate(type) {
-      if (type === 'HSCREDIT_V1') {
-        this.form.requestMethod = 'POST'
-        this.form.contentType = 'application/json'
-        this.form.endpointUrl = this.form.endpointUrl || '/hscredit-score/v1'
-        this.form.headerConfig = this.stringifyJson({ 'X-Request-Id': '${request_id}' })
-        this.form.requestMapping = this.stringifyJson({
-          request_id: '$.request_id',
-          model_id: '$.model_id',
-          model_params: {
-            br_applyloanstr_v2: '$.model_params.br_applyloanstr_v2'
-          }
-        })
-        this.form.responseMapping = this.stringifyJson({
-          code: ['body.code', 'body.result.code'],
-          swiftNumber: [
-            'body.model_params.br_applyloanstr_v2.swift_number',
-            'body.data.swift_number',
-            'body.swift_number'
-          ],
-          applyLoanFlag: [
-            'body.model_params.br_applyloanstr_v2.flag_applyloanstr',
-            'body.data.flag_applyloanstr',
-            'body.flag_applyloanstr'
-          ],
-          alsM12CellNbankAllnum: {
-            paths: [
-              'body.model_params.br_applyloanstr_v2.als_m12_cell_nbank_allnum',
-              'body.data.als_m12_cell_nbank_allnum'
-            ],
-            default: null
-          }
-        })
-        this.form.bodyTemplate = ''
-        return
-      }
       if (type === 'RULE_ENGINE') {
         this.form.requestMethod = 'POST'
         this.form.contentType = 'application/json'

@@ -126,16 +126,16 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         }
         // 前缀匹配变量编码（likeLeft: 输入 "AMOUNT" 匹配 "AMOUNT"、"AMOUNT_DISCOUNT" 等）
         if (varCode != null && !varCode.isEmpty()) {
-            wrapper.likeRight(RuleVariable::getVarCode, varCode);
+            wrapper.like(RuleVariable::getVarCode, varCode);
         }
         // 前缀匹配变量名称
         if (varLabel != null && !varLabel.isEmpty()) {
-            wrapper.likeRight(RuleVariable::getVarLabel, varLabel);
+            wrapper.like(RuleVariable::getVarLabel, varLabel);
         }
         // 通过 projectCode 或 projectName 进行筛选
         if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectCode, projectCode))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
                     .stream().map(RuleProject::getId).collect(java.util.stream.Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleVariable::getProjectId, projectIds)
@@ -147,7 +147,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
             }
         } else if (projectName != null && !projectName.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectName, projectName))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
                     .stream().map(RuleProject::getId).collect(java.util.stream.Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleVariable::getProjectId, projectIds)

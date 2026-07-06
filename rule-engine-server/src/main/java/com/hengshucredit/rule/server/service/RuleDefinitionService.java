@@ -81,13 +81,13 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             wrapper.eq(RuleDefinition::getStatus, query.getStatus());
         }
         if (query.getRuleCode() != null && !query.getRuleCode().isEmpty()) {
-            wrapper.eq(RuleDefinition::getRuleCode, query.getRuleCode());
+            wrapper.like(RuleDefinition::getRuleCode, query.getRuleCode());
         }
         if (query.getRuleName() != null && !query.getRuleName().isEmpty()) {
             wrapper.like(RuleDefinition::getRuleName, query.getRuleName());
         }
         if (query.getProjectCode() != null && !query.getProjectCode().isEmpty()) {
-            wrapper.eq(RuleDefinition::getProjectCode, query.getProjectCode());
+            wrapper.like(RuleDefinition::getProjectCode, query.getProjectCode());
         }
         if (query.getPublishedVersion() != null && !query.getPublishedVersion().isEmpty()) {
             wrapper.eq(RuleDefinition::getPublishedVersion, query.getPublishedVersion());
@@ -437,7 +437,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             wrapper.eq(RuleDefinition::getStatus, status);
         }
         if (ruleCode != null && !ruleCode.isEmpty()) {
-            wrapper.eq(RuleDefinition::getRuleCode, ruleCode);
+            wrapper.like(RuleDefinition::getRuleCode, ruleCode);
         }
         if (ruleName != null && !ruleName.isEmpty()) {
             wrapper.like(RuleDefinition::getRuleName, ruleName);

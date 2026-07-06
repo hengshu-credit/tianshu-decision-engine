@@ -126,16 +126,16 @@ public class RuleFunctionService {
         }
         // 精确匹配函数编码
         if (funcCode != null && !funcCode.isEmpty()) {
-            wrapper.eq(RuleFunction::getFuncCode, funcCode);
+            wrapper.like(RuleFunction::getFuncCode, funcCode);
         }
         // 精确匹配函数名称
         if (funcLabel != null && !funcLabel.isEmpty()) {
-            wrapper.eq(RuleFunction::getFuncName, funcLabel);
+            wrapper.like(RuleFunction::getFuncName, funcLabel);
         }
         // 通过 projectCode 或 projectName 进行筛选
         if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectCode, projectCode))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
@@ -146,7 +146,7 @@ public class RuleFunctionService {
             }
         } else if (projectName != null && !projectName.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectName, projectName))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
@@ -176,11 +176,11 @@ public class RuleFunctionService {
         }
         // 精确匹配函数编码
         if (funcCode != null && !funcCode.isEmpty()) {
-            wrapper.eq(RuleFunction::getFuncCode, funcCode);
+            wrapper.like(RuleFunction::getFuncCode, funcCode);
         }
         // 精确匹配函数名称
         if (funcLabel != null && !funcLabel.isEmpty()) {
-            wrapper.eq(RuleFunction::getFuncName, funcLabel);
+            wrapper.like(RuleFunction::getFuncName, funcLabel);
         }
         // projectId 精确匹配（优先于 projectCode/projectName）
         if (projectId != null && projectId > 0) {
@@ -196,7 +196,7 @@ public class RuleFunctionService {
             }
         } else if (projectCode != null && !projectCode.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectCode, projectCode))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
@@ -207,7 +207,7 @@ public class RuleFunctionService {
             }
         } else if (projectName != null && !projectName.isEmpty()) {
             List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().eq(RuleProject::getProjectName, projectName))
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
                     .stream().map(RuleProject::getId).collect(Collectors.toList());
             if (!projectIds.isEmpty()) {
                 wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)

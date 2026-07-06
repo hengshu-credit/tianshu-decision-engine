@@ -29,7 +29,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         }
         if (hasText(datasourceCode)) {
             List<Long> ids = datasourceMapper.selectList(new LambdaQueryWrapper<RuleExternalDatasource>()
-                    .likeRight(RuleExternalDatasource::getDatasourceCode, datasourceCode))
+                    .like(RuleExternalDatasource::getDatasourceCode, datasourceCode))
                     .stream().map(RuleExternalDatasource::getId).collect(Collectors.toList());
             if (ids.isEmpty()) {
                 wrapper.eq(RuleExternalApiConfig::getDatasourceId, -1L);
@@ -38,7 +38,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
             }
         }
         if (hasText(apiCode)) {
-            wrapper.likeRight(RuleExternalApiConfig::getApiCode, apiCode);
+            wrapper.like(RuleExternalApiConfig::getApiCode, apiCode);
         }
         if (hasText(apiName)) {
             wrapper.like(RuleExternalApiConfig::getApiName, apiName);
