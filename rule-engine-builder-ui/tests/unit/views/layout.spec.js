@@ -114,12 +114,13 @@ describe('Layout — 侧边栏菜单配置', () => {
     { index: '/function', label: '函数管理', icon: 'el-icon-s-operation' },
     { index: '/test', label: '规则测试', icon: 'el-icon-video-play' },
     { index: '/lineage', label: '血缘分析', icon: 'el-icon-share' },
+    { index: '/experiment', label: '分流实验', icon: 'el-icon-s-flag' },
     { index: '/log', label: '执行日志', icon: 'el-icon-document' },
     { index: '/billing', label: '账单管理', icon: 'el-icon-coin' }
   ]
 
-  test('侧边栏包含 12 个菜单项', () => {
-    expect(sidebarMenus).toHaveLength(12)
+  test('侧边栏包含 13 个菜单项', () => {
+    expect(sidebarMenus).toHaveLength(13)
   })
 
   sidebarMenus.forEach(({ index, label, icon }) => {
@@ -132,7 +133,7 @@ describe('Layout — 侧边栏菜单配置', () => {
   })
 
   test('所有菜单项的 index 都是有效的路由路径', () => {
-    const validRoutes = ['/project', '/rule', '/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/lineage', '/log', '/billing']
+    const validRoutes = ['/project', '/rule', '/variable', '/list', '/datasource', '/database', '/model', '/function', '/test', '/lineage', '/experiment', '/log', '/billing']
     sidebarMenus.forEach(menu => {
       expect(validRoutes).toContain(menu.index)
     })
@@ -156,6 +157,7 @@ describe('Layout — 路由导航模拟', () => {
     { label: '函数管理', index: '/function' },
     { label: '规则测试', index: '/test' },
     { label: '血缘分析', index: '/lineage' },
+    { label: '分流实验', index: '/experiment' },
     { label: '执行日志', index: '/log' },
     { label: '账单管理', index: '/billing' }
   ]

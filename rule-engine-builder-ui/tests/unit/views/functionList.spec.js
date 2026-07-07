@@ -226,6 +226,41 @@ describe('FunctionList — 函数操作', () => {
     expect(JSON.parse(wrapper.vm.functionTestResultText).result).toBe(12.3)
   })
 
+  test('handleTestFunction 优先使用参数 example 生成复杂函数测试入参', () => {
+    const row = {
+      id: 6,
+      funcCode: 'jsonSum',
+      funcName: 'JSONPath 求和',
+      paramsJson: JSON.stringify([
+        {
+          name: 'json',
+          type: 'OBJECT',
+          example: {
+            orders: [
+              { status: 'SUCCESS', amount: 12.5 },
+              { status: 'FAIL', amount: 3 },
+              { status: 'SUCCESS', amount: 7.5 }
+            ]
+          }
+        },
+        { name: 'path', type: 'STRING', example: "$.orders[?(@.status='SUCCESS')].amount" }
+      ])
+    }
+
+    wrapper.vm.handleTestFunction(row)
+
+    expect(JSON.parse(wrapper.vm.functionTestParamsText)).toEqual({
+      json: {
+        orders: [
+          { status: 'SUCCESS', amount: 12.5 },
+          { status: 'FAIL', amount: 3 },
+          { status: 'SUCCESS', amount: 7.5 }
+        ]
+      },
+      path: "$.orders[?(@.status='SUCCESS')].amount"
+    })
+  })
+
   test('handleDelete 调用删除 API', async () => {
     functionApi.deleteFunction.mockResolvedValueOnce({ data: true })
     const row = { id: 99, funcName: '测试函数' }

@@ -120,7 +120,8 @@ public class RuleFunctionService {
      * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
      */
     public IPage<RuleFunction> pageByProject(Long projectId, int pageNum, int pageSize, String scope,
-                                              String projectCode, String projectName, String funcCode, String funcLabel) {
+                                              String projectCode, String projectName, String funcCode, String funcLabel,
+                                              String implType) {
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
@@ -146,6 +147,9 @@ public class RuleFunctionService {
         // 精确匹配函数名称
         if (funcLabel != null && !funcLabel.isEmpty()) {
             wrapper.like(RuleFunction::getFuncName, funcLabel);
+        }
+        if (implType != null && !implType.isEmpty()) {
+            wrapper.eq(RuleFunction::getImplType, implType);
         }
         // 通过 projectCode 或 projectName 进行筛选
         if (projectCode != null && !projectCode.isEmpty()) {
@@ -184,7 +188,8 @@ public class RuleFunctionService {
      *       避免返回所有项目级函数造成数据泄露和界面混乱。
      */
     public IPage<RuleFunction> pageAll(int pageNum, int pageSize, String scope, Long projectId,
-                                        String projectCode, String projectName, String funcCode, String funcLabel) {
+                                        String projectCode, String projectName, String funcCode, String funcLabel,
+                                        String implType) {
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
@@ -196,6 +201,9 @@ public class RuleFunctionService {
         // 精确匹配函数名称
         if (funcLabel != null && !funcLabel.isEmpty()) {
             wrapper.like(RuleFunction::getFuncName, funcLabel);
+        }
+        if (implType != null && !implType.isEmpty()) {
+            wrapper.eq(RuleFunction::getImplType, implType);
         }
         // projectId 精确匹配（优先于 projectCode/projectName）
         if (projectId != null && projectId > 0) {

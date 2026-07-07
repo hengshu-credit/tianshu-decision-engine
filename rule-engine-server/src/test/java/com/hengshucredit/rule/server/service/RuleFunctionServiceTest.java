@@ -5,6 +5,7 @@ import com.hengshucredit.rule.model.entity.RuleFunction;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -47,6 +48,26 @@ public class RuleFunctionServiceTest {
         throw new AssertionError("Expected IllegalArgumentException");
     }
 
+    @Test
+    public void testFunctionExecutesCoreJavaJsonFunction() {
+        RuleFunction function = javaFunction("jsonSum",
+                "[{\"name\":\"json\",\"type\":\"OBJECT\"},{\"name\":\"path\",\"type\":\"STRING\"}]",
+                "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions",
+                "jsonSum");
+        function.setId(2L);
+
+        RuleFunctionService service = serviceWithFunction(function);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("json", sampleJson());
+        params.put("path", "$.orders[?(@.status='SUCCESS')].amount");
+
+        Map<String, Object> result = service.testFunction(2L, params);
+
+        assertEquals(true, result.get("success"));
+        assertEquals("jsonSum", result.get("functionCode"));
+        assertEquals(20.0, ((Number) result.get("result")).doubleValue(), 0.000001);
+    }
+
     private static RuleFunctionService serviceWithFunction(RuleFunction function) {
         RuleFunctionService service = new RuleFunctionService() {
             @Override
@@ -67,5 +88,33 @@ public class RuleFunctionServiceTest {
         function.setParamsJson(paramsJson);
         function.setImplScript(implScript);
         return function;
+    }
+
+    private static RuleFunction javaFunction(String funcCode, String paramsJson, String implClass, String implMethod) {
+        RuleFunction function = new RuleFunction();
+        function.setFuncCode(funcCode);
+        function.setFuncName(funcCode);
+        function.setImplType("JAVA");
+        function.setParamsJson(paramsJson);
+        function.setImplClass(implClass);
+        function.setImplMethod(implMethod);
+        return function;
+    }
+
+    private static Map<String, Object> sampleJson() {
+        Map<String, Object> root = new LinkedHashMap<>();
+        root.put("orders", Arrays.asList(
+                order("SUCCESS", 12.5),
+                order("FAIL", 3.0),
+                order("SUCCESS", 7.5)
+        ));
+        return root;
+    }
+
+    private static Map<String, Object> order(String status, double amount) {
+        Map<String, Object> order = new LinkedHashMap<>();
+        order.put("status", status);
+        order.put("amount", amount);
+        return order;
     }
 }

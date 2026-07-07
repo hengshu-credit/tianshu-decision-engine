@@ -399,9 +399,19 @@ export default {
       const params = this.parseParams(row && row.paramsJson)
       const sample = {}
       params.forEach(item => {
-        if (item && item.name) sample[item.name] = sampleValueForVarType(item.type)
+        if (item && item.name) sample[item.name] = this.sampleValueForFunctionParam(item)
       })
       return JSON.stringify(sample, null, 2)
+    },
+    sampleValueForFunctionParam(item) {
+      if (item && Object.prototype.hasOwnProperty.call(item, 'example')) {
+        try {
+          return JSON.parse(JSON.stringify(item.example))
+        } catch (e) {
+          return item.example
+        }
+      }
+      return sampleValueForVarType(item && item.type)
     },
     async doTestFunction() {
       if (!this.functionTestTarget || !this.functionTestTarget.id) return

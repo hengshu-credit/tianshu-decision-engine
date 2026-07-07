@@ -36,8 +36,9 @@ public class RuleFunctionController {
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String funcCode,
-            @RequestParam(required = false) String funcLabel) {
-        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName, funcCode, funcLabel));
+            @RequestParam(required = false) String funcLabel,
+            @RequestParam(required = false) String implType) {
+        return Result.ok(functionService.pageByProject(projectId, pageNum, pageSize, scope, projectCode, projectName, funcCode, funcLabel, implType));
     }
 
     /**
@@ -53,8 +54,9 @@ public class RuleFunctionController {
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String funcCode,
-            @RequestParam(required = false) String funcLabel) {
-        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectId, projectCode, projectName, funcCode, funcLabel));
+            @RequestParam(required = false) String funcLabel,
+            @RequestParam(required = false) String implType) {
+        return Result.ok(functionService.pageAll(pageNum, pageSize, scope, projectId, projectCode, projectName, funcCode, funcLabel, implType));
     }
 
     /**

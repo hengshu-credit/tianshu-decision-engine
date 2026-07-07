@@ -2,6 +2,7 @@ import Vue from 'vue'
 import VueRouter from 'vue-router'
 import axios from 'axios'
 import Layout from '@/layout/index.vue'
+import { createConsoleAuthGuard } from './authGuard'
 
 Vue.use(VueRouter)
 
@@ -28,18 +29,10 @@ function fetchConsoleConfig() {
   return _consoleConfigPromise
 }
 
-/**
- * 会话校验结果缓存（模块级，整个页面生命周期只请求一次）
- */
-var _mePromise = null
-
 function fetchMe() {
-  if (!_mePromise) {
-    _mePromise = authAxios.get('/auth/console/me')
-      .then(function (res) { return res.data })
-      .catch(function () { return null })
-  }
-  return _mePromise
+  return authAxios.get('/auth/console/me')
+    .then(function (res) { return res.data })
+    .catch(function () { return null })
 }
 
 const routes = [
@@ -269,34 +262,9 @@ const router = new VueRouter({
 })
 
 /**
- * 若后端启用控制台登录，则校验会话；未启用时与改造前行为一致。
+ * 若后端启用控制台登录，则每次进入受保护路由都校验会话；
+ * 未启用时与改造前行为一致。
  */
-var _checked = false // 是否已完成登录校验（首次校验后不再重复触发重定向）
-router.beforeEach(async (to, from, next) => {
-  var body = await fetchConsoleConfig()
-  if (to.path === '/login') {
-    if (body && body.code === 200 && body.data && !body.data.loginEnabled) {
-      // 登录已禁用，直接跳转（使用 Vue Router 而非 location 避免页面刷新）
-      return next({ path: to.query.redirect || '/project', replace: true })
-    }
-    return next()
-  }
-  if (!body || body.code !== 200 || !body.data || !body.data.loginEnabled) {
-    return next()
-  }
-  if (_checked) {
-    // 首次校验后不再重复触发重定向，直接放行
-    return next()
-  }
-  try {
-    var me = await fetchMe()
-    if (me && me.code === 200 && me.data && me.data.username) {
-      return next()
-    }
-  } catch (e) { /* ignore */ }
-  // 记录已触发重定向，防止刷新后再次重定向形成循环
-  _checked = true
-  return next({ path: '/login?redirect=' + encodeURIComponent(to.fullPath), replace: true })
-})
+router.beforeEach(createConsoleAuthGuard(fetchConsoleConfig, fetchMe))
 
 export default router
