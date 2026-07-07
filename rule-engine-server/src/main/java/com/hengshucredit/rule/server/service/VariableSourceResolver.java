@@ -474,7 +474,7 @@ public class VariableSourceResolver {
         return error == null ? "未知错误" : String.valueOf(error);
     }
 
-    private Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> resolvedParams) {
+    Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> resolvedParams) {
         Map<String, Object> params = new LinkedHashMap<>();
         List<RuleModelInputField> fields = model == null ? null : model.getInputFields();
         if (fields == null || fields.isEmpty()) {
@@ -491,12 +491,45 @@ public class VariableSourceResolver {
             if (value == null && !fieldName.equals(scriptName)) {
                 value = readPath(resolvedParams, fieldName);
             }
+            String modelCode = model == null ? null : trimToNull(model.getModelCode());
+            if (value == null && modelCode != null) {
+                value = readPath(resolvedParams, modelCode + "_fields." + scriptName);
+            }
+            if (value == null && modelCode != null && !fieldName.equals(scriptName)) {
+                value = readPath(resolvedParams, modelCode + "_fields." + fieldName);
+            }
+            if (value == null) {
+                value = findUniqueNestedFieldValue(resolvedParams, fieldName);
+            }
             if (value == null && hasText(field.getDefaultValue())) {
                 value = parseJsonOrRaw(field.getDefaultValue());
             }
             params.put(fieldName, value);
         }
         return params;
+    }
+
+    private Object findUniqueNestedFieldValue(Map<String, Object> params, String fieldName) {
+        if (params == null || !hasText(fieldName)) {
+            return null;
+        }
+        Object matched = null;
+        boolean found = false;
+        for (Object value : params.values()) {
+            if (!(value instanceof Map)) {
+                continue;
+            }
+            Map<?, ?> nested = (Map<?, ?>) value;
+            if (!nested.containsKey(fieldName)) {
+                continue;
+            }
+            if (found) {
+                return null;
+            }
+            matched = nested.get(fieldName);
+            found = true;
+        }
+        return matched;
     }
 
     private RuleModel loadModelDetail(RuleModel model) {
@@ -577,7 +610,7 @@ public class VariableSourceResolver {
         if (!hasText(sql)) {
             throw new IllegalArgumentException("DB变量缺少查询SQL");
         }
-        List<Object> queryParams = buildParamList(config.get("params"), params);
+        List<Object> queryParams = alignQueryParamsWithSql(sql, buildParamList(config.get("params"), params));
         int maxRows = intValue(config.get("maxRows"), 1);
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
@@ -818,6 +851,31 @@ public class VariableSourceResolver {
             }
         }
         return result;
+    }
+
+    private List<Object> alignQueryParamsWithSql(String sql, List<Object> queryParams) {
+        int placeholderCount = countJdbcPlaceholders(sql);
+        if (placeholderCount < 0 || queryParams == null || queryParams.size() <= placeholderCount) {
+            return queryParams;
+        }
+        return new ArrayList<>(queryParams.subList(0, placeholderCount));
+    }
+
+    private int countJdbcPlaceholders(String sql) {
+        if (!hasText(sql)) {
+            return -1;
+        }
+        int count = 0;
+        boolean inSingleQuote = false;
+        for (int i = 0; i < sql.length(); i++) {
+            char c = sql.charAt(i);
+            if (c == '\'') {
+                inSingleQuote = !inSingleQuote;
+            } else if (c == '?' && !inSingleQuote) {
+                count++;
+            }
+        }
+        return count;
     }
 
     private List<String> buildStringList(Object configValue) {

@@ -44,6 +44,26 @@ public class ExternalConfigDefaultsTest {
         assertEquals(Integer.valueOf(0), config.getResponseCacheSeconds());
     }
 
+    @Test
+    public void apiAsyncDefaultsPreserveSelectedAsyncConfigOnly() throws Exception {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setRequestMode("ASYNC");
+        config.setAsyncResultMode("POLL");
+        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\"}");
+        config.setAsyncCallbackConfig("");
+        config.setAsyncCallbackUrl("  ");
+        config.setAsyncResultPath("body.data");
+
+        invokeFillDefaults(new RuleExternalApiConfigService(), config);
+
+        assertEquals("ASYNC", config.getRequestMode());
+        assertEquals("POLL", config.getAsyncResultMode());
+        assertEquals("{\"resultEndpointUrl\":\"/result/${taskId}\"}", config.getAsyncPollConfig());
+        assertNull(config.getAsyncCallbackConfig());
+        assertNull(config.getAsyncCallbackUrl());
+        assertEquals("body.data", config.getAsyncResultPath());
+    }
+
     private void invokeFillDefaults(Object service, Object target) throws Exception {
         Method method = service.getClass().getDeclaredMethod("fillDefaults", target.getClass());
         method.setAccessible(true);

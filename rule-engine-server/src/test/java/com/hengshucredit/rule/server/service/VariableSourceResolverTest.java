@@ -147,6 +147,23 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void modelParamsCanReadFieldsFromModelFieldsObject() {
+        RuleModel model = modelDetail(100L, "score_f1",
+                input("HYBASE_X115", "HYBASE_X115"),
+                input("HYJH_X54", "HYJH_X54"));
+        Map<String, Object> scoreFields = new LinkedHashMap<>();
+        scoreFields.put("HYBASE_X115", 2);
+        scoreFields.put("HYJH_X54", 3);
+        Map<String, Object> resolvedParams = new LinkedHashMap<>();
+        resolvedParams.put("score_f1_fields", scoreFields);
+
+        Map<String, Object> modelParams = new VariableSourceResolver().buildModelParams(model, resolvedParams);
+
+        assertEquals(2, modelParams.get("HYBASE_X115"));
+        assertEquals(3, modelParams.get("HYJH_X54"));
+    }
+
+    @Test
     public void sourceVariableWaitsForRequiredModelOutput() throws Exception {
         RuleVariable riskBand = variable("riskBand", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.score_f1.score\"},\"resultPath\":\"body.band\"}");

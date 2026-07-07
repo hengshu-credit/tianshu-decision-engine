@@ -75,7 +75,7 @@ export function collectReferencePaths(value, options = {}) {
 
 export function setPathValue(target, path, value) {
   if (!target || !path) return
-  const parts = String(path).split('.').map(item => item.trim()).filter(Boolean)
+  const parts = normalizePath(path).split('.').map(item => item.trim()).filter(Boolean)
   if (parts.length === 0) return
   let current = target
   parts.forEach((part, index) => {

@@ -345,6 +345,14 @@ public class SchemaSyncService {
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
         addColumnIfMissing(table, "billing_condition",
                 "`billing_condition` JSON DEFAULT NULL COMMENT '计费条件JSON，空表示正常计费' AFTER `billing_item_code`");
+        addColumnIfMissing(table, "async_result_mode",
+                "`async_result_mode` VARCHAR(32) DEFAULT NULL COMMENT '异步结果获取方式：POLL/CALLBACK' AFTER `fallback_value`");
+        addColumnIfMissing(table, "async_poll_config",
+                "`async_poll_config` JSON DEFAULT NULL COMMENT '异步轮询配置JSON' AFTER `async_result_mode`");
+        addColumnIfMissing(table, "async_callback_config",
+                "`async_callback_config` JSON DEFAULT NULL COMMENT '异步回调配置JSON' AFTER `async_poll_config`");
+        addColumnIfMissing(table, "test_sample_params",
+                "`test_sample_params` LONGTEXT DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`");
     }
 
     private void ensureModelFieldForeignKeysRemoved() {

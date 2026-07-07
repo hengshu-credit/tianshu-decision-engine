@@ -204,6 +204,15 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void tianshuDatasourceUsesLocalRuleEnginePathEvenWhenLegacyProtocolIsHttps() {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setProtocol("HTTPS");
+        datasource.setDatasourceCode("tianshu_rule_engine");
+
+        assertTrue(new ExternalApiInvokeService().isRuleEngineDatasource(datasource));
+    }
+
+    @Test
     public void invokeUsesResponseCacheWithinTtl() throws Exception {
         AtomicInteger callCount = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -323,6 +332,205 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void invokeBuildsNestedRequestBodyWhenTargetPathStartsWithDollar() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[1024];
+            int len;
+            while ((len = exchange.getRequestBody().read(chunk)) >= 0) {
+                buffer.write(chunk, 0, len);
+            }
+            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+            byte[] response = "{\"code\":\"00\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(7L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(99L);
+            config.setDatasourceId(7L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setRequestMapping("{\"$.params.mobile_no\":\"$.mobile_no\",\"$.params.idcard_no\":\"$.idcard_no\"}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("mobile_no", "13800000000");
+            params.put("idcard_no", "110101199001010011");
+
+            service.invoke(99L, params);
+
+            assertTrue(requestBody.get().contains("\"params\":{"));
+            assertTrue(requestBody.get().contains("\"mobile_no\":\"13800000000\""));
+            assertTrue(requestBody.get().contains("\"idcard_no\":\"110101199001010011\""));
+            assertEquals(false, requestBody.get().contains("\"$.params.mobile_no\""));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void requestMappingTakesPrecedenceOverLegacyBodyTemplate() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[1024];
+            int len;
+            while ((len = exchange.getRequestBody().read(chunk)) >= 0) {
+                buffer.write(chunk, 0, len);
+            }
+            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+            byte[] response = "{\"ok\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(7L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(99L);
+            config.setDatasourceId(7L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setRequestMapping("{\"params\":{\"$.mobile_no\":\"$.mobile_no\"},\"clientAppName\":\"BNLP\"}");
+            config.setBodyTemplate("{\"params\":{\"mobile_no\":\"legacy\"}}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("mobile_no", "13800138000");
+
+            service.invoke(99L, params);
+
+            assertTrue(requestBody.get().contains("\"mobile_no\":\"13800138000\""));
+            assertEquals(false, requestBody.get().contains("legacy"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void queryBillingSkipsLocalExceptionBeforeRequestIssued() {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(7L);
+        datasource.setProtocol("HTTP");
+        datasource.setBaseUrl("bad-url");
+        datasource.setAuthType("NONE");
+
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setId(99L);
+        config.setDatasourceId(7L);
+        config.setRequestMethod("POST");
+        config.setEndpointUrl("/score");
+        config.setContentType("application/json");
+        config.setBillingCondition("{\"mode\":\"QUERY\"}");
+        config.setResponseCacheSeconds(0);
+        config.setTimeoutMs(3000);
+        config.setRetryCount(0);
+        config.setRetryIntervalMs(0);
+        config.setExceptionStrategy("RETURN_DEFAULT");
+        config.setFallbackValue("{}");
+
+        RecordingBillingService billingService = new RecordingBillingService();
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ReflectionTestUtils.setField(service, "apiConfigMapper",
+                mapperProxy(RuleExternalApiConfigMapper.class, config));
+        ReflectionTestUtils.setField(service, "datasourceMapper",
+                mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+        ReflectionTestUtils.setField(service, "billingService", billingService);
+
+        service.invoke(99L, new LinkedHashMap<>());
+
+        assertEquals(0, billingService.recordCount.get());
+    }
+
+    @Test
+    public void hitBillingRecordsOnlyWhenConditionMatchesResponse() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            byte[] response = "{\"hit\":true}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(7L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(99L);
+            config.setDatasourceId(7L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setBillingCondition("{\"mode\":\"HIT\",\"path\":\"body.hit\",\"operator\":\"==\",\"value\":true}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            RecordingBillingService billingService = new RecordingBillingService();
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", billingService);
+
+            service.invoke(99L, new LinkedHashMap<>());
+
+            assertEquals(1, billingService.recordCount.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void sensitiveRequestFieldsAreMaskedBeforeLogging() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("username", "alice");
@@ -422,9 +630,12 @@ public class ExternalApiInvokeServiceTest {
     }
 
     private static class RecordingBillingService extends RuleBillingService {
+        private final AtomicInteger recordCount = new AtomicInteger();
+
         @Override
         public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                        boolean success, Long costTimeMs, String errorMessage) {
+            recordCount.incrementAndGet();
         }
     }
 }

@@ -55,14 +55,16 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         return page;
     }
 
-    public void saveWithDefaults(RuleExternalApiConfig config) {
+    public RuleExternalApiConfig saveWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
         save(config);
+        return getById(config.getId());
     }
 
-    public void updateWithDefaults(RuleExternalApiConfig config) {
+    public RuleExternalApiConfig updateWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
         updateById(config);
+        return getById(config.getId());
     }
 
     public void deleteByDatasourceId(Long datasourceId) {
@@ -85,6 +87,21 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         config.setRequestMapping(nullIfBlank(config.getRequestMapping()));
         config.setResponseMapping(nullIfBlank(config.getResponseMapping()));
         config.setAuthApiConfig(nullIfBlank(config.getAuthApiConfig()));
+        config.setTestSampleParams(nullIfBlank(config.getTestSampleParams()));
+        config.setAsyncPollConfig(nullIfBlank(config.getAsyncPollConfig()));
+        config.setAsyncCallbackConfig(nullIfBlank(config.getAsyncCallbackConfig()));
+        config.setAsyncCallbackUrl(nullIfBlank(config.getAsyncCallbackUrl()));
+        config.setAsyncResultPath(nullIfBlank(config.getAsyncResultPath()));
+        if ("ASYNC".equals(config.getRequestMode()) && !hasText(config.getAsyncResultMode())) {
+            config.setAsyncResultMode("POLL");
+        }
+        if (!"ASYNC".equals(config.getRequestMode())) {
+            config.setAsyncResultMode(null);
+            config.setAsyncPollConfig(null);
+            config.setAsyncCallbackConfig(null);
+            config.setAsyncCallbackUrl(null);
+            config.setAsyncResultPath(null);
+        }
         if (config.getTokenCacheSeconds() == null) {
             config.setTokenCacheSeconds(0);
         }

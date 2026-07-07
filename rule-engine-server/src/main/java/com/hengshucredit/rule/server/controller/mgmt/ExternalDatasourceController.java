@@ -81,15 +81,13 @@ public class ExternalDatasourceController {
     }
 
     @PostMapping("/api-config")
-    public R<Void> createApiConfig(@RequestBody RuleExternalApiConfig config) {
-        apiConfigService.saveWithDefaults(config);
-        return R.ok();
+    public R<RuleExternalApiConfig> createApiConfig(@RequestBody RuleExternalApiConfig config) {
+        return R.ok(apiConfigService.saveWithDefaults(config));
     }
 
     @PutMapping("/api-config")
-    public R<Void> updateApiConfig(@RequestBody RuleExternalApiConfig config) {
-        apiConfigService.updateWithDefaults(config);
-        return R.ok();
+    public R<RuleExternalApiConfig> updateApiConfig(@RequestBody RuleExternalApiConfig config) {
+        return R.ok(apiConfigService.updateWithDefaults(config));
     }
 
     @DeleteMapping("/api-config/{id:\\d+}")

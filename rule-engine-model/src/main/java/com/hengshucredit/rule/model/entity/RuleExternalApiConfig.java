@@ -38,12 +38,16 @@ public class RuleExternalApiConfig {
     private Integer retryIntervalMs;
     private String exceptionStrategy;
     private String fallbackValue;
+    private String asyncResultMode;
+    private String asyncPollConfig;
+    private String asyncCallbackConfig;
     private String asyncCallbackUrl;
     private String asyncResultPath;
     private String billingItemCode;
     private String billingCondition;
     private BigDecimal unitPrice;
     private String description;
+    private String testSampleParams;
     private Integer status;
     @TableField(exist = false)
     private String datasourceName;

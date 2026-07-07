@@ -97,7 +97,7 @@ public class ExternalApiInvokeService {
                     responseCaches.put(responseCacheKey, new ApiResponseCache(copyResponse(result),
                             System.currentTimeMillis() + responseCacheSeconds * 1000L));
                 }
-                if (matchesBillingCondition(apiConfig.getBillingCondition(), result)) {
+                if (shouldRecordSuccessBilling(apiConfig, result)) {
                     billingService.recordApiExecution(apiConfig, datasource, true, cost, null);
                 }
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
@@ -121,7 +121,9 @@ public class ExternalApiInvokeService {
             logDatasourceCall(apiConfig, datasource, trace, true, cached, message, cost);
             return cached;
         }
-        billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
+        if (shouldRecordFailedBilling(apiConfig, trace)) {
+            billingService.recordApiExecution(apiConfig, datasource, false, cost, message);
+        }
         if ("RETURN_DEFAULT".equals(apiConfig.getExceptionStrategy())) {
             Map<String, Object> fallback = new LinkedHashMap<>();
             fallback.put("success", false);
@@ -193,7 +195,7 @@ public class ExternalApiInvokeService {
 
     private Map<String, Object> doInvoke(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                          Map<String, Object> params, InvokeTrace trace) throws Exception {
-        if ("RULE_ENGINE".equalsIgnoreCase(datasource.getProtocol())) {
+        if (isRuleEngineDatasource(datasource)) {
             return doInvokeRuleEngine(apiConfig, datasource, params, trace);
         }
         String url = buildUrl(datasource.getBaseUrl(), apiConfig.getEndpointUrl());
@@ -220,6 +222,7 @@ public class ExternalApiInvokeService {
         trace.requestUrl = builder.build(true).toUriString();
         trace.requestHeaders = headersToLog(headers);
         trace.requestBody = requestBody;
+        trace.requestIssued = true;
         ResponseEntity<String> response = restTemplate.exchange(
                 builder.build(true).toUri(),
                 method,
@@ -234,6 +237,16 @@ public class ExternalApiInvokeService {
         result.put("httpStatus", response.getStatusCodeValue());
         result.put("body", responseBody);
         return applyResponseMapping(apiConfig, result);
+    }
+
+    boolean isRuleEngineDatasource(RuleExternalDatasource datasource) {
+        if (datasource == null) {
+            return false;
+        }
+        if ("RULE_ENGINE".equalsIgnoreCase(datasource.getProtocol())) {
+            return true;
+        }
+        return "tianshu_rule_engine".equalsIgnoreCase(datasource.getDatasourceCode());
     }
 
     private Map<String, Object> doInvokeRuleEngine(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
@@ -259,10 +272,11 @@ public class ExternalApiInvokeService {
             throw new IllegalArgumentException("内部规则不存在或未发布: " + ruleCode);
         }
         Object mapped = config.get("params");
-        Map<String, Object> ruleParams = mapped == null ? params : parseNestedMap(resolveValue(mapped, params));
+        Map<String, Object> ruleParams = mapped == null ? params : parseNestedMap(resolveRequestMappingObject(mapped, params));
         trace.requestMethod = "POST";
         trace.requestUrl = "rule-engine://local/" + ruleCode;
         trace.requestBody = ruleParams;
+        trace.requestIssued = true;
         RuleResult result = ruleExecuteService.executePublished(published, ruleParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", result.isSuccess());
@@ -519,19 +533,72 @@ public class ExternalApiInvokeService {
         if ("GET".equals(apiConfig.getRequestMethod()) || "DELETE".equals(apiConfig.getRequestMethod())) {
             return null;
         }
+        Map<String, Object> mapping = parseJsonMap(apiConfig.getRequestMapping());
+        if (!mapping.isEmpty()) {
+            return resolveRequestMappingObject(mapping, params);
+        }
         if (apiConfig.getBodyTemplate() != null && !apiConfig.getBodyTemplate().trim().isEmpty()) {
             String resolved = resolveTemplate(apiConfig.getBodyTemplate(), params);
             return parseJsonOrRaw(resolved);
         }
-        Map<String, Object> mapping = parseJsonMap(apiConfig.getRequestMapping());
-        if (!mapping.isEmpty()) {
-            Map<String, Object> body = new LinkedHashMap<>();
-            for (Map.Entry<String, Object> entry : mapping.entrySet()) {
-                body.put(entry.getKey(), resolveValue(entry.getValue(), params));
-            }
-            return body;
-        }
         return params;
+    }
+
+    private Object resolveRequestMappingObject(Object value, Map<String, Object> params) {
+        if (value instanceof Map) {
+            Map<String, Object> source = parseNestedMap(value);
+            Map<String, Object> result = new LinkedHashMap<>();
+            for (Map.Entry<String, Object> entry : source.entrySet()) {
+                putMappedRequestValue(result, normalizeOutputFieldName(entry.getKey()),
+                        resolveRequestMappingObject(entry.getValue(), params));
+            }
+            return result;
+        }
+        if (value instanceof List) {
+            List<Object> result = new ArrayList<>();
+            for (Object item : (List<?>) value) {
+                result.add(resolveRequestMappingObject(item, params));
+            }
+            return result;
+        }
+        return resolveValue(value, params);
+    }
+
+    private String normalizeOutputFieldName(String name) {
+        if (name == null) {
+            return "";
+        }
+        String text = String.valueOf(name).trim();
+        return text.startsWith("$.") ? text.substring(2) : text;
+    }
+
+    private void putMappedRequestValue(Map<String, Object> result, String outputPath, Object value) {
+        if (!hasText(outputPath)) {
+            return;
+        }
+        String[] parts = outputPath.split("\\.");
+        Map<String, Object> current = result;
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i] == null ? "" : parts[i].trim();
+            if (part.isEmpty()) {
+                continue;
+            }
+            if (i == parts.length - 1) {
+                current.put(part, value);
+                return;
+            }
+            Object next = current.get(part);
+            if (!(next instanceof Map)) {
+                next = new LinkedHashMap<String, Object>();
+                current.put(part, next);
+            }
+            current = castStringObjectMap(next);
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> castStringObjectMap(Object value) {
+        return (Map<String, Object>) value;
     }
 
     private String buildUrl(String baseUrl, String endpointUrl) {
@@ -675,6 +742,10 @@ public class ExternalApiInvokeService {
             return true;
         }
         Map<String, Object> condition = parseJsonMap(billingCondition);
+        String mode = firstText(condition.get("mode"), condition.get("billingMode"));
+        if ("QUERY".equalsIgnoreCase(mode)) {
+            return true;
+        }
         String path = firstText(condition.get("path"), condition.get("field"));
         if (!hasText(path)) {
             return true;
@@ -687,6 +758,19 @@ public class ExternalApiInvokeService {
             return !equal;
         }
         return equal;
+    }
+
+    private boolean shouldRecordSuccessBilling(RuleExternalApiConfig apiConfig, Map<String, Object> result) {
+        return matchesBillingCondition(apiConfig.getBillingCondition(), result);
+    }
+
+    private boolean shouldRecordFailedBilling(RuleExternalApiConfig apiConfig, InvokeTrace trace) {
+        if (trace == null || !trace.requestIssued) {
+            return false;
+        }
+        Map<String, Object> condition = parseJsonMap(apiConfig.getBillingCondition());
+        String mode = firstText(condition.get("mode"), condition.get("billingMode"));
+        return !("HIT".equalsIgnoreCase(mode));
     }
 
     private boolean valuesEqual(Object actual, Object expected) {
@@ -978,6 +1062,7 @@ public class ExternalApiInvokeService {
         private Object requestBody;
         private Integer responseStatus;
         private Object responseBody;
+        private boolean requestIssued;
     }
 
     private static class TokenCache {
