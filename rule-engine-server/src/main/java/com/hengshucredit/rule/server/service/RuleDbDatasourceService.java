@@ -57,6 +57,14 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
         save(datasource);
     }
 
+    public RuleDbDatasource getDetail(Long id) {
+        RuleDbDatasource datasource = getById(id);
+        if (datasource != null) {
+            fillProjectName(java.util.Collections.singletonList(datasource));
+        }
+        return datasource;
+    }
+
     public void updateWithDefaults(RuleDbDatasource datasource) {
         fillDefaults(datasource);
         updateById(datasource);

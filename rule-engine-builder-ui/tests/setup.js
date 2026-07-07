@@ -205,6 +205,7 @@ jest.mock('@/api/lineage', () => ({
 }))
 jest.mock('@/api/database', () => ({
   listDbDatasources: jest.fn(),
+  getDbDatasource: jest.fn(),
   createDbDatasource: jest.fn(),
   updateDbDatasource: jest.fn(),
   deleteDbDatasource: jest.fn(),

@@ -332,8 +332,138 @@ INSERT INTO rule_engine.rule_external_api_config (datasource_id,api_code,api_nam
 	 (1,'DBQUERY','评分规则准入结果','POST','/DBQUERY','application/json','SYNC',7,8,'{"X-Request-Id": "${requestId}"}',NULL,'{"params": {"$.is_hit": 1, "$.mobile_no": "13800138000"}, "clientAppName": "BNLP"}',NULL,NULL,'INHERIT',NULL,0,0,3000,0,200,'FAIL_FAST',NULL,'','','',NULL,0.000000,'',1,'2026-07-04 04:00:41','2026-07-04 04:00:41');
 INSERT INTO rule_engine.rule_external_datasource (project_id,`scope`,datasource_code,datasource_name,provider_name,protocol,base_url,auth_type,auth_config,token_cache_seconds,description,status,create_time,update_time) VALUES
 	 (0,'GLOBAL','tianshu_rule_engine','天枢决策引擎','衡枢真信','HTTPS','http://localhost:9090/api/rule/sync/execute','API_KEY','{"name": "X-Rule-Token", "value": "327d0665e1074c2e9c349ed38497801c", "location": "HEADER"}',0,'',1,'2026-07-04 03:40:56','2026-07-04 03:40:56');
-INSERT INTO rule_engine.rule_function_version (function_id,version,function_json,change_log,publish_by,publish_time) VALUES
-	 (1,1,'{"createTime":1783355671000,"description":"身份证提取出生日期\\n\\n参数：idCard（STRING）\\n返回类型：DATE 或 OBJECT","funcCode":"idCardBirthDate","funcName":"身份证生日提取","id":1,"implBeanName":"","implClass":"","implMethod":"","implScript":"if (idCard == null) {\\r\\n    return null;\\r\\n}\\r\\n\\r\\nid = idCard.toString().trim();\\r\\n\\r\\nif (id.matches(\\"^[0-9]{17}[0-9Xx]$\\")) {\\r\\n    birthText = id.substring(6, 14);\\r\\n} else if (id.matches(\\"^[0-9]{15}$\\")) {\\r\\n    birthText = \\"19\\" + id.substring(6, 12);\\r\\n} else {\\r\\n    return null;\\r\\n}\\r\\n\\r\\ntry {\\r\\n    formatter = new java.text.SimpleDateFormat(\\"yyyyMMdd\\");\\r\\n    formatter.setLenient(false);\\r\\n    return formatter.parse(birthText);\\r\\n} catch (Exception e) {\\r\\n    return null;\\r\\n}","implType":"SCRIPT","paramsJson":"[{\\"name\\":\\"idCard\\",\\"type\\":\\"STRING\\",\\"label\\":\\"身份证号\\"}]","projectId":0,"returnType":"DATE","scope":"GLOBAL","status":1,"updateTime":1783355671000}','create',NULL,'2026-07-07 00:34:31');
+INSERT INTO rule_engine.rule_function (project_id,`scope`,func_code,func_name,description,params_json,return_type,impl_type,impl_script,impl_class,impl_method,impl_bean_name,status,create_time,update_time) VALUES
+	 (0,'GLOBAL','idCardGender','身份证提取性别','根据身份证号提取性别：女返回0，男返回1，未知返回-1','[{"name":"idCard","type":"STRING","label":"身份证号"}]','NUMBER','SCRIPT','if (idCard == null) {
+    return -1;
+}
+id = ("" + idCard).trim();
+if (id.matches("[0-9]{17}[0-9Xx]")) {
+    sexText = id.substring(16, 17);
+} else if (id.matches("[0-9]{15}")) {
+    sexText = id.substring(14, 15);
+} else {
+    return -1;
+}
+sexDigit = java.lang.Integer.parseInt(sexText);
+return sexDigit % 2 == 0 ? 0 : 1;','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31'),
+	 (0,'GLOBAL','idCardBirthDate','身份证提取出生日期','根据身份证号提取出生年月日，返回日期类型；无法识别时返回null','[{"name":"idCard","type":"STRING","label":"身份证号"}]','DATE','SCRIPT','if (idCard == null) {
+    return null;
+}
+id = ("" + idCard).trim();
+if (id.matches("[0-9]{17}[0-9Xx]")) {
+    birthText = id.substring(6, 14);
+} else if (id.matches("[0-9]{15}")) {
+    birthText = "19" + id.substring(6, 12);
+} else {
+    return null;
+}
+try {
+    formatter = new java.text.SimpleDateFormat("yyyyMMdd");
+    formatter.setLenient(false);
+    return formatter.parse(birthText);
+} catch (Exception ex) {
+    return null;
+}','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31'),
+	 (0,'GLOBAL','strLeft','字符串提取前N位','提取字符串前N位；长度不够返回全部字符','[{"name":"text","type":"STRING","label":"字符串"},{"name":"n","type":"NUMBER","label":"位数"}]','STRING','SCRIPT','if (text == null) {
+    return null;
+}
+if (n == null) {
+    return "";
+}
+s = "" + text;
+limit = n.intValue();
+if (limit <= 0) {
+    return "";
+}
+if (s.length() <= limit) {
+    return s;
+}
+return s.substring(0, limit);','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31'),
+	 (0,'GLOBAL','strRight','字符串提取后N位','提取字符串后N位；长度不够返回全部字符','[{"name":"text","type":"STRING","label":"字符串"},{"name":"n","type":"NUMBER","label":"位数"}]','STRING','SCRIPT','if (text == null) {
+    return null;
+}
+if (n == null) {
+    return "";
+}
+s = "" + text;
+limit = n.intValue();
+if (limit <= 0) {
+    return "";
+}
+len = s.length();
+if (len <= limit) {
+    return s;
+}
+return s.substring(len - limit, len);','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31'),
+	 (0,'GLOBAL','idCardAge','身份证计算年龄','根据身份证出生日期计算年龄。currentDate可不传，默认当前时间；calcMode=YEAR按年相减，calcMode=FULL按年月日相减','[{"name":"idCard","type":"STRING","label":"身份证号"},{"name":"currentDate","type":"DATE","label":"当前时间"},{"name":"calcMode","type":"STRING","label":"计算方式YEAR/FULL"}]','NUMBER','SCRIPT','if (idCard == null) {
+    return -1;
+}
+id = ("" + idCard).trim();
+if (id.matches("[0-9]{17}[0-9Xx]")) {
+    birthText = id.substring(6, 14);
+} else if (id.matches("[0-9]{15}")) {
+    birthText = "19" + id.substring(6, 12);
+} else {
+    return -1;
+}
+try {
+    formatter = new java.text.SimpleDateFormat("yyyyMMdd");
+    formatter.setLenient(false);
+    birthDate = formatter.parse(birthText);
+} catch (Exception ex) {
+    return -1;
+}
+if (calcMode == null && currentDate instanceof java.lang.String) {
+    currentDateText = ("" + currentDate).trim();
+    if (currentDateText.equals("YEAR") || currentDateText.equals("FULL")) {
+        calcMode = currentDateText;
+        currentDate = null;
+    }
+}
+mode = calcMode == null ? "FULL" : ("" + calcMode).trim();
+if (currentDate == null) {
+    current = new java.util.Date();
+} else if (currentDate instanceof java.util.Date) {
+    current = currentDate;
+} else if (currentDate instanceof java.lang.String) {
+    currentText = ("" + currentDate).trim();
+    if (currentText.matches("[0-9]{8}")) {
+        parseText = currentText;
+    } else if (currentText.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}")) {
+        parseText = currentText.substring(0, 4) + currentText.substring(5, 7) + currentText.substring(8, 10);
+    } else {
+        return -1;
+    }
+    try {
+        formatter = new java.text.SimpleDateFormat("yyyyMMdd");
+        formatter.setLenient(false);
+        current = formatter.parse(parseText);
+    } catch (Exception ex) {
+        return -1;
+    }
+} else {
+    return -1;
+}
+age = current.getYear() - birthDate.getYear();
+if (age < 0) {
+    return -1;
+}
+if (mode.equals("YEAR")) {
+    return age;
+}
+if (current.getMonth() < birthDate.getMonth() || (current.getMonth() == birthDate.getMonth() && current.getDate() < birthDate.getDate())) {
+    age = age - 1;
+}
+return age < 0 ? -1 : age;','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31'),
+	 (0,'GLOBAL','regexMatch','字符串正则匹配','字符串匹配正则表达式，匹配返回1，未匹配或表达式无效返回0','[{"name":"text","type":"STRING","label":"字符串"},{"name":"regex","type":"STRING","label":"正则表达式"}]','NUMBER','SCRIPT','if (text == null || regex == null) {
+    return 0;
+}
+try {
+    return ("" + text).matches("" + regex) ? 1 : 0;
+} catch (Exception ex) {
+    return 0;
+}','','','',1,'2026-07-07 00:34:31','2026-07-07 00:34:31')
+ON DUPLICATE KEY UPDATE `func_name` = VALUES(`func_name`), `description` = VALUES(`description`), `params_json` = VALUES(`params_json`), `return_type` = VALUES(`return_type`), `impl_type` = VALUES(`impl_type`), `impl_script` = VALUES(`impl_script`), `impl_class` = VALUES(`impl_class`), `impl_method` = VALUES(`impl_method`), `impl_bean_name` = VALUES(`impl_bean_name`), `status` = VALUES(`status`), `update_time` = VALUES(`update_time`);
 INSERT INTO rule_engine.rule_list_library (project_id,`scope`,list_code,list_name,list_type,description,status,create_time,update_time) VALUES
 	 (0,'GLOBAL','black_list','风险黑名单','BLACK','',1,'2026-07-04 03:10:23','2026-07-04 03:10:23'),
 	 (0,'GLOBAL','grey_list','风险灰名单','GREY','',1,'2026-07-04 03:10:47','2026-07-04 03:10:47'),

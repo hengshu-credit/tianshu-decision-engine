@@ -44,7 +44,7 @@ public class DbDatasourceController {
 
     @GetMapping("/{id:\\d+}")
     public R<RuleDbDatasource> get(@PathVariable Long id) {
-        return R.ok(datasourceService.getById(id));
+        return R.ok(datasourceService.getDetail(id));
     }
 
     @PostMapping

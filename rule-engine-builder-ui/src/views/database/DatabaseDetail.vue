@@ -250,10 +250,11 @@ export default {
     async loadDetail() {
       const res = await getDbDatasource(this.$route.params.id)
       const data = res && res.data ? res.data : res
-      this.form = { ...this.emptyForm(), ...data, jdbcAutoBuild: false }
+      this.form = this.normalizeLoadedForm({ ...this.emptyForm(), ...data, jdbcAutoBuild: false })
     },
     onScopeChange(scope) {
       if (scope === 'GLOBAL') this.form.projectId = 0
+      if (scope === 'PROJECT' && (!this.form.projectId || this.form.projectId <= 0)) this.form.projectId = null
     },
     onDbTypeChange(value) {
       const option = this.dbTypeOptions.find(item => item.value === value)
@@ -315,6 +316,13 @@ export default {
       if (data.scope === 'GLOBAL') data.projectId = 0
       if (!data.jdbcUrl) data.jdbcUrl = this.buildJdbcUrl(data)
       delete data.jdbcAutoBuild
+      return data
+    },
+    normalizeLoadedForm(form) {
+      const data = { ...form }
+      if (data.scope === 'PROJECT' && (!data.projectId || data.projectId <= 0)) {
+        data.projectId = null
+      }
       return data
     },
     handleSubmit() {
