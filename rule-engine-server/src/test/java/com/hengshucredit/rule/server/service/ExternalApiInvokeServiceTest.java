@@ -114,6 +114,46 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void responseMappingSupportsNestedConditionTreeAndFallbackCase() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setResponseMapping("{\"riskScore\":{\"cases\":["
+                + "{\"when\":{\"type\":\"group\",\"op\":\"AND\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"body.code\",\"operator\":\"==\",\"value\":\"00\"},"
+                + "{\"type\":\"group\",\"op\":\"OR\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"body.data.level\",\"operator\":\"==\",\"value\":\"A\"},"
+                + "{\"type\":\"leaf\",\"varCode\":\"body.data.score\",\"operator\":\">=\",\"value\":\"700\",\"varType\":\"NUMBER\"}"
+                + "]}]},\"path\":\"body.data.score\"},"
+                + "{\"path\":\"body.error.score\"}"
+                + "]}}");
+
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("level", "B");
+        data.put("score", 720);
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "00");
+        body.put("data", data);
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("success", true);
+        response.put("body", body);
+
+        Map<String, Object> mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, response);
+
+        assertEquals(720, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
+
+        Map<String, Object> error = new LinkedHashMap<>();
+        error.put("score", -2);
+        Map<String, Object> fallbackBody = new LinkedHashMap<>();
+        fallbackBody.put("code", "E001");
+        fallbackBody.put("error", error);
+        Map<String, Object> fallbackResponse = new LinkedHashMap<>();
+        fallbackResponse.put("success", true);
+        fallbackResponse.put("body", fallbackBody);
+        mappedResponse = new ExternalApiInvokeService().applyResponseMapping(config, fallbackResponse);
+
+        assertEquals(-2, ((Map<?, ?>) mappedResponse.get("body")).get("riskScore"));
+    }
+
+    @Test
     public void tokenRequestBodyUsesMultipartFormWhenConfigured() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("username", "shujupingtai2");

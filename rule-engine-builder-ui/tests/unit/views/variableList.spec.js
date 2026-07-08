@@ -404,7 +404,6 @@ describe('VariableList — 变量操作', () => {
       varType: 'NUMBER',
       varSource: 'API',
       apiConfigId: 10001,
-      apiParamMapping: '{"request_id":"$.requestId","br_applyloanstr_v2":"$.br_applyloanstr_v2"}',
       apiResultPath: 'body.v1',
       apiForceRefresh: true,
       apiExceptionStrategy: 'RETURN_DEFAULT',
@@ -415,10 +414,7 @@ describe('VariableList — 变量操作', () => {
     const config = JSON.parse(payload.sourceConfig)
 
     expect(config.apiConfigId).toBe(10001)
-    expect(config.paramMapping).toEqual({
-      request_id: '$.requestId',
-      br_applyloanstr_v2: '$.br_applyloanstr_v2'
-    })
+    expect(config.paramMapping).toBeUndefined()
     expect(config.resultPath).toBe('body.v1')
     expect(config.forceRefresh).toBe(true)
     expect(config.exceptionStrategy).toBe('RETURN_DEFAULT')

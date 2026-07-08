@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObjectFieldOption;
@@ -100,12 +101,31 @@ public class RuleDataObjectController {
         return R.ok(dataObjectService.listByProject(projectId));
     }
 
+    @GetMapping("/page")
+    public R<IPage<RuleDataObject>> page(
+            @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
+            @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String objectCode) {
+        return R.ok(dataObjectService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName, sourceType, objectCode));
+    }
+
     /**
      * 获取所有项目的数据对象树（未选项目时使用）
      */
     @GetMapping("/tree")
-    public R<Map<String, Object>> treeAll() {
-        return R.ok(dataObjectService.getVariableTreeAll());
+    public R<Map<String, Object>> treeAll(
+            @RequestParam(required = false) String scope,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
+            @RequestParam(required = false) String sourceType,
+            @RequestParam(required = false) String objectCode) {
+        return R.ok(dataObjectService.getVariableTreeAll(scope, projectId, projectCode, projectName, sourceType, objectCode));
     }
 
     @GetMapping("/{id:\\d+}")

@@ -134,21 +134,44 @@ describe('ApiDetail helpers', () => {
       responseMappingRows: [{ outputField: 'score', sourcePath: 'body.data.score', defaultValue: '' }],
       responseConditionRows: [{
         outputField: 'score',
-        conditionPath: 'body.code',
-        operator: '==',
-        conditionValue: '00',
+        conditionRoot: {
+          type: 'group',
+          op: 'AND',
+          children: [{ type: 'leaf', varCode: 'body.code', operator: '==', valueKind: 'CONST', value: '00', varType: 'STRING' }]
+        },
         sourcePath: 'body.data.score',
-        defaultValue: 0
+        defaultValue: 0,
+        fallback: false
       }]
     })
 
     const config = ctx.buildResponseMappingConfig()
 
     expect(config.score.cases[0]).toMatchObject({
-      when: { path: 'body.code', operator: '==', value: '00' },
+      when: {
+        type: 'group',
+        op: 'AND',
+        children: [{ type: 'leaf', varCode: 'body.code', operator: '==', value: '00' }]
+      },
       path: 'body.data.score'
     })
     expect(config.score.default).toBe(0)
+  })
+
+  test('response fallback branch serializes without when condition', () => {
+    const ctx = createContext({
+      responseConditionRows: [{
+        outputField: 'score',
+        conditionRoot: { type: 'group', op: 'AND', children: [] },
+        sourcePath: 'body.backup.score',
+        defaultValue: '',
+        fallback: true
+      }]
+    })
+
+    const config = ctx.buildResponseMappingConfig()
+
+    expect(config.score.cases[0]).toEqual({ path: 'body.backup.score' })
   })
 
   test('billing mode serializes query and hit configs', () => {
@@ -221,20 +244,24 @@ describe('ApiDetail helpers', () => {
         object: { id: 10, scriptName: 'customer' },
         flatVariables: [
           { scriptName: 'customer.idNo', varLabel: '证件号', varType: 'STRING' },
-          { scriptName: 'customer.age', varLabel: '年龄', varType: 'NUMBER' }
+          { scriptName: 'customer.age', varLabel: '年龄', varType: 'NUMBER' },
+          { scriptName: 'customer.tags', varLabel: '标签', varType: 'LIST' },
+          { scriptName: 'customer.ext', varLabel: '扩展', varType: 'OBJECT' }
         ]
       }]
     })
     const row = {
       headerConfig: '{"X-Trace":"${traceId}"}',
-      requestMapping: '{"certNo":"$.customer.idNo","age":"$.customer.age"}'
+      requestMapping: '{"certNo":"$.customer.idNo","age":"$.customer.age","tags":"$.customer.tags","ext":"$.customer.ext"}'
     }
 
     expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
       traceId: '',
       customer: {
         idNo: '',
-        age: 0
+        age: 0,
+        tags: [],
+        ext: {}
       }
     })
   })

@@ -1,15 +1,19 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hengshucredit.rule.model.dto.ParsedField;
 import com.hengshucredit.rule.model.dto.ParsedObject;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObjectFieldOption;
+import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldOptionMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
+import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.service.parser.DdlTableParser;
 import com.hengshucredit.rule.server.service.parser.JavaEntityParser;
 import com.hengshucredit.rule.server.service.parser.JsonSchemaParser;
@@ -33,6 +37,9 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     @Resource
     private RuleDataObjectFieldOptionMapper objectFieldOptionMapper;
+
+    @Resource
+    private RuleProjectMapper projectMapper;
 
     @Resource
     private JavaEntityParser javaEntityParser;
@@ -195,6 +202,14 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         return list(wrapper);
     }
 
+    public IPage<RuleDataObject> pageList(int pageNum, int pageSize, String scope, Long projectId,
+                                          String projectCode, String projectName, String sourceType,
+                                          String objectCode) {
+        LambdaQueryWrapper<RuleDataObject> wrapper = buildObjectQuery(scope, projectId, projectCode, projectName, sourceType, objectCode);
+        wrapper.orderByDesc(RuleDataObject::getCreateTime);
+        return page(new Page<>(pageNum, pageSize), wrapper);
+    }
+
     public Map<String, Object> getObjectWithVariables(Long objectId) {
         RuleDataObject obj = getById(objectId);
         if (obj == null) return null;
@@ -304,19 +319,80 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
      */
     @Transactional
     public Map<String, Object> getVariableTreeAll() {
+        return getVariableTreeAll(null, null, null, null, null, null);
+    }
+
+    @Transactional
+    public Map<String, Object> getVariableTreeAll(String scope, Long projectId, String projectCode,
+                                                  String projectName, String sourceType, String objectCode) {
         List<RuleDataObject> objects = getBaseMapper().selectList(
-                new LambdaQueryWrapper<RuleDataObject>()
+                buildObjectQuery(scope, projectId, projectCode, projectName, sourceType, objectCode)
                         .orderByAsc(RuleDataObject::getProjectId)
                         .orderByAsc(RuleDataObject::getId));
         materializeJsonFieldsIfMissing(objects);
-        List<RuleDataObjectField> allFields = objectFieldMapper.selectList(
-                new LambdaQueryWrapper<RuleDataObjectField>()
-                        .orderByAsc(RuleDataObjectField::getProjectId)
-                        .orderByAsc(RuleDataObjectField::getSortOrder));
+        List<Long> objectIds = objects.stream()
+                .map(RuleDataObject::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        List<RuleDataObjectField> allFields = objectIds.isEmpty()
+                ? Collections.emptyList()
+                : objectFieldMapper.selectList(
+                        new LambdaQueryWrapper<RuleDataObjectField>()
+                                .in(RuleDataObjectField::getObjectId, objectIds)
+                                .orderByAsc(RuleDataObjectField::getProjectId)
+                                .orderByAsc(RuleDataObjectField::getSortOrder));
         Map<String, Object> result = new HashMap<>();
         result.put("tree", buildVariableTree(objects, allFields));
         result.put("objectIdMap", buildObjectIdMap(objects));
         return result;
+    }
+
+    private LambdaQueryWrapper<RuleDataObject> buildObjectQuery(String scope, Long projectId,
+                                                               String projectCode, String projectName,
+                                                               String sourceType, String objectCode) {
+        LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+        if (scope != null && !scope.isEmpty()) {
+            wrapper.eq(RuleDataObject::getScope, scope);
+        }
+        if (projectId != null && projectId > 0) {
+            if (scope == null || scope.isEmpty()) {
+                wrapper.and(w -> w.eq(RuleDataObject::getScope, SCOPE_GLOBAL)
+                        .or()
+                        .eq(RuleDataObject::getScope, SCOPE_PROJECT)
+                        .eq(RuleDataObject::getProjectId, projectId));
+            } else if (SCOPE_PROJECT.equals(scope)) {
+                wrapper.eq(RuleDataObject::getProjectId, projectId);
+            }
+        } else if (projectCode != null && !projectCode.isEmpty()) {
+            List<Long> projectIds = projectMapper.selectList(
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
+                    .stream().map(RuleProject::getId).collect(Collectors.toList());
+            if (!projectIds.isEmpty()) {
+                wrapper.and(w -> w.in(RuleDataObject::getProjectId, projectIds)
+                        .or()
+                        .eq(RuleDataObject::getScope, SCOPE_GLOBAL));
+            } else {
+                wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
+            }
+        } else if (projectName != null && !projectName.isEmpty()) {
+            List<Long> projectIds = projectMapper.selectList(
+                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
+                    .stream().map(RuleProject::getId).collect(Collectors.toList());
+            if (!projectIds.isEmpty()) {
+                wrapper.and(w -> w.in(RuleDataObject::getProjectId, projectIds)
+                        .or()
+                        .eq(RuleDataObject::getScope, SCOPE_GLOBAL));
+            } else {
+                wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
+            }
+        }
+        if (sourceType != null && !sourceType.isEmpty()) {
+            wrapper.eq(RuleDataObject::getSourceType, sourceType);
+        }
+        if (objectCode != null && !objectCode.isEmpty()) {
+            wrapper.like(RuleDataObject::getObjectCode, objectCode);
+        }
+        return wrapper;
     }
 
     /**

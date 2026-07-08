@@ -9,16 +9,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <el-select v-model="queryParams.projectCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
+          <remote-filter-select v-model="queryParams.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <el-select v-model="queryParams.projectName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="queryParams.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="发布状态">
           <el-select v-model="queryParams.status" clearable filterable placeholder="全部" style="width:100px;">
@@ -41,10 +35,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="规则编码">
-          <el-input v-model="queryParams.ruleCode" clearable placeholder="规则编码" style="width:140px;" />
+          <remote-filter-select v-model="queryParams.ruleCode" :fetch-options="fetchRuleCodeOptions" option-label-key="ruleCode" option-value-key="ruleCode" allow-free-input placeholder="规则编码" style="width:140px;" />
         </el-form-item>
         <el-form-item label="规则名称">
-          <el-input v-model="queryParams.ruleName" clearable placeholder="规则名称" style="width:140px;" />
+          <remote-filter-select v-model="queryParams.ruleName" :fetch-options="fetchRuleNameOptions" option-label-key="ruleName" option-value-key="ruleName" allow-free-input placeholder="规则名称" style="width:140px;" />
         </el-form-item>
         <el-form-item label="发布版本">
           <el-input v-model="queryParams.publishedVersion" clearable placeholder="发布版本" style="width:100px;" />
@@ -150,9 +144,11 @@ import variables from '@/styles/variables.scss'
 import { listDefinitions, createDefinition, deleteDefinition, publishRule, unpublishRule } from '@/api/definition'
 import { listProjects } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'RuleList',
+  components: { RemoteFilterSelect },
   data() {
     return {
       colorDanger: variables.colorDanger,
@@ -160,7 +156,6 @@ export default {
       tableData: [],
       total: 0,
       projectList: [],
-      projectListLoading: false,
       filteredProjectCodes: [],
       filteredProjectNames: [],
       queryParams: {
@@ -215,9 +210,8 @@ export default {
         this.filteredProjectNames = list.slice(0, 20)
         return
       }
-      this.projectListLoading = true
       try {
-        const res = await listProjects({ pageNum: 1, pageSize: 500 })
+        const res = await listProjects({ pageNum: 1, pageSize: 50 })
         if (res.data) {
           const list = res.data.records || res.data || []
           this.projectList = list
@@ -230,27 +224,31 @@ export default {
         this.projectList = []
         this.filteredProjectCodes = []
         this.filteredProjectNames = []
-      } finally {
-        this.projectListLoading = false
       }
+    },
+    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectCode: query || '' })
+    },
+    fetchProjectNameOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectName: query || '' })
+    },
+    fetchRuleCodeOptions({ query, pageNum, pageSize }) {
+      return listDefinitions({ ...this.queryParams, pageNum, pageSize, ruleCode: query || '' })
+    },
+    fetchRuleNameOptions({ query, pageNum, pageSize }) {
+      return listDefinitions({ ...this.queryParams, pageNum, pageSize, ruleName: query || '' })
     },
     queryProjectCode(query) {
-      if (!query) {
-        this.filteredProjectCodes = this.projectList.slice(0, 20)
-        return
-      }
-      this.filteredProjectCodes = this.projectList.filter(p =>
-        p.projectCode && p.projectCode.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
+      const q = (query || '').toLowerCase()
+      this.filteredProjectCodes = q
+        ? this.projectList.filter(p => p.projectCode && p.projectCode.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
     },
     queryProjectName(query) {
-      if (!query) {
-        this.filteredProjectNames = this.projectList.slice(0, 20)
-        return
-      }
-      this.filteredProjectNames = this.projectList.filter(p =>
-        p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
+      const q = (query || '').toLowerCase()
+      this.filteredProjectNames = q
+        ? this.projectList.filter(p => p.projectName && p.projectName.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
     },
     async loadData() {
       this.loading = true

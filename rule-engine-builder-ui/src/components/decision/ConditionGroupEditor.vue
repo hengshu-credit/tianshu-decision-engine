@@ -20,6 +20,7 @@
             :depth="depth + 1"
             :get-var-options-fn="getVarOptionsFn"
             :selected-vars="selectedVars"
+            :allow-custom-var="allowCustomVar"
             @remove-group="removeChild(idx)"
           />
           <div v-else class="cg-leaf">
@@ -30,7 +31,7 @@
                 placeholder="选择字段..."
                 size="mini"
                 width="100%"
-                :allow-custom="false"
+                :allow-custom="allowCustomVar"
                 :selected-vars="selectedVars"
                 @select="v => onLeafLeftSelect(child, v)"
               />
@@ -110,7 +111,8 @@ export default {
     vars: { type: Array, default: () => [] },
     selectedVars: { type: Array, default: () => [] },
     depth: { type: Number, default: 0 },
-    getVarOptionsFn: { type: Function, default: null }
+    getVarOptionsFn: { type: Function, default: null },
+    allowCustomVar: { type: Boolean, default: false }
   },
   methods: {
     setGroupOp(op) {

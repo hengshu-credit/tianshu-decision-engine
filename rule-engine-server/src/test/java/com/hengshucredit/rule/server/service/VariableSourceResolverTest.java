@@ -2,10 +2,13 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.Collections;
@@ -124,6 +127,29 @@ public class VariableSourceResolverTest {
         assertEquals(72, resolved.get("dbScore"));
         assertEquals(88, resolved.get("riskScore"));
         assertEquals(72, apiService.lastParams.get("score"));
+    }
+
+    @Test
+    public void apiVariableCanInferDependenciesFromApiConfigWithoutParamMapping() throws Exception {
+        RuleVariable apiScore = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        RuleVariable customerId = variable("customerId", "CONSTANT", null);
+        customerId.setVarType("STRING");
+        customerId.setDefaultValue("C001");
+        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
+        apiConfig.setId(7L);
+        apiConfig.setQueryConfig("{\"customer\":\"${customerId}\"}");
+        apiConfig.setBodyTemplate("{\"payload\":{\"customerId\":\"${customerId}\"}}");
+        FakeApiService apiService = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, customerId), apiService,
+                new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false), null, apiConfig);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("riskScore")));
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals("C001", resolved.get("customerId"));
+        assertEquals(88, resolved.get("riskScore"));
+        assertEquals("C001", apiService.lastParams.get("customerId"));
     }
 
     @Test
@@ -376,13 +402,29 @@ public class VariableSourceResolverTest {
     private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
                                             DBConnectPools dbPools, RuleListService listService,
                                             RuleModelService modelService) throws Exception {
+        return resolver(variables, apiService, dbPools, listService, modelService, null);
+    }
+
+    private VariableSourceResolver resolver(List<RuleVariable> variables, ExternalApiInvokeService apiService,
+                                            DBConnectPools dbPools, RuleListService listService,
+                                            RuleModelService modelService, RuleExternalApiConfig apiConfig) throws Exception {
         VariableSourceResolver resolver = new VariableSourceResolver();
         setField(resolver, "variableService", new FakeVariableService(variables));
         setField(resolver, "externalApiInvokeService", apiService);
+        if (apiConfig != null) {
+            setField(resolver, "apiConfigMapper", apiConfigMapper(apiConfig));
+        }
         setField(resolver, "dbConnectPools", dbPools);
         setField(resolver, "ruleListService", listService);
         setField(resolver, "ruleModelService", modelService);
         return resolver;
+    }
+
+    private RuleExternalApiConfigMapper apiConfigMapper(RuleExternalApiConfig apiConfig) {
+        return (RuleExternalApiConfigMapper) Proxy.newProxyInstance(
+                RuleExternalApiConfigMapper.class.getClassLoader(),
+                new Class<?>[]{RuleExternalApiConfigMapper.class},
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null);
     }
 
     private void setField(Object target, String name, Object value) throws Exception {

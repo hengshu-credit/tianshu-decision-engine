@@ -24,16 +24,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="模型大类">
           <el-select v-model="qp.modelType" clearable filterable placeholder="全部" style="width:120px;" @change="handleQuery">
@@ -55,16 +49,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="模型编码">
-          <el-select v-model="qp.modelCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryModelCode" :loading="modelCodeLoading">
-            <el-option v-for="c in filteredModelCodes" :key="c" :label="c" :value="c" />
-          </el-select>
+          <remote-filter-select v-model="qp.modelCode" :fetch-options="fetchModelCodeOptions" option-label-key="modelCode" option-value-key="modelCode" allow-free-input placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="模型名称">
-          <el-select v-model="qp.modelName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryModelName" :loading="modelNameLoading">
-            <el-option v-for="n in filteredModelNames" :key="n" :label="n" :value="n" />
-          </el-select>
+          <remote-filter-select v-model="qp.modelName" :fetch-options="fetchModelNameOptions" option-label-key="modelName" option-value-key="modelName" allow-free-input placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -228,6 +216,7 @@ import { listProjects } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -241,7 +230,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelList',
-  components: { ModuleCallLog, MonacoEditor },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
   data() {
     return {
       loading: false,
@@ -250,7 +239,6 @@ export default {
       total: 0,
       projects: [],
       projectList: [],
-      projectListLoading: false,
       filteredProjectCodes: [],
       filteredProjectNames: [],
 
@@ -258,10 +246,10 @@ export default {
         pageNum: 1, pageSize: 10, scope: '', modelType: '', modelFormat: '',
         modelCode: '', modelName: '', projectCode: '', projectName: ''
       },
-
-      // 模型编码/名称远程搜索
-      modelCodeLoading: false, filteredModelCodes: [], allModelCodes: [],
-      modelNameLoading: false, filteredModelNames: [], allModelNames: [],
+      allModelCodes: [],
+      allModelNames: [],
+      filteredModelCodes: [],
+      filteredModelNames: [],
 
       // 上传
       uploadVisible: false, uploading: false,
@@ -347,17 +335,41 @@ export default {
         this.filteredProjectNames = list.slice(0, 20)
       } catch (e) { this.projects = []; this.projectList = [] }
     },
+    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectCode: query || '' })
+    },
+    fetchProjectNameOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectName: query || '' })
+    },
+    fetchModelCodeOptions({ query, pageNum, pageSize }) {
+      return api.listModels({ ...this.qp, pageNum, pageSize, modelCode: query || '' })
+    },
+    fetchModelNameOptions({ query, pageNum, pageSize }) {
+      return api.listModels({ ...this.qp, pageNum, pageSize, modelName: query || '' })
+    },
     queryProjectName(query) {
-      if (!query) { this.filteredProjectNames = this.projectList.slice(0, 20); return }
-      this.filteredProjectNames = this.projectList.filter(p =>
-        p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
+      const q = (query || '').toLowerCase()
+      this.filteredProjectNames = q
+        ? this.projectList.filter(p => p.projectName && p.projectName.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
     },
     queryProjectCode(query) {
-      if (!query) { this.filteredProjectCodes = this.projectList.slice(0, 20); return }
-      this.filteredProjectCodes = this.projectList.filter(p =>
-        p.projectCode && p.projectCode.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
+      const q = (query || '').toLowerCase()
+      this.filteredProjectCodes = q
+        ? this.projectList.filter(p => p.projectCode && p.projectCode.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
+    },
+    queryModelCode(q) {
+      const query = (q || '').toLowerCase()
+      this.filteredModelCodes = query
+        ? this.allModelCodes.filter(c => c && c.toLowerCase().includes(query)).slice(0, 20)
+        : this.allModelCodes.slice(0, 20)
+    },
+    queryModelName(q) {
+      const query = (q || '').toLowerCase()
+      this.filteredModelNames = query
+        ? this.allModelNames.filter(n => n && n.toLowerCase().includes(query)).slice(0, 20)
+        : this.allModelNames.slice(0, 20)
     },
     async load() {
       this.loading = true
@@ -374,8 +386,10 @@ export default {
           if (r.modelCode) codeSet.add(r.modelCode)
           if (r.modelName) nameSet.add(r.modelName)
         })
-        this.allModelCodes = Array.from(codeSet); this.filteredModelCodes = this.allModelCodes.slice(0, 20)
-        this.allModelNames = Array.from(nameSet); this.filteredModelNames = this.allModelNames.slice(0, 20)
+        this.allModelCodes = Array.from(codeSet)
+        this.allModelNames = Array.from(nameSet)
+        this.filteredModelCodes = this.allModelCodes.slice(0, 20)
+        this.filteredModelNames = this.allModelNames.slice(0, 20)
       } catch (err) { this.$message.error('加载模型列表失败') } finally { this.loading = false }
     },
     handleQuery() { this.qp.pageNum = 1; this.load() },
@@ -384,17 +398,6 @@ export default {
       clearPageState('ModelList')
       this.load()
     },
-    queryModelCode(q) {
-      this.modelCodeLoading = true
-      this.filteredModelCodes = q ? this.allModelCodes.filter(c => c && c.toLowerCase().includes(q.toLowerCase())).slice(0, 20) : this.allModelCodes.slice(0, 20)
-      this.modelCodeLoading = false
-    },
-    queryModelName(q) {
-      this.modelNameLoading = true
-      this.filteredModelNames = q ? this.allModelNames.filter(n => n && n.toLowerCase().includes(q.toLowerCase())).slice(0, 20) : this.allModelNames.slice(0, 20)
-      this.modelNameLoading = false
-    },
-
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
 
     handleUpload() {

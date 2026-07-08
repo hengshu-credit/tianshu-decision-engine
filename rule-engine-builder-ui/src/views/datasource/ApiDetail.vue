@@ -89,6 +89,9 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="API说明">
+          <el-input v-model="form.description" type="textarea" :rows="2" placeholder="接口用途、供应商联系人、变更说明等" />
+        </el-form-item>
       </div>
 
       <el-tabs v-model="activeConfigTab" class="config-tabs">
@@ -235,6 +238,40 @@
           </div>
         </el-tab-pane>
 
+        <el-tab-pane label="请求参数" name="query">
+          <div class="tab-section">
+            <div class="section-toolbar">
+              <div>
+                <div class="section-title">URL Query 参数</div>
+                <div class="field-help">这里配置拼接到 URL 上的查询参数，GET/DELETE 的查询条件放这里，不会放入 Header 或 Body。取值支持固定值、<code>$.字段路径</code>、<code>${字段路径}</code>。</div>
+              </div>
+              <el-button size="mini" icon="el-icon-plus" @click="addQueryRow">添加 Query</el-button>
+            </div>
+            <el-table :data="queryRows" border size="mini" class="config-table">
+              <el-table-column label="参数名" min-width="180">
+                <template slot-scope="{ row }">
+                  <el-input v-model="row.name" placeholder="如 mobile_no" />
+                </template>
+              </el-table-column>
+              <el-table-column label="取值" min-width="240">
+                <template slot-scope="{ row }">
+                  <el-input v-model="row.value" placeholder="如 $.mobile_no" />
+                </template>
+              </el-table-column>
+              <el-table-column label="说明" min-width="180">
+                <template slot-scope="{ row }">
+                  <el-input v-model="row.remark" placeholder="业务含义，可选" />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80" align="center">
+                <template slot-scope="{ $index }">
+                  <el-button type="text" size="mini" class="btn-delete" @click="removeRow(queryRows, $index)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+        </el-tab-pane>
+
         <el-tab-pane label="请求体" name="request">
           <div class="tab-section">
             <div class="section-toolbar">
@@ -250,36 +287,6 @@
 
             <div v-if="requestBodyMode === 'MAPPING'" class="mapping-layout">
               <div class="mapping-main">
-                <div class="section-toolbar compact query-toolbar">
-                  <div>
-                    <div class="section-title">URL Query 参数</div>
-                    <div class="field-help">GET 查询条件配置在这里；执行时会拼到 URL 上，不会放到 Header。取值支持固定值、<code>$.字段路径</code>、<code>${字段路径}</code>。</div>
-                  </div>
-                  <el-button size="mini" icon="el-icon-plus" @click="addQueryRow">添加 Query</el-button>
-                </div>
-                <el-table :data="queryRows" border size="mini" class="config-table">
-                  <el-table-column label="参数名" min-width="180">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.name" placeholder="如 mobile_no" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="取值" min-width="240">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.value" placeholder="如 $.mobile_no" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="说明" min-width="180">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.remark" placeholder="业务含义，可选" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="80" align="center">
-                    <template slot-scope="{ $index }">
-                      <el-button type="text" size="mini" class="btn-delete" @click="removeRow(queryRows, $index)">删除</el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
-
                 <div class="section-toolbar compact">
                   <div class="field-help">接口字段路径是发给外部 API 的字段；右侧入参路径是规则引擎已有变量。填写任意一边时，另一边会按同名字段自动补齐。</div>
                   <div>
@@ -384,50 +391,51 @@
                 <div class="section-toolbar compact condition-toolbar">
                   <div>
                     <div class="section-title">条件响应结构</div>
-                    <div class="field-help">当接口根据请求或服务端逻辑返回不同结构时，在这里按条件配置兜底读取路径。</div>
+                    <div class="field-help">按原始响应路径配置不同结构的读取规则；条件编辑器支持且/或嵌套，兜底分支放在最后。</div>
                   </div>
-                  <el-button size="mini" icon="el-icon-plus" @click="addResponseConditionRow">添加条件</el-button>
+                  <div>
+                    <el-button size="mini" icon="el-icon-plus" @click="addResponseConditionRow(false)">添加条件分支</el-button>
+                    <el-button size="mini" @click="addResponseConditionRow(true)">添加兜底分支</el-button>
+                  </div>
                 </div>
-                <el-table :data="responseConditionRows" border size="mini" class="config-table">
-                  <el-table-column label="输出字段" min-width="130">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.outputField" placeholder="如 score" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="条件路径" min-width="170">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.conditionPath" placeholder="如 body.code" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="关系" width="100">
-                    <template slot-scope="{ row }">
-                      <el-select v-model="row.operator" style="width:100%">
-                        <el-option label="等于" value="==" />
-                        <el-option label="不等于" value="!=" />
-                      </el-select>
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="条件值" min-width="120">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.conditionValue" placeholder="如 00" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="读取路径" min-width="190">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.sourcePath" placeholder="如 body.data.score" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="默认值" min-width="120">
-                    <template slot-scope="{ row }">
-                      <el-input v-model="row.defaultValue" placeholder="可选" />
-                    </template>
-                  </el-table-column>
-                  <el-table-column label="操作" width="80" align="center">
-                    <template slot-scope="{ $index }">
-                      <el-button type="text" size="mini" class="btn-delete" @click="removeRow(responseConditionRows, $index)">删除</el-button>
-                    </template>
-                  </el-table-column>
-                </el-table>
+                <div v-if="responseConditionRows.length === 0" class="empty-state">没有条件分支时，仅使用上方基础响应映射。</div>
+                <div
+                  v-for="(row, index) in responseConditionRows"
+                  :key="'response-condition-' + index"
+                  class="response-condition-card"
+                >
+                  <div class="response-condition-head">
+                    <div class="response-condition-title">{{ row.fallback ? '兜底分支' : '条件分支 #' + (index + 1) }}</div>
+                    <div>
+                      <el-switch v-model="row.fallback" active-text="兜底" inactive-text="条件" />
+                      <el-button type="text" size="mini" class="btn-delete" @click="removeRow(responseConditionRows, index)">删除</el-button>
+                    </div>
+                  </div>
+                  <el-row :gutter="12">
+                    <el-col :lg="8" :md="24">
+                      <el-form-item label="输出字段">
+                        <el-input v-model="row.outputField" placeholder="如 score" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :lg="10" :md="24">
+                      <el-form-item label="读取路径">
+                        <el-input v-model="row.sourcePath" placeholder="如 body.data.score，可逗号分隔多个路径" />
+                      </el-form-item>
+                    </el-col>
+                    <el-col :lg="6" :md="24">
+                      <el-form-item label="默认值">
+                        <el-input v-model="row.defaultValue" placeholder="可选，如 0" />
+                      </el-form-item>
+                    </el-col>
+                  </el-row>
+                  <div v-if="!row.fallback" class="response-condition-tree">
+                    <condition-group-editor
+                      :group="row.conditionRoot"
+                      :vars="responseConditionVarOptions"
+                      :allow-custom-var="true"
+                    />
+                  </div>
+                </div>
               </div>
               <div class="field-reference">
                 <div class="reference-title">响应对象字段</div>
@@ -653,21 +661,17 @@
           </div>
         </el-tab-pane>
 
-        <el-tab-pane label="其他" name="other">
+        <el-tab-pane label="接口测试" name="test">
           <div class="tab-section">
-            <el-form-item label="说明">
-              <el-input v-model="form.description" type="textarea" :rows="3" placeholder="接口用途、供应商联系人、变更说明等" />
-            </el-form-item>
-
-            <div class="section-toolbar test-toolbar">
+            <div class="section-toolbar">
               <div>
                 <div class="section-title">API 调用测试</div>
-                <div class="field-help">测试 JSON 会根据请求头、Query、请求体映射和鉴权配置自动生成；保存样例后下次打开页面会直接加载。</div>
+                <div class="field-help">每个 API 只保存一份测试样例；生成测试 JSON 会根据请求对象字段类型创建空字符串、0、false、{}、[] 等默认值。</div>
               </div>
               <div>
                 <el-button size="mini" @click="regenerateTestParams">生成测试 JSON</el-button>
                 <el-button size="mini" @click="loadSavedSample">加载已存样例</el-button>
-                <el-button size="mini" @click="saveCurrentSample">保存当前样例</el-button>
+                <el-button size="mini" :disabled="!form.id" @click="saveCurrentSample">保存样例</el-button>
                 <el-button size="mini" type="primary" :disabled="!form.id" :loading="invokeLoading" @click="runInvokeApi">执行测试</el-button>
               </div>
             </div>
@@ -700,12 +704,14 @@ import {
   updateApiConfig
 } from '@/api/datasource'
 import { getVariableTree, listDataObjects } from '@/api/dataObject'
+import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
+import { createEmptyGroup, createEmptyLeaf } from '@/utils/decisionConditionTree'
 import { collectReferencePaths, sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
 
 export default {
   name: 'ApiDetail',
-  components: { MonacoEditor },
+  components: { ConditionGroupEditor, MonacoEditor },
   data() {
     return {
       datasourceOptions: [],
@@ -773,6 +779,30 @@ export default {
     },
     responseFieldOptions() {
       return this.fieldsForObject(this.form.responseObjectId)
+    },
+    responseConditionVarOptions() {
+      const common = [
+        { varCode: 'success', varLabel: '调用是否成功', varType: 'BOOLEAN' },
+        { varCode: 'body.code', varLabel: '响应编码', varType: 'STRING' },
+        { varCode: 'body.status', varLabel: '响应状态', varType: 'STRING' },
+        { varCode: 'body.message', varLabel: '响应消息', varType: 'STRING' }
+      ]
+      const fields = this.responseFieldOptions.map(field => {
+        const path = this.stripSelectedObjectPrefix(this.fieldScriptPath(field), this.form.responseObjectId)
+        const code = path ? 'body.' + path : ''
+        return {
+          ...field,
+          varCode: code,
+          varLabel: this.fieldDisplayName(field),
+          varType: field.varType || 'STRING'
+        }
+      }).filter(item => item.varCode)
+      const seen = {}
+      return common.concat(fields).filter(item => {
+        if (seen[item.varCode]) return false
+        seen[item.varCode] = true
+        return true
+      })
     },
     engineCallbackPlaceholder() {
       const code = this.form.apiCode || '{apiCode}'
@@ -860,8 +890,19 @@ export default {
     emptyResponseMappingRow() {
       return { outputField: '', sourcePath: '', defaultValue: '' }
     },
-    emptyResponseConditionRow() {
-      return { outputField: '', conditionPath: '', operator: '==', conditionValue: '', sourcePath: '', defaultValue: '' }
+    emptyResponseConditionRow(fallback) {
+      return {
+        outputField: '',
+        conditionRoot: this.createResponseConditionRoot(),
+        sourcePath: '',
+        defaultValue: '',
+        fallback: fallback === true
+      }
+    },
+    createResponseConditionRoot() {
+      const root = createEmptyGroup('AND')
+      root.children.push(createEmptyLeaf())
+      return root
     },
     emptyBillingConfig() {
       return { mode: 'QUERY', path: '', operator: '==', value: '' }
@@ -952,7 +993,7 @@ export default {
       this.requestBodyMode = 'MAPPING'
       this.requestMappingRows = this.rowsFromRequestMapping(this.form.requestMapping)
       this.requestMappingJsonText = this.stringifyJson(this.buildRequestMappingConfig())
-      this.responseMappingMode = this.hasComplexResponseMapping(this.form.responseMapping) ? 'JSON' : 'MAPPING'
+      this.responseMappingMode = 'MAPPING'
       this.responseMappingRows = this.rowsFromResponseMapping(this.form.responseMapping)
       this.responseConditionRows = this.rowsFromConditionalResponseMapping(this.form.responseMapping)
       this.responseMappingJsonText = this.stringifyJson(this.buildResponseMappingConfig())
@@ -1055,14 +1096,12 @@ export default {
         if (!value || typeof value !== 'object' || Array.isArray(value) || !Array.isArray(value.cases)) return
         value.cases.forEach(item => {
           const caseConfig = item && typeof item === 'object' ? item : {}
-          const condition = caseConfig.when && typeof caseConfig.when === 'object' ? caseConfig.when : {}
           rows.push({
             outputField,
-            conditionPath: condition.path || condition.field || '',
-            operator: condition.operator || '==',
-            conditionValue: this.valueToEditableText(condition.value),
+            conditionRoot: this.normalizeResponseConditionRoot(caseConfig.when),
             sourcePath: caseConfig.path || (Array.isArray(caseConfig.paths) ? caseConfig.paths.join(', ') : ''),
-            defaultValue: this.valueToEditableText(caseConfig.default)
+            defaultValue: this.valueToEditableText(caseConfig.default),
+            fallback: !caseConfig.when
           })
         })
         if (rows.length && Object.prototype.hasOwnProperty.call(value, 'default')) {
@@ -1071,6 +1110,26 @@ export default {
         }
       })
       return rows
+    },
+    normalizeResponseConditionRoot(condition) {
+      if (!condition || typeof condition !== 'object') return this.createResponseConditionRoot()
+      if (condition.type === 'group') {
+        return JSON.parse(JSON.stringify(condition))
+      }
+      if (condition.type === 'leaf') {
+        const root = createEmptyGroup('AND')
+        root.children.push(JSON.parse(JSON.stringify(condition)))
+        return root
+      }
+      const root = createEmptyGroup('AND')
+      const leaf = createEmptyLeaf()
+      leaf.varCode = condition.path || condition.field || condition.varCode || ''
+      leaf.varLabel = leaf.varCode
+      leaf.operator = condition.operator || '=='
+      leaf.value = this.valueToEditableText(condition.value)
+      leaf.varType = condition.varType || 'STRING'
+      root.children.push(leaf)
+      return root
     },
     hasComplexResponseMapping(text) {
       const config = this.parseConfigForTemplate(text)
@@ -1210,12 +1269,8 @@ export default {
           : {}
         if (!Array.isArray(target.cases)) target.cases = []
         const caseConfig = {}
-        if (row.conditionPath && String(row.conditionPath).trim()) {
-          caseConfig.when = {
-            path: String(row.conditionPath).trim(),
-            operator: row.operator || '==',
-            value: this.parseJsonOrString(row.conditionValue)
-          }
+        if (!row.fallback && row.conditionRoot) {
+          caseConfig.when = JSON.parse(JSON.stringify(row.conditionRoot))
         }
         const paths = String(row.sourcePath || '').split(',').map(item => item.trim()).filter(Boolean)
         if (paths.length > 1) caseConfig.paths = paths
@@ -1344,8 +1399,8 @@ export default {
     addResponseMappingRow() {
       this.responseMappingRows.push(this.emptyResponseMappingRow())
     },
-    addResponseConditionRow() {
-      this.responseConditionRows.push(this.emptyResponseConditionRow())
+    addResponseConditionRow(fallback) {
+      this.responseConditionRows.push(this.emptyResponseConditionRow(fallback))
     },
     removeRow(rows, index) {
       rows.splice(index, 1)
@@ -1530,13 +1585,25 @@ export default {
       }
       this.regenerateTestParams()
     },
-    saveCurrentSample() {
+    async saveCurrentSample() {
       try {
         const parsed = this.invokeParamsText ? JSON.parse(this.invokeParamsText) : {}
         this.form.testSampleParams = this.stringifyJson(parsed)
-        this.$message.success('测试样例已保存到当前表单，点击保存后持久化')
+        if (!this.form.id) {
+          this.$message.warning('新接口需要先保存后才能保存测试样例')
+          return
+        }
+        const data = this.normalizeForm(this.form)
+        const res = await updateApiConfig(data)
+        const saved = res && res.data ? res.data : res
+        if (saved && saved.id) {
+          this.form = { ...this.emptyForm(), ...saved }
+          this.syncEditableRowsFromForm()
+          this.loadSavedSample()
+        }
+        this.$message.success('测试样例已覆盖保存')
       } catch (e) {
-        this.$message.error('测试参数不是合法 JSON')
+        this.$message.error(e.message || '测试参数不是合法 JSON')
       }
     },
     buildApiInvokeParamTemplate(row) {
@@ -1552,7 +1619,6 @@ export default {
       addPaths(row && row.queryConfig)
       addPaths(row && row.requestMapping)
       addPaths(row && row.bodyTemplate)
-      addPaths(row && row.testSampleParams)
 
       const authConfig = this.parseConfigForTemplate(row && row.authApiConfig)
       if (authConfig && typeof authConfig === 'object') {
@@ -1571,12 +1637,24 @@ export default {
     },
     sampleValueForPath(path) {
       const normalized = String(path || '').replace(/^\$\./, '')
-      const requestFields = this.fieldsForObject(this.form.requestObjectId)
-      const field = requestFields.concat(this.flattenAllObjectFields()).find(item => {
-        const scriptName = this.fieldScriptPath(item)
-        return scriptName === normalized || scriptName.endsWith('.' + normalized)
-      })
+      const field = this.findFieldForSamplePath(normalized)
       return sampleValueForVarType(field && field.varType)
+    },
+    findFieldForSamplePath(path) {
+      const normalized = String(path || '').replace(/^\$\./, '')
+      const requestFields = this.fieldsForObject(this.form.requestObjectId)
+      const candidates = requestFields.concat(this.flattenAllObjectFields())
+      const selectedObject = this.dataObjectOptions.find(item => String(item.id) === String(this.form.requestObjectId))
+      const selectedPrefix = selectedObject && (selectedObject.scriptName || selectedObject.objectCode)
+      return candidates.find(item => {
+        const scriptName = this.fieldScriptPath(item)
+        const stripped = this.stripSelectedObjectPrefix(scriptName, this.form.requestObjectId)
+        const leaf = this.leafName(scriptName)
+        return scriptName === normalized ||
+          stripped === normalized ||
+          (selectedPrefix ? selectedPrefix + '.' + normalized === scriptName : false) ||
+          (normalized.indexOf('.') < 0 && leaf === normalized)
+      })
     },
     flattenAllObjectFields() {
       const result = []
@@ -1755,6 +1833,28 @@ export default {
     border: 1px dashed #cbd5e1;
     border-radius: 4px;
     padding: 10px 12px;
+  }
+  .response-condition-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    padding: 12px;
+    margin-bottom: 12px;
+    background: #fff;
+  }
+  .response-condition-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .response-condition-title {
+    color: #1f2937;
+    font-weight: 700;
+  }
+  .response-condition-tree {
+    border-top: 1px solid #e5e7eb;
+    padding-top: 10px;
   }
   .test-toolbar {
     border-top: 1px solid #e5e7eb;

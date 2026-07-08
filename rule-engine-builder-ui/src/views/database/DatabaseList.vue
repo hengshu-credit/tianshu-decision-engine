@@ -16,10 +16,10 @@
               </el-select>
             </el-form-item>
             <el-form-item label="数据源编码">
-              <el-input v-model="qp.datasourceCode" clearable placeholder="前缀筛选" style="width:150px;" />
+              <remote-filter-select v-model="qp.datasourceCode" :fetch-options="fetchDatasourceCodeOptions" option-label-key="datasourceCode" option-value-key="datasourceCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="数据源名称">
-              <el-input v-model="qp.datasourceName" clearable placeholder="名称筛选" style="width:150px;" />
+              <remote-filter-select v-model="qp.datasourceName" :fetch-options="fetchDatasourceNameOptions" option-label-key="datasourceName" option-value-key="datasourceName" allow-free-input placeholder="名称筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="数据库类型">
               <el-select v-model="qp.dbType" clearable placeholder="全部" style="width:120px;">
@@ -320,10 +320,11 @@ import {
 import { listProjects } from '@/api/project'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'DatabaseList',
-  components: { ModuleCallLog, MonacoEditor },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
   data() {
     return {
       projects: [],
@@ -395,6 +396,12 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    fetchDatasourceCodeOptions({ query, pageNum, pageSize }) {
+      return listDbDatasources({ ...this.qp, pageNum, pageSize, datasourceCode: query || '' })
+    },
+    fetchDatasourceNameOptions({ query, pageNum, pageSize }) {
+      return listDbDatasources({ ...this.qp, pageNum, pageSize, datasourceName: query || '' })
     },
     handleQuery() {
       this.qp.pageNum = 1

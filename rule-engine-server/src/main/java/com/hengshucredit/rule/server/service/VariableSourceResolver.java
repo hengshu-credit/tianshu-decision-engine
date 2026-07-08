@@ -3,10 +3,12 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -28,6 +30,9 @@ public class VariableSourceResolver {
 
     @Resource
     private ExternalApiInvokeService externalApiInvokeService;
+
+    @Resource
+    private RuleExternalApiConfigMapper apiConfigMapper;
 
     @Resource
     private DBConnectPools dbConnectPools;
@@ -329,13 +334,33 @@ public class VariableSourceResolver {
         Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
         String varSource = variable.getVarSource();
         if ("API".equals(varSource)) {
-            collectDependencyValues(config.get("paramMapping"), dependencies);
+            Object mapping = config.get("paramMapping");
+            collectDependencyValues(mapping, dependencies);
+            if (parseNestedMap(mapping).isEmpty()) {
+                collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
+            }
         } else if ("DB".equals(varSource)) {
             collectDependencyValues(config.get("params"), dependencies);
         } else if ("LIST".equals(varSource)) {
             collectDependencyValues(firstNonNull(config.get("queryField"), config.get("queryPath"), config.get("field")), dependencies);
         }
         return dependencies;
+    }
+
+    private void collectApiConfigDependencies(Object apiConfigIdValue, Set<String> dependencies) {
+        Long apiConfigId = longValue(apiConfigIdValue);
+        if (apiConfigId == null || apiConfigMapper == null) {
+            return;
+        }
+        RuleExternalApiConfig apiConfig = apiConfigMapper.selectById(apiConfigId);
+        if (apiConfig == null) {
+            return;
+        }
+        collectDependencyValues(parseJsonMap(apiConfig.getHeaderConfig()), dependencies);
+        collectDependencyValues(parseJsonMap(apiConfig.getQueryConfig()), dependencies);
+        collectDependencyValues(parseJsonMap(apiConfig.getRequestMapping()), dependencies);
+        collectDependencyValues(parseJsonOrRaw(apiConfig.getBodyTemplate()), dependencies);
+        collectDependencyValues(parseJsonMap(apiConfig.getAuthApiConfig()), dependencies);
     }
 
     private Set<String> collectModelInputNames(RuleModel model) {

@@ -32,14 +32,8 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
-          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="qp.varSource" clearable filterable placeholder="来源" size="mini" style="width:100px;"
             @change="handleQuery">
             <el-option label="输入参数" value="INPUT" />
@@ -53,14 +47,8 @@
             @change="handleQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <el-select v-model="qp.varCode" clearable filterable remote reserve-keyword placeholder="变量编码" size="mini" style="width:120px;"
-            :remote-method="queryVarCode" :loading="varCodeLoading">
-            <el-option v-for="v in filteredVarCodes" :key="v" :label="v" :value="v" />
-          </el-select>
-          <el-select v-model="qp.varLabel" clearable filterable remote reserve-keyword placeholder="变量名称" size="mini" style="width:120px;"
-            :remote-method="queryVarLabel" :loading="varLabelLoading">
-            <el-option v-for="v in filteredVarLabels" :key="v" :label="v" :value="v" />
-          </el-select>
+          <remote-filter-select v-model="qp.varCode" :fetch-options="fetchVarCodeOptions" option-label-key="varCode" option-value-key="varCode" allow-free-input placeholder="变量编码" size="mini" style="width:120px;" />
+          <remote-filter-select v-model="qp.varLabel" :fetch-options="fetchVarLabelOptions" option-label-key="varLabel" option-value-key="varLabel" allow-free-input placeholder="变量名称" size="mini" style="width:120px;" />
           <el-button type="primary" @click="handleQuery">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
         </div>
@@ -124,24 +112,15 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select v-model="objQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
-          <el-select v-model="objQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="objQp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <remote-filter-select v-model="objQp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="objQp.sourceType" clearable filterable placeholder="来源" size="mini" style="width:100px;" @change="onObjFilterChange">
             <el-option label="Java 实体" value="JAVA" />
             <el-option label="JSON" value="JSON" />
             <el-option label="DDL" value="DDL" />
             <el-option label="手动" value="MANUAL" />
           </el-select>
-          <el-select v-model="objQp.objectCode" clearable filterable remote reserve-keyword placeholder="对象名称" size="mini" style="width:130px;"
-            :remote-method="queryObjectName" :loading="objectNameLoading">
-            <el-option v-for="o in filteredObjectNames" :key="o" :label="o" :value="o" />
-          </el-select>
+          <remote-filter-select v-model="objQp.objectCode" :fetch-options="fetchObjectCodeOptions" option-label-key="objectCode" option-value-key="objectCode" allow-free-input placeholder="对象名称" size="mini" style="width:130px;" />
           <el-button type="primary" @click="onObjFilterChange">查询</el-button>
           <el-button @click="resetObjQuery">重置</el-button>
         </div>
@@ -224,25 +203,13 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <el-select v-model="constQp.projectCode" clearable filterable remote reserve-keyword placeholder="项目编码" size="mini" style="width:110px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
-          <el-select v-model="constQp.projectName" clearable filterable remote reserve-keyword placeholder="项目名称" size="mini" style="width:130px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="constQp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <remote-filter-select v-model="constQp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="constQp.varType" clearable filterable placeholder="数据类型" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
-          <el-select v-model="constQp.varCode" clearable filterable remote reserve-keyword placeholder="常量编码" size="mini" style="width:120px;"
-            :remote-method="queryConstCode" :loading="constCodeLoading">
-            <el-option v-for="v in filteredConstCodes" :key="v" :label="v" :value="v" />
-          </el-select>
-          <el-select v-model="constQp.varLabel" clearable filterable remote reserve-keyword placeholder="常量名称" size="mini" style="width:120px;"
-            :remote-method="queryConstLabel" :loading="constLabelLoading">
-            <el-option v-for="v in filteredConstLabels" :key="v" :label="v" :value="v" />
-          </el-select>
+          <remote-filter-select v-model="constQp.varCode" :fetch-options="fetchConstCodeOptions" option-label-key="varCode" option-value-key="varCode" allow-free-input placeholder="常量编码" size="mini" style="width:120px;" />
+          <remote-filter-select v-model="constQp.varLabel" :fetch-options="fetchConstLabelOptions" option-label-key="varLabel" option-value-key="varLabel" allow-free-input placeholder="常量名称" size="mini" style="width:120px;" />
           <el-button type="primary" @click="handleConstQuery">查询</el-button>
           <el-button @click="resetConstQuery">重置</el-button>
         </div>
@@ -331,12 +298,11 @@
                 :value="api.id"
               />
             </el-select>
-          </el-form-item>
-          <el-form-item label="入参映射">
-            <monaco-editor v-model="form.apiParamMapping" language="json" height="130px" />
+            <div class="field-help">接口入参由外数 API 的“请求参数/请求体”统一配置，这里只选择要调用的 API。</div>
           </el-form-item>
           <el-form-item label="结果路径">
             <el-input v-model="form.apiResultPath" placeholder="body.data.score" />
+            <div class="field-help">从 API 映射后的返回中读取，例如 <code>body.score</code>；读取全部映射结果可填 <code>body</code>。</div>
           </el-form-item>
           <el-form-item label="异常策略">
             <el-select v-model="form.apiExceptionStrategy" style="width:180px;">
@@ -764,10 +730,11 @@ import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTa
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { collectReferencePaths, collectReferencePathsFromText, setPathValue } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'VariableList',
-  components: { MonacoEditor },
+  components: { MonacoEditor, RemoteFilterSelect },
   data() {
     return {
       activeTab: 'list',
@@ -935,14 +902,8 @@ export default {
       return (this.objectTree || []).filter(node => {
         const obj = node.object
         if (scope && obj.scope !== scope) return false
-        if (projectCode) {
-          const p = this.projectList.find(p => p.projectCode === projectCode)
-          if (p && obj.projectId !== p.id) return false
-        }
-        if (projectName) {
-          const p = this.projectList.find(p => p.projectName === projectName)
-          if (p && obj.projectId !== p.id) return false
-        }
+        if (projectCode && obj.projectCode && !obj.projectCode.toLowerCase().includes(projectCode.toLowerCase())) return false
+        if (projectName && obj.projectName && !obj.projectName.toLowerCase().includes(projectName.toLowerCase())) return false
         if (sourceType && obj.sourceType !== sourceType) return false
         if (objectCode && obj.objectCode && !obj.objectCode.toLowerCase().includes(objectCode.toLowerCase())) return false
         return true
@@ -1110,11 +1071,8 @@ export default {
             this.$message.warning('请选择接口配置')
             return null
           }
-          const paramMapping = this.parseSourceJson(payload.apiParamMapping, '入参映射')
-          if (paramMapping == null) return null
           payload.sourceConfig = JSON.stringify({
             apiConfigId: payload.apiConfigId,
-            paramMapping,
             resultPath: payload.apiResultPath || 'body',
             forceRefresh: payload.apiForceRefresh === true,
             exceptionStrategy: payload.apiExceptionStrategy || 'ERROR',
@@ -1198,6 +1156,34 @@ export default {
       if (!pid) return ''
       const p = this.projectList.find(x => x.id === pid)
       return p ? p.projectName : ''
+    },
+    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectCode: query || '' })
+    },
+    fetchProjectNameOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectName: query || '' })
+    },
+    fetchVarCodeOptions({ query, pageNum, pageSize }) {
+      return listVariables({ ...this.qp, pageNum, pageSize, standaloneOnly: true, varCode: query || '' })
+    },
+    fetchVarLabelOptions({ query, pageNum, pageSize }) {
+      return listVariables({ ...this.qp, pageNum, pageSize, standaloneOnly: true, varLabel: query || '' })
+    },
+    fetchConstCodeOptions({ query, pageNum, pageSize }) {
+      return listVariables({ ...this.constQp, pageNum, pageSize, varSource: 'CONSTANT', varCode: query || '' })
+    },
+    fetchConstLabelOptions({ query, pageNum, pageSize }) {
+      return listVariables({ ...this.constQp, pageNum, pageSize, varSource: 'CONSTANT', varLabel: query || '' })
+    },
+    fetchObjectCodeOptions({ query, pageNum, pageSize }) {
+      return request.get('/rule/dataobject/page', {
+        params: {
+          ...this.objQp,
+          pageNum,
+          pageSize,
+          objectCode: query || ''
+        }
+      })
     },
     queryProjectCode(query) {
       if (!query) {
@@ -1370,13 +1356,8 @@ export default {
           const p = {}
           const { scope, projectCode, projectName, sourceType, objectCode } = this.objQp
           if (scope) p.scope = scope
-          if (projectCode) {
-            const proj = this.projectList.find(x => x.projectCode === projectCode)
-            if (proj) p.projectId = proj.id
-          } else if (projectName) {
-            const proj = this.projectList.find(x => x.projectName === projectName)
-            if (proj) p.projectId = proj.id
-          }
+          if (projectCode) p.projectCode = projectCode
+          if (projectName) p.projectName = projectName
           if (sourceType) p.sourceType = sourceType
           if (objectCode) p.objectCode = objectCode
           return p
@@ -1387,13 +1368,6 @@ export default {
         let tree = rawData.tree || []
         // 铁律四：构建 id→objectCode 映射，供前端展示 refObjectId 对应的对象名
         this.objectIdMap = rawData.objectIdMap || {}
-        // 前端额外过滤 sourceType 和 objectCode（如果后端不支持）
-        if (this.objQp.sourceType) {
-          tree = tree.filter(n => n.object.sourceType === this.objQp.sourceType)
-        }
-        if (this.objQp.objectCode) {
-          tree = tree.filter(n => n.object.objectCode && n.object.objectCode.toLowerCase().includes(this.objQp.objectCode.toLowerCase()))
-        }
         this.objectTree = tree
         this.normalizeObjectFieldPages()
         this.objectMap = {}
@@ -1571,13 +1545,8 @@ export default {
           if (varType) p.varType = varType
           if (varCode) p.varCode = varCode
           if (varLabel) p.varLabel = varLabel
-          if (projectCode) {
-            const proj = this.projectList.find(x => x.projectCode === projectCode)
-            if (proj) p.projectId = proj.id
-          } else if (projectName) {
-            const proj = this.projectList.find(x => x.projectName === projectName)
-            if (proj) p.projectId = proj.id
-          }
+          if (projectCode) p.projectCode = projectCode
+          if (projectName) p.projectName = projectName
           return p
         }
         let res
@@ -1752,12 +1721,15 @@ export default {
       const config = this.parseJson(row && row.sourceConfig, {})
       const rows = []
       if (row && row.varSource === 'API') {
-        const mapping = config.paramMapping || {}
+        const mapping = config.paramMapping || this.apiInputConfig(config.apiConfigId)
         Object.keys(mapping).forEach(key => {
           const expression = mapping[key]
           const paths = collectReferencePaths(expression, { allowBarePath: true })
-          rows.push({ field: paths.length ? paths.join(', ') : key, usage: 'API参数 ' + key, expression: String(expression || '') })
+          rows.push({ field: paths.length ? paths.join(', ') : key, usage: 'API入参 ' + key, expression: String(expression || '') })
         })
+        if (rows.length === 0 && config.apiConfigId) {
+          rows.push({ field: '由API配置决定', usage: 'API入参', expression: '外数 API 请求参数/请求体中未识别到 $. 或 ${} 引用' })
+        }
       } else if (row && row.varSource === 'DB') {
         const params = Array.isArray(config.params) ? config.params : []
         params.forEach((item, index) => {
@@ -1781,7 +1753,7 @@ export default {
       const config = this.parseJson(row && row.sourceConfig, {})
       const sample = {}
       if (row && row.varSource === 'API') {
-        const mapping = config.paramMapping || {}
+        const mapping = config.paramMapping || this.apiInputConfig(config.apiConfigId)
         Object.keys(mapping).forEach(key => {
           const paths = collectReferencePaths(mapping[key], { allowBarePath: true })
           if (paths.length) paths.forEach(path => setPathValue(sample, path, ''))
@@ -1796,6 +1768,21 @@ export default {
         collectReferencePaths(config.queryField || config.queryPath || config.field, { allowBarePath: true }).forEach(path => setPathValue(sample, path, ''))
       }
       return this.formatJson(sample)
+    },
+    apiInputConfig(apiConfigId) {
+      const api = (this.apiConfigOptions || []).find(item => String(item.id) === String(apiConfigId))
+      const merged = {}
+      if (!api) return merged
+      ;['headerConfig', 'queryConfig', 'requestMapping', 'bodyTemplate', 'authApiConfig'].forEach(key => {
+        const parsed = this.parseJson(api[key], null)
+        this.collectApiReferenceConfig(parsed == null ? api[key] : parsed, merged)
+      })
+      return merged
+    },
+    collectApiReferenceConfig(value, target) {
+      collectReferencePaths(value, { allowBarePath: false }).forEach(path => {
+        target[path] = '$.' + path
+      })
     },
     async doTestVariable() {
       if (!this.testTarget) return
@@ -2001,6 +1988,8 @@ export default {
 .tab-filter-row { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
 .tab-empty { text-align:center; padding:48px 0; color:#c0c4cc; font-size:14px; }
 .text-muted { color:#909399; font-size:13px; }
+.field-help { color:#64748b; font-size:12px; line-height:1.6; margin-top:4px; }
+.field-help code { color:#1e40af; background:#eff6ff; border-radius:3px; padding:0 4px; }
 
 /* 变量列表分区样式 */
 .var-list-section { margin-bottom:24px; }

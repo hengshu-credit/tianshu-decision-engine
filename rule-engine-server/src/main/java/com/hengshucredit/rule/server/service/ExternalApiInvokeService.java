@@ -723,18 +723,147 @@ public class ExternalApiInvokeService {
             return true;
         }
         Map<String, Object> condition = parseNestedMap(conditionObject);
-        String path = firstText(condition.get("path"), condition.get("field"));
+        String type = firstText(condition.get("type"));
+        if ("group".equalsIgnoreCase(type)) {
+            Object childrenObject = condition.get("children");
+            if (!(childrenObject instanceof Iterable)) {
+                return true;
+            }
+            String op = firstText(condition.get("op"), "AND");
+            boolean hasChild = false;
+            if ("OR".equalsIgnoreCase(op)) {
+                for (Object child : (Iterable<?>) childrenObject) {
+                    hasChild = true;
+                    if (responseConditionMatches(child, response, body)) {
+                        return true;
+                    }
+                }
+                return !hasChild;
+            }
+            for (Object child : (Iterable<?>) childrenObject) {
+                hasChild = true;
+                if (!responseConditionMatches(child, response, body)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        String path = firstText(condition.get("varCode"), condition.get("path"), condition.get("field"));
         if (!hasText(path)) {
             return true;
         }
         Object actual = readMappedPath(response, body, path);
         Object expected = condition.get("value");
+        if ("VAR".equalsIgnoreCase(firstText(condition.get("valueKind")))) {
+            expected = readMappedPath(response, body, stringValue(expected));
+        }
         String operator = firstText(condition.get("operator"), "==").toLowerCase();
+        return compareConditionValue(actual, expected, operator);
+    }
+
+    private boolean compareConditionValue(Object actual, Object expected, String operator) {
+        String op = operator == null ? "==" : operator.toLowerCase();
+        if ("*".equals(op)) return true;
+        if ("is_null".equals(op)) return actual == null;
+        if ("not_null".equals(op)) return actual != null;
+        if ("is_empty".equals(op)) return isEmptyValue(actual);
+        if ("not_empty".equals(op)) return !isEmptyValue(actual);
+        if ("is_true".equals(op)) return actual != null && booleanValue(actual);
+        if ("is_false".equals(op)) return actual != null && !booleanValue(actual);
+
         boolean equal = valuesEqual(actual, expected);
-        if ("!=".equals(operator) || "<>".equals(operator) || "ne".equals(operator)) {
-            return !equal;
+        if ("==".equals(op) || "eq".equals(op)) return equal;
+        if ("!=".equals(op) || "<>".equals(op) || "ne".equals(op)) return !equal;
+
+        java.math.BigDecimal actualNumber = toBigDecimal(actual);
+        java.math.BigDecimal expectedNumber = toBigDecimal(expected);
+        if (actualNumber != null && expectedNumber != null) {
+            int cmp = actualNumber.compareTo(expectedNumber);
+            if (">".equals(op)) return cmp > 0;
+            if (">=".equals(op)) return cmp >= 0;
+            if ("<".equals(op)) return cmp < 0;
+            if ("<=".equals(op)) return cmp <= 0;
+            if ("between".equals(op) || "not_between".equals(op)) {
+                List<String> values = splitConditionValues(expected);
+                if (values.size() < 2) return false;
+                java.math.BigDecimal left = toBigDecimal(values.get(0));
+                java.math.BigDecimal right = toBigDecimal(values.get(1));
+                boolean inRange = left != null && right != null
+                        && actualNumber.compareTo(left) >= 0
+                        && actualNumber.compareTo(right) <= 0;
+                return "between".equals(op) ? inRange : !inRange;
+            }
+        }
+
+        String actualText = actual == null ? "" : String.valueOf(actual);
+        String expectedText = expected == null ? "" : String.valueOf(expected);
+        if ("contains".equals(op)) return containsValue(actual, expected);
+        if ("not_contains".equals(op)) return !containsValue(actual, expected);
+        if ("starts_with".equals(op)) return actualText.startsWith(expectedText);
+        if ("not_starts_with".equals(op)) return !actualText.startsWith(expectedText);
+        if ("ends_with".equals(op)) return actualText.endsWith(expectedText);
+        if ("not_ends_with".equals(op)) return !actualText.endsWith(expectedText);
+        if ("in".equals(op) || "not_in".equals(op)) {
+            boolean found = splitConditionValues(expected).stream().anyMatch(item -> valuesEqual(actual, item));
+            return "in".equals(op) ? found : !found;
+        }
+        if ("contains_any".equals(op) || "contains_all".equals(op)) {
+            List<String> values = splitConditionValues(expected);
+            boolean matched = "contains_all".equals(op)
+                    ? values.stream().allMatch(item -> containsValue(actual, item))
+                    : values.stream().anyMatch(item -> containsValue(actual, item));
+            return matched;
+        }
+        if ("has_key".equals(op) || "not_has_key".equals(op)) {
+            boolean hasKey = actual instanceof Map && ((Map<?, ?>) actual).containsKey(expectedText);
+            return "has_key".equals(op) ? hasKey : !hasKey;
         }
         return equal;
+    }
+
+    private boolean isEmptyValue(Object value) {
+        if (value == null) return true;
+        if (value instanceof CharSequence) return String.valueOf(value).isEmpty();
+        if (value instanceof Map) return ((Map<?, ?>) value).isEmpty();
+        if (value instanceof Iterable) return !((Iterable<?>) value).iterator().hasNext();
+        if (value.getClass().isArray()) return Array.getLength(value) == 0;
+        return false;
+    }
+
+    private boolean containsValue(Object actual, Object expected) {
+        if (actual == null) return false;
+        if (actual instanceof Map) return ((Map<?, ?>) actual).containsKey(String.valueOf(expected));
+        if (actual instanceof Iterable) {
+            for (Object item : (Iterable<?>) actual) {
+                if (valuesEqual(item, expected)) return true;
+            }
+            return false;
+        }
+        if (actual.getClass().isArray()) {
+            int length = Array.getLength(actual);
+            for (int i = 0; i < length; i++) {
+                if (valuesEqual(Array.get(actual, i), expected)) return true;
+            }
+            return false;
+        }
+        return String.valueOf(actual).contains(String.valueOf(expected));
+    }
+
+    private List<String> splitConditionValues(Object value) {
+        if (value instanceof Iterable) {
+            List<String> result = new ArrayList<>();
+            for (Object item : (Iterable<?>) value) {
+                if (item != null && hasText(String.valueOf(item))) result.add(String.valueOf(item).trim());
+            }
+            return result;
+        }
+        String text = value == null ? "" : String.valueOf(value);
+        String[] parts = text.split(",");
+        List<String> result = new ArrayList<>();
+        for (String part : parts) {
+            if (hasText(part)) result.add(part.trim());
+        }
+        return result;
     }
 
     boolean matchesBillingCondition(String billingCondition, Map<String, Object> response) {
@@ -794,6 +923,13 @@ public class ExternalApiInvokeService {
             }
         }
         return null;
+    }
+
+    private boolean booleanValue(Object value) {
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        }
+        return value != null && "true".equalsIgnoreCase(String.valueOf(value));
     }
 
     private Object resolveValue(Object value, Map<String, Object> params) {

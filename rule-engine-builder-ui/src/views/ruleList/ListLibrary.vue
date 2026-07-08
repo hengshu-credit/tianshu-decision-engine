@@ -27,7 +27,7 @@
           </el-select>
         </el-form-item>
         <el-form-item label="关键字">
-          <el-input v-model="query.keyword" clearable placeholder="编码/名称" style="width:180px;" />
+          <remote-filter-select v-model="query.keyword" :fetch-options="fetchKeywordOptions" allow-free-input placeholder="编码/名称" style="width:180px;" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -141,10 +141,11 @@
 import { listProjects } from '@/api/project'
 import { listLibraries, createLibrary, updateLibrary, deleteLibrary } from '@/api/ruleList'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'ListLibrary',
-  components: { ModuleCallLog },
+  components: { ModuleCallLog, RemoteFilterSelect },
   data() {
     return {
       loading: false,
@@ -192,6 +193,16 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    async fetchKeywordOptions({ query, pageNum, pageSize }) {
+      const res = await listLibraries({ ...this.query, pageNum, pageSize, keyword: query || '' })
+      const data = (res && res.data) || {}
+      const values = []
+      ;(data.records || []).forEach(row => {
+        if (row.listCode) values.push({ label: row.listCode, value: row.listCode })
+        if (row.listName) values.push({ label: row.listName, value: row.listName })
+      })
+      return { records: values, total: data.total || values.length }
     },
     handleQuery() { this.query.pageNum = 1; this.loadData() },
     resetQuery() {

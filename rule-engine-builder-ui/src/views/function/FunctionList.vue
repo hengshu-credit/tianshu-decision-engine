@@ -13,16 +13,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectCode" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p.projectCode" :label="p.projectCode" :value="p.projectCode" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryProjectName" :loading="projectListLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p.projectName" :label="p.projectName" :value="p.projectName" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="实现方式">
           <el-select v-model="qp.implType" clearable filterable placeholder="全部" style="width:110px;">
@@ -32,16 +26,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="函数编码">
-          <el-select v-model="qp.funcCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryFuncCode" :loading="funcCodeLoading">
-            <el-option v-for="v in filteredFuncCodes" :key="v" :label="v" :value="v" />
-          </el-select>
+          <remote-filter-select v-model="qp.funcCode" :fetch-options="fetchFuncCodeOptions" option-label-key="funcCode" option-value-key="funcCode" allow-free-input placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="函数名称">
-          <el-select v-model="qp.funcLabel" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:140px;"
-            :remote-method="queryFuncLabel" :loading="funcLabelLoading">
-            <el-option v-for="v in filteredFuncLabels" :key="v" :label="v" :value="v" />
-          </el-select>
+          <remote-filter-select v-model="qp.funcLabel" :fetch-options="fetchFuncLabelOptions" option-label-key="funcName" option-value-key="funcName" allow-free-input placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -224,10 +212,11 @@ import { VAR_TYPE_FORM_OPTIONS, varTypeLabel } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'FunctionList',
-  components: { MonacoEditor },
+  components: { MonacoEditor, RemoteFilterSelect },
   data() {
     return {
       projects: [],
@@ -243,16 +232,8 @@ export default {
       versionCompare: null,
       versionPreview: '',
       projectList: [],
-      projectListLoading: false,
       filteredProjectCodes: [],
       filteredProjectNames: [],
-      // 函数编码/名称远程搜索
-      funcCodeLoading: false,
-      funcLabelLoading: false,
-      allFuncCodes: [],
-      allFuncLabels: [],
-      filteredFuncCodes: [],
-      filteredFuncLabels: [],
       editForm: { funcCode: '', funcName: '', description: '', returnType: 'STRING', implType: 'SCRIPT', implScript: '', implClass: '', implMethod: '', implBeanName: '', status: 1 },
       editParams: [],
       functionTestVisible: false,
@@ -289,41 +270,29 @@ export default {
         this.filteredProjectNames = list.slice(0, 20)
       } catch (e) { this.projects = []; this.projectList = [] }
     },
+    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectCode: query || '' })
+    },
+    fetchProjectNameOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectName: query || '' })
+    },
+    fetchFuncCodeOptions({ query, pageNum, pageSize }) {
+      return listFunctions({ ...this.qp, pageNum, pageSize, funcCode: query || '' })
+    },
+    fetchFuncLabelOptions({ query, pageNum, pageSize }) {
+      return listFunctions({ ...this.qp, pageNum, pageSize, funcLabel: query || '' })
+    },
     queryProjectCode(query) {
-      if (!query) {
-        this.filteredProjectCodes = this.projectList.slice(0, 20)
-        return
-      }
-      this.filteredProjectCodes = this.projectList.filter(p =>
-        p.projectCode && p.projectCode.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
+      const q = (query || '').toLowerCase()
+      this.filteredProjectCodes = q
+        ? this.projectList.filter(p => p.projectCode && p.projectCode.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
     },
     queryProjectName(query) {
-      if (!query) {
-        this.filteredProjectNames = this.projectList.slice(0, 20)
-        return
-      }
-      this.filteredProjectNames = this.projectList.filter(p =>
-        p.projectName && p.projectName.toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 20)
-    },
-    queryFuncCode(query) {
-      this.funcCodeLoading = true
-      if (!query) {
-        this.filteredFuncCodes = this.allFuncCodes.slice(0, 20)
-      } else {
-        this.filteredFuncCodes = this.allFuncCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
-      }
-      this.funcCodeLoading = false
-    },
-    queryFuncLabel(query) {
-      this.funcLabelLoading = true
-      if (!query) {
-        this.filteredFuncLabels = this.allFuncLabels.slice(0, 20)
-      } else {
-        this.filteredFuncLabels = this.allFuncLabels.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
-      }
-      this.funcLabelLoading = false
+      const q = (query || '').toLowerCase()
+      this.filteredProjectNames = q
+        ? this.projectList.filter(p => p.projectName && p.projectName.toLowerCase().includes(q)).slice(0, 20)
+        : this.projectList.slice(0, 20)
     },
     handleQuery() { this.qp.pageNum = 1; this.loadFunctions() },
     resetQuery() { this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', projectCode: '', projectName: '', implType: '', funcCode: '', funcLabel: '' }; clearPageState('FunctionList'); this.loadFunctions() },
@@ -342,13 +311,6 @@ export default {
         const res = await listFunctions(params)
         this.funcList = (res && res.data && res.data.records) || []
         this.total = (res && res.data && res.data.total) || 0
-        // 加载函数编码/名称列表供筛选下拉
-        const codeSet = new Set(), labelSet = new Set()
-        this.funcList.forEach(r => { if (r.funcCode) codeSet.add(r.funcCode); if (r.funcName) labelSet.add(r.funcName) })
-        this.allFuncCodes = Array.from(codeSet)
-        this.allFuncLabels = Array.from(labelSet)
-        this.filteredFuncCodes = this.allFuncCodes.slice(0, 20)
-        this.filteredFuncLabels = this.allFuncLabels.slice(0, 20)
       } catch (e) {
         this.funcList = []; this.total = 0
       } finally {

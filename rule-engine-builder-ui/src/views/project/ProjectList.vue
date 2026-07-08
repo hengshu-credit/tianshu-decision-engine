@@ -3,16 +3,10 @@
     <div class="uiue-search-container">
       <el-form :inline="true" size="small">
         <el-form-item label="项目编码">
-          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:160px;"
-            :remote-method="queryProjectCode" :loading="projectCodeLoading">
-            <el-option v-for="p in filteredProjectCodes" :key="p" :label="p" :value="p" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:160px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <el-select v-model="qp.projectName" clearable filterable remote reserve-keyword placeholder="输入筛选" style="width:160px;"
-            :remote-method="queryProjectName" :loading="projectNameLoading">
-            <el-option v-for="p in filteredProjectNames" :key="p" :label="p" :value="p" />
-          </el-select>
+          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:160px;" />
         </el-form-item>
         <el-form-item label="启用状态">
           <el-select v-model="qp.status" clearable filterable placeholder="全部" style="width:100px;" @change="handleQuery">
@@ -107,16 +101,19 @@
 <script>
 import { listProjects, createProject, updateProject, deleteProject, getMaskedToken, getFullToken, regenerateToken, exportApiDoc } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 export default {
   name: 'ProjectList',
+  components: { RemoteFilterSelect },
   data() {
     return {
       loading: false, tableData: [], total: 0,
       qp: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' },
       createTimeRange: [],
-      // 项目编码/名称远程搜索
-      projectCodeLoading: false, filteredProjectCodes: [], allProjectCodes: [],
-      projectNameLoading: false, filteredProjectNames: [], allProjectNames: [],
+      allProjectCodes: [],
+      allProjectNames: [],
+      filteredProjectCodes: [],
+      filteredProjectNames: [],
       dialogVisible: false,
       tokenDialogVisible: false,
       fullToken: '',
@@ -160,6 +157,12 @@ export default {
         const res = await listProjects(params)
         this.tableData = res.data.records || []
         this.total = res.data.total || 0
+        const codeSet = new Set(), nameSet = new Set()
+        this.tableData.forEach(r => { if (r.projectCode) codeSet.add(r.projectCode); if (r.projectName) nameSet.add(r.projectName) })
+        this.allProjectCodes = Array.from(codeSet)
+        this.allProjectNames = Array.from(nameSet)
+        this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
+        this.filteredProjectNames = this.allProjectNames.slice(0, 20)
         // 加载每个项目的脱敏Token
         for (let row of this.tableData) {
           try {
@@ -171,14 +174,25 @@ export default {
             // ignore
           }
         }
-        // 加载项目编码/名称列表供筛选下拉
-        const codeSet = new Set(), nameSet = new Set()
-        this.tableData.forEach(r => { if (r.projectCode) codeSet.add(r.projectCode); if (r.projectName) nameSet.add(r.projectName) })
-        this.allProjectCodes = Array.from(codeSet)
-        this.allProjectNames = Array.from(nameSet)
-        this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
-        this.filteredProjectNames = this.allProjectNames.slice(0, 20)
       } finally { this.loading = false }
+    },
+    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectCode: query || '' })
+    },
+    fetchProjectNameOptions({ query, pageNum, pageSize }) {
+      return listProjects({ pageNum, pageSize, projectName: query || '' })
+    },
+    queryProjectCode(query) {
+      const q = (query || '').toLowerCase()
+      this.filteredProjectCodes = q
+        ? this.allProjectCodes.filter(v => v && v.toLowerCase().includes(q)).slice(0, 20)
+        : this.allProjectCodes.slice(0, 20)
+    },
+    queryProjectName(query) {
+      const q = (query || '').toLowerCase()
+      this.filteredProjectNames = q
+        ? this.allProjectNames.filter(v => v && v.toLowerCase().includes(q)).slice(0, 20)
+        : this.allProjectNames.slice(0, 20)
     },
     handleQuery() { this.qp.pageNum = 1; this.loadData() },
     resetQuery() {
@@ -191,24 +205,6 @@ export default {
       this.qp.createBeginTime = val ? val[0] : ''
       this.qp.createEndTime = val ? val[1] : ''
       this.saveCachedState()
-    },
-    queryProjectCode(query) {
-      this.projectCodeLoading = true
-      if (!query) {
-        this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
-      } else {
-        this.filteredProjectCodes = this.allProjectCodes.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
-      }
-      this.projectCodeLoading = false
-    },
-    queryProjectName(query) {
-      this.projectNameLoading = true
-      if (!query) {
-        this.filteredProjectNames = this.allProjectNames.slice(0, 20)
-      } else {
-        this.filteredProjectNames = this.allProjectNames.filter(v => v && v.toLowerCase().includes(query.toLowerCase())).slice(0, 20)
-      }
-      this.projectNameLoading = false
     },
     handleCreate() { this.form = { id: null, projectCode: '', projectName: '', description: '', status: 1 }; this.dialogVisible = true },
     handleEdit(row) { this.form = { ...row }; this.dialogVisible = true },

@@ -30,10 +30,10 @@
               </el-select>
             </el-form-item>
             <el-form-item label="数据源编码">
-              <el-input v-model="datasourceQuery.datasourceCode" clearable placeholder="前缀筛选" style="width:150px;" />
+              <remote-filter-select v-model="datasourceQuery.datasourceCode" :fetch-options="fetchDatasourceCodeOptions" option-label-key="datasourceCode" option-value-key="datasourceCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="数据源名称">
-              <el-input v-model="datasourceQuery.datasourceName" clearable placeholder="名称筛选" style="width:150px;" />
+              <remote-filter-select v-model="datasourceQuery.datasourceName" :fetch-options="fetchDatasourceNameOptions" option-label-key="datasourceName" option-value-key="datasourceName" allow-free-input placeholder="名称筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="鉴权方式">
               <el-select v-model="datasourceQuery.authType" clearable placeholder="全部" style="width:130px;">
@@ -111,13 +111,13 @@
         <div class="uiue-search-container">
           <el-form :inline="true" size="small">
             <el-form-item label="数据源编码">
-              <el-input v-model="apiQuery.datasourceCode" clearable placeholder="前缀筛选" style="width:150px;" />
+              <remote-filter-select v-model="apiQuery.datasourceCode" :fetch-options="fetchApiDatasourceCodeOptions" option-label-key="datasourceCode" option-value-key="datasourceCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="接口编码">
-              <el-input v-model="apiQuery.apiCode" clearable placeholder="前缀筛选" style="width:150px;" />
+              <remote-filter-select v-model="apiQuery.apiCode" :fetch-options="fetchApiCodeOptions" option-label-key="apiCode" option-value-key="apiCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="接口名称">
-              <el-input v-model="apiQuery.apiName" clearable placeholder="名称筛选" style="width:150px;" />
+              <remote-filter-select v-model="apiQuery.apiName" :fetch-options="fetchApiNameOptions" option-label-key="apiName" option-value-key="apiName" allow-free-input placeholder="名称筛选" style="width:150px;" />
             </el-form-item>
             <el-form-item label="调用模式">
               <el-select v-model="apiQuery.requestMode" clearable placeholder="全部" style="width:110px;">
@@ -655,10 +655,11 @@ import { listDataObjects } from '@/api/dataObject'
 import { collectReferencePaths, setPathValue } from '@/utils/testParamTemplate'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   name: 'DatasourceList',
-  components: { ModuleCallLog, MonacoEditor },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
   data() {
     return {
       activeTab: 'datasource',
@@ -817,6 +818,12 @@ export default {
         this.datasourceLoading = false
       }
     },
+    fetchDatasourceCodeOptions({ query, pageNum, pageSize }) {
+      return listDatasources({ ...this.datasourceQuery, pageNum, pageSize, datasourceCode: query || '' })
+    },
+    fetchDatasourceNameOptions({ query, pageNum, pageSize }) {
+      return listDatasources({ ...this.datasourceQuery, pageNum, pageSize, datasourceName: query || '' })
+    },
     async loadDatasourceOptions() {
       const res = await listDatasources({ pageNum: 1, pageSize: 500, status: 1 })
       this.datasourceOptions = (res.data && res.data.records) || []
@@ -839,6 +846,15 @@ export default {
       } finally {
         this.apiLoading = false
       }
+    },
+    fetchApiDatasourceCodeOptions({ query, pageNum, pageSize }) {
+      return listApiConfigs({ ...this.apiQuery, pageNum, pageSize, datasourceCode: query || '' })
+    },
+    fetchApiCodeOptions({ query, pageNum, pageSize }) {
+      return listApiConfigs({ ...this.apiQuery, pageNum, pageSize, apiCode: query || '' })
+    },
+    fetchApiNameOptions({ query, pageNum, pageSize }) {
+      return listApiConfigs({ ...this.apiQuery, pageNum, pageSize, apiName: query || '' })
     },
     onTabChange() {
       if (this.activeTab === 'api') {
