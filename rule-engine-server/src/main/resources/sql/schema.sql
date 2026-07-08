@@ -1,3 +1,9 @@
+-- 开启root远程登录
+CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '1qaz@WSX';
+ALTER USER 'root'@'%' IDENTIFIED BY '1qaz@WSX';
+GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
+FLUSH PRIVILEGES;
+
 CREATE DATABASE IF NOT EXISTS `rule_engine` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE `rule_engine`;
 

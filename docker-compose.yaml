@@ -16,7 +16,7 @@ services:
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d
-      - ./rule-engine-mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/init.sql
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" || exit 1"]
       interval: 10s
@@ -37,7 +37,7 @@ services:
       MYSQL_PWD: 1qaz@WSX
       TZ: Asia/Shanghai
     volumes:
-      - ./rule-engine-mysql/init.sql:/init.sql:ro
+      - ./rule-engine-server/src/main/resources/sql/schema.sql:/init.sql:ro
     command: >
       sh -c 'until mysqladmin ping -hmysql -uroot --silent; do
       sleep 2;
