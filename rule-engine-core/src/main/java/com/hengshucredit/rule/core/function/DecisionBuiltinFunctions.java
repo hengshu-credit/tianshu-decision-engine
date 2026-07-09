@@ -6,9 +6,16 @@ import com.alibaba.fastjson.JSONPath;
 import java.lang.reflect.Array;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.text.ParsePosition;
+import java.text.SimpleDateFormat;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -18,6 +25,19 @@ import java.util.regex.Pattern;
  * 决策引擎通用内置函数：覆盖 JSONPath、对象、数组、字符串和数值加工。
  */
 public class DecisionBuiltinFunctions {
+
+    private static final String DEFAULT_DATETIME_PATTERN = "yyyy-MM-dd HH:mm:ss";
+    private static final List<String> DATE_PATTERNS = Arrays.asList(
+            "yyyy-MM-dd HH:mm:ss",
+            "yyyy-MM-dd HH:mm:ss.SSS",
+            "yyyy-MM-dd'T'HH:mm:ss",
+            "yyyy-MM-dd'T'HH:mm:ss.SSS",
+            "yyyy-MM-dd",
+            "yyyy/MM/dd HH:mm:ss",
+            "yyyy/MM/dd",
+            "yyyyMMddHHmmss",
+            "yyyyMMdd"
+    );
 
     public BigDecimal numAdd(double left, double right) {
         return decimal(left).add(decimal(right));
@@ -309,6 +329,88 @@ public class DecisionBuiltinFunctions {
         return JSON.toJSONString(value);
     }
 
+    public String dateFormat(Object date, String pattern) {
+        LocalDateTime value = toDateTime(date, null);
+        if (value == null) {
+            return null;
+        }
+        return formatDateTime(value, pattern);
+    }
+
+    public String dateConvert(String text, String fromPattern, String toPattern) {
+        LocalDateTime value = toDateTime(text, fromPattern);
+        if (value == null) {
+            return null;
+        }
+        return formatDateTime(value, toPattern);
+    }
+
+    public String dateAdd(Object date, double amount, String unit) {
+        LocalDateTime value = toDateTime(date, null);
+        if (value == null) {
+            return null;
+        }
+        return formatDateTime(plusDateTime(value, amount, unit), DEFAULT_DATETIME_PATTERN);
+    }
+
+    public String dateSub(Object date, double amount, String unit) {
+        return dateAdd(date, -amount, unit);
+    }
+
+    public long dateDiff(Object start, Object end, String unit) {
+        LocalDateTime left = toDateTime(start, null);
+        LocalDateTime right = toDateTime(end, null);
+        if (left == null || right == null) {
+            return 0L;
+        }
+        String normalized = normalizeDateUnit(unit);
+        if ("QUARTER".equals(normalized)) {
+            return ChronoUnit.MONTHS.between(left, right) / 3L;
+        }
+        if ("MILLISECOND".equals(normalized)) {
+            return ChronoUnit.MILLIS.between(left, right);
+        }
+        return chronoUnit(normalized).between(left, right);
+    }
+
+    public long dateToMillis(Object date) {
+        LocalDateTime value = toDateTime(date, null);
+        if (value == null) {
+            return 0L;
+        }
+        return Date.from(value.atZone(ZoneId.systemDefault()).toInstant()).getTime();
+    }
+
+    public String millisToDate(double timestamp, String pattern) {
+        LocalDateTime value = LocalDateTime.ofInstant(new Date((long) timestamp).toInstant(), ZoneId.systemDefault());
+        return formatDateTime(value, pattern);
+    }
+
+    public BigDecimal scoreByOdds(double odds, double a, double b, String direction) {
+        if (odds <= 0d) {
+            return null;
+        }
+        double sign = scoreDirectionSign(direction);
+        return decimal(a).add(decimal(sign * b * Math.log(odds))).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal scoreByOddsPdo(double odds, double baseScore, double baseOdds, double pdo, String direction) {
+        if (odds <= 0d || baseOdds <= 0d || pdo == 0d) {
+            return null;
+        }
+        double b = pdo / Math.log(2d);
+        double sign = scoreDirectionSign(direction);
+        return decimal(baseScore).add(decimal(sign * b * Math.log(odds / baseOdds))).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal scoreByBadRatePdo(double badRate, double baseScore, double baseOdds, double pdo, String direction) {
+        if (badRate <= 0d || badRate >= 1d) {
+            return null;
+        }
+        double odds = (1d - badRate) / badRate;
+        return scoreByOddsPdo(odds, baseScore, baseOdds, pdo, direction);
+    }
+
     private static Object readByPath(Object source, String path) {
         if (source == null) {
             return null;
@@ -461,6 +563,106 @@ public class DecisionBuiltinFunctions {
             return leftNumber.compareTo(rightNumber);
         }
         return String.valueOf(left).compareTo(String.valueOf(right));
+    }
+
+    private static LocalDateTime plusDateTime(LocalDateTime value, double amount, String unit) {
+        long delta = (long) amount;
+        String normalized = normalizeDateUnit(unit);
+        if ("QUARTER".equals(normalized)) {
+            return value.plusMonths(delta * 3L);
+        }
+        if ("MILLISECOND".equals(normalized)) {
+            return value.plus(delta, ChronoUnit.MILLIS);
+        }
+        return value.plus(delta, chronoUnit(normalized));
+    }
+
+    private static ChronoUnit chronoUnit(String unit) {
+        switch (normalizeDateUnit(unit)) {
+            case "YEAR": return ChronoUnit.YEARS;
+            case "MONTH": return ChronoUnit.MONTHS;
+            case "WEEK": return ChronoUnit.WEEKS;
+            case "DAY": return ChronoUnit.DAYS;
+            case "HOUR": return ChronoUnit.HOURS;
+            case "MINUTE": return ChronoUnit.MINUTES;
+            case "SECOND": return ChronoUnit.SECONDS;
+            default: return ChronoUnit.DAYS;
+        }
+    }
+
+    private static String normalizeDateUnit(String unit) {
+        String text = unit == null ? "" : unit.trim().toUpperCase();
+        if ("YEAR".equals(text) || "YEARS".equals(text) || "Y".equals(text) || "年".equals(text)) return "YEAR";
+        if ("QUARTER".equals(text) || "QUARTERS".equals(text) || "Q".equals(text) || "季".equals(text) || "季度".equals(text)) return "QUARTER";
+        if ("MONTH".equals(text) || "MONTHS".equals(text) || "M".equals(text) || "月".equals(text)) return "MONTH";
+        if ("WEEK".equals(text) || "WEEKS".equals(text) || "W".equals(text) || "周".equals(text) || "星期".equals(text)) return "WEEK";
+        if ("DAY".equals(text) || "DAYS".equals(text) || "D".equals(text) || "日".equals(text) || "天".equals(text)) return "DAY";
+        if ("HOUR".equals(text) || "HOURS".equals(text) || "H".equals(text) || "小时".equals(text)) return "HOUR";
+        if ("MINUTE".equals(text) || "MINUTES".equals(text) || "MI".equals(text) || "N".equals(text) || "分钟".equals(text)) return "MINUTE";
+        if ("SECOND".equals(text) || "SECONDS".equals(text) || "S".equals(text) || "秒".equals(text)) return "SECOND";
+        if ("MILLISECOND".equals(text) || "MILLISECONDS".equals(text) || "MILLIS".equals(text) || "MS".equals(text) || "毫秒".equals(text)) return "MILLISECOND";
+        return "DAY";
+    }
+
+    private static String formatDateTime(LocalDateTime value, String pattern) {
+        String effectivePattern = pattern == null || pattern.trim().isEmpty() ? DEFAULT_DATETIME_PATTERN : pattern.trim();
+        try {
+            return value.format(java.time.format.DateTimeFormatter.ofPattern(effectivePattern));
+        } catch (Exception e) {
+            return value.format(java.time.format.DateTimeFormatter.ofPattern(DEFAULT_DATETIME_PATTERN));
+        }
+    }
+
+    private static LocalDateTime toDateTime(Object value, String pattern) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof LocalDateTime) {
+            return (LocalDateTime) value;
+        }
+        if (value instanceof Date) {
+            return LocalDateTime.ofInstant(((Date) value).toInstant(), ZoneId.systemDefault());
+        }
+        if (value instanceof Number) {
+            return LocalDateTime.ofInstant(new Date(((Number) value).longValue()).toInstant(), ZoneId.systemDefault());
+        }
+        String text = String.valueOf(value).trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        if (text.matches("^-?\\d{10,}$")) {
+            try {
+                return LocalDateTime.ofInstant(new Date(Long.parseLong(text)).toInstant(), ZoneId.systemDefault());
+            } catch (Exception ignored) {
+                return null;
+            }
+        }
+        if (pattern != null && !pattern.trim().isEmpty()) {
+            return parseDateTime(text, pattern.trim());
+        }
+        for (String candidate : DATE_PATTERNS) {
+            LocalDateTime parsed = parseDateTime(text, candidate);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        return null;
+    }
+
+    private static LocalDateTime parseDateTime(String text, String pattern) {
+        SimpleDateFormat format = new SimpleDateFormat(pattern);
+        format.setLenient(false);
+        ParsePosition position = new ParsePosition(0);
+        Date date = format.parse(text, position);
+        if (date == null || position.getIndex() != text.length()) {
+            return null;
+        }
+        return LocalDateTime.ofInstant(date.toInstant(), ZoneId.systemDefault());
+    }
+
+    private static double scoreDirectionSign(String direction) {
+        String text = direction == null ? "" : direction.trim().toUpperCase();
+        return ("DESC".equals(text) || "DOWN".equals(text) || "REVERSE".equals(text) || "降序".equals(text) || "下降".equals(text)) ? -1d : 1d;
     }
 
 }

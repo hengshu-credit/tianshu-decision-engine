@@ -3,7 +3,7 @@
     <!-- 顶部工具栏 -->
     <div class="tree-toolbar">
       <div class="toolbar-left">
-        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
+        <el-button type="text" icon="el-icon-back" class="toolbar-back" @click="$router.back()" />
         <i class="el-icon-set-up toolbar-icon" />
         <span class="toolbar-title">决策树设计器</span>
         <el-tag size="small" type="info" style="margin-left:8px;">可视化树形规则</el-tag>
@@ -17,8 +17,8 @@
         <el-button size="mini" @click="addNode('exclusive-gateway')">
           <span class="node-dot" style="background:#fa8c16" />条件判断
         </el-button>
-        <el-button size="mini" @click="addNode('script-task')">
-          <span class="node-dot" style="background:#1890ff" />执行动作
+        <el-button size="mini" class="btn-script-task" @click="addNode('script-task')">
+          <span class="node-dot" />执行动作
         </el-button>
         <el-button size="mini" @click="addNode('end-event')">
           <span class="node-dot" style="background:#ff4d4f" />结束
@@ -51,9 +51,9 @@
       </div>
       <div class="toolbar-right">
         <el-button size="mini" icon="el-icon-circle-check" @click="handleValidate">验证</el-button>
-        <el-button size="mini" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="mini" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="mini" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="mini" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
+        <el-button size="mini" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
+        <el-button size="mini" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
       </div>
     </div>
 
@@ -208,7 +208,7 @@
 
             <!-- 操作按钮 -->
             <div class="prop-section" style="padding-top:4px;">
-              <el-button type="danger" size="small" plain icon="el-icon-delete" style="width:100%;" @click="deleteCurrentNode">
+              <el-button type="danger" size="small" icon="el-icon-delete" class="delete-current-node" @click="deleteCurrentNode">
                 删除此节点
               </el-button>
             </div>
@@ -280,6 +280,7 @@ import {
   collectScriptInputCodes,
   refCodeById
 } from '@/utils/testSampleParams'
+import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 export default {
   name: 'DecisionTree',
@@ -1004,7 +1005,7 @@ export default {
     async handleCompile() {
       await this.handleSave()
       const res = await compileRule(this.definitionId)
-      if (res && res.data && res.data.success) {
+      if (isSuccessResult(res)) {
         this.$message.success('编译成功')
         // 异步刷新变量映射和脚本面板
         await this.loadProjectVars(this.definitionId)
@@ -1012,7 +1013,7 @@ export default {
           this.$refs.scriptPanel.refresh()
         }
       } else {
-        this.$message.error('编译失败: ' + (res && res.data ? res.data.errorMessage : '未知错误'))
+        this.$message.error('编译失败: ' + resultErrorMessage(res))
       }
     },
 
@@ -1177,11 +1178,14 @@ export default {
   align-items: center;
   justify-content: space-between;
   padding: 7px 14px;
-  background: linear-gradient(135deg, #1a6fc4 0%, #1890ff 100%);
+  background: #2639E9;
   color: #fff;
   flex-shrink: 0;
   flex-wrap: wrap;
   gap: 6px;
+}
+.toolbar-back {
+  color: #fff !important;
 }
 .toolbar-icon {
   font-size: 18px;
@@ -1214,6 +1218,16 @@ export default {
   &:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.7); }
   &.el-button--primary { background: #fff; color: #1890ff; border-color: #fff; }
   &.el-button--warning { background: rgba(250,140,22,0.9); border-color: transparent; }
+}
+.toolbar-center .btn-script-task {
+  background: #2639E9;
+  border-color: rgba(255,255,255,0.72);
+  color: #fff;
+  .node-dot { background: #fff; }
+}
+.delete-current-node {
+  width: 100%;
+  color: #fff !important;
 }
 .node-dot {
   display: inline-block;

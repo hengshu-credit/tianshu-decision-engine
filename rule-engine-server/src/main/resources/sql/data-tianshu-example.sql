@@ -826,3 +826,25 @@ INSERT INTO rule_engine.rule_variable_option (variable_id,option_value,option_la
 	 (141,'1','拒绝',1),
 	 (141,'2','转人工',2),
 	 (141,'-1','异常',3);
+
+-- ============================================================
+-- 系统常量：用于规则右侧阈值与特殊值比较
+-- ============================================================
+INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time) VALUES
+	 (0,'GLOBAL','NEGATIVE_INFINITY','负无穷','NEGATIVE_INFINITY','DOUBLE','CONSTANT',NULL,'-Infinity','','-Infinity','系统常量：数值比较下界，可在条件右侧通过字段选择器引用。',-1000,1,NOW(),NOW()),
+	 (0,'GLOBAL','NULL_VALUE','空值','NULL_VALUE','OBJECT','CONSTANT',NULL,'null','','null','系统常量：空值，可在条件右侧通过字段选择器引用。',-999,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_STRING','空字符串','EMPTY_STRING','STRING','CONSTANT',NULL,'""','','""','系统常量：空字符串，可在条件右侧通过字段选择器引用。',-998,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_OBJECT','空对象','EMPTY_OBJECT','OBJECT','CONSTANT',NULL,'{}','','{}','系统常量：空对象，可在条件右侧通过字段选择器引用。',-997,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_LIST','空列表','EMPTY_LIST','LIST','CONSTANT',NULL,'[]','','[]','系统常量：空列表，可在条件右侧通过字段选择器引用。',-996,1,NOW(),NOW()),
+	 (0,'GLOBAL','POSITIVE_INFINITY','正无穷','POSITIVE_INFINITY','DOUBLE','CONSTANT',NULL,'Infinity','','Infinity','系统常量：数值比较上界，可在条件右侧通过字段选择器引用。',-995,1,NOW(),NOW())
+ON DUPLICATE KEY UPDATE
+	 var_label=VALUES(var_label),
+	 script_name=VALUES(script_name),
+	 var_type=VALUES(var_type),
+	 var_source=VALUES(var_source),
+	 default_value=VALUES(default_value),
+	 example_value=VALUES(example_value),
+	 description=VALUES(description),
+	 sort_order=VALUES(sort_order),
+	 status=VALUES(status),
+	 update_time=NOW();

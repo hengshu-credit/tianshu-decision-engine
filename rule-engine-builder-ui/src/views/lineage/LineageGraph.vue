@@ -66,10 +66,14 @@
           class="graph-node"
           :class="{ 'is-start': startNode && node.id === startNode.id }"
           :style="nodeStyle(node)"
+          @mousedown.prevent="startDrag(node, $event)"
         >
-          <div class="node-type">{{ nodeTypeLabel(node.type) }}</div>
-          <div class="node-label">{{ node.label || node.code }}</div>
-          <div class="node-code">{{ node.code }}</div>
+          <div class="node-head">
+            <span class="node-type" :style="{ color: nodeColor(node.type) }">{{ nodeTypeLabel(node.type) }}</span>
+            <i class="el-icon-rank node-drag-icon" />
+          </div>
+          <div class="node-label" :title="node.label || node.code">{{ node.label || node.code }}</div>
+          <div class="node-code" :title="node.code">{{ node.code }}</div>
         </div>
       </div>
     </div>
@@ -94,6 +98,8 @@ export default {
       startNode: null,
       nodes: [],
       edges: [],
+      nodePositions: {},
+      dragging: null,
       query: { nodeType: 'VARIABLE', nodeId: '', direction: 'ALL' },
       nodeTypeOptions: [
         { label: '项目', value: 'PROJECT' },
@@ -112,9 +118,10 @@ export default {
   },
   computed: {
     positions() {
-      const map = {}
+      const map = { ...this.nodePositions }
       const cols = Math.max(1, Math.ceil(Math.sqrt(this.nodes.length || 1)))
       this.nodes.forEach((node, index) => {
+        if (map[node.id]) return
         const row = Math.floor(index / cols)
         const col = index % cols
         map[node.id] = {
@@ -126,6 +133,15 @@ export default {
     },
     canvasSize() {
       const count = this.nodes.length || 1
+      const positions = Object.values(this.positions)
+      if (positions.length) {
+        const maxRight = Math.max.apply(null, positions.map(pos => pos.left + CARD_W + 48))
+        const maxBottom = Math.max.apply(null, positions.map(pos => pos.top + CARD_H + 48))
+        return {
+          width: Math.max(760, maxRight),
+          height: Math.max(360, maxBottom)
+        }
+      }
       const cols = Math.max(1, Math.ceil(Math.sqrt(count)))
       const rows = Math.ceil(count / cols)
       return {
@@ -166,6 +182,7 @@ export default {
       this.query.nodeId = ''
       this.nodes = []
       this.edges = []
+      this.nodePositions = {}
       this.startNode = null
       this.loadOptions('')
     },
@@ -181,9 +198,24 @@ export default {
         this.startNode = data.startNode || null
         this.nodes = data.nodes || []
         this.edges = data.edges || []
+        this.nodePositions = this.layoutNodes(this.nodes)
       } finally {
         this.loading = false
       }
+    },
+    layoutNodes(nodes) {
+      const map = {}
+      const list = nodes || []
+      const cols = Math.max(1, Math.ceil(Math.sqrt(list.length || 1)))
+      list.forEach((node, index) => {
+        const row = Math.floor(index / cols)
+        const col = index % cols
+        map[node.id] = {
+          left: 32 + col * (CARD_W + GAP_X),
+          top: 32 + row * (CARD_H + GAP_Y)
+        }
+      })
+      return map
     },
     nodeStyle(node) {
       const pos = this.positions[node.id] || { left: 0, top: 0 }
@@ -193,6 +225,30 @@ export default {
         borderColor: this.nodeColor(node.type),
         boxShadow: 'inset 4px 0 0 ' + this.nodeColor(node.type)
       }
+    },
+    startDrag(node, event) {
+      const pos = this.positions[node.id] || { left: 0, top: 0 }
+      this.dragging = {
+        id: node.id,
+        startX: event.clientX,
+        startY: event.clientY,
+        left: pos.left,
+        top: pos.top
+      }
+      window.addEventListener('mousemove', this.onDragMove)
+      window.addEventListener('mouseup', this.stopDrag)
+    },
+    onDragMove(event) {
+      if (!this.dragging) return
+      const left = Math.max(8, this.dragging.left + event.clientX - this.dragging.startX)
+      const top = Math.max(8, this.dragging.top + event.clientY - this.dragging.startY)
+      this.$set(this.nodePositions, this.dragging.id, { left, top })
+    },
+    stopDrag() {
+      if (!this.dragging) return
+      this.dragging = null
+      window.removeEventListener('mousemove', this.onDragMove)
+      window.removeEventListener('mouseup', this.stopDrag)
     },
     nodeColor(type) {
       return {
@@ -213,6 +269,10 @@ export default {
       if (type === 'DATA_FIELD') return '数据字段'
       return type
     }
+  },
+  beforeDestroy() {
+    window.removeEventListener('mousemove', this.onDragMove)
+    window.removeEventListener('mouseup', this.stopDrag)
   }
 }
 </script>
@@ -292,17 +352,32 @@ export default {
     height: 86px;
     background: #fff;
     border: 1px solid #CBD5E1;
-    border-radius: 6px;
+    border-radius: 4px;
     padding: 10px 12px;
     box-sizing: border-box;
+    cursor: move;
+    user-select: none;
+    transition: box-shadow 0.15s, border-color 0.15s;
+  }
+  .graph-node:hover {
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12) !important;
   }
   .graph-node.is-start {
     background: #FFFBEB;
   }
-  .node-type {
-    color: #64748B;
-    font-size: 12px;
+  .node-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     margin-bottom: 4px;
+  }
+  .node-type {
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .node-drag-icon {
+    color: #94a3b8;
+    font-size: 13px;
   }
   .node-label {
     color: #111827;

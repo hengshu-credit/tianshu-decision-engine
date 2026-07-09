@@ -121,14 +121,6 @@
           </el-select>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" placeholder="规则功能描述" /></el-form-item>
-        <el-form-item label="输入字段">
-          <el-input v-model="form.inputFields" type="textarea" :rows="2" placeholder="输入变量，多个用逗号分隔，如：amount, age, income" />
-          <div style="color:#909399;font-size:12px;line-height:1.4;">提示：输入变量为规则的入参变量</div>
-        </el-form-item>
-        <el-form-item label="输出字段">
-          <el-input v-model="form.outputFields" type="textarea" :rows="2" placeholder="输出变量，多个用逗号分隔，如：resultScore, level" />
-          <div style="color:#909399;font-size:12px;line-height:1.4;">提示：输出变量为规则的结果变量</div>
-        </el-form-item>
         <el-form-item label="状态"><el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" /></el-form-item>
       </el-form>
       <div slot="footer">
@@ -328,8 +320,6 @@ export default {
         ruleName: '',
         modelType: 'TABLE',
         description: '',
-        inputFields: '',
-        outputFields: '',
         status: 0
       }
       this.dialogVisible = true

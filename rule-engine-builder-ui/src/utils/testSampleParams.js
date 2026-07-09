@@ -35,8 +35,10 @@ export function buildSampleParamsFromCodes(codes, projectRefs) {
   const params = {}
   const list = codes || []
   list.forEach(code => {
-    if (!code || params[code] !== undefined) return
+    if (!code) return
     const ref = findRefByCode(projectRefs, code)
+    if (appendModelInputSamples(params, ref)) return
+    if (params[code] !== undefined) return
     params[code] = sampleValueForRef(ref)
   })
   return params
@@ -191,6 +193,54 @@ export function refCodeById(projectRefs, varId, refType) {
 
 function findRefByCode(projectRefs, code) {
   return (projectRefs || []).find(ref => ref && ref.refCode === code) || null
+}
+
+function appendModelInputSamples(params, ref) {
+  if (!ref || ref.refType !== 'MODEL_OUTPUT') return false
+  const fields = ref.modelInputFields || ref.inputFields || (ref.varObj && (ref.varObj.modelInputFields || ref.varObj.inputFields)) || []
+  if (!fields.length) return false
+  const modelCode = ref.modelCode || (ref.varObj && ref.varObj.modelCode)
+  const target = modelCode ? ensureObject(params, `${modelCode}_fields`) : params
+  fields.forEach(field => {
+    if (!field || field.status === 0) return
+    const code = field.scriptName || field.fieldName
+    if (!code) return
+    setParamPath(target, code, sampleValueForModelField(field))
+  })
+  return true
+}
+
+function sampleValueForModelField(field) {
+  if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+    return field.defaultValue
+  }
+  const type = field.fieldType || field.varType || 'STRING'
+  if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT'].indexOf(String(type).toUpperCase()) >= 0) return 0
+  if (['BOOLEAN', 'BOOL'].indexOf(String(type).toUpperCase()) >= 0) return false
+  return ''
+}
+
+function ensureObject(params, key) {
+  if (!params[key] || typeof params[key] !== 'object' || Array.isArray(params[key])) {
+    params[key] = {}
+  }
+  return params[key]
+}
+
+function setParamPath(target, path, value) {
+  const parts = String(path).split('.').map(item => item.trim()).filter(Boolean)
+  if (!parts.length) return
+  let current = target
+  parts.forEach((part, index) => {
+    if (index === parts.length - 1) {
+      current[part] = value
+      return
+    }
+    if (!current[part] || typeof current[part] !== 'object' || Array.isArray(current[part])) {
+      current[part] = {}
+    }
+    current = current[part]
+  })
 }
 
 function sampleValueForOperator(value, operator, ref) {

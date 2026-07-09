@@ -87,9 +87,10 @@
                 </el-tooltip>
               </div>
               <div v-else>
-                <span v-if="getRowVarMap(row)" class="script-name-text">
-                  {{ getRowVarMap(row).varLabel }}
-                </span>
+                <div v-if="getRowVarMap(row)" class="binding-display">
+                  <div class="binding-name">{{ bindingDisplay(row).label }}</div>
+                  <div class="binding-meta">{{ bindingDisplay(row).code }} · {{ bindingDisplay(row).type }} · {{ bindingDisplay(row).source }}</div>
+                </div>
                 <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -105,9 +106,14 @@
           <el-table-column label="缺失值" min-width="130">
             <template slot-scope="{row}">
               <div v-if="row._editing">
-                <el-input v-model="row.missingValue" size="mini" placeholder="默认值" />
+                <el-input v-model="row.missingValue" size="mini" placeholder="空值时替换为该值" />
               </div>
-              <span v-else style="color:#909399;font-size:12px;">{{ row.missingValue || '-' }}</span>
+              <div v-else class="missing-display">
+                <span>{{ row.missingValue || '不替换' }}</span>
+                <el-tooltip :content="missingValueHint(row)" placement="top">
+                  <i class="el-icon-info missing-info" />
+                </el-tooltip>
+              </div>
             </template>
           </el-table-column>
           <!-- 操作 -->
@@ -190,9 +196,10 @@
                 </el-tooltip>
               </div>
               <div v-else>
-                <span v-if="getRowVarMap(row)" class="script-name-text">
-                  {{ getRowVarMap(row).varLabel }}
-                </span>
+                <div v-if="getRowVarMap(row)" class="binding-display">
+                  <div class="binding-name">{{ bindingDisplay(row).label }}</div>
+                  <div class="binding-meta">{{ bindingDisplay(row).code }} · {{ bindingDisplay(row).type }} · {{ bindingDisplay(row).source }}</div>
+                </div>
                 <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
                 <span v-else class="script-name-text script-unbound">（未关联）</span>
               </div>
@@ -614,6 +621,47 @@ export default {
     getRowVarMap(row) {
       if (!row || !row.varId) return null
       return this.varMap[this.refKey(row.varId, row.refType)] || this.varMap[String(row.varId)] || null
+    },
+    bindingDisplay(row) {
+      const item = this.getRowVarMap(row)
+      if (!item) {
+        return { label: row.fieldLabel || row.scriptName || '未关联', code: row.scriptName || '-', type: row.fieldType || '-', source: this.refTypeLabel(row.refType) }
+      }
+      return {
+        label: item.varLabelText || item.varLabel || item.varCode,
+        code: item.varCodeText || item.varCode || row.scriptName || '-',
+        type: this.varTypeLabel(item.varType || row.fieldType),
+        source: this.refTypeLabel(item.refType || row.refType)
+      }
+    },
+    varTypeLabel(type) {
+      return {
+        STRING: '字符串',
+        NUMBER: '数值',
+        INTEGER: '整数',
+        DOUBLE: '小数',
+        BOOLEAN: '布尔',
+        DATE: '日期',
+        ENUM: '枚举',
+        OBJECT: '对象',
+        LIST: '列表',
+        MAP: '映射',
+        MODEL: '模型'
+      }[type] || type || '-'
+    },
+    refTypeLabel(type) {
+      return {
+        VARIABLE: '变量',
+        CONSTANT: '常量',
+        DATA_OBJECT: '对象字段',
+        MODEL: '模型'
+      }[type] || type || '变量'
+    },
+    missingValueHint(row) {
+      if (row && row.missingValue !== undefined && row.missingValue !== null && row.missingValue !== '') {
+        return '测试或执行时，如果入参为空值，会先转换为这里填写的缺失值再传给模型。'
+      }
+      return '未配置缺失值时，入参按原始值传给模型；空值会作为空值传入，不自动替换。'
     },
     putVarMap(item) {
       this.$set(this.varMap, this.refKey(item.id, item.refType), item)
@@ -1182,9 +1230,41 @@ export default {
   font-size: 13px;
   color: #409eff;
 }
+.binding-display {
+  min-width: 0;
+}
+.binding-name {
+  color: #1f2937;
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.binding-meta {
+  color: #64748b;
+  font-family: Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .script-unbound {
   color: #c0c4cc;
   font-style: italic;
+}
+.missing-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: #606266;
+  font-size: 12px;
+}
+.missing-info {
+  color: #94a3b8;
+  cursor: help;
 }
 /* 变量选择单元格 */
 .var-picker-cell {

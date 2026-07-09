@@ -9,9 +9,9 @@
         <el-tag size="mini" type="info" style="margin-left:8px;">{{ lineCount }} 行</el-tag>
       </div>
       <div class="se-toolbar">
-        <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">验证脚本</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存脚本</el-button>
+        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并验证脚本</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">验证后测试</el-button>
       </div>
     </div>
 

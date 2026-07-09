@@ -334,7 +334,7 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.isTestableSource(row)).toBe(true)
     expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
 
-    wrapper.vm.handleTestVariable(row)
+    await wrapper.vm.handleTestVariable(row)
     expect(wrapper.vm.variableTestVisible).toBe(true)
     expect(JSON.parse(wrapper.vm.variableTestParamsText)).toEqual({ customer: { id: '' } })
 
@@ -344,6 +344,24 @@ describe('VariableList — 变量操作', () => {
 
     expect(variableApi.testVariable).toHaveBeenCalledWith(10, { customer: { id: 'C001' } })
     expect(wrapper.vm.variableTestResult.resolvedValue).toBe(88)
+  })
+
+  test('接口变量测试优先加载 API 中保存的测试样例', async () => {
+    wrapper.vm.apiConfigOptions = [
+      { id: 10001, apiName: '评分接口', testSampleParams: '{"request":{"mobile":"13800000000","age":30}}' }
+    ]
+    wrapper.vm.sourceOptionsLoaded.API = true
+    const row = {
+      id: 11,
+      varSource: 'API',
+      sourceConfig: JSON.stringify({ apiConfigId: 10001, resultPath: 'body.score' })
+    }
+
+    await wrapper.vm.handleTestVariable(row)
+
+    expect(JSON.parse(wrapper.vm.variableTestParamsText)).toEqual({
+      request: { mobile: '13800000000', age: 30 }
+    })
   })
 
   test('变量测试模板支持模板表达式和名单裸字段路径', () => {

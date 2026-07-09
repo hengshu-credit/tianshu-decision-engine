@@ -41,6 +41,10 @@ public class RuleModelService {
     private RuleModelRefMapper refMapper;
     @Resource
     private RuleProjectMapper projectMapper;
+    @Resource
+    private RuleVariableMapper variableMapper;
+    @Resource
+    private RuleDataObjectFieldMapper dataObjectFieldMapper;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -113,6 +117,24 @@ public class RuleModelService {
         Map<Long, List<RuleModelOutputField>> byModel = fields.stream()
                 .collect(Collectors.groupingBy(RuleModelOutputField::getModelId, LinkedHashMap::new, Collectors.toList()));
         list.forEach(model -> model.setOutputFields(byModel.getOrDefault(model.getId(), Collections.emptyList())));
+    }
+
+    private void fillInputFields(List<RuleModel> list) {
+        if (list == null || list.isEmpty()) return;
+        List<Long> modelIds = list.stream()
+                .map(RuleModel::getId)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toList());
+        if (modelIds.isEmpty()) return;
+        List<RuleModelInputField> fields = inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelInputField>()
+                        .in(RuleModelInputField::getModelId, modelIds)
+                        .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
+                        .orderByAsc(RuleModelInputField::getSortOrder)
+                        .orderByAsc(RuleModelInputField::getId));
+        Map<Long, List<RuleModelInputField>> byModel = fields.stream()
+                .collect(Collectors.groupingBy(RuleModelInputField::getModelId, LinkedHashMap::new, Collectors.toList()));
+        list.forEach(model -> model.setInputFields(byModel.getOrDefault(model.getId(), Collections.emptyList())));
     }
 
     /**
@@ -277,6 +299,7 @@ public class RuleModelService {
     public void publish(Long modelId, String changeLog, String publishBy) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
+        validatePublishFields(modelId);
 
         int newVersion = (model.getCurrentVersion() != null ? model.getCurrentVersion() : 0) + 1;
         model.setPublishedVersion(newVersion);
@@ -450,6 +473,7 @@ public class RuleModelService {
         wrapper.eq(RuleModel::getStatus, 1)
                .orderByAsc(RuleModel::getModelCode);
         List<RuleModel> models = modelMapper.selectList(wrapper);
+        fillInputFields(models);
         fillOutputFields(models);
         return models;
     }
@@ -744,7 +768,7 @@ public class RuleModelService {
         }
 
         if ("PMML".equals(model.getModelFormat())) {
-            return executePmml(model, params);
+            return executePmml(model, applyMissingValues(modelId, params));
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -754,6 +778,124 @@ public class RuleModelService {
         result.put("modelFormat", model.getModelFormat());
         result.put("inputParams", params);
         return result;
+    }
+
+    private void validatePublishFields(Long modelId) {
+        List<String> errors = new ArrayList<>();
+        List<RuleModelInputField> inputFields = inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
+                .eq(RuleModelInputField::getModelId, modelId)
+                .orderByAsc(RuleModelInputField::getSortOrder));
+        for (RuleModelInputField field : inputFields) {
+            if (field.getStatus() != null && field.getStatus() == 0) {
+                continue;
+            }
+            validateFieldBinding(errors, "输入字段", field.getFieldName(), field.getFieldLabel(),
+                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName());
+        }
+
+        List<RuleModelOutputField> outputFields = outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
+                .eq(RuleModelOutputField::getModelId, modelId)
+                .orderByAsc(RuleModelOutputField::getSortOrder));
+        for (RuleModelOutputField field : outputFields) {
+            validateFieldBinding(errors, "输出字段", field.getFieldName(), field.getFieldLabel(),
+                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName());
+        }
+
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("模型发布校验失败：" + String.join("；", errors));
+        }
+    }
+
+    private void validateFieldBinding(List<String> errors, String section, String fieldName, String fieldLabel,
+                                      String fieldType, Long varId, String refType, String scriptName) {
+        String displayName = fieldLabel != null && !fieldLabel.trim().isEmpty() ? fieldLabel : fieldName;
+        if (varId == null || refType == null || refType.trim().isEmpty() || scriptName == null || scriptName.trim().isEmpty()) {
+            errors.add(section + "「" + displayName + "」未完整关联变量");
+            return;
+        }
+        String actualType = resolveRefVarType(refType, varId);
+        if (actualType == null || actualType.trim().isEmpty()) {
+            errors.add(section + "「" + displayName + "」关联资源不存在");
+            return;
+        }
+        if (!isTypeCompatible(fieldType, actualType)) {
+            errors.add(section + "「" + displayName + "」类型不匹配，模型字段为 " + normalizeType(fieldType) + "，关联字段为 " + normalizeType(actualType));
+        }
+    }
+
+    private String resolveRefVarType(String refType, Long varId) {
+        if (varId == null || refType == null) return null;
+        String normalized = refType.trim().toUpperCase();
+        if ("VARIABLE".equals(normalized) || "CONSTANT".equals(normalized)) {
+            RuleVariable variable = variableMapper.selectById(varId);
+            return variable == null ? null : variable.getVarType();
+        }
+        if ("DATA_OBJECT".equals(normalized) || "DATA_FIELD".equals(normalized)) {
+            RuleDataObjectField field = dataObjectFieldMapper.selectById(varId);
+            return field == null ? null : field.getVarType();
+        }
+        if ("MODEL".equals(normalized)) {
+            RuleModel model = modelMapper.selectById(varId);
+            return model == null ? null : "MODEL";
+        }
+        return null;
+    }
+
+    private boolean isTypeCompatible(String fieldType, String actualType) {
+        String expected = normalizeType(fieldType);
+        String actual = normalizeType(actualType);
+        if (expected.isEmpty() || actual.isEmpty()) return true;
+        if (expected.equals(actual)) return true;
+        if (isNumericType(expected) && isNumericType(actual)) return true;
+        if ("PROBABILITY".equals(expected) && isNumericType(actual)) return true;
+        if ("ENUM".equals(expected) && ("STRING".equals(actual) || "ENUM".equals(actual))) return true;
+        if ("STRING".equals(expected) && "ENUM".equals(actual)) return true;
+        if ("OBJECT".equals(expected) && "MAP".equals(actual)) return true;
+        if ("MAP".equals(expected) && "OBJECT".equals(actual)) return true;
+        if ("LIST".equals(expected) && "ARRAY".equals(actual)) return true;
+        if ("ARRAY".equals(expected) && "LIST".equals(actual)) return true;
+        return false;
+    }
+
+    private boolean isNumericType(String type) {
+        return "NUMBER".equals(type) || "INTEGER".equals(type) || "INT".equals(type)
+                || "LONG".equals(type) || "DOUBLE".equals(type) || "FLOAT".equals(type)
+                || "DECIMAL".equals(type);
+    }
+
+    private String normalizeType(String type) {
+        return type == null ? "" : type.trim().toUpperCase();
+    }
+
+    private Map<String, Object> applyMissingValues(Long modelId, Map<String, Object> params) {
+        Map<String, Object> result = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+        List<RuleModelInputField> inputFields = inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
+                .eq(RuleModelInputField::getModelId, modelId));
+        for (RuleModelInputField field : inputFields) {
+            String missingValue = field.getMissingValue();
+            if (missingValue == null || missingValue.trim().isEmpty() || field.getFieldName() == null) {
+                continue;
+            }
+            Object current = result.get(field.getFieldName());
+            if (current == null || (current instanceof String && ((String) current).trim().isEmpty())) {
+                result.put(field.getFieldName(), convertValueByType(missingValue, field.getFieldType()));
+            }
+        }
+        return result;
+    }
+
+    private Object convertValueByType(String value, String type) {
+        String normalized = normalizeType(type);
+        try {
+            if ("INTEGER".equals(normalized) || "INT".equals(normalized)) return Integer.valueOf(value);
+            if ("LONG".equals(normalized)) return Long.valueOf(value);
+            if ("NUMBER".equals(normalized) || "DOUBLE".equals(normalized) || "FLOAT".equals(normalized)
+                    || "DECIMAL".equals(normalized) || "PROBABILITY".equals(normalized)) return Double.valueOf(value);
+            if ("BOOLEAN".equals(normalized)) return Boolean.valueOf(value);
+        } catch (Exception ignored) {
+            return value;
+        }
+        return value;
     }
 
     /**

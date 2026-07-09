@@ -20,9 +20,9 @@
         <el-divider direction="vertical" />
         <el-button size="small" icon="el-icon-plus" @click="addRule">添加规则</el-button>
         <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
-        <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
+        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
       </div>
     </div>
 

@@ -290,6 +290,18 @@ describe('ModelDetail — 变量关联加载', () => {
     wrapper.vm.onVarChange(row, 200)
     expect(row.varSource).toBe('dataObject')
   })
+
+  test('bindingDisplay 同时展示变量名称、编码、类型和来源', () => {
+    wrapper.vm.buildVarOptions(mockVars(), [])
+    const row = { varId: 10, refType: 'VARIABLE', fieldType: 'INTEGER', scriptName: 'age' }
+
+    expect(wrapper.vm.bindingDisplay(row)).toEqual({
+      label: '年龄',
+      code: 'age',
+      type: '字符串',
+      source: '变量'
+    })
+  })
 })
 
 describe('ModelDetail — 输入字段编辑', () => {

@@ -135,6 +135,7 @@ export default {
         const modelCode = m.modelCode || ''
         if (!modelCode) return
         const modelLabel = m.modelName || modelCode
+        const inputFields = m.inputFields || []
         const outputFields = m.outputFields || []
         outputFields.forEach(field => {
           const outputCode = (field && (field.scriptName || field.fieldName)) || ''
@@ -150,7 +151,8 @@ export default {
             scriptName: outputCode,
             varLabel: modelLabel + '/' + fieldLabel,
             varType: field.fieldType || 'STRING',
-            refType: 'MODEL_OUTPUT'
+            refType: 'MODEL_OUTPUT',
+            modelInputFields: inputFields
           }
           refs.push({
             refCode,
@@ -161,7 +163,8 @@ export default {
             refType: 'MODEL_OUTPUT',
             modelCode,
             modelId: m.id,
-            modelLabel
+            modelLabel,
+            modelInputFields: inputFields
           })
         })
       })

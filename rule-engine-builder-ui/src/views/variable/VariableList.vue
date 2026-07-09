@@ -478,7 +478,7 @@
         <code>{{ testTarget.scriptName || testTarget.varCode }}</code>
       </div>
       <el-alert
-        title="请输入该变量取数所需的上下文字段，接口变量会按 paramMapping 映射，数据库变量会按 params 数组取值，名单变量会按 queryField 查询。"
+        :title="testDialogHint"
         type="info"
         :closable="false"
         show-icon
@@ -503,18 +503,29 @@
           <el-descriptions-item label="来源">{{ sourceLabel(sourceDetailTarget.varSource) }}</el-descriptions-item>
           <el-descriptions-item label="脚本名">{{ sourceDetailTarget.scriptName || sourceDetailTarget.varCode }}</el-descriptions-item>
         </el-descriptions>
+        <div class="source-summary-card">
+          <div class="source-summary-title">{{ sourceBusinessTitle(sourceDetailTarget) }}</div>
+          <div class="source-summary-desc">{{ sourceBusinessDesc(sourceDetailTarget) }}</div>
+          <div class="source-summary-grid">
+            <div v-for="item in sourceSummaryRows(sourceDetailTarget)" :key="item.label" class="source-summary-item">
+              <div class="source-summary-label">{{ item.label }}</div>
+              <div class="source-summary-value">{{ item.value }}</div>
+            </div>
+          </div>
+        </div>
         <div class="source-detail-section">
           <div class="source-detail-title">依赖输入字段</div>
           <el-table :data="sourceInputFields(sourceDetailTarget)" border size="small" empty-text="未配置依赖输入字段">
             <el-table-column prop="field" label="输入字段" min-width="160" show-overflow-tooltip />
-            <el-table-column prop="usage" label="用途" min-width="150" show-overflow-tooltip />
-            <el-table-column prop="expression" label="配置表达式" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="usage" label="业务用途" min-width="150" show-overflow-tooltip />
+            <el-table-column prop="expression" label="取值来源" min-width="220" show-overflow-tooltip />
           </el-table>
         </div>
-        <div class="source-detail-section">
-          <div class="source-detail-title">原始取数配置</div>
-          <monaco-editor :value="formatJson(parseJson(sourceDetailTarget.sourceConfig, {}))" language="json" height="220px" read-only />
-        </div>
+        <el-collapse class="source-tech-collapse">
+          <el-collapse-item title="技术配置（排查时查看）" name="raw">
+            <monaco-editor :value="formatJson(parseJson(sourceDetailTarget.sourceConfig, {}))" language="json" height="220px" read-only />
+          </el-collapse-item>
+        </el-collapse>
       </template>
       <div slot="footer">
         <el-button size="small" @click="sourceDetailVisible=false">关闭</el-button>
@@ -728,7 +739,7 @@ import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
-import { collectReferencePaths, collectReferencePathsFromText, setPathValue } from '@/utils/testParamTemplate'
+import { collectReferencePaths, collectReferencePathsFromText, sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
@@ -924,6 +935,18 @@ export default {
     /** 数据对象弹窗标题 */
     objectDialogTitle() {
       return this.objectForm.id ? '编辑数据对象' : '新建数据对象'
+    },
+    testDialogHint() {
+      if (this.testTarget && this.testTarget.varSource === 'API') {
+        return '已优先加载外数 API 中保存的测试样例；没有样例时会根据接口请求参数生成完整入参 JSON。'
+      }
+      if (this.testTarget && this.testTarget.varSource === 'DB') {
+        return '请输入数据库查询变量依赖的上下文字段，系统会按 SQL 参数顺序取值。'
+      }
+      if (this.testTarget && this.testTarget.varSource === 'LIST') {
+        return '请输入名单查询字段对应的上下文值，系统会按名单匹配方式返回命中结果。'
+      }
+      return '请输入该变量取数所需的上下文字段。'
     }
   },
   methods: {
@@ -1713,7 +1736,8 @@ export default {
     isTestableSource(row) {
       return row && ['API', 'DB', 'LIST'].indexOf(row.varSource) >= 0
     },
-    handleViewSourceDetail(row) {
+    async handleViewSourceDetail(row) {
+      await this.loadVariableSourceOptions(row && row.varSource)
       this.sourceDetailTarget = row
       this.sourceDetailVisible = true
     },
@@ -1743,7 +1767,8 @@ export default {
       }
       return rows
     },
-    handleTestVariable(row) {
+    async handleTestVariable(row) {
+      await this.loadVariableSourceOptions(row && row.varSource)
       this.testTarget = row
       this.variableTestParamsText = this.buildTestParamTemplate(row)
       this.variableTestResult = null
@@ -1753,10 +1778,12 @@ export default {
       const config = this.parseJson(row && row.sourceConfig, {})
       const sample = {}
       if (row && row.varSource === 'API') {
+        const savedSample = this.apiSavedSample(config.apiConfigId)
+        if (savedSample) return this.formatJson(savedSample)
         const mapping = config.paramMapping || this.apiInputConfig(config.apiConfigId)
         Object.keys(mapping).forEach(key => {
           const paths = collectReferencePaths(mapping[key], { allowBarePath: true })
-          if (paths.length) paths.forEach(path => setPathValue(sample, path, ''))
+          if (paths.length) paths.forEach(path => setPathValue(sample, path, sampleValueForVarType()))
           else sample[key] = ''
         })
       } else if (row && row.varSource === 'DB') {
@@ -1769,8 +1796,17 @@ export default {
       }
       return this.formatJson(sample)
     },
+    apiOption(apiConfigId) {
+      return (this.apiConfigOptions || []).find(item => String(item.id) === String(apiConfigId)) || null
+    },
+    apiSavedSample(apiConfigId) {
+      const api = this.apiOption(apiConfigId)
+      if (!api || !api.testSampleParams) return null
+      const parsed = this.parseJsonSafe(api.testSampleParams, null)
+      return parsed && typeof parsed === 'object' ? parsed : null
+    },
     apiInputConfig(apiConfigId) {
-      const api = (this.apiConfigOptions || []).find(item => String(item.id) === String(apiConfigId))
+      const api = this.apiOption(apiConfigId)
       const merged = {}
       if (!api) return merged
       ;['headerConfig', 'queryConfig', 'requestMapping', 'bodyTemplate', 'authApiConfig'].forEach(key => {
@@ -1783,6 +1819,63 @@ export default {
       collectReferencePaths(value, { allowBarePath: false }).forEach(path => {
         target[path] = '$.' + path
       })
+    },
+    sourceBusinessTitle(row) {
+      if (!row) return '取数配置'
+      return { API: '接口取数', DB: '数据库查询', LIST: '名单匹配' }[row.varSource] || '取数配置'
+    },
+    sourceBusinessDesc(row) {
+      const config = this.parseJson(row && row.sourceConfig, {})
+      if (row && row.varSource === 'API') {
+        const api = this.apiOption(config.apiConfigId)
+        return '执行规则时调用「' + (api ? (api.apiName || api.apiCode) : '已选接口') + '」，并从返回结果中读取变量值。'
+      }
+      if (row && row.varSource === 'DB') {
+        return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
+      }
+      if (row && row.varSource === 'LIST') {
+        return '执行规则时使用指定字段到名单库中匹配，返回是否命中或命中明细。'
+      }
+      return '当前变量使用普通输入或计算方式。'
+    },
+    sourceSummaryRows(row) {
+      const config = this.parseJson(row && row.sourceConfig, {})
+      if (row && row.varSource === 'API') {
+        const api = this.apiOption(config.apiConfigId)
+        return [
+          { label: '调用接口', value: api ? (api.apiName || api.apiCode) : (config.apiConfigId ? '接口ID ' + config.apiConfigId : '未配置') },
+          { label: '取值位置', value: config.resultPath || 'body' },
+          { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) },
+          { label: '测试样例', value: this.apiSavedSample(config.apiConfigId) ? '已保存，可直接加载测试' : '未保存，按请求参数生成' }
+        ]
+      }
+      if (row && row.varSource === 'DB') {
+        const db = (this.dbDatasourceOptions || []).find(item => String(item.id) === String(config.datasourceId))
+        return [
+          { label: '数据库源', value: db ? (db.datasourceName || db.datasourceCode) : (config.datasourceId ? '数据库ID ' + config.datasourceId : '未配置') },
+          { label: '返回位置', value: config.resultPath || '第一列/首行结果' },
+          { label: '最多返回', value: (config.maxRows || 1) + ' 行' },
+          { label: '失败处理', value: this.exceptionStrategyLabel(config.exceptionStrategy) }
+        ]
+      }
+      if (row && row.varSource === 'LIST') {
+        const listId = config.listId || config.listLibraryId
+        const library = (this.listLibraryOptions || []).find(item => String(item.id) === String(listId))
+        return [
+          { label: '名单库', value: library ? (library.listName || library.listCode) : (listId ? '名单ID ' + listId : '未配置') },
+          { label: '匹配字段', value: config.queryField || config.queryPath || config.field || '未配置' },
+          { label: '匹配方式', value: this.listMatchModeLabel(config.matchMode || config.operator) },
+          { label: '返回结果', value: config.returnMode === 'DETAIL' ? '命中明细' : '是否命中/命中数量' }
+        ]
+      }
+      return []
+    },
+    exceptionStrategyLabel(value) {
+      return { ERROR: '失败时报错', RETURN_DEFAULT: '失败时返回默认值', RETURN_NULL: '失败时返回空值' }[value || 'ERROR'] || value || '失败时报错'
+    },
+    listMatchModeLabel(value) {
+      const found = this.listMatchModeOptions.find(item => item.value === value)
+      return found ? found.label : (value || '在名单内（精确匹配）')
     },
     async doTestVariable() {
       if (!this.testTarget) return
@@ -2034,6 +2127,14 @@ export default {
 .test-result-pre { margin:0; padding:10px; border:1px solid #e2e8f0; border-radius:4px; background:#f8fafc; max-height:260px; overflow:auto; font-size:12px; line-height:1.5; }
 .source-detail-section { margin-top:14px; }
 .source-detail-title { font-weight:700; color:#334155; margin-bottom:8px; }
+.source-summary-card { margin-top:14px; padding:14px; border:1px solid #dbeafe; background:#f8fbff; border-radius:6px; }
+.source-summary-title { color:#1e3a8a; font-weight:700; margin-bottom:4px; }
+.source-summary-desc { color:#475569; font-size:13px; line-height:1.6; margin-bottom:12px; }
+.source-summary-grid { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.source-summary-item { background:#fff; border:1px solid #e2e8f0; border-radius:4px; padding:8px 10px; min-width:0; }
+.source-summary-label { color:#64748b; font-size:12px; margin-bottom:4px; }
+.source-summary-value { color:#0f172a; font-size:13px; font-weight:600; line-height:1.4; word-break:break-all; }
+.source-tech-collapse { margin-top:14px; }
 
 /* Import result */
 .import-result-body { text-align:center; padding:20px 0; }

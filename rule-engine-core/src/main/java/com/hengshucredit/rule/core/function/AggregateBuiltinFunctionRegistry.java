@@ -18,8 +18,14 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] THREE_STRINGS = {String.class, String.class, String.class};
     private static final Class<?>[] OBJECT_STRING = {Object.class, String.class};
     private static final Class<?>[] OBJECT_STRING_OBJECT = {Object.class, String.class, Object.class};
+    private static final Class<?>[] OBJECT_DOUBLE_STRING = {Object.class, double.class, String.class};
+    private static final Class<?>[] OBJECT_OBJECT_STRING = {Object.class, Object.class, String.class};
+    private static final Class<?>[] STRING_STRING_STRING = {String.class, String.class, String.class};
+    private static final Class<?>[] DOUBLE_STRING = {double.class, String.class};
     private static final Class<?>[] DOUBLE_DOUBLE = {double.class, double.class};
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE = {double.class, double.class, double.class};
+    private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, String.class};
+    private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, double.class, String.class};
 
     private AggregateBuiltinFunctionRegistry() {
     }
@@ -92,5 +98,17 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("objKeys", DECISION_DELEGATE, "objKeys", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("objValues", DECISION_DELEGATE, "objValues", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("toJson", DECISION_DELEGATE, "toJson", SINGLE_OBJECT);
+
+        runner.addFunctionOfServiceMethod("dateFormat", DECISION_DELEGATE, "dateFormat", OBJECT_STRING);
+        runner.addFunctionOfServiceMethod("dateConvert", DECISION_DELEGATE, "dateConvert", STRING_STRING_STRING);
+        runner.addFunctionOfServiceMethod("dateAdd", DECISION_DELEGATE, "dateAdd", OBJECT_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("dateSub", DECISION_DELEGATE, "dateSub", OBJECT_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("dateDiff", DECISION_DELEGATE, "dateDiff", OBJECT_OBJECT_STRING);
+        runner.addFunctionOfServiceMethod("dateToMillis", DECISION_DELEGATE, "dateToMillis", SINGLE_OBJECT);
+        runner.addFunctionOfServiceMethod("millisToDate", DECISION_DELEGATE, "millisToDate", DOUBLE_STRING);
+
+        runner.addFunctionOfServiceMethod("scoreByOdds", DECISION_DELEGATE, "scoreByOdds", DOUBLE_DOUBLE_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("scoreByOddsPdo", DECISION_DELEGATE, "scoreByOddsPdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("scoreByBadRatePdo", DECISION_DELEGATE, "scoreByBadRatePdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
     }
 }

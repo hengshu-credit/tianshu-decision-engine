@@ -100,6 +100,48 @@ final class BuiltinFunctionCatalog {
         list.add(fn("objValues", "对象 value 列表", "返回 Map/对象的 value 列表", p("object", "OBJECT", "对象", sampleJson()), "LIST", DECISION_CLASS, "objValues"));
         list.add(fn("toJson", "对象转 JSON", "将对象、数组或标量序列化为 JSON 字符串", p("value", "OBJECT", "值", sampleJson()), "STRING", DECISION_CLASS, "toJson"));
 
+        list.add(fn("dateFormat", "日期格式化", "将日期、时间戳或常见日期字符串格式化为指定样式", params(
+                p("input_date", "OBJECT", "日期", "2026-07-09 10:30:00"),
+                p("format_pattern", "STRING", "输出格式", "yyyy-MM-dd")), "STRING", DECISION_CLASS, "dateFormat"));
+        list.add(fn("dateConvert", "日期格式转换", "按输入格式解析日期文本，并转换为新的输出格式", params(
+                p("input_date", "STRING", "日期文本", "20260709"),
+                p("from_pattern", "STRING", "输入格式", "yyyyMMdd"),
+                p("to_pattern", "STRING", "输出格式", "yyyy-MM-dd")), "STRING", DECISION_CLASS, "dateConvert"));
+        list.add(fn("dateAdd", "日期加法", "对日期按年、季、月、周、日、小时、分钟、秒或毫秒增加指定数量", params(
+                p("input_date", "OBJECT", "日期", "2026-07-09 10:30:00"),
+                p("amount", "NUMBER", "数量", 3),
+                p("unit", "STRING", "单位", "DAY")), "STRING", DECISION_CLASS, "dateAdd"));
+        list.add(fn("dateSub", "日期减法", "对日期按指定单位减少指定数量", params(
+                p("input_date", "OBJECT", "日期", "2026-07-09 10:30:00"),
+                p("amount", "NUMBER", "数量", 1),
+                p("unit", "STRING", "单位", "MONTH")), "STRING", DECISION_CLASS, "dateSub"));
+        list.add(fn("dateDiff", "日期差值", "计算两个日期之间的差值，单位支持 YEAR/QUARTER/MONTH/WEEK/DAY/HOUR/MINUTE/SECOND/MILLISECOND", params(
+                p("start_date", "OBJECT", "开始日期", "2026-07-01 00:00:00"),
+                p("end_date", "OBJECT", "结束日期", "2026-07-09 12:30:00"),
+                p("unit", "STRING", "单位", "DAY")), "NUMBER", DECISION_CLASS, "dateDiff"));
+        list.add(fn("dateToMillis", "日期转毫秒时间戳", "将日期、时间戳或常见日期字符串转换为毫秒时间戳", p("input_date", "OBJECT", "日期", "2026-07-09 10:30:00"), "NUMBER", DECISION_CLASS, "dateToMillis"));
+        list.add(fn("millisToDate", "毫秒时间戳转日期", "将毫秒时间戳格式化为日期字符串", params(
+                p("timestamp", "NUMBER", "毫秒时间戳", 1783564200000L),
+                p("format_pattern", "STRING", "输出格式", "yyyy-MM-dd HH:mm:ss")), "STRING", DECISION_CLASS, "millisToDate"));
+
+        list.add(fn("scoreByOdds", "odds 转评分", "按 score = A +/- B * ln(odds) 将 odds 倍率转换为评分，direction 支持 ASC/DESC", params(
+                p("odds", "NUMBER", "odds 倍率", 20),
+                p("a", "NUMBER", "A 参数", 600),
+                p("b", "NUMBER", "B 参数", 28.8539),
+                p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByOdds"));
+        list.add(fn("scoreByOddsPdo", "odds 按 PDO 转评分", "通过基础分、基础 odds、PDO 和方向将 odds 倍率转换为评分", params(
+                p("odds", "NUMBER", "odds 倍率", 40),
+                p("base_score", "NUMBER", "基础分", 600),
+                p("base_odds", "NUMBER", "基础 odds", 20),
+                p("pdo", "NUMBER", "PDO", 20),
+                p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByOddsPdo"));
+        list.add(fn("scoreByBadRatePdo", "坏账率按 PDO 转评分", "先将 bad_rate 转为 good/bad odds，再按基础分、基础 odds、PDO 和方向转换为评分", params(
+                p("bad_rate", "NUMBER", "坏账率", 0.05),
+                p("base_score", "NUMBER", "基础分", 600),
+                p("base_odds", "NUMBER", "基础 odds", 20),
+                p("pdo", "NUMBER", "PDO", 20),
+                p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByBadRatePdo"));
+
         return list;
     }
 

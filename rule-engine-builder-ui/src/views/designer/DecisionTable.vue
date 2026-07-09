@@ -11,9 +11,9 @@
       <div class="dt-toolbar">
         <el-button size="small" icon="el-icon-plus" @click="addRule">添加行</el-button>
         <el-divider direction="vertical" />
-        <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
+        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
         <el-divider direction="vertical" />
         <span class="toolbar-label">命中策略</span>
         <el-select v-model="model.hitPolicy" size="small" style="width:110px;">
@@ -208,6 +208,7 @@ import {
   walkConditionLeaves
 } from '@/utils/decisionConditionTree'
 import { coerceSampleValue } from '@/utils/testSampleParams'
+import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 export default {
   name: 'DecisionTable',
@@ -577,14 +578,14 @@ export default {
     async handleCompile() {
       await this.handleSave()
       const res = await compileRule(this.definitionId)
-      if (res && res.data && res.data.success) {
+      if (isSuccessResult(res)) {
         this.$message.success('编译成功')
         await this.loadProjectVars(this.definitionId)
         if (this.$refs.scriptPanel) {
           this.$refs.scriptPanel.refresh()
         }
       } else {
-        this.$message.error('编译失败: ' + (res && res.data ? res.data.errorMessage : '未知错误'))
+        this.$message.error('编译失败: ' + resultErrorMessage(res))
       }
     },
 

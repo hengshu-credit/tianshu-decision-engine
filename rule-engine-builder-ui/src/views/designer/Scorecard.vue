@@ -12,9 +12,9 @@
         <el-button size="small" icon="el-icon-plus" @click="addScoreItem">添加评分项</el-button>
         <el-button size="small" icon="el-icon-plus" @click="addThreshold">添加等级</el-button>
         <el-divider direction="vertical" />
-        <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">测试</el-button>
+        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
+        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">编译后测试</el-button>
       </div>
     </div>
 
@@ -289,6 +289,7 @@ import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
+import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
@@ -505,7 +506,7 @@ export default {
     async handleCompile() {
       await this.handleSave()
       const res = await compileRule(this.definitionId)
-      if (res && res.data && res.data.success) {
+      if (isSuccessResult(res)) {
         this.$message.success('编译成功')
         // 异步刷新变量映射和脚本面板
         await this.loadProjectVars(this.definitionId)
@@ -513,7 +514,7 @@ export default {
           this.$refs.scriptPanel.refresh()
         }
       } else {
-        this.$message.error('编译失败: ' + (res && res.data ? res.data.errorMessage : '未知错误'))
+        this.$message.error('编译失败: ' + resultErrorMessage(res))
       }
     },
     openTestDialog() {

@@ -93,6 +93,8 @@ async function mountAndWait() {
       'el-date-picker': makeStub('div'),
       'el-divider': makeStub('hr'),
       'el-tooltip': makeStub('span'),
+      'el-collapse': makeStub('div'),
+      'el-collapse-item': makeStub('div'),
       'el-loading': makeStub('div'),
       'monaco-editor': makeStub('div')
     }
@@ -308,6 +310,22 @@ describe('RuleDetail version history', () => {
 
     expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 2, 1)
     expect(wrapper.vm.versionCompare.modelJsonChanged).toBe(true)
+  })
+
+  test('versionDiffRows builds business diff rows', async () => {
+    wrapper.vm.versionCompare = {
+      left: { version: 2, modelJson: '{"rules":[{"conditions":[{"varLabel":"年龄","operator":">","value":20}]}]}' },
+      right: { version: 1, modelJson: '{"rules":[{"conditions":[{"varLabel":"年龄","operator":">","value":18}]}]}' }
+    }
+
+    expect(wrapper.vm.versionDiffRows).toEqual([
+      {
+        path: '规则行[1].条件[1].取值',
+        leftText: '20',
+        rightText: '18',
+        type: 'changed'
+      }
+    ])
   })
 
   test('rollbackVersion calls rollback and refreshes data', async () => {

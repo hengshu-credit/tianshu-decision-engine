@@ -20,6 +20,28 @@ describe('testSampleParams', () => {
     })
   })
 
+  test('模型输出字段样例展开为模型底层输入字段', () => {
+    const modelRefs = [{
+      refCode: 'score_f1.score',
+      refType: 'MODEL_OUTPUT',
+      modelCode: 'score_f1',
+      varType: 'DOUBLE',
+      varObj: {},
+      modelInputFields: [
+        { scriptName: 'HYBASE_X115', fieldName: 'HYBASE_X115', fieldType: 'DOUBLE' },
+        { scriptName: 'HYDK_X760', fieldName: 'HYDK_X760', fieldType: 'DOUBLE' },
+        { scriptName: 'ignored_field', fieldName: 'ignored_field', fieldType: 'DOUBLE', status: 0 }
+      ]
+    }]
+
+    expect(buildSampleParamsFromCodes(['score_f1.score'], modelRefs)).toEqual({
+      score_f1_fields: {
+        HYBASE_X115: 0,
+        HYDK_X760: 0
+      }
+    })
+  })
+
   test('脚本样例跳过单纯赋值左侧变量并保留右侧输入', () => {
     const codes = collectScriptInputCodes('resultAmount = inputAmount + 1\nif (riskFlag == true) { resultAmount = 0 }', refs)
     expect(Array.from(codes).sort()).toEqual(['inputAmount', 'riskFlag'])

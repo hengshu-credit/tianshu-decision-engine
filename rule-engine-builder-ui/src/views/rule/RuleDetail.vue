@@ -4,6 +4,7 @@
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
       <h2 style="margin:0;">{{ rule.ruleName || '规则详情' }}</h2>
       <div>
+        <el-button size="small" icon="el-icon-edit" @click="openBaseEditDialog">编辑基本信息</el-button>
         <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">规则测试</el-button>
         <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
         <el-button size="small" icon="el-icon-back" @click="$router.push('/rule')">返回</el-button>
@@ -29,6 +30,24 @@
       <div slot="header" style="font-weight:600;">描述</div>
       <div style="color:#606266;font-size:14px;line-height:1.6;">{{ rule.description }}</div>
     </el-card>
+
+    <el-dialog title="编辑规则基本信息" :visible.sync="baseEditVisible" width="560px" :close-on-click-modal="false">
+      <el-form :model="baseForm" label-width="90px" size="small">
+        <el-form-item label="规则编码">
+          <el-input :value="rule.ruleCode" disabled />
+        </el-form-item>
+        <el-form-item label="规则名称" required>
+          <el-input v-model="baseForm.ruleName" placeholder="请输入规则名称" />
+        </el-form-item>
+        <el-form-item label="描述">
+          <el-input v-model="baseForm.description" type="textarea" :rows="4" placeholder="请输入规则功能描述" />
+        </el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="baseEditVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="baseSaving" @click="saveBaseInfo">保存</el-button>
+      </div>
+    </el-dialog>
 
     <!-- 输入输出字段 -->
     <el-tabs type="border-card">
@@ -291,16 +310,46 @@
           :closable="false"
           show-icon
         />
-        <div class="version-compare-grid">
-          <div>
-            <div class="version-compare-title">左侧版本模型 JSON</div>
-            <pre>{{ formatVersionJson(versionCompare.left.modelJson) }}</pre>
+        <div class="version-diff-panel">
+          <div class="version-diff-head">
+            <span>业务配置差异</span>
+            <span class="version-diff-count">{{ versionDiffRows.length }} 项变化</span>
           </div>
-          <div>
-            <div class="version-compare-title">左侧版本编译脚本</div>
-            <pre>{{ versionCompare.left.compiledScript || '' }}</pre>
-          </div>
+          <el-table :data="versionDiffRows" border size="mini" max-height="360" empty-text="两个版本的业务配置一致">
+            <el-table-column prop="path" label="配置项" min-width="220" show-overflow-tooltip />
+            <el-table-column label="左侧版本" min-width="240" show-overflow-tooltip>
+              <template slot-scope="{ row }"><span :class="diffValueClass(row, 'left')">{{ row.leftText }}</span></template>
+            </el-table-column>
+            <el-table-column label="右侧版本" min-width="240" show-overflow-tooltip>
+              <template slot-scope="{ row }"><span :class="diffValueClass(row, 'right')">{{ row.rightText }}</span></template>
+            </el-table-column>
+            <el-table-column label="变化" width="90" align="center">
+              <template slot-scope="{ row }"><el-tag size="mini" :type="diffTagType(row.type)">{{ diffTypeLabel(row.type) }}</el-tag></template>
+            </el-table-column>
+          </el-table>
         </div>
+        <el-collapse class="version-tech-collapse">
+          <el-collapse-item title="技术内容（原始 JSON / 编译脚本）" name="raw">
+            <div class="version-compare-grid">
+              <div>
+                <div class="version-compare-title">左侧模型 JSON</div>
+                <pre>{{ formatVersionJson(versionCompare.left.modelJson) }}</pre>
+              </div>
+              <div>
+                <div class="version-compare-title">右侧模型 JSON</div>
+                <pre>{{ formatVersionJson(versionCompare.right.modelJson) }}</pre>
+              </div>
+              <div>
+                <div class="version-compare-title">左侧编译脚本</div>
+                <pre>{{ versionCompare.left.compiledScript || '' }}</pre>
+              </div>
+              <div>
+                <div class="version-compare-title">右侧编译脚本</div>
+                <pre>{{ versionCompare.right.compiledScript || '' }}</pre>
+              </div>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
       </div>
       <div slot="footer">
         <el-button size="small" @click="versionVisible = false">关闭</el-button>
@@ -343,6 +392,12 @@ export default {
         { label: '数据对象字段', options: [] },
         { label: '模型', options: [] }
       ],
+      baseEditVisible: false,
+      baseSaving: false,
+      baseForm: {
+        ruleName: '',
+        description: ''
+      },
       fieldPageSize: 100,
       inputFieldPage: 1,
       outputFieldPage: 1,
@@ -392,6 +447,22 @@ export default {
       const fields = (this.rule && this.rule.outputFieldsJson) || []
       if (!this.outputFieldNeedsPaging) return fields
       return fields.slice(this.outputFieldOffset, this.outputFieldOffset + this.fieldPageSize)
+    },
+    versionDiffRows() {
+      if (!this.versionCompare || !this.versionCompare.left || !this.versionCompare.right) return []
+      const leftMap = this.flattenVersionObject(this.parseVersionObject(this.versionCompare.left.modelJson))
+      const rightMap = this.flattenVersionObject(this.parseVersionObject(this.versionCompare.right.modelJson))
+      const keys = Array.from(new Set(Object.keys(leftMap).concat(Object.keys(rightMap)))).sort()
+      return keys.filter(key => !this.sameVersionValue(leftMap[key], rightMap[key])).map(key => {
+        const hasLeft = Object.prototype.hasOwnProperty.call(leftMap, key)
+        const hasRight = Object.prototype.hasOwnProperty.call(rightMap, key)
+        return {
+          path: this.businessPathLabel(key),
+          leftText: hasLeft ? this.displayVersionValue(leftMap[key]) : '未配置',
+          rightText: hasRight ? this.displayVersionValue(rightMap[key]) : '未配置',
+          type: !hasLeft ? 'rightOnly' : (!hasRight ? 'leftOnly' : 'changed')
+        }
+      })
     }
   },
   created() {
@@ -431,6 +502,38 @@ export default {
         this.$message.error(e.message || '加载规则详情失败')
       } finally {
         this.loading = false
+      }
+    },
+    openBaseEditDialog() {
+      this.baseForm = {
+        ruleName: this.rule.ruleName || '',
+        description: this.rule.description || ''
+      }
+      this.baseEditVisible = true
+    },
+    async saveBaseInfo() {
+      const ruleName = (this.baseForm.ruleName || '').trim()
+      if (!ruleName) {
+        this.$message.warning('规则名称不能为空')
+        return
+      }
+      this.baseSaving = true
+      try {
+        await api.updateDefinition({
+          id: this.rule.id,
+          projectId: this.rule.projectId,
+          ruleName,
+          description: this.baseForm.description || '',
+          status: this.rule.status
+        })
+        this.$set(this.rule, 'ruleName', ruleName)
+        this.$set(this.rule, 'description', this.baseForm.description || '')
+        this.baseEditVisible = false
+        this.$message.success('规则基本信息已更新')
+      } catch (e) {
+        this.$message.error(e.message || '保存规则基本信息失败')
+      } finally {
+        this.baseSaving = false
       }
     },
     async loadVars() {
@@ -817,6 +920,77 @@ export default {
         return value
       }
     },
+    parseVersionObject(value) {
+      if (!value) return {}
+      if (typeof value === 'object') return value
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        return { raw: value }
+      }
+    },
+    flattenVersionObject(value, prefix = '') {
+      const result = {}
+      if (value == null || typeof value !== 'object') {
+        result[prefix || '规则内容'] = value
+        return result
+      }
+      if (Array.isArray(value)) {
+        if (value.length === 0) {
+          result[prefix || '列表'] = []
+          return result
+        }
+        value.forEach((item, index) => {
+          Object.assign(result, this.flattenVersionObject(item, prefix ? prefix + '[' + (index + 1) + ']' : '[' + (index + 1) + ']'))
+        })
+        return result
+      }
+      const keys = Object.keys(value)
+      if (keys.length === 0) {
+        result[prefix || '对象'] = {}
+        return result
+      }
+      keys.forEach(key => {
+        const label = prefix ? prefix + '.' + key : key
+        Object.assign(result, this.flattenVersionObject(value[key], label))
+      })
+      return result
+    },
+    businessPathLabel(path) {
+      return String(path || '')
+        .replace(/\brules\b/g, '规则行')
+        .replace(/\bconditions\b/g, '条件')
+        .replace(/\bactions\b/g, '执行动作')
+        .replace(/\bdefaultActions\b/g, '默认动作')
+        .replace(/\bnodes\b/g, '节点')
+        .replace(/\bedges\b/g, '连线')
+        .replace(/\bvarCode\b/g, '字段编码')
+        .replace(/\bvarLabel\b/g, '字段名称')
+        .replace(/\boperator\b/g, '判断关系')
+        .replace(/\bvalue\b/g, '取值')
+        .replace(/\bresultVar\b/g, '结果字段')
+    },
+    displayVersionValue(value) {
+      if (value == null) return '空值'
+      if (typeof value === 'object') return JSON.stringify(value)
+      return String(value)
+    },
+    sameVersionValue(left, right) {
+      return this.displayVersionValue(left) === this.displayVersionValue(right)
+    },
+    diffTypeLabel(type) {
+      return { leftOnly: '左侧独有', rightOnly: '右侧独有', changed: '变更' }[type] || '变更'
+    },
+    diffTagType(type) {
+      return { leftOnly: 'success', rightOnly: 'info', changed: 'warning' }[type] || 'warning'
+    },
+    diffValueClass(row, side) {
+      if (!row) return ''
+      if (row.type === 'leftOnly' && side === 'left') return 'diff-value-added'
+      if (row.type === 'rightOnly' && side === 'right') return 'diff-value-added'
+      if (row.type === 'changed') return 'diff-value-changed'
+      return ''
+    },
     async openTestDialog() {
       this.testVisible = true
       this.testReady = false
@@ -960,6 +1134,41 @@ export default {
 .script-unbound {
   color: #c0c4cc;
   font-style: italic;
+}
+.version-diff-panel {
+  margin-top: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  overflow: hidden;
+}
+.version-diff-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  background: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+}
+.version-diff-count {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+.version-tech-collapse {
+  margin-top: 12px;
+}
+.diff-value-added {
+  color: #047857;
+  font-weight: 600;
+}
+.diff-value-removed {
+  color: #b91c1c;
+  text-decoration: line-through;
+}
+.diff-value-changed {
+  color: #92400e;
+  font-weight: 600;
 }
 ::v-deep .editing-row { background-color: #f0f9eb; }
 ::v-deep .el-table .editing-row td { background-color: #f0f9eb; }

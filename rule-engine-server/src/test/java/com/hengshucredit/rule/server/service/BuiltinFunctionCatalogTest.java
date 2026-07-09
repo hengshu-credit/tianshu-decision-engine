@@ -38,6 +38,10 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("arrDistinct"));
         assertTrue(codeSet.contains("jsonSum"));
         assertTrue(codeSet.contains("objGet"));
-        assertTrue(definitions.size() >= 45);
+        assertTrue(codeSet.contains("dateAdd"));
+        assertTrue(codeSet.contains("dateDiff"));
+        assertTrue(codeSet.contains("scoreByOddsPdo"));
+        assertTrue(codeSet.contains("scoreByBadRatePdo"));
+        assertTrue(definitions.size() >= 55);
     }
 }

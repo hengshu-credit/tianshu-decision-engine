@@ -11,9 +11,9 @@
       <div class="asc-toolbar">
         <el-button size="small" icon="el-icon-plus" @click="addGroup">添加维度组</el-button>
         <el-divider direction="vertical" />
-        <el-button size="small" icon="el-icon-document" @click="handleSave">保存</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">测试</el-button>
+        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
+        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
+        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
       </div>
     </div>
 
@@ -327,6 +327,7 @@ import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
+import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
@@ -550,11 +551,11 @@ export default {
     async handleCompile() {
       await this.handleSave()
       const res = await compileRule(this.definitionId)
-      if (res && res.data && res.data.success) {
+      if (isSuccessResult(res)) {
         this.$message.success('编译成功')
         if (this.$refs.scriptPanel) this.$refs.scriptPanel.refresh()
       } else {
-        this.$message.error('编译失败: ' + (res && res.data ? res.data.errorMessage : '未知错误'))
+        this.$message.error('编译失败: ' + resultErrorMessage(res))
       }
     },
     handleTest() {

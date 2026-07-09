@@ -74,7 +74,17 @@
                   <el-option label="true" value="true" />
                   <el-option label="false" value="false" />
                 </el-select>
-                <el-input v-else v-model="child.value" size="mini" class="cg-input-full" :placeholder="valuePlaceholder(child)" />
+                <div v-else class="cg-manual-value">
+                  <el-input v-model="child.value" size="mini" class="cg-input-full" :placeholder="valuePlaceholder(child)" />
+                  <el-tooltip content="从字段选择器选择右侧值" placement="top" effect="light">
+                    <el-button
+                      size="mini"
+                      icon="el-icon-s-operation"
+                      :disabled="!operatorAllowsVarValue(child)"
+                      @click="switchRightToVar(child)"
+                    />
+                  </el-tooltip>
+                </div>
               </div>
             </template>
             <span v-else class="cg-field cg-field--any">无需输入值</span>
@@ -160,6 +170,13 @@ export default {
     },
 
     onValueKindChange(leaf) {
+      this.$set(leaf, 'value', '')
+      this.clearRightVarRef(leaf)
+    },
+
+    switchRightToVar(leaf) {
+      if (!this.operatorAllowsVarValue(leaf)) return
+      this.$set(leaf, 'valueKind', 'VAR')
       this.$set(leaf, 'value', '')
       this.clearRightVarRef(leaf)
     },
@@ -344,6 +361,18 @@ export default {
 .cg-sel-full,
 .cg-input-full {
   width: 100%;
+}
+.cg-manual-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.cg-manual-value .el-button {
+  flex: 0 0 auto;
+  padding-left: 8px;
+  padding-right: 8px;
 }
 .cg-field ::v-deep .var-picker-wrap {
   width: 100% !important;

@@ -75,6 +75,20 @@ public class DecisionBuiltinFunctionsTest {
     }
 
     @Test
+    public void dateAndScoreFunctionsWork() {
+        assertEquals("2026-07-09", functions.dateFormat("2026-07-09 10:30:00", "yyyy-MM-dd"));
+        assertEquals("2026-07-09", functions.dateConvert("20260709", "yyyyMMdd", "yyyy-MM-dd"));
+        assertEquals("2026-07-12 10:30:00", functions.dateAdd("2026-07-09 10:30:00", 3, "DAY"));
+        assertEquals("2026-06-09 10:30:00", functions.dateSub("2026-07-09 10:30:00", 1, "MONTH"));
+        assertEquals(8L, functions.dateDiff("2026-07-01 00:00:00", "2026-07-09 12:30:00", "DAY"));
+        assertEquals(750L, functions.dateDiff("2026-07-09 10:30:00", "2026-07-09 10:30:00.750", "MILLISECOND"));
+
+        assertEquals(620.0d, functions.scoreByOddsPdo(40, 600, 20, 20, "ASC").doubleValue(), 0.000001d);
+        assertEquals(580.0d, functions.scoreByOddsPdo(40, 600, 20, 20, "DESC").doubleValue(), 0.000001d);
+        assertEquals(600.0d, functions.scoreByBadRatePdo(1d / 21d, 600, 20, 20, "ASC").doubleValue(), 0.000001d);
+    }
+
+    @Test
     public void qlExpressCanCallRegisteredDecisionBuiltins() {
         QLExpressEngine engine = new QLExpressEngine();
         Map<String, Object> context = new LinkedHashMap<>();
@@ -87,7 +101,9 @@ public class DecisionBuiltinFunctionsTest {
                 "phone = strRegexExtract(\"phone=13800138000\", \"phone=([0-9]+)\", 1);\n" +
                 "sorted = arrSort(numbers, \"ASC\");\n" +
                 "ratio = numDiv(10, 3, 2);\n" +
-                "_result = {\"successAmount\": successAmount, \"phone\": phone, \"sorted\": sorted, \"ratio\": ratio}\n" +
+                "nextDate = dateAdd(\"2026-07-09 10:30:00\", 3, \"DAY\");\n" +
+                "score = scoreByOddsPdo(40, 600, 20, 20, \"ASC\");\n" +
+                "_result = {\"successAmount\": successAmount, \"phone\": phone, \"sorted\": sorted, \"ratio\": ratio, \"nextDate\": nextDate, \"score\": score}\n" +
                 "_result",
                 context);
 
@@ -97,6 +113,8 @@ public class DecisionBuiltinFunctionsTest {
         assertEquals("13800138000", output.get("phone"));
         assertEquals(Arrays.asList(1, 2, 3), output.get("sorted"));
         assertEquals(3.33d, ((Number) output.get("ratio")).doubleValue(), 0.000001d);
+        assertEquals("2026-07-12 10:30:00", output.get("nextDate"));
+        assertEquals(620.0d, ((Number) output.get("score")).doubleValue(), 0.000001d);
     }
 
     private static Map<String, Object> sampleJson() {

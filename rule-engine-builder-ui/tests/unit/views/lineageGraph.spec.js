@@ -66,4 +66,24 @@ describe('LineageGraph', () => {
     expect(wrapper.vm.nodeColor('API')).toBe('#EA580C')
     wrapper.destroy()
   })
+
+  test('拖拽节点后更新节点位置并带动连线', async () => {
+    const wrapper = mountPage()
+    wrapper.vm.nodes = [
+      { id: 'API:7', type: 'API', code: 'score_api', label: '评分API' },
+      { id: 'VARIABLE:1', type: 'VARIABLE', code: 'riskScore', label: '风险分' }
+    ]
+    wrapper.vm.edges = [{ from: 'API:7', to: 'VARIABLE:1', label: '接口取数' }]
+    wrapper.vm.nodePositions = wrapper.vm.layoutNodes(wrapper.vm.nodes)
+    const before = wrapper.vm.edgeLines[0].x1
+
+    wrapper.vm.startDrag(wrapper.vm.nodes[0], { clientX: 10, clientY: 10 })
+    wrapper.vm.onDragMove({ clientX: 60, clientY: 30 })
+    wrapper.vm.stopDrag()
+
+    expect(wrapper.vm.nodePositions['API:7'].left).toBe(82)
+    expect(wrapper.vm.nodePositions['API:7'].top).toBe(52)
+    expect(wrapper.vm.edgeLines[0].x1).toBe(before + 50)
+    wrapper.destroy()
+  })
 })
