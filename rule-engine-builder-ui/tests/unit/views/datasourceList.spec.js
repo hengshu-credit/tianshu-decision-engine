@@ -9,6 +9,7 @@ function createContext(overrides = {}) {
   Object.keys(DatasourceList.methods).forEach(name => {
     ctx[name] = DatasourceList.methods[name].bind(ctx)
   })
+  ctx.apiGuideTemplates = overrides.apiGuideTemplates || DatasourceList.data.call(ctx).apiGuideTemplates
   return ctx
 }
 
@@ -214,6 +215,18 @@ describe('DatasourceList helpers', () => {
     })
   })
 
+  test('buildApiInvokeParamTemplate prefers saved test sample params', () => {
+    const ctx = createContext()
+    const row = {
+      testSampleParams: '{"request":{"mobile":"13800000000"}}',
+      requestMapping: '{"mobile":"${request.mobile}"}'
+    }
+
+    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(row))).toEqual({
+      request: { mobile: '13800000000' }
+    })
+  })
+
   test('isRuleEngineDatasource checks selected datasource protocol', () => {
     const ctx = createContext({
       datasourceOptions: [
@@ -234,5 +247,17 @@ describe('DatasourceList helpers', () => {
     expect(ctx.formatCacheSeconds(60)).toBe('1分钟')
     expect(ctx.formatCacheSeconds(3600)).toBe('1小时')
     expect(ctx.formatCacheSeconds(86400)).toBe('1天')
+  })
+
+  test('apiGuideTemplates 解释外数 API 模板和变量读取路径', () => {
+    const ctx = createContext()
+
+    expect(ctx.apiGuideTemplates.map(item => item.title)).toEqual([
+      'HTTP 外数模板',
+      '内部规则模板',
+      '接口变量读取'
+    ])
+    expect(ctx.apiGuideTemplates[0].text).toContain('requestMapping')
+    expect(ctx.apiGuideTemplates[2].text).toContain('resultPath')
   })
 })

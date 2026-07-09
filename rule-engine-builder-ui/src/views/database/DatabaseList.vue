@@ -4,6 +4,12 @@
       <div class="hint-title">数据库管理</div>
       <div class="hint-text">统一维护外部数据库连接池，供数据查询变量（var_source=DB）通过后端访问外部库。</div>
     </div>
+    <div class="usage-guide">
+      <div v-for="item in databaseGuideCards" :key="item.title" class="guide-item">
+        <div class="guide-title">{{ item.title }}</div>
+        <div class="guide-text">{{ item.text }}</div>
+      </div>
+    </div>
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="数据源配置" name="datasource">
@@ -327,6 +333,11 @@ export default {
   components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
   data() {
     return {
+      databaseGuideCards: [
+        { title: '只读连接', text: '生产建议配置只读账号，连接池只用于查询类 SQL；测试连接前确认网络、SSH 隧道和 validationQuery。' },
+        { title: '查询模板', text: '在线查询建议使用 SELECT 和参数占位，先限制 maxRows，再把稳定 SQL 配到数据库变量。' },
+        { title: '数据库变量', text: '变量来源选择 DB 后，在 sourceConfig 中配置 datasourceId、sql、params 和 resultPath，返回字段名保持数据库原样。' }
+      ],
       projects: [],
       activeTab: 'datasource',
       tableData: [],
@@ -603,6 +614,32 @@ export default {
     margin-bottom: 12px;
   }
 
+  .usage-guide {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .guide-item {
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: #FFFFFF;
+  }
+
+  .guide-title {
+    color: #0F172A;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .guide-text {
+    color: #64748B;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
   .sql-input ::v-deep textarea {
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
@@ -634,6 +671,12 @@ export default {
     text-align: center;
     padding: 28px;
     border-radius: 4px;
+  }
+
+  @media (max-width: 1200px) {
+    .usage-guide {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
   }
 }
 </style>

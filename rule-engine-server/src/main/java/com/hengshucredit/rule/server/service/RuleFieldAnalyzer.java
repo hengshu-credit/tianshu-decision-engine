@@ -426,30 +426,33 @@ public class RuleFieldAnalyzer {
         // 防环：同一 (refType:scriptName) 只展开一次，避免变量/模型相互引用导致死循环
         String visitKey = (refType != null ? refType : "NONE") + ":" + (scriptName != null ? scriptName.toLowerCase() : "null");
         boolean alreadyVisited = !visited.add(visitKey);
+        if (alreadyVisited) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
 
         // 名单查询变量：保留源字段，并展开其查询依赖字段（与既有行为一致）
         if ("VARIABLE".equals(refType) && "LIST".equals(varSource)) {
             RuleDefinitionInputField listDependency = buildListDependencyField(field, varMetaMap);
-            addInputFieldIfAbsent(result, seen, field);
+            int before = result.size();
             if (listDependency != null) {
                 enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
                 expandFieldRecursive(listDependency, varMetaMap, seen, visited, result);
+            }
+            if (result.size() == before) {
+                addInputFieldIfAbsent(result, seen, field);
             }
             return;
         }
 
         // 仅当未展开过且携带 varId 时递归穿透（visited 仅防止重复展开，不阻止叶子落库）
-        if (!alreadyVisited && field.getVarId() != null) {
-            if ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
-                addInputFieldIfAbsent(result, seen, field);
-                expandModelOrOutputFields(field, meta, varMetaMap, seen, visited, result);
-                return;
-            }
-            if ("DB".equals(varSource) || "API".equals(varSource) || "COMPUTED".equals(varSource)) {
-                addInputFieldIfAbsent(result, seen, field);
-                expandSourceVariableFields(field, meta, varMetaMap, seen, visited, result);
-                return;
-            }
+        if (field.getVarId() != null && ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType))) {
+            expandModelOrOutputFields(field, meta, varMetaMap, seen, visited, result);
+            return;
+        }
+        if ("DB".equals(varSource) || "API".equals(varSource) || "COMPUTED".equals(varSource)) {
+            expandSourceVariableFields(field, meta, varMetaMap, seen, visited, result);
+            return;
         }
 
         // 叶子字段（INPUT / CONSTANT / DATA_OBJECT / 未知引用 / 无法解析的依赖）：保留
@@ -473,10 +476,14 @@ public class RuleFieldAnalyzer {
             addInputFieldIfAbsent(result, seen, field);
             return;
         }
+        int before = result.size();
         for (RuleModelInputField modelField : modelFields) {
             RuleDefinitionInputField expanded = copyModelInputField(modelField);
             enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
             expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
+        }
+        if (result.size() == before) {
+            addInputFieldIfAbsent(result, seen, field);
         }
     }
 
@@ -547,6 +554,7 @@ public class RuleFieldAnalyzer {
             variable.setSourceConfig(sourceConfig);
             depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
         }
+        int before = result.size();
         for (String depName : depNames) {
             RuleDefinitionInputField depField = new RuleDefinitionInputField();
             depField.setScriptName(depName);
@@ -556,7 +564,21 @@ public class RuleFieldAnalyzer {
             depField.setStatus(1);
             depField.setCreateTime(LocalDateTime.now());
             enrichFieldFromMeta(depField, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            Map<String, Object> depMeta = findFieldMeta(depField, varMetaMap);
+            if (depField.getRefType() == null && depMeta != null && depMeta.get("varSource") != null) {
+                depField.setRefType("VARIABLE");
+            }
+            String depScriptName = trimToNull(depField.getScriptName());
+            String depRefType = normalizeRefType(depField.getRefType());
+            String depVisitKey = (depRefType != null ? depRefType : "NONE") + ":"
+                    + (depScriptName != null ? depScriptName.toLowerCase() : "null");
+            if (visited.contains(depVisitKey)) {
+                addInputFieldIfAbsent(result, seen, field);
+            }
             expandFieldRecursive(depField, varMetaMap, seen, visited, result);
+        }
+        if (result.size() == before) {
+            addInputFieldIfAbsent(result, seen, field);
         }
     }
 

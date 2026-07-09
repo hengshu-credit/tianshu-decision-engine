@@ -29,6 +29,7 @@ function createContext(overrides = {}) {
   Object.keys(ExperimentDetail.methods).forEach(name => {
     ctx[name] = ExperimentDetail.methods[name].bind(ctx)
   })
+  ctx.experimentGuideCards = overrides.experimentGuideCards || ExperimentDetail.data.call(ctx).experimentGuideCards
   ctx.form = overrides.form || ctx.emptyForm()
   Object.defineProperty(ctx, 'productionFormGroups', {
     get() { return ExperimentDetail.computed.productionFormGroups.call(ctx) }
@@ -177,5 +178,17 @@ describe('ExperimentDetail', () => {
     expect(listVersions).toHaveBeenCalledWith(9)
     expect(compareVersions).toHaveBeenCalledWith(9, 2, 1)
     expect(ctx.versionCompare.groupsChanged).toBe(true)
+  })
+
+  test('experimentGuideCards 解释冠军挑战和空跑测试', () => {
+    const ctx = createContext()
+
+    expect(ctx.experimentGuideCards.map(item => item.title)).toEqual([
+      '冠军组',
+      '挑战组',
+      '空跑测试',
+      '版本回滚'
+    ])
+    expect(ctx.experimentGuideCards[2].text).toContain('不影响生产结果')
   })
 })

@@ -247,13 +247,8 @@ public class RuleFieldAnalyzerTest {
                 .map(RuleDefinitionInputField::getScriptName)
                 .collect(Collectors.toList());
 
-        assertTrue(names.contains("riskHit"));
+        assertFalse(names.contains("riskHit"));
         assertTrue(names.contains("mobile"));
-        assertEquals(Long.valueOf(9), fields.stream()
-                .filter(field -> "riskHit".equals(field.getScriptName()))
-                .findFirst()
-                .get()
-                .getVarId());
     }
 
     @Test
@@ -286,7 +281,7 @@ public class RuleFieldAnalyzerTest {
                 .map(RuleDefinitionInputField::getScriptName)
                 .collect(Collectors.toList());
 
-        assertTrue("模型输出应保留为输入字段", names.contains("score_f1.score"));
+        assertFalse("模型输出不应保留为测试入参", names.contains("score_f1.score"));
         assertTrue("模型输出应穿透到最底层输入特征", names.contains("HYBASE_X115"));
         RuleDefinitionInputField leaf = fields.stream()
                 .filter(f -> "HYBASE_X115".equals(f.getScriptName())).findFirst().get();
@@ -347,17 +342,20 @@ public class RuleFieldAnalyzerTest {
         List<RuleDefinitionInputField> dbResult = (List<RuleDefinitionInputField>) expand.invoke(
                 analyzer, java.util.Collections.singletonList(dbField), varMetaMap);
         assertTrue("DB 变量应穿透到其参数依赖", names(dbResult).contains("idcard_no"));
+        assertFalse("DB 变量本身不应保留为测试入参", names(dbResult).contains("db_score"));
 
         RuleDefinitionInputField apiField = inputField("api_score", "VARIABLE", "API", 101L);
         List<RuleDefinitionInputField> apiResult = (List<RuleDefinitionInputField>) expand.invoke(
                 analyzer, java.util.Collections.singletonList(apiField), varMetaMap);
         assertTrue("API 变量应穿透到请求映射依赖", names(apiResult).contains("idcard_no"));
+        assertFalse("API 变量本身不应保留为测试入参", names(apiResult).contains("api_score"));
 
         RuleDefinitionInputField computedField = inputField("computed_score", "VARIABLE", "COMPUTED", 102L);
         List<RuleDefinitionInputField> computedResult = (List<RuleDefinitionInputField>) expand.invoke(
                 analyzer, java.util.Collections.singletonList(computedField), varMetaMap);
         assertTrue("计算变量应穿透到表达式引用变量", names(computedResult).contains("idcard_no"));
         assertTrue("计算变量应穿透到表达式引用变量", names(computedResult).contains("age"));
+        assertFalse("计算变量本身不应保留为测试入参", names(computedResult).contains("computed_score"));
     }
 
     @Test

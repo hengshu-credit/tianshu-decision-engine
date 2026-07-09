@@ -418,6 +418,33 @@ $warning-bg: #fffbe6;
   &.sp-manual { color: #ffd93d; }
 }
 .sp-statusbar-spacer { flex: 1; }
+.sp-statusbar ::v-deep .el-button {
+  min-height: 26px;
+  padding: 6px 12px;
+  background: #F8FAFF;
+  background-color: #F8FAFF !important;
+  border-color: #ADC6FF !important;
+  color: #1D39C4 !important;
+  font-weight: 600;
+}
+.sp-statusbar ::v-deep .el-button:hover {
+  background: #EAF2FF;
+  background-color: #EAF2FF !important;
+  border-color: #85A5FF !important;
+  color: #1D39C4 !important;
+}
+.sp-statusbar ::v-deep .el-button--primary {
+  background: #2639E9;
+  background-color: #2639E9 !important;
+  border-color: #2639E9 !important;
+  color: #FFFFFF !important;
+}
+.sp-statusbar ::v-deep .el-button--primary:hover {
+  background: #1D39C4;
+  background-color: #1D39C4 !important;
+  border-color: #1D39C4 !important;
+  color: #FFFFFF !important;
+}
 
 /* 编辑器容器 */
 .sp-editor-container {
@@ -529,5 +556,15 @@ $warning-bg: #fffbe6;
 .sp-header-right ::v-deep .el-radio-button__inner {
   padding: 4px 10px;
   font-size: 12px;
+  color: #334155;
+  border-color: #CBD5E1;
+  background: #FFFFFF;
+  box-shadow: none;
+}
+.sp-header-right ::v-deep .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  background: #2639E9;
+  border-color: #2639E9;
+  color: #FFFFFF;
+  box-shadow: none;
 }
 </style>

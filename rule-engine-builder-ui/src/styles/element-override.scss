@@ -42,7 +42,7 @@ $--color-primary-dark-2: color.mix(#000000, $--color-primary, 20%);
 
 $primary-color: $--color-primary;
 $success-color: #10B981;
-$warning-color: #F59E0B;
+$warning-color: #F76E6C;
 $danger-color: $secondary-color;
 $info-color: #6366F1;
 
@@ -172,14 +172,14 @@ $info-color: #6366F1;
 .el-button--warning {
   &:hover,
   &:focus {
-    background-color: #db8d09 !important;
-    border-color: #db8d09 !important;
+    background-color: #d16260 !important;
+    border-color: #d16260 !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #b87607 !important;
-    border-color: #b87607 !important;
+    background-color: #d16260 !important;
+    border-color: #d16260 !important;
   }
 }
 
@@ -205,9 +205,9 @@ $info-color: #6366F1;
 }
 
 .el-tag--warning {
-  background-color: rgba(#F59E0B, 0.1) !important;
-  border-color: rgba(#F59E0B, 0.22) !important;
-  color: #F59E0B !important;
+  background-color: rgba(#F76E6C, 0.1) !important;
+  border-color: rgba(#F76E6C, 0.22) !important;
+  color: #F76E6C !important;
 }
 
 /* ── 主色标签 ── */

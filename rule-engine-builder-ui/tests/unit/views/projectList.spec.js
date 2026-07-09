@@ -361,4 +361,20 @@ describe('ProjectList — 边界情况', () => {
     expect(w.vm.allProjectNames).toContain('项目A')
     w.destroy()
   })
+
+  test('workflowSteps 覆盖从项目到发布的完整路径', async () => {
+    const w = await mountAndWait()
+    expect(w.vm.workflowSteps.map(item => item.title)).toEqual([
+      '创建项目',
+      '定义变量/对象',
+      '设计规则',
+      '编译',
+      '测试',
+      '发布',
+      'SDK 接入',
+      '查看日志/账单'
+    ])
+    expect(w.vm.workflowSteps[6].text).toContain('X-Rule-Token')
+    w.destroy()
+  })
 })

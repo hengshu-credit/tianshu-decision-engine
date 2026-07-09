@@ -1,12 +1,15 @@
+import { collectReferencePaths, sampleValueForVarType } from '@/utils/testParamTemplate'
+
 export function sampleValueForRef(ref) {
   const variable = ref && ref.varObj ? ref.varObj : {}
   if (variable.defaultValue !== undefined && variable.defaultValue !== null && variable.defaultValue !== '') {
     return variable.defaultValue
   }
+  if (variable.exampleValue !== undefined && variable.exampleValue !== null && variable.exampleValue !== '') {
+    return variable.exampleValue
+  }
   const type = (ref && ref.varType) || variable.varType || 'STRING'
-  if (type === 'NUMBER') return 0
-  if (type === 'BOOLEAN') return false
-  return ''
+  return sampleValueForVarType(type)
 }
 
 export function coerceSampleValue(value, ref) {
@@ -34,12 +37,13 @@ export function coerceSampleValue(value, ref) {
 export function buildSampleParamsFromCodes(codes, projectRefs) {
   const params = {}
   const list = codes || []
+  const visited = new Set()
   list.forEach(code => {
     if (!code) return
     const ref = findRefByCode(projectRefs, code)
-    if (appendModelInputSamples(params, ref)) return
-    if (params[code] !== undefined) return
-    params[code] = sampleValueForRef(ref)
+    if (appendExpandedSample(params, ref, code, projectRefs, visited)) return
+    if (pathValueExists(params, code)) return
+    setParamPath(params, code, sampleValueForRef(ref))
   })
   return params
 }
@@ -195,10 +199,94 @@ function findRefByCode(projectRefs, code) {
   return (projectRefs || []).find(ref => ref && ref.refCode === code) || null
 }
 
-function appendModelInputSamples(params, ref) {
+function appendExpandedSample(params, ref, code, projectRefs, visited) {
+  if (!ref) return false
+  if (ref.refType === 'MODEL_OUTPUT') return appendModelInputSamples(params, ref, projectRefs, visited)
+  if (isLeafRef(ref)) {
+    setParamPath(params, code || ref.refCode, sampleValueForRef(ref))
+    return true
+  }
+  const paths = dependencyPathsForRef(ref, projectRefs)
+  if (!paths.length) {
+    if (isComputedRef(ref)) {
+      setParamPath(params, code || ref.refCode, sampleValueForRef(ref))
+      return true
+    }
+    return false
+  }
+  const key = refKey(ref)
+  if (visited.has(key)) return true
+  visited.add(key)
+  paths.forEach(path => appendDependencyPath(params, path, projectRefs, visited))
+  visited.delete(key)
+  return true
+}
+
+function appendDependencyPath(params, path, projectRefs, visited) {
+  if (!path) return
+  const ref = findRefByCode(projectRefs, path)
+  if (ref) {
+    appendExpandedSample(params, ref, path, projectRefs, visited)
+    return
+  }
+  if (!pathValueExists(params, path)) setParamPath(params, path, '')
+}
+
+function isLeafRef(ref) {
+  const variable = ref && ref.varObj ? ref.varObj : {}
+  const source = variable.varSource || ref.varSource
+  return ref.refType === 'DATA_OBJECT' || source === 'INPUT' || (!source && ref.refType !== 'MODEL_OUTPUT')
+}
+
+function isComputedRef(ref) {
+  const variable = ref && ref.varObj ? ref.varObj : {}
+  return (variable.varSource || ref.varSource) === 'COMPUTED'
+}
+
+function dependencyPathsForRef(ref, projectRefs) {
+  const variable = ref && ref.varObj ? ref.varObj : {}
+  const source = variable.varSource || ref.varSource
+  const config = parseSourceConfig(variable.sourceConfig || ref.sourceConfig)
+  const paths = []
+  const seen = new Set()
+  const addPaths = value => {
+    collectReferencePaths(value, { allowBarePath: true }).forEach(path => addPath(paths, seen, path))
+  }
+
+  if (source === 'API') {
+    addPaths(config.paramMapping)
+    if (!paths.length) {
+      addPaths(config.headerConfig)
+      addPaths(config.queryConfig)
+      addPaths(config.requestMapping)
+      addPaths(config.bodyTemplate)
+      addPaths(config.authApiConfig)
+    }
+  } else if (source === 'DB') {
+    addPaths(config.params)
+  } else if (source === 'LIST') {
+    addPaths(config.queryField || config.queryPath || config.field)
+  } else if (source === 'COMPUTED') {
+    const codes = collectKnownCodesFromText(config.expression || config.script || config.formula, projectRefs, new Set(), { skipAssignmentLeft: true })
+    Array.from(codes).forEach(path => addPath(paths, seen, path))
+  }
+  return paths
+}
+
+function appendModelInputSamples(params, ref, projectRefs, visited) {
   if (!ref || ref.refType !== 'MODEL_OUTPUT') return false
   const fields = ref.modelInputFields || ref.inputFields || (ref.varObj && (ref.varObj.modelInputFields || ref.varObj.inputFields)) || []
   if (!fields.length) return false
+  let expanded = false
+  fields.forEach(field => {
+    if (!field || field.status === 0) return
+    const code = field.scriptName || field.fieldName
+    const depRef = findRefByCode(projectRefs, code)
+    if (!depRef) return
+    appendExpandedSample(params, depRef, code, projectRefs, visited)
+    expanded = true
+  })
+  if (expanded) return true
   const modelCode = ref.modelCode || (ref.varObj && ref.varObj.modelCode)
   const target = modelCode ? ensureObject(params, `${modelCode}_fields`) : params
   fields.forEach(field => {
@@ -208,6 +296,27 @@ function appendModelInputSamples(params, ref) {
     setParamPath(target, code, sampleValueForModelField(field))
   })
   return true
+}
+
+function parseSourceConfig(value) {
+  if (!value) return {}
+  if (typeof value === 'object') return value
+  try {
+    return JSON.parse(value)
+  } catch (e) {
+    return {}
+  }
+}
+
+function addPath(paths, seen, path) {
+  if (!path || seen.has(path)) return
+  seen.add(path)
+  paths.push(path)
+}
+
+function refKey(ref) {
+  const id = ref && ref.varObj ? ref.varObj.id : ''
+  return (ref && ref.refType ? ref.refType : 'REF') + ':' + (id || (ref && ref.refCode) || '')
 }
 
 function sampleValueForModelField(field) {
@@ -241,6 +350,17 @@ function setParamPath(target, path, value) {
     }
     current = current[part]
   })
+}
+
+function pathValueExists(target, path) {
+  const parts = String(path).split('.').map(item => item.trim()).filter(Boolean)
+  if (!parts.length) return false
+  let current = target
+  for (let i = 0; i < parts.length; i++) {
+    if (!current || typeof current !== 'object' || !(parts[i] in current)) return false
+    current = current[parts[i]]
+  }
+  return true
 }
 
 function sampleValueForOperator(value, operator, ref) {

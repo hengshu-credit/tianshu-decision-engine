@@ -157,7 +157,7 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
 }
 
 // ============================================================
-// 3. 脚本任务 - 蓝色圆角矩形
+// 3. 脚本任务 - 主题浅色圆角矩形
 // ============================================================
 function ScriptTaskFactory(RectNode, RectNodeModel) {
   class ScriptTaskView extends RectNode {
@@ -172,8 +172,8 @@ function ScriptTaskFactory(RectNode, RectNodeModel) {
           height,
           rx: radius,
           ry: radius,
-          fill: '#1890ff',
-          stroke: '#096dd9',
+          fill: '#EAF2FF',
+          stroke: '#2F54EB',
           strokeWidth: 2
         }),
         h('text', {
@@ -181,7 +181,7 @@ function ScriptTaskFactory(RectNode, RectNodeModel) {
           y: y + 1,
           textAnchor: 'middle',
           dominantBaseline: 'central',
-          fill: '#fff',
+          fill: '#1D39C4',
           fontSize: 13,
           fontWeight: 'bold'
         }, name.length > 10 ? name.substr(0, 10) + '...' : name)
@@ -210,8 +210,8 @@ function ScriptTaskFactory(RectNode, RectNodeModel) {
     }
     getNodeStyle() {
       const style = super.getNodeStyle()
-      style.stroke = '#096dd9'
-      style.fill = '#1890ff'
+      style.stroke = '#2F54EB'
+      style.fill = '#EAF2FF'
       style.radius = 6
       return style
     }
@@ -392,7 +392,7 @@ export const NODE_PANEL_LIST = [
   {
     group: '任务节点',
     items: [
-      { type: 'script-task', label: '脚本任务', icon: 'el-icon-document', color: '#1890ff' }
+      { type: 'script-task', label: '脚本任务', icon: 'el-icon-document', color: '#2F54EB' }
     ]
   },
   {

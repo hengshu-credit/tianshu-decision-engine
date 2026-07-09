@@ -4,6 +4,12 @@
       <div class="hint-title">血缘分析</div>
       <div class="hint-text">从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。</div>
     </div>
+    <div class="usage-guide">
+      <div v-for="item in lineageGuideCards" :key="item.title" class="guide-item">
+        <div class="guide-title">{{ item.title }}</div>
+        <div class="guide-text">{{ item.text }}</div>
+      </div>
+    </div>
 
     <div class="query-panel">
       <el-form :inline="true" size="small">
@@ -92,6 +98,11 @@ export default {
   name: 'LineageGraph',
   data() {
     return {
+      lineageGuideCards: [
+        { title: '选择起点', text: '先选节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、名单或模型定位影响范围。' },
+        { title: '上游/下游', text: '上游表示当前节点依赖了哪些对象，下游表示哪些规则或变量引用了当前节点，全部方向会同时展示。' },
+        { title: '静态分析边界', text: '血缘基于结构化配置和脚本静态分析生成；复杂动态脚本引用需结合规则测试与执行日志复核。' }
+      ],
       loading: false,
       optionLoading: false,
       options: [],
@@ -291,6 +302,28 @@ export default {
   }
   .hint-title { color:#1F2937; font-weight:700; white-space:nowrap; }
   .hint-text { color:#64748B; }
+  .usage-guide {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .guide-item {
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: #FFFFFF;
+  }
+  .guide-title {
+    color: #0F172A;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .guide-text {
+    color: #64748B;
+    font-size: 12px;
+    line-height: 1.6;
+  }
   .query-panel {
     background: #fff;
     border: 1px solid #E5E7EB;
@@ -394,6 +427,11 @@ export default {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  @media (max-width: 1200px) {
+    .usage-guide {
+      grid-template-columns: repeat(1, minmax(0, 1fr));
+    }
   }
 }
 </style>

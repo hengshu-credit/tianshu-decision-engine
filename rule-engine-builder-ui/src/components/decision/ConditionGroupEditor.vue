@@ -50,6 +50,7 @@
             <template v-if="operatorRequiresValue(child)">
               <div v-if="child.valueKind === 'VAR'" class="cg-field cg-field--var-right">
                 <var-picker
+                  :ref="rightVarPickerRef(idx)"
                   :vars="vars"
                   :value="child.value"
                   placeholder="右侧变量"
@@ -81,7 +82,7 @@
                       size="mini"
                       icon="el-icon-s-operation"
                       :disabled="!operatorAllowsVarValue(child)"
-                      @click="switchRightToVar(child)"
+                      @click="switchRightToVar(child, idx)"
                     />
                   </el-tooltip>
                 </div>
@@ -174,11 +175,24 @@ export default {
       this.clearRightVarRef(leaf)
     },
 
-    switchRightToVar(leaf) {
+    switchRightToVar(leaf, idx) {
       if (!this.operatorAllowsVarValue(leaf)) return
       this.$set(leaf, 'valueKind', 'VAR')
       this.$set(leaf, 'value', '')
       this.clearRightVarRef(leaf)
+      this.$nextTick(() => this.openRightVarPicker(idx))
+    },
+
+    rightVarPickerRef(idx) {
+      return 'rightVarPicker-' + this.depth + '-' + idx
+    },
+
+    openRightVarPicker(idx) {
+      const pickerRef = this.$refs[this.rightVarPickerRef(idx)]
+      const picker = Array.isArray(pickerRef) ? pickerRef[0] : pickerRef
+      if (picker && typeof picker.openPopover === 'function') {
+        picker.openPopover()
+      }
     },
 
     onLeafLeftSelect(leaf, variable) {

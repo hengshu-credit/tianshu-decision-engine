@@ -5,17 +5,9 @@
       <div class="hint-text">集中配置第三方 API、鉴权流程、入参与响应映射、同步/异步调用、超时和重试策略，供接口变量使用。</div>
     </div>
     <div class="usage-guide">
-      <div class="guide-item">
-        <div class="guide-title">HTTP 外数</div>
-        <div class="guide-text">先建数据源基础地址，再建接口；入参映射用 <code>$.字段</code> 从进件取值，响应映射会把接口返回裁剪成变量可读取的 <code>body</code>。</div>
-      </div>
-      <div class="guide-item">
-        <div class="guide-title">内部规则引擎</div>
-        <div class="guide-text">协议选择“内部规则引擎”，接口地址填写已发布规则编码，可把一个项目下的规则结果当作外数供其他规则复用。</div>
-      </div>
-      <div class="guide-item">
-        <div class="guide-title">接口变量</div>
-        <div class="guide-text">变量来源选择 API 后，在变量的 sourceConfig 中配置 <code>apiConfigId</code>、<code>paramMapping</code>、<code>resultPath</code> 即可读取外数结果。</div>
+      <div v-for="item in apiGuideTemplates" :key="item.title" class="guide-item">
+        <div class="guide-title">{{ item.title }}</div>
+        <div class="guide-text">{{ item.text }}</div>
       </div>
     </div>
 
@@ -662,6 +654,11 @@ export default {
   components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
   data() {
     return {
+      apiGuideTemplates: [
+        { title: 'HTTP 外数模板', text: '先建数据源基础地址，再建接口；headerConfig/queryConfig 配公共参数，requestMapping 用 $.字段 取进件值，responseMapping 裁剪接口 body。' },
+        { title: '内部规则模板', text: '协议选择内部规则引擎，endpointUrl 填已发布 ruleCode；requestMapping.params 传入下游规则需要的字段。' },
+        { title: '接口变量读取', text: '变量来源选择 API 后，在 sourceConfig 写 apiConfigId、paramMapping 和 resultPath，例如 body.score。' }
+      ],
       activeTab: 'datasource',
       projects: [],
       datasourceList: [],
@@ -906,6 +903,8 @@ export default {
       this.invokeDialogVisible = true
     },
     buildApiInvokeParamTemplate(row) {
+      const savedSample = this.parseConfigForTemplate(row && row.testSampleParams)
+      if (savedSample && typeof savedSample === 'object') return this.stringifyJson(savedSample)
       const sample = {}
       const paths = []
       const addPaths = value => {

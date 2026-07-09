@@ -78,6 +78,7 @@
                 :vars="varPickerOptions"
                 :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
+                :allow-custom-var="true"
               />
             </div>
             <div class="action-panel">
@@ -187,6 +188,7 @@ import {
   collectVarCodesFromConditionTree,
   walkConditionLeaves
 } from '@/utils/decisionConditionTree'
+import { buildSampleParamsFromCodes, collectActionDataInputCodes } from '@/utils/testSampleParams'
 
 export default {
   name: 'RuleSet',
@@ -230,6 +232,7 @@ export default {
       ;(this.model.rules || []).forEach(rule => {
         if (rule.enabled === false) return
         collectVarCodesFromConditionTree(rule.conditionRoot, s)
+        collectActionDataInputCodes(rule.actionData, this.projectRefs, s)
       })
       return Array.from(s)
     }
@@ -414,28 +417,12 @@ export default {
       }
     },
     buildTestParamsTemplate() {
-      const template = {}
-      this.testVarCodeList.forEach(code => {
-        const ref = this.projectRefs.find(r => r.refCode === code)
-        if (ref && ref.varObj && ref.varObj.defaultValue !== undefined && ref.varObj.defaultValue !== null) {
-          template[code] = ref.varObj.defaultValue
-        } else {
-          const meta = this.testVarMeta(code)
-          if (meta.varType === 'NUMBER') template[code] = 0
-          else if (meta.varType === 'BOOLEAN') template[code] = false
-          else template[code] = ''
-        }
-      })
-      return template
+      return buildSampleParamsFromCodes(this.testVarCodeList, this.projectRefs)
     },
     handleTest() {
-      this.testParamsTemplate = this.buildTestParamsTemplate()
       const template = this.buildTestParamsTemplate()
-      const params = {}
-      this.testVarCodeList.forEach(code => {
-        params[code] = template[code] !== undefined ? template[code] : ''
-      })
-      this.testParams = params
+      this.testParamsTemplate = template
+      this.testParams = template
       this.testResult = null
       this.testVisible = true
     },

@@ -54,4 +54,31 @@ describe('testSampleParams', () => {
     ], refs)
     expect(Array.from(codes).sort()).toEqual(['inputAmount', 'riskFlag'])
   })
+
+  test('source variables and model outputs expand to leaf test params', () => {
+    const projectRefs = [
+      { refCode: 'mobile', refType: 'VARIABLE', varType: 'STRING', varObj: { varSource: 'INPUT', defaultValue: '13800000000' } },
+      { refCode: 'request.idNo', refType: 'DATA_OBJECT', varType: 'STRING', varObj: { defaultValue: 'ID001' } },
+      { refCode: 'riskScore', refType: 'VARIABLE', varType: 'NUMBER', varObj: { varSource: 'API', sourceConfig: '{"paramMapping":{"idNo":"$.request.idNo","mobile":"${mobile}"}}' } },
+      { refCode: 'dbScore', refType: 'VARIABLE', varType: 'NUMBER', varObj: { varSource: 'DB', sourceConfig: '{"params":["$.request.idNo"]}' } },
+      { refCode: 'blackHit', refType: 'VARIABLE', varType: 'BOOLEAN', varObj: { varSource: 'LIST', sourceConfig: '{"queryField":"mobile"}' } },
+      { refCode: 'ageCalc', refType: 'VARIABLE', varType: 'NUMBER', varObj: { varSource: 'COMPUTED', sourceConfig: '{"expression":"riskScore + dbScore"}' } },
+      {
+        refCode: 'scoreCard.score',
+        refType: 'MODEL_OUTPUT',
+        modelCode: 'scoreCard',
+        varType: 'NUMBER',
+        varObj: {},
+        modelInputFields: [
+          { scriptName: 'ageCalc', fieldType: 'NUMBER' },
+          { scriptName: 'blackHit', fieldType: 'BOOLEAN' }
+        ]
+      }
+    ]
+
+    expect(buildSampleParamsFromCodes(['scoreCard.score'], projectRefs)).toEqual({
+      mobile: '13800000000',
+      request: { idNo: 'ID001' }
+    })
+  })
 })

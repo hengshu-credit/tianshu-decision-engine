@@ -56,6 +56,7 @@
                 :vars="varPickerOptions"
                 :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
+                :allow-custom-var="true"
               />
             </div>
             <div class="dt-act-panel">
@@ -207,7 +208,7 @@ import {
   collectVarCodesFromConditionTree,
   walkConditionLeaves
 } from '@/utils/decisionConditionTree'
-import { coerceSampleValue } from '@/utils/testSampleParams'
+import { buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 export default {
@@ -593,24 +594,13 @@ export default {
      * 根据条件树涉及的变量构造测试默认值模板。
      */
     buildTestParamsTemplate() {
-      const template = {}
-      this.testVarCodeList.forEach(code => {
-        const ref = this.projectRefs.find(r => r.refCode === code)
-        if (ref && ref.varObj && ref.varObj.defaultValue !== undefined && ref.varObj.defaultValue !== null) {
-          template[code] = ref.varObj.defaultValue
-        } else {
-          const meta = this.testVarMeta(code)
-          if (meta.varType === 'NUMBER') template[code] = 0
-          else if (meta.varType === 'BOOLEAN') template[code] = false
-          else template[code] = ''
-        }
-      })
+      const template = buildSampleParamsFromCodes(this.testVarCodeList, this.projectRefs)
       const firstRule = (this.model.rules || []).find(rule => rule && rule.conditions && rule.conditions.length)
       if (firstRule) {
         (this.model.conditions || []).forEach((condition, index) => {
           const code = condition && condition.varCode
           const ruleCondition = firstRule.conditions[index]
-          if (!code || !ruleCondition || ruleCondition.value === undefined || ruleCondition.value === '') return
+          if (!code || !Object.prototype.hasOwnProperty.call(template, code) || !ruleCondition || ruleCondition.value === undefined || ruleCondition.value === '') return
           const ref = this.projectRefs.find(r => r.refCode === code)
           template[code] = coerceSampleValue(ruleCondition.value, ref)
         })
@@ -618,7 +608,7 @@ export default {
       const firstTreeRule = (this.model.rules || []).find(rule => rule && rule.conditionRoot)
       if (firstTreeRule) {
         walkConditionLeaves(firstTreeRule.conditionRoot, leaf => {
-          if (!leaf.varCode || leaf.valueKind === 'VAR' || leaf.value === undefined || leaf.value === '') return
+          if (!leaf.varCode || !Object.prototype.hasOwnProperty.call(template, leaf.varCode) || leaf.valueKind === 'VAR' || leaf.value === undefined || leaf.value === '') return
           const ref = this.projectRefs.find(r => r.refCode === leaf.varCode)
           template[leaf.varCode] = coerceSampleValue(leaf.value, ref)
         })
@@ -627,13 +617,9 @@ export default {
     },
 
     handleTest() {
-      this.testParamsTemplate = this.buildTestParamsTemplate()
       const template = this.buildTestParamsTemplate()
-      const params = {}
-      this.testVarCodeList.forEach(code => {
-        params[code] = template[code] !== undefined ? template[code] : ''
-      })
-      this.testParams = params
+      this.testParamsTemplate = template
+      this.testParams = template
       this.testResult = null
       this.testVisible = true
     },

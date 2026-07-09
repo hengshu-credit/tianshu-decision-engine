@@ -112,6 +112,7 @@
                   :vars="varPickerOptions"
                   :get-var-options-fn="getVarOptions"
                   :selected-vars="selectedVarPickerOptions"
+                  :allow-custom-var="true"
                 />
                 <el-button type="primary" size="mini" icon="el-icon-check" style="width:100%;margin-top:8px;" @click="applyEdgeCondVisual">
                   生成表达式
@@ -1333,15 +1334,43 @@ export default {
   color: #fff;
   border-color: rgba(255,255,255,0.4);
   background: rgba(255,255,255,0.1);
+  min-height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
   &:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.7); }
-  &.el-button--primary { background: #fff; color: #1890ff; border-color: #fff; }
-  &.el-button--warning { background: rgba(250,140,22,0.9); border-color: transparent; }
+  &.el-button--primary {
+    background: #FFFFFF;
+    background-color: #FFFFFF !important;
+    color: #1D39C4;
+    color: #1D39C4 !important;
+    border-color: #FFFFFF !important;
+    font-weight: 600;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+  }
+  &.el-button--warning { background: #F76E6C; color: #fff; border-color: #F76E6C; }
+  &.is-disabled,
+  &.is-disabled:hover {
+    color: rgba(255,255,255,0.55);
+    border-color: rgba(255,255,255,0.24);
+    background: rgba(255,255,255,0.08);
+  }
+}
+.toolbar-right .el-button {
+  min-width: 88px;
 }
 .toolbar-center .btn-script-task {
-  background: #2639E9;
-  border-color: rgba(255,255,255,0.72);
-  color: #fff;
-  .node-dot { background: #fff; }
+  // background: #EAF2FF;
+  // border-color: #ADC6FF;
+  color: #FFFFFF;
+  font-weight: 600;
+  &:hover {
+    // background: #D6E4FF;
+    border-color: #85A5FF;
+    // color: #1D39C4;
+  }
+  .node-dot { background: #2639E9; }
 }
 .delete-current-node {
   width: 100%;
@@ -1451,6 +1480,20 @@ export default {
   font-size: 13px;
   font-weight: 600;
   color: #333;
+}
+.section-title ::v-deep .el-radio-button__inner {
+  min-width: 72px;
+  padding: 6px 12px;
+  color: #334155;
+  border-color: #CBD5E1;
+  background: #FFFFFF;
+  box-shadow: none;
+}
+.section-title ::v-deep .el-radio-button__orig-radio:checked + .el-radio-button__inner {
+  background: #2639E9;
+  border-color: #2639E9;
+  color: #FFFFFF;
+  box-shadow: none;
 }
 .prop-form {
   padding: 0;

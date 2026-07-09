@@ -86,4 +86,17 @@ describe('LineageGraph', () => {
     expect(wrapper.vm.edgeLines[0].x1).toBe(before + 50)
     wrapper.destroy()
   })
+
+  test('提供血缘方向和静态分析边界说明', () => {
+    const wrapper = mountPage()
+
+    expect(wrapper.vm.lineageGuideCards.map(item => item.title)).toEqual([
+      '选择起点',
+      '上游/下游',
+      '静态分析边界'
+    ])
+    expect(wrapper.vm.lineageGuideCards[1].text).toContain('上游')
+    expect(wrapper.vm.lineageGuideCards[2].text).toContain('静态分析')
+    wrapper.destroy()
+  })
 })

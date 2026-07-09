@@ -12,6 +12,13 @@
       </div>
     </div>
 
+    <div class="usage-guide">
+      <div v-for="item in experimentGuideCards" :key="item.title" class="guide-item">
+        <div class="guide-title">{{ item.title }}</div>
+        <div class="guide-text">{{ item.text }}</div>
+      </div>
+    </div>
+
     <el-form ref="form" :model="form" :rules="rules" label-width="96px" size="small" class="base-form">
       <el-row :gutter="12">
         <el-col :span="6">
@@ -366,6 +373,12 @@ export default {
   mixins: [varPickerMixin],
   data() {
     return {
+      experimentGuideCards: [
+        { title: '冠军组', text: '当前生产主策略，必须且只能有一个；随机分流时冠军组和挑战组比例合计必须为 100%。' },
+        { title: '挑战组', text: '用于承接新策略流量，可配置多个；建议用描述记录和冠军组的规则差异、观察指标。' },
+        { title: '空跑测试', text: 'TEST 组只记录试算结果，不影响生产结果；适合验证新规则输出、耗时和异常情况。' },
+        { title: '版本回滚', text: '保存会形成版本；上线前可对比配置差异，异常时通过版本回滚恢复历史配置。' }
+      ],
       activeTab: 'champion',
       saving: false,
       contentLoaded: true,
@@ -963,6 +976,32 @@ export default {
     gap: 8px;
   }
 
+  .usage-guide {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+
+  .guide-item {
+    border: 1px solid #E2E8F0;
+    border-radius: 4px;
+    padding: 10px 12px;
+    background: #FFFFFF;
+  }
+
+  .guide-title {
+    color: #0F172A;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .guide-text {
+    color: #64748B;
+    font-size: 12px;
+    line-height: 1.6;
+  }
+
   .base-form,
   .detail-tabs {
     background: #fff;
@@ -1028,6 +1067,12 @@ export default {
     border: 1px solid #e5e7eb;
     border-radius: 4px;
     background: #fff;
+  }
+
+  @media (max-width: 1200px) {
+    .usage-guide {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
   }
 
   .ratio-group-meta {

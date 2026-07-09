@@ -116,4 +116,14 @@ describe('DatabaseList — JDBC URL 生成', () => {
     expect(data.sshHost).toBe('bastion.internal')
     expect(data.sshUsername).toBe('deploy')
   })
+
+  test('提供数据库变量配置说明和只读查询提示', () => {
+    expect(wrapper.vm.databaseGuideCards.map(item => item.title)).toEqual([
+      '只读连接',
+      '查询模板',
+      '数据库变量'
+    ])
+    expect(wrapper.vm.databaseGuideCards[0].text).toContain('只读账号')
+    expect(wrapper.vm.databaseGuideCards[2].text).toContain('sourceConfig')
+  })
 })

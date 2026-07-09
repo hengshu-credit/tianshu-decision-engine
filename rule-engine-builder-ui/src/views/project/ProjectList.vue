@@ -1,5 +1,21 @@
 <template>
   <div class="uiue-list-page">
+    <div class="workflow-guide">
+      <div class="workflow-guide-head">
+        <div class="workflow-guide-title">从项目到发布</div>
+        <div class="workflow-guide-text">按顺序完成配置、验证和接入，避免业务人员漏掉编译、发布、日志核对等关键步骤。</div>
+      </div>
+      <div class="workflow-steps">
+        <div v-for="(item, index) in workflowSteps" :key="item.title" class="workflow-step">
+          <div class="step-index">{{ index + 1 }}</div>
+          <div class="step-body">
+            <div class="step-title">{{ item.title }}</div>
+            <div class="step-text">{{ item.text }}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="uiue-search-container">
       <el-form :inline="true" size="small">
         <el-form-item label="项目编码">
@@ -107,6 +123,16 @@ export default {
   components: { RemoteFilterSelect },
   data() {
     return {
+      workflowSteps: [
+        { title: '创建项目', text: '填写项目编码、名称和状态，保存后获取项目访问令牌。' },
+        { title: '定义变量/对象', text: '在项目内维护输入变量、输出变量和数据对象，变量编码保持业务原样。' },
+        { title: '设计规则', text: '进入规则设计器选择决策表、决策树、规则集、评分卡或 QL 脚本等模型。' },
+        { title: '编译', text: '保存规则后执行编译，检查变量引用、输出字段和生成脚本是否正确。' },
+        { title: '测试', text: '使用规则测试录入样例请求，核对执行结果、命中路径和追踪树。' },
+        { title: '发布', text: '发布已验证版本，服务端会推送规则变更给客户端缓存。' },
+        { title: 'SDK 接入', text: '业务系统用 projectCode 和 X-Rule-Token 接入，依赖 API/DB/名单变量时开启服务端执行。' },
+        { title: '查看日志/账单', text: '上线后在执行日志、分流日志和账单汇总里核对调用量、耗时、成功率和费用。' }
+      ],
       loading: false, tableData: [], total: 0,
       qp: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' },
       createTimeRange: [],
@@ -689,3 +715,79 @@ System.out.println("ExecuteTime: " + result.getExecuteTimeMs() + "ms");</code></
   }
 }
 </script>
+<style lang="scss" scoped>
+.workflow-guide {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.workflow-guide-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.workflow-guide-title {
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.workflow-guide-text {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.workflow-step {
+  display: flex;
+  gap: 8px;
+  min-height: 82px;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.step-index {
+  width: 22px;
+  height: 22px;
+  line-height: 22px;
+  border-radius: 50%;
+  background: #2639e9;
+  color: #fff;
+  text-align: center;
+  font-size: 12px;
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.step-title {
+  color: #0f172a;
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.step-text {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1200px) {
+  .workflow-steps {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+</style>
