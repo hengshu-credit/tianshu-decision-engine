@@ -22,6 +22,7 @@ import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.hengshucredit.rule.server.service.VariableSourceResolver;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
@@ -66,6 +67,9 @@ public class RuleFieldAnalyzer {
 
     @Resource
     private RuleModelOutputFieldMapper modelOutputFieldMapper;
+
+    @Resource
+    private VariableSourceResolver variableSourceResolver;
 
     /**
      * 解析模型内容，提取输入/输出变量，持久化到字段表。
@@ -267,6 +271,7 @@ public class RuleFieldAnalyzer {
             }
             Map<String, Object> meta = new HashMap<>();
             meta.put("id", field.getId());
+            meta.put("modelId", field.getModelId());
             meta.put("varLabel", firstNonBlank(modelNameMap.get(field.getModelId()), modelCode)
                     + "/" + firstNonBlank(field.getFieldLabel(), field.getFieldName(), outputScript));
             meta.put("varType", firstNonBlank(field.getFieldType(), "STRING"));
@@ -393,42 +398,166 @@ public class RuleFieldAnalyzer {
         }
     }
 
+    /**
+     * 展开输入字段：把非最原始（依赖其他变量/模型的）字段穿透到最底层依赖字段。
+     * 规则输入仅应展示业务系统真正需要提供的原始字段，因此模型输出、DB/API/计算等
+     * 派生变量会被展开为其底层依赖，递归直到 INPUT/CONSTANT/DATA_OBJECT 等叶子字段。
+     */
     private List<RuleDefinitionInputField> expandModelInputFields(List<RuleDefinitionInputField> inputFields,
             Map<String, Map<String, Object>> varMetaMap) {
         List<RuleDefinitionInputField> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
+        Set<String> visited = new LinkedHashSet<>();
         for (RuleDefinitionInputField field : inputFields) {
-            String refType = normalizeRefType(field.getRefType());
-            RuleDefinitionInputField listDependency = buildListDependencyField(field, varMetaMap);
-            if (listDependency != null) {
-                addInputFieldIfAbsent(result, seen, field);
-                enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
-                addInputFieldIfAbsent(result, seen, listDependency);
-                continue;
-            }
-            if (!"MODEL".equals(refType) || field.getVarId() == null || modelInputFieldMapper == null) {
-                addInputFieldIfAbsent(result, seen, field);
-                continue;
-            }
-
-            List<RuleModelInputField> modelFields = modelInputFieldMapper.selectList(
-                    new LambdaQueryWrapper<RuleModelInputField>()
-                            .eq(RuleModelInputField::getModelId, field.getVarId())
-                            .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
-                            .orderByAsc(RuleModelInputField::getSortOrder)
-                            .orderByAsc(RuleModelInputField::getId));
-            if (modelFields == null || modelFields.isEmpty()) {
-                addInputFieldIfAbsent(result, seen, field);
-                continue;
-            }
-
-            for (RuleModelInputField modelField : modelFields) {
-                RuleDefinitionInputField expanded = copyModelInputField(modelField);
-                enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
-                addInputFieldIfAbsent(result, seen, expanded);
-            }
+            expandFieldRecursive(field, varMetaMap, seen, visited, result);
         }
         return result;
+    }
+
+    private void expandFieldRecursive(RuleDefinitionInputField field,
+            Map<String, Map<String, Object>> varMetaMap,
+            Set<String> seen, Set<String> visited,
+            List<RuleDefinitionInputField> result) {
+        String scriptName = trimToNull(field.getScriptName());
+        String refType = normalizeRefType(field.getRefType());
+        Map<String, Object> meta = scriptName != null ? varMetaMap.get(scriptName.toLowerCase()) : null;
+        String varSource = meta != null ? (String) meta.get("varSource") : null;
+
+        // 防环：同一 (refType:scriptName) 只展开一次，避免变量/模型相互引用导致死循环
+        String visitKey = (refType != null ? refType : "NONE") + ":" + (scriptName != null ? scriptName.toLowerCase() : "null");
+        boolean alreadyVisited = !visited.add(visitKey);
+
+        // 名单查询变量：保留源字段，并展开其查询依赖字段（与既有行为一致）
+        if ("VARIABLE".equals(refType) && "LIST".equals(varSource)) {
+            RuleDefinitionInputField listDependency = buildListDependencyField(field, varMetaMap);
+            addInputFieldIfAbsent(result, seen, field);
+            if (listDependency != null) {
+                enrichFieldFromMeta(listDependency, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                expandFieldRecursive(listDependency, varMetaMap, seen, visited, result);
+            }
+            return;
+        }
+
+        // 仅当未展开过且携带 varId 时递归穿透（visited 仅防止重复展开，不阻止叶子落库）
+        if (!alreadyVisited && field.getVarId() != null) {
+            if ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
+                addInputFieldIfAbsent(result, seen, field);
+                expandModelOrOutputFields(field, meta, varMetaMap, seen, visited, result);
+                return;
+            }
+            if ("DB".equals(varSource) || "API".equals(varSource) || "COMPUTED".equals(varSource)) {
+                addInputFieldIfAbsent(result, seen, field);
+                expandSourceVariableFields(field, meta, varMetaMap, seen, visited, result);
+                return;
+            }
+        }
+
+        // 叶子字段（INPUT / CONSTANT / DATA_OBJECT / 未知引用 / 无法解析的依赖）：保留
+        addInputFieldIfAbsent(result, seen, field);
+    }
+
+    private void expandModelOrOutputFields(RuleDefinitionInputField field, Map<String, Object> meta,
+            Map<String, Map<String, Object>> varMetaMap, Set<String> seen, Set<String> visited,
+            List<RuleDefinitionInputField> result) {
+        if (field.getVarId() == null) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+        Long modelId = resolveModelId(field, meta);
+        if (modelId == null) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+        List<RuleModelInputField> modelFields = loadModelInputFields(modelId);
+        if (modelFields == null || modelFields.isEmpty()) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+        for (RuleModelInputField modelField : modelFields) {
+            RuleDefinitionInputField expanded = copyModelInputField(modelField);
+            enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
+        }
+    }
+
+    /**
+     * 加载模型输入字段。抽成独立方法便于测试覆盖（子类重写或注入 mapper）。
+     */
+    protected List<RuleModelInputField> loadModelInputFields(Long modelId) {
+        if (modelInputFieldMapper == null || modelId == null) {
+            return java.util.Collections.emptyList();
+        }
+        return modelInputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelInputField>()
+                        .eq(RuleModelInputField::getModelId, modelId)
+                        .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
+                        .orderByAsc(RuleModelInputField::getSortOrder)
+                        .orderByAsc(RuleModelInputField::getId));
+    }
+
+    private Long resolveModelId(RuleDefinitionInputField field, Map<String, Object> meta) {
+        String refType = normalizeRefType(field.getRefType());
+        if ("MODEL".equals(refType)) {
+            return field.getVarId();
+        }
+        if ("MODEL_OUTPUT".equals(refType)) {
+            if (meta != null && meta.get("modelId") instanceof Long) {
+                return (Long) meta.get("modelId");
+            }
+            if (modelOutputFieldMapper != null) {
+                RuleModelOutputField mof = modelOutputFieldMapper.selectById(field.getVarId());
+                if (mof != null) {
+                    return mof.getModelId();
+                }
+            }
+        }
+        return null;
+    }
+
+    private void expandSourceVariableFields(RuleDefinitionInputField field, Map<String, Object> meta,
+            Map<String, Map<String, Object>> varMetaMap, Set<String> seen, Set<String> visited,
+            List<RuleDefinitionInputField> result) {
+        if (meta == null) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+        String varSource = (String) meta.get("varSource");
+        String sourceConfig = (String) meta.get("sourceConfig");
+        if (varSource == null) {
+            addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+        Set<String> depNames = new LinkedHashSet<>();
+        if ("COMPUTED".equals(varSource)) {
+            String expr = null;
+            if (sourceConfig != null) {
+                JSONObject obj = parseObject(sourceConfig);
+                expr = firstNonBlank(obj.getString("expression"), obj.getString("computeExpression"), obj.getString("script"));
+            }
+            if (expr == null) {
+                expr = sourceConfig;
+            }
+            if (expr != null) {
+                depNames.addAll(extractIdentifiersFromScript(expr));
+            }
+        } else if (variableSourceResolver != null) {
+            RuleVariable variable = new RuleVariable();
+            variable.setScriptName(trimToNull(field.getScriptName()));
+            variable.setVarSource(varSource);
+            variable.setSourceConfig(sourceConfig);
+            depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
+        }
+        for (String depName : depNames) {
+            RuleDefinitionInputField depField = new RuleDefinitionInputField();
+            depField.setScriptName(depName);
+            depField.setFieldName(depName);
+            depField.setFieldLabel(depName);
+            depField.setFieldType(inferFieldType(depName));
+            depField.setStatus(1);
+            depField.setCreateTime(LocalDateTime.now());
+            enrichFieldFromMeta(depField, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            expandFieldRecursive(depField, varMetaMap, seen, visited, result);
+        }
     }
 
     private RuleDefinitionInputField buildListDependencyField(RuleDefinitionInputField field,

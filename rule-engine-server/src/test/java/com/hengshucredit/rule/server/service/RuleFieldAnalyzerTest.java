@@ -1,10 +1,18 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
+import com.hengshucredit.rule.model.entity.RuleVariable;
 import org.junit.Test;
 
+import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -246,5 +254,163 @@ public class RuleFieldAnalyzerTest {
                 .findFirst()
                 .get()
                 .getVarId());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelOutputExpandsToModelInputFieldsRecursively() throws Exception {
+        RuleDefinitionInputField scoreF1 = new RuleDefinitionInputField();
+        scoreF1.setScriptName("score_f1.score");
+        scoreF1.setRefType("MODEL_OUTPUT");
+        scoreF1.setVarId(130L);
+
+        Map<String, Object> modelOutputMeta = new HashMap<>();
+        modelOutputMeta.put("varSource", "MODEL_OUTPUT");
+        modelOutputMeta.put("modelId", 1L);
+        modelOutputMeta.put("sourceConfig", "");
+        Map<String, Object> leafMeta = new HashMap<>();
+        leafMeta.put("varSource", "DATA_OBJECT");
+        leafMeta.put("id", 25L);
+        leafMeta.put("refType", "DATA_OBJECT");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("score_f1.score", modelOutputMeta);
+        varMetaMap.put("hybase_x115", leafMeta);
+
+        RuleFieldAnalyzer analyzer = new TestableRuleFieldAnalyzer(Arrays.asList("HYBASE_X115"));
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        List<RuleDefinitionInputField> fields = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(scoreF1), varMetaMap);
+        List<String> names = fields.stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue("模型输出应保留为输入字段", names.contains("score_f1.score"));
+        assertTrue("模型输出应穿透到最底层输入特征", names.contains("HYBASE_X115"));
+        RuleDefinitionInputField leaf = fields.stream()
+                .filter(f -> "HYBASE_X115".equals(f.getScriptName())).findFirst().get();
+        assertEquals("底层字段应携带引擎变量关联", Long.valueOf(25), leaf.getVarId());
+        assertEquals("DATA_OBJECT", leaf.getRefType());
+    }
+
+    /** 覆盖 loadModelInputFields，避免依赖 MyBatis mapper 实现 */
+    private static class TestableRuleFieldAnalyzer extends RuleFieldAnalyzer {
+        private final List<String> modelInputNames;
+
+        private TestableRuleFieldAnalyzer(List<String> modelInputNames) {
+            this.modelInputNames = modelInputNames;
+        }
+
+        @Override
+        protected List<RuleModelInputField> loadModelInputFields(Long modelId) {
+            List<RuleModelInputField> fields = new ArrayList<>();
+            for (String name : modelInputNames) {
+                RuleModelInputField field = new RuleModelInputField();
+                field.setModelId(modelId);
+                field.setVarId(25L);
+                field.setRefType("DATA_OBJECT");
+                field.setFieldName(name);
+                field.setScriptName(name);
+                field.setFieldType("DOUBLE");
+                fields.add(field);
+            }
+            return fields;
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void sourceVariablesExpandToUnderlyingInputs() throws Exception {
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
+
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        Map<String, Object> dbMeta = new HashMap<>();
+        dbMeta.put("varSource", "DB");
+        dbMeta.put("sourceConfig", "{\"sql\":\"select 1\",\"params\":[\"$.idcard_no\"]}");
+        Map<String, Object> apiMeta = new HashMap<>();
+        apiMeta.put("varSource", "API");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"paramMapping\":{\"idNo\":\"$.idcard_no\"}}");
+        Map<String, Object> computedMeta = new HashMap<>();
+        computedMeta.put("varSource", "COMPUTED");
+        computedMeta.put("sourceConfig", "{\"expression\":\"idcard_no + age\"}");
+        varMetaMap.put("db_score", dbMeta);
+        varMetaMap.put("api_score", apiMeta);
+        varMetaMap.put("computed_score", computedMeta);
+        varMetaMap.put("idcard_no", leafMeta("idcard_no", "INPUT", 6L));
+        varMetaMap.put("age", leafMeta("age", "INPUT", 37L));
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+
+        RuleDefinitionInputField dbField = inputField("db_score", "VARIABLE", "DB", 100L);
+        List<RuleDefinitionInputField> dbResult = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(dbField), varMetaMap);
+        assertTrue("DB 变量应穿透到其参数依赖", names(dbResult).contains("idcard_no"));
+
+        RuleDefinitionInputField apiField = inputField("api_score", "VARIABLE", "API", 101L);
+        List<RuleDefinitionInputField> apiResult = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(apiField), varMetaMap);
+        assertTrue("API 变量应穿透到请求映射依赖", names(apiResult).contains("idcard_no"));
+
+        RuleDefinitionInputField computedField = inputField("computed_score", "VARIABLE", "COMPUTED", 102L);
+        List<RuleDefinitionInputField> computedResult = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(computedField), varMetaMap);
+        assertTrue("计算变量应穿透到表达式引用变量", names(computedResult).contains("idcard_no"));
+        assertTrue("计算变量应穿透到表达式引用变量", names(computedResult).contains("age"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void cyclicDependenciesDoNotCauseInfiniteRecursion() throws Exception {
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
+
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        Map<String, Object> aMeta = new HashMap<>();
+        aMeta.put("varSource", "DB");
+        aMeta.put("sourceConfig", "{\"params\":[\"$.b_var\"]}");
+        Map<String, Object> bMeta = new HashMap<>();
+        bMeta.put("varSource", "DB");
+        bMeta.put("sourceConfig", "{\"params\":[\"$.a_var\"]}");
+        varMetaMap.put("a_var", aMeta);
+        varMetaMap.put("b_var", bMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField aField = inputField("a_var", "VARIABLE", "DB", 1L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(aField), varMetaMap);
+        List<String> names = names(result);
+        assertTrue(names.contains("a_var"));
+        assertTrue(names.contains("b_var"));
+    }
+
+    private static RuleDefinitionInputField inputField(String scriptName, String refType, String varSource, Long varId) {
+        RuleDefinitionInputField field = new RuleDefinitionInputField();
+        field.setScriptName(scriptName);
+        field.setFieldName(scriptName);
+        field.setRefType(refType);
+        field.setVarId(varId);
+        field.setFieldType("STRING");
+        field.setStatus(1);
+        return field;
+    }
+
+    private static Map<String, Object> leafMeta(String scriptName, String varSource, Long id) {
+        Map<String, Object> meta = new HashMap<>();
+        meta.put("varSource", varSource);
+        meta.put("id", id);
+        meta.put("refType", varSource);
+        return meta;
+    }
+
+    private static List<String> names(List<RuleDefinitionInputField> fields) {
+        return fields.stream().map(RuleDefinitionInputField::getScriptName).collect(Collectors.toList());
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 }

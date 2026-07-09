@@ -2,6 +2,9 @@
 
 This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
+> ⚠️ 本文件与 `CLAUDE.md` 内容应保持一致（两者是同一份指引的镜像）。修改本文件时同步更新 `CLAUDE.md`。
+> ⚠️ 项目仍是「未发布版」（见 `README.md` 顶部提示），部分功能逻辑仍在修缮中。研究现状时以实际代码为准，本文件的功能状态描述可能滞后。
+
 所有回答以及中间的思考过程，尽可能全部使用中文进行解答。
 
 所有实现的代码，在完成后都需要反复核对逻辑是否正确，是否与用户提出的需求匹配，如果有问题修复后需要再次核对。
@@ -28,7 +31,9 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 ## 项目概述
 
-衡枢规则引擎（hscredit/qlexpress-rule）是一套基于 **Spring Boot 2.3** 与 **QLExpress 4** 的可视化风控决策系统：支持 **决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本** 等 8 种模型的可视化编排，涵盖变量管理、模型管理、函数管理、规则测试、执行日志等功能。
+天枢决策引擎（com.hengshucredit.rule，仓库名 qlexpress-rule）是一套基于 **Spring Boot 2.3** 与 **QLExpress 4** 的可视化风控决策系统：支持 **决策表、决策树、决策流、规则集、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本** 等 9 种模型的可视化编排，涵盖项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力。
+
+> 后端 Java 包名前缀统一为 `com.hengshucredit.rule.*`（注意不是 hscredit），Maven `groupId` 为 `com.hengshucredit.rule`，`artifactId: qlexpress-rule`。
 
 ## 环境要求
 
@@ -108,16 +113,18 @@ npm run test:coverage # 覆盖率报告
 ### 基础设施
 
 ```bash
-cd rule-engine-mysql && docker-compose up -d   # MySQL
+# 根目录 docker-compose 已包含 mysql + redis + 初始化（schema.sql 作为 init.sql 挂载）
+docker-compose up -d
+# 单独启动：
+cd rule-engine-mysql && docker-compose up -d   # MySQL（仅 compose 文件，无 dockerfile）
 cd rule-engine-redis && docker-compose up -d    # Redis
 ```
 
-### 截图采集
+### 数据库初始化
 
-```bash
-# 依赖 scripts/ 下的 node_modules + playwright
-node scripts/capture-designer-screenshots.cjs
-```
+- Schema：`rule-engine-server/src/main/resources/sql/schema.sql`（被根 `docker-compose.yaml` 挂载为 `init.sql` 自动建表）
+- 示例数据：`data-example.sql` / `data-tianshu-example.sql`（手动导入）；`export_*.sql` 为历史导出，非初始化脚本，勿随意执行
+- 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
 
 ## 核心编译器（rule-engine-core）
 
@@ -128,6 +135,7 @@ node scripts/capture-designer-screenshots.cjs
 | `DecisionTableCompiler` | 决策表 |
 | `DecisionTreeCompiler` | 决策树 |
 | `DecisionFlowCompiler` | 决策流 |
+| `RuleSetCompiler` | 规则集 |
 | `CrossTableCompiler` | 交叉表 |
 | `ScorecardCompiler` | 评分卡 |
 | `AdvancedCrossTableCompiler` | 复杂交叉表 |
@@ -143,9 +151,9 @@ node scripts/capture-designer-screenshots.cjs
 
 ## 前端关键路径
 
-- 设计器视图: `src/views/designer/`（8 个单文件组件）
-- 页面视图: `src/views/`（project、rule、variable、model、function、test、log 等）
-- API 层: `src/api/`（auth、dataObject、definition、function、model、project、request、variable）
+- 设计器视图: `src/views/designer/`（9 个单文件组件）
+- 页面视图: `src/views/`（project、rule、variable、model、function、test、log、billing、database、datasource、lineage、experiment、ruleList 等）
+- API 层: `src/api/`（auth、billing、database、datasource、dataObject、definition、experiment、function、lineage、model、project、request、ruleList、runtimeLog、variable）
 - 全局样式覆盖: `src/styles/element-override.scss`
 - **变量选择 Mixin**: `src/mixins/varPickerMixin.js`
 - 侧边栏菜单: `src/layout/index.vue`（el-menu 组件，新建页面需在此添加菜单项）
@@ -163,11 +171,11 @@ Jest 配置（`jest.config.js`）关键点：
 - `monaco-editor` / `@logicflow/core` 已 mock，SCSS 文件 mock 为空模块
 - `setup.js` 预置所有 API mock 和 Element UI mock
 
-**当前测试状态**：前端 470 个测试全部通过 ✅，后端 35 个测试全部通过 ✅
+**当前测试状态**：前端约 615 个用例（36 个 spec 文件）全部通过 ✅，后端约 186 个用例（core / client / server 三模块均有）全部通过 ✅（具体数字随用例增长变化，以 `npm test` / `mvn test` 实际输出为准）。
 
 ## 后端测试框架 (JUnit 4)
 
-当前仅有 `rule-engine-core` 模块包含测试：`DecisionTableCompilerTest`（35 个用例）。
+后端 `rule-engine-core`、`rule-engine-client`、`rule-engine-server` 三个模块均含测试。覆盖编译器（各 `*CompilerTest`）、执行引擎、内置函数、服务端控制器（`RuleSyncControllerTest`、`LogReportControllerTest`）、鉴权拦截器、`VariableSourceResolver`、各 `*ServiceTest` 等。
 
 ## 核心设计约束
 
@@ -208,6 +216,7 @@ Jest 配置（`jest.config.js`）关键点：
 | DecisionTable | ✅ `syncVarItem()` | ✅ `syncVarItem()` | 已完整实现 |
 | DecisionTree | ✅ `leftVarId`/`rightVarId` 持久化到 nodes/edges | ✅ `actionData` | 节点/连线条件变量已正确持久化 |
 | DecisionFlow | ✅ `leftVarId`/`rightVarId` 持久化到 nodes/edges | ✅ `actionData` | 已与 DecisionTree 保持一致 |
+| RuleSet | ✅ `syncVarItem()`（条件+动作叶子节点） | ✅ `syncVarItem()` | 已完整实现 |
 | CrossTable | — | — | 简单交叉表，无变量选择 |
 | Scorecard | — | — | 简单评分卡，无变量选择 |
 | AdvancedCrossTable | ✅ `dim._varId` | ✅ `resultVar._varId` | 已完整实现 |
@@ -216,35 +225,35 @@ Jest 配置（`jest.config.js`）关键点：
 
 > ✅ **已修复**：ScriptEditor 的 var-picker 选择时，通过 `scriptVarRefs` 数组同时持久化 `_varId`（`varId`）到 `modelJson.scriptVarRefs`。保存时 `syncScriptVarRefsFromScript()` 从脚本中提取实际引用并更新映射；加载时 `_syncModelVarRefs()` 用 `varId` 查找最新的 `refCode`，自动同步变量编码变更。
 
-## 待实现功能
+## 功能现状（已实现 / 待修缮）
 
-### 外数管理（`/#/datasource`）
+> ⚠️ 以下为实测代码现状。README 顶部声明项目仍为「未发布版」，部分功能逻辑仍在修缮。修改前先读对应控制器 `rule-engine-server/.../controller/mgmt`（Billing、DbDatasource、ExecutionLog、ExternalDatasource、RuleDataObject、RuleDefinition、RuleExperiment、RuleFunction、RuleLineage、RuleList、RuleProject、RuleVariable、RuntimeCallLog）与 `controller/sync`（LogReport、RuleSync），确认实际接口，不要凭旧文档猜测。
 
-通过 API 获取外部数据的统一接入模块，对应变量中的 **接口变量**（`rule_variable.var_source = 'API'`）。
+**已实现（前后端均有对应页面/API，勿当作缺失来"补"）**：
 
-涉及数据库表：`rule_external_datasource`（数据源定义）、`rule_external_api_config`（API 配置，含计费方式、重试策略等）。
+| 能力 | 前端入口 | 后端控制器 | 备注 |
+|------|----------|------------|------|
+| 项目管理/令牌 | `views/project` | `RuleProjectController` | 含访问令牌、接口说明 |
+| 规则设计 9 种模型 | `views/designer/*`（9 个） | `RuleDefinitionController` | 含 RuleSet 设计器 |
+| 变量管理 | `views/variable` | `RuleVariableController` | API/DB/名单变量支持在线测试与详情 |
+| 名单管理 | `views/ruleList` 旁 | `RuleListController` | 名单库/记录/导入导出/匹配日志 |
+| 外数管理 | `views/datasource` | `ExternalDatasourceController` | 数据源/接口/鉴权/调用日志 |
+| 数据库管理 | `views/database` | `DbDatasourceController` | 后端 HikariCP 连接池 |
+| 模型管理 | `views/model` | `RuleModelController` | 入参/出参/执行测试/调用日志 |
+| 函数管理 | `views/function` | `RuleFunctionController` | QLExpress/Java/Spring Bean |
+| 规则测试 | `views/test` | `RuleDefinitionController` 测试 | 含追踪树 |
+| 血缘分析 | `views/lineage` | `RuleLineageController` | 基于结构化字段（脚本动态引用仅静态识别） |
+| 分流实验 | `views/experiment` | `RuleExperimentController` | 冠军/挑战/测试组；支持版本回滚 |
+| 执行日志 | `views/log` | `ExecutionLogController` | 服务端+客户端追踪 |
+| 账单管理 | `views/billing` | `BillingController` | 计费项/明细/汇总 |
+| 版本回滚与对比 | `RuleDetail/ModelDetail/FunctionList/ExperimentDetail` | `RuleDefinitionController` 等 `/versions`、`/versionCompare`、`/rollback` | **已实现**：规则、模型、函数、实验均支持查看版本、对比差异、回滚 |
 
-涉及前端：`src/views/datasource/` 新建页面，`src/api/datasource.js` 新建 API 层，`src/layout/index.vue` 侧边栏添加菜单项。
+**仍为待修缮项（以 README 第 12 节「实现边界」为准）**：
+- 血缘分析仅能静态识别结构化字段与变量来源配置，脚本中复杂的动态引用无法保证完全识别。
+- 控制台默认 admin/`1qaz@WSX`，生产需替换；数据库管理只应配只读账号、查询类 SQL。
+- 外数/数据库/名单变量在线测试依赖对应数据源可用，失败会写入各自模块日志。
 
-### 数据库管理（`/#/database`）
-
-在后端集中配置数据库连接池（HikariCP），数据查询变量（`rule_variable.var_source = 'DB'`）执行时通过后端查询外部数据库。
-
-涉及数据库表：`rule_db_datasource`（数据库数据源定义）。
-
-### 账单管理（`/#/billing`）
-
-规则引擎与外部 API 调用费用的统一计费与统计模块，统计引擎规则执行和外数 API 调用的费用。
-
-涉及数据库表：`rule_billing_config`（计费配置）、`rule_billing_record`（调用记录明细）、`rule_billing_summary`（聚合汇总表）。
-
-### 规则版本回滚与版本对比
-
-`rule_definition_version` 表已存储历史版本，但前端无回滚入口和对比 UI，后端无相关 API。
-
-### 批量导入错误处理
-
-后端已返回详细错误信息，但前端未展示具体失败行和错误原因。
+> ⚠️ 旧版本文档曾把「外数/数据库/账单/实验/血缘/名单/版本回滚」列为待实现，现已全部落地。若任务需要新增能力，先确认是否已在表中，避免重复造轮子。
 
 ## 技术栈
 
@@ -258,7 +267,6 @@ Jest 配置（`jest.config.js`）关键点：
 ## 参考资料
 
 - 详细使用说明见 `README.md`
-- 设计器截图采集脚本：`scripts/capture-designer-screenshots.cjs`
 - 参考实现：`rule_examples/` 目录下的企业级/个人开源参考项目
 
 

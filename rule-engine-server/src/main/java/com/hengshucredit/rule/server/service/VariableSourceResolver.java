@@ -326,7 +326,7 @@ public class VariableSourceResolver {
         return null;
     }
 
-    private Set<String> collectVariableDependencies(RuleVariable variable) {
+    Set<String> collectVariableDependencies(RuleVariable variable) {
         Set<String> dependencies = new LinkedHashSet<>();
         if (variable == null) {
             return dependencies;
