@@ -256,6 +256,9 @@
         <designer-test-dialog
       :visible.sync="testVisible"
       :definition-id="definitionId"
+      :project-id="projectIdForRefs"
+      model-type="FLOW"
+      :model-json-provider="buildBackendModel"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -420,7 +423,7 @@ export default {
           this.projectRules = []
           return
         }
-        this._projectId = def.projectId
+        this.projectIdForRefs = def.projectId
         const res = await listProjectDefinitions(def.projectId, { pageNum: 1, pageSize: 1000 })
         const page = res && res.data ? res.data : res
         const records = Array.isArray(page) ? page : (page && page.records) || []

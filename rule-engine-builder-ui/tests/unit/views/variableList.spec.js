@@ -43,6 +43,7 @@ import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
 import * as dataObjectApi from '@/api/dataObject'
 import * as ruleListApi from '@/api/ruleList'
+import * as definitionApi from '@/api/definition'
 import VariableList from '@/views/variable/VariableList.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -333,10 +334,15 @@ describe('VariableList — 变量操作', () => {
     }
     expect(wrapper.vm.isTestableSource(row)).toBe(true)
     expect(wrapper.vm.isTestableSource({ varSource: 'INPUT' })).toBe(false)
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
+      inputs: [{ refId: 20, refType: 'DATA_OBJECT', scriptName: 'customer.id', valueType: 'STRING' }],
+      sampleParams: { customer: { id: 'C000' } }
+    } })
 
     await wrapper.vm.handleTestVariable(row)
     expect(wrapper.vm.variableTestVisible).toBe(true)
-    expect(JSON.parse(wrapper.vm.variableTestParamsText)).toEqual({ customer: { id: '' } })
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'VARIABLE', targetId: 10 })
+    expect(JSON.parse(wrapper.vm.variableTestParamsText)).toEqual({ customer: { id: 'C000' } })
 
     variableApi.testVariable.mockResolvedValueOnce({ data: { resolvedValue: 88 } })
     wrapper.vm.variableTestParamsText = '{"customer":{"id":"C001"}}'

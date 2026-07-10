@@ -14,6 +14,8 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
+import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExperimentVersion;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleExperimentExecutionLogMapper;
@@ -35,8 +37,10 @@ import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, RuleExperiment> {
@@ -66,6 +70,15 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Resource
     private QLExpressEngine qlExpressEngine;
 
+    @Resource
+    private RuleDefinitionService definitionService;
+
+    @Resource
+    private ExecutionParameterBinder executionParameterBinder;
+
+    @Resource
+    private RuleFieldAnalyzer ruleFieldAnalyzer;
+
     public IPage<RuleExperiment> pageExperiments(int pageNum, int pageSize, Long projectId,
                                                  Integer status, String keyword) {
         LambdaQueryWrapper<RuleExperiment> wrapper = new LambdaQueryWrapper<>();
@@ -92,6 +105,81 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             experiment.setGroups(listGroups(id));
         }
         return experiment;
+    }
+
+    public List<Long> listReferencedDefinitionIds(Long experimentId) {
+        RuleExperiment experiment = getDetail(experimentId);
+        if (experiment == null) return Collections.emptyList();
+        Set<String> ruleCodes = new LinkedHashSet<>();
+        if (hasText(experiment.getConditionRuleCode())) ruleCodes.add(experiment.getConditionRuleCode());
+        for (RuleExperimentGroup group : experiment.getGroups() == null ? Collections.<RuleExperimentGroup>emptyList() : experiment.getGroups()) {
+            if (hasText(group.getRuleCode())) ruleCodes.add(group.getRuleCode());
+        }
+        Set<Long> definitionIds = new LinkedHashSet<>();
+        for (String ruleCode : ruleCodes) {
+            LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
+                    .eq(RulePublished::getRuleCode, ruleCode)
+                    .eq(RulePublished::getStatus, 1)
+                    .orderByDesc(RulePublished::getVersion);
+            if (hasText(experiment.getProjectCode())) {
+                wrapper.eq(RulePublished::getProjectCode, experiment.getProjectCode());
+            }
+            List<RulePublished> publishedRules = publishedMapper.selectList(wrapper);
+            if (publishedRules != null && !publishedRules.isEmpty() && publishedRules.get(0).getDefinitionId() != null) {
+                definitionIds.add(publishedRules.get(0).getDefinitionId());
+            }
+        }
+        return new ArrayList<>(definitionIds);
+    }
+
+    public RuleFieldAnalyzer.ResolvedFields resolveTestFields(Long experimentId) {
+        RuleExperiment experiment = getDetail(experimentId);
+        if (experiment == null) {
+            throw new IllegalArgumentException("分流实验不存在: " + experimentId);
+        }
+        List<RuleDefinitionInputField> inputs = new ArrayList<>();
+        List<RuleDefinitionOutputField> outputs = new ArrayList<>();
+        for (Long definitionId : listReferencedDefinitionIds(experimentId)) {
+            List<RuleDefinitionInputField> ruleInputs = definitionService.listInputFields(definitionId);
+            List<RuleDefinitionOutputField> ruleOutputs = definitionService.listOutputFields(definitionId);
+            if (ruleInputs != null) inputs.addAll(ruleInputs);
+            if (ruleOutputs != null) outputs.addAll(ruleOutputs);
+        }
+        List<Map<String, Object>> nodes = new ArrayList<>();
+        for (RuleExperimentGroup group : experiment.getGroups() == null ? Collections.<RuleExperimentGroup>emptyList() : experiment.getGroups()) {
+            Map<String, Object> node = new LinkedHashMap<>();
+            if (hasText(group.getConditionConfig())) {
+                try {
+                    node.put("conditionConfig", JSON.parseObject(group.getConditionConfig()));
+                } catch (Exception e) {
+                    node.put("conditionExpression", group.getConditionConfig());
+                }
+            }
+            if (hasText(group.getConditionExpression())) {
+                node.put("conditionExpression", group.getConditionExpression());
+            }
+            if (!node.isEmpty()) nodes.add(node);
+        }
+        if (!nodes.isEmpty()) {
+            Map<String, Object> conditionModel = new LinkedHashMap<>();
+            conditionModel.put("nodes", nodes);
+            RuleFieldAnalyzer.ResolvedFields conditionFields = ruleFieldAnalyzer.resolveFields(
+                    null, JSON.toJSONString(conditionModel), "FLOW", experiment.getProjectId());
+            inputs.addAll(conditionFields.getInputFields());
+        }
+        if (hasText(experiment.getRequestKeyPath())) {
+            String path = experiment.getRequestKeyPath().trim().replaceFirst("^\\$\\.", "");
+            RuleDefinitionInputField requestKey = new RuleDefinitionInputField();
+            requestKey.setFieldName(path);
+            requestKey.setScriptName(path);
+            requestKey.setFieldLabel(path);
+            requestKey.setFieldType("STRING");
+            requestKey.setRefType("VARIABLE");
+            requestKey.setStatus(1);
+            inputs.add(requestKey);
+        }
+        return new RuleFieldAnalyzer.ResolvedFields(
+                deduplicateInputs(inputs), deduplicateOutputs(outputs));
     }
 
     public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
@@ -161,6 +249,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
                 : request.getParams();
+        params = bindExperimentParams(experiment, params);
         String requestKey = resolveRequestKey(experiment, request, params);
         LocalDateTime requestTime = resolveRequestTime(request, params);
         String clientAppName = request == null ? null : request.getClientAppName();
@@ -195,6 +284,29 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setErrorMessage(productionResult.getErrorMessage());
         result.setExecuteTimeMs(System.currentTimeMillis() - start);
         return result;
+    }
+
+    private Map<String, Object> bindExperimentParams(RuleExperiment experiment, Map<String, Object> params) {
+        return executionParameterBinder.bindRuleInputs(
+                resolveTestFields(experiment.getId()).getInputFields(), params);
+    }
+
+    private List<RuleDefinitionInputField> deduplicateInputs(List<RuleDefinitionInputField> inputs) {
+        Map<String, RuleDefinitionInputField> dedup = new LinkedHashMap<>();
+        for (RuleDefinitionInputField field : inputs) {
+            String key = firstText(field.getScriptName(), field.getFieldName());
+            if (key != null) dedup.putIfAbsent(key, field);
+        }
+        return new ArrayList<>(dedup.values());
+    }
+
+    private List<RuleDefinitionOutputField> deduplicateOutputs(List<RuleDefinitionOutputField> outputs) {
+        Map<String, RuleDefinitionOutputField> dedup = new LinkedHashMap<>();
+        for (RuleDefinitionOutputField field : outputs) {
+            String key = firstText(field.getScriptName(), field.getFieldName());
+            if (key != null) dedup.putIfAbsent(key, field);
+        }
+        return new ArrayList<>(dedup.values());
     }
 
     private RouteChoice chooseProductionGroup(RuleExperiment experiment, List<RuleExperimentGroup> groups,
@@ -702,6 +814,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private boolean hasText(String value) {
         return value != null && !value.trim().isEmpty();
+    }
+
+    private String firstText(String... values) {
+        for (String value : values) {
+            if (hasText(value)) return value.trim();
+        }
+        return null;
     }
 
     private boolean isFallbackGroup(RuleExperimentGroup group) {

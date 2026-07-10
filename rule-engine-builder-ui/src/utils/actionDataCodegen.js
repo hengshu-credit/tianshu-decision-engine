@@ -39,6 +39,17 @@ function wrapSwitchCaseValue(val) {
   return quoteString(s)
 }
 
+function wrapFunctionArg(value, ref) {
+  if (ref && (ref._varId != null || ref.varId != null || ref._refType || ref.refType)) {
+    return String(value == null ? '' : value).trim()
+  }
+  const text = String(value == null ? '' : value).trim()
+  if (text === 'true' || text === 'false' || text === 'null') return text
+  if (text !== '' && !isNaN(text)) return text
+  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) return text
+  return quoteString(text)
+}
+
 function inferConstType(value) {
   const text = String(value == null ? '' : value).trim()
   if (text !== '' && !isNaN(text)) return 'NUMBER'
@@ -101,7 +112,8 @@ function generateBlock(block, indent) {
 
     case 'func-call': {
       if (!block.funcName) return ''
-      const args = (block.args || []).join(', ')
+      const refs = block._argRefs || []
+      const args = (block.args || []).map((arg, index) => wrapFunctionArg(arg, refs[index])).join(', ')
       const call = block.funcName + '(' + args + ')'
       return block.target ? pad + block.target + ' = ' + call : pad + call
     }
@@ -203,7 +215,7 @@ export function newBlock(type) {
     case 'switch-block':
       return { type: 'switch-block', matchVar: '', cases: [{ value: '', actions: [{ type: 'assign', target: '', value: '' }] }], defaultActions: [{ type: 'assign', target: '', value: '' }] }
     case 'func-call':
-      return { type: 'func-call', target: '', funcName: '', args: [''] }
+      return { type: 'func-call', target: '', funcName: '', args: [''], _argRefs: [null] }
     case 'foreach':
       return { type: 'foreach', itemVar: 'item', listExpr: '', actions: [{ type: 'assign', target: '', value: '' }] }
     case 'ternary':

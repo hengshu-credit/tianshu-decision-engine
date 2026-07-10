@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import org.junit.Test;
 
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelVarParserTest {
@@ -31,5 +32,21 @@ public class RuleModelVarParserTest {
         assertTrue(result.getOutputCodes().contains("hitResult"));
         assertTrue(result.getOutputCodes().contains("gradeResult"));
         assertTrue(result.getOutputCodes().contains("summary"));
+    }
+
+    @Test
+    public void functionLiteralOptionIsNotAnInputField() {
+        String modelJson = "{\"nodes\":[{\"actionData\":[{"
+                + "\"type\":\"func-call\",\"target\":\"age\",\"funcName\":\"idCardAge\","
+                + "\"args\":[\"idcard_no\",\"credit_time\",\"DAY\"],"
+                + "\"_argRefs\":[{\"_varId\":6},{\"_varId\":8},null]"
+                + "}]}]}";
+
+        RuleModelVarParser.ParseResult result = parser.parse(modelJson, "FLOW");
+
+        assertTrue(result.getInputCodes().contains("idcard_no"));
+        assertTrue(result.getInputCodes().contains("credit_time"));
+        assertFalse(result.getInputCodes().contains("DAY"));
+        assertTrue(result.getOutputCodes().contains("age"));
     }
 }

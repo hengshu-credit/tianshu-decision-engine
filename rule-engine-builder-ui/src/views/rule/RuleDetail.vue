@@ -67,18 +67,18 @@
           </el-table-column>
           <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span v-if="row.varId && getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
+              <span v-if="getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
           <el-table-column label="变量名称" min-width="130">
             <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldLabel || '—' }}</span>
+              <span style="font-weight:500;">{{ fieldDisplayLabel(row) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <span v-if="row.varId && getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
+              <span v-if="getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
@@ -147,18 +147,18 @@
           </el-table-column>
           <el-table-column label="变量编码" min-width="120">
             <template slot-scope="{row}">
-              <span v-if="row.varId && getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
+              <span v-if="getFieldVarMap(row)" class="script-name-text">{{ getFieldVarMap(row).varCode }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
           <el-table-column label="变量名称" min-width="130">
             <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldLabel || '—' }}</span>
+              <span style="font-weight:500;">{{ fieldDisplayLabel(row) }}</span>
             </template>
           </el-table-column>
           <el-table-column label="脚本名称" min-width="130">
             <template slot-scope="{row}">
-              <span v-if="row.varId && getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
+              <span v-if="getFieldVarMap(row)">{{ getFieldVarMap(row).varCodeText }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
@@ -271,9 +271,9 @@
           <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:8px;">
             <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
           </el-alert>
-          <div v-if="testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.error }}</div>
+          <div v-if="testResult.errorMessage || testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.errorMessage || testResult.error }}</div>
           <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
-          <pre v-if="testResult.outputs" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.outputs) }}</pre>
+          <pre v-if="testResult.hasOutput" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.output) }}</pre>
         </div>
       </template>
 
@@ -364,6 +364,14 @@ import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import { getModel, listAllModelsByProject } from '@/api/model'
 import { sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
+import {
+  buildDetailReferenceMap,
+  buildDetailReferenceState,
+  buildReferenceCatalog,
+  resolveDetailReference
+} from '@/utils/referenceCatalog'
+import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
+import { normalizeTestSchema, schemaFieldsToTestFields, flattenSchemaSample } from '@/utils/testSchema'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -635,10 +643,20 @@ export default {
       if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
     },
     getFieldVarMap(row) {
-      if (!row || !row.varId) return null
-      return this.varMap[this.refKey(row.varId, row.refType)] || this.varMap[String(row.varId)] || null
+      return resolveDetailReference(this.varMap, row)
+    },
+    fieldDisplayLabel(row) {
+      const item = this.getFieldVarMap(row)
+      return (item && (item.varLabelText || item.varLabel)) || row.fieldLabel || '—'
     },
     buildVarOptions(vars, doTree, models = []) {
+      const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, models))
+      if (state && state.items) {
+        this.varMap = buildDetailReferenceMap(state)
+        this.varPickerGroups.splice(0, this.varPickerGroups.length,
+          ...state.groups.map(group => ({ label: group.label, options: group.options })))
+        return
+      }
       this.varMap = {}
       const seenIds = new Set()
       /** @type {Array} 普通变量选项 */
@@ -1008,18 +1026,26 @@ export default {
         const res = await api.getDefinitionDetail(this.rule.id)
         freshRule = (res.data !== undefined ? res.data : res) || freshRule
       } catch (e) { /* fallback */ }
-      this.testFieldKeyMap = await this.buildModelInputFieldKeyMap(freshRule)
-
-      const testFields = (freshRule.inputFieldsJson || []).filter(f => f.status !== 0).map(f => {
-        if (f.validValues && typeof f.validValues === 'string') {
-          try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
-        }
-        if (!f.validValues) f.validValues = []
-        return f
-      })
-
-      const testParams = this.buildFlatTestParams(testFields)
-      const testJsonStr = JSON.stringify(this.buildNestedTestParams(testFields, testParams), null, 2)
+      let schema = null
+      try {
+        schema = normalizeTestSchema(await api.getRuleTestSchema({ targetType: 'RULE', targetId: this.rule.id }))
+      } catch (e) { /* compatibility fallback for older servers */ }
+      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+      this.testFieldKeyMap = {}
+      const testFields = hasSchema
+        ? schemaFieldsToTestFields(schema.inputs)
+        : (freshRule.inputFieldsJson || []).filter(f => f.status !== 0).map(f => {
+          if (f.validValues && typeof f.validValues === 'string') {
+            try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
+          }
+          if (!f.validValues) f.validValues = []
+          return f
+        })
+      const testParams = hasSchema
+        ? flattenSchemaSample(testFields, schema.sampleParams)
+        : this.buildFlatTestParams(testFields)
+      const nestedParams = hasSchema ? schema.sampleParams : this.buildNestedTestParams(testFields, testParams)
+      const testJsonStr = JSON.stringify(nestedParams, null, 2)
 
       this.testFields = testFields
       this.testParams = testParams
@@ -1072,8 +1098,8 @@ export default {
         params = this.buildNestedTestParams(this.testFields, this.testParams)
       }
       try {
-        const res = await api.executeRule({ id: this.rule.id, params })
-        this.testResult = res.data || {}
+        const res = await api.executeRule({ definitionId: this.rule.id, params })
+        this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)
           this.jsonEdited = true
@@ -1194,8 +1220,7 @@ export default {
       return current
     },
     formatResult(outputs) {
-      if (typeof outputs === 'object') return JSON.stringify(outputs, null, 2)
-      return outputs
+      return formatTestOutput(outputs)
     }
   }
 }

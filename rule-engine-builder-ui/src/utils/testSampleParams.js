@@ -233,7 +233,7 @@ function appendDependencyPath(params, path, projectRefs, visited) {
   if (!pathValueExists(params, path)) setParamPath(params, path, '')
 }
 
-function isLeafRef(ref) {
+export function isLeafRef(ref) {
   const variable = ref && ref.varObj ? ref.varObj : {}
   const source = variable.varSource || ref.varSource
   return ref.refType === 'DATA_OBJECT' || source === 'INPUT' || (!source && ref.refType !== 'MODEL_OUTPUT')
@@ -340,7 +340,7 @@ function ensureObject(params, key) {
   return params[key]
 }
 
-function setParamPath(target, path, value) {
+export function setParamPath(target, path, value) {
   const parts = String(path).split('.').map(item => item.trim()).filter(Boolean)
   if (!parts.length) return
   let current = target

@@ -33,6 +33,7 @@ jest.mock('@/api/dataObject', () => ({
 import * as modelApi from '@/api/model'
 import * as variableApi from '@/api/variable'
 import * as dataObjectApi from '@/api/dataObject'
+import * as definitionApi from '@/api/definition'
 import ModelDetail from '@/views/model/ModelDetail.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -231,7 +232,19 @@ describe('ModelDetail — 变量关联加载', () => {
     const objGroup = wrapper.vm.varPickerGroups.find(g => g.label === '数据对象字段')
     expect(objGroup.options.length).toBe(1)
     expect(objGroup.options[0].sourceType).toBe('dataObject')
-    expect(objGroup.options[0].varCode).toBe('amount')
+    expect(objGroup.options[0].varCode).toBe('TaxRequest.amount')
+    expect(objGroup.options[0].varLabel).toMatch(/TaxRequest\.amount/)
+  })
+
+  test('数据对象关联展示完整对象与字段名称', () => {
+    wrapper.vm.buildVarOptions([], mockObjectTree())
+    const row = { varId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount' }
+
+    expect(wrapper.vm.bindingDisplay(row)).toMatchObject({
+      label: '税务请求/金额',
+      code: 'TaxRequest.amount',
+      source: '对象字段'
+    })
   })
 
   test('buildVarOptions 中 id 去重', () => {
@@ -444,15 +457,20 @@ describe('ModelDetail — 模型测试弹窗', () => {
   test('openTestDialog 打开弹窗并重置状态', async () => {
     modelApi.getModel.mockResolvedValue({ data: mockModel() })
     modelApi.getTestParams.mockResolvedValue({ data: null })
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
+      inputs: [{ refId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount', label: '税务请求/金额', valueType: 'NUMBER' }],
+      sampleParams: { TaxRequest: { amount: 100 } }
+    } })
     wrapper.vm.model = mockModel()
 
-    wrapper.vm.openTestDialog()
-    await Vue.nextTick()
+    await wrapper.vm.openTestDialog()
 
     expect(wrapper.vm.testVisible).toBe(true)
-    expect(wrapper.vm.testReady).toBe(false)
+    expect(wrapper.vm.testReady).toBe(true)
     expect(wrapper.vm.testResult).toBeNull()
     expect(wrapper.vm.testMode).toBe('manual')
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'MODEL', targetId: 1 })
+    expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ TaxRequest: { amount: 100 } })
   })
 
   test('switchToJsonMode 切换到 JSON 模式', () => {
@@ -593,6 +611,7 @@ describe('ModelDetail — 模型测试执行', () => {
     await wrapper.vm.doTest()
     expect(wrapper.vm.testResult).toBeDefined()
     expect(wrapper.vm.testResult.success).toBe(true)
+    expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: { result: 100 } })
     expect(wrapper.vm.testExecuting).toBe(false)
   })
 

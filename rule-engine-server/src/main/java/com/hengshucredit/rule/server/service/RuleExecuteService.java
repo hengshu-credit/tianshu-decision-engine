@@ -51,6 +51,9 @@ public class RuleExecuteService {
     @Resource
     private RuleRuntimeInvoker runtimeRuleInvoker;
 
+    @Resource
+    private ExecutionParameterBinder executionParameterBinder;
+
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
@@ -73,7 +76,8 @@ public class RuleExecuteService {
                 ? content.getCompiledScript()
                 : funcPrefix + "\n" + content.getCompiledScript();
         VariableResolveOptions resolveOptions = withDefinitionInputFields(VariableResolveOptions.defaults(), definitionId);
-        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), params, resolveOptions);
+        Map<String, Object> boundParams = bindDefinitionInputs(definitionId, params);
+        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), boundParams, resolveOptions);
         String projectCode = null;
         if (definition.getProjectId() != null) {
             RuleProject project = projectService.getById(definition.getProjectId());
@@ -81,7 +85,7 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams);
+        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams, true);
         RuleResult result;
         try {
             result = qlExpressEngine.execute(fullScript, executeParams, true);
@@ -130,7 +134,7 @@ public class RuleExecuteService {
         Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
         prepareProjectFunctions(executionProjectId, false);
 
-        Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
+        Map<String, Object> safeParams = bindDefinitionInputs(published.getDefinitionId(), params);
         VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId());
         Map<String, Object> executeParams = variableSourceResolver.resolve(executionProjectId, safeParams, effectiveOptions);
         String projectCode = published.getProjectCode();
@@ -188,6 +192,12 @@ public class RuleExecuteService {
             effective.setRequiredScriptNames(names);
         }
         return effective;
+    }
+
+    private Map<String, Object> bindDefinitionInputs(Long definitionId, Map<String, Object> params) {
+        Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
+        List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
+        return executionParameterBinder.bindRuleInputs(fields, safeParams);
     }
 
     private String prepareProjectFunctions(Long projectId, boolean includeScriptPrefix) {

@@ -9,6 +9,7 @@ public final class AggregateBuiltinFunctionRegistry {
 
     private static final AggregateBuiltinFunctions DELEGATE = new AggregateBuiltinFunctions();
     private static final DecisionBuiltinFunctions DECISION_DELEGATE = new DecisionBuiltinFunctions();
+    private static final RuntimeContextBuiltinFunctions RUNTIME_CONTEXT_DELEGATE = new RuntimeContextBuiltinFunctions();
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
     private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
     private static final Class<?>[] THREE_OBJECTS = {Object.class, Object.class, Object.class};
@@ -20,6 +21,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] OBJECT_STRING_OBJECT = {Object.class, String.class, Object.class};
     private static final Class<?>[] OBJECT_DOUBLE_STRING = {Object.class, double.class, String.class};
     private static final Class<?>[] OBJECT_OBJECT_STRING = {Object.class, Object.class, String.class};
+    private static final Class<?>[] STRING_OBJECT = {String.class, Object.class};
     private static final Class<?>[] STRING_STRING_STRING = {String.class, String.class, String.class};
     private static final Class<?>[] DOUBLE_STRING = {double.class, String.class};
     private static final Class<?>[] DOUBLE_DOUBLE = {double.class, double.class};
@@ -110,5 +112,6 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("scoreByOdds", DECISION_DELEGATE, "scoreByOdds", DOUBLE_DOUBLE_DOUBLE_STRING);
         runner.addFunctionOfServiceMethod("scoreByOddsPdo", DECISION_DELEGATE, "scoreByOddsPdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
         runner.addFunctionOfServiceMethod("scoreByBadRatePdo", DECISION_DELEGATE, "scoreByBadRatePdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("setRuntimeValue", RUNTIME_CONTEXT_DELEGATE, "setRuntimeValue", STRING_OBJECT);
     }
 }

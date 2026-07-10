@@ -732,6 +732,7 @@
 <script>
 import { listVariables, createVariable, updateVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
+import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
 import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
 import { listApiConfigs } from '@/api/datasource'
@@ -740,6 +741,8 @@ import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { collectReferencePaths, collectReferencePathsFromText, sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
+import { normalizeTestSchema } from '@/utils/testSchema'
+import { normalizeTestResult } from '@/utils/testResult'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
@@ -1770,7 +1773,13 @@ export default {
     async handleTestVariable(row) {
       await this.loadVariableSourceOptions(row && row.varSource)
       this.testTarget = row
-      this.variableTestParamsText = this.buildTestParamTemplate(row)
+      let schema = null
+      try {
+        schema = normalizeTestSchema(await getRuleTestSchema({ targetType: 'VARIABLE', targetId: row.id }))
+      } catch (e) { /* compatibility fallback for older servers */ }
+      this.variableTestParamsText = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+        ? this.formatJson(schema.sampleParams)
+        : this.buildTestParamTemplate(row)
       this.variableTestResult = null
       this.variableTestVisible = true
     },
@@ -1923,7 +1932,7 @@ export default {
       this.variableTestResult = null
       try {
         const res = await testVariable(this.testTarget.id, params)
-        this.variableTestResult = res && res.data ? res.data : res
+        this.variableTestResult = normalizeTestResult(res)
       } catch (e) {
         this.variableTestResult = { success: false, errorMessage: e.message || '测试失败' }
       } finally {

@@ -182,11 +182,17 @@ describe('generateScript', () => {
   // -------- func-call --------
   test('func-call: 无目标变量', () => {
     const script = generateScript([{ type: 'func-call', funcName: 'print', args: ['msg'] }])
-    expect(script).toBe('print(msg)')
+    expect(script).toBe('print("msg")')
   })
 
   test('func-call: 有目标变量', () => {
-    const script = generateScript([{ type: 'func-call', target: 'maxVal', funcName: 'max', args: ['a', 'b'] }])
+    const script = generateScript([{
+      type: 'func-call',
+      target: 'maxVal',
+      funcName: 'max',
+      args: ['a', 'b'],
+      _argRefs: [{ _varId: 1 }, { _varId: 2 }]
+    }])
     expect(script).toBe('maxVal = max(a, b)')
   })
 
@@ -196,8 +202,8 @@ describe('generateScript', () => {
   })
 
   test('func-call: 多参数', () => {
-    const script = generateScript([{ type: 'func-call', funcName: 'sum', args: ['a', 'b', 'c'] }])
-    expect(script).toBe('sum(a, b, c)')
+    const script = generateScript([{ type: 'func-call', funcName: 'dateDiff', args: ['idcard_no', 'credit_time', 'DAY'], _argRefs: [{ _varId: 1 }, { _varId: 2 }, null] }])
+    expect(script).toBe('dateDiff(idcard_no, credit_time, "DAY")')
   })
 
   // -------- foreach --------

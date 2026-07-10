@@ -185,6 +185,17 @@ describe('RuleDetail — 辅助方法', () => {
     expect(wrapper.vm.typeLabel('ENUM')).toBe('枚举')
     expect(wrapper.vm.typeLabel('OBJECT')).toBe('对象')
   })
+
+  test('数据对象字段按完整路径解析展示名称', () => {
+    wrapper.vm.buildVarOptions([], [{
+      object: { objectCode: 'bankcard', objectLabel: '银行卡信息', scriptName: 'bankcard' },
+      flatVariables: [{ id: 11, varCode: 'bank_card_no', varLabel: '银行卡号', scriptName: 'bank_card_no', varType: 'STRING' }]
+    }])
+    const row = { refType: 'DATA_OBJECT', scriptName: 'bankcard.bank_card_no', fieldLabel: '银行卡号' }
+
+    expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡信息/银行卡号')
+    expect(wrapper.vm.getFieldVarMap(row).varCodeText).toBe('bankcard.bank_card_no')
+  })
 })
 
 describe('RuleDetail — 出入参字段管理', () => {
@@ -242,9 +253,14 @@ describe('RuleDetail — 测试弹窗', () => {
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('openTestDialog 打开测试弹窗', async () => {
-    wrapper.vm.openTestDialog()
-    await Vue.nextTick()
+    definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
+      inputs: [{ refId: 9, refType: 'DATA_OBJECT', scriptName: 'bankcard.bank_card_no', label: '银行卡信息/银行卡号', valueType: 'STRING' }],
+      sampleParams: { bankcard: { bank_card_no: '6222' } }
+    } })
+    await wrapper.vm.openTestDialog()
     expect(wrapper.vm.testVisible).toBe(true)
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'RULE', targetId: 1 })
+    expect(JSON.parse(wrapper.vm.testJsonStr)).toEqual({ bankcard: { bank_card_no: '6222' } })
   })
 
   test('testMode 默认为 manual', () => {
@@ -272,6 +288,38 @@ describe('RuleDetail — 测试弹窗', () => {
     const formatted = wrapper.vm.formatResult(outputs)
     expect(formatted).toContain('result')
     expect(formatted).toContain('PASS')
+  })
+})
+
+describe('RuleDetail execute test request', () => {
+  let wrapper
+
+  beforeEach(async () => { wrapper = await mountAndWait() })
+  afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('doTest 按执行接口契约传递 definitionId', async () => {
+    definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: false } })
+    wrapper.vm.testMode = 'json'
+    wrapper.vm.testJsonStr = '{"age":55}'
+
+    await wrapper.vm.doTest()
+
+    expect(definitionApi.executeRule).toHaveBeenCalledWith({
+      definitionId: 1,
+      params: { age: 55 }
+    })
+    expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: false })
+  })
+
+  test('数据对象字段使用完整对象名称和脚本路径', () => {
+    wrapper.vm.buildVarOptions([], [{
+      object: { objectLabel: '银行卡信息', objectCode: 'bankcard', scriptName: 'bankcard' },
+      variables: [{ id: 88, varLabel: '银行卡号', varCode: 'bank_card_no', scriptName: 'bank_card_no', varType: 'STRING' }]
+    }])
+
+    const item = wrapper.vm.varMap['DATA_OBJECT:88']
+    expect(item.varLabel).toBe('银行卡信息/银行卡号 bankcard.bank_card_no')
+    expect(item.varCodeText).toBe('bankcard.bank_card_no')
   })
 })
 

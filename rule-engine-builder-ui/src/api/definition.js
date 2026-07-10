@@ -96,6 +96,10 @@ export function executeRule(data) {
   return request({ url: '/rule/definition/execute', method: 'post', data })
 }
 
+export function getRuleTestSchema(data) {
+  return request({ url: '/rule/test-schema', method: 'post', data })
+}
+
 /** 技术人员直接保存脚本（脚本模式），跳过可视化编译器 */
 export function saveScript(definitionId, script) {
   return request({ url: `/rule/definition/script/${definitionId}`, method: 'post', data: { script } })

@@ -22,6 +22,7 @@ import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
+import { buildReferenceCatalog } from '@/utils/referenceCatalog'
 
 // 变量选择 Mixin
 
@@ -35,7 +36,7 @@ export default {
       /** 变量加载是否失败 */
       varsLoadError: false,
       varOptionsByCode: {},
-      _projectId: null
+      projectIdForRefs: null
     }
   },
 
@@ -184,7 +185,7 @@ export default {
           this.loadingVars = false
           return
         }
-        this._projectId = def.projectId
+        this.projectIdForRefs = def.projectId
         const pid = def.projectId
 
         // request 拦截器已返回 res.data，无需再访问 .data
@@ -215,64 +216,11 @@ export default {
           }
         })
 
-        const refs = []
+        const refs = buildReferenceCatalog(allVars, objectTree, models).refs
 
         // 1. 普通变量（排除常量）
-        allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
-          refs.push({
-            refCode: v.scriptName || v.varCode,
-            refLabel: makeRefLabel(v, 'variable', ''),
-            varType: v.varType,
-            varObj: Object.assign({ refType: this.refTypeForVar(v) }, v),
-            category: 'standalone',
-            refType: this.refTypeForVar(v)
-          })
-        })
-
         // 2. 常量：单段 scriptName（或 varCode）
-        allVars.filter(v => v.varSource === 'CONSTANT').forEach(c => {
-          const constScriptName = c.scriptName || c.varCode
-          refs.push({
-            refCode: constScriptName,
-            refLabel: makeRefLabel(c, 'constant', ''),
-            varType: c.varType,
-            varObj: Object.assign({ refType: 'CONSTANT' }, c),
-            category: 'constant',
-            refType: 'CONSTANT'
-          })
-        })
-
         // 3. 对象字段：对象 scriptName.字段 scriptName
-        objectTree.forEach(node => {
-          const obj = node.object || node
-          const objectCode = obj.objectCode || ''
-          const objScriptName = obj.scriptName || objectCode
-          const objectLabel = obj.objectLabel || objectCode
-          const fields = node.flatVariables || this.flattenObjectVariables(node.variables)
-          ;(fields || []).forEach(v => {
-            const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
-            const refCode = `${objScriptName}.${varScriptName}`
-            const labelSource = Object.assign({}, v, {
-              scriptName: varScriptName,
-              varCode: varScriptName,
-              varLabel: this.stripObjectPrefix(v.varLabel || '', objScriptName)
-            })
-            refs.push({
-              refCode,
-              refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
-              varType: v.varType,
-              varObj: Object.assign({ refType: 'DATA_OBJECT' }, v),
-              category: 'object',
-              refType: 'DATA_OBJECT',
-              objectCode: objScriptName,
-              objectRawCode: objectCode,
-              objectLabel
-            })
-          })
-        })
-
-        this.appendModelOutputRefs(refs, models)
-
         this.projectRefs = refs
 
         this._trySyncModelVarRefs()
@@ -309,11 +257,11 @@ export default {
      * 重新拉取当前项目下的所有数据，更新 projectVars、projectRefs、projectFunctions。
      */
     async refreshProjectRefs() {
-      if (!this._projectId) return
+      if (!this.projectIdForRefs) return
       this.loadingVars = true
       this.varsLoadError = false
       try {
-        const pid = this._projectId
+        const pid = this.projectIdForRefs
         const [varRes, objRes, funcRes, modelRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
@@ -341,56 +289,7 @@ export default {
           }
         })
 
-        const refs = []
-        allVars.filter(v => v.varSource !== 'CONSTANT').forEach(v => {
-          refs.push({
-            refCode: v.scriptName || v.varCode,
-            refLabel: makeRefLabel(v, 'variable', ''),
-            varType: v.varType,
-            varObj: Object.assign({ refType: this.refTypeForVar(v) }, v),
-            category: 'standalone',
-            refType: this.refTypeForVar(v)
-          })
-        })
-        allVars.filter(v => v.varSource === 'CONSTANT').forEach(c => {
-          const constScriptName = c.scriptName || c.varCode
-          refs.push({
-            refCode: constScriptName,
-            refLabel: makeRefLabel(c, 'constant', ''),
-            varType: c.varType,
-            varObj: Object.assign({ refType: 'CONSTANT' }, c),
-            category: 'constant',
-            refType: 'CONSTANT'
-          })
-        })
-        objectTree.forEach(node => {
-          const obj = node.object || node
-          const objectCode = obj.objectCode || ''
-          const objScriptName = obj.scriptName || objectCode
-          const fields = node.flatVariables || this.flattenObjectVariables(node.variables)
-          ;(fields || []).forEach(v => {
-            const varScriptName = this.normalizeObjectFieldScriptName(v, objScriptName)
-            const refCode = `${objScriptName}.${varScriptName}`
-            const labelSource = Object.assign({}, v, {
-              scriptName: varScriptName,
-              varCode: varScriptName,
-              varLabel: this.stripObjectPrefix(v.varLabel || '', objScriptName)
-            })
-            refs.push({
-              refCode,
-              refLabel: makeRefLabel(labelSource, 'dataObject', obj.objectLabel || objectCode),
-              varType: v.varType,
-              varObj: Object.assign({ refType: 'DATA_OBJECT' }, v),
-              category: 'object',
-              refType: 'DATA_OBJECT',
-              objectCode: objScriptName,
-              objectRawCode: objectCode,
-              objectLabel: obj.objectLabel || objectCode
-            })
-          })
-        })
-        this.appendModelOutputRefs(refs, models)
-
+        const refs = buildReferenceCatalog(allVars, objectTree, models).refs
         this.projectRefs = refs
         this._trySyncModelVarRefs()
         const enumRefs = refs.filter(r => r.varType === 'ENUM')

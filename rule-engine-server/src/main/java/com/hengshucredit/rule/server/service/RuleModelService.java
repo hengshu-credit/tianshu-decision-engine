@@ -45,6 +45,8 @@ public class RuleModelService {
     private RuleVariableMapper variableMapper;
     @Resource
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
+    @Resource
+    private ExecutionParameterBinder executionParameterBinder;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -758,6 +760,21 @@ public class RuleModelService {
     /**
      * 执行模型测试
      */
+    public List<RuleModelInputField> listInputFields(Long modelId) {
+        return inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
+                .eq(RuleModelInputField::getModelId, modelId)
+                .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
+                .orderByAsc(RuleModelInputField::getSortOrder)
+                .orderByAsc(RuleModelInputField::getId));
+    }
+
+    public List<RuleModelOutputField> listOutputFields(Long modelId) {
+        return outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
+                .eq(RuleModelOutputField::getModelId, modelId)
+                .orderByAsc(RuleModelOutputField::getSortOrder)
+                .orderByAsc(RuleModelOutputField::getId));
+    }
+
     public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) {
@@ -767,8 +784,9 @@ public class RuleModelService {
             throw new IllegalArgumentException("模型文件内容为空");
         }
 
+        Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(listInputFields(modelId), params);
         if ("PMML".equals(model.getModelFormat())) {
-            return executePmml(model, applyMissingValues(modelId, params));
+            return executePmml(model, applyMissingValues(modelId, boundParams));
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -776,7 +794,7 @@ public class RuleModelService {
         result.put("message", model.getModelFormat() + " 格式暂不支持在线执行，仅 PMML 格式支持测试");
         result.put("modelCode", model.getModelCode());
         result.put("modelFormat", model.getModelFormat());
-        result.put("inputParams", params);
+        result.put("inputParams", boundParams);
         return result;
     }
 

@@ -8,6 +8,14 @@
   >
     <div class="designer-test-dialog">
       <div class="editor-label">输入参数 JSON</div>
+      <el-alert
+        v-if="schemaDiagnostics.length"
+        :title="schemaDiagnostics.join('；')"
+        type="warning"
+        :closable="false"
+        show-icon
+        style="margin-bottom:8px;"
+      />
       <monaco-editor
         v-model="paramsJson"
         language="json"
@@ -29,7 +37,7 @@
             <pre class="result-pre">{{ formatJson(lastInput) }}</pre>
           </el-tab-pane>
           <el-tab-pane label="执行输出" name="output">
-            <pre class="result-pre">{{ formatJson(result.result) }}</pre>
+            <pre class="result-pre">{{ formatOutput(result.output) }}</pre>
           </el-tab-pane>
           <el-tab-pane v-if="result.errorMessage" label="错误信息" name="error">
             <pre class="result-pre error-pre">{{ result.errorMessage }}</pre>
@@ -55,8 +63,9 @@
 </template>
 
 <script>
-import { executeRule } from '@/api/definition'
+import { executeRule, getRuleTestSchema } from '@/api/definition'
 import MonacoEditor from '@/components/MonacoEditor'
+import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
 
 export default {
   name: 'DesignerTestDialog',
@@ -68,6 +77,26 @@ export default {
     },
     definitionId: {
       type: [String, Number],
+      default: null
+    },
+    targetType: {
+      type: String,
+      default: 'RULE'
+    },
+    projectId: {
+      type: [String, Number],
+      default: null
+    },
+    modelType: {
+      type: String,
+      default: ''
+    },
+    modelJson: {
+      type: [Object, String],
+      default: null
+    },
+    modelJsonProvider: {
+      type: Function,
       default: null
     },
     paramsTemplate: {
@@ -83,7 +112,9 @@ export default {
       lastInput: null,
       executing: false,
       editorKey: 1,
-      activeTab: 'output'
+      activeTab: 'output',
+      resolvedTemplate: null,
+      schemaDiagnostics: []
     }
   },
   computed: {
@@ -108,11 +139,34 @@ export default {
     }
   },
   methods: {
-    open() {
+    async open() {
       this.result = null
       this.lastInput = null
       this.activeTab = 'output'
+      this.resolvedTemplate = null
+      await this.loadTestSchema()
       this.resetParams()
+    },
+    async loadTestSchema() {
+      const currentModel = this.modelJsonProvider ? this.modelJsonProvider() : this.modelJson
+      if (!this.definitionId && !currentModel) return
+      const modelJson = typeof currentModel === 'string'
+        ? currentModel
+        : (currentModel ? JSON.stringify(currentModel) : null)
+      try {
+        const response = await getRuleTestSchema({
+          targetType: this.targetType || 'RULE',
+          targetId: this.definitionId,
+          projectId: this.projectId,
+          modelType: this.modelType || undefined,
+          modelJson
+        })
+        const schema = response && response.data !== undefined ? response.data : response
+        if (schema && schema.sampleParams) this.resolvedTemplate = schema.sampleParams
+        this.schemaDiagnostics = schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
+      } catch (e) {
+        this.schemaDiagnostics = [e.message || '测试字段解析失败']
+      }
     },
     resetParams() {
       this.paramsJson = this.formatJson(this.normalizeTemplate())
@@ -120,6 +174,7 @@ export default {
       this.editorKey += 1
     },
     normalizeTemplate() {
+      if (this.resolvedTemplate !== null) return this.resolvedTemplate
       if (typeof this.paramsTemplate === 'string') {
         try {
           return JSON.parse(this.paramsTemplate || '{}')
@@ -155,10 +210,10 @@ export default {
       this.lastInput = params
       try {
         const res = await executeRule({ definitionId: this.definitionId, params })
-        this.result = res && res.data ? res.data : res
+        this.result = normalizeTestResult(res)
         this.activeTab = this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {
-        this.result = { success: false, errorMessage: e.message || '执行异常', executeTimeMs: 0, result: null }
+        this.result = normalizeTestResult({ success: false, errorMessage: e.message || '执行异常', executeTimeMs: 0, result: null })
         this.activeTab = 'error'
       } finally {
         this.executing = false
@@ -174,6 +229,9 @@ export default {
       } catch (e) {
         return String(value)
       }
+    },
+    formatOutput(value) {
+      return formatTestOutput(value)
     }
   }
 }

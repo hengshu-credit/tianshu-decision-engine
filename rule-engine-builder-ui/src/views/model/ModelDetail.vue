@@ -362,10 +362,10 @@
             <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
             <span v-if="testResult.modelType">，模型类型：{{ testResult.modelType }}</span>
           </el-alert>
-          <div v-if="testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.error }}</div>
+          <div v-if="testResult.errorMessage || testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.errorMessage || testResult.error }}</div>
           <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
           <div v-if="testResult.note" style="color:#909399;font-size:12px;margin-bottom:8px;">{{ testResult.note }}</div>
-          <pre v-if="testResult.outputs" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.outputs) }}</pre>
+          <pre v-if="testResult.hasOutput" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.output) }}</pre>
         </div>
       </template>
 
@@ -378,9 +378,24 @@
 
 <script>
 import * as api from '@/api/model'
+import { getRuleTestSchema } from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import VarPicker from '@/components/common/VarPicker.vue'
+import {
+  buildDetailReferenceMap,
+  buildDetailReferenceState,
+  buildReferenceCatalog,
+  resolveDetailReference
+} from '@/utils/referenceCatalog'
+import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
+import {
+  normalizeTestSchema,
+  schemaFieldsToTestFields,
+  flattenSchemaSample,
+  buildNestedSchemaParams,
+  readParamPath
+} from '@/utils/testSchema'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -619,8 +634,7 @@ export default {
       return (refType || 'VARIABLE') + ':' + id
     },
     getRowVarMap(row) {
-      if (!row || !row.varId) return null
-      return this.varMap[this.refKey(row.varId, row.refType)] || this.varMap[String(row.varId)] || null
+      return resolveDetailReference(this.varMap, row)
     },
     bindingDisplay(row) {
       const item = this.getRowVarMap(row)
@@ -668,6 +682,13 @@ export default {
       if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
     },
     buildVarOptions(vars, doTree, models = []) {
+      const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, models))
+      if (state && state.items) {
+        this.varMap = buildDetailReferenceMap(state)
+        this.varPickerGroups.splice(0, this.varPickerGroups.length,
+          ...state.groups.map(group => ({ label: group.label, options: group.options })))
+        return
+      }
       this.varMap = {}
       const seenIds = new Set()
       const varOptions = []
@@ -1008,8 +1029,14 @@ export default {
         if (res.data) freshModel = res.data
       } catch (e) { /* fallback to cached */ }
 
+      let schema = null
+      try {
+        schema = normalizeTestSchema(await getRuleTestSchema({ targetType: 'MODEL', targetId: this.model.id }))
+      } catch (e) { /* compatibility fallback for older servers */ }
+      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+
       // 3. 初始化字段列表（解析 validValues）
-      const testFields = (freshModel.inputFields || []).filter(f => f.status !== 0).map(f => {
+      const testFields = hasSchema ? schemaFieldsToTestFields(schema.inputs) : (freshModel.inputFields || []).filter(f => f.status !== 0).map(f => {
         if (f.validValues && typeof f.validValues === 'string') {
           try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
         }
@@ -1041,30 +1068,14 @@ export default {
       }
 
       // 6. 优先级：已保存参数 > 上传样例 > 空对象
-      const initObj = savedParams || configParams || {}
+      const initObj = savedParams || configParams || (hasSchema ? schema.sampleParams : {})
 
       // 7. 构建 testParams 和 testJsonStr
       //    数字字段默认 0（而非 null），避免 el-input-number 显示 0.000000
-      const testParams = {}
-      testFields.forEach(f => {
-        if (initObj[f.fieldName] !== undefined) {
-          testParams[f.fieldName] = initObj[f.fieldName]
-        } else if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
-          testParams[f.fieldName] = f.defaultValue
-        } else if (f.fieldType === 'BOOLEAN') {
-          testParams[f.fieldName] = false
-        } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
-          testParams[f.fieldName] = 0
-        } else {
-          testParams[f.fieldName] = ''
-        }
-      })
+      const testParams = flattenSchemaSample(testFields, initObj)
 
       // 8. 构建初始 JSON（包含所有字段的当前值）
-      const jsonObj = {}
-      testFields.forEach(f => {
-        jsonObj[f.fieldName] = testParams[f.fieldName]
-      })
+      const jsonObj = buildNestedSchemaParams(testFields, testParams)
       const testJsonStr = JSON.stringify(jsonObj, null, 2)
       const testJsonSkeleton = JSON.stringify({}, null, 2)
 
@@ -1094,26 +1105,28 @@ export default {
       this.syncJsonToParams()
     },
     syncParamsToJson() {
-      const obj = {}
+      const flat = {}
       this.testFields.forEach(f => {
         const val = this.testParams[f.fieldName]
         if (val !== '' && val !== null) {
-          obj[f.fieldName] = val
+          flat[f.fieldName] = val
         } else {
-          obj[f.fieldName] = null
+          flat[f.fieldName] = null
         }
       })
+      const obj = buildNestedSchemaParams(this.testFields, flat)
       this.testJsonStr = JSON.stringify(obj, null, 2)
       this.jsonEdited = false
       this.jsonError = ''
     },
     buildJsonStr() {
-      const obj = {}
+      const flat = {}
       Object.keys(this.testParams).forEach(k => {
         const val = this.testParams[k]
-        if (val !== '' && val !== null) obj[k] = val
-        else obj[k] = null
+        if (val !== '' && val !== null) flat[k] = val
+        else flat[k] = null
       })
+      const obj = buildNestedSchemaParams(this.testFields, flat)
       return JSON.stringify(obj, null, 2)
     },
     onJsonInput() {
@@ -1132,14 +1145,9 @@ export default {
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
-        const inputFieldNames = new Set(this.testFields.map(f => f.fieldName))
-        Object.keys(obj).forEach(k => {
-          if (inputFieldNames.has(k)) {
-            // 仅当当前 testParams 中该字段为 undefined 时才更新
-            if (this.testParams[k] === undefined) {
-              this.testParams[k] = obj[k]
-            }
-          }
+        this.testFields.forEach(field => {
+          const value = readParamPath(obj, field.fieldName)
+          if (value !== undefined) this.$set(this.testParams, field.fieldName, value)
         })
         this.jsonError = ''
       } catch (e) {
@@ -1159,14 +1167,11 @@ export default {
           return
         }
       } else {
-        params = { ...this.testParams }
-        Object.keys(params).forEach(k => {
-          if (params[k] === '' || params[k] === null) delete params[k]
-        })
+        params = buildNestedSchemaParams(this.testFields, this.testParams)
       }
       try {
         const res = await api.executeModel(this.model.id, params)
-        this.testResult = res.data || {}
+        this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)
           this.jsonEdited = true
@@ -1187,10 +1192,7 @@ export default {
           return
         }
       } else {
-        params = { ...this.testParams }
-        Object.keys(params).forEach(k => {
-          if (params[k] === '' || params[k] === null) delete params[k]
-        })
+        params = buildNestedSchemaParams(this.testFields, this.testParams)
       }
       try {
         await api.saveTestParams(this.model.id, JSON.stringify(params))
@@ -1209,16 +1211,14 @@ export default {
         else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = 0
         else this.testParams[f.fieldName] = ''
       })
-      const jsonObj = {}
-      this.testFields.forEach(f => { jsonObj[f.fieldName] = this.testParams[f.fieldName] })
+      const jsonObj = buildNestedSchemaParams(this.testFields, this.testParams)
       this.testJsonStr = JSON.stringify(jsonObj, null, 2)
       this.jsonEdited = false
       this.testResult = null
       this.jsonError = ''
     },
     formatResult(outputs) {
-      if (typeof outputs === 'object') return JSON.stringify(outputs, null, 2)
-      return outputs
+      return formatTestOutput(outputs)
     }
   }
 }

@@ -4,6 +4,7 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Test;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
@@ -42,5 +43,21 @@ public class QLExpressEngineTest {
         RuleResult result = new QLExpressEngine().execute("\"abc\".getClass().getName()", new HashMap<>());
 
         assertFalse(result.isSuccess());
+    }
+
+    @Test
+    public void runtimeValueFunctionNotifiesRequestScopedBridge() {
+        Map<String, Object> captured = new LinkedHashMap<>();
+        RuntimeContextBridge.bind(captured::put);
+        try {
+            RuleResult result = new QLExpressEngine().execute(
+                    "setRuntimeValue(\"age\", 22); age = 22; age", new HashMap<>());
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(Integer.valueOf(22), captured.get("age"));
+            assertEquals(22, ((Number) result.getResult()).intValue());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
     }
 }

@@ -213,6 +213,9 @@
         <designer-test-dialog
       :visible.sync="testVisible"
       :definition-id="definitionId"
+      :project-id="projectIdForRefs"
+      model-type="CROSS_ADV"
+      :model-json-provider="buildSaveModel"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -225,7 +228,7 @@ import varPickerMixin from '@/mixins/varPickerMixin'
 import VarPicker from '@/components/common/VarPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
-import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
+import { addCode, buildSampleParamsFromCodes, coerceSampleValue, isLeafRef, setParamPath } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 export default {
@@ -496,7 +499,8 @@ export default {
         const segment = (dim.segments || []).find(item => item && item.value !== undefined && item.value !== '')
         if (!dim.varCode || !segment) return
         const ref = this.projectRefs.find(r => r.refCode === dim.varCode)
-        params[dim.varCode] = coerceSampleValue(segment.value, ref)
+        if (ref && !isLeafRef(ref)) return
+        setParamPath(params, dim.varCode, coerceSampleValue(segment.value, ref))
       })
       return params
     },

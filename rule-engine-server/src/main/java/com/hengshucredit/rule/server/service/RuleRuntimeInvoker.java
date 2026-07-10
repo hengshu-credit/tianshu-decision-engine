@@ -4,8 +4,10 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
@@ -16,9 +18,9 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +48,9 @@ public class RuleRuntimeInvoker {
     @Resource
     private QLExpressEngine qlExpressEngine;
 
+    @Resource
+    private ExecutionParameterBinder executionParameterBinder;
+
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final ThreadLocal<ExecutionFrame> currentFrame = new ThreadLocal<>();
 
@@ -56,6 +61,8 @@ public class RuleRuntimeInvoker {
         try {
             runner.addFunctionOfServiceMethod("executeRule", this, "executeRule", ONE_STRING);
             runner.addFunctionOfServiceMethod("executeRuleField", this, "executeRuleField", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleById", this, "executeRuleById", ONE_STRING);
+            runner.addFunctionOfServiceMethod("executeRuleFieldById", this, "executeRuleFieldById", TWO_STRINGS);
         } catch (Exception e) {
             registered.set(false);
             log.warn("Register rule runtime functions failed: {}", e.getMessage());
@@ -63,17 +70,25 @@ public class RuleRuntimeInvoker {
     }
 
     public void enter(String ruleCode, Long projectId, String projectCode, Map<String, Object> context) {
+        enter(ruleCode, projectId, projectCode, context, false);
+    }
+
+    public void enter(String ruleCode, Long projectId, String projectCode,
+                      Map<String, Object> context, boolean testMode) {
         ExecutionFrame frame = new ExecutionFrame();
         frame.projectId = projectId;
         frame.projectCode = projectCode;
-        frame.context = context == null ? Collections.emptyMap() : context;
+        frame.context = context == null ? new LinkedHashMap<>() : context;
+        frame.testMode = testMode;
         if (hasText(ruleCode)) {
             frame.stack.addLast(ruleCode);
         }
         currentFrame.set(frame);
+        RuntimeContextBridge.bind(this::writeRuntimeValue);
     }
 
     public void exit() {
+        RuntimeContextBridge.clear();
         currentFrame.remove();
     }
 
@@ -83,6 +98,19 @@ public class RuleRuntimeInvoker {
 
     public Object executeRuleField(String ruleCode, String outputField) {
         Object result = doExecuteRule(ruleCode);
+        return extractOutput(result, outputField);
+    }
+
+    public Object executeRuleById(String ruleId) {
+        return doExecuteRule(parseRuleId(ruleId), null);
+    }
+
+    public Object executeRuleFieldById(String ruleId, String outputField) {
+        Object result = doExecuteRule(parseRuleId(ruleId), null);
+        return extractOutput(result, outputField);
+    }
+
+    private Object extractOutput(Object result, String outputField) {
         if (!hasText(outputField) || result == null) {
             return result;
         }
@@ -96,40 +124,73 @@ public class RuleRuntimeInvoker {
     }
 
     private Object doExecuteRule(String ruleCode) {
-        if (!hasText(ruleCode)) {
-            throw new IllegalArgumentException("调用规则编码不能为空");
+        return doExecuteRule(null, ruleCode);
+    }
+
+    private Object doExecuteRule(Long definitionId, String ruleCode) {
+        if (definitionId == null && !hasText(ruleCode)) {
+            throw new IllegalArgumentException("调用规则标识不能为空");
         }
         ExecutionFrame frame = currentFrame.get();
         if (frame == null) {
             throw new IllegalStateException("executeRule 只能在规则执行过程中调用");
         }
-        if (frame.stack.contains(ruleCode)) {
-            throw new IllegalStateException("规则调用存在循环: " + buildCyclePath(frame.stack, ruleCode));
+        RuleDefinition definition = definitionId == null
+                ? findDefinitionForTest(ruleCode, frame.projectId)
+                : definitionService.getById(definitionId);
+        String targetRuleCode = definition != null && hasText(definition.getRuleCode())
+                ? definition.getRuleCode() : ruleCode;
+        if (frame.stack.contains(targetRuleCode)) {
+            throw new IllegalStateException("规则调用存在循环: " + buildCyclePath(frame.stack, targetRuleCode));
         }
-        RulePublished published = findPublishedRule(ruleCode, frame.projectId, frame.projectCode);
-        if (published == null) {
-            throw new IllegalArgumentException("调用规则不存在或未发布: " + ruleCode);
+        RuleDefinitionContent currentContent = frame.testMode && definition != null
+                ? definitionService.getContent(definition.getId()) : null;
+        RulePublished published = null;
+        String compiledScript;
+        Long targetDefinitionId;
+        boolean useCurrentContent = currentContent != null
+                && Integer.valueOf(1).equals(currentContent.getCompileStatus());
+        if (useCurrentContent) {
+            compiledScript = currentContent.getCompiledScript();
+            targetDefinitionId = definition.getId();
+        } else {
+            published = definitionId == null
+                    ? findPublishedRule(ruleCode, frame.projectId, frame.projectCode)
+                    : findPublishedRule(definitionId, frame.projectId, frame.projectCode);
+            if (published == null) {
+                throw new IllegalArgumentException("调用规则不存在、未编译或未发布: "
+                        + (definitionId == null ? ruleCode : definitionId));
+            }
+            compiledScript = published.getCompiledScript();
+            targetDefinitionId = published.getDefinitionId();
+            if (definition == null) {
+                definition = definitionService.getById(targetDefinitionId);
+                targetRuleCode = definition != null && hasText(definition.getRuleCode())
+                        ? definition.getRuleCode() : published.getRuleCode();
+            }
         }
-        RuleDefinition definition = definitionService.getById(published.getDefinitionId());
+        String publishedProjectCode = published == null ? null : published.getProjectCode();
         Long previousProjectId = frame.projectId;
         String previousProjectCode = frame.projectCode;
         Map<String, Object> previousContext = frame.context;
-        frame.stack.addLast(ruleCode);
+        frame.stack.addLast(targetRuleCode);
         try {
             Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
-            String projectCode = hasText(published.getProjectCode()) ? published.getProjectCode() : resolveProjectCode(projectId);
+            String projectCode = hasText(publishedProjectCode) ? publishedProjectCode : resolveProjectCode(projectId);
             VariableResolveOptions options = VariableResolveOptions.defaults();
-            Set<String> requiredNames = requiredInputNames(published.getDefinitionId());
+            Set<String> requiredNames = requiredInputNames(targetDefinitionId);
             if (!requiredNames.isEmpty()) {
                 options.setRequiredScriptNames(requiredNames);
             }
-            Map<String, Object> executeParams = variableSourceResolver.resolve(projectId, previousContext, options);
+            List<RuleDefinitionInputField> childFields = definitionService.listInputFields(targetDefinitionId);
+            Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(childFields, previousContext);
+            Map<String, Object> executeParams = variableSourceResolver.resolve(projectId, boundParams, options);
             frame.projectId = projectId;
             frame.projectCode = projectCode;
             frame.context = executeParams;
-            RuleResult result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, false);
+            RuleResult result = qlExpressEngine.execute(compiledScript, executeParams, false);
             if (!result.isSuccess()) {
-                throw new IllegalStateException("执行调用规则失败[" + ruleCode + "]: " + result.getErrorMessage());
+                throw new IllegalStateException("执行调用规则失败[" + targetRuleCode + "]: " + result.getErrorMessage());
             }
             return result.getResult();
         } finally {
@@ -144,12 +205,26 @@ public class RuleRuntimeInvoker {
         LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getRuleCode, ruleCode)
                 .eq(RulePublished::getStatus, 1);
-        if (hasText(projectCode) || projectId != null) {
+        applyProjectScope(wrapper, projectId, projectCode);
+        return publishedMapper.selectOne(wrapper);
+    }
+
+    private RulePublished findPublishedRule(Long definitionId, Long projectId, String projectCode) {
+        LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getDefinitionId, definitionId)
+                .eq(RulePublished::getStatus, 1);
+        applyProjectScope(wrapper, projectId, projectCode);
+        return publishedMapper.selectOne(wrapper);
+    }
+
+    private void applyProjectScope(LambdaQueryWrapper<RulePublished> wrapper,
+                                   Long projectId, String projectCode) {
+        if (hasText(projectCode) || (projectId != null && projectId > 0)) {
             wrapper.and(w -> {
                 boolean hasProjectCode = hasText(projectCode);
                 if (hasProjectCode) {
                     w.eq(RulePublished::getProjectCode, projectCode);
-                    if (projectId != null) {
+                    if (projectId != null && projectId > 0) {
                         w.or().exists(buildLinkedGlobalRuleExistsSql(projectId));
                     }
                 } else {
@@ -157,7 +232,20 @@ public class RuleRuntimeInvoker {
                 }
             });
         }
-        return publishedMapper.selectOne(wrapper);
+    }
+
+    private RuleDefinition findDefinitionForTest(String ruleCode, Long projectId) {
+        if (!hasText(ruleCode)) {
+            return null;
+        }
+        LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, ruleCode)
+                .eq(RuleDefinition::getStatus, 1);
+        if (projectId != null && projectId > 0) {
+            wrapper.and(w -> w.eq(RuleDefinition::getProjectId, projectId)
+                    .or().eq(RuleDefinition::getScope, "GLOBAL"));
+        }
+        return definitionService.getOne(wrapper, false);
     }
 
     private Set<String> requiredInputNames(Long definitionId) {
@@ -183,6 +271,30 @@ public class RuleRuntimeInvoker {
         }
         RuleProject project = projectService.getById(projectId);
         return project == null ? null : project.getProjectCode();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void writeRuntimeValue(String path, Object value) {
+        ExecutionFrame frame = currentFrame.get();
+        if (frame == null || !hasText(path)) {
+            return;
+        }
+        String[] parts = path.split("\\.");
+        Map<String, Object> current = frame.context;
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (part.isEmpty()) continue;
+            if (i == parts.length - 1) {
+                current.put(part, value);
+            } else {
+                Object child = current.get(part);
+                if (!(child instanceof Map)) {
+                    child = new LinkedHashMap<String, Object>();
+                    current.put(part, child);
+                }
+                current = (Map<String, Object>) child;
+            }
+        }
     }
 
     private static String buildLinkedGlobalRuleExistsSql(Long projectId) {
@@ -212,10 +324,22 @@ public class RuleRuntimeInvoker {
         return value != null && !value.trim().isEmpty();
     }
 
+    private static Long parseRuleId(String value) {
+        if (!hasText(value)) {
+            throw new IllegalArgumentException("调用规则ID不能为空");
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("调用规则ID格式错误: " + value, e);
+        }
+    }
+
     private static class ExecutionFrame {
         private Long projectId;
         private String projectCode;
         private Map<String, Object> context;
+        private boolean testMode;
         private final Deque<String> stack = new ArrayDeque<>();
     }
 }

@@ -174,6 +174,9 @@
         <designer-test-dialog
       :visible.sync="testVisible"
       :definition-id="definitionId"
+      :project-id="projectIdForRefs"
+      model-type="SCRIPT"
+      :model-json-provider="buildModelJson"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -504,13 +507,16 @@ export default {
         this.contentLoaded = true
       }
     },
-    async handleSave() {
-      // 保存前：从脚本中提取实际引用的变量，更新 scriptVarRefs
+    buildModelJson() {
       this.syncScriptVarRefsFromScript()
-      const modelJson = JSON.stringify({
+      return {
         script: this.script,
         scriptVarRefs: this.scriptVarRefs
-      })
+      }
+    },
+    async handleSave() {
+      // 保存前：从脚本中提取实际引用的变量，更新 scriptVarRefs
+      const modelJson = JSON.stringify(this.buildModelJson())
       await saveContent({ definitionId: this.definitionId, modelJson })
       await refreshFields(this.definitionId, modelJson)
       this.$message.success('保存成功')
