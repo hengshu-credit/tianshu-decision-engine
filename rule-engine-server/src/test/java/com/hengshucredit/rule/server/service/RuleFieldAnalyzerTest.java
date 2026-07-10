@@ -109,6 +109,24 @@ public class RuleFieldAnalyzerTest {
     }
 
     @Test
+    public void graphFunctionArgsOnlyTreatExplicitRefsAsInputs() {
+        String json = "{\"nodes\":[{\"id\":\"n1\",\"type\":\"task\",\"actionData\":[{"
+                + "\"type\":\"func-call\",\"target\":\"age\",\"funcName\":\"idCardAge\","
+                + "\"args\":[\"idcard_no\",\"credit_time\",\"DAY\"],"
+                + "\"_argRefs\":[{\"_varId\":6,\"_refType\":\"VARIABLE\"},"
+                + "{\"_varId\":8,\"_refType\":\"VARIABLE\"},null]"
+                + "}]}]}";
+
+        List<String> inputs = analyzer.extractInputFields(json, "FLOW").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(inputs.contains("idcard_no"));
+        assertTrue(inputs.contains("credit_time"));
+        assertFalse(inputs.contains("DAY"));
+    }
+
+    @Test
     public void graphExtractsConditionConfigFieldsFromEdges() {
         String json = "{"
                 + "\"nodes\":[{\"id\":\"n1\",\"type\":\"decision\"},{\"id\":\"n2\",\"type\":\"task\",\"actionData\":[{\"type\":\"assign\",\"target\":\"result.hit\",\"value\":\"1\"}]}],"

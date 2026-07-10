@@ -1274,6 +1274,10 @@ public class RuleFieldAnalyzer {
         }
     }
 
+    private boolean hasExplicitArgRef(JSONObject ref) {
+        return ref != null && (ref.getLong("_varId") != null || ref.getLong("varId") != null);
+    }
+
     private void collectActionBlockVars(JSONObject block, Set<String> varCodes, boolean isInput) {
         if (block == null) return;
         String type = getString(block, "type");
@@ -1290,9 +1294,13 @@ public class RuleFieldAnalyzer {
                 extractIdentifiersFromExpression(getString(block, "value"), varCodes);
             } else if ("func-call".equals(type)) {
                 JSONArray args = block.getJSONArray("args");
-                if (args != null) {
+                JSONArray argRefs = block.getJSONArray("_argRefs");
+                if (args != null && argRefs != null) {
                     for (int i = 0; i < args.size(); i++) {
-                        extractIdentifiersFromExpression(args.getString(i), varCodes);
+                        JSONObject ref = i < argRefs.size() ? argRefs.getJSONObject(i) : null;
+                        if (hasExplicitArgRef(ref)) {
+                            addVarName(varCodes, args.getString(i));
+                        }
                     }
                 }
             } else if ("foreach".equals(type)) {

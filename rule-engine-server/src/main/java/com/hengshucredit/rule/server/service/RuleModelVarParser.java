@@ -503,11 +503,13 @@ public class RuleModelVarParser {
                 }
                 // args 是输入参数
                 JSONArray args = a.getJSONArray("args");
-                if (args != null) {
+                JSONArray argRefs = a.getJSONArray("_argRefs");
+                if (args != null && argRefs != null) {
                     for (int j = 0; j < args.size(); j++) {
-                        Object arg = args.get(j);
-                        if (arg instanceof String && isIdentifier((String) arg)) {
-                            result.getInputCodes().add((String) arg);
+                        JSONObject ref = j < argRefs.size() ? argRefs.getJSONObject(j) : null;
+                        String arg = args.getString(j);
+                        if (hasExplicitArgRef(ref) && arg != null && !arg.isEmpty()) {
+                            result.getInputCodes().add(arg);
                         }
                     }
                 }
@@ -559,6 +561,10 @@ public class RuleModelVarParser {
         if (code != null && !code.isEmpty()) {
             codes.add(code);
         }
+    }
+
+    private boolean hasExplicitArgRef(JSONObject ref) {
+        return ref != null && (ref.getLong("_varId") != null || ref.getLong("varId") != null);
     }
 
     /**
