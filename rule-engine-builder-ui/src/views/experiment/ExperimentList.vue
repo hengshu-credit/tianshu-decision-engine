@@ -235,7 +235,7 @@
 
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions } from '@/api/definition'
+import { getRuleTestSchema, listDefinitions } from '@/api/definition'
 import { deleteExperiment, executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
@@ -247,6 +247,7 @@ import {
   hasUsableConditionLeaf,
   compileConditionTreeExpression
 } from '@/utils/decisionConditionTree'
+import { normalizeTestSchema } from '@/utils/testSchema'
 
 export default {
   name: 'ExperimentList',
@@ -408,12 +409,12 @@ export default {
     },
     async loadExperimentRefs(projectId) {
       if (!projectId) {
-        this._projectId = null
+        this.projectIdForRefs = null
         this.projectRefs = []
         this.projectVars = []
         return
       }
-      this._projectId = projectId
+      this.projectIdForRefs = projectId
       await this.refreshProjectRefs()
     },
     onRoutingModeChange(mode) {
@@ -608,11 +609,17 @@ export default {
       })
       if (changed) this.$forceUpdate()
     },
-    handleTest(row) {
+    async handleTest(row) {
       this.testExperiment = row
       this.testResult = null
       this.testRequest = { requestKey: '', requestTime: '' }
-      this.testJson = this.defaultTestJson(row)
+      let schema = null
+      try {
+        schema = normalizeTestSchema(await getRuleTestSchema({ targetType: 'EXPERIMENT', targetId: row.id }))
+      } catch (e) { /* compatibility fallback for older servers */ }
+      this.testJson = schema && Object.keys(schema.sampleParams).length
+        ? JSON.stringify(schema.sampleParams, null, 2)
+        : this.defaultTestJson(row)
       this.testVisible = true
     },
     defaultTestJson(row) {

@@ -628,12 +628,12 @@ export default {
     },
     async loadExperimentRefs(projectId) {
       if (!projectId) {
-        this._projectId = null
+        this.projectIdForRefs = null
         this.projectRefs = []
         this.projectVars = []
         return
       }
-      this._projectId = projectId
+      this.projectIdForRefs = projectId
       await this.refreshProjectRefs()
     },
     onRoutingModeChange(mode) {

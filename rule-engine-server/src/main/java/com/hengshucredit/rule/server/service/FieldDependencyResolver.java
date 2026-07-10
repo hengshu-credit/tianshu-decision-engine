@@ -4,6 +4,7 @@ import com.hengshucredit.rule.model.dto.ResolutionPlan;
 import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -39,6 +40,9 @@ public class FieldDependencyResolver {
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
 
+    @Resource
+    private RuleExperimentService experimentService;
+
     public ResolutionPlan resolve(RuleTestSchemaRequest request) {
         if (request == null || !hasText(request.getTargetType())) {
             throw new IllegalArgumentException("targetType不能为空");
@@ -52,6 +56,9 @@ public class FieldDependencyResolver {
         }
         if ("VARIABLE".equals(targetType)) {
             return resolveVariable(request);
+        }
+        if ("EXPERIMENT".equals(targetType)) {
+            return resolveExperiment(request);
         }
         throw new IllegalArgumentException("不支持的targetType: " + request.getTargetType());
     }
@@ -76,8 +83,17 @@ public class FieldDependencyResolver {
             outputs = fields.getOutputFields();
         } else {
             requireTargetId(definitionId);
-            inputs = definitionService.listInputFields(definitionId);
-            outputs = definitionService.listOutputFields(definitionId);
+            RuleDefinition definition = definitionService.getById(definitionId);
+            RuleDefinitionContent content = definitionService.getContent(definitionId);
+            if (definition != null && content != null && hasText(content.getModelJson())) {
+                RuleFieldAnalyzer.ResolvedFields fields = ruleFieldAnalyzer.resolveFields(
+                        definitionId, content.getModelJson(), definition.getModelType(), definition.getProjectId());
+                inputs = fields.getInputFields();
+                outputs = fields.getOutputFields();
+            } else {
+                inputs = definitionService.listInputFields(definitionId);
+                outputs = definitionService.listOutputFields(definitionId);
+            }
         }
         return planFromRuleFields(inputs, outputs);
     }
@@ -131,6 +147,13 @@ public class FieldDependencyResolver {
             plan.setRuntimeNodes(Collections.singletonList(variableField));
         }
         return plan;
+    }
+
+    private ResolutionPlan resolveExperiment(RuleTestSchemaRequest request) {
+        Long experimentId = request.getTargetId();
+        requireTargetId(experimentId);
+        RuleFieldAnalyzer.ResolvedFields fields = experimentService.resolveTestFields(experimentId);
+        return planFromRuleFields(fields.getInputFields(), fields.getOutputFields());
     }
 
     private ResolutionPlan planFromRuleFields(List<RuleDefinitionInputField> inputs,

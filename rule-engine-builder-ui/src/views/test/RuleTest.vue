@@ -119,7 +119,7 @@
 
             <div style="margin-bottom: 16px;">
               <div class="result-section-title">返回结果</div>
-              <pre class="result-pre">{{ formatJson(result.result) }}</pre>
+              <pre class="result-pre">{{ formatJson(result.output) }}</pre>
             </div>
 
             <div v-if="result.traces && result.traces.length > 0">
@@ -158,13 +158,15 @@
 </template>
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions, executeRule, getContent, listInputFields, refreshFields } from '@/api/definition'
+import { listDefinitions, executeRule, getContent, listInputFields, refreshFields, getRuleTestSchema } from '@/api/definition'
 import { listVariablesByProject, getVariableOptions, listVariables } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject, getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
+import { normalizeTestResult } from '@/utils/testResult'
+import { normalizeTestSchema, schemaFieldsToTestFields, flattenSchemaSample } from '@/utils/testSchema'
 
 export default {
   name: 'RuleTest',
@@ -203,8 +205,8 @@ export default {
       return JSON.stringify(this.buildParamMap())
     },
     outputResultJson: function () {
-      if (!this.result || this.result.result === null || this.result.result === undefined) return ''
-      return JSON.stringify(this.result.result)
+      if (!this.result || !this.result.hasOutput) return ''
+      return JSON.stringify(this.result.output)
     }
   },
   methods: {
@@ -320,6 +322,26 @@ export default {
     async loadVariables() {
       if (!this.selectedRule) return  // 未选择规则，提前返回
       try {
+        try {
+          var schema = normalizeTestSchema(await getRuleTestSchema({ targetType: 'RULE', targetId: this.selectedRuleId }))
+          if (schema.inputs.length || Object.keys(schema.sampleParams).length) {
+            var schemaFields = schemaFieldsToTestFields(schema.inputs)
+            var schemaValues = flattenSchemaSample(schemaFields, schema.sampleParams)
+            this.params = schemaFields.map(function (field) {
+              return {
+                key: field.fieldName,
+                label: field.fieldLabel,
+                value: schemaValues[field.fieldName],
+                type: field.fieldType,
+                refType: field.refType || '',
+                example: field.exampleValue || '',
+                fromVar: true,
+                options: field.validValues || []
+              }
+            })
+            return
+          }
+        } catch (e) { /* compatibility fallback for older servers */ }
         var fields = await this.loadInputFieldsFromServer()
         if (fields.length > 0) {
           await this.applyInputFieldsToParams(fields)
@@ -913,7 +935,7 @@ export default {
       this.result = null
       try {
         const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap })
-        this.result = this.unwrapResponse(res)
+        this.result = normalizeTestResult(res)
         // 执行完成后切换到追踪树标签页
         this.traceTab = 'tree'
       } catch (e) {

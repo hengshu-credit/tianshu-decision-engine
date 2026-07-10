@@ -120,6 +120,9 @@
         <designer-test-dialog
       :visible.sync="testVisible"
       :definition-id="definitionId"
+      :project-id="projectIdForRefs"
+      model-type="RULE_SET"
+      :model-json-provider="serializeModel"
       :params-template="testParamsTemplate"
     />
 

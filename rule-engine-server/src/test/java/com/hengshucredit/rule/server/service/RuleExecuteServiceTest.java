@@ -151,6 +151,11 @@ public class RuleExecuteServiceTest {
         }
 
         @Override
+        public void enter(String ruleCode, Long projectId, String projectCode,
+                          Map<String, Object> context, boolean testMode) {
+        }
+
+        @Override
         public void exit() {
         }
     }

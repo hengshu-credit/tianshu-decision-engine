@@ -5,7 +5,7 @@ import lombok.Data;
 /** 统一测试字段结构请求。 */
 @Data
 public class RuleTestSchemaRequest {
-    /** RULE / MODEL / VARIABLE */
+    /** RULE / MODEL / VARIABLE / EXPERIMENT */
     private String targetType;
     private Long targetId;
     private Long projectId;

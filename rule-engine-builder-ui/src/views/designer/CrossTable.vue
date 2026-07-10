@@ -190,6 +190,9 @@
     <designer-test-dialog
       :visible.sync="testVisible"
       :definition-id="definitionId"
+      :project-id="projectIdForRefs"
+      model-type="CROSS"
+      :model-json="model"
       :params-template="testParamsTemplate"
     />
   </div>

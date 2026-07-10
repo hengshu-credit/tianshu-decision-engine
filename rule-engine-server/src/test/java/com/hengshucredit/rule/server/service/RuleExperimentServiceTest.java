@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
+import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -11,6 +13,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -103,6 +106,89 @@ public class RuleExperimentServiceTest {
         throw new AssertionError("expected invalid test ratio to be rejected");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void experimentParametersUseTheSharedTypeBinderBeforeRouting() throws Exception {
+        RuleExperimentService typedService = new RuleExperimentService() {
+            @Override
+            public RuleFieldAnalyzer.ResolvedFields resolveTestFields(Long experimentId) {
+                RuleDefinitionInputField age = new RuleDefinitionInputField();
+                age.setScriptName("age");
+                age.setFieldType("INTEGER");
+                return new RuleFieldAnalyzer.ResolvedFields(
+                        Collections.singletonList(age), Collections.emptyList());
+            }
+        };
+        setField(typedService, "executionParameterBinder", new ExecutionParameterBinder());
+        RuleExperiment experiment = experiment("CONDITION", "CONDITION");
+        experiment.setId(3L);
+        Map<String, Object> params = new HashMap<>();
+        params.put("age", "22");
+
+        Method method = RuleExperimentService.class.getDeclaredMethod(
+                "bindExperimentParams", RuleExperiment.class, Map.class);
+        method.setAccessible(true);
+        Map<String, Object> bound = (Map<String, Object>) method.invoke(typedService, experiment, params);
+
+        assertEquals(Integer.valueOf(22), bound.get("age"));
+    }
+
+    @Test
+    public void resolveTestFieldsMergesRuleConditionsAndRequestKey() throws Exception {
+        RuleExperiment experiment = experiment("CONDITION", "CONDITION");
+        experiment.setId(3L);
+        experiment.setProjectId(1L);
+        experiment.setRequestKeyPath("request.id");
+        experiment.setGroups(Collections.singletonList(
+                group("champion", "CHAMPION", 100, 0, "customer.level == \"A\"", null)));
+        RuleExperimentService resolverService = new RuleExperimentService() {
+            @Override
+            public RuleExperiment getDetail(Long id) {
+                return experiment;
+            }
+
+            @Override
+            public List<Long> listReferencedDefinitionIds(Long experimentId) {
+                return Collections.singletonList(7L);
+            }
+        };
+        setField(resolverService, "definitionService", new RuleDefinitionService() {
+            @Override
+            public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+                RuleDefinitionInputField input = new RuleDefinitionInputField();
+                input.setScriptName("score_f1_fields.HYBASE_X115");
+                input.setFieldType("DOUBLE");
+                return Collections.singletonList(input);
+            }
+
+            @Override
+            public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+                RuleDefinitionOutputField output = new RuleDefinitionOutputField();
+                output.setScriptName("decision");
+                return Collections.singletonList(output);
+            }
+        });
+        setField(resolverService, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+                RuleDefinitionInputField input = new RuleDefinitionInputField();
+                input.setScriptName("customer.level");
+                input.setFieldType("STRING");
+                return new ResolvedFields(Collections.singletonList(input), Collections.emptyList());
+            }
+        });
+
+        RuleFieldAnalyzer.ResolvedFields fields = resolverService.resolveTestFields(3L);
+
+        List<String> paths = new ArrayList<>();
+        for (RuleDefinitionInputField field : fields.getInputFields()) paths.add(field.getScriptName());
+        assertEquals(3, paths.size());
+        assertEquals("score_f1_fields.HYBASE_X115", paths.get(0));
+        assertEquals("customer.level", paths.get(1));
+        assertEquals("request.id", paths.get(2));
+        assertEquals("decision", fields.getOutputFields().get(0).getScriptName());
+    }
+
     private RuleExperiment experiment(String routingMode, String testRoutingMode) {
         RuleExperiment experiment = new RuleExperiment();
         experiment.setExperimentCode("EXP_TEST");
@@ -149,6 +235,12 @@ public class RuleExperimentServiceTest {
                 RuleExperiment.class, List.class);
         method.setAccessible(true);
         method.invoke(service, experiment, groups);
+    }
+
+    private void setField(Object target, String name, Object value) throws Exception {
+        Field field = RuleExperimentService.class.getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     private RuleExperimentGroup routeGroup(Object routeChoice) throws Exception {

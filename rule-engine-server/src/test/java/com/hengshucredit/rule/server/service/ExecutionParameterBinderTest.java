@@ -57,6 +57,34 @@ public class ExecutionParameterBinderTest {
         }
     }
 
+    @Test
+    public void bindsBooleanLongArrayAndObjectWithTheSameNestedPathRules() {
+        Map<String, Object> bound = binder.bindRuleInputs(Arrays.asList(
+                ruleField("enabled", "BOOLEAN"),
+                ruleField("request.sequence", "LONG"),
+                ruleField("tags", "ARRAY"),
+                ruleField("profile", "OBJECT")
+        ), JSON.parseObject("{\"enabled\":\"false\",\"request\":{\"sequence\":\"900719925474099\"},"
+                + "\"tags\":\"[\\\"A\\\",\\\"B\\\"]\",\"profile\":\"{\\\"level\\\":\\\"A\\\"}\"}"));
+
+        assertEquals(Boolean.FALSE, bound.get("enabled"));
+        assertEquals(Long.valueOf(900719925474099L), ((Map<?, ?>) bound.get("request")).get("sequence"));
+        assertEquals(Arrays.asList("A", "B"), bound.get("tags"));
+        assertEquals("A", ((Map<?, ?>) bound.get("profile")).get("level"));
+    }
+
+    @Test
+    public void rejectsAmbiguousBooleanStrings() {
+        try {
+            binder.bindRuleInputs(Arrays.asList(ruleField("enabled", "BOOLEAN")),
+                    JSON.parseObject("{\"enabled\":\"yes\"}"));
+            fail("expected invalid boolean error");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("enabled"));
+            assertTrue(e.getMessage().contains("BOOLEAN"));
+        }
+    }
+
     private static RuleDefinitionInputField ruleField(String path, String type) {
         RuleDefinitionInputField field = new RuleDefinitionInputField();
         field.setScriptName(path);

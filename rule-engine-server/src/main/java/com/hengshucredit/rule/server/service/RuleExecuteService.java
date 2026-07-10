@@ -85,7 +85,7 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams);
+        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams, true);
         RuleResult result;
         try {
             result = qlExpressEngine.execute(fullScript, executeParams, true);

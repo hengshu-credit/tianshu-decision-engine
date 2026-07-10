@@ -107,6 +107,7 @@ jest.mock('@/api/definition', () => ({
   compareVersions: jest.fn(),
   rollbackVersion: jest.fn(),
   executeRule: jest.fn(),
+  getRuleTestSchema: jest.fn(),
   saveScript: jest.fn(),
   updateScriptMode: jest.fn(),
   validateScript: jest.fn(),

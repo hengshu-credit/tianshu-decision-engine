@@ -230,11 +230,19 @@ public class ActionDataCompiler {
 
     private static String compileRuleCall(JSONObject b, int indent, VarContext varContext) {
         String ruleCode = b.getString("ruleCode");
-        if (empty(ruleCode)) return "";
+        Long ruleId = b.getLong("ruleId");
+        if (ruleId == null && empty(ruleCode)) return "";
         String outputField = b.getString("outputField");
-        String call = empty(outputField)
-                ? "executeRule(" + quoteString(ruleCode) + ")"
-                : "executeRuleField(" + quoteString(ruleCode) + ", " + quoteString(outputField) + ")";
+        String call;
+        if (ruleId != null) {
+            call = empty(outputField)
+                    ? "executeRuleById(" + quoteString(String.valueOf(ruleId)) + ")"
+                    : "executeRuleFieldById(" + quoteString(String.valueOf(ruleId)) + ", " + quoteString(outputField) + ")";
+        } else {
+            call = empty(outputField)
+                    ? "executeRule(" + quoteString(ruleCode) + ")"
+                    : "executeRuleField(" + quoteString(ruleCode) + ", " + quoteString(outputField) + ")";
+        }
         String target = b.getString("target");
         if (empty(target)) {
             return pad(indent) + call;

@@ -83,6 +83,19 @@ public class ActionDataCompilerTest {
     }
 
     @Test
+    public void compileRuleCallUsesStableRuleIdWhenAvailable() {
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"rule-call\",\"ruleId\":1,\"ruleCode\":\"JCZR\"},"
+                + "{\"type\":\"rule-call\",\"target\":\"score\",\"ruleId\":2,\"ruleCode\":\"SCORE\",\"outputField\":\"score\"}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData);
+
+        assertTrue(script.contains("executeRuleById(\"1\")"));
+        assertTrue(script.contains("score = executeRuleFieldById(\"2\", \"score\")"));
+    }
+
+    @Test
     public void switchBlockExecutesMatchedCaseAndDefault() {
         JSONArray actionData = JSON.parseArray("["
                 + "{\"type\":\"switch-block\",\"matchVar\":\"grade\",\"cases\":["

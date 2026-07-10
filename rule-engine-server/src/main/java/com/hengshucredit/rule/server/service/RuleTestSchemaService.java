@@ -30,7 +30,8 @@ public class RuleTestSchemaService {
         for (ResolvedField field : plan.getExternalInputs()) {
             String path = firstText(field.getScriptName(), field.getCode());
             if (path != null) {
-                setPathValue(params, path, sampleValue(field));
+                String conflict = setPathValue(params, path, sampleValue(field));
+                if (conflict != null) schema.getDiagnostics().add(conflict);
             }
         }
         schema.setSampleParams(params);
@@ -51,13 +52,28 @@ public class RuleTestSchemaService {
     }
 
     @SuppressWarnings("unchecked")
-    private void setPathValue(Map<String, Object> target, String path, Object value) {
+    private String setPathValue(Map<String, Object> target, String path, Object value) {
         String[] parts = path.split("\\.");
+        Map<String, Object> probe = target;
+        for (int i = 0; i < parts.length - 1; i++) {
+            String part = parts[i].trim();
+            if (part.isEmpty()) continue;
+            Object child = probe.get(part);
+            if (child == null) break;
+            if (!(child instanceof Map)) {
+                return "测试参数路径冲突[" + path + "]: 父路径[" + part + "]已经是普通值";
+            }
+            probe = (Map<String, Object>) child;
+        }
         Map<String, Object> current = target;
         for (int i = 0; i < parts.length; i++) {
             String part = parts[i].trim();
             if (part.isEmpty()) continue;
             if (i == parts.length - 1) {
+                Object existing = current.get(part);
+                if (existing != null && (existing instanceof Map) != (value instanceof Map)) {
+                    return "测试参数路径冲突[" + path + "]: 同一路径同时声明为对象和普通值";
+                }
                 current.put(part, value);
             } else {
                 Object child = current.get(part);
@@ -68,6 +84,7 @@ public class RuleTestSchemaService {
                 current = (Map<String, Object>) child;
             }
         }
+        return null;
     }
 
     private String firstText(String... values) {

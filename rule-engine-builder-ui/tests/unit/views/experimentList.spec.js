@@ -1,6 +1,6 @@
 import ExperimentList from '@/views/experiment/ExperimentList.vue'
 import { executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
-import { listDefinitions } from '@/api/definition'
+import { getRuleTestSchema, listDefinitions } from '@/api/definition'
 
 function createContext(overrides = {}) {
   const ctx = {
@@ -208,12 +208,18 @@ describe('ExperimentList', () => {
     expect(ctx.testResult.tags).toEqual(['champion'])
   })
 
-  test('handleTest fills executable demo params for browser testing', () => {
+  test('handleTest fills executable demo params for browser testing', async () => {
     const ctx = createContext()
+    const row = { id: 9, experimentCode: 'EXP_DEMO' }
+    const sampleParams = JSON.parse(ctx.defaultTestJson(row))
+    sampleParams.score_f1_fields = { HYBASE_X115: 0 }
+    getRuleTestSchema.mockResolvedValueOnce({ data: { inputs: [], sampleParams } })
 
-    ctx.handleTest({ experimentCode: 'EXP_DEMO' })
+    await ctx.handleTest(row)
 
     const params = JSON.parse(ctx.testJson)
+    expect(getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'EXPERIMENT', targetId: 9 })
+    expect(params.score_f1_fields.HYBASE_X115).toBe(0)
     expect(params.requestId).toBe('EXP_DEMO_REQ_001')
     expect(params.taxpayerType).toBe('一般纳税人')
     expect(params.goodsCategory).toBe('货物')

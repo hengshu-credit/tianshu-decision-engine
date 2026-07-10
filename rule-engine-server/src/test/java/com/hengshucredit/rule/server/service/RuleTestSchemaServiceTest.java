@@ -46,6 +46,26 @@ public class RuleTestSchemaServiceTest {
         assertFalse(schema.getSampleParams().containsKey("DAY"));
     }
 
+    @Test
+    public void reportsParentChildPathConflictsWithoutOverwritingExistingValue() {
+        ResolutionPlan plan = new ResolutionPlan();
+        ResolvedField parent = field("request", "STRING", "INPUT");
+        parent.setDefaultValue("raw-request");
+        plan.setExternalInputs(Arrays.asList(parent, field("request.id", "STRING", "DATA_OBJECT")));
+        RuleTestSchemaService service = new RuleTestSchemaService();
+        ReflectionTestUtils.setField(service, "fieldDependencyResolver", new FieldDependencyResolver() {
+            @Override
+            public ResolutionPlan resolve(RuleTestSchemaRequest request) {
+                return plan;
+            }
+        });
+
+        RuleTestSchema schema = service.build(new RuleTestSchemaRequest());
+
+        assertEquals("raw-request", schema.getSampleParams().get("request"));
+        assertTrue(schema.getDiagnostics().stream().anyMatch(message -> message.contains("request.id")));
+    }
+
     private static ResolvedField field(String path, String type, String sourceType) {
         ResolvedField field = new ResolvedField();
         field.setCode(path);

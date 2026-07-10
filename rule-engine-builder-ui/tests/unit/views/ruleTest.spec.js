@@ -73,6 +73,8 @@ function mockExecutionResult() {
     success: true,
     executeTimeMs: 15,
     result: { taxRate: 0.03 },
+    hasOutput: true,
+    output: { taxRate: 0.03 },
     traces: [
       {
         input: { taxpayerType: '小规模纳税人', goodsCategory: '服务' },
@@ -413,6 +415,21 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     expect(varCodes).toEqual(['taxpayerType'])
   })
 
+  test('统一测试结构直接生成嵌套规则参数', async () => {
+    wrapper.vm.selectedRuleId = 7
+    wrapper.vm.selectedRule = { id: 7, ruleCode: 'JCL_TEST', modelType: 'FLOW', projectId: 1 }
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
+      inputs: [{ refId: 25, refType: 'DATA_OBJECT', scriptName: 'score_f1_fields.HYBASE_X115', label: '评分字段/HYBASE_X115', valueType: 'DOUBLE' }],
+      sampleParams: { score_f1_fields: { HYBASE_X115: 0 } }
+    } })
+
+    await wrapper.vm.loadVariables()
+
+    expect(definitionApi.getRuleTestSchema).toHaveBeenCalledWith({ targetType: 'RULE', targetId: 7 })
+    expect(wrapper.vm.params).toEqual([expect.objectContaining({ key: 'score_f1_fields.HYBASE_X115', value: 0, type: 'DOUBLE' })])
+    expect(wrapper.vm.buildParamMap()).toEqual({ score_f1_fields: { HYBASE_X115: 0 } })
+  })
+
   test('未选择规则时 loadVariables 不调用 API', async () => {
     wrapper.vm.selectedRule = null
     await wrapper.vm.loadVariables()
@@ -474,6 +491,13 @@ describe('RuleTest — 执行与结果展示', () => {
     expect(wrapper.vm.result).not.toBeNull()
     expect(wrapper.vm.result.success).toBe(true)
     expect(wrapper.vm.result.result.taxRate).toBe(0.03)
+  })
+
+  test('handleExecute 保留 false 输出', async () => {
+    definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: false } })
+    wrapper.vm.selectedRuleId = 4
+    await wrapper.vm.handleExecute()
+    expect(wrapper.vm.result).toMatchObject({ hasOutput: true, output: false })
   })
 
   test('handleExecute 失败时设置错误信息到 result', async () => {
