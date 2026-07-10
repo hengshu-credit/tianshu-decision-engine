@@ -74,7 +74,7 @@ public class ActionDataCompiler {
                   .append(quoteString(rm)).append(")");
             }
         }
-        return sb.toString();
+        return appendRuntimeSync(sb.toString(), resolvedTarget, indent);
     }
 
     private static String compileIfBlock(JSONObject b, int indent, VarContext varContext) {
@@ -141,7 +141,7 @@ public class ActionDataCompiler {
                     String argRefType = fieldRefType(ref, "arg");
                     ab.append(resolveVar(argVarId, argRefType, arg, varContext));
                 } else {
-                    ab.append(arg);
+                    ab.append(ActionOperandCompiler.compileLiteral(arg));
                 }
             }
         }
@@ -149,7 +149,11 @@ public class ActionDataCompiler {
         String target = b.getString("target");
         Long targetVarId = fieldVarId(b, "target");
         String targetRefType = fieldRefType(b, "target");
-        return pad(indent) + (!empty(target) ? resolveVar(targetVarId, targetRefType, target, varContext) + " = " + call : call);
+        if (empty(target)) {
+            return pad(indent) + call;
+        }
+        String resolvedTarget = resolveVar(targetVarId, targetRefType, target, varContext);
+        return appendRuntimeSync(pad(indent) + resolvedTarget + " = " + call, resolvedTarget, indent);
     }
 
     private static String compileForeach(JSONObject b, int indent, VarContext varContext) {
@@ -179,7 +183,8 @@ public class ActionDataCompiler {
                 b.getString("condVarType"), op, b.getString("condValue"), false);
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
-        return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv);
+        String resolvedTarget = resolveVar(targetVarId, targetRefType, target, varContext);
+        return appendRuntimeSync(pad(indent) + resolvedTarget + " = " + cond + " ? " + (empty(tv) ? "\"\"" : tv) + " : " + (empty(fv) ? "\"\"" : fv), resolvedTarget, indent);
     }
 
     private static String compileInCheck(JSONObject b, int indent, VarContext varContext) {
@@ -203,7 +208,8 @@ public class ActionDataCompiler {
         }
         String tv = b.getString("trueValue");
         String fv = b.getString("falseValue");
-        return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = " + resolveVar(checkVarId, checkRefType, checkVar, varContext) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv);
+        String resolvedTarget = resolveVar(targetVarId, targetRefType, target, varContext);
+        return appendRuntimeSync(pad(indent) + resolvedTarget + " = " + resolveVar(checkVarId, checkRefType, checkVar, varContext) + " in [" + vb + "] ? " + (empty(tv) ? "true" : tv) + " : " + (empty(fv) ? "false" : fv), resolvedTarget, indent);
     }
 
     private static String compileTemplateStr(JSONObject b, int indent, VarContext varContext) {
@@ -218,7 +224,8 @@ public class ActionDataCompiler {
             if ("expr".equals(p.getString("type"))) sb.append("${").append(p.getString("content")).append("}");
             else sb.append(p.getString("content"));
         }
-        return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = \"" + sb.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        String resolvedTarget = resolveVar(targetVarId, targetRefType, target, varContext);
+        return appendRuntimeSync(pad(indent) + resolvedTarget + " = \"" + sb.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\"", resolvedTarget, indent);
     }
 
     private static String compileRuleCall(JSONObject b, int indent, VarContext varContext) {
@@ -234,7 +241,8 @@ public class ActionDataCompiler {
         }
         Long targetVarId = fieldVarId(b, "target");
         String targetRefType = fieldRefType(b, "target");
-        return pad(indent) + resolveVar(targetVarId, targetRefType, target, varContext) + " = " + call;
+        String resolvedTarget = resolveVar(targetVarId, targetRefType, target, varContext);
+        return appendRuntimeSync(pad(indent) + resolvedTarget + " = " + call, resolvedTarget, indent);
     }
 
     private static String compileActions(JSONArray actions, int indent, VarContext varContext) {
@@ -319,7 +327,15 @@ public class ActionDataCompiler {
     }
 
     private static String quoteString(String value) {
-        return "\"" + (value == null ? "" : value).replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        return ActionOperandCompiler.quoteString(value);
+    }
+
+    private static String appendRuntimeSync(String code, String resolvedTarget, int indent) {
+        if (empty(code) || empty(resolvedTarget)) {
+            return code;
+        }
+        return code + "\n" + pad(indent) + "setRuntimeValue("
+                + quoteString(resolvedTarget) + ", " + resolvedTarget + ")";
     }
 
     private static boolean empty(String s) { return s == null || s.trim().isEmpty(); }

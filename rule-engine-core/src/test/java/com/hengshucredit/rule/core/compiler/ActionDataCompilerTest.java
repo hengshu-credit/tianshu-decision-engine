@@ -49,6 +49,24 @@ public class ActionDataCompilerTest {
     }
 
     @Test
+    public void compileFunctionTreatsUnreferencedIdentifierAsLiteralAndSyncsTarget() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(6L, "idcard_no");
+        varIdMap.put(8L, "credit_time");
+        VarContext context = new VarContext(varIdMap);
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"func-call\",\"target\":\"age\",\"funcName\":\"idCardAge\","
+                + "\"args\":[\"idcard_no\",\"credit_time\",\"DAY\"],"
+                + "\"_argRefs\":[{\"_varId\":6},{\"_varId\":8},null]}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData, context);
+
+        assertTrue(script.contains("age = idCardAge(idcard_no, credit_time, \"DAY\")"));
+        assertTrue(script.contains("setRuntimeValue(\"age\", age)"));
+    }
+
+    @Test
     public void compileRuleCallSupportsWholeResultAndOutputField() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(5L, "risk.decision");
