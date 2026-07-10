@@ -153,6 +153,21 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void apiVariableCollectsParamMappingAndApiConfigDependenciesTogether() throws Exception {
+        RuleVariable apiScore = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.score\"}");
+        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
+        apiConfig.setId(7L);
+        apiConfig.setQueryConfig("{\"customer\":\"${customerId}\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(apiScore),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), null, apiConfig);
+
+        assertEquals(new LinkedHashSet<>(Arrays.asList("requestId", "customerId")),
+                resolver.collectVariableDependencies(apiScore));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void modelOutputExecutesWithResolvedSourceInputs() throws Exception {
         RuleVariable hyField = variable("HY001", "DB",

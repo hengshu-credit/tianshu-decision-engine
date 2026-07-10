@@ -164,6 +164,7 @@ import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject, getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
+import { sampleValueForVarType } from '@/utils/testParamTemplate'
 
 export default {
   name: 'RuleTest',
@@ -367,7 +368,7 @@ export default {
           var param = {
             key: v.varCode,
             label: v.varLabel,
-            value: v.defaultValue || '',
+            value: this.sampleValueForInputField(v, v.varType),
             type: v.varType,
             example: v.exampleValue,
             fromVar: true,
@@ -398,7 +399,7 @@ export default {
             var vparam = {
               key: vCode,
               label: vv.varLabel || vCode,
-              value: vv.defaultValue || '',
+              value: this.sampleValueForInputField(vv, vv.varType),
               type: vv.varType,
               example: vv.exampleValue,
               fromVar: true,
@@ -440,16 +441,19 @@ export default {
     },
     async applyInputFieldsToParams(fields) {
       var existingKeys = new Set(this.params.map(function (p) { return p.key }))
+      var modelInputKeyMap = await this.buildModelInputFieldKeyMap()
       var loadedCount = 0
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i]
-        var key = f.scriptName || f.fieldName
+        var rawKey = f.scriptName || f.fieldName
+        var key = modelInputKeyMap[rawKey] || rawKey
         if (!key || existingKeys.has(key)) continue
+        var fieldType = await this.resolveInputFieldType(f)
         var param = {
           key: key,
           label: f.fieldLabel || f.fieldName || key,
-          value: f.defaultValue || '',
-          type: await this.resolveInputFieldType(f),
+          value: this.sampleValueForInputField(f, fieldType),
+          type: fieldType,
           refType: f.refType || '',
           example: '',
           fromVar: true,
@@ -486,6 +490,64 @@ export default {
         }
       } catch (e) { /* ignore */ }
       return fieldType
+    },
+    async buildModelInputFieldKeyMap() {
+      var map = {}
+      if (!this.selectedRule || !this.definitionModel) return map
+      var modelTexts = [JSON.stringify(this.definitionModel)]
+      var ruleIds = this.collectRuleCallIds(this.definitionModel)
+      for (var r = 0; r < ruleIds.length; r++) {
+        try {
+          var contentRes = await getContent(ruleIds[r])
+          var content = this.unwrapResponse(contentRes)
+          if (content && content.modelJson) modelTexts.push(content.modelJson)
+        } catch (e) { /* ignore */ }
+      }
+      var modelText = modelTexts.join('\n')
+      var pid = this.selectedRule.projectId || 0
+      try {
+        var res = await listAllModelsByProject(pid)
+        var data = this.unwrapResponse(res)
+        var models = Array.isArray(data) ? data : (data && data.records ? data.records : [])
+        for (var i = 0; i < models.length; i++) {
+          var model = models[i]
+          var modelCode = model && model.modelCode
+          if (!modelCode || modelText.indexOf(modelCode) < 0) continue
+          var detailRes = await getModel(model.id)
+          var detail = this.unwrapResponse(detailRes)
+          var fields = detail && Array.isArray(detail.inputFields) ? detail.inputFields : []
+          fields.forEach(function (field) {
+            if (!field || field.status === 0) return
+            var scriptName = field.scriptName || field.fieldName
+            if (scriptName && !map[scriptName]) {
+              map[scriptName] = modelCode + '_fields.' + scriptName
+            }
+          })
+        }
+      } catch (e) { /* ignore */ }
+      return map
+    },
+    collectRuleCallIds(value, out) {
+      var ids = out || []
+      if (!value || typeof value !== 'object') return ids
+      if (Array.isArray(value)) {
+        value.forEach(item => this.collectRuleCallIds(item, ids))
+        return ids
+      }
+      if (value.type === 'rule-call' && value.ruleId && ids.indexOf(value.ruleId) < 0) {
+        ids.push(value.ruleId)
+      }
+      Object.keys(value).forEach(key => this.collectRuleCallIds(value[key], ids))
+      return ids
+    },
+    sampleValueForInputField(field, fieldType) {
+      if (field && field.exampleValue !== undefined && field.exampleValue !== null && field.exampleValue !== '') {
+        return field.exampleValue
+      }
+      if (field && field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+        return field.defaultValue
+      }
+      return sampleValueForVarType(fieldType || (field && (field.fieldType || field.varType)))
     },
     async loadAllRuleRefs() {
       var refs = []

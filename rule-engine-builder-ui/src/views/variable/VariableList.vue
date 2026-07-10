@@ -1780,21 +1780,54 @@ export default {
       if (row && row.varSource === 'API') {
         const savedSample = this.apiSavedSample(config.apiConfigId)
         if (savedSample) return this.formatJson(savedSample)
-        const mapping = config.paramMapping || this.apiInputConfig(config.apiConfigId)
+        const mapping = { ...this.apiInputConfig(config.apiConfigId), ...(config.paramMapping || {}) }
         Object.keys(mapping).forEach(key => {
           const paths = collectReferencePaths(mapping[key], { allowBarePath: true })
-          if (paths.length) paths.forEach(path => setPathValue(sample, path, sampleValueForVarType()))
-          else sample[key] = ''
+          if (paths.length) paths.forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
+          else sample[key] = this.sampleValueForPath(key)
         })
       } else if (row && row.varSource === 'DB') {
         const params = Array.isArray(config.params) ? config.params : []
         params.forEach(item => {
-          collectReferencePaths(item, { allowBarePath: true }).forEach(path => setPathValue(sample, path, ''))
+          collectReferencePaths(item, { allowBarePath: true }).forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
         })
       } else if (row && row.varSource === 'LIST') {
-        collectReferencePaths(config.queryField || config.queryPath || config.field, { allowBarePath: true }).forEach(path => setPathValue(sample, path, ''))
+        collectReferencePaths(config.queryField || config.queryPath || config.field, { allowBarePath: true }).forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
       }
       return this.formatJson(sample)
+    },
+    sampleValueForPath(path) {
+      const ref = this.findRefForPath(path)
+      if (ref && ref.exampleValue !== undefined && ref.exampleValue !== null && ref.exampleValue !== '') {
+        return ref.exampleValue
+      }
+      if (ref && ref.defaultValue !== undefined && ref.defaultValue !== null && ref.defaultValue !== '') {
+        return ref.defaultValue
+      }
+      return sampleValueForVarType(ref && (ref.varType || ref.fieldType))
+    },
+    findRefForPath(path) {
+      const text = String(path || '').replace(/^\$\./, '')
+      if (!text) return null
+      const parts = text.split('.').filter(Boolean)
+      const candidates = [text, parts[parts.length - 1]]
+      const vars = this.tableData || []
+      for (let i = 0; i < vars.length; i++) {
+        const v = vars[i]
+        if (candidates.indexOf(v.scriptName) >= 0 || candidates.indexOf(v.varCode) >= 0) return v
+      }
+      return this.findObjectFieldForPath(this.objectTree || [], candidates)
+    },
+    findObjectFieldForPath(rows, candidates) {
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i]
+        if (candidates.indexOf(row.scriptName) >= 0 || candidates.indexOf(row.varCode) >= 0 || candidates.indexOf(row.fieldName) >= 0) {
+          return row
+        }
+        const child = this.findObjectFieldForPath(row.children || [], candidates)
+        if (child) return child
+      }
+      return null
     },
     apiOption(apiConfigId) {
       return (this.apiConfigOptions || []).find(item => String(item.id) === String(apiConfigId)) || null

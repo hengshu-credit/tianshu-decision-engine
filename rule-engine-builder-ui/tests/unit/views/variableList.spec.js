@@ -390,6 +390,29 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.sourceInputFields(listRow)[0].field).toBe('request.mobile')
   })
 
+  test('API variable test template merges paramMapping and API config references', () => {
+    wrapper.vm.apiConfigOptions = [
+      {
+        id: 10001,
+        headerConfig: '{"age":"$.age"}',
+        bodyTemplate: '{"income":"${income}"}'
+      }
+    ]
+    const apiRow = {
+      varSource: 'API',
+      sourceConfig: JSON.stringify({
+        apiConfigId: 10001,
+        paramMapping: { requestId: '${requestId}' }
+      })
+    }
+
+    expect(JSON.parse(wrapper.vm.buildTestParamTemplate(apiRow))).toEqual({
+      age: '18',
+      income: 0,
+      requestId: ''
+    })
+  })
+
   test('buildVariablePayload 生成名单查询配置', async () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),

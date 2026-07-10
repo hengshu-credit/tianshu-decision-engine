@@ -362,7 +362,8 @@
 import * as api from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import { listAllModelsByProject } from '@/api/model'
+import { getModel, listAllModelsByProject } from '@/api/model'
+import { sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -407,6 +408,7 @@ export default {
       testMode: 'manual',
       testFields: [],
       testParams: {},
+      testFieldKeyMap: {},
       testJsonStr: '{}',
       jsonEdited: false,
       jsonError: '',
@@ -776,7 +778,8 @@ export default {
       return { NUMBER: '数字', INTEGER: '整数', DOUBLE: '浮点', STRING: '字符串', BOOLEAN: '布尔', ENUM: '枚举', DATE: '日期', OBJECT: '对象', LIST: '列表' }[t] || t || '—'
     },
     fieldParamKey(field) {
-      return (field && (field.scriptName || field.fieldName)) || ''
+      const rawKey = (field && (field.scriptName || field.fieldName)) || ''
+      return (this.testFieldKeyMap && this.testFieldKeyMap[rawKey]) || rawKey
     },
 
     // ========== 输入字段编辑 ==========
@@ -1005,6 +1008,7 @@ export default {
         const res = await api.getDefinitionDetail(this.rule.id)
         freshRule = (res.data !== undefined ? res.data : res) || freshRule
       } catch (e) { /* fallback */ }
+      this.testFieldKeyMap = await this.buildModelInputFieldKeyMap(freshRule)
 
       const testFields = (freshRule.inputFieldsJson || []).filter(f => f.status !== 0).map(f => {
         if (f.validValues && typeof f.validValues === 'string') {
@@ -1014,23 +1018,8 @@ export default {
         return f
       })
 
-      const testParams = {}
-      testFields.forEach(f => {
-        const key = this.fieldParamKey(f)
-        if (f.defaultValue !== undefined && f.defaultValue !== null && f.defaultValue !== '') {
-          testParams[key] = f.defaultValue
-        } else if (f.fieldType === 'BOOLEAN') {
-          testParams[key] = false
-        } else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') {
-          testParams[key] = 0
-        } else {
-          testParams[key] = ''
-        }
-      })
-
-      const jsonObj = {}
-      testFields.forEach(f => { jsonObj[this.fieldParamKey(f)] = testParams[this.fieldParamKey(f)] })
-      const testJsonStr = JSON.stringify(jsonObj, null, 2)
+      const testParams = this.buildFlatTestParams(testFields)
+      const testJsonStr = JSON.stringify(this.buildNestedTestParams(testFields, testParams), null, 2)
 
       this.testFields = testFields
       this.testParams = testParams
@@ -1048,12 +1037,7 @@ export default {
       this.syncJsonToParams()
     },
     syncParamsToJson() {
-      const obj = {}
-      this.testFields.forEach(f => {
-        const key = this.fieldParamKey(f)
-        const val = this.testParams[key]
-        obj[key] = (val !== '' && val !== null) ? val : null
-      })
+      const obj = this.buildNestedTestParams(this.testFields, this.testParams)
       this.testJsonStr = JSON.stringify(obj, null, 2)
       this.jsonEdited = false
       this.jsonError = ''
@@ -1066,11 +1050,10 @@ export default {
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
-        const inputFieldNames = new Set(this.testFields.map(f => this.fieldParamKey(f)))
-        Object.keys(obj).forEach(k => {
-          if (inputFieldNames.has(k) && this.testParams[k] === undefined) {
-            this.testParams[k] = obj[k]
-          }
+        this.testFields.forEach(f => {
+          const key = this.fieldParamKey(f)
+          const value = this.readParamPath(obj, key)
+          if (value !== undefined) this.$set(this.testParams, key, value)
         })
         this.jsonError = ''
       } catch (e) { this.jsonError = 'JSON 格式错误: ' + e.message }
@@ -1086,8 +1069,7 @@ export default {
           return
         }
       } else {
-        params = { ...this.testParams }
-        Object.keys(params).forEach(k => { if (params[k] === '' || params[k] === null) delete params[k] })
+        params = this.buildNestedTestParams(this.testFields, this.testParams)
       }
       try {
         const res = await api.executeRule({ id: this.rule.id, params })
@@ -1103,19 +1085,113 @@ export default {
       }
     },
     handleClearParams() {
-      this.testParams = {}
-      this.testFields.forEach(f => {
-        const key = this.fieldParamKey(f)
-        if (f.fieldType === 'BOOLEAN') this.testParams[key] = false
-        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[key] = 0
-        else this.testParams[key] = ''
-      })
-      const jsonObj = {}
-      this.testFields.forEach(f => { jsonObj[this.fieldParamKey(f)] = this.testParams[this.fieldParamKey(f)] })
-      this.testJsonStr = JSON.stringify(jsonObj, null, 2)
+      this.testParams = this.buildFlatTestParams(this.testFields)
+      this.testJsonStr = JSON.stringify(this.buildNestedTestParams(this.testFields, this.testParams), null, 2)
       this.jsonEdited = false
       this.testResult = null
       this.jsonError = ''
+    },
+    async buildModelInputFieldKeyMap(rule) {
+      const map = {}
+      const currentRule = rule || this.rule
+      if (!currentRule || !currentRule.id) return map
+      const modelTexts = []
+      let modelText = currentRule.modelJson || ''
+      try {
+        const contentRes = await api.getContent(currentRule.id)
+        const content = contentRes && contentRes.data !== undefined ? contentRes.data : contentRes
+        if (content && content.modelJson) modelText = content.modelJson
+      } catch (e) { /* ignore */ }
+      if (modelText) modelTexts.push(modelText)
+      const ruleIds = this.collectRuleCallIds(this.parseJsonObject(modelText))
+      for (let r = 0; r < ruleIds.length; r++) {
+        try {
+          const contentRes = await api.getContent(ruleIds[r])
+          const content = contentRes && contentRes.data !== undefined ? contentRes.data : contentRes
+          if (content && content.modelJson) modelTexts.push(content.modelJson)
+        } catch (e) { /* ignore */ }
+      }
+      modelText = modelTexts.join('\n')
+      if (!modelText) return map
+      const projectId = currentRule.projectId || 0
+      try {
+        const res = await listAllModelsByProject(projectId)
+        const data = res && res.data !== undefined ? res.data : res
+        const models = Array.isArray(data) ? data : (data && data.records ? data.records : [])
+        for (let i = 0; i < models.length; i++) {
+          const model = models[i]
+          const modelCode = model && model.modelCode
+          if (!modelCode || modelText.indexOf(modelCode) < 0) continue
+          const detailRes = await getModel(model.id)
+          const detail = detailRes && detailRes.data !== undefined ? detailRes.data : detailRes
+          const fields = detail && Array.isArray(detail.inputFields) ? detail.inputFields : []
+          fields.forEach(field => {
+            if (!field || field.status === 0) return
+            const scriptName = field.scriptName || field.fieldName
+            if (scriptName && !map[scriptName]) {
+              map[scriptName] = modelCode + '_fields.' + scriptName
+            }
+          })
+        }
+      } catch (e) { /* ignore */ }
+      return map
+    },
+    collectRuleCallIds(value, out) {
+      const ids = out || []
+      if (!value || typeof value !== 'object') return ids
+      if (Array.isArray(value)) {
+        value.forEach(item => this.collectRuleCallIds(item, ids))
+        return ids
+      }
+      if (value.type === 'rule-call' && value.ruleId && ids.indexOf(value.ruleId) < 0) {
+        ids.push(value.ruleId)
+      }
+      Object.keys(value).forEach(key => this.collectRuleCallIds(value[key], ids))
+      return ids
+    },
+    parseJsonObject(text) {
+      if (!text) return null
+      try {
+        return JSON.parse(text)
+      } catch (e) {
+        return null
+      }
+    },
+    buildFlatTestParams(fields) {
+      const params = {}
+      ;(fields || []).forEach(f => {
+        const key = this.fieldParamKey(f)
+        if (key) params[key] = this.sampleValueForField(f)
+      })
+      return params
+    },
+    buildNestedTestParams(fields, flatParams) {
+      const obj = {}
+      ;(fields || []).forEach(f => {
+        const key = this.fieldParamKey(f)
+        if (!key) return
+        setPathValue(obj, key, flatParams[key])
+      })
+      return obj
+    },
+    sampleValueForField(field) {
+      if (field && field.exampleValue !== undefined && field.exampleValue !== null && field.exampleValue !== '') {
+        return field.exampleValue
+      }
+      if (field && field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
+        return field.defaultValue
+      }
+      return sampleValueForVarType(field && field.fieldType)
+    },
+    readParamPath(target, path) {
+      const parts = String(path || '').split('.').map(item => item.trim()).filter(Boolean)
+      if (!parts.length) return undefined
+      let current = target
+      for (let i = 0; i < parts.length; i++) {
+        if (!current || typeof current !== 'object' || !(parts[i] in current)) return undefined
+        current = current[parts[i]]
+      }
+      return current
     },
     formatResult(outputs) {
       if (typeof outputs === 'object') return JSON.stringify(outputs, null, 2)

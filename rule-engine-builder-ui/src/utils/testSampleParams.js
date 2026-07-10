@@ -2,11 +2,11 @@ import { collectReferencePaths, sampleValueForVarType } from '@/utils/testParamT
 
 export function sampleValueForRef(ref) {
   const variable = ref && ref.varObj ? ref.varObj : {}
-  if (variable.defaultValue !== undefined && variable.defaultValue !== null && variable.defaultValue !== '') {
-    return variable.defaultValue
-  }
   if (variable.exampleValue !== undefined && variable.exampleValue !== null && variable.exampleValue !== '') {
     return variable.exampleValue
+  }
+  if (variable.defaultValue !== undefined && variable.defaultValue !== null && variable.defaultValue !== '') {
+    return variable.defaultValue
   }
   const type = (ref && ref.varType) || variable.varType || 'STRING'
   return sampleValueForVarType(type)
@@ -201,6 +201,7 @@ function findRefByCode(projectRefs, code) {
 
 function appendExpandedSample(params, ref, code, projectRefs, visited) {
   if (!ref) return false
+  if (isConstantRef(ref)) return true
   if (ref.refType === 'MODEL_OUTPUT') return appendModelInputSamples(params, ref, projectRefs, visited)
   if (isLeafRef(ref)) {
     setParamPath(params, code || ref.refCode, sampleValueForRef(ref))
@@ -238,6 +239,11 @@ function isLeafRef(ref) {
   return ref.refType === 'DATA_OBJECT' || source === 'INPUT' || (!source && ref.refType !== 'MODEL_OUTPUT')
 }
 
+function isConstantRef(ref) {
+  const variable = ref && ref.varObj ? ref.varObj : {}
+  return ref.refType === 'CONSTANT' || (variable.varSource || ref.varSource) === 'CONSTANT'
+}
+
 function isComputedRef(ref) {
   const variable = ref && ref.varObj ? ref.varObj : {}
   return (variable.varSource || ref.varSource) === 'COMPUTED'
@@ -255,13 +261,11 @@ function dependencyPathsForRef(ref, projectRefs) {
 
   if (source === 'API') {
     addPaths(config.paramMapping)
-    if (!paths.length) {
-      addPaths(config.headerConfig)
-      addPaths(config.queryConfig)
-      addPaths(config.requestMapping)
-      addPaths(config.bodyTemplate)
-      addPaths(config.authApiConfig)
-    }
+    addPaths(config.headerConfig)
+    addPaths(config.queryConfig)
+    addPaths(config.requestMapping)
+    addPaths(config.bodyTemplate)
+    addPaths(config.authApiConfig)
   } else if (source === 'DB') {
     addPaths(config.params)
   } else if (source === 'LIST') {

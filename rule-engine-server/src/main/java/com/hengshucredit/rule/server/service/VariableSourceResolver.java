@@ -336,9 +336,7 @@ public class VariableSourceResolver {
         if ("API".equals(varSource)) {
             Object mapping = config.get("paramMapping");
             collectDependencyValues(mapping, dependencies);
-            if (parseNestedMap(mapping).isEmpty()) {
-                collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
-            }
+            collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
         } else if ("DB".equals(varSource)) {
             collectDependencyValues(config.get("params"), dependencies);
         } else if ("LIST".equals(varSource)) {

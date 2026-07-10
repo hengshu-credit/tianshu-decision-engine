@@ -108,7 +108,7 @@ public class RuleFieldAnalyzer {
             enrichFieldFromMeta(field, varMetaMap, existingInputVarMap, existingInputRefTypeMap);
             preparedInputFields.add(field);
         }
-        preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
+        preparedInputFields.addAll(loadRuleCallInputFields(modelJson));
 
         List<RuleDefinitionOutputField> preparedOutputFields = new ArrayList<>();
         for (RuleDefinitionOutputField field : outputFields) {
@@ -116,6 +116,8 @@ public class RuleFieldAnalyzer {
             enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
             preparedOutputFields.add(field);
         }
+        preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
+        preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
 
         // 删除旧字段
         inputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionInputField>()
@@ -414,6 +416,89 @@ public class RuleFieldAnalyzer {
         return result;
     }
 
+    private List<RuleDefinitionInputField> loadRuleCallInputFields(String modelJson) {
+        List<RuleDefinitionInputField> result = new ArrayList<>();
+        if (inputFieldMapper == null || modelJson == null || modelJson.isEmpty()) {
+            return result;
+        }
+        Set<Long> ruleIds = new LinkedHashSet<>();
+        collectRuleCallIds(parseObject(modelJson), ruleIds);
+        for (Long ruleId : ruleIds) {
+            List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionInputField>()
+                            .eq(RuleDefinitionInputField::getDefinitionId, ruleId)
+                            .and(w -> w.isNull(RuleDefinitionInputField::getStatus).or().eq(RuleDefinitionInputField::getStatus, 1))
+                            .orderByAsc(RuleDefinitionInputField::getSortOrder)
+                            .orderByAsc(RuleDefinitionInputField::getId));
+            if (fields == null) {
+                continue;
+            }
+            for (RuleDefinitionInputField field : fields) {
+                result.add(copyDefinitionInputField(field));
+            }
+        }
+        return result;
+    }
+
+    private void collectRuleCallIds(Object value, Set<Long> ruleIds) {
+        if (value instanceof JSONObject) {
+            JSONObject obj = (JSONObject) value;
+            if ("rule-call".equals(obj.getString("type")) && obj.getLong("ruleId") != null) {
+                ruleIds.add(obj.getLong("ruleId"));
+            }
+            for (String key : obj.keySet()) {
+                collectRuleCallIds(obj.get(key), ruleIds);
+            }
+        } else if (value instanceof JSONArray) {
+            JSONArray arr = (JSONArray) value;
+            for (int i = 0; i < arr.size(); i++) {
+                collectRuleCallIds(arr.get(i), ruleIds);
+            }
+        }
+    }
+
+    private RuleDefinitionInputField copyDefinitionInputField(RuleDefinitionInputField source) {
+        RuleDefinitionInputField field = new RuleDefinitionInputField();
+        field.setVarId(source.getVarId());
+        field.setRefType(source.getRefType());
+        field.setFieldName(source.getFieldName());
+        field.setFieldLabel(source.getFieldLabel());
+        field.setScriptName(source.getScriptName());
+        field.setFieldType(source.getFieldType());
+        field.setMissingValue(source.getMissingValue());
+        field.setDefaultValue(source.getDefaultValue());
+        field.setValidValues(source.getValidValues());
+        field.setTransformType(source.getTransformType());
+        field.setTransformParams(source.getTransformParams());
+        field.setStatus(source.getStatus());
+        return field;
+    }
+
+    private List<RuleDefinitionInputField> removeOutputFields(List<RuleDefinitionInputField> inputFields,
+            List<RuleDefinitionOutputField> outputFields) {
+        if (inputFields == null || inputFields.isEmpty() || outputFields == null || outputFields.isEmpty()) {
+            return inputFields;
+        }
+        Set<String> outputNames = new HashSet<>();
+        for (RuleDefinitionOutputField output : outputFields) {
+            String scriptName = trimToNull(output.getScriptName());
+            if (scriptName != null) {
+                outputNames.add(scriptName.toLowerCase());
+            }
+        }
+        if (outputNames.isEmpty()) {
+            return inputFields;
+        }
+        List<RuleDefinitionInputField> result = new ArrayList<>();
+        for (RuleDefinitionInputField input : inputFields) {
+            String scriptName = trimToNull(input.getScriptName());
+            if (scriptName == null || !outputNames.contains(scriptName.toLowerCase())) {
+                result.add(input);
+            }
+        }
+        return result;
+    }
+
     private void expandFieldRecursive(RuleDefinitionInputField field,
             Map<String, Map<String, Object>> varMetaMap,
             Set<String> seen, Set<String> visited,
@@ -422,6 +507,10 @@ public class RuleFieldAnalyzer {
         String refType = normalizeRefType(field.getRefType());
         Map<String, Object> meta = scriptName != null ? varMetaMap.get(scriptName.toLowerCase()) : null;
         String varSource = meta != null ? (String) meta.get("varSource") : null;
+
+        if ("CONSTANT".equals(refType) || "CONSTANT".equals(varSource)) {
+            return;
+        }
 
         // 防环：同一 (refType:scriptName) 只展开一次，避免变量/模型相互引用导致死循环
         String visitKey = (refType != null ? refType : "NONE") + ":" + (scriptName != null ? scriptName.toLowerCase() : "null");

@@ -81,4 +81,39 @@ describe('testSampleParams', () => {
       request: { idNo: 'ID001' }
     })
   })
+
+  test('sample params prefer example values and skip constants', () => {
+    const projectRefs = [
+      { refCode: 'mobile_no', refType: 'VARIABLE', varType: 'STRING', varObj: { varSource: 'INPUT', defaultValue: '13800000000', exampleValue: '14519144474' } },
+      { refCode: 'EMPTY_VALUE', refType: 'CONSTANT', varType: 'STRING', varObj: { varSource: 'CONSTANT', defaultValue: '' } }
+    ]
+
+    expect(buildSampleParamsFromCodes(['mobile_no', 'EMPTY_VALUE'], projectRefs)).toEqual({
+      mobile_no: '14519144474'
+    })
+  })
+
+  test('API source variables collect mapping and API request dependencies together', () => {
+    const projectRefs = [
+      { refCode: 'idcard_no', refType: 'VARIABLE', varType: 'STRING', varObj: { varSource: 'INPUT' } },
+      { refCode: 'clientAppName', refType: 'VARIABLE', varType: 'STRING', varObj: { varSource: 'INPUT' } },
+      {
+        refCode: 'bdzr_result',
+        refType: 'VARIABLE',
+        varType: 'OBJECT',
+        varObj: {
+          varSource: 'API',
+          sourceConfig: JSON.stringify({
+            paramMapping: { idNo: '$.idcard_no' },
+            queryConfig: { app: '${clientAppName}' }
+          })
+        }
+      }
+    ]
+
+    expect(buildSampleParamsFromCodes(['bdzr_result'], projectRefs)).toEqual({
+      idcard_no: '',
+      clientAppName: ''
+    })
+  })
 })

@@ -6,10 +6,12 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
@@ -360,6 +362,50 @@ public class RuleFieldAnalyzerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void constantsAreNotExpandedAsTestInputFields() throws Exception {
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        Map<String, Object> constantMeta = new HashMap<>();
+        constantMeta.put("varSource", "CONSTANT");
+        constantMeta.put("id", 10L);
+        constantMeta.put("refType", "CONSTANT");
+        varMetaMap.put("empty_value", constantMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField constantField = inputField("empty_value", "CONSTANT", "CONSTANT", 10L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(constantField), varMetaMap);
+
+        assertTrue("常量是直接值，不应生成测试入参字段", result.isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void ruleCallInputsAreMergedAndCurrentOutputsAreExcluded() throws Exception {
+        RuleDefinitionInputField age = inputField("age", "VARIABLE", "INPUT", 37L);
+        RuleDefinitionInputField scoreField = inputField("HYBASE_X115", "DATA_OBJECT", "DATA_OBJECT", 25L);
+        setField(analyzer, "inputFieldMapper", inputFieldMapper(Arrays.asList(age, scoreField)));
+
+        String json = "{\"nodes\":[{\"actionData\":[{\"type\":\"rule-call\",\"ruleId\":1}]}]}";
+        Method loadRuleCallInputs = RuleFieldAnalyzer.class.getDeclaredMethod("loadRuleCallInputFields", String.class);
+        loadRuleCallInputs.setAccessible(true);
+        List<RuleDefinitionInputField> calledInputs = (List<RuleDefinitionInputField>) loadRuleCallInputs.invoke(analyzer, json);
+        assertTrue(names(calledInputs).contains("age"));
+        assertTrue(names(calledInputs).contains("HYBASE_X115"));
+
+        RuleDefinitionOutputField output = new RuleDefinitionOutputField();
+        output.setScriptName("age");
+        Method removeOutputs = RuleFieldAnalyzer.class.getDeclaredMethod("removeOutputFields", List.class, List.class);
+        removeOutputs.setAccessible(true);
+        List<RuleDefinitionInputField> filtered = (List<RuleDefinitionInputField>) removeOutputs.invoke(
+                analyzer, calledInputs, java.util.Collections.singletonList(output));
+
+        assertFalse("当前规则已计算的中间变量不应作为测试入参", names(filtered).contains("age"));
+        assertTrue(names(filtered).contains("HYBASE_X115"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void cyclicDependenciesDoNotCauseInfiniteRecursion() throws Exception {
         setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
 
@@ -400,6 +446,13 @@ public class RuleFieldAnalyzerTest {
         meta.put("id", id);
         meta.put("refType", varSource);
         return meta;
+    }
+
+    private static RuleDefinitionInputFieldMapper inputFieldMapper(List<RuleDefinitionInputField> fields) {
+        return (RuleDefinitionInputFieldMapper) Proxy.newProxyInstance(
+                RuleDefinitionInputFieldMapper.class.getClassLoader(),
+                new Class<?>[]{RuleDefinitionInputFieldMapper.class},
+                (proxy, method, args) -> "selectList".equals(method.getName()) ? fields : null);
     }
 
     private static List<String> names(List<RuleDefinitionInputField> fields) {
