@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
@@ -16,9 +17,9 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayDeque;
-import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +47,9 @@ public class RuleRuntimeInvoker {
     @Resource
     private QLExpressEngine qlExpressEngine;
 
+    @Resource
+    private ExecutionParameterBinder executionParameterBinder;
+
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final ThreadLocal<ExecutionFrame> currentFrame = new ThreadLocal<>();
 
@@ -66,14 +70,16 @@ public class RuleRuntimeInvoker {
         ExecutionFrame frame = new ExecutionFrame();
         frame.projectId = projectId;
         frame.projectCode = projectCode;
-        frame.context = context == null ? Collections.emptyMap() : context;
+        frame.context = context == null ? new LinkedHashMap<>() : context;
         if (hasText(ruleCode)) {
             frame.stack.addLast(ruleCode);
         }
         currentFrame.set(frame);
+        RuntimeContextBridge.bind(this::writeRuntimeValue);
     }
 
     public void exit() {
+        RuntimeContextBridge.clear();
         currentFrame.remove();
     }
 
@@ -123,7 +129,9 @@ public class RuleRuntimeInvoker {
             if (!requiredNames.isEmpty()) {
                 options.setRequiredScriptNames(requiredNames);
             }
-            Map<String, Object> executeParams = variableSourceResolver.resolve(projectId, previousContext, options);
+            List<RuleDefinitionInputField> childFields = definitionService.listInputFields(published.getDefinitionId());
+            Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(childFields, previousContext);
+            Map<String, Object> executeParams = variableSourceResolver.resolve(projectId, boundParams, options);
             frame.projectId = projectId;
             frame.projectCode = projectCode;
             frame.context = executeParams;
@@ -183,6 +191,30 @@ public class RuleRuntimeInvoker {
         }
         RuleProject project = projectService.getById(projectId);
         return project == null ? null : project.getProjectCode();
+    }
+
+    @SuppressWarnings("unchecked")
+    private void writeRuntimeValue(String path, Object value) {
+        ExecutionFrame frame = currentFrame.get();
+        if (frame == null || !hasText(path)) {
+            return;
+        }
+        String[] parts = path.split("\\.");
+        Map<String, Object> current = frame.context;
+        for (int i = 0; i < parts.length; i++) {
+            String part = parts[i].trim();
+            if (part.isEmpty()) continue;
+            if (i == parts.length - 1) {
+                current.put(part, value);
+            } else {
+                Object child = current.get(part);
+                if (!(child instanceof Map)) {
+                    child = new LinkedHashMap<String, Object>();
+                    current.put(part, child);
+                }
+                current = (Map<String, Object>) child;
+            }
+        }
     }
 
     private static String buildLinkedGlobalRuleExistsSql(Long projectId) {
