@@ -269,9 +269,10 @@ public class RuleFieldAnalyzerTest {
         leafMeta.put("varSource", "DATA_OBJECT");
         leafMeta.put("id", 25L);
         leafMeta.put("refType", "DATA_OBJECT");
+        leafMeta.put("scriptName", "score_f1_fields.HYBASE_X115");
         Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
         varMetaMap.put("score_f1.score", modelOutputMeta);
-        varMetaMap.put("hybase_x115", leafMeta);
+        varMetaMap.put("score_f1_fields.hybase_x115", leafMeta);
 
         RuleFieldAnalyzer analyzer = new TestableRuleFieldAnalyzer(Arrays.asList("HYBASE_X115"));
 
@@ -284,9 +285,9 @@ public class RuleFieldAnalyzerTest {
                 .collect(Collectors.toList());
 
         assertFalse("模型输出不应保留为测试入参", names.contains("score_f1.score"));
-        assertTrue("模型输出应穿透到最底层输入特征", names.contains("HYBASE_X115"));
+        assertTrue("模型输出应穿透到最底层输入特征", names.contains("score_f1_fields.HYBASE_X115"));
         RuleDefinitionInputField leaf = fields.stream()
-                .filter(f -> "HYBASE_X115".equals(f.getScriptName())).findFirst().get();
+                .filter(f -> "score_f1_fields.HYBASE_X115".equals(f.getScriptName())).findFirst().get();
         assertEquals("底层字段应携带引擎变量关联", Long.valueOf(25), leaf.getVarId());
         assertEquals("DATA_OBJECT", leaf.getRefType());
     }
@@ -377,6 +378,27 @@ public class RuleFieldAnalyzerTest {
                 analyzer, java.util.Collections.singletonList(constantField), varMetaMap);
 
         assertTrue("常量是直接值，不应生成测试入参字段", result.isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void dataObjectLeafUsesPersistedObjectPathWhenOnlyVarIdMatches() throws Exception {
+        Map<String, Object> leafMeta = new HashMap<>();
+        leafMeta.put("varSource", "DATA_OBJECT");
+        leafMeta.put("id", 25L);
+        leafMeta.put("refType", "DATA_OBJECT");
+        leafMeta.put("scriptName", "score_f1_fields.HYBASE_X115");
+        leafMeta.put("varType", "DOUBLE");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("score_f1_fields.hybase_x115", leafMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField field = inputField("HYBASE_X115", "DATA_OBJECT", "DATA_OBJECT", 25L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(field), varMetaMap);
+
+        assertTrue(names(result).contains("score_f1_fields.HYBASE_X115"));
     }
 
     @Test

@@ -321,9 +321,10 @@ public class RuleFieldAnalyzer {
             Map<String, Long> existingVarMap,
             Map<String, String> existingRefTypeMap) {
         String fieldCode = field.getScriptName() != null ? field.getScriptName().toLowerCase() : null;
-        if (fieldCode == null) return;
-
-        Map<String, Object> meta = varMetaMap.get(fieldCode);
+        Map<String, Object> meta = fieldCode != null ? varMetaMap.get(fieldCode) : null;
+        if (meta == null) {
+            meta = findMetaById(field.getVarId(), field.getRefType(), varMetaMap);
+        }
         if (meta != null) {
             // 补充变量元信息
             if (field.getFieldLabel() == null || field.getFieldLabel().isEmpty() || field.getFieldLabel().equals(field.getFieldName())) {
@@ -366,9 +367,10 @@ public class RuleFieldAnalyzer {
             Map<String, Long> existingVarMap,
             Map<String, String> existingRefTypeMap) {
         String fieldCode = field.getScriptName() != null ? field.getScriptName().toLowerCase() : null;
-        if (fieldCode == null) return;
-
-        Map<String, Object> meta = varMetaMap.get(fieldCode);
+        Map<String, Object> meta = fieldCode != null ? varMetaMap.get(fieldCode) : null;
+        if (meta == null) {
+            meta = findMetaById(field.getVarId(), field.getRefType(), varMetaMap);
+        }
         if (meta != null) {
             if (field.getFieldLabel() == null || field.getFieldLabel().isEmpty() || field.getFieldLabel().equals(field.getFieldName())) {
                 String varLabel = (String) meta.get("varLabel");
@@ -405,6 +407,24 @@ public class RuleFieldAnalyzer {
      * 规则输入仅应展示业务系统真正需要提供的原始字段，因此模型输出、DB/API/计算等
      * 派生变量会被展开为其底层依赖，递归直到 INPUT/CONSTANT/DATA_OBJECT 等叶子字段。
      */
+    private Map<String, Object> findMetaById(Long varId, String refType, Map<String, Map<String, Object>> varMetaMap) {
+        if (varId == null || varMetaMap == null || varMetaMap.isEmpty()) {
+            return null;
+        }
+        String normalizedRefType = normalizeRefType(refType);
+        for (Map<String, Object> meta : varMetaMap.values()) {
+            Object id = meta.get("id");
+            if (!(id instanceof Long) || !varId.equals(id)) {
+                continue;
+            }
+            String metaRefType = normalizeRefType((String) meta.get("refType"));
+            if (normalizedRefType == null || metaRefType == null || normalizedRefType.equals(metaRefType)) {
+                return meta;
+            }
+        }
+        return null;
+    }
+
     private List<RuleDefinitionInputField> expandModelInputFields(List<RuleDefinitionInputField> inputFields,
             Map<String, Map<String, Object>> varMetaMap) {
         List<RuleDefinitionInputField> result = new ArrayList<>();
@@ -506,6 +526,20 @@ public class RuleFieldAnalyzer {
         String scriptName = trimToNull(field.getScriptName());
         String refType = normalizeRefType(field.getRefType());
         Map<String, Object> meta = scriptName != null ? varMetaMap.get(scriptName.toLowerCase()) : null;
+        if (meta == null) {
+            meta = findMetaById(field.getVarId(), field.getRefType(), varMetaMap);
+            if (meta != null) {
+                String metaScriptName = trimToNull((String) meta.get("scriptName"));
+                if (metaScriptName != null) {
+                    field.setScriptName(metaScriptName);
+                    scriptName = metaScriptName;
+                }
+                String metaType = trimToNull((String) meta.get("varType"));
+                if (metaType != null && ("STRING".equals(field.getFieldType()) || field.getFieldType() == null)) {
+                    field.setFieldType(metaType);
+                }
+            }
+        }
         String varSource = meta != null ? (String) meta.get("varSource") : null;
 
         if ("CONSTANT".equals(refType) || "CONSTANT".equals(varSource)) {

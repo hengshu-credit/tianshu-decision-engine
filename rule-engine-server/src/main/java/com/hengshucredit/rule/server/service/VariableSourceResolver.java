@@ -287,6 +287,7 @@ public class VariableSourceResolver {
             }
         }
         Set<String> expanded = new LinkedHashSet<>(initial);
+        addModelsSatisfiedByRequiredInputs(expanded, modelMap);
         List<String> queue = new ArrayList<>(initial);
         int index = 0;
         while (index < queue.size()) {
@@ -306,9 +307,61 @@ public class VariableSourceResolver {
                         queue.add(dependency);
                     }
                 }
+                addModelsSatisfiedByRequiredInputs(expanded, modelMap);
             }
         }
         return expanded;
+    }
+
+    private void addModelsSatisfiedByRequiredInputs(Set<String> requiredNames, Map<String, RuleModel> modelMap) {
+        if (requiredNames == null || requiredNames.isEmpty() || modelMap == null || modelMap.isEmpty()) {
+            return;
+        }
+        boolean changed;
+        do {
+            changed = false;
+            for (RuleModel model : modelMap.values()) {
+                String modelCode = trimToNull(model.getModelCode());
+                if (modelCode == null || isModelRequired(modelCode, requiredNames)) {
+                    continue;
+                }
+                Set<String> inputNames = collectModelInputNames(model);
+                if (!inputNames.isEmpty() && requiredContainsAllModelInputs(modelCode, inputNames, requiredNames)) {
+                    changed = requiredNames.add(modelCode) || changed;
+                }
+            }
+        } while (changed);
+    }
+
+    private boolean requiredContainsAllModelInputs(String modelCode, Set<String> inputNames, Set<String> requiredNames) {
+        for (String inputName : inputNames) {
+            if (!requiredContainsModelInput(modelCode, inputName, requiredNames)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private boolean requiredContainsModelInput(String modelCode, String inputName, Set<String> requiredNames) {
+        if (!hasText(inputName)) {
+            return false;
+        }
+        if (requiredNames.contains(inputName)) {
+            return true;
+        }
+        String modelFieldsName = modelCode == null ? null : modelCode + "_fields." + inputName;
+        for (String required : requiredNames) {
+            if (required == null) {
+                continue;
+            }
+            if (modelFieldsName != null && required.equals(modelFieldsName)) {
+                return true;
+            }
+            if (required.endsWith("." + inputName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private RuleModel findRequiredModel(String requiredName, Map<String, RuleModel> modelMap) {

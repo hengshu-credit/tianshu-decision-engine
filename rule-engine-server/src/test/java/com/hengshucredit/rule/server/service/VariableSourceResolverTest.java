@@ -205,6 +205,24 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    public void modelExecutesWhenRequiredInputsAreNestedModelFieldsObject() throws Exception {
+        FakeModelService modelService = new FakeModelService();
+        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), modelService);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("score_f1_fields.HY001")));
+        Map<String, Object> scoreFields = singletonMap("HY001", 12.5);
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("score_f1_fields", scoreFields), options);
+
+        assertEquals(12.5, ((Number) modelService.lastParams.get("HY001")).doubleValue(), 0.000001);
+        Map<String, Object> modelOutput = (Map<String, Object>) resolved.get("score_f1");
+        assertEquals(660, modelOutput.get("score"));
+    }
+
+    @Test
     public void sourceVariableWaitsForRequiredModelOutput() throws Exception {
         RuleVariable riskBand = variable("riskBand", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.score_f1.score\"},\"resultPath\":\"body.band\"}");
