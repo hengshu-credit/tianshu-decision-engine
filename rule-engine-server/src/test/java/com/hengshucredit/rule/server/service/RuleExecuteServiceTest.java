@@ -39,6 +39,7 @@ public class RuleExecuteServiceTest {
         ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
         ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
         ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
 
         RulePublished published = new RulePublished();
         published.setDefinitionId(10L);
@@ -46,15 +47,17 @@ public class RuleExecuteServiceTest {
         published.setProjectCode("project_a");
         published.setVersion(3);
         published.setModelType("SCRIPT");
-        published.setCompiledScript("decision = externalScore >= 60 ? \"PASS\" : \"REJECT\";\ndecision");
+        published.setCompiledScript("decision = age >= 18 && externalScore >= 60 ? \"PASS\" : \"REJECT\";\ndecision");
 
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("applicantId", "A001");
+        params.put("age", "22");
         RuleExecuteService.ExecutionOutcome outcome = service.executePublishedWithOptions(
                 published, params, 1L, "biz-app", VariableResolveOptions.defaults(), "CLIENT_SERVER");
 
         assertTrue(outcome.getResult().getErrorMessage(), outcome.getResult().isSuccess());
         assertEquals("PASS", outcome.getResult().getResult());
+        assertEquals(Integer.valueOf(22), outcome.getExecuteParams().get("age"));
         assertEquals(Integer.valueOf(80), outcome.getExecuteParams().get("externalScore"));
         assertEquals(Long.valueOf(1), resolver.projectId);
         assertNotNull(resolver.requiredScriptNames);
@@ -79,9 +82,13 @@ public class RuleExecuteServiceTest {
 
         @Override
         public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
-            RuleDefinitionInputField field = new RuleDefinitionInputField();
-            field.setScriptName("externalScore");
-            return Collections.singletonList(field);
+            RuleDefinitionInputField externalScore = new RuleDefinitionInputField();
+            externalScore.setScriptName("externalScore");
+            externalScore.setFieldType("INTEGER");
+            RuleDefinitionInputField age = new RuleDefinitionInputField();
+            age.setScriptName("age");
+            age.setFieldType("INTEGER");
+            return java.util.Arrays.asList(externalScore, age);
         }
     }
 
