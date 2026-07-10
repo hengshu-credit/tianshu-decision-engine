@@ -758,6 +758,21 @@ public class RuleModelService {
     /**
      * 执行模型测试
      */
+    public List<RuleModelInputField> listInputFields(Long modelId) {
+        return inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
+                .eq(RuleModelInputField::getModelId, modelId)
+                .and(w -> w.isNull(RuleModelInputField::getStatus).or().eq(RuleModelInputField::getStatus, 1))
+                .orderByAsc(RuleModelInputField::getSortOrder)
+                .orderByAsc(RuleModelInputField::getId));
+    }
+
+    public List<RuleModelOutputField> listOutputFields(Long modelId) {
+        return outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
+                .eq(RuleModelOutputField::getModelId, modelId)
+                .orderByAsc(RuleModelOutputField::getSortOrder)
+                .orderByAsc(RuleModelOutputField::getId));
+    }
+
     public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) {

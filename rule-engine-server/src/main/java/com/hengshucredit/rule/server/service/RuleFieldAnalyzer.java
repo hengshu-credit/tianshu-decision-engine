@@ -88,36 +88,15 @@ public class RuleFieldAnalyzer {
         }
 
         // 解析字段
-        List<RuleDefinitionInputField> inputFields = extractInputFields(modelJson, modelType);
-        List<RuleDefinitionOutputField> outputFields = extractOutputFields(modelJson, modelType);
+        ResolvedFields resolvedFields = resolveFields(definitionId, modelJson, modelType, projectId);
+        List<RuleDefinitionInputField> preparedInputFields = resolvedFields.getInputFields();
+        List<RuleDefinitionOutputField> preparedOutputFields = resolvedFields.getOutputFields();
 
         // 收集已有的 varId 映射（保留用户关联的变量）
-        Map<String, Long> existingInputVarMap = getExistingVarIdMap(definitionId, true);
-        Map<String, Long> existingOutputVarMap = getExistingVarIdMap(definitionId, false);
-        Map<String, String> existingInputRefTypeMap = getExistingRefTypeMap(definitionId, true);
-        Map<String, String> existingOutputRefTypeMap = getExistingRefTypeMap(definitionId, false);
-        Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
 
         // 从变量管理表查询元信息：varCode -> {varLabel, varType, scriptName, id}
-        Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
 
         // 先补齐变量元信息，模型引用会展开为模型自身输入字段。
-        List<RuleDefinitionInputField> preparedInputFields = new ArrayList<>();
-        for (RuleDefinitionInputField field : inputFields) {
-            applyExplicitRef(field, explicitRefMap);
-            enrichFieldFromMeta(field, varMetaMap, existingInputVarMap, existingInputRefTypeMap);
-            preparedInputFields.add(field);
-        }
-        preparedInputFields.addAll(loadRuleCallInputFields(modelJson));
-
-        List<RuleDefinitionOutputField> preparedOutputFields = new ArrayList<>();
-        for (RuleDefinitionOutputField field : outputFields) {
-            applyExplicitRef(field, explicitRefMap);
-            enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
-            preparedOutputFields.add(field);
-        }
-        preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
-        preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
 
         // 删除旧字段
         inputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionInputField>()
@@ -142,6 +121,73 @@ public class RuleFieldAnalyzer {
             field.setStatus(1);
             field.setCreateTime(LocalDateTime.now());
             outputFieldMapper.insert(field);
+        }
+    }
+
+    /** 使用与持久化完全相同的规则解析字段，但不写数据库。 */
+    public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+        List<RuleDefinitionInputField> inputFields = extractInputFields(modelJson, modelType);
+        List<RuleDefinitionOutputField> outputFields = extractOutputFields(modelJson, modelType);
+        Map<String, Long> existingInputVarMap = definitionId == null
+                ? Collections.emptyMap() : getExistingVarIdMap(definitionId, true);
+        Map<String, Long> existingOutputVarMap = definitionId == null
+                ? Collections.emptyMap() : getExistingVarIdMap(definitionId, false);
+        Map<String, String> existingInputRefTypeMap = definitionId == null
+                ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, true);
+        Map<String, String> existingOutputRefTypeMap = definitionId == null
+                ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, false);
+        Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
+        Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
+
+        List<RuleDefinitionInputField> preparedInputFields = new ArrayList<>();
+        for (RuleDefinitionInputField field : inputFields) {
+            applyExplicitRef(field, explicitRefMap);
+            enrichFieldFromMeta(field, varMetaMap, existingInputVarMap, existingInputRefTypeMap);
+            preparedInputFields.add(field);
+        }
+        preparedInputFields.addAll(loadRuleCallInputFields(modelJson));
+
+        List<RuleDefinitionOutputField> preparedOutputFields = new ArrayList<>();
+        for (RuleDefinitionOutputField field : outputFields) {
+            applyExplicitRef(field, explicitRefMap);
+            enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
+            preparedOutputFields.add(field);
+        }
+        preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
+        preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
+        return new ResolvedFields(preparedInputFields, preparedOutputFields);
+    }
+
+    /** 将模型或变量入口字段递归展开到 INPUT / DATA_OBJECT 叶子。 */
+    public List<RuleDefinitionInputField> resolveInputFields(List<RuleDefinitionInputField> fields, Long projectId) {
+        if (fields == null || fields.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
+        List<RuleDefinitionInputField> prepared = new ArrayList<>();
+        for (RuleDefinitionInputField field : fields) {
+            enrichFieldFromMeta(field, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+            prepared.add(field);
+        }
+        return expandModelInputFields(prepared, varMetaMap);
+    }
+
+    public static class ResolvedFields {
+        private final List<RuleDefinitionInputField> inputFields;
+        private final List<RuleDefinitionOutputField> outputFields;
+
+        public ResolvedFields(List<RuleDefinitionInputField> inputFields,
+                              List<RuleDefinitionOutputField> outputFields) {
+            this.inputFields = inputFields;
+            this.outputFields = outputFields;
+        }
+
+        public List<RuleDefinitionInputField> getInputFields() {
+            return inputFields;
+        }
+
+        public List<RuleDefinitionOutputField> getOutputFields() {
+            return outputFields;
         }
     }
 
