@@ -1,5 +1,4 @@
 import { shallowMount } from '@vue/test-utils'
-import Vue from 'vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 
 function makeStub(tag) {
@@ -9,21 +8,13 @@ function makeStub(tag) {
   }
 }
 
-const openPopoverMock = jest.fn()
-
-const VarPickerStub = {
-  name: 'VarPicker',
-  template: '<div class="var-picker-stub" />',
-  props: ['value', 'allowCustom'],
-  methods: {
-    openPopover() {
-      openPopoverMock()
-    }
-  }
+const OperandPickerStub = {
+  name: 'OperandPicker',
+  template: '<div class="operand-picker-stub" />',
+  props: ['value', 'allowedKinds', 'expectedType', 'writableOnly']
 }
 
 function mountEditor(leafOverrides = {}) {
-  openPopoverMock.mockClear()
   return shallowMount(ConditionGroupEditor, {
     propsData: {
       group: {
@@ -31,16 +22,21 @@ function mountEditor(leafOverrides = {}) {
         op: 'AND',
         children: [{
           type: 'leaf',
-          varCode: 'amount',
-          varLabel: '申请金额',
-          varType: 'NUMBER',
+          leftOperand: {
+            kind: 'REFERENCE',
+            value: 'amount',
+            code: 'amount',
+            label: '申请金额',
+            valueType: 'NUMBER',
+            refId: 1,
+            refType: 'VARIABLE',
+            resolved: true
+          },
           operator: '>',
-          valueKind: 'CONST',
-          value: '1000',
+          rightOperand: { kind: 'LITERAL', value: '1000', valueType: 'NUMBER' },
           ...leafOverrides
         }]
       },
-      allowCustomVar: true,
       vars: [
         { varCode: 'amount', varLabel: '申请金额', varType: 'NUMBER', _varId: 1, _refType: 'VARIABLE' },
         { varCode: 'CONST_NEG_INF', varLabel: '负无穷', varType: 'NUMBER', _varId: 2, _refType: 'CONSTANT' }
@@ -48,56 +44,56 @@ function mountEditor(leafOverrides = {}) {
     },
     stubs: {
       'condition-group-editor': true,
-      'var-picker': VarPickerStub,
+      'operand-picker': OperandPickerStub,
       'el-button': makeStub('button'),
       'el-button-group': makeStub('div'),
       'el-select': makeStub('div'),
-      'el-option': true,
-      'el-input': makeStub('div'),
-      'el-tooltip': makeStub('span')
+      'el-option': true
     }
   })
 }
 
 describe('ConditionGroupEditor', () => {
-  test('左侧字段选择器允许在规则设计页切换手工输入', () => {
+  test('条件叶节点只渲染左右操作数选择器', () => {
     const wrapper = mountEditor()
+    const pickers = wrapper.findAllComponents(OperandPickerStub)
 
-    const leftPicker = wrapper.findAllComponents(VarPickerStub).at(0)
-
-    expect(leftPicker.props('allowCustom')).toBe(true)
-  })
-
-  test('点击右侧字段按钮后切换为字段选择并自动弹出选择器', async () => {
-    const wrapper = mountEditor()
-    const leaf = wrapper.props('group').children[0]
-
-    wrapper.vm.switchRightToVar(leaf, 0)
-    await Vue.nextTick()
-
-    const pickers = wrapper.findAllComponents(VarPickerStub)
-    expect(leaf.valueKind).toBe('VAR')
     expect(pickers).toHaveLength(2)
-    expect(openPopoverMock).toHaveBeenCalledTimes(1)
+    expect(pickers.at(0).props('allowedKinds')).toEqual(['PATH', 'REFERENCE', 'FUNCTION'])
+    expect(pickers.at(1).props('allowedKinds')).toEqual(['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'])
+    expect(wrapper.find('.cg-field--kind').exists()).toBe(false)
+    expect(wrapper.find('.cg-manual-value').exists()).toBe(false)
   })
 
-  test('右侧字段选择常量后按变量引用持久化 ID 和 refType', () => {
-    const wrapper = mountEditor({ valueKind: 'VAR', value: '' })
+  test('无右值运算符清空 rightOperand 并隐藏右侧选择器', async () => {
+    const wrapper = mountEditor()
+    const leaf = wrapper.props('group').children[0]
+    leaf.operator = 'is_null'
+
+    wrapper.vm.onOpChange(leaf)
+    await wrapper.vm.$nextTick()
+
+    expect(leaf.rightOperand).toBeNull()
+    expect(wrapper.findAllComponents(OperandPickerStub)).toHaveLength(1)
+  })
+
+  test('选择左操作数后按其类型规范化运算符', () => {
+    const wrapper = mountEditor({ operator: 'contains' })
     const leaf = wrapper.props('group').children[0]
 
-    wrapper.vm.onLeafRightSelect(leaf, {
-      varCode: 'CONST_NEG_INF',
-      varLabel: '负无穷',
-      varType: 'NUMBER',
-      _varId: 2,
-      _refType: 'CONSTANT'
+    wrapper.vm.onLeftOperandChange(leaf, {
+      kind: 'REFERENCE', value: 'approved', code: 'approved', valueType: 'BOOLEAN',
+      refId: 3, refType: 'VARIABLE', resolved: true
     })
 
-    expect(leaf.valueKind).toBe('VAR')
-    expect(leaf.value).toBe('CONST_NEG_INF')
-    expect(leaf.rightVarLabel).toBe('负无穷')
-    expect(leaf.rightVarType).toBe('NUMBER')
-    expect(leaf._rightVarId).toBe(2)
-    expect(leaf._rightRefType).toBe('CONSTANT')
+    expect(leaf.leftOperand.valueType).toBe('BOOLEAN')
+    expect(leaf.operator).toBe('==')
+  })
+
+  test('列表型运算符只允许阈值右值', () => {
+    const wrapper = mountEditor({ operator: 'between' })
+    const leaf = wrapper.props('group').children[0]
+
+    expect(wrapper.vm.rightAllowedKinds(leaf)).toEqual(['LITERAL'])
   })
 })

@@ -2,6 +2,12 @@ import {
   compileConditionExpression,
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
+import {
+  collectOperandReferences,
+  compileOperand,
+  createLiteralOperand,
+  operandFromReferenceFields
+} from '@/utils/operand'
 
 export function createEmptyGroup(op = 'AND') {
   return { type: 'group', op, children: [] }
@@ -20,19 +26,16 @@ export function createEmptyActionItem() {
 export function createEmptyLeaf() {
   return {
     type: 'leaf',
-    varCode: '',
-    varLabel: '',
-    varType: 'STRING',
-    enumOptions: '',
+    leftOperand: null,
     operator: '==',
-    valueKind: 'CONST',
-    value: ''
+    rightOperand: null
   }
 }
 
 export function normalizeConditionLeafOperator(leaf) {
   if (!leaf || typeof leaf !== 'object') return leaf
-  const nextOperator = normalizeConditionOperator(leaf.operator || '==', leaf.varType || 'STRING')
+  const valueType = leaf.leftOperand && leaf.leftOperand.valueType
+  const nextOperator = normalizeConditionOperator(leaf.operator || '==', valueType || 'STRING')
   if (nextOperator !== leaf.operator) leaf.operator = nextOperator
   return leaf
 }
@@ -45,14 +48,9 @@ export function migrateRuleConditionsToTree(legacyConds, colDefs) {
     const def = (colDefs && colDefs[j]) || {}
     children.push(normalizeConditionLeafOperator({
       type: 'leaf',
-      varCode: def.varCode || '',
-      varLabel: def.varLabel || '',
-      varType: def.varType || 'STRING',
-      enumOptions: def.enumOptions || '',
-      _varId: def._varId,
+      leftOperand: operandFromReferenceFields(def),
       operator: cond.operator || '==',
-      valueKind: 'CONST',
-      value: cond.value != null ? String(cond.value) : ''
+      rightOperand: createLiteralOperand(cond.value != null ? String(cond.value) : '', def.varType || 'STRING')
     }))
   }
   return { type: 'group', op: 'AND', children }
@@ -62,8 +60,12 @@ export function collectVarCodesFromConditionTree(node, out) {
   const s = out || new Set()
   if (!node || typeof node !== 'object') return s
   if (node.type === 'leaf') {
-    if (node.varCode) s.add(node.varCode)
-    if (node.valueKind === 'VAR' && node.value) s.add(node.value)
+    collectOperandReferences(node.leftOperand).forEach(ref => {
+      if (ref.code || ref.path) s.add(ref.code || ref.path)
+    })
+    collectOperandReferences(node.rightOperand).forEach(ref => {
+      if (ref.code || ref.path) s.add(ref.code || ref.path)
+    })
     return s
   }
   if (node.type === 'group' && Array.isArray(node.children)) {
@@ -87,16 +89,12 @@ export function hasUsableConditionLeaf(node) {
   let usable = false
   walkConditionLeaves(node, leaf => {
     if (usable) return
-    if (!leaf.varCode || leaf.operator === '*') return
+    if (!compileOperand(leaf.leftOperand) || leaf.operator === '*') return
     if (['is_null', 'not_null', 'is_empty', 'not_empty', 'is_true', 'is_false'].includes(leaf.operator)) {
       usable = true
       return
     }
-    if (leaf.valueKind === 'VAR') {
-      usable = !!leaf.value
-      return
-    }
-    usable = leaf.value !== undefined && leaf.value !== null && String(leaf.value) !== ''
+    usable = !!compileOperand(leaf.rightOperand)
   })
   return usable
 }
@@ -117,12 +115,15 @@ export function compileConditionTreeExpression(node) {
 }
 
 function compileConditionLeafExpression(leaf) {
-  if (!leaf || !leaf.varCode) return 'true'
+  if (!leaf || !leaf.leftOperand) return 'true'
+  const left = compileOperand(leaf.leftOperand)
+  const right = leaf.rightOperand
+  const rightValue = right && right.kind === 'LITERAL' ? right.value : compileOperand(right)
   return compileConditionExpression(
-    leaf.varCode,
-    leaf.varType,
+    left,
+    leaf.leftOperand.valueType,
     leaf.operator || '==',
-    leaf.value,
-    leaf.valueKind
+    rightValue,
+    right && right.kind === 'LITERAL' ? 'CONST' : 'VAR'
   )
 }

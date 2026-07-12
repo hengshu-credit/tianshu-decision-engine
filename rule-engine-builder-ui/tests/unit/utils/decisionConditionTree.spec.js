@@ -1,302 +1,120 @@
-// tests/unit/utils/decisionConditionTree.spec.js
 import {
-  createEmptyGroup,
-  createEmptyActionItem,
-  createEmptyLeaf,
-  migrateRuleConditionsToTree,
   collectVarCodesFromConditionTree,
-  walkConditionLeaves,
+  compileConditionTreeExpression,
+  createEmptyActionItem,
+  createEmptyGroup,
+  createEmptyLeaf,
   hasUsableConditionLeaf,
-  compileConditionTreeExpression
+  migrateRuleConditionsToTree,
+  walkConditionLeaves
 } from '@/utils/decisionConditionTree'
 
-// ─── createEmptyGroup ──────────────────────────────────────
-describe('createEmptyGroup', () => {
-  test('默认 op 为 AND', () => {
-    const g = createEmptyGroup()
-    expect(g.type).toBe('group')
-    expect(g.op).toBe('AND')
-    expect(g.children).toBeInstanceOf(Array)
-    expect(g.children.length).toBe(0)
-  })
-
-  test('可指定 op 为 OR', () => {
-    const g = createEmptyGroup('OR')
-    expect(g.op).toBe('OR')
-  })
-
-  test('children 为可修改的空数组', () => {
-    const g = createEmptyGroup()
-    g.children.push({ type: 'leaf' })
-    expect(g.children.length).toBe(1)
-  })
+const ref = (code, refId = null, refType = '') => ({
+  kind: 'REFERENCE', value: code, code, label: code, valueType: 'NUMBER',
+  refId, refType, resolved: refId != null && !!refType
 })
+const literal = (value, valueType = 'NUMBER') => ({ kind: 'LITERAL', value, valueType })
 
-// ─── createEmptyActionItem ──────────────────────────────────
-describe('createEmptyActionItem', () => {
-  test('返回正确的默认字段', () => {
-    const a = createEmptyActionItem()
-    expect(a).toEqual({
-      varCode: '',
-      varLabel: '',
-      varType: 'STRING',
-      enumOptions: '',
-      value: ''
+describe('decisionConditionTree', () => {
+  test('创建空条件组', () => {
+    expect(createEmptyGroup()).toEqual({ type: 'group', op: 'AND', children: [] })
+    expect(createEmptyGroup('OR').op).toBe('OR')
+  })
+
+  test('创建空条件叶节点只包含左右操作数', () => {
+    expect(createEmptyLeaf()).toEqual({
+      type: 'leaf', leftOperand: null, operator: '==', rightOperand: null
     })
   })
 
-  test('所有字段初始为空或默认值', () => {
-    const a = createEmptyActionItem()
-    expect(a.varCode).toBe('')
-    expect(a.varType).toBe('STRING')
-    expect(a.value).toBe('')
-  })
-})
-
-// ─── createEmptyLeaf ─────────────────────────────────────────
-describe('createEmptyLeaf', () => {
-  test('返回正确的默认字段', () => {
-    const l = createEmptyLeaf()
-    expect(l.type).toBe('leaf')
-    expect(l.varCode).toBe('')
-    expect(l.operator).toBe('==')
-    expect(l.valueKind).toBe('CONST')
-    expect(l.value).toBe('')
+  test('动作默认结构保持不变', () => {
+    expect(createEmptyActionItem()).toEqual({
+      varCode: '', varLabel: '', varType: 'STRING', enumOptions: '', value: ''
+    })
   })
 
-  test('type 固定为 leaf', () => {
-    const l = createEmptyLeaf()
-    expect(l.type).toBe('leaf')
-  })
-})
+  test('列定义迁移为引用操作数，旧值迁移为阈值', () => {
+    const tree = migrateRuleConditionsToTree(
+      [{ operator: '>', value: '18' }],
+      [{ varCode: 'age', varLabel: '年龄', varType: 'INTEGER', _varId: 9, _refType: 'VARIABLE' }]
+    )
 
-// ─── migrateRuleConditionsToTree ──────────────────────────────
-describe('migrateRuleConditionsToTree', () => {
-  test('旧版规则转为 conditionRoot', () => {
-    const legacyConds = [
-      { operator: '>', value: '18' },
-      { operator: '<=', value: '60' }
-    ]
-    const colDefs = [
-      { varCode: 'age', varLabel: '年龄', varType: 'Integer', _varId: 1 },
-      { varCode: 'income', varLabel: '收入', varType: 'Double', _varId: 2 }
-    ]
-    const tree = migrateRuleConditionsToTree(legacyConds, colDefs)
-    expect(tree.type).toBe('group')
-    expect(tree.op).toBe('AND')
-    expect(tree.children.length).toBe(2)
-    expect(tree.children[0].varCode).toBe('age')
-    expect(tree.children[0].operator).toBe('>')
-    expect(tree.children[0].value).toBe('18')
-    expect(tree.children[1].varCode).toBe('income')
-    expect(tree.children[1]._varId).toBe(2)
+    expect(tree.children[0]).toMatchObject({
+      operator: '>',
+      leftOperand: { kind: 'REFERENCE', code: 'age', refId: 9, refType: 'VARIABLE' },
+      rightOperand: { kind: 'LITERAL', value: '18', valueType: 'INTEGER' }
+    })
   })
 
-  test('colDefs 为空时 children 为空', () => {
-    const tree = migrateRuleConditionsToTree([], [])
-    expect(tree.children.length).toBe(0)
+  test('迁移时按较长列表补齐叶节点', () => {
+    const tree = migrateRuleConditionsToTree([], [{ varCode: 'a' }, { varCode: 'b' }])
+    expect(tree.children).toHaveLength(2)
+    expect(tree.children[1].leftOperand.code).toBe('b')
+    expect(tree.children[1].rightOperand.value).toBe('')
   })
 
-  test('colDefs 长度大于 legacyConds 时，缺少的 cond 使用默认值', () => {
-    const legacyConds = [{ operator: '==', value: '1' }]
-    const colDefs = [
-      { varCode: 'a', varLabel: 'A', varType: 'String' },
-      { varCode: 'b', varLabel: 'B', varType: 'String' }
-    ]
-    const tree = migrateRuleConditionsToTree(legacyConds, colDefs)
-    expect(tree.children.length).toBe(2)
-    expect(tree.children[1].varCode).toBe('b')
-    expect(tree.children[1].operator).toBe('==')
-    expect(tree.children[1].value).toBe('')
-  })
-
-  test('legacyConds 为 null/undefined 时不报错', () => {
-    const tree = migrateRuleConditionsToTree(null, [])
-    expect(tree.children.length).toBe(0)
-  })
-
-  test('_varId 正确迁移', () => {
-    const colDefs = [{ varCode: 'x', _varId: 99 }]
-    const tree = migrateRuleConditionsToTree([], colDefs)
-    expect(tree.children[0]._varId).toBe(99)
-  })
-
-  test('valueKind 固定为 CONST', () => {
-    const tree = migrateRuleConditionsToTree([{ value: 'test' }], [{ varCode: 'v' }])
-    expect(tree.children[0].valueKind).toBe('CONST')
-  })
-})
-
-// ─── collectVarCodesFromConditionTree ───────────────────────
-describe('collectVarCodesFromConditionTree', () => {
-  test('收集叶节点的 varCode', () => {
+  test('递归收集左右操作数依赖并去重', () => {
     const tree = {
       type: 'group', op: 'AND', children: [
-        { type: 'leaf', varCode: 'age', value: '30' },
-        { type: 'leaf', varCode: 'score', value: '85' }
+        { type: 'leaf', leftOperand: ref('amount', 1, 'VARIABLE'), operator: '>', rightOperand: ref('threshold', 2, 'VARIABLE') },
+        { type: 'leaf', leftOperand: ref('amount', 1, 'VARIABLE'), operator: '>=', rightOperand: literal('100') }
       ]
     }
-    const result = collectVarCodesFromConditionTree(tree)
-    expect(result.has('age')).toBe(true)
-    expect(result.has('score')).toBe(true)
+    expect(Array.from(collectVarCodesFromConditionTree(tree))).toEqual(['amount', 'threshold'])
   })
 
-  test('valueKind=VAR 时同时收集 varCode 和 value 作为变量编码', () => {
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        { type: 'leaf', varCode: 'result', valueKind: 'VAR', value: 'baseScore' }
-      ]
-    }
-    const result = collectVarCodesFromConditionTree(tree)
-    expect(result.has('baseScore')).toBe(true)
-    // varCode 始终被收集，不受 valueKind 影响
-    expect(result.has('result')).toBe(true)
+  test('外部 Set 会被追加而不是替换', () => {
+    const out = new Set(['existing'])
+    collectVarCodesFromConditionTree({ type: 'leaf', leftOperand: ref('newField') }, out)
+    expect(Array.from(out)).toEqual(['existing', 'newField'])
   })
 
-  test('嵌套 group 递归收集', () => {
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        {
-          type: 'group', op: 'OR', children: [
-            { type: 'leaf', varCode: 'a' },
-            { type: 'leaf', varCode: 'b' }
-          ]
-        },
-        { type: 'leaf', varCode: 'c' }
-      ]
-    }
-    const result = collectVarCodesFromConditionTree(tree)
-    expect(result.has('a')).toBe(true)
-    expect(result.has('b')).toBe(true)
-    expect(result.has('c')).toBe(true)
-  })
-
-  test('空节点不报错，返回空 Set', () => {
-    const result = collectVarCodesFromConditionTree(null)
-    expect(result.size).toBe(0)
-  })
-
-  test('重复 varCode 去重', () => {
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        { type: 'leaf', varCode: 'x' },
-        { type: 'leaf', varCode: 'x' }
-      ]
-    }
-    const result = collectVarCodesFromConditionTree(tree)
-    expect(result.size).toBe(1)
-  })
-
-  test('接受外部 Set 并追加', () => {
-    const existing = new Set(['predefined'])
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        { type: 'leaf', varCode: 'newVar' }
-      ]
-    }
-    const result = collectVarCodesFromConditionTree(tree, existing)
-    expect(result.has('predefined')).toBe(true)
-    expect(result.has('newVar')).toBe(true)
-  })
-})
-
-// ─── walkConditionLeaves ───────────────────────────────────
-describe('walkConditionLeaves', () => {
-  test('遍历所有叶节点', () => {
+  test('遍历嵌套组中的全部叶节点', () => {
     const leaves = []
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        { type: 'leaf', varCode: 'a', value: '1' },
-        { type: 'leaf', varCode: 'b', value: '2' }
-      ]
-    }
-    walkConditionLeaves(tree, l => leaves.push(l))
-    expect(leaves.length).toBe(2)
-    expect(leaves[0].varCode).toBe('a')
-    expect(leaves[1].varCode).toBe('b')
+    const tree = { type: 'group', op: 'AND', children: [
+      { type: 'leaf', leftOperand: ref('a') },
+      { type: 'group', op: 'OR', children: [{ type: 'leaf', leftOperand: ref('b') }] }
+    ] }
+    walkConditionLeaves(tree, leaf => leaves.push(leaf.leftOperand.code))
+    expect(leaves).toEqual(['a', 'b'])
   })
 
-  test('嵌套 group 递归遍历', () => {
-    const leaves = []
-    const tree = {
-      type: 'group', op: 'AND', children: [
-        {
-          type: 'group', op: 'OR', children: [
-            { type: 'leaf', varCode: 'nested' }
-          ]
-        }
-      ]
-    }
-    walkConditionLeaves(tree, l => leaves.push(l))
-    expect(leaves.length).toBe(1)
-    expect(leaves[0].varCode).toBe('nested')
-  })
-
-  test('空节点不报错', () => {
-    expect(() => walkConditionLeaves(null, () => {})).not.toThrow()
-  })
-
-  test('undefined 节点不报错', () => {
-    expect(() => walkConditionLeaves(undefined, () => {})).not.toThrow()
-  })
-
-  test('非条件树节点不报错', () => {
-    expect(() => walkConditionLeaves({ type: 'unknown' }, () => {})).not.toThrow()
-  })
-})
-
-describe('hasUsableConditionLeaf', () => {
-  test('空树没有有效条件', () => {
+  test('阈值条件和无右值条件均可用', () => {
+    expect(hasUsableConditionLeaf({ type: 'leaf', leftOperand: ref('amount'), operator: '>=', rightOperand: literal('100') })).toBe(true)
+    expect(hasUsableConditionLeaf({ type: 'leaf', leftOperand: ref('tags'), operator: 'not_empty', rightOperand: null })).toBe(true)
     expect(hasUsableConditionLeaf(createEmptyGroup())).toBe(false)
   })
 
-  test('有左变量和常量值时认为有效', () => {
-    const tree = createEmptyGroup()
-    tree.children.push({ type: 'leaf', varCode: 'amount', operator: '>=', valueKind: 'CONST', value: '100' })
-    expect(hasUsableConditionLeaf(tree)).toBe(true)
+  test('编译统一操作数条件', () => {
+    expect(compileConditionTreeExpression({
+      type: 'leaf', operator: '>=',
+      leftOperand: { kind: 'PATH', value: 'request.age' },
+      rightOperand: literal('18')
+    })).toBe('request.age >= 18')
   })
 
-  test('任意运算符不作为有效条件', () => {
-    const tree = createEmptyGroup()
-    tree.children.push({ type: 'leaf', varCode: 'amount', operator: '*', valueKind: 'CONST', value: '' })
-    expect(hasUsableConditionLeaf(tree)).toBe(false)
-  })
-})
-
-describe('compileConditionTreeExpression', () => {
-  test('编译字符串常量并转义引号', () => {
-    const tree = {
-      type: 'group',
-      op: 'AND',
-      children: [
-        { type: 'leaf', varCode: 'customerLevel', varType: 'STRING', operator: '==', valueKind: 'CONST', value: '金"卡' }
-      ]
-    }
-
-    expect(compileConditionTreeExpression(tree)).toBe('(customerLevel == "金\\"卡")')
+  test('函数和引用可以作为条件操作数', () => {
+    expect(compileConditionTreeExpression({
+      type: 'leaf', operator: '>',
+      leftOperand: {
+        kind: 'FUNCTION', functionId: 1, functionCode: 'max', args: [ref('scoreA'), ref('scoreB')]
+      },
+      rightOperand: literal('600')
+    })).toBe('max(scoreA, scoreB) > 600')
   })
 
-  test('编译嵌套与或条件', () => {
-    const tree = {
-      type: 'group',
-      op: 'AND',
-      children: [
-        { type: 'leaf', varCode: 'amount', varType: 'NUMBER', operator: '>=', valueKind: 'CONST', value: '1000' },
-        {
-          type: 'group',
-          op: 'OR',
-          children: [
-            { type: 'leaf', varCode: 'level', varType: 'ENUM', operator: '==', valueKind: 'CONST', value: 'A' },
-            { type: 'leaf', varCode: 'score', operator: '>=', valueKind: 'VAR', value: 'threshold' }
-          ]
-        }
-      ]
-    }
-
-    expect(compileConditionTreeExpression(tree)).toBe('(amount >= 1000 && (level == "A" || score >= threshold))')
+  test('编译嵌套与或条件并转义字符串', () => {
+    const tree = { type: 'group', op: 'AND', children: [
+      { type: 'leaf', leftOperand: { ...ref('name'), valueType: 'STRING' }, operator: '==', rightOperand: literal('金"卡', 'STRING') },
+      { type: 'group', op: 'OR', children: [
+        { type: 'leaf', leftOperand: ref('amount'), operator: '>=', rightOperand: literal('1000') },
+        { type: 'leaf', leftOperand: ref('score'), operator: '>=', rightOperand: ref('threshold') }
+      ] }
+    ] }
+    expect(compileConditionTreeExpression(tree)).toBe('(name == "金\\"卡" && (amount >= 1000 || score >= threshold))')
   })
 
-  test('空条件编译为 true', () => {
+  test('空树编译为 true', () => {
     expect(compileConditionTreeExpression(null)).toBe('true')
     expect(compileConditionTreeExpression(createEmptyGroup())).toBe('true')
   })

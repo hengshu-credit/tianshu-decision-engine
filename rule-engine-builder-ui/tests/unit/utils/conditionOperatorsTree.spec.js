@@ -1,18 +1,14 @@
-import {
-  compileConditionTreeExpression,
-  createEmptyGroup,
-  hasUsableConditionLeaf,
-  normalizeConditionLeafOperator
-} from '@/utils/decisionConditionTree'
+import { compileConditionTreeExpression, createEmptyGroup, hasUsableConditionLeaf } from '@/utils/decisionConditionTree'
+
+const ref = (code, valueType) => ({ kind: 'REFERENCE', value: code, code, valueType })
+const literal = (value, valueType) => ({ kind: 'LITERAL', value, valueType })
 
 describe('condition tree typed operators', () => {
   test('编译字符串包含和数字区间操作符', () => {
     const tree = {
-      type: 'group',
-      op: 'AND',
-      children: [
-        { type: 'leaf', varCode: 'name', varType: 'STRING', operator: 'contains', valueKind: 'CONST', value: 'VIP' },
-        { type: 'leaf', varCode: 'age', varType: 'NUMBER', operator: 'between', valueKind: 'CONST', value: '18,60' }
+      type: 'group', op: 'AND', children: [
+        { type: 'leaf', leftOperand: ref('name', 'STRING'), operator: 'contains', rightOperand: literal('VIP', 'STRING') },
+        { type: 'leaf', leftOperand: ref('age', 'NUMBER'), operator: 'between', rightOperand: literal('18,60', 'NUMBER') }
       ]
     }
 
@@ -21,17 +17,9 @@ describe('condition tree typed operators', () => {
 
   test('无右值操作符可以构成有效条件', () => {
     const tree = createEmptyGroup()
-    tree.children.push({ type: 'leaf', varCode: 'tags', varType: 'LIST', operator: 'not_empty', valueKind: 'CONST', value: '' })
+    tree.children.push({ type: 'leaf', leftOperand: ref('tags', 'LIST'), operator: 'not_empty', rightOperand: null })
 
     expect(hasUsableConditionLeaf(tree)).toBe(true)
     expect(compileConditionTreeExpression(tree)).toBe('(isNotBlank(tags))')
-  })
-
-  test('字段类型变化后会重置不适用的操作符', () => {
-    const leaf = { type: 'leaf', varType: 'BOOLEAN', operator: '>' }
-
-    normalizeConditionLeafOperator(leaf)
-
-    expect(leaf.operator).toBe('==')
   })
 })
