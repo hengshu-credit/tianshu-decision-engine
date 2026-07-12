@@ -1,7 +1,7 @@
 <template>
   <div class="var-picker-wrap" :style="{ width: width || '100%' }">
     <!-- 手动输入模式 -->
-    <template v-if="customMode">
+    <template v-if="!operandMode && customMode">
       <div class="custom-input-row">
         <el-input
           v-model="localCustomValue"
@@ -21,7 +21,7 @@
     <template v-else>
       <div class="select-input-row">
         <el-popover
-          v-if="groupedByCategory && hasVarOptions"
+          v-if="groupedByCategory && (hasVarOptions || operandMode)"
           ref="popover"
           v-model="popoverVisible"
           placement="bottom-start"
@@ -43,8 +43,61 @@
                 <span class="vp-cat-count">{{ cat.count }}</span>
               </div>
             </div>
+            <div v-if="activeCategory === 'manual'" class="vp-right vp-manual">
+              <div class="vp-manual-title">请选择手动输入类型</div>
+              <div class="vp-manual-types">
+                <button
+                  v-if="allowsOperandKind('LITERAL')"
+                  type="button"
+                  class="vp-manual-type"
+                  :class="{ 'vp-manual-type--active': manualKind === 'LITERAL' }"
+                  @click="selectManualKind('LITERAL')"
+                >
+                  <i class="el-icon-edit-outline" />
+                  <span>手输阈值</span>
+                  <small>直接输入数值、文本、布尔值或日期</small>
+                </button>
+                <button
+                  v-if="allowsOperandKind('PATH')"
+                  type="button"
+                  class="vp-manual-type"
+                  :class="{ 'vp-manual-type--active': manualKind === 'PATH' }"
+                  @click="selectManualKind('PATH')"
+                >
+                  <i class="el-icon-link" />
+                  <span>手输路径</span>
+                  <small>输入运行时字段路径并自动识别引用</small>
+                </button>
+              </div>
+              <div v-if="manualKind" class="vp-manual-editor">
+                <el-input
+                  v-model="manualValue"
+                  size="small"
+                  clearable
+                  :placeholder="manualKind === 'PATH' ? '例如 request.customer.age' : manualValuePlaceholder"
+                  @keyup.enter.native="confirmManual"
+                />
+                <div v-if="pathCandidates.length" class="vp-path-candidates">
+                  <div class="vp-path-warning">该路径匹配到多个字段，请明确选择：</div>
+                  <button
+                    v-for="candidate in pathCandidates"
+                    :key="optionIdentityKey(candidate)"
+                    type="button"
+                    class="vp-path-candidate"
+                    @click="confirmPathCandidate(candidate)"
+                  >
+                    <span>{{ optionLabel(candidate) || candidate.varCode }}</span>
+                    <code>{{ candidate.varCode || candidate.refCode }}</code>
+                  </button>
+                </div>
+                <div class="vp-manual-actions">
+                  <el-button size="small" @click="resetManual">重选类型</el-button>
+                  <el-button type="primary" size="small" :disabled="!manualValue" @click="confirmManual">确认</el-button>
+                </div>
+              </div>
+            </div>
             <!-- 右侧：字段表格 + 搜索 -->
-            <div class="vp-right">
+            <div v-else class="vp-right">
               <div class="vp-search" v-if="showSearch">
                 <el-input
                   v-model="searchText"
@@ -150,6 +203,7 @@
               :size="size"
               :placeholder="placeholder || '选择变量/常量/对象字段'"
               :value="referenceInputValue"
+              :readonly="operandMode"
               style="width:100%"
               @focus="onInputFocus"
               @input="onReferenceInput"
@@ -179,7 +233,7 @@
           @clear="onCustomClear"
         />
 
-        <el-tooltip v-if="allowCustom && hasVarOptions" content="切换为手动输入变量" placement="top">
+        <el-tooltip v-if="!operandMode && allowCustom && hasVarOptions" content="切换为手动输入变量" placement="top">
           <span class="mode-switch" @click="customMode = true"><i class="el-icon-edit" /></span>
         </el-tooltip>
       </div>
@@ -190,12 +244,20 @@
 <script>
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
+import {
+  createFunctionOperand,
+  createLiteralOperand,
+  createPathOperand,
+  createReferenceOperand,
+  operandDisplay,
+  resolvePathOperand
+} from '@/utils/operand'
 
 export default {
   name: 'VarPicker',
   props: {
     /** 绑定值：varCode（默认）或 id（数字） */
-    value: { type: [String, Number], default: '' },
+    value: { type: [String, Number, Object], default: '' },
     vars: { type: Array, default: () => [] },
     /** 当前设计器页面已选择过的字段，用于快速复用 */
     selectedVars: { type: Array, default: () => [] },
@@ -224,7 +286,13 @@ export default {
      */
     columnLabels: { type: [String, Object], default: 'variable' },
     /** 鍊间笉鍦ㄥ€欓€夐」涓椂鏄惁鑷姩鍒囨崲鍒版墜杈撴ā寮?*/
-    autoSwitchCustom: { type: Boolean, default: true }
+    autoSwitchCustom: { type: Boolean, default: true },
+    /** 统一操作数模式；迁移期间字符串模式仍服务尚未接入的旧页面 */
+    operandMode: { type: Boolean, default: false },
+    allowedKinds: { type: Array, default: () => ['LITERAL', 'PATH', 'REFERENCE'] },
+    expectedType: { type: String, default: 'STRING' },
+    writableOnly: { type: Boolean, default: false },
+    functions: { type: Array, default: () => [] }
   },
   data() {
     return {
@@ -235,7 +303,10 @@ export default {
       /** popover 显示状态 */
       popoverVisible: false,
       /** 当前选中的分类 */
-      activeCategory: 'standalone',
+      activeCategory: this.operandMode ? 'manual' : 'standalone',
+      manualKind: '',
+      manualValue: '',
+      pathCandidates: [],
       /** 搜索文本 */
       searchText: '',
       /** 输入框内临时检索文本，不直接改写外部绑定值 */
@@ -326,7 +397,11 @@ export default {
       return true
     },
     referenceInputValue() {
+      if (this.operandMode) return operandDisplay(this.value)
       return this.referenceKeyword || this.displayValue
+    },
+    manualValuePlaceholder() {
+      return this.expectedType === 'NUMBER' ? '请输入阈值' : '请输入值'
     },
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
@@ -357,17 +432,30 @@ export default {
     /** 分类列表（仅显示有数据的分类） */
     categoryList() {
       var list = [
+        { key: 'manual', label: '手动输入', count: 0 },
         { key: 'selected', label: '已选字段', count: 0 },
         { key: 'standalone', label: '普通变量', count: 0 },
         { key: 'constant', label: '常量', count: 0 },
         { key: 'object', label: '数据对象', count: 0 },
-        { key: 'model', label: '模型', count: 0 }
+        { key: 'model', label: '模型', count: 0 },
+        { key: 'function', label: '函数/方法', count: 0 }
       ]
       list.forEach(function (item) {
-        var items = this.categoryItems(item.key)
-        item.count = this.searchText ? this.filterItemsByKeyword(items).length : items.length
+        if (item.key === 'manual') {
+          item.count = this.allowsOperandKind('LITERAL') || this.allowsOperandKind('PATH') ? 2 : 0
+        } else if (item.key === 'function') {
+          item.count = this.allowsOperandKind('FUNCTION') ? this.functions.length : 0
+        } else {
+          var items = this.categoryItems(item.key)
+          item.count = this.searchText ? this.filterItemsByKeyword(items).length : items.length
+        }
       }.bind(this))
-      return list.filter(function (item) { return item.count > 0 })
+      return list.filter(function (item) {
+        if (item.key === 'manual') return this.operandMode && item.count > 0
+        if (item.key === 'function') return this.operandMode && item.count > 0
+        if (this.operandMode && !this.allowsOperandKind('REFERENCE')) return false
+        return item.count > 0
+      }.bind(this))
     },
     selectedItems() {
       var result = []
@@ -385,6 +473,17 @@ export default {
     /** 右侧项列表（按当前分类过滤 + 排序）。对象/模型字段自动附加同分组下的所有字段 children） */
     rightItems() {
       var self = this
+      if (this.activeCategory === 'function') {
+        return this.functions.map(function (fn) {
+          return {
+            _function: true,
+            varCode: fn.functionCode || fn.funcCode || fn.functionName || fn.funcName || fn.name || '',
+            varLabel: fn.functionLabel || fn.funcName || fn.functionName || fn.label || '',
+            varType: fn.returnType || 'FUNCTION',
+            function: fn
+          }
+        })
+      }
       if (this.activeCategory === 'selected') {
         return this.selectedItems
       }
@@ -417,6 +516,8 @@ export default {
   methods: {
     categoryItems(category) {
       var self = this
+      if (category === 'manual') return []
+      if (category === 'function') return this.functions
       if (category === 'selected') {
         return this.selectedItems
       }
@@ -748,6 +849,13 @@ export default {
         }
         return
       }
+      if (this.operandMode) {
+        var operand = item._function ? createFunctionOperand(item.function) : createReferenceOperand(item)
+        this.$emit('input', operand)
+        this.$emit('select', operand)
+        this.closePopover()
+        return
+      }
       var val = this.valueKey === 'id' ? item.id : item.varCode
       this.$emit('input', val)
       this.$emit('select', item)
@@ -802,9 +910,11 @@ export default {
     },
     /** 输入框获得焦点时自动弹出选择器面板 */
     onInputFocus() {
+      if (this.operandMode) return
       this.openPopover()
     },
     onReferenceInput(value) {
+      if (this.operandMode) return
       this.referenceKeyword = value || ''
       this.searchText = value || ''
       this.openPopover()
@@ -819,7 +929,7 @@ export default {
       this.openPopover()
     },
     openPopover() {
-      if (this.groupedByCategory && this.hasVarOptions) {
+      if (this.groupedByCategory && (this.hasVarOptions || this.operandMode)) {
         var wasVisible = this.popoverVisible
         this.popoverVisible = true
         if (!this.referenceKeyword) this.searchText = ''
@@ -962,7 +1072,7 @@ export default {
     },
     /** 清除选中的值 */
     onClearValue() {
-      this.$emit('input', '')
+      this.$emit('input', this.operandMode ? null : '')
       this.$emit('select', null)
       this.$emit('clear')
       this.closePopover()
@@ -992,6 +1102,7 @@ export default {
     },
     /** 回显时自动识别：当前值非空但在变量列表中找不到时，自动切换到手动输入模式 */
     _autoSwitchIfUnmatched() {
+      if (this.operandMode) return
       if (!this.autoSwitchCustom || !this.allowCustom || !this.value || this.customMode) return
       if (!this.hasVarOptions) return
       var found
@@ -1004,6 +1115,42 @@ export default {
         this.customMode = true
         this.localCustomValue = this.value
       }
+    },
+    allowsOperandKind(kind) {
+      return (this.allowedKinds || []).includes(kind)
+    },
+    selectManualKind(kind) {
+      if (!this.allowsOperandKind(kind)) return
+      this.manualKind = kind
+      this.manualValue = ''
+      this.pathCandidates = []
+    },
+    resetManual() {
+      this.manualKind = ''
+      this.manualValue = ''
+      this.pathCandidates = []
+    },
+    confirmManual() {
+      if (!this.manualValue || !this.manualKind) return
+      if (this.manualKind === 'LITERAL') {
+        this.emitOperand(createLiteralOperand(this.manualValue, this.expectedType))
+        return
+      }
+      var result = resolvePathOperand(createPathOperand(this.manualValue), this.vars)
+      this.pathCandidates = result.candidates
+      if (result.candidates.length) return
+      this.emitOperand(result.operand)
+    },
+    confirmPathCandidate(candidate) {
+      var result = resolvePathOperand(createPathOperand(this.manualValue), [candidate])
+      this.pathCandidates = []
+      this.emitOperand(result.operand)
+    },
+    emitOperand(operand) {
+      this.$emit('input', operand)
+      this.$emit('select', operand)
+      this.closePopover()
+      this.resetManual()
     },
     typeLabel(t) {
       return varTypeLabel(t)
@@ -1178,6 +1325,74 @@ export default {
   background: #bae7ff;
   color: #1890ff;
 }
+.vp-manual {
+  padding: 20px;
+  box-sizing: border-box;
+  overflow-y: auto;
+}
+.vp-manual-title {
+  color: #303133;
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.vp-manual-types {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.vp-manual-type {
+  display: grid;
+  grid-template-columns: 26px 1fr;
+  gap: 3px 8px;
+  padding: 14px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
+  color: #303133;
+  cursor: pointer;
+  text-align: left;
+}
+.vp-manual-type i {
+  grid-row: 1 / 3;
+  color: #409eff;
+  font-size: 20px;
+  align-self: center;
+}
+.vp-manual-type span { font-weight: 600; }
+.vp-manual-type small { color: #909399; line-height: 1.4; }
+.vp-manual-type:hover,
+.vp-manual-type--active {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+.vp-manual-editor {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #ebeef5;
+}
+.vp-manual-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+.vp-path-candidates { margin-top: 10px; }
+.vp-path-warning { color: #e6a23c; font-size: 12px; margin-bottom: 6px; }
+.vp-path-candidate {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid #ebeef5;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+}
+.vp-path-candidate + .vp-path-candidate { border-top: 0; }
+.vp-path-candidate:hover { background: #f5f7fa; }
+.vp-path-candidate code { color: #909399; }
 .vp-right {
   flex: 1;
   display: flex;
