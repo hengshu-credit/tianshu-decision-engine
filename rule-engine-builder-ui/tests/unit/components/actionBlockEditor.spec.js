@@ -5,6 +5,9 @@ const ActionBlockEditor = require('@/components/flow/ActionBlockEditor.vue').def
 function createEditorContext(blocks, extra = {}) {
   const ctx = {
     blocks,
+    vars: extra.vars || [],
+    selectedVars: extra.selectedVars || [],
+    functions: extra.functions || [],
     rules: extra.rules || [],
     currentRuleId: extra.currentRuleId == null ? null : extra.currentRuleId,
     currentRuleCode: extra.currentRuleCode || '',
@@ -30,47 +33,39 @@ function createEditorContext(blocks, extra = {}) {
 }
 
 describe('ActionBlockEditor', () => {
-  test('selectVar writes field-level target reference', () => {
-    const ctx = createEditorContext([{ type: 'assign', target: '', value: '1' }])
+  test('setOperand 原样写入目标 Operand 并触发更新', () => {
+    const ctx = createEditorContext([{ type: 'assign', targetOperand: null, valueOperand: null }])
+    const operand = { kind: 'REFERENCE', code: 'decision', refId: 2, refType: 'VARIABLE' }
 
-    ctx.selectVar(ctx.blocks[0], 'target', { varCode: 'decision', _varId: 2, _refType: 'VARIABLE' })
+    ctx.setOperand(ctx.blocks[0], 'targetOperand', operand)
 
-    const payload = ctx.emitted[0].payload[0]
-    expect(payload.target).toBe('decision')
-    expect(payload._targetVarId).toBe(2)
-    expect(payload._targetRefType).toBe('VARIABLE')
-    expect(payload._varId).toBe(2)
+    expect(ctx.emitted[0].payload[0].targetOperand).toEqual(operand)
   })
 
-  test('selectVar keeps target and condVar references separate', () => {
-    const ctx = createEditorContext([{ type: 'ternary', target: '', condVar: '', condOp: '>=', condValue: '60', trueValue: '"PASS"', falseValue: '"REJECT"' }])
+  test('目标、条件左右值保持独立 Operand', () => {
+    const ctx = createEditorContext([{ type: 'ternary', targetOperand: null, leftOperand: null, operator: '>=', rightOperand: null, trueOperand: null, falseOperand: null }])
     const block = ctx.blocks[0]
+    const target = { kind: 'REFERENCE', code: 'decision', refId: 2, refType: 'VARIABLE' }
+    const left = { kind: 'REFERENCE', code: 'score', refId: 1, refType: 'VARIABLE' }
 
-    ctx.selectVar(block, 'target', { varCode: 'decision', _varId: 2, _refType: 'VARIABLE' })
-    ctx.selectVar(block, 'condVar', { varCode: 'score', _varId: 1, _refType: 'VARIABLE' })
+    ctx.setOperand(block, 'targetOperand', target)
+    ctx.setOperand(block, 'leftOperand', left)
 
     const payload = ctx.emitted[1].payload[0]
-    expect(payload.target).toBe('decision')
-    expect(payload._targetVarId).toBe(2)
-    expect(payload.condVar).toBe('score')
-    expect(payload._condVarId).toBe(1)
-    expect(payload._varId).toBeUndefined()
+    expect(payload.targetOperand).toEqual(target)
+    expect(payload.leftOperand).toEqual(left)
   })
 
-  test('selectArgVar writes function argument reference', () => {
-    const ctx = createEditorContext([{ type: 'func-call', target: '', funcName: 'max', args: [''] }])
+  test('函数参数数组只保存 Operand', () => {
+    const ctx = createEditorContext([{ type: 'func-call', targetOperand: null, functionCode: 'max', args: [null] }])
     const block = ctx.blocks[0]
+    const operand = { kind: 'PATH', value: 'request.score', code: 'request.score' }
 
-    ctx.selectArgVar(block, 0, { varCode: 'score', _varId: 1, _refType: 'VARIABLE' })
+    ctx.setArrayOperand(block.args, 0, operand)
 
     const payload = ctx.emitted[0].payload[0]
-    expect(payload.args).toEqual(['score'])
-    expect(payload._argRefs).toEqual([{ _varId: 1, _refType: 'VARIABLE' }])
-
-    ctx.setArgValue(block, 0, 'score + 1')
-    const nextPayload = ctx.emitted[1].payload[0]
-    expect(nextPayload.args).toEqual(['score + 1'])
-    expect(nextPayload._argRefs).toEqual([null])
+    expect(payload.args).toEqual([operand])
+    expect(payload._argRefs).toBeUndefined()
   })
 
   test('onRuleSelect writes called rule metadata', async () => {

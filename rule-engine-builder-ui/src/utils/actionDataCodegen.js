@@ -1,60 +1,35 @@
-/**
- * actionData JSON → QLExpress 脚本生成器
- *
- * 块类型一览：
- *   assign:       赋值          { type:'assign', target, value }
- *   if-block:     条件分支      { type:'if-block', branches:[{type,condVar,condOp,condValue,actions}] }
- *   switch-block: switch匹配    { type:'switch-block', matchVar, cases:[{value,actions}], defaultActions:[] }
- *   func-call:    函数调用      { type:'func-call', target, funcName, args:[] }
- *   foreach:      for-each循环  { type:'foreach', itemVar, listExpr, actions:[] }
- *   ternary:      三元表达式    { type:'ternary', target, condVar, condOp, condValue, trueValue, falseValue }
- *   in-check:     in判断赋值    { type:'in-check', target, checkVar, inValues:[], trueValue, falseValue }
- *   template-str: 动态字符串    { type:'template-str', target, parts:[{type:'text'|'expr', content}] }
- *   rule-call:    执行规则      { type:'rule-call', target, ruleCode, outputField }
- */
-
 import { compileConditionExpression } from '@/constants/conditionOperators'
+import { compileOperand, OPERAND_KINDS } from '@/utils/operand'
 
 function quoteString(value) {
-  return '"' + String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+  return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 
-function wrapValue(val) {
-  if (val === null || val === undefined || val === '') return '""'
-  const s = String(val).trim()
-  if (s === 'true' || s === 'false' || s === 'null') return s
-  if (!isNaN(s) && s !== '') return s
-  if (/^[a-zA-Z_]\w*(\.\w+)*$/.test(s)) return s
-  if (s.startsWith('"') || s.startsWith("'")) return s
-  if (/[+\-*/()><=!&|,[{}]/.test(s)) return s
-  return '"' + s.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+function compileCondition(leftOperand, operator, rightOperand) {
+  const left = compileOperand(leftOperand)
+  if (!left) return 'true'
+  const rightValue = rightOperand && rightOperand.kind === OPERAND_KINDS.LITERAL
+    ? rightOperand.value
+    : compileOperand(rightOperand)
+  return compileConditionExpression(
+    left,
+    leftOperand.valueType,
+    operator || '==',
+    rightValue,
+    rightOperand && rightOperand.kind === OPERAND_KINDS.LITERAL ? 'CONST' : 'VAR'
+  )
 }
 
-function wrapSwitchCaseValue(val) {
-  if (val === null || val === undefined || val === '') return '""'
-  const s = String(val).trim()
-  if (s === 'true' || s === 'false' || s === 'null') return s
-  if (!isNaN(s) && s !== '') return s
-  if (s.startsWith('"') || s.startsWith("'")) return s
-  return quoteString(s)
-}
-
-function wrapFunctionArg(value, ref) {
-  if (ref && (ref._varId != null || ref.varId != null || ref._refType || ref.refType)) {
-    return String(value == null ? '' : value).trim()
+function generateAssignment(action, indent) {
+  const target = compileOperand(action && action.targetOperand)
+  const value = compileOperand(action && action.valueOperand)
+  if (!target || !value) return ''
+  const pad = '    '.repeat(indent)
+  const lines = [pad + target + ' = ' + value]
+  if (action.enableRounding && action.decimalPlaces != null && Number(action.decimalPlaces) >= 0) {
+    lines.push(pad + target + ' = roundScale(' + target + ', ' + Number(action.decimalPlaces) + ', ' + quoteString(action.roundingMode || 'HALF_UP') + ')')
   }
-  const text = String(value == null ? '' : value).trim()
-  if (text === 'true' || text === 'false' || text === 'null') return text
-  if (text !== '' && !isNaN(text)) return text
-  if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) return text
-  return quoteString(text)
-}
-
-function inferConstType(value) {
-  const text = String(value == null ? '' : value).trim()
-  if (text !== '' && !isNaN(text)) return 'NUMBER'
-  if (text === 'true' || text === 'false') return 'BOOLEAN'
-  return 'STRING'
+  return lines.join('\n')
 }
 
 function generateBlock(block, indent) {
@@ -62,90 +37,99 @@ function generateBlock(block, indent) {
   if (!block || !block.type) return ''
 
   switch (block.type) {
-    case 'assign': {
-      if (!block.target || !block.value) return ''
-      const lines = [pad + block.target + ' = ' + block.value]
-      if (block.enableRounding && block.decimalPlaces !== null && block.decimalPlaces !== undefined && Number(block.decimalPlaces) >= 0) {
-        lines.push(pad + block.target + ' = roundScale(' + block.target + ', ' + Number(block.decimalPlaces) + ', ' + quoteString(block.roundingMode || 'HALF_UP') + ')')
-      }
-      return lines.join('\n')
-    }
+    case 'assign':
+      return generateAssignment(block, indent)
 
     case 'if-block': {
       const branches = block.branches || []
-      if (branches.length === 0) return ''
+      if (!branches.length) return ''
       const lines = []
-      for (const b of branches) {
-        const inner = (b.actions || []).map(a => generateBlock(a, indent + 1)).filter(Boolean)
-        if (b.type === 'if') lines.push(pad + 'if (' + buildCondExpr(b) + ') {')
-        else if (b.type === 'elseif') lines.push(pad + '} else if (' + buildCondExpr(b) + ') {')
+      branches.forEach(branch => {
+        const actions = (branch.actions || []).map(action => generateBlock(action, indent + 1)).filter(Boolean)
+        if (branch.type === 'if') lines.push(pad + 'if (' + compileCondition(branch.leftOperand, branch.operator, branch.rightOperand) + ') {')
+        else if (branch.type === 'elseif') lines.push(pad + '} else if (' + compileCondition(branch.leftOperand, branch.operator, branch.rightOperand) + ') {')
         else lines.push(pad + '} else {')
-        lines.push(...inner)
-      }
+        lines.push(...actions)
+      })
       lines.push(pad + '}')
       return lines.join('\n')
     }
 
     case 'switch-block': {
-      if (!block.matchVar) return ''
+      const match = compileOperand(block.matchOperand)
+      if (!match) return ''
       const lines = []
       let hasCase = false
-      for (const c of (block.cases || [])) {
-        if (!c.value && c.value !== 0) continue
-        lines.push((hasCase ? pad + '} else ' : pad) + 'if (' + block.matchVar + ' == ' + wrapSwitchCaseValue(c.value) + ') {')
-        for (const a of (c.actions || [])) {
-          const code = generateBlock(a, indent + 1)
+      ;(block.cases || []).forEach(item => {
+        const value = compileOperand(item.valueOperand)
+        if (!value) return
+        lines.push((hasCase ? pad + '} else ' : pad) + 'if (' + match + ' == ' + value + ') {')
+        ;(item.actions || []).forEach(action => {
+          const code = generateBlock(action, indent + 1)
           if (code) lines.push(code)
-        }
+        })
+        hasCase = true
+      })
+      if ((block.defaultActions || []).length) {
+        lines.push(hasCase ? pad + '} else {' : pad + 'if (true) {')
+        block.defaultActions.forEach(action => {
+          const code = generateBlock(action, indent + 1)
+          if (code) lines.push(code)
+        })
         hasCase = true
       }
-      if (block.defaultActions && block.defaultActions.length > 0) {
-        lines.push(hasCase ? pad + '} else {' : pad + 'if (true) {')
-        for (const a of block.defaultActions) {
-          const code = generateBlock(a, indent + 1)
-          if (code) lines.push(code)
-        }
-      }
+      if (!hasCase) return ''
       lines.push(pad + '}')
       return lines.join('\n')
     }
 
     case 'func-call': {
-      if (!block.funcName) return ''
-      const refs = block._argRefs || []
-      const args = (block.args || []).map((arg, index) => wrapFunctionArg(arg, refs[index])).join(', ')
-      const call = block.funcName + '(' + args + ')'
-      return block.target ? pad + block.target + ' = ' + call : pad + call
+      const functionCode = block.functionCode || ''
+      if (!functionCode) return ''
+      const call = functionCode + '(' + (block.args || []).map(compileOperand).join(', ') + ')'
+      const target = compileOperand(block.targetOperand)
+      return target ? pad + target + ' = ' + call : pad + call
     }
 
     case 'foreach': {
-      if (!block.itemVar || !block.listExpr) return ''
-      const lines = [pad + 'for (' + block.itemVar + ' : ' + block.listExpr + ') {']
-      for (const a of (block.actions || [])) {
-        const code = generateBlock(a, indent + 1)
+      const list = compileOperand(block.listOperand)
+      if (!block.itemVar || !list) return ''
+      const lines = [pad + 'for (' + block.itemVar + ' : ' + list + ') {']
+      ;(block.actions || []).forEach(action => {
+        const code = generateBlock(action, indent + 1)
         if (code) lines.push(code)
-      }
+      })
       lines.push(pad + '}')
       return lines.join('\n')
     }
 
     case 'ternary': {
-      if (!block.target || !block.condVar) return ''
-      const cond = block.condVar + ' ' + (block.condOp || '==') + ' ' + wrapValue(block.condValue)
-      return pad + block.target + ' = ' + cond + ' ? ' + (block.trueValue || '""') + ' : ' + (block.falseValue || '""')
+      const target = compileOperand(block.targetOperand)
+      const truthy = compileOperand(block.trueOperand)
+      const falsy = compileOperand(block.falseOperand)
+      if (!target || !compileOperand(block.leftOperand) || !truthy || !falsy) return ''
+      return pad + target + ' = ' + compileCondition(block.leftOperand, block.operator, block.rightOperand) + ' ? ' + truthy + ' : ' + falsy
     }
 
     case 'in-check': {
-      if (!block.target || !block.checkVar) return ''
-      const inVals = (block.inValues || []).filter(v => v != null && String(v).trim() !== '')
-      const vals = inVals.map(v => wrapValue(v)).join(', ')
-      return pad + block.target + ' = ' + block.checkVar + ' in [' + vals + '] ? ' + (block.trueValue || 'true') + ' : ' + (block.falseValue || 'false')
+      const target = compileOperand(block.targetOperand)
+      const check = compileOperand(block.checkOperand)
+      if (!target || !check) return ''
+      const values = (block.inOperands || []).map(compileOperand).filter(Boolean).join(', ')
+      const truthy = compileOperand(block.trueOperand)
+      const falsy = compileOperand(block.falseOperand)
+      if (!truthy || !falsy) return ''
+      return pad + target + ' = ' + check + ' in [' + values + '] ? ' + truthy + ' : ' + falsy
     }
 
     case 'template-str': {
-      if (!block.target || !block.parts || block.parts.length === 0) return ''
-      const segs = block.parts.map(p => p.type === 'expr' ? '${' + p.content + '}' : p.content).join('')
-      return pad + block.target + ' = "' + segs.replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
+      const target = compileOperand(block.targetOperand)
+      if (!target || !(block.parts || []).length) return ''
+      const content = block.parts.map(part => part.type === 'expr'
+        ? '${' + compileOperand(part.operand) + '}'
+        : String(part.operand && part.operand.value != null ? part.operand.value : '')
+      ).join('')
+      return pad + target + ' = ' + quoteString(content)
     }
 
     case 'rule-call': {
@@ -153,7 +137,8 @@ function generateBlock(block, indent) {
       const call = block.outputField
         ? 'executeRuleField(' + quoteString(block.ruleCode) + ', ' + quoteString(block.outputField) + ')'
         : 'executeRule(' + quoteString(block.ruleCode) + ')'
-      return block.target ? pad + block.target + ' = ' + call : pad + call
+      const target = compileOperand(block.targetOperand)
+      return target ? pad + target + ' = ' + call : pad + call
     }
 
     default:
@@ -161,73 +146,47 @@ function generateBlock(block, indent) {
   }
 }
 
-function buildCondExpr(branch) {
-  if (!branch.condVar) return 'true'
-  return compileConditionExpression(branch.condVar, branch.condVarType || inferConstType(branch.condValue), branch.condOp || '==', branch.condValue, 'CONST')
-}
-
 export function generateScript(actionData) {
-  if (!actionData || !Array.isArray(actionData) || actionData.length === 0) return ''
-  return actionData.map(b => generateBlock(b, 0)).filter(Boolean).join('\n')
+  if (!Array.isArray(actionData) || !actionData.length) return ''
+  return actionData.map(block => generateBlock(block, 0)).filter(Boolean).join('\n')
 }
 
 export function actionDataToBlocks(actionData) {
-  if (!actionData || !Array.isArray(actionData) || actionData.length === 0) return []
-  return actionData.map(block => {
-    if (block.type === 'if-block' && block.branches) {
-      return {
-        ...block,
-        branches: block.branches.map(b => ({
-          ...b,
-          actions: b.actions || []
-        }))
-      }
-    }
-    if (block.type === 'switch-block') {
-      return {
-        ...block,
-        cases: (block.cases || []).map(c => ({ ...c, actions: c.actions || [] })),
-        defaultActions: block.defaultActions || []
-      }
-    }
-    if (block.type === 'foreach') {
-      return { ...block, actions: block.actions || [] }
-    }
-    if (block.type === 'in-check') {
-      const inValues = Array.isArray(block.inValues) ? block.inValues.filter(v => v != null && String(v).trim() !== '') : []
-      return { ...block, inValues }
-    }
-    return { ...block }
-  })
+  if (!Array.isArray(actionData) || !actionData.length) return []
+  return JSON.parse(JSON.stringify(actionData))
 }
 
 export function blocksToActionData(blocks) {
-  if (!blocks || blocks.length === 0) return []
-  return blocks.map(b => JSON.parse(JSON.stringify(b)))
+  if (!Array.isArray(blocks) || !blocks.length) return []
+  return JSON.parse(JSON.stringify(blocks))
+}
+
+function newAssignment() {
+  return { type: 'assign', targetOperand: null, valueOperand: null }
 }
 
 export function newBlock(type) {
   switch (type) {
     case 'assign':
-      return { type: 'assign', target: '', value: '' }
+      return newAssignment()
     case 'if-block':
-      return { type: 'if-block', branches: [{ type: 'if', condVar: '', condOp: '==', condValue: '', actions: [{ type: 'assign', target: '', value: '' }] }] }
+      return { type: 'if-block', branches: [{ type: 'if', leftOperand: null, operator: '==', rightOperand: null, actions: [newAssignment()] }] }
     case 'switch-block':
-      return { type: 'switch-block', matchVar: '', cases: [{ value: '', actions: [{ type: 'assign', target: '', value: '' }] }], defaultActions: [{ type: 'assign', target: '', value: '' }] }
+      return { type: 'switch-block', matchOperand: null, cases: [{ valueOperand: null, actions: [newAssignment()] }], defaultActions: [newAssignment()] }
     case 'func-call':
-      return { type: 'func-call', target: '', funcName: '', args: [''], _argRefs: [null] }
+      return { type: 'func-call', targetOperand: null, functionId: null, functionCode: '', args: [null] }
     case 'foreach':
-      return { type: 'foreach', itemVar: 'item', listExpr: '', actions: [{ type: 'assign', target: '', value: '' }] }
+      return { type: 'foreach', itemVar: 'item', listOperand: null, actions: [newAssignment()] }
     case 'ternary':
-      return { type: 'ternary', target: '', condVar: '', condOp: '==', condValue: '', trueValue: '', falseValue: '' }
+      return { type: 'ternary', targetOperand: null, leftOperand: null, operator: '==', rightOperand: null, trueOperand: null, falseOperand: null }
     case 'in-check':
-      return { type: 'in-check', target: '', checkVar: '', inValues: [], trueValue: 'true', falseValue: 'false' }
+      return { type: 'in-check', targetOperand: null, checkOperand: null, inOperands: [], trueOperand: null, falseOperand: null }
     case 'template-str':
-      return { type: 'template-str', target: '', parts: [{ type: 'text', content: '' }] }
+      return { type: 'template-str', targetOperand: null, parts: [{ type: 'text', operand: null }] }
     case 'rule-call':
-      return { type: 'rule-call', target: '', ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '' }
+      return { type: 'rule-call', targetOperand: null, ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '' }
     default:
-      return { type: 'assign', target: '', value: '' }
+      return newAssignment()
   }
 }
 

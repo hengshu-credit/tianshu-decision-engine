@@ -1,540 +1,178 @@
-/**
- * actionDataCodegen.spec.js
- * 动作数据 JSON → QLExpress 脚本生成器的单元测试
- *
- * 注意：wrapValue 语义为 QLExpress 脚本中的值字面量处理。
- * - null / undefined / '' → '""' (QLExpress 空字符串字面量)
- * - 标识符 (符合 [a-zA-Z_]\w*) → 不加引号 (变量引用)
- * - 数字字面量 → 不加引号
- * - 带引号字符串 → 保留引号
- * - 其他字符串 → 加引号
- */
-
 import {
-  generateScript,
   actionDataToBlocks,
+  BLOCK_TYPES,
   blocksToActionData,
-  newBlock,
-  BLOCK_TYPES
+  generateScript,
+  newBlock
 } from '@/utils/actionDataCodegen'
+import { createLiteralOperand, createPathOperand } from '@/utils/operand'
 
-// ============================================================
-// generateScript
-// ============================================================
+const literal = (value, type = 'STRING') => createLiteralOperand(value, type)
+const path = value => createPathOperand(value)
+const ref = (code, valueType = 'STRING') => ({
+  kind: 'REFERENCE', value: code, code, label: code, valueType,
+  refId: 1, refType: 'VARIABLE', resolved: true
+})
+const assign = (target, value) => ({ type: 'assign', targetOperand: target, valueOperand: value })
+
 describe('generateScript', () => {
-  test('空数组返回空字符串', () => {
-    expect(generateScript([])).toBe('')
+  test.each([null, undefined, []])('空动作返回空脚本', value => {
+    expect(generateScript(value)).toBe('')
   })
 
-  test('null 输入返回空字符串', () => {
-    expect(generateScript(null)).toBe('')
+  test('赋值明确区分目标引用与字符串阈值', () => {
+    expect(generateScript([assign(ref('result'), literal('threshold'))])).toBe('result = "threshold"')
   })
 
-  test('undefined 输入返回空字符串', () => {
-    expect(generateScript(undefined)).toBe('')
-  })
-
-  // -------- assign --------
-  test('assign: 基础赋值', () => {
-    const script = generateScript([{ type: 'assign', target: 'result', value: '100' }])
-    expect(script).toBe('result = 100')
-  })
-
-  test('assign: 空 target 不生成代码', () => {
-    const script = generateScript([{ type: 'assign', target: '', value: '100' }])
-    expect(script).toBe('')
-  })
-
-  test('assign: 空 value 不生成代码', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: '' }])
-    expect(script).toBe('')
-  })
-
-  test('assign: 标识符作为 value 不加引号', () => {
-    const script = generateScript([{ type: 'assign', target: 'msg', value: 'hello' }])
-    expect(script).toBe('msg = hello')
-  })
-
-  test('assign: 表达式作为 value 直接透传', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: 'a + b * 2' }])
-    expect(script).toBe('x = a + b * 2')
-  })
-
-  test('assign: 带引号字符串保留引号', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: '"hello"' }])
-    expect(script).toBe('x = "hello"')
-  })
-
-  test('assign: 精度配置生成 roundScale 调用', () => {
-    const script = generateScript([{ type: 'assign', target: 'amount', value: '10 / 3', enableRounding: true, decimalPlaces: 2, roundingMode: 'HALF_UP' }])
-    expect(script).toContain('amount = 10 / 3')
-    expect(script).toContain('amount = roundScale(amount, 2, "HALF_UP")')
-  })
-
-  // -------- if-block --------
-  test('if-block: 单 if 分支', () => {
+  test('赋值支持路径、数字与精度处理', () => {
     const script = generateScript([{
-      type: 'if-block',
-      branches: [{
-        type: 'if',
-        condVar: 'score',
-        condOp: '>=',
-        condValue: '60',
-        actions: [{ type: 'assign', target: 'grade', value: '"pass"' }]
-      }]
+      ...assign(path('result.amount'), literal('10.25', 'NUMBER')),
+      enableRounding: true,
+      decimalPlaces: 2,
+      roundingMode: 'HALF_UP'
     }])
-    expect(script).toContain('if (score >= 60) {')
-    expect(script).toContain('grade = "pass"')
-    expect(script).toContain('}')
+    expect(script).toBe('result.amount = 10.25\nresult.amount = roundScale(result.amount, 2, "HALF_UP")')
   })
 
-  test('if-block: if + elseif + else', () => {
+  test('赋值缺少任一 Operand 不生成代码', () => {
+    expect(generateScript([assign(null, literal('1', 'NUMBER'))])).toBe('')
+    expect(generateScript([assign(ref('x'), null)])).toBe('')
+  })
+
+  test('条件分支支持 Operand 条件和嵌套动作', () => {
     const script = generateScript([{
       type: 'if-block',
       branches: [
-        { type: 'if', condVar: 's', condOp: '>', condValue: '90', actions: [{ type: 'assign', target: 'g', value: '"A"' }] },
-        { type: 'elseif', condVar: 's', condOp: '>', condValue: '60', actions: [{ type: 'assign', target: 'g', value: '"B"' }] },
-        { type: 'else', actions: [{ type: 'assign', target: 'g', value: '"C"' }] }
+        { type: 'if', leftOperand: ref('score', 'NUMBER'), operator: '>=', rightOperand: literal('90', 'NUMBER'), actions: [assign(ref('grade'), literal('A'))] },
+        { type: 'elseif', leftOperand: ref('score', 'NUMBER'), operator: '>=', rightOperand: literal('60', 'NUMBER'), actions: [assign(ref('grade'), literal('B'))] },
+        { type: 'else', actions: [assign(ref('grade'), literal('C'))] }
       ]
     }])
-    expect(script).toContain('if (s > 90) {')
-    expect(script).toContain('} else if (s > 60) {')
+    expect(script).toContain('if (score >= 90) {')
+    expect(script).toContain('} else if (score >= 60) {')
     expect(script).toContain('} else {')
+    expect(script).toContain('grade = "A"')
   })
 
-  test('if-block: 空 branches 不生成代码', () => {
-    const script = generateScript([{ type: 'if-block', branches: [] }])
-    expect(script).toBe('')
-  })
-
-  test('if-block: condVar 为空时使用 true', () => {
-    const script = generateScript([{
+  test('空条件左值按 true 处理', () => {
+    expect(generateScript([{
       type: 'if-block',
-      branches: [{ type: 'if', condVar: '', condOp: '==', condValue: '', actions: [{ type: 'assign', target: 'x', value: '1' }] }]
-    }])
-    expect(script).toContain('if (true) {')
+      branches: [{ type: 'if', leftOperand: null, operator: '==', rightOperand: null, actions: [assign(ref('x'), literal('1', 'NUMBER'))] }]
+    }])).toContain('if (true) {')
   })
 
-  test('if-block: 嵌套多个动作', () => {
-    const script = generateScript([{
-      type: 'if-block',
-      branches: [{
-        type: 'if', condVar: 'flag', condOp: '==', condValue: 'true', actions: [
-          { type: 'assign', target: 'a', value: '1' },
-          { type: 'assign', target: 'b', value: '2' }
-        ]
-      }]
-    }])
-    expect(script).toContain('a = 1')
-    expect(script).toContain('b = 2')
-  })
-
-  // -------- switch-block --------
-  test('switch-block: 单 case + default', () => {
+  test('Switch 的匹配值可以是阈值或字段路径', () => {
     const script = generateScript([{
       type: 'switch-block',
-      matchVar: 'status',
+      matchOperand: path('request.status'),
       cases: [
-        { value: 1, actions: [{ type: 'assign', target: 'msg', value: '"ok"' }] }
+        { valueOperand: literal('PASS'), actions: [assign(ref('flag'), literal('true', 'BOOLEAN'))] },
+        { valueOperand: path('request.fallbackStatus'), actions: [assign(ref('flag'), literal('false', 'BOOLEAN'))] }
       ],
-      defaultActions: [{ type: 'assign', target: 'msg', value: '"unknown"' }]
+      defaultActions: []
     }])
-    expect(script).toContain('if (status == 1) {')
-    expect(script).toContain('} else {')
+    expect(script).toContain('if (request.status == "PASS") {')
+    expect(script).toContain('} else if (request.status == request.fallbackStatus) {')
   })
 
-  test('switch-block: 多 case', () => {
+  test('函数参数支持路径和数值阈值', () => {
+    expect(generateScript([{
+      type: 'func-call', functionCode: 'max', args: [path('request.score'), literal('600', 'NUMBER')]
+    }])).toBe('max(request.score, 600)')
+  })
+
+  test('函数结果可写入目标字段', () => {
+    expect(generateScript([{
+      type: 'func-call', targetOperand: ref('maxScore'), functionCode: 'max', args: [ref('a', 'NUMBER'), ref('b', 'NUMBER')]
+    }])).toBe('maxScore = max(a, b)')
+  })
+
+  test('ForEach 列表使用 Operand', () => {
     const script = generateScript([{
-      type: 'switch-block',
-      matchVar: 'code',
-      cases: [
-        { value: 1, actions: [{ type: 'assign', target: 'x', value: '1' }] },
-        { value: 2, actions: [{ type: 'assign', target: 'x', value: '2' }] }
-      ]
+      type: 'foreach', itemVar: 'item', listOperand: path('request.items'), actions: [assign(ref('lastItem'), path('item'))]
     }])
-    expect(script).toContain('if (code == 1) {')
-    expect(script).toContain('} else if (code == 2) {')
+    expect(script).toContain('for (item : request.items) {')
+    expect(script).toContain('lastItem = item')
   })
 
-  test('switch-block: 空 matchVar 不生成代码', () => {
-    const script = generateScript([{ type: 'switch-block', matchVar: '', cases: [{ value: 1, actions: [] }] }])
-    expect(script).toBe('')
+  test('三元表达式的条件和结果均使用 Operand', () => {
+    expect(generateScript([{
+      type: 'ternary', targetOperand: ref('label'), leftOperand: ref('score', 'NUMBER'), operator: '>=',
+      rightOperand: literal('60', 'NUMBER'), trueOperand: literal('pass'), falseOperand: literal('fail')
+    }])).toBe('label = score >= 60 ? "pass" : "fail"')
   })
 
-  test('switch-block: value=0 仍然生成（0 是有效值）', () => {
-    const script = generateScript([{
-      type: 'switch-block',
-      matchVar: 'flag',
-      cases: [{ value: 0, actions: [{ type: 'assign', target: 'x', value: '0' }] }]
-    }])
-    expect(script).toContain('if (flag == 0) {')
+  test('IN 判断的列表项与结果均使用 Operand', () => {
+    expect(generateScript([{
+      type: 'in-check', targetOperand: ref('flag'), checkOperand: path('request.status'),
+      inOperands: [literal('A'), literal('B')], trueOperand: literal('true', 'BOOLEAN'), falseOperand: literal('false', 'BOOLEAN')
+    }])).toBe('flag = request.status in ["A", "B"] ? true : false')
   })
 
-  test('switch-block: value 为空字符串时不生成', () => {
-    const script = generateScript([{
-      type: 'switch-block',
-      matchVar: 'x',
-      cases: [{ value: '', actions: [] }]
-    }])
-    expect(script).not.toContain('if (x == ""')
+  test('动态字符串的表达式片段使用 Operand', () => {
+    expect(generateScript([{
+      type: 'template-str', targetOperand: ref('message'),
+      parts: [{ type: 'text', operand: literal('Hello, ') }, { type: 'expr', operand: path('request.name') }]
+    }])).toBe('message = "Hello, ${request.name}"')
   })
 
-  // -------- func-call --------
-  test('func-call: 无目标变量', () => {
-    const script = generateScript([{ type: 'func-call', funcName: 'print', args: ['msg'] }])
-    expect(script).toBe('print("msg")')
-  })
-
-  test('func-call: 有目标变量', () => {
-    const script = generateScript([{
-      type: 'func-call',
-      target: 'maxVal',
-      funcName: 'max',
-      args: ['a', 'b'],
-      _argRefs: [{ _varId: 1 }, { _varId: 2 }]
-    }])
-    expect(script).toBe('maxVal = max(a, b)')
-  })
-
-  test('func-call: 空 funcName 不生成', () => {
-    const script = generateScript([{ type: 'func-call', target: 'x', funcName: '', args: [] }])
-    expect(script).toBe('')
-  })
-
-  test('func-call: 多参数', () => {
-    const script = generateScript([{ type: 'func-call', funcName: 'dateDiff', args: ['idcard_no', 'credit_time', 'DAY'], _argRefs: [{ _varId: 1 }, { _varId: 2 }, null] }])
-    expect(script).toBe('dateDiff(idcard_no, credit_time, "DAY")')
-  })
-
-  // -------- foreach --------
-  test('foreach: 基本循环', () => {
-    const script = generateScript([{
-      type: 'foreach',
-      itemVar: 'item',
-      listExpr: 'items',
-      actions: [{ type: 'assign', target: 'sum', value: 'sum + item' }]
-    }])
-    expect(script).toContain('for (item : items) {')
-    expect(script).toContain('sum = sum + item')
-    expect(script).toMatch(/\}$/)
-  })
-
-  test('foreach: 空 itemVar 不生成', () => {
-    const script = generateScript([{ type: 'foreach', itemVar: '', listExpr: 'items', actions: [] }])
-    expect(script).toBe('')
-  })
-
-  test('foreach: 空 listExpr 不生成', () => {
-    const script = generateScript([{ type: 'foreach', itemVar: 'item', listExpr: '', actions: [] }])
-    expect(script).toBe('')
-  })
-
-  // -------- ternary --------
-  test('ternary: 三元表达式', () => {
-    const script = generateScript([{
-      type: 'ternary',
-      target: 'label',
-      condVar: 'score',
-      condOp: '>=',
-      condValue: '60',
-      trueValue: '"pass"',
-      falseValue: '"fail"'
-    }])
-    expect(script).toBe('label = score >= 60 ? "pass" : "fail"')
-  })
-
-  test('ternary: 空 target 不生成', () => {
-    const script = generateScript([{ type: 'ternary', target: '', condVar: 'x', condValue: '0', trueValue: '1', falseValue: '2' }])
-    expect(script).toBe('')
-  })
-
-  test('ternary: 空 condVar 不生成', () => {
-    const script = generateScript([{ type: 'ternary', target: 'x', condVar: '', condValue: '0', trueValue: '1', falseValue: '2' }])
-    expect(script).toBe('')
-  })
-
-  // -------- in-check --------
-  test('in-check: IN 判断（标识符格式不加引号，符合 QLExpress 脚本语义）', () => {
-    const script = generateScript([{
-      type: 'in-check',
-      target: 'flag',
-      checkVar: 'status',
-      inValues: ['S1', 'S2', 'S3'],
-      trueValue: 'true',
-      falseValue: 'false'
-    }])
-    expect(script).toBe('flag = status in [S1, S2, S3] ? true : false')
-  })
-
-  test('in-check: 空 inValues 只生成 false 分支', () => {
-    const script = generateScript([{
-      type: 'in-check',
-      target: 'x',
-      checkVar: 'v',
-      inValues: [],
-      trueValue: 'true',
-      falseValue: 'false'
-    }])
-    expect(script).toBe('x = v in [] ? true : false')
-  })
-
-  test('in-check: 过滤 null 和空字符串', () => {
-    const script = generateScript([{
-      type: 'in-check',
-      target: 'x',
-      checkVar: 'v',
-      inValues: ['AA', null, '', 'BB'],
-      trueValue: '1',
-      falseValue: '0'
-    }])
-    expect(script).toBe('x = v in [AA, BB] ? 1 : 0')
-  })
-
-  // -------- template-str --------
-  test('template-str: 动态字符串', () => {
-    const script = generateScript([{
-      type: 'template-str',
-      target: 'msg',
-      parts: [
-        { type: 'text', content: 'Hello, ' },
-        { type: 'expr', content: 'name' }
-      ]
-    }])
-    expect(script).toContain('msg = "Hello, ${name}"')
-  })
-
-  test('template-str: 纯文本', () => {
-    const script = generateScript([{
-      type: 'template-str',
-      target: 'msg',
-      parts: [{ type: 'text', content: 'fixed text' }]
-    }])
-    expect(script).toContain('msg = "fixed text"')
-  })
-
-  test('template-str: 空 target 不生成', () => {
-    const script = generateScript([{ type: 'template-str', target: '', parts: [{ type: 'text', content: 'x' }] }])
-    expect(script).toBe('')
-  })
-
-  test('rule-call: 调用整条规则结果', () => {
-    const script = generateScript([{ type: 'rule-call', target: 'riskResult', ruleCode: 'credit_flow' }])
-    expect(script).toBe('riskResult = executeRule("credit_flow")')
-  })
-
-  test('rule-call: 调用规则具体输出字段', () => {
-    const script = generateScript([{ type: 'rule-call', target: 'score', ruleCode: 'score_card', outputField: 'score' }])
-    expect(script).toBe('score = executeRuleField("score_card", "score")')
-  })
-
-  // -------- 多块组合 --------
-  test('多块按顺序拼接', () => {
-    const script = generateScript([
-      { type: 'assign', target: 'a', value: '1' },
-      { type: 'assign', target: 'b', value: '2' }
-    ])
-    expect(script).toBe('a = 1\nb = 2')
-  })
-
-  // -------- 边界值 --------
-  test('assign: null value 不生成代码（falsy 拦截）', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: null }])
-    expect(script).toBe('')
-  })
-
-  test('assign: undefined value 不生成代码（falsy 拦截）', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: undefined }])
-    expect(script).toBe('')
-  })
-
-  test('wrapValue: true/false/null 作为关键字保留', () => {
-    expect(generateScript([{ type: 'assign', target: 'x', value: 'true' }])).toBe('x = true')
-    expect(generateScript([{ type: 'assign', target: 'x', value: 'false' }])).toBe('x = false')
-    expect(generateScript([{ type: 'assign', target: 'x', value: 'null' }])).toBe('x = null')
-  })
-
-  test('wrapValue: 数字直接透传', () => {
-    const script = generateScript([{ type: 'assign', target: 'x', value: '123.45' }])
-    expect(script).toBe('x = 123.45')
-  })
-
-  test('未知块类型返回空', () => {
-    const script = generateScript([{ type: 'unknown-block', target: 'x', value: '1' }])
-    expect(script).toBe('')
+  test('规则调用结果可选写入目标 Operand', () => {
+    expect(generateScript([{
+      type: 'rule-call', targetOperand: ref('score'), ruleCode: 'score_card', outputField: 'score'
+    }])).toBe('score = executeRuleField("score_card", "score")')
+    expect(generateScript([{ type: 'rule-call', targetOperand: null, ruleCode: 'credit_flow' }])).toBe('executeRule("credit_flow")')
   })
 })
 
-// ============================================================
-// actionDataToBlocks
-// ============================================================
-describe('actionDataToBlocks', () => {
-  test('空数组返回空数组', () => {
-    expect(actionDataToBlocks([])).toEqual([])
-  })
-
-  test('null 输入返回空数组', () => {
+describe('动作数据转换', () => {
+  test('空数据返回空数组', () => {
     expect(actionDataToBlocks(null)).toEqual([])
-  })
-
-  test('普通块直接透传', () => {
-    const input = [{ type: 'assign', target: 'x', value: '1' }]
-    expect(actionDataToBlocks(input)).toEqual(input)
-  })
-
-  test('if-block: 标准化 branches.actions', () => {
-    const input = [{
-      type: 'if-block',
-      branches: [
-        { type: 'if', condVar: 'x', actions: null }
-      ]
-    }]
-    const out = actionDataToBlocks(input)
-    expect(out[0].branches[0].actions).toEqual([])
-  })
-
-  test('switch-block: 标准化 cases 和 defaultActions', () => {
-    const input = [{
-      type: 'switch-block',
-      matchVar: 'x',
-      cases: [{ value: 'A' }],
-      defaultActions: undefined
-    }]
-    const out = actionDataToBlocks(input)
-    expect(out[0].cases[0].actions).toEqual([])
-    expect(out[0].defaultActions).toEqual([])
-  })
-
-  test('foreach: 标准化 actions', () => {
-    const input = [{ type: 'foreach', itemVar: 'i', listExpr: 'arr', actions: null }]
-    const out = actionDataToBlocks(input)
-    expect(out[0].actions).toEqual([])
-  })
-
-  test('in-check: 过滤空值', () => {
-    const input = [{
-      type: 'in-check',
-      target: 'x',
-      checkVar: 'v',
-      inValues: ['A', null, '', 'B']
-    }]
-    const out = actionDataToBlocks(input)
-    expect(out[0].inValues).toEqual(['A', 'B'])
-  })
-})
-
-// ============================================================
-// blocksToActionData
-// ============================================================
-describe('blocksToActionData', () => {
-  test('空数组返回空数组', () => {
     expect(blocksToActionData([])).toEqual([])
   })
 
-  test('深拷贝，不污染原数组', () => {
-    const original = [{ type: 'assign', target: 'x', value: '1' }]
-    const copy = blocksToActionData(original)
-    copy[0].target = 'y'
-    expect(original[0].target).toBe('x')
-  })
-
-  test('嵌套对象深拷贝', () => {
-    const original = [{
-      type: 'if-block',
-      branches: [{ type: 'if', actions: [{ type: 'assign', target: 'a', value: '1' }] }]
-    }]
-    const copy = blocksToActionData(original)
-    copy[0].branches[0].actions[0].target = 'b'
-    expect(original[0].branches[0].actions[0].target).toBe('a')
+  test('双向转换都深拷贝 Operand', () => {
+    const source = [assign(ref('x'), literal('1', 'NUMBER'))]
+    const blocks = actionDataToBlocks(source)
+    blocks[0].targetOperand.code = 'y'
+    expect(source[0].targetOperand.code).toBe('x')
+    const output = blocksToActionData(source)
+    output[0].valueOperand.value = '2'
+    expect(source[0].valueOperand.value).toBe('1')
   })
 })
 
-// ============================================================
-// newBlock
-// ============================================================
 describe('newBlock', () => {
-  test('assign: 标准结构', () => {
-    const b = newBlock('assign')
-    expect(b).toEqual({ type: 'assign', target: '', value: '' })
+  test('赋值块只初始化 Operand 字段', () => {
+    expect(newBlock('assign')).toEqual({ type: 'assign', targetOperand: null, valueOperand: null })
   })
 
-  test('if-block: 带默认分支', () => {
-    const b = newBlock('if-block')
-    expect(b.type).toBe('if-block')
-    expect(b.branches[0].type).toBe('if')
-    expect(b.branches[0].actions[0].type).toBe('assign')
+  test('条件块的分支使用标准 Operand 字段', () => {
+    expect(newBlock('if-block').branches[0]).toMatchObject({ leftOperand: null, rightOperand: null })
   })
 
-  test('switch-block: 带 case + default', () => {
-    const b = newBlock('switch-block')
-    expect(b.type).toBe('switch-block')
-    expect(b.cases[0].value).toBe('')
-    expect(b.defaultActions[0].type).toBe('assign')
+  test.each([
+    ['switch-block', 'matchOperand'],
+    ['func-call', 'targetOperand'],
+    ['foreach', 'listOperand'],
+    ['ternary', 'rightOperand'],
+    ['in-check', 'checkOperand'],
+    ['template-str', 'targetOperand'],
+    ['rule-call', 'targetOperand']
+  ])('%s 使用标准 Operand 字段', (type, key) => {
+    expect(newBlock(type)).toHaveProperty(key)
   })
 
-  test('func-call: 默认参数为空字符串', () => {
-    const b = newBlock('func-call')
-    expect(b.args).toEqual([''])
-  })
-
-  test('foreach: itemVar 默认 item', () => {
-    const b = newBlock('foreach')
-    expect(b.itemVar).toBe('item')
-    expect(b.listExpr).toBe('')
-  })
-
-  test('ternary: 全字段初始化', () => {
-    const b = newBlock('ternary')
-    expect(b.type).toBe('ternary')
-    expect(b.condOp).toBe('==')
-  })
-
-  test('in-check: inValues 默认空数组，true/false 默认值', () => {
-    const b = newBlock('in-check')
-    expect(b.inValues).toEqual([])
-    expect(b.trueValue).toBe('true')
-    expect(b.falseValue).toBe('false')
-  })
-
-  test('template-str: 默认文本段落', () => {
-    const b = newBlock('template-str')
-    expect(b.parts).toEqual([{ type: 'text', content: '' }])
-  })
-
-  test('rule-call: 初始化规则调用块', () => {
-    const b = newBlock('rule-call')
-    expect(b).toMatchObject({ type: 'rule-call', target: '', ruleId: null, ruleCode: '', outputField: '' })
-  })
-
-  test('未知类型默认为 assign', () => {
-    const b = newBlock('unknown')
-    expect(b.type).toBe('assign')
+  test('未知类型退化为标准赋值块', () => {
+    expect(newBlock('unknown')).toEqual(newBlock('assign'))
   })
 })
 
-// ============================================================
-// BLOCK_TYPES 常量
-// ============================================================
 describe('BLOCK_TYPES', () => {
-  test('包含全部 9 种块类型', () => {
-    const types = BLOCK_TYPES.map(b => b.type)
-    expect(types).toContain('assign')
-    expect(types).toContain('if-block')
-    expect(types).toContain('switch-block')
-    expect(types).toContain('func-call')
-    expect(types).toContain('foreach')
-    expect(types).toContain('ternary')
-    expect(types).toContain('in-check')
-    expect(types).toContain('template-str')
-    expect(types).toContain('rule-call')
-    expect(types.length).toBe(9)
-  })
-
-  test('每种类型有 label 和 color', () => {
-    BLOCK_TYPES.forEach(b => {
-      expect(typeof b.label).toBe('string')
-      expect(b.label.length).toBeGreaterThan(0)
-      expect(typeof b.color).toBe('string')
-      expect(b.color.startsWith('#')).toBe(true)
+  test('保留全部九种动作类型和展示元信息', () => {
+    expect(BLOCK_TYPES).toHaveLength(9)
+    BLOCK_TYPES.forEach(item => {
+      expect(item.label).toBeTruthy()
+      expect(item.color).toMatch(/^#/)
     })
   })
 })
