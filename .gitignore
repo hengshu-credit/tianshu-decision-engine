@@ -17,3 +17,4 @@ rule_examples
 常用命令.txt
 rule-engine-mysql/data
 rule-engine-redis/data
+.worktrees/
