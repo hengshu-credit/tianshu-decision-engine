@@ -27,19 +27,29 @@ describe('formatVarDisplay', () => {
     expect(formatVarDisplay(undefined)).toBe('')
   })
 
-  test('数据对象字段（objectLabel 存在）返回 "中文标签 monospace对象路径.编码" 格式', () => {
-    const result = formatVarDisplay({ varLabel: '金额', varCode: 'amount', objectLabel: 'TaxRequest' })
-    expect(result).toBe('金额 TaxRequest.amount')
+  test('数据对象字段返回“对象名称/字段名称 完整字段路径”格式', () => {
+    const result = formatVarDisplay({ varLabel: '金额', varCode: 'amount', objectLabel: '税务请求', objectCode: 'TaxRequest' })
+    expect(result).toBe('税务请求/金额 TaxRequest.amount')
   })
 
   test('数据对象字段无 varCode 时返回 label', () => {
-    const result = formatVarDisplay({ varLabel: '金额', varCode: '', objectLabel: 'TaxRequest' })
-    expect(result).toBe('金额')
+    const result = formatVarDisplay({ varLabel: '金额', varCode: '', objectLabel: '税务请求', objectCode: 'TaxRequest' })
+    expect(result).toBe('税务请求/金额')
   })
 
   test('数据对象字段无 label 时返回 "对象路径.编码"', () => {
-    const result = formatVarDisplay({ varLabel: '', varCode: 'amount', objectLabel: 'TaxRequest' })
+    const result = formatVarDisplay({ varLabel: '', varCode: 'amount', objectLabel: '税务请求', objectCode: 'TaxRequest' })
     expect(result).toBe('TaxRequest.amount')
+  })
+
+  test('数据对象字段已是完整显示名时不重复拼接', () => {
+    const result = formatVarDisplay({
+      varLabel: '税务请求/金额 TaxRequest.amount',
+      varCode: 'TaxRequest.amount',
+      objectLabel: '税务请求',
+      objectCode: 'TaxRequest'
+    })
+    expect(result).toBe('税务请求/金额 TaxRequest.amount')
   })
 
   test('常量返回 "中文标签 monospace编码" 格式', () => {

@@ -373,7 +373,7 @@ import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
-import { compileOperand, createFunctionOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields } from '@/utils/operand'
+import { compileOperand, createFunctionOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import {
   buildDetailReferenceMap,
   buildDetailReferenceState,
@@ -749,6 +749,22 @@ export default {
       this.$set(this.varMap, this.refKey(item.id, item.refType), item)
       if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
     },
+    syncModelOperandReferences() {
+      const options = this.varPickerOptions
+      const syncField = (row, field) => {
+        if (!row || !row[field]) return
+        const result = syncOperandReference(row[field], options)
+        if (result.changed) this.$set(row, field, result.operand)
+      }
+      ;(this.model.inputFields || []).forEach(row => {
+        syncField(row, 'sourceOperand')
+        syncField(row, 'defaultOperand')
+      })
+      ;(this.model.outputFields || []).forEach(row => {
+        syncField(row, 'targetOperand')
+        syncField(row, 'transformOperand')
+      })
+    },
     buildVarOptions(vars, doTree, models = []) {
       const referenceModels = this.withCurrentModel(models)
       const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, referenceModels))
@@ -756,6 +772,7 @@ export default {
         this.varMap = buildDetailReferenceMap(state)
         this.varPickerGroups.splice(0, this.varPickerGroups.length,
           ...state.groups.map(group => ({ label: group.label, options: group.options })))
+        this.syncModelOperandReferences()
         return
       }
       this.varMap = {}
@@ -803,12 +820,13 @@ export default {
           const labelText = this.stripObjectPrefix(f.varLabel || '', objCode)
           const codeText = f.scriptName || f.varCode || ''
           const objLabel = obj.objectLabel || obj.objectCode || '数据对象'
+          const displayLabel = [objLabel, labelText].filter(Boolean).join('/')
           const item = {
             id: f.id,
             refType,
             varCode: codeText,
-            varLabel: labelText + (codeText ? ' ' + codeText : ''),
-            varLabelText: labelText,
+            varLabel: displayLabel + (codeText ? ' ' + codeText : ''),
+            varLabelText: displayLabel,
             varCodeText: codeText,
             varType: f.varType,
             varSource: 'INPUT',
@@ -850,6 +868,7 @@ export default {
         { label: '数据对象字段', options: objOptions },
         { label: '模型', options: modelOptions }
       ])
+      this.syncModelOperandReferences()
     },
     withCurrentModel(models) {
       const list = Array.isArray(models) ? models.slice() : []

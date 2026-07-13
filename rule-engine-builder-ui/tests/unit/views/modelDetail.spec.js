@@ -241,7 +241,7 @@ describe('ModelDetail — 变量关联加载', () => {
     expect(objGroup.options.length).toBe(1)
     expect(objGroup.options[0].sourceType).toBe('dataObject')
     expect(objGroup.options[0].varCode).toBe('TaxRequest.amount')
-    expect(objGroup.options[0].varLabel).toMatch(/TaxRequest\.amount/)
+    expect(objGroup.options[0].varLabel).toBe('税务请求/金额 TaxRequest.amount')
   })
 
   test('数据对象关联展示变量名称和完整脚本路径', () => {
@@ -249,10 +249,41 @@ describe('ModelDetail — 变量关联加载', () => {
     const row = { varId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount' }
 
     expect(wrapper.vm.bindingDisplay(row)).toMatchObject({
-      label: '金额',
+      label: '税务请求/金额',
       code: 'TaxRequest.amount',
       source: '对象字段'
     })
+  })
+
+  test('buildVarOptions 按引用 ID 同步已保存 operand 的最新数据对象显示名', () => {
+    wrapper.vm.model.inputFields = [{
+      sourceOperand: {
+        kind: 'REFERENCE',
+        refId: 200,
+        refType: 'DATA_OBJECT',
+        code: 'TaxRequest.amount',
+        label: '金额'
+      }
+    }]
+    wrapper.vm.model.outputFields = [{
+      transformOperand: {
+        kind: 'FUNCTION',
+        functionId: 31,
+        functionCode: 'numAdd',
+        args: [{
+          kind: 'REFERENCE',
+          refId: 200,
+          refType: 'DATA_OBJECT',
+          code: 'TaxRequest.amount',
+          label: '金额'
+        }]
+      }
+    }]
+
+    wrapper.vm.buildVarOptions([], mockObjectTree())
+
+    expect(wrapper.vm.model.inputFields[0].sourceOperand.label).toBe('税务请求/金额')
+    expect(wrapper.vm.model.outputFields[0].transformOperand.args[0].label).toBe('税务请求/金额')
   })
 
   test('buildVarOptions 中 id 去重', () => {

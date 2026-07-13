@@ -237,7 +237,7 @@ describe('DecisionTable — 变量选择器加载', () => {
     const options = wrapper.vm.varPickerOptions
     const amountOpt = options.find(o => o.varCode === 'TaxRequest.amount')
     expect(amountOpt).toBeDefined()
-    expect(amountOpt.varLabel).toBe('金额 TaxRequest.amount')
+    expect(amountOpt.varLabel).toBe('税务请求/金额 TaxRequest.amount')
   })
 
   test('selectedVarPickerOptions 汇总当前规则已选择的条件和动作字段', () => {

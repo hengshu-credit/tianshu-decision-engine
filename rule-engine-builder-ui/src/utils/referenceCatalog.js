@@ -72,11 +72,12 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
       const fieldPath = stripPrefix(field.scriptName || field.varCode || '', objectCode)
       const refCode = [objectCode, fieldPath].filter(Boolean).join('.')
       const fieldLabel = stripPrefix(field.varLabel || field.varCode || fieldPath, objectCode)
+      const displayLabel = [objectLabel, fieldLabel].filter(Boolean).join('/')
       const entry = refEntry({
         id: field.id,
         refType: 'DATA_OBJECT',
         refCode,
-        label: fieldLabel,
+        label: displayLabel,
         varType: field.varType,
         category: 'object',
         varObj: Object.assign({ objectField: true }, field),

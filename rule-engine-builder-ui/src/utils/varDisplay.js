@@ -20,10 +20,18 @@
  */
 export function formatVarDisplay(item) {
   if (!item) return ''
-  const label = item.varLabel || ''
+  let label = item.varLabel || ''
   const code = item.varCode || ''
   if (item.objectLabel) {
-    return code ? `${label}${label ? ' ' : ''}${item.objectLabel}.${code}` : label
+    const objectCode = item.objectCode || item.objectLabel
+    const fullCode = code ? (code.indexOf('.') === -1 ? `${objectCode}.${code}` : code) : ''
+    if (fullCode && label.lastIndexOf(' ' + fullCode) === label.length - fullCode.length - 1) {
+      label = label.substring(0, label.length - fullCode.length - 1)
+    }
+    if (label && label.indexOf(item.objectLabel + '/') !== 0) {
+      label = `${item.objectLabel}/${label}`
+    }
+    return fullCode ? `${label}${label ? ' ' : ''}${fullCode}` : label
   }
   return code ? `${label}${label ? ' ' : ''}${code}` : label
 }

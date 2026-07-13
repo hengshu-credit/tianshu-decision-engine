@@ -27,8 +27,8 @@ describe('referenceCatalog', () => {
     const bankCard = catalog.refs.find(item => item.refCode === 'bankcard.bank_card_no')
     const score = catalog.refs.find(item => item.refCode === 'score_f1.score')
 
-    expect(bankCard.refLabel).toEqual({ label: '银行卡号', code: 'bankcard.bank_card_no' })
-    expect(bankCard.displayName).toBe('银行卡号 bankcard.bank_card_no')
+    expect(bankCard.refLabel).toEqual({ label: '银行卡信息/银行卡号', code: 'bankcard.bank_card_no' })
+    expect(bankCard.displayName).toBe('银行卡信息/银行卡号 bankcard.bank_card_no')
     expect(score.refLabel).toEqual({ label: '反欺诈评分F1/评分', code: 'score_f1.score' })
     expect(catalog.groups.map(group => group.key)).toEqual(['variable', 'constant', 'dataObject', 'model'])
 
@@ -36,7 +36,7 @@ describe('referenceCatalog', () => {
     expect(detailState.items.find(item => item.id === 11)).toMatchObject({
       varCode: 'bankcard.bank_card_no',
       varCodeText: 'bankcard.bank_card_no',
-      varLabel: '银行卡号 bankcard.bank_card_no'
+      varLabel: '银行卡信息/银行卡号 bankcard.bank_card_no'
     })
 
     const referenceMap = buildDetailReferenceMap(detailState)
@@ -44,7 +44,7 @@ describe('referenceCatalog', () => {
       refType: 'DATA_OBJECT',
       scriptName: 'bankcard.bank_card_no'
     })).toMatchObject({
-      varLabelText: '银行卡号',
+      varLabelText: '银行卡信息/银行卡号',
       varCodeText: 'bankcard.bank_card_no'
     })
   })
