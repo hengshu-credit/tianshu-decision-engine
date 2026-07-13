@@ -18,6 +18,9 @@ public final class OperandCompiler {
         if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
             String code = firstText(operand.getString("code"), operand.getString("value"));
             if (varContext == null) return code;
+            if ("REFERENCE".equals(kind) && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
+                return varContext.resolveConstant(operand.getLong("refId"));
+            }
             return varContext.resolveVar(operand.getLong("refId"), operand.getString("refType"), code);
         }
         if ("FUNCTION".equals(kind)) {

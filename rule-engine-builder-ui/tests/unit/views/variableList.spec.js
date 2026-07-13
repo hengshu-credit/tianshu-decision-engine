@@ -45,6 +45,8 @@ import * as dataObjectApi from '@/api/dataObject'
 import * as ruleListApi from '@/api/ruleList'
 import * as definitionApi from '@/api/definition'
 import VariableList from '@/views/variable/VariableList.vue'
+import fs from 'fs'
+import path from 'path'
 
 afterEach(() => { jest.clearAllMocks() })
 
@@ -280,6 +282,20 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.form.id).toBe(1)
     expect(wrapper.vm.form.varLabel).toBe('年龄')
     expect(wrapper.vm.dialogVisible).toBe(true)
+  })
+
+  test('常量只能通过编辑弹窗修改且表格没有行内保存', () => {
+    const row = { id: 3, varCode: 'EMPTY_STRING', varLabel: '空字符串', varType: 'STRING', varSource: 'CONSTANT', defaultValue: '' }
+    wrapper.vm.handleEdit(row)
+
+    expect(wrapper.vm.form.id).toBe(3)
+    expect(wrapper.vm.dialogVisible).toBe(true)
+    expect(wrapper.vm.onConstDefaultBlur).toBeUndefined()
+
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
+    const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
+    expect(constantTable).not.toContain('v-model="row.defaultValue"')
+    expect(constantTable).not.toContain('@blur="onConstDefaultBlur(row)"')
   })
 
   test('handlePrimaryCreate 打开创建弹窗', () => {

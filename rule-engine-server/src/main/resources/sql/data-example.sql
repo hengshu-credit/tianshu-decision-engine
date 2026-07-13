@@ -503,13 +503,21 @@ ON DUPLICATE KEY UPDATE `change_log` = VALUES(`change_log`), `publish_time` = NO
 -- ============================================================
 -- 12. 系统常量：用于规则右侧阈值与特殊值比较
 -- ============================================================
+DELETE FROM `rule_variable`
+WHERE `project_id` = 0 AND `scope` = 'GLOBAL' AND `var_source` = 'CONSTANT'
+  AND `var_code` IN ('EMPTY_OBJECT', 'NULL_STRING', 'NULL_NUMBER', 'NULL_OBJECT', 'NULL_LIST', 'NULL_MAP');
 INSERT INTO `rule_variable` (`project_id`, `scope`, `var_code`, `var_label`, `script_name`, `var_type`, `var_source`, `source_config`, `default_value`, `value_range`, `example_value`, `description`, `sort_order`, `status`, `create_time`, `update_time`) VALUES
 (0, 'GLOBAL', 'NEGATIVE_INFINITY', '负无穷', 'NEGATIVE_INFINITY', 'DOUBLE', 'CONSTANT', NULL, '-Infinity', '', '-Infinity', '系统常量：数值比较下界，可在条件右侧通过字段选择器引用。', -1000, 1, NOW(), NOW()),
 (0, 'GLOBAL', 'NULL_VALUE', '空值', 'NULL_VALUE', 'OBJECT', 'CONSTANT', NULL, 'null', '', 'null', '系统常量：空值，可在条件右侧通过字段选择器引用。', -999, 1, NOW(), NOW()),
-(0, 'GLOBAL', 'EMPTY_STRING', '空字符串', 'EMPTY_STRING', 'STRING', 'CONSTANT', NULL, '""', '', '""', '系统常量：空字符串，可在条件右侧通过字段选择器引用。', -998, 1, NOW(), NOW()),
-(0, 'GLOBAL', 'EMPTY_OBJECT', '空对象', 'EMPTY_OBJECT', 'OBJECT', 'CONSTANT', NULL, '{}', '', '{}', '系统常量：空对象，可在条件右侧通过字段选择器引用。', -997, 1, NOW(), NOW()),
-(0, 'GLOBAL', 'EMPTY_LIST', '空列表', 'EMPTY_LIST', 'LIST', 'CONSTANT', NULL, '[]', '', '[]', '系统常量：空列表，可在条件右侧通过字段选择器引用。', -996, 1, NOW(), NOW()),
-(0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'DOUBLE', 'CONSTANT', NULL, 'Infinity', '', 'Infinity', '系统常量：数值比较上界，可在条件右侧通过字段选择器引用。', -995, 1, NOW(), NOW())
+(0, 'GLOBAL', 'EMPTY_STRING', '空字符串', 'EMPTY_STRING', 'STRING', 'CONSTANT', NULL, '', '', '', '系统常量：空字符串，可在条件右侧通过字段选择器引用。', -998, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'EMPTY_LIST', '空列表', 'EMPTY_LIST', 'LIST', 'CONSTANT', NULL, '[]', '', '[]', '系统常量：空列表，可在条件右侧通过字段选择器引用。', -997, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'EMPTY_MAP', '空映射', 'EMPTY_MAP', 'MAP', 'CONSTANT', NULL, '{}', '', '{}', '系统常量：空键值映射，可在条件右侧通过字段选择器引用。', -996, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'FALSE_VALUE', '布尔假', 'FALSE_VALUE', 'BOOLEAN', 'CONSTANT', NULL, 'false', '', 'false', '系统常量：布尔假。', -995, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'TRUE_VALUE', '布尔真', 'TRUE_VALUE', 'BOOLEAN', 'CONSTANT', NULL, 'true', '', 'true', '系统常量：布尔真。', -994, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'NEGATIVE_ONE', '负一', 'NEGATIVE_ONE', 'NUMBER', 'CONSTANT', NULL, '-1', '', '-1', '系统常量：数值负一。', -993, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'ZERO', '零', 'ZERO', 'NUMBER', 'CONSTANT', NULL, '0', '', '0', '系统常量：数值零。', -992, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'ONE', '一', 'ONE', 'NUMBER', 'CONSTANT', NULL, '1', '', '1', '系统常量：数值一。', -991, 1, NOW(), NOW()),
+(0, 'GLOBAL', 'POSITIVE_INFINITY', '正无穷', 'POSITIVE_INFINITY', 'DOUBLE', 'CONSTANT', NULL, 'Infinity', '', 'Infinity', '系统常量：数值比较上界，可在条件右侧通过字段选择器引用。', -990, 1, NOW(), NOW())
 ON DUPLICATE KEY UPDATE
 `var_label` = VALUES(`var_label`),
 `script_name` = VALUES(`script_name`),

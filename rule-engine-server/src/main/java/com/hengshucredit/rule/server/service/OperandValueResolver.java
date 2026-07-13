@@ -19,19 +19,37 @@ public final class OperandValueResolver {
     }
 
     public static Object resolve(String operandJson, Map<String, Object> values) {
+        return resolve(operandJson, values, java.util.Collections.emptyMap());
+    }
+
+    public static Object resolve(String operandJson, Map<String, Object> values,
+                                 Map<String, Object> referenceValues) {
         if (operandJson == null || operandJson.trim().isEmpty()) return null;
-        return resolve(JSON.parseObject(operandJson), values);
+        return resolve(JSON.parseObject(operandJson), values, referenceValues);
     }
 
     public static Object resolve(JSONObject operand, Map<String, Object> values) {
+        return resolve(operand, values, java.util.Collections.emptyMap());
+    }
+
+    public static Object resolve(JSONObject operand, Map<String, Object> values,
+                                 Map<String, Object> referenceValues) {
         if (operand == null) return null;
         String kind = operand.getString("kind");
         if ("LITERAL".equals(kind)) return literal(operand.get("value"), operand.getString("valueType"));
         if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
+            if ("REFERENCE".equals(kind) && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
+                Long refId = operand.getLong("refId");
+                String refKey = refId == null ? null : "CONSTANT:" + refId;
+                if (refKey == null || referenceValues == null || !referenceValues.containsKey(refKey)) {
+                    throw new IllegalArgumentException("常量引用不存在、已停用或值不合法，ID=" + refId);
+                }
+                return referenceValues.get(refKey);
+            }
             String path = firstText(operand.getString("value"), operand.getString("code"));
             return readPath(values, path);
         }
-        if ("FUNCTION".equals(kind)) return call(operand, values);
+        if ("FUNCTION".equals(kind)) return call(operand, values, referenceValues);
         return null;
     }
 
@@ -43,16 +61,29 @@ public final class OperandValueResolver {
     }
 
     public static Map<String, Object> bindModelInputs(List<RuleModelInputField> fields, Map<String, Object> values) {
+        return bindModelInputs(fields, values, java.util.Collections.emptyMap());
+    }
+
+    public static Map<String, Object> bindModelInputs(List<RuleModelInputField> fields, Map<String, Object> values,
+                                                       Map<String, Object> referenceValues) {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         if (values != null) result.putAll(values);
         if (fields == null) return result;
         for (RuleModelInputField field : fields) {
             String fieldName = firstText(field.getFieldName(), field.getScriptName());
             if (fieldName == null) continue;
-            Object value = resolve(field.getSourceOperand(), values);
-            if (value == null) value = readPath(values, firstText(field.getScriptName(), field.getFieldName()));
-            if (value == null) value = resolve(field.getDefaultOperand(), values);
-            if (value == null && field.getDefaultValue() != null && !field.getDefaultValue().trim().isEmpty()) {
+            Object value = resolve(field.getSourceOperand(), values, referenceValues);
+            boolean sourceIsConstant = isConstantReference(field.getSourceOperand());
+            boolean defaultIsConstant = false;
+            if (value == null && !sourceIsConstant) {
+                value = readPath(values, firstText(field.getScriptName(), field.getFieldName()));
+            }
+            if (value == null && !sourceIsConstant) {
+                value = resolve(field.getDefaultOperand(), values, referenceValues);
+                defaultIsConstant = isConstantReference(field.getDefaultOperand());
+            }
+            if (value == null && !sourceIsConstant && !defaultIsConstant
+                    && field.getDefaultValue() != null && !field.getDefaultValue().trim().isEmpty()) {
                 value = parseJsonOrRaw(field.getDefaultValue());
             }
             result.put(fieldName, value);
@@ -94,12 +125,15 @@ public final class OperandValueResolver {
         }
     }
 
-    private static Object call(JSONObject operand, Map<String, Object> values) {
+    private static Object call(JSONObject operand, Map<String, Object> values,
+                               Map<String, Object> referenceValues) {
         String code = operand.getString("functionCode");
         JSONArray args = operand.getJSONArray("args");
         List<Object> resolved = new ArrayList<>();
         if (args != null) {
-            for (int i = 0; i < args.size(); i++) resolved.add(resolve(args.getJSONObject(i), values));
+            for (int i = 0; i < args.size(); i++) {
+                resolved.add(resolve(args.getJSONObject(i), values, referenceValues));
+            }
         }
         if ("max".equals(code)) return numericExtreme(resolved, true);
         if ("min".equals(code)) return numericExtreme(resolved, false);
@@ -161,6 +195,17 @@ public final class OperandValueResolver {
             return JSON.parse(value);
         } catch (Exception ignored) {
             return value;
+        }
+    }
+
+    private static boolean isConstantReference(String operandJson) {
+        if (operandJson == null || operandJson.trim().isEmpty()) return false;
+        try {
+            JSONObject operand = JSON.parseObject(operandJson);
+            return "REFERENCE".equals(operand.getString("kind"))
+                    && "CONSTANT".equalsIgnoreCase(operand.getString("refType"));
+        } catch (RuntimeException ignored) {
+            return false;
         }
     }
 

@@ -1,3 +1,5 @@
+import { formatConstantValue } from '@/utils/constantValue'
+
 export const OPERAND_KINDS = Object.freeze({
   LITERAL: 'LITERAL',
   PATH: 'PATH',
@@ -50,7 +52,7 @@ export function createReferenceOperand(option) {
   const code = optionCode(option)
   const refId = optionRefId(option)
   const refType = optionRefType(option)
-  return {
+  const operand = {
     kind: OPERAND_KINDS.REFERENCE,
     value: code,
     code,
@@ -60,6 +62,12 @@ export function createReferenceOperand(option) {
     refType,
     resolved: refId != null && !!refType
   }
+  if (refType === 'CONSTANT') {
+    operand.constantValue = option.constantValue !== undefined
+      ? option.constantValue
+      : (option.defaultValue !== undefined ? option.defaultValue : option.varObj && option.varObj.defaultValue)
+  }
+  return operand
 }
 
 export function createFunctionOperand(fn, args = []) {
@@ -200,6 +208,10 @@ export function operandDisplay(operand) {
   }
   const code = operand.code || operand.value || ''
   const label = operand.label || ''
+  if (operand.refType === 'CONSTANT' && Object.prototype.hasOwnProperty.call(operand, 'constantValue')) {
+    const name = [label, code].filter(Boolean).join(' ')
+    return name + ' = ' + formatConstantValue(operand.constantValue, operand.valueType)
+  }
   return label && label !== code ? label + ' ' + code : code
 }
 

@@ -6,6 +6,7 @@
 export const VAR_TYPE_FORM_OPTIONS = [
   { label: '字符串 (STRING)', value: 'STRING' },
   { label: '数值 (NUMBER)', value: 'NUMBER' },
+  { label: '双精度数值 (DOUBLE)', value: 'DOUBLE' },
   { label: '布尔 (BOOLEAN)', value: 'BOOLEAN' },
   { label: '日期 (DATE)', value: 'DATE' },
   { label: '枚举 (ENUM)', value: 'ENUM' },
@@ -18,6 +19,7 @@ export const VAR_TYPE_FORM_OPTIONS = [
 export const VAR_TYPE_FILTER_OPTIONS = [
   { label: '字符串', value: 'STRING' },
   { label: '数值', value: 'NUMBER' },
+  { label: '双精度数值', value: 'DOUBLE' },
   { label: '布尔', value: 'BOOLEAN' },
   { label: '日期', value: 'DATE' },
   { label: '枚举', value: 'ENUM' },
@@ -29,6 +31,7 @@ export const VAR_TYPE_FILTER_OPTIONS = [
 const LABELS = {
   STRING: '字符串',
   NUMBER: '数值',
+  DOUBLE: '双精度数值',
   BOOLEAN: '布尔',
   DATE: '日期',
   ENUM: '枚举',
@@ -42,6 +45,7 @@ const LABELS = {
 const TAG_COLORS = {
   STRING: '',
   NUMBER: 'warning',
+  DOUBLE: 'warning',
   BOOLEAN: 'success',
   DATE: 'info',
   ENUM: 'danger',

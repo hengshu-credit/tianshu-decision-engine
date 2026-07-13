@@ -58,7 +58,11 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
       varType: variable.varType,
       category: constant ? 'constant' : 'standalone',
       varObj: variable,
-      extra: { sourceType: constant ? 'constant' : 'variable', varSource: variable.varSource }
+      extra: {
+        sourceType: constant ? 'constant' : 'variable',
+        varSource: variable.varSource,
+        constantValue: constant ? variable.defaultValue : undefined
+      }
     })
     addRef(entry, constant ? 'constant' : 'variable')
   })
@@ -155,6 +159,7 @@ export function buildDetailReferenceState(catalog) {
       modelLabel: ref.modelLabel || '',
       modelCode: ref.modelCode || '',
       modelInputFields: ref.modelInputFields || [],
+      constantValue: ref.constantValue,
       varObj: ref.varObj
     }
     itemByKey.set(`${ref.refType || 'VARIABLE'}:${ref.id}`, item)

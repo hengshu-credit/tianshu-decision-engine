@@ -27,12 +27,15 @@ public class VarContext {
     /** refType:id → scriptName 映射，用于跨变量/常量/数据对象/模型的精确引用 */
     private final Map<String, String> refIdToScriptName;
 
+    /** 常量 ID → 可信 QLExpress 表达式映射 */
+    private final Map<Long, String> constantIdToExpression;
+
     /**
      * 构造函数，仅构建 varId → scriptName 映射。
      * {@link #getScriptNameByVarCode(String)} 在此构造方式下恒返 null。
      */
     public VarContext(Map<Long, String> varIdToScriptName) {
-        this(varIdToScriptName, Collections.emptyMap(), Collections.emptyMap());
+        this(varIdToScriptName, Collections.emptyMap(), Collections.emptyMap(), Collections.emptyMap());
     }
 
     /**
@@ -42,7 +45,7 @@ public class VarContext {
      * @param varCodeToScriptName varCode → scriptName（大小写敏感）
      */
     public VarContext(Map<Long, String> varIdToScriptName, Map<String, String> varCodeToScriptName) {
-        this(varIdToScriptName, varCodeToScriptName, Collections.emptyMap());
+        this(varIdToScriptName, varCodeToScriptName, Collections.emptyMap(), Collections.emptyMap());
     }
 
     /**
@@ -55,9 +58,17 @@ public class VarContext {
     public VarContext(Map<Long, String> varIdToScriptName,
                       Map<String, String> varCodeToScriptName,
                       Map<String, String> refIdToScriptName) {
+        this(varIdToScriptName, varCodeToScriptName, refIdToScriptName, Collections.emptyMap());
+    }
+
+    public VarContext(Map<Long, String> varIdToScriptName,
+                      Map<String, String> varCodeToScriptName,
+                      Map<String, String> refIdToScriptName,
+                      Map<Long, String> constantIdToExpression) {
         this.varIdToScriptName = varIdToScriptName != null ? varIdToScriptName : Collections.emptyMap();
         this.varCodeToScriptName = varCodeToScriptName != null ? varCodeToScriptName : Collections.emptyMap();
         this.refIdToScriptName = refIdToScriptName != null ? refIdToScriptName : Collections.emptyMap();
+        this.constantIdToExpression = constantIdToExpression != null ? constantIdToExpression : Collections.emptyMap();
     }
 
     /**
@@ -102,9 +113,21 @@ public class VarContext {
         return refIdToScriptName.get(refKey(refType, refId));
     }
 
+    public String resolveConstant(Long refId) {
+        if (refId == null) {
+            throw new IllegalArgumentException("常量引用缺少 ID");
+        }
+        String expression = constantIdToExpression.get(refId);
+        if (expression == null || expression.trim().isEmpty()) {
+            throw new IllegalArgumentException("常量引用不存在、已停用或值不合法，ID=" + refId);
+        }
+        return expression;
+    }
+
     /** 是否为空（无任何映射） */
     public boolean isEmpty() {
-        return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty() && refIdToScriptName.isEmpty();
+        return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty()
+                && refIdToScriptName.isEmpty() && constantIdToExpression.isEmpty();
     }
 
     /**
@@ -132,6 +155,9 @@ public class VarContext {
      * @return 脚本中实际使用的引用名，永不为 null
      */
     public String resolveVar(Long varId, String refType, String varCode) {
+        if ("CONSTANT".equalsIgnoreCase(refType)) {
+            return resolveConstant(varId);
+        }
         if (varId != null && refType != null && !refType.trim().isEmpty()) {
             String name = refIdToScriptName.get(refKey(refType, varId));
             if (name != null) return name;

@@ -7,8 +7,8 @@ import {
 } from '@/constants/varTypes'
 
 describe('VAR_TYPE_FORM_OPTIONS', () => {
-  test('包含所有 8 种类型', () => {
-    expect(VAR_TYPE_FORM_OPTIONS.length).toBe(8)
+  test('包含所有 9 种类型', () => {
+    expect(VAR_TYPE_FORM_OPTIONS.length).toBe(9)
   })
 
   test('每项有 label 和 value', () => {
@@ -28,11 +28,15 @@ describe('VAR_TYPE_FORM_OPTIONS', () => {
   test('包含 OBJECT 类型', () => {
     expect(VAR_TYPE_FORM_OPTIONS.find(o => o.value === 'OBJECT')).toBeDefined()
   })
+
+  test('包含正负无穷常量使用的 DOUBLE 类型', () => {
+    expect(VAR_TYPE_FORM_OPTIONS.find(o => o.value === 'DOUBLE')).toBeDefined()
+  })
 })
 
 describe('VAR_TYPE_FILTER_OPTIONS', () => {
-  test('包含所有 8 种类型', () => {
-    expect(VAR_TYPE_FILTER_OPTIONS.length).toBe(8)
+  test('包含所有 9 种类型', () => {
+    expect(VAR_TYPE_FILTER_OPTIONS.length).toBe(9)
   })
 
   test('每项有 label 和 value', () => {

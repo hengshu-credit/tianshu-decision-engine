@@ -220,6 +220,51 @@ public class RuleModelServiceTest {
         assertEquals(0.2, ((Number) rawOutputs.get("probability")).doubleValue(), 0.000001);
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void outputTransformResolvesConstantArgumentByStableId() {
+        RuleFunction function = function(7L, 1, twoParams());
+        function.setImplType("SCRIPT");
+        function.setImplScript("return probability * base;");
+        RuleFunctionService functionService = new RuleFunctionService() {
+            @Override
+            public RuleFunction getById(Long id) {
+                return function.getId().equals(id) ? function : null;
+            }
+        };
+        ReflectionTestUtils.setField(functionService, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(functionService, "functionRegistrar", new FunctionRegistrar());
+
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setFieldName("probability");
+        output.setTransformOperand(transformOperand(7L,
+                "{\"kind\":\"REFERENCE\",\"refId\":100,\"refType\":\"MODEL_OUTPUT\",\"code\":\"risk_model.probability\"}",
+                "{\"kind\":\"REFERENCE\",\"refId\":7,\"refType\":\"CONSTANT\",\"code\":\"BASE_SCORE\"}"));
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "ruleFunctionService", functionService);
+        ReflectionTestUtils.setField(service, "variableService", new RuleVariableService() {
+            @Override
+            public Map<String, Object> buildRefConstantValueMap(Long projectId) {
+                Map<String, Object> values = new LinkedHashMap<>();
+                values.put("CONSTANT:7", 600D);
+                return values;
+            }
+        });
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class, (proxy, method, args) -> {
+            if ("selectList".equals(method.getName())) return Collections.singletonList(output);
+            return defaultValue(method.getReturnType());
+        }));
+        RuleModel model = model();
+        model.setModelCode("risk_model");
+        Map<String, Object> rawOutputs = new LinkedHashMap<>();
+        rawOutputs.put("probability", 0.2);
+
+        Map<String, Object> result = ReflectionTestUtils.invokeMethod(
+                service, "applyOutputTransforms", model, Collections.emptyMap(), rawOutputs);
+
+        assertEquals(120.0, ((Number) result.get("probability")).doubleValue(), 0.000001);
+    }
+
     private static RuleModel model() {
         RuleModel model = new RuleModel();
         model.setId(1L);

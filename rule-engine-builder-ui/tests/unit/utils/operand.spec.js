@@ -26,6 +26,15 @@ describe('operand', () => {
       varType: 'DOUBLE',
       _varId: 21,
       _refType: 'MODEL_OUTPUT'
+    },
+    {
+      varCode: 'EMPTY_STRING',
+      varLabel: '空字符串',
+      varType: 'STRING',
+      defaultValue: '',
+      constantValue: '',
+      _varId: 30,
+      _refType: 'CONSTANT'
     }
   ]
 
@@ -113,6 +122,18 @@ describe('operand', () => {
     })
   })
 
+  test('常量引用保留值预览并按名称编码和值显示', () => {
+    const operand = createReferenceOperand(references[2])
+
+    expect(operand).toMatchObject({
+      refId: 30,
+      refType: 'CONSTANT',
+      code: 'EMPTY_STRING',
+      constantValue: ''
+    })
+    expect(operandDisplay(operand)).toBe("空字符串 EMPTY_STRING = ''")
+  })
+
   test('字符串阈值始终加引号，路径不加引号', () => {
     expect(compileOperand(createLiteralOperand('threshold', 'STRING'))).toBe('"threshold"')
     expect(compileOperand(createPathOperand('request.score'))).toBe('request.score')
@@ -141,6 +162,11 @@ describe('operand', () => {
     const path = syncOperandReference(createPathOperand('riskModel.score'), references)
     expect(path.operand.refId).toBe(21)
     expect(path.operand.resolved).toBe(true)
+
+    const constant = syncOperandReference({
+      kind: 'REFERENCE', value: 'EMPTY_STRING', code: 'EMPTY_STRING', refId: 30, refType: 'CONSTANT'
+    }, references)
+    expect(constant.operand.constantValue).toBe('')
   })
 
   test('显示类型能直观区分阈值、路径和资源来源', () => {

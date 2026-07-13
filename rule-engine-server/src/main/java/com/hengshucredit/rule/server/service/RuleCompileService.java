@@ -68,7 +68,9 @@ public class RuleCompileService {
         Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
         Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
         Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
-        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName, refIdToScriptName);
+        Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(definition.getProjectId());
+        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName,
+                refIdToScriptName, constantIdToExpression);
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
 

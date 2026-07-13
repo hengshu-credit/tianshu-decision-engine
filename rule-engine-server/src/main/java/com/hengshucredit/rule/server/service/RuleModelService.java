@@ -49,6 +49,8 @@ public class RuleModelService {
     private ExecutionParameterBinder executionParameterBinder;
     @Resource
     private RuleFunctionService ruleFunctionService;
+    @Resource
+    private RuleVariableService variableService;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -787,7 +789,8 @@ public class RuleModelService {
         }
 
         List<RuleModelInputField> inputFields = listInputFields(modelId);
-        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(inputFields, params);
+        Map<String, Object> constantValues = constantReferenceValues(model.getProjectId());
+        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(inputFields, params, constantValues);
         Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
         if ("PMML".equals(model.getModelFormat())) {
             return executePmml(model, boundParams);
@@ -945,6 +948,7 @@ public class RuleModelService {
         Map<String, Object> transformed = new LinkedHashMap<>(original);
         if (model == null || model.getId() == null) return transformed;
         Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+        Map<String, Object> constantValues = constantReferenceValues(model.getProjectId());
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
@@ -964,13 +968,18 @@ public class RuleModelService {
                     if (operand == null) {
                         throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换参数 " + (i + 1) + " 未配置");
                     }
-                    args.add(OperandValueResolver.resolve(operand, context));
+                    args.add(OperandValueResolver.resolve(operand, context, constantValues));
                 }
             }
             String outputKey = outputKey(field, original);
             transformed.put(outputKey, ruleFunctionService.invoke(functionId, args));
         }
         return transformed;
+    }
+
+    private Map<String, Object> constantReferenceValues(Long projectId) {
+        return variableService == null
+                ? Collections.emptyMap() : variableService.buildRefConstantValueMap(projectId);
     }
 
     private String outputKey(RuleModelOutputField field, Map<String, Object> outputs) {

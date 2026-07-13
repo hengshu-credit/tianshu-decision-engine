@@ -9,7 +9,7 @@ describe('referenceCatalog', () => {
   test('统一构造普通变量、常量、数据对象完整路径和模型输出', () => {
     const variables = [
       { id: 1, varLabel: '年龄', varCode: 'age', scriptName: 'age', varType: 'INTEGER', varSource: 'INPUT' },
-      { id: 2, varLabel: '通过', varCode: 'PASS', scriptName: 'PASS', varType: 'STRING', varSource: 'CONSTANT' }
+      { id: 2, varLabel: '空字符串', varCode: 'EMPTY_STRING', scriptName: 'EMPTY_STRING', varType: 'STRING', varSource: 'CONSTANT', defaultValue: '' }
     ]
     const objectTree = [{
       object: { id: 10, objectLabel: '银行卡信息', objectCode: 'bankcard', scriptName: 'bankcard' },
@@ -26,13 +26,19 @@ describe('referenceCatalog', () => {
     const catalog = buildReferenceCatalog(variables, objectTree, models)
     const bankCard = catalog.refs.find(item => item.refCode === 'bankcard.bank_card_no')
     const score = catalog.refs.find(item => item.refCode === 'score_f1.score')
+    const emptyString = catalog.refs.find(item => item.refType === 'CONSTANT')
 
     expect(bankCard.refLabel).toEqual({ label: '银行卡信息/银行卡号', code: 'bankcard.bank_card_no' })
     expect(bankCard.displayName).toBe('银行卡信息/银行卡号 bankcard.bank_card_no')
     expect(score.refLabel).toEqual({ label: '反欺诈评分F1/评分', code: 'score_f1.score' })
+    expect(emptyString).toMatchObject({ id: 2, refCode: 'EMPTY_STRING', constantValue: '' })
     expect(catalog.groups.map(group => group.key)).toEqual(['variable', 'constant', 'dataObject', 'model'])
 
     const detailState = buildDetailReferenceState(catalog)
+    expect(detailState.items.find(item => item.id === 2)).toMatchObject({
+      refType: 'CONSTANT',
+      constantValue: ''
+    })
     expect(detailState.items.find(item => item.id === 11)).toMatchObject({
       varCode: 'bankcard.bank_card_no',
       varCodeText: 'bankcard.bank_card_no',

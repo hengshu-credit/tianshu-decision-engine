@@ -225,17 +225,13 @@
           <el-table-column prop="varCode" label="常量编码" min-width="130" show-overflow-tooltip />
           <el-table-column prop="varLabel" label="常量名称" min-width="120" show-overflow-tooltip />
           <el-table-column label="脚本名称" min-width="130">
-            <template slot-scope="{row}">
-              <el-input v-model="row.scriptName" size="mini" placeholder="脚本名称" @blur="onVarScriptNameChange(row)" />
-            </template>
+            <template slot-scope="{row}"><code>{{ row.scriptName || row.varCode }}</code></template>
           </el-table-column>
           <el-table-column prop="varType" label="类型" min-width="80" align="center">
             <template slot-scope="{ row }"><el-tag size="mini" :type="typeTagColor(row.varType)">{{ typeLabel(row.varType) }}</el-tag></template>
           </el-table-column>
           <el-table-column label="常量值（默认）" min-width="160">
-            <template slot-scope="{row}">
-              <el-input v-model="row.defaultValue" size="mini" @blur="onConstDefaultBlur(row)" />
-            </template>
+            <template slot-scope="{row}"><code>{{ formatConstantValue(row.defaultValue, row.varType) }}</code></template>
           </el-table-column>
           <el-table-column prop="status" label="状态" min-width="60" align="center">
             <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
@@ -739,6 +735,7 @@ import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
+import { formatConstantValue, hasConstantValue } from '@/utils/constantValue'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { collectReferencePaths, collectReferencePathsFromText, sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
 import { normalizeTestSchema } from '@/utils/testSchema'
@@ -1443,17 +1440,6 @@ export default {
         status: row.status
       })
     },
-    /**
-     * 常量列表行内修改默认值后保存。
-     */
-    async onConstDefaultBlur(row) {
-      if (!row.defaultValue || !String(row.defaultValue).trim()) {
-        this.$message.warning('常量值不能为空')
-        await this.loadConstants()
-        return
-      }
-      await updateVariable({ ...row, varSource: 'CONSTANT' })
-    },
     async handleDeleteObject(obj) {
       await this.$confirm(`确定删除对象「${obj.objectCode}」及其所有变量？`, '确认删除', { type: 'warning' })
       await deleteDataObject(obj.id)
@@ -1711,7 +1697,7 @@ export default {
           return
         }
         if (this.form.varSource === 'CONSTANT') {
-          if (!this.form.defaultValue || !String(this.form.defaultValue).trim()) {
+          if (!hasConstantValue(this.form.defaultValue, this.form.varType)) {
             this.$message.warning('常量必须填写默认值')
             return
           }
@@ -2103,6 +2089,7 @@ export default {
     // ── Helpers ──
     typeLabel: varTypeLabel,
     typeTagColor: varTypeTagColor,
+    formatConstantValue,
     scopeTagLabel(scope) {
       return { GLOBAL: '全局', PROJECT: '项目级' }[scope] || '项目级'
     },

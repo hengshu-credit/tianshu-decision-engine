@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ParsedConstant;
 import com.hengshucredit.rule.model.dto.ParsedConstantGroup;
+import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -338,6 +339,40 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         return map;
     }
 
+    /** 构建常量 ID → 可信 QLExpress 表达式映射。 */
+    public Map<Long, String> buildRefConstantExpressionMap(Long projectId) {
+        List<RuleVariable> vars = projectId != null && projectId > 0
+                ? listByProject(projectId, null) : listGlobalOnly();
+        Map<Long, String> map = new HashMap<>();
+        for (RuleVariable variable : vars) {
+            if (variable == null || variable.getId() == null
+                    || variable.getStatus() == null || variable.getStatus() != 1
+                    || !"CONSTANT".equals(variable.getVarSource())) {
+                continue;
+            }
+            map.put(variable.getId(), ConstantValueCodec.toQlExpression(
+                    variable.getVarType(), variable.getDefaultValue()));
+        }
+        return map;
+    }
+
+    /** 构建 CONSTANT:id → Java 运行时值映射。 */
+    public Map<String, Object> buildRefConstantValueMap(Long projectId) {
+        List<RuleVariable> vars = projectId != null && projectId > 0
+                ? listByProject(projectId, null) : listGlobalOnly();
+        Map<String, Object> map = new HashMap<>();
+        for (RuleVariable variable : vars) {
+            if (variable == null || variable.getId() == null
+                    || variable.getStatus() == null || variable.getStatus() != 1
+                    || !"CONSTANT".equals(variable.getVarSource())) {
+                continue;
+            }
+            map.put(refKey("CONSTANT", variable.getId()), ConstantValueCodec.toRuntimeValue(
+                    variable.getVarType(), variable.getDefaultValue()));
+        }
+        return map;
+    }
+
     private List<RuleDataObjectField> listObjectFields(Long projectId) {
         LambdaQueryWrapper<RuleDataObjectField> wrapper = new LambdaQueryWrapper<>();
         appendScopeCondition(wrapper, RuleDataObjectField::getScope, RuleDataObjectField::getProjectId, projectId);
@@ -431,7 +466,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Override
     public boolean save(RuleVariable entity) {
-        assertConstantHasDefault(entity);
+        validateAndNormalizeConstant(entity);
         // 确保 scope 有默认值
         if (entity.getScope() == null || entity.getScope().isEmpty()) {
             entity.setScope(SCOPE_PROJECT);
@@ -451,7 +486,12 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Override
     public boolean updateById(RuleVariable entity) {
-        assertConstantHasDefault(mergeForConstantCheck(entity));
+        RuleVariable merged = mergeForConstantCheck(entity);
+        validateAndNormalizeConstant(merged);
+        if (entity != null && entity.getDefaultValue() != null && merged != null
+                && "CONSTANT".equals(merged.getVarSource())) {
+            entity.setDefaultValue(merged.getDefaultValue());
+        }
         return super.updateById(entity);
     }
 
@@ -468,21 +508,17 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         }
         RuleVariable m = new RuleVariable();
         m.setVarSource(patch.getVarSource() != null ? patch.getVarSource() : db.getVarSource());
+        m.setVarType(patch.getVarType() != null ? patch.getVarType() : db.getVarType());
         m.setDefaultValue(patch.getDefaultValue() != null ? patch.getDefaultValue() : db.getDefaultValue());
         return m;
     }
 
-    /**
-     * 常量（{@code var_source=CONSTANT}）必须配置非空默认值。
-     */
-    private void assertConstantHasDefault(RuleVariable v) {
+    /** 校验常量类型并将其值规范化；STRING 允许真正的空字符串。 */
+    void validateAndNormalizeConstant(RuleVariable v) {
         if (v == null || !"CONSTANT".equals(v.getVarSource())) {
             return;
         }
-        String d = v.getDefaultValue();
-        if (d == null || d.trim().isEmpty()) {
-            throw new IllegalArgumentException("常量的默认值不能为空");
-        }
+        v.setDefaultValue(ConstantValueCodec.normalize(v.getVarType(), v.getDefaultValue()));
     }
 
     /**
@@ -551,9 +587,10 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         int order = 0;
         for (ParsedConstant pc : parsed.getConstants()) {
             String val = pc.getConstValue();
-            if (val == null || val.trim().isEmpty()) {
+            if (val == null) {
                 throw new IllegalArgumentException("常量 [" + pc.getConstCode() + "] 缺少默认值");
             }
+            val = ConstantValueCodec.normalize(pc.getConstType(), val);
             RuleVariable existing = getBaseMapper().selectOne(
                     new LambdaQueryWrapper<RuleVariable>()
                             .eq(RuleVariable::getScope, scope)

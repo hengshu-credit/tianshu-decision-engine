@@ -85,6 +85,34 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void constantAlwaysOverridesCallerInputAndKeepsEmptyString() throws Exception {
+        RuleVariable variable = variable("EMPTY_STRING", "CONSTANT", null);
+        variable.setVarType("STRING");
+        variable.setDefaultValue("");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("EMPTY_STRING", "tampered");
+
+        Map<String, Object> resolved = resolver.resolve(1L, params);
+
+        assertEquals("", resolved.get("EMPTY_STRING"));
+    }
+
+    @Test
+    public void constantResolvesPositiveInfinityAsDouble() throws Exception {
+        RuleVariable variable = variable("POSITIVE_INFINITY", "CONSTANT", null);
+        variable.setVarType("DOUBLE");
+        variable.setDefaultValue("Infinity");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap());
+
+        assertEquals(Double.POSITIVE_INFINITY, resolved.get("POSITIVE_INFINITY"));
+    }
+
+    @Test
     public void testVariableForcesSourceLookupEvenWhenInputHasSameKey() throws Exception {
         RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));

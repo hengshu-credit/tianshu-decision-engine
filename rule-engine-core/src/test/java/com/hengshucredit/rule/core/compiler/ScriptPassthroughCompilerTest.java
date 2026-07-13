@@ -48,6 +48,36 @@ public class ScriptPassthroughCompilerTest {
     }
 
     @Test
+    public void referencedConstantsAreInlinedByStableIdWithoutChangingStringsOrComments() {
+        String model = "{\"script\":\"value = EMPTY_STRING\\ntext = \\\"EMPTY_STRING\\\"\\n// EMPTY_STRING\","
+                + "\"scriptVarRefs\":[{\"refCode\":\"EMPTY_STRING\",\"varId\":8,\"refType\":\"CONSTANT\"}]}";
+        VarContext context = new VarContext(Collections.<Long, String>emptyMap(),
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(),
+                Collections.singletonMap(8L, "''"));
+
+        CompileResult compileResult = new ScriptPassthroughCompiler().compile(model, context);
+
+        assertTrue(compileResult.getErrorMessage(), compileResult.isSuccess());
+        assertTrue(compileResult.getCompiledScript().contains("value = ''"));
+        assertTrue(compileResult.getCompiledScript().contains("text = \"EMPTY_STRING\""));
+        assertTrue(compileResult.getCompiledScript().contains("// EMPTY_STRING"));
+    }
+
+    @Test
+    public void missingReferencedConstantFailsInsteadOfFallingBackToRawJson() {
+        String model = "{\"script\":\"value = EMPTY_STRING\","
+                + "\"scriptVarRefs\":[{\"refCode\":\"EMPTY_STRING\",\"varId\":99,\"refType\":\"CONSTANT\"}]}";
+        VarContext context = new VarContext(Collections.<Long, String>emptyMap(),
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(),
+                Collections.<Long, String>emptyMap());
+
+        CompileResult compileResult = new ScriptPassthroughCompiler().compile(model, context);
+
+        assertTrue(!compileResult.isSuccess());
+        assertTrue(compileResult.getErrorMessage().contains("99"));
+    }
+
+    @Test
     public void blendCalcScriptExecutesWithTraceAndReturnsAssignedOutputs() {
         String script = "{\"script\":\"// 混业场景组合计费脚本\\n"
                 + "if (taxpayerQualification == \\\"小规模纳税人\\\") {\\n"

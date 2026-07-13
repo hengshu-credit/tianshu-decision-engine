@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -62,6 +63,7 @@ public class VariableSourceResolver {
         }
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
+        removeCallerConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(), variables, models);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
@@ -1052,6 +1054,9 @@ public class VariableSourceResolver {
 
     private Object parseDefaultValue(RuleVariable variable) {
         String defaultValue = variable.getDefaultValue();
+        if ("CONSTANT".equals(variable.getVarSource())) {
+            return ConstantValueCodec.toRuntimeValue(variable.getVarType(), defaultValue);
+        }
         if (!hasText(defaultValue)) {
             return null;
         }
@@ -1069,6 +1074,20 @@ public class VariableSourceResolver {
             return parseJsonOrRaw(defaultValue);
         } catch (Exception ignored) {
             return defaultValue;
+        }
+    }
+
+    private void removeCallerConstantValues(List<RuleVariable> variables, Map<String, Object> resolvedParams) {
+        if (variables == null || resolvedParams == null) {
+            return;
+        }
+        for (RuleVariable variable : variables) {
+            if (variable != null && "CONSTANT".equals(variable.getVarSource())) {
+                String scriptName = resolveScriptName(variable);
+                if (scriptName != null) {
+                    resolvedParams.remove(scriptName);
+                }
+            }
         }
     }
 
