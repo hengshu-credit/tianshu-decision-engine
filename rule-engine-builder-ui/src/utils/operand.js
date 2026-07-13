@@ -153,22 +153,67 @@ export function collectOperandReferences(operand, out = []) {
       return
     }
     if (current.kind === OPERAND_KINDS.FUNCTION) {
-      ;(current.args || []).forEach(visit)
+      (current.args || []).forEach(visit)
     }
   }
   visit(operand)
   return result
 }
 
+export function syncOperandReference(operand, options = []) {
+  if (!operand || !operand.kind) return { operand, changed: false }
+  if (operand.kind === OPERAND_KINDS.FUNCTION) {
+    let changed = false
+    const args = (operand.args || []).map(arg => {
+      const result = syncOperandReference(arg, options)
+      if (result.changed) changed = true
+      return result.operand
+    })
+    return { operand: changed ? { ...operand, args } : operand, changed }
+  }
+  if (operand.kind !== OPERAND_KINDS.PATH && operand.kind !== OPERAND_KINDS.REFERENCE) {
+    return { operand, changed: false }
+  }
+
+  let match = null
+  if (operand.refId != null && operand.refType) {
+    match = (options || []).find(option => String(optionRefId(option)) === String(operand.refId) && optionRefType(option) === operand.refType)
+  }
+  if (!match && operand.kind === OPERAND_KINDS.PATH) {
+    const resolved = resolvePathOperand(operand, options)
+    return { operand: resolved.operand, changed: JSON.stringify(resolved.operand) !== JSON.stringify(operand) }
+  }
+  if (!match) return { operand, changed: false }
+
+  const current = createReferenceOperand(match)
+  const next = operand.kind === OPERAND_KINDS.PATH
+    ? { ...operand, code: current.code, label: current.label, valueType: current.valueType, refId: current.refId, refType: current.refType, resolved: current.resolved }
+    : current
+  return { operand: next, changed: JSON.stringify(next) !== JSON.stringify(operand) }
+}
+
 export function operandDisplay(operand) {
   if (!operand) return ''
   if (operand.kind === OPERAND_KINDS.LITERAL) return String(operand.value == null ? '' : operand.value)
   if (operand.kind === OPERAND_KINDS.FUNCTION) {
-    return (operand.label || operand.functionCode || '函数') + '(...)'
+    return compileOperand(operand)
   }
   const code = operand.code || operand.value || ''
   const label = operand.label || ''
   return label && label !== code ? label + ' ' + code : code
+}
+
+export function operandKindMeta(operand) {
+  if (!operand || !operand.kind) return { label: '', tone: 'empty' }
+  if (operand.kind === OPERAND_KINDS.LITERAL) return { label: '阈值', tone: 'literal' }
+  if (operand.kind === OPERAND_KINDS.FUNCTION) return { label: '方法', tone: 'function' }
+  const source = referenceTypeMeta(operand.refType)
+  if (operand.kind === OPERAND_KINDS.PATH) {
+    return source.label
+      ? { label: '路径→' + source.label, tone: 'path-resolved' }
+      : { label: '路径', tone: 'path' }
+  }
+  return source.label ? source : { label: '字段', tone: 'reference' }
 }
 
 export function operandFromReferenceFields(source, codeKey = 'varCode', idKey = '_varId', refTypeKey = '_refType') {
@@ -246,4 +291,13 @@ function referenceKey(reference) {
     return reference.refType + ':' + reference.refId
   }
   return 'PATH:' + ((reference && (reference.path || reference.value || reference.code)) || '')
+}
+
+function referenceTypeMeta(refType) {
+  const type = String(refType || '').toUpperCase()
+  if (type === 'CONSTANT') return { label: '常量', tone: 'constant' }
+  if (type === 'DATA_OBJECT' || type === 'DATA_FIELD') return { label: '数据对象', tone: 'object' }
+  if (type === 'MODEL' || type === 'MODEL_OUTPUT') return { label: '模型', tone: 'model' }
+  if (type === 'VARIABLE') return { label: '变量', tone: 'variable' }
+  return { label: '', tone: 'reference' }
 }

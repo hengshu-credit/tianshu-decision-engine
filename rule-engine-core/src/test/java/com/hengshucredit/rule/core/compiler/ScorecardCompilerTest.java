@@ -79,4 +79,23 @@ public class ScorecardCompilerTest {
         Map<?, ?> output = (Map<?, ?>) result.getResult();
         assertEquals(10.0, ((Number) output.get("score")).doubleValue(), 0.000001);
     }
+
+    @Test
+    public void test统一操作数支持路径条件字段引用值和等级结果() {
+        CompileResult result = compiler.compile("{"
+                + "\"initialScore\":0,"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"PATH\",\"value\":\"decision.score\",\"code\":\"decision.score\"}},"
+                + "\"scoreItems\":[{"
+                + "\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"request.age\",\"code\":\"request.age\",\"valueType\":\"NUMBER\"},"
+                + "\"condOperator\":\">=\","
+                + "\"rightOperand\":{\"kind\":\"REFERENCE\",\"value\":\"adultAge\",\"code\":\"adultAge\",\"valueType\":\"NUMBER\"},"
+                + "\"score\":10,\"weight\":1}],"
+                + "\"thresholds\":[{\"min\":10,\"max\":20,\"resultOperand\":{\"kind\":\"REFERENCE\",\"value\":\"passLevel\",\"code\":\"passLevel\"}}]}"
+        );
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("request.age >= adultAge"));
+        assertTrue(result.getCompiledScript().contains("decision.score = decision.score + 10.0"));
+        assertTrue(result.getCompiledScript().contains("riskLevel = passLevel"));
+    }
 }

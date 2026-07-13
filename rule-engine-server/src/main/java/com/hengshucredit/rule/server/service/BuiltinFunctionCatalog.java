@@ -123,12 +123,23 @@ final class BuiltinFunctionCatalog {
         list.add(fn("millisToDate", "毫秒时间戳转日期", "将毫秒时间戳格式化为日期字符串", params(
                 p("timestamp", "NUMBER", "毫秒时间戳", 1783564200000L),
                 p("format_pattern", "STRING", "输出格式", "yyyy-MM-dd HH:mm:ss")), "STRING", DECISION_CLASS, "millisToDate"));
+        list.add(fn("idCardBirthDate", "身份证提取出生日期", "提取身份证出生日期并返回 yyyy-MM-dd；无法识别时返回 null",
+                p("idCard", "STRING", "身份证号", "110105199001022317"), "STRING", DECISION_CLASS, "idCardBirthDate"));
+        list.add(fn("idCardAge", "身份证计算年龄", "按身份证出生日期计算年龄；YEAR 按年份差，FULL/DAY 按周岁计算", params(
+                p("idCard", "STRING", "身份证号", "110105199001022317"),
+                p("currentDate", "OBJECT", "计算日期", "2025-01-02 12:30:00"),
+                p("calcMode", "STRING", "计算方式", "FULL")), "NUMBER", DECISION_CLASS, "idCardAge"));
 
         list.add(fn("scoreByOdds", "odds 转评分", "按 score = A +/- B * ln(odds) 将 odds 倍率转换为评分，direction 支持 ASC/DESC", params(
                 p("odds", "NUMBER", "odds 倍率", 20),
                 p("a", "NUMBER", "A 参数", 600),
                 p("b", "NUMBER", "B 参数", 28.8539),
                 p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByOdds"));
+        list.add(fn("scoreByProbability", "概率转评分", "按 A +/- B * ln(p/(1-p)) 将概率转换为评分；默认越大越好使用减号", params(
+                p("p", "NUMBER", "概率 p", 0.05),
+                p("a", "NUMBER", "A 参数", 600),
+                p("b", "NUMBER", "B 参数", 20),
+                p("direction", "STRING", "方向 HIGH_GOOD/LOW_GOOD", "HIGH_GOOD")), "NUMBER", DECISION_CLASS, "scoreByProbability"));
         list.add(fn("scoreByOddsPdo", "odds 按 PDO 转评分", "通过基础分、基础 odds、PDO 和方向将 odds 倍率转换为评分", params(
                 p("odds", "NUMBER", "odds 倍率", 40),
                 p("base_score", "NUMBER", "基础分", 600),

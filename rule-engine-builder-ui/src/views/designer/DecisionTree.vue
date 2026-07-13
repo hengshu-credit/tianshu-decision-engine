@@ -107,9 +107,9 @@
                   v-if="edgeConditionRoot"
                   :group="edgeConditionRoot"
                   :vars="varPickerOptions"
+                  :functions="projectFunctions"
                   :get-var-options-fn="getVarOptions"
                   :selected-vars="selectedVarPickerOptions"
-                  :allow-custom-var="true"
                 />
                 <el-button type="primary" size="mini" icon="el-icon-check" style="width:100%;margin-top:8px;" @click="applyEdgeCondVisual">
                   生成表达式
@@ -262,7 +262,7 @@ import {
   mergeEdgePropertiesFromForm
 } from '@/components/flow/edgeLineType'
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
-import { generateScript } from '@/utils/actionDataCodegen'
+import { generateScript, normalizeGraphActionData } from '@/utils/actionDataCodegen'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
@@ -273,8 +273,10 @@ import {
   createEmptyLeaf,
   collectVarCodesFromConditionTree,
   walkConditionLeaves,
-  compileConditionTreeExpression
+  compileConditionTreeExpression,
+  normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
+import { collectOperandReferences, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import {
   addCode,
   applyActionDataSampleValues,
@@ -413,25 +415,19 @@ export default {
       const root = createEmptyGroup('AND')
       const leaf = createEmptyLeaf()
       if (visual && visual.leftVar) {
-        leaf.varCode = visual.leftVar
-        leaf.varLabel = visual.leftLabel || visual.leftVar
-        leaf._varId = visual.leftVarId || undefined
-        leaf._refType = visual.leftRefType || undefined
+        leaf.leftOperand = operandFromReferenceFields({ varCode: visual.leftVar, varLabel: visual.leftLabel, _varId: visual.leftVarId, _refType: visual.leftRefType })
         leaf.operator = visual.operator || '=='
-        leaf.valueKind = visual.rightType === 'var' ? 'VAR' : 'CONST'
-        leaf.value = visual.rightType === 'var' ? visual.rightVar : visual.rightValue
-        if (visual.rightType === 'var') {
-          leaf._rightVarId = visual.rightVarId || undefined
-          leaf._rightRefType = visual.rightRefType || undefined
-        }
+        leaf.rightOperand = visual.rightType === 'var'
+          ? operandFromReferenceFields({ varCode: visual.rightVar, _varId: visual.rightVarId, _refType: visual.rightRefType })
+          : createLiteralOperand(visual.rightValue, '')
       }
       root.children.push(leaf)
       return root
     },
     parseConditionConfig(config, expr) {
       if (config) {
-        if (typeof config === 'object') return JSON.parse(JSON.stringify(config))
-        try { return JSON.parse(config) } catch (e) { /* ignore */ }
+        if (typeof config === 'object') return normalizeConditionTreeOperands(JSON.parse(JSON.stringify(config)))
+        try { return normalizeConditionTreeOperands(JSON.parse(config)) } catch (e) { /* ignore */ }
       }
       return this.createConditionRootFromVisual(this.syncCondVisualFromExpr(expr))
     },
@@ -439,16 +435,7 @@ export default {
       const items = []
       const root = this.parseConditionConfig(config, '')
       walkConditionLeaves(root, leaf => {
-        items.push(leaf)
-        if (leaf.valueKind === 'VAR' && leaf.value) {
-          items.push({
-            varCode: leaf.value,
-            varLabel: leaf.rightVarLabel,
-            _varId: leaf._rightVarId,
-            _refType: leaf._rightRefType || leaf._refType,
-            varType: leaf.rightVarType
-          })
-        }
+        [leaf.leftOperand, leaf.rightOperand].forEach(operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType })))
       })
       return items
     },
@@ -456,23 +443,10 @@ export default {
       if (!config || typeof config !== 'object') return false
       let changed = false
       walkConditionLeaves(config, leaf => {
-        if (leaf.varCode && this.syncVarItem(leaf)) changed = true
-        if (leaf.valueKind === 'VAR' && leaf.value) {
-          const fake = {
-            varCode: leaf.value,
-            varLabel: leaf.rightVarLabel,
-            _varId: leaf._rightVarId,
-            _refType: leaf._rightRefType || leaf._refType,
-            varType: leaf.rightVarType
-          }
-          if (this.syncVarItem(fake)) {
-            leaf.value = fake.varCode
-            leaf.rightVarLabel = fake.varLabel
-            leaf._rightVarId = fake._varId
-            leaf.rightVarType = fake.varType
-            changed = true
-          }
-        }
+        ['leftOperand', 'rightOperand'].forEach(field => {
+          const result = syncOperandReference(leaf[field], this.varPickerOptions)
+          if (result.changed) { leaf[field] = result.operand; changed = true }
+        })
       })
       return changed
     },
@@ -811,7 +785,7 @@ export default {
         const res = await getContent(this.definitionId)
         const content = res && res.data ? res.data : res
         if (content && content.modelJson && content.modelJson !== '{}') {
-          const modelData = JSON.parse(content.modelJson)
+          const modelData = normalizeGraphActionData(JSON.parse(content.modelJson))
           migrateModelJsonForEdgeLineTypes(modelData)
           this.globalEdgeLineType = modelData.defaultEdgeLineType
           this.lf.setDefaultEdgeType(this.globalEdgeLineType)

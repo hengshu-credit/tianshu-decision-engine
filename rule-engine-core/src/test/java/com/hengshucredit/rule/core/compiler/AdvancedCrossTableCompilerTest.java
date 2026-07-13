@@ -59,6 +59,25 @@ public class AdvancedCrossTableCompilerTest {
         assertNull(resultMap.get("rate"));
     }
 
+    @Test
+    public void compilesUnifiedOperandsForDimensionsSegmentsAndCells() {
+        String json = "{"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"PATH\",\"value\":\"decision.rate\",\"code\":\"decision.rate\"},\"varType\":\"DOUBLE\"},"
+                + "\"rowDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"age\",\"value\":\"age\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\">=\",\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"18\",\"valueType\":\"NUMBER\"}}]}],"
+                + "\"colDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"limit\",\"value\":\"limit\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\">\",\"valueOperand\":{\"kind\":\"REFERENCE\",\"code\":\"minLimit\",\"value\":\"minLimit\",\"valueType\":\"NUMBER\"}}]}],"
+                + "\"cells\":[[{\"kind\":\"LITERAL\",\"value\":\"0.2\",\"valueType\":\"NUMBER\"}]]}"
+                ;
+
+        CompileResult result = compiler.compile(json);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("age >= 18"));
+        assertTrue(result.getCompiledScript().contains("limit > minLimit"));
+        assertTrue(result.getCompiledScript().contains("decision.rate = 0.2"));
+    }
+
     private String modelJson() {
         return "{"
                 + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"DOUBLE\"},"

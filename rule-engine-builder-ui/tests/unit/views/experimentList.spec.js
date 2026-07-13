@@ -2,6 +2,13 @@ import ExperimentList from '@/views/experiment/ExperimentList.vue'
 import { executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
 import { getRuleTestSchema, listDefinitions } from '@/api/definition'
 
+const leaf = (code, value) => ({
+  type: 'leaf',
+  leftOperand: { kind: 'PATH', value: code, code, valueType: 'NUMBER' },
+  operator: '>=',
+  rightOperand: { kind: 'LITERAL', value, valueType: 'NUMBER' }
+})
+
 function createContext(overrides = {}) {
   const ctx = {
     form: { groups: [] },
@@ -90,26 +97,12 @@ describe('ExperimentList', () => {
     ctx.form.testRoutingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
     ctx.form.groups[0].trafficRatio = 10
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '1000'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000')
     ctx.addProductionFallback()
     ctx.productionFormGroups[1].ruleCode = 'fallback_rule'
     ctx.form.groups.push(ctx.newGroup('TEST', 'test_1', '测试组1', 0))
     ctx.testFormGroups[0].ruleCode = 'test_rule_1'
-    ctx.testFormGroups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'score',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '80'
-    }
+    ctx.testFormGroups[0].conditionConfig.children[0] = leaf('score', '80')
     ctx.addTestFallback()
     ctx.testFormGroups[1].ruleCode = 'test_fallback_rule'
 
@@ -120,14 +113,7 @@ describe('ExperimentList', () => {
     const ctx = createContext()
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varType: 'NUMBER',
-      operator: '>',
-      valueKind: 'CONST',
-      value: '100'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = { ...leaf('amount', '100'), operator: '>' }
 
     expect(ctx.validateGroups()).toBe('冠军挑战条件分流必须配置兜底动作')
   })
@@ -136,21 +122,14 @@ describe('ExperimentList', () => {
     const ctx = createContext()
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '1000'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000')
     ctx.addProductionFallback()
     ctx.productionFormGroups[1].ruleCode = 'fallback_rule'
 
     const groups = ctx.prepareGroupsForSave()
 
     expect(groups[0].conditionExpression).toBe('(amount >= 1000)')
-    expect(JSON.parse(groups[0].conditionConfig).children[0].varCode).toBe('amount')
+    expect(JSON.parse(groups[0].conditionConfig).children[0].leftOperand.value).toBe('amount')
     expect(groups[1].conditionExpression).toBe('')
     expect(JSON.parse(groups[1].conditionConfig).fallback).toBe(true)
   })

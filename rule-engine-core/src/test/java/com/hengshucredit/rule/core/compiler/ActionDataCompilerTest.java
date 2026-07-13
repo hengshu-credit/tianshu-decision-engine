@@ -16,6 +16,19 @@ import static org.junit.Assert.assertTrue;
 public class ActionDataCompilerTest {
 
     @Test
+    public void compileUnifiedOperands() {
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"assign\",\"targetOperand\":{\"kind\":\"PATH\",\"value\":\"result\"},\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"PASS\",\"valueType\":\"STRING\"}},"
+                + "{\"type\":\"func-call\",\"functionCode\":\"max\",\"args\":[{\"kind\":\"PATH\",\"value\":\"request.score\"},{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}]}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData);
+
+        assertTrue(script.contains("result = \"PASS\""));
+        assertTrue(script.contains("max(request.score, 600)"));
+    }
+
+    @Test
     public void compileUsesFieldLevelVarIds() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(1L, "scoreInput");

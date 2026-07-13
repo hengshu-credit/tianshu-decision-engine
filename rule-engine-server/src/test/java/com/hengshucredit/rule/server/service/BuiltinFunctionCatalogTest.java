@@ -1,11 +1,17 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -40,8 +46,45 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("objGet"));
         assertTrue(codeSet.contains("dateAdd"));
         assertTrue(codeSet.contains("dateDiff"));
+        assertTrue(codeSet.contains("idCardBirthDate"));
+        assertTrue(codeSet.contains("idCardAge"));
+        assertTrue(codeSet.contains("scoreByProbability"));
         assertTrue(codeSet.contains("scoreByOddsPdo"));
         assertTrue(codeSet.contains("scoreByBadRatePdo"));
-        assertTrue(definitions.size() >= 55);
+        assertTrue(definitions.size() >= 58);
+    }
+
+    @Test
+    public void builtinFunctionExamplesExecuteThroughFunctionManagement() {
+        for (RuleFunction function : BuiltinFunctionCatalog.definitions()) {
+            RuleFunctionService service = serviceWithFunction(function);
+            Map<String, Object> params = exampleParams(function.getParamsJson());
+
+            Map<String, Object> result = service.testFunction(1L, params);
+
+            assertEquals(function.getFuncCode() + ": " + result.get("errorMessage"), true, result.get("success"));
+        }
+    }
+
+    private static RuleFunctionService serviceWithFunction(RuleFunction function) {
+        RuleFunctionService service = new RuleFunctionService() {
+            @Override
+            public RuleFunction getById(Long id) {
+                return function;
+            }
+        };
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        return service;
+    }
+
+    private static Map<String, Object> exampleParams(String paramsJson) {
+        Map<String, Object> params = new LinkedHashMap<>();
+        JSONArray definitions = JSON.parseArray(paramsJson);
+        for (int i = 0; i < definitions.size(); i++) {
+            JSONObject definition = definitions.getJSONObject(i);
+            params.put(definition.getString("name"), definition.get("example"));
+        }
+        return params;
     }
 }

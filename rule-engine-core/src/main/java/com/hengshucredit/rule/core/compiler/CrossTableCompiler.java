@@ -190,22 +190,31 @@ public class CrossTableCompiler implements RuleCompiler {
         JSONArray rowHeaders = model.getJSONArray("rowHeaders");
         JSONArray colHeaders = model.getJSONArray("colHeaders");
         JSONArray cells = model.getJSONArray("cells");
+        JSONArray rowHeaderOperands = model.getJSONArray("rowHeaderOperands");
+        JSONArray colHeaderOperands = model.getJSONArray("colHeaderOperands");
+        JSONArray cellOperands = model.getJSONArray("cellOperands");
         if (rowVar == null || colVar == null || resultVar == null
                 || rowHeaders == null || colHeaders == null || cells == null) {
             return CompileResult.fail("交叉表模型缺少必要字段: rowVar/colVar/resultVar/rowHeaders/colHeaders/cells");
         }
 
-        String rowScript = resolveVar(
+        String rowScript = rowVar.getJSONObject("operand") != null
+                ? OperandCompiler.compile(rowVar.getJSONObject("operand"), varContext)
+                : resolveVar(
                 rowVar.containsKey("_varId") ? rowVar.getLong("_varId") : null,
                 rowVar.getString("_refType"),
                 rowVar.getString("varCode"),
                 varContext);
-        String colScript = resolveVar(
+        String colScript = colVar.getJSONObject("operand") != null
+                ? OperandCompiler.compile(colVar.getJSONObject("operand"), varContext)
+                : resolveVar(
                 colVar.containsKey("_varId") ? colVar.getLong("_varId") : null,
                 colVar.getString("_refType"),
                 colVar.getString("varCode"),
                 varContext);
-        String resultScript = resolveVar(
+        String resultScript = resultVar.getJSONObject("operand") != null
+                ? OperandCompiler.compile(resultVar.getJSONObject("operand"), varContext)
+                : resolveVar(
                 resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null,
                 resultVar.getString("_refType"),
                 resultVar.getString("varCode"),
@@ -215,22 +224,26 @@ public class CrossTableCompiler implements RuleCompiler {
         boolean first = true;
         for (int r = 0; r < rowHeaders.size(); r++) {
             JSONArray rowCells = cells.getJSONArray(r);
+            JSONArray rowOperandCells = cellOperands != null && r < cellOperands.size() ? cellOperands.getJSONArray(r) : null;
             if (rowCells == null) {
                 continue;
             }
             for (int c = 0; c < colHeaders.size(); c++) {
                 String cellValue = c < rowCells.size() ? rowCells.getString(c) : null;
-                if (cellValue == null || cellValue.trim().isEmpty()) {
+                JSONObject cellOperand = rowOperandCells != null && c < rowOperandCells.size() ? rowOperandCells.getJSONObject(c) : null;
+                if (cellOperand == null && (cellValue == null || cellValue.trim().isEmpty())) {
                     continue;
                 }
                 script.append(first ? "if (" : " else if (");
                 first = false;
                 script.append(rowScript).append(" == ");
-                appendValue(script, rowHeaders.getString(r), rowVar.getString("varType"));
+                JSONObject rowOperand = rowHeaderOperands != null && r < rowHeaderOperands.size() ? rowHeaderOperands.getJSONObject(r) : null;
+                appendOperandOrValue(script, rowOperand, rowHeaders.getString(r), rowVar.getString("varType"), varContext);
                 script.append(" && ").append(colScript).append(" == ");
-                appendValue(script, colHeaders.getString(c), colVar.getString("varType"));
+                JSONObject colOperand = colHeaderOperands != null && c < colHeaderOperands.size() ? colHeaderOperands.getJSONObject(c) : null;
+                appendOperandOrValue(script, colOperand, colHeaders.getString(c), colVar.getString("varType"), varContext);
                 script.append(") {\n    ").append(resultScript).append(" = ");
-                appendValue(script, cellValue, resultVar.getString("varType"));
+                appendOperandOrValue(script, cellOperand, cellValue, resultVar.getString("varType"), varContext);
                 script.append(";\n}");
             }
         }
@@ -242,6 +255,12 @@ public class CrossTableCompiler implements RuleCompiler {
         RuleScriptResultCollector.prependOutputNullInits(script, outVars);
         RuleScriptResultCollector.appendResultMapReturn(script, outVars);
         return CompileResult.ok(script.toString(), "QLEXPRESS");
+    }
+
+    private void appendOperandOrValue(StringBuilder script, JSONObject operand, String value,
+                                      String valueType, VarContext varContext) {
+        if (operand != null) script.append(OperandCompiler.compile(operand, varContext));
+        else appendValue(script, value, valueType);
     }
 
     /**
@@ -340,6 +359,7 @@ public class CrossTableCompiler implements RuleCompiler {
     }
 
     private static String compileLeaf(JSONObject leaf, VarContext varContext) {
+        if (ConditionOperandCompiler.supports(leaf)) return ConditionOperandCompiler.compile(leaf, varContext);
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
         String refType = leaf.getString("_refType");
         String varCode = leaf.getString("varCode");

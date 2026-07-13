@@ -1,5 +1,5 @@
 import { compileConditionExpression } from '@/constants/conditionOperators'
-import { compileOperand, OPERAND_KINDS } from '@/utils/operand'
+import { compileOperand, createLiteralOperand, createPathOperand, OPERAND_KINDS } from '@/utils/operand'
 
 function quoteString(value) {
   return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
@@ -153,12 +153,135 @@ export function generateScript(actionData) {
 
 export function actionDataToBlocks(actionData) {
   if (!Array.isArray(actionData) || !actionData.length) return []
-  return JSON.parse(JSON.stringify(actionData))
+  return actionData.map(normalizeActionBlock)
+}
+
+export function normalizeGraphActionData(modelData) {
+  if (!modelData || typeof modelData !== 'object') return modelData
+  ;(modelData.nodes || []).forEach(node => {
+    node.actionData = actionDataToBlocks(node.actionData)
+  })
+  const logicflow = modelData.logicflow
+  ;(logicflow && logicflow.nodes || []).forEach(node => {
+    if (!node.properties) node.properties = {}
+    node.properties.actionData = actionDataToBlocks(node.properties.actionData)
+  })
+  return modelData
 }
 
 export function blocksToActionData(blocks) {
   if (!Array.isArray(blocks) || !blocks.length) return []
   return JSON.parse(JSON.stringify(blocks))
+}
+
+function normalizeActionBlock(source) {
+  const block = JSON.parse(JSON.stringify(source || {}))
+  const targetOperand = block.targetOperand || legacyReferenceOperand(
+    block.target,
+    block._targetVarId != null ? block._targetVarId : block._varId,
+    block._targetRefType || block._refType,
+    block.targetVarType
+  )
+  if (block.target !== undefined || block.targetOperand !== undefined) block.targetOperand = targetOperand
+
+  if (block.type === 'assign') {
+    block.valueOperand = block.valueOperand || legacyValueOperand(block.value, block.valueType)
+  } else if (block.type === 'if-block') {
+    block.branches = (block.branches || []).map(branch => ({
+      ...branch,
+      leftOperand: branch.leftOperand || legacyReferenceOperand(branch.condVar, branch._varId, branch._refType, branch.condVarType),
+      operator: branch.operator || branch.condOp || '==',
+      rightOperand: branch.rightOperand || legacyLiteralOperand(branch.condValue, branch.condVarType),
+      actions: (branch.actions || []).map(normalizeActionBlock)
+    }))
+    block.branches.forEach(branch => removeKeys(branch, ['condVar', 'condOp', 'condValue', 'condVarType', '_varId', '_refType']))
+  } else if (block.type === 'switch-block') {
+    block.matchOperand = block.matchOperand || legacyReferenceOperand(block.matchVar)
+    block.cases = (block.cases || []).map(item => ({
+      ...item,
+      valueOperand: item.valueOperand || legacyLiteralOperand(item.value),
+      actions: (item.actions || []).map(normalizeActionBlock)
+    }))
+    block.cases.forEach(item => removeKeys(item, ['value']))
+    block.defaultActions = (block.defaultActions || []).map(normalizeActionBlock)
+  } else if (block.type === 'func-call') {
+    block.functionCode = block.functionCode || block.funcName || ''
+    const refs = block._argRefs || []
+    block.args = (block.args || []).map((arg, index) => {
+      if (arg && arg.kind) return arg
+      const ref = refs[index] || {}
+      return ref._varId != null || ref.varId != null || ref._refType || ref.refType
+        ? legacyReferenceOperand(arg, ref._varId != null ? ref._varId : ref.varId, ref._refType || ref.refType, ref.varType)
+        : legacyLiteralOperand(arg)
+    })
+  } else if (block.type === 'foreach') {
+    block.listOperand = block.listOperand || legacyReferenceOperand(block.listExpr)
+    block.actions = (block.actions || []).map(normalizeActionBlock)
+  } else if (block.type === 'ternary') {
+    block.leftOperand = block.leftOperand || legacyReferenceOperand(block.condVar, block._condVarId, block._condRefType, block.condVarType)
+    block.operator = block.operator || block.condOp || '=='
+    block.rightOperand = block.rightOperand || legacyLiteralOperand(block.condValue, block.condVarType)
+    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue)
+    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue)
+  } else if (block.type === 'in-check') {
+    block.checkOperand = block.checkOperand || legacyReferenceOperand(block.checkVar)
+    block.inOperands = block.inOperands || (block.inValues || []).map(value => legacyLiteralOperand(value))
+    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue)
+    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue)
+  } else if (block.type === 'template-str') {
+    block.parts = (block.parts || []).map(part => part.operand
+      ? part
+      : { type: part.type, operand: part.type === 'expr' ? legacyReferenceOperand(part.content) : createLiteralOperand(part.content || '') })
+  }
+
+  removeKeys(block, [
+    'target', 'value', 'valueType', 'funcName', '_argRefs', 'matchVar', 'listExpr',
+    'condVar', 'condOp', 'condValue', 'condVarType', 'trueValue', 'falseValue',
+    'checkVar', 'inValues', '_targetVarId', '_targetRefType', '_varId', '_refType',
+    '_condVarId', '_condRefType', 'targetVarType'
+  ])
+  return block
+}
+
+function legacyReferenceOperand(value, refId, refType, valueType) {
+  if (value == null || String(value).trim() === '') return null
+  const code = String(value).trim()
+  if (refId != null && refType) {
+    return {
+      kind: OPERAND_KINDS.REFERENCE,
+      value: code,
+      code,
+      label: code,
+      valueType: valueType || '',
+      refId,
+      refType,
+      resolved: true
+    }
+  }
+  return createPathOperand(code)
+}
+
+function legacyLiteralOperand(value, valueType) {
+  if (value == null) return null
+  const text = String(value).trim()
+  const quoted = text.length >= 2 && ((text[0] === '"' && text[text.length - 1] === '"') || (text[0] === "'" && text[text.length - 1] === "'"))
+  const normalizedValue = quoted ? text.slice(1, -1) : text
+  const type = valueType || (text !== '' && !isNaN(text) ? 'NUMBER' : text === 'true' || text === 'false' ? 'BOOLEAN' : 'STRING')
+  return createLiteralOperand(normalizedValue, type)
+}
+
+function legacyValueOperand(value, valueType) {
+  if (value == null || String(value).trim() === '') return null
+  const text = String(value).trim()
+  const isQuoted = text.length >= 2 && ((text[0] === '"' && text[text.length - 1] === '"') || (text[0] === "'" && text[text.length - 1] === "'"))
+  if (valueType || isQuoted || !isNaN(text) || text === 'true' || text === 'false' || text === 'null') {
+    return legacyLiteralOperand(text, valueType || (text === 'null' ? 'NULL' : undefined))
+  }
+  return createPathOperand(text)
+}
+
+function removeKeys(target, keys) {
+  keys.forEach(key => { if (target[key] !== undefined) delete target[key] })
 }
 
 function newAssignment() {

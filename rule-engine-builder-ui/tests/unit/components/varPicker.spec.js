@@ -87,6 +87,22 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
+  test('可写操作数只展示变量和数据对象字段', () => {
+    const wrapper = mountPicker({
+      operandMode: true,
+      writableOnly: true,
+      allowedKinds: ['PATH', 'REFERENCE'],
+      vars: [
+        ...standaloneOptions(1),
+        ...objectFieldOptions(),
+        ...modelFieldOptions(),
+        { varCode: 'LIMIT', varLabel: '阈值', _refType: 'CONSTANT', _ref: { category: 'constant', refType: 'CONSTANT' } }
+      ]
+    })
+
+    expect(wrapper.vm.categoryList.map(item => item.key)).toEqual(['manual', 'standalone', 'object'])
+  })
+
   test('只有对象字段时自动切换到对象分类', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     await Vue.nextTick()

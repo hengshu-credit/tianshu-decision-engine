@@ -199,27 +199,9 @@
 
 <script>
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import AssignmentRow from './ActionAssignmentRow.vue'
+import AssignmentTarget from './ActionAssignmentTarget.vue'
 import { actionDataToBlocks, BLOCK_TYPES, blocksToActionData, generateScript, newBlock } from '@/utils/actionDataCodegen'
-
-const AssignmentRow = {
-  components: { OperandPicker },
-  inject: ['actionEditor'],
-  props: { action: { type: Object, required: true } },
-  template: `<div class="inline-row assignment-row">
-    <operand-picker :value="action.targetOperand" :vars="actionEditor.vars" :selected-vars="actionEditor.selectedVars" :allowed-kinds="actionEditor.writeKinds" writable-only placeholder="选择目标字段" size="mini" @input="value => actionEditor.setOperand(action, 'targetOperand', value)" />
-    <span class="eq">=</span>
-    <operand-picker :value="action.valueOperand" :vars="actionEditor.vars" :functions="actionEditor.functions" :selected-vars="actionEditor.selectedVars" :allowed-kinds="actionEditor.valueKinds" placeholder="选择值或字段" size="mini" @input="value => actionEditor.setOperand(action, 'valueOperand', value)" />
-  </div>`
-}
-
-const AssignmentTarget = {
-  components: { OperandPicker },
-  inject: ['actionEditor'],
-  props: { block: { type: Object, required: true } },
-  template: `<div class="inline-row"><span class="mini-label">结果</span>
-    <operand-picker :value="block.targetOperand" :vars="actionEditor.vars" :selected-vars="actionEditor.selectedVars" :allowed-kinds="actionEditor.writeKinds" writable-only placeholder="选择结果字段" size="mini" @input="value => actionEditor.setOperand(block, 'targetOperand', value)" />
-  </div>`
-}
 
 export default {
   name: 'ActionBlockEditor',

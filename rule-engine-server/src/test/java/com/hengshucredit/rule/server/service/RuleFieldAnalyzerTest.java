@@ -28,6 +28,22 @@ public class RuleFieldAnalyzerTest {
     private final RuleFieldAnalyzer analyzer = new RuleFieldAnalyzer();
 
     @Test
+    public void unifiedOperandsContributeInputAndOutputDependencies() {
+        String json = "{\"rules\":[{"
+                + "\"conditionRoot\":{\"type\":\"group\",\"children\":[{\"type\":\"leaf\",\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"request.score\"},\"operator\":\">=\",\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}}]},"
+                + "\"actions\":[{\"targetOperand\":{\"kind\":\"REFERENCE\",\"code\":\"decision\",\"refId\":2,\"refType\":\"VARIABLE\"},\"valueOperand\":{\"kind\":\"PATH\",\"value\":\"request.result\"}}]}]}";
+
+        List<String> inputs = analyzer.extractInputFields(json, "TABLE").stream()
+                .map(RuleDefinitionInputField::getScriptName).collect(Collectors.toList());
+        List<String> outputs = analyzer.extractOutputFields(json, "TABLE").stream()
+                .map(RuleDefinitionOutputField::getScriptName).collect(Collectors.toList());
+
+        assertTrue(inputs.contains("request.score"));
+        assertTrue(inputs.contains("request.result"));
+        assertTrue(outputs.contains("decision"));
+    }
+
+    @Test
     public void scriptExtractsInputsFromRightHandSide() {
         String json = "{"
                 + "\"script\":\"riskScore = request.params.score + modelScore\\nresult.level = riskScore >= 60 ? \\\"PASS\\\" : \\\"REJECT\\\"\","
@@ -417,6 +433,28 @@ public class RuleFieldAnalyzerTest {
                 analyzer, java.util.Collections.singletonList(field), varMetaMap);
 
         assertTrue(names(result).contains("score_f1_fields.HYBASE_X115"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void variableMetaCarriesExampleAndDefaultValueToResolvedInputs() throws Exception {
+        Map<String, Object> ageMeta = leafMeta("age", "INPUT", 37L);
+        ageMeta.put("scriptName", "age");
+        ageMeta.put("varType", "NUMBER");
+        ageMeta.put("defaultValue", "18");
+        ageMeta.put("exampleValue", "55");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("age", ageMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField field = inputField("age", "VARIABLE", "INPUT", 37L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, java.util.Collections.singletonList(field), varMetaMap);
+
+        RuleDefinitionInputField resolved = result.get(0);
+        assertEquals("18", resolved.getDefaultValue());
+        assertEquals("55", resolved.getExampleValue());
     }
 
     @Test

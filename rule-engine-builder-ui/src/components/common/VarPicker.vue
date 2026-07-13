@@ -209,6 +209,13 @@
               @input="onReferenceInput"
               @click.native="onInputClick"
             >
+              <span
+                v-if="operandMode && operandKindMetaValue.label"
+                slot="prefix"
+                class="vp-operand-kind"
+                :class="'vp-operand-kind--' + operandKindMetaValue.tone"
+                :title="operandKindMetaValue.label"
+              >{{ operandKindMetaValue.label }}</span>
               <i slot="suffix" class="el-input__icon el-icon-arrow-down" />
               <i
                 v-if="value && allowCustom"
@@ -250,6 +257,7 @@ import {
   createPathOperand,
   createReferenceOperand,
   operandDisplay,
+  operandKindMeta,
   resolvePathOperand
 } from '@/utils/operand'
 
@@ -400,6 +408,9 @@ export default {
       if (this.operandMode) return operandDisplay(this.value)
       return this.referenceKeyword || this.displayValue
     },
+    operandKindMetaValue() {
+      return operandKindMeta(this.value)
+    },
     manualValuePlaceholder() {
       return this.expectedType === 'NUMBER' ? '请输入阈值' : '请输入值'
     },
@@ -442,7 +453,7 @@ export default {
       ]
       list.forEach(function (item) {
         if (item.key === 'manual') {
-          item.count = this.allowsOperandKind('LITERAL') || this.allowsOperandKind('PATH') ? 2 : 0
+          item.count = (this.allowsOperandKind('LITERAL') ? 1 : 0) + (this.allowsOperandKind('PATH') ? 1 : 0)
         } else if (item.key === 'function') {
           item.count = this.allowsOperandKind('FUNCTION') ? this.functions.length : 0
         } else {
@@ -485,12 +496,13 @@ export default {
         })
       }
       if (this.activeCategory === 'selected') {
-        return this.selectedItems
+        return this.selectedItems.filter(this.isWritableOption)
       }
       var list = this.vars.filter(function (v) {
         var cat = (v._ref && v._ref.category) || 'standalone'
         if (cat !== self.activeCategory) return false
         if (self.typeFilter && v.varType !== self.typeFilter) return false
+        if (!self.isWritableOption(v)) return false
         return true
       })
 
@@ -519,12 +531,13 @@ export default {
       if (category === 'manual') return []
       if (category === 'function') return this.functions
       if (category === 'selected') {
-        return this.selectedItems
+        return this.selectedItems.filter(this.isWritableOption)
       }
       var list = this.vars.filter(function (v) {
         var cat = (v._ref && v._ref.category) || 'standalone'
         if (cat !== category) return false
         if (self.typeFilter && v.varType !== self.typeFilter) return false
+        if (!self.isWritableOption(v)) return false
         return true
       })
 
@@ -533,6 +546,11 @@ export default {
       }
 
       return list.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
+    },
+    isWritableOption(item) {
+      if (!this.writableOnly) return true
+      const category = (item && item._ref && item._ref.category) || 'standalone'
+      return category === 'standalone' || category === 'object'
     },
     isGroupedFieldCategory(category) {
       return category === 'object' || category === 'model'
@@ -1245,6 +1263,35 @@ export default {
 .vp-reference {
   width: 100%;
 }
+.vp-reference ::v-deep .el-input__prefix {
+  display: flex;
+  align-items: center;
+  left: 6px;
+}
+.vp-reference ::v-deep .el-input--prefix .el-input__inner {
+  padding-left: 82px;
+}
+.vp-operand-kind {
+  display: inline-flex;
+  align-items: center;
+  max-width: 72px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 20px;
+  white-space: nowrap;
+  color: #fff;
+  background: #909399;
+}
+.vp-operand-kind--literal { background: #e6a23c; }
+.vp-operand-kind--path { background: #607d8b; }
+.vp-operand-kind--path-resolved { background: #546e7a; }
+.vp-operand-kind--variable { background: #409eff; }
+.vp-operand-kind--constant { background: #9c6ade; }
+.vp-operand-kind--object { background: #00a870; }
+.vp-operand-kind--model { background: #f56c6c; }
+.vp-operand-kind--function { background: #13c2c2; }
 .mode-switch {
   flex-shrink: 0;
   cursor: pointer;

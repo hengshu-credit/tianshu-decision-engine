@@ -27,9 +27,9 @@ describe('decisionConditionTree', () => {
     })
   })
 
-  test('动作默认结构保持不变', () => {
+  test('动作默认结构使用统一 Operand', () => {
     expect(createEmptyActionItem()).toEqual({
-      varCode: '', varLabel: '', varType: 'STRING', enumOptions: '', value: ''
+      targetOperand: null, valueOperand: null
     })
   })
 

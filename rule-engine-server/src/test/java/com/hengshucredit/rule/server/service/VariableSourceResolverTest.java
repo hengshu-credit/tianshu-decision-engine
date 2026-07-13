@@ -2,10 +2,12 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
@@ -205,6 +207,63 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void modelParamsResolveSourceAndDefaultOperands() {
+        RuleModelInputField score = input("modelScore", "legacyScore");
+        score.setSourceOperand("{\"kind\":\"PATH\",\"value\":\"request.score\"}");
+        RuleModelInputField fallback = input("fallback", "legacyFallback");
+        fallback.setSourceOperand("{\"kind\":\"PATH\",\"value\":\"request.missing\"}");
+        fallback.setDefaultOperand("{\"kind\":\"PATH\",\"value\":\"defaults.score\"}");
+        RuleModel model = modelDetail(100L, "score_f1", score, fallback);
+        Map<String, Object> resolvedParams = new LinkedHashMap<>();
+        resolvedParams.put("request", singletonMap("score", 620));
+        resolvedParams.put("defaults", singletonMap("score", 600));
+
+        Map<String, Object> modelParams = new VariableSourceResolver().buildModelParams(model, resolvedParams);
+
+        assertEquals(620, modelParams.get("modelScore"));
+        assertEquals(600, modelParams.get("fallback"));
+    }
+
+    @Test
+    public void modelParamsKeepResolvedContextForOutputTransformArguments() {
+        RuleModelInputField score = input("modelScore", "request.score");
+        RuleModel model = modelDetail(100L, "risk_model", score);
+        Map<String, Object> resolvedParams = new LinkedHashMap<>();
+        resolvedParams.put("request", singletonMap("score", 0.2));
+        resolvedParams.put("baseScore", 600);
+
+        Map<String, Object> modelParams = new VariableSourceResolver().buildModelParams(model, resolvedParams);
+
+        assertEquals(0.2, ((Number) modelParams.get("modelScore")).doubleValue(), 0.000001);
+        assertEquals(600, modelParams.get("baseScore"));
+        assertEquals(singletonMap("score", 0.2), modelParams.get("request"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelTransformDependenciesExcludeCurrentRawOutput() {
+        RuleModel detail = modelDetail(100L, "risk_model", input("feature", "request.feature"));
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setFieldName("probability");
+        output.setTransformOperand("{\"kind\":\"FUNCTION\",\"functionId\":7,\"functionCode\":\"convert\",\"args\":["
+                + "{\"kind\":\"REFERENCE\",\"refId\":100,\"refType\":\"MODEL_OUTPUT\",\"code\":\"risk_model.probability\"},"
+                + "{\"kind\":\"PATH\",\"value\":\"baseScore\"}]}" );
+        detail.setOutputFields(Collections.singletonList(output));
+        RuleModelService modelService = new RuleModelService() {
+            @Override
+            public RuleModel getDetail(Long modelId) {
+                return detail;
+            }
+        };
+        VariableSourceResolver resolver = new VariableSourceResolver();
+        ReflectionTestUtils.setField(resolver, "ruleModelService", modelService);
+
+        java.util.Set<String> dependencies = ReflectionTestUtils.invokeMethod(resolver, "collectModelInputNames", detail);
+
+        assertEquals(new LinkedHashSet<>(Arrays.asList("request.feature", "baseScore")), dependencies);
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void modelExecutesWhenRequiredInputsAreNestedModelFieldsObject() throws Exception {
         FakeModelService modelService = new FakeModelService();
@@ -220,6 +279,7 @@ public class VariableSourceResolverTest {
         assertEquals(12.5, ((Number) modelService.lastParams.get("HY001")).doubleValue(), 0.000001);
         Map<String, Object> modelOutput = (Map<String, Object>) resolved.get("score_f1");
         assertEquals(660, modelOutput.get("score"));
+        assertEquals(660, ((Map<?, ?>) resolved.get("decision")).get("score"));
     }
 
     @Test
@@ -637,6 +697,10 @@ public class VariableSourceResolverTest {
             input.setScriptName("HY001");
             input.setStatus(1);
             model.setInputFields(Collections.singletonList(input));
+            RuleModelOutputField output = new RuleModelOutputField();
+            output.setFieldName("score");
+            output.setTargetOperand("{\"kind\":\"PATH\",\"value\":\"decision.score\"}");
+            model.setOutputFields(Collections.singletonList(output));
             return model;
         }
 

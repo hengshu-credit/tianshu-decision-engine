@@ -28,10 +28,13 @@ public class RuleModelOutputField {
     private String fieldType;
 
     private String targetField;
+
+    /** 统一 Operand JSON：模型输出写入的引擎字段/路径 */
+    private String targetOperand;
     private String featureName;
 
-    /** 转换方法：NONE/RENAME/SCALE/OHE */
-    private String transformType;
+    /** 函数转换 Operand；顶层必须是 FUNCTION */
+    private String transformOperand;
 
     /** 是否概率输出：0-否，1-是 */
     private Integer isProbability;

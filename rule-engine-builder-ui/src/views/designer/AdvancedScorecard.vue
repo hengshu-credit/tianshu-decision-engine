@@ -28,34 +28,17 @@
         <div class="base-config-item">
           <span class="base-config-label">结果变量</span>
           <div class="result-var-picker">
-            <var-picker
-              v-if="!customResultVarMode && varPickerOptions.length"
+            <operand-picker
               :vars="varPickerOptions"
+              :functions="projectFunctions"
               :selected-vars="selectedVarPickerOptions"
-              :value="model.resultVar.varCode"
-              placeholder="选择结果变量..."
+              :value="model.resultVar.operand"
+              :allowed-kinds="writeOperandKinds"
+              writable-only
+              placeholder="选择结果字段或手输路径"
               width="200px"
-              @select="onResultVarSelect"
-              @clear="onResultVarClear"
+              @input="value => setFieldOperand(model.resultVar, 'operand', value)"
             />
-            <el-input
-              v-else
-              v-model="model.resultVar.varCode"
-              size="small"
-              placeholder="输入变量编码"
-              style="width:200px;"
-              clearable
-              @input="onResultVarCustomInput"
-            />
-            <el-tooltip :content="customResultVarMode ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
-              <el-button
-                size="small"
-                type="text"
-                :icon="customResultVarMode ? 'el-icon-collection' : 'el-icon-edit'"
-                class="result-var-switch-btn"
-                @click="customResultVarMode = !customResultVarMode"
-              />
-            </el-tooltip>
           </div>
           <span v-if="model.resultVar.varLabel" class="result-var-label">{{ model.resultVar.varLabel }}</span>
         </div>
@@ -108,16 +91,16 @@
           <div class="dim-header">
             <span class="dim-index">{{ gi + 1 }}.{{ di + 1 }}</span>
             <el-input v-model="dim.varLabel" size="small" placeholder="维度名称" style="width:160px;" />
-            <var-picker
-              v-if="varPickerOptions.length"
+            <operand-picker
               :vars="varPickerOptions"
+              :functions="projectFunctions"
               :selected-vars="selectedVarPickerOptions"
-              :value="dim.varCode"
-              placeholder="主变量..."
+              :value="dim.operand"
+              :allowed-kinds="readOperandKinds"
+              placeholder="选择维度字段或路径"
               width="180px"
-              @select="v => onDimVarSelect(gi, di, v)"
+              @input="value => setFieldOperand(dim, 'operand', value)"
             />
-            <el-input v-else v-model="dim.varCode" size="small" placeholder="变量编码" style="width:140px;" />
             <div class="dim-weight-area">
               <span class="item-field-label">权重</span>
               <el-input-number
@@ -154,18 +137,17 @@
                     :key="ci"
                     class="condition-row"
                   >
-                    <var-picker
-                      v-if="varPickerOptions.length"
+                    <operand-picker
                       :vars="varPickerOptions"
+                      :functions="projectFunctions"
                       :selected-vars="selectedVarPickerOptions"
-                      :value="cond.varCode"
-                      placeholder="变量"
+                      :value="cond.leftOperand"
+                      :allowed-kinds="readOperandKinds"
+                      placeholder="选择左操作数"
                       width="100%"
                       class="cond-var"
-                      @select="v => onCondVarSelect(cond, v)"
-                      @clear="() => onCondVarClear(cond)"
+                      @input="value => setConditionOperand(cond, 'leftOperand', value)"
                     />
-                    <el-input v-else v-model="cond.varCode" size="mini" placeholder="变量" class="cond-var" />
                     <el-select v-model="cond.operator" size="mini" class="cond-op">
                       <el-option label="等于" value="==" />
                       <el-option label="不等于" value="!=" />
@@ -174,7 +156,17 @@
                       <el-option label="小于" value="<" />
                       <el-option label="小于等于" value="<=" />
                     </el-select>
-                    <el-input v-model="cond.value" size="mini" placeholder="值" class="cond-val" />
+                    <operand-picker
+                      :value="cond.rightOperand"
+                      :vars="varPickerOptions"
+                      :functions="projectFunctions"
+                      :selected-vars="selectedVarPickerOptions"
+                      :allowed-kinds="valueOperandKinds"
+                      placeholder="选择值或字段"
+                      width="100%"
+                      class="cond-val"
+                      @input="value => setConditionOperand(cond, 'rightOperand', value)"
+                    />
                     <el-button
                       v-if="rule.conditions.length > 1"
                       type="text" size="mini" icon="el-icon-close" style="color:#ccc;"
@@ -289,7 +281,16 @@
             <el-input-number v-model="thresh.max" size="small" :min="thresh.min" :controls="false" style="width:100px;" />
           </div>
           <div class="thresh-result">
-            <el-input v-model="thresh.result" size="small" placeholder="等级名称（如 低风险）" style="width:100%;min-width:200px;" />
+            <operand-picker
+              :value="thresh.resultOperand"
+              :vars="varPickerOptions"
+              :functions="projectFunctions"
+              :selected-vars="selectedVarPickerOptions"
+              :allowed-kinds="valueOperandKinds"
+              placeholder="选择等级结果或手输阈值"
+              width="100%"
+              @input="value => setThresholdOperand(thresh, value)"
+            />
           </div>
           <el-tag :color="thresholdColor(ti)" effect="dark" size="small" class="thresh-badge">
             {{ thresh.result || '等级 ' + (ti + 1) }}
@@ -326,17 +327,18 @@
 <script>
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
-import VarPicker from '@/components/common/VarPicker.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
 export default {
   name: 'AdvancedScorecard',
-  components: { DesignerTestDialog, VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, OperandPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -353,8 +355,9 @@ export default {
       testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
-      /** 结果变量手动输入模式 */
-      customResultVarMode: false
+      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
+      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
     }
   },
   computed: {
@@ -385,16 +388,18 @@ export default {
   },
   methods: {
     collectSelectedVarItems() {
-      const items = [this.model.resultVar]
+      const items = []
+      const add = operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType }))
+      add(this.model.resultVar && this.model.resultVar.operand)
       const groups = this.model.dimensionGroups || []
       groups.forEach(group => {
         const dimensions = group.dimensions || []
         dimensions.forEach(dim => {
-          items.push(dim)
+          add(dim.operand)
           const rules = dim.rules || []
           rules.forEach(rule => {
             const conditions = rule.conditions || []
-            conditions.forEach(cond => items.push(cond))
+            conditions.forEach(cond => { add(cond.leftOperand); add(cond.rightOperand) })
           })
         })
       })
@@ -420,11 +425,20 @@ export default {
       if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', _varId: null })
       if (!this.model.dimensionGroups) this.$set(this.model, 'dimensionGroups', [])
       if (!this.model.thresholds) this.$set(this.model, 'thresholds', [])
+      if (!this.model.resultVar.operand) this.$set(this.model.resultVar, 'operand', operandFromReferenceFields(this.model.resultVar))
       this.model.dimensionGroups.forEach(g => {
         if (g.weight == null) this.$set(g, 'weight', 1.0)
         ;(g.dimensions || []).forEach(d => {
           if (d.weight == null) this.$set(d, 'weight', 1.0)
+          if (!d.operand) this.$set(d, 'operand', operandFromReferenceFields(d))
+          ;(d.rules || []).forEach(rule => (rule.conditions || []).forEach(cond => {
+            if (!cond.leftOperand) this.$set(cond, 'leftOperand', operandFromReferenceFields(cond))
+            if (!cond.rightOperand) this.$set(cond, 'rightOperand', createLiteralOperand(cond.value, cond.varType || 'STRING'))
+          }))
         })
+      })
+      this.model.thresholds.forEach(threshold => {
+        if (!threshold.resultOperand) this.$set(threshold, 'resultOperand', createLiteralOperand(threshold.result, 'STRING'))
       })
     },
     /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
@@ -448,66 +462,48 @@ export default {
       ;(this.model.dimensionGroups || []).forEach(g =>
         (g.dimensions || []).forEach(d => fillRef(d))
       )
+      this.syncAllOperands()
     },
-    onResultVarSelect(v) {
-      if (!v) return
-      this.$set(this.model, 'resultVar', {
-        varCode: v.varCode,
-        varLabel: v.varLabel || v.varCode,
-        _varId: (v._varId != null) ? v._varId : null,
-        _refType: v._refType || v.refType || (v.varObj && v.varObj.refType) || null
-      })
+    setFieldOperand(holder, field, value) {
+      this.$set(holder, field, value)
+      holder.varCode = compileOperand(value)
+      holder.varLabel = value && (value.label || value.code || value.value) || ''
+      holder.varType = value && value.valueType || holder.varType
+      holder._varId = value && value.refId != null ? value.refId : null
+      holder._refType = value && value.refType || null
     },
-    /** 清除结果变量选择 */
-    onResultVarClear() {
-      this.$set(this.model, 'resultVar', {
-        varCode: '',
-        varLabel: '',
-        _varId: null,
-        _refType: null
-      })
-    },
-    /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
-    onResultVarCustomInput(val) {
-      if (!val) {
-        this.$set(this.model.resultVar, 'varLabel', '')
-        this.$set(this.model.resultVar, '_varId', null)
-        this.$set(this.model.resultVar, '_refType', null)
-        return
-      }
-      const ref = this.projectRefs.find(r => r.refCode === val)
-      if (ref) {
-        this.$set(this.model.resultVar, 'varLabel', ref.refLabel.label || ref.refLabel)
-        this.$set(this.model.resultVar, '_varId', ref.varObj && ref.varObj.id ? ref.varObj.id : null)
-        this.$set(this.model.resultVar, '_refType', ref.refType || null)
+    setConditionOperand(condition, field, value) {
+      this.$set(condition, field, value)
+      if (field === 'leftOperand') {
+        condition.varCode = compileOperand(value)
+        condition.varLabel = value && (value.label || value.code || value.value) || ''
+        condition._varId = value && value.refId != null ? value.refId : null
+        condition._refType = value && value.refType || null
       } else {
-        this.$set(this.model.resultVar, 'varLabel', '')
-        this.$set(this.model.resultVar, '_varId', null)
-        this.$set(this.model.resultVar, '_refType', null)
+        condition.value = compileOperand(value)
       }
     },
-    onDimVarSelect(gi, di, v) {
-      if (!v) return
-      const dim = this.model.dimensionGroups[gi].dimensions[di]
-      dim.varCode = v.varCode
-      dim.varLabel = v.varLabel || v.varCode
-      dim._varId = (v._varId != null) ? v._varId : null
-      dim._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
+    setThresholdOperand(threshold, value) {
+      this.$set(threshold, 'resultOperand', value)
+      threshold.result = compileOperand(value)
     },
-    /** 条件变量选择 */
-    onCondVarSelect(cond, v) {
-      if (!v) return
-      cond.varCode = v.varCode
-      cond.varLabel = v.varLabel || v.varCode
-      cond._varId = (v._varId != null) ? v._varId : null
-      cond._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
-    },
-    /** 条件变量清除 */
-    onCondVarClear(cond) {
-      cond.varCode = ''
-      cond.varLabel = ''
-      cond._varId = null
-      cond._refType = null
+    syncAllOperands() {
+      const sync = (holder, field) => {
+        if (!holder || !holder[field]) return
+        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        if (result.changed) this.setFieldOperand(holder, field, result.operand)
+      }
+      sync(this.model.resultVar, 'operand')
+      ;(this.model.dimensionGroups || []).forEach(group => (group.dimensions || []).forEach(dim => {
+        sync(dim, 'operand')
+        const rules = dim.rules || []
+        rules.forEach(rule => (rule.conditions || []).forEach(condition => {
+          ['leftOperand', 'rightOperand'].forEach(field => {
+            const result = syncOperandReference(condition[field], this.varPickerOptions)
+            if (result.changed) this.setConditionOperand(condition, field, result.operand)
+          })
+        }))
+      }))
     },
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
@@ -523,24 +519,24 @@ export default {
       this.model.dimensionGroups.splice(gi, 1)
     },
     addDimension(gi) {
-      this.model.dimensionGroups[gi].dimensions.push({ varCode: '', varLabel: '', _varId: null, weight: 1.0, rules: [] })
+      this.model.dimensionGroups[gi].dimensions.push({ varCode: '', varLabel: '', _varId: null, operand: null, weight: 1.0, rules: [] })
     },
     removeDimension(gi, di) {
       this.model.dimensionGroups[gi].dimensions.splice(di, 1)
     },
     addRule(gi, di) {
       this.model.dimensionGroups[gi].dimensions[di].rules.push({
-        conditions: [{ varCode: '', operator: '==', value: '' }],
+        conditions: [{ leftOperand: null, operator: '==', rightOperand: createLiteralOperand('', 'STRING'), varCode: '', value: '' }],
         score: 0
       })
     },
     addCondition(rule) {
-      rule.conditions.push({ varCode: '', operator: '==', value: '' })
+      rule.conditions.push({ leftOperand: null, operator: '==', rightOperand: createLiteralOperand('', 'STRING'), varCode: '', value: '' })
     },
     addThreshold() {
       const last = this.model.thresholds[this.model.thresholds.length - 1]
       const min = last ? last.max : 0
-      this.model.thresholds.push({ min, max: min + 50, result: '' })
+      this.model.thresholds.push({ min, max: min + 50, result: '', resultOperand: createLiteralOperand('', 'STRING') })
     },
     async handleSave() {
       const saveModel = JSON.parse(JSON.stringify(this.model))
@@ -574,10 +570,15 @@ export default {
         const dimensions = group.dimensions || []
         dimensions.forEach(dim => {
           addCode(codes, dim.varCode)
+          collectOperandReferences(dim.operand).forEach(reference => addCode(codes, reference.code || reference.path))
           const rules = dim.rules || []
           rules.forEach(rule => {
             const conditions = rule.conditions || []
-            conditions.forEach(cond => addCode(codes, cond.varCode))
+            conditions.forEach(cond => {
+              addCode(codes, cond.varCode)
+              collectOperandReferences(cond.leftOperand).forEach(reference => addCode(codes, reference.code || reference.path))
+              collectOperandReferences(cond.rightOperand).forEach(reference => addCode(codes, reference.code || reference.path))
+            })
           })
         })
       })
@@ -588,9 +589,11 @@ export default {
           const firstRule = (dim.rules || []).find(rule => rule && rule.conditions && rule.conditions.length)
           if (!firstRule) return
           firstRule.conditions.forEach(cond => {
+            if (cond.rightOperand && cond.rightOperand.kind !== 'LITERAL') return
             if (!cond.varCode || cond.value === undefined || cond.value === '') return
             const ref = this.projectRefs.find(r => r.refCode === cond.varCode)
-            params[cond.varCode] = coerceSampleValue(cond.value, ref)
+            const sampleValue = cond.rightOperand ? cond.rightOperand.value : cond.value
+            params[cond.varCode] = coerceSampleValue(sampleValue, ref)
           })
         })
       })

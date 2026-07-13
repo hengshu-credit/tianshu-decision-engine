@@ -36,7 +36,10 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
             String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
             String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
-            String resCode = resolveVar(resVarId, resRefType, varCode, varContext);
+            JSONObject resultOperand = resultVar != null ? resultVar.getJSONObject("operand") : null;
+            String resCode = resultOperand != null
+                    ? OperandCompiler.compile(resultOperand, varContext)
+                    : resolveVar(resVarId, resRefType, varCode, varContext);
 
             StringBuilder script = new StringBuilder();
             script.append(resCode).append(" = ").append(initialScore).append(";\n");
@@ -95,13 +98,19 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                     JSONObject th = thresholds.getJSONObject(i);
                     double min = th.getDoubleValue("min");
                     double max = th.getDoubleValue("max");
-                    String result = th.getString("result");
+                    JSONObject resultOperandValue = th.getJSONObject("resultOperand");
 
                     script.append(i == 0 ? "if (" : " else if (");
                     script.append(resCode).append(" >= ").append(min)
                           .append(" && ").append(resCode).append(" < ").append(max);
                     script.append(") {\n    ").append(levelVar)
-                          .append(" = \"").append(escapeForQlDoubleQuotedString(result)).append("\"\n}");
+                          .append(" = ");
+                    if (resultOperandValue != null) {
+                        script.append(OperandCompiler.compile(resultOperandValue, varContext));
+                    } else {
+                        script.append("\"").append(escapeForQlDoubleQuotedString(th.getString("result"))).append("\"");
+                    }
+                    script.append("\n}");
                 }
                 script.append("\n");
             }
@@ -148,6 +157,10 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
         for (int i = 0; i < conditions.size(); i++) {
             if (i > 0) sb.append(" && ");
             JSONObject cond = conditions.getJSONObject(i);
+            if (ConditionOperandCompiler.supports(cond)) {
+                sb.append(ConditionOperandCompiler.compile(cond, varContext));
+                continue;
+            }
             Long varId = cond.containsKey("_varId") ? cond.getLong("_varId") : null;
             String refType = cond.getString("_refType");
             String varCode = cond.getString("varCode");

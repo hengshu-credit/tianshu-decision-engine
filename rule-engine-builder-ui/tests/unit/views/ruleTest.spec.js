@@ -208,6 +208,22 @@ describe('RuleTest — 辅助方法', () => {
     await new Promise(r => setTimeout(r, 100))
   })
 
+  test('从统一操作数按引用 ID 收集测试变量并忽略输出目标', () => {
+    const result = {}
+    wrapper.vm.collectVarIds({
+      rules: [{
+        conditionRoot: {
+          type: 'leaf',
+          leftOperand: { kind: 'REFERENCE', refId: 11, refType: 'VARIABLE', code: 'age' },
+          rightOperand: { kind: 'REFERENCE', refId: 12, refType: 'CONSTANT', code: 'adultAge' }
+        },
+        actionData: [{ targetOperand: { kind: 'REFERENCE', refId: 13, refType: 'VARIABLE', code: 'result' } }]
+      }]
+    }, 'RULE_SET', result)
+
+    expect(result).toEqual({ 11: { varCode: 'age' }, 12: { varCode: 'adultAge' } })
+  })
+
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('mtl 返回正确的模型类型标签（注意：方法名是 mtl 不是 modelTypeLabel）', () => {

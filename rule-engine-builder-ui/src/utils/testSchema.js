@@ -71,7 +71,7 @@ function parseValidValues(value) {
 
 function sampleValue(field) {
   if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
-    return field.defaultValue
+    return parseConfiguredValue(field.defaultValue, field.fieldType || field.valueType || 'STRING')
   }
   const type = String(field.fieldType || field.valueType || 'STRING').toUpperCase()
   if (['INTEGER', 'INT', 'LONG', 'NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].indexOf(type) >= 0) return 0
@@ -79,4 +79,37 @@ function sampleValue(field) {
   if (['ARRAY', 'LIST', 'VECTOR'].indexOf(type) >= 0) return []
   if (['OBJECT', 'MAP'].indexOf(type) >= 0) return {}
   return ''
+}
+
+function parseConfiguredValue(value, type) {
+  const raw = String(value).trim()
+  const normalized = String(type || '').toUpperCase()
+  if (raw.toLowerCase() === 'null') return null
+  if (raw === '""' || raw === "''") return ''
+  if (['NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].indexOf(normalized) >= 0) {
+    const n = Number(raw)
+    return Number.isNaN(n) ? stripQuotedString(raw) : n
+  }
+  if (['INTEGER', 'INT', 'LONG'].indexOf(normalized) >= 0) {
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? stripQuotedString(raw) : n
+  }
+  if (['BOOLEAN', 'BOOL'].indexOf(normalized) >= 0) {
+    return raw === '1' || raw.toLowerCase() === 'true'
+  }
+  if (['ARRAY', 'LIST', 'VECTOR', 'OBJECT', 'MAP'].indexOf(normalized) >= 0) {
+    try {
+      return JSON.parse(raw)
+    } catch (e) {
+      return stripQuotedString(raw)
+    }
+  }
+  return stripQuotedString(raw)
+}
+
+function stripQuotedString(raw) {
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1)
+  }
+  return raw
 }

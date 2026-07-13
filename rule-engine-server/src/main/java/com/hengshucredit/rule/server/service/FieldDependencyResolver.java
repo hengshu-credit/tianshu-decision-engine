@@ -183,6 +183,7 @@ public class FieldDependencyResolver {
         ResolvedField resolved = baseResolved(field.getVarId(), field.getRefType(), field.getFieldName(),
                 field.getFieldLabel(), field.getScriptName(), field.getFieldType());
         resolved.setDefaultValue(field.getDefaultValue());
+        resolved.setExampleValue(field.getExampleValue());
         resolved.setValidValues(field.getValidValues());
         resolved.setSourceType(sourceType(field.getRefType()));
         return resolved;

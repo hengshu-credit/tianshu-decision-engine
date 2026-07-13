@@ -54,9 +54,9 @@
                 v-if="row.conditionRoot"
                 :group="row.conditionRoot"
                 :vars="varPickerOptions"
+                :functions="projectFunctions"
                 :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
-                :allow-custom-var="true"
               />
             </div>
             <div class="dt-act-panel">
@@ -73,9 +73,8 @@
                 >
                   <div class="dt-act-head">
                     <span class="col-tag act-tag">THEN</span>
-                    <span class="dt-act-title">{{ act.varLabel || act.varCode || '未选变量' }}</span>
+                    <span class="dt-act-title">{{ operandDisplay(act.targetOperand) || '未选目标字段' }}</span>
                     <span class="th-actions">
-                      <i class="el-icon-setting" title="配置变量与类型" @click.stop="openActionConfig(ri, ai)" />
                       <i
                         class="el-icon-delete"
                         title="删除此动作"
@@ -84,25 +83,28 @@
                     </span>
                   </div>
                   <div class="dt-act-body">
-                    <el-select
-                      v-if="act.varType === 'ENUM' && getEnumOptions(act).length"
-                      v-model="act.value"
+                    <operand-picker
+                      :value="act.targetOperand"
+                      :vars="varPickerOptions"
+                      :selected-vars="selectedVarPickerOptions"
+                      :allowed-kinds="writeOperandKinds"
+                      writable-only
+                      placeholder="选择目标字段"
                       size="mini"
-                      class="dt-act-value-ctl"
-                      clearable
-                    >
-                      <el-option v-for="opt in getEnumOptions(act)" :key="opt" :label="opt" :value="opt" />
-                    </el-select>
-                    <el-select
-                      v-else-if="act.varType === 'BOOLEAN'"
-                      v-model="act.value"
+                      @input="operand => setActionOperand(act, 'targetOperand', operand)"
+                    />
+                    <span class="dt-act-eq">=</span>
+                    <operand-picker
+                      :value="act.valueOperand"
+                      :vars="varPickerOptions"
+                      :functions="projectFunctions"
+                      :selected-vars="selectedVarPickerOptions"
+                      :allowed-kinds="valueOperandKinds"
+                      :expected-type="act.targetOperand && act.targetOperand.valueType"
+                      placeholder="选择阈值、路径或字段"
                       size="mini"
-                      class="dt-act-value-ctl"
-                    >
-                      <el-option label="true" value="true" />
-                      <el-option label="false" value="false" />
-                    </el-select>
-                    <el-input v-else v-model="act.value" size="mini" class="dt-act-value-ctl" placeholder="赋值" />
+                      @input="operand => setActionOperand(act, 'valueOperand', operand)"
+                    />
                   </div>
                 </div>
               </div>
@@ -122,52 +124,6 @@
         <p>暂无规则行，请点击「添加行」；每条规则内可单独「添加动作」并选择要赋值的变量</p>
       </div>
     </div>
-
-    <!-- 列配置弹窗（仅动作列） -->
-    <el-dialog
-      :title="colConfigTitle"
-      :visible.sync="colConfigVisible"
-      width="520px"
-      append-to-body
-      destroy-on-close
-    >
-      <el-form v-if="activeColDef" label-width="90px" size="small">
-        <el-form-item label="选择变量">
-          <var-picker
-            v-if="varPickerOptions.length"
-            :vars="varPickerOptions"
-            :value="activeColDef.varCode"
-            placeholder="选择变量、常量或对象字段..."
-            size="small"
-            :selected-vars="selectedVarPickerOptions"
-            @select="onColConfigVarSelect"
-          />
-          <span v-else style="color:#999;font-size:12px;">暂无变量库数据</span>
-        </el-form-item>
-        <el-form-item label="中文名称">
-          <el-input v-model="activeColDef.varLabel" placeholder="如：业务类型" />
-        </el-form-item>
-        <el-form-item label="变量编码">
-          <el-input v-model="activeColDef.varCode" placeholder="如：bizType" />
-        </el-form-item>
-        <el-form-item label="数据类型">
-          <el-select
-            v-model="activeColDef.varType"
-            style="width:100%"
-            popper-append-to-body
-            @change="onColDefVarTypeChange"
-          >
-            <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
-          </el-select>
-        </el-form-item>
-        <el-form-item v-if="activeColDef.varType === 'ENUM'" label="枚举值">
-          <el-input v-model="activeColDef.enumOptions" placeholder="逗号分隔，如：普通,免税,优惠" />
-        </el-form-item>
-      </el-form>
-      <template slot="footer">
-        <el-button size="small" @click="colConfigVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
 
     <!-- 脚本预览/编辑面板 -->
     <script-panel
@@ -198,9 +154,8 @@
 
 <script>
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
-import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
-import VarPicker from '@/components/common/VarPicker.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
@@ -211,12 +166,13 @@ import {
   collectVarCodesFromConditionTree,
   walkConditionLeaves
 } from '@/utils/decisionConditionTree'
+import { collectOperandReferences, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 
 export default {
   name: 'DecisionTable',
-  components: { DesignerTestDialog, VarPicker, ScriptPanel, ConditionGroupEditor },
+  components: { DesignerTestDialog, OperandPicker, ScriptPanel, ConditionGroupEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -233,10 +189,8 @@ export default {
       testParams: {},
       testResult: null,
       contentLoaded: false,
-      colConfigVisible: false,
-      colConfigRuleIndex: -1,
-      colConfigActionIndex: -1,
-      varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
+      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
     }
   },
   computed: {
@@ -247,15 +201,6 @@ export default {
         UNIQUE: '唯一命中：期望有且仅有一条规则满足，否则报错'
       }
       return map[this.model.hitPolicy] || ''
-    },
-    colConfigTitle() {
-      if (this.colConfigRuleIndex < 0 || this.colConfigActionIndex < 0) return '动作配置'
-      return '动作配置 - 规则 #' + (this.colConfigRuleIndex + 1) + ' / 第 ' + (this.colConfigActionIndex + 1) + ' 条'
-    },
-    activeColDef() {
-      const r = this.model.rules[this.colConfigRuleIndex]
-      if (!r || !r.actions || this.colConfigActionIndex < 0) return null
-      return r.actions[this.colConfigActionIndex]
     },
     /** 测试弹窗中需要录入的变量编码列表（条件树 DFS 去重） */
     testVarCodeList() {
@@ -276,21 +221,23 @@ export default {
         seen.add(key)
         result.push(option)
       }
+      const addOperand = operand => {
+        collectOperandReferences(operand).forEach(reference => addItem({
+          varCode: reference.code,
+          _varId: reference.refId,
+          _refType: reference.refType
+        }))
+      }
 
       ;(this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
-          addItem(leaf)
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            addItem({
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              _refType: leaf._rightRefType || leaf._refType,
-              varType: leaf.rightVarType
-            })
-          }
+          addOperand(leaf.leftOperand)
+          addOperand(leaf.rightOperand)
         })
-        ;(rule.actions || []).forEach(addItem)
+        ;(rule.actions || []).forEach(action => {
+          addOperand(action.targetOperand)
+          addOperand(action.valueOperand)
+        })
       })
       return result
     }
@@ -321,30 +268,20 @@ export default {
      */
     _syncModelVarRefs() {
       let changed = false
+      const sync = (holder, field) => {
+        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        if (!result.changed) return
+        this.$set(holder, field, result.operand)
+        changed = true
+      }
       ;(this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
-          if (leaf.varCode && this.syncVarItem(leaf)) changed = true
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            const fake = {
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              varType: leaf.rightVarType
-            }
-            if (this.syncVarItem(fake)) {
-              leaf.value = fake.varCode
-              leaf.rightVarLabel = fake.varLabel
-              leaf._rightVarId = fake._varId
-              leaf.rightVarType = fake.varType
-              changed = true
-            }
-          }
+          sync(leaf, 'leftOperand')
+          sync(leaf, 'rightOperand')
         })
-      })
-
-      ;(this.model.rules || []).forEach(rule => {
-        (rule.actions || []).forEach(item => {
-          if (item && item.varCode && this.syncVarItem(item)) changed = true
+        ;(rule.actions || []).forEach(action => {
+          sync(action, 'targetOperand')
+          sync(action, 'valueOperand')
         })
       })
       if (changed) this.$forceUpdate()
@@ -353,45 +290,17 @@ export default {
     /**
      * 判断规则动作是否已是「每行自带 varCode」的新结构（旧数据仅为 { value }）。
      */
-    _ruleActionsAreFullShape(actions) {
-      if (!actions || !actions.length) return false
-      const a0 = actions[0]
-      return a0 && (a0.varCode !== undefined || a0.varType !== undefined)
-    },
-
-    /**
-     * 将单条规则动作列表规范为完整字段；支持旧版「全局 actions + 行上仅 value」合并。
-     */
     ensureRuleActionsShape(rule, legacyGlobalActions) {
-      let acts = rule.actions || []
-      const full = this._ruleActionsAreFullShape(acts)
-      if (!full && legacyGlobalActions && legacyGlobalActions.length) {
-        const merged = legacyGlobalActions.map((def, i) => ({
-          varCode: def.varCode || '',
-          varLabel: def.varLabel || '',
-          varType: def.varType || 'STRING',
-          enumOptions: def.enumOptions !== undefined ? def.enumOptions : '',
-          _varId: def._varId,
-          value: acts[i] && acts[i].value !== undefined ? acts[i].value : ''
-        }))
-        this.$set(rule, 'actions', merged)
-      } else if (!full) {
-        this.$set(rule, 'actions', (acts.length ? acts : [{}]).map(a => ({
-          varCode: '',
-          varLabel: '',
-          varType: 'STRING',
-          enumOptions: '',
-          value: a && a.value !== undefined ? a.value : ''
-        })))
-      }
-      acts = rule.actions || []
-      if (!acts.length) {
-        this.$set(rule, 'actions', [createEmptyActionItem()])
-        acts = rule.actions
-      }
-      acts.forEach(a => {
-        if (a.enumOptions === undefined) this.$set(a, 'enumOptions', '')
+      const actions = rule.actions || []
+      const normalized = (actions.length ? actions : [createEmptyActionItem()]).map((action, index) => {
+        if (action.targetOperand !== undefined || action.valueOperand !== undefined) return action
+        const definition = action.varCode ? action : ((legacyGlobalActions || [])[index] || {})
+        return {
+          targetOperand: operandFromReferenceFields(definition),
+          valueOperand: createLiteralOperand(action.value == null ? '' : action.value, definition.varType || 'STRING')
+        }
       })
+      this.$set(rule, 'actions', normalized)
     },
 
     /**
@@ -412,16 +321,29 @@ export default {
           const migrated = migrateRuleConditionsToTree(r.conditions || [], legacyCols)
           this.$set(r, 'conditionRoot', migrated)
         }
+        walkConditionLeaves(r.conditionRoot, leaf => {
+          if (!leaf.leftOperand && leaf.varCode) this.$set(leaf, 'leftOperand', operandFromReferenceFields(leaf))
+          if (!leaf.rightOperand && leaf.value !== undefined) {
+            if (leaf.valueKind === 'VAR') {
+              this.$set(leaf, 'rightOperand', operandFromReferenceFields({
+                varCode: leaf.value,
+                varLabel: leaf.rightVarLabel,
+                varType: leaf.rightVarType,
+                _varId: leaf._rightVarId,
+                _refType: leaf._rightRefType
+              }))
+            } else {
+              this.$set(leaf, 'rightOperand', createLiteralOperand(leaf.value, leaf.varType || 'STRING'))
+            }
+          }
+        })
         if (r.conditions !== undefined) delete r.conditions
       })
       this.model.conditions = []
       this.model.actions = []
     },
 
-    getEnumOptions(cond) {
-      if (!cond.enumOptions) return []
-      return cond.enumOptions.split(',').map(s => s.trim()).filter(Boolean)
-    },
+    operandDisplay,
 
     /**
      * 测试弹窗：变量中文标签。
@@ -456,13 +378,8 @@ export default {
       return m.enumOptions.split(',').map(s => s.trim()).filter(Boolean)
     },
 
-    /**
-     * 打开本条规则内某一动作的变量/类型配置弹窗。
-     */
-    openActionConfig(ruleIndex, actionIndex) {
-      this.colConfigRuleIndex = ruleIndex
-      this.colConfigActionIndex = actionIndex
-      this.colConfigVisible = true
+    setActionOperand(action, field, operand) {
+      this.$set(action, field, operand || null)
     },
 
     varPickerOptionKey(option) {
@@ -494,31 +411,6 @@ export default {
         return optionCode.substring(optionCode.lastIndexOf('.') + 1) === code
       })
       return leafMatches.length === 1 ? leafMatches[0] : null
-    },
-
-    onColConfigVarSelect(variable) {
-      if (!variable) return
-      const act = this.activeColDef
-      if (!act) return
-      const varLabel = variable.varLabel || variable.varCode
-      const _varId = variable._varId || (variable._ref && variable._ref.id) || null
-      const _refType = variable._refType || (variable._ref && variable._ref.refType) || null
-      this.$set(act, 'varCode', variable.varCode)
-      this.$set(act, 'varLabel', varLabel)
-      this.$set(act, '_varId', _varId)
-      this.$set(act, '_refType', _refType)
-      this.$set(act, 'varType', variable.varType)
-      this.$set(act, 'enumOptions', variable.varType === 'ENUM'
-        ? this.getVarOptions(variable.varCode).map(o => o.value || o.optionValue).join(',')
-        : '')
-    },
-
-    /**
-     * 列配置中切换数据类型时，非枚举类型清空枚举值配置，避免残留。
-     */
-    onColDefVarTypeChange(type) {
-      if (!this.activeColDef || type === 'ENUM') return
-      this.$set(this.activeColDef, 'enumOptions', '')
     },
 
     /**
@@ -611,9 +503,11 @@ export default {
       const firstTreeRule = (this.model.rules || []).find(rule => rule && rule.conditionRoot)
       if (firstTreeRule) {
         walkConditionLeaves(firstTreeRule.conditionRoot, leaf => {
-          if (!leaf.varCode || !Object.prototype.hasOwnProperty.call(template, leaf.varCode) || leaf.valueKind === 'VAR' || leaf.value === undefined || leaf.value === '') return
-          const ref = this.projectRefs.find(r => r.refCode === leaf.varCode)
-          template[leaf.varCode] = coerceSampleValue(leaf.value, ref)
+          const leftRefs = collectOperandReferences(leaf.leftOperand)
+          const code = leftRefs.length ? (leftRefs[0].code || leftRefs[0].path) : ''
+          if (!code || !Object.prototype.hasOwnProperty.call(template, code) || !leaf.rightOperand || leaf.rightOperand.kind !== 'LITERAL' || leaf.rightOperand.value === '') return
+          const ref = this.projectRefs.find(r => r.refCode === code)
+          template[code] = coerceSampleValue(leaf.rightOperand.value, ref)
         })
       }
       return template
@@ -809,7 +703,12 @@ export default {
 .dt-act-body {
   width: 100%;
   min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  ::v-deep .var-picker-wrap { flex: 1 1 0; width: auto !important; min-width: 0; }
 }
+.dt-act-eq { color: #909399; font-weight: 600; }
 .dt-act-value-ctl {
   width: 100%;
   max-width: 100%;

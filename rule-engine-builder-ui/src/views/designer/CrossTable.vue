@@ -26,17 +26,16 @@
     <div class="ct-dim-panel">
       <div class="ct-dim-card">
         <div class="dim-label"><i class="el-icon-s-unfold dim-icon row-icon" /> 行维度</div>
-        <var-picker
-          v-if="varPickerOptions.length"
+        <operand-picker
           :vars="varPickerOptions"
           :selected-vars="selectedVarPickerOptions"
-          :value="model.rowVar.varCode"
-          placeholder="选择变量、常量或对象字段..."
+          :value="model.rowVar.operand"
+          :allowed-kinds="readOperandKinds"
+          placeholder="选择行维度字段或路径"
           style="margin-bottom:6px;"
-          @select="v => applyVarToDim(v, 'rowVar')"
+          @input="operand => setDimOperand('rowVar', operand)"
         />
         <el-input v-model="model.rowVar.varLabel" size="small" placeholder="中文名称（如 纳税人类型）" style="margin-bottom:6px;" />
-        <el-input v-model="model.rowVar.varCode" size="small" placeholder="变量编码（如 taxpayerType）" />
       </div>
       <div class="ct-dim-cross">
         <div class="cross-label">×</div>
@@ -44,31 +43,30 @@
       </div>
       <div class="ct-dim-card">
         <div class="dim-label"><i class="el-icon-s-fold dim-icon col-icon" /> 列维度</div>
-        <var-picker
-          v-if="varPickerOptions.length"
+        <operand-picker
           :vars="varPickerOptions"
           :selected-vars="selectedVarPickerOptions"
-          :value="model.colVar.varCode"
-          placeholder="选择变量、常量或对象字段..."
+          :value="model.colVar.operand"
+          :allowed-kinds="readOperandKinds"
+          placeholder="选择列维度字段或路径"
           style="margin-bottom:6px;"
-          @select="v => applyVarToDim(v, 'colVar')"
+          @input="operand => setDimOperand('colVar', operand)"
         />
         <el-input v-model="model.colVar.varLabel" size="small" placeholder="中文名称（如 货物类别）" style="margin-bottom:6px;" />
-        <el-input v-model="model.colVar.varCode" size="small" placeholder="变量编码（如 goodsCategory）" />
       </div>
       <div class="ct-dim-card">
         <div class="dim-label"><i class="el-icon-finished dim-icon result-icon" /> 结果变量</div>
-        <var-picker
-          v-if="varPickerOptions.length"
+        <operand-picker
           :vars="varPickerOptions"
           :selected-vars="selectedVarPickerOptions"
-          :value="model.resultVar.varCode"
-          placeholder="选择变量、常量或对象字段..."
+          :value="model.resultVar.operand"
+          :allowed-kinds="writeOperandKinds"
+          writable-only
+          placeholder="选择结果字段或路径"
           style="margin-bottom:6px;"
-          @select="v => applyVarToDim(v, 'resultVar')"
+          @input="operand => setDimOperand('resultVar', operand)"
         />
         <el-input v-model="model.resultVar.varLabel" size="small" placeholder="中文名称（如 适用税率）" style="margin-bottom:6px;" />
-        <el-input v-model="model.resultVar.varCode" size="small" placeholder="变量编码（如 taxRate）" />
         <el-select v-model="model.resultVar.varType" size="small" style="width:100%;margin-top:6px;" popper-append-to-body>
           <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
         </el-select>
@@ -94,11 +92,16 @@
             <!-- 列头单元格 -->
             <th v-for="(col, ci) in model.colHeaders" :key="'ch-' + ci" class="col-header-cell">
               <div class="header-cell-inner">
-                <el-input
-                  v-model="model.colHeaders[ci]"
+                <operand-picker
+                  :value="model.colHeaderOperands[ci]"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :allowed-kinds="valueOperandKinds"
+                  :expected-type="model.colVar.varType"
                   size="mini"
-                  placeholder="列值"
+                  placeholder="选择列值"
                   class="header-input"
+                  @input="operand => setHeaderOperand('col', ci, operand)"
                 />
                 <el-tooltip content="删除此列" placement="top">
                   <el-button
@@ -122,11 +125,16 @@
             <!-- 行头单元格 -->
             <td class="row-header-cell">
               <div class="row-header-inner">
-                <el-input
-                  v-model="model.rowHeaders[ri]"
+                <operand-picker
+                  :value="model.rowHeaderOperands[ri]"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :allowed-kinds="valueOperandKinds"
+                  :expected-type="model.rowVar.varType"
                   size="mini"
-                  placeholder="行值"
+                  placeholder="选择行值"
                   class="header-input"
+                  @input="operand => setHeaderOperand('row', ri, operand)"
                 />
                 <el-tooltip content="删除此行" placement="right">
                   <el-button
@@ -145,13 +153,16 @@
               :key="'cell-' + ri + '-' + ci"
               :class="['data-cell', { 'cell-filled': isCellFilled(ri, ci), 'cell-focused': focusedCell === ri + '_' + ci }]"
             >
-              <el-input
-                v-model="model.cells[ri][ci]"
+              <operand-picker
+                :value="model.cellOperands[ri][ci]"
+                :vars="varPickerOptions"
+                :functions="projectFunctions"
+                :allowed-kinds="valueOperandKinds"
+                :expected-type="model.resultVar.varType"
                 size="mini"
-                :placeholder="model.resultVar.varType === 'NUMBER' ? '0' : ''"
+                placeholder="选择结果值"
                 class="cell-input"
-                @focus="focusedCell = ri + '_' + ci"
-                @blur="focusedCell = null"
+                @input="operand => setCellOperand(ri, ci, operand)"
               />
             </td>
             <!-- 行操作 -->
@@ -203,13 +214,14 @@ import { saveContent, compileRule, getContent, refreshFields } from '@/api/defin
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
-import VarPicker from '@/components/common/VarPicker.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 
 export default {
   name: 'CrossTable',
-  components: { DesignerTestDialog, VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, OperandPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -221,8 +233,14 @@ export default {
         resultVar: { varCode: '', varLabel: '', varType: 'NUMBER' },
         rowHeaders: [''],
         colHeaders: [''],
-        cells: [['']]
+        cells: [['']],
+        rowHeaderOperands: [null],
+        colHeaderOperands: [null],
+        cellOperands: [[null]]
       },
+      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
+      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'],
       focusedCell: null,
       scriptMode: 'visual',
       testVisible: false,
@@ -236,7 +254,32 @@ export default {
   },
   methods: {
     collectSelectedVarItems() {
-      return [this.model.rowVar, this.model.colVar, this.model.resultVar]
+      const items = []
+      const add = operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, _varId: reference.refId, _refType: reference.refType, varType: reference.valueType }))
+      ;['rowVar', 'colVar', 'resultVar'].forEach(key => add(this.model[key] && this.model[key].operand))
+      ;(this.model.rowHeaderOperands || []).forEach(add)
+      ;(this.model.colHeaderOperands || []).forEach(add)
+      ;(this.model.cellOperands || []).forEach(row => row.forEach(add))
+      return items
+    },
+    setDimOperand(dimKey, operand) {
+      const dim = this.model[dimKey]
+      this.$set(dim, 'operand', operand || null)
+      this.$set(dim, 'varCode', operand ? (operand.code || operand.value || '') : '')
+      this.$set(dim, 'varLabel', operand ? (operand.label || operand.code || operand.value || '') : '')
+      this.$set(dim, 'varType', (operand && operand.valueType) || dim.varType || 'STRING')
+      this.$set(dim, '_varId', operand && operand.refId != null ? operand.refId : null)
+      this.$set(dim, '_refType', (operand && operand.refType) || '')
+    },
+    setHeaderOperand(axis, index, operand) {
+      const operands = axis === 'row' ? this.model.rowHeaderOperands : this.model.colHeaderOperands
+      const values = axis === 'row' ? this.model.rowHeaders : this.model.colHeaders
+      this.$set(operands, index, operand || null)
+      this.$set(values, index, operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
+    },
+    setCellOperand(row, column, operand) {
+      this.$set(this.model.cellOperands[row], column, operand || null)
+      this.$set(this.model.cells[row], column, operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
     },
     applyVarToDim(variable, dimKey) {
       if (!variable) return
@@ -259,6 +302,7 @@ export default {
           if (dimKey === 'rowVar') {
             const oldLen = this.model.rowHeaders.length
             this.model.rowHeaders = vals
+            this.model.rowHeaderOperands = vals.map(value => createLiteralOperand(value, variable.varType))
             const colCount = this.model.colHeaders.length
             this.model.cells = vals.map((_, ri) =>
               ri < oldLen ? [...(this.model.cells[ri] || []), ...Array(Math.max(0, colCount - (this.model.cells[ri] || []).length)).fill('')]
@@ -266,6 +310,7 @@ export default {
             )
           } else if (dimKey === 'colVar') {
             this.model.colHeaders = vals
+            this.model.colHeaderOperands = vals.map(value => createLiteralOperand(value, variable.varType))
             this.model.cells = this.model.cells.map(row => {
               const newRow = [...row]
               while (newRow.length < vals.length) newRow.push('')
@@ -294,7 +339,9 @@ export default {
     _syncModelVarRefs() {
       let changed = false
       ;['rowVar', 'colVar', 'resultVar'].forEach(key => {
-        if (this.model[key] && this.syncVarItem(this.model[key])) changed = true
+        if (!this.model[key]) return
+        const result = syncOperandReference(this.model[key].operand, this.varPickerOptions)
+        if (result.changed) { this.setDimOperand(key, result.operand); changed = true }
       })
       if (changed) this.$forceUpdate()
     },
@@ -313,6 +360,17 @@ export default {
       this.model.cells.forEach(row => {
         while (row.length < cols) row.push('')
       })
+      ;['rowVar', 'colVar', 'resultVar'].forEach(key => {
+        const dim = this.model[key]
+        if (!dim.operand) this.$set(dim, 'operand', operandFromReferenceFields(dim))
+      })
+      if (!Array.isArray(this.model.rowHeaderOperands)) this.$set(this.model, 'rowHeaderOperands', this.model.rowHeaders.map(value => createLiteralOperand(value, this.model.rowVar.varType)))
+      if (!Array.isArray(this.model.colHeaderOperands)) this.$set(this.model, 'colHeaderOperands', this.model.colHeaders.map(value => createLiteralOperand(value, this.model.colVar.varType)))
+      if (!Array.isArray(this.model.cellOperands)) this.$set(this.model, 'cellOperands', this.model.cells.map(row => row.map(value => createLiteralOperand(value, this.model.resultVar.varType))))
+      while (this.model.rowHeaderOperands.length < rows) this.model.rowHeaderOperands.push(null)
+      while (this.model.colHeaderOperands.length < cols) this.model.colHeaderOperands.push(null)
+      while (this.model.cellOperands.length < rows) this.model.cellOperands.push(Array(cols).fill(null))
+      this.model.cellOperands.forEach(row => { while (row.length < cols) row.push(null) })
     },
     isCellFilled(ri, ci) {
       return !!(this.model.cells[ri] && this.model.cells[ri][ci] !== '' && this.model.cells[ri][ci] !== null && this.model.cells[ri][ci] !== undefined)
@@ -321,6 +379,8 @@ export default {
       const colCount = Math.max(1, (this.model.colHeaders || []).length)
       this.model.rowHeaders.push('')
       this.model.cells.push(Array(colCount).fill(''))
+      this.model.rowHeaderOperands.push(null)
+      this.model.cellOperands.push(Array(colCount).fill(null))
     },
     removeRow(ri) {
       if (this.model.rowHeaders.length <= 1) {
@@ -329,10 +389,14 @@ export default {
       }
       this.model.rowHeaders.splice(ri, 1)
       this.model.cells.splice(ri, 1)
+      this.model.rowHeaderOperands.splice(ri, 1)
+      this.model.cellOperands.splice(ri, 1)
     },
     addColumn() {
       this.model.colHeaders.push('')
       this.model.cells.forEach(row => row.push(''))
+      this.model.colHeaderOperands.push(null)
+      this.model.cellOperands.forEach(row => row.push(null))
     },
     removeColumn(ci) {
       if (this.model.colHeaders.length <= 1) {
@@ -341,6 +405,8 @@ export default {
       }
       this.model.colHeaders.splice(ci, 1)
       this.model.cells.forEach(row => row.splice(ci, 1))
+      this.model.colHeaderOperands.splice(ci, 1)
+      this.model.cellOperands.forEach(row => row.splice(ci, 1))
     },
     async handleSave() {
       await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })

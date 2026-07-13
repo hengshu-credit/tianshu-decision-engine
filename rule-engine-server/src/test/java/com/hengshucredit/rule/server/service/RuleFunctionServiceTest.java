@@ -68,6 +68,41 @@ public class RuleFunctionServiceTest {
         assertEquals(20.0, ((Number) result.get("result")).doubleValue(), 0.000001);
     }
 
+    @Test
+    public void invokeFunctionBindsOrderedArguments() {
+        RuleFunction function = scriptFunction("roundTax", "[{\"name\":\"amount\",\"type\":\"NUMBER\"}]",
+                "scaled = amount * 100 + 0.5; return (scaled - scaled % 1) / 100;");
+        function.setId(1L);
+        function.setStatus(1);
+        RuleFunctionService service = serviceWithFunction(function);
+
+        Object result = ReflectionTestUtils.invokeMethod(service, "invoke", 1L, Arrays.asList(12.345));
+
+        assertEquals(12.35, ((Number) result).doubleValue(), 0.000001);
+    }
+
+    @Test
+    public void invokeFunctionRejectsArgumentCountAndDisabledFunction() {
+        RuleFunction function = scriptFunction("roundTax", "[{\"name\":\"amount\",\"type\":\"NUMBER\"}]", "return amount;");
+        function.setId(1L);
+        function.setStatus(1);
+        RuleFunctionService service = serviceWithFunction(function);
+        try {
+            ReflectionTestUtils.invokeMethod(service, "invoke", 1L, Arrays.asList(1, 2));
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("参数数量"));
+        }
+
+        function.setStatus(0);
+        try {
+            ReflectionTestUtils.invokeMethod(service, "invoke", 1L, Arrays.asList(1));
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage().contains("停用"));
+            return;
+        }
+        throw new AssertionError("Expected disabled function error");
+    }
+
     private static RuleFunctionService serviceWithFunction(RuleFunction function) {
         RuleFunctionService service = new RuleFunctionService() {
             @Override

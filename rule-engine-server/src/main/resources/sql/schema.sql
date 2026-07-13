@@ -548,8 +548,9 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
   `field_type`       VARCHAR(32)  NOT NULL                COMMENT '数据类型：STRING/NUMBER/INTEGER/DOUBLE/BOOLEAN/DATE',
   `data_type`        VARCHAR(32)  DEFAULT NULL             COMMENT '数据用途类型：CONTINUOUS-连续/CATEGORICAL-类别/ORDINAL-有序',
-  `missing_value`    VARCHAR(256) DEFAULT NULL             COMMENT '缺失值处理策略',
   `default_value`    VARCHAR(256) DEFAULT NULL             COMMENT '默认值',
+  `source_operand`   JSON         DEFAULT NULL             COMMENT '模型输入来源 Operand',
+  `default_operand`  JSON         DEFAULT NULL             COMMENT '模型输入默认值 Operand',
   `valid_values`     TEXT         DEFAULT NULL             COMMENT '有效值列表（JSON数组，分类变量）',
   `feature_name`     VARCHAR(128) DEFAULT NULL             COMMENT '模型内部特征名称（如XGBoost的f0）',
   `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '预处理类型：NONE/NORMALIZE/DISCRETIZE/MAPVALUES/MINMAX',
@@ -577,8 +578,9 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的引用名（驼峰）',
   `field_type`       VARCHAR(32)  NOT NULL                COMMENT '字段类型：STRING/NUMBER/INTEGER/DOUBLE/PROBABILITY/VECTOR',
   `target_field`     VARCHAR(128) DEFAULT NULL             COMMENT '对应的目标变量名',
+  `target_operand`   JSON         DEFAULT NULL             COMMENT '模型输出目标 Operand',
   `feature_name`     VARCHAR(128) DEFAULT NULL             COMMENT '模型内部输出特征名',
-  `transform_type`   VARCHAR(32)  DEFAULT NULL             COMMENT '转换方法：NONE/RENAME/SCALE/OHE',
+  `transform_operand` JSON        DEFAULT NULL             COMMENT '模型输出函数转换 Operand',
   `is_probability`   TINYINT      NOT NULL DEFAULT 0       COMMENT '是否概率输出：0-否，1-是',
   `category`         VARCHAR(64)  DEFAULT NULL             COMMENT '类别标签（概率输出时指定）',
   `sort_order`       INT          NOT NULL DEFAULT 0       COMMENT '排序序号',
@@ -929,3 +931,60 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   KEY `idx_billing_summary_date` (`summary_date`),
   KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
+
+-- 未发布阶段的增量结构同步：mysql-init 每次启动都会执行，已有开发数据卷也能补齐 Operand 列。
+DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_operand_columns`;
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_operand_columns`()
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'source_operand'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_input_field`
+      ADD COLUMN `source_operand` JSON DEFAULT NULL COMMENT '模型输入来源 Operand' AFTER `default_value`;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'default_operand'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_input_field`
+      ADD COLUMN `default_operand` JSON DEFAULT NULL COMMENT '模型输入默认值 Operand' AFTER `source_operand`;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'target_operand'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_output_field`
+      ADD COLUMN `target_operand` JSON DEFAULT NULL COMMENT '模型输出目标 Operand' AFTER `target_field`;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_input_field' AND COLUMN_NAME = 'missing_value'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_input_field`
+      DROP COLUMN `missing_value`;
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'transform_type'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_output_field`
+      DROP COLUMN `transform_type`;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_output_field' AND COLUMN_NAME = 'transform_operand'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_model_output_field`
+      ADD COLUMN `transform_operand` JSON DEFAULT NULL COMMENT '模型输出函数转换 Operand' AFTER `feature_name`;
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_operand_columns`();
+DROP PROCEDURE `rule_engine`.`ensure_operand_columns`;

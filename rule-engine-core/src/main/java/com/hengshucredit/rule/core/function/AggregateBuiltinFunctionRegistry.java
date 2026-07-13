@@ -22,6 +22,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] OBJECT_DOUBLE_STRING = {Object.class, double.class, String.class};
     private static final Class<?>[] OBJECT_OBJECT_STRING = {Object.class, Object.class, String.class};
     private static final Class<?>[] STRING_OBJECT = {String.class, Object.class};
+    private static final Class<?>[] STRING_OBJECT_STRING = {String.class, Object.class, String.class};
     private static final Class<?>[] STRING_STRING_STRING = {String.class, String.class, String.class};
     private static final Class<?>[] DOUBLE_STRING = {double.class, String.class};
     private static final Class<?>[] DOUBLE_DOUBLE = {double.class, double.class};
@@ -108,8 +109,11 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("dateDiff", DECISION_DELEGATE, "dateDiff", OBJECT_OBJECT_STRING);
         runner.addFunctionOfServiceMethod("dateToMillis", DECISION_DELEGATE, "dateToMillis", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("millisToDate", DECISION_DELEGATE, "millisToDate", DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("idCardBirthDate", DECISION_DELEGATE, "idCardBirthDate", SINGLE_STRING);
+        runner.addFunctionOfServiceMethod("idCardAge", DECISION_DELEGATE, "idCardAge", STRING_OBJECT_STRING);
 
         runner.addFunctionOfServiceMethod("scoreByOdds", DECISION_DELEGATE, "scoreByOdds", DOUBLE_DOUBLE_DOUBLE_STRING);
+        runner.addFunctionOfServiceMethod("scoreByProbability", DECISION_DELEGATE, "scoreByProbability", DOUBLE_DOUBLE_DOUBLE_STRING);
         runner.addFunctionOfServiceMethod("scoreByOddsPdo", DECISION_DELEGATE, "scoreByOddsPdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
         runner.addFunctionOfServiceMethod("scoreByBadRatePdo", DECISION_DELEGATE, "scoreByBadRatePdo", DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING);
         runner.addFunctionOfServiceMethod("setRuntimeValue", RUNTIME_CONTEXT_DELEGATE, "setRuntimeValue", STRING_OBJECT);

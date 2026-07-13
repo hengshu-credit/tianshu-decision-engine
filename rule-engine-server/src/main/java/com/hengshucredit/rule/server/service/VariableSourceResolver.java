@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
@@ -418,13 +419,25 @@ public class VariableSourceResolver {
         Set<String> names = new LinkedHashSet<>();
         RuleModel detail = loadModelDetail(model);
         List<RuleModelInputField> fields = detail == null ? null : detail.getInputFields();
-        if (fields == null || fields.isEmpty()) {
-            return names;
+        if (fields != null) {
+            for (RuleModelInputField field : fields) {
+                names.addAll(OperandValueResolver.collectPaths(field.getSourceOperand()));
+                names.addAll(OperandValueResolver.collectPaths(field.getDefaultOperand()));
+                String scriptName = firstText(field.getScriptName(), field.getFieldName());
+                if (scriptName != null) {
+                    names.add(scriptName);
+                }
+            }
         }
-        for (RuleModelInputField field : fields) {
-            String scriptName = firstText(field.getScriptName(), field.getFieldName());
-            if (scriptName != null) {
-                names.add(scriptName);
+        String modelCode = detail == null ? null : trimToNull(detail.getModelCode());
+        List<RuleModelOutputField> outputFields = detail == null ? null : detail.getOutputFields();
+        if (outputFields != null) {
+            for (RuleModelOutputField field : outputFields) {
+                for (String path : OperandValueResolver.collectPaths(field.getTransformOperand())) {
+                    if (modelCode == null || (!path.equals(modelCode) && !path.startsWith(modelCode + "."))) {
+                        names.add(path);
+                    }
+                }
             }
         }
         return names;
@@ -440,6 +453,15 @@ public class VariableSourceResolver {
         Object outputs = modelResult.get("outputs");
         Object modelValue = outputs instanceof Map ? outputs : modelResult;
         resolvedParams.put(modelCode, modelValue);
+        if (modelValue instanceof Map && detail != null && detail.getOutputFields() != null) {
+            Map<?, ?> outputValues = (Map<?, ?>) modelValue;
+            for (RuleModelOutputField field : detail.getOutputFields()) {
+                Object value = outputValues.get(firstText(field.getFieldName(), field.getScriptName()));
+                if (value == null && hasText(field.getScriptName())) value = outputValues.get(field.getScriptName());
+                if (value == null && hasText(field.getFeatureName())) value = outputValues.get(field.getFeatureName());
+                OperandValueResolver.write(field.getTargetOperand(), resolvedParams, value);
+            }
+        }
     }
 
     private void collectDependencyValues(Object value, Set<String> dependencies) {
@@ -551,10 +573,9 @@ public class VariableSourceResolver {
     }
 
     Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> resolvedParams) {
-        Map<String, Object> params = new LinkedHashMap<>();
+        Map<String, Object> params = resolvedParams == null ? new LinkedHashMap<>() : new LinkedHashMap<>(resolvedParams);
         List<RuleModelInputField> fields = model == null ? null : model.getInputFields();
         if (fields == null || fields.isEmpty()) {
-            params.putAll(resolvedParams);
             return params;
         }
         for (RuleModelInputField field : fields) {
@@ -563,7 +584,8 @@ public class VariableSourceResolver {
             if (fieldName == null || scriptName == null) {
                 continue;
             }
-            Object value = readPath(resolvedParams, scriptName);
+            Object value = OperandValueResolver.resolve(field.getSourceOperand(), resolvedParams);
+            if (value == null) value = readPath(resolvedParams, scriptName);
             if (value == null && !fieldName.equals(scriptName)) {
                 value = readPath(resolvedParams, fieldName);
             }
@@ -576,6 +598,9 @@ public class VariableSourceResolver {
             }
             if (value == null) {
                 value = findUniqueNestedFieldValue(resolvedParams, fieldName);
+            }
+            if (value == null) {
+                value = OperandValueResolver.resolve(field.getDefaultOperand(), resolvedParams);
             }
             if (value == null && hasText(field.getDefaultValue())) {
                 value = parseJsonOrRaw(field.getDefaultValue());

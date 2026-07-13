@@ -17,6 +17,17 @@ import static org.junit.Assert.*;
  */
 public class DecisionTableCompilerTest {
 
+    @Test
+    public void compilesUnifiedConditionAndActionOperands() {
+        CompileResult result = compile("{\"rules\":[{"
+                + "\"conditionRoot\":{\"type\":\"group\",\"op\":\"AND\",\"children\":[{\"type\":\"leaf\",\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"request.score\",\"valueType\":\"NUMBER\"},\"operator\":\">=\",\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}}]},"
+                + "\"actions\":[{\"targetOperand\":{\"kind\":\"PATH\",\"value\":\"decision\"},\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"PASS\",\"valueType\":\"STRING\"}}]}]}" );
+
+        assertTrue(result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("request.score >= 600"));
+        assertTrue(result.getCompiledScript().contains("decision = \"PASS\""));
+    }
+
     private DecisionTableCompiler compiler;
     private QLExpressEngine engine;
 

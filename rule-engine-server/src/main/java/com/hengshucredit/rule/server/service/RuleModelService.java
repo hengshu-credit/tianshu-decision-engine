@@ -47,6 +47,8 @@ public class RuleModelService {
     private RuleDataObjectFieldMapper dataObjectFieldMapper;
     @Resource
     private ExecutionParameterBinder executionParameterBinder;
+    @Resource
+    private RuleFunctionService ruleFunctionService;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -784,9 +786,11 @@ public class RuleModelService {
             throw new IllegalArgumentException("模型文件内容为空");
         }
 
-        Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(listInputFields(modelId), params);
+        List<RuleModelInputField> inputFields = listInputFields(modelId);
+        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(inputFields, params);
+        Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
         if ("PMML".equals(model.getModelFormat())) {
-            return executePmml(model, applyMissingValues(modelId, boundParams));
+            return executePmml(model, boundParams);
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -800,6 +804,7 @@ public class RuleModelService {
 
     private void validatePublishFields(Long modelId) {
         List<String> errors = new ArrayList<>();
+        RuleModel model = modelMapper.selectById(modelId);
         List<RuleModelInputField> inputFields = inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
                 .eq(RuleModelInputField::getModelId, modelId)
                 .orderByAsc(RuleModelInputField::getSortOrder));
@@ -808,7 +813,7 @@ public class RuleModelService {
                 continue;
             }
             validateFieldBinding(errors, "输入字段", field.getFieldName(), field.getFieldLabel(),
-                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName());
+                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getSourceOperand(), false);
         }
 
         List<RuleModelOutputField> outputFields = outputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
@@ -816,7 +821,9 @@ public class RuleModelService {
                 .orderByAsc(RuleModelOutputField::getSortOrder));
         for (RuleModelOutputField field : outputFields) {
             validateFieldBinding(errors, "输出字段", field.getFieldName(), field.getFieldLabel(),
-                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName());
+                    field.getFieldType(), field.getVarId(), field.getRefType(), field.getScriptName(), field.getTargetOperand(), true);
+            String transformError = validateTransformOperand(model, field.getFieldLabel(), field.getFieldName(), field.getTransformOperand());
+            if (transformError != null) errors.add(transformError);
         }
 
         if (!errors.isEmpty()) {
@@ -825,8 +832,27 @@ public class RuleModelService {
     }
 
     private void validateFieldBinding(List<String> errors, String section, String fieldName, String fieldLabel,
-                                      String fieldType, Long varId, String refType, String scriptName) {
+                                      String fieldType, Long varId, String refType, String scriptName, String operandJson,
+                                      boolean writableTarget) {
         String displayName = fieldLabel != null && !fieldLabel.trim().isEmpty() ? fieldLabel : fieldName;
+        if (operandJson != null && !operandJson.trim().isEmpty()) {
+            try {
+                com.alibaba.fastjson.JSONObject operand = com.alibaba.fastjson.JSON.parseObject(operandJson);
+                String kind = operand.getString("kind");
+                if ("PATH".equals(kind)) return;
+                if (!writableTarget && ("FUNCTION".equals(kind) || "LITERAL".equals(kind))) return;
+                if ("REFERENCE".equals(kind) && operand.getLong("refId") != null && operand.getString("refType") != null) {
+                    String operandRefType = operand.getString("refType").toUpperCase();
+                    if (!writableTarget || "VARIABLE".equals(operandRefType)
+                            || "DATA_OBJECT".equals(operandRefType) || "DATA_FIELD".equals(operandRefType)) return;
+                }
+                errors.add(section + "「" + displayName + "」Operand 配置不完整");
+                return;
+            } catch (Exception e) {
+                errors.add(section + "「" + displayName + "」Operand JSON 无效");
+                return;
+            }
+        }
         if (varId == null || refType == null || refType.trim().isEmpty() || scriptName == null || scriptName.trim().isEmpty()) {
             errors.add(section + "「" + displayName + "」未完整关联变量");
             return;
@@ -885,37 +911,6 @@ public class RuleModelService {
         return type == null ? "" : type.trim().toUpperCase();
     }
 
-    private Map<String, Object> applyMissingValues(Long modelId, Map<String, Object> params) {
-        Map<String, Object> result = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
-        List<RuleModelInputField> inputFields = inputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>()
-                .eq(RuleModelInputField::getModelId, modelId));
-        for (RuleModelInputField field : inputFields) {
-            String missingValue = field.getMissingValue();
-            if (missingValue == null || missingValue.trim().isEmpty() || field.getFieldName() == null) {
-                continue;
-            }
-            Object current = result.get(field.getFieldName());
-            if (current == null || (current instanceof String && ((String) current).trim().isEmpty())) {
-                result.put(field.getFieldName(), convertValueByType(missingValue, field.getFieldType()));
-            }
-        }
-        return result;
-    }
-
-    private Object convertValueByType(String value, String type) {
-        String normalized = normalizeType(type);
-        try {
-            if ("INTEGER".equals(normalized) || "INT".equals(normalized)) return Integer.valueOf(value);
-            if ("LONG".equals(normalized)) return Long.valueOf(value);
-            if ("NUMBER".equals(normalized) || "DOUBLE".equals(normalized) || "FLOAT".equals(normalized)
-                    || "DECIMAL".equals(normalized) || "PROBABILITY".equals(normalized)) return Double.valueOf(value);
-            if ("BOOLEAN".equals(normalized)) return Boolean.valueOf(value);
-        } catch (Exception ignored) {
-            return value;
-        }
-        return value;
-    }
-
     /**
      * 执行 PMML 模型预测，通过 PMMLModelExecutor 实现
      */
@@ -926,7 +921,8 @@ public class RuleModelService {
         result.put("modelFormat", "PMML");
 
         try {
-            Map<String, Object> outputs = pmmlExecutor.evaluate(model.getModelContent(), params);
+            Map<String, Object> rawOutputs = pmmlExecutor.evaluate(model.getModelContent(), params);
+            Map<String, Object> outputs = applyOutputTransforms(model, params, rawOutputs);
             result.put("success", true);
             result.put("outputs", outputs);
             result.put("inputParams", params);
@@ -941,6 +937,49 @@ public class RuleModelService {
         }
 
         return result;
+    }
+
+    private Map<String, Object> applyOutputTransforms(RuleModel model, Map<String, Object> params,
+                                                       Map<String, Object> rawOutputs) {
+        Map<String, Object> original = rawOutputs == null ? Collections.emptyMap() : new LinkedHashMap<>(rawOutputs);
+        Map<String, Object> transformed = new LinkedHashMap<>(original);
+        if (model == null || model.getId() == null) return transformed;
+        Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
+        if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
+            context.put(model.getModelCode(), original);
+        }
+        for (RuleModelOutputField field : listOutputFields(model.getId())) {
+            String transformJson = field.getTransformOperand();
+            if (transformJson == null || transformJson.trim().isEmpty()) continue;
+            com.alibaba.fastjson.JSONObject transform = com.alibaba.fastjson.JSON.parseObject(transformJson);
+            Long functionId = transform.getLong("functionId");
+            if (functionId == null) {
+                throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换函数缺少 functionId");
+            }
+            List<Object> args = new ArrayList<>();
+            com.alibaba.fastjson.JSONArray operands = transform.getJSONArray("args");
+            if (operands != null) {
+                for (int i = 0; i < operands.size(); i++) {
+                    com.alibaba.fastjson.JSONObject operand = operands.getJSONObject(i);
+                    if (operand == null) {
+                        throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换参数 " + (i + 1) + " 未配置");
+                    }
+                    args.add(OperandValueResolver.resolve(operand, context));
+                }
+            }
+            String outputKey = outputKey(field, original);
+            transformed.put(outputKey, ruleFunctionService.invoke(functionId, args));
+        }
+        return transformed;
+    }
+
+    private String outputKey(RuleModelOutputField field, Map<String, Object> outputs) {
+        if (field.getFieldName() != null && outputs.containsKey(field.getFieldName())) return field.getFieldName();
+        if (field.getScriptName() != null && outputs.containsKey(field.getScriptName())) return field.getScriptName();
+        if (field.getFeatureName() != null && outputs.containsKey(field.getFeatureName())) return field.getFeatureName();
+        if (field.getFieldName() != null && !field.getFieldName().trim().isEmpty()) return field.getFieldName();
+        if (field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) return field.getScriptName();
+        throw new IllegalArgumentException("模型输出字段缺少可写名称");
     }
 
     /**
@@ -999,8 +1038,9 @@ public class RuleModelService {
         existing.setScriptName(field.getScriptName());
         existing.setFieldLabel(field.getFieldLabel());
         existing.setFieldType(field.getFieldType());
-        existing.setMissingValue(field.getMissingValue());
         existing.setDefaultValue(field.getDefaultValue());
+        existing.setSourceOperand(field.getSourceOperand());
+        existing.setDefaultOperand(field.getDefaultOperand());
         existing.setTransformType(field.getTransformType());
         existing.setTransformParams(field.getTransformParams());
         existing.setValidValues(field.getValidValues());
@@ -1015,14 +1055,93 @@ public class RuleModelService {
         if (existing == null) {
             throw new IllegalArgumentException("输出字段不存在");
         }
+        RuleModel model = modelMapper.selectById(existing.getModelId());
+        String transformError = validateTransformOperand(model, field.getFieldLabel(), existing.getFieldName(), field.getTransformOperand());
+        if (transformError != null) throw new IllegalArgumentException(transformError);
         existing.setVarId(field.getVarId());
         existing.setRefType(field.getRefType());
         existing.setScriptName(field.getScriptName());
         existing.setFieldLabel(field.getFieldLabel());
         existing.setFieldType(field.getFieldType());
-        existing.setTransformType(field.getTransformType());
         existing.setTargetField(field.getTargetField());
+        existing.setTargetOperand(field.getTargetOperand());
+        existing.setTransformOperand(field.getTransformOperand());
         outputFieldMapper.updateById(existing);
+    }
+
+    private String validateTransformOperand(RuleModel model, String fieldLabel, String fieldName, String operandJson) {
+        if (operandJson == null || operandJson.trim().isEmpty()) return null;
+        String displayName = fieldLabel != null && !fieldLabel.trim().isEmpty() ? fieldLabel : fieldName;
+        final com.alibaba.fastjson.JSONObject operand;
+        try {
+            operand = com.alibaba.fastjson.JSON.parseObject(operandJson);
+        } catch (Exception e) {
+            return "输出字段「" + displayName + "」转换 Operand JSON 无效";
+        }
+        if (!"FUNCTION".equals(operand.getString("kind"))) {
+            return "输出字段「" + displayName + "」转换方法必须引用函数";
+        }
+        Long functionId = operand.getLong("functionId");
+        if (functionId == null) {
+            return "输出字段「" + displayName + "」转换函数缺少 functionId";
+        }
+        RuleFunction function = ruleFunctionService == null ? null : ruleFunctionService.getById(functionId);
+        if (function == null) {
+            return "输出字段「" + displayName + "」引用的转换函数不存在";
+        }
+        if (!Integer.valueOf(1).equals(function.getStatus())) {
+            return "输出字段「" + displayName + "」引用的转换函数已停用";
+        }
+        if (!functionInModelScope(model, function)) {
+            return "输出字段「" + displayName + "」引用的转换函数不在模型作用域内";
+        }
+
+        int expectedCount;
+        try {
+            com.alibaba.fastjson.JSONArray params = function.getParamsJson() == null || function.getParamsJson().trim().isEmpty()
+                    ? new com.alibaba.fastjson.JSONArray()
+                    : com.alibaba.fastjson.JSON.parseArray(function.getParamsJson());
+            expectedCount = params.size();
+        } catch (Exception e) {
+            return "输出字段「" + displayName + "」引用的转换函数参数定义无效";
+        }
+        com.alibaba.fastjson.JSONArray args = operand.getJSONArray("args");
+        int actualCount = args == null ? 0 : args.size();
+        if (actualCount != expectedCount) {
+            return "输出字段「" + displayName + "」转换函数参数数量应为 " + expectedCount + "，实际为 " + actualCount;
+        }
+        for (int i = 0; i < actualCount; i++) {
+            com.alibaba.fastjson.JSONObject arg = args.getJSONObject(i);
+            if (arg == null || arg.getString("kind") == null) {
+                return "输出字段「" + displayName + "」转换函数参数 " + (i + 1) + " 未配置";
+            }
+            String kind = arg.getString("kind");
+            if ("FUNCTION".equals(kind)) {
+                return "输出字段「" + displayName + "」转换函数参数不支持嵌套函数";
+            }
+            if (!"LITERAL".equals(kind) && !"PATH".equals(kind) && !"REFERENCE".equals(kind)) {
+                return "输出字段「" + displayName + "」转换函数参数 " + (i + 1) + " 类型无效";
+            }
+            if ("PATH".equals(kind) && emptyText(arg.getString("value")) && emptyText(arg.getString("code"))) {
+                return "输出字段「" + displayName + "」转换函数路径参数 " + (i + 1) + " 为空";
+            }
+            if ("REFERENCE".equals(kind) && (arg.getLong("refId") == null || emptyText(arg.getString("refType")))) {
+                return "输出字段「" + displayName + "」转换函数引用参数 " + (i + 1) + " 未关联资源 ID";
+            }
+        }
+        return null;
+    }
+
+    private boolean functionInModelScope(RuleModel model, RuleFunction function) {
+        if (RuleFunctionService.SCOPE_GLOBAL.equals(function.getScope())) return true;
+        return model != null
+                && SCOPE_PROJECT.equals(model.getScope())
+                && RuleFunctionService.SCOPE_PROJECT.equals(function.getScope())
+                && Objects.equals(model.getProjectId(), function.getProjectId());
+    }
+
+    private boolean emptyText(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     /**

@@ -426,6 +426,7 @@
 <script>
 import TraceNode from './TraceNode.vue'
 import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
+import { compileOperand, operandDisplay } from '@/utils/operand'
 
 /** 运算符中文映射 */
 var OP_CN = {
@@ -1540,13 +1541,14 @@ export default {
       items.push(this._buildRuleSetConditionLeaf(node, traceNode))
     },
     _buildRuleSetConditionLeaf: function (leaf, traceNode) {
-      var actual = this._actualFromTraceOrInput(leaf.varCode, traceNode)
+      var varCode = this._ruleSetLeafCode(leaf)
+      var actual = this._actualFromTraceOrInput(varCode, traceNode)
       var matched = this._findRuleSetConditionTrace(leaf, traceNode)
       var result = matched && matched.value !== undefined ? this._ruleSetConditionTraceResult(leaf.operator, matched.value) : null
       if (result === null && actual !== undefined) result = this._evalRuleSetLeaf(leaf, actual)
       return {
         kind: 'condition',
-        varCode: leaf.varCode || '?',
+        varCode: varCode || '?',
         varName: this._ruleSetVarName(leaf),
         actualText: actual === undefined ? '未取值' : this.fmtVal(actual),
         operatorText: this._ruleSetOperatorText(leaf.operator, leaf.varType),
@@ -1572,9 +1574,10 @@ export default {
     },
     _findRuleSetConditionTrace: function (leaf, traceNode) {
       if (!leaf || !traceNode) return null
-      var direct = this._findBinaryConditionTrace(traceNode, leaf.varCode, leaf.operator)
+      var varCode = this._ruleSetLeafCode(leaf)
+      var direct = this._findBinaryConditionTrace(traceNode, varCode, leaf.operator)
       if (direct) return direct
-      return this._findFunctionConditionTrace(traceNode, leaf.varCode, leaf.operator)
+      return this._findFunctionConditionTrace(traceNode, varCode, leaf.operator)
     },
     _findBinaryConditionTrace: function (node, varCode, operator) {
       if (!node) return null
@@ -1635,8 +1638,9 @@ export default {
       return map[operator] || ''
     },
     _ruleSetVarName: function (leaf) {
-      var code = leaf && leaf.varCode ? leaf.varCode : ''
-      var label = leaf && leaf.varLabel ? leaf.varLabel : (this.varMap[code] || '')
+      var code = this._ruleSetLeafCode(leaf)
+      var leftOperand = leaf && leaf.leftOperand
+      var label = leftOperand && leftOperand.label ? leftOperand.label : (leaf && leaf.varLabel ? leaf.varLabel : (this.varMap[code] || ''))
       if (!label) return code || '?'
       var text = String(label).replace(new RegExp('\\s*' + this._escapeRegExp(code) + '$'), '').trim()
       return text || label || code || '?'
@@ -1650,6 +1654,15 @@ export default {
         var label = leaf.rightVarLabel || this.varMap[leaf.value] || leaf.value || '?'
         var val = this.getInputValue(leaf.value)
         return label + (val !== undefined ? ' = ' + this.fmtVal(val) : '')
+      }
+      if (leaf && leaf.rightOperand) {
+        var operand = leaf.rightOperand
+        if (operand.kind === 'REFERENCE' || operand.kind === 'PATH') {
+          var operandCode = operand.code || operand.value || ''
+          var operandValue = this.getInputValue(operandCode)
+          return operandDisplay(operand) + (operandValue !== undefined ? ' = ' + this.fmtVal(operandValue) : '')
+        }
+        return operandDisplay(operand)
       }
       return this.fmtVal(leaf ? leaf.value : '')
     },
@@ -1687,7 +1700,7 @@ export default {
     },
     _evalRuleSetLeaf: function (leaf, actual) {
       var op = leaf.operator || '=='
-      var raw = leaf.valueKind === 'VAR' ? this.getInputValue(leaf.value) : leaf.value
+      var raw = this._ruleSetOperandValue(leaf)
       if (op === '*') return true
       if (op === 'is_null') return actual === null || actual === undefined
       if (op === 'not_null') return !(actual === null || actual === undefined)
@@ -1707,6 +1720,19 @@ export default {
       if (op === 'contains') return String(actual).indexOf(String(raw)) !== -1
       if (op === 'not_contains') return String(actual).indexOf(String(raw)) === -1
       return null
+    },
+    _ruleSetLeafCode: function (leaf) {
+      if (!leaf) return ''
+      return leaf.leftOperand ? compileOperand(leaf.leftOperand) : (leaf.varCode || '')
+    },
+    _ruleSetOperandValue: function (leaf) {
+      if (leaf && leaf.rightOperand) {
+        var operand = leaf.rightOperand
+        if (operand.kind === 'LITERAL') return operand.value
+        if (operand.kind === 'REFERENCE' || operand.kind === 'PATH') return this.getInputValue(operand.code || operand.value)
+        return undefined
+      }
+      return leaf.valueKind === 'VAR' ? this.getInputValue(leaf.value) : leaf.value
     },
     _coerceCompareValue: function (v) {
       if (v === true || v === 'true') return true

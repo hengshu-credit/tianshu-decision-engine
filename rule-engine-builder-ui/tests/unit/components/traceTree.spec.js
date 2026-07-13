@@ -212,4 +212,18 @@ describe('TraceTree', () => {
     expect(wrapper.text()).toContain('实际值 1')
     expect(wrapper.text()).toContain('阈值 1')
   })
+
+  test('规则集追踪展示统一操作数中的路径与引用阈值', () => {
+    const wrapper = mountTraceTree({ inputParams: JSON.stringify({ request: { age: 20 }, adultAge: 18 }) })
+    const leaf = {
+      type: 'leaf',
+      leftOperand: { kind: 'PATH', value: 'request.age', code: 'request.age', label: '年龄', valueType: 'NUMBER' },
+      operator: '>=',
+      rightOperand: { kind: 'REFERENCE', value: 'adultAge', code: 'adultAge', label: '成年年龄', valueType: 'NUMBER' }
+    }
+
+    const item = wrapper.vm._buildRuleSetConditionLeaf(leaf, null)
+
+    expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', thresholdText: '成年年龄 adultAge = 18', result: true })
+  })
 })

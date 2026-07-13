@@ -36,7 +36,10 @@ public class ScorecardCompiler implements RuleCompiler {
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
             String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
             String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
-            String resolvedResultVar = resolveVar(resVarId, resRefType, varCode, varContext);
+            JSONObject resultOperand = resultVar != null ? resultVar.getJSONObject("operand") : null;
+            String resolvedResultVar = resultOperand != null
+                    ? OperandCompiler.compile(resultOperand, varContext)
+                    : resolveVar(resVarId, resRefType, varCode, varContext);
 
             StringBuilder script = new StringBuilder();
             script.append(resolvedResultVar).append(" = ").append(initialScore).append(";\n");
@@ -74,13 +77,18 @@ public class ScorecardCompiler implements RuleCompiler {
                     JSONObject th = thresholds.getJSONObject(i);
                     double min = th.getDoubleValue("min");
                     double max = th.getDoubleValue("max");
-                    String result = th.getString("result");
+                    JSONObject resultOperandValue = th.getJSONObject("resultOperand");
 
                     script.append(i == 0 ? "if (" : " else if (");
                     script.append(resolvedResultVar).append(" >= ").append(min).append(" && ")
                           .append(resolvedResultVar).append(" < ").append(max).append(") {\n");
-                    script.append("    ").append(levelVar).append(" = \"")
-                          .append(escapeForQlDoubleQuotedString(result)).append("\"\n}");
+                    script.append("    ").append(levelVar).append(" = ");
+                    if (resultOperandValue != null) {
+                        script.append(OperandCompiler.compile(resultOperandValue, varContext));
+                    } else {
+                        script.append("\"").append(escapeForQlDoubleQuotedString(th.getString("result"))).append("\"");
+                    }
+                    script.append("\n}");
                 }
                 script.append("\n");
 
@@ -114,6 +122,13 @@ public class ScorecardCompiler implements RuleCompiler {
     }
 
     private String buildCondition(JSONObject item, VarContext varContext) {
+        if (item.getJSONObject("leftOperand") != null) {
+            JSONObject condition = new JSONObject();
+            condition.put("leftOperand", item.getJSONObject("leftOperand"));
+            condition.put("operator", item.getString("condOperator"));
+            condition.put("rightOperand", item.getJSONObject("rightOperand"));
+            return ConditionOperandCompiler.compile(condition, varContext);
+        }
         String condVar = item.getString("condVar");
         String condOp = item.getString("condOperator");
         String condValue = item.getString("condValue");

@@ -76,7 +76,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
         id: field.id,
         refType: 'DATA_OBJECT',
         refCode,
-        label: [objectLabel, fieldLabel].filter(Boolean).join('/'),
+        label: fieldLabel,
         varType: field.varType,
         category: 'object',
         varObj: Object.assign({ objectField: true }, field),

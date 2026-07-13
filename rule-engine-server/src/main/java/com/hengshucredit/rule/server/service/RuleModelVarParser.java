@@ -256,17 +256,23 @@ public class RuleModelVarParser {
 
     private void parseCrossModel(JSONObject model, ParseResult result) {
         JSONObject rowVar = model.getJSONObject("rowVar");
+        OperandDependencyCollector.collect(rowVar == null ? null : rowVar.getJSONObject("operand"), result.getInputCodes());
         if (rowVar != null && rowVar.containsKey("varCode") && !rowVar.getString("varCode").isEmpty()) {
             result.getInputCodes().add(rowVar.getString("varCode"));
         }
         JSONObject colVar = model.getJSONObject("colVar");
+        OperandDependencyCollector.collect(colVar == null ? null : colVar.getJSONObject("operand"), result.getInputCodes());
         if (colVar != null && colVar.containsKey("varCode") && !colVar.getString("varCode").isEmpty()) {
             result.getInputCodes().add(colVar.getString("varCode"));
         }
         JSONObject resultVar = model.getJSONObject("resultVar");
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), result.getOutputCodes());
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
         }
+        collectOperandValues(model.get("rowHeaderOperands"), result.getInputCodes());
+        collectOperandValues(model.get("colHeaderOperands"), result.getInputCodes());
+        collectOperandValues(model.get("cellOperands"), result.getInputCodes());
     }
 
     // ==================== 复杂交叉表 ====================
@@ -277,6 +283,7 @@ public class RuleModelVarParser {
         if (rowDims != null) {
             for (int i = 0; i < rowDims.size(); i++) {
                 JSONObject dim = rowDims.getJSONObject(i);
+                collectAdvancedCrossDimensionOperands(dim, result.getInputCodes());
                 if (dim.containsKey("varCode") && !dim.getString("varCode").isEmpty()) {
                     result.getInputCodes().add(dim.getString("varCode"));
                 }
@@ -288,6 +295,7 @@ public class RuleModelVarParser {
         if (colDims != null) {
             for (int i = 0; i < colDims.size(); i++) {
                 JSONObject dim = colDims.getJSONObject(i);
+                collectAdvancedCrossDimensionOperands(dim, result.getInputCodes());
                 if (dim.containsKey("varCode") && !dim.getString("varCode").isEmpty()) {
                     result.getInputCodes().add(dim.getString("varCode"));
                 }
@@ -296,9 +304,11 @@ public class RuleModelVarParser {
         }
         // resultVar
         JSONObject resultVar = model.getJSONObject("resultVar");
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), result.getOutputCodes());
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
         }
+        collectOperandValues(model.get("cells"), result.getInputCodes());
     }
 
     // ==================== 评分卡 ====================
@@ -308,6 +318,8 @@ public class RuleModelVarParser {
         if (items != null) {
             for (int i = 0; i < items.size(); i++) {
                 JSONObject item = items.getJSONObject(i);
+                OperandDependencyCollector.collect(item.getJSONObject("leftOperand"), result.getInputCodes());
+                OperandDependencyCollector.collect(item.getJSONObject("rightOperand"), result.getInputCodes());
                 // conditionRoot（树形条件）
                 extractFromConditionRoot(item.getJSONObject("conditionRoot"), result.getInputCodes());
                 // condition（字符串表达式）
@@ -320,9 +332,11 @@ public class RuleModelVarParser {
         }
         // resultVar
         JSONObject resultVar = model.getJSONObject("resultVar");
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), result.getOutputCodes());
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
         }
+        collectThresholdOperands(model.getJSONArray("thresholds"), result.getInputCodes());
     }
 
     // ==================== 复杂评分卡 ====================
@@ -336,6 +350,7 @@ public class RuleModelVarParser {
                 if (dims != null) {
                     for (int j = 0; j < dims.size(); j++) {
                         JSONObject dim = dims.getJSONObject(j);
+                        OperandDependencyCollector.collect(dim.getJSONObject("operand"), result.getInputCodes());
                         if (dim.containsKey("varCode") && !dim.getString("varCode").isEmpty()) {
                             result.getInputCodes().add(dim.getString("varCode"));
                         }
@@ -343,6 +358,12 @@ public class RuleModelVarParser {
                         if (rules != null) {
                             for (int k = 0; k < rules.size(); k++) {
                                 JSONObject rule = rules.getJSONObject(k);
+                                JSONArray conditions = rule.getJSONArray("conditions");
+                                if (conditions != null) for (int n = 0; n < conditions.size(); n++) {
+                                    JSONObject condition = conditions.getJSONObject(n);
+                                    OperandDependencyCollector.collect(condition.getJSONObject("leftOperand"), result.getInputCodes());
+                                    OperandDependencyCollector.collect(condition.getJSONObject("rightOperand"), result.getInputCodes());
+                                }
                                 if (rule.containsKey("condVar") && !rule.getString("condVar").isEmpty()) {
                                     result.getInputCodes().add(rule.getString("condVar"));
                                 }
@@ -356,8 +377,40 @@ public class RuleModelVarParser {
         }
         // resultVar
         JSONObject resultVar = model.getJSONObject("resultVar");
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), result.getOutputCodes());
         if (resultVar != null && resultVar.containsKey("varCode") && !resultVar.getString("varCode").isEmpty()) {
             result.getOutputCodes().add(resultVar.getString("varCode"));
+        }
+        collectThresholdOperands(model.getJSONArray("thresholds"), result.getInputCodes());
+    }
+
+    private void collectAdvancedCrossDimensionOperands(JSONObject dim, Set<String> inputs) {
+        OperandDependencyCollector.collect(dim.getJSONObject("operand"), inputs);
+        JSONArray segments = dim.getJSONArray("segments");
+        if (segments == null) return;
+        for (int i = 0; i < segments.size(); i++) {
+            JSONObject segment = segments.getJSONObject(i);
+            OperandDependencyCollector.collect(segment.getJSONObject("valueOperand"), inputs);
+            OperandDependencyCollector.collect(segment.getJSONObject("minOperand"), inputs);
+            OperandDependencyCollector.collect(segment.getJSONObject("maxOperand"), inputs);
+        }
+    }
+
+    private void collectThresholdOperands(JSONArray thresholds, Set<String> inputs) {
+        if (thresholds == null) return;
+        for (int i = 0; i < thresholds.size(); i++) {
+            OperandDependencyCollector.collect(thresholds.getJSONObject(i).getJSONObject("resultOperand"), inputs);
+        }
+    }
+
+    private void collectOperandValues(Object value, Set<String> inputs) {
+        if (value instanceof JSONObject) {
+            JSONObject object = (JSONObject) value;
+            if (object.getString("kind") != null) OperandDependencyCollector.collect(object, inputs);
+            else for (Object nested : object.values()) collectOperandValues(nested, inputs);
+        } else if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.size(); i++) collectOperandValues(array.get(i), inputs);
         }
     }
 
@@ -458,6 +511,8 @@ public class RuleModelVarParser {
      */
     private void extractFromConditionRoot(JSONObject root, Set<String> codes) {
         if (root == null) return;
+        OperandDependencyCollector.collect(root.getJSONObject("leftOperand"), codes);
+        OperandDependencyCollector.collect(root.getJSONObject("rightOperand"), codes);
         // 叶子节点
         if ("leaf".equals(root.getString("type")) && root.containsKey("varCode") && !root.getString("varCode").isEmpty()) {
             codes.add(root.getString("varCode"));
@@ -487,6 +542,22 @@ public class RuleModelVarParser {
         for (int i = 0; i < actionData.size(); i++) {
             JSONObject a = actionData.getJSONObject(i);
             String type = a.getString("type");
+            OperandDependencyCollector.collect(a.getJSONObject("targetOperand"), result.getOutputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("valueOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("leftOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("rightOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("matchOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("listOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("checkOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("trueOperand"), result.getInputCodes());
+            OperandDependencyCollector.collect(a.getJSONObject("falseOperand"), result.getInputCodes());
+            JSONArray operandArgs = a.getJSONArray("args");
+            if (operandArgs != null) {
+                for (int j = 0; j < operandArgs.size(); j++) {
+                    Object arg = operandArgs.get(j);
+                    if (arg instanceof JSONObject) OperandDependencyCollector.collect((JSONObject) arg, result.getInputCodes());
+                }
+            }
             if ("assign".equals(type)) {
                 // target 是输出变量
                 if (a.containsKey("target") && !a.getString("target").isEmpty()) {
@@ -518,6 +589,8 @@ public class RuleModelVarParser {
                 if (branches != null) {
                     for (int j = 0; j < branches.size(); j++) {
                         JSONObject branch = branches.getJSONObject(j);
+                        OperandDependencyCollector.collect(branch.getJSONObject("leftOperand"), result.getInputCodes());
+                        OperandDependencyCollector.collect(branch.getJSONObject("rightOperand"), result.getInputCodes());
                         addCode(branch.getString("condVar"), result.getInputCodes());
                         extractFromActionData(branch.getJSONArray("actions"), result);
                     }
@@ -527,6 +600,7 @@ public class RuleModelVarParser {
                 JSONArray cases = a.getJSONArray("cases");
                 if (cases != null) {
                     for (int j = 0; j < cases.size(); j++) {
+                        OperandDependencyCollector.collect(cases.getJSONObject(j).getJSONObject("valueOperand"), result.getInputCodes());
                         extractFromActionData(cases.getJSONObject(j).getJSONArray("actions"), result);
                     }
                 }
@@ -540,12 +614,15 @@ public class RuleModelVarParser {
             } else if ("in-check".equals(type)) {
                 addCode(a.getString("checkVar"), result.getInputCodes());
                 addCode(a.getString("target"), result.getOutputCodes());
+                JSONArray inOperands = a.getJSONArray("inOperands");
+                if (inOperands != null) for (int j = 0; j < inOperands.size(); j++) OperandDependencyCollector.collect(inOperands.getJSONObject(j), result.getInputCodes());
             } else if ("template-str".equals(type)) {
                 addCode(a.getString("target"), result.getOutputCodes());
                 JSONArray parts = a.getJSONArray("parts");
                 if (parts != null) {
                     for (int j = 0; j < parts.size(); j++) {
                         JSONObject part = parts.getJSONObject(j);
+                        OperandDependencyCollector.collect(part.getJSONObject("operand"), result.getInputCodes());
                         if ("expr".equals(part.getString("type"))) {
                             extractIdentifiers(part.getString("content"), result.getInputCodes());
                         }

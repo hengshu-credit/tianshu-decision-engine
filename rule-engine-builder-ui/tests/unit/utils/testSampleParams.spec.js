@@ -14,7 +14,7 @@ const refs = [
 describe('testSampleParams', () => {
   test('按变量默认值和类型生成样例参数', () => {
     expect(buildSampleParamsFromCodes(['inputAmount', 'riskFlag', 'customerType'], refs)).toEqual({
-      inputAmount: '100',
+      inputAmount: 100,
       riskFlag: false,
       customerType: ''
     })
@@ -90,6 +90,24 @@ describe('testSampleParams', () => {
 
     expect(buildSampleParamsFromCodes(['mobile_no', 'EMPTY_VALUE'], projectRefs)).toEqual({
       mobile_no: '14519144474'
+    })
+  })
+
+  test('sample params parse example and default values by field type', () => {
+    const projectRefs = [
+      { refCode: 'age', refType: 'VARIABLE', varType: 'NUMBER', varObj: { varSource: 'INPUT', defaultValue: '18', exampleValue: '55' } },
+      { refCode: 'emptyValue', refType: 'VARIABLE', varType: 'OBJECT', varObj: { varSource: 'INPUT', defaultValue: 'null' } },
+      { refCode: 'emptyString', refType: 'VARIABLE', varType: 'STRING', varObj: { varSource: 'INPUT', defaultValue: '""' } },
+      { refCode: 'emptyObject', refType: 'VARIABLE', varType: 'OBJECT', varObj: { varSource: 'INPUT', defaultValue: '{}' } },
+      { refCode: 'emptyList', refType: 'VARIABLE', varType: 'LIST', varObj: { varSource: 'INPUT', defaultValue: '[]' } }
+    ]
+
+    expect(buildSampleParamsFromCodes(['age', 'emptyValue', 'emptyString', 'emptyObject', 'emptyList'], projectRefs)).toEqual({
+      age: 55,
+      emptyValue: null,
+      emptyString: '',
+      emptyObject: {},
+      emptyList: []
     })
   })
 

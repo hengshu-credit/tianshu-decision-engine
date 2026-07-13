@@ -109,6 +109,11 @@ public class DecisionTableCompiler implements RuleCompiler {
             for (int k = 0; k < ruleActions.size(); k++) {
                 JSONObject act = ruleActions.getJSONObject(k);
                 if (act == null) continue;
+                if (act.getJSONObject("targetOperand") != null) {
+                    String target = OperandCompiler.compile(act.getJSONObject("targetOperand"), varContext);
+                    if (target != null && !target.trim().isEmpty()) set.add(target);
+                    continue;
+                }
                 String vc = null;
                 Long varId = act.containsKey("_varId") ? act.getLong("_varId") : null;
                 String refType = act.getString("_refType");
@@ -151,6 +156,15 @@ public class DecisionTableCompiler implements RuleCompiler {
         for (int k = 0; k < ruleActions.size(); k++) {
             JSONObject act = ruleActions.getJSONObject(k);
             JSONObject actDef = k < globalActionDefs.size() ? globalActionDefs.getJSONObject(k) : null;
+
+            if (act != null && (act.getJSONObject("targetOperand") != null || act.getJSONObject("valueOperand") != null)) {
+                String target = OperandCompiler.compile(act.getJSONObject("targetOperand"), varContext);
+                String valueExpression = OperandCompiler.compile(act.getJSONObject("valueOperand"), varContext);
+                if (!target.trim().isEmpty() && !valueExpression.trim().isEmpty()) {
+                    script.append("    ").append(target).append(" = ").append(valueExpression).append(";\n");
+                }
+                continue;
+            }
 
             String varCode;
             String varType;
@@ -247,6 +261,9 @@ public class DecisionTableCompiler implements RuleCompiler {
      * 编译叶条件：比较左侧变量与常量或其它变量。
      */
     static String compileLeaf(JSONObject leaf, VarContext varContext) {
+        if (ConditionOperandCompiler.supports(leaf)) {
+            return ConditionOperandCompiler.compile(leaf, varContext);
+        }
         Long varId = leaf.containsKey("_varId") ? leaf.getLong("_varId") : null;
         String refType = leaf.getString("_refType");
         String varCode = leaf.getString("varCode");

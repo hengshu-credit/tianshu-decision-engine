@@ -54,6 +54,14 @@ public class ActionDataCompiler {
     }
 
     private static String compileAssign(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("targetOperand") != null || b.getJSONObject("valueOperand") != null) {
+            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            String value = OperandCompiler.compile(b.getJSONObject("valueOperand"), varContext);
+            if (empty(target) || empty(value)) return "";
+            StringBuilder code = new StringBuilder(pad(indent)).append(target).append(" = ").append(value);
+            appendRounding(code, b, target, indent);
+            return appendRuntimeSync(code.toString(), target, indent);
+        }
         String target = b.getString("target");
         String value = b.getString("value");
         if (empty(target) || empty(value)) return "";
@@ -62,18 +70,7 @@ public class ActionDataCompiler {
         String resolvedTarget = resolveVar(varId, refType, target, varContext);
         StringBuilder sb = new StringBuilder();
         sb.append(pad(indent)).append(resolvedTarget).append(" = ").append(value);
-        Boolean enableRounding = b.getBoolean("enableRounding");
-        if (Boolean.TRUE.equals(enableRounding)) {
-            Integer dp = b.getInteger("decimalPlaces");
-            if (dp != null && dp >= 0) {
-                String rm = b.getString("roundingMode");
-                if (empty(rm)) rm = "HALF_UP";
-                sb.append("\n").append(pad(indent))
-                  .append(resolvedTarget).append(" = roundScale(")
-                  .append(resolvedTarget).append(", ").append(dp).append(", ")
-                  .append(quoteString(rm)).append(")");
-            }
-        }
+        appendRounding(sb, b, resolvedTarget, indent);
         return appendRuntimeSync(sb.toString(), resolvedTarget, indent);
     }
 
@@ -94,6 +91,9 @@ public class ActionDataCompiler {
     }
 
     private static String compileSwitchBlock(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("matchOperand") != null) {
+            return compileOperandSwitchBlock(b, indent, varContext);
+        }
         String matchVar = b.getString("matchVar");
         if (empty(matchVar)) return "";
         Long varId = fieldVarId(b, "matchVar");
@@ -126,6 +126,21 @@ public class ActionDataCompiler {
     }
 
     private static String compileFuncCall(JSONObject b, int indent, VarContext varContext) {
+        if (b.containsKey("functionCode")) {
+            String functionCode = b.getString("functionCode");
+            if (empty(functionCode)) return "";
+            JSONArray operands = b.getJSONArray("args");
+            StringBuilder args = new StringBuilder();
+            if (operands != null) {
+                for (int i = 0; i < operands.size(); i++) {
+                    if (i > 0) args.append(", ");
+                    args.append(OperandCompiler.compile(operands.getJSONObject(i), varContext));
+                }
+            }
+            String call = functionCode + "(" + args + ")";
+            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            return empty(target) ? pad(indent) + call : appendRuntimeSync(pad(indent) + target + " = " + call, target, indent);
+        }
         String funcName = b.getString("funcName");
         if (empty(funcName)) return "";
         JSONArray args = b.getJSONArray("args");
@@ -157,6 +172,14 @@ public class ActionDataCompiler {
     }
 
     private static String compileForeach(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("listOperand") != null) {
+            String itemVar = b.getString("itemVar");
+            String list = OperandCompiler.compile(b.getJSONObject("listOperand"), varContext);
+            if (empty(itemVar) || empty(list)) return "";
+            StringBuilder code = new StringBuilder(pad(indent)).append("for (").append(itemVar).append(" : ").append(list).append(") {\n");
+            code.append(compileActions(b.getJSONArray("actions"), indent + 1, varContext));
+            return code.append(pad(indent)).append("}").toString();
+        }
         String itemVar = b.getString("itemVar");
         String listExpr = b.getString("listExpr");
         if (empty(itemVar) || empty(listExpr)) return "";
@@ -170,6 +193,14 @@ public class ActionDataCompiler {
     }
 
     private static String compileTernary(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("targetOperand") != null) {
+            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            String condition = buildOperandCondition(b.getJSONObject("leftOperand"), b.getString("operator"), b.getJSONObject("rightOperand"), varContext);
+            String trueValue = OperandCompiler.compile(b.getJSONObject("trueOperand"), varContext);
+            String falseValue = OperandCompiler.compile(b.getJSONObject("falseOperand"), varContext);
+            if (empty(target) || empty(trueValue) || empty(falseValue)) return "";
+            return appendRuntimeSync(pad(indent) + target + " = " + condition + " ? " + trueValue + " : " + falseValue, target, indent);
+        }
         String target = b.getString("target");
         String condVar = b.getString("condVar");
         if (empty(target) || empty(condVar)) return "";
@@ -188,6 +219,24 @@ public class ActionDataCompiler {
     }
 
     private static String compileInCheck(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("targetOperand") != null) {
+            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            String check = OperandCompiler.compile(b.getJSONObject("checkOperand"), varContext);
+            String trueValue = OperandCompiler.compile(b.getJSONObject("trueOperand"), varContext);
+            String falseValue = OperandCompiler.compile(b.getJSONObject("falseOperand"), varContext);
+            if (empty(target) || empty(check) || empty(trueValue) || empty(falseValue)) return "";
+            StringBuilder values = new StringBuilder();
+            JSONArray operands = b.getJSONArray("inOperands");
+            if (operands != null) {
+                for (int i = 0; i < operands.size(); i++) {
+                    String value = OperandCompiler.compile(operands.getJSONObject(i), varContext);
+                    if (empty(value)) continue;
+                    if (values.length() > 0) values.append(", ");
+                    values.append(value);
+                }
+            }
+            return appendRuntimeSync(pad(indent) + target + " = " + check + " in [" + values + "] ? " + trueValue + " : " + falseValue, target, indent);
+        }
         String target = b.getString("target");
         String checkVar = b.getString("checkVar");
         if (empty(target) || empty(checkVar)) return "";
@@ -213,6 +262,19 @@ public class ActionDataCompiler {
     }
 
     private static String compileTemplateStr(JSONObject b, int indent, VarContext varContext) {
+        if (b.getJSONObject("targetOperand") != null) {
+            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            JSONArray parts = b.getJSONArray("parts");
+            if (empty(target) || parts == null || parts.isEmpty()) return "";
+            StringBuilder content = new StringBuilder();
+            for (int i = 0; i < parts.size(); i++) {
+                JSONObject part = parts.getJSONObject(i);
+                JSONObject operand = part.getJSONObject("operand");
+                if ("expr".equals(part.getString("type"))) content.append("${").append(OperandCompiler.compile(operand, varContext)).append("}");
+                else if (operand != null && operand.get("value") != null) content.append(operand.getString("value"));
+            }
+            return appendRuntimeSync(pad(indent) + target + " = " + quoteString(content.toString()), target, indent);
+        }
         String target = b.getString("target");
         JSONArray parts = b.getJSONArray("parts");
         if (empty(target) || parts == null || parts.isEmpty()) return "";
@@ -243,7 +305,9 @@ public class ActionDataCompiler {
                     ? "executeRule(" + quoteString(ruleCode) + ")"
                     : "executeRuleField(" + quoteString(ruleCode) + ", " + quoteString(outputField) + ")";
         }
-        String target = b.getString("target");
+        String target = b.getJSONObject("targetOperand") != null
+                ? OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext)
+                : b.getString("target");
         if (empty(target)) {
             return pad(indent) + call;
         }
@@ -266,6 +330,9 @@ public class ActionDataCompiler {
     }
 
     private static String buildCond(JSONObject branch, VarContext varContext) {
+        if (branch.getJSONObject("leftOperand") != null) {
+            return buildOperandCondition(branch.getJSONObject("leftOperand"), branch.getString("operator"), branch.getJSONObject("rightOperand"), varContext);
+        }
         Long varId = fieldVarId(branch, "condVar");
         String refType = fieldRefType(branch, "condVar");
         String v = branch.getString("condVar");
@@ -344,6 +411,54 @@ public class ActionDataCompiler {
         }
         return code + "\n" + pad(indent) + "setRuntimeValue("
                 + quoteString(resolvedTarget) + ", " + resolvedTarget + ")";
+    }
+
+    private static void appendRounding(StringBuilder code, JSONObject block, String target, int indent) {
+        if (!Boolean.TRUE.equals(block.getBoolean("enableRounding"))) return;
+        Integer decimalPlaces = block.getInteger("decimalPlaces");
+        if (decimalPlaces == null || decimalPlaces < 0) return;
+        String roundingMode = block.getString("roundingMode");
+        if (empty(roundingMode)) roundingMode = "HALF_UP";
+        code.append("\n").append(pad(indent)).append(target).append(" = roundScale(")
+                .append(target).append(", ").append(decimalPlaces).append(", ")
+                .append(quoteString(roundingMode)).append(")");
+    }
+
+    private static String buildOperandCondition(JSONObject leftOperand, String operator,
+                                                JSONObject rightOperand, VarContext varContext) {
+        String left = OperandCompiler.compile(leftOperand, varContext);
+        if (empty(left)) return "true";
+        String op = empty(operator) ? "==" : operator;
+        boolean literal = rightOperand != null && "LITERAL".equals(rightOperand.getString("kind"));
+        String right = literal ? rightOperand.getString("value") : OperandCompiler.compile(rightOperand, varContext);
+        return ConditionExpressionBuilder.build(left,
+                leftOperand == null ? null : leftOperand.getString("valueType"), op, right, !literal);
+    }
+
+    private static String compileOperandSwitchBlock(JSONObject block, int indent, VarContext varContext) {
+        String match = OperandCompiler.compile(block.getJSONObject("matchOperand"), varContext);
+        if (empty(match)) return "";
+        StringBuilder code = new StringBuilder();
+        boolean hasCase = false;
+        JSONArray cases = block.getJSONArray("cases");
+        if (cases != null) {
+            for (int i = 0; i < cases.size(); i++) {
+                JSONObject item = cases.getJSONObject(i);
+                String value = OperandCompiler.compile(item.getJSONObject("valueOperand"), varContext);
+                if (empty(value)) continue;
+                code.append(hasCase ? " else " : pad(indent)).append("if (").append(match).append(" == ").append(value).append(") {\n");
+                code.append(compileActions(item.getJSONArray("actions"), indent + 1, varContext));
+                code.append(pad(indent)).append("}");
+                hasCase = true;
+            }
+        }
+        JSONArray defaults = block.getJSONArray("defaultActions");
+        if (defaults != null && !defaults.isEmpty()) {
+            code.append(hasCase ? " else {\n" : pad(indent) + "if (true) {\n");
+            code.append(compileActions(defaults, indent + 1, varContext));
+            code.append(pad(indent)).append("}");
+        }
+        return code.toString();
     }
 
     private static boolean empty(String s) { return s == null || s.trim().isEmpty(); }

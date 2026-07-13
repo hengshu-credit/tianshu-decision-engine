@@ -8,8 +8,10 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.text.ParsePosition;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -386,12 +388,39 @@ public class DecisionBuiltinFunctions {
         return formatDateTime(value, pattern);
     }
 
+    public String idCardBirthDate(String idCard) {
+        LocalDate birthDate = idCardBirthLocalDate(idCard);
+        return birthDate == null ? null : birthDate.format(DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    public long idCardAge(String idCard, Object currentDate, String calcMode) {
+        LocalDate birthDate = idCardBirthLocalDate(idCard);
+        LocalDate effectiveDate = currentDate == null ? LocalDate.now() : toLocalDate(currentDate);
+        if (birthDate == null || effectiveDate == null || birthDate.isAfter(effectiveDate)) {
+            return -1L;
+        }
+        int years = effectiveDate.getYear() - birthDate.getYear();
+        if (calcMode != null && "YEAR".equalsIgnoreCase(calcMode.trim())) {
+            return years;
+        }
+        return effectiveDate.isBefore(birthDate.plusYears(years)) ? years - 1L : years;
+    }
+
     public BigDecimal scoreByOdds(double odds, double a, double b, String direction) {
         if (odds <= 0d) {
             return null;
         }
         double sign = scoreDirectionSign(direction);
         return decimal(a).add(decimal(sign * b * Math.log(odds))).setScale(2, RoundingMode.HALF_UP);
+    }
+
+    public BigDecimal scoreByProbability(double probability, double a, double b, String direction) {
+        if (probability <= 0d || probability >= 1d) {
+            return null;
+        }
+        double logOdds = Math.log(probability / (1d - probability));
+        return decimal(a).add(decimal(probabilityDirectionSign(direction) * b * logOdds))
+                .setScale(2, RoundingMode.HALF_UP);
     }
 
     public BigDecimal scoreByOddsPdo(double odds, double baseScore, double baseOdds, double pdo, String direction) {
@@ -649,6 +678,34 @@ public class DecisionBuiltinFunctions {
         return null;
     }
 
+    private static LocalDate toLocalDate(Object value) {
+        if (value instanceof LocalDate) {
+            return (LocalDate) value;
+        }
+        LocalDateTime dateTime = toDateTime(value, null);
+        return dateTime == null ? null : dateTime.toLocalDate();
+    }
+
+    private static LocalDate idCardBirthLocalDate(String idCard) {
+        if (idCard == null) {
+            return null;
+        }
+        String text = idCard.trim();
+        String birthText;
+        if (text.matches("[0-9]{17}[0-9Xx]")) {
+            birthText = text.substring(6, 14);
+        } else if (text.matches("[0-9]{15}")) {
+            birthText = "19" + text.substring(6, 12);
+        } else {
+            return null;
+        }
+        try {
+            return LocalDate.parse(birthText, DateTimeFormatter.BASIC_ISO_DATE);
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
     private static LocalDateTime parseDateTime(String text, String pattern) {
         SimpleDateFormat format = new SimpleDateFormat(pattern);
         format.setLenient(false);
@@ -663,6 +720,11 @@ public class DecisionBuiltinFunctions {
     private static double scoreDirectionSign(String direction) {
         String text = direction == null ? "" : direction.trim().toUpperCase();
         return ("DESC".equals(text) || "DOWN".equals(text) || "REVERSE".equals(text) || "降序".equals(text) || "下降".equals(text)) ? -1d : 1d;
+    }
+
+    private static double probabilityDirectionSign(String direction) {
+        String text = direction == null ? "" : direction.trim().toUpperCase();
+        return ("LOW_GOOD".equals(text) || "DESC".equals(text) || "越小越好".equals(text)) ? 1d : -1d;
     }
 
 }

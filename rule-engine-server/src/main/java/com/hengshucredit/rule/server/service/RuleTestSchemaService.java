@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.dto.ResolutionPlan;
 import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchema;
@@ -39,9 +42,13 @@ public class RuleTestSchemaService {
     }
 
     private Object sampleValue(ResolvedField field) {
-        if (field.getExampleValue() != null && !field.getExampleValue().isEmpty()) return field.getExampleValue();
-        if (field.getDefaultValue() != null && !field.getDefaultValue().isEmpty()) return field.getDefaultValue();
         String type = field.getValueType() == null ? "STRING" : field.getValueType().toUpperCase(Locale.ROOT);
+        if (field.getExampleValue() != null && !field.getExampleValue().isEmpty()) {
+            return parseConfiguredValue(field.getExampleValue(), type);
+        }
+        if (field.getDefaultValue() != null && !field.getDefaultValue().isEmpty()) {
+            return parseConfiguredValue(field.getDefaultValue(), type);
+        }
         if ("INTEGER".equals(type) || "INT".equals(type) || "LONG".equals(type)) return 0;
         if ("NUMBER".equals(type) || "DOUBLE".equals(type) || "FLOAT".equals(type)
                 || "DECIMAL".equals(type) || "PROBABILITY".equals(type)) return 0d;
@@ -49,6 +56,42 @@ public class RuleTestSchemaService {
         if ("ARRAY".equals(type) || "LIST".equals(type) || "VECTOR".equals(type)) return new ArrayList<>();
         if ("OBJECT".equals(type) || "MAP".equals(type)) return new LinkedHashMap<>();
         return "";
+    }
+
+    private Object parseConfiguredValue(String value, String type) {
+        String raw = value == null ? "" : value.trim();
+        if ("null".equalsIgnoreCase(raw)) return null;
+        if ("\"\"".equals(raw) || "''".equals(raw)) return "";
+        try {
+            if ("INTEGER".equals(type) || "INT".equals(type)) return Integer.valueOf(raw);
+            if ("LONG".equals(type)) return Long.valueOf(raw);
+            if ("NUMBER".equals(type) || "DOUBLE".equals(type) || "FLOAT".equals(type)
+                    || "DECIMAL".equals(type) || "PROBABILITY".equals(type)) {
+                if ("Infinity".equals(raw)) return Double.POSITIVE_INFINITY;
+                if ("-Infinity".equals(raw)) return Double.NEGATIVE_INFINITY;
+                return Double.valueOf(raw);
+            }
+            if ("BOOLEAN".equals(type) || "BOOL".equals(type)) return Boolean.valueOf(raw);
+            if ("ARRAY".equals(type) || "LIST".equals(type) || "VECTOR".equals(type)) {
+                Object parsed = JSON.parse(raw);
+                return parsed instanceof JSONArray ? parsed : raw;
+            }
+            if ("OBJECT".equals(type) || "MAP".equals(type)) {
+                Object parsed = JSON.parse(raw);
+                return parsed instanceof JSONObject ? parsed : raw;
+            }
+        } catch (Exception ignored) {
+            return stripQuotedString(raw);
+        }
+        return stripQuotedString(raw);
+    }
+
+    private String stripQuotedString(String raw) {
+        if (raw == null) return "";
+        if ((raw.startsWith("\"") && raw.endsWith("\"")) || (raw.startsWith("'") && raw.endsWith("'"))) {
+            return raw.substring(1, raw.length() - 1);
+        }
+        return raw;
     }
 
     @SuppressWarnings("unchecked")

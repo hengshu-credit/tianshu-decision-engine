@@ -1,6 +1,13 @@
 import ExperimentDetail from '@/views/experiment/ExperimentDetail.vue'
 import { listExperimentLogs, saveExperiment, listVersions, compareVersions } from '@/api/experiment'
 
+const leaf = (code, value, label = code) => ({
+  type: 'leaf',
+  leftOperand: { kind: 'PATH', value: code, code, label, valueType: 'NUMBER' },
+  operator: '>=',
+  rightOperand: { kind: 'LITERAL', value, valueType: 'NUMBER' }
+})
+
 function createContext(overrides = {}) {
   const ctx = {
     $set(target, key, value) { target[key] = value },
@@ -76,14 +83,7 @@ describe('ExperimentDetail', () => {
     const ctx = createContext()
     ctx.form.routingMode = 'RATIO'
     ctx.form.groups[0].ruleCode = 'champion_rule'
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '1000'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000')
 
     const groups = ctx.prepareGroupsForSave()
 
@@ -95,14 +95,7 @@ describe('ExperimentDetail', () => {
     const ctx = createContext()
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '1000'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000')
     ctx.addProductionFallback()
     ctx.productionFormGroups[1].ruleCode = 'fallback_rule'
 
@@ -136,15 +129,7 @@ describe('ExperimentDetail', () => {
     })
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
-    ctx.form.groups[0].conditionConfig.children[0] = {
-      type: 'leaf',
-      varCode: 'amount',
-      varLabel: '申请金额',
-      varType: 'NUMBER',
-      operator: '>=',
-      valueKind: 'CONST',
-      value: '1000'
-    }
+    ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000', '申请金额')
 
     expect(ctx.experimentInputFields.map(f => f.fieldName)).toEqual(['amount', 'age'])
     expect(ctx.experimentOutputFields.map(f => f.fieldName)).toEqual(['riskLevel'])

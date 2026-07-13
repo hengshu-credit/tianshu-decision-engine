@@ -42,7 +42,10 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             String resRefType = resultVar.getString("_refType");
             String resCode = resultVar.getString("varCode");
             String resType = resultVar.getString("varType");
-            String resolvedResCode = resolveVar(resVarId, resRefType, resCode, varContext);
+            JSONObject resultOperand = resultVar.getJSONObject("operand");
+            String resolvedResCode = resultOperand != null
+                    ? OperandCompiler.compile(resultOperand, varContext)
+                    : resolveVar(resVarId, resRefType, resCode, varContext);
 
             if (rowDims == null || rowDims.isEmpty()) {
                 return CompileResult.fail("复杂交叉表缺少行维度定义");
@@ -67,8 +70,8 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
                 for (int ci = 0; ci < colProduct.size(); ci++) {
                     List<SegmentInfo> colSegs = colProduct.get(ci);
-                    String cellValue = getCellValue(rowCells, ci, colProduct.size());
-                    if (cellValue == null || cellValue.trim().isEmpty()) continue;
+                    Object cellValue = getCellValue(rowCells, ci);
+                    if (cellValue == null || (cellValue instanceof String && ((String) cellValue).trim().isEmpty())) continue;
 
                     script.append(first ? "if (" : " else if (");
                     first = false;
@@ -86,7 +89,11 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                     }
 
                     script.append(") {\n    ").append(resolvedResCode).append(" = ");
-                    appendValue(script, cellValue, resType);
+                    if (cellValue instanceof JSONObject) {
+                        script.append(OperandCompiler.compile((JSONObject) cellValue, varContext));
+                    } else {
+                        appendValue(script, String.valueOf(cellValue), resType);
+                    }
                     script.append("\n}");
                 }
             }
@@ -115,6 +122,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             String varType = dim.getString("varType");
             Long varId = dim.containsKey("_varId") ? dim.getLong("_varId") : null;
             String refType = dim.getString("_refType");
+            JSONObject dimensionOperand = dim.getJSONObject("operand");
             JSONArray segments = dim.getJSONArray("segments");
 
             List<List<SegmentInfo>> newResult = new ArrayList<>();
@@ -122,11 +130,14 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                 for (int s = 0; s < segments.size(); s++) {
                     JSONObject seg = segments.getJSONObject(s);
                     List<SegmentInfo> newList = new ArrayList<>(existing);
-                    newList.add(new SegmentInfo(varCode, varType, varId, refType,
+                    newList.add(new SegmentInfo(varCode, varType, varId, refType, dimensionOperand,
                             seg.getString("operator"),
                             seg.getString("value"),
                             seg.getString("min"),
-                            seg.getString("max")));
+                            seg.getString("max"),
+                            seg.getJSONObject("valueOperand"),
+                            seg.getJSONObject("minOperand"),
+                            seg.getJSONObject("maxOperand")));
                     newResult.add(newList);
                 }
             }
@@ -136,13 +147,13 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
     }
 
     /** 从多层嵌套的 cells 数组中取值 */
-    private String getCellValue(JSONArray rowCells, int colIndex, int totalCols) {
+    private Object getCellValue(JSONArray rowCells, int colIndex) {
         try {
             Object val = rowCells.get(colIndex);
             if (val instanceof JSONArray) {
-                return ((JSONArray) val).getString(0);
+                return ((JSONArray) val).get(0);
             }
-            return val != null ? val.toString() : null;
+            return val;
         } catch (Exception e) {
             return null;
         }
@@ -150,17 +161,28 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
     /** 将单个分段条件追加到脚本 */
     private void appendCondition(StringBuilder sb, SegmentInfo seg, VarContext varContext) {
-        String scriptName = resolveVar(seg.varId, seg.refType, seg.varCode, varContext);
+        String scriptName = seg.dimensionOperand != null
+                ? OperandCompiler.compile(seg.dimensionOperand, varContext)
+                : resolveVar(seg.varId, seg.refType, seg.varCode, varContext);
         String op = seg.operator;
 
         if ("range".equals(op)) {
             sb.append(scriptName).append(" >= ");
-            appendValue(sb, seg.min, seg.varType);
+            appendSegmentValue(sb, seg.minOperand, seg.min, seg.varType, varContext);
             sb.append(" && ").append(scriptName).append(" < ");
-            appendValue(sb, seg.max, seg.varType);
+            appendSegmentValue(sb, seg.maxOperand, seg.max, seg.varType, varContext);
         } else {
             sb.append(scriptName).append(" ").append(op).append(" ");
-            appendValue(sb, seg.value, seg.varType);
+            appendSegmentValue(sb, seg.valueOperand, seg.value, seg.varType, varContext);
+        }
+    }
+
+    private void appendSegmentValue(StringBuilder sb, JSONObject operand, String legacyValue,
+                                    String legacyType, VarContext varContext) {
+        if (operand != null) {
+            sb.append(OperandCompiler.compile(operand, varContext));
+        } else {
+            appendValue(sb, legacyValue, legacyType);
         }
     }
 
@@ -189,20 +211,30 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         final String varType;
         final Long varId;
         final String refType;
+        final JSONObject dimensionOperand;
         final String operator;
         final String value;
         final String min;
         final String max;
+        final JSONObject valueOperand;
+        final JSONObject minOperand;
+        final JSONObject maxOperand;
 
-        SegmentInfo(String varCode, String varType, Long varId, String refType, String operator, String value, String min, String max) {
+        SegmentInfo(String varCode, String varType, Long varId, String refType, JSONObject dimensionOperand,
+                    String operator, String value, String min, String max,
+                    JSONObject valueOperand, JSONObject minOperand, JSONObject maxOperand) {
             this.varCode = varCode;
             this.varType = varType;
             this.varId = varId;
             this.refType = refType;
+            this.dimensionOperand = dimensionOperand;
             this.operator = operator;
             this.value = value;
             this.min = min;
             this.max = max;
+            this.valueOperand = valueOperand;
+            this.minOperand = minOperand;
+            this.maxOperand = maxOperand;
         }
     }
 }

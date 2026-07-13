@@ -1,0 +1,46 @@
+package com.hengshucredit.rule.core.compiler;
+
+import com.alibaba.fastjson.JSONObject;
+
+/** 统一条件叶 Operand 编译逻辑。 */
+final class ConditionOperandCompiler {
+
+    private ConditionOperandCompiler() {
+    }
+
+    static boolean supports(JSONObject leaf) {
+        return leaf != null && leaf.getJSONObject("leftOperand") != null;
+    }
+
+    static boolean hasUsableCondition(JSONObject leaf) {
+        if (!supports(leaf)) return false;
+        String left = OperandCompiler.compile(leaf.getJSONObject("leftOperand"), null);
+        String operator = leaf.getString("operator");
+        if (empty(left) || "*".equals(operator)) return false;
+        if (isNoValueOperator(operator)) return true;
+        return !empty(OperandCompiler.compile(leaf.getJSONObject("rightOperand"), null));
+    }
+
+    static String compile(JSONObject leaf, VarContext varContext) {
+        JSONObject leftOperand = leaf.getJSONObject("leftOperand");
+        String left = OperandCompiler.compile(leftOperand, varContext);
+        if (empty(left)) return "true";
+        String operator = leaf.getString("operator");
+        JSONObject rightOperand = leaf.getJSONObject("rightOperand");
+        boolean literal = rightOperand != null && "LITERAL".equals(rightOperand.getString("kind"));
+        String right = literal ? rightOperand.getString("value") : OperandCompiler.compile(rightOperand, varContext);
+        return ConditionExpressionBuilder.build(left,
+                leftOperand == null ? null : leftOperand.getString("valueType"),
+                operator, right, !literal);
+    }
+
+    private static boolean isNoValueOperator(String operator) {
+        return "is_null".equals(operator) || "not_null".equals(operator)
+                || "is_empty".equals(operator) || "not_empty".equals(operator)
+                || "is_true".equals(operator) || "is_false".equals(operator);
+    }
+
+    private static boolean empty(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+}

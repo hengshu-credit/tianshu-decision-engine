@@ -233,11 +233,11 @@ describe('DecisionTable — 变量选择器加载', () => {
     expect(ageOpt.varLabel).toMatch(/年龄.*age/)
   })
 
-  test('varPickerOptions 中对象字段的 varLabel 包含对象路径', () => {
+  test('varPickerOptions 中对象字段按变量名称和脚本路径展示', () => {
     const options = wrapper.vm.varPickerOptions
     const amountOpt = options.find(o => o.varCode === 'TaxRequest.amount')
     expect(amountOpt).toBeDefined()
-    expect(amountOpt.varLabel).toMatch(/税务请求/)
+    expect(amountOpt.varLabel).toBe('金额 TaxRequest.amount')
   })
 
   test('selectedVarPickerOptions 汇总当前规则已选择的条件和动作字段', () => {

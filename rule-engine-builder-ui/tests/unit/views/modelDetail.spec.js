@@ -14,6 +14,7 @@ jest.mock('@/api/model', () => ({
   executeModel: jest.fn(),
   getTestParams: jest.fn(),
   saveTestParams: jest.fn(),
+  listAllModelsByProject: jest.fn(),
   listVersions: jest.fn(),
   compareVersions: jest.fn(),
   rollbackVersion: jest.fn()
@@ -30,9 +31,14 @@ jest.mock('@/api/dataObject', () => ({
   getDataObjectFieldOptions: jest.fn()
 }))
 
+jest.mock('@/api/function', () => ({
+  listAllFunctionsByProject: jest.fn()
+}))
+
 import * as modelApi from '@/api/model'
 import * as variableApi from '@/api/variable'
 import * as dataObjectApi from '@/api/dataObject'
+import * as functionApi from '@/api/function'
 import * as definitionApi from '@/api/definition'
 import ModelDetail from '@/views/model/ModelDetail.vue'
 
@@ -55,12 +61,12 @@ function mockModel(id = 1) {
     currentVersion: 1,
     publishedVersion: 1,
     inputFields: [
-      { id: 1, fieldName: 'age', fieldLabel: '年龄', fieldType: 'INTEGER', varId: 10, scriptName: 'age', missingValue: '18' },
-      { id: 2, fieldName: 'income', fieldLabel: '收入', fieldType: 'DOUBLE', varId: null, scriptName: '', missingValue: '' }
+      { id: 1, fieldName: 'age', fieldLabel: '年龄', fieldType: 'INTEGER', varId: 10, scriptName: 'age' },
+      { id: 2, fieldName: 'income', fieldLabel: '收入', fieldType: 'DOUBLE', varId: null, scriptName: '' }
     ],
     outputFields: [
-      { id: 100, fieldName: 'score', fieldLabel: '评分', fieldType: 'DOUBLE', varId: 20, scriptName: 'score', transformType: 'SCALE' },
-      { id: 101, fieldName: 'level', fieldLabel: '等级', fieldType: 'STRING', varId: null, scriptName: '', transformType: '' }
+      { id: 100, fieldName: 'score', fieldLabel: '评分', fieldType: 'DOUBLE', varId: 20, scriptName: 'score', transformOperand: null },
+      { id: 101, fieldName: 'level', fieldLabel: '等级', fieldType: 'STRING', varId: null, scriptName: '', transformOperand: null }
     ]
   }
 }
@@ -102,6 +108,8 @@ async function mountAndWait(modelData = mockModel()) {
   variableApi.listVariablesByProject.mockResolvedValue({ data: mockVars() })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockConsts() } })
   dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree())
+  modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
+  functionApi.listAllFunctionsByProject.mockResolvedValue({ data: [] })
 
   const wrapper = mount(ModelDetail, {
     localVue: createTestVue(),
@@ -236,12 +244,12 @@ describe('ModelDetail — 变量关联加载', () => {
     expect(objGroup.options[0].varLabel).toMatch(/TaxRequest\.amount/)
   })
 
-  test('数据对象关联展示完整对象与字段名称', () => {
+  test('数据对象关联展示变量名称和完整脚本路径', () => {
     wrapper.vm.buildVarOptions([], mockObjectTree())
     const row = { varId: 200, refType: 'DATA_OBJECT', scriptName: 'TaxRequest.amount' }
 
     expect(wrapper.vm.bindingDisplay(row)).toMatchObject({
-      label: '税务请求/金额',
+      label: '金额',
       code: 'TaxRequest.amount',
       source: '对象字段'
     })
@@ -269,39 +277,42 @@ describe('ModelDetail — 变量关联加载', () => {
     expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(0)
   })
 
-  test('onVarClear 清除关联变量', () => {
-    const row = { varId: 10, fieldLabel: '年龄', scriptName: 'age' }
-    wrapper.vm.onVarClear(row)
+  test('统一操作数清除字段关联时回到模型字段名', () => {
+    const row = { fieldName: 'age_input', varId: 10, fieldLabel: '年龄', scriptName: 'age' }
+    wrapper.vm.onFieldOperandSelect(row, 'sourceOperand', null)
     expect(row.varId).toBeNull()
-    expect(row.fieldLabel).toBe('')
-    expect(row.scriptName).toBe('')
+    expect(row.refType).toBe('')
+    expect(row.scriptName).toBe('age_input')
   })
 
-  test('onVarChange 同步普通变量信息到行（依赖 v-model 已更新 varId）', () => {
-    // buildVarOptions 将变量 id 映射为选项的 id 字段
-    wrapper.vm.buildVarOptions(mockVars(), [])
-    const row = { varId: null, fieldLabel: '', scriptName: '', varSource: '' }
-    // v-model 已在 el-select @input 中更新了 row.varId，此处模拟该行为
-    row.varId = 10
-    wrapper.vm.onVarChange(row, 10)
-    // onVarChange 不修改 varId（由 v-model 处理），只同步 fieldLabel / scriptName / varSource
+  test('变量目录缺少当前模型时仍提供当前模型原始输出', () => {
+    wrapper.vm.buildVarOptions(mockVars(), [], [])
+    const modelGroup = wrapper.vm.varPickerGroups.find(g => g.label === '模型')
+    expect(modelGroup.options).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 100, refType: 'MODEL_OUTPUT', varCode: 'risk_score_model.score' })
+    ]))
+  })
+
+  test('统一引用操作数同步 ID、类型、编码和标签', () => {
+    const row = { fieldName: 'age_input', varId: null, fieldLabel: '', scriptName: '' }
+    wrapper.vm.onFieldOperandSelect(row, 'sourceOperand', { kind: 'REFERENCE', refId: 10, refType: 'VARIABLE', code: 'age', label: '年龄' })
+    expect(row.varId).toBe(10)
+    expect(row.refType).toBe('VARIABLE')
     expect(row.fieldLabel).toBe('年龄')
     expect(row.scriptName).toBe('age')
-    expect(row.varSource).toBe('variable')
   })
 
-  test('onVarChange 选择常量时 sourceType 为 constant', () => {
-    wrapper.vm.buildVarOptions(mockConsts(), [])
-    const row = { varId: null, fieldLabel: '', scriptName: '' }
-    wrapper.vm.onVarChange(row, 100)
-    expect(row.varSource).toBe('constant')
+  test('手输阈值作为模型输入时不覆盖模型字段名', () => {
+    const row = { fieldName: 'threshold', varId: null, fieldLabel: '', scriptName: '' }
+    wrapper.vm.onFieldOperandSelect(row, 'sourceOperand', { kind: 'LITERAL', value: '600', valueType: 'NUMBER' })
+    expect(row.scriptName).toBe('threshold')
+    expect(row.varId).toBeNull()
   })
 
-  test('onVarChange 选择数据对象字段时 sourceType 为 dataObject', () => {
-    wrapper.vm.buildVarOptions([], mockObjectTree())
-    const row = { varId: null, fieldLabel: '', scriptName: '' }
-    wrapper.vm.onVarChange(row, 200)
-    expect(row.varSource).toBe('dataObject')
+  test('默认值操作数同步标量默认值', () => {
+    const row = { fieldName: 'threshold', defaultValue: '' }
+    wrapper.vm.onFieldOperandSelect(row, 'defaultOperand', { kind: 'LITERAL', value: '600', valueType: 'NUMBER' })
+    expect(row.defaultValue).toBe('600')
   })
 
   test('bindingDisplay 同时展示变量名称、编码、类型和来源', () => {
@@ -322,6 +333,16 @@ describe('ModelDetail — 输入字段编辑', () => {
 
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('输入字段只展示默认值并提供空值回退提示', () => {
+    const labels = wrapper.findAll('el-table-column-stub').wrappers.map(item => item.attributes('label'))
+    expect(labels).toContain('默认值')
+    expect(labels).not.toContain('缺失值')
+    const hint = wrapper.findAll('el-tooltip-stub').wrappers.find(item => (
+      item.attributes('content') === '来源为空或未取到值时使用默认值；未配置则按空值传入模型。'
+    ))
+    expect(hint).toBeDefined()
+  })
 
   test('editInputField 设置行的 _editing 标志', () => {
     const field = wrapper.vm.model.inputFields[0]
@@ -348,7 +369,7 @@ describe('ModelDetail — 输入字段编辑', () => {
   test('cancelEditInput 恢复原始数据并取消编辑', () => {
     const field = wrapper.vm.model.inputFields[0]
     field._editing = true
-    field._origin = { varId: 10, fieldLabel: '年龄', scriptName: 'age', missingValue: '18' }
+    field._origin = { varId: 10, fieldLabel: '年龄', scriptName: 'age' }
     field.varId = 20
     field.scriptName = 'changed'
     wrapper.vm.cancelEditInput(field)
@@ -385,17 +406,49 @@ describe('ModelDetail — 输出字段编辑', () => {
     wrapper.vm.editOutputField(field)
     expect(field._origin).toBeDefined()
     expect(field._origin.varId).toBe(20)
-    expect(field._origin.transformType).toBe('SCALE')
+    expect(field._origin.transformOperand).toBeNull()
   })
 
   test('cancelEditOutput 恢复原始数据并取消编辑', () => {
     const field = wrapper.vm.model.outputFields[0]
     field._editing = true
-    field._origin = { varId: 20, fieldLabel: '评分', scriptName: 'score', transformType: 'SCALE' }
-    field.transformType = 'NONE'
+    const original = { kind: 'FUNCTION', functionId: 7, functionCode: 'roundScore', args: [] }
+    field._origin = { varId: 20, fieldLabel: '评分', scriptName: 'score', transformOperand: original }
+    field.transformOperand = null
     wrapper.vm.cancelEditOutput(field)
-    expect(field.transformType).toBe('SCALE')
+    expect(field.transformOperand).toEqual(original)
     expect(field._editing).toBe(false)
+  })
+
+  test('转换函数的全部参数由用户逐项选择并展示完整公式', () => {
+    wrapper.vm.projectFunctions = [{
+      id: 7,
+      funcCode: 'scoreByProbability',
+      funcName: '概率转评分',
+      returnType: 'NUMBER',
+      paramsJson: '[{"name":"probability","type":"NUMBER"},{"name":"base","type":"NUMBER"}]'
+    }]
+    const field = wrapper.vm.model.outputFields[0]
+    wrapper.vm.onTransformFunctionSelect(field, 7)
+    expect(field.transformOperand).toMatchObject({
+      kind: 'FUNCTION',
+      functionId: 7,
+      functionCode: 'scoreByProbability'
+    })
+    expect(field.transformOperand.args).toEqual([null, null])
+
+    wrapper.vm.onTransformArgSelect(field, 0, {
+      kind: 'REFERENCE', refId: 100, refType: 'MODEL_OUTPUT',
+      code: 'risk_score_model.score', value: 'risk_score_model.score', label: '评分', valueType: 'DOUBLE'
+    })
+    wrapper.vm.onTransformArgSelect(field, 1, { kind: 'LITERAL', value: '600', valueType: 'NUMBER' })
+
+    expect(wrapper.vm.transformFunctionParams(field).map(item => item.name)).toEqual(['probability', 'base'])
+    expect(wrapper.vm.transformFormula(field)).toBe('scoreByProbability(risk_score_model.score, 600)')
+  })
+
+  test('未配置转换函数时公式显示短横线', () => {
+    expect(wrapper.vm.transformFormula({ transformOperand: null })).toBe('-')
   })
 
   test('outputRowClassName 返回 editing-row 当 _editing 为 true', () => {
@@ -419,6 +472,7 @@ describe('ModelDetail — 字段保存功能', () => {
     await Vue.nextTick()
 
     expect(modelApi.updateModelInputField).toHaveBeenCalled()
+    expect(modelApi.updateModelInputField.mock.calls[0][1]).not.toHaveProperty('missingValue')
     expect(field._editing).toBe(false)
     expect(field._saving).toBe(false)
   })
@@ -438,12 +492,17 @@ describe('ModelDetail — 字段保存功能', () => {
   test('saveOutputField 调用 updateModelOutputField 并更新状态', async () => {
     const field = wrapper.vm.model.outputFields[0]
     field._editing = true
+    field.transformOperand = { kind: 'FUNCTION', functionId: 7, functionCode: 'roundScore', args: [] }
     modelApi.updateModelOutputField.mockResolvedValue({ data: true })
 
     await wrapper.vm.saveOutputField(field)
     await Vue.nextTick()
 
     expect(modelApi.updateModelOutputField).toHaveBeenCalled()
+    expect(modelApi.updateModelOutputField.mock.calls[0][1]).toMatchObject({
+      transformOperand: JSON.stringify(field.transformOperand)
+    })
+    expect(modelApi.updateModelOutputField.mock.calls[0][1]).not.toHaveProperty('transformType')
     expect(field._editing).toBe(false)
   })
 })

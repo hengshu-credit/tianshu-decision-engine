@@ -47,6 +47,38 @@ public class RuleTestSchemaServiceTest {
     }
 
     @Test
+    public void parsesExampleAndDefaultValuesByFieldType() {
+        ResolutionPlan plan = new ResolutionPlan();
+        ResolvedField age = field("age", "NUMBER", "INPUT");
+        age.setExampleValue("55");
+        ResolvedField emptyValue = field("emptyValue", "OBJECT", "INPUT");
+        emptyValue.setDefaultValue("null");
+        ResolvedField emptyString = field("emptyString", "STRING", "INPUT");
+        emptyString.setDefaultValue("\"\"");
+        ResolvedField emptyObject = field("emptyObject", "OBJECT", "INPUT");
+        emptyObject.setDefaultValue("{}");
+        ResolvedField emptyList = field("emptyList", "LIST", "INPUT");
+        emptyList.setDefaultValue("[]");
+        plan.setExternalInputs(Arrays.asList(age, emptyValue, emptyString, emptyObject, emptyList));
+        RuleTestSchemaService service = new RuleTestSchemaService();
+        ReflectionTestUtils.setField(service, "fieldDependencyResolver", new FieldDependencyResolver() {
+            @Override
+            public ResolutionPlan resolve(RuleTestSchemaRequest request) {
+                return plan;
+            }
+        });
+
+        RuleTestSchema schema = service.build(new RuleTestSchemaRequest());
+
+        assertEquals(55d, ((Number) schema.getSampleParams().get("age")).doubleValue(), 0d);
+        assertTrue(schema.getSampleParams().containsKey("emptyValue"));
+        assertEquals(null, schema.getSampleParams().get("emptyValue"));
+        assertEquals("", schema.getSampleParams().get("emptyString"));
+        assertTrue(schema.getSampleParams().get("emptyObject") instanceof Map);
+        assertTrue(schema.getSampleParams().get("emptyList") instanceof java.util.List);
+    }
+
+    @Test
     public void reportsParentChildPathConflictsWithoutOverwritingExistingValue() {
         ResolutionPlan plan = new ResolutionPlan();
         ResolvedField parent = field("request", "STRING", "INPUT");

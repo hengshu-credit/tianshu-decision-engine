@@ -276,6 +276,33 @@ public class RuleFunctionService {
         return result;
     }
 
+    public Object invoke(Long functionId, List<Object> args) {
+        RuleFunction function = getById(functionId);
+        if (function == null) {
+            throw new IllegalArgumentException("转换函数不存在: " + functionId);
+        }
+        if (!Integer.valueOf(1).equals(function.getStatus())) {
+            throw new IllegalArgumentException("转换函数已停用: " + function.getFuncCode());
+        }
+        List<String> paramNames = parseParamNames(function.getParamsJson());
+        List<Object> values = args == null ? Collections.emptyList() : args;
+        if (paramNames.size() != values.size()) {
+            throw new IllegalArgumentException("转换函数 " + function.getFuncCode() + " 参数数量应为 "
+                    + paramNames.size() + "，实际为 " + values.size());
+        }
+        Map<String, Object> context = new LinkedHashMap<>();
+        for (int i = 0; i < paramNames.size(); i++) {
+            context.put(paramNames.get(i), values.get(i));
+        }
+        String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
+        registerFunctionIfNeeded(function, implType);
+        RuleResult result = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, false);
+        if (!result.isSuccess()) {
+            throw new IllegalArgumentException("转换函数 " + function.getFuncCode() + " 执行失败: " + result.getErrorMessage());
+        }
+        return result.getResult();
+    }
+
     public void create(RuleFunction func) {
         // 确保 scope 有默认值
         if (func.getScope() == null || func.getScope().isEmpty()) {

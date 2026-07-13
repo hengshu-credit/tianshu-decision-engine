@@ -76,9 +76,9 @@
                 v-if="rule.conditionRoot"
                 :group="rule.conditionRoot"
                 :vars="varPickerOptions"
+                :functions="projectFunctions"
                 :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
-                :allow-custom-var="true"
               />
             </div>
             <div class="action-panel">
@@ -183,14 +183,16 @@ import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
-import { newBlock } from '@/utils/actionDataCodegen'
+import { actionDataToBlocks, newBlock } from '@/utils/actionDataCodegen'
 import {
   createEmptyGroup,
   createEmptyLeaf,
   migrateRuleConditionsToTree,
   collectVarCodesFromConditionTree,
-  walkConditionLeaves
+  walkConditionLeaves,
+  normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
+import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
 import { buildSampleParamsFromCodes, collectActionDataInputCodes } from '@/utils/testSampleParams'
 
 export default {
@@ -280,7 +282,9 @@ export default {
           if (!migrated.children || !migrated.children.length) migrated.children = [createEmptyLeaf()]
           this.$set(rule, 'conditionRoot', migrated)
         }
-        if (!Array.isArray(rule.actionData)) this.$set(rule, 'actionData', [newBlock('assign')])
+        normalizeConditionTreeOperands(rule.conditionRoot)
+        const actionData = actionDataToBlocks(rule.actionData)
+        this.$set(rule, 'actionData', actionData.length ? actionData : [newBlock('assign')])
         if (rule.status !== undefined) this.$delete(rule, 'status')
         if (rule.conditions !== undefined) this.$delete(rule, 'conditions')
       })
@@ -289,26 +293,16 @@ export default {
     },
     _syncModelVarRefs() {
       let changed = false
+      const sync = (leaf, field) => {
+        const result = syncOperandReference(leaf[field], this.varPickerOptions)
+        if (!result.changed) return
+        this.$set(leaf, field, result.operand)
+        changed = true
+      }
       ;(this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
-          if (leaf.varCode && this.syncVarItem(leaf)) changed = true
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            const item = {
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              _refType: leaf._rightRefType || leaf._refType,
-              varType: leaf.rightVarType
-            }
-            if (this.syncVarItem(item)) {
-              leaf.value = item.varCode
-              leaf.rightVarLabel = item.varLabel
-              leaf._rightVarId = item._varId
-              leaf._rightRefType = item._refType
-              leaf.rightVarType = item.varType
-              changed = true
-            }
-          }
+          sync(leaf, 'leftOperand')
+          sync(leaf, 'rightOperand')
         })
         if (this.syncActionDataVarRefs(rule.actionData || [])) changed = true
       })
@@ -316,18 +310,16 @@ export default {
     },
     collectSelectedVarItems() {
       const items = []
+      const addOperand = operand => collectOperandReferences(operand).forEach(reference => items.push({
+        varCode: reference.code,
+        varType: reference.valueType,
+        _varId: reference.refId,
+        _refType: reference.refType
+      }))
       ;(this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
-          items.push(leaf)
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            items.push({
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              _refType: leaf._rightRefType || leaf._refType,
-              varType: leaf.rightVarType
-            })
-          }
+          addOperand(leaf.leftOperand)
+          addOperand(leaf.rightOperand)
         })
         items.push(...this.collectActionDataVarItems(rule.actionData || []))
       })

@@ -23,6 +23,7 @@ import { listAllModelsByProject } from '@/api/model'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
 import { buildReferenceCatalog } from '@/utils/referenceCatalog'
+import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
 
 // 变量选择 Mixin
 
@@ -334,6 +335,14 @@ export default {
 
     collectActionDataVarItems(actionData) {
       const result = []
+      const pushOperand = operand => {
+        collectOperandReferences(operand).forEach(reference => result.push({
+          varCode: reference.code || reference.path,
+          varType: reference.valueType,
+          _varId: reference.refId,
+          _refType: reference.refType
+        }))
+      }
       const pushValue = value => {
         if (!value) return
         if (typeof value === 'string') result.push({ varCode: value })
@@ -355,6 +364,10 @@ export default {
       const walkActions = actions => {
         const list = actions || []
         list.forEach(action => {
+          ['targetOperand', 'valueOperand', 'leftOperand', 'rightOperand', 'matchOperand', 'listOperand', 'checkOperand', 'trueOperand', 'falseOperand'].forEach(field => pushOperand(action[field]))
+          ;(action.args || []).forEach(pushOperand)
+          ;(action.inOperands || []).forEach(pushOperand)
+          ;(action.parts || []).forEach(part => pushOperand(part.operand))
           pushField(action, 'target')
           pushField(action, 'condVar')
           pushField(action, 'matchVar')
@@ -363,10 +376,15 @@ export default {
           if (Array.isArray(action.actions)) walkActions(action.actions)
           if (Array.isArray(action.defaultActions)) walkActions(action.defaultActions)
           ;(action.branches || []).forEach(branch => {
+            pushOperand(branch.leftOperand)
+            pushOperand(branch.rightOperand)
             pushField(branch, 'condVar')
             walkActions(branch.actions)
           })
-          ;(action.cases || []).forEach(item => walkActions(item.actions))
+          ;(action.cases || []).forEach(item => {
+            pushOperand(item.valueOperand)
+            walkActions(item.actions)
+          })
         })
       }
       walkActions(actionData)
@@ -386,6 +404,23 @@ export default {
     syncActionDataVarRefs(actionData) {
       if (!Array.isArray(actionData)) return false
       let changed = false
+      const syncOperand = (holder, field) => {
+        if (!holder || !holder[field]) return
+        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        if (result.changed) {
+          holder[field] = result.operand
+          changed = true
+        }
+      }
+      const syncOperandArray = values => {
+        (values || []).forEach((operand, index) => {
+          const result = syncOperandReference(operand, this.varPickerOptions)
+          if (result.changed) {
+            values[index] = result.operand
+            changed = true
+          }
+        })
+      }
       const syncField = (holder, field) => {
         if (!holder || !holder[field]) return
         const keys = this.actionDataFieldRefKeys(field)
@@ -400,6 +435,10 @@ export default {
       const walk = actions => {
         const rows = actions || []
         rows.forEach(action => {
+          ['targetOperand', 'valueOperand', 'leftOperand', 'rightOperand', 'matchOperand', 'listOperand', 'checkOperand', 'trueOperand', 'falseOperand'].forEach(field => syncOperand(action, field))
+          syncOperandArray(action.args)
+          syncOperandArray(action.inOperands)
+          ;(action.parts || []).forEach(part => syncOperand(part, 'operand'))
           syncField(action, 'target')
           syncField(action, 'condVar')
           syncField(action, 'matchVar')
@@ -408,11 +447,16 @@ export default {
           if (Array.isArray(action.defaultActions)) walk(action.defaultActions)
           const branches = action.branches || []
           branches.forEach(branch => {
+            syncOperand(branch, 'leftOperand')
+            syncOperand(branch, 'rightOperand')
             syncField(branch, 'condVar')
             walk(branch.actions)
           })
           const cases = action.cases || []
-          cases.forEach(item => walk(item.actions))
+          cases.forEach(item => {
+            syncOperand(item, 'valueOperand')
+            walk(item.actions)
+          })
         })
       }
       walk(actionData)

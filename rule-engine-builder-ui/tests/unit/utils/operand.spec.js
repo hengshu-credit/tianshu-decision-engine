@@ -6,7 +6,9 @@ import {
   createPathOperand,
   createReferenceOperand,
   operandDisplay,
-  resolvePathOperand
+  operandKindMeta,
+  resolvePathOperand,
+  syncOperandReference
 } from '@/utils/operand'
 
 describe('operand', () => {
@@ -126,6 +128,26 @@ describe('operand', () => {
     expect(collectOperandReferences(fn)).toEqual([
       expect.objectContaining({ refId: 21, refType: 'MODEL_OUTPUT' })
     ])
-    expect(operandDisplay(fn)).toBe('最大值(...)')
+    expect(operandDisplay(fn)).toBe('max(riskModel.score, 600)')
+  })
+
+  test('按稳定 ID 同步引用编码并自动解析 PATH', () => {
+    const renamed = syncOperandReference({
+      kind: 'REFERENCE', value: 'oldCode', code: 'oldCode', refId: 12, refType: 'DATA_OBJECT'
+    }, references)
+    expect(renamed.operand.code).toBe('request.customer.age')
+    expect(renamed.changed).toBe(true)
+
+    const path = syncOperandReference(createPathOperand('riskModel.score'), references)
+    expect(path.operand.refId).toBe(21)
+    expect(path.operand.resolved).toBe(true)
+  })
+
+  test('显示类型能直观区分阈值、路径和资源来源', () => {
+    expect(operandKindMeta(createLiteralOperand('10', 'NUMBER')).label).toBe('阈值')
+    expect(operandKindMeta(createPathOperand('payload.score')).label).toBe('路径')
+    expect(operandKindMeta(createReferenceOperand(references[0])).label).toBe('数据对象')
+    expect(operandKindMeta(createFunctionOperand({ funcCode: 'max' })).label).toBe('方法')
+    expect(operandKindMeta(createReferenceOperand({ varCode: 'risk.score', refType: 'MODEL_OUTPUT', id: 3 })).label).toBe('模型')
   })
 })

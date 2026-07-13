@@ -193,7 +193,7 @@ describe('RuleDetail — 辅助方法', () => {
     }])
     const row = { refType: 'DATA_OBJECT', scriptName: 'bankcard.bank_card_no', fieldLabel: '银行卡号' }
 
-    expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡信息/银行卡号')
+    expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡号')
     expect(wrapper.vm.getFieldVarMap(row).varCodeText).toBe('bankcard.bank_card_no')
   })
 })
@@ -318,7 +318,7 @@ describe('RuleDetail execute test request', () => {
     }])
 
     const item = wrapper.vm.varMap['DATA_OBJECT:88']
-    expect(item.varLabel).toBe('银行卡信息/银行卡号 bankcard.bank_card_no')
+    expect(item.varLabel).toBe('银行卡号 bankcard.bank_card_no')
     expect(item.varCodeText).toBe('bankcard.bank_card_no')
   })
 })

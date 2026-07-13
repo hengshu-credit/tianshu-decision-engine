@@ -44,4 +44,22 @@ describe('testSchema', () => {
       age: 55
     })
   })
+
+  test('flattenSchemaSample parses field defaults by type when sample is missing', () => {
+    const fields = [
+      { fieldName: 'age', fieldType: 'NUMBER', defaultValue: '55' },
+      { fieldName: 'emptyValue', fieldType: 'OBJECT', defaultValue: 'null' },
+      { fieldName: 'emptyString', fieldType: 'STRING', defaultValue: '""' },
+      { fieldName: 'emptyObject', fieldType: 'OBJECT', defaultValue: '{}' },
+      { fieldName: 'emptyList', fieldType: 'LIST', defaultValue: '[]' }
+    ]
+
+    expect(flattenSchemaSample(fields, {})).toEqual({
+      age: 55,
+      emptyValue: null,
+      emptyString: '',
+      emptyObject: {},
+      emptyList: []
+    })
+  })
 })

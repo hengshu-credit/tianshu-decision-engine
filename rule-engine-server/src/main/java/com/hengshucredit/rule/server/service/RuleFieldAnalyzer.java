@@ -222,6 +222,8 @@ public class RuleFieldAnalyzer {
                 meta.put("varCode", v.getVarCode());
                 meta.put("varSource", v.getVarSource());
                 meta.put("sourceConfig", v.getSourceConfig());
+                meta.put("defaultValue", v.getDefaultValue());
+                meta.put("exampleValue", v.getExampleValue());
                 meta.put("refType", "CONSTANT".equals(v.getVarSource()) ? "CONSTANT" : "VARIABLE");
                 map.put(key, meta);
             }
@@ -533,6 +535,7 @@ public class RuleFieldAnalyzer {
         field.setFieldType(source.getFieldType());
         field.setMissingValue(source.getMissingValue());
         field.setDefaultValue(source.getDefaultValue());
+        field.setExampleValue(source.getExampleValue());
         field.setValidValues(source.getValidValues());
         field.setTransformType(source.getTransformType());
         field.setTransformParams(source.getTransformParams());
@@ -587,6 +590,7 @@ public class RuleFieldAnalyzer {
             }
         }
         String varSource = meta != null ? (String) meta.get("varSource") : null;
+        applySampleValuesFromMeta(field, meta);
 
         if ("CONSTANT".equals(refType) || "CONSTANT".equals(varSource)) {
             return;
@@ -646,12 +650,17 @@ public class RuleFieldAnalyzer {
             return;
         }
         int before = result.size();
+        boolean hasOperandBinding = false;
         for (RuleModelInputField modelField : modelFields) {
-            RuleDefinitionInputField expanded = copyModelInputField(modelField);
-            enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
-            expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
+            if (trimToNull(modelField.getSourceOperand()) != null || trimToNull(modelField.getDefaultOperand()) != null) {
+                hasOperandBinding = true;
+            }
+            for (RuleDefinitionInputField expanded : copyModelInputFields(modelField)) {
+                enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+                expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
+            }
         }
-        if (result.size() == before) {
+        if (result.size() == before && !hasOperandBinding) {
             addInputFieldIfAbsent(result, seen, field);
         }
     }
@@ -751,6 +760,18 @@ public class RuleFieldAnalyzer {
         }
     }
 
+    private void applySampleValuesFromMeta(RuleDefinitionInputField field, Map<String, Object> meta) {
+        if (field == null || meta == null) {
+            return;
+        }
+        if ((field.getDefaultValue() == null || field.getDefaultValue().isEmpty()) && meta.get("defaultValue") instanceof String) {
+            field.setDefaultValue((String) meta.get("defaultValue"));
+        }
+        if ((field.getExampleValue() == null || field.getExampleValue().isEmpty()) && meta.get("exampleValue") instanceof String) {
+            field.setExampleValue((String) meta.get("exampleValue"));
+        }
+    }
+
     private RuleDefinitionInputField buildListDependencyField(RuleDefinitionInputField field,
             Map<String, Map<String, Object>> varMetaMap) {
         Map<String, Object> meta = findFieldMeta(field, varMetaMap);
@@ -810,7 +831,6 @@ public class RuleFieldAnalyzer {
         field.setFieldLabel(firstNonBlank(modelField.getFieldLabel(), displayName, scriptName));
         field.setScriptName(scriptName);
         field.setFieldType(firstNonBlank(modelField.getFieldType(), "STRING"));
-        field.setMissingValue(modelField.getMissingValue());
         field.setDefaultValue(modelField.getDefaultValue());
         field.setValidValues(modelField.getValidValues());
         field.setTransformType(modelField.getTransformType());
@@ -818,6 +838,46 @@ public class RuleFieldAnalyzer {
         field.setStatus(1);
         field.setCreateTime(LocalDateTime.now());
         return field;
+    }
+
+    private List<RuleDefinitionInputField> copyModelInputFields(RuleModelInputField modelField) {
+        List<JSONObject> operands = new ArrayList<>();
+        collectReferenceOperands(parseObject(modelField.getSourceOperand()), operands);
+        collectReferenceOperands(parseObject(modelField.getDefaultOperand()), operands);
+        if (operands.isEmpty()) {
+            if (trimToNull(modelField.getSourceOperand()) != null || trimToNull(modelField.getDefaultOperand()) != null) {
+                return Collections.emptyList();
+            }
+            return Collections.singletonList(copyModelInputField(modelField));
+        }
+        List<RuleDefinitionInputField> fields = new ArrayList<>();
+        for (JSONObject operand : operands) {
+            RuleDefinitionInputField field = new RuleDefinitionInputField();
+            String scriptName = firstNonBlank(operand.getString("code"), operand.getString("value"));
+            field.setVarId(operand.getLong("refId"));
+            field.setRefType(normalizeRefType(operand.getString("refType")));
+            field.setFieldName(leafName(scriptName));
+            field.setFieldLabel(firstNonBlank(operand.getString("label"), field.getFieldName(), scriptName));
+            field.setScriptName(scriptName);
+            field.setFieldType(firstNonBlank(operand.getString("valueType"), modelField.getFieldType(), "STRING"));
+            field.setStatus(1);
+            field.setCreateTime(LocalDateTime.now());
+            fields.add(field);
+        }
+        return fields;
+    }
+
+    private void collectReferenceOperands(JSONObject operand, List<JSONObject> result) {
+        if (operand == null) return;
+        String kind = operand.getString("kind");
+        if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
+            result.add(operand);
+            return;
+        }
+        if ("FUNCTION".equals(kind)) {
+            JSONArray args = operand.getJSONArray("args");
+            if (args != null) for (int i = 0; i < args.size(); i++) collectReferenceOperands(args.getJSONObject(i), result);
+        }
     }
 
     private void addInputFieldIfAbsent(List<RuleDefinitionInputField> fields, Set<String> seen, RuleDefinitionInputField field) {
@@ -1129,12 +1189,20 @@ public class RuleFieldAnalyzer {
                 if (condRoot != null) {
                     collectVarCodesFromConditionTree(condRoot, inputVars);
                 }
+                JSONArray ruleActions = rule.getJSONArray("actions");
+                if (ruleActions != null) {
+                    for (int j = 0; j < ruleActions.size(); j++) {
+                        OperandDependencyCollector.collect(ruleActions.getJSONObject(j).getJSONObject("valueOperand"), inputVars);
+                    }
+                }
             }
         }
     }
 
     private void collectVarCodesFromConditionTree(JSONObject node, Set<String> inputVars) {
         if (node == null) return;
+        OperandDependencyCollector.collect(node.getJSONObject("leftOperand"), inputVars);
+        OperandDependencyCollector.collect(node.getJSONObject("rightOperand"), inputVars);
         String varCode = getString(node, "varCode");
         if (varCode != null && !varCode.isEmpty()) {
             inputVars.add(varCode);
@@ -1171,6 +1239,7 @@ public class RuleFieldAnalyzer {
         if (actions != null) {
             for (int i = 0; i < actions.size(); i++) {
                 JSONObject action = actions.getJSONObject(i);
+                OperandDependencyCollector.collect(action.getJSONObject("targetOperand"), outputVars);
                 String varCode = getString(action, "varCode");
                 if (varCode != null && !varCode.isEmpty()) {
                     outputVars.add(varCode);
@@ -1186,6 +1255,7 @@ public class RuleFieldAnalyzer {
                 if (ruleActions != null) {
                     for (int j = 0; j < ruleActions.size(); j++) {
                         JSONObject action = ruleActions.getJSONObject(j);
+                        OperandDependencyCollector.collect(action.getJSONObject("targetOperand"), outputVars);
                         String varCode = getString(action, "varCode");
                         if (varCode != null && !varCode.isEmpty()) {
                             outputVars.add(varCode);
@@ -1328,6 +1398,7 @@ public class RuleFieldAnalyzer {
         if (block == null) return;
         String type = getString(block, "type");
         if (!isInput) {
+            OperandDependencyCollector.collect(block.getJSONObject("targetOperand"), varCodes);
             addVarName(varCodes, getString(block, "target"));
             addVarName(varCodes, getString(block, "outputVar"));
             if (type == null || "action".equals(type)) {
@@ -1336,6 +1407,21 @@ public class RuleFieldAnalyzer {
         }
 
         if (isInput) {
+            OperandDependencyCollector.collect(block.getJSONObject("valueOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("leftOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("rightOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("matchOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("listOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("checkOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("trueOperand"), varCodes);
+            OperandDependencyCollector.collect(block.getJSONObject("falseOperand"), varCodes);
+            JSONArray operandArgs = block.getJSONArray("args");
+            if (operandArgs != null) {
+                for (int i = 0; i < operandArgs.size(); i++) {
+                    Object arg = operandArgs.get(i);
+                    if (arg instanceof JSONObject) OperandDependencyCollector.collect((JSONObject) arg, varCodes);
+                }
+            }
             if ("assign".equals(type)) {
                 extractIdentifiersFromExpression(getString(block, "value"), varCodes);
             } else if ("func-call".equals(type)) {
@@ -1357,11 +1443,14 @@ public class RuleFieldAnalyzer {
                 extractIdentifiersFromExpression(getString(block, "falseValue"), varCodes);
             } else if ("in-check".equals(type)) {
                 addVarName(varCodes, getString(block, "checkVar"));
+                JSONArray inOperands = block.getJSONArray("inOperands");
+                if (inOperands != null) for (int i = 0; i < inOperands.size(); i++) OperandDependencyCollector.collect(inOperands.getJSONObject(i), varCodes);
             } else if ("template-str".equals(type)) {
                 JSONArray parts = block.getJSONArray("parts");
                 if (parts != null) {
                     for (int i = 0; i < parts.size(); i++) {
                         JSONObject part = parts.getJSONObject(i);
+                        OperandDependencyCollector.collect(part.getJSONObject("operand"), varCodes);
                         if ("expr".equals(getString(part, "type"))) {
                             extractIdentifiersFromExpression(getString(part, "content"), varCodes);
                         }
@@ -1379,6 +1468,8 @@ public class RuleFieldAnalyzer {
                 for (int i = 0; i < branches.size(); i++) {
                     JSONObject branch = branches.getJSONObject(i);
                     if (isInput) {
+                        OperandDependencyCollector.collect(branch.getJSONObject("leftOperand"), varCodes);
+                        OperandDependencyCollector.collect(branch.getJSONObject("rightOperand"), varCodes);
                         addVarName(varCodes, getString(branch, "condVar"));
                         extractIdentifiersFromExpression(getString(branch, "condition"), varCodes);
                     }
@@ -1392,6 +1483,7 @@ public class RuleFieldAnalyzer {
             JSONArray cases = block.getJSONArray("cases");
             if (cases != null) {
                 for (int i = 0; i < cases.size(); i++) {
+                    if (isInput) OperandDependencyCollector.collect(cases.getJSONObject(i).getJSONObject("valueOperand"), varCodes);
                     collectActionDataVars(cases.getJSONObject(i).getJSONArray("actions"), varCodes, isInput);
                 }
             }
@@ -1408,6 +1500,8 @@ public class RuleFieldAnalyzer {
         addVarName(varCodes, getString(obj, "leftVar"));
         addVarName(varCodes, getString(obj, "matchVar"));
         addVarName(varCodes, getString(obj, "checkVar"));
+        OperandDependencyCollector.collect(obj.getJSONObject("leftOperand"), varCodes);
+        OperandDependencyCollector.collect(obj.getJSONObject("rightOperand"), varCodes);
 
         JSONObject condVar = obj.getJSONObject("condVar");
         if (condVar != null) {
@@ -1481,6 +1575,11 @@ public class RuleFieldAnalyzer {
             String varCode = getString(colVar, "varCode");
             if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
         }
+        OperandDependencyCollector.collect(rowVar == null ? null : rowVar.getJSONObject("operand"), inputVars);
+        OperandDependencyCollector.collect(colVar == null ? null : colVar.getJSONObject("operand"), inputVars);
+        collectOperandValues(model.get("rowHeaderOperands"), inputVars);
+        collectOperandValues(model.get("colHeaderOperands"), inputVars);
+        collectOperandValues(model.get("cellOperands"), inputVars);
     }
 
     private void extractOutputFromCrossTable(JSONObject model, Set<String> outputVars) {
@@ -1489,6 +1588,7 @@ public class RuleFieldAnalyzer {
             String varCode = getString(resultVar, "varCode");
             if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
         }
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
     }
 
     // ==================== 评分卡 ====================
@@ -1498,6 +1598,8 @@ public class RuleFieldAnalyzer {
         if (scoreItems != null) {
             for (int i = 0; i < scoreItems.size(); i++) {
                 JSONObject item = scoreItems.getJSONObject(i);
+                OperandDependencyCollector.collect(item.getJSONObject("leftOperand"), inputVars);
+                OperandDependencyCollector.collect(item.getJSONObject("rightOperand"), inputVars);
                 String varCode = getString(item, "condVar");
                 if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
                 // 兼容 condition
@@ -1507,6 +1609,7 @@ public class RuleFieldAnalyzer {
                 }
             }
         }
+        collectThresholdOperands(model.getJSONArray("thresholds"), inputVars);
     }
 
     private void extractOutputFromScorecard(JSONObject model, Set<String> outputVars) {
@@ -1515,6 +1618,7 @@ public class RuleFieldAnalyzer {
             String varCode = getString(resultVar, "varCode");
             if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
         }
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
     }
 
     // ==================== 复杂交叉表 ====================
@@ -1535,6 +1639,7 @@ public class RuleFieldAnalyzer {
     }
 
     private void extractDimensionVar(JSONObject dim, Set<String> varCodes) {
+        OperandDependencyCollector.collect(dim.getJSONObject("operand"), varCodes);
         String varCode = getString(dim, "varCode");
         if (varCode != null && !varCode.isEmpty()) varCodes.add(varCode);
         // 兼容嵌套结构
@@ -1542,6 +1647,13 @@ public class RuleFieldAnalyzer {
         if (condVar != null) {
             String cv = getString(condVar, "varCode");
             if (cv != null && !cv.isEmpty()) varCodes.add(cv);
+        }
+        JSONArray segments = dim.getJSONArray("segments");
+        if (segments != null) for (int i = 0; i < segments.size(); i++) {
+            JSONObject segment = segments.getJSONObject(i);
+            OperandDependencyCollector.collect(segment.getJSONObject("valueOperand"), varCodes);
+            OperandDependencyCollector.collect(segment.getJSONObject("minOperand"), varCodes);
+            OperandDependencyCollector.collect(segment.getJSONObject("maxOperand"), varCodes);
         }
     }
 
@@ -1551,6 +1663,7 @@ public class RuleFieldAnalyzer {
             String varCode = getString(resultVar, "varCode");
             if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
         }
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
     }
 
     // ==================== 复杂评分卡 ====================
@@ -1564,6 +1677,7 @@ public class RuleFieldAnalyzer {
                 if (dimensions != null) {
                     for (int j = 0; j < dimensions.size(); j++) {
                         JSONObject dim = dimensions.getJSONObject(j);
+                        OperandDependencyCollector.collect(dim.getJSONObject("operand"), inputVars);
                         String varCode = getString(dim, "varCode");
                         if (varCode != null && !varCode.isEmpty()) inputVars.add(varCode);
                         // 兼容 condition
@@ -1571,10 +1685,20 @@ public class RuleFieldAnalyzer {
                         if (condition != null && !condition.isEmpty()) {
                             extractVarCodesFromConditionString(condition, inputVars);
                         }
+                        JSONArray rules = dim.getJSONArray("rules");
+                        if (rules != null) for (int k = 0; k < rules.size(); k++) {
+                            JSONArray conditions = rules.getJSONObject(k).getJSONArray("conditions");
+                            if (conditions != null) for (int n = 0; n < conditions.size(); n++) {
+                                JSONObject conditionItem = conditions.getJSONObject(n);
+                                OperandDependencyCollector.collect(conditionItem.getJSONObject("leftOperand"), inputVars);
+                                OperandDependencyCollector.collect(conditionItem.getJSONObject("rightOperand"), inputVars);
+                            }
+                        }
                     }
                 }
             }
         }
+        collectThresholdOperands(model.getJSONArray("thresholds"), inputVars);
     }
 
     private void extractOutputFromAdvancedScorecard(JSONObject model, Set<String> outputVars) {
@@ -1582,6 +1706,25 @@ public class RuleFieldAnalyzer {
         if (resultVar != null) {
             String varCode = getString(resultVar, "varCode");
             if (varCode != null && !varCode.isEmpty()) outputVars.add(varCode);
+        }
+        OperandDependencyCollector.collect(resultVar == null ? null : resultVar.getJSONObject("operand"), outputVars);
+    }
+
+    private void collectThresholdOperands(JSONArray thresholds, Set<String> inputVars) {
+        if (thresholds == null) return;
+        for (int i = 0; i < thresholds.size(); i++) {
+            OperandDependencyCollector.collect(thresholds.getJSONObject(i).getJSONObject("resultOperand"), inputVars);
+        }
+    }
+
+    private void collectOperandValues(Object value, Set<String> vars) {
+        if (value instanceof JSONObject) {
+            JSONObject object = (JSONObject) value;
+            if (object.getString("kind") != null) OperandDependencyCollector.collect(object, vars);
+            else for (Object nested : object.values()) collectOperandValues(nested, vars);
+        } else if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.size(); i++) collectOperandValues(array.get(i), vars);
         }
     }
 

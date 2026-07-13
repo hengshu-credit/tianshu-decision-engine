@@ -15,11 +15,8 @@ export function createEmptyGroup(op = 'AND') {
 
 export function createEmptyActionItem() {
   return {
-    varCode: '',
-    varLabel: '',
-    varType: 'STRING',
-    enumOptions: '',
-    value: ''
+    targetOperand: null,
+    valueOperand: null
   }
 }
 
@@ -83,6 +80,26 @@ export function walkConditionLeaves(node, fn) {
   if (node.type === 'group' && Array.isArray(node.children)) {
     node.children.forEach(c => walkConditionLeaves(c, fn))
   }
+}
+
+export function normalizeConditionTreeOperands(node) {
+  walkConditionLeaves(node, leaf => {
+    if (!leaf.leftOperand && leaf.varCode) leaf.leftOperand = operandFromReferenceFields(leaf)
+    if (!leaf.rightOperand && leaf.value !== undefined) {
+      leaf.rightOperand = leaf.valueKind === 'VAR'
+        ? operandFromReferenceFields({
+          varCode: leaf.value,
+          varLabel: leaf.rightVarLabel,
+          varType: leaf.rightVarType,
+          _varId: leaf._rightVarId,
+          _refType: leaf._rightRefType
+        })
+        : createLiteralOperand(leaf.value, leaf.varType || 'STRING')
+    }
+    ['varCode', 'varLabel', 'varType', 'value', 'valueKind', '_varId', '_refType',
+      'rightVarLabel', 'rightVarType', '_rightVarId', '_rightRefType'].forEach(key => delete leaf[key])
+  })
+  return node
 }
 
 export function hasUsableConditionLeaf(node) {

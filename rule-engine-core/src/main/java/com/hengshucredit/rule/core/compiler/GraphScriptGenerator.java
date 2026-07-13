@@ -228,6 +228,7 @@ public class GraphScriptGenerator {
         if (Boolean.TRUE.equals(node.getBoolean("fallback"))) return false;
         String type = node.getString("type");
         if ("leaf".equals(type)) {
+            if (ConditionOperandCompiler.supports(node)) return ConditionOperandCompiler.hasUsableCondition(node);
             String op = node.getString("operator");
             if (op == null || op.trim().isEmpty()) op = "==";
             if ("*".equals(op)) return false;
@@ -273,6 +274,7 @@ public class GraphScriptGenerator {
     }
 
     private static String compileConditionLeaf(JSONObject leaf, VarContext varContext) {
+        if (ConditionOperandCompiler.supports(leaf)) return ConditionOperandCompiler.compile(leaf, varContext);
         String leftCode = leaf.getString("varCode");
         if (leftCode == null || leftCode.trim().isEmpty()) return "true";
         String op = leaf.getString("operator");

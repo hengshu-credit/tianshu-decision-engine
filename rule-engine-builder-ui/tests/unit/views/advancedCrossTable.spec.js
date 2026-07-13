@@ -1,6 +1,23 @@
 import AdvancedCrossTable from '@/views/designer/AdvancedCrossTable.vue'
 
 describe('AdvancedCrossTable', () => {
+  test('将维度、分段和结果字段统一转换为操作数', () => {
+    const context = {
+      model: {
+        rowDimensions: [{ varCode: 'age', _varId: 1, _refType: 'VARIABLE', segments: [{ operator: '==', value: '18' }] }],
+        colDimensions: [],
+        resultVar: { varCode: 'result', _varId: 2, _refType: 'VARIABLE' }
+      },
+      $set(target, key, value) { target[key] = value }
+    }
+
+    AdvancedCrossTable.methods.normalizeModel.call(context)
+
+    expect(context.model.rowDimensions[0].operand).toMatchObject({ kind: 'REFERENCE', refId: 1 })
+    expect(context.model.rowDimensions[0].segments[0].valueOperand).toMatchObject({ kind: 'LITERAL', value: '18' })
+    expect(context.model.resultVar.operand).toMatchObject({ kind: 'REFERENCE', refId: 2 })
+  })
+
   test('测试参数仅保留模型输出所需的底层字段', () => {
     const context = {
       model: {
@@ -37,6 +54,24 @@ describe('AdvancedCrossTable', () => {
         HYDK_X760: 0
       },
       age: 55
+    })
+  })
+
+  test('测试参数不会把路径操作数当作维度样例值', () => {
+    const context = {
+      model: {
+        rowDimensions: [{
+          varCode: 'age',
+          segments: [{ value: 'request.limit', valueOperand: { kind: 'PATH', value: 'request.limit' } }]
+        }],
+        colDimensions: []
+      },
+      projectRefs: [{ refCode: 'age', refType: 'VARIABLE', varType: 'NUMBER', varObj: { varSource: 'INPUT' } }]
+    }
+
+    expect(AdvancedCrossTable.methods.buildTestParamsTemplate.call(context)).toEqual({
+      age: 0,
+      request: { limit: '' }
     })
   })
 })

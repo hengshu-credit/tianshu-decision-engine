@@ -52,4 +52,20 @@ public class AdvancedScorecardCompilerTest {
         assertEquals(120.0, ((Number) resultMap.get("totalScore")).doubleValue(), 0.000001);
         assertEquals("PASS", resultMap.get("riskLevel"));
     }
+
+    @Test
+    public void compilesUnifiedOperandsForConditionsAndThresholdResults() {
+        CompileResult result = compiler.compile("{"
+                + "\"initialScore\":100,"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"totalScore\",\"value\":\"totalScore\",\"valueType\":\"NUMBER\"}},"
+                + "\"dimensionGroups\":[{\"dimensions\":[{\"rules\":[{\"conditions\":[{"
+                + "\"leftOperand\":{\"kind\":\"REFERENCE\",\"code\":\"creditScore\",\"value\":\"creditScore\",\"valueType\":\"NUMBER\"},"
+                + "\"operator\":\">=\",\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}}],\"score\":20}]}]}],"
+                + "\"thresholds\":[{\"min\":120,\"max\":200,\"resultOperand\":{\"kind\":\"LITERAL\",\"value\":\"PASS\",\"valueType\":\"STRING\"}}]}"
+        );
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("creditScore >= 600"));
+        assertTrue(result.getCompiledScript().contains("riskLevel = \"PASS\""));
+    }
 }

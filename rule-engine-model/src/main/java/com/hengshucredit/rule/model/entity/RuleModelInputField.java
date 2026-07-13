@@ -30,9 +30,13 @@ public class RuleModelInputField {
     /** 数据用途类型：CONTINUOUS-连续/CATEGORICAL-类别/ORDINAL-有序 */
     private String dataType;
 
-    /** 缺失值处理策略 */
-    private String missingValue;
     private String defaultValue;
+
+    /** 统一 Operand JSON：模型字段从哪个引擎字段/路径取值 */
+    private String sourceOperand;
+
+    /** 统一 Operand JSON：源值为空时使用的阈值、路径或引用 */
+    private String defaultOperand;
 
     /** 有效值列表（JSON数组） */
     private String validValues;

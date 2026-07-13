@@ -1,14 +1,15 @@
 import { collectReferencePaths, sampleValueForVarType } from '@/utils/testParamTemplate'
+import { collectOperandReferences } from '@/utils/operand'
 
 export function sampleValueForRef(ref) {
   const variable = ref && ref.varObj ? ref.varObj : {}
+  const type = (ref && ref.varType) || variable.varType || 'STRING'
   if (variable.exampleValue !== undefined && variable.exampleValue !== null && variable.exampleValue !== '') {
-    return variable.exampleValue
+    return parseConfiguredValue(variable.exampleValue, type)
   }
   if (variable.defaultValue !== undefined && variable.defaultValue !== null && variable.defaultValue !== '') {
-    return variable.defaultValue
+    return parseConfiguredValue(variable.defaultValue, type)
   }
-  const type = (ref && ref.varType) || variable.varType || 'STRING'
   return sampleValueForVarType(type)
 }
 
@@ -79,6 +80,16 @@ export function collectActionDataInputCodes(actionData, projectRefs, out) {
   }
   if (typeof actionData !== 'object') return s
   const block = actionData
+  const addOperand = operand => collectOperandReferences(operand).forEach(reference => addCode(s, reference.code || reference.path))
+  ;['valueOperand', 'leftOperand', 'rightOperand', 'matchOperand', 'listOperand', 'checkOperand', 'trueOperand', 'falseOperand'].forEach(field => addOperand(block[field]))
+  ;(block.args || []).forEach(arg => { if (arg && typeof arg === 'object') addOperand(arg) })
+  ;(block.inOperands || []).forEach(addOperand)
+  ;(block.parts || []).forEach(part => addOperand(part && part.operand))
+  ;(block.branches || []).forEach(branch => {
+    addOperand(branch.leftOperand)
+    addOperand(branch.rightOperand)
+  })
+  ;(block.cases || []).forEach(item => addOperand(item.valueOperand))
   switch (block.type) {
     case 'assign':
       collectKnownCodesFromText(block.value, projectRefs, s)
@@ -325,12 +336,45 @@ function refKey(ref) {
 
 function sampleValueForModelField(field) {
   if (field.defaultValue !== undefined && field.defaultValue !== null && field.defaultValue !== '') {
-    return field.defaultValue
+    return parseConfiguredValue(field.defaultValue, field.fieldType || field.varType || 'STRING')
   }
   const type = field.fieldType || field.varType || 'STRING'
   if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT'].indexOf(String(type).toUpperCase()) >= 0) return 0
   if (['BOOLEAN', 'BOOL'].indexOf(String(type).toUpperCase()) >= 0) return false
   return ''
+}
+
+function parseConfiguredValue(value, type) {
+  const raw = String(value).trim()
+  const normalized = String(type || '').toUpperCase()
+  if (raw.toLowerCase() === 'null') return null
+  if (raw === '""' || raw === "''") return ''
+  if (['NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].indexOf(normalized) >= 0) {
+    const n = Number(raw)
+    return Number.isNaN(n) ? stripQuotedString(raw) : n
+  }
+  if (['INTEGER', 'INT', 'LONG'].indexOf(normalized) >= 0) {
+    const n = parseInt(raw, 10)
+    return Number.isNaN(n) ? stripQuotedString(raw) : n
+  }
+  if (['BOOLEAN', 'BOOL'].indexOf(normalized) >= 0) {
+    return raw === '1' || raw.toLowerCase() === 'true'
+  }
+  if (['LIST', 'ARRAY', 'OBJECT', 'MAP'].indexOf(normalized) >= 0) {
+    try {
+      return JSON.parse(raw)
+    } catch (e) {
+      return stripQuotedString(raw)
+    }
+  }
+  return stripQuotedString(raw)
+}
+
+function stripQuotedString(raw) {
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1)
+  }
+  return raw
 }
 
 function ensureObject(params, key) {

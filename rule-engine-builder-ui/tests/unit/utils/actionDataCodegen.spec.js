@@ -3,7 +3,8 @@ import {
   BLOCK_TYPES,
   blocksToActionData,
   generateScript,
-  newBlock
+  newBlock,
+  normalizeGraphActionData
 } from '@/utils/actionDataCodegen'
 import { createLiteralOperand, createPathOperand } from '@/utils/operand'
 
@@ -138,6 +139,46 @@ describe('动作数据转换', () => {
     const output = blocksToActionData(source)
     output[0].valueOperand.value = '2'
     expect(source[0].valueOperand.value).toBe('1')
+  })
+
+  test('载入现有赋值动作时归一化为可区分的目标引用和阈值操作数', () => {
+    const blocks = actionDataToBlocks([{
+      type: 'assign', target: 'result', value: '1',
+      _targetVarId: 141, _targetRefType: 'VARIABLE'
+    }])
+
+    expect(blocks[0].targetOperand).toMatchObject({
+      kind: 'REFERENCE', code: 'result', refId: 141, refType: 'VARIABLE'
+    })
+    expect(blocks[0].valueOperand).toMatchObject({ kind: 'LITERAL', value: '1', valueType: 'NUMBER' })
+    expect(blocks[0]).not.toHaveProperty('target')
+    expect(blocks[0]).not.toHaveProperty('value')
+  })
+
+  test('载入现有函数动作时保留参数引用关系', () => {
+    const blocks = actionDataToBlocks([{
+      type: 'func-call', target: 'birthday', funcName: 'idCardBirthDate', args: ['idcard_no'],
+      _targetVarId: 197, _targetRefType: 'VARIABLE',
+      _argRefs: [{ _varId: 6, _refType: 'VARIABLE' }]
+    }])
+
+    expect(blocks[0].functionCode).toBe('idCardBirthDate')
+    expect(blocks[0].targetOperand).toMatchObject({ kind: 'REFERENCE', refId: 197 })
+    expect(blocks[0].args[0]).toMatchObject({ kind: 'REFERENCE', code: 'idcard_no', refId: 6 })
+    expect(blocks[0]).not.toHaveProperty('funcName')
+    expect(blocks[0]).not.toHaveProperty('_argRefs')
+  })
+
+  test('图模型的后端节点和画布节点共用动作归一化', () => {
+    const model = {
+      nodes: [{ actionData: [{ type: 'assign', target: 'result', value: '1' }] }],
+      logicflow: { nodes: [{ properties: { actionData: [{ type: 'assign', target: 'result', value: '1' }] } }] }
+    }
+
+    normalizeGraphActionData(model)
+
+    expect(model.nodes[0].actionData[0].targetOperand).toMatchObject({ kind: 'PATH', value: 'result' })
+    expect(model.logicflow.nodes[0].properties.actionData[0].valueOperand).toMatchObject({ kind: 'LITERAL', value: '1' })
   })
 })
 

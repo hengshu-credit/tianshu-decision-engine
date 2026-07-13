@@ -29,35 +29,16 @@
         <div class="base-config-item">
           <span class="base-config-label">结果变量</span>
           <div class="result-var-picker">
-            <var-picker
-              v-if="!customResultVarMode && varPickerOptions.length"
+            <operand-picker
               :vars="varPickerOptions"
               :selected-vars="selectedVarPickerOptions"
-              :value="model.resultVar.varCode"
-              placeholder="选择变量、常量或对象字段..."
+              :value="model.resultVar.operand"
+              :allowed-kinds="writeOperandKinds"
+              writable-only
+              placeholder="选择结果字段或路径"
               width="200px"
-              type-filter="NUMBER"
-              :show-all-when-filter-empty="true"
-              @select="onResultVarSelect"
+              @input="onResultOperandSelect"
             />
-            <el-input
-              v-else
-              v-model="model.resultVar.varCode"
-              size="small"
-              placeholder="输入变量编码"
-              style="width:200px;"
-              clearable
-              @input="onResultVarCustomInput"
-            />
-            <el-tooltip :content="customResultVarMode ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
-              <el-button
-                size="small"
-                type="text"
-                :icon="customResultVarMode ? 'el-icon-collection' : 'el-icon-edit'"
-                class="result-var-switch-btn"
-                @click="customResultVarMode = !customResultVarMode"
-              />
-            </el-tooltip>
           </div>
           <span v-if="model.resultVar.varLabel" class="result-var-label">{{ model.resultVar.varLabel }}</span>
         </div>
@@ -107,17 +88,16 @@
             <div class="score-item-row">
               <span class="item-field-label">条件</span>
               <div class="condition-row">
-                <var-picker
-                  v-if="varPickerOptions.length"
+                <operand-picker
                   :vars="varPickerOptions"
                   :selected-vars="selectedVarPickerOptions"
-                  :value="item.condVar"
-                  placeholder="选择变量"
+                  :value="item.leftOperand"
+                  :allowed-kinds="readOperandKinds"
+                  placeholder="选择条件字段或路径"
                   width="100%"
                   class="cond-var"
-                  @select="v => { item.condVar = v.varCode; item.condVarType = v.varType; item._varId = v._varId || (v.varObj && v.varObj.id) || null; item._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null }"
+                  @input="operand => setScoreItemOperand(item, 'leftOperand', operand)"
                 />
-                <el-input v-else v-model="item.condVar" size="small" placeholder="变量编码" class="cond-var" />
                 <el-select v-model="item.condOperator" size="small" class="cond-op">
                   <el-option label="等于" value="==" />
                   <el-option label="不等于" value="!=" />
@@ -126,7 +106,17 @@
                   <el-option label="小于" value="<" />
                   <el-option label="小于等于" value="<=" />
                 </el-select>
-                <el-input v-model="item.condValue" size="small" placeholder="值" class="cond-val" />
+                <operand-picker
+                  :value="item.rightOperand"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  :expected-type="item.leftOperand && item.leftOperand.valueType"
+                  placeholder="选择阈值、路径或字段"
+                  class="cond-val"
+                  @input="operand => setScoreItemOperand(item, 'rightOperand', operand)"
+                />
               </div>
             </div>
 
@@ -232,7 +222,16 @@
             />
           </div>
           <div class="thresh-result">
-            <el-input v-model="thresh.result" size="small" placeholder="等级名称（如 优质客户）" style="width:100%;min-width:240px;" />
+            <operand-picker
+              :value="thresh.resultOperand"
+              :vars="varPickerOptions"
+              :functions="projectFunctions"
+              :allowed-kinds="valueOperandKinds"
+              expected-type="STRING"
+              placeholder="选择等级结果值"
+              style="width:100%;min-width:240px;"
+              @input="operand => setThresholdOperand(thresh, operand)"
+            />
           </div>
           <el-tag :color="thresholdColor(ti)" effect="dark" size="small" class="thresh-badge">
             {{ thresh.result || '等级 ' + (ti + 1) }}
@@ -289,16 +288,17 @@
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
-import VarPicker from '@/components/common/VarPicker.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
 export default {
   name: 'Scorecard',
-  components: { DesignerTestDialog, VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, OperandPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -321,8 +321,9 @@ export default {
       testReady: false,
       testExecuting: false,
       jsonError: '',
-      /** 结果变量手动输入模式（true=手动输入，false=变量选择器） */
-      customResultVarMode: false
+      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
+      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
     }
   },
   computed: {
@@ -354,16 +355,14 @@ export default {
   },
   methods: {
     collectSelectedVarItems() {
-      const items = [this.model.resultVar]
+      const items = []
+      const add = operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType }))
+      add(this.model.resultVar && this.model.resultVar.operand)
       ;(this.model.scoreItems || []).forEach(item => {
-        items.push({
-          varCode: item.condVar,
-          varLabel: item.conditionLabel,
-          varType: item.condVarType,
-          _varId: item._varId,
-          _refType: item._refType
-        })
+        add(item.leftOperand)
+        add(item.rightOperand)
       })
+      ;(this.model.thresholds || []).forEach(item => add(item.resultOperand))
       return items
     },
     async loadContent() {
@@ -383,14 +382,21 @@ export default {
     },
     /** 加载最新变量后，同步 model 中结果变量的 varCode 和 varLabel */
     _syncModelVarRefs() {
-      if (this.model.resultVar && this.syncVarItem(this.model.resultVar)) {
-        this.$forceUpdate()
+      let changed = false
+      const sync = (holder, field) => {
+        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        if (result.changed) { this.$set(holder, field, result.operand); changed = true }
       }
+      sync(this.model.resultVar, 'operand')
+      ;(this.model.scoreItems || []).forEach(item => { sync(item, 'leftOperand'); sync(item, 'rightOperand') })
+      ;(this.model.thresholds || []).forEach(item => sync(item, 'resultOperand'))
+      if (changed) this.$forceUpdate()
     },
     normalizeModel() {
       if (this.model.initialScore == null) this.$set(this.model, 'initialScore', 0)
       if (!this.model.scoreItems) this.$set(this.model, 'scoreItems', [])
       if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '' })
+      if (!this.model.resultVar.operand) this.$set(this.model.resultVar, 'operand', operandFromReferenceFields(this.model.resultVar))
       if (!this.model.thresholds) this.$set(this.model, 'thresholds', [])
       this.model.scoreItems.forEach(item => {
         if (item.score == null) this.$set(item, 'score', 1)
@@ -402,6 +408,11 @@ export default {
         if (item.condOperator == null) this.$set(item, 'condOperator', '==')
         if (item.condValue == null) this.$set(item, 'condValue', '')
         if (item.condVarType == null) this.$set(item, 'condVarType', 'STRING')
+        if (!item.leftOperand && item.condVar) this.$set(item, 'leftOperand', operandFromReferenceFields({ ...item, varCode: item.condVar, varLabel: item.conditionLabel, varType: item.condVarType }))
+        if (!item.rightOperand && item.condValue !== '') this.$set(item, 'rightOperand', createLiteralOperand(item.condValue, item.condVarType))
+      })
+      this.model.thresholds.forEach(item => {
+        if (!item.resultOperand && item.result !== '') this.$set(item, 'resultOperand', createLiteralOperand(item.result, item.resultType || 'STRING'))
       })
     },
     /** 从已有 condition 字符串反解出结构化字段 */
@@ -439,12 +450,8 @@ export default {
     thresholdColor(idx) {
       return THRESHOLD_COLORS[idx % THRESHOLD_COLORS.length]
     },
-    onResultVarSelect(v) {
-      if (!v) return
-      const varLabel = v.varLabel || v.varCode
-      const _varId = v._varId || (v.varObj && v.varObj.id) || null
-      const _refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null
-      const newCode = v.varCode
+    onResultOperandSelect(operand) {
+      const newCode = operand ? (operand.code || operand.value || '') : ''
       // 检测结果变量是否与已有条件变量同名（评分卡中结果变量应为输出变量，不应与输入条件变量同名）
       const conflictItem = this.model.scoreItems.find(item => item.condVar === newCode)
       if (conflictItem) {
@@ -455,11 +462,27 @@ export default {
       }
       this.$set(this.model, 'resultVar', {
         ...this.model.resultVar,
+        operand: operand || null,
         varCode: newCode,
-        varLabel,
-        _varId,
-        _refType
+        varLabel: (operand && operand.label) || newCode,
+        _varId: operand && operand.refId != null ? operand.refId : null,
+        _refType: (operand && operand.refType) || null
       })
+    },
+    setScoreItemOperand(item, field, operand) {
+      this.$set(item, field, operand || null)
+      if (field === 'leftOperand') {
+        this.$set(item, 'condVar', operand ? (operand.code || operand.value || '') : '')
+        this.$set(item, 'condVarType', (operand && operand.valueType) || 'STRING')
+        this.$set(item, '_varId', operand && operand.refId != null ? operand.refId : null)
+        this.$set(item, '_refType', (operand && operand.refType) || null)
+      } else {
+        this.$set(item, 'condValue', operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
+      }
+    },
+    setThresholdOperand(threshold, operand) {
+      this.$set(threshold, 'resultOperand', operand || null)
+      this.$set(threshold, 'result', operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
     },
     /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
     onResultVarCustomInput(val) {
@@ -483,7 +506,7 @@ export default {
       }
     },
     addScoreItem() {
-      this.model.scoreItems.push({ condVar: '', condOperator: '==', condValue: '', condVarType: 'STRING', condition: '', conditionLabel: '', score: 1, weight: 1.0 })
+      this.model.scoreItems.push({ leftOperand: null, rightOperand: null, condVar: '', condOperator: '==', condValue: '', condVarType: 'STRING', condition: '', conditionLabel: '', score: 1, weight: 1.0 })
     },
     removeScoreItem(index) {
       this.model.scoreItems.splice(index, 1)
@@ -491,7 +514,7 @@ export default {
     addThreshold() {
       const last = this.model.thresholds[this.model.thresholds.length - 1]
       const min = last ? last.max : 0
-      this.model.thresholds.push({ min, max: min + 50, result: '', resultType: 'STRING' })
+      this.model.thresholds.push({ min, max: min + 50, result: '', resultOperand: null, resultType: 'STRING' })
     },
     removeThreshold(index) {
       this.model.thresholds.splice(index, 1)
@@ -532,7 +555,11 @@ export default {
     buildTestParamsTemplate() {
       const codes = new Set()
       const items = this.model.scoreItems || []
-      items.forEach(item => addCode(codes, item.condVar))
+      items.forEach(item => {
+        addCode(codes, item.condVar)
+        collectOperandReferences(item.leftOperand).forEach(reference => addCode(codes, reference.code || reference.path))
+        collectOperandReferences(item.rightOperand).forEach(reference => addCode(codes, reference.code || reference.path))
+      })
       return buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
     },
     onJsonInput(val) {

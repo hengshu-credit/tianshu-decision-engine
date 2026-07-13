@@ -13,6 +13,7 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class DecisionBuiltinFunctionsTest {
@@ -89,6 +90,29 @@ public class DecisionBuiltinFunctionsTest {
     }
 
     @Test
+    public void idCardFunctionsExtractBirthDateAndCalculateAge() {
+        assertEquals("1990-01-02", functions.idCardBirthDate("110105199001022317"));
+        assertEquals("1990-01-02", functions.idCardBirthDate("110105900102231"));
+        assertNull(functions.idCardBirthDate("110105199013022317"));
+
+        assertEquals(34L, functions.idCardAge("110105199001022317", "2025-01-01 12:30:00", "FULL"));
+        assertEquals(35L, functions.idCardAge("110105199001022317", "2025-01-02", "DAY"));
+        assertEquals(35L, functions.idCardAge("110105199001022317", "2025-01-01", "YEAR"));
+        assertEquals(-1L, functions.idCardAge("110105209001022317", "2025-01-02", "FULL"));
+    }
+
+    @Test
+    public void probabilityScoreUsesConfiguredDirection() {
+        assertEquals(600.0d, functions.scoreByProbability(0.5, 600, 20, null).doubleValue(), 0.000001d);
+        assertEquals(556.06d, functions.scoreByProbability(0.9, 600, 20, "HIGH_GOOD").doubleValue(), 0.000001d);
+        assertEquals(556.06d, functions.scoreByProbability(0.9, 600, 20, "越大越好").doubleValue(), 0.000001d);
+        assertEquals(643.94d, functions.scoreByProbability(0.9, 600, 20, "LOW_GOOD").doubleValue(), 0.000001d);
+        assertEquals(643.94d, functions.scoreByProbability(0.9, 600, 20, "越小越好").doubleValue(), 0.000001d);
+        assertNull(functions.scoreByProbability(0, 600, 20, "HIGH_GOOD"));
+        assertNull(functions.scoreByProbability(1, 600, 20, "HIGH_GOOD"));
+    }
+
+    @Test
     public void qlExpressCanCallRegisteredDecisionBuiltins() {
         QLExpressEngine engine = new QLExpressEngine();
         Map<String, Object> context = new LinkedHashMap<>();
@@ -102,8 +126,11 @@ public class DecisionBuiltinFunctionsTest {
                 "sorted = arrSort(numbers, \"ASC\");\n" +
                 "ratio = numDiv(10, 3, 2);\n" +
                 "nextDate = dateAdd(\"2026-07-09 10:30:00\", 3, \"DAY\");\n" +
+                "birthDate = idCardBirthDate(\"110105199001022317\");\n" +
+                "age = idCardAge(\"110105199001022317\", \"2025-01-02 12:30:00\", \"FULL\");\n" +
+                "probabilityScore = scoreByProbability(0.9, 600, 20, \"HIGH_GOOD\");\n" +
                 "score = scoreByOddsPdo(40, 600, 20, 20, \"ASC\");\n" +
-                "_result = {\"successAmount\": successAmount, \"phone\": phone, \"sorted\": sorted, \"ratio\": ratio, \"nextDate\": nextDate, \"score\": score}\n" +
+                "_result = {\"successAmount\": successAmount, \"phone\": phone, \"sorted\": sorted, \"ratio\": ratio, \"nextDate\": nextDate, \"birthDate\": birthDate, \"age\": age, \"probabilityScore\": probabilityScore, \"score\": score}\n" +
                 "_result",
                 context);
 
@@ -114,6 +141,9 @@ public class DecisionBuiltinFunctionsTest {
         assertEquals(Arrays.asList(1, 2, 3), output.get("sorted"));
         assertEquals(3.33d, ((Number) output.get("ratio")).doubleValue(), 0.000001d);
         assertEquals("2026-07-12 10:30:00", output.get("nextDate"));
+        assertEquals("1990-01-02", output.get("birthDate"));
+        assertEquals(35, ((Number) output.get("age")).intValue());
+        assertEquals(556.06d, ((Number) output.get("probabilityScore")).doubleValue(), 0.000001d);
         assertEquals(620.0d, ((Number) output.get("score")).doubleValue(), 0.000001d);
     }
 

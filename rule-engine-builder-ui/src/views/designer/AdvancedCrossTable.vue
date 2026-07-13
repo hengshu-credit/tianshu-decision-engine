@@ -27,17 +27,17 @@
         </div>
         <div v-for="(dim, di) in model.rowDimensions" :key="'rd-' + di" class="dim-config-card">
           <div class="dim-config-header">
-            <var-picker
-              v-if="varPickerOptions.length"
+            <operand-picker
               :vars="varPickerOptions"
+              :functions="projectFunctions"
               :selected-vars="selectedVarPickerOptions"
-              :value="dim.varCode"
-              placeholder="选择变量..."
+              :value="dim.operand"
+              :allowed-kinds="readOperandKinds"
+              placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @select="v => applyVarToDim(v, 'rowDimensions', di)"
+              @input="value => setDimensionOperand(dim, value)"
             />
-            <el-input v-else v-model="dim.varCode" size="mini" placeholder="变量编码" class="dim-field-var" />
             <el-input v-model="dim.varLabel" size="mini" placeholder="维度名称" class="dim-field-label" />
             <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
               <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -53,11 +53,11 @@
                 <el-option label="区间" value="range" />
               </el-select>
               <template v-if="seg.operator === 'range'">
-                <el-input v-model="seg.min" size="mini" placeholder="最小值(含)" class="seg-val" />
+                <operand-picker :value="seg.minOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最小值(含)" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'minOperand', value)" />
                 <span class="seg-sep">~</span>
-                <el-input v-model="seg.max" size="mini" placeholder="最大值(不含)" class="seg-val" />
+                <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值(不含)" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
               </template>
-              <el-input v-else v-model="seg.value" size="mini" placeholder="值" class="seg-val" />
+              <operand-picker v-else :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
               <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
               <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
             </div>
@@ -74,17 +74,17 @@
         </div>
         <div v-for="(dim, di) in model.colDimensions" :key="'cd-' + di" class="dim-config-card">
           <div class="dim-config-header">
-            <var-picker
-              v-if="varPickerOptions.length"
+            <operand-picker
               :vars="varPickerOptions"
+              :functions="projectFunctions"
               :selected-vars="selectedVarPickerOptions"
-              :value="dim.varCode"
-              placeholder="选择变量..."
+              :value="dim.operand"
+              :allowed-kinds="readOperandKinds"
+              placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @select="v => applyVarToDim(v, 'colDimensions', di)"
+              @input="value => setDimensionOperand(dim, value)"
             />
-            <el-input v-else v-model="dim.varCode" size="mini" placeholder="变量编码" class="dim-field-var" />
             <el-input v-model="dim.varLabel" size="mini" placeholder="维度名称" class="dim-field-label" />
             <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
               <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -100,11 +100,11 @@
                 <el-option label="区间" value="range" />
               </el-select>
               <template v-if="seg.operator === 'range'">
-                <el-input v-model="seg.min" size="mini" placeholder="最小值(含)" class="seg-val" />
+                <operand-picker :value="seg.minOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最小值(含)" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'minOperand', value)" />
                 <span class="seg-sep">~</span>
-                <el-input v-model="seg.max" size="mini" placeholder="最大值(不含)" class="seg-val" />
+                <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值(不含)" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
               </template>
-              <el-input v-else v-model="seg.value" size="mini" placeholder="值" class="seg-val" />
+              <operand-picker v-else :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
               <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
               <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
             </div>
@@ -120,17 +120,18 @@
         <i class="el-icon-finished" style="color:#fa8c16;" /> 结果变量
       </div>
       <div class="result-config">
-        <var-picker
-          v-if="varPickerOptions.length"
+        <operand-picker
           :vars="varPickerOptions"
+          :functions="projectFunctions"
           :selected-vars="selectedVarPickerOptions"
-          :value="model.resultVar.varCode"
-          placeholder="选择结果变量..."
+          :value="model.resultVar.operand"
+          :allowed-kinds="writeOperandKinds"
+          writable-only
+          placeholder="选择结果字段或手输路径"
           width="100%"
           class="result-field-var"
-          @select="v => { model.resultVar.varCode = v.varCode; model.resultVar.varLabel = v.varLabel || v.varCode; model.resultVar._varId = (v._varId != null) ? v._varId : null; model.resultVar._refType = v._refType || v.refType || (v.varObj && v.varObj.refType) || null }"
+          @input="value => setDimensionOperand(model.resultVar, value)"
         />
-        <el-input v-else v-model="model.resultVar.varCode" size="mini" placeholder="变量编码" class="result-field-var" />
         <el-input v-model="model.resultVar.varLabel" size="mini" placeholder="结果名称" class="result-field-label" />
         <el-select v-model="model.resultVar.varType" size="mini" class="result-field-type" popper-append-to-body>
           <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
@@ -187,11 +188,16 @@
                 :key="'cell-' + ri + '-' + ci"
                 class="data-cell"
               >
-                <el-input
-                  v-model="cellData[ri][ci]"
-                  size="mini"
-                  :placeholder="model.resultVar.varType === 'NUMBER' ? '0' : ''"
+                <operand-picker
+                  :value="cellData[ri][ci]"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  placeholder="选择结果或手输阈值"
+                  width="100%"
                   class="cell-input"
+                  @input="value => setCellOperand(ri, ci, value)"
                 />
               </td>
             </tr>
@@ -225,15 +231,16 @@
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
-import VarPicker from '@/components/common/VarPicker.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue, isLeafRef, setParamPath } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { collectOperandReferences, compileOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 
 export default {
   name: 'AdvancedCrossTable',
-  components: { DesignerTestDialog, VarPicker, ScriptPanel },
+  components: { DesignerTestDialog, OperandPicker, ScriptPanel },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -251,7 +258,10 @@ export default {
       testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
-      varTypeFormOptions: VAR_TYPE_FORM_OPTIONS
+      varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
+      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
+      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
     }
   },
   computed: {
@@ -294,7 +304,7 @@ export default {
         const segs = dims[level].segments || []
         for (let r = 0; r < repeat; r++) {
           for (const seg of segs) {
-            cells.push({ label: seg.label || seg.value || '-', colspan })
+            cells.push({ label: seg.label || operandDisplay(seg.valueOperand) || '-', colspan })
           }
         }
         rows.push(cells)
@@ -320,7 +330,7 @@ export default {
           if (ri % rowspan === 0) {
             const combo = this.rowCombinations[ri]
             cells.push({
-              label: combo && combo[level] ? (combo[level].label || combo[level].value || '-') : '-',
+              label: combo && combo[level] ? (combo[level].label || operandDisplay(combo[level].valueOperand) || '-') : '-',
               rowspan,
               level
             })
@@ -341,11 +351,15 @@ export default {
   },
   methods: {
     collectSelectedVarItems() {
-      return [
-        this.model.resultVar,
-        ...(this.model.rowDimensions || []),
-        ...(this.model.colDimensions || [])
-      ]
+      const items = []
+      const add = operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType }))
+      add(this.model.resultVar && this.model.resultVar.operand)
+      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
+        add(dim.operand)
+        ;(dim.segments || []).forEach(segment => { add(segment.valueOperand); add(segment.minOperand); add(segment.maxOperand) })
+      })
+      this.cellData.forEach(row => row.forEach(add))
+      return items
     },
     cartesianProduct(dimensions) {
       if (!dimensions || dimensions.length === 0) return []
@@ -371,7 +385,7 @@ export default {
       for (let r = 0; r < rows; r++) {
         const row = []
         for (let c = 0; c < cols; c++) {
-          row.push(this.cellData[r] && this.cellData[r][c] != null ? this.cellData[r][c] : '')
+          row.push(this.cellData[r] && this.cellData[r][c] != null ? this.cellData[r][c] : createLiteralOperand('', this.model.resultVar.varType || 'STRING'))
         }
         newData.push(row)
       }
@@ -402,8 +416,9 @@ export default {
       return cells.map(row => {
         if (!Array.isArray(row)) return []
         return row.map(cell => {
-          if (Array.isArray(cell)) return cell[0] != null ? String(cell[0]) : ''
-          return cell != null ? String(cell) : ''
+          if (Array.isArray(cell)) cell = cell[0]
+          if (cell && cell.kind) return cell
+          return createLiteralOperand(cell != null ? cell : '', this.model.resultVar && this.model.resultVar.varType || 'STRING')
         })
       })
     },
@@ -411,6 +426,15 @@ export default {
       if (!this.model.rowDimensions) this.$set(this.model, 'rowDimensions', [])
       if (!this.model.colDimensions) this.$set(this.model, 'colDimensions', [])
       if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', varType: 'NUMBER', _varId: null })
+      if (!this.model.resultVar.operand) this.$set(this.model.resultVar, 'operand', operandFromReferenceFields(this.model.resultVar))
+      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
+        if (!dim.operand) this.$set(dim, 'operand', operandFromReferenceFields(dim))
+        ;(dim.segments || []).forEach(segment => {
+          if (!segment.valueOperand) this.$set(segment, 'valueOperand', createLiteralOperand(segment.value, dim.varType || 'STRING'))
+          if (!segment.minOperand) this.$set(segment, 'minOperand', createLiteralOperand(segment.min, dim.varType || 'STRING'))
+          if (!segment.maxOperand) this.$set(segment, 'maxOperand', createLiteralOperand(segment.max, dim.varType || 'STRING'))
+        })
+      })
     },
     /** 根据 modelJson 中已有的 _varId 同步填充变量元信息 */
     _syncModelVarRefs() {
@@ -432,32 +456,53 @@ export default {
       if (this.model.resultVar) fillRef(this.model.resultVar)
       ;(this.model.rowDimensions || []).forEach(d => fillRef(d))
       ;(this.model.colDimensions || []).forEach(d => fillRef(d))
+      this.syncAllOperands()
     },
-    applyVarToDim(variable, dimKey, di) {
-      if (!variable) return
-      const dim = this.model[dimKey][di]
-      dim.varCode = variable.varCode
-      dim.varLabel = variable.varLabel || variable.varCode
-      dim.varType = variable.varType || 'STRING'
-      dim._varId = (variable._varId != null) ? variable._varId : null
-      dim._refType = variable._refType || variable.refType || (variable.varObj && variable.varObj.refType) || null
-      if (variable.varType === 'ENUM') {
-        const options = this.getVarOptions(variable.varCode)
+    setDimensionOperand(dim, value) {
+      this.$set(dim, 'operand', value)
+      dim.varCode = compileOperand(value)
+      dim.varLabel = value && (value.label || value.code || value.value) || ''
+      dim.varType = value && value.valueType || dim.varType || 'STRING'
+      dim._varId = value && value.refId != null ? value.refId : null
+      dim._refType = value && value.refType || null
+      if (dim.varType === 'ENUM') {
+        const options = this.getVarOptions(dim.varCode)
         if (options.length > 0) {
-          dim.segments = options.map(o => ({ label: o.label || o.value, operator: '==', value: o.value }))
+          dim.segments = options.map(o => ({ label: o.label || o.value, operator: '==', value: o.value, valueOperand: createLiteralOperand(o.value, 'STRING') }))
         }
       }
     },
+    setSegmentOperand(segment, field, value) {
+      this.$set(segment, field, value)
+      const scalar = field === 'valueOperand' ? 'value' : field === 'minOperand' ? 'min' : 'max'
+      segment[scalar] = compileOperand(value)
+    },
+    setCellOperand(row, col, value) {
+      this.$set(this.cellData[row], col, value)
+    },
+    syncAllOperands() {
+      const sync = (holder, field, setter) => {
+        if (!holder || !holder[field]) return
+        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        if (result.changed) setter(result.operand)
+      }
+      sync(this.model.resultVar, 'operand', value => this.setDimensionOperand(this.model.resultVar, value))
+      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
+        sync(dim, 'operand', value => this.setDimensionOperand(dim, value))
+        ;(dim.segments || []).forEach(segment => ['valueOperand', 'minOperand', 'maxOperand'].forEach(field => sync(segment, field, value => this.setSegmentOperand(segment, field, value))))
+      })
+      this.cellData.forEach((row, ri) => row.forEach((operand, ci) => sync(row, ci, value => this.setCellOperand(ri, ci, value))))
+    },
     addDimension(type) {
       const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions
-      dims.push({ varCode: '', varLabel: '', varType: 'STRING', _varId: null, segments: [{ label: '', operator: '==', value: '' }] })
+      dims.push({ varCode: '', varLabel: '', varType: 'STRING', _varId: null, operand: null, segments: [{ label: '', operator: '==', value: '', valueOperand: createLiteralOperand('', 'STRING') }] })
     },
     removeDimension(type, index) {
       const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions
       dims.splice(index, 1)
     },
     addSegment(dim) {
-      dim.segments.push({ label: '', operator: '==', value: '' })
+      dim.segments.push({ label: '', operator: '==', value: '', valueOperand: createLiteralOperand('', dim.varType || 'STRING') })
     },
     buildSaveModel() {
       const saveModel = JSON.parse(JSON.stringify(this.model))
@@ -492,15 +537,26 @@ export default {
       const codes = new Set()
       const rowDimensions = this.model.rowDimensions || []
       const colDimensions = this.model.colDimensions || []
-      rowDimensions.forEach(dim => addCode(codes, dim.varCode))
-      colDimensions.forEach(dim => addCode(codes, dim.varCode))
+      ;[...rowDimensions, ...colDimensions].forEach(dim => {
+        addCode(codes, dim.varCode)
+        collectOperandReferences(dim.operand).forEach(reference => addCode(codes, reference.code || reference.path))
+        ;(dim.segments || []).forEach(segment => {
+          ['valueOperand', 'minOperand', 'maxOperand'].forEach(field => {
+            collectOperandReferences(segment[field]).forEach(reference => addCode(codes, reference.code || reference.path))
+          })
+        })
+      })
       const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
       ;[...rowDimensions, ...colDimensions].forEach(dim => {
-        const segment = (dim.segments || []).find(item => item && item.value !== undefined && item.value !== '')
+        const segment = (dim.segments || []).find(item => item && (
+          item.valueOperand && item.valueOperand.kind === 'LITERAL' && item.valueOperand.value !== '' ||
+          !item.valueOperand && item.value !== undefined && item.value !== ''
+        ))
         if (!dim.varCode || !segment) return
         const ref = this.projectRefs.find(r => r.refCode === dim.varCode)
         if (ref && !isLeafRef(ref)) return
-        setParamPath(params, dim.varCode, coerceSampleValue(segment.value, ref))
+        const sampleValue = segment.valueOperand ? segment.valueOperand.value : segment.value
+        setParamPath(params, dim.varCode, coerceSampleValue(sampleValue, ref))
       })
       return params
     },

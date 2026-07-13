@@ -35,6 +35,10 @@ public class RuleDefinitionInputField {
     /** 默认值 */
     private String defaultValue;
 
+    /** Test sample value from variable metadata; not persisted in rule_definition_input_field. */
+    @TableField(exist = false)
+    private String exampleValue;
+
     /** 有效值列表（JSON数组） */
     private String validValues;
 

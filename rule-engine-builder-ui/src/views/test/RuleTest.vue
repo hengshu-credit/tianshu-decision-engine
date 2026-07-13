@@ -766,6 +766,21 @@ export default {
           this.extractAllVarIds(model, varIdMap)
         }
       }
+      this.extractOperandVarIds(model, varIdMap)
+    },
+    extractOperandVarIds(obj, varIdMap) {
+      if (!obj || typeof obj !== 'object') return
+      if (Array.isArray(obj)) {
+        obj.forEach(item => this.extractOperandVarIds(item, varIdMap))
+        return
+      }
+      if ((obj.kind === 'PATH' || obj.kind === 'REFERENCE') && obj.refId != null) {
+        varIdMap[obj.refId] = { varCode: obj.code || obj.value || '' }
+      }
+      Object.keys(obj).forEach(key => {
+        if (key === 'targetOperand' || key === 'resultVar') return
+        this.extractOperandVarIds(obj[key], varIdMap)
+      })
     },
     /**
      * 兜底：递归搜索所有 _varId

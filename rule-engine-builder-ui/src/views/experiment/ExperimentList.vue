@@ -134,6 +134,7 @@
                 v-else-if="row.conditionConfig"
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
+                :functions="projectFunctions"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -179,6 +180,7 @@
                 v-else-if="row.conditionConfig"
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
+                :functions="projectFunctions"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -245,8 +247,10 @@ import {
   createEmptyLeaf,
   walkConditionLeaves,
   hasUsableConditionLeaf,
-  compileConditionTreeExpression
+  compileConditionTreeExpression,
+  normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
+import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
 import { normalizeTestSchema } from '@/utils/testSchema'
 
 export default {
@@ -351,9 +355,9 @@ export default {
     },
     parseConditionConfig(config) {
       if (!config) return null
-      if (typeof config === 'object') return JSON.parse(JSON.stringify(config))
+      if (typeof config === 'object') return normalizeConditionTreeOperands(JSON.parse(JSON.stringify(config)))
       try {
-        return JSON.parse(config)
+        return normalizeConditionTreeOperands(JSON.parse(config))
       } catch (e) {
         return null
       }
@@ -569,42 +573,31 @@ export default {
       ;(this.form.groups || []).forEach(group => {
         if (!group.conditionConfig || this.isFallbackGroup(group)) return
         walkConditionLeaves(group.conditionConfig, leaf => {
-          result.push(leaf)
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            result.push({
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              _refType: leaf._rightRefType || leaf._refType,
-              varType: leaf.rightVarType
-            })
-          }
+          [leaf.leftOperand, leaf.rightOperand].forEach(operand => {
+            collectOperandReferences(operand).forEach(reference => result.push({
+              varCode: reference.code,
+              _varId: reference.refId,
+              _refType: reference.refType,
+              varType: reference.valueType
+            }))
+          })
         })
       })
       return result
     },
     _syncModelVarRefs() {
       let changed = false
+      const sync = (leaf, field) => {
+        const result = syncOperandReference(leaf[field], this.varPickerOptions)
+        if (!result.changed) return
+        this.$set(leaf, field, result.operand)
+        changed = true
+      }
       ;(this.form.groups || []).forEach(group => {
         if (!group.conditionConfig || this.isFallbackGroup(group)) return
         walkConditionLeaves(group.conditionConfig, leaf => {
-          if (leaf.varCode && this.syncVarItem(leaf)) changed = true
-          if (leaf.valueKind === 'VAR' && leaf.value) {
-            const fake = {
-              varCode: leaf.value,
-              varLabel: leaf.rightVarLabel,
-              _varId: leaf._rightVarId,
-              _refType: leaf._rightRefType || leaf._refType,
-              varType: leaf.rightVarType
-            }
-            if (this.syncVarItem(fake)) {
-              leaf.value = fake.varCode
-              leaf.rightVarLabel = fake.varLabel
-              leaf._rightVarId = fake._varId
-              leaf.rightVarType = fake.varType
-              changed = true
-            }
-          }
+          sync(leaf, 'leftOperand')
+          sync(leaf, 'rightOperand')
         })
       })
       if (changed) this.$forceUpdate()

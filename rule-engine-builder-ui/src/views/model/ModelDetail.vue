@@ -57,63 +57,48 @@
           <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing" class="var-picker-cell">
-                <var-picker
-                  v-if="!isCustomVarMode(row) && varPickerOptions.length"
+                <operand-picker
                   :vars="varPickerOptions"
-                  :value="getRowVarCode(row)"
-                  placeholder="选择变量、常量或对象字段..."
+                  :functions="projectFunctions"
+                  :value="row.sourceOperand"
+                  :allowed-kinds="valueOperandKinds"
+                  :expected-type="row.fieldType"
+                  placeholder="选择阈值、路径、字段或方法"
                   width="100%"
-                  value-key="code"
-                  :allow-custom="false"
-                  @select="v => onVarPickerSelect(row, v)"
+                  @input="operand => onFieldOperandSelect(row, 'sourceOperand', operand)"
                 />
-                <div v-else class="custom-var-input">
-                  <el-input
-                    :value="row.scriptName || ''"
-                    size="mini"
-                    placeholder="输入变量编码"
-                    clearable
-                    @input="val => onVarCodeInput(row, val)"
-                  />
-                </div>
-                <el-tooltip :content="isCustomVarMode(row) ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
-                  <el-button
-                    size="mini"
-                    type="text"
-                    :icon="isCustomVarMode(row) ? 'el-icon-collection' : 'el-icon-edit'"
-                    class="var-switch-btn"
-                    @click="toggleCustomVarMode(row)"
-                  />
-                </el-tooltip>
               </div>
               <div v-else>
-                <div v-if="getRowVarMap(row)" class="binding-display">
-                  <div class="binding-name">{{ bindingDisplay(row).label }}</div>
-                  <div class="binding-meta">{{ bindingDisplay(row).code }} · {{ bindingDisplay(row).type }} · {{ bindingDisplay(row).source }}</div>
-                </div>
-                <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
-                <span v-else class="script-name-text script-unbound">（未关联）</span>
+                <operand-value-display :operand="row.sourceOperand" empty-text="未关联" />
               </div>
+            </template>
+          </el-table-column>
+          <el-table-column label="默认值" min-width="230">
+            <template slot="header">
+              <span>默认值</span>
+              <el-tooltip content="来源为空或未取到值时使用默认值；未配置则按空值传入模型。" placement="top">
+                <i class="el-icon-info default-value-info" />
+              </el-tooltip>
+            </template>
+            <template slot-scope="{row}">
+              <operand-picker
+                v-if="row._editing"
+                :value="row.defaultOperand"
+                :vars="varPickerOptions"
+                :functions="projectFunctions"
+                :allowed-kinds="valueOperandKinds"
+                :expected-type="row.fieldType"
+                placeholder="选择默认阈值、路径或字段"
+                width="100%"
+                @input="operand => onFieldOperandSelect(row, 'defaultOperand', operand)"
+              />
+              <operand-value-display v-else :operand="row.defaultOperand" />
             </template>
           </el-table-column>
           <!-- 字段类型 -->
           <el-table-column prop="fieldType" label="字段类型" width="100" align="center">
             <template slot-scope="{row}">
               <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
-            </template>
-          </el-table-column>
-          <!-- 缺失值（可编辑） -->
-          <el-table-column label="缺失值" min-width="130">
-            <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-input v-model="row.missingValue" size="mini" placeholder="空值时替换为该值" />
-              </div>
-              <div v-else class="missing-display">
-                <span>{{ row.missingValue || '不替换' }}</span>
-                <el-tooltip :content="missingValueHint(row)" placement="top">
-                  <i class="el-icon-info missing-info" />
-                </el-tooltip>
-              </div>
             </template>
           </el-table-column>
           <!-- 操作 -->
@@ -166,42 +151,18 @@
           <el-table-column label="对应变量" min-width="280">
             <template slot-scope="{row}">
               <div v-if="row._editing" class="var-picker-cell">
-                <var-picker
-                  v-if="!isCustomVarMode(row) && varPickerOptions.length"
+                <operand-picker
                   :vars="varPickerOptions"
-                  :value="getRowVarCode(row)"
-                  placeholder="选择变量、常量或对象字段..."
+                  :value="row.targetOperand"
+                  :allowed-kinds="writeOperandKinds"
+                  writable-only
+                  placeholder="选择目标路径或字段"
                   width="100%"
-                  value-key="code"
-                  :allow-custom="false"
-                  @select="v => onVarPickerSelect(row, v)"
+                  @input="operand => onFieldOperandSelect(row, 'targetOperand', operand)"
                 />
-                <div v-else class="custom-var-input">
-                  <el-input
-                    :value="row.scriptName || ''"
-                    size="mini"
-                    placeholder="输入变量编码"
-                    clearable
-                    @input="val => onVarCodeInput(row, val)"
-                  />
-                </div>
-                <el-tooltip :content="isCustomVarMode(row) ? '切换为从变量管理选择' : '切换为手动输入变量编码'" placement="top">
-                  <el-button
-                    size="mini"
-                    type="text"
-                    :icon="isCustomVarMode(row) ? 'el-icon-collection' : 'el-icon-edit'"
-                    class="var-switch-btn"
-                    @click="toggleCustomVarMode(row)"
-                  />
-                </el-tooltip>
               </div>
               <div v-else>
-                <div v-if="getRowVarMap(row)" class="binding-display">
-                  <div class="binding-name">{{ bindingDisplay(row).label }}</div>
-                  <div class="binding-meta">{{ bindingDisplay(row).code }} · {{ bindingDisplay(row).type }} · {{ bindingDisplay(row).source }}</div>
-                </div>
-                <span v-else-if="row.scriptName" class="script-name-text script-unbound">{{ row.scriptName }}</span>
-                <span v-else class="script-name-text script-unbound">（未关联）</span>
+                <operand-value-display :operand="row.targetOperand" empty-text="未关联" />
               </div>
             </template>
           </el-table-column>
@@ -212,18 +173,46 @@
             </template>
           </el-table-column>
           <!-- 转换方法（可编辑） -->
-          <el-table-column label="转换方法" min-width="160">
+          <el-table-column label="转换方法" min-width="420">
             <template slot-scope="{row}">
-              <div v-if="row._editing">
-                <el-select v-model="row.transformType" size="mini" style="width:100%;" popper-append-to-body placeholder="选择">
-                  <el-option label="（无）" value="" />
-                  <el-option label="NONE - 不转换" value="NONE" />
-                  <el-option label="RENAME - 重命名" value="RENAME" />
-                  <el-option label="SCALE - 缩放" value="SCALE" />
-                  <el-option label="OHE - 独热编码" value="OHE" />
+              <div v-if="row._editing" class="transform-editor">
+                <el-select
+                  :value="transformFunctionId(row)"
+                  size="mini"
+                  style="width:100%;"
+                  popper-append-to-body
+                  filterable
+                  clearable
+                  placeholder="选择转换函数"
+                  @change="functionId => onTransformFunctionSelect(row, functionId)"
+                >
+                  <el-option
+                    v-for="fn in projectFunctions"
+                    :key="fn.id"
+                    :label="functionLabel(fn)"
+                    :value="fn.id"
+                  />
                 </el-select>
+                <div
+                  v-for="(param, paramIndex) in transformFunctionParams(row)"
+                  :key="param.name || paramIndex"
+                  class="transform-param-row"
+                >
+                  <span class="transform-param-label">{{ param.name || ('参数 ' + (paramIndex + 1)) }}</span>
+                  <operand-picker
+                    :value="row.transformOperand && row.transformOperand.args ? row.transformOperand.args[paramIndex] : null"
+                    :vars="varPickerOptions"
+                    :functions="projectFunctions"
+                    :allowed-kinds="transformArgKinds"
+                    :expected-type="param.type || ''"
+                    placeholder="选择参数"
+                    width="100%"
+                    @input="operand => onTransformArgSelect(row, paramIndex, operand)"
+                  />
+                </div>
+                <code v-if="row.transformOperand" class="transform-formula">{{ transformFormula(row) }}</code>
               </div>
-              <span v-else style="color:#606266;font-size:12px;">{{ row.transformType || '-' }}</span>
+              <code v-else class="transform-formula">{{ transformFormula(row) }}</code>
             </template>
           </el-table-column>
           <!-- 操作 -->
@@ -381,7 +370,10 @@ import * as api from '@/api/model'
 import { getRuleTestSchema } from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
-import VarPicker from '@/components/common/VarPicker.vue'
+import { listAllFunctionsByProject } from '@/api/function'
+import OperandPicker from '@/components/common/OperandPicker.vue'
+import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
+import { compileOperand, createFunctionOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields } from '@/utils/operand'
 import {
   buildDetailReferenceMap,
   buildDetailReferenceState,
@@ -413,7 +405,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'ModelDetail',
-  components: { VarPicker },
+  components: { OperandPicker, OperandValueDisplay },
   data() {
     return {
       loading: false,
@@ -427,6 +419,10 @@ export default {
         { label: '数据对象字段', options: [] },
         { label: '模型', options: [] }
       ],
+      projectFunctions: [],
+      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'],
+      transformArgKinds: ['LITERAL', 'PATH', 'REFERENCE'],
+      writeOperandKinds: ['PATH', 'REFERENCE'],
       // 测试相关
       testVisible: false,
       testReady: false,
@@ -440,8 +436,6 @@ export default {
       testExecuting: false,
       testResult: null,
       testDialogKey: 1,
-      /** 各行是否处于手动输入模式 */
-      customVarModes: {},
       fieldPageSize: 100,
       inputFieldPage: 1,
       outputFieldPage: 1,
@@ -509,6 +503,70 @@ export default {
     this.load()
   },
   methods: {
+    operandDisplay,
+    parseOperand(value) {
+      if (!value) return null
+      if (typeof value === 'object') return JSON.parse(JSON.stringify(value))
+      try { return JSON.parse(value) } catch (e) { return null }
+    },
+    onFieldOperandSelect(row, field, operand) {
+      this.$set(row, field, operand || null)
+      if (field === 'defaultOperand') {
+        this.$set(row, 'defaultValue', operand && operand.kind === 'LITERAL' ? operand.value : '')
+        return
+      }
+      this.$set(row, 'varId', operand && operand.refId != null ? operand.refId : null)
+      this.$set(row, 'refType', (operand && operand.refType) || '')
+      const scriptName = operand && (operand.kind === 'PATH' || operand.kind === 'REFERENCE')
+        ? (operand.code || operand.value)
+        : row.fieldName
+      this.$set(row, 'scriptName', scriptName || '')
+      this.$set(row, 'fieldLabel', (operand && operand.label) || row.fieldLabel || row.fieldName || '')
+    },
+    transformFunctionId(row) {
+      return row && row.transformOperand ? row.transformOperand.functionId : null
+    },
+    functionLabel(fn) {
+      if (!fn) return ''
+      const code = fn.funcCode || fn.functionCode || ''
+      const name = fn.funcName || fn.functionName || code
+      return code && code !== name ? name + ' (' + code + ')' : name
+    },
+    parseFunctionParams(fn) {
+      if (!fn || !fn.paramsJson) return []
+      try {
+        const params = JSON.parse(fn.paramsJson)
+        return Array.isArray(params) ? params : []
+      } catch (e) {
+        return []
+      }
+    },
+    transformFunctionParams(row) {
+      if (!row || !row.transformOperand) return []
+      const fn = this.projectFunctions.find(item => String(item.id) === String(row.transformOperand.functionId))
+      return this.parseFunctionParams(fn)
+    },
+    onTransformFunctionSelect(row, functionId) {
+      if (functionId === undefined || functionId === null || functionId === '') {
+        this.$set(row, 'transformOperand', null)
+        return
+      }
+      const fn = this.projectFunctions.find(item => String(item.id) === String(functionId))
+      if (!fn) {
+        this.$set(row, 'transformOperand', null)
+        return
+      }
+      const args = this.parseFunctionParams(fn).map(() => null)
+      this.$set(row, 'transformOperand', createFunctionOperand(fn, args))
+    },
+    onTransformArgSelect(row, index, operand) {
+      if (!row || !row.transformOperand) return
+      if (!Array.isArray(row.transformOperand.args)) this.$set(row.transformOperand, 'args', [])
+      this.$set(row.transformOperand.args, index, operand || null)
+    },
+    transformFormula(row) {
+      return row && row.transformOperand ? (compileOperand(row.transformOperand) || '-') : '-'
+    },
     async load() {
       const id = this.$route.params.id
       if (!id) return
@@ -518,10 +576,22 @@ export default {
         this.model = res.data || {}
         // 初始化 _editing 标志
         if (this.model.inputFields) {
-          this.model.inputFields.forEach(f => this.$set(f, '_editing', false))
+          this.model.inputFields.forEach(f => {
+            this.$set(f, '_editing', false)
+            const sourceOperand = this.parseOperand(f.sourceOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
+            if (sourceOperand && !sourceOperand.valueType) sourceOperand.valueType = f.fieldType || ''
+            this.$set(f, 'sourceOperand', sourceOperand)
+            this.$set(f, 'defaultOperand', this.parseOperand(f.defaultOperand) || (f.defaultValue ? createLiteralOperand(f.defaultValue, f.fieldType) : null))
+          })
         }
         if (this.model.outputFields) {
-          this.model.outputFields.forEach(f => this.$set(f, '_editing', false))
+          this.model.outputFields.forEach(f => {
+            this.$set(f, '_editing', false)
+            const targetOperand = this.parseOperand(f.targetOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
+            if (targetOperand && !targetOperand.valueType) targetOperand.valueType = f.fieldType || ''
+            this.$set(f, 'targetOperand', targetOperand)
+            this.$set(f, 'transformOperand', this.parseOperand(f.transformOperand))
+          })
         }
         this.normalizeFieldPages()
         // 模型加载后加载变量库
@@ -551,11 +621,12 @@ export default {
     },
     async loadVarsByProject(projectId) {
       try {
-        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes, functionRes] = await Promise.all([
           listVariablesByProject(projectId),
           listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(projectId),
-          api.listAllModelsByProject(projectId)
+          api.listAllModelsByProject(projectId),
+          listAllFunctionsByProject(projectId)
         ])
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
         const consts = (constRes.data && Array.isArray(constRes.data.records))
@@ -563,6 +634,7 @@ export default {
           : (Array.isArray(constRes.data) ? constRes.data : [])
         const tree = this.normalizeVariableTree(treeRes.data)
         const models = this.normalizeListResponse(modelRes)
+        this.projectFunctions = this.normalizeListResponse(functionRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
@@ -576,11 +648,12 @@ export default {
     },
     async loadGlobalVars() {
       try {
-        const [varsRes, constRes, treeRes, modelRes] = await Promise.all([
+        const [varsRes, constRes, treeRes, modelRes, functionRes] = await Promise.all([
           listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
           listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
           getVariableTree(0),
-          api.listAllModelsByProject(0)
+          api.listAllModelsByProject(0),
+          listAllFunctionsByProject(0)
         ])
         const vars = (varsRes.data && Array.isArray(varsRes.data.records))
           ? varsRes.data.records
@@ -590,6 +663,7 @@ export default {
           : (Array.isArray(constRes.data) ? constRes.data : [])
         const tree = this.normalizeVariableTree(treeRes.data)
         const models = this.normalizeListResponse(modelRes)
+        this.projectFunctions = this.normalizeListResponse(functionRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
@@ -671,18 +745,13 @@ export default {
         MODEL: '模型'
       }[type] || type || '变量'
     },
-    missingValueHint(row) {
-      if (row && row.missingValue !== undefined && row.missingValue !== null && row.missingValue !== '') {
-        return '测试或执行时，如果入参为空值，会先转换为这里填写的缺失值再传给模型。'
-      }
-      return '未配置缺失值时，入参按原始值传给模型；空值会作为空值传入，不自动替换。'
-    },
     putVarMap(item) {
       this.$set(this.varMap, this.refKey(item.id, item.refType), item)
       if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
     },
     buildVarOptions(vars, doTree, models = []) {
-      const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, models))
+      const referenceModels = this.withCurrentModel(models)
+      const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, referenceModels))
       if (state && state.items) {
         this.varMap = buildDetailReferenceMap(state)
         this.varPickerGroups.splice(0, this.varPickerGroups.length,
@@ -782,84 +851,19 @@ export default {
         { label: '模型', options: modelOptions }
       ])
     },
-    onVarClear(row) {
-      this.$set(row, 'varId', null)
-      this.$set(row, 'refType', '')
-      this.$set(row, 'fieldLabel', '')
-      this.$set(row, 'scriptName', '')
-    },
-    /** 获取行对应的变量编码（用于 VarPicker 的 value） */
-    getRowVarCode(row) {
-      if (!row.varId) return ''
-      const v = this.getRowVarMap(row)
-      return v ? v.varCode : ''
-    },
-    /** 获取行是否处于手动输入模式 */
-    isCustomVarMode(row) {
-      return this.customVarModes[row.id] || false
-    },
-    /** 切换手动输入模式 */
-    toggleCustomVarMode(row) {
-      this.$set(this.customVarModes, row.id, !this.customVarModes[row.id])
-    },
-    /** 处理 VarPicker 选择结果 */
-    onVarPickerSelect(row, v) {
-      if (!v) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'refType', '')
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-        this.$set(row, 'varSource', '')
-        return
+    withCurrentModel(models) {
+      const list = Array.isArray(models) ? models.slice() : []
+      if (!this.model || !this.model.modelCode) return list
+      const index = list.findIndex(item => (
+        (item.id != null && this.model.id != null && String(item.id) === String(this.model.id)) ||
+        item.modelCode === this.model.modelCode
+      ))
+      if (index < 0) {
+        list.push(this.model)
+      } else if (!Array.isArray(list[index].outputFields) || !list[index].outputFields.length) {
+        list.splice(index, 1, { ...list[index], outputFields: this.model.outputFields || [], inputFields: this.model.inputFields || [] })
       }
-      // v 是 VarPicker 返回的选项对象
-      const varObj = v.varObj
-      const varId = varObj && varObj.id ? varObj.id : null
-      this.$set(row, 'varId', varId)
-      this.$set(row, 'refType', v._refType || v.refType || (varObj && varObj.refType) || '')
-      this.$set(row, 'fieldLabel', v.varLabel || v.varCode)
-      this.$set(row, 'scriptName', v.varCode)
-      this.$set(row, 'varSource', v._ref ? v._ref.category : 'variable')
-    },
-    /** 手动输入变量编码时自动关联 */
-    onVarCodeInput(row, val) {
-      if (!val) {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'refType', '')
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', '')
-        this.$set(row, 'varSource', '')
-        return
-      }
-      // 在 varMap 中查找匹配的变量
-      const found = Object.values(this.varMap).find(v => v.varCode === val)
-      if (found) {
-        this.$set(row, 'varId', found.id)
-        this.$set(row, 'refType', found.refType || '')
-        this.$set(row, 'fieldLabel', found.varLabelText || found.varCode)
-        this.$set(row, 'scriptName', found.varCode)
-        this.$set(row, 'varSource', found.sourceType)
-      } else {
-        this.$set(row, 'varId', null)
-        this.$set(row, 'refType', '')
-        this.$set(row, 'fieldLabel', '')
-        this.$set(row, 'scriptName', val)
-        this.$set(row, 'varSource', 'custom')
-      }
-    },
-    onVarChange(row, varId) {
-      if (!varId) return
-      let opt = null
-      for (const group of this.varPickerGroups) {
-        const found = group.options.find(o => o.id === varId)
-        if (found) { opt = found; break }
-      }
-      if (!opt) return
-      // v-model 已通过 @input 更新了 row.varId，此处只需同步关联字段
-      this.$set(row, 'fieldLabel', opt.varLabelText)
-      this.$set(row, 'scriptName', opt.varCodeText)
-      this.$set(row, 'varSource', opt.sourceType)
-      this.$set(row, 'refType', opt.refType || '')
+      return list
     },
     modelTypeLabel(t) {
       return MODEL_TYPE_LABELS[t] || t || '—'
@@ -879,7 +883,7 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, missingValue: row.missingValue })
+      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, sourceOperand: row.sourceOperand, defaultOperand: row.defaultOperand, defaultValue: row.defaultValue })
     },
     async saveInputField(row) {
       this.$set(row, '_saving', true)
@@ -890,8 +894,9 @@ export default {
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
-          missingValue: row.missingValue,
           defaultValue: row.defaultValue,
+          sourceOperand: row.sourceOperand ? JSON.stringify(row.sourceOperand) : null,
+          defaultOperand: row.defaultOperand ? JSON.stringify(row.defaultOperand) : null,
           transformType: row.transformType,
           transformParams: row.transformParams,
           validValues: row.validValues
@@ -910,7 +915,9 @@ export default {
         this.$set(row, 'refType', row._origin.refType)
         this.$set(row, 'fieldLabel', row._origin.fieldLabel)
         this.$set(row, 'scriptName', row._origin.scriptName)
-        this.$set(row, 'missingValue', row._origin.missingValue)
+        this.$set(row, 'sourceOperand', row._origin.sourceOperand)
+        this.$set(row, 'defaultOperand', row._origin.defaultOperand)
+        this.$set(row, 'defaultValue', row._origin.defaultValue)
       }
       this.$set(row, '_editing', false)
     },
@@ -926,7 +933,7 @@ export default {
         })
       }
       this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformType: row.transformType })
+      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformOperand: this.parseOperand(row.transformOperand), targetOperand: row.targetOperand })
     },
     async saveOutputField(row) {
       this.$set(row, '_saving', true)
@@ -937,8 +944,9 @@ export default {
           scriptName: row.scriptName,
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
-          transformType: row.transformType,
-          targetField: row.targetField
+          targetField: row.targetField,
+          targetOperand: row.targetOperand ? JSON.stringify(row.targetOperand) : null,
+          transformOperand: row.transformOperand ? JSON.stringify(row.transformOperand) : null
         })
         this.$set(row, '_editing', false)
         this.$set(row, '_saving', false)
@@ -954,7 +962,8 @@ export default {
         this.$set(row, 'refType', row._origin.refType)
         this.$set(row, 'fieldLabel', row._origin.fieldLabel)
         this.$set(row, 'scriptName', row._origin.scriptName)
-        this.$set(row, 'transformType', row._origin.transformType)
+        this.$set(row, 'transformOperand', this.parseOperand(row._origin.transformOperand))
+        this.$set(row, 'targetOperand', row._origin.targetOperand)
       }
       this.$set(row, '_editing', false)
     },
@@ -1255,16 +1264,36 @@ export default {
   color: #c0c4cc;
   font-style: italic;
 }
-.missing-display {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: #606266;
-  font-size: 12px;
-}
-.missing-info {
+.default-value-info {
+  margin-left: 4px;
   color: #94a3b8;
   cursor: help;
+}
+.transform-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.transform-param-row {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+}
+.transform-param-label {
+  overflow: hidden;
+  color: #606266;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transform-formula {
+  display: block;
+  overflow: hidden;
+  color: #334155;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 /* 变量选择单元格 */
 .var-picker-cell {
