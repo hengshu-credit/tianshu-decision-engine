@@ -27,6 +27,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -169,6 +170,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     public List<RuleVariable> listByProject(Long projectId, String varSource) {
+        if (getBaseMapper() == null) return Collections.emptyList();
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null && projectId > 0) {
             // 同时查询全局变量和指定项目的变量
@@ -194,6 +196,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
      * 仅查询指定项目的变量（不包含全局变量）
      */
     public List<RuleVariable> listByProjectOnly(Long projectId) {
+        if (getBaseMapper() == null) return Collections.emptyList();
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleVariable::getProjectId, projectId)
                .eq(RuleVariable::getScope, SCOPE_PROJECT)
@@ -206,6 +209,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
      * 仅查询全局变量
      */
     public List<RuleVariable> listGlobalOnly() {
+        if (getBaseMapper() == null) return Collections.emptyList();
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleVariable::getScope, SCOPE_GLOBAL)
                .eq(RuleVariable::getStatus, 1)
@@ -374,6 +378,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     private List<RuleDataObjectField> listObjectFields(Long projectId) {
+        if (dataObjectFieldMapper == null) return Collections.emptyList();
         LambdaQueryWrapper<RuleDataObjectField> wrapper = new LambdaQueryWrapper<>();
         appendScopeCondition(wrapper, RuleDataObjectField::getScope, RuleDataObjectField::getProjectId, projectId);
         wrapper.eq(RuleDataObjectField::getStatus, 1);
@@ -381,6 +386,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     private Map<Long, RuleDataObject> buildObjectMap(Long projectId) {
+        if (dataObjectMapper == null) return Collections.emptyMap();
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         appendScopeCondition(wrapper, RuleDataObject::getScope, RuleDataObject::getProjectId, projectId);
         wrapper.eq(RuleDataObject::getStatus, 1);
@@ -390,6 +396,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     private List<RuleModel> listModels(Long projectId) {
+        if (modelMapper == null) return Collections.emptyList();
         LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
         appendScopeCondition(wrapper, RuleModel::getScope, RuleModel::getProjectId, projectId);
         wrapper.eq(RuleModel::getStatus, 1);
@@ -397,7 +404,7 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     private List<RuleModelOutputField> listModelOutputFields(java.util.Set<Long> modelIds) {
-        if (modelIds == null || modelIds.isEmpty()) {
+        if (modelOutputFieldMapper == null || modelIds == null || modelIds.isEmpty()) {
             return java.util.Collections.emptyList();
         }
         return modelOutputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>()
