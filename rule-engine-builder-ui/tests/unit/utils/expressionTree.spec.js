@@ -1,5 +1,10 @@
 import {
+  collapsedExpressionPaths,
   createFunctionTemplate,
+  existingCollapsedPaths,
+  expressionAncestorKeys,
+  expressionDescendantCount,
+  expressionPathKey,
   firstEditablePath,
   getExpressionNode,
   removeExpressionNode,
@@ -47,5 +52,35 @@ describe('expressionTree', () => {
     expect(wrapExpressionNode(field, { kind: 'OPERATION', operator: '+', operands: [] }).operands[0]).toEqual(field)
     expect(wrapExpressionNode(field, { kind: 'ACCESS', accessType: 'KEY' }).target).toEqual(field)
     expect(wrapExpressionNode(field, { kind: 'CAST', targetType: 'NUMBER' }).operand).toEqual(field)
+  })
+
+  test('按语义层级生成默认折叠路径并统计隐藏节点', () => {
+    const source = {
+      kind: 'FUNCTION',
+      functionCode: 'outer',
+      args: [{
+        kind: 'OPERATION',
+        operator: '+',
+        operands: [{
+          kind: 'FUNCTION',
+          functionCode: 'inner',
+          args: [
+            { kind: 'LITERAL', value: '1', valueType: 'NUMBER' },
+            { kind: 'LITERAL', value: '2', valueType: 'NUMBER' }
+          ]
+        }, { kind: 'LITERAL', value: '3', valueType: 'NUMBER' }]
+      }]
+    }
+
+    expect(collapsedExpressionPaths(source, 2)).toEqual(['args.0.operands.0'])
+    expect(expressionDescendantCount(source.args[0].operands[0])).toBe(2)
+  })
+
+  test('路径键支持根节点、反解祖先，并清理已失效的折叠状态', () => {
+    const source = { kind: 'FUNCTION', functionCode: 'max', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }] }
+
+    expect(expressionPathKey([])).toBe('$')
+    expect(expressionAncestorKeys(['args', 0, 'items', 1])).toEqual(['$', 'args', 'args.0', 'args.0.items'])
+    expect(existingCollapsedPaths(source, ['$', 'args.0', 'missing'])).toEqual(['$'])
   })
 })

@@ -258,6 +258,7 @@
 <script>
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
+import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 import {
   createFunctionOperand,
   createLiteralOperand,
@@ -458,10 +459,7 @@ export default {
       var list = [
         { key: 'manual', label: '手动输入', count: 0 },
         { key: 'selected', label: '已选字段', count: 0 },
-        { key: 'standalone', label: '普通变量', count: 0 },
-        { key: 'constant', label: '常量', count: 0 },
-        { key: 'object', label: '数据对象', count: 0 },
-        { key: 'model', label: '模型', count: 0 },
+        ...REFERENCE_PICKER_CATEGORIES.map(function (item) { return { key: item.key, label: item.label, count: 0 } }),
         { key: 'function', label: '函数/方法', count: 0 }
       ]
       list.forEach(function (item) {

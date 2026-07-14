@@ -40,6 +40,45 @@ export function expressionChildEntries(node, basePath = []) {
   return []
 }
 
+export function expressionPathKey(path = []) {
+  return (path || []).length ? path.join('.') : '$'
+}
+
+export function expressionAncestorKeys(path = []) {
+  return (path || []).map((unused, index) => expressionPathKey(path.slice(0, index)))
+}
+
+export function expressionDescendantCount(node) {
+  return expressionChildEntries(node).reduce((total, entry) => total + 1 + expressionDescendantCount(entry.value), 0)
+}
+
+export function collapsedExpressionPaths(root, maxDepth = 2) {
+  const result = []
+  const visit = (node, path, depth) => {
+    const children = expressionChildEntries(node, path)
+    if (!children.length) return
+    if (depth >= maxDepth) {
+      result.push(expressionPathKey(path))
+      return
+    }
+    children.forEach(entry => visit(entry.value, entry.path, depth + 1))
+  }
+  visit(root, [], 0)
+  return result
+}
+
+export function existingCollapsedPaths(root, collapsedPathKeys = []) {
+  const existing = new Set()
+  const visit = (node, path) => {
+    const children = expressionChildEntries(node, path)
+    if (!children.length) return
+    existing.add(expressionPathKey(path))
+    children.forEach(entry => visit(entry.value, entry.path))
+  }
+  visit(root, [])
+  return (collapsedPathKeys || []).filter(key => existing.has(key))
+}
+
 export function firstEditablePath(node, basePath = []) {
   const children = expressionChildEntries(node, basePath)
   if (!children.length) return basePath

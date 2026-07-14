@@ -57,4 +57,35 @@ describe('ExpressionEditorDialog', () => {
     expect(wrapper.emitted().input).toBeUndefined()
     expect(wrapper.vm.validationErrors[0].message).toContain('不支持')
   })
+
+  test('复杂表达式默认折叠到两层并支持一键展开', () => {
+    const value = {
+      kind: 'FUNCTION',
+      functionCode: 'outer',
+      args: [{
+        kind: 'OPERATION',
+        operator: '+',
+        operands: [{ kind: 'FUNCTION', functionCode: 'inner', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }] }, null]
+      }]
+    }
+    const wrapper = mountEditor({ value })
+
+    expect(wrapper.vm.collapsedPathKeys).toContain('args.0.operands.0')
+    wrapper.vm.expandAll()
+    expect(wrapper.vm.collapsedPathKeys).toEqual([])
+  })
+
+  test('选择折叠子树中的位置会自动展开全部祖先', () => {
+    const value = {
+      kind: 'FUNCTION',
+      functionCode: 'outer',
+      args: [{ kind: 'FUNCTION', functionCode: 'inner', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }] }]
+    }
+    const wrapper = mountEditor({ value })
+    wrapper.setData({ collapsedPathKeys: ['$', 'args.0'] })
+
+    wrapper.vm.selectPath(['args', 0, 'args', 0])
+
+    expect(wrapper.vm.collapsedPathKeys).toEqual([])
+  })
 })

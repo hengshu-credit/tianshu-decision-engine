@@ -27,9 +27,22 @@
             <span>公式预览</span>
             <code>{{ formulaPreview || '请选择中间位置并添加内容' }}</code>
           </div>
+          <div class="workspace-tools">
+            <span>复杂公式可折叠子表达式，当前编辑位置会自动展开。</span>
+            <div>
+              <el-button size="mini" @click="collapseToOverview">折叠到两层</el-button>
+              <el-button size="mini" @click="expandAll">全部展开</el-button>
+            </div>
+          </div>
           <el-alert v-if="validationErrors.length" type="error" :closable="false" show-icon :title="validationErrors[0].message" />
           <div class="canvas-scroll">
-            <expression-canvas :node="draft" :selected-path="selectedPath" @select="selectPath" />
+            <expression-canvas
+              :node="draft"
+              :selected-path="selectedPath"
+              :collapsed-path-keys="collapsedPathKeys"
+              @select="selectPath"
+              @toggleCollapse="toggleCollapse"
+            />
           </div>
         </section>
         <expression-node-inspector
@@ -55,7 +68,12 @@ import ExpressionPalette from './ExpressionPalette.vue'
 import { compileOperand, cloneOperand, validateOperand } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
+  collapsedExpressionPaths,
   createFunctionTemplate,
+  existingCollapsedPaths,
+  expressionAncestorKeys,
+  expressionChildEntries,
+  expressionPathKey,
   firstEditablePath,
   getExpressionNode,
   removeExpressionNode,
@@ -83,6 +101,7 @@ export default {
       selectedPath: [],
       history: [],
       historyIndex: -1,
+      collapsedPathKeys: [],
       validationErrors: [],
       previousFocus: null
     }
@@ -129,12 +148,15 @@ export default {
     reset(value) {
       this.draft = cloneOperand(value)
       this.selectedPath = firstEditablePath(this.draft)
+      this.collapsedPathKeys = collapsedExpressionPaths(this.draft, 2)
+      this.revealPath(this.selectedPath)
       this.history = [cloneOperand(this.draft)]
       this.historyIndex = 0
       this.validationErrors = []
     },
     selectPath(path) {
       this.selectedPath = (path || []).slice()
+      this.revealPath(this.selectedPath)
       this.validationErrors = []
     },
     insertTemplate(template) {
@@ -146,6 +168,7 @@ export default {
       const insertedPath = this.selectedPath.slice()
       this.commit(next)
       this.selectedPath = firstEditablePath(nextNode, insertedPath)
+      this.revealPath(this.selectedPath)
       this.validationErrors = []
     },
     updateSelected(node) {
@@ -161,12 +184,15 @@ export default {
       this.history = this.history.slice(0, this.historyIndex + 1).concat([snapshot])
       this.historyIndex = this.history.length - 1
       this.draft = cloneOperand(snapshot)
+      this.collapsedPathKeys = existingCollapsedPaths(this.draft, this.collapsedPathKeys)
     },
     undo() {
       if (!this.canUndo) return
       this.historyIndex -= 1
       this.draft = cloneOperand(this.history[this.historyIndex])
       this.selectedPath = firstEditablePath(this.draft)
+      this.collapsedPathKeys = existingCollapsedPaths(this.draft, this.collapsedPathKeys)
+      this.revealPath(this.selectedPath)
       this.validationErrors = []
     },
     redo() {
@@ -174,7 +200,28 @@ export default {
       this.historyIndex += 1
       this.draft = cloneOperand(this.history[this.historyIndex])
       this.selectedPath = firstEditablePath(this.draft)
+      this.collapsedPathKeys = existingCollapsedPaths(this.draft, this.collapsedPathKeys)
+      this.revealPath(this.selectedPath)
       this.validationErrors = []
+    },
+    toggleCollapse(path) {
+      const key = expressionPathKey(path)
+      if (this.collapsedPathKeys.includes(key)) {
+        this.collapsedPathKeys = this.collapsedPathKeys.filter(item => item !== key)
+      } else if (expressionChildEntries(getExpressionNode(this.draft, path), path).length) {
+        this.collapsedPathKeys = this.collapsedPathKeys.concat([key])
+      }
+    },
+    collapseToOverview() {
+      this.collapsedPathKeys = collapsedExpressionPaths(this.draft, 2)
+      this.revealPath(this.selectedPath)
+    },
+    expandAll() {
+      this.collapsedPathKeys = []
+    },
+    revealPath(path) {
+      const ancestors = new Set(expressionAncestorKeys(path))
+      this.collapsedPathKeys = this.collapsedPathKeys.filter(key => !ancestors.has(key))
     },
     apply() {
       this.validationErrors = validateOperand(this.draft, { allowedKinds: this.effectiveAllowedKinds })
@@ -214,6 +261,8 @@ export default {
 .formula-preview { display: grid; min-height: 52px; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 12px; padding: 9px 13px; border: 1px solid #dce5ef; border-radius: 7px; background: #fff; }
 .formula-preview span { color: #7d8a9d; font-size: 12px; }
 .formula-preview code { overflow: hidden; color: #174ea6; font-family: Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 10px; color: #7d8a9d; font-size: 12px; }
+.workspace-tools > div { display: flex; flex: none; gap: 6px; }
 .canvas-scroll { flex: 1; overflow: auto; padding: 12px 8px 50px; }
 .expression-editor__footer { border-top: 1px solid #e7ecf2; border-bottom: 0; }
 .expression-editor__footer > span { color: #7d8a9d; font-size: 12px; }
