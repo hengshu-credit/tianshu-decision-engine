@@ -43,6 +43,9 @@ public class VariableSourceResolver {
     private RuleListService ruleListService;
 
     @Resource
+    private ListMatchMatrix listMatchMatrix;
+
+    @Resource
     private RuleRuntimeCallLogService runtimeCallLogService;
 
     @Resource
@@ -396,7 +399,12 @@ public class VariableSourceResolver {
         } else if ("DB".equals(varSource)) {
             collectDependencyValues(config.get("params"), dependencies);
         } else if ("LIST".equals(varSource)) {
-            collectDependencyValues(firstNonNull(config.get("queryField"), config.get("queryPath"), config.get("field")), dependencies);
+            Object queryOperands = config.get("queryOperands");
+            if (queryOperands instanceof Iterable) {
+                for (Object operand : (Iterable<?>) queryOperands) {
+                    dependencies.addAll(OperandValueResolver.collectPaths(JSON.toJSONString(operand)));
+                }
+            }
         }
         return dependencies;
     }
@@ -826,22 +834,30 @@ public class VariableSourceResolver {
 
     private Object resolveListVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params,
                                        VariableResolveOptions options) {
-        Long listId = longValue(firstNonNull(config.get("listId"), config.get("listLibraryId")));
-        if (listId == null) {
-            throw new IllegalArgumentException("名单变量缺少 listId");
-        }
-        Object queryValue = resolveListQueryValue(config, params);
-        List<String> itemTypes = buildStringList(firstNonNull(config.get("itemTypes"), config.get("itemType")));
-        String matchMode = stringValue(firstNonNull(config.get("matchMode"), config.get("operator")));
+        rejectLegacyListConfig(config);
+        List<Long> listIds = buildLongList(config.get("listIds"));
+        if (listIds.isEmpty()) throw new IllegalArgumentException("名单变量缺少 listIds");
+        List<Object> queryValues = resolveListQueryOperands(config.get("queryOperands"), params);
+        if (queryValues.isEmpty()) throw new IllegalArgumentException("名单变量缺少 queryOperands");
+        String combinationMode = stringValue(config.get("combinationMode"));
+        if (!hasText(combinationMode)) throw new IllegalArgumentException("名单变量缺少 combinationMode");
+        List<String> itemTypes = buildStringList(config.get("itemTypes"));
+        String matchMode = stringValue(config.get("matchMode"));
         if (!hasText(matchMode)) {
             matchMode = "IN_LIST";
         }
+        String returnMode = stringValue(config.get("returnMode"));
+        if (!"BOOLEAN".equals(returnMode) && !"NUMBER".equals(returnMode)) {
+            throw new IllegalArgumentException("名单变量 returnMode 仅支持 BOOLEAN 或 NUMBER");
+        }
         long start = System.currentTimeMillis();
-        boolean hit = options != null && options.getListMatchTime() != null
-                ? ruleListService.matchAt(listId, queryValue, itemTypes, matchMode, options.getListMatchTime())
-                : ruleListService.match(listId, queryValue, itemTypes, matchMode);
+        ListMatchMatrix matrix = listMatchMatrix == null ? new ListMatchMatrix(ruleListService) : listMatchMatrix;
+        boolean hit = matrix.match(listIds, queryValues, combinationMode, matchMode, itemTypes,
+                options == null ? null : options.getListMatchTime());
         Map<String, Object> request = new LinkedHashMap<>();
-        request.put("queryValue", queryValue);
+        request.put("listIds", listIds);
+        request.put("queryValues", queryValues);
+        request.put("combinationMode", combinationMode);
         request.put("itemTypes", itemTypes);
         request.put("matchMode", matchMode);
         if (options != null && options.getListMatchTime() != null) {
@@ -849,13 +865,9 @@ public class VariableSourceResolver {
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("hit", hit);
-        logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listId, request, response, null, System.currentTimeMillis() - start);
-        String returnMode = stringValue(config.get("returnMode"));
+        logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request, response, null, System.currentTimeMillis() - start);
         if ("BOOLEAN".equals(returnMode)) {
             return hit;
-        }
-        if (config.containsKey("hitValue") || config.containsKey("missValue")) {
-            return hit ? parseConfiguredValue(config.get("hitValue"), params) : parseConfiguredValue(config.get("missValue"), params);
         }
         return hit ? 1 : 0;
     }
@@ -892,20 +904,37 @@ public class VariableSourceResolver {
         return "HTTP";
     }
 
-    private Object resolveListQueryValue(Map<String, Object> config, Map<String, Object> params) {
-        Object raw = firstNonNull(config.get("queryField"), config.get("queryPath"), config.get("field"));
-        if (raw == null) {
-            throw new IllegalArgumentException("名单变量缺少 queryField");
+    private List<Object> resolveListQueryOperands(Object source, Map<String, Object> params) {
+        List<Object> result = new ArrayList<>();
+        if (!(source instanceof Iterable)) return result;
+        for (Object value : (Iterable<?>) source) {
+            JSONObject operand = value instanceof JSONObject
+                    ? (JSONObject) value
+                    : JSON.parseObject(JSON.toJSONString(value));
+            result.add(OperandValueResolver.resolve(operand, params));
         }
-        if (raw instanceof String) {
-            String text = (String) raw;
-            if (text.startsWith("$.")) {
-                return readPath(params, text.substring(2));
+        return result;
+    }
+
+    private List<Long> buildLongList(Object source) {
+        List<Long> result = new ArrayList<>();
+        if (!(source instanceof Iterable)) return result;
+        for (Object value : (Iterable<?>) source) {
+            Long parsed = longValue(value);
+            if (parsed == null) throw new IllegalArgumentException("名单ID必须是整数: " + value);
+            result.add(parsed);
+        }
+        return result;
+    }
+
+    private void rejectLegacyListConfig(Map<String, Object> config) {
+        String[] legacyKeys = {"listId", "listLibraryId", "queryField", "queryPath", "field",
+                "itemType", "operator", "hitValue", "missValue"};
+        for (String key : legacyKeys) {
+            if (config.containsKey(key)) {
+                throw new IllegalArgumentException("名单变量不再支持旧配置字段: " + key);
             }
-            Object value = readPath(params, text);
-            return value != null ? value : parseConfiguredValue(raw, params);
         }
-        return parseConfiguredValue(raw, params);
     }
 
     private void applyExceptionStrategy(RuleVariable variable, Map<String, Object> config, String scriptName,

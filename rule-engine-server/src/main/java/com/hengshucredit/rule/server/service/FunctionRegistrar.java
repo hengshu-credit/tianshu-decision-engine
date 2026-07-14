@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.server.functions.RuleListFunctions;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationContext;
@@ -32,6 +33,9 @@ public class FunctionRegistrar {
 
     @Resource
     private ApplicationContext applicationContext;
+
+    @Resource
+    private RuleListFunctions ruleListFunctions;
 
     /** 缓存 JAVA 类型的实例，避免重复反射创建 */
     private final Map<String, Object> javaInstanceCache = new ConcurrentHashMap<>();
@@ -141,6 +145,17 @@ public class FunctionRegistrar {
                 log.error("[FunctionRegistrar] 注册 BEAN 函数 {} 失败: {}", func.getFuncCode(), e.getMessage(), e);
             }
         }
+    }
+
+    /** 注册依赖服务端数据源的函数；客户端引擎不会注册这些方法。 */
+    public void registerServerFunctions(Express4Runner runner) {
+        if (runner == null || ruleListFunctions == null) return;
+        Class<?>[] twoObjects = {Object.class, Object.class};
+        Class<?>[] listMatchArgs = {Object.class, Object.class, String.class, String.class, Object.class};
+        runner.addFunctionOfServiceMethod("isInLists", ruleListFunctions, "isInLists", twoObjects);
+        runner.addFunctionOfServiceMethod("isInListsNumber", ruleListFunctions, "isInListsNumber", twoObjects);
+        runner.addFunctionOfServiceMethod("listMatch", ruleListFunctions, "listMatch", listMatchArgs);
+        runner.addFunctionOfServiceMethod("listMatchNumber", ruleListFunctions, "listMatchNumber", listMatchArgs);
     }
 
     /**

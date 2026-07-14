@@ -250,6 +250,17 @@ final class BuiltinFunctionCatalog {
         add(list, "currentRule", "获取当前规则", "MAP", RUNTIME_CONTEXT_CLASS);
         add(list, "currentRuleName", "获取当前规则名称", "STRING", RUNTIME_CONTEXT_CLASS);
         add(list, "currentMatchedConditions", "获取当前命中条件", "LIST", RUNTIME_CONTEXT_CLASS);
+        list.add(beanFn("isInLists", "是否在一个或多个名单内", "按单个值查询一个或多个名单库并返回布尔值",
+                params(p("value", "OBJECT", "查询值", "13800138000"), p("listIds", "OBJECT", "名单ID", Arrays.asList(1, 2))), "BOOLEAN"));
+        list.add(beanFn("isInListsNumber", "是否在名单内（数字）", "按单个值查询一个或多个名单库并返回0或1",
+                params(p("value", "OBJECT", "查询值", "13800138000"), p("listIds", "OBJECT", "名单ID", Arrays.asList(1, 2))), "NUMBER"));
+        String matrixParams = params(p("values", "OBJECT", "查询值", Arrays.asList("13800138000", "110101199001010011")),
+                p("listIds", "OBJECT", "名单ID", Arrays.asList(1, 2)),
+                p("combinationMode", "STRING", "组合模式", "ANY_FIELD_ANY_LIST"),
+                p("matchMode", "STRING", "匹配方式", "IN_LIST"),
+                p("itemTypes", "OBJECT", "内容类型", Arrays.asList("MOBILE", "ID_CARD")));
+        list.add(beanFn("listMatch", "多字段多名单匹配", "按字段与名单组合模式返回布尔值", matrixParams, "BOOLEAN"));
+        list.add(beanFn("listMatchNumber", "多字段多名单匹配（数字）", "按字段与名单组合模式返回0或1", matrixParams, "NUMBER"));
     }
 
     private static void addDateShift(List<RuleFunction> list, String code, String name) {
@@ -287,6 +298,22 @@ final class BuiltinFunctionCatalog {
         function.setImplType("JAVA");
         function.setImplClass(implClass);
         function.setImplMethod(implMethod);
+        function.setStatus(1);
+        return function;
+    }
+
+    private static RuleFunction beanFn(String code, String name, String description, String paramsJson, String returnType) {
+        RuleFunction function = new RuleFunction();
+        function.setProjectId(0L);
+        function.setScope(RuleFunctionService.SCOPE_GLOBAL);
+        function.setFuncCode(code);
+        function.setFuncName(name);
+        function.setDescription(description);
+        function.setParamsJson(paramsJson);
+        function.setReturnType(returnType);
+        function.setImplType("BEAN");
+        function.setImplBeanName("ruleListFunctions");
+        function.setImplMethod(code);
         function.setStatus(1);
         return function;
     }

@@ -209,6 +209,7 @@ public class RuleExecuteService {
 
         functionRegistrar.registerJavaFunctions(javaFuncs, qlExpressEngine.getRunner());
         functionRegistrar.registerBeanFunctions(beanFuncs, qlExpressEngine.getRunner());
+        functionRegistrar.registerServerFunctions(qlExpressEngine.getRunner());
         AggregateBuiltinFunctionRegistry.register(qlExpressEngine.getRunner());
         runtimeRuleInvoker.register(qlExpressEngine.getRunner());
 

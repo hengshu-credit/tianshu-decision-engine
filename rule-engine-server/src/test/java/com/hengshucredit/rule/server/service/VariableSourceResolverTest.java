@@ -433,7 +433,8 @@ public class VariableSourceResolverTest {
     @Test
     public void listVariableQueriesConfiguredFieldAndReturnsHitFlag() throws Exception {
         RuleVariable variable = variable("mobileBlackHit", "LIST",
-                "{\"listId\":9,\"queryField\":\"request.mobile\",\"itemTypes\":[\"MOBILE\"]}");
+                "{\"listIds\":[9],\"queryOperands\":[{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"request.mobile\"}],"
+                        + "\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"IN_LIST\",\"itemTypes\":[\"MOBILE\"],\"returnMode\":\"NUMBER\"}");
         FakeRuleListService listService = new FakeRuleListService(true);
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
                 new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
@@ -451,7 +452,8 @@ public class VariableSourceResolverTest {
     @Test
     public void listVariablePassesConfiguredMatchMode() throws Exception {
         RuleVariable variable = variable("mobileNotBlack", "LIST",
-                "{\"listId\":9,\"queryField\":\"mobile\",\"itemTypes\":[\"手机号\"],\"matchMode\":\"NOT_IN_LIST\"}");
+                "{\"listIds\":[9],\"queryOperands\":[{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"mobile\"}],"
+                        + "\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"NOT_IN_LIST\",\"itemTypes\":[\"MOBILE\"],\"returnMode\":\"BOOLEAN\"}");
         FakeRuleListService listService = new FakeRuleListService(true);
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
                 new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
@@ -459,8 +461,32 @@ public class VariableSourceResolverTest {
         Map<String, Object> request = singletonMap("mobile", "13800138000");
         Map<String, Object> resolved = resolver.resolve(1L, request);
 
-        assertEquals(1, resolved.get("mobileNotBlack"));
+        assertEquals(Boolean.TRUE, resolved.get("mobileNotBlack"));
         assertEquals("NOT_IN_LIST", listService.lastMatchMode);
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void listVariableRejectsLegacySingleFieldConfiguration() throws Exception {
+        RuleVariable variable = variable("legacyListHit", "LIST",
+                "{\"listId\":9,\"queryField\":\"mobile\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(true));
+
+        resolver.resolve(1L, singletonMap("mobile", "13800138000"));
+    }
+
+    @Test
+    public void listVariableDependenciesComeFromEveryNestedQueryOperand() {
+        RuleVariable variable = variable("multiListHit", "LIST",
+                "{\"listIds\":[9,10],\"queryOperands\":["
+                        + "{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"request.mobile\"},"
+                        + "{\"kind\":\"FUNCTION\",\"functionId\":21,\"functionCode\":\"strUpper\",\"args\":["
+                        + "{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"VARIABLE\",\"code\":\"request.name\"}]}],"
+                        + "\"combinationMode\":\"ALL_FIELDS_ANY_LIST\",\"matchMode\":\"IN_LIST\",\"itemTypes\":[],\"returnMode\":\"BOOLEAN\"}");
+
+        assertEquals(new LinkedHashSet<>(Arrays.asList("request.mobile", "request.name")),
+                new VariableSourceResolver().collectVariableDependencies(variable));
     }
 
     @Test
@@ -481,7 +507,8 @@ public class VariableSourceResolverTest {
     @Test
     public void testGroupListVariableUsesRequestTimeSnapshot() throws Exception {
         RuleVariable variable = variable("mobileBlackHit", "LIST",
-                "{\"listId\":9,\"queryField\":\"mobile\",\"itemTypes\":[\"MOBILE\"]}");
+                "{\"listIds\":[9],\"queryOperands\":[{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"mobile\"}],"
+                        + "\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"IN_LIST\",\"itemTypes\":[\"MOBILE\"],\"returnMode\":\"NUMBER\"}");
         FakeRuleListService listService = new FakeRuleListService(true);
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
                 new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);

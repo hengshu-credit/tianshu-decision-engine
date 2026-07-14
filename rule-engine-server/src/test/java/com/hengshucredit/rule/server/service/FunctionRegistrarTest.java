@@ -3,7 +3,9 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.server.functions.RuleListFunctions;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -57,6 +59,31 @@ public class FunctionRegistrarTest {
         assertTrue(result.getErrorMessage(), result.isSuccess());
         Map<?, ?> output = (Map<?, ?>) result.getResult();
         assertEquals("13,000.00", output.get("formatted"));
+    }
+
+    @Test
+    public void serverRegistersListFunctionsWithSpringManagedDependencies() {
+        RuleListService listService = new RuleListService() {
+            @Override
+            public boolean match(Long listId, Object content, java.util.List<String> itemTypes, String matchMode) {
+                return Long.valueOf(9L).equals(listId) && "13800138000".equals(content);
+            }
+        };
+        FunctionRegistrar registrar = new FunctionRegistrar();
+        ReflectionTestUtils.setField(registrar, "ruleListFunctions",
+                new RuleListFunctions(new ListMatchMatrix(listService)));
+        QLExpressEngine engine = new QLExpressEngine();
+
+        registrar.registerServerFunctions(engine.getRunner());
+        RuleResult result = engine.execute(
+                "_result = {\"booleanHit\": isInLists(\"13800138000\", [9,10]), "
+                        + "\"numberMiss\": isInListsNumber(\"other\", 9)}\n_result",
+                Collections.emptyMap());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        Map<?, ?> output = (Map<?, ?>) result.getResult();
+        assertEquals(Boolean.TRUE, output.get("booleanHit"));
+        assertEquals(0, ((Number) output.get("numberMiss")).intValue());
     }
 
     @Test

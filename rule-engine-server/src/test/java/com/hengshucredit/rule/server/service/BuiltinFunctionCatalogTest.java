@@ -31,9 +31,13 @@ public class BuiltinFunctionCatalogTest {
             assertTrue("duplicate funcCode: " + function.getFuncCode(), codes.add(function.getFuncCode()));
             assertEquals(RuleFunctionService.SCOPE_GLOBAL, function.getScope());
             assertEquals(Long.valueOf(0L), function.getProjectId());
-            assertEquals("JAVA", function.getImplType());
+            assertTrue("JAVA".equals(function.getImplType()) || "BEAN".equals(function.getImplType()));
             assertFalse(function.getFuncName().isEmpty());
-            assertFalse(function.getImplClass().isEmpty());
+            if ("JAVA".equals(function.getImplType())) {
+                assertFalse(function.getImplClass().isEmpty());
+            } else {
+                assertEquals("ruleListFunctions", function.getImplBeanName());
+            }
             assertFalse(function.getImplMethod().isEmpty());
             assertNotNull(function.getParamsJson());
             assertTrue(function.getParamsJson(), function.getParamsJson().startsWith("["));
@@ -76,6 +80,10 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("currentRule"));
         assertTrue(codeSet.contains("currentRuleName"));
         assertTrue(codeSet.contains("currentMatchedConditions"));
+        assertTrue(codeSet.contains("isInLists"));
+        assertTrue(codeSet.contains("isInListsNumber"));
+        assertTrue(codeSet.contains("listMatch"));
+        assertTrue(codeSet.contains("listMatchNumber"));
         assertFalse(codeSet.contains("newInstanceByClassName"));
         assertTrue(definitions.size() >= 105);
     }
@@ -83,6 +91,7 @@ public class BuiltinFunctionCatalogTest {
     @Test
     public void builtinFunctionExamplesExecuteThroughFunctionManagement() {
         for (RuleFunction function : BuiltinFunctionCatalog.definitions()) {
+            if ("BEAN".equals(function.getImplType())) continue;
             RuleFunctionService service = serviceWithFunction(function);
             Map<String, Object> params = exampleParams(function.getParamsJson());
 
