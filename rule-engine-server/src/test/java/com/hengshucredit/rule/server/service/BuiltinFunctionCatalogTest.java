@@ -17,6 +17,7 @@ import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class BuiltinFunctionCatalogTest {
@@ -34,7 +35,9 @@ public class BuiltinFunctionCatalogTest {
             assertFalse(function.getFuncName().isEmpty());
             assertFalse(function.getImplClass().isEmpty());
             assertFalse(function.getImplMethod().isEmpty());
-            assertTrue(JSON.parseArray(function.getParamsJson()).size() >= 1);
+            assertNotNull(function.getParamsJson());
+            assertTrue(function.getParamsJson(), function.getParamsJson().startsWith("["));
+            JSON.parseArray(function.getParamsJson());
         }
 
         Set<String> codeSet = definitions.stream().map(RuleFunction::getFuncCode).collect(Collectors.toSet());
@@ -51,7 +54,30 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("scoreByProbability"));
         assertTrue(codeSet.contains("scoreByOddsPdo"));
         assertTrue(codeSet.contains("scoreByBadRatePdo"));
-        assertTrue(definitions.size() >= 58);
+        assertTrue(codeSet.contains("currentDate"));
+        assertTrue(codeSet.contains("currentDateTime"));
+        assertTrue(codeSet.contains("dateAddMonths"));
+        assertTrue(codeSet.contains("dateAddParts"));
+        assertTrue(codeSet.contains("dateSubParts"));
+        assertTrue(codeSet.contains("dateYear"));
+        assertTrue(codeSet.contains("dateDaysInSpecifiedMonths"));
+        assertTrue(codeSet.contains("dateDaysOutsideSpecifiedMonths"));
+        assertTrue(codeSet.contains("strSubstring"));
+        assertTrue(codeSet.contains("strUpper"));
+        assertTrue(codeSet.contains("numCeil"));
+        assertTrue(codeSet.contains("numLog10"));
+        assertTrue(codeSet.contains("arrSortBy"));
+        assertTrue(codeSet.contains("arrPluck"));
+        assertTrue(codeSet.contains("mapPut"));
+        assertTrue(codeSet.contains("newMap"));
+        assertTrue(codeSet.contains("newList"));
+        assertTrue(codeSet.contains("newLike"));
+        assertTrue(codeSet.contains("toNumberValue"));
+        assertTrue(codeSet.contains("currentRule"));
+        assertTrue(codeSet.contains("currentRuleName"));
+        assertTrue(codeSet.contains("currentMatchedConditions"));
+        assertFalse(codeSet.contains("newInstanceByClassName"));
+        assertTrue(definitions.size() >= 105);
     }
 
     @Test

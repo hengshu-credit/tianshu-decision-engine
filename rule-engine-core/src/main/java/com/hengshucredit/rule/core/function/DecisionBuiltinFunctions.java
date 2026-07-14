@@ -16,10 +16,14 @@ import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Comparator;
 import java.util.Date;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -75,6 +79,50 @@ public class DecisionBuiltinFunctions {
 
     public boolean numBetween(double value, double min, double max) {
         return value >= min && value <= max;
+    }
+
+    public double numMax(double left, double right) {
+        return Math.max(left, right);
+    }
+
+    public double numMin(double left, double right) {
+        return Math.min(left, right);
+    }
+
+    public double numSin(double value) {
+        return Math.sin(value);
+    }
+
+    public double numCos(double value) {
+        return Math.cos(value);
+    }
+
+    public double numTan(double value) {
+        return Math.tan(value);
+    }
+
+    public double numCot(double value) {
+        return 1d / Math.tan(value);
+    }
+
+    public double numLn(double value) {
+        return Math.log(value);
+    }
+
+    public double numLog10(double value) {
+        return Math.log10(value);
+    }
+
+    public double numCeil(double value) {
+        return Math.ceil(value);
+    }
+
+    public double numFloor(double value) {
+        return Math.floor(value);
+    }
+
+    public double numRoundInteger(double value) {
+        return Math.round(value);
     }
 
     public int strLength(String text) {
@@ -148,6 +196,50 @@ public class DecisionBuiltinFunctions {
         return sb.toString();
     }
 
+    public String strSubstring(String text, double start, double end) {
+        if (text == null) return null;
+        int from = clampIndex((int) start, text.length());
+        int to = clampIndex((int) end, text.length());
+        return text.substring(Math.min(from, to), Math.max(from, to));
+    }
+
+    public String strSubstringFrom(String text, double start) {
+        if (text == null) return null;
+        return text.substring(clampIndex((int) start, text.length()));
+    }
+
+    public String strSubstringTo(String text, double end) {
+        if (text == null) return null;
+        return text.substring(0, clampIndex((int) end, text.length()));
+    }
+
+    public String strLower(String text) {
+        return text == null ? null : text.toLowerCase(java.util.Locale.ROOT);
+    }
+
+    public String strUpper(String text) {
+        return text == null ? null : text.toUpperCase(java.util.Locale.ROOT);
+    }
+
+    public String strCharAt(String text, double index) {
+        if (text == null) return null;
+        int value = (int) index;
+        return value >= 0 && value < text.length() ? String.valueOf(text.charAt(value)) : null;
+    }
+
+    public long strIndexOf(String text, String target) {
+        return text == null || target == null ? -1L : text.indexOf(target);
+    }
+
+    public long strLastIndexOf(String text, String target) {
+        return text == null || target == null ? -1L : text.lastIndexOf(target);
+    }
+
+    public String strReplaceLiteral(String text, String target, String replacement) {
+        if (text == null || target == null) return text;
+        return text.replace(target, replacement == null ? "" : replacement);
+    }
+
     public long arrSize(Object values) {
         return sizeOf(values);
     }
@@ -206,6 +298,51 @@ public class DecisionBuiltinFunctions {
             }
         }
         return false;
+    }
+
+    public Object arrMax(Object values) {
+        return arrayExtreme(values, true);
+    }
+
+    public Object arrMin(Object values) {
+        return arrayExtreme(values, false);
+    }
+
+    public List<Object> arrAdd(Object values, Object value) {
+        List<Object> result = new ArrayList<>(toElements(values));
+        result.add(value);
+        return result;
+    }
+
+    public List<Object> arrRemove(Object values, Object value) {
+        List<Object> result = new ArrayList<>();
+        for (Object item : toElements(values)) {
+            if (!valueEquals(item, value)) result.add(item);
+        }
+        return result;
+    }
+
+    public List<Object> arrSortBy(Object values, final String path, String direction) {
+        List<Object> result = new ArrayList<>(toElements(values));
+        final boolean desc = direction != null && "DESC".equalsIgnoreCase(direction.trim());
+        result.sort(new Comparator<Object>() {
+            @Override
+            public int compare(Object left, Object right) {
+                int compared = compareValue(readByPath(left, path), readByPath(right, path));
+                return desc ? -compared : compared;
+            }
+        });
+        return result;
+    }
+
+    public List<Object> arrPluck(Object values, String path) {
+        List<Object> result = new ArrayList<>();
+        for (Object item : toElements(values)) result.add(readByPath(item, path));
+        return result;
+    }
+
+    public boolean arrIsEmpty(Object values) {
+        return toElements(values).isEmpty();
     }
 
     public Object jsonParse(String text) {
@@ -331,6 +468,99 @@ public class DecisionBuiltinFunctions {
         return JSON.toJSONString(value);
     }
 
+    public Map<String, Object> mapPut(Object source, String key, Object value) {
+        Map<String, Object> result = toMapValue(source);
+        result.put(key, value);
+        return result;
+    }
+
+    public Map<String, Object> mapRemove(Object source, String key) {
+        Map<String, Object> result = toMapValue(source);
+        result.remove(key);
+        return result;
+    }
+
+    public boolean mapHasKey(Object source, String key) {
+        return toMapValue(source).containsKey(key);
+    }
+
+    public Object mapGet(Object source, String key) {
+        return toMapValue(source).get(key);
+    }
+
+    public long mapSize(Object source) {
+        return toMapValue(source).size();
+    }
+
+    public List<Object> mapKeys(Object source) {
+        return new ArrayList<Object>(toMapValue(source).keySet());
+    }
+
+    public List<Object> mapValues(Object source) {
+        return new ArrayList<>(toMapValue(source).values());
+    }
+
+    public Map<String, Object> newMap() {
+        return new LinkedHashMap<>();
+    }
+
+    public List<Object> newList() {
+        return new ArrayList<>();
+    }
+
+    public Object newLike(Object source) {
+        if (source instanceof Map) return new LinkedHashMap<>();
+        if (source instanceof Set) return new LinkedHashSet<>();
+        if (source instanceof Collection) return new ArrayList<>();
+        if (source != null && source.getClass().isArray()) {
+            return Array.newInstance(source.getClass().getComponentType(), 0);
+        }
+        return null;
+    }
+
+    public String toStringValue(Object value) {
+        return value == null ? null : String.valueOf(value);
+    }
+
+    public BigDecimal toNumberValue(Object value) {
+        BigDecimal result = toBigDecimal(value);
+        if (result == null) throw new IllegalArgumentException("无法转换为数值: " + value);
+        return result;
+    }
+
+    public Boolean toBooleanValue(Object value) {
+        if (value instanceof Boolean) return (Boolean) value;
+        if (value instanceof Number) return BigDecimal.ZERO.compareTo(toNumberValue(value)) != 0;
+        String text = value == null ? "" : String.valueOf(value).trim();
+        if ("true".equalsIgnoreCase(text)) return Boolean.TRUE;
+        if ("false".equalsIgnoreCase(text)) return Boolean.FALSE;
+        throw new IllegalArgumentException("无法转换为布尔值: " + value);
+    }
+
+    public List<Object> toListValue(Object value) {
+        return new ArrayList<>(toElements(value));
+    }
+
+    @SuppressWarnings("unchecked")
+    public Map<String, Object> toMapValue(Object value) {
+        Object parsed = parseJsonTextIfNeeded(value);
+        if (parsed == null) return new LinkedHashMap<>();
+        if (!(parsed instanceof Map)) throw new IllegalArgumentException("无法转换为 Map: " + value);
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) parsed).entrySet()) {
+            result.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return result;
+    }
+
+    public String currentDate() {
+        return LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE);
+    }
+
+    public String currentDateTime() {
+        return LocalDateTime.now().format(DateTimeFormatter.ofPattern(DEFAULT_DATETIME_PATTERN));
+    }
+
     public String dateFormat(Object date, String pattern) {
         LocalDateTime value = toDateTime(date, null);
         if (value == null) {
@@ -359,6 +589,33 @@ public class DecisionBuiltinFunctions {
         return dateAdd(date, -amount, unit);
     }
 
+    public String dateAddParts(Object date, double years, double months, double days,
+                               double hours, double minutes, double seconds) {
+        LocalDateTime value = toDateTime(date, null);
+        if (value == null) return null;
+        value = value.plusYears((long) years).plusMonths((long) months).plusDays((long) days)
+                .plusHours((long) hours).plusMinutes((long) minutes).plusSeconds((long) seconds);
+        return formatDateTime(value, DEFAULT_DATETIME_PATTERN);
+    }
+
+    public String dateSubParts(Object date, double years, double months, double days,
+                               double hours, double minutes, double seconds) {
+        return dateAddParts(date, -years, -months, -days, -hours, -minutes, -seconds);
+    }
+
+    public String dateAddYears(Object date, double amount) { return dateAdd(date, amount, "YEAR"); }
+    public String dateAddMonths(Object date, double amount) { return dateAdd(date, amount, "MONTH"); }
+    public String dateAddDays(Object date, double amount) { return dateAdd(date, amount, "DAY"); }
+    public String dateAddHours(Object date, double amount) { return dateAdd(date, amount, "HOUR"); }
+    public String dateAddMinutes(Object date, double amount) { return dateAdd(date, amount, "MINUTE"); }
+    public String dateAddSeconds(Object date, double amount) { return dateAdd(date, amount, "SECOND"); }
+    public String dateSubYears(Object date, double amount) { return dateSub(date, amount, "YEAR"); }
+    public String dateSubMonths(Object date, double amount) { return dateSub(date, amount, "MONTH"); }
+    public String dateSubDays(Object date, double amount) { return dateSub(date, amount, "DAY"); }
+    public String dateSubHours(Object date, double amount) { return dateSub(date, amount, "HOUR"); }
+    public String dateSubMinutes(Object date, double amount) { return dateSub(date, amount, "MINUTE"); }
+    public String dateSubSeconds(Object date, double amount) { return dateSub(date, amount, "SECOND"); }
+
     public long dateDiff(Object start, Object end, String unit) {
         LocalDateTime left = toDateTime(start, null);
         LocalDateTime right = toDateTime(end, null);
@@ -373,6 +630,54 @@ public class DecisionBuiltinFunctions {
             return ChronoUnit.MILLIS.between(left, right);
         }
         return chronoUnit(normalized).between(left, right);
+    }
+
+    public long dateYear(Object date) { return datePart(date, "YEAR"); }
+    public long dateMonth(Object date) { return datePart(date, "MONTH"); }
+    public long dateWeekday(Object date) { return datePart(date, "WEEKDAY"); }
+    public long dateDay(Object date) { return datePart(date, "DAY"); }
+    public long dateHour(Object date) { return datePart(date, "HOUR"); }
+    public long dateMinute(Object date) { return datePart(date, "MINUTE"); }
+    public long dateSecond(Object date) { return datePart(date, "SECOND"); }
+    public long dateDiffMillis(Object start, Object end) { return dateDiff(start, end, "MILLISECOND"); }
+    public long dateDiffSeconds(Object start, Object end) { return dateDiff(start, end, "SECOND"); }
+    public long dateDiffMinutes(Object start, Object end) { return dateDiff(start, end, "MINUTE"); }
+    public long dateDiffHours(Object start, Object end) { return dateDiff(start, end, "HOUR"); }
+    public long dateDiffDays(Object start, Object end) { return dateDiff(start, end, "DAY"); }
+    public long dateDiffWeeks(Object start, Object end) { return dateDiff(start, end, "WEEK"); }
+
+    public List<String> dateDaysInMonths(Object date) {
+        LocalDate value = toLocalDate(date);
+        if (value == null) return Collections.emptyList();
+        List<String> result = new ArrayList<>();
+        LocalDate current = value.withDayOfMonth(1);
+        for (int i = 0; i < value.lengthOfMonth(); i++) {
+            result.add(current.plusDays(i).format(DateTimeFormatter.ISO_LOCAL_DATE));
+        }
+        return result;
+    }
+
+    public List<String> dateDaysOutsideMonths(Object date) {
+        LocalDate value = toLocalDate(date);
+        if (value == null) return Collections.emptyList();
+        List<String> result = new ArrayList<>();
+        LocalDate current = LocalDate.of(value.getYear(), 1, 1);
+        int days = current.lengthOfYear();
+        for (int i = 0; i < days; i++) {
+            LocalDate candidate = current.plusDays(i);
+            if (candidate.getMonthValue() != value.getMonthValue()) {
+                result.add(candidate.format(DateTimeFormatter.ISO_LOCAL_DATE));
+            }
+        }
+        return result;
+    }
+
+    public List<String> dateDaysInSpecifiedMonths(Object start, Object end, String months) {
+        return dateDaysByMonths(start, end, months, true);
+    }
+
+    public List<String> dateDaysOutsideSpecifiedMonths(Object start, Object end, String months) {
+        return dateDaysByMonths(start, end, months, false);
     }
 
     public long dateToMillis(Object date) {
@@ -510,6 +815,62 @@ public class DecisionBuiltinFunctions {
             return effective.toString().length();
         }
         return 1;
+    }
+
+    private static int clampIndex(int value, int length) {
+        if (value < 0) return 0;
+        return Math.min(value, length);
+    }
+
+    private static Object arrayExtreme(Object values, boolean max) {
+        Object selected = null;
+        for (Object item : toElements(values)) {
+            if (selected == null || (max ? compareValue(item, selected) > 0 : compareValue(item, selected) < 0)) {
+                selected = item;
+            }
+        }
+        return selected;
+    }
+
+    private static long datePart(Object date, String part) {
+        LocalDateTime value = toDateTime(date, null);
+        if (value == null) return 0L;
+        if ("YEAR".equals(part)) return value.getYear();
+        if ("MONTH".equals(part)) return value.getMonthValue();
+        if ("WEEKDAY".equals(part)) return value.getDayOfWeek().getValue();
+        if ("DAY".equals(part)) return value.getDayOfMonth();
+        if ("HOUR".equals(part)) return value.getHour();
+        if ("MINUTE".equals(part)) return value.getMinute();
+        return value.getSecond();
+    }
+
+    private static List<String> dateDaysByMonths(Object start, Object end, String months, boolean included) {
+        LocalDate from = toLocalDate(start);
+        LocalDate to = toLocalDate(end);
+        List<String> result = new ArrayList<>();
+        if (from == null || to == null) return result;
+        if (from.isAfter(to)) {
+            LocalDate swap = from;
+            from = to;
+            to = swap;
+        }
+        Set<Integer> selected = new LinkedHashSet<>();
+        if (months != null) {
+            for (String item : months.split(",")) {
+                try {
+                    int month = Integer.parseInt(item.trim());
+                    if (month >= 1 && month <= 12) selected.add(month);
+                } catch (NumberFormatException ignored) {
+                    // 忽略无效月份，其余有效月份仍继续计算。
+                }
+            }
+        }
+        for (LocalDate cursor = from; !cursor.isAfter(to); cursor = cursor.plusDays(1)) {
+            if (selected.contains(cursor.getMonthValue()) == included) {
+                result.add(cursor.format(DateTimeFormatter.ISO_LOCAL_DATE));
+            }
+        }
+        return result;
     }
 
     private static List<Object> toElements(Object value) {

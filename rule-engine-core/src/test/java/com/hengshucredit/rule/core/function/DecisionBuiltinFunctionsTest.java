@@ -9,6 +9,7 @@ import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -145,6 +146,105 @@ public class DecisionBuiltinFunctionsTest {
         assertEquals(35, ((Number) output.get("age")).intValue());
         assertEquals(556.06d, ((Number) output.get("probabilityScore")).doubleValue(), 0.000001d);
         assertEquals(620.0d, ((Number) output.get("score")).doubleValue(), 0.000001d);
+    }
+
+    @Test
+    public void uruleDateAndCurrentTimeEquivalentsWork() {
+        assertTrue(Pattern.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}", functions.currentDate()));
+        assertTrue(Pattern.matches("[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}", functions.currentDateTime()));
+        assertEquals("2027-01-31 10:20:30", functions.dateAddYears("2026-01-31 10:20:30", 1));
+        assertEquals("2026-02-28 10:20:30", functions.dateAddMonths("2026-01-31 10:20:30", 1));
+        assertEquals("2027-03-03 14:25:36", functions.dateAddParts("2026-01-31 10:20:30", 1, 1, 3, 4, 5, 6));
+        assertEquals("2024-12-28 06:15:24", functions.dateSubParts("2026-01-31 10:20:30", 1, 1, 3, 4, 5, 6));
+        assertEquals("2026-01-29 10:20:30", functions.dateSubDays("2026-01-31 10:20:30", 2));
+        assertEquals(2026L, functions.dateYear("2026-07-14 15:16:17"));
+        assertEquals(7L, functions.dateMonth("2026-07-14 15:16:17"));
+        assertEquals(14L, functions.dateDay("2026-07-14 15:16:17"));
+        assertEquals(15L, functions.dateHour("2026-07-14 15:16:17"));
+        assertEquals(16L, functions.dateMinute("2026-07-14 15:16:17"));
+        assertEquals(17L, functions.dateSecond("2026-07-14 15:16:17"));
+        assertEquals(2L, functions.dateDiffDays("2026-07-01", "2026-07-03"));
+        assertEquals(31, functions.dateDaysInMonths("2026-07-14").size());
+        assertEquals(334, functions.dateDaysOutsideMonths("2026-07-14").size());
+        assertEquals(59, functions.dateDaysInSpecifiedMonths("2026-01-01", "2026-03-31", "1,2").size());
+        assertEquals(31, functions.dateDaysOutsideSpecifiedMonths("2026-01-01", "2026-03-31", "1,2").size());
+    }
+
+    @Test
+    public void uruleStringAndMathEquivalentsWork() {
+        assertEquals("BCD", functions.strSubstring("ABCDE", 1, 4));
+        assertEquals("CDE", functions.strSubstringFrom("ABCDE", 2));
+        assertEquals("ABC", functions.strSubstringTo("ABCDE", 3));
+        assertEquals("abc", functions.strLower("AbC"));
+        assertEquals("ABC", functions.strUpper("AbC"));
+        assertEquals("B", functions.strCharAt("ABC", 1));
+        assertEquals(1L, functions.strIndexOf("ABCA", "B"));
+        assertEquals(3L, functions.strLastIndexOf("ABCA", "A"));
+        assertEquals("A.B", functions.strReplaceLiteral("A-B", "-", "."));
+        assertEquals(9d, functions.numMax(9, 2), 0d);
+        assertEquals(2d, functions.numMin(9, 2), 0d);
+        assertEquals(2d, functions.numCeil(1.2), 0d);
+        assertEquals(1d, functions.numFloor(1.9), 0d);
+        assertEquals(2d, functions.numRoundInteger(1.5), 0d);
+        assertEquals(0d, functions.numSin(0), 0d);
+        assertEquals(1d, functions.numCos(0), 0d);
+        assertEquals(1d, functions.numLn(Math.E), 0.000001d);
+        assertEquals(2d, functions.numLog10(100), 0.000001d);
+    }
+
+    @Test
+    public void uruleListMapObjectAndCastEquivalentsWorkWithoutMutatingInput() {
+        List<Object> source = Arrays.<Object>asList(3, 1, 2);
+        assertEquals(3d, ((Number) functions.arrMax(source)).doubleValue(), 0d);
+        assertEquals(1d, ((Number) functions.arrMin(source)).doubleValue(), 0d);
+        assertEquals(Arrays.<Object>asList(3, 1, 2, 4), functions.arrAdd(source, 4));
+        assertEquals(Arrays.<Object>asList(3, 1), functions.arrRemove(source, 2));
+        assertFalse(functions.arrIsEmpty(source));
+        assertTrue(functions.arrIsEmpty(Arrays.asList()));
+
+        Map<String, Object> rowA = new LinkedHashMap<>();
+        rowA.put("score", 20);
+        Map<String, Object> rowB = new LinkedHashMap<>();
+        rowB.put("score", 10);
+        assertEquals(Arrays.asList(10, 20), functions.arrPluck(functions.arrSortBy(Arrays.asList(rowA, rowB), "score", "ASC"), "score"));
+
+        Map<String, Object> original = new LinkedHashMap<>();
+        original.put("a", 1);
+        Map<String, Object> added = functions.mapPut(original, "b", 2);
+        assertEquals(1, original.size());
+        assertEquals(2, added.size());
+        assertTrue(functions.mapHasKey(added, "b"));
+        assertEquals(2, functions.mapGet(added, "b"));
+        assertEquals(2L, functions.mapSize(added));
+        assertEquals(Arrays.asList("a", "b"), functions.mapKeys(added));
+        assertEquals(Arrays.asList(1, 2), functions.mapValues(added));
+        assertEquals(original, functions.mapRemove(added, "b"));
+        assertTrue(functions.newMap().isEmpty());
+        assertTrue(functions.newList().isEmpty());
+        assertTrue(((Map<?, ?>) functions.newLike(original)).isEmpty());
+        assertTrue(((List<?>) functions.newLike(source)).isEmpty());
+
+        assertEquals("12.5", functions.toStringValue(12.5));
+        assertEquals(12.5d, functions.toNumberValue("12.5").doubleValue(), 0d);
+        assertEquals(Boolean.TRUE, functions.toBooleanValue("true"));
+        assertEquals(Arrays.asList(1, 2), functions.toListValue("[1,2]"));
+        assertEquals(1, functions.toMapValue("{\"a\":1}").get("a"));
+    }
+
+    @Test
+    public void qlExpressRegistersNewSafeBuiltins() {
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleResult result = engine.execute(
+                "m = newMap();\n" +
+                "m = mapPut(m, \"score\", numCeil(toNumberValue(\"12.2\")));\n" +
+                "_result = {\"date\": currentDate(), \"upper\": strUpper(\"ab\"), \"score\": mapGet(m, \"score\")}\n" +
+                "_result", new LinkedHashMap<String, Object>());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        Map<?, ?> output = (Map<?, ?>) result.getResult();
+        assertTrue(Pattern.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}", String.valueOf(output.get("date"))));
+        assertEquals("AB", output.get("upper"));
+        assertEquals(13d, ((Number) output.get("score")).doubleValue(), 0d);
     }
 
     private static Map<String, Object> sampleJson() {

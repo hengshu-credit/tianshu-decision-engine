@@ -31,12 +31,16 @@ public class RuleRuntimeInvokerTest {
 
             assertEquals(Integer.valueOf(22), context.get("age"));
             assertEquals("PASS", ((Map<?, ?>) context.get("result")).get("decision"));
+            assertEquals("JCLTest", RuntimeContextBridge.currentRule().get("code"));
+            assertEquals(Long.valueOf(1L), RuntimeContextBridge.currentRule().get("projectId"));
+            assertEquals("TIANSHU", RuntimeContextBridge.currentRule().get("projectCode"));
         } finally {
             invoker.exit();
         }
 
         RuntimeContextBridge.setValue("afterExit", true);
         assertFalse(context.containsKey("afterExit"));
+        assertEquals(Collections.emptyMap(), RuntimeContextBridge.currentRule());
     }
 
     @Test

@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.util.ArrayDeque;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.LinkedHashSet;
 import java.util.LinkedHashMap;
@@ -85,6 +86,12 @@ public class RuleRuntimeInvoker {
         }
         currentFrame.set(frame);
         RuntimeContextBridge.bind(this::writeRuntimeValue);
+        Map<String, Object> ruleContext = new LinkedHashMap<>();
+        ruleContext.put("code", ruleCode);
+        ruleContext.put("name", ruleCode);
+        ruleContext.put("projectId", projectId);
+        ruleContext.put("projectCode", projectCode);
+        RuntimeContextBridge.setRuleContext(ruleContext, Collections.<String>emptyList());
     }
 
     public void exit() {

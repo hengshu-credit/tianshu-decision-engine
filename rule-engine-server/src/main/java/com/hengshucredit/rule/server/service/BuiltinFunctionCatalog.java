@@ -16,6 +16,7 @@ final class BuiltinFunctionCatalog {
 
     private static final String AGGREGATE_CLASS = "com.hengshucredit.rule.core.function.AggregateBuiltinFunctions";
     private static final String DECISION_CLASS = "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions";
+    private static final String RUNTIME_CONTEXT_CLASS = "com.hengshucredit.rule.core.function.RuntimeContextBuiltinFunctions";
 
     private BuiltinFunctionCatalog() {
     }
@@ -153,7 +154,119 @@ final class BuiltinFunctionCatalog {
                 p("pdo", "NUMBER", "PDO", 20),
                 p("direction", "STRING", "方向", "ASC")), "NUMBER", DECISION_CLASS, "scoreByBadRatePdo"));
 
+        addExtendedDefinitions(list);
         return list;
+    }
+
+    private static void addExtendedDefinitions(List<RuleFunction> list) {
+        add(list, "numMax", "两数最大值", "NUMBER", DECISION_CLASS, p("left", "NUMBER", "左值", 9), p("right", "NUMBER", "右值", 2));
+        add(list, "numMin", "两数最小值", "NUMBER", DECISION_CLASS, p("left", "NUMBER", "左值", 9), p("right", "NUMBER", "右值", 2));
+        add(list, "numSin", "正弦", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "弧度", 0));
+        add(list, "numCos", "余弦", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "弧度", 0));
+        add(list, "numTan", "正切", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "弧度", 0));
+        add(list, "numCot", "余切", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "弧度", 1));
+        add(list, "numLn", "自然对数", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "正数", Math.E));
+        add(list, "numLog10", "常用对数", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "正数", 100));
+        add(list, "numCeil", "向上取整", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "数值", 1.2));
+        add(list, "numFloor", "向下取整", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "数值", 1.9));
+        add(list, "numRoundInteger", "四舍五入取整", "NUMBER", DECISION_CLASS, p("value", "NUMBER", "数值", 1.5));
+
+        add(list, "strSubstring", "截取字符串", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "ABCDE"), p("start", "NUMBER", "开始下标", 1), p("end", "NUMBER", "结束下标", 4));
+        add(list, "strSubstringFrom", "从下标截取", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "ABCDE"), p("start", "NUMBER", "开始下标", 2));
+        add(list, "strSubstringTo", "截取到下标", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "ABCDE"), p("end", "NUMBER", "结束下标", 3));
+        add(list, "strLower", "转小写", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "AbC"));
+        add(list, "strUpper", "转大写", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "AbC"));
+        add(list, "strCharAt", "按下标取字符", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "ABC"), p("index", "NUMBER", "下标", 1));
+        add(list, "strIndexOf", "首次出现位置", "NUMBER", DECISION_CLASS, p("text", "STRING", "文本", "ABCA"), p("target", "STRING", "目标", "B"));
+        add(list, "strLastIndexOf", "末次出现位置", "NUMBER", DECISION_CLASS, p("text", "STRING", "文本", "ABCA"), p("target", "STRING", "目标", "A"));
+        add(list, "strReplaceLiteral", "按字面量替换", "STRING", DECISION_CLASS, p("text", "STRING", "文本", "A-B"), p("target", "STRING", "目标", "-"), p("replacement", "STRING", "替换值", "."));
+
+        add(list, "arrMax", "数组最大值", "OBJECT", DECISION_CLASS, p("values", "LIST", "数组", Arrays.asList(3, 1, 2)));
+        add(list, "arrMin", "数组最小值", "OBJECT", DECISION_CLASS, p("values", "LIST", "数组", Arrays.asList(3, 1, 2)));
+        add(list, "arrAdd", "数组追加元素", "LIST", DECISION_CLASS, p("values", "LIST", "数组", Arrays.asList(1, 2)), p("value", "OBJECT", "元素", 3));
+        add(list, "arrRemove", "数组移除元素", "LIST", DECISION_CLASS, p("values", "LIST", "数组", Arrays.asList(1, 2, 3)), p("value", "OBJECT", "元素", 2));
+        add(list, "arrSortBy", "数组按字段排序", "LIST", DECISION_CLASS, p("values", "LIST", "对象数组", sampleRows()), p("path", "STRING", "字段路径", "score"), p("direction", "STRING", "方向", "ASC"));
+        add(list, "arrPluck", "提取数组字段", "LIST", DECISION_CLASS, p("values", "LIST", "对象数组", sampleRows()), p("path", "STRING", "字段路径", "score"));
+        add(list, "arrIsEmpty", "数组是否为空", "BOOLEAN", DECISION_CLASS, p("values", "LIST", "数组", Arrays.asList()));
+
+        add(list, "mapPut", "字典设置键值", "MAP", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)), p("key", "STRING", "键", "b"), p("value", "OBJECT", "值", 2));
+        add(list, "mapRemove", "字典移除键", "MAP", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)), p("key", "STRING", "键", "a"));
+        add(list, "mapHasKey", "字典包含键", "BOOLEAN", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)), p("key", "STRING", "键", "a"));
+        add(list, "mapGet", "字典按键取值", "OBJECT", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)), p("key", "STRING", "键", "a"));
+        add(list, "mapSize", "字典键数量", "NUMBER", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)));
+        add(list, "mapKeys", "字典键列表", "LIST", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)));
+        add(list, "mapValues", "字典值列表", "LIST", DECISION_CLASS, p("source", "MAP", "字典", mapOf("a", 1)));
+        add(list, "newMap", "新建空字典", "MAP", DECISION_CLASS);
+        add(list, "newList", "新建空数组", "LIST", DECISION_CLASS);
+        add(list, "newLike", "新建同结构容器", "OBJECT", DECISION_CLASS, p("source", "OBJECT", "源容器", mapOf("a", 1)));
+        add(list, "toStringValue", "转换为字符串", "STRING", DECISION_CLASS, p("value", "OBJECT", "值", 12.5));
+        add(list, "toNumberValue", "转换为数值", "NUMBER", DECISION_CLASS, p("value", "OBJECT", "值", "12.5"));
+        add(list, "toBooleanValue", "转换为布尔值", "BOOLEAN", DECISION_CLASS, p("value", "OBJECT", "值", "true"));
+        add(list, "toListValue", "转换为数组", "LIST", DECISION_CLASS, p("value", "OBJECT", "值", "[1,2]"));
+        add(list, "toMapValue", "转换为字典", "MAP", DECISION_CLASS, p("value", "OBJECT", "值", "{\"a\":1}"));
+
+        add(list, "currentDate", "获取当前日期", "STRING", DECISION_CLASS);
+        add(list, "currentDateTime", "获取当前日期时间", "STRING", DECISION_CLASS);
+        add(list, "dateAddParts", "按年月日时分秒增加日期", "STRING", DECISION_CLASS,
+                p("date", "OBJECT", "日期", "2026-01-31 10:20:30"), p("years", "NUMBER", "年", 1),
+                p("months", "NUMBER", "月", 1), p("days", "NUMBER", "日", 3),
+                p("hours", "NUMBER", "小时", 4), p("minutes", "NUMBER", "分钟", 5), p("seconds", "NUMBER", "秒", 6));
+        add(list, "dateSubParts", "按年月日时分秒减少日期", "STRING", DECISION_CLASS,
+                p("date", "OBJECT", "日期", "2026-01-31 10:20:30"), p("years", "NUMBER", "年", 1),
+                p("months", "NUMBER", "月", 1), p("days", "NUMBER", "日", 3),
+                p("hours", "NUMBER", "小时", 4), p("minutes", "NUMBER", "分钟", 5), p("seconds", "NUMBER", "秒", 6));
+        addDateShift(list, "dateAddYears", "日期增加年");
+        addDateShift(list, "dateAddMonths", "日期增加月");
+        addDateShift(list, "dateAddDays", "日期增加日");
+        addDateShift(list, "dateAddHours", "日期增加小时");
+        addDateShift(list, "dateAddMinutes", "日期增加分钟");
+        addDateShift(list, "dateAddSeconds", "日期增加秒");
+        addDateShift(list, "dateSubYears", "日期减少年");
+        addDateShift(list, "dateSubMonths", "日期减少月");
+        addDateShift(list, "dateSubDays", "日期减少日");
+        addDateShift(list, "dateSubHours", "日期减少小时");
+        addDateShift(list, "dateSubMinutes", "日期减少分钟");
+        addDateShift(list, "dateSubSeconds", "日期减少秒");
+        addDatePart(list, "dateYear", "获取年份");
+        addDatePart(list, "dateMonth", "获取月份");
+        addDatePart(list, "dateWeekday", "获取星期");
+        addDatePart(list, "dateDay", "获取日");
+        addDatePart(list, "dateHour", "获取小时");
+        addDatePart(list, "dateMinute", "获取分钟");
+        addDatePart(list, "dateSecond", "获取秒");
+        addDateDiff(list, "dateDiffMillis", "日期相差毫秒");
+        addDateDiff(list, "dateDiffSeconds", "日期相差秒");
+        addDateDiff(list, "dateDiffMinutes", "日期相差分钟");
+        addDateDiff(list, "dateDiffHours", "日期相差小时");
+        addDateDiff(list, "dateDiffDays", "日期相差天");
+        addDateDiff(list, "dateDiffWeeks", "日期相差周");
+        add(list, "dateDaysInMonths", "日期所在月的全部日期", "LIST", DECISION_CLASS, p("date", "OBJECT", "日期", "2026-07-14"));
+        add(list, "dateDaysOutsideMonths", "日期所在年其他月份的日期", "LIST", DECISION_CLASS, p("date", "OBJECT", "日期", "2026-07-14"));
+        add(list, "dateDaysInSpecifiedMonths", "时间段内指定月份日期", "LIST", DECISION_CLASS,
+                p("start", "OBJECT", "开始日期", "2026-01-01"), p("end", "OBJECT", "结束日期", "2026-03-31"), p("months", "STRING", "月份", "1,2"));
+        add(list, "dateDaysOutsideSpecifiedMonths", "时间段内非指定月份日期", "LIST", DECISION_CLASS,
+                p("start", "OBJECT", "开始日期", "2026-01-01"), p("end", "OBJECT", "结束日期", "2026-03-31"), p("months", "STRING", "月份", "1,2"));
+
+        add(list, "currentRule", "获取当前规则", "MAP", RUNTIME_CONTEXT_CLASS);
+        add(list, "currentRuleName", "获取当前规则名称", "STRING", RUNTIME_CONTEXT_CLASS);
+        add(list, "currentMatchedConditions", "获取当前命中条件", "LIST", RUNTIME_CONTEXT_CLASS);
+    }
+
+    private static void addDateShift(List<RuleFunction> list, String code, String name) {
+        add(list, code, name, "STRING", DECISION_CLASS, p("date", "OBJECT", "日期", "2026-07-14 10:20:30"), p("amount", "NUMBER", "数量", 1));
+    }
+
+    private static void addDatePart(List<RuleFunction> list, String code, String name) {
+        add(list, code, name, "NUMBER", DECISION_CLASS, p("date", "OBJECT", "日期", "2026-07-14 15:16:17"));
+    }
+
+    private static void addDateDiff(List<RuleFunction> list, String code, String name) {
+        add(list, code, name, "NUMBER", DECISION_CLASS, p("start", "OBJECT", "开始日期", "2026-07-01 00:00:00"), p("end", "OBJECT", "结束日期", "2026-07-03 00:00:00"));
+    }
+
+    private static void add(List<RuleFunction> list, String code, String name, String returnType,
+                            String implClass, JSONObject... arguments) {
+        list.add(fn(code, name, name, params(arguments), returnType, implClass, code));
     }
 
     private static RuleFunction fn(String code, String name, String description, JSONObject param, String returnType,
@@ -205,6 +318,10 @@ final class BuiltinFunctionCatalog {
                 order("SUCCESS", 7.5, "C")
         ));
         return root;
+    }
+
+    private static List<Map<String, Object>> sampleRows() {
+        return Arrays.asList(mapOf("score", 20), mapOf("score", 10));
     }
 
     private static Map<String, Object> order(String status, double amount, String type) {
