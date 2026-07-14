@@ -12,6 +12,7 @@
       v-on="forwardedListeners"
       @input="onQuickInput"
       @select="onQuickSelect"
+      @manual-edit="openManualEditor"
     />
     <el-tooltip v-if="showEditorButton" content="配置组合表达式：可组合字段、方法、阈值和运算符" placement="top">
       <button type="button" class="expression-button" aria-label="配置组合表达式" @click="openEditor">fx</button>
@@ -34,7 +35,7 @@
 <script>
 import VarPicker from './VarPicker.vue'
 import ExpressionEditorDialog from '@/components/expression/ExpressionEditorDialog.vue'
-import { cloneOperand, VALUE_OPERAND_KINDS } from '@/utils/operand'
+import { cloneOperand, createLiteralOperand, createPathOperand, VALUE_OPERAND_KINDS } from '@/utils/operand'
 import { createFunctionTemplate } from '@/components/expression/expressionTree'
 
 export default {
@@ -64,6 +65,7 @@ export default {
       const listeners = { ...this.$listeners }
       delete listeners.input
       delete listeners.select
+      delete listeners['manual-edit']
       return listeners
     },
     showEditorButton() {
@@ -97,6 +99,12 @@ export default {
     },
     openEditor() {
       this.editorValue = cloneOperand(this.value)
+      this.editorVisible = true
+    },
+    openManualEditor(kind) {
+      this.editorValue = kind === 'PATH'
+        ? createPathOperand('')
+        : createLiteralOperand('', this.expectedType || 'STRING')
       this.editorVisible = true
     },
     onEditorApply(operand) {

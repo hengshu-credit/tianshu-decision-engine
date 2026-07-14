@@ -25,6 +25,12 @@ public class RuleBillingRecord {
     private String ruleCode;
     private String apiCode;
     private String datasourceCode;
+    private Long authId;
+    private String authCode;
+    private String authType;
+    private Long tokenId;
+    private String tokenCode;
+    private String authPhase;
     private Integer success;
     private BigDecimal quantity;
     private BigDecimal unitPrice;

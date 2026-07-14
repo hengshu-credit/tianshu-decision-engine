@@ -92,58 +92,35 @@ describe('ExpressionPalette', () => {
     expect(wrapper.vm.page).toBe(1)
   })
 
-  test('手输唯一路径反解为带稳定ID的PATH', () => {
-    const wrapper = mountPalette({
-      vars: [variable(12, 'request.customer.age', 'object', 'DATA_OBJECT')]
-    })
-    wrapper.vm.manualKind = 'PATH'
-    wrapper.vm.manualValue = 'request.customer.age'
+  test('手输资源只创建空节点且不显示资源区输入框', async () => {
+    const wrapper = mountPalette({ expectedType: 'NUMBER' })
+    wrapper.vm.selectCategory('manual')
+    await wrapper.vm.$nextTick()
 
-    wrapper.vm.confirmManual()
+    expect(wrapper.find('.palette-manual-editor').exists()).toBe(false)
 
-    expect(wrapper.emitted().insert[0][0]).toMatchObject({
-      kind: 'PATH',
-      refId: 12,
-      refType: 'DATA_OBJECT',
-      resolved: true
-    })
+    wrapper.vm.insertManual('LITERAL')
+    wrapper.vm.insertManual('PATH')
+    expect(wrapper.emitted().insert[0][0]).toEqual({ kind: 'LITERAL', value: '', valueType: 'NUMBER' })
+    expect(wrapper.emitted().insert[1][0]).toMatchObject({ kind: 'PATH', value: '', resolved: false })
   })
 
-  test('同路径多候选必须明确选择', () => {
-    const wrapper = mountPalette({
-      vars: [
-        variable(1, 'score'),
-        variable(2, 'score', 'model', 'MODEL_OUTPUT')
-      ]
-    })
-    wrapper.vm.manualKind = 'PATH'
-    wrapper.vm.manualValue = 'score'
+  test('字段结果使用类型编码名称三列展示', () => {
+    const wrapper = mountPalette({ vars: [variable(1, 'customer.extremely_long_score')] })
 
-    wrapper.vm.confirmManual()
-
-    expect(wrapper.emitted().insert).toBeUndefined()
-    expect(wrapper.vm.pathCandidates).toHaveLength(2)
-
-    wrapper.vm.confirmPathCandidate(wrapper.vm.pathCandidates[1])
-    expect(wrapper.emitted().insert[0][0]).toMatchObject({
-      kind: 'PATH',
-      refId: 2,
-      refType: 'MODEL_OUTPUT',
-      resolved: true
-    })
+    expect(wrapper.findAll('.palette-reference-table th')).toHaveLength(3)
+    expect(wrapper.find('.palette-reference-code').text()).toBe('customer.extremely_long_score')
   })
 
-  test('无法反解的手输路径原样保留', () => {
+  test('分类栏和内容栏宽度分别受到上下限约束', () => {
     const wrapper = mountPalette()
-    wrapper.vm.manualKind = 'PATH'
-    wrapper.vm.manualValue = 'payload.external_score'
-
-    wrapper.vm.confirmManual()
-
-    expect(wrapper.emitted().insert[0][0]).toMatchObject({
-      kind: 'PATH',
-      value: 'payload.external_score',
-      resolved: false
-    })
+    wrapper.vm.resizeColumn('category', -1000)
+    expect(wrapper.vm.categoryWidth).toBe(128)
+    wrapper.vm.resizeColumn('category', 1000)
+    expect(wrapper.vm.categoryWidth).toBe(240)
+    wrapper.vm.resizeColumn('content', -1000)
+    expect(wrapper.vm.contentWidth).toBe(280)
+    wrapper.vm.resizeColumn('content', 1000)
+    expect(wrapper.vm.contentWidth).toBeLessThanOrEqual(640)
   })
 })

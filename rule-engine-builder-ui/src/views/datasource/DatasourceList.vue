@@ -14,7 +14,7 @@
     <el-tabs v-model="activeTab" @tab-click="onTabChange">
       <el-tab-pane label="数据源" name="datasource">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleDatasourceQuery">
             <el-form-item label="作用范围">
               <el-select v-model="datasourceQuery.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />
@@ -101,7 +101,7 @@
 
       <el-tab-pane label="API 接口" name="api">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleApiQuery">
             <el-form-item label="数据源编码">
               <remote-filter-select v-model="apiQuery.datasourceCode" :fetch-options="fetchApiDatasourceCodeOptions" option-label-key="datasourceCode" option-value-key="datasourceCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>

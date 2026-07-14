@@ -1,5 +1,18 @@
 import { shallowMount } from '@vue/test-utils'
 import ExpressionEditorDialog from '@/components/expression/ExpressionEditorDialog.vue'
+import { createOperationOperand } from '@/utils/operand'
+
+function variable(id, code, category = 'standalone', refType = 'VARIABLE') {
+  return {
+    id,
+    _varId: id,
+    _refType: refType,
+    varCode: code,
+    varLabel: code,
+    varType: 'NUMBER',
+    _ref: { category, refType }
+  }
+}
 
 function mountEditor(propsData = {}) {
   return shallowMount(ExpressionEditorDialog, {
@@ -64,13 +77,15 @@ describe('ExpressionEditorDialog', () => {
       functionCode: 'outer',
       args: [{
         kind: 'OPERATION',
-        operator: '+',
-        operands: [{ kind: 'FUNCTION', functionCode: 'inner', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }] }, null]
+        terms: [
+          { operand: { kind: 'FUNCTION', functionCode: 'inner', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }] } },
+          { operator: '+', operand: null }
+        ]
       }]
     }
     const wrapper = mountEditor({ value })
 
-    expect(wrapper.vm.collapsedPathKeys).toContain('args.0.operands.0')
+    expect(wrapper.vm.collapsedPathKeys).toContain('args.0')
     wrapper.vm.expandAll()
     expect(wrapper.vm.collapsedPathKeys).toEqual([])
   })
@@ -87,5 +102,44 @@ describe('ExpressionEditorDialog', () => {
     wrapper.vm.selectPath(['args', 0, 'args', 0])
 
     expect(wrapper.vm.collapsedPathKeys).toEqual([])
+  })
+
+  test('在运算项后插入运算符后自动选中新同级项', () => {
+    const value = createOperationOperand([
+      { operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } },
+      { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } }
+    ])
+    const wrapper = mountEditor({ value })
+    wrapper.vm.selectedPath = ['terms', 0, 'operand']
+    wrapper.vm.insertTemplate(createOperationOperand([{ operand: null }, { operator: '*', operand: null }]))
+
+    expect(wrapper.vm.draft.terms.map(term => term.operator || '')).toEqual(['', '*', '+'])
+    expect(wrapper.vm.selectedPath).toEqual(['terms', 1, 'operand'])
+  })
+
+  test('检查器追加运算项后编辑器自动选中新空项', () => {
+    const value = createOperationOperand([
+      { operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } },
+      { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } }
+    ])
+    const wrapper = mountEditor({ value })
+    wrapper.vm.selectedPath = []
+    wrapper.vm.updateSelected({
+      ...value,
+      terms: value.terms.concat([{ operator: '+', operand: null }])
+    })
+
+    expect(wrapper.vm.selectedPath).toEqual(['terms', 2, 'operand'])
+  })
+
+  test('画布路径输入支持唯一匹配、多候选和无匹配', () => {
+    const wrapper = mountEditor({ vars: [variable(1, 'score'), variable(2, 'score', 'model', 'MODEL_OUTPUT')] })
+    wrapper.vm.draft = { kind: 'PATH', value: '', resolved: false }
+    wrapper.vm.updateManualPath({ path: [], value: 'score' })
+    wrapper.vm.resolveManualPath([])
+    expect(wrapper.vm.pathCandidates).toHaveLength(2)
+
+    wrapper.vm.selectPathCandidate({ path: [], candidate: wrapper.vm.pathCandidates[1] })
+    expect(wrapper.vm.draft).toMatchObject({ kind: 'PATH', refId: 2, refType: 'MODEL_OUTPUT', resolved: true })
   })
 })

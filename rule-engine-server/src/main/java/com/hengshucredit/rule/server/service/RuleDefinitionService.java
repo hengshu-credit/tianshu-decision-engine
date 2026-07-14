@@ -129,6 +129,8 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
                 definition.setProjectName(project.getProjectName());
             }
         }
+        definition.setStatus(0);
+        definition.setPublishedVersion(null);
         save(definition);
         RuleDefinitionContent content = new RuleDefinitionContent();
         content.setDefinitionId(definition.getId());

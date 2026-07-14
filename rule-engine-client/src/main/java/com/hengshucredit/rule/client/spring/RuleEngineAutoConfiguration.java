@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.client.spring;
 
 import com.hengshucredit.rule.client.RuleEngineClient;
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.KafkaLogReporter;
 import org.springframework.beans.factory.ObjectProvider;
@@ -54,6 +55,7 @@ public class RuleEngineAutoConfiguration {
                 .appName(props.getAppName())
                 .projectCode(props.getProjectCode())
                 .token(props.getToken())
+                .authConfig(props.toAuthConfig())
                 .connectionFactory(connectionFactory)
                 .applicationContext(applicationContext)
                 .l1CacheMaxSize(props.getL1CacheMaxSize())
@@ -63,12 +65,19 @@ public class RuleEngineAutoConfiguration {
                 .serverSideExecution(props.isServerSideExecution());
 
         ExecutionLogReporter reporter = logReporterProvider.getIfAvailable();
-        if (reporter != null) {
+        if (reporter != null && shouldUseExternalReporter(props)) {
             builder.logReporter(reporter);
         }
 
         RuleEngineClient client = builder.build();
         client.start();
         return client;
+    }
+
+    static boolean shouldUseExternalReporter(RuleEngineClientProperties properties) {
+        String authType = properties.getAuthType();
+        return !ClientAuthConfig.BASIC.equalsIgnoreCase(authType)
+                && !ClientAuthConfig.API_KEY.equalsIgnoreCase(authType)
+                && !ClientAuthConfig.HMAC_SHA256.equalsIgnoreCase(authType);
     }
 }

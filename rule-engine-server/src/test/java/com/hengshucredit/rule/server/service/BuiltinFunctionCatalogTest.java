@@ -68,6 +68,10 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("dateDaysOutsideSpecifiedMonths"));
         assertTrue(codeSet.contains("strSubstring"));
         assertTrue(codeSet.contains("strUpper"));
+        assertTrue(codeSet.contains("md5"));
+        assertTrue(codeSet.contains("sha1"));
+        assertTrue(codeSet.contains("sha256"));
+        assertTrue(codeSet.contains("hmacSha256"));
         assertTrue(codeSet.contains("numCeil"));
         assertTrue(codeSet.contains("numLog10"));
         assertTrue(codeSet.contains("arrSortBy"));

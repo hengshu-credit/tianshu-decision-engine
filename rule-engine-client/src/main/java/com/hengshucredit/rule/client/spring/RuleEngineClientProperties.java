@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.client.spring;
 
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import lombok.Data;
 
 /**
@@ -16,6 +17,16 @@ public class RuleEngineClientProperties {
      * 访问Token，用于服务端身份认证
      */
     private String token;
+    private String authType;
+    private String username;
+    private String password;
+    private String apiKey;
+    private String apiKeyPlacement = "HEADER";
+    private String apiKeyParameterName = "X-Rule-Api-Key";
+    private String accessKey;
+    private String hmacSecret;
+    private boolean tokenExchangeEnabled = true;
+    private int tokenRefreshAheadSeconds = 60;
 
     private int l1CacheMaxSize = 1000;
     private int httpTimeoutMs = 3000;
@@ -25,4 +36,24 @@ public class RuleEngineClientProperties {
     /** 是否开启表达式追踪，默认 true；关闭可提升执行性能 */
     private boolean traceEnabled = true;
     private boolean serverSideExecution = false;
+
+    public ClientAuthConfig toAuthConfig() {
+        ClientAuthConfig auth;
+        if (ClientAuthConfig.BASIC.equalsIgnoreCase(authType)) {
+            auth = ClientAuthConfig.basic(username, password);
+        } else if (ClientAuthConfig.API_KEY.equalsIgnoreCase(authType)) {
+            auth = ClientAuthConfig.apiKey(apiKeyParameterName, apiKey, apiKeyPlacement);
+        } else if (ClientAuthConfig.HMAC_SHA256.equalsIgnoreCase(authType)) {
+            auth = ClientAuthConfig.hmac(accessKey, hmacSecret);
+        } else if (token != null && !token.isEmpty()) {
+            auth = ClientAuthConfig.legacyToken(token);
+        } else {
+            return null;
+        }
+        if (!ClientAuthConfig.LEGACY_TOKEN.equals(auth.getAuthType())) {
+            auth.setTokenExchangeEnabled(tokenExchangeEnabled);
+        }
+        auth.setRefreshAheadSeconds(tokenRefreshAheadSeconds);
+        return auth;
+    }
 }

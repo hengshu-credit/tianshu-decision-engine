@@ -135,6 +135,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
                             seg.getString("value"),
                             seg.getString("min"),
                             seg.getString("max"),
+                            normalizeRangeBoundary(seg.getString("rangeBoundary")),
                             seg.getJSONObject("valueOperand"),
                             seg.getJSONObject("minOperand"),
                             seg.getJSONObject("maxOperand")));
@@ -167,9 +168,9 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         String op = seg.operator;
 
         if ("range".equals(op)) {
-            sb.append(scriptName).append(" >= ");
+            sb.append(scriptName).append(seg.rangeBoundary.startsWith("[") ? " >= " : " > ");
             appendSegmentValue(sb, seg.minOperand, seg.min, seg.varType, varContext);
-            sb.append(" && ").append(scriptName).append(" < ");
+            sb.append(" && ").append(scriptName).append(seg.rangeBoundary.endsWith("]") ? " <= " : " < ");
             appendSegmentValue(sb, seg.maxOperand, seg.max, seg.varType, varContext);
         } else {
             sb.append(scriptName).append(" ").append(op).append(" ");
@@ -214,6 +215,14 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         }
     }
 
+    private static String normalizeRangeBoundary(String rangeBoundary) {
+        if ("[)".equals(rangeBoundary) || "()".equals(rangeBoundary)
+                || "[]".equals(rangeBoundary) || "(]".equals(rangeBoundary)) {
+            return rangeBoundary;
+        }
+        return "[)";
+    }
+
     /** 维度分段信息 */
     private static class SegmentInfo {
         final String varCode;
@@ -225,12 +234,13 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         final String value;
         final String min;
         final String max;
+        final String rangeBoundary;
         final JSONObject valueOperand;
         final JSONObject minOperand;
         final JSONObject maxOperand;
 
         SegmentInfo(String varCode, String varType, Long varId, String refType, JSONObject dimensionOperand,
-                    String operator, String value, String min, String max,
+                    String operator, String value, String min, String max, String rangeBoundary,
                     JSONObject valueOperand, JSONObject minOperand, JSONObject maxOperand) {
             this.varCode = varCode;
             this.varType = varType;
@@ -241,6 +251,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             this.value = value;
             this.min = min;
             this.max = max;
+            this.rangeBoundary = rangeBoundary;
             this.valueOperand = valueOperand;
             this.minOperand = minOperand;
             this.maxOperand = maxOperand;

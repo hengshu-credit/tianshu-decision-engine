@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.client.log;
 
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
+import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.alibaba.fastjson.JSON;
 import okhttp3.*;
@@ -15,16 +17,21 @@ public class HttpLogReporter implements ExecutionLogReporter {
     private static final MediaType JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
     private final OkHttpClient httpClient;
     private final String reportUrl;
-    private final String token;
+    private final ClientRequestAuthenticator authenticator;
 
     public HttpLogReporter(String serverUrl, int timeoutMs) {
-        this(serverUrl, timeoutMs, null);
+        this(serverUrl, timeoutMs, (ClientRequestAuthenticator) null);
     }
 
     public HttpLogReporter(String serverUrl, int timeoutMs, String token) {
+        this(serverUrl, timeoutMs, token == null || token.isEmpty() ? null
+                : new ClientRequestAuthenticator(serverUrl, timeoutMs, ClientAuthConfig.legacyToken(token)));
+    }
+
+    public HttpLogReporter(String serverUrl, int timeoutMs, ClientRequestAuthenticator authenticator) {
         String baseUrl = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
         this.reportUrl = baseUrl + "/api/rule/log/report";
-        this.token = token;
+        this.authenticator = authenticator;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
@@ -36,10 +43,8 @@ public class HttpLogReporter implements ExecutionLogReporter {
         try {
             RequestBody body = RequestBody.create(JSON.toJSONString(logs), JSON_TYPE);
             Request.Builder builder = new Request.Builder().url(reportUrl).post(body);
-            if (token != null && !token.isEmpty()) {
-                builder.header("X-Rule-Token", token);
-            }
             Request request = builder.build();
+            if (authenticator != null) request = authenticator.authenticate(request);
             try (Response response = httpClient.newCall(request).execute()) {
                 if (!response.isSuccessful()) {
                     log.warn("Log report failed with status: {}", response.code());

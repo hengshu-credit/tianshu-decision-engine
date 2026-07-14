@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.core.compiler;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -71,6 +72,21 @@ public class OperandCompilerTest {
     }
 
     @Test
+    public void compilesFlatMixedOperationTerms() {
+        Assert.assertEquals("(1 + 2 * 3 - 4)", compile(
+                "{\"kind\":\"OPERATION\",\"terms\":["
+                        + "{\"operand\":{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}},"
+                        + "{\"operator\":\"+\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}},"
+                        + "{\"operator\":\"*\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}},"
+                        + "{\"operator\":\"-\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"4\",\"valueType\":\"NUMBER\"}}]}"));
+    }
+
+    @Test
+    public void rejectsLegacyBinaryOperationShape() {
+        assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[]}", "terms");
+    }
+
+    @Test
     public void resolvesManagedFunctionCodeByStableId() {
         VarContext context = new VarContext(Collections.<Long, String>emptyMap(),
                 Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(),
@@ -83,7 +99,7 @@ public class OperandCompilerTest {
 
     @Test
     public void compilesRecursiveExpressionNodes() {
-        Assert.assertEquals("(request.amount + 100)", compile("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"PATH\",\"value\":\"request.amount\"},{\"kind\":\"LITERAL\",\"value\":\"100\",\"valueType\":\"NUMBER\"}]}"));
+        Assert.assertEquals("(request.amount + 100)", compile("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"PATH\",\"value\":\"request.amount\"}},{\"operator\":\"+\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"100\",\"valueType\":\"NUMBER\"}}]}"));
         Assert.assertEquals("objGet(request.payload, \"score\")", compile("{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}"));
         Assert.assertEquals("arrGet(request.items, 0)", compile("{\"kind\":\"ACCESS\",\"accessType\":\"INDEX\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.items\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"0\",\"valueType\":\"NUMBER\"}}"));
         Assert.assertEquals("toNumberValue(\"12.5\")", compile("{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"12.5\",\"valueType\":\"STRING\"}}"));
@@ -119,8 +135,8 @@ public class OperandCompilerTest {
     @Test
     public void rejectsInvalidExpressionNodes() {
         assertCompileFails("{\"kind\":\"UNKNOWN\"}", "不支持");
-        assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[null]}", "参数");
-        assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"<\",\"operands\":[{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}]}", "2");
+        assertCompileFails("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":null},{\"operator\":\"+\",\"operand\":null}]}", "参数");
+        assertCompileFails("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}},{\"operator\":\"^\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}}]}", "不支持");
         assertCompileFails("{\"kind\":\"REFERENCE\",\"code\":\"score\"}", "ID");
     }
 
@@ -160,9 +176,15 @@ public class OperandCompilerTest {
 
     private JSONObject operation(String operator, JSONObject... operands) {
         JSONObject node = new JSONObject();
+        JSONArray terms = new JSONArray();
+        for (int i = 0; i < operands.length; i++) {
+            JSONObject term = new JSONObject();
+            if (i > 0) term.put("operator", operator);
+            term.put("operand", operands[i]);
+            terms.add(term);
+        }
         node.put("kind", "OPERATION");
-        node.put("operator", operator);
-        node.put("operands", operands);
+        node.put("terms", terms);
         return node;
     }
 

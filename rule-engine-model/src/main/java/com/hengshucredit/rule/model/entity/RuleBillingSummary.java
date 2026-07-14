@@ -22,6 +22,9 @@ public class RuleBillingSummary {
     private String billingCode;
     private String billingTarget;
     private Long targetRefId;
+    private Long authId;
+    private String authCode;
+    private String authType;
     private Long totalCount;
     private Long successCount;
     private Long failCount;

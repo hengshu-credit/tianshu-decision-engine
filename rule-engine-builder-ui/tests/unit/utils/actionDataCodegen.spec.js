@@ -6,7 +6,7 @@ import {
   newBlock,
   normalizeGraphActionData
 } from '@/utils/actionDataCodegen'
-import { createLiteralOperand, createPathOperand } from '@/utils/operand'
+import { createLiteralOperand, createOperationOperand, createPathOperand } from '@/utils/operand'
 
 const literal = (value, type = 'STRING') => createLiteralOperand(value, type)
 const path = value => createPathOperand(value)
@@ -16,7 +16,9 @@ const ref = (code, valueType = 'STRING') => ({
 })
 const assign = (target, value) => ({ type: 'assign', targetOperand: target, valueOperand: value })
 const fn = (functionCode, ...args) => ({ kind: 'FUNCTION', functionCode, args })
-const op = (operator, ...operands) => ({ kind: 'OPERATION', operator, operands })
+const op = (operator, ...operands) => createOperationOperand(operands.map((operand, index) => (
+  index === 0 ? { operand } : { operator, operand }
+)))
 
 describe('generateScript', () => {
   test.each([null, undefined, []])('空动作返回空脚本', value => {

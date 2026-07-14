@@ -11,6 +11,7 @@ import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
@@ -115,14 +116,28 @@ public class RuleExecuteService {
 
     public RuleResult executePublished(RulePublished published, Map<String, Object> params,
                                        Long projectId, String clientAppName) {
+        return executePublished(published, params, projectId, clientAppName, null);
+    }
+
+    public RuleResult executePublished(RulePublished published, Map<String, Object> params,
+                                       Long projectId, String clientAppName,
+                                       ProjectAuthContext authContext) {
         return executePublishedWithOptions(published, params, projectId, clientAppName,
-                VariableResolveOptions.defaults(), "CLIENT_SERVER").getResult();
+                VariableResolveOptions.defaults(), "CLIENT_SERVER", authContext).getResult();
     }
 
     public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
                                                         Long projectId, String clientAppName,
                                                         VariableResolveOptions resolveOptions,
                                                         String source) {
+        return executePublishedWithOptions(published, params, projectId, clientAppName,
+                resolveOptions, source, null);
+    }
+
+    public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
+                                                        Long projectId, String clientAppName,
+                                                        VariableResolveOptions resolveOptions, String source,
+                                                        ProjectAuthContext authContext) {
         if (published == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -159,6 +174,7 @@ public class RuleExecuteService {
         log.setModelType(published.getModelType());
         log.setSource(source == null ? "CLIENT_SERVER" : source);
         log.setClientAppName(clientAppName);
+        applyAuthAttribution(log, authContext);
         log.setInputParams(toJsonSafely(executeParams));
         log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
@@ -168,9 +184,20 @@ public class RuleExecuteService {
             log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
         logService.save(log);
-        billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
+        billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(),
+                result.getErrorMessage(), authContext);
 
         return new ExecutionOutcome(result, executeParams);
+    }
+
+    private void applyAuthAttribution(RuleExecutionLog log, ProjectAuthContext authContext) {
+        if (authContext == null) return;
+        log.setAuthId(authContext.getAuthId());
+        log.setAuthCode(authContext.getAuthCode());
+        log.setAuthType(authContext.getAuthType());
+        log.setTokenId(authContext.getTokenId());
+        log.setTokenCode(authContext.getTokenCode());
+        log.setAuthPhase(authContext.getAuthPhase());
     }
 
     private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId) {

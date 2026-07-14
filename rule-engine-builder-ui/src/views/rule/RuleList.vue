@@ -1,7 +1,7 @@
 <template>
   <div class="uiue-list-page">
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="作用范围">
           <el-select v-model="queryParams.scope" clearable filterable placeholder="全部" style="width:100px;">
             <el-option label="全局" value="GLOBAL" />
@@ -70,19 +70,21 @@
       </el-table-column>
       <el-table-column prop="status" label="发布状态" min-width="80" align="center">
         <template slot-scope="{ row }">
-          <el-tag :type="statusTagType(row.status)" size="mini">{{ statusLabel(row.status) }}</el-tag>
+          <el-tag :type="statusTagType(effectiveStatus(row))" size="mini">{{ statusLabel(effectiveStatus(row)) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="currentVersion" label="设计版本" min-width="80" align="center" />
-      <el-table-column prop="publishedVersion" label="发布版本" min-width="80" align="center" />
+      <el-table-column prop="publishedVersion" label="发布版本" min-width="80" align="center">
+        <template slot-scope="{ row }">{{ publishedVersionLabel(row) }}</template>
+      </el-table-column>
       <el-table-column prop="description" label="描述" min-width="140" show-overflow-tooltip />
       <el-table-column prop="updateTime" label="更新时间" min-width="160" />
       <el-table-column label="操作" width="230" align="center">
         <template slot-scope="{ row }">
           <el-button type="text" size="small" @click="handleDetail(row)">详情</el-button>
           <el-button type="text" size="small" @click="handleDesign(row)">设计</el-button>
-          <el-button type="text" size="small" @click="handlePublish(row)">{{ row.status === 1 ? '重新发布' : '发布' }}</el-button>
-          <el-button type="text" size="small" v-if="row.status === 1" @click="handleUnpublish(row)">下线</el-button>
+          <el-button type="text" size="small" @click="handlePublish(row)">{{ isPublished(row) ? '重新发布' : '发布' }}</el-button>
+          <el-button type="text" size="small" v-if="isPublished(row)" @click="handleUnpublish(row)">下线</el-button>
           <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
       </el-table-column>
@@ -121,7 +123,6 @@
           </el-select>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" placeholder="规则功能描述" /></el-form-item>
-        <el-form-item label="状态"><el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" /></el-form-item>
       </el-form>
       <div slot="footer">
         <el-button size="small" @click="dialogVisible = false">取消</el-button>
@@ -410,6 +411,19 @@ export default {
     },
     statusTagType(status) {
       return { 0: 'info', 1: 'success', 2: 'warning' }[status] || 'info'
+    },
+    effectiveStatus(row) {
+      if (row && row.status === 2) return 2
+      if (row && row.status === 1 && row.publishedVersion !== null && row.publishedVersion !== undefined) return 1
+      return 0
+    },
+    isPublished(row) {
+      return this.effectiveStatus(row) === 1
+    },
+    publishedVersionLabel(row) {
+      return row && row.publishedVersion !== null && row.publishedVersion !== undefined
+        ? row.publishedVersion
+        : '-'
     }
   }
 }

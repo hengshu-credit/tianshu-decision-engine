@@ -179,6 +179,15 @@ jest.mock('@/api/project', () => ({
   getFullToken: jest.fn(),
   regenerateToken: jest.fn(),
   exportApiDoc: jest.fn(),
+  listProjectAuths: jest.fn(),
+  createProjectAuth: jest.fn(),
+  updateProjectAuth: jest.fn(),
+  updateProjectAuthStatus: jest.fn(),
+  getProjectAuthFull: jest.fn(),
+  listProjectAuthTokens: jest.fn(),
+  getProjectAuthTokenFull: jest.fn(),
+  revokeProjectAuthToken: jest.fn(),
+  listProjectAuthAccessLogs: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/datasource', () => ({

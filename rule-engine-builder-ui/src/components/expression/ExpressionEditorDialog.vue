@@ -40,8 +40,15 @@
               :node="draft"
               :selected-path="selectedPath"
               :collapsed-path-keys="collapsedPathKeys"
+              :expected-type="expectedType || contextMeta.expectedType"
+              :path-candidates="pathCandidates"
+              :candidate-path-key="candidatePathKey"
               @select="selectPath"
               @toggleCollapse="toggleCollapse"
+              @patchNode="patchCanvasNode"
+              @manualInput="updateManualPath"
+              @resolvePath="resolveManualPath"
+              @selectPathCandidate="selectPathCandidate"
             />
           </div>
         </section>
@@ -65,7 +72,7 @@
 import ExpressionCanvas from './ExpressionCanvas.vue'
 import ExpressionNodeInspector from './ExpressionNodeInspector.vue'
 import ExpressionPalette from './ExpressionPalette.vue'
-import { compileOperand, cloneOperand, validateOperand } from '@/utils/operand'
+import { compileOperand, cloneOperand, createPathOperand, resolvePathOperand, validateOperand } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   collapsedExpressionPaths,
@@ -76,6 +83,7 @@ import {
   expressionPathKey,
   firstEditablePath,
   getExpressionNode,
+  insertExpressionOperation,
   removeExpressionNode,
   setExpressionNode,
   wrapExpressionNode
@@ -103,6 +111,8 @@ export default {
       historyIndex: -1,
       collapsedPathKeys: [],
       validationErrors: [],
+      pathCandidates: [],
+      candidatePathKey: '',
       previousFocus: null
     }
   },
@@ -153,15 +163,27 @@ export default {
       this.history = [cloneOperand(this.draft)]
       this.historyIndex = 0
       this.validationErrors = []
+      this.clearPathCandidates()
     },
     selectPath(path) {
       this.selectedPath = (path || []).slice()
       this.revealPath(this.selectedPath)
       this.validationErrors = []
+      this.clearPathCandidates()
     },
     insertTemplate(template) {
+      if (template && template.kind === 'OPERATION') {
+        const term = (template.terms || [])[1]
+        const result = insertExpressionOperation(this.draft, this.selectedPath, term && term.operator)
+        this.commit(result.root)
+        this.selectedPath = result.selectedPath
+        this.revealPath(this.selectedPath)
+        this.validationErrors = []
+        this.clearPathCandidates()
+        return
+      }
       const current = getExpressionNode(this.draft, this.selectedPath)
-      const nextNode = ['OPERATION', 'ACCESS', 'CAST'].includes(template && template.kind)
+      const nextNode = ['ACCESS', 'CAST'].includes(template && template.kind)
         ? wrapExpressionNode(current, template)
         : cloneOperand(template)
       const next = setExpressionNode(this.draft, this.selectedPath, nextNode)
@@ -170,14 +192,55 @@ export default {
       this.selectedPath = firstEditablePath(nextNode, insertedPath)
       this.revealPath(this.selectedPath)
       this.validationErrors = []
+      this.clearPathCandidates()
     },
     updateSelected(node) {
-      this.commit(setExpressionNode(this.draft, this.selectedPath, node))
+      const previous = getExpressionNode(this.draft, this.selectedPath)
+      const basePath = this.selectedPath.slice()
+      this.commit(setExpressionNode(this.draft, basePath, node))
+      const previousCount = previous && previous.kind === 'OPERATION' ? (previous.terms || []).length : 0
+      const nextCount = node && node.kind === 'OPERATION' ? (node.terms || []).length : 0
+      if (nextCount > previousCount) {
+        this.selectedPath = basePath.concat(['terms', nextCount - 1, 'operand'])
+        this.revealPath(this.selectedPath)
+      }
+      this.clearPathCandidates()
     },
     removeSelected() {
       const path = this.selectedPath.slice()
       this.commit(removeExpressionNode(this.draft, path))
       this.selectedPath = path
+      this.clearPathCandidates()
+    },
+    patchCanvasNode({ path, fields }) {
+      const current = getExpressionNode(this.draft, path)
+      this.commit(setExpressionNode(this.draft, path, { ...cloneOperand(current), ...fields }))
+      this.selectedPath = path.slice()
+    },
+    updateManualPath({ path, value }) {
+      this.commit(setExpressionNode(this.draft, path, createPathOperand(value)))
+      this.selectedPath = path.slice()
+      this.clearPathCandidates()
+    },
+    resolveManualPath(path) {
+      const current = getExpressionNode(this.draft, path)
+      if (!current || current.kind !== 'PATH' || !current.value) return
+      const result = resolvePathOperand(current, this.vars)
+      this.pathCandidates = result.candidates
+      this.candidatePathKey = expressionPathKey(path)
+      this.commit(setExpressionNode(this.draft, path, result.operand))
+      this.selectedPath = path.slice()
+    },
+    selectPathCandidate({ path, candidate }) {
+      const current = getExpressionNode(this.draft, path)
+      const result = resolvePathOperand(current, [candidate])
+      this.commit(setExpressionNode(this.draft, path, result.operand))
+      this.selectedPath = path.slice()
+      this.clearPathCandidates()
+    },
+    clearPathCandidates() {
+      this.pathCandidates = []
+      this.candidatePathKey = ''
     },
     commit(value) {
       const snapshot = cloneOperand(value)
@@ -194,6 +257,7 @@ export default {
       this.collapsedPathKeys = existingCollapsedPaths(this.draft, this.collapsedPathKeys)
       this.revealPath(this.selectedPath)
       this.validationErrors = []
+      this.clearPathCandidates()
     },
     redo() {
       if (!this.canRedo) return
@@ -203,6 +267,7 @@ export default {
       this.collapsedPathKeys = existingCollapsedPaths(this.draft, this.collapsedPathKeys)
       this.revealPath(this.selectedPath)
       this.validationErrors = []
+      this.clearPathCandidates()
     },
     toggleCollapse(path) {
       const key = expressionPathKey(path)
@@ -256,17 +321,17 @@ export default {
 .expression-editor__header p { margin: 4px 0 0; color: #8290a3; font-size: 12px; }
 .header-actions { display: flex; align-items: center; gap: 8px; }
 .close-button { width: 34px; height: 34px; margin-left: 5px; border: 0; border-radius: 6px; background: #f3f6f9; color: #526278; cursor: pointer; }
-.expression-editor__body { display: grid; min-height: 0; grid-template-columns: 270px minmax(420px, 1fr) 320px; }
-.expression-workspace { display: flex; min-width: 0; min-height: 0; flex-direction: column; padding: 18px; background: #f4f7fb; }
+.expression-editor__body { display: flex; min-width: 0; min-height: 0; overflow: auto; }
+.expression-workspace { display: flex; min-width: 420px; min-height: 0; flex: 1; flex-direction: column; padding: 18px; background: #f4f7fb; }
 .formula-preview { display: grid; min-height: 52px; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 12px; padding: 9px 13px; border: 1px solid #dce5ef; border-radius: 7px; background: #fff; }
 .formula-preview span { color: #7d8a9d; font-size: 12px; }
-.formula-preview code { overflow: hidden; color: #174ea6; font-family: Consolas, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.formula-preview code { max-height: 96px; overflow: auto; color: #174ea6; font-family: Consolas, monospace; overflow-wrap: anywhere; white-space: normal; }
 .workspace-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 10px; color: #7d8a9d; font-size: 12px; }
 .workspace-tools > div { display: flex; flex: none; gap: 6px; }
 .canvas-scroll { flex: 1; overflow: auto; padding: 12px 8px 50px; }
+.expression-editor__body > .expression-inspector { box-sizing: border-box; width: 320px; flex: 0 0 320px; }
 .expression-editor__footer { border-top: 1px solid #e7ecf2; border-bottom: 0; }
 .expression-editor__footer > span { color: #7d8a9d; font-size: 12px; }
 .expression-fade-enter-active, .expression-fade-leave-active { transition: opacity .16s ease; }
 .expression-fade-enter, .expression-fade-leave-to { opacity: 0; }
-@media (max-width: 1000px) { .expression-editor__body { grid-template-columns: 220px minmax(360px, 1fr) 280px; } }
 </style>

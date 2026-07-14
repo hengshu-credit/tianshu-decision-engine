@@ -17,7 +17,7 @@
     </div>
 
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="项目编码">
           <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:160px;" />
         </el-form-item>
@@ -61,11 +61,12 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
-      <el-table-column label="操作" min-width="180" align="center">
+      <el-table-column label="操作" min-width="220" align="center">
         <template slot-scope="{ row }">
           <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
           <el-button type="text" size="small" @click="$router.push('/project/' + row.id)">进入</el-button>
           <el-button type="text" size="small" @click="handleViewToken(row)">令牌</el-button>
+          <el-button type="text" size="small" @click="handleAuth(row)">鉴权</el-button>
           <el-button type="text" size="small" @click="handleExportDoc(row)">API</el-button>
           <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
         </template>
@@ -112,15 +113,17 @@
         <el-button size="small" type="danger" :loading="regenerating" @click="confirmRegenerate">确认重新生成</el-button>
       </div>
     </el-dialog>
+    <project-auth-dialog :visible.sync="authDialogVisible" :project="currentAuthProject" />
   </div>
 </template>
 <script>
 import { listProjects, createProject, updateProject, deleteProject, getMaskedToken, getFullToken, regenerateToken, exportApiDoc } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
   name: 'ProjectList',
-  components: { RemoteFilterSelect },
+  components: { RemoteFilterSelect, ProjectAuthDialog },
   data() {
     return {
       workflowSteps: [
@@ -130,7 +133,7 @@ export default {
         { title: '编译', text: '保存规则后执行编译，检查变量引用、输出字段和生成脚本是否正确。' },
         { title: '测试', text: '使用规则测试录入样例请求，核对执行结果、命中路径和追踪树。' },
         { title: '发布', text: '发布已验证版本，服务端会推送规则变更给客户端缓存。' },
-        { title: 'SDK 接入', text: '业务系统用 projectCode 和 X-Rule-Token 接入，依赖 API/DB/名单变量时开启服务端执行。' },
+        { title: 'SDK 接入', text: '业务系统可用 X-Rule-Token、账号密码、API Key 或 HMAC 接入，SDK 支持临时 Token 自动续期。' },
         { title: '查看日志/账单', text: '上线后在执行日志、分流日志和账单汇总里核对调用量、耗时、成功率和费用。' }
       ],
       loading: false, tableData: [], total: 0,
@@ -147,6 +150,8 @@ export default {
       regenerating: false,
       currentTokenProject: '',
       currentTokenId: null,
+      authDialogVisible: false,
+      currentAuthProject: {},
       form: { id: null, projectCode: '', projectName: '', description: '', status: 1 },
       rules: {
         projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
@@ -281,6 +286,10 @@ export default {
       } catch (e) {
         this.$message.error('获取令牌失败')
       }
+    },
+    handleAuth(row) {
+      this.currentAuthProject = row
+      this.authDialogVisible = true
     },
     handleRegenerateToken() {
       this.tokenDialogVisible = false
@@ -527,9 +536,11 @@ export default {
           <div class="section">
             <h3>认证鉴权</h3>
             <div class="auth-box">
-              <p>请求头中添加 <code>X-Rule-Token</code> 字段，或通过 Query 参数 <code>token</code> 传递：</p>
+              <p>兼容原项目令牌：请求头添加 <code>X-Rule-Token</code>，或通过 Query 参数 <code>token</code> 传递：</p>
               <pre><code>X-Rule-Token: &lt;项目访问令牌&gt;</code></pre>
-              <p class="tips">访问令牌在「规则项目」页面获取，需与规则所属项目一致。</p>
+              <p>也可在「鉴权」中配置账号密码、API Key 或 HMAC-SHA256，使用相应凭证请求 <code>POST /api/rule/auth/token</code> 换取临时 Token，再携带：</p>
+              <pre><code>Authorization: Bearer &lt;临时Token&gt;</code></pre>
+              <p class="tips"><code>/token</code> 不传 authCode，服务端根据凭证自动识别；SDK 默认自动换取并续期。</p>
             </div>
           </div>
 
@@ -617,6 +628,15 @@ export default {
     .serverSideExecution(true)
     .build();
 
+// 账号密码方式（API Key、HMAC 分别使用 apiKeyAuth(...)、hmacAuth(...)）
+RuleEngineClient tokenClient = RuleEngineClient.builder()
+    .serverUrl("http://localhost:8080")
+    .appName("your-service-name")
+    .projectCode("${escapeHtml(doc.project.projectCode)}")
+    .basicAuth("&lt;账号&gt;", "&lt;密码&gt;")
+    .connectionFactory(redisConnectionFactory)
+    .build();
+
 // 构建请求参数（参考规则测试中的输入参数）
 Map&lt;String, Object&gt; params = new HashMap&lt;&gt;();
 // ${inputVars.slice(0, 5).map(v => `params.put("${v.varCode}", ${v.exampleValue || v.defaultValue || 'null'});`).join('\n// ')}
@@ -633,7 +653,13 @@ System.out.println("ExecuteTime: " + result.getExecuteTimeMs() + "ms");</code></
     project-id: ${doc.project.id || 0}
     trace-enabled: true
     # 规则依赖 API/DB/名单变量时必须开启
-    server-side-execution: true</code></pre>
+    server-side-execution: true
+
+# 账号密码方式可将 token 替换为：
+#    auth-type: BASIC
+#    username: &lt;账号&gt;
+#    password: &lt;密码&gt;
+# SDK 默认提前 60 秒自动续期临时 Token</code></pre>
           </div>
         </div>`
       }).join('')

@@ -44,4 +44,15 @@ describe('统一 OperandPicker', () => {
     expect(source.value).toBe('100')
     expect(wrapper.vm.editorVisible).toBe(true)
   })
+
+  test('手输阈值和路径以空节点打开统一表达式画布', () => {
+    const wrapper = mountPicker({ expectedType: 'NUMBER' })
+
+    wrapper.vm.openManualEditor('LITERAL')
+    expect(wrapper.vm.editorValue).toEqual({ kind: 'LITERAL', value: '', valueType: 'NUMBER' })
+    expect(wrapper.vm.editorVisible).toBe(true)
+
+    wrapper.vm.openManualEditor('PATH')
+    expect(wrapper.vm.editorValue).toMatchObject({ kind: 'PATH', value: '', resolved: false })
+  })
 })

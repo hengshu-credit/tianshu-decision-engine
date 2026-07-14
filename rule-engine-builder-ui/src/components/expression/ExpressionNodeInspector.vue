@@ -19,15 +19,16 @@
       </template>
 
       <template v-else-if="node.kind === 'OPERATION'">
-        <label>运算符</label>
-        <el-select :value="node.operator" size="small" filterable @input="patch({ operator: $event })">
-          <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
-        </el-select>
-        <div class="inline-heading"><label>运算项</label><span class="field-tip">二元运算固定为两项</span></div>
-        <div v-for="(item, index) in node.operands || []" :key="index" class="argument-row">
-          <span>第 {{ index + 1 }} 项</span>
-          <span>{{ item ? '已配置' : '待配置' }}</span>
+        <div class="inline-heading"><label>同级运算项</label><el-button type="text" @click="addOperationTerm">增加运算项</el-button></div>
+        <div v-for="(term, index) in node.terms || []" :key="index" class="argument-row operation-term-row">
+          <span v-if="index === 0" class="operation-start">起始项</span>
+          <el-select v-else :value="term.operator" size="mini" @input="patchTermOperator(index, $event)">
+            <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
+          </el-select>
+          <span>{{ term.operand ? '已配置' : '待配置' }}</span>
+          <el-button v-if="node.terms.length > 2" type="text" @click="removeOperationTerm(index)">删除</el-button>
         </div>
+        <p class="field-tip">同级运算项按运算符优先级计算，显式分组才会产生嵌套。</p>
       </template>
 
       <template v-else-if="node.kind === 'FUNCTION'">
@@ -101,7 +102,7 @@
 </template>
 
 <script>
-import { cloneOperand } from '@/utils/operand'
+import { cloneOperand, OPERATION_OPERATORS } from '@/utils/operand'
 import { LIST_COMBINATION_MODES, LIST_ITEM_TYPES, POSITIVE_LIST_MATCH_MODES, listCombinationMode } from '@/constants/listMatchModes'
 
 export default {
@@ -112,7 +113,7 @@ export default {
   },
   data() {
     return {
-      operators: ['+', '-', '*', '/', '%', '==', '!=', '>', '>=', '<', '<=', '&&', '||'],
+      operators: OPERATION_OPERATORS,
       valueTypes: [
         { label: '文本', value: 'STRING' },
         { label: '数字', value: 'NUMBER' },
@@ -150,6 +151,21 @@ export default {
       args.splice(index, 1)
       this.patch({ args })
     },
+    patchTermOperator(index, operator) {
+      const terms = cloneOperand(this.node.terms || [])
+      terms[index] = { ...terms[index], operator }
+      this.patch({ terms })
+    },
+    addOperationTerm() {
+      this.patch({ terms: (this.node.terms || []).concat([{ operator: '+', operand: null }]) })
+    },
+    removeOperationTerm(index) {
+      const terms = cloneOperand(this.node.terms || [])
+      if (terms.length <= 2) return
+      terms.splice(index, 1)
+      if (terms[0]) delete terms[0].operator
+      this.patch({ terms })
+    },
     addChild(key) {
       this.patch({ [key]: (this.node[key] || []).concat([null]) })
     },
@@ -172,6 +188,9 @@ label { display: block; margin: 16px 0 7px; color: #45556c; font-size: 12px; fon
 .inline-heading { display: flex; align-items: center; justify-content: space-between; margin-top: 14px; }
 .inline-heading label { margin: 0; }
 .argument-row { display: flex; min-height: 35px; align-items: center; justify-content: space-between; margin-top: 6px; padding: 0 9px; border: 1px solid #e4e9f0; border-radius: 5px; background: #fff; color: #617087; font-size: 12px; }
+.operation-term-row { gap: 8px; }
+.operation-term-row .el-select { width: 72px; }
+.operation-start { min-width: 72px; color: #45556c; font-weight: 600; }
 .field-tip { margin: 9px 0 0; color: #8794a7; font-size: 12px; line-height: 1.65; }
 .danger-button { color: #e35d6a; }
 .empty-inspector { padding: 80px 12px; color: #8794a7; text-align: center; }

@@ -50,7 +50,8 @@ async function mountAndWait() {
       'el-dialog': true, 'el-card': true,
       'el-pagination': true, 'el-switch': true, 'el-loading': true,
       'el-textarea': true, 'el-divider': true, 'el-alert': true,
-      'el-date-picker': true, 'el-tooltip': true
+      'el-date-picker': true, 'el-tooltip': true,
+      'project-auth-dialog': true
     }
   })
 
@@ -141,6 +142,19 @@ describe('ProjectList — 筛选与搜索', () => {
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
+  test('顶部筛选栏按 Enter 重置页码并重新查询', async () => {
+    const queryForm = wrapper.find('.uiue-search-container').find('el-form-stub')
+    const callCount = projectApi.listProjects.mock.calls.length
+    wrapper.vm.qp.pageNum = 5
+    projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
+
+    await queryForm.trigger('keyup', { key: 'Enter', keyCode: 13 })
+    await Vue.nextTick()
+
+    expect(wrapper.vm.qp.pageNum).toBe(1)
+    expect(projectApi.listProjects).toHaveBeenCalledTimes(callCount + 1)
+  })
+
   test('resetQuery 重置所有查询条件', () => {
     wrapper.vm.qp.status = '1'
     wrapper.vm.qp.projectCode = 'test'
@@ -212,6 +226,15 @@ describe('ProjectList — 项目操作', () => {
     expect(wrapper.vm.fullToken).toBe('secret-token-12345678')
   })
 
+  test('handleAuth 打开当前项目的多鉴权配置', () => {
+    const row = { id: 1, projectCode: 'project_a', projectName: '项目A' }
+
+    wrapper.vm.handleAuth(row)
+
+    expect(wrapper.vm.authDialogVisible).toBe(true)
+    expect(wrapper.vm.currentAuthProject).toEqual(row)
+  })
+
   test('handleDelete 调用删除 API', async () => {
     projectApi.deleteProject.mockResolvedValue({ data: true })
     const row = { id: 1, projectName: '测试项目' }
@@ -254,6 +277,12 @@ describe('ProjectList — 项目操作', () => {
     expect(html).toContain('clientAppName')
     expect(html).toContain('RuleEngineClient.builder()')
     expect(html).toContain('.serverSideExecution(true)')
+    expect(html).toContain('X-Rule-Token')
+    expect(html).toContain('/api/rule/auth/token')
+    expect(html).toContain('Authorization: Bearer')
+    expect(html).toContain('.basicAuth(')
+    expect(html).toContain('API Key')
+    expect(html).toContain('HMAC')
     expect(html).toContain('规则集命中列表')
     expect(html).toContain('&quot;result&quot;: [')
     expect(html).not.toContain('from rule_engine_client import RuleEngineClient')

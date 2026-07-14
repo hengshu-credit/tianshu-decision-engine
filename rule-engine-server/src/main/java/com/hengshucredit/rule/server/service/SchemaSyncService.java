@@ -56,6 +56,7 @@ public class SchemaSyncService {
             ensureListTables();
             ensureExperimentTables();
             ensureRuntimeCallLogTable();
+            ensureProjectAuthSchema();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelFieldForeignKeysRemoved();
@@ -304,6 +305,121 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表'");
         }
         ensureUtf8mb4Table("rule_runtime_call_log");
+    }
+
+    private void ensureProjectAuthSchema() {
+        if (!tableExists("rule_project_auth")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_project_auth` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`project_id` BIGINT NOT NULL COMMENT '所属项目ID',"
+                    + "`auth_code` VARCHAR(128) NOT NULL COMMENT '鉴权配置编码',"
+                    + "`auth_name` VARCHAR(128) NOT NULL COMMENT '鉴权配置名称',"
+                    + "`auth_type` VARCHAR(32) NOT NULL COMMENT '鉴权类型',"
+                    + "`lookup_key` CHAR(64) NOT NULL COMMENT '凭据定位摘要',"
+                    + "`identifier_ciphertext` TEXT DEFAULT NULL COMMENT '凭据标识密文',"
+                    + "`secret_ciphertext` TEXT NOT NULL COMMENT '凭据密文',"
+                    + "`config_json` JSON DEFAULT NULL COMMENT '非敏感鉴权配置',"
+                    + "`token_ttl_seconds` INT NOT NULL DEFAULT 7200 COMMENT '临时Token有效秒数',"
+                    + "`token_grace_seconds` INT NOT NULL DEFAULT 600 COMMENT '临时Token宽限秒数',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_project_auth_code` (`auth_code`),"
+                    + "UNIQUE KEY `uk_project_auth_lookup` (`lookup_key`),"
+                    + "KEY `idx_project_auth_project` (`project_id`, `status`),"
+                    + "KEY `idx_project_auth_type` (`auth_type`, `status`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权配置表'");
+        }
+        if (!tableExists("rule_project_auth_token")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_project_auth_token` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`project_id` BIGINT NOT NULL COMMENT '所属项目ID',"
+                    + "`auth_id` BIGINT NOT NULL COMMENT '来源鉴权配置ID',"
+                    + "`token_code` VARCHAR(128) NOT NULL COMMENT 'Token展示编码',"
+                    + "`lookup_key` CHAR(64) NOT NULL COMMENT 'Token定位摘要',"
+                    + "`token_ciphertext` TEXT NOT NULL COMMENT 'Token密文',"
+                    + "`issued_time` DATETIME NOT NULL COMMENT '签发时间',"
+                    + "`expire_time` DATETIME NOT NULL COMMENT '正常到期时间',"
+                    + "`grace_expire_time` DATETIME NOT NULL COMMENT '宽限截止时间',"
+                    + "`last_used_time` DATETIME DEFAULT NULL COMMENT '最后使用时间',"
+                    + "`revoked_time` DATETIME DEFAULT NULL COMMENT '撤销时间',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-撤销，1-有效',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_project_auth_token_code` (`token_code`),"
+                    + "UNIQUE KEY `uk_project_auth_token_lookup` (`lookup_key`),"
+                    + "KEY `idx_project_auth_token_auth` (`auth_id`, `status`),"
+                    + "KEY `idx_project_auth_token_project` (`project_id`, `status`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表'");
+        }
+        if (!tableExists("rule_auth_access_log")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_auth_access_log` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`project_id` BIGINT DEFAULT NULL COMMENT '项目ID',"
+                    + "`project_code` VARCHAR(128) DEFAULT NULL COMMENT '项目编码快照',"
+                    + "`auth_id` BIGINT DEFAULT NULL COMMENT '鉴权配置ID',"
+                    + "`auth_code` VARCHAR(128) DEFAULT NULL COMMENT '鉴权配置编码快照',"
+                    + "`auth_type` VARCHAR(32) DEFAULT NULL COMMENT '鉴权类型快照',"
+                    + "`token_id` BIGINT DEFAULT NULL COMMENT '临时Token ID',"
+                    + "`token_code` VARCHAR(128) DEFAULT NULL COMMENT '临时Token编码快照',"
+                    + "`auth_phase` VARCHAR(16) DEFAULT NULL COMMENT '鉴权阶段：DIRECT/VALID/GRACE',"
+                    + "`request_method` VARCHAR(16) DEFAULT NULL COMMENT '请求方法',"
+                    + "`request_uri` VARCHAR(1024) DEFAULT NULL COMMENT '请求路径',"
+                    + "`request_id` VARCHAR(128) DEFAULT NULL COMMENT '请求ID',"
+                    + "`client_ip` VARCHAR(64) DEFAULT NULL COMMENT '客户端IP',"
+                    + "`success` TINYINT NOT NULL DEFAULT 1 COMMENT '是否成功',"
+                    + "`failure_reason` VARCHAR(512) DEFAULT NULL COMMENT '失败原因',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "KEY `idx_auth_access_project_time` (`project_id`, `create_time`),"
+                    + "KEY `idx_auth_access_auth_time` (`auth_id`, `create_time`),"
+                    + "KEY `idx_auth_access_token_time` (`token_id`, `create_time`),"
+                    + "KEY `idx_auth_access_success_time` (`success`, `create_time`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权访问日志表'");
+        }
+
+        addAuthAttributionColumns("rule_execution_log", "create_time", true);
+        addAuthAttributionColumns("rule_billing_record", "occur_time", true);
+        addAuthAttributionColumns("rule_billing_summary", "summary_date", false);
+        ensureBillingSummaryAuthUniqueKey();
+    }
+
+    private void addAuthAttributionColumns(String table, String timeColumn, boolean includeToken) {
+        if (!tableExists(table)) return;
+        addColumnIfMissing(table, "auth_id", "`auth_id` BIGINT DEFAULT NULL COMMENT '鉴权配置ID'");
+        addColumnIfMissing(table, "auth_code", "`auth_code` VARCHAR(128) DEFAULT NULL COMMENT '鉴权配置编码快照'");
+        addColumnIfMissing(table, "auth_type", "`auth_type` VARCHAR(32) DEFAULT NULL COMMENT '鉴权类型快照'");
+        if (includeToken) {
+            addColumnIfMissing(table, "token_id", "`token_id` BIGINT DEFAULT NULL COMMENT '临时Token ID'");
+            addColumnIfMissing(table, "token_code", "`token_code` VARCHAR(128) DEFAULT NULL COMMENT '临时Token编码快照'");
+            addColumnIfMissing(table, "auth_phase", "`auth_phase` VARCHAR(16) DEFAULT NULL COMMENT '鉴权阶段'");
+        }
+        String indexName = "idx_" + table.replace("rule_", "") + "_auth";
+        if (!indexExists(table, indexName)) {
+            String columns = includeToken
+                    ? "`auth_id`, `token_id`, `" + timeColumn + "`"
+                    : "`auth_id`, `" + timeColumn + "`";
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD INDEX `" + indexName + "` (" + columns + ")");
+        }
+    }
+
+    private void ensureBillingSummaryAuthUniqueKey() {
+        String table = "rule_billing_summary";
+        String index = "uk_billing_summary_key";
+        if (!tableExists(table)) return;
+        List<String> expected = Arrays.asList("summary_date", "project_code", "billing_code",
+                "billing_target", "target_ref_id", "auth_id");
+        boolean create = !indexExists(table, index);
+        if (!create && !sameColumns(indexColumns(table, index), expected)) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` DROP INDEX `" + index + "`");
+            create = true;
+        }
+        if (create) {
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD UNIQUE KEY `" + index
+                    + "` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`)");
+        }
     }
 
     private void ensureDbDatasourceConnectionColumns() {

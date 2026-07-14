@@ -4,6 +4,7 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.common.R;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
@@ -92,7 +93,8 @@ public class RuleSyncController {
         String clientAppName = body == null || body.get("clientAppName") == null
                 ? null
                 : String.valueOf(body.get("clientAppName"));
-        return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName));
+        return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName,
+                ProjectAuthContext.from(request)));
     }
 
     /**

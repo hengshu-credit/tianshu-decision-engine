@@ -16,6 +16,12 @@ public class RuleExecutionLog {
     private String source;
     private String clientAppName;
     private String clientIp;
+    private Long authId;
+    private String authCode;
+    private String authType;
+    private Long tokenId;
+    private String tokenCode;
+    private String authPhase;
     private String inputParams;
     private String outputResult;
     private String traceInfo;

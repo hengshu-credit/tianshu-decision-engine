@@ -10,7 +10,7 @@
     </div>
 
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="项目">
           <el-select v-model="query.projectId" clearable filterable placeholder="全部项目" style="width:180px;">
             <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />

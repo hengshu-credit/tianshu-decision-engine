@@ -2,6 +2,8 @@ package com.hengshucredit.rule.client;
 
 import com.hengshucredit.rule.client.cache.CachedRule;
 import com.hengshucredit.rule.client.cache.L1MemoryCache;
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
+import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.client.function.ClientFunctionRegistrar;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.HttpLogReporter;
@@ -41,7 +43,9 @@ public class RuleEngineClient {
                              ExecutionLogReporter externalReporter, ApplicationContext applicationContext) {
         this.config = config;
         this.l1Cache = new L1MemoryCache(config.getL1CacheMaxSize());
-        this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), config.getToken());
+        ClientRequestAuthenticator authenticator = new ClientRequestAuthenticator(
+                config.getServerUrl(), config.getHttpTimeoutMs(), resolveAuthConfig(config));
+        this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator);
         this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, resolvePushSubscriptionKey(config),
                 httpSyncClient::fetchRule);
         this.engine = new QLExpressEngine();
@@ -52,7 +56,7 @@ public class RuleEngineClient {
         if (externalReporter != null) {
             this.logReporter = externalReporter;
         } else if (config.isLogReportEnabled()) {
-            this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs(), config.getToken());
+            this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator);
         } else {
             this.logReporter = new NoOpLogReporter();
         }
@@ -302,6 +306,12 @@ public class RuleEngineClient {
         return config.getAppName();
     }
 
+    private static ClientAuthConfig resolveAuthConfig(RuleEngineClientConfig config) {
+        if (config.getAuthConfig() != null) return config.getAuthConfig();
+        return config.getToken() == null || config.getToken().isEmpty()
+                ? null : ClientAuthConfig.legacyToken(config.getToken());
+    }
+
     public static class Builder {
         private final RuleEngineClientConfig config = new RuleEngineClientConfig();
         private RedisConnectionFactory connectionFactory;
@@ -312,6 +322,16 @@ public class RuleEngineClient {
         public Builder appName(String appName) { config.setAppName(appName); return this; }
         public Builder projectCode(String projectCode) { config.setProjectCode(projectCode); return this; }
         public Builder token(String token) { config.setToken(token); return this; }
+        public Builder authConfig(ClientAuthConfig authConfig) { config.setAuthConfig(authConfig); return this; }
+        public Builder basicAuth(String username, String password) {
+            return authConfig(ClientAuthConfig.basic(username, password));
+        }
+        public Builder apiKeyAuth(String parameterName, String apiKey, String placement) {
+            return authConfig(ClientAuthConfig.apiKey(parameterName, apiKey, placement));
+        }
+        public Builder hmacAuth(String accessKey, String hmacSecret) {
+            return authConfig(ClientAuthConfig.hmac(accessKey, hmacSecret));
+        }
         public Builder l1CacheMaxSize(int size) { config.setL1CacheMaxSize(size); return this; }
         public Builder httpTimeoutMs(int ms) { config.setHttpTimeoutMs(ms); return this; }
         public Builder logReportEnabled(boolean enabled) { config.setLogReportEnabled(enabled); return this; }

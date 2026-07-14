@@ -415,9 +415,8 @@ describe('VarPicker', () => {
     expect(wrapper.vm.rightPage).toBe(2)
   })
 
-  test('空操作数打开后默认聚焦手输阈值', async () => {
+  test('空操作数打开后默认定位手输分类但不在弹层输入', async () => {
     const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'REFERENCE'], vars: standaloneOptions(1) })
-    const focusManualInput = jest.spyOn(wrapper.vm, 'focusManualInput')
     wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
 
     wrapper.vm.openPopover()
@@ -425,8 +424,16 @@ describe('VarPicker', () => {
     await Vue.nextTick()
 
     expect(wrapper.vm.activeCategory).toBe('manual')
-    expect(wrapper.vm.manualKind).toBe('LITERAL')
-    expect(focusManualInput).toHaveBeenCalled()
+    expect(wrapper.find('.vp-manual-editor').exists()).toBe(false)
+  })
+
+  test('操作数模式点击手输类型只发出画布编辑请求', () => {
+    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'PATH'], vars: standaloneOptions(1) })
+
+    wrapper.vm.requestManualEdit('LITERAL')
+
+    expect(wrapper.emitted()['manual-edit'][0]).toEqual(['LITERAL'])
+    expect(wrapper.emitted().input).toBeUndefined()
   })
 
   test('操作数选择器支持键盘聚焦并通过输入框焦点打开', async () => {

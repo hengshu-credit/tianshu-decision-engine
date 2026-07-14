@@ -107,6 +107,50 @@ public class AdvancedCrossTableCompilerTest {
         assertEquals(3000, ((Number) ((Map<?, ?>) execution.getResult()).get("rate")).intValue());
     }
 
+    @Test
+    public void rangeBoundaryControlsWhetherEndpointsAreIncluded() {
+        assertTrue(matchesRangeBoundary("[)", 0));
+        assertFalse(matchesRangeBoundary("[)", 2000));
+
+        assertFalse(matchesRangeBoundary("()", 0));
+        assertTrue(matchesRangeBoundary("()", 1000));
+        assertFalse(matchesRangeBoundary("()", 2000));
+
+        assertTrue(matchesRangeBoundary("[]", 0));
+        assertTrue(matchesRangeBoundary("[]", 2000));
+
+        assertFalse(matchesRangeBoundary("(]", 0));
+        assertTrue(matchesRangeBoundary("(]", 2000));
+    }
+
+    @Test
+    public void missingOrInvalidRangeBoundaryDefaultsToLeftClosedRightOpen() {
+        assertTrue(matchesRangeBoundary(null, 0));
+        assertFalse(matchesRangeBoundary(null, 2000));
+        assertTrue(matchesRangeBoundary("invalid", 0));
+        assertFalse(matchesRangeBoundary("invalid", 2000));
+    }
+
+    private boolean matchesRangeBoundary(String rangeBoundary, int amount) {
+        String boundaryJson = rangeBoundary == null ? "" : ",\"rangeBoundary\":\"" + rangeBoundary + "\"";
+        String json = "{"
+                + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"NUMBER\"},"
+                + "\"rowDimensions\":[{\"varCode\":\"amount\",\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\"range\",\"min\":\"0\",\"max\":\"2000\"" + boundaryJson + "}]}],"
+                + "\"colDimensions\":[{\"varCode\":\"enabled\",\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\"==\",\"value\":\"1\"}]}],"
+                + "\"cells\":[[\"3000\"]]}";
+        CompileResult compileResult = compiler.compile(json);
+        assertTrue(compileResult.getErrorMessage(), compileResult.isSuccess());
+
+        Map<String, Object> context = new HashMap<>();
+        context.put("amount", amount);
+        context.put("enabled", 1);
+        RuleResult execution = engine.execute(compileResult.getCompiledScript(), context);
+        assertTrue(execution.getErrorMessage(), execution.isSuccess());
+        return ((Map<?, ?>) execution.getResult()).get("rate") != null;
+    }
+
     private String modelJson() {
         return "{"
                 + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"DOUBLE\"},"

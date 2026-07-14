@@ -34,6 +34,7 @@ import org.springframework.stereotype.Service;
 import javax.annotation.Resource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -115,52 +116,109 @@ public class RuleLineageService {
         return result.size() > 80 ? new ArrayList<>(result.subList(0, 80)) : result;
     }
 
-    public Map<String, Object> graph(String nodeType, Long nodeId, String direction) {
+    public Map<String, Object> graph(String nodeType, Long nodeId, String direction, Integer maxDepth) {
         FullGraph full = buildFullGraph();
         String startKey = nodeKey(normalizeType(nodeType), nodeId);
         if (!full.nodes.containsKey(startKey)) {
             throw new IllegalArgumentException("血缘起点不存在");
         }
-        String dir = direction == null || direction.trim().isEmpty() ? "ALL" : direction.trim().toUpperCase();
+        String dir = normalizeDirection(direction);
+        int depth = normalizeMaxDepth(maxDepth);
         Set<String> selectedNodes = new LinkedHashSet<>();
         Set<String> selectedEdges = new LinkedHashSet<>();
-        Queue<String> queue = new ArrayDeque<>();
         selectedNodes.add(startKey);
-        queue.add(startKey);
+        if ("ALL".equals(dir) || "UPSTREAM".equals(dir)) {
+            traverse(full, startKey, "UPSTREAM", depth, selectedNodes, selectedEdges);
+        }
+        if ("ALL".equals(dir) || "DOWNSTREAM".equals(dir)) {
+            traverse(full, startKey, "DOWNSTREAM", depth, selectedNodes, selectedEdges);
+        }
+        return graphResult(full, startKey, selectedNodes, selectedEdges);
+    }
+
+    private void traverse(FullGraph full, String startKey, String direction, int maxDepth,
+                          Set<String> selectedNodes, Set<String> selectedEdges) {
+        Set<String> visited = new LinkedHashSet<>();
+        Queue<TraversalStep> queue = new ArrayDeque<>();
+        visited.add(startKey);
+        queue.add(new TraversalStep(startKey, 0));
         while (!queue.isEmpty()) {
-            String current = queue.poll();
-            for (Map<String, Object> edge : full.edges) {
-                String from = (String) edge.get("from");
-                String to = (String) edge.get("to");
-                boolean downstream = ("ALL".equals(dir) || "DOWNSTREAM".equals(dir)) && current.equals(from);
-                boolean upstream = ("ALL".equals(dir) || "UPSTREAM".equals(dir)) && current.equals(to);
-                if (!downstream && !upstream) {
-                    continue;
-                }
-                String next = downstream ? to : from;
-                String edgeKey = from + "->" + to + ":" + edge.get("label");
-                selectedEdges.add(edgeKey);
-                if (selectedNodes.add(next)) {
-                    queue.add(next);
+            TraversalStep step = queue.poll();
+            if (step.depth >= maxDepth) continue;
+            List<Map<String, Object>> related = "UPSTREAM".equals(direction)
+                    ? full.incomingEdges.getOrDefault(step.nodeKey, Collections.emptyList())
+                    : full.outgoingEdges.getOrDefault(step.nodeKey, Collections.emptyList());
+            for (Map<String, Object> edge : related) {
+                String next = "UPSTREAM".equals(direction)
+                        ? (String) edge.get("from")
+                        : (String) edge.get("to");
+                if (!full.nodes.containsKey(next)) continue;
+                selectedNodes.add(next);
+                selectedEdges.add(edgeKey(edge));
+                if (visited.add(next)) {
+                    queue.add(new TraversalStep(next, step.depth + 1));
                 }
             }
         }
+    }
+
+    private Map<String, Object> graphResult(FullGraph full, String startKey,
+                                            Set<String> selectedNodes, Set<String> selectedEdges) {
         List<Map<String, Object>> nodes = new ArrayList<>();
         for (String key : selectedNodes) {
-            nodes.add(full.nodes.get(key));
+            Map<String, Object> node = full.nodes.get(key);
+            if (node != null) nodes.add(nodeWithRelations(full, key, node));
         }
         List<Map<String, Object>> edges = new ArrayList<>();
         for (Map<String, Object> edge : full.edges) {
-            String edgeKey = edge.get("from") + "->" + edge.get("to") + ":" + edge.get("label");
-            if (selectedEdges.contains(edgeKey)) {
+            if (selectedEdges.contains(edgeKey(edge))) {
                 edges.add(edge);
             }
         }
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("startNode", full.nodes.get(startKey));
+        result.put("startNode", nodeWithRelations(full, startKey, full.nodes.get(startKey)));
         result.put("nodes", nodes);
         result.put("edges", edges);
         return result;
+    }
+
+    private Map<String, Object> nodeWithRelations(FullGraph full, String key, Map<String, Object> source) {
+        Map<String, Object> node = new LinkedHashMap<>(source);
+        node.put("hasUpstream", hasValidNeighbor(full, key, "UPSTREAM"));
+        node.put("hasDownstream", hasValidNeighbor(full, key, "DOWNSTREAM"));
+        return node;
+    }
+
+    private boolean hasValidNeighbor(FullGraph full, String key, String direction) {
+        List<Map<String, Object>> related = "UPSTREAM".equals(direction)
+                ? full.incomingEdges.getOrDefault(key, Collections.emptyList())
+                : full.outgoingEdges.getOrDefault(key, Collections.emptyList());
+        for (Map<String, Object> edge : related) {
+            String next = "UPSTREAM".equals(direction)
+                    ? (String) edge.get("from")
+                    : (String) edge.get("to");
+            if (full.nodes.containsKey(next)) return true;
+        }
+        return false;
+    }
+
+    private String edgeKey(Map<String, Object> edge) {
+        return edge.get("from") + "->" + edge.get("to") + ":" + edge.get("label");
+    }
+
+    private String normalizeDirection(String direction) {
+        String value = direction == null || direction.trim().isEmpty()
+                ? "ALL" : direction.trim().toUpperCase();
+        if (!"ALL".equals(value) && !"UPSTREAM".equals(value) && !"DOWNSTREAM".equals(value)) {
+            throw new IllegalArgumentException("不支持的血缘方向");
+        }
+        return value;
+    }
+
+    private int normalizeMaxDepth(Integer maxDepth) {
+        if (maxDepth == null) return Integer.MAX_VALUE;
+        if (maxDepth <= 0) throw new IllegalArgumentException("血缘层级必须大于 0");
+        return maxDepth;
     }
 
     private FullGraph buildFullGraph() {
@@ -290,6 +348,8 @@ public class RuleLineageService {
         edge.put("to", to);
         edge.put("label", label);
         graph.edges.add(edge);
+        graph.outgoingEdges.computeIfAbsent(from, key -> new ArrayList<>()).add(edge);
+        graph.incomingEdges.computeIfAbsent(to, key -> new ArrayList<>()).add(edge);
     }
 
     private void addOption(List<Map<String, Object>> result, String type, Long id, String code, String label, String keyword) {
@@ -352,5 +412,17 @@ public class RuleLineageService {
     private static class FullGraph {
         private final Map<String, Map<String, Object>> nodes = new LinkedHashMap<>();
         private final List<Map<String, Object>> edges = new ArrayList<>();
+        private final Map<String, List<Map<String, Object>>> outgoingEdges = new LinkedHashMap<>();
+        private final Map<String, List<Map<String, Object>>> incomingEdges = new LinkedHashMap<>();
+    }
+
+    private static class TraversalStep {
+        private final String nodeKey;
+        private final int depth;
+
+        private TraversalStep(String nodeKey, int depth) {
+            this.nodeKey = nodeKey;
+            this.depth = depth;
+        }
     }
 }

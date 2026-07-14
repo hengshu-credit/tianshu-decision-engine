@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.client;
 
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import lombok.Data;
 
 /**
@@ -16,6 +17,7 @@ public class RuleEngineClientConfig {
      * 访问Token，用于服务端身份认证
      */
     private String token;
+    private ClientAuthConfig authConfig;
     
     private int l1CacheMaxSize = 1000;
     private int httpTimeoutMs = 3000;

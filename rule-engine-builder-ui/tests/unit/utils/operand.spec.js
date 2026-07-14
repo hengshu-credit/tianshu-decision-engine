@@ -1,4 +1,5 @@
 import {
+  OPERATION_OPERATORS,
   cloneOperand,
   collectOperandReferences,
   compileOperand,
@@ -193,7 +194,10 @@ describe('operand', () => {
     const riskAmount = createReferenceOperand({ varCode: 'riskAmount', varLabel: '风险额度', varType: 'NUMBER', _varId: 104, _refType: 'VARIABLE' })
     const number = value => createLiteralOperand(String(value), 'NUMBER')
     const fn = (code, args) => createFunctionOperand({ funcCode: code, returnType: 'NUMBER' }, args)
-    const op = (operator, operands) => createOperationOperand(operator, operands, 'NUMBER')
+    const op = (operator, operands) => createOperationOperand(operands.map((operand, index) => ({
+      ...(index ? { operator } : {}),
+      operand
+    })), 'NUMBER')
     const expression = op('*', [
       fn('numCeil', [op('/', [
         fn('numMax', [number(4200), fn('numMin', [
@@ -237,24 +241,52 @@ describe('operand', () => {
   })
 
   test('深克隆不污染原节点，校验能定位缺少参数和非法写目标', () => {
-    const expression = createOperationOperand('+', [createLiteralOperand('1', 'NUMBER'), null], 'NUMBER')
+    const expression = createOperationOperand([
+      { operand: createLiteralOperand('1', 'NUMBER') },
+      { operator: '+', operand: null }
+    ], 'NUMBER')
     const cloned = cloneOperand(expression)
-    cloned.operands[0].value = '2'
+    cloned.terms[0].operand.value = '2'
 
-    expect(expression.operands[0].value).toBe('1')
+    expect(expression.terms[0].operand.value).toBe('1')
     expect(validateOperand(expression)).toEqual([
-      expect.objectContaining({ path: 'root.operands[1]', message: '表达式参数不能为空' })
+      expect.objectContaining({ path: 'root.terms[1].operand', message: '表达式参数不能为空' })
     ])
     expect(validateOperand(createFunctionOperand({ funcCode: 'max' }, []), { allowedKinds: ['PATH', 'REFERENCE'] }))
       .toEqual([expect.objectContaining({ path: 'root', message: '当前配置位置不支持方法' })])
   })
 
-  test('运算节点严格限制为二元，固定参数函数校验参数数量', () => {
-    expect(validateOperand(createOperationOperand('<', [
-      createLiteralOperand('1', 'NUMBER'),
-      createLiteralOperand('2', 'NUMBER'),
-      createLiteralOperand('3', 'NUMBER')
-    ]))).toEqual([expect.objectContaining({ message: '运算符 < 需要 2 个运算项' })])
+  test('运算节点支持多个同级项并校验每一项的运算符', () => {
+    const expression = createOperationOperand([
+      { operand: createLiteralOperand('1', 'NUMBER') },
+      { operator: '+', operand: createLiteralOperand('2', 'NUMBER') },
+      { operator: '*', operand: createLiteralOperand('3', 'NUMBER') }
+    ], 'NUMBER')
+
+    expect(expression).toEqual({
+      kind: 'OPERATION',
+      terms: [
+        { operand: expect.objectContaining({ value: '1' }) },
+        { operator: '+', operand: expect.objectContaining({ value: '2' }) },
+        { operator: '*', operand: expect.objectContaining({ value: '3' }) }
+      ],
+      valueType: 'NUMBER'
+    })
+    expect(OPERATION_OPERATORS).toContain('*')
+    expect(operandChildren(expression)).toHaveLength(3)
+    expect(compileOperand(expression)).toBe('(1 + 2 * 3)')
+    expect(validateOperand(expression)).toEqual([])
+
+    const invalid = createOperationOperand([
+      { operator: '+', operand: createLiteralOperand('1', 'NUMBER') },
+      { operand: createLiteralOperand('2', 'NUMBER') },
+      { operator: '^', operand: createLiteralOperand('3', 'NUMBER') }
+    ])
+    expect(validateOperand(invalid)).toEqual([
+      expect.objectContaining({ path: 'root.terms[0].operator' }),
+      expect.objectContaining({ path: 'root.terms[1].operator' }),
+      expect.objectContaining({ path: 'root.terms[2].operator' })
+    ])
 
     const fn = createFunctionOperand({ id: 88, funcCode: 'numMax', params: [{ type: 'NUMBER' }, { type: 'NUMBER' }] }, [
       createLiteralOperand('1', 'NUMBER')
@@ -279,15 +311,15 @@ describe('operand', () => {
 
   test('递归同步访问器、运算符和数组中的引用', () => {
     const expression = createArrayOperand([
-      createOperationOperand('+', [
-        { kind: 'REFERENCE', value: 'old', code: 'old', refId: 12, refType: 'DATA_OBJECT' },
-        createAccessOperand({ kind: 'REFERENCE', value: 'old2', code: 'old2', refId: 21, refType: 'MODEL_OUTPUT' }, 'KEY', createLiteralOperand('score'))
+      createOperationOperand([
+        { operand: { kind: 'REFERENCE', value: 'old', code: 'old', refId: 12, refType: 'DATA_OBJECT' } },
+        { operator: '+', operand: createAccessOperand({ kind: 'REFERENCE', value: 'old2', code: 'old2', refId: 21, refType: 'MODEL_OUTPUT' }, 'KEY', createLiteralOperand('score')) }
       ])
     ])
     const result = syncOperandReference(expression, references)
 
     expect(result.changed).toBe(true)
-    expect(result.operand.items[0].operands[0].code).toBe('request.customer.age')
-    expect(result.operand.items[0].operands[1].target.code).toBe('riskModel.score')
+    expect(result.operand.items[0].terms[0].operand.code).toBe('request.customer.age')
+    expect(result.operand.items[0].terms[1].operand.target.code).toBe('riskModel.score')
   })
 })

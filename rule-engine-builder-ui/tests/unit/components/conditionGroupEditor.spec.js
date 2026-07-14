@@ -113,10 +113,9 @@ describe('ConditionGroupEditor', () => {
     const wrapper = mountEditor({
       leftOperand: {
         kind: 'OPERATION',
-        operator: '+',
-        operands: [
-          { kind: 'REFERENCE', code: 'amount', valueType: 'NUMBER', refId: 1, refType: 'VARIABLE' },
-          { kind: 'LITERAL', value: '100', valueType: 'NUMBER' }
+        terms: [
+          { operand: { kind: 'REFERENCE', code: 'amount', valueType: 'NUMBER', refId: 1, refType: 'VARIABLE' } },
+          { operator: '+', operand: { kind: 'LITERAL', value: '100', valueType: 'NUMBER' } }
         ]
       }
     })

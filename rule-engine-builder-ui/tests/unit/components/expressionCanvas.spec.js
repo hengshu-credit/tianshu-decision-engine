@@ -1,5 +1,6 @@
 import { shallowMount } from '@vue/test-utils'
 import ExpressionCanvas from '@/components/expression/ExpressionCanvas.vue'
+import { createOperationOperand } from '@/utils/operand'
 
 describe('ExpressionCanvas', () => {
   const node = {
@@ -28,5 +29,41 @@ describe('ExpressionCanvas', () => {
 
     expect(wrapper.emitted().toggleCollapse[0][0]).toEqual([])
     expect(node.args).toHaveLength(2)
+  })
+
+  test('折叠按钮位于节点卡片之前', () => {
+    const wrapper = shallowMount(ExpressionCanvas, {
+      propsData: { node, path: [], selectedPath: [] }
+    })
+    const children = wrapper.find('.canvas-node-row').element.children
+
+    expect(children[0].classList.contains('canvas-collapse')).toBe(true)
+    expect(children[1].classList.contains('canvas-node')).toBe(true)
+  })
+
+  test('选中阈值和路径时输入控件出现在画布节点内', () => {
+    const literal = shallowMount(ExpressionCanvas, {
+      propsData: { node: { kind: 'LITERAL', value: '', valueType: 'NUMBER' }, selectedPath: [], path: [] },
+      stubs: ['el-input', 'el-select', 'el-option']
+    })
+    expect(literal.find('.canvas-inline-editor').exists()).toBe(true)
+
+    const path = shallowMount(ExpressionCanvas, {
+      propsData: { node: { kind: 'PATH', value: '', resolved: false }, selectedPath: [], path: [] },
+      stubs: ['el-input', 'el-select', 'el-option']
+    })
+    expect(path.find('.canvas-path-editor').exists()).toBe(true)
+  })
+
+  test('运算项显示项间运算符且保持同一子层', () => {
+    const operation = createOperationOperand([
+      { operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } },
+      { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } },
+      { operator: '*', operand: { kind: 'LITERAL', value: '3', valueType: 'NUMBER' } }
+    ])
+    const wrapper = shallowMount(ExpressionCanvas, { propsData: { node: operation } })
+
+    expect(wrapper.findAll('.canvas-child')).toHaveLength(3)
+    expect(wrapper.findAll('.canvas-edge-operator').wrappers.map(item => item.text())).toEqual(['+', '*'])
   })
 })

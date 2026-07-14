@@ -28,9 +28,10 @@ public class RuleLineageController {
     @GetMapping("/graph")
     public R<Map<String, Object>> graph(@RequestParam String nodeType,
                                         @RequestParam Long nodeId,
-                                        @RequestParam(required = false, defaultValue = "ALL") String direction) {
+                                        @RequestParam(required = false, defaultValue = "ALL") String direction,
+                                        @RequestParam(required = false) Integer maxDepth) {
         try {
-            return R.ok(lineageService.graph(nodeType, nodeId, direction));
+            return R.ok(lineageService.graph(nodeType, nodeId, direction, maxDepth));
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());
         }

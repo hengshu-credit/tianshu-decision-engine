@@ -18,3 +18,4 @@ rule_examples
 rule-engine-mysql/data
 rule-engine-redis/data
 .worktrees/
+docs/superpowers/*

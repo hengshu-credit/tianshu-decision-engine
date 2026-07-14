@@ -63,45 +63,24 @@ describe('OperandPicker', () => {
     expect(wrapper.vm.activeCategory).toBe('manual')
   })
 
-  test('手输阈值发出显式 LITERAL 操作数', () => {
+  test('手输阈值请求进入统一表达式画布', () => {
     const wrapper = mountPicker({ vars: references, expectedType: 'NUMBER' })
-    wrapper.vm.selectManualKind('LITERAL')
-    wrapper.vm.manualValue = '600'
-    wrapper.vm.confirmManual()
+    wrapper.vm.requestManualEdit('LITERAL')
 
-    expect(wrapper.emitted().input[0][0]).toEqual({
-      kind: 'LITERAL', value: '600', valueType: 'NUMBER'
-    })
-  })
-
-  test('手输路径唯一命中后发出带 ID 的 PATH', () => {
-    const wrapper = mountPicker({ vars: references })
-    wrapper.vm.selectManualKind('PATH')
-    wrapper.vm.manualValue = 'request.age'
-    wrapper.vm.confirmManual()
-
-    expect(wrapper.emitted().input[0][0]).toMatchObject({
-      kind: 'PATH',
-      value: 'request.age',
-      refId: 8,
-      refType: 'DATA_OBJECT',
-      resolved: true
-    })
-  })
-
-  test('多项命中时不能确认并展示候选项', () => {
-    const wrapper = mountPicker({
-      vars: [
-        { ...references[0], varCode: 'score' },
-        { ...references[1], varCode: 'score' }
-      ]
-    })
-    wrapper.vm.selectManualKind('PATH')
-    wrapper.vm.manualValue = 'score'
-    wrapper.vm.confirmManual()
-
+    expect(wrapper.emitted()['manual-edit'][0]).toEqual(['LITERAL'])
     expect(wrapper.emitted().input).toBeUndefined()
-    expect(wrapper.vm.pathCandidates).toHaveLength(2)
+  })
+
+  test('手输路径请求进入统一表达式画布', () => {
+    const wrapper = mountPicker({ vars: references })
+    wrapper.vm.requestManualEdit('PATH')
+
+    expect(wrapper.emitted()['manual-edit'][0]).toEqual(['PATH'])
+  })
+
+  test('手输分类不再包含弹层输入表单', () => {
+    const wrapper = mountPicker({ vars: references })
+    expect(wrapper.find('.vp-manual-editor').exists()).toBe(false)
   })
 
   test('从变量分类选择时发出 REFERENCE 操作数', () => {

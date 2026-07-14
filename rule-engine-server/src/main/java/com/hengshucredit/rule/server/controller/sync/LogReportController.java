@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.controller.sync;
 
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
@@ -23,7 +24,9 @@ public class LogReportController {
     @PostMapping("/report")
     public R<Void> report(@RequestBody List<RuleExecutionLog> logs, HttpServletRequest request) {
         if (logs != null && !logs.isEmpty()) {
-            String projectCode = request.getAttribute("projectCode") == null
+            ProjectAuthContext authContext = ProjectAuthContext.from(request);
+            String projectCode = authContext != null ? authContext.getProjectCode()
+                    : request.getAttribute("projectCode") == null
                     ? null
                     : String.valueOf(request.getAttribute("projectCode"));
             if (projectCode == null || projectCode.trim().isEmpty()) {
@@ -38,6 +41,7 @@ public class LogReportController {
                     return R.fail(403, "Project token does not match log project");
                 }
                 log.setProjectCode(projectCode);
+                applyAuthAttribution(log, authContext);
                 if (log.getSource() == null || log.getSource().trim().isEmpty()) {
                     log.setSource("CLIENT");
                 }
@@ -48,5 +52,14 @@ public class LogReportController {
             }
         }
         return R.ok();
+    }
+
+    private void applyAuthAttribution(RuleExecutionLog log, ProjectAuthContext authContext) {
+        log.setAuthId(authContext == null ? null : authContext.getAuthId());
+        log.setAuthCode(authContext == null ? null : authContext.getAuthCode());
+        log.setAuthType(authContext == null ? null : authContext.getAuthType());
+        log.setTokenId(authContext == null ? null : authContext.getTokenId());
+        log.setTokenCode(authContext == null ? null : authContext.getTokenCode());
+        log.setAuthPhase(authContext == null ? null : authContext.getAuthPhase());
     }
 }

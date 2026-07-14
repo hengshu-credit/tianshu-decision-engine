@@ -875,7 +875,7 @@ public class RuleFieldAnalyzer {
             return;
         }
         if ("FUNCTION".equals(kind)) collectReferenceOperands(operand.getJSONArray("args"), result);
-        else if ("OPERATION".equals(kind)) collectReferenceOperands(operand.getJSONArray("operands"), result);
+        else if ("OPERATION".equals(kind)) collectOperationTerms(operand.getJSONArray("terms"), result);
         else if ("ARRAY".equals(kind)) collectReferenceOperands(operand.getJSONArray("items"), result);
         else if ("ACCESS".equals(kind)) {
             collectReferenceOperands(operand.getJSONObject("target"), result);
@@ -887,6 +887,14 @@ public class RuleFieldAnalyzer {
         if (operands == null) return;
         for (int i = 0; i < operands.size(); i++) {
             collectReferenceOperands(operands.getJSONObject(i), result);
+        }
+    }
+
+    private void collectOperationTerms(JSONArray terms, List<JSONObject> result) {
+        if (terms == null) return;
+        for (int i = 0; i < terms.size(); i++) {
+            JSONObject term = terms.getJSONObject(i);
+            collectReferenceOperands(term == null ? null : term.getJSONObject("operand"), result);
         }
     }
 

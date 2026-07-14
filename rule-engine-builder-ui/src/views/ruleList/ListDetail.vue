@@ -17,7 +17,7 @@
     <el-tabs v-model="activeTab">
       <el-tab-pane label="名单内容" name="records">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
             <el-form-item label="内容类型">
               <el-select v-model="query.itemType" clearable placeholder="全部" style="width:120px;">
                 <el-option v-for="opt in itemTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />

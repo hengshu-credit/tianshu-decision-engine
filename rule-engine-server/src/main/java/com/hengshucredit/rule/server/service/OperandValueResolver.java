@@ -221,25 +221,50 @@ public final class OperandValueResolver {
 
     private static Object operation(JSONObject operand, Map<String, Object> values,
                                     Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
-        String operator = operand.getString("operator");
-        JSONArray operands = operand.getJSONArray("operands");
-        if (empty(operator)) throw new IllegalArgumentException("运算符不能为空");
-        if (operands == null || operands.size() != 2) {
-            throw new IllegalArgumentException("运算符 " + operator + " 需要 2 个运算参数");
+        JSONArray terms = operand.getJSONArray("terms");
+        if (terms == null || terms.size() < 2) {
+            throw new IllegalArgumentException("运算表达式 terms 至少需要 2 项");
         }
-        List<Object> resolved = resolveArray(operands, values, referenceValues, functionInvoker);
-        if ("&&".equals(operator) || "||".equals(operator)) {
-            boolean result = "&&".equals(operator);
-            for (Object value : resolved) {
-                if ("&&".equals(operator)) result = result && booleanValue(value);
-                else result = result || booleanValue(value);
+        List<Object> valueStack = new ArrayList<>();
+        List<String> operatorStack = new ArrayList<>();
+        for (int i = 0; i < terms.size(); i++) {
+            JSONObject term = terms.getJSONObject(i);
+            if (term == null) throw new IllegalArgumentException("第 " + (i + 1) + " 个运算项不能为空");
+            String operator = term.getString("operator");
+            if (i == 0) {
+                if (!empty(operator)) throw new IllegalArgumentException("第 1 个运算项不能设置前置运算符");
+            } else {
+                if (precedence(operator) < 0) throw new IllegalArgumentException("不支持的运算符: " + operator);
+                while (!operatorStack.isEmpty()
+                        && precedence(operatorStack.get(operatorStack.size() - 1)) >= precedence(operator)) {
+                    applyTop(valueStack, operatorStack);
+                }
+                operatorStack.add(operator);
             }
-            return result;
+            valueStack.add(resolveRequired(term.getJSONObject("operand"), values, referenceValues, functionInvoker));
         }
-        if (isComparison(operator)) return compare(resolved.get(0), resolved.get(1), operator);
-        Object result = resolved.get(0);
-        for (int i = 1; i < resolved.size(); i++) result = arithmetic(result, resolved.get(i), operator);
-        return result;
+        while (!operatorStack.isEmpty()) applyTop(valueStack, operatorStack);
+        return valueStack.get(0);
+    }
+
+    private static int precedence(String operator) {
+        if ("*".equals(operator) || "/".equals(operator) || "%".equals(operator)) return 6;
+        if ("+".equals(operator) || "-".equals(operator)) return 5;
+        if (">".equals(operator) || ">=".equals(operator) || "<".equals(operator) || "<=".equals(operator)) return 4;
+        if ("==".equals(operator) || "!=".equals(operator)) return 3;
+        if ("&&".equals(operator)) return 2;
+        if ("||".equals(operator)) return 1;
+        return -1;
+    }
+
+    private static void applyTop(List<Object> values, List<String> operators) {
+        String operator = operators.remove(operators.size() - 1);
+        Object right = values.remove(values.size() - 1);
+        Object left = values.remove(values.size() - 1);
+        if ("&&".equals(operator)) values.add(booleanValue(left) && booleanValue(right));
+        else if ("||".equals(operator)) values.add(booleanValue(left) || booleanValue(right));
+        else if (isComparison(operator)) values.add(compare(left, right, operator));
+        else values.add(arithmetic(left, right, operator));
     }
 
     private static Object arithmetic(Object left, Object right, String operator) {
@@ -374,7 +399,15 @@ public final class OperandValueResolver {
         List<JSONObject> children = new ArrayList<>();
         String kind = operand.getString("kind");
         if ("FUNCTION".equals(kind)) addChildren(children, operand.getJSONArray("args"));
-        else if ("OPERATION".equals(kind)) addChildren(children, operand.getJSONArray("operands"));
+        else if ("OPERATION".equals(kind)) {
+            JSONArray terms = operand.getJSONArray("terms");
+            if (terms != null) {
+                for (int i = 0; i < terms.size(); i++) {
+                    JSONObject term = terms.getJSONObject(i);
+                    children.add(term == null ? null : term.getJSONObject("operand"));
+                }
+            }
+        }
         else if ("ARRAY".equals(kind)) addChildren(children, operand.getJSONArray("items"));
         else if ("ACCESS".equals(kind)) {
             children.add(operand.getJSONObject("target"));

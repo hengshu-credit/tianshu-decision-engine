@@ -1,5 +1,7 @@
 package com.hengshucredit.rule.client.sync;
 
+import com.hengshucredit.rule.client.auth.ClientAuthConfig;
+import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.client.cache.CachedRule;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.alibaba.fastjson.JSON;
@@ -23,15 +25,20 @@ public class HttpSyncClient {
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
     private final OkHttpClient httpClient;
     private final String serverUrl;
-    private final String token;
+    private final ClientRequestAuthenticator authenticator;
 
     public HttpSyncClient(String serverUrl, int timeoutMs) {
-        this(serverUrl, timeoutMs, null);
+        this(serverUrl, timeoutMs, (ClientRequestAuthenticator) null);
     }
     
     public HttpSyncClient(String serverUrl, int timeoutMs, String token) {
+        this(serverUrl, timeoutMs, token == null || token.isEmpty() ? null
+                : new ClientRequestAuthenticator(serverUrl, timeoutMs, ClientAuthConfig.legacyToken(token)));
+    }
+
+    public HttpSyncClient(String serverUrl, int timeoutMs, ClientRequestAuthenticator authenticator) {
         this.serverUrl = serverUrl.endsWith("/") ? serverUrl.substring(0, serverUrl.length() - 1) : serverUrl;
-        this.token = token;
+        this.authenticator = authenticator;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(timeoutMs, TimeUnit.MILLISECONDS)
                 .readTimeout(timeoutMs, TimeUnit.MILLISECONDS)
@@ -43,11 +50,7 @@ public class HttpSyncClient {
             Request.Builder requestBuilder = new Request.Builder()
                     .url(serverUrl + "/api/rule/sync/" + ruleCode)
                     .get();
-            // 添加Token认证头
-            if (token != null && !token.isEmpty()) {
-                requestBuilder.header("X-Rule-Token", token);
-            }
-            Request request = requestBuilder.build();
+            Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
@@ -68,11 +71,7 @@ public class HttpSyncClient {
             Request.Builder requestBuilder = new Request.Builder()
                     .url(serverUrl + "/api/rule/sync/all")
                     .get();
-            // 添加Token认证头
-            if (token != null && !token.isEmpty()) {
-                requestBuilder.header("X-Rule-Token", token);
-            }
-            Request request = requestBuilder.build();
+            Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
@@ -105,10 +104,7 @@ public class HttpSyncClient {
             Request.Builder requestBuilder = new Request.Builder()
                     .url(serverUrl + "/api/rule/sync/functions/" + projectId)
                     .get();
-            if (token != null && !token.isEmpty()) {
-                requestBuilder.header("X-Rule-Token", token);
-            }
-            Request request = requestBuilder.build();
+            Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
@@ -137,10 +133,7 @@ public class HttpSyncClient {
             Request.Builder requestBuilder = new Request.Builder()
                     .url(serverUrl + "/api/rule/sync/execute/" + ruleCode)
                     .post(requestBody);
-            if (token != null && !token.isEmpty()) {
-                requestBuilder.header("X-Rule-Token", token);
-            }
-            Request request = requestBuilder.build();
+            Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.body() == null) {
                     return failure("Empty response from rule server");
@@ -155,6 +148,10 @@ public class HttpSyncClient {
             log.warn("Failed to execute rule {} on server: {}", ruleCode, e.getMessage());
             return failure(e.getMessage());
         }
+    }
+
+    private Request authenticate(Request request) throws java.io.IOException {
+        return authenticator == null ? request : authenticator.authenticate(request);
     }
 
     private CachedRule toCachedRule(JSONObject obj) {

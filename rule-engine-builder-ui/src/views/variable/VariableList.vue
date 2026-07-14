@@ -26,7 +26,7 @@
 
       <!-- Tab 1: Variable List -->
       <el-tab-pane label="变量列表" name="list">
-        <div class="tab-filter-row">
+        <div class="tab-filter-row" @keyup.enter="handleQuery">
           <el-select v-model="qp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;"
             @change="handleQuery">
             <el-option label="全局" value="GLOBAL" />
@@ -107,7 +107,7 @@
 
       <!-- Tab 2: Data Objects -->
       <el-tab-pane label="数据对象" name="objects">
-        <div class="tab-filter-row">
+        <div class="tab-filter-row" @keyup.enter="onObjFilterChange">
           <el-select v-model="objQp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;" @change="onObjFilterChange">
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
@@ -198,7 +198,7 @@
 
       <!-- Tab 3: 常量列表（与变量列表相同分页模型，必须有默认值） -->
       <el-tab-pane label="常量列表" name="constants">
-        <div class="tab-filter-row">
+        <div class="tab-filter-row" @keyup.enter="handleConstQuery">
           <el-select v-model="constQp.scope" clearable filterable placeholder="作用范围" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
@@ -1839,7 +1839,7 @@ export default {
           rows.push({ field: paths.length ? paths.join(', ') : ('参数' + (index + 1)), usage: 'SQL占位参数 #' + (index + 1), expression: String(item || '') })
         })
       } else if (row && row.varSource === 'LIST') {
-        ;(config.queryOperands || []).forEach((operand, index) => {
+        (config.queryOperands || []).forEach((operand, index) => {
           const refs = collectOperandReferences(operand)
           rows.push({
             field: refs.length ? refs.map(ref => ref.code || ref.path).join(', ') : '无字段依赖',
@@ -1881,7 +1881,7 @@ export default {
           collectReferencePaths(item, { allowBarePath: true }).forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
         })
       } else if (row && row.varSource === 'LIST') {
-        ;(config.queryOperands || []).forEach(operand => {
+        (config.queryOperands || []).forEach(operand => {
           collectOperandReferences(operand).forEach(ref => {
             const path = ref.code || ref.path
             if (path) setPathValue(sample, path, this.sampleValueForPath(path))

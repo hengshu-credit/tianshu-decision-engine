@@ -14,7 +14,7 @@
     <el-tabs v-model="activeTab">
       <el-tab-pane label="数据源配置" name="datasource">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
             <el-form-item label="作用范围">
               <el-select v-model="qp.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />

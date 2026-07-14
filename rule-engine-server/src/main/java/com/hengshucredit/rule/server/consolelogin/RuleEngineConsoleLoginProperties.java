@@ -33,6 +33,7 @@ public class RuleEngineConsoleLoginProperties {
      */
     private List<String> excludePatterns = new ArrayList<>(Arrays.asList(
             "/api/auth/**",
+            "/api/rule/auth/token",
             "/api/rule/sync/**",
             "/api/rule/log/report"
     ));

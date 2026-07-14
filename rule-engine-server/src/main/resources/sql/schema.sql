@@ -30,6 +30,83 @@ CREATE TABLE IF NOT EXISTS `rule_project` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则项目表';
 
 -- ============================================================
+-- 1.1 rule_project_auth - 项目鉴权配置表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_project_auth` (
+  `id`                    BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`            BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `auth_code`             VARCHAR(128) NOT NULL                COMMENT '鉴权配置编码',
+  `auth_name`             VARCHAR(128) NOT NULL                COMMENT '鉴权配置名称',
+  `auth_type`             VARCHAR(32)  NOT NULL                COMMENT '鉴权类型',
+  `lookup_key`            CHAR(64)     NOT NULL                COMMENT '凭据定位摘要',
+  `identifier_ciphertext` TEXT         DEFAULT NULL            COMMENT '凭据标识密文',
+  `secret_ciphertext`     TEXT         NOT NULL                COMMENT '凭据密文',
+  `config_json`           JSON         DEFAULT NULL            COMMENT '非敏感鉴权配置',
+  `token_ttl_seconds`     INT          NOT NULL DEFAULT 7200   COMMENT '临时Token有效秒数',
+  `token_grace_seconds`   INT          NOT NULL DEFAULT 600    COMMENT '临时Token宽限秒数',
+  `status`                TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_auth_code` (`auth_code`),
+  UNIQUE KEY `uk_project_auth_lookup` (`lookup_key`),
+  KEY `idx_project_auth_project` (`project_id`, `status`),
+  KEY `idx_project_auth_type` (`auth_type`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权配置表';
+
+-- ============================================================
+-- 1.2 rule_project_auth_token - 项目临时访问Token表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_project_auth_token` (
+  `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
+  `auth_id`           BIGINT       NOT NULL                COMMENT '来源鉴权配置ID',
+  `token_code`        VARCHAR(128) NOT NULL                COMMENT 'Token展示编码',
+  `lookup_key`        CHAR(64)     NOT NULL                COMMENT 'Token定位摘要',
+  `token_ciphertext`  TEXT         NOT NULL                COMMENT 'Token密文',
+  `issued_time`       DATETIME     NOT NULL                COMMENT '签发时间',
+  `expire_time`       DATETIME     NOT NULL                COMMENT '正常到期时间',
+  `grace_expire_time` DATETIME     NOT NULL                COMMENT '宽限截止时间',
+  `last_used_time`    DATETIME     DEFAULT NULL            COMMENT '最后使用时间',
+  `revoked_time`      DATETIME     DEFAULT NULL            COMMENT '撤销时间',
+  `status`            TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-撤销，1-有效',
+  `create_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`       DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_project_auth_token_code` (`token_code`),
+  UNIQUE KEY `uk_project_auth_token_lookup` (`lookup_key`),
+  KEY `idx_project_auth_token_auth` (`auth_id`, `status`),
+  KEY `idx_project_auth_token_project` (`project_id`, `status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目临时访问Token表';
+
+-- ============================================================
+-- 1.3 rule_auth_access_log - 项目鉴权访问日志表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_auth_access_log` (
+  `id`             BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `project_id`     BIGINT        DEFAULT NULL            COMMENT '项目ID',
+  `project_code`   VARCHAR(128)  DEFAULT NULL            COMMENT '项目编码快照',
+  `auth_id`        BIGINT        DEFAULT NULL            COMMENT '鉴权配置ID',
+  `auth_code`      VARCHAR(128)  DEFAULT NULL            COMMENT '鉴权配置编码快照',
+  `auth_type`      VARCHAR(32)   DEFAULT NULL            COMMENT '鉴权类型快照',
+  `token_id`       BIGINT        DEFAULT NULL            COMMENT '临时Token ID',
+  `token_code`     VARCHAR(128)  DEFAULT NULL            COMMENT '临时Token编码快照',
+  `auth_phase`     VARCHAR(16)   DEFAULT NULL            COMMENT '鉴权阶段：DIRECT/VALID/GRACE',
+  `request_method` VARCHAR(16)   DEFAULT NULL            COMMENT '请求方法',
+  `request_uri`    VARCHAR(1024) DEFAULT NULL            COMMENT '请求路径',
+  `request_id`     VARCHAR(128)  DEFAULT NULL            COMMENT '请求ID',
+  `client_ip`      VARCHAR(64)   DEFAULT NULL            COMMENT '客户端IP',
+  `success`        TINYINT       NOT NULL DEFAULT 1      COMMENT '是否成功',
+  `failure_reason` VARCHAR(512)  DEFAULT NULL            COMMENT '失败原因',
+  `create_time`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
+  PRIMARY KEY (`id`),
+  KEY `idx_auth_access_project_time` (`project_id`, `create_time`),
+  KEY `idx_auth_access_auth_time` (`auth_id`, `create_time`),
+  KEY `idx_auth_access_token_time` (`token_id`, `create_time`),
+  KEY `idx_auth_access_success_time` (`success`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权访问日志表';
+
+-- ============================================================
 -- 2. rule_definition - 规则定义表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition` (
@@ -421,6 +498,12 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `source`          VARCHAR(32)   NOT NULL DEFAULT 'SERVER' COMMENT '来源：SERVER-服务端测试，CLIENT-客户端执行',
    `client_app_name` VARCHAR(128)  DEFAULT NULL             COMMENT '客户端应用名称',
    `client_ip`       VARCHAR(64)   DEFAULT NULL             COMMENT '客户端IP',
+   `auth_id`         BIGINT        DEFAULT NULL             COMMENT '鉴权配置ID',
+   `auth_code`       VARCHAR(128)  DEFAULT NULL             COMMENT '鉴权配置编码快照',
+   `auth_type`       VARCHAR(32)   DEFAULT NULL             COMMENT '鉴权类型快照',
+   `token_id`        BIGINT        DEFAULT NULL             COMMENT '临时Token ID',
+   `token_code`      VARCHAR(128)  DEFAULT NULL             COMMENT '临时Token编码快照',
+   `auth_phase`      VARCHAR(16)   DEFAULT NULL             COMMENT '鉴权阶段',
    `input_params`    TEXT          DEFAULT NULL             COMMENT '输入参数（JSON）',
    `output_result`   TEXT          DEFAULT NULL             COMMENT '输出结果（JSON）',
    `trace_info`      LONGTEXT      DEFAULT NULL             COMMENT '表达式追踪树（JSON）',
@@ -432,7 +515,8 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    KEY `idx_rule_code` (`rule_code`, `create_time`),
    KEY `idx_project_code` (`project_code`, `create_time`),
    KEY `idx_source` (`source`, `create_time`),
-   KEY `idx_client_app` (`client_app_name`, `create_time`)
+    KEY `idx_client_app` (`client_app_name`, `create_time`),
+    KEY `idx_execution_log_auth` (`auth_id`, `token_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
     COMMENT='规则执行日志表（按月分区）'
     PARTITION BY RANGE (TO_DAYS(`create_time`)) (
@@ -912,6 +996,12 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `rule_code`       VARCHAR(128) DEFAULT NULL            COMMENT '规则编码',
   `api_code`        VARCHAR(128) DEFAULT NULL            COMMENT 'API编码',
   `datasource_code` VARCHAR(128) DEFAULT NULL            COMMENT '数据源编码',
+  `auth_id`         BIGINT       DEFAULT NULL            COMMENT '鉴权配置ID',
+  `auth_code`       VARCHAR(128) DEFAULT NULL            COMMENT '鉴权配置编码快照',
+  `auth_type`       VARCHAR(32)  DEFAULT NULL            COMMENT '鉴权类型快照',
+  `token_id`        BIGINT       DEFAULT NULL            COMMENT '临时Token ID',
+  `token_code`      VARCHAR(128) DEFAULT NULL            COMMENT '临时Token编码快照',
+  `auth_phase`      VARCHAR(16)  DEFAULT NULL            COMMENT '鉴权阶段',
   `success`         TINYINT      NOT NULL DEFAULT 1      COMMENT '是否成功：0-失败，1-成功',
   `quantity`        DECIMAL(18,6) NOT NULL DEFAULT 1.000000 COMMENT '计费数量',
   `unit_price`      DECIMAL(18,6) NOT NULL DEFAULT 0.000000 COMMENT '单价',
@@ -924,7 +1014,8 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   PRIMARY KEY (`id`),
   KEY `idx_billing_record_occur` (`occur_time`),
   KEY `idx_billing_record_target` (`billing_target`, `target_ref_id`),
-  KEY `idx_billing_record_project` (`project_code`, `occur_time`)
+  KEY `idx_billing_record_project` (`project_code`, `occur_time`),
+  KEY `idx_billing_record_auth` (`auth_id`, `token_id`, `occur_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费明细表';
 
 -- ============================================================
@@ -935,6 +1026,9 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `summary_date`    DATE         NOT NULL                COMMENT '汇总日期',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
   `project_code`    VARCHAR(128) DEFAULT NULL            COMMENT '项目编码',
+  `auth_id`         BIGINT       DEFAULT NULL            COMMENT '鉴权配置ID',
+  `auth_code`       VARCHAR(128) DEFAULT NULL            COMMENT '鉴权配置编码快照',
+  `auth_type`       VARCHAR(32)  DEFAULT NULL            COMMENT '鉴权类型快照',
   `billing_code`    VARCHAR(128) NOT NULL                COMMENT '计费项编码',
   `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象',
   `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
@@ -948,9 +1042,10 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
-  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`),
+  UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`),
   KEY `idx_billing_summary_date` (`summary_date`),
-  KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`)
+  KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`),
+  KEY `idx_billing_summary_auth` (`auth_id`, `summary_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
 
 -- 未发布阶段的增量结构同步：mysql-init 每次启动都会执行，已有开发数据卷也能补齐 Operand 列。

@@ -1,7 +1,7 @@
 package com.hengshucredit.rule.server.config;
 
-import com.hengshucredit.rule.model.entity.RuleProject;
-import com.hengshucredit.rule.server.service.RuleProjectService;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.service.ProjectAuthService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
@@ -19,13 +19,14 @@ import javax.servlet.http.HttpServletResponse;
 public class TokenAuthInterceptor implements HandlerInterceptor {
     
     @Autowired
-    private RuleProjectService projectService;
+    private ProjectAuthService projectAuthService;
     
     // 需要验证Token的路径（同步API）
     private static final String[] PROTECTED_PATH_PREFIXES = {
         "/api/sync",
         "/api/rule/sync",
-        "/api/rule/log/report"
+        "/api/rule/log/report",
+        "/api/rule/auth/token"
     };
     
     @Override
@@ -39,29 +40,36 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         if (!needAuth) {
             return true;
         }
-        
-        // 获取Token
-        String token = extractToken(request);
-        if (token == null) {
-            log.warn("Token not found in request: {}", uri);
-            response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("{\"code\":401,\"message\":\"Token is required\"}");
+
+        boolean tokenRequest = "/api/rule/auth/token".equals(uri);
+        if (tokenRequest && !projectAuthService.isTokenRequestAllowed(request)) {
+            projectAuthService.recordAccess(request, null, false, "RATE_LIMITED");
+            response.setStatus(429);
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":429,\"message\":\"Too many token attempts\"}");
             return false;
         }
         
-        // 验证Token
-        RuleProject project = projectService.validateToken(token);
-        if (project == null) {
-            log.warn("Invalid token for request: {}", uri);
+        ProjectAuthContext context = projectAuthService.authenticate(request);
+        if (context == null) {
+            if (tokenRequest) {
+                projectAuthService.recordTokenFailure(request);
+            }
+            projectAuthService.recordAccess(request, null, false, "INVALID_CREDENTIAL");
+            log.warn("Invalid project credential for request: {}", uri);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            response.getWriter().write("{\"code\":401,\"message\":\"Invalid or expired token\"}");
+            response.setContentType("application/json;charset=UTF-8");
+            response.getWriter().write("{\"code\":401,\"message\":\"Invalid project credential\"}");
             return false;
         }
-        
-        // 将项目信息存入request属性，供后续使用
-        request.setAttribute("projectId", project.getId());
-        request.setAttribute("projectCode", project.getProjectCode());
-        
+        context.attach(request);
+        if ("GRACE".equals(context.getAuthPhase())) {
+            response.setHeader("X-Rule-Token-State", "grace");
+        }
+        if (tokenRequest) {
+            projectAuthService.clearTokenFailures(request);
+        }
+        projectAuthService.recordAccess(request, context, true, null);
         return true;
     }
 
@@ -77,23 +85,4 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         return false;
     }
     
-    /**
-     * 从请求中提取Token
-     * 支持Header: X-Rule-Token 或 Query Param: token
-     */
-    private String extractToken(HttpServletRequest request) {
-        // 优先从Header获取
-        String token = request.getHeader("X-Rule-Token");
-        if (token != null && !token.isEmpty()) {
-            return token;
-        }
-        
-        // 从Query Param获取
-        token = request.getParameter("token");
-        if (token != null && !token.isEmpty()) {
-            return token;
-        }
-        
-        return null;
-    }
 }

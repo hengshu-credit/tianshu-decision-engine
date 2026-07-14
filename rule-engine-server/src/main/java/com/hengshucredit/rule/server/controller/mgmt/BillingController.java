@@ -57,9 +57,13 @@ public class BillingController {
             @RequestParam(required = false) String billingTarget,
             @RequestParam(required = false) String billingCode,
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String authType,
+            @RequestParam(required = false) String authCode,
+            @RequestParam(required = false) String tokenCode,
             @RequestParam(required = false) String beginTime,
             @RequestParam(required = false) String endTime) {
-        return R.ok(billingService.pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, beginTime, endTime));
+        return R.ok(billingService.pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode,
+                authType, authCode, tokenCode, beginTime, endTime));
     }
 
     @GetMapping("/summary/list")
@@ -69,9 +73,12 @@ public class BillingController {
             @RequestParam(required = false) String billingTarget,
             @RequestParam(required = false) String billingCode,
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String authType,
+            @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String beginDate,
             @RequestParam(required = false) String endDate) {
-        return R.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode, beginDate, endDate));
+        return R.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode,
+                authType, authCode, beginDate, endDate));
     }
 
     @PostMapping("/summary/refresh")

@@ -12,6 +12,10 @@ export const OPERAND_KINDS = Object.freeze({
   LIST_QUERY: 'LIST_QUERY'
 })
 
+export const OPERATION_OPERATORS = Object.freeze([
+  '+', '-', '*', '/', '%', '==', '!=', '>', '>=', '<', '<=', '&&', '||'
+])
+
 export const READ_OPERAND_KINDS = Object.freeze([
   OPERAND_KINDS.PATH,
   OPERAND_KINDS.REFERENCE,
@@ -101,11 +105,14 @@ export function createFunctionOperand(fn, args = []) {
   }
 }
 
-export function createOperationOperand(operator, operands = [], valueType = '') {
+export function createOperationOperand(terms = [], valueType = '') {
   return {
     kind: OPERAND_KINDS.OPERATION,
-    operator: operator || '',
-    operands: Array.isArray(operands) ? operands : [],
+    terms: Array.isArray(terms) ? terms.map((term, index) => {
+      const result = { operand: term && term.operand ? cloneOperand(term.operand) : null }
+      if (index > 0 || (term && term.operator)) result.operator = (term && term.operator) || ''
+      return result
+    }) : [],
     valueType: valueType || ''
   }
 }
@@ -157,7 +164,7 @@ export function cloneOperand(operand) {
 export function operandChildren(operand) {
   if (!operand || !operand.kind) return []
   if (operand.kind === OPERAND_KINDS.FUNCTION) return operand.args || []
-  if (operand.kind === OPERAND_KINDS.OPERATION) return operand.operands || []
+  if (operand.kind === OPERAND_KINDS.OPERATION) return (operand.terms || []).map(term => term && term.operand)
   if (operand.kind === OPERAND_KINDS.ACCESS) return [operand.target, operand.accessor]
   if (operand.kind === OPERAND_KINDS.CAST) return [operand.operand]
   if (operand.kind === OPERAND_KINDS.ARRAY) return operand.items || []
@@ -169,12 +176,14 @@ export function inferOperandType(operand) {
   if (operand.kind === OPERAND_KINDS.CAST) return normalizeType(operand.targetType)
   if (operand.kind === OPERAND_KINDS.ARRAY) return 'LIST'
   if (operand.kind === OPERAND_KINDS.LIST_QUERY) return 'BOOLEAN'
-  if (operand.kind === OPERAND_KINDS.OPERATION && ['&&', '||', '!', '==', '!=', '>', '>=', '<', '<='].includes(operand.operator)) return 'BOOLEAN'
-  if (operand.valueType) return normalizeType(operand.valueType)
   if (operand.kind === OPERAND_KINDS.OPERATION) {
-    const first = (operand.operands || []).find(Boolean)
+    const operators = (operand.terms || []).slice(1).map(term => term && term.operator)
+    if (operators.some(operator => ['&&', '||', '==', '!=', '>', '>=', '<', '<='].includes(operator))) return 'BOOLEAN'
+    if (operand.valueType) return normalizeType(operand.valueType)
+    const first = (operand.terms || []).map(term => term && term.operand).find(Boolean)
     return inferOperandType(first)
   }
+  if (operand.valueType) return normalizeType(operand.valueType)
   return ''
 }
 
@@ -213,11 +222,17 @@ export function validateOperand(operand, options = {}) {
         }
       })
     }
-    if (current.kind === OPERAND_KINDS.OPERATION && !current.operator) {
-      errors.push({ path, message: '运算符不能为空' })
-    }
-    if (current.kind === OPERAND_KINDS.OPERATION && (current.operands || []).length !== 2) {
-      errors.push({ path, message: '运算符 ' + current.operator + ' 需要 2 个运算项' })
+    if (current.kind === OPERAND_KINDS.OPERATION) {
+      const terms = current.terms || []
+      if (terms.length < 2) errors.push({ path, message: '运算表达式至少需要 2 个运算项' })
+      terms.forEach((term, index) => {
+        if (index === 0 && term && term.operator) {
+          errors.push({ path: path + '.terms[0].operator', message: '第 1 个运算项不能设置前置运算符' })
+        }
+        if (index > 0 && (!term || !OPERATION_OPERATORS.includes(term.operator))) {
+          errors.push({ path: path + '.terms[' + index + '].operator', message: '第 ' + (index + 1) + ' 个运算项缺少运算符' })
+        }
+      })
     }
     if (current.kind === OPERAND_KINDS.ACCESS && !current.accessType) {
       errors.push({ path, message: '访问方式不能为空' })
@@ -287,9 +302,11 @@ export function compileOperand(operand) {
     return (operand.functionCode || '') + '(' + args + ')'
   }
   if (operand.kind === OPERAND_KINDS.OPERATION) {
-    const values = (operand.operands || []).map(compileOperand)
-    if (values.length === 1) return '(' + (operand.operator || '') + values[0] + ')'
-    return '(' + values.join(' ' + (operand.operator || '') + ' ') + ')'
+    const values = (operand.terms || []).map((term, index) => {
+      const value = compileOperand(term && term.operand)
+      return index === 0 ? value : ((term && term.operator) || '') + ' ' + value
+    })
+    return '(' + values.join(' ') + ')'
   }
   if (operand.kind === OPERAND_KINDS.ACCESS) {
     const fn = String(operand.accessType || '').toUpperCase() === 'INDEX' ? 'arrGet' : 'objGet'
@@ -514,7 +531,12 @@ function typesCompatible(expected, actual) {
 function operandChildEntries(operand) {
   if (!operand || !operand.kind) return []
   if (operand.kind === OPERAND_KINDS.FUNCTION) return (operand.args || []).map((value, index) => ({ path: '.args[' + index + ']', value }))
-  if (operand.kind === OPERAND_KINDS.OPERATION) return (operand.operands || []).map((value, index) => ({ path: '.operands[' + index + ']', value }))
+  if (operand.kind === OPERAND_KINDS.OPERATION) {
+    return (operand.terms || []).map((term, index) => ({
+      path: '.terms[' + index + '].operand',
+      value: term && term.operand
+    }))
+  }
   if (operand.kind === OPERAND_KINDS.ACCESS) return [{ path: '.target', value: operand.target }, { path: '.accessor', value: operand.accessor }]
   if (operand.kind === OPERAND_KINDS.CAST) return [{ path: '.operand', value: operand.operand }]
   if (operand.kind === OPERAND_KINDS.ARRAY) return (operand.items || []).map((value, index) => ({ path: '.items[' + index + ']', value }))
@@ -522,9 +544,17 @@ function operandChildEntries(operand) {
 }
 
 function syncOperandChildren(operand, options) {
+  if (operand.kind === OPERAND_KINDS.OPERATION) {
+    let changed = false
+    const terms = (operand.terms || []).map(term => {
+      const child = syncOperandReference(term && term.operand, options)
+      if (child.changed) changed = true
+      return { ...term, operand: child.operand }
+    })
+    return { operand: changed ? { ...operand, terms } : operand, changed }
+  }
   let key = null
   if (operand.kind === OPERAND_KINDS.FUNCTION) key = 'args'
-  if (operand.kind === OPERAND_KINDS.OPERATION) key = 'operands'
   if (operand.kind === OPERAND_KINDS.ARRAY) key = 'items'
   if (key) {
     let changed = false

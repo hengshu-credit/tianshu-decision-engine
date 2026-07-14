@@ -8,7 +8,7 @@
     <el-tabs v-model="activeTab" @tab-click="onTabChange">
       <el-tab-pane label="计费配置" name="config">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleConfigQuery">
             <el-form-item label="作用范围">
               <el-select v-model="configQuery.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />
@@ -87,7 +87,7 @@
 
       <el-tab-pane label="计费明细" name="record">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleRecordQuery">
             <el-form-item label="计费对象">
               <el-select v-model="recordQuery.billingTarget" clearable placeholder="全部" style="width:120px;">
                 <el-option v-for="item in billingTargetOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -99,6 +99,13 @@
             <el-form-item label="项目编码">
               <el-input v-model="recordQuery.projectCode" clearable placeholder="项目编码" style="width:150px;" />
             </el-form-item>
+            <el-form-item label="鉴权方式">
+              <el-select v-model="recordQuery.authType" clearable placeholder="全部" style="width:130px;">
+                <el-option v-for="item in authTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="鉴权编码"><el-input v-model="recordQuery.authCode" clearable placeholder="鉴权编码" style="width:145px;" /></el-form-item>
+            <el-form-item label="Token 编码"><el-input v-model="recordQuery.tokenCode" clearable placeholder="Token 编码" style="width:160px;" /></el-form-item>
             <el-form-item label="发生时间">
               <el-date-picker v-model="recordDateRange" type="daterange" value-format="yyyy-MM-dd" range-separator="至"
                 start-placeholder="开始日期" end-placeholder="结束日期" style="width:240px;" @change="onRecordDateChange" />
@@ -113,6 +120,9 @@
         <el-table :data="recordList" border size="small" v-loading="recordLoading" style="width:100%;">
           <el-table-column prop="occurTime" label="发生时间" min-width="160" />
           <el-table-column prop="projectCode" label="项目编码" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="authCode" label="鉴权编码" min-width="135" show-overflow-tooltip />
+          <el-table-column label="鉴权方式" min-width="105"><template slot-scope="{ row }">{{ optionLabel(authTypeOptions, row.authType) }}</template></el-table-column>
+          <el-table-column prop="tokenCode" label="Token 编码" min-width="180" show-overflow-tooltip />
           <el-table-column prop="billingCode" label="计费编码" min-width="130" show-overflow-tooltip />
           <el-table-column label="对象" width="90" align="center">
             <template slot-scope="{ row }">{{ optionLabel(billingTargetOptions, row.billingTarget) }}</template>
@@ -144,7 +154,7 @@
 
       <el-tab-pane label="计费汇总" name="summary">
         <div class="uiue-search-container">
-          <el-form :inline="true" size="small">
+          <el-form :inline="true" size="small" @keyup.enter.native="handleSummaryQuery">
             <el-form-item label="计费对象">
               <el-select v-model="summaryQuery.billingTarget" clearable placeholder="全部" style="width:120px;">
                 <el-option v-for="item in billingTargetOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -156,6 +166,12 @@
             <el-form-item label="项目编码">
               <el-input v-model="summaryQuery.projectCode" clearable placeholder="项目编码" style="width:150px;" />
             </el-form-item>
+            <el-form-item label="鉴权方式">
+              <el-select v-model="summaryQuery.authType" clearable placeholder="全部" style="width:130px;">
+                <el-option v-for="item in authTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="鉴权编码"><el-input v-model="summaryQuery.authCode" clearable placeholder="鉴权编码" style="width:145px;" /></el-form-item>
             <el-form-item label="汇总日期">
               <el-date-picker v-model="summaryDateRange" type="daterange" value-format="yyyy-MM-dd" range-separator="至"
                 start-placeholder="开始日期" end-placeholder="结束日期" style="width:240px;" @change="onSummaryDateChange" />
@@ -177,6 +193,8 @@
         <el-table :data="summaryList" border size="small" v-loading="summaryLoading" style="width:100%;">
           <el-table-column prop="summaryDate" label="汇总日期" width="110" />
           <el-table-column prop="projectCode" label="项目编码" min-width="120" show-overflow-tooltip />
+          <el-table-column prop="authCode" label="鉴权编码" min-width="135" show-overflow-tooltip />
+          <el-table-column label="鉴权方式" min-width="105"><template slot-scope="{ row }">{{ optionLabel(authTypeOptions, row.authType) }}</template></el-table-column>
           <el-table-column prop="billingCode" label="计费编码" min-width="130" show-overflow-tooltip />
           <el-table-column label="对象" width="90" align="center">
             <template slot-scope="{ row }">{{ optionLabel(billingTargetOptions, row.billingTarget) }}</template>
@@ -335,12 +353,18 @@ export default {
       recordTotal: 0,
       recordLoading: false,
       recordDateRange: [],
-      recordQuery: { pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '', beginTime: '', endTime: '' },
+      recordQuery: {
+        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '',
+        authType: '', authCode: '', tokenCode: '', beginTime: '', endTime: ''
+      },
       summaryList: [],
       summaryTotal: 0,
       summaryLoading: false,
       summaryDateRange: [],
-      summaryQuery: { pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '', beginDate: '', endDate: '' },
+      summaryQuery: {
+        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '',
+        authType: '', authCode: '', beginDate: '', endDate: ''
+      },
       refreshDate: '',
       billingTargetOptions: [
         { label: '规则引擎', value: 'ENGINE' },
@@ -352,6 +376,12 @@ export default {
         { label: '成功计费', value: 'SUCCESS' },
         { label: '按耗时', value: 'DURATION' },
         { label: '固定金额', value: 'FIXED' }
+      ],
+      authTypeOptions: [
+        { label: '兼容令牌', value: 'LEGACY_TOKEN' },
+        { label: '账号密码', value: 'BASIC' },
+        { label: 'API Key', value: 'API_KEY' },
+        { label: 'HMAC-SHA256', value: 'HMAC_SHA256' }
       ]
     }
   },
@@ -424,7 +454,10 @@ export default {
     },
     resetRecordQuery() {
       this.recordDateRange = []
-      this.recordQuery = { pageNum: 1, pageSize: this.recordQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '', beginTime: '', endTime: '' }
+      this.recordQuery = {
+        pageNum: 1, pageSize: this.recordQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '',
+        authType: '', authCode: '', tokenCode: '', beginTime: '', endTime: ''
+      }
       this.loadRecords()
     },
     handleSummaryQuery() {
@@ -433,7 +466,10 @@ export default {
     },
     resetSummaryQuery() {
       this.summaryDateRange = []
-      this.summaryQuery = { pageNum: 1, pageSize: this.summaryQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '', beginDate: '', endDate: '' }
+      this.summaryQuery = {
+        pageNum: 1, pageSize: this.summaryQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '',
+        authType: '', authCode: '', beginDate: '', endDate: ''
+      }
       this.loadSummaries()
     },
     handleCreateConfig() {

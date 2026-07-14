@@ -24,10 +24,40 @@ import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleDefinitionServiceTest {
+
+    @Test
+    public void createWithContentAlwaysCreatesDraftDefinition() {
+        RuleDefinitionService service = new RuleDefinitionService();
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(15L);
+        definition.setProjectId(0L);
+        definition.setModelType("TABLE");
+        definition.setStatus(1);
+        definition.setPublishedVersion(9);
+        final RuleDefinition[] insertedDefinition = {null};
+
+        ReflectionTestUtils.setField(service, "baseMapper", mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
+            if ("insert".equals(method.getName())) {
+                insertedDefinition[0] = (RuleDefinition) args[0];
+                return 1;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "contentMapper", mapper(RuleDefinitionContentMapper.class,
+                (proxy, method, args) -> "insert".equals(method.getName()) ? 1 : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "fieldAnalyzer", new RecordingRuleFieldAnalyzer());
+
+        service.createWithContent(definition);
+
+        assertSame(definition, insertedDefinition[0]);
+        assertEquals(Integer.valueOf(0), insertedDefinition[0].getStatus());
+        assertNull(insertedDefinition[0].getPublishedVersion());
+    }
 
     @Test
     public void pageListForProjectIncludesRuleOutputFieldsForFlowCalls() {

@@ -8,7 +8,7 @@
     <el-tabs v-model="activeTab" type="border-card" class="page-tabs">
       <el-tab-pane label="名单管理" name="list">
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="作用范围">
           <el-select v-model="query.scope" clearable placeholder="全部" style="width:110px;">
             <el-option label="全局" value="GLOBAL" />

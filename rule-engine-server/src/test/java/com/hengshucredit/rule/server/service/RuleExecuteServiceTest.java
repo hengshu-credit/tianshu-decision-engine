@@ -8,6 +8,8 @@ import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -29,6 +31,7 @@ public class RuleExecuteServiceTest {
         RuleExecuteService service = new RuleExecuteService();
         RecordingVariableSourceResolver resolver = new RecordingVariableSourceResolver();
         RecordingLogService logService = new RecordingLogService();
+        RecordingBillingService billingService = new RecordingBillingService();
 
         ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
         ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
@@ -36,7 +39,7 @@ public class RuleExecuteServiceTest {
         ReflectionTestUtils.setField(service, "logService", logService);
         ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
         ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
-        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "billingService", billingService);
         ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
         ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
         ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
@@ -52,8 +55,10 @@ public class RuleExecuteServiceTest {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("applicantId", "A001");
         params.put("age", "22");
+        ProjectAuthContext authContext = ProjectAuthContext.temporary(1L, "project_a", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC, 21L, "TOKEN_A", "GRACE");
         RuleExecuteService.ExecutionOutcome outcome = service.executePublishedWithOptions(
-                published, params, 1L, "biz-app", VariableResolveOptions.defaults(), "CLIENT_SERVER");
+                published, params, 1L, "biz-app", VariableResolveOptions.defaults(), "CLIENT_SERVER", authContext);
 
         assertTrue(outcome.getResult().getErrorMessage(), outcome.getResult().isSuccess());
         assertEquals("PASS", outcome.getResult().getResult());
@@ -65,7 +70,11 @@ public class RuleExecuteServiceTest {
         assertNotNull(logService.saved);
         assertEquals("RISK_RULE", logService.saved.getRuleCode());
         assertEquals("biz-app", logService.saved.getClientAppName());
+        assertEquals("BASIC_MAIN", logService.saved.getAuthCode());
+        assertEquals("TOKEN_A", logService.saved.getTokenCode());
+        assertEquals("GRACE", logService.saved.getAuthPhase());
         assertTrue(logService.saved.getInputParams().contains("externalScore"));
+        assertEquals(authContext, billingService.authContext);
     }
 
     private static class FakeDefinitionService extends RuleDefinitionService {
@@ -134,8 +143,12 @@ public class RuleExecuteServiceTest {
     }
 
     private static class RecordingBillingService extends RuleBillingService {
+        private ProjectAuthContext authContext;
+
         @Override
-        public void recordEngineExecution(RuleDefinition definition, boolean success, Long executeTimeMs, String errorMessage) {
+        public void recordEngineExecution(RuleDefinition definition, boolean success, Long executeTimeMs,
+                                          String errorMessage, ProjectAuthContext authContext) {
+            this.authContext = authContext;
             RuleResult ignored = new RuleResult();
             ignored.setSuccess(success);
         }

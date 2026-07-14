@@ -50,8 +50,7 @@
                   v-if="allowsOperandKind('LITERAL')"
                   type="button"
                   class="vp-manual-type"
-                  :class="{ 'vp-manual-type--active': manualKind === 'LITERAL' }"
-                  @click="selectManualKind('LITERAL')"
+                  @click="requestManualEdit('LITERAL')"
                 >
                   <i class="el-icon-edit-outline" />
                   <span>手输阈值</span>
@@ -61,40 +60,12 @@
                   v-if="allowsOperandKind('PATH')"
                   type="button"
                   class="vp-manual-type"
-                  :class="{ 'vp-manual-type--active': manualKind === 'PATH' }"
-                  @click="selectManualKind('PATH')"
+                  @click="requestManualEdit('PATH')"
                 >
                   <i class="el-icon-link" />
                   <span>手输路径</span>
                   <small>输入运行时字段路径并自动识别引用</small>
                 </button>
-              </div>
-              <div v-if="manualKind" class="vp-manual-editor">
-                <el-input
-                  ref="manualInput"
-                  v-model="manualValue"
-                  size="small"
-                  clearable
-                  :placeholder="manualKind === 'PATH' ? '例如 request.customer.age' : manualValuePlaceholder"
-                  @keyup.enter.native="confirmManual"
-                />
-                <div v-if="pathCandidates.length" class="vp-path-candidates">
-                  <div class="vp-path-warning">该路径匹配到多个字段，请明确选择：</div>
-                  <button
-                    v-for="candidate in pathCandidates"
-                    :key="optionIdentityKey(candidate)"
-                    type="button"
-                    class="vp-path-candidate"
-                    @click="confirmPathCandidate(candidate)"
-                  >
-                    <span>{{ optionLabel(candidate) || candidate.varCode }}</span>
-                    <code>{{ candidate.varCode || candidate.refCode }}</code>
-                  </button>
-                </div>
-                <div class="vp-manual-actions">
-                  <el-button size="small" @click="resetManual">重选类型</el-button>
-                  <el-button type="primary" size="small" :disabled="!manualValue" @click="confirmManual">确认</el-button>
-                </div>
               </div>
             </div>
             <!-- 右侧：字段表格 + 搜索 -->
@@ -261,12 +232,9 @@ import { formatVarDisplay } from '@/utils/varDisplay'
 import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
 import {
   createFunctionOperand,
-  createLiteralOperand,
-  createPathOperand,
   createReferenceOperand,
   operandDisplay,
-  operandKindMeta,
-  resolvePathOperand
+  operandKindMeta
 } from '@/utils/operand'
 
 export default {
@@ -320,9 +288,6 @@ export default {
       popoverVisible: false,
       /** 当前选中的分类 */
       activeCategory: this.operandMode ? 'manual' : 'standalone',
-      manualKind: '',
-      manualValue: '',
-      pathCandidates: [],
       /** 搜索文本 */
       searchText: '',
       /** 输入框内临时检索文本，不直接改写外部绑定值 */
@@ -419,9 +384,6 @@ export default {
     },
     operandKindMetaValue() {
       return operandKindMeta(this.value)
-    },
-    manualValuePlaceholder() {
-      return this.expectedType === 'NUMBER' ? '请输入阈值' : '请输入值'
     },
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
@@ -968,20 +930,12 @@ export default {
           this.$nextTick(function () {
             if (this.operandMode && !this.value && this.allowsOperandKind('LITERAL')) {
               this.activeCategory = 'manual'
-              this.selectManualKind('LITERAL')
-              this.focusManualInput()
             } else {
               this.focusCurrentValueInPicker()
             }
           })
         }
       }
-    },
-    focusManualInput() {
-      this.$nextTick(function () {
-        var input = this.$refs.manualInput
-        if (input && typeof input.focus === 'function') input.focus()
-      })
     },
     focusCurrentValueInPicker() {
       var option
@@ -1184,38 +1138,15 @@ export default {
     allowsOperandKind(kind) {
       return (this.allowedKinds || []).includes(kind)
     },
-    selectManualKind(kind) {
+    requestManualEdit(kind) {
       if (!this.allowsOperandKind(kind)) return
-      this.manualKind = kind
-      this.manualValue = ''
-      this.pathCandidates = []
-    },
-    resetManual() {
-      this.manualKind = ''
-      this.manualValue = ''
-      this.pathCandidates = []
-    },
-    confirmManual() {
-      if (!this.manualValue || !this.manualKind) return
-      if (this.manualKind === 'LITERAL') {
-        this.emitOperand(createLiteralOperand(this.manualValue, this.expectedType))
-        return
-      }
-      var result = resolvePathOperand(createPathOperand(this.manualValue), this.vars)
-      this.pathCandidates = result.candidates
-      if (result.candidates.length) return
-      this.emitOperand(result.operand)
-    },
-    confirmPathCandidate(candidate) {
-      var result = resolvePathOperand(createPathOperand(this.manualValue), [candidate])
-      this.pathCandidates = []
-      this.emitOperand(result.operand)
+      this.$emit('manual-edit', kind)
+      this.closePopover()
     },
     emitOperand(operand) {
       this.$emit('input', operand)
       this.$emit('select', operand)
       this.closePopover()
-      this.resetManual()
     },
     typeLabel(t) {
       return varTypeLabel(t)
@@ -1461,38 +1392,10 @@ export default {
 }
 .vp-manual-type span { font-weight: 600; }
 .vp-manual-type small { color: #909399; line-height: 1.4; }
-.vp-manual-type:hover,
-.vp-manual-type--active {
+.vp-manual-type:hover {
   border-color: #409eff;
   background: #ecf5ff;
 }
-.vp-manual-editor {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid #ebeef5;
-}
-.vp-manual-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
-}
-.vp-path-candidates { margin-top: 10px; }
-.vp-path-warning { color: #e6a23c; font-size: 12px; margin-bottom: 6px; }
-.vp-path-candidate {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 8px 10px;
-  border: 1px solid #ebeef5;
-  background: #fff;
-  cursor: pointer;
-  text-align: left;
-}
-.vp-path-candidate + .vp-path-candidate { border-top: 0; }
-.vp-path-candidate:hover { background: #f5f7fa; }
-.vp-path-candidate code { color: #909399; }
 .vp-right {
   flex: 1;
   display: flex;

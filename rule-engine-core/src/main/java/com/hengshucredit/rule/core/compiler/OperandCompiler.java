@@ -46,16 +46,24 @@ public final class OperandCompiler {
             return result.append(')').toString();
         }
         if ("OPERATION".equals(kind)) {
-            String operator = operand.getString("operator");
-            if (empty(operator)) throw new IllegalArgumentException("运算符不能为空");
-            JSONArray operands = operand.getJSONArray("operands");
-            if (operands == null || operands.size() != 2) {
-                throw new IllegalArgumentException("运算符 " + operator + " 需要 2 个运算参数");
+            JSONArray terms = operand.getJSONArray("terms");
+            if (terms == null || terms.size() < 2) {
+                throw new IllegalArgumentException("运算表达式 terms 至少需要 2 项");
             }
             StringBuilder result = new StringBuilder("(");
-            for (int i = 0; i < operands.size(); i++) {
-                if (i > 0) result.append(' ').append(operator).append(' ');
-                result.append(compileRequired(operands, i, varContext));
+            for (int i = 0; i < terms.size(); i++) {
+                JSONObject term = terms.getJSONObject(i);
+                if (term == null) throw new IllegalArgumentException("第 " + (i + 1) + " 个运算项不能为空");
+                String operator = term.getString("operator");
+                if (i == 0) {
+                    if (!empty(operator)) throw new IllegalArgumentException("第 1 个运算项不能设置前置运算符");
+                } else {
+                    if (!supportedOperator(operator)) {
+                        throw new IllegalArgumentException("第 " + (i + 1) + " 个运算项缺少或包含不支持的运算符");
+                    }
+                    result.append(' ').append(operator).append(' ');
+                }
+                result.append(compileRequired(term.getJSONObject("operand"), varContext));
             }
             return result.append(')').toString();
         }
@@ -164,6 +172,15 @@ public final class OperandCompiler {
                 || "INTEGER".equals(type) || "LONG".equals(type) || "FLOAT".equals(type)
                 || "DOUBLE".equals(type) || "DECIMAL".equals(type) || "BIGDECIMAL".equals(type)
                 || "NUMBER".equals(type) || "PROBABILITY".equals(type);
+    }
+
+    private static boolean supportedOperator(String operator) {
+        return "+".equals(operator) || "-".equals(operator) || "*".equals(operator)
+                || "/".equals(operator) || "%".equals(operator)
+                || "==".equals(operator) || "!=".equals(operator)
+                || ">".equals(operator) || ">=".equals(operator)
+                || "<".equals(operator) || "<=".equals(operator)
+                || "&&".equals(operator) || "||".equals(operator);
     }
 
     private static String firstText(String first, String second) {

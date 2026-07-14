@@ -16,6 +16,7 @@ final class BuiltinFunctionCatalog {
 
     private static final String AGGREGATE_CLASS = "com.hengshucredit.rule.core.function.AggregateBuiltinFunctions";
     private static final String DECISION_CLASS = "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions";
+    private static final String DIGEST_CLASS = "com.hengshucredit.rule.core.function.DigestBuiltinFunctions";
     private static final String RUNTIME_CONTEXT_CLASS = "com.hengshucredit.rule.core.function.RuntimeContextBuiltinFunctions";
 
     private BuiltinFunctionCatalog() {
@@ -75,6 +76,15 @@ final class BuiltinFunctionCatalog {
         list.add(fn("strRegexExtract", "字符串正则提取", "按正则分组提取文本，未匹配返回 null", params(p("text", "STRING", "文本", "phone=13800138000"), p("regex", "STRING", "正则", "phone=([0-9]+)"), p("groupIndex", "NUMBER", "分组序号", 1)), "STRING", DECISION_CLASS, "strRegexExtract"));
         list.add(fn("strSplit", "字符串切分", "按字面量分隔符切分文本", params(p("text", "STRING", "文本", "A,B,C"), p("delimiter", "STRING", "分隔符", ",")), "LIST", DECISION_CLASS, "strSplit"));
         list.add(fn("strJoin", "序列拼接字符串", "将序列元素按分隔符拼接", params(p("values", "LIST", "序列", Arrays.asList("A", "B", "C")), p("delimiter", "STRING", "分隔符", "|")), "STRING", DECISION_CLASS, "strJoin"));
+        list.add(fn("md5", "MD5 字段摘要", "按 UTF-8 计算 MD5 并返回小写十六进制；仅用于兼容旧系统，不用于密码或安全签名",
+                p("text", "STRING", "字段文本", "abc"), "STRING", DIGEST_CLASS, "md5"));
+        list.add(fn("sha1", "SHA-1 字段摘要", "按 UTF-8 计算 SHA-1 并返回小写十六进制；仅用于兼容旧系统，不用于密码或安全签名",
+                p("text", "STRING", "字段文本", "abc"), "STRING", DIGEST_CLASS, "sha1"));
+        list.add(fn("sha256", "SHA-256 字段摘要", "按 UTF-8 计算 SHA-256 并返回小写十六进制；低熵敏感字段建议使用 HMAC-SHA256",
+                p("text", "STRING", "字段文本", "abc"), "STRING", DIGEST_CLASS, "sha256"));
+        list.add(fn("hmacSha256", "HMAC-SHA256 字段摘要", "使用密钥按 UTF-8 计算 HMAC-SHA256；空密钥返回 null，密钥应从运行时安全变量传入，不要写死在规则中",
+                params(p("text", "STRING", "字段文本", "abc"), p("key", "STRING", "密钥", "secret-key")),
+                "STRING", DIGEST_CLASS, "hmacSha256"));
 
         list.add(fn("arrSize", "数组长度", "返回列表、数组或对象值集合的元素数量", p("values", "LIST", "数组", Arrays.asList("A", "B", "C")), "NUMBER", DECISION_CLASS, "arrSize"));
         list.add(fn("arrGet", "数组按下标取值", "按下标取值，支持负数倒序下标", params(p("values", "LIST", "数组", Arrays.asList("A", "B", "C")), p("index", "NUMBER", "下标", 1)), "OBJECT", DECISION_CLASS, "arrGet"));

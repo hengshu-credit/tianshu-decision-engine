@@ -9,7 +9,7 @@
     </div>
 
     <div class="log-filter">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="动作">
           <el-select v-model="query.actionType" clearable placeholder="全部" style="width:160px">
             <el-option v-for="item in actionOptions" :key="item.value" :label="item.label" :value="item.value" />

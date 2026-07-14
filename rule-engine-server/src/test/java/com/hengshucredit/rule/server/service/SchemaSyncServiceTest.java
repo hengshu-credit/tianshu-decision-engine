@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class SchemaSyncServiceTest {
 
@@ -53,6 +54,43 @@ public class SchemaSyncServiceTest {
                 jdbcTemplate.sqlList.get(4));
     }
 
+    @Test
+    public void projectAuthSchemaCreatesTablesAndAttributionColumnsWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate(
+                "auth_id", "auth_code", "auth_type", "token_id", "token_code", "auth_phase");
+        jdbcTemplate.missingTables.addAll(Arrays.asList(
+                "rule_project_auth", "rule_project_auth_token", "rule_auth_access_log"));
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureProjectAuthSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_project_auth`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_project_auth_token`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_auth_access_log`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_execution_log` ADD COLUMN `auth_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_billing_record` ADD COLUMN `token_code`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_billing_summary` ADD COLUMN `auth_code`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_billing_summary` DROP INDEX `uk_billing_summary_key`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ADD UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`)"));
+    }
+
+    private boolean containsSql(List<String> sqlList, String fragment) {
+        for (String sql : sqlList) {
+            if (sql.contains(fragment)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void setField(Object target, String name, Object value) throws Exception {
         Field field = target.getClass().getDeclaredField(name);
         field.setAccessible(true);
@@ -62,6 +100,7 @@ public class SchemaSyncServiceTest {
     private static class FakeJdbcTemplate extends JdbcTemplate {
         private final List<String> sqlList = new ArrayList<>();
         private final Set<String> missingColumns;
+        private final Set<String> missingTables = new HashSet<>();
 
         private FakeJdbcTemplate(String... missingColumns) {
             this.missingColumns = new HashSet<>(Arrays.asList(missingColumns));
@@ -74,11 +113,28 @@ public class SchemaSyncServiceTest {
 
         @Override
         public <T> T queryForObject(String sql, Object[] args, Class<T> requiredType) {
+            if (sql.contains("INFORMATION_SCHEMA.TABLES") && args != null && args.length > 0
+                    && missingTables.contains(String.valueOf(args[0]))) {
+                return requiredType.cast(Integer.valueOf(0));
+            }
             if (sql.contains("INFORMATION_SCHEMA.COLUMNS") && args != null && args.length > 1
                     && missingColumns.contains(String.valueOf(args[1]))) {
                 return requiredType.cast(Integer.valueOf(0));
             }
             return requiredType.cast(Integer.valueOf(1));
+        }
+
+        @Override
+        public <T> List<T> queryForList(String sql, Object[] args, Class<T> elementType) {
+            if (sql.contains("INFORMATION_SCHEMA.STATISTICS") && args != null && args.length > 1
+                    && "uk_billing_summary_key".equals(String.valueOf(args[1]))) {
+                List<String> columns = Arrays.asList("summary_date", "project_code", "billing_code",
+                        "billing_target", "target_ref_id");
+                @SuppressWarnings("unchecked")
+                List<T> result = (List<T>) columns;
+                return result;
+            }
+            return new ArrayList<>();
         }
     }
 }

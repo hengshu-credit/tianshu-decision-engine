@@ -1,4 +1,5 @@
 import BillingList from '@/views/billing/BillingList.vue'
+import * as billingApi from '@/api/billing'
 import { listDefinitions } from '@/api/definition'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
@@ -89,5 +90,40 @@ describe('BillingList target selector', () => {
     const ctx = createContext()
 
     expect(ctx.targetOptionLabel({ id: 1, apiName: 'Credit API', apiCode: 'credit_api' })).toBe('Credit API / credit_api')
+  })
+
+  test('billing detail keeps authentication and token filters', async () => {
+    billingApi.listBillingRecords.mockResolvedValue({ data: { records: [], total: 0 } })
+    const ctx = createContext({
+      recordLoading: false,
+      recordList: [],
+      recordTotal: 0,
+      recordQuery: {
+        pageNum: 1, pageSize: 10, authType: 'BASIC', authCode: 'BASIC_MAIN', tokenCode: 'TOKEN_A'
+      }
+    })
+
+    await ctx.loadRecords()
+
+    expect(billingApi.listBillingRecords).toHaveBeenCalledWith(expect.objectContaining({
+      authType: 'BASIC', authCode: 'BASIC_MAIN', tokenCode: 'TOKEN_A'
+    }))
+  })
+
+  test('billing summary groups and filters by authentication but not token', async () => {
+    billingApi.listBillingSummaries.mockResolvedValue({ data: { records: [], total: 0 } })
+    const ctx = createContext({
+      summaryLoading: false,
+      summaryList: [],
+      summaryTotal: 0,
+      summaryQuery: { pageNum: 1, pageSize: 10, authType: 'API_KEY', authCode: 'PARTNER_API' }
+    })
+
+    await ctx.loadSummaries()
+
+    expect(billingApi.listBillingSummaries).toHaveBeenCalledWith(expect.objectContaining({
+      authType: 'API_KEY', authCode: 'PARTNER_API'
+    }))
+    expect(billingApi.listBillingSummaries.mock.calls[0][0].tokenCode).toBeUndefined()
   })
 })

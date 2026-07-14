@@ -161,6 +161,20 @@ describe('RuleList — 标签与格式化方法', () => {
     expect(wrapper.vm.statusTagType(2)).toBe('warning')
     expect(wrapper.vm.statusTagType(9)).toBe('info')
   })
+
+  test('仅发布状态和发布版本同时存在时才视为已发布', () => {
+    expect(wrapper.vm.effectiveStatus({ status: 1, publishedVersion: null })).toBe(0)
+    expect(wrapper.vm.effectiveStatus({ status: 1, publishedVersion: 3 })).toBe(1)
+    expect(wrapper.vm.effectiveStatus({ status: 2, publishedVersion: 3 })).toBe(2)
+    expect(wrapper.vm.isPublished({ status: 1, publishedVersion: null })).toBe(false)
+    expect(wrapper.vm.isPublished({ status: 1, publishedVersion: 3 })).toBe(true)
+  })
+
+  test('发布版本为空时显示占位符', () => {
+    expect(wrapper.vm.publishedVersionLabel({ publishedVersion: null })).toBe('-')
+    expect(wrapper.vm.publishedVersionLabel({ publishedVersion: 0 })).toBe(0)
+    expect(wrapper.vm.publishedVersionLabel({ publishedVersion: 3 })).toBe(3)
+  })
 })
 
 describe('RuleList — 筛选与搜索', () => {
@@ -223,8 +237,10 @@ describe('RuleList — 规则操作', () => {
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('handleCreate 打开创建弹窗', () => {
+    wrapper.vm.form.status = 1
     wrapper.vm.handleCreate()
     expect(wrapper.vm.dialogVisible).toBe(true)
+    expect(wrapper.vm.form.status).toBe(0)
   })
 
   test('handleDetail 跳转到详情页', () => {

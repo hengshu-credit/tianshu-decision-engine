@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -69,9 +71,24 @@ public class OperandValueResolverTest {
         root.put("payload", payload);
         root.put("items", Arrays.asList("A", "B"));
 
-        Assert.assertEquals(new BigDecimal("25.0"), OperandValueResolver.resolve("{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}]}" , root));
+        Assert.assertEquals(new BigDecimal("25.0"), OperandValueResolver.resolve("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}}},{\"operator\":\"*\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}}]}" , root));
         Assert.assertEquals("B", OperandValueResolver.resolve("{\"kind\":\"ACCESS\",\"accessType\":\"INDEX\",\"target\":{\"kind\":\"PATH\",\"value\":\"items\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}}", root));
         Assert.assertEquals(Arrays.asList("A", new BigDecimal("3")), OperandValueResolver.resolve("{\"kind\":\"ARRAY\",\"items\":[{\"kind\":\"LITERAL\",\"value\":\"A\",\"valueType\":\"STRING\"},{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}]}", root));
+    }
+
+    @Test
+    public void resolvesMixedOperationTermsByPrecedence() {
+        String arithmetic = "{\"kind\":\"OPERATION\",\"terms\":["
+                + "{\"operand\":{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}},"
+                + "{\"operator\":\"+\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}},"
+                + "{\"operator\":\"*\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}}]}";
+        Assert.assertEquals(0, new BigDecimal("7").compareTo((BigDecimal) OperandValueResolver.resolve(arithmetic, Collections.emptyMap())));
+
+        String grouped = "{\"kind\":\"OPERATION\",\"terms\":["
+                + "{\"operand\":" + arithmetic + "},"
+                + "{\"operator\":\">\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"6\",\"valueType\":\"NUMBER\"}},"
+                + "{\"operator\":\"&&\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"true\",\"valueType\":\"BOOLEAN\"}}]}";
+        Assert.assertEquals(Boolean.TRUE, OperandValueResolver.resolve(grouped, Collections.emptyMap()));
     }
 
     @Test
@@ -133,10 +150,21 @@ public class OperandValueResolverTest {
         values.put("riskFactor", 1.2);
         values.put("riskAmount", 4000);
 
-        String json = "{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":["
-                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numCeil\",\"args\":[{\"kind\":\"OPERATION\",\"operator\":\"/\",\"operands\":["
-                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"4200\",\"valueType\":\"NUMBER\"},{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":["
-                + "{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":[{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"REFERENCE\",\"refId\":101,\"refType\":\"VARIABLE\",\"code\":\"monthlyRepayment\"},{\"kind\":\"REFERENCE\",\"refId\":102,\"refType\":\"VARIABLE\",\"code\":\"usedAmount\"}]},{\"kind\":\"LITERAL\",\"value\":\"9000\",\"valueType\":\"NUMBER\"}]},{\"kind\":\"REFERENCE\",\"refId\":103,\"refType\":\"VARIABLE\",\"code\":\"riskFactor\"}]},{\"kind\":\"LITERAL\",\"value\":\"0.3\",\"valueType\":\"NUMBER\"}]},{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"REFERENCE\",\"refId\":104,\"refType\":\"VARIABLE\",\"code\":\"riskAmount\"},{\"kind\":\"LITERAL\",\"value\":\"0.5\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"7000\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}";
+        String json = operation("*",
+                function("numCeil", operation("/",
+                        function("numMax", number("4200"), function("numMin",
+                                operation("+",
+                                        operation("*",
+                                                operation("*",
+                                                        function("numMin",
+                                                                function("numMax", reference(101, "monthlyRepayment"), reference(102, "usedAmount")),
+                                                                number("9000")),
+                                                        reference(103, "riskFactor")),
+                                                number("0.3")),
+                                        operation("*", reference(104, "riskAmount"), number("0.5"))),
+                                number("7000"))),
+                        number("500"))),
+                number("500")).toJSONString();
 
         Assert.assertEquals(0, new BigDecimal("4500").compareTo((BigDecimal) OperandValueResolver.resolve(json, values)));
         Assert.assertEquals(Arrays.asList("monthlyRepayment", "usedAmount", "riskFactor", "riskAmount"), Arrays.asList(OperandValueResolver.collectPaths(json).toArray()));
@@ -163,8 +191,47 @@ public class OperandValueResolverTest {
     @Test
     public void rejectsUnknownOrIncompleteNodes() {
         assertResolveFails("{\"kind\":\"UNKNOWN\"}", "不支持");
-        assertResolveFails("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[null]}", "参数");
-        assertResolveFails("{\"kind\":\"OPERATION\",\"operator\":\"<\",\"operands\":[{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}]}", "2");
+        assertResolveFails("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":null},{\"operator\":\"+\",\"operand\":null}]}", "参数");
+        assertResolveFails("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}},{\"operator\":\"^\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}}]}", "不支持");
+    }
+
+    private JSONObject number(String value) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "LITERAL");
+        node.put("value", value);
+        node.put("valueType", "NUMBER");
+        return node;
+    }
+
+    private JSONObject reference(long id, String code) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "REFERENCE");
+        node.put("refId", id);
+        node.put("refType", "VARIABLE");
+        node.put("code", code);
+        return node;
+    }
+
+    private JSONObject function(String code, JSONObject... args) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "FUNCTION");
+        node.put("functionCode", code);
+        node.put("args", args);
+        return node;
+    }
+
+    private JSONObject operation(String operator, JSONObject... operands) {
+        JSONArray terms = new JSONArray();
+        for (int i = 0; i < operands.length; i++) {
+            JSONObject term = new JSONObject();
+            if (i > 0) term.put("operator", operator);
+            term.put("operand", operands[i]);
+            terms.add(term);
+        }
+        JSONObject node = new JSONObject();
+        node.put("kind", "OPERATION");
+        node.put("terms", terms);
+        return node;
     }
 
     private void assertResolveFails(String json, String message) {

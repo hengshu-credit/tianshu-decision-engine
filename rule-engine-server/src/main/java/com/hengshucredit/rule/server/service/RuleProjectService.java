@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ApiDocDTO;
 import com.hengshucredit.rule.model.entity.*;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -18,6 +19,9 @@ import java.util.*;
 @Slf4j
 @Service
 public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProject> {
+
+    @Resource
+    private ProjectAuthService projectAuthService;
 
     public IPage<RuleProject> pageList(int pageNum, int pageSize, String keyword, String projectCode, String projectName, Integer status, String createBeginTime, String createEndTime) {
         LambdaQueryWrapper<RuleProject> wrapper = new LambdaQueryWrapper<>();
@@ -59,11 +63,12 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         // 生成UUID Token
         String token = UUID.randomUUID().toString().replace("-", "");
         
-        // 直接存储明文Token
-        project.setAccessToken(token);
+        // Token 仅保存到加密鉴权配置，旧字段保持为空
+        project.setAccessToken(null);
         
         // 保存项目
         save(project);
+        projectAuthService.saveLegacyToken(project, token);
         
         log.info("Created project with access token: {}", project.getProjectCode());
         return token;
@@ -77,44 +82,26 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             return null;
         }
         
-        LambdaQueryWrapper<RuleProject> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(RuleProject::getAccessToken, token);
-        RuleProject project = getOne(wrapper);
-        
-        if (project == null) {
+        ProjectAuthContext context = projectAuthService.authenticateLegacyToken(token);
+        if (context == null) {
             log.warn("Token not found for any project");
             return null;
         }
-        
-        // 检查项目状态
-        if (project.getStatus() == null || project.getStatus() != 1) {
-            log.warn("Project is disabled: {}", project.getProjectCode());
-            return null;
-        }
-        
-        return project;
+        return getById(context.getProjectId());
     }
     
     /**
      * 获取Token脱敏显示
      */
     public String getMaskedToken(Long projectId) {
-        RuleProject project = getById(projectId);
-        if (project == null || !StringUtils.hasText(project.getAccessToken())) {
-            return null;
-        }
-        return maskToken(project.getAccessToken());
+        return maskToken(projectAuthService.getLegacyToken(projectId));
     }
 
     /**
      * 获取完整Token（需登录后查看，不脱敏）
      */
     public String getFullToken(Long projectId) {
-        RuleProject project = getById(projectId);
-        if (project == null || !StringUtils.hasText(project.getAccessToken())) {
-            return null;
-        }
-        return project.getAccessToken();
+        return projectAuthService.getLegacyToken(projectId);
     }
 
     /**
@@ -125,8 +112,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         String newToken = UUID.randomUUID().toString().replace("-", "");
         RuleProject project = getById(projectId);
         if (project != null) {
-            project.setAccessToken(newToken);
-            updateById(project);
+            projectAuthService.saveLegacyToken(project, newToken);
         }
         return newToken;
     }

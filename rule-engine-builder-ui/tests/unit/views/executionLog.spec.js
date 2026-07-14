@@ -148,6 +148,12 @@ describe('ExecutionLog — 初始化与数据加载', () => {
   test('loading 初始值为 false', () => {
     expect(wrapper.vm.loading).toBe(false)
   })
+
+  test('鉴权归因筛选初始化为空', () => {
+    expect(wrapper.vm.qp.authType).toBe('')
+    expect(wrapper.vm.qp.authCode).toBe('')
+    expect(wrapper.vm.qp.tokenCode).toBe('')
+  })
 })
 
 describe('ExecutionLog — 工具方法', () => {
@@ -198,10 +204,16 @@ describe('ExecutionLog — 筛选与分页', () => {
   test('resetQuery 重置查询条件并重新加载', async () => {
     wrapper.vm.qp.source = 'SERVER'
     wrapper.vm.qp.ruleCode = 'test'
+    wrapper.vm.qp.authType = 'BASIC'
+    wrapper.vm.qp.authCode = 'BASIC_MAIN'
+    wrapper.vm.qp.tokenCode = 'TOKEN_A'
     requestApi.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.resetQuery()
     expect(wrapper.vm.qp.source).toBe('')
     expect(wrapper.vm.qp.ruleCode).toBe('')
+    expect(wrapper.vm.qp.authType).toBe('')
+    expect(wrapper.vm.qp.authCode).toBe('')
+    expect(wrapper.vm.qp.tokenCode).toBe('')
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 

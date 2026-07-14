@@ -12,6 +12,7 @@ import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RuleProject;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.RuleBillingConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleBillingRecordMapper;
 import com.hengshucredit.rule.server.mapper.RuleBillingSummaryMapper;
@@ -72,7 +73,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
-                                                String projectCode, String beginTime, String endTime) {
+                                                String projectCode, String authType, String authCode,
+                                                String tokenCode, String beginTime, String endTime) {
         LambdaQueryWrapper<RuleBillingRecord> wrapper = new LambdaQueryWrapper<>();
         if (hasText(billingTarget)) {
             wrapper.eq(RuleBillingRecord::getBillingTarget, billingTarget);
@@ -82,6 +84,15 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         if (hasText(projectCode)) {
             wrapper.like(RuleBillingRecord::getProjectCode, projectCode);
+        }
+        if (hasText(authType)) {
+            wrapper.eq(RuleBillingRecord::getAuthType, authType);
+        }
+        if (hasText(authCode)) {
+            wrapper.like(RuleBillingRecord::getAuthCode, authCode);
+        }
+        if (hasText(tokenCode)) {
+            wrapper.like(RuleBillingRecord::getTokenCode, tokenCode);
         }
         if (hasText(beginTime)) {
             wrapper.ge(RuleBillingRecord::getOccurTime, beginTime + " 00:00:00");
@@ -94,7 +105,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     public IPage<RuleBillingSummary> pageSummaries(int pageNum, int pageSize, String billingTarget,
-                                                   String billingCode, String projectCode,
+                                                   String billingCode, String projectCode, String authType,
+                                                   String authCode,
                                                    String beginDate, String endDate) {
         LambdaQueryWrapper<RuleBillingSummary> wrapper = new LambdaQueryWrapper<>();
         if (hasText(billingTarget)) {
@@ -105,6 +117,12 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         if (hasText(projectCode)) {
             wrapper.like(RuleBillingSummary::getProjectCode, projectCode);
+        }
+        if (hasText(authType)) {
+            wrapper.eq(RuleBillingSummary::getAuthType, authType);
+        }
+        if (hasText(authCode)) {
+            wrapper.like(RuleBillingSummary::getAuthCode, authCode);
         }
         if (hasText(beginDate)) {
             wrapper.ge(RuleBillingSummary::getSummaryDate, beginDate);
@@ -135,15 +153,13 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         LocalDateTime begin = summaryDate.atStartOfDay();
         LocalDateTime end = summaryDate.plusDays(1).atStartOfDay();
-        summaryMapper.delete(new LambdaQueryWrapper<RuleBillingSummary>()
-                .eq(RuleBillingSummary::getSummaryDate, summaryDate));
-        List<RuleBillingRecord> records = recordMapper.selectList(new LambdaQueryWrapper<RuleBillingRecord>()
-                .ge(RuleBillingRecord::getOccurTime, begin)
-                .lt(RuleBillingRecord::getOccurTime, end));
+        deleteSummaries(summaryDate);
+        List<RuleBillingRecord> records = findRecords(begin, end);
         Map<String, RuleBillingSummary> summaryMap = new LinkedHashMap<>();
         for (RuleBillingRecord record : records) {
             String key = record.getProjectId() + "|" + record.getProjectCode() + "|" + record.getBillingCode()
-                    + "|" + record.getBillingTarget() + "|" + record.getTargetRefId();
+                    + "|" + record.getBillingTarget() + "|" + record.getTargetRefId()
+                    + "|" + record.getAuthId();
             RuleBillingSummary summary = summaryMap.get(key);
             if (summary == null) {
                 summary = new RuleBillingSummary();
@@ -153,6 +169,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                 summary.setBillingCode(record.getBillingCode());
                 summary.setBillingTarget(record.getBillingTarget());
                 summary.setTargetRefId(record.getTargetRefId());
+                summary.setAuthId(record.getAuthId());
+                summary.setAuthCode(record.getAuthCode());
+                summary.setAuthType(record.getAuthType());
                 summary.setCurrency(record.getCurrency());
                 summary.setTotalCount(0L);
                 summary.setSuccessCount(0L);
@@ -177,37 +196,26 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                 summary.setAvgCostTimeMs(summary.getAvgCostTimeMs()
                         .divide(new BigDecimal(summary.getTotalCount()), 2, RoundingMode.HALF_UP));
             }
-            summaryMapper.insert(summary);
+            insertSummary(summary);
         }
         return summaryMap.size();
     }
 
     public void recordEngineExecution(RuleDefinition definition, boolean success, Long costTimeMs, String errorMessage) {
+        recordEngineExecution(definition, success, costTimeMs, errorMessage, null);
+    }
+
+    public void recordEngineExecution(RuleDefinition definition, boolean success, Long costTimeMs,
+                                      String errorMessage, ProjectAuthContext authContext) {
         if (definition == null) {
             return;
         }
         LocalDateTime now = LocalDateTime.now();
-        LambdaQueryWrapper<RuleBillingConfig> wrapper = new LambdaQueryWrapper<>();
-        wrapper.eq(RuleBillingConfig::getStatus, 1)
-                .eq(RuleBillingConfig::getBillingTarget, TARGET_ENGINE)
-                .and(w -> w.isNull(RuleBillingConfig::getTargetRefId)
-                        .or()
-                        .eq(RuleBillingConfig::getTargetRefId, definition.getId()))
-                .and(w -> w.eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_GLOBAL)
-                        .or()
-                        .eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_PROJECT)
-                        .eq(RuleBillingConfig::getProjectId, definition.getProjectId()))
-                .and(w -> w.isNull(RuleBillingConfig::getEffectiveTime)
-                        .or()
-                        .le(RuleBillingConfig::getEffectiveTime, now))
-                .and(w -> w.isNull(RuleBillingConfig::getExpireTime)
-                        .or()
-                        .ge(RuleBillingConfig::getExpireTime, now));
-        List<RuleBillingConfig> configs = list(wrapper);
+        List<RuleBillingConfig> configs = findActiveEngineConfigs(definition, now);
         if (configs.isEmpty()) {
             return;
         }
-        RuleProject project = definition.getProjectId() == null ? null : projectMapper.selectById(definition.getProjectId());
+        RuleProject project = definition.getProjectId() == null ? null : findProject(definition.getProjectId());
         for (RuleBillingConfig config : configs) {
             RuleBillingRecord record = new RuleBillingRecord();
             record.setProjectId(definition.getProjectId());
@@ -225,7 +233,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setUnitPrice(nullToZero(config.getUnitPrice()));
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
-            recordMapper.insert(record);
+            applyAuthAttribution(record, authContext);
+            insertRecord(record);
         }
     }
 
@@ -233,13 +242,20 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         if (log == null || !hasText(log.getRuleCode())) {
             return;
         }
-        RuleDefinition definition = definitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
-                .eq(RuleDefinition::getRuleCode, log.getRuleCode()));
+        RuleDefinition definition = findDefinitionByRuleCode(log.getRuleCode());
         if (definition == null) {
             return;
         }
         boolean success = log.getSuccess() != null && log.getSuccess() == 1;
-        recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage());
+        ProjectAuthContext authContext = null;
+        if (log.getAuthId() != null) {
+            authContext = log.getTokenId() == null
+                    ? ProjectAuthContext.direct(definition.getProjectId(), log.getProjectCode(), log.getAuthId(),
+                    log.getAuthCode(), log.getAuthType())
+                    : ProjectAuthContext.temporary(definition.getProjectId(), log.getProjectCode(), log.getAuthId(),
+                    log.getAuthCode(), log.getAuthType(), log.getTokenId(), log.getTokenCode(), log.getAuthPhase());
+        }
+        recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage(), authContext);
     }
 
     public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
@@ -307,6 +323,63 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         record.setQuantity(BigDecimal.ONE);
         record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
         return record;
+    }
+
+    protected List<RuleBillingConfig> findActiveEngineConfigs(RuleDefinition definition, LocalDateTime now) {
+        return list(new LambdaQueryWrapper<RuleBillingConfig>()
+                .eq(RuleBillingConfig::getStatus, 1)
+                .eq(RuleBillingConfig::getBillingTarget, TARGET_ENGINE)
+                .and(w -> w.isNull(RuleBillingConfig::getTargetRefId)
+                        .or()
+                        .eq(RuleBillingConfig::getTargetRefId, definition.getId()))
+                .and(w -> w.eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_GLOBAL)
+                        .or()
+                        .eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_PROJECT)
+                        .eq(RuleBillingConfig::getProjectId, definition.getProjectId()))
+                .and(w -> w.isNull(RuleBillingConfig::getEffectiveTime)
+                        .or()
+                        .le(RuleBillingConfig::getEffectiveTime, now))
+                .and(w -> w.isNull(RuleBillingConfig::getExpireTime)
+                        .or()
+                        .ge(RuleBillingConfig::getExpireTime, now)));
+    }
+
+    protected RuleProject findProject(Long projectId) {
+        return projectMapper.selectById(projectId);
+    }
+
+    protected RuleDefinition findDefinitionByRuleCode(String ruleCode) {
+        return definitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, ruleCode));
+    }
+
+    protected void insertRecord(RuleBillingRecord record) {
+        recordMapper.insert(record);
+    }
+
+    protected void deleteSummaries(LocalDate summaryDate) {
+        summaryMapper.delete(new LambdaQueryWrapper<RuleBillingSummary>()
+                .eq(RuleBillingSummary::getSummaryDate, summaryDate));
+    }
+
+    protected List<RuleBillingRecord> findRecords(LocalDateTime begin, LocalDateTime end) {
+        return recordMapper.selectList(new LambdaQueryWrapper<RuleBillingRecord>()
+                .ge(RuleBillingRecord::getOccurTime, begin)
+                .lt(RuleBillingRecord::getOccurTime, end));
+    }
+
+    protected void insertSummary(RuleBillingSummary summary) {
+        summaryMapper.insert(summary);
+    }
+
+    private void applyAuthAttribution(RuleBillingRecord record, ProjectAuthContext authContext) {
+        if (authContext == null) return;
+        record.setAuthId(authContext.getAuthId());
+        record.setAuthCode(authContext.getAuthCode());
+        record.setAuthType(authContext.getAuthType());
+        record.setTokenId(authContext.getTokenId());
+        record.setTokenCode(authContext.getTokenCode());
+        record.setAuthPhase(authContext.getAuthPhase());
     }
 
     private BigDecimal resolveQuantity(String chargeType, boolean success, Long costTimeMs) {

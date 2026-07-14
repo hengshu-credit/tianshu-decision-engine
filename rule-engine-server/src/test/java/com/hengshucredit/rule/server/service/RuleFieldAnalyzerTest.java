@@ -533,7 +533,7 @@ public class RuleFieldAnalyzerTest {
         RuleModelInputField modelField = new RuleModelInputField();
         modelField.setFieldName("derived");
         modelField.setFieldType("NUMBER");
-        modelField.setSourceOperand("{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"baseAmount\",\"valueType\":\"NUMBER\"},{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"DATA_OBJECT\",\"code\":\"payload\",\"valueType\":\"MAP\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}]}}");
+        modelField.setSourceOperand("{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"baseAmount\",\"valueType\":\"NUMBER\"}},{\"operator\":\"+\",\"operand\":{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"DATA_OBJECT\",\"code\":\"payload\",\"valueType\":\"MAP\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}}]}}");
 
         Method copy = RuleFieldAnalyzer.class.getDeclaredMethod("copyModelInputFields", RuleModelInputField.class);
         copy.setAccessible(true);

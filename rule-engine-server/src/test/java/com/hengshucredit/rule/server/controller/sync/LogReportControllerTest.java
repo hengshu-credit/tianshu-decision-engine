@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.server.controller.sync;
 
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
@@ -47,13 +49,24 @@ public class LogReportControllerTest {
         log.setRuleCode("RC_TEST");
         log.setSuccess(1);
         log.setExecuteTimeMs(12L);
+        log.setAuthCode("FAKE_AUTH");
+        log.setTokenCode("FAKE_TOKEN");
 
-        R<Void> result = controller.report(Collections.singletonList(log), requestWithProject("RISK_DEMO"));
+        MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.temporary(1L, "RISK_DEMO", 11L, "BASIC_MAIN", ProjectAuthType.BASIC,
+                21L, "TOKEN_A", "VALID").attach(request);
+        R<Void> result = controller.report(Collections.singletonList(log), request);
 
         assertEquals(200, result.getCode());
         assertEquals(1, logService.saved.size());
         assertEquals("RISK_DEMO", logService.saved.get(0).getProjectCode());
         assertEquals("CLIENT", logService.saved.get(0).getSource());
+        assertEquals(Long.valueOf(11L), logService.saved.get(0).getAuthId());
+        assertEquals("BASIC_MAIN", logService.saved.get(0).getAuthCode());
+        assertEquals(ProjectAuthType.BASIC, logService.saved.get(0).getAuthType());
+        assertEquals(Long.valueOf(21L), logService.saved.get(0).getTokenId());
+        assertEquals("TOKEN_A", logService.saved.get(0).getTokenCode());
+        assertEquals("VALID", logService.saved.get(0).getAuthPhase());
         assertEquals(1, billingService.billed.size());
         assertEquals("RC_TEST", billingService.billed.get(0).getRuleCode());
     }

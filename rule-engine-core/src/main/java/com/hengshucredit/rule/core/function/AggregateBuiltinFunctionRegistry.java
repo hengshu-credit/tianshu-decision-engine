@@ -9,6 +9,7 @@ public final class AggregateBuiltinFunctionRegistry {
 
     private static final AggregateBuiltinFunctions DELEGATE = new AggregateBuiltinFunctions();
     private static final DecisionBuiltinFunctions DECISION_DELEGATE = new DecisionBuiltinFunctions();
+    private static final DigestBuiltinFunctions DIGEST_DELEGATE = new DigestBuiltinFunctions();
     private static final RuntimeContextBuiltinFunctions RUNTIME_CONTEXT_DELEGATE = new RuntimeContextBuiltinFunctions();
     private static final Class<?>[] NO_ARGS = {};
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
@@ -109,6 +110,10 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("strIndexOf", DECISION_DELEGATE, "strIndexOf", TWO_STRINGS);
         runner.addFunctionOfServiceMethod("strLastIndexOf", DECISION_DELEGATE, "strLastIndexOf", TWO_STRINGS);
         runner.addFunctionOfServiceMethod("strReplaceLiteral", DECISION_DELEGATE, "strReplaceLiteral", THREE_STRINGS);
+        runner.addFunctionOfServiceMethod("md5", DIGEST_DELEGATE, "md5", SINGLE_STRING);
+        runner.addFunctionOfServiceMethod("sha1", DIGEST_DELEGATE, "sha1", SINGLE_STRING);
+        runner.addFunctionOfServiceMethod("sha256", DIGEST_DELEGATE, "sha256", SINGLE_STRING);
+        runner.addFunctionOfServiceMethod("hmacSha256", DIGEST_DELEGATE, "hmacSha256", TWO_STRINGS);
 
         runner.addFunctionOfServiceMethod("arrSize", DECISION_DELEGATE, "arrSize", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("arrGet", DECISION_DELEGATE, "arrGet", new Class<?>[]{Object.class, double.class});

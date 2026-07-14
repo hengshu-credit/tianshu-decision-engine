@@ -20,7 +20,7 @@ final class OperandDependencyCollector {
             return;
         }
         if ("FUNCTION".equals(kind)) collectArray(operand.getJSONArray("args"), paths);
-        else if ("OPERATION".equals(kind)) collectArray(operand.getJSONArray("operands"), paths);
+        else if ("OPERATION".equals(kind)) collectTerms(operand.getJSONArray("terms"), paths);
         else if ("ARRAY".equals(kind)) collectArray(operand.getJSONArray("items"), paths);
         else if ("ACCESS".equals(kind)) {
             collect(operand.getJSONObject("target"), paths);
@@ -31,6 +31,14 @@ final class OperandDependencyCollector {
     private static void collectArray(JSONArray values, Set<String> paths) {
         if (values == null) return;
         for (int i = 0; i < values.size(); i++) collect(values.getJSONObject(i), paths);
+    }
+
+    private static void collectTerms(JSONArray terms, Set<String> paths) {
+        if (terms == null) return;
+        for (int i = 0; i < terms.size(); i++) {
+            JSONObject term = terms.getJSONObject(i);
+            collect(term == null ? null : term.getJSONObject("operand"), paths);
+        }
     }
 
     private static String firstText(String first, String second) {

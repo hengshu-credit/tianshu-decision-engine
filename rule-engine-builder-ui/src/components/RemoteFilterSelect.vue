@@ -8,11 +8,13 @@
     reserve-keyword
     :allow-create="allowFreeInput"
     :default-first-option="allowFreeInput"
+    :popper-append-to-body="false"
     :placeholder="placeholder"
     :loading="loading"
     v-bind="$attrs"
     @input="$emit('input', $event)"
     @change="$emit('change', $event)"
+    @keyup.enter.native="handleEnter"
     @visible-change="handleVisibleChange"
     :remote-method="handleRemote"
   >
@@ -46,13 +48,27 @@ export default {
       pageNum: 1,
       total: 0,
       hasMore: true,
-      dropdownWrap: null
+      dropdownWrap: null,
+      inputObserver: null,
+      optionsRequestId: 0
     }
   },
+  mounted() {
+    this.$nextTick(() => {
+      this.bindEditableInput()
+      this.setDropdownAccessible(false)
+    })
+  },
   beforeDestroy() {
+    this.unbindEditableInput()
     this.unbindDropdownScroll()
   },
   methods: {
+    handleEnter(event) {
+      if (!this.allowFreeInput) return
+      this.query = event && event.target ? event.target.value : this.query
+      this.$emit('input', this.query || '')
+    },
     handleRemote(query) {
       this.query = query || ''
       if (this.allowFreeInput) {
@@ -62,15 +78,78 @@ export default {
     },
     handleVisibleChange(visible) {
       if (visible) {
+        this.setDropdownAccessible(true)
         this.query = this.allowFreeInput ? (this.value || '') : this.query
         this.loadOptions(true)
         this.$nextTick(this.bindDropdownScroll)
       } else {
+        this.cancelPendingLoad()
+        this.setDropdownAccessible(false)
+        this.retainSelectedOption()
         this.unbindDropdownScroll()
       }
     },
+    nativeInput() {
+      const select = this.$refs.select
+      const reference = select && select.$refs ? select.$refs.reference : null
+      return (reference && reference.$refs && reference.$refs.input) ||
+        (select && select.$el ? select.$el.querySelector('input') : null)
+    },
+    dropdownElement() {
+      const select = this.$refs.select
+      if (!select) return null
+      return select.popperElm ||
+        (select.$refs && select.$refs.popper ? select.$refs.popper.$el : null)
+    },
+    bindEditableInput() {
+      this.unbindEditableInput()
+      const input = this.nativeInput()
+      if (!input) return
+      input.removeAttribute('readonly')
+      this.inputObserver = new MutationObserver(() => {
+        if (input.hasAttribute('readonly')) input.removeAttribute('readonly')
+      })
+      this.inputObserver.observe(input, { attributes: true, attributeFilter: ['readonly'] })
+    },
+    unbindEditableInput() {
+      if (this.inputObserver) {
+        this.inputObserver.disconnect()
+        this.inputObserver = null
+      }
+    },
+    setDropdownAccessible(visible) {
+      const dropdown = this.dropdownElement()
+      if (!dropdown) return
+      if (visible) {
+        dropdown.removeAttribute('inert')
+        dropdown.removeAttribute('aria-hidden')
+        return
+      }
+      if (dropdown.contains(document.activeElement)) {
+        const input = this.nativeInput()
+        if (input) input.focus()
+      }
+      dropdown.setAttribute('inert', '')
+      dropdown.setAttribute('aria-hidden', 'true')
+    },
+    retainSelectedOption() {
+      if (this.value === undefined || this.value === null || this.value === '') {
+        this.options = []
+        return
+      }
+      const selectedValue = String(this.value)
+      this.options = this.options.filter(option => String(this.optionValue(option)) === selectedValue)
+    },
+    cancelPendingLoad() {
+      this.optionsRequestId += 1
+      this.loading = false
+    },
     async loadOptions(reset) {
-      if (this.loading) return
+      if (this.loading) {
+        if (!reset) return
+        this.cancelPendingLoad()
+      }
+      const requestId = ++this.optionsRequestId
       if (reset) {
         this.pageNum = 1
         this.total = 0
@@ -85,6 +164,7 @@ export default {
           pageNum: this.pageNum,
           pageSize: this.pageSize
         })
+        if (requestId !== this.optionsRequestId) return
         const page = this.normalizeResult(result)
         this.appendOptions(page.records)
         this.total = page.total
@@ -92,7 +172,7 @@ export default {
           (this.total <= 0 || this.options.length < this.total)
         this.pageNum += 1
       } finally {
-        this.loading = false
+        if (requestId === this.optionsRequestId) this.loading = false
       }
     },
     normalizeResult(result) {

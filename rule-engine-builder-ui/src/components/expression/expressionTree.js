@@ -2,7 +2,9 @@ import {
   cloneOperand,
   createArrayOperand,
   createFunctionOperand,
-  createLiteralOperand
+  createLiteralOperand,
+  createOperationOperand,
+  inferOperandType
 } from '@/utils/operand'
 
 export function getExpressionNode(root, path = []) {
@@ -30,7 +32,15 @@ export function removeExpressionNode(root, path = []) {
 export function expressionChildEntries(node, basePath = []) {
   if (!node || !node.kind) return []
   if (node.kind === 'FUNCTION') return (node.args || []).map((value, index) => ({ label: '参数 ' + (index + 1), path: basePath.concat(['args', index]), value }))
-  if (node.kind === 'OPERATION') return (node.operands || []).map((value, index) => ({ label: '运算项 ' + (index + 1), path: basePath.concat(['operands', index]), value }))
+  if (node.kind === 'OPERATION') {
+    return (node.terms || []).map((term, index) => ({
+      label: '运算项 ' + (index + 1),
+      operator: index === 0 ? '' : (term.operator || ''),
+      termIndex: index,
+      path: basePath.concat(['terms', index, 'operand']),
+      value: term.operand
+    }))
+  }
   if (node.kind === 'ACCESS') return [
     { label: '目标', path: basePath.concat(['target']), value: node.target },
     { label: node.accessType === 'INDEX' ? '下标' : '键', path: basePath.concat(['accessor']), value: node.accessor }
@@ -52,12 +62,13 @@ export function expressionDescendantCount(node) {
   return expressionChildEntries(node).reduce((total, entry) => total + 1 + expressionDescendantCount(entry.value), 0)
 }
 
-export function collapsedExpressionPaths(root, maxDepth = 2) {
+export function collapsedExpressionPaths(root, visibleLevels = 2) {
   const result = []
+  const collapseDepth = Math.max(visibleLevels - 1, 0)
   const visit = (node, path, depth) => {
     const children = expressionChildEntries(node, path)
     if (!children.length) return
-    if (depth >= maxDepth) {
+    if (depth >= collapseDepth) {
       result.push(expressionPathKey(path))
       return
     }
@@ -121,11 +132,48 @@ export function functionParameters(fn) {
   }
 }
 
+export function insertExpressionOperation(root, selectedPath = [], operator) {
+  const path = selectedPath.slice()
+  const current = getExpressionNode(root, path)
+  if (current && current.kind === 'OPERATION') {
+    const next = cloneOperand(current)
+    const index = (next.terms || []).length
+    next.terms = (next.terms || []).concat([{ operator, operand: null }])
+    return {
+      root: setExpressionNode(root, path, next),
+      selectedPath: path.concat(['terms', index, 'operand'])
+    }
+  }
+
+  if (path.length >= 3 && path[path.length - 3] === 'terms' && path[path.length - 1] === 'operand') {
+    const index = path[path.length - 2]
+    const parentPath = path.slice(0, -3)
+    const parent = getExpressionNode(root, parentPath)
+    if (parent && parent.kind === 'OPERATION' && Number.isInteger(index)) {
+      const next = cloneOperand(parent)
+      next.terms.splice(index + 1, 0, { operator, operand: null })
+      return {
+        root: setExpressionNode(root, parentPath, next),
+        selectedPath: parentPath.concat(['terms', index + 1, 'operand'])
+      }
+    }
+  }
+
+  const next = createOperationOperand([
+    { operand: cloneOperand(current) },
+    { operator, operand: null }
+  ], inferOperandType(current))
+  return {
+    root: setExpressionNode(root, path, next),
+    selectedPath: path.concat(['terms', 1, 'operand'])
+  }
+}
+
 export function wrapExpressionNode(current, template) {
   const source = cloneOperand(template)
   if (!current) return source
   if (source.kind === 'OPERATION') {
-    source.operands = [cloneOperand(current), null]
+    source.terms[0].operand = cloneOperand(current)
   } else if (source.kind === 'ACCESS') {
     source.target = cloneOperand(current)
     source.accessor = source.accessor || createLiteralOperand('', source.accessType === 'INDEX' ? 'NUMBER' : 'STRING')

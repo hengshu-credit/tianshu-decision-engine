@@ -1,7 +1,7 @@
 <template>
   <div class="uiue-list-page">
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="来源">
           <el-select v-model="qp.source" clearable placeholder="全部" @change="onSourceChange">
             <el-option label="服务端" value="SERVER" />
@@ -31,6 +31,16 @@
             <el-option label="脚本" value="SCRIPT" />
           </el-select>
         </el-form-item>
+        <el-form-item label="鉴权方式">
+          <el-select v-model="qp.authType" clearable placeholder="全部方式" style="width:130px">
+            <el-option label="兼容令牌" value="LEGACY_TOKEN" />
+            <el-option label="账号密码" value="BASIC" />
+            <el-option label="API Key" value="API_KEY" />
+            <el-option label="HMAC-SHA256" value="HMAC_SHA256" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="鉴权编码"><el-input v-model="qp.authCode" clearable placeholder="如 BASIC_MAIN" style="width:150px" /></el-form-item>
+        <el-form-item label="Token 编码"><el-input v-model="qp.tokenCode" clearable placeholder="如 TOKEN_..." style="width:160px" /></el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker v-model="timeRange" type="datetimerange" range-separator="-"
             start-placeholder="开始时间" end-placeholder="结束时间" value-format="yyyy-MM-dd HH:mm:ss"
@@ -55,6 +65,13 @@
       <el-table-column prop="source" label="来源" min-width="70" align="center">
         <template slot-scope="{row}"><el-tag :type="row.source==='SERVER'?'':'success'" size="mini">{{row.source==='SERVER'?'服务端':'客户端'}}</el-tag></template>
       </el-table-column>
+      <el-table-column prop="authCode" label="鉴权编码" min-width="130" show-overflow-tooltip>
+        <template slot-scope="{row}">
+          <div>{{ row.authCode || '-' }}</div>
+          <div class="auth-type-text">{{ authTypeLabel(row.authType) }}</div>
+        </template>
+      </el-table-column>
+      <el-table-column prop="tokenCode" label="Token 编码" min-width="170" show-overflow-tooltip />
       <el-table-column prop="success" label="结果" min-width="65" align="center">
         <template slot-scope="{row}"><el-tag :type="row.success===1?'success':'danger'" size="mini">{{row.success===1?'成功':'失败'}}</el-tag></template>
       </el-table-column>
@@ -80,6 +97,15 @@
       <div style="padding:16px" v-if="detail">
         <el-tabs v-model="detailTab">
           <el-tab-pane label="基本信息" name="basic">
+            <div class="uiue-card auth-attribution-card">
+              <div class="uiue-card-title">鉴权归因</div>
+              <div class="auth-attribution-grid">
+                <div><span>鉴权编码</span><code>{{ detail.authCode || '-' }}</code></div>
+                <div><span>鉴权方式</span><strong>{{ authTypeLabel(detail.authType) }}</strong></div>
+                <div><span>Token 编码</span><code>{{ detail.tokenCode || '-' }}</code></div>
+                <div><span>鉴权阶段</span><strong>{{ authPhaseLabel(detail.authPhase) }}</strong></div>
+              </div>
+            </div>
             <div class="uiue-card">
               <div class="uiue-card-title">输入参数</div>
               <pre class="log-pre">{{fj(detail.inputParams)}}</pre>
@@ -124,7 +150,10 @@ export default {
       loading: false,
       list: [],
       total: 0,
-      qp: { pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '', modelType: '' },
+      qp: {
+        pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '', modelType: '',
+        authType: '', authCode: '', tokenCode: ''
+      },
       /** 时间范围，默认最近三个月 */
       timeRange: null,
       /** 日期快捷选项 */
@@ -408,6 +437,9 @@ export default {
       this.qp.projectCode = ''
       this.qp.ruleCode = ''
       this.qp.modelType = ''
+      this.qp.authType = ''
+      this.qp.authCode = ''
+      this.qp.tokenCode = ''
       this.qp.pageNum = 1
       this.initDefaultTimeRange()
       clearPageState('ExecutionLog')
@@ -440,6 +472,14 @@ export default {
       if (isNaN(d.getTime())) return time
       var pad = function (n) { return String(n).padStart(2, '0') }
       return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds())
+    },
+    authTypeLabel: function (type) {
+      return {
+        LEGACY_TOKEN: '兼容令牌', BASIC: '账号密码', API_KEY: 'API Key', HMAC_SHA256: 'HMAC-SHA256'
+      }[type] || type || '-'
+    },
+    authPhaseLabel: function (phase) {
+      return { DIRECT: '直接鉴权', VALID: 'Token 有效期', GRACE: 'Token 冗余期' }[phase] || phase || '-'
     }
   }
 }
@@ -461,6 +501,33 @@ export default {
 }
 .trace-badge {
   margin-left: 4px;
+}
+.auth-type-text {
+  color: #909399;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.auth-attribution-card {
+  margin-bottom: 12px;
+}
+.auth-attribution-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin-top: 12px;
+}
+.auth-attribution-grid > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+.auth-attribution-grid span {
+  color: #909399;
+  font-size: 12px;
+}
+.auth-attribution-grid code {
+  word-break: break-all;
 }
 ::v-deep .trace-badge .el-badge__content {
   background-color: #1890ff;

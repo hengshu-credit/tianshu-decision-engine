@@ -34,6 +34,14 @@ spring:
       shutdown-timeout: 200ms
 
 rule-engine:
+  project-auth:
+    active-key-id: v1
+    master-keys:
+      v1: ${RULE_AUTH_MASTER_KEY:tianshu-dev-auth-master-key-change-me}
+    hmac-time-window-seconds: 300
+    token-failure-limit: 10
+    token-failure-window-seconds: 300
+    token-lock-seconds: 900
   # 启用 Kafka 消费执行日志时，与 spring.kafka 一并配置；参见 README
   kafka:
     log-topic: rule-execution-log
@@ -46,6 +54,7 @@ rule-engine:
     # 匿名放行：同步、日志上报、认证接口等
     exclude-patterns:
       - /api/auth/**
+      - /api/rule/auth/token
       - /api/rule/sync/**
       - /api/rule/log/report
     session-username-attribute: RULE_CONSOLE_USERNAME

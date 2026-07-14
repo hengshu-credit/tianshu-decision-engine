@@ -1,5 +1,15 @@
 import { shallowMount } from '@vue/test-utils'
 import ExpressionNodeInspector from '@/components/expression/ExpressionNodeInspector.vue'
+import { createLiteralOperand, createOperationOperand } from '@/utils/operand'
+
+const literal = value => createLiteralOperand(value, 'NUMBER')
+
+function mountInspector(node) {
+  return shallowMount(ExpressionNodeInspector, {
+    propsData: { node },
+    stubs: ['el-input', 'el-select', 'el-option', 'el-button', 'el-radio-group', 'el-radio-button']
+  })
+}
 
 describe('ExpressionNodeInspector', () => {
   test('函数参数支持添加和删减', async () => {
@@ -39,5 +49,32 @@ describe('ExpressionNodeInspector', () => {
     expect(wrapper.text()).toContain('限制最严格')
     expect(wrapper.vm.listMatchModes.map(item => item.value)).toEqual(['IN_LIST', 'CONTAINED_IN_LIST'])
     expect(wrapper.vm.listItemTypes.length).toBeGreaterThan(1)
+  })
+
+  test('运算检查器修改项间运算符并正确删除首项', async () => {
+    const node = createOperationOperand([
+      { operand: literal('1') },
+      { operator: '+', operand: literal('2') },
+      { operator: '*', operand: literal('3') }
+    ])
+    const wrapper = mountInspector(node)
+
+    wrapper.vm.patchTermOperator(2, '-')
+    expect(wrapper.emitted().input[0][0].terms[2].operator).toBe('-')
+
+    await wrapper.setProps({ node: wrapper.emitted().input[0][0] })
+    wrapper.vm.removeOperationTerm(0)
+    expect(wrapper.emitted().input[1][0].terms).toHaveLength(2)
+    expect(wrapper.emitted().input[1][0].terms[0].operator).toBeUndefined()
+  })
+
+  test('运算检查器追加带默认加号的空项', () => {
+    const wrapper = mountInspector(createOperationOperand([
+      { operand: literal('1') },
+      { operator: '+', operand: literal('2') }
+    ]))
+
+    wrapper.vm.addOperationTerm()
+    expect(wrapper.emitted().input[0][0].terms[2]).toEqual({ operator: '+', operand: null })
   })
 })

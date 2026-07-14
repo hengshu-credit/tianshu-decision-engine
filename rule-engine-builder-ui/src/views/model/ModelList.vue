@@ -16,7 +16,7 @@
 
     <!-- 筛选条件 -->
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="作用范围">
           <el-select v-model="qp.scope" clearable filterable placeholder="全部" style="width:100px;" @change="handleQuery">
             <el-option label="全局" value="GLOBAL" />

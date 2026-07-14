@@ -7,7 +7,7 @@
 
     <!-- 筛选条件 -->
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small">
+      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="作用范围">
           <el-select v-model="qp.scope" clearable style="width:120px;">
             <el-option label="项目级" value="PROJECT" />

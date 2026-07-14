@@ -2,6 +2,7 @@ package com.hengshucredit.rule.core.compiler;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Test;
@@ -162,14 +163,27 @@ public class ActionDataCompilerTest {
 
     @Test
     public void nestedAmountExpressionExecutesEndToEnd() {
-        JSONArray actionData = JSON.parseArray("[{\"type\":\"assign\","
-                + "\"targetOperand\":{\"kind\":\"REFERENCE\",\"refId\":105,\"refType\":\"VARIABLE\",\"code\":\"amount\"},"
-                + "\"valueOperand\":{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":["
-                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numCeil\",\"args\":[{\"kind\":\"OPERATION\",\"operator\":\"/\",\"operands\":["
-                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"4200\",\"valueType\":\"NUMBER\"},{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":["
-                + "{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":["
-                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":[{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"REFERENCE\",\"refId\":101,\"refType\":\"VARIABLE\",\"code\":\"monthlyRepayment\"},{\"kind\":\"REFERENCE\",\"refId\":102,\"refType\":\"VARIABLE\",\"code\":\"usedAmount\"}]},{\"kind\":\"LITERAL\",\"value\":\"9000\",\"valueType\":\"NUMBER\"}]},"
-                + "{\"kind\":\"REFERENCE\",\"refId\":103,\"refType\":\"VARIABLE\",\"code\":\"riskFactor\"}]},{\"kind\":\"LITERAL\",\"value\":\"0.3\",\"valueType\":\"NUMBER\"}]},{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"REFERENCE\",\"refId\":104,\"refType\":\"VARIABLE\",\"code\":\"riskAmount\"},{\"kind\":\"LITERAL\",\"value\":\"0.5\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"7000\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}}]");
+        JSONObject expression = operation("*",
+                function("numCeil", operation("/",
+                        function("numMax", number("4200"), function("numMin",
+                                operation("+",
+                                        operation("*",
+                                                operation("*",
+                                                        function("numMin",
+                                                                function("numMax", reference(101, "monthlyRepayment"), reference(102, "usedAmount")),
+                                                                number("9000")),
+                                                        reference(103, "riskFactor")),
+                                                number("0.3")),
+                                        operation("*", reference(104, "riskAmount"), number("0.5"))),
+                                number("7000"))),
+                        number("500"))),
+                number("500"));
+        JSONObject action = new JSONObject();
+        action.put("type", "assign");
+        action.put("targetOperand", reference(105, "amount"));
+        action.put("valueOperand", expression);
+        JSONArray actionData = new JSONArray();
+        actionData.add(action);
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("monthlyRepayment", 5000);
         params.put("usedAmount", 6000);
@@ -181,6 +195,45 @@ public class ActionDataCompilerTest {
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertEquals(4500d, ((Number) result.getResult()).doubleValue(), 0d);
+    }
+
+    private JSONObject number(String value) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "LITERAL");
+        node.put("value", value);
+        node.put("valueType", "NUMBER");
+        return node;
+    }
+
+    private JSONObject reference(long id, String code) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "REFERENCE");
+        node.put("refId", id);
+        node.put("refType", "VARIABLE");
+        node.put("code", code);
+        return node;
+    }
+
+    private JSONObject function(String code, JSONObject... args) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "FUNCTION");
+        node.put("functionCode", code);
+        node.put("args", args);
+        return node;
+    }
+
+    private JSONObject operation(String operator, JSONObject... operands) {
+        JSONArray terms = new JSONArray();
+        for (int i = 0; i < operands.length; i++) {
+            JSONObject term = new JSONObject();
+            if (i > 0) term.put("operator", operator);
+            term.put("operand", operands[i]);
+            terms.add(term);
+        }
+        JSONObject node = new JSONObject();
+        node.put("kind", "OPERATION");
+        node.put("terms", terms);
+        return node;
     }
 
     @Test

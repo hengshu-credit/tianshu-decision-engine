@@ -152,10 +152,9 @@ describe('ExperimentDetail', () => {
       targetType: 'STRING',
       operand: {
         kind: 'OPERATION',
-        operator: '+',
-        operands: [
-          { kind: 'REFERENCE', refId: 8, refType: 'VARIABLE', code: 'customerId', label: '客户ID', valueType: 'STRING' },
-          { kind: 'LITERAL', value: '-RISK', valueType: 'STRING' }
+        terms: [
+          { operand: { kind: 'REFERENCE', refId: 8, refType: 'VARIABLE', code: 'customerId', label: '客户ID', valueType: 'STRING' } },
+          { operator: '+', operand: { kind: 'LITERAL', value: '-RISK', valueType: 'STRING' } }
         ]
       }
     }
