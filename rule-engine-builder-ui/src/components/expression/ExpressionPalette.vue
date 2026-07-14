@@ -5,6 +5,11 @@
       <h4>基础</h4>
       <button class="palette-item" type="button" @click="insertLiteral"><i class="el-icon-edit-outline" /> 输入阈值</button>
     </section>
+    <section v-if="allows('LIST_QUERY')">
+      <h4>名单</h4>
+      <button class="palette-item palette-list-query" type="button" @click="insertListQuery"><i class="el-icon-collection" /> 配置名单查询</button>
+      <p class="palette-tip">支持选择一个或多个名单，并设置字段与名单的组合命中方式。</p>
+    </section>
     <section v-if="allows('REFERENCE') && filteredVars.length">
       <h4>字段</h4>
       <button v-for="item in filteredVars" :key="referenceKey(item)" class="palette-item" type="button" @click="$emit('insert', referenceTemplate(item))">
@@ -38,6 +43,7 @@ import {
   createAccessOperand,
   createArrayOperand,
   createCastOperand,
+  createListQueryOperand,
   createLiteralOperand,
   createOperationOperand,
   createReferenceOperand
@@ -49,6 +55,7 @@ export default {
   props: {
     vars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
+    listOptions: { type: Array, default: () => [] },
     allowedKinds: { type: Array, default: () => [] },
     expectedType: { type: String, default: '' }
   },
@@ -73,6 +80,12 @@ export default {
   methods: {
     allows(kind) { return !this.allowedKinds.length || this.allowedKinds.includes(kind) },
     insertLiteral() { this.$emit('insert', createLiteralOperand('', this.expectedType || 'STRING')) },
+    insertListQuery() {
+      this.$emit('insert', createListQueryOperand({
+        combinationMode: 'ANY_FIELD_ANY_LIST',
+        matchMode: 'IN_LIST'
+      }))
+    },
     referenceTemplate(item) { return createReferenceOperand(item) },
     functionTemplate(fn) { return createFunctionTemplate(fn) },
     operationTemplate(operator) { return createOperationOperand(operator, [null, null]) },
@@ -93,4 +106,5 @@ h4 { margin: 18px 0 8px; color: #6b778c; font-size: 12px; text-transform: upperc
 .palette-item code { overflow: hidden; color: #7a8799; font-size: 11px; text-overflow: ellipsis; }
 .palette-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .palette-grid button { height: 30px; border: 1px solid #dce3ec; border-radius: 5px; background: #fff; cursor: pointer; }
+.palette-tip { margin: 6px 2px 0; color: #8794a7; font-size: 11px; line-height: 1.6; }
 </style>

@@ -108,6 +108,7 @@
                   :group="edgeConditionRoot"
                   :vars="varPickerOptions"
                   :functions="projectFunctions"
+                  :list-options="projectLists"
                   :get-var-options-fn="getVarOptions"
                   :selected-vars="selectedVarPickerOptions"
                 />
@@ -287,6 +288,7 @@ import {
   refCodeById
 } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { clampDesignerPanelWidth } from '@/utils/designerPanelWidth'
 
 export default {
   name: 'DecisionTree',
@@ -376,7 +378,7 @@ export default {
     onPropertyResize(event) {
       if (!this.resizingPropertyPanel || !event) return
       const width = window.innerWidth - event.clientX
-      this.propertyPanelWidth = Math.min(Math.max(width, 320), 1080)
+      this.propertyPanelWidth = clampDesignerPanelWidth(width, window.innerWidth)
     },
     stopPropertyResize() {
       window.removeEventListener('mousemove', this.onPropertyResize)
@@ -1289,7 +1291,7 @@ export default {
   flex-direction: column;
   position: relative;
   min-width: 320px;
-  max-width: 720px;
+  max-width: 80vw;
 }
 .property-resize-handle {
   position: absolute;

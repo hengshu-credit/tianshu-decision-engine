@@ -20,6 +20,7 @@ import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
+import { listLibraries } from '@/api/ruleList'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
@@ -33,6 +34,7 @@ export default {
       projectVars: [],
       projectRefs: [],
       projectFunctions: [],
+      projectLists: [],
       loadingVars: false,
       /** 变量加载是否失败 */
       varsLoadError: false,
@@ -175,13 +177,15 @@ export default {
         const pid = def.projectId
 
         // request 拦截器已返回 res.data，无需再访问 .data
-        const [varRes, objRes, funcRes, modelRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes, listRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
-          listAllModelsByProject(pid).catch(() => [])
+          listAllModelsByProject(pid).catch(() => []),
+          listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 }).catch(() => [])
         ])
         this.projectFunctions = this.normalizeListResponse(funcRes)
+        this.projectLists = this.normalizeListResponse(listRes)
 
         // request 拦截器已返回 res.data，varRes 直接是数组，无需 .data
         const allVars = this.normalizeListResponse(varRes)
@@ -216,6 +220,7 @@ export default {
       } catch (e) {
         this.projectVars = []
         this.projectRefs = []
+        this.projectLists = []
         this.varsLoadError = true
       } finally {
         this.loadingVars = false
@@ -243,19 +248,21 @@ export default {
      * 重新拉取当前项目下的所有数据，更新 projectVars、projectRefs、projectFunctions。
      */
     async refreshProjectRefs() {
-      if (!this.projectIdForRefs) return
+      if (this.projectIdForRefs == null) return
       this.loadingVars = true
       this.varsLoadError = false
       try {
         const pid = this.projectIdForRefs
-        const [varRes, objRes, funcRes, modelRes] = await Promise.all([
+        const [varRes, objRes, funcRes, modelRes, listRes] = await Promise.all([
           listVariablesByProject(pid).catch(() => []),
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
-          listAllModelsByProject(pid).catch(() => [])
+          listAllModelsByProject(pid).catch(() => []),
+          listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 }).catch(() => [])
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)
+        this.projectLists = this.normalizeListResponse(listRes)
 
         const allVars = this.normalizeListResponse(varRes)
 

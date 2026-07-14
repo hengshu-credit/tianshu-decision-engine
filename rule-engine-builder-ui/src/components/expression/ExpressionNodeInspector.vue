@@ -72,16 +72,18 @@
         </el-select>
         <label>字段与名单组合</label>
         <el-select :value="node.combinationMode" size="small" @input="patch({ combinationMode: $event })">
-          <el-option label="任一字段命中任一名单" value="ANY_FIELD_ANY_LIST" />
-          <el-option label="全部字段各自命中任一名单" value="ALL_FIELDS_ANY_LIST" />
-          <el-option label="任一字段同时命中全部名单" value="ANY_FIELD_ALL_LISTS" />
-          <el-option label="全部字段同时命中全部名单" value="ALL_FIELDS_ALL_LISTS" />
+          <el-option v-for="item in listCombinationModes" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
-        <label>匹配结果</label>
+        <p class="field-tip">{{ listCombinationDescription }}</p>
+        <label>名单内容匹配</label>
         <el-radio-group :value="node.matchMode" size="small" @input="patch({ matchMode: $event })">
-          <el-radio-button label="IN_LIST">在名单内</el-radio-button>
-          <el-radio-button label="NOT_IN_LIST">不在名单内</el-radio-button>
+          <el-radio-button v-for="item in listMatchModes" :key="item.value" :label="item.value">{{ item.label }}</el-radio-button>
         </el-radio-group>
+        <p class="field-tip">“不在名单内”由条件操作符控制，这里只配置名单内容如何匹配，避免重复取反。</p>
+        <label>内容类型</label>
+        <el-select :value="node.itemTypes" size="small" multiple clearable collapse-tags placeholder="不选表示任意类型" @input="patch({ itemTypes: $event })">
+          <el-option v-for="item in listItemTypes" :key="item.value" :label="item.label" :value="item.value" />
+        </el-select>
       </template>
 
       <template v-else>
@@ -100,6 +102,7 @@
 
 <script>
 import { cloneOperand } from '@/utils/operand'
+import { LIST_COMBINATION_MODES, LIST_ITEM_TYPES, POSITIVE_LIST_MATCH_MODES, listCombinationMode } from '@/constants/listMatchModes'
 
 export default {
   name: 'ExpressionNodeInspector',
@@ -118,7 +121,10 @@ export default {
         { label: '日期时间', value: 'DATETIME' },
         { label: '数组', value: 'LIST' },
         { label: '字典', value: 'MAP' }
-      ]
+      ],
+      listCombinationModes: LIST_COMBINATION_MODES,
+      listMatchModes: POSITIVE_LIST_MATCH_MODES,
+      listItemTypes: LIST_ITEM_TYPES
     }
   },
   computed: {
@@ -127,6 +133,9 @@ export default {
     },
     kindTip() {
       return { FUNCTION: '参数可增减，也可继续嵌套函数与运算。', OPERATION: '按画布顺序计算，可继续增加运算项。', ACCESS: '支持字典 Key 与数组 Index 取值。', CAST: '先配置目标类型，再配置待转换值。' }[this.node.kind] || '修改会立即反映到中间公式结构。'
+    },
+    listCombinationDescription() {
+      return listCombinationMode(this.node && this.node.combinationMode).description
     }
   },
   methods: {

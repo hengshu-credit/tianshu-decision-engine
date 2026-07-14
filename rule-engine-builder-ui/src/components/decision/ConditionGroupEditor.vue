@@ -18,6 +18,7 @@
             :group="child"
             :vars="vars"
             :functions="functions"
+            :list-options="listOptions"
             :depth="depth + 1"
             :get-var-options-fn="getVarOptionsFn"
             :selected-vars="selectedVars"
@@ -29,7 +30,9 @@
                 :value="child.leftOperand"
                 :vars="vars"
                 :functions="functions"
+                :list-options="listOptions"
                 :allowed-kinds="leftAllowedKinds"
+                context="READ_EXPRESSION"
                 :selected-vars="selectedVars"
                 placeholder="选择左操作数..."
                 size="mini"
@@ -47,8 +50,10 @@
                 :value="child.rightOperand"
                 :vars="vars"
                 :functions="functions"
+                :list-options="listOptions"
                 :allowed-kinds="rightAllowedKinds(child)"
-                :expected-type="leftOperandType(child)"
+                :context="rightContext(child)"
+                :expected-type="rightExpectedType(child)"
                 :selected-vars="selectedVars"
                 placeholder="选择右操作数..."
                 size="mini"
@@ -78,12 +83,13 @@ import { createEmptyGroup, createEmptyLeaf } from '@/utils/decisionConditionTree
 import {
   conditionOperatorAllowsVarValue,
   conditionOperatorRequiresValue,
+  findConditionOperator,
   getConditionOperatorOptions,
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
-const LEFT_ALLOWED_KINDS = ['PATH', 'REFERENCE', 'FUNCTION']
-const VALUE_ALLOWED_KINDS = ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
+const READ_EXPRESSION_KINDS = getExpressionContext('READ_EXPRESSION').allowedKinds
 
 export default {
   name: 'ConditionGroupEditor',
@@ -92,13 +98,14 @@ export default {
     group: { type: Object, required: true },
     vars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
+    listOptions: { type: Array, default: () => [] },
     selectedVars: { type: Array, default: () => [] },
     depth: { type: Number, default: 0 },
     getVarOptionsFn: { type: Function, default: null }
   },
   computed: {
     leftAllowedKinds() {
-      return LEFT_ALLOWED_KINDS
+      return READ_EXPRESSION_KINDS
     }
   },
   methods: {
@@ -115,9 +122,19 @@ export default {
       return conditionOperatorRequiresValue(leaf && leaf.operator, this.leftOperandType(leaf))
     },
     rightAllowedKinds(leaf) {
+      const context = this.rightContext(leaf)
+      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
       return conditionOperatorAllowsVarValue(leaf && leaf.operator, this.leftOperandType(leaf))
-        ? VALUE_ALLOWED_KINDS
+        ? getExpressionContext(context).allowedKinds
         : ['LITERAL']
+    },
+    rightContext(leaf) {
+      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf))
+      return (option && option.rightContext) || 'READ_EXPRESSION'
+    },
+    rightExpectedType(leaf) {
+      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf))
+      return (option && option.rightValueType) || this.leftOperandType(leaf)
     },
     onOpChange(leaf) {
       const type = this.leftOperandType(leaf)
@@ -127,7 +144,7 @@ export default {
         this.$set(leaf, 'rightOperand', null)
         return
       }
-      if (!conditionOperatorAllowsVarValue(operator, type) && leaf.rightOperand && leaf.rightOperand.kind !== 'LITERAL') {
+      if (leaf.rightOperand && !this.rightAllowedKinds(leaf).includes(leaf.rightOperand.kind)) {
         this.$set(leaf, 'rightOperand', null)
       }
     },

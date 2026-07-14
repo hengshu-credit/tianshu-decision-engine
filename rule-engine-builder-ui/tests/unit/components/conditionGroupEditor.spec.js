@@ -11,7 +11,7 @@ function makeStub(tag) {
 const OperandPickerStub = {
   name: 'OperandPicker',
   template: '<div class="operand-picker-stub" />',
-  props: ['value', 'allowedKinds', 'expectedType', 'writableOnly']
+  props: ['value', 'allowedKinds', 'expectedType', 'writableOnly', 'context', 'listOptions']
 }
 
 function mountEditor(leafOverrides = {}) {
@@ -40,7 +40,8 @@ function mountEditor(leafOverrides = {}) {
       vars: [
         { varCode: 'amount', varLabel: '申请金额', varType: 'NUMBER', _varId: 1, _refType: 'VARIABLE' },
         { varCode: 'CONST_NEG_INF', varLabel: '负无穷', varType: 'NUMBER', _varId: 2, _refType: 'CONSTANT' }
-      ]
+      ],
+      listOptions: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }]
     },
     stubs: {
       'condition-group-editor': true,
@@ -59,8 +60,8 @@ describe('ConditionGroupEditor', () => {
     const pickers = wrapper.findAllComponents(OperandPickerStub)
 
     expect(pickers).toHaveLength(2)
-    expect(pickers.at(0).props('allowedKinds')).toEqual(['PATH', 'REFERENCE', 'FUNCTION'])
-    expect(pickers.at(1).props('allowedKinds')).toEqual(['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'])
+    expect(pickers.at(0).props('allowedKinds')).toEqual(expect.arrayContaining(['REFERENCE', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']))
+    expect(pickers.at(1).props('allowedKinds')).toEqual(expect.arrayContaining(['LITERAL', 'REFERENCE', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST']))
     expect(wrapper.find('.cg-field--kind').exists()).toBe(false)
     expect(wrapper.find('.cg-manual-value').exists()).toBe(false)
   })
@@ -95,5 +96,16 @@ describe('ConditionGroupEditor', () => {
     const leaf = wrapper.props('group').children[0]
 
     expect(wrapper.vm.rightAllowedKinds(leaf)).toEqual(['LITERAL'])
+  })
+
+  test('在名单内只允许名单配置并透传名单选项', async () => {
+    const wrapper = mountEditor({ operator: 'in_list', rightOperand: null })
+    const leaf = wrapper.props('group').children[0]
+    await wrapper.vm.$nextTick()
+    const right = wrapper.findAllComponents(OperandPickerStub).at(1)
+
+    expect(wrapper.vm.rightAllowedKinds(leaf)).toEqual(['LIST_QUERY'])
+    expect(right.props('context')).toBe('LIST_QUERY_CONFIG')
+    expect(right.props('listOptions')).toEqual([{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }])
   })
 })

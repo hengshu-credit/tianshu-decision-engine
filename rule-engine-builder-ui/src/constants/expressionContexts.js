@@ -13,8 +13,13 @@ export const EXPRESSION_CONTEXTS = Object.freeze({
   }),
   LIST_QUERY_VALUE: Object.freeze({
     key: 'LIST_QUERY_VALUE',
-    allowedKinds: Object.freeze(VALUE_OPERAND_KINDS.filter(kind => kind !== OPERAND_KINDS.LIST_QUERY)),
+    allowedKinds: Object.freeze(VALUE_OPERAND_KINDS.slice()),
     expectedType: ''
+  }),
+  LIST_QUERY_CONFIG: Object.freeze({
+    key: 'LIST_QUERY_CONFIG',
+    allowedKinds: Object.freeze([OPERAND_KINDS.LIST_QUERY]),
+    expectedType: 'BOOLEAN'
   }),
   WRITE_TARGET: Object.freeze({
     key: 'WRITE_TARGET',

@@ -31,7 +31,7 @@ describe('conditionOperators', () => {
   test('操作符声明右值表达式上下文和适用类型', () => {
     expect(findConditionOperator('regex_match', 'STRING').rightContext).toBe('READ_EXPRESSION')
     expect(findConditionOperator('in_array', 'STRING').rightValueType).toBe('LIST')
-    expect(findConditionOperator('in_list', 'STRING').rightContext).toBe('LIST_QUERY_VALUE')
+    expect(findConditionOperator('in_list', 'STRING').rightContext).toBe('LIST_QUERY_CONFIG')
     expect(findConditionOperator('in_list', 'LIST')).toBeNull()
   })
 

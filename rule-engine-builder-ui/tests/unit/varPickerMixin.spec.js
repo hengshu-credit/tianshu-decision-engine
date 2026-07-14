@@ -17,6 +17,7 @@ import * as variableApi from '@/api/variable'
 import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
 import * as modelApi from '@/api/model'
+import * as ruleListApi from '@/api/ruleList'
 
 // ─── Mock 数据（传原始数组，由 axios 拦截器包成 { data: ... }） ─────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
@@ -65,6 +66,7 @@ describe('varPickerMixin', () => {
     dataObjectApi.getVariableTree.mockResolvedValue(mockObjectTree)
     functionApi.listAllFunctionsByProject.mockResolvedValue([])
     modelApi.listAllModelsByProject.mockResolvedValue(mockModels)
+    ruleListApi.listLibraries.mockResolvedValue({ records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }] })
     dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
 
@@ -99,6 +101,8 @@ describe('varPickerMixin', () => {
     expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(1)
     expect(functionApi.listAllFunctionsByProject).toHaveBeenCalledWith(1)
     expect(modelApi.listAllModelsByProject).toHaveBeenCalledWith(1)
+    expect(ruleListApi.listLibraries).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1000, projectId: 1, status: 1 })
+    expect(vm.projectLists).toEqual([{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }])
   })
 
   test('loadProjectVars 完成后 projectVars 非空', async () => {

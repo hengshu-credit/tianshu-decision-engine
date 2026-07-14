@@ -758,7 +758,7 @@ import { listLibraries } from '@/api/ruleList'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
-import { LIST_COMBINATION_MODES, LIST_MATCH_MODES, listCombinationMode } from '@/constants/listMatchModes'
+import { LIST_COMBINATION_MODES, LIST_ITEM_TYPES, LIST_MATCH_MODES, listCombinationMode } from '@/constants/listMatchModes'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import { formatConstantValue, hasConstantValue } from '@/utils/constantValue'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
@@ -819,18 +819,7 @@ export default {
         listFunctionOptions: [],
         listReferenceProjectId: null,
         sourceOptionsLoaded: { API: false, DB: false, LIST: false },
-        listItemTypeOptions: [
-          { label: '手机号', value: 'MOBILE' },
-          { label: '身份证', value: 'ID_CARD' },
-          { label: '地址', value: 'ADDRESS' },
-          { label: 'IP', value: 'IP' },
-          { label: '设备号', value: 'DEVICE' },
-          { label: '姓名', value: 'NAME' },
-          { label: 'GPS', value: 'GPS' },
-          { label: '邮箱', value: 'EMAIL' },
-          { label: '银行卡', value: 'BANK_CARD' },
-          { label: '其他', value: 'OTHER' }
-        ],
+        listItemTypeOptions: LIST_ITEM_TYPES,
         listCombinationModeOptions: LIST_COMBINATION_MODES,
         listMatchModeOptions: LIST_MATCH_MODES,
         listQueryOperandKinds: getExpressionContext('LIST_QUERY_VALUE').allowedKinds,

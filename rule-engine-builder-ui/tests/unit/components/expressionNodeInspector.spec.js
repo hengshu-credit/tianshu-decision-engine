@@ -23,4 +23,21 @@ describe('ExpressionNodeInspector', () => {
     wrapper.vm.patch({ accessType: 'INDEX' })
     expect(wrapper.emitted().input[0][0].accessType).toBe('INDEX')
   })
+
+  test('名单查询展示组合含义并只配置正向匹配语义', () => {
+    const wrapper = shallowMount(ExpressionNodeInspector, {
+      propsData: {
+        node: {
+          kind: 'LIST_QUERY', listIds: [1], itemTypes: [],
+          combinationMode: 'ALL_FIELDS_ALL_LISTS', matchMode: 'IN_LIST'
+        },
+        listOptions: [{ id: 1, listName: '黑名单' }]
+      },
+      stubs: ['el-input', 'el-select', 'el-option', 'el-button', 'el-radio-group', 'el-radio-button']
+    })
+
+    expect(wrapper.text()).toContain('限制最严格')
+    expect(wrapper.vm.listMatchModes.map(item => item.value)).toEqual(['IN_LIST', 'CONTAINED_IN_LIST'])
+    expect(wrapper.vm.listItemTypes.length).toBeGreaterThan(1)
+  })
 })

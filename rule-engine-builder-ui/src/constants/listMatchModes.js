@@ -12,6 +12,23 @@ export const LIST_MATCH_MODES = Object.freeze([
   Object.freeze({ label: '未被名单内容包含', value: 'NOT_CONTAINED_IN_LIST' })
 ])
 
+export const POSITIVE_LIST_MATCH_MODES = Object.freeze(
+  LIST_MATCH_MODES.filter(item => item.value === 'IN_LIST' || item.value === 'CONTAINED_IN_LIST')
+)
+
+export const LIST_ITEM_TYPES = Object.freeze([
+  Object.freeze({ label: '手机号', value: 'MOBILE' }),
+  Object.freeze({ label: '身份证', value: 'ID_CARD' }),
+  Object.freeze({ label: '地址', value: 'ADDRESS' }),
+  Object.freeze({ label: 'IP', value: 'IP' }),
+  Object.freeze({ label: '设备号', value: 'DEVICE' }),
+  Object.freeze({ label: '姓名', value: 'NAME' }),
+  Object.freeze({ label: 'GPS', value: 'GPS' }),
+  Object.freeze({ label: '邮箱', value: 'EMAIL' }),
+  Object.freeze({ label: '银行卡', value: 'BANK_CARD' }),
+  Object.freeze({ label: '其他', value: 'OTHER' })
+])
+
 export function listCombinationMode(value) {
   return LIST_COMBINATION_MODES.find(item => item.value === value) || LIST_COMBINATION_MODES[0]
 }

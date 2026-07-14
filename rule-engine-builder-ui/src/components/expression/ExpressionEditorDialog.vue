@@ -17,6 +17,7 @@
         <expression-palette
           :vars="vars"
           :functions="functions"
+          :list-options="listOptions"
           :allowed-kinds="effectiveAllowedKinds"
           :expected-type="expectedType || contextMeta.expectedType"
           @insert="insertTemplate"

@@ -47,4 +47,14 @@ describe('flow designer style regressions', () => {
     expect(source).toContain('background: #F8FAFF;')
     expect(source).toContain('color: #1D39C4 !important;')
   })
+
+  test('决策树和决策流属性面板最多占页面百分之八十', () => {
+    const tree = readSource('src/views/designer/DecisionTree.vue')
+    const flow = readSource('src/views/designer/DecisionFlow.vue')
+
+    ;[tree, flow].forEach(source => {
+      expect(source).toContain('clampDesignerPanelWidth(width, window.innerWidth)')
+      expect(source).toContain('max-width: 80vw;')
+    })
+  })
 })

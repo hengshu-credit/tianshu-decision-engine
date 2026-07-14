@@ -55,6 +55,7 @@
                 :group="row.conditionRoot"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 :selected-vars="selectedVarPickerOptions"
                 :get-var-options-fn="getVarOptions"
               />

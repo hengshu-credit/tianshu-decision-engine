@@ -18,6 +18,12 @@ describe('expressionContexts', () => {
     expect(isExpressionKindAllowed('WRITE_TARGET', 'FUNCTION')).toBe(false)
   })
 
+  test('名单配置是独立上下文，不混入普通读表达式', () => {
+    expect(EXPRESSION_CONTEXTS.READ_EXPRESSION.allowedKinds).not.toContain('LIST_QUERY')
+    expect(EXPRESSION_CONTEXTS.LIST_QUERY_CONFIG.allowedKinds).toEqual(['LIST_QUERY'])
+    expect(EXPRESSION_CONTEXTS.LIST_QUERY_CONFIG.expectedType).toBe('BOOLEAN')
+  })
+
   test('未知上下文回退为读取表达式并返回独立副本', () => {
     const first = getExpressionContext('UNKNOWN')
     first.allowedKinds.push('BROKEN')

@@ -28,8 +28,8 @@ const STRING_OPERATORS = [
   { label: '不在列表中', value: 'not_in', valuePlaceholder: '逗号分隔多个值', noVarValue: true },
   { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
   { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
-  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
-  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_CONFIG' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_CONFIG' },
   { label: '为空字符串', value: 'is_empty', noValue: true },
   { label: '非空字符串', value: 'not_empty', noValue: true },
   { label: '任意', value: '*', noValue: true }
@@ -42,8 +42,8 @@ const NUMBER_OPERATORS = [
   { label: '不在列表中', value: 'not_in', valuePlaceholder: '逗号分隔多个数值', noVarValue: true },
   { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
   { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
-  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
-  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_CONFIG' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_CONFIG' },
   { label: '任意', value: '*', noValue: true }
 ]
 
@@ -56,8 +56,8 @@ const BOOLEAN_OPERATORS = [
   { label: '不为空', value: 'not_null', noValue: true },
   { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
   { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
-  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
-  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_CONFIG' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_CONFIG' },
   { label: '任意', value: '*', noValue: true }
 ]
 
@@ -67,8 +67,8 @@ const ENUM_OPERATORS = [
   { label: '不在枚举中', value: 'not_in', valuePlaceholder: '逗号分隔多个枚举值', noVarValue: true },
   { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
   { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
-  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
-  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_CONFIG' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_CONFIG' },
   { label: '任意', value: '*', noValue: true }
 ]
 
