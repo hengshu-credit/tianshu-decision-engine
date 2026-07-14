@@ -218,6 +218,7 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'CrossTable',
@@ -238,9 +239,9 @@ export default {
         colHeaderOperands: [null],
         cellOperands: [[null]]
       },
-      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
-      writeOperandKinds: ['PATH', 'REFERENCE'],
-      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'],
+      readOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
       focusedCell: null,
       scriptMode: 'visual',
       testVisible: false,

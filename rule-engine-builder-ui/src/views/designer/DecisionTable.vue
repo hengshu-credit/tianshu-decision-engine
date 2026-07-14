@@ -170,6 +170,7 @@ import {
 import { collectOperandReferences, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'DecisionTable',
@@ -190,8 +191,8 @@ export default {
       testParams: {},
       testResult: null,
       contentLoaded: false,
-      writeOperandKinds: ['PATH', 'REFERENCE'],
-      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
+      writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
     }
   },
   computed: {

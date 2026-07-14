@@ -293,6 +293,7 @@ import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
 
@@ -321,9 +322,9 @@ export default {
       testReady: false,
       testExecuting: false,
       jsonError: '',
-      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
-      writeOperandKinds: ['PATH', 'REFERENCE'],
-      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
+      readOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
     }
   },
   computed: {

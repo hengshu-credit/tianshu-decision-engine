@@ -202,6 +202,7 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import AssignmentRow from './ActionAssignmentRow.vue'
 import AssignmentTarget from './ActionAssignmentTarget.vue'
 import { actionDataToBlocks, BLOCK_TYPES, blocksToActionData, generateScript, newBlock } from '@/utils/actionDataCodegen'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'ActionBlockEditor',
@@ -222,9 +223,9 @@ export default {
       blocks: [],
       blockTypes: BLOCK_TYPES,
       literalKinds: ['LITERAL'],
-      readKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
-      valueKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'],
-      writeKinds: ['PATH', 'REFERENCE']
+      readKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      valueKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      writeKinds: getExpressionContext('WRITE_TARGET').allowedKinds
     }
   },
   computed: {

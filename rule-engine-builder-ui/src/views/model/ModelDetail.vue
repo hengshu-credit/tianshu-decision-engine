@@ -374,6 +374,7 @@ import { listAllFunctionsByProject } from '@/api/function'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
 import { compileOperand, createFunctionOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   buildDetailReferenceMap,
   buildDetailReferenceState,
@@ -420,9 +421,9 @@ export default {
         { label: '模型', options: [] }
       ],
       projectFunctions: [],
-      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION'],
-      transformArgKinds: ['LITERAL', 'PATH', 'REFERENCE'],
-      writeOperandKinds: ['PATH', 'REFERENCE'],
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      transformArgKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
       // 测试相关
       testVisible: false,
       testReady: false,

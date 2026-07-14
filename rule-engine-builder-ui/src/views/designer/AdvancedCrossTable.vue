@@ -237,6 +237,7 @@ import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue, isLeafRef, setParamPath } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { collectOperandReferences, compileOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'AdvancedCrossTable',
@@ -259,9 +260,9 @@ export default {
       testParamsJson: '{}',
       testResult: null,
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
-      readOperandKinds: ['PATH', 'REFERENCE', 'FUNCTION'],
-      writeOperandKinds: ['PATH', 'REFERENCE'],
-      valueOperandKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION']
+      readOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
     }
   },
   computed: {

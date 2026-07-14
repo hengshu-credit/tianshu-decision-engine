@@ -182,7 +182,7 @@ export default {
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
-          listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 }).catch(() => [])
+          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
         ])
         this.projectFunctions = this.normalizeListResponse(funcRes)
         this.projectLists = this.normalizeListResponse(listRes)
@@ -258,7 +258,7 @@ export default {
           getVariableTree(pid).catch(() => []),
           listAllFunctionsByProject(pid).catch(() => []),
           listAllModelsByProject(pid).catch(() => []),
-          listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 }).catch(() => [])
+          Promise.resolve(listLibraries({ pageNum: 1, pageSize: 1000, projectId: pid, status: 1 })).catch(() => [])
         ])
         // request 拦截器已返回 res.data，直接使用
         this.projectFunctions = this.normalizeListResponse(funcRes)
