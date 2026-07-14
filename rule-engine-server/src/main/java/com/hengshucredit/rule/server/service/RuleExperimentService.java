@@ -83,6 +83,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Resource
     private RuleFunctionService ruleFunctionService;
 
+    @Resource
+    private RuleVariableService variableService;
+
     public IPage<RuleExperiment> pageExperiments(int pageNum, int pageSize, Long projectId,
                                                  Integer status, String keyword) {
         LambdaQueryWrapper<RuleExperiment> wrapper = new LambdaQueryWrapper<>();
@@ -759,7 +762,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         Object configured = hasText(experiment.getRequestKeyPath())
                 ? OperandValueResolver.resolve(experiment.getRequestKeyPath(), params,
-                Collections.<String, Object>emptyMap(), this::invokeOperandFunction)
+                referenceValues(experiment.getProjectId(), params), this::invokeOperandFunction)
                 : null;
         if (configured != null && hasText(String.valueOf(configured))) {
             return String.valueOf(configured);
@@ -772,6 +775,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
         }
         return null;
+    }
+
+    private Map<String, Object> referenceValues(Long projectId, Map<String, Object> values) {
+        if (variableService == null) return Collections.emptyMap();
+        return OperandValueResolver.buildReferenceValues(
+                variableService.buildRefScriptNameMap(projectId), values,
+                variableService.buildRefConstantValueMap(projectId));
     }
 
     private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {

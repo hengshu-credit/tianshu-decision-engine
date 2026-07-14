@@ -196,9 +196,9 @@ describe('operand', () => {
     const op = (operator, operands) => createOperationOperand(operator, operands, 'NUMBER')
     const expression = op('*', [
       fn('numCeil', [op('/', [
-        fn('max', [number(4200), fn('min', [
+        fn('numMax', [number(4200), fn('numMin', [
           op('+', [
-            op('*', [fn('min', [fn('max', [repayment, used]), number(9000)]), factor, number(0.3)]),
+            op('*', [op('*', [fn('numMin', [fn('numMax', [repayment, used]), number(9000)]), factor]), number(0.3)]),
             op('*', [riskAmount, number(0.5)])
           ]),
           number(7000)
@@ -208,7 +208,7 @@ describe('operand', () => {
       number(500)
     ])
 
-    expect(compileOperand(expression)).toBe('(numCeil((max(4200, min(((min(max(monthlyRepayment, usedAmount), 9000) * riskFactor * 0.3) + (riskAmount * 0.5)), 7000)) / 500)) * 500)')
+    expect(compileOperand(expression)).toBe('(numCeil((numMax(4200, numMin((((numMin(numMax(monthlyRepayment, usedAmount), 9000) * riskFactor) * 0.3) + (riskAmount * 0.5)), 7000)) / 500)) * 500)')
     expect(collectOperandReferences(expression).map(item => item.refId)).toEqual([101, 102, 103, 104])
     expect(inferOperandType(expression)).toBe('NUMBER')
     expect(validateOperand(expression)).toEqual([])
@@ -247,6 +247,34 @@ describe('operand', () => {
     ])
     expect(validateOperand(createFunctionOperand({ funcCode: 'max' }, []), { allowedKinds: ['PATH', 'REFERENCE'] }))
       .toEqual([expect.objectContaining({ path: 'root', message: '当前配置位置不支持方法' })])
+  })
+
+  test('运算节点严格限制为二元，固定参数函数校验参数数量', () => {
+    expect(validateOperand(createOperationOperand('<', [
+      createLiteralOperand('1', 'NUMBER'),
+      createLiteralOperand('2', 'NUMBER'),
+      createLiteralOperand('3', 'NUMBER')
+    ]))).toEqual([expect.objectContaining({ message: '运算符 < 需要 2 个运算项' })])
+
+    const fn = createFunctionOperand({ id: 88, funcCode: 'numMax', params: [{ type: 'NUMBER' }, { type: 'NUMBER' }] }, [
+      createLiteralOperand('1', 'NUMBER')
+    ])
+    expect(validateOperand(fn)).toEqual([expect.objectContaining({ message: '方法 numMax 需要 2 个参数' })])
+  })
+
+  test('固定参数函数校验每个参数的字段类型', () => {
+    const fn = createFunctionOperand({
+      id: 89,
+      funcCode: 'typedFn',
+      params: [{ type: 'NUMBER' }, { type: 'LIST' }]
+    }, [
+      createLiteralOperand('not-a-number', 'STRING'),
+      createArrayOperand([createLiteralOperand('A', 'STRING')])
+    ])
+
+    expect(validateOperand(fn)).toEqual([
+      expect.objectContaining({ path: 'root.args[0]', message: '方法 typedFn 的第 1 个参数需要 NUMBER，当前为 STRING' })
+    ])
   })
 
   test('递归同步访问器、运算符和数组中的引用', () => {

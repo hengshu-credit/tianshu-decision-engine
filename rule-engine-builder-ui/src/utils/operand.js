@@ -87,12 +87,16 @@ export function createFunctionOperand(fn, args = []) {
   if (!fn) return null
   const functionCode = fn.functionCode || fn.funcCode || fn.functionName || fn.funcName || fn.name || ''
   const functionLabel = fn.functionLabel || fn.funcName || fn.functionName || fn.label || functionCode
+  const parameters = functionParameterDefinitions(fn)
+  const hasParameterMetadata = Array.isArray(fn.params) || Array.isArray(fn.parameters) || fn.paramsJson != null
   return {
     kind: OPERAND_KINDS.FUNCTION,
     functionId: fn.functionId != null ? fn.functionId : fn.id,
     functionCode,
     label: functionLabel,
     valueType: fn.returnType || fn.valueType || fn.varType || '',
+    parameterCount: hasParameterMetadata ? parameters.length : null,
+    parameterTypes: parameters.map(param => normalizeType(param.type || param.valueType || 'OBJECT')),
     args: Array.isArray(args) ? args : []
   }
 }
@@ -192,8 +196,28 @@ export function validateOperand(operand, options = {}) {
     if (current.kind === OPERAND_KINDS.FUNCTION && !current.functionCode) {
       errors.push({ path, message: '方法编码不能为空' })
     }
+    if (current.kind === OPERAND_KINDS.FUNCTION && Number.isInteger(current.parameterCount) && (current.args || []).length !== current.parameterCount) {
+      errors.push({ path, message: '方法 ' + current.functionCode + ' 需要 ' + current.parameterCount + ' 个参数' })
+    }
+    if (current.kind === OPERAND_KINDS.FUNCTION && Array.isArray(current.parameterTypes)) {
+      (current.args || []).forEach((arg, index) => {
+        const declaredType = current.parameterTypes[index]
+        if (!declaredType) return
+        const expected = normalizeType(declaredType)
+        const actual = inferOperandType(arg)
+        if (expected && expected !== 'OBJECT' && expected !== 'ANY' && actual && !typesCompatible(expected, actual)) {
+          errors.push({
+            path: path + '.args[' + index + ']',
+            message: '方法 ' + current.functionCode + ' 的第 ' + (index + 1) + ' 个参数需要 ' + expected + '，当前为 ' + actual
+          })
+        }
+      })
+    }
     if (current.kind === OPERAND_KINDS.OPERATION && !current.operator) {
       errors.push({ path, message: '运算符不能为空' })
+    }
+    if (current.kind === OPERAND_KINDS.OPERATION && (current.operands || []).length !== 2) {
+      errors.push({ path, message: '运算符 ' + current.operator + ' 需要 2 个运算项' })
     }
     if (current.kind === OPERAND_KINDS.ACCESS && !current.accessType) {
       errors.push({ path, message: '访问方式不能为空' })
@@ -463,6 +487,28 @@ function normalizeType(valueType) {
   if (type === 'BOOL') return 'BOOLEAN'
   if (['ARRAY', 'SET', 'COLLECTION'].includes(type)) return 'LIST'
   return type
+}
+
+function functionParameterDefinitions(fn) {
+  if (!fn) return []
+  if (Array.isArray(fn.params)) return fn.params
+  if (Array.isArray(fn.parameters)) return fn.parameters
+  if (!fn.paramsJson) return []
+  try {
+    const parsed = typeof fn.paramsJson === 'string' ? JSON.parse(fn.paramsJson) : fn.paramsJson
+    return Array.isArray(parsed) ? parsed : []
+  } catch (e) {
+    return []
+  }
+}
+
+function typesCompatible(expected, actual) {
+  const left = normalizeType(expected)
+  const right = normalizeType(actual)
+  if (left === right) return true
+  if ((left === 'MAP' && right === 'OBJECT') || (left === 'OBJECT' && right === 'MAP')) return true
+  if ((left === 'STRING' && right === 'ENUM') || (left === 'ENUM' && right === 'STRING')) return true
+  return false
 }
 
 function operandChildEntries(operand) {

@@ -30,6 +30,12 @@ public class VarContext {
     /** 常量 ID → 可信 QLExpress 表达式映射 */
     private final Map<Long, String> constantIdToExpression;
 
+    /** 函数 ID → 当前函数编码映射 */
+    private final Map<Long, String> functionIdToCode;
+
+    /** 函数 ID → 固定参数数量映射 */
+    private final Map<Long, Integer> functionIdToArity;
+
     /**
      * 构造函数，仅构建 varId → scriptName 映射。
      * {@link #getScriptNameByVarCode(String)} 在此构造方式下恒返 null。
@@ -65,10 +71,22 @@ public class VarContext {
                       Map<String, String> varCodeToScriptName,
                       Map<String, String> refIdToScriptName,
                       Map<Long, String> constantIdToExpression) {
+        this(varIdToScriptName, varCodeToScriptName, refIdToScriptName, constantIdToExpression,
+                Collections.emptyMap(), Collections.emptyMap());
+    }
+
+    public VarContext(Map<Long, String> varIdToScriptName,
+                      Map<String, String> varCodeToScriptName,
+                      Map<String, String> refIdToScriptName,
+                      Map<Long, String> constantIdToExpression,
+                      Map<Long, String> functionIdToCode,
+                      Map<Long, Integer> functionIdToArity) {
         this.varIdToScriptName = varIdToScriptName != null ? varIdToScriptName : Collections.emptyMap();
         this.varCodeToScriptName = varCodeToScriptName != null ? varCodeToScriptName : Collections.emptyMap();
         this.refIdToScriptName = refIdToScriptName != null ? refIdToScriptName : Collections.emptyMap();
         this.constantIdToExpression = constantIdToExpression != null ? constantIdToExpression : Collections.emptyMap();
+        this.functionIdToCode = functionIdToCode != null ? functionIdToCode : Collections.emptyMap();
+        this.functionIdToArity = functionIdToArity != null ? functionIdToArity : Collections.emptyMap();
     }
 
     /**
@@ -124,10 +142,27 @@ public class VarContext {
         return expression;
     }
 
+    public String resolveFunction(Long functionId, int actualArity) {
+        if (functionId == null) {
+            throw new IllegalArgumentException("受管方法引用缺少 ID");
+        }
+        String code = functionIdToCode.get(functionId);
+        if (code == null || code.trim().isEmpty()) {
+            throw new IllegalArgumentException("方法引用不存在或已停用，ID=" + functionId);
+        }
+        Integer expectedArity = functionIdToArity.get(functionId);
+        if (expectedArity != null && expectedArity != actualArity) {
+            throw new IllegalArgumentException("方法 " + code + " 需要 " + expectedArity
+                    + " 个参数，实际为 " + actualArity);
+        }
+        return code;
+    }
+
     /** 是否为空（无任何映射） */
     public boolean isEmpty() {
         return varIdToScriptName.isEmpty() && varCodeToScriptName.isEmpty()
-                && refIdToScriptName.isEmpty() && constantIdToExpression.isEmpty();
+                && refIdToScriptName.isEmpty() && constantIdToExpression.isEmpty()
+                && functionIdToCode.isEmpty() && functionIdToArity.isEmpty();
     }
 
     /**

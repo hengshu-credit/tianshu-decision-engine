@@ -790,9 +790,9 @@ public class RuleModelService {
         }
 
         List<RuleModelInputField> inputFields = listInputFields(modelId);
-        Map<String, Object> constantValues = constantReferenceValues(model.getProjectId());
+        Map<String, Object> referenceValues = referenceValues(model.getProjectId(), params);
         Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
-                inputFields, params, constantValues, this::invokeOperandFunction);
+                inputFields, params, referenceValues, this::invokeOperandFunction);
         Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
         if ("PMML".equals(model.getModelFormat())) {
             return executePmml(model, boundParams);
@@ -950,10 +950,10 @@ public class RuleModelService {
         Map<String, Object> transformed = new LinkedHashMap<>(original);
         if (model == null || model.getId() == null) return transformed;
         Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
-        Map<String, Object> constantValues = constantReferenceValues(model.getProjectId());
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
+        Map<String, Object> referenceValues = referenceValues(model.getProjectId(), context);
         for (RuleModelOutputField field : listOutputFields(model.getId())) {
             String transformJson = field.getTransformOperand();
             if (transformJson == null || transformJson.trim().isEmpty()) continue;
@@ -971,7 +971,7 @@ public class RuleModelService {
                         throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换参数 " + (i + 1) + " 未配置");
                     }
                     args.add(OperandValueResolver.resolve(
-                            operand, context, constantValues, this::invokeOperandFunction));
+                            operand, context, referenceValues, this::invokeOperandFunction));
                 }
             }
             String outputKey = outputKey(field, original);
@@ -980,9 +980,11 @@ public class RuleModelService {
         return transformed;
     }
 
-    private Map<String, Object> constantReferenceValues(Long projectId) {
-        return variableService == null
-                ? Collections.emptyMap() : variableService.buildRefConstantValueMap(projectId);
+    private Map<String, Object> referenceValues(Long projectId, Map<String, Object> values) {
+        if (variableService == null) return Collections.emptyMap();
+        return OperandValueResolver.buildReferenceValues(
+                variableService.buildRefScriptNameMap(projectId), values,
+                variableService.buildRefConstantValueMap(projectId));
     }
 
     private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {

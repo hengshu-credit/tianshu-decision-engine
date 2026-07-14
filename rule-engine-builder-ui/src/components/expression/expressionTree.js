@@ -1,5 +1,6 @@
 import {
   cloneOperand,
+  createArrayOperand,
   createFunctionOperand,
   createLiteralOperand
 } from '@/utils/operand'
@@ -49,11 +50,23 @@ export function firstEditablePath(node, basePath = []) {
 
 export function createFunctionTemplate(fn) {
   const definitions = functionParameters(fn)
-  const args = definitions.map(param => createLiteralOperand(
-    param.example == null ? '' : param.example,
-    param.type || param.valueType || 'STRING'
-  ))
+  const args = definitions.map(functionExampleOperand)
   return createFunctionOperand(fn, args)
+}
+
+function functionExampleOperand(param) {
+  const example = param && param.example
+  const type = String((param && (param.type || param.valueType)) || 'STRING').toUpperCase()
+  if (Array.isArray(example)) {
+    return createArrayOperand(example.map(value => createLiteralOperand(
+      value,
+      typeof value === 'number' ? 'NUMBER' : (typeof value === 'boolean' ? 'BOOLEAN' : 'STRING')
+    )))
+  }
+  if (example && typeof example === 'object') {
+    return createLiteralOperand(JSON.stringify(example), type === 'OBJECT' ? 'MAP' : type)
+  }
+  return createLiteralOperand(example == null ? '' : example, type)
 }
 
 export function functionParameters(fn) {

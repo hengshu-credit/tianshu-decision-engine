@@ -28,6 +28,9 @@ public class RuleCompileService {
     private RuleVariableService variableService;
 
     @Resource
+    private RuleFunctionService functionService;
+
+    @Resource
     private RuleCallCycleService ruleCallCycleService;
 
     public RuleCompileService() {
@@ -70,7 +73,9 @@ public class RuleCompileService {
         Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
         Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(definition.getProjectId());
         VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName,
-                refIdToScriptName, constantIdToExpression);
+                refIdToScriptName, constantIdToExpression,
+                functionService.buildFunctionCodeMap(definition.getProjectId()),
+                functionService.buildFunctionArityMap(definition.getProjectId()));
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
 

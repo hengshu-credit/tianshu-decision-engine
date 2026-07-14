@@ -88,6 +88,7 @@ import {
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import { inferOperandType } from '@/utils/operand'
 
 const READ_EXPRESSION_KINDS = getExpressionContext('READ_EXPRESSION').allowedKinds
 
@@ -113,7 +114,7 @@ export default {
       this.$set(this.group, 'op', op)
     },
     leftOperandType(leaf) {
-      return (leaf && leaf.leftOperand && leaf.leftOperand.valueType) || 'STRING'
+      return inferOperandType(leaf && leaf.leftOperand) || 'STRING'
     },
     operatorOptions(leaf) {
       return getConditionOperatorOptions(this.leftOperandType(leaf))

@@ -7,9 +7,9 @@ import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
-import java.math.RoundingMode;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -73,6 +73,12 @@ public final class OperandValueResolver {
                 }
                 return referenceValues.get(refKey);
             }
+            if ("REFERENCE".equals(kind)) {
+                String refKey = operand.getString("refType").trim().toUpperCase() + ":" + operand.getLong("refId");
+                if (referenceValues != null && referenceValues.containsKey(refKey)) {
+                    return referenceValues.get(refKey);
+                }
+            }
             String path = firstText(operand.getString("value"), operand.getString("code"));
             return readPath(values, path);
         }
@@ -93,6 +99,23 @@ public final class OperandValueResolver {
         if (operandJson == null || operandJson.trim().isEmpty()) return paths;
         collectPaths(JSON.parseObject(operandJson), paths);
         return paths;
+    }
+
+    /**
+     * 按受管引用的稳定 ID 构建 Java 运行时值，避免字段改名后继续读取 Operand 中的旧 code。
+     */
+    public static Map<String, Object> buildReferenceValues(Map<String, String> referencePaths,
+                                                            Map<String, Object> values,
+                                                            Map<String, Object> trustedValues) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (trustedValues != null) result.putAll(trustedValues);
+        if (referencePaths == null) return result;
+        for (Map.Entry<String, String> entry : referencePaths.entrySet()) {
+            String refKey = entry.getKey();
+            if (empty(refKey) || refKey.toUpperCase().startsWith("CONSTANT:")) continue;
+            result.put(refKey, readPath(values, entry.getValue()));
+        }
+        return result;
     }
 
     static List<JSONObject> collectReferences(String operandJson) {
@@ -193,13 +216,6 @@ public final class OperandValueResolver {
         if (functionId != null && functionInvoker != null) {
             return functionInvoker.invoke(functionId, code, resolved);
         }
-        if ("max".equals(code)) return numericExtreme(resolved, true);
-        if ("min".equals(code)) return numericExtreme(resolved, false);
-        if ("sum".equals(code)) return sum(resolved);
-        if ("count".equals(code)) return resolved.size();
-        if ("numCeil".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.CEILING);
-        if ("numFloor".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.FLOOR);
-        if ("numRoundInteger".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.HALF_UP);
         return BuiltinFunctionInvoker.invoke(code, resolved);
     }
 
@@ -208,15 +224,10 @@ public final class OperandValueResolver {
         String operator = operand.getString("operator");
         JSONArray operands = operand.getJSONArray("operands");
         if (empty(operator)) throw new IllegalArgumentException("运算符不能为空");
-        if (operands == null || operands.isEmpty()) throw new IllegalArgumentException("运算参数不能为空");
-        List<Object> resolved = resolveArray(operands, values, referenceValues, functionInvoker);
-        if (resolved.size() == 1) {
-            Object value = resolved.get(0);
-            if ("!".equals(operator)) return !booleanValue(value);
-            if ("-".equals(operator)) return number(value).negate();
-            if ("+".equals(operator)) return number(value);
-            throw new IllegalArgumentException("不支持的一元运算符: " + operator);
+        if (operands == null || operands.size() != 2) {
+            throw new IllegalArgumentException("运算符 " + operator + " 需要 2 个运算参数");
         }
+        List<Object> resolved = resolveArray(operands, values, referenceValues, functionInvoker);
         if ("&&".equals(operator) || "||".equals(operator)) {
             boolean result = "&&".equals(operator);
             for (Object value : resolved) {
@@ -273,20 +284,8 @@ public final class OperandValueResolver {
                                  Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         Object target = resolveRequired(operand.getJSONObject("target"), values, referenceValues, functionInvoker);
         Object accessor = resolveRequired(operand.getJSONObject("accessor"), values, referenceValues, functionInvoker);
-        if ("INDEX".equalsIgnoreCase(operand.getString("accessType"))) {
-            int index = number(accessor).intValueExact();
-            if (target instanceof List) {
-                List<?> list = (List<?>) target;
-                return index >= 0 && index < list.size() ? list.get(index) : null;
-            }
-            if (target != null && target.getClass().isArray()) {
-                return index >= 0 && index < Array.getLength(target) ? Array.get(target, index) : null;
-            }
-            return null;
-        }
-        if (target instanceof Map) return ((Map<?, ?>) target).get(String.valueOf(accessor));
-        if (target instanceof JSONObject) return ((JSONObject) target).get(String.valueOf(accessor));
-        return null;
+        String functionCode = "INDEX".equalsIgnoreCase(operand.getString("accessType")) ? "arrGet" : "objGet";
+        return BuiltinFunctionInvoker.invoke(functionCode, Arrays.asList(target, accessor));
     }
 
     private static Object cast(String targetType, Object value) {
@@ -316,26 +315,6 @@ public final class OperandValueResolver {
         return resolve(operand, values, referenceValues, functionInvoker);
     }
 
-    private static Object numericExtreme(List<Object> values, boolean max) {
-        BigDecimal result = null;
-        Object selected = null;
-        for (Object value : values) {
-            if (value == null) continue;
-            BigDecimal number = new BigDecimal(String.valueOf(value));
-            if (result == null || (max ? number.compareTo(result) > 0 : number.compareTo(result) < 0)) {
-                result = number;
-                selected = value;
-            }
-        }
-        return selected;
-    }
-
-    private static Object sum(List<Object> values) {
-        BigDecimal result = BigDecimal.ZERO;
-        for (Object value : values) if (value != null) result = result.add(new BigDecimal(String.valueOf(value)));
-        return result;
-    }
-
     private static Object literal(Object value, String valueType) {
         String type = valueType == null ? "STRING" : valueType.trim().toUpperCase();
         String text = value == null ? "" : String.valueOf(value);
@@ -360,11 +339,6 @@ public final class OperandValueResolver {
         } catch (NumberFormatException e) {
             throw new IllegalArgumentException("无法转换为数值: " + value, e);
         }
-    }
-
-    private static BigDecimal numberArg(List<Object> values, int index, String code) {
-        if (values == null || values.size() <= index) throw new IllegalArgumentException(code + " 缺少参数");
-        return number(values.get(index));
     }
 
     private static boolean booleanValue(Object value) {

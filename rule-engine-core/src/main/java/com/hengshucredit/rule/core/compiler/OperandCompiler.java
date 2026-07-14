@@ -30,10 +30,13 @@ public final class OperandCompiler {
             return varContext.resolveVar(operand.getLong("refId"), operand.getString("refType"), code);
         }
         if ("FUNCTION".equals(kind)) {
-            String functionCode = operand.getString("functionCode");
+            JSONArray args = operand.getJSONArray("args");
+            int arity = args == null ? 0 : args.size();
+            String functionCode = varContext != null
+                    ? varContext.resolveFunction(operand.getLong("functionId"), arity)
+                    : operand.getString("functionCode");
             if (empty(functionCode)) throw new IllegalArgumentException("方法编码不能为空");
             StringBuilder result = new StringBuilder(functionCode).append('(');
-            JSONArray args = operand.getJSONArray("args");
             if (args != null) {
                 for (int i = 0; i < args.size(); i++) {
                     if (i > 0) result.append(", ");
@@ -46,9 +49,8 @@ public final class OperandCompiler {
             String operator = operand.getString("operator");
             if (empty(operator)) throw new IllegalArgumentException("运算符不能为空");
             JSONArray operands = operand.getJSONArray("operands");
-            if (operands == null || operands.isEmpty()) throw new IllegalArgumentException("运算参数不能为空");
-            if (operands.size() == 1) {
-                return "(" + operator + compileRequired(operands, 0, varContext) + ")";
+            if (operands == null || operands.size() != 2) {
+                throw new IllegalArgumentException("运算符 " + operator + " 需要 2 个运算参数");
             }
             StringBuilder result = new StringBuilder("(");
             for (int i = 0; i < operands.size(); i++) {

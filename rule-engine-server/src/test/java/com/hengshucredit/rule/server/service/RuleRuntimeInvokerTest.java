@@ -57,6 +57,25 @@ public class RuleRuntimeInvokerTest {
         invoker.enter("JCLTest", 0L, null, context, true);
         try {
             assertEquals("PASS", invoker.executeRuleById("1"));
+            assertEquals("JCLTest", RuntimeContextBridge.currentRule().get("code"));
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
+    public void nestedRuleUsesItsRealNameAndRestoresParentRuntimeContext() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+
+        invoker.enter("PARENT", 0L, null, new LinkedHashMap<String, Object>(), true);
+        try {
+            assertEquals("子规则", invoker.executeRuleById("2"));
+            assertEquals("PARENT", RuntimeContextBridge.currentRule().get("code"));
         } finally {
             invoker.exit();
         }
@@ -95,6 +114,33 @@ public class RuleRuntimeInvokerTest {
         @Override
         public RuleProject getById(Serializable id) {
             return null;
+        }
+    }
+
+    private static class ContextDefinitionService extends RuleDefinitionService {
+        @Override
+        public RuleDefinition getById(Serializable id) {
+            RuleDefinition definition = new RuleDefinition();
+            definition.setId(2L);
+            definition.setProjectId(0L);
+            definition.setRuleCode("CHILD");
+            definition.setRuleName("子规则");
+            definition.setStatus(1);
+            return definition;
+        }
+
+        @Override
+        public RuleDefinitionContent getContent(Long definitionId) {
+            RuleDefinitionContent content = new RuleDefinitionContent();
+            content.setDefinitionId(definitionId);
+            content.setCompileStatus(1);
+            content.setCompiledScript("currentRuleName()");
+            return content;
+        }
+
+        @Override
+        public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+            return Collections.emptyList();
         }
     }
 

@@ -23,10 +23,10 @@
         <el-select :value="node.operator" size="small" filterable @input="patch({ operator: $event })">
           <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
         </el-select>
-        <div class="inline-heading"><label>运算项</label><el-button type="text" @click="addChild('operands')">增加一项</el-button></div>
+        <div class="inline-heading"><label>运算项</label><span class="field-tip">二元运算固定为两项</span></div>
         <div v-for="(item, index) in node.operands || []" :key="index" class="argument-row">
           <span>第 {{ index + 1 }} 项</span>
-          <el-button type="text" :disabled="(node.operands || []).length <= 1" @click="removeChild('operands', index)">删除</el-button>
+          <span>{{ item ? '已配置' : '待配置' }}</span>
         </div>
       </template>
 

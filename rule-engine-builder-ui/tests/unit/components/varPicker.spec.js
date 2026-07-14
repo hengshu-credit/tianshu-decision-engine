@@ -90,6 +90,22 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
+  test('同编码但不同 ID 的字段使用独立行 key', async () => {
+    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const vars = standaloneOptions(2).map((item, index) => ({
+      ...item,
+      varCode: 'amount',
+      varLabel: index === 0 ? '全局金额' : '项目计算额度'
+    }))
+
+    const wrapper = mountPicker({ vars })
+    await Vue.nextTick()
+
+    expect(wrapper.findAll('.vp-row')).toHaveLength(2)
+    expect(errorSpy.mock.calls.some(args => args.join(' ').includes("Duplicate keys detected: 'amount'"))).toBe(false)
+    errorSpy.mockRestore()
+  })
+
   test('可写操作数只展示变量和数据对象字段', () => {
     const wrapper = mountPicker({
       operandMode: true,
@@ -411,6 +427,19 @@ describe('VarPicker', () => {
     expect(wrapper.vm.activeCategory).toBe('manual')
     expect(wrapper.vm.manualKind).toBe('LITERAL')
     expect(focusManualInput).toHaveBeenCalled()
+  })
+
+  test('操作数选择器支持键盘聚焦并通过输入框焦点打开', async () => {
+    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'REFERENCE'], vars: standaloneOptions(1) })
+    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+
+    const reference = wrapper.find('.vp-reference')
+    expect(reference.attributes('tabindex')).toBe('0')
+    expect(reference.attributes('role')).toBe('button')
+
+    wrapper.vm.onInputFocus()
+    await Vue.nextTick()
+    expect(wrapper.vm.popoverVisible).toBe(true)
   })
 
   test('关闭面板前移走弹层内焦点并仅处理当前弹层', () => {

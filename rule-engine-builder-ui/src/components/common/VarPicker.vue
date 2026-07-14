@@ -120,7 +120,7 @@
                   <tbody>
                     <template v-for="v in pagedRightItems">
                       <tr
-                        :key="fieldGroupKey(v) || v.varCode"
+                        :key="fieldGroupKey(v) || optionIdentityKey(v)"
                         class="vp-row"
                         :class="{ 'vp-row--selected': !isFieldGroup(v) && v.varCode === currentValue }"
                         @click="onItemClick(v)"
@@ -134,7 +134,7 @@
                       <!-- 数据对象/模型嵌套行：点击分组展开，点击子字段才选择 -->
                       <tr
                         v-if="v.children && expandedObject === fieldGroupKey(v)"
-                        :key="(fieldGroupKey(v) || v.varCode) + '-children'"
+                        :key="(fieldGroupKey(v) || optionIdentityKey(v)) + '-children'"
                         class="vp-children-row"
                       >
                         <td colspan="3" class="vp-children-td">
@@ -145,7 +145,7 @@
                             <div class="vp-children-list">
                               <div
                                 v-for="child in pagedObjectChildren(v)"
-                                :key="(fieldGroupKey(v) || '') + '.' + child.varCode"
+                                :key="(fieldGroupKey(v) || optionIdentityKey(v)) + '.' + optionIdentityKey(child)"
                                 class="vp-child-item"
                                 :class="{ 'vp-child-item--selected': child.varCode === currentValue }"
                                 @click.stop="onItemClick(child)"
@@ -199,8 +199,12 @@
             slot="reference"
             ref="reference"
             class="vp-reference"
-            tabindex="-1"
+            tabindex="0"
+            role="button"
+            aria-label="打开字段与表达式选择器"
             @click.stop="openPopover"
+            @keydown.enter.prevent.stop="openPopover"
+            @keydown.space.prevent.stop="openPopover"
           >
             <el-input
               :size="size"
@@ -940,7 +944,6 @@ export default {
     },
     /** 输入框获得焦点时自动弹出选择器面板 */
     onInputFocus() {
-      if (this.operandMode) return
       this.openPopover()
     },
     onReferenceInput(value) {

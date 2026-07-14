@@ -25,6 +25,23 @@ describe('expressionTree', () => {
     expect(firstEditablePath(fn)).toEqual(['args', 0])
   })
 
+  test('函数数组和对象示例生成结构化参数而不是错误字符串', () => {
+    const arrayFn = createFunctionTemplate({
+      id: 8,
+      funcCode: 'arrMax',
+      params: [{ name: 'values', type: 'LIST', example: [3, 1, 2] }]
+    })
+    const objectFn = createFunctionTemplate({
+      id: 9,
+      funcCode: 'objGet',
+      params: [{ name: 'object', type: 'MAP', example: { customer: { age: 36 } } }]
+    })
+
+    expect(arrayFn.args[0]).toMatchObject({ kind: 'ARRAY', valueType: 'LIST' })
+    expect(arrayFn.args[0].items).toHaveLength(3)
+    expect(objectFn.args[0]).toMatchObject({ kind: 'LITERAL', valueType: 'MAP', value: '{"customer":{"age":36}}' })
+  })
+
   test('运算、访问和转换模板会包裹当前节点', () => {
     const field = { kind: 'PATH', value: 'request.amount' }
     expect(wrapExpressionNode(field, { kind: 'OPERATION', operator: '+', operands: [] }).operands[0]).toEqual(field)

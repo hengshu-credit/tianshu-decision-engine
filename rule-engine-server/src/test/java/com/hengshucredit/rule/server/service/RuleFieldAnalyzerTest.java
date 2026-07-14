@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -505,6 +506,42 @@ public class RuleFieldAnalyzerTest {
         List<String> names = names(result);
         assertTrue(names.contains("a_var"));
         assertTrue(names.contains("b_var"));
+    }
+
+    @Test
+    public void persistedVariableTypeOverridesNameHeuristics() throws Exception {
+        RuleDefinitionInputField field = inputField("riskFactor", "VARIABLE", "INPUT", 241L);
+        field.setFieldType("BOOLEAN");
+        Map<String, Object> meta = leafMeta("riskFactor", "INPUT", 241L);
+        meta.put("refType", "VARIABLE");
+        meta.put("scriptName", "riskFactor");
+        meta.put("varType", "NUMBER");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("riskfactor", meta);
+
+        Method enrich = RuleFieldAnalyzer.class.getDeclaredMethod("enrichFieldFromMeta",
+                RuleDefinitionInputField.class, Map.class, Map.class, Map.class);
+        enrich.setAccessible(true);
+        enrich.invoke(analyzer, field, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
+
+        assertEquals("NUMBER", field.getFieldType());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelOperandDependenciesTraverseEveryRecursiveNodeKind() throws Exception {
+        RuleModelInputField modelField = new RuleModelInputField();
+        modelField.setFieldName("derived");
+        modelField.setFieldType("NUMBER");
+        modelField.setSourceOperand("{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"REFERENCE\",\"refId\":11,\"refType\":\"VARIABLE\",\"code\":\"baseAmount\",\"valueType\":\"NUMBER\"},{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"DATA_OBJECT\",\"code\":\"payload\",\"valueType\":\"MAP\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}]}}");
+
+        Method copy = RuleFieldAnalyzer.class.getDeclaredMethod("copyModelInputFields", RuleModelInputField.class);
+        copy.setAccessible(true);
+        List<RuleDefinitionInputField> fields = (List<RuleDefinitionInputField>) copy.invoke(analyzer, modelField);
+
+        assertEquals(Arrays.asList("baseAmount", "payload"), names(fields));
+        assertEquals(Long.valueOf(11), fields.get(0).getVarId());
+        assertEquals(Long.valueOf(12), fields.get(1).getVarId());
     }
 
     private static RuleDefinitionInputField inputField(String scriptName, String refType, String varSource, Long varId) {

@@ -382,7 +382,7 @@ public class RuleFieldAnalyzer {
                 }
             }
             String varType = (String) meta.get("varType");
-            if (varType != null && !varType.isEmpty() && "STRING".equals(field.getFieldType())) {
+            if (varType != null && !varType.isEmpty()) {
                 field.setFieldType(varType);
             }
             String scriptName = (String) meta.get("scriptName");
@@ -427,7 +427,7 @@ public class RuleFieldAnalyzer {
                 }
             }
             String varType = (String) meta.get("varType");
-            if (varType != null && !varType.isEmpty() && "STRING".equals(field.getFieldType())) {
+            if (varType != null && !varType.isEmpty()) {
                 field.setFieldType(varType);
             }
             String scriptName = (String) meta.get("scriptName");
@@ -874,9 +874,19 @@ public class RuleFieldAnalyzer {
             result.add(operand);
             return;
         }
-        if ("FUNCTION".equals(kind)) {
-            JSONArray args = operand.getJSONArray("args");
-            if (args != null) for (int i = 0; i < args.size(); i++) collectReferenceOperands(args.getJSONObject(i), result);
+        if ("FUNCTION".equals(kind)) collectReferenceOperands(operand.getJSONArray("args"), result);
+        else if ("OPERATION".equals(kind)) collectReferenceOperands(operand.getJSONArray("operands"), result);
+        else if ("ARRAY".equals(kind)) collectReferenceOperands(operand.getJSONArray("items"), result);
+        else if ("ACCESS".equals(kind)) {
+            collectReferenceOperands(operand.getJSONObject("target"), result);
+            collectReferenceOperands(operand.getJSONObject("accessor"), result);
+        } else if ("CAST".equals(kind)) collectReferenceOperands(operand.getJSONObject("operand"), result);
+    }
+
+    private void collectReferenceOperands(JSONArray operands, List<JSONObject> result) {
+        if (operands == null) return;
+        for (int i = 0; i < operands.size(); i++) {
+            collectReferenceOperands(operands.getJSONObject(i), result);
         }
     }
 

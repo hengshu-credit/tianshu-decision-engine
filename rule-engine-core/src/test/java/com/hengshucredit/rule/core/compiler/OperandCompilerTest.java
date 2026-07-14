@@ -2,6 +2,8 @@ package com.hengshucredit.rule.core.compiler;
 
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -69,6 +71,17 @@ public class OperandCompilerTest {
     }
 
     @Test
+    public void resolvesManagedFunctionCodeByStableId() {
+        VarContext context = new VarContext(Collections.<Long, String>emptyMap(),
+                Collections.<String, String>emptyMap(), Collections.<String, String>emptyMap(),
+                Collections.<Long, String>emptyMap(), Collections.singletonMap(88L, "renamedFunction"),
+                Collections.singletonMap(88L, 2));
+        JSONObject operand = JSON.parseObject("{\"kind\":\"FUNCTION\",\"functionId\":88,\"functionCode\":\"oldFunction\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}]}");
+
+        Assert.assertEquals("renamedFunction(1, 2)", OperandCompiler.compile(operand, context));
+    }
+
+    @Test
     public void compilesRecursiveExpressionNodes() {
         Assert.assertEquals("(request.amount + 100)", compile("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"PATH\",\"value\":\"request.amount\"},{\"kind\":\"LITERAL\",\"value\":\"100\",\"valueType\":\"NUMBER\"}]}"));
         Assert.assertEquals("objGet(request.payload, \"score\")", compile("{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}"));
@@ -82,21 +95,32 @@ public class OperandCompilerTest {
     public void compilesAmountFormulaWithStableReferences() {
         JSONObject expression = operation("*",
                 function("numCeil", operation("/",
-                        function("max", number("4200"), function("min",
+                        function("numMax", number("4200"), function("numMin",
                                 operation("+",
-                                        operation("*", function("min", function("max", reference(101, "monthlyRepayment"), reference(102, "usedAmount")), number("9000")), reference(103, "riskFactor"), number("0.3")),
+                                        operation("*", operation("*", function("numMin", function("numMax", reference(101, "monthlyRepayment"), reference(102, "usedAmount")), number("9000")), reference(103, "riskFactor")), number("0.3")),
                                         operation("*", reference(104, "riskAmount"), number("0.5"))),
                                 number("7000"))),
                         number("500"))),
                 number("500"));
 
-        Assert.assertEquals("(numCeil((max(4200, min(((min(max(monthlyRepayment, usedAmount), 9000) * riskFactor * 0.3) + (riskAmount * 0.5)), 7000)) / 500)) * 500)", OperandCompiler.compile(expression, null));
+        String script = OperandCompiler.compile(expression, null);
+        Assert.assertEquals("(numCeil((numMax(4200, numMin((((numMin(numMax(monthlyRepayment, usedAmount), 9000) * riskFactor) * 0.3) + (riskAmount * 0.5)), 7000)) / 500)) * 500)", script);
+
+        Map<String, Object> values = new HashMap<>();
+        values.put("monthlyRepayment", 5000);
+        values.put("usedAmount", 6000);
+        values.put("riskFactor", 1.2);
+        values.put("riskAmount", 4000);
+        RuleResult result = new QLExpressEngine().execute(script, values);
+        Assert.assertTrue(result.getErrorMessage(), result.isSuccess());
+        Assert.assertEquals(4500d, ((Number) result.getResult()).doubleValue(), 0d);
     }
 
     @Test
     public void rejectsInvalidExpressionNodes() {
         assertCompileFails("{\"kind\":\"UNKNOWN\"}", "不支持");
         assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[null]}", "参数");
+        assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"<\",\"operands\":[{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"3\",\"valueType\":\"NUMBER\"}]}", "2");
         assertCompileFails("{\"kind\":\"REFERENCE\",\"code\":\"score\"}", "ID");
     }
 

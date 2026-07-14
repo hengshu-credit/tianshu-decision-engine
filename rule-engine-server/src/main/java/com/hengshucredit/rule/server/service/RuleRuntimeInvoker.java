@@ -180,6 +180,8 @@ public class RuleRuntimeInvoker {
         Long previousProjectId = frame.projectId;
         String previousProjectCode = frame.projectCode;
         Map<String, Object> previousContext = frame.context;
+        Map<String, Object> previousRule = RuntimeContextBridge.currentRule();
+        List<String> previousMatchedConditions = RuntimeContextBridge.currentMatchedConditions();
         frame.stack.addLast(targetRuleCode);
         try {
             Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
@@ -195,6 +197,14 @@ public class RuleRuntimeInvoker {
             frame.projectId = projectId;
             frame.projectCode = projectCode;
             frame.context = executeParams;
+            Map<String, Object> childRule = new LinkedHashMap<>();
+            childRule.put("id", targetDefinitionId);
+            childRule.put("code", targetRuleCode);
+            childRule.put("name", definition != null && hasText(definition.getRuleName())
+                    ? definition.getRuleName() : targetRuleCode);
+            childRule.put("projectId", projectId);
+            childRule.put("projectCode", projectCode);
+            RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
             RuleResult result = qlExpressEngine.execute(compiledScript, executeParams, false);
             if (!result.isSuccess()) {
                 throw new IllegalStateException("执行调用规则失败[" + targetRuleCode + "]: " + result.getErrorMessage());
@@ -205,6 +215,7 @@ public class RuleRuntimeInvoker {
             frame.projectId = previousProjectId;
             frame.projectCode = previousProjectCode;
             frame.context = previousContext;
+            RuntimeContextBridge.setRuleContext(previousRule, previousMatchedConditions);
         }
     }
 

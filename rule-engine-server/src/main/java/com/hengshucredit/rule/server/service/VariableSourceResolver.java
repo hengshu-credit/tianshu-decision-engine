@@ -588,6 +588,8 @@ public class VariableSourceResolver {
 
     Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> resolvedParams) {
         Map<String, Object> params = resolvedParams == null ? new LinkedHashMap<>() : new LinkedHashMap<>(resolvedParams);
+        Map<String, Object> referenceValues = referenceValues(
+                model == null ? null : model.getProjectId(), resolvedParams);
         List<RuleModelInputField> fields = model == null ? null : model.getInputFields();
         if (fields == null || fields.isEmpty()) {
             return params;
@@ -599,7 +601,7 @@ public class VariableSourceResolver {
                 continue;
             }
             Object value = OperandValueResolver.resolve(field.getSourceOperand(), resolvedParams,
-                    Collections.<String, Object>emptyMap(), this::invokeOperandFunction);
+                    referenceValues, this::invokeOperandFunction);
             if (value == null) value = readPath(resolvedParams, scriptName);
             if (value == null && !fieldName.equals(scriptName)) {
                 value = readPath(resolvedParams, fieldName);
@@ -616,7 +618,7 @@ public class VariableSourceResolver {
             }
             if (value == null) {
                 value = OperandValueResolver.resolve(field.getDefaultOperand(), resolvedParams,
-                        Collections.<String, Object>emptyMap(), this::invokeOperandFunction);
+                        referenceValues, this::invokeOperandFunction);
             }
             if (value == null && hasText(field.getDefaultValue())) {
                 value = parseJsonOrRaw(field.getDefaultValue());
@@ -843,7 +845,8 @@ public class VariableSourceResolver {
         rejectLegacyListConfig(config);
         List<Long> listIds = buildLongList(config.get("listIds"));
         if (listIds.isEmpty()) throw new IllegalArgumentException("名单变量缺少 listIds");
-        List<Object> queryValues = resolveListQueryOperands(config.get("queryOperands"), params);
+        List<Object> queryValues = resolveListQueryOperands(
+                config.get("queryOperands"), variable.getProjectId(), params);
         if (queryValues.isEmpty()) throw new IllegalArgumentException("名单变量缺少 queryOperands");
         String combinationMode = stringValue(config.get("combinationMode"));
         if (!hasText(combinationMode)) throw new IllegalArgumentException("名单变量缺少 combinationMode");
@@ -910,17 +913,25 @@ public class VariableSourceResolver {
         return "HTTP";
     }
 
-    private List<Object> resolveListQueryOperands(Object source, Map<String, Object> params) {
+    private List<Object> resolveListQueryOperands(Object source, Long projectId, Map<String, Object> params) {
         List<Object> result = new ArrayList<>();
         if (!(source instanceof Iterable)) return result;
+        Map<String, Object> referenceValues = referenceValues(projectId, params);
         for (Object value : (Iterable<?>) source) {
             JSONObject operand = value instanceof JSONObject
                     ? (JSONObject) value
                     : JSON.parseObject(JSON.toJSONString(value));
             result.add(OperandValueResolver.resolve(operand, params,
-                    Collections.<String, Object>emptyMap(), this::invokeOperandFunction));
+                    referenceValues, this::invokeOperandFunction));
         }
         return result;
+    }
+
+    private Map<String, Object> referenceValues(Long projectId, Map<String, Object> values) {
+        if (variableService == null) return Collections.emptyMap();
+        return OperandValueResolver.buildReferenceValues(
+                variableService.buildRefScriptNameMap(projectId), values,
+                variableService.buildRefConstantValueMap(projectId));
     }
 
     private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {

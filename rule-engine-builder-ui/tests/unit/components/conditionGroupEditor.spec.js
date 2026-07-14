@@ -108,4 +108,22 @@ describe('ConditionGroupEditor', () => {
     expect(right.props('context')).toBe('LIST_QUERY_CONFIG')
     expect(right.props('listOptions')).toEqual([{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }])
   })
+
+  test('复合数值表达式使用递归类型推断展示数值操作符', () => {
+    const wrapper = mountEditor({
+      leftOperand: {
+        kind: 'OPERATION',
+        operator: '+',
+        operands: [
+          { kind: 'REFERENCE', code: 'amount', valueType: 'NUMBER', refId: 1, refType: 'VARIABLE' },
+          { kind: 'LITERAL', value: '100', valueType: 'NUMBER' }
+        ]
+      }
+    })
+    const leaf = wrapper.props('group').children[0]
+
+    expect(wrapper.vm.leftOperandType(leaf)).toBe('NUMBER')
+    expect(wrapper.vm.operatorOptions(leaf).map(item => item.value)).toEqual(expect.arrayContaining(['>', '>=', '<', '<=', 'between']))
+    expect(wrapper.vm.operatorOptions(leaf).map(item => item.value)).not.toContain('starts_with')
+  })
 })

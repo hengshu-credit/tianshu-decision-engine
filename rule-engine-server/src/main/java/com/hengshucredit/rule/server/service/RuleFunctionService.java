@@ -115,6 +115,20 @@ public class RuleFunctionService {
         return functionMapper.selectList(wrapper);
     }
 
+    public Map<Long, String> buildFunctionCodeMap(Long projectId) {
+        return listByProject(projectId).stream()
+                .filter(function -> function.getId() != null && function.getFuncCode() != null
+                        && !function.getFuncCode().trim().isEmpty())
+                .collect(Collectors.toMap(RuleFunction::getId, RuleFunction::getFuncCode, (left, right) -> left));
+    }
+
+    public Map<Long, Integer> buildFunctionArityMap(Long projectId) {
+        return listByProject(projectId).stream()
+                .filter(function -> function.getId() != null)
+                .collect(Collectors.toMap(RuleFunction::getId,
+                        function -> parseParamNames(function.getParamsJson()).size(), (left, right) -> left));
+    }
+
     /**
      * 按项目分页查询函数（管理页面使用）
      * @param scope 作用域筛选：GLOBAL/PROJECT，null 表示不限制
