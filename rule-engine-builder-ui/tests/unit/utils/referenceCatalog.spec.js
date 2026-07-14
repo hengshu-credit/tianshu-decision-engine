@@ -1,6 +1,7 @@
 import {
   buildDetailReferenceMap,
   buildDetailReferenceState,
+  buildPickerOptions,
   buildReferenceCatalog,
   resolveDetailReference
 } from '@/utils/referenceCatalog'
@@ -43,6 +44,12 @@ describe('referenceCatalog', () => {
       varCode: 'bankcard.bank_card_no',
       varCodeText: 'bankcard.bank_card_no',
       varLabel: '银行卡信息/银行卡号 bankcard.bank_card_no'
+    })
+
+    expect(buildPickerOptions(catalog).find(item => item._varId === 11)).toMatchObject({
+      varCode: 'bankcard.bank_card_no',
+      _refType: 'DATA_OBJECT',
+      _ref: { category: 'object', refType: 'DATA_OBJECT' }
     })
 
     const referenceMap = buildDetailReferenceMap(detailState)

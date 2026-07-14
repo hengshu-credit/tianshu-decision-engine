@@ -24,8 +24,12 @@ jest.mock('@/api/project', () => ({
 
 jest.mock('@/api/dataObject', () => ({
   batchValidateRules: jest.fn(),
-  batchValidateAll: jest.fn()
+  batchValidateAll: jest.fn(),
+  getVariableTree: jest.fn()
 }))
+
+jest.mock('@/api/function', () => ({ listAllFunctionsByProject: jest.fn() }))
+jest.mock('@/api/model', () => ({ listAllModelsByProject: jest.fn() }))
 
 jest.mock('@/api/datasource', () => ({
   listApiConfigs: jest.fn()
@@ -42,6 +46,8 @@ jest.mock('@/api/ruleList', () => ({
 import * as variableApi from '@/api/variable'
 import * as projectApi from '@/api/project'
 import * as dataObjectApi from '@/api/dataObject'
+import * as functionApi from '@/api/function'
+import * as modelApi from '@/api/model'
 import * as ruleListApi from '@/api/ruleList'
 import * as definitionApi from '@/api/definition'
 import VariableList from '@/views/variable/VariableList.vue'
@@ -83,6 +89,10 @@ async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockVars(), total: 3 } })
   ruleListApi.listLibraries.mockResolvedValue({ data: { records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }], total: 1 } })
+  variableApi.listVariablesByProject.mockResolvedValue({ data: mockVars() })
+  dataObjectApi.getVariableTree.mockResolvedValue({ data: { tree: [] } })
+  functionApi.listAllFunctionsByProject.mockResolvedValue({ data: [] })
+  modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
 
   const wrapper = mount(VariableList, {
     localVue: createTestVue(),
@@ -106,7 +116,8 @@ async function mountAndWait() {
       'el-radio': true, 'el-radio-group': true, 'el-upload': true,
       'el-input-number': true, 'el-tooltip': true, 'el-tree': true,
       'el-icon': true, 'el-col': true, 'el-row': true,
-      'el-link': true, 'el-badge': true
+      'el-link': true, 'el-badge': true,
+      'operand-picker': true, 'router-link': true
     }
   })
 
@@ -386,7 +397,7 @@ describe('VariableList — 变量操作', () => {
     })
   })
 
-  test('变量测试模板支持模板表达式和名单裸字段路径', () => {
+  test('变量测试模板支持模板表达式和名单递归表达式', () => {
     const apiRow = {
       varSource: 'API',
       sourceConfig: JSON.stringify({
@@ -403,7 +414,13 @@ describe('VariableList — 变量操作', () => {
 
     const listRow = {
       varSource: 'LIST',
-      sourceConfig: JSON.stringify({ queryField: 'request.mobile' })
+      sourceConfig: JSON.stringify({
+        queryOperands: [{
+          kind: 'FUNCTION', functionCode: 'toStringValue', args: [
+            { kind: 'REFERENCE', refId: 11, refType: 'DATA_OBJECT', code: 'request.mobile', valueType: 'STRING' }
+          ]
+        }]
+      })
     }
     expect(JSON.parse(wrapper.vm.buildTestParamTemplate(listRow))).toEqual({
       request: { mobile: '' }
@@ -435,28 +452,62 @@ describe('VariableList — 变量操作', () => {
     })
   })
 
-  test('buildVariablePayload 生成名单查询配置', async () => {
+  test('buildVariablePayload 生成多字段多名单新配置且不写旧字段', async () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),
       varCode: 'mobileBlackHit',
       varLabel: '手机号黑名单命中',
       varType: 'NUMBER',
       varSource: 'LIST',
-      listId: 9,
-      listQueryField: 'request.mobile',
+      listIds: [9, 10],
+      listQueryOperands: [
+        { kind: 'REFERENCE', refId: 11, refType: 'DATA_OBJECT', code: 'request.mobile', valueType: 'STRING' },
+        { kind: 'REFERENCE', refId: 12, refType: 'VARIABLE', code: 'backupMobile', valueType: 'STRING' }
+      ],
+      listCombinationMode: 'ALL_FIELDS_ANY_LIST',
       listMatchMode: 'CONTAINED_IN_LIST',
       listItemTypes: ['MOBILE'],
       listReturnMode: 'NUMBER',
-      listForceRefresh: true
     }
     const payload = wrapper.vm.buildVariablePayload()
     const config = JSON.parse(payload.sourceConfig)
-    expect(config.listId).toBe(9)
-    expect(config.queryField).toBe('request.mobile')
+    expect(config.listIds).toEqual([9, 10])
+    expect(config.queryOperands).toHaveLength(2)
+    expect(config.queryOperands[0]).toMatchObject({ refId: 11, refType: 'DATA_OBJECT' })
+    expect(config.combinationMode).toBe('ALL_FIELDS_ANY_LIST')
     expect(config.matchMode).toBe('CONTAINED_IN_LIST')
     expect(config.itemTypes).toEqual(['MOBILE'])
-    expect(config.forceRefresh).toBe(true)
-    expect(payload.listId).toBeUndefined()
+    expect(config.listId).toBeUndefined()
+    expect(config.queryField).toBeUndefined()
+    expect(payload.listIds).toBeUndefined()
+    expect(payload.varType).toBe('NUMBER')
+  })
+
+  test('名单查询表达式支持增删且布尔返回同步变量类型', () => {
+    wrapper.vm.form = { ...wrapper.vm.initForm(), varSource: 'LIST' }
+    wrapper.vm.addListQueryOperand()
+    expect(wrapper.vm.form.listQueryOperands).toHaveLength(2)
+    wrapper.vm.setListQueryOperand(1, { kind: 'LITERAL', value: '13800138000', valueType: 'STRING' })
+    expect(wrapper.vm.form.listQueryOperands[1].value).toBe('13800138000')
+    wrapper.vm.removeListQueryOperand(0)
+    expect(wrapper.vm.form.listQueryOperands).toHaveLength(1)
+
+    wrapper.vm.onListReturnModeChange('BOOLEAN')
+    expect(wrapper.vm.form.varType).toBe('BOOLEAN')
+  })
+
+  test('名单查询字段素材复用统一引用目录并排除变量自身', async () => {
+    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: [
+      { id: 30, varCode: 'selfHit', scriptName: 'selfHit', varLabel: '当前变量', varType: 'NUMBER', varSource: 'LIST' },
+      { id: 31, varCode: 'mobile', scriptName: 'mobile', varLabel: '手机号', varType: 'STRING', varSource: 'INPUT' }
+    ] })
+    wrapper.vm.form = { ...wrapper.vm.initForm(), id: 30, scope: 'PROJECT', projectId: 1, varSource: 'LIST' }
+
+    await wrapper.vm.loadListExpressionOptions()
+
+    expect(wrapper.vm.listReferenceOptions.map(item => item._varId)).toEqual([31])
+    expect(wrapper.vm.listReferenceOptions[0]).toMatchObject({ _refType: 'VARIABLE', varCode: 'mobile' })
+    expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
   })
 
   test('buildVariablePayload 生成接口变量配置', async () => {
@@ -484,19 +535,23 @@ describe('VariableList — 变量操作', () => {
     expect(payload.apiConfigId).toBeUndefined()
   })
 
-  test('applySourceConfigToForm 回显名单匹配方式', () => {
+  test('applySourceConfigToForm 回显多字段多名单配置', () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),
       varSource: 'LIST',
       sourceConfig: JSON.stringify({
-        listId: 9,
-        queryField: 'request.mobile',
+        listIds: [9, 10],
+        queryOperands: [{ kind: 'REFERENCE', refId: 11, refType: 'DATA_OBJECT', code: 'request.mobile' }],
+        combinationMode: 'ANY_FIELD_ALL_LISTS',
         matchMode: 'NOT_CONTAINED_IN_LIST',
         itemTypes: ['MOBILE']
       })
     }
     wrapper.vm.applySourceConfigToForm()
 
+    expect(wrapper.vm.form.listIds).toEqual([9, 10])
+    expect(wrapper.vm.form.listQueryOperands[0]).toMatchObject({ refId: 11, refType: 'DATA_OBJECT' })
+    expect(wrapper.vm.form.listCombinationMode).toBe('ANY_FIELD_ALL_LISTS')
     expect(wrapper.vm.form.listMatchMode).toBe('NOT_CONTAINED_IN_LIST')
     expect(wrapper.vm.form.listItemTypes).toEqual(['MOBILE'])
   })
@@ -547,7 +602,7 @@ describe('VariableList — 边界情况', () => {
         'el-dialog': true, 'el-dropdown': true, 'el-dropdown-menu': true, 'el-dropdown-item': true,
         'el-pagination': true, 'el-switch': true, 'el-loading': true, 'el-textarea': true,
         'el-tree': true, 'el-icon': true, 'el-col': true, 'el-row': true,
-        'el-link': true, 'el-badge': true, 'el-input-number': true
+        'el-link': true, 'el-badge': true, 'el-input-number': true, 'router-link': true
       }
     })
     await Vue.nextTick()

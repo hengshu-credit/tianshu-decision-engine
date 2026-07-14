@@ -22,7 +22,7 @@ import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
 import { varTypeTagColor, varTypeLabel as _varTypeLabel } from '@/constants/varTypes'
 import { makeRefLabel } from '@/utils/varDisplay'
-import { buildReferenceCatalog } from '@/utils/referenceCatalog'
+import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
 
 // 变量选择 Mixin
@@ -44,22 +44,7 @@ export default {
   computed: {
     /** VarPicker 使用的选项列表（分层：普通变量 / 常量 / 对象字段） */
     varPickerOptions() {
-      return this.projectRefs.map(r => ({
-        id: r.varObj && r.varObj.id,
-        varCode: r.refCode,
-        varLabel: r.refLabel.label + ' ' + r.refLabel.code,
-        varLabelText: r.refLabel.label,
-        varCodeText: r.refLabel.code,
-        varType: r.varType,
-        varObj: r.varObj,
-        refType: r.refType,
-        _varId: r.varObj && r.varObj.id,
-        _refType: r.refType,
-        _ref: Object.assign({}, r, {
-          id: r.varObj && r.varObj.id,
-          refType: r.refType
-        })
-      }))
+      return buildPickerOptions({ refs: this.projectRefs })
     },
     selectedVarPickerOptions() {
       if (typeof this.collectSelectedVarItems !== 'function') return []

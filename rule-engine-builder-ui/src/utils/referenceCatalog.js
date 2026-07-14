@@ -173,6 +173,27 @@ export function buildDetailReferenceState(catalog) {
   return { items, groups }
 }
 
+/** 将统一引用目录转换为 VarPicker/OperandPicker 的扁平选项。 */
+export function buildPickerOptions(catalog) {
+  return ((catalog && catalog.refs) || []).map(ref => ({
+    id: ref.id,
+    varCode: ref.refCode,
+    varLabel: ref.displayName,
+    varLabelText: ref.refLabel && ref.refLabel.label,
+    varCodeText: ref.refCode,
+    varType: ref.varType,
+    varObj: ref.varObj,
+    refType: ref.refType,
+    constantValue: ref.constantValue,
+    _varId: ref.id,
+    _refType: ref.refType,
+    _ref: Object.assign({}, ref, {
+      id: ref.id,
+      refType: ref.refType
+    })
+  }))
+}
+
 export function buildDetailReferenceMap(state) {
   const map = {}
   const items = (state && state.items) || []

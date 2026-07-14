@@ -250,7 +250,7 @@
     </el-tabs>
 
     <!-- Create/Edit Variable Dialog -->
-    <el-dialog :title="variableDialogTitle" :visible.sync="dialogVisible" width="600px" :close-on-click-modal="false">
+    <el-dialog :title="variableDialogTitle" :visible.sync="dialogVisible" :width="form.varSource === 'LIST' ? '760px' : '600px'" :close-on-click-modal="false">
       <el-form ref="form" :model="form" :rules="rules" label-width="120px" size="small">
         <el-form-item v-if="!form.id && isObjectField && objectFieldParentId" label="所属数据对象">
           <span class="text-muted">{{ getObjectCode(objectFieldParentId) }}</span>
@@ -262,7 +262,7 @@
           </el-select>
         </el-form-item>
         <el-form-item v-if="!isObjectField && form.scope === 'PROJECT'" label="项目名称" prop="projectId">
-          <el-select v-model="form.projectId" placeholder="请选择项目" style="width:100%;" filterable clearable>
+          <el-select v-model="form.projectId" placeholder="请选择项目" style="width:100%;" filterable clearable @change="onVariableProjectChange">
             <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
           </el-select>
         </el-form-item>
@@ -346,8 +346,8 @@
           </el-form-item>
         </template>
         <template v-if="!isObjectField && form.varSource === 'LIST'">
-          <el-form-item label="名单库">
-            <el-select v-model="form.listId" filterable clearable placeholder="选择名单库" style="width:100%;">
+          <el-form-item label="名单库（多选）">
+            <el-select v-model="form.listIds" multiple collapse-tags filterable clearable placeholder="选择一个或多个名单库" style="width:100%;">
               <el-option
                 v-for="item in listLibraryOptions"
                 :key="item.id"
@@ -356,10 +356,31 @@
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="查询字段">
-            <el-input v-model="form.listQueryField" placeholder="如 request.mobile 或 mobile" />
+          <el-form-item label="查询表达式">
+            <div v-for="(operand, index) in form.listQueryOperands" :key="index" class="list-query-row">
+              <operand-picker
+                :value="operand"
+                :vars="listReferenceOptions"
+                :functions="listFunctionOptions"
+                :list-options="listLibraryOptions"
+                :allowed-kinds="listQueryOperandKinds"
+                context="LIST_QUERY_VALUE"
+                :placeholder="'选择第 ' + (index + 1) + ' 个查询字段或表达式'"
+                editor-title="配置名单查询表达式"
+                @input="value => setListQueryOperand(index, value)"
+              />
+              <el-button type="text" class="list-query-remove" :disabled="form.listQueryOperands.length <= 1" @click="removeListQueryOperand(index)">删除</el-button>
+            </div>
+            <el-button type="text" icon="el-icon-plus" @click="addListQueryOperand">增加查询表达式</el-button>
+            <div class="field-help">每一项都可组合字段、函数、阈值和运算符；引用按字段 ID 保存。</div>
           </el-form-item>
-          <el-form-item label="匹配方式">
+          <el-form-item label="组合模式">
+            <el-select v-model="form.listCombinationMode" style="width:100%;">
+              <el-option v-for="opt in listCombinationModeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            </el-select>
+            <div class="field-help">{{ listCombinationDescription }}</div>
+          </el-form-item>
+          <el-form-item label="名单匹配">
             <el-select v-model="form.listMatchMode" style="width:100%;">
               <el-option v-for="opt in listMatchModeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
             </el-select>
@@ -370,11 +391,11 @@
             </el-select>
           </el-form-item>
           <el-form-item label="返回模式">
-            <el-select v-model="form.listReturnMode" style="width:180px;">
-              <el-option label="命中 1 / 未命中 0" value="NUMBER" />
-              <el-option label="布尔值 true/false" value="BOOLEAN" />
-            </el-select>
-            <el-switch v-model="form.listForceRefresh" active-text="强制刷新" style="margin-left:12px;" />
+            <el-radio-group v-model="form.listReturnMode" @change="onListReturnModeChange">
+              <el-radio-button label="NUMBER">命中 1 / 未命中 0</el-radio-button>
+              <el-radio-button label="BOOLEAN">true / false</el-radio-button>
+            </el-radio-group>
+            <div class="field-help">返回模式会同步当前变量的数据类型，避免运行时类型不一致。</div>
           </el-form-item>
         </template>
         <el-form-item v-if="!isObjectField" label="默认值">
@@ -726,26 +747,33 @@
 </template>
 
 <script>
-import { listVariables, createVariable, updateVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
+import { listVariables, listVariablesByProject, createVariable, updateVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
-import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject } from '@/api/dataObject'
+import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject, getVariableTree } from '@/api/dataObject'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
+import { listAllFunctionsByProject } from '@/api/function'
+import { listAllModelsByProject } from '@/api/model'
 import { VAR_TYPE_FILTER_OPTIONS, VAR_TYPE_FORM_OPTIONS, varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
+import { LIST_COMBINATION_MODES, LIST_MATCH_MODES, listCombinationMode } from '@/constants/listMatchModes'
+import { getExpressionContext } from '@/constants/expressionContexts'
 import { formatConstantValue, hasConstantValue } from '@/utils/constantValue'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { collectReferencePaths, collectReferencePathsFromText, sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
 import { normalizeTestSchema } from '@/utils/testSchema'
 import { normalizeTestResult } from '@/utils/testResult'
+import { cloneOperand, collectOperandReferences, operandDisplay, validateOperand } from '@/utils/operand'
+import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 
 export default {
   name: 'VariableList',
-  components: { MonacoEditor, RemoteFilterSelect },
+  components: { MonacoEditor, OperandPicker, RemoteFilterSelect },
   data() {
     return {
       activeTab: 'list',
@@ -787,6 +815,9 @@ export default {
         apiConfigOptions: [],
         dbDatasourceOptions: [],
         listLibraryOptions: [],
+        listReferenceOptions: [],
+        listFunctionOptions: [],
+        listReferenceProjectId: null,
         sourceOptionsLoaded: { API: false, DB: false, LIST: false },
         listItemTypeOptions: [
           { label: '手机号', value: 'MOBILE' },
@@ -800,12 +831,9 @@ export default {
           { label: '银行卡', value: 'BANK_CARD' },
           { label: '其他', value: 'OTHER' }
         ],
-        listMatchModeOptions: [
-          { label: '在名单内（精确匹配）', value: 'IN_LIST' },
-          { label: '不在名单内（精确排除）', value: 'NOT_IN_LIST' },
-          { label: '被名单内容包含（名单内容包含输入值）', value: 'CONTAINED_IN_LIST' },
-          { label: '未被名单内容包含', value: 'NOT_CONTAINED_IN_LIST' }
-        ],
+        listCombinationModeOptions: LIST_COMBINATION_MODES,
+        listMatchModeOptions: LIST_MATCH_MODES,
+        listQueryOperandKinds: getExpressionContext('LIST_QUERY_VALUE').allowedKinds,
         rules: {
         varCode: [{ required: true, message: '请输入变量编码', trigger: 'blur' }],
         varLabel: [{ required: true, message: '请输入变量名称', trigger: 'blur' }],
@@ -947,6 +975,9 @@ export default {
         return '请输入名单查询字段对应的上下文值，系统会按名单匹配方式返回命中结果。'
       }
       return '请输入该变量取数所需的上下文字段。'
+    },
+    listCombinationDescription() {
+      return listCombinationMode(this.form.listCombinationMode).description
     }
   },
   methods: {
@@ -1002,12 +1033,12 @@ export default {
           dbForceRefresh: false,
           dbExceptionStrategy: 'ERROR',
           dbFallbackValue: '',
-          listId: '',
-          listQueryField: '',
+          listIds: [],
+          listQueryOperands: [null],
+          listCombinationMode: 'ANY_FIELD_ANY_LIST',
           listMatchMode: 'IN_LIST',
           listItemTypes: [],
           listReturnMode: 'NUMBER',
-          listForceRefresh: false,
           refObjectCode: '',
           defaultValue: '',
           valueRange: '',
@@ -1018,7 +1049,12 @@ export default {
         }
       },
       async onVarSourceChange(source) {
+        if (source === 'LIST') this.onListReturnModeChange(this.form.listReturnMode)
         await this.loadVariableSourceOptions(source)
+      },
+      async onVariableProjectChange() {
+        this.listReferenceProjectId = null
+        if (this.form.varSource === 'LIST') await this.loadListExpressionOptions()
       },
       async loadVariableSourceOptions(source) {
         if (source === 'API' && !this.sourceOptionsLoaded.API) {
@@ -1048,6 +1084,45 @@ export default {
             this.listLibraryOptions = []
           }
         }
+        if (source === 'LIST') await this.loadListExpressionOptions()
+      },
+      normalizeSourceList(res) {
+        const data = res && res.data !== undefined ? res.data : res
+        if (Array.isArray(data)) return data
+        return data && Array.isArray(data.records) ? data.records : []
+      },
+      async loadListExpressionOptions() {
+        const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
+        if (projectId === '' || projectId == null) {
+          this.listReferenceOptions = []
+          this.listFunctionOptions = []
+          return
+        }
+        if (String(this.listReferenceProjectId) === String(projectId) && this.listReferenceOptions.length) return
+        try {
+          const [variableRes, objectRes, functionRes, modelRes] = await Promise.all([
+            listVariablesByProject(projectId),
+            getVariableTree(projectId),
+            listAllFunctionsByProject(projectId),
+            listAllModelsByProject(projectId)
+          ])
+          const objectData = objectRes && objectRes.data !== undefined ? objectRes.data : objectRes
+          const objectTree = Array.isArray(objectData) ? objectData : ((objectData && objectData.tree) || [])
+          const catalog = buildReferenceCatalog(
+            this.normalizeSourceList(variableRes),
+            objectTree,
+            this.normalizeSourceList(modelRes)
+          )
+          this.listReferenceOptions = buildPickerOptions(catalog).filter(option => {
+            return !(this.form.id != null && option._refType === 'VARIABLE' && String(option._varId) === String(this.form.id))
+          })
+          this.listFunctionOptions = this.normalizeSourceList(functionRes)
+          this.listReferenceProjectId = projectId
+        } catch (e) {
+          this.listReferenceOptions = []
+          this.listFunctionOptions = []
+          this.$message.warning('名单查询字段加载失败，请检查项目后重试')
+        }
       },
       applySourceConfigToForm() {
         const config = this.parseJsonSafe(this.form.sourceConfig, {})
@@ -1068,12 +1143,15 @@ export default {
           this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
           this.form.dbFallbackValue = config.fallbackValue != null ? String(config.fallbackValue) : ''
         } else if (this.form.varSource === 'LIST') {
-          this.form.listId = config.listId || config.listLibraryId || ''
-          this.form.listQueryField = config.queryField || config.queryPath || config.field || ''
-          this.form.listMatchMode = config.matchMode || config.operator || 'IN_LIST'
-          this.form.listItemTypes = Array.isArray(config.itemTypes) ? config.itemTypes : (config.itemType ? [config.itemType] : [])
+          this.form.listIds = Array.isArray(config.listIds) ? config.listIds.slice() : []
+          this.form.listQueryOperands = Array.isArray(config.queryOperands) && config.queryOperands.length
+            ? config.queryOperands.map(cloneOperand)
+            : [null]
+          this.form.listCombinationMode = config.combinationMode || 'ANY_FIELD_ANY_LIST'
+          this.form.listMatchMode = config.matchMode || 'IN_LIST'
+          this.form.listItemTypes = Array.isArray(config.itemTypes) ? config.itemTypes.slice() : []
           this.form.listReturnMode = config.returnMode || 'NUMBER'
-          this.form.listForceRefresh = config.forceRefresh === true
+          this.onListReturnModeChange(this.form.listReturnMode)
         }
       },
       parseJsonSafe(text, fallback) {
@@ -1127,22 +1205,30 @@ export default {
             fallbackValue: payload.dbFallbackValue || null
           })
         } else if (payload.varSource === 'LIST') {
-          if (!payload.listId) {
-            this.$message.warning('请选择名单库')
+          if (!Array.isArray(payload.listIds) || !payload.listIds.length) {
+            this.$message.warning('请至少选择一个名单库')
             return null
           }
-          if (!payload.listQueryField || !payload.listQueryField.trim()) {
-            this.$message.warning('请输入名单查询字段')
+          if (!Array.isArray(payload.listQueryOperands) || !payload.listQueryOperands.length) {
+            this.$message.warning('请至少配置一个名单查询表达式')
             return null
+          }
+          for (let index = 0; index < payload.listQueryOperands.length; index++) {
+            const errors = validateOperand(payload.listQueryOperands[index], { allowedKinds: this.listQueryOperandKinds })
+            if (errors.length) {
+              this.$message.warning('第 ' + (index + 1) + ' 个名单查询表达式：' + errors[0].message)
+              return null
+            }
           }
           payload.sourceConfig = JSON.stringify({
-            listId: payload.listId,
-            queryField: payload.listQueryField.trim(),
+            listIds: payload.listIds.slice(),
+            queryOperands: payload.listQueryOperands.map(cloneOperand),
+            combinationMode: payload.listCombinationMode || 'ANY_FIELD_ANY_LIST',
             matchMode: payload.listMatchMode || 'IN_LIST',
             itemTypes: payload.listItemTypes || [],
-            returnMode: payload.listReturnMode || 'NUMBER',
-            forceRefresh: payload.listForceRefresh === true
+            returnMode: payload.listReturnMode || 'NUMBER'
           })
+          payload.varType = payload.listReturnMode === 'BOOLEAN' ? 'BOOLEAN' : 'NUMBER'
         } else {
           payload.sourceConfig = null
         }
@@ -1161,9 +1247,22 @@ export default {
     removeSourceFormFields(payload) {
       const sourceFormFields = ['apiConfigId', 'apiParamMapping', 'apiResultPath', 'apiForceRefresh', 'apiExceptionStrategy', 'apiFallbackValue',
         'dbDatasourceId', 'dbSql', 'dbParams', 'dbResultPath', 'dbMaxRows', 'dbForceRefresh', 'dbExceptionStrategy', 'dbFallbackValue',
-        'listId', 'listQueryField', 'listMatchMode', 'listItemTypes', 'listReturnMode', 'listForceRefresh'
+        'listIds', 'listQueryOperands', 'listCombinationMode', 'listMatchMode', 'listItemTypes', 'listReturnMode'
       ]
       sourceFormFields.forEach(key => { delete payload[key] })
+    },
+    setListQueryOperand(index, operand) {
+      this.$set(this.form.listQueryOperands, index, cloneOperand(operand))
+    },
+    addListQueryOperand() {
+      this.form.listQueryOperands.push(null)
+    },
+    removeListQueryOperand(index) {
+      if (this.form.listQueryOperands.length <= 1) return
+      this.form.listQueryOperands.splice(index, 1)
+    },
+    onListReturnModeChange(mode) {
+      this.form.varType = mode === 'BOOLEAN' ? 'BOOLEAN' : 'NUMBER'
     },
       async loadProjects() {
       try {
@@ -1655,6 +1754,7 @@ export default {
       if (val === 'GLOBAL') {
         this.form.projectId = 0
       }
+      this.onVariableProjectChange()
     },
     handleSubmit() {
       this.$refs.form.validate(async (valid) => {
@@ -1750,9 +1850,14 @@ export default {
           rows.push({ field: paths.length ? paths.join(', ') : ('参数' + (index + 1)), usage: 'SQL占位参数 #' + (index + 1), expression: String(item || '') })
         })
       } else if (row && row.varSource === 'LIST') {
-        const expression = config.queryField || config.queryPath || config.field || ''
-        const paths = collectReferencePaths(expression, { allowBarePath: true })
-        if (expression) rows.push({ field: paths.length ? paths.join(', ') : expression, usage: '名单匹配字段', expression: String(expression) })
+        ;(config.queryOperands || []).forEach((operand, index) => {
+          const refs = collectOperandReferences(operand)
+          rows.push({
+            field: refs.length ? refs.map(ref => ref.code || ref.path).join(', ') : '无字段依赖',
+            usage: '名单查询表达式 #' + (index + 1),
+            expression: operandDisplay(operand)
+          })
+        })
       }
       return rows
     },
@@ -1787,7 +1892,12 @@ export default {
           collectReferencePaths(item, { allowBarePath: true }).forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
         })
       } else if (row && row.varSource === 'LIST') {
-        collectReferencePaths(config.queryField || config.queryPath || config.field, { allowBarePath: true }).forEach(path => setPathValue(sample, path, this.sampleValueForPath(path)))
+        ;(config.queryOperands || []).forEach(operand => {
+          collectOperandReferences(operand).forEach(ref => {
+            const path = ref.code || ref.path
+            if (path) setPathValue(sample, path, this.sampleValueForPath(path))
+          })
+        })
       }
       return this.formatJson(sample)
     },
@@ -1862,7 +1972,7 @@ export default {
         return '执行规则时按配置的查询条件读取数据库结果，再将结果写入当前变量。'
       }
       if (row && row.varSource === 'LIST') {
-        return '执行规则时使用指定字段到名单库中匹配，返回是否命中或命中明细。'
+        return '执行规则时计算一个或多个查询表达式，并按所选组合模式到一个或多个名单库中匹配。'
       }
       return '当前变量使用普通输入或计算方式。'
     },
@@ -1887,13 +1997,16 @@ export default {
         ]
       }
       if (row && row.varSource === 'LIST') {
-        const listId = config.listId || config.listLibraryId
-        const library = (this.listLibraryOptions || []).find(item => String(item.id) === String(listId))
+        const listNames = (config.listIds || []).map(listId => {
+          const library = (this.listLibraryOptions || []).find(item => String(item.id) === String(listId))
+          return library ? (library.listName || library.listCode) : ('名单ID ' + listId)
+        })
         return [
-          { label: '名单库', value: library ? (library.listName || library.listCode) : (listId ? '名单ID ' + listId : '未配置') },
-          { label: '匹配字段', value: config.queryField || config.queryPath || config.field || '未配置' },
-          { label: '匹配方式', value: this.listMatchModeLabel(config.matchMode || config.operator) },
-          { label: '返回结果', value: config.returnMode === 'DETAIL' ? '命中明细' : '是否命中/命中数量' }
+          { label: '名单库', value: listNames.length ? listNames.join('、') : '未配置' },
+          { label: '查询表达式', value: (config.queryOperands || []).map(operandDisplay).join('；') || '未配置' },
+          { label: '组合模式', value: listCombinationMode(config.combinationMode).label },
+          { label: '匹配方式', value: this.listMatchModeLabel(config.matchMode) },
+          { label: '返回结果', value: config.returnMode === 'BOOLEAN' ? 'true / false' : '命中 1 / 未命中 0' }
         ]
       }
       return []
@@ -2112,6 +2225,9 @@ export default {
 .text-muted { color:#909399; font-size:13px; }
 .field-help { color:#64748b; font-size:12px; line-height:1.6; margin-top:4px; }
 .field-help code { color:#1e40af; background:#eff6ff; border-radius:3px; padding:0 4px; }
+.list-query-row { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+.list-query-row .operand-picker { flex:1; min-width:0; }
+.list-query-remove { flex:none; color:#ef6b73 !important; }
 
 /* 变量列表分区样式 */
 .var-list-section { margin-bottom:24px; }
