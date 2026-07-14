@@ -4,20 +4,35 @@ export const OPERAND_KINDS = Object.freeze({
   LITERAL: 'LITERAL',
   PATH: 'PATH',
   REFERENCE: 'REFERENCE',
-  FUNCTION: 'FUNCTION'
+  FUNCTION: 'FUNCTION',
+  OPERATION: 'OPERATION',
+  ACCESS: 'ACCESS',
+  CAST: 'CAST',
+  ARRAY: 'ARRAY',
+  LIST_QUERY: 'LIST_QUERY'
 })
 
 export const READ_OPERAND_KINDS = Object.freeze([
   OPERAND_KINDS.PATH,
   OPERAND_KINDS.REFERENCE,
-  OPERAND_KINDS.FUNCTION
+  OPERAND_KINDS.FUNCTION,
+  OPERAND_KINDS.OPERATION,
+  OPERAND_KINDS.ACCESS,
+  OPERAND_KINDS.CAST,
+  OPERAND_KINDS.ARRAY,
+  OPERAND_KINDS.LIST_QUERY
 ])
 
 export const VALUE_OPERAND_KINDS = Object.freeze([
   OPERAND_KINDS.LITERAL,
   OPERAND_KINDS.PATH,
   OPERAND_KINDS.REFERENCE,
-  OPERAND_KINDS.FUNCTION
+  OPERAND_KINDS.FUNCTION,
+  OPERAND_KINDS.OPERATION,
+  OPERAND_KINDS.ACCESS,
+  OPERAND_KINDS.CAST,
+  OPERAND_KINDS.ARRAY,
+  OPERAND_KINDS.LIST_QUERY
 ])
 
 export const WRITE_OPERAND_KINDS = Object.freeze([
@@ -84,6 +99,121 @@ export function createFunctionOperand(fn, args = []) {
   }
 }
 
+export function createOperationOperand(operator, operands = [], valueType = '') {
+  return {
+    kind: OPERAND_KINDS.OPERATION,
+    operator: operator || '',
+    operands: Array.isArray(operands) ? operands : [],
+    valueType: valueType || ''
+  }
+}
+
+export function createAccessOperand(target, accessType, accessor, valueType = '') {
+  return {
+    kind: OPERAND_KINDS.ACCESS,
+    target: target || null,
+    accessType: String(accessType || 'KEY').toUpperCase(),
+    accessor: accessor || null,
+    valueType: valueType || ''
+  }
+}
+
+export function createCastOperand(targetType, operand) {
+  const normalized = normalizeType(targetType)
+  return {
+    kind: OPERAND_KINDS.CAST,
+    targetType: normalized,
+    operand: operand || null,
+    valueType: normalized
+  }
+}
+
+export function createArrayOperand(items = []) {
+  return {
+    kind: OPERAND_KINDS.ARRAY,
+    items: Array.isArray(items) ? items : [],
+    valueType: 'LIST'
+  }
+}
+
+export function createListQueryOperand(config = {}) {
+  return {
+    kind: OPERAND_KINDS.LIST_QUERY,
+    listIds: Array.isArray(config.listIds) ? config.listIds.slice() : [],
+    itemTypes: Array.isArray(config.itemTypes) ? config.itemTypes.slice() : [],
+    combinationMode: config.combinationMode || '',
+    matchMode: config.matchMode || '',
+    valueType: 'BOOLEAN'
+  }
+}
+
+export function cloneOperand(operand) {
+  if (operand == null) return operand
+  return JSON.parse(JSON.stringify(operand))
+}
+
+export function operandChildren(operand) {
+  if (!operand || !operand.kind) return []
+  if (operand.kind === OPERAND_KINDS.FUNCTION) return operand.args || []
+  if (operand.kind === OPERAND_KINDS.OPERATION) return operand.operands || []
+  if (operand.kind === OPERAND_KINDS.ACCESS) return [operand.target, operand.accessor]
+  if (operand.kind === OPERAND_KINDS.CAST) return [operand.operand]
+  if (operand.kind === OPERAND_KINDS.ARRAY) return operand.items || []
+  return []
+}
+
+export function inferOperandType(operand) {
+  if (!operand || !operand.kind) return ''
+  if (operand.kind === OPERAND_KINDS.CAST) return normalizeType(operand.targetType)
+  if (operand.kind === OPERAND_KINDS.ARRAY) return 'LIST'
+  if (operand.kind === OPERAND_KINDS.LIST_QUERY) return 'BOOLEAN'
+  if (operand.kind === OPERAND_KINDS.OPERATION && ['&&', '||', '!', '==', '!=', '>', '>=', '<', '<='].includes(operand.operator)) return 'BOOLEAN'
+  if (operand.valueType) return normalizeType(operand.valueType)
+  if (operand.kind === OPERAND_KINDS.OPERATION) {
+    const first = (operand.operands || []).find(Boolean)
+    return inferOperandType(first)
+  }
+  return ''
+}
+
+export function validateOperand(operand, options = {}) {
+  const errors = []
+  const allowedKinds = Array.isArray(options.allowedKinds) ? options.allowedKinds : null
+  const visit = (current, path) => {
+    if (!current || !current.kind) {
+      errors.push({ path, message: '表达式参数不能为空' })
+      return
+    }
+    if (allowedKinds && !allowedKinds.includes(current.kind)) {
+      errors.push({ path, message: '当前配置位置不支持' + operandKindName(current.kind) })
+      return
+    }
+    if (current.kind === OPERAND_KINDS.REFERENCE && (current.refId == null || !current.refType)) {
+      errors.push({ path, message: '受管字段引用缺少 ID 或引用类型' })
+    }
+    if (current.kind === OPERAND_KINDS.FUNCTION && !current.functionCode) {
+      errors.push({ path, message: '方法编码不能为空' })
+    }
+    if (current.kind === OPERAND_KINDS.OPERATION && !current.operator) {
+      errors.push({ path, message: '运算符不能为空' })
+    }
+    if (current.kind === OPERAND_KINDS.ACCESS && !current.accessType) {
+      errors.push({ path, message: '访问方式不能为空' })
+    }
+    if (current.kind === OPERAND_KINDS.CAST && !current.targetType) {
+      errors.push({ path, message: '转换目标类型不能为空' })
+    }
+    if (current.kind === OPERAND_KINDS.LIST_QUERY) {
+      if (!(current.listIds || []).length) errors.push({ path, message: '名单查询至少选择一个名单' })
+      if (!current.combinationMode) errors.push({ path, message: '名单组合模式不能为空' })
+      if (!current.matchMode) errors.push({ path, message: '名单匹配模式不能为空' })
+    }
+    operandChildEntries(current).forEach(entry => visit(entry.value, path + entry.path))
+  }
+  visit(operand, 'root')
+  return errors
+}
+
 export function resolvePathOperand(operand, options = []) {
   const source = operand && operand.kind === OPERAND_KINDS.PATH
     ? { ...operand }
@@ -134,6 +264,28 @@ export function compileOperand(operand) {
     const args = (operand.args || []).map(compileOperand).join(', ')
     return (operand.functionCode || '') + '(' + args + ')'
   }
+  if (operand.kind === OPERAND_KINDS.OPERATION) {
+    const values = (operand.operands || []).map(compileOperand)
+    if (values.length === 1) return '(' + (operand.operator || '') + values[0] + ')'
+    return '(' + values.join(' ' + (operand.operator || '') + ' ') + ')'
+  }
+  if (operand.kind === OPERAND_KINDS.ACCESS) {
+    const fn = String(operand.accessType || '').toUpperCase() === 'INDEX' ? 'arrGet' : 'objGet'
+    return fn + '(' + compileOperand(operand.target) + ', ' + compileOperand(operand.accessor) + ')'
+  }
+  if (operand.kind === OPERAND_KINDS.CAST) {
+    const fn = castFunction(operand.targetType)
+    return fn + '(' + compileOperand(operand.operand) + ')'
+  }
+  if (operand.kind === OPERAND_KINDS.ARRAY) {
+    return '[' + (operand.items || []).map(compileOperand).join(', ') + ']'
+  }
+  if (operand.kind === OPERAND_KINDS.LIST_QUERY) {
+    return 'listQuery(' + compileListLiteral(operand.listIds, 'NUMBER') + ', '
+      + compileListLiteral(operand.itemTypes, 'STRING') + ', '
+      + compileLiteral(operand.combinationMode, 'STRING') + ', '
+      + compileLiteral(operand.matchMode, 'STRING') + ')'
+  }
   return ''
 }
 
@@ -160,9 +312,7 @@ export function collectOperandReferences(operand, out = []) {
       }
       return
     }
-    if (current.kind === OPERAND_KINDS.FUNCTION) {
-      (current.args || []).forEach(visit)
-    }
+    operandChildren(current).forEach(visit)
   }
   visit(operand)
   return result
@@ -170,15 +320,8 @@ export function collectOperandReferences(operand, out = []) {
 
 export function syncOperandReference(operand, options = []) {
   if (!operand || !operand.kind) return { operand, changed: false }
-  if (operand.kind === OPERAND_KINDS.FUNCTION) {
-    let changed = false
-    const args = (operand.args || []).map(arg => {
-      const result = syncOperandReference(arg, options)
-      if (result.changed) changed = true
-      return result.operand
-    })
-    return { operand: changed ? { ...operand, args } : operand, changed }
-  }
+  const nested = syncOperandChildren(operand, options)
+  if (nested) return nested
   if (operand.kind !== OPERAND_KINDS.PATH && operand.kind !== OPERAND_KINDS.REFERENCE) {
     return { operand, changed: false }
   }
@@ -206,6 +349,9 @@ export function operandDisplay(operand) {
   if (operand.kind === OPERAND_KINDS.FUNCTION) {
     return compileOperand(operand)
   }
+  if ([OPERAND_KINDS.OPERATION, OPERAND_KINDS.ACCESS, OPERAND_KINDS.CAST, OPERAND_KINDS.ARRAY, OPERAND_KINDS.LIST_QUERY].includes(operand.kind)) {
+    return compileOperand(operand)
+  }
   const code = operand.code || operand.value || ''
   const label = operand.label || ''
   if (operand.refType === 'CONSTANT' && Object.prototype.hasOwnProperty.call(operand, 'constantValue')) {
@@ -219,6 +365,11 @@ export function operandKindMeta(operand) {
   if (!operand || !operand.kind) return { label: '', tone: 'empty' }
   if (operand.kind === OPERAND_KINDS.LITERAL) return { label: '阈值', tone: 'literal' }
   if (operand.kind === OPERAND_KINDS.FUNCTION) return { label: '方法', tone: 'function' }
+  if (operand.kind === OPERAND_KINDS.OPERATION) return { label: '运算', tone: 'operation' }
+  if (operand.kind === OPERAND_KINDS.ACCESS) return { label: '取值', tone: 'access' }
+  if (operand.kind === OPERAND_KINDS.CAST) return { label: '转换', tone: 'cast' }
+  if (operand.kind === OPERAND_KINDS.ARRAY) return { label: '数组', tone: 'array' }
+  if (operand.kind === OPERAND_KINDS.LIST_QUERY) return { label: '名单', tone: 'list-query' }
   const source = referenceTypeMeta(operand.refType)
   if (operand.kind === OPERAND_KINDS.PATH) {
     return source.label
@@ -286,12 +437,77 @@ function compileLiteral(value, valueType) {
   return quoteString(text)
 }
 
+function compileListLiteral(values, valueType) {
+  return '[' + (values || []).map(value => compileLiteral(value, valueType)).join(', ') + ']'
+}
+
+function castFunction(targetType) {
+  const type = normalizeType(targetType)
+  if (type === 'NUMBER') return 'toNumberValue'
+  if (type === 'BOOLEAN') return 'toBooleanValue'
+  if (type === 'LIST') return 'toListValue'
+  if (type === 'MAP' || type === 'OBJECT') return 'toMapValue'
+  return 'toStringValue'
+}
+
 function normalizeType(valueType) {
   const type = String(valueType || 'STRING').toUpperCase()
   if (['BYTE', 'SHORT', 'INT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL', 'BIGDECIMAL', 'PROBABILITY'].includes(type)) return 'NUMBER'
   if (type === 'BOOL') return 'BOOLEAN'
   if (['ARRAY', 'SET', 'COLLECTION'].includes(type)) return 'LIST'
   return type
+}
+
+function operandChildEntries(operand) {
+  if (!operand || !operand.kind) return []
+  if (operand.kind === OPERAND_KINDS.FUNCTION) return (operand.args || []).map((value, index) => ({ path: '.args[' + index + ']', value }))
+  if (operand.kind === OPERAND_KINDS.OPERATION) return (operand.operands || []).map((value, index) => ({ path: '.operands[' + index + ']', value }))
+  if (operand.kind === OPERAND_KINDS.ACCESS) return [{ path: '.target', value: operand.target }, { path: '.accessor', value: operand.accessor }]
+  if (operand.kind === OPERAND_KINDS.CAST) return [{ path: '.operand', value: operand.operand }]
+  if (operand.kind === OPERAND_KINDS.ARRAY) return (operand.items || []).map((value, index) => ({ path: '.items[' + index + ']', value }))
+  return []
+}
+
+function syncOperandChildren(operand, options) {
+  let key = null
+  if (operand.kind === OPERAND_KINDS.FUNCTION) key = 'args'
+  if (operand.kind === OPERAND_KINDS.OPERATION) key = 'operands'
+  if (operand.kind === OPERAND_KINDS.ARRAY) key = 'items'
+  if (key) {
+    let changed = false
+    const children = (operand[key] || []).map(child => {
+      const result = syncOperandReference(child, options)
+      if (result.changed) changed = true
+      return result.operand
+    })
+    return { operand: changed ? { ...operand, [key]: children } : operand, changed }
+  }
+  if (operand.kind === OPERAND_KINDS.ACCESS) {
+    const target = syncOperandReference(operand.target, options)
+    const accessor = syncOperandReference(operand.accessor, options)
+    const changed = target.changed || accessor.changed
+    return { operand: changed ? { ...operand, target: target.operand, accessor: accessor.operand } : operand, changed }
+  }
+  if (operand.kind === OPERAND_KINDS.CAST) {
+    const child = syncOperandReference(operand.operand, options)
+    return { operand: child.changed ? { ...operand, operand: child.operand } : operand, changed: child.changed }
+  }
+  return null
+}
+
+function operandKindName(kind) {
+  const names = {
+    LITERAL: '阈值',
+    PATH: '路径',
+    REFERENCE: '字段',
+    FUNCTION: '方法',
+    OPERATION: '运算',
+    ACCESS: '取值',
+    CAST: '类型转换',
+    ARRAY: '数组',
+    LIST_QUERY: '名单查询'
+  }
+  return names[kind] || '表达式节点'
 }
 
 function quoteString(value) {
