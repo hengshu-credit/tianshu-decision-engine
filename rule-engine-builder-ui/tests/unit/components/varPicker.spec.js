@@ -20,6 +20,9 @@ function mountPicker(propsData = {}) {
       'el-tooltip': {
         template: '<span><slot /></span>'
       },
+      'el-button': {
+        template: '<button><slot /></button>'
+      },
       'el-pagination': {
         template: '<div />'
       }
@@ -292,7 +295,7 @@ describe('VarPicker', () => {
     expect(wrapper.vm.filteredRightItems.map(v => v.varCode)).toEqual(['scoreLevel', 'creditScore', 'riskScore'])
   })
 
-  test('reference search switches to the matching category', async () => {
+  test('搜索切换到命中分类但左侧分类和计数保持稳定', async () => {
     const wrapper = mountPicker({
       vars: [
         { varCode: 'age', varLabel: '年龄', varType: 'NUMBER', _ref: { category: 'standalone' } },
@@ -305,8 +308,10 @@ describe('VarPicker', () => {
 
     wrapper.vm.onReferenceInput('credit')
     await Vue.nextTick()
+    await Vue.nextTick()
 
-    expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['model'])
+    expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['standalone', 'model'])
+    expect(wrapper.vm.categoryList.map(c => c.count)).toEqual([1, 1])
     expect(wrapper.vm.activeCategory).toBe('model')
     expect(wrapper.vm.filteredRightItems).toHaveLength(1)
     expect(wrapper.vm.filteredRightItems[0]._modelGroup).toBe(true)
@@ -347,6 +352,19 @@ describe('VarPicker', () => {
     expect(wrapper.vm.panelStyle.width).toBe('720px')
   })
 
+  test('200 个字段搜索前后左侧计数和面板宽度不变化', async () => {
+    const wrapper = mountPicker({ vars: standaloneOptions(200) })
+    await Vue.nextTick()
+    const width = wrapper.vm.panelStyle.width
+
+    expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
+    wrapper.vm.onReferenceInput('v199')
+    await Vue.nextTick()
+
+    expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
+    expect(wrapper.vm.panelStyle.width).toBe(width)
+  })
+
   test('popover resize supports larger panel bounds', () => {
     const wrapper = mountPicker({ vars: standaloneOptions(1) })
     wrapper.vm.$refs.popover = {
@@ -359,6 +377,60 @@ describe('VarPicker', () => {
 
     expect(wrapper.vm.panelWidth).toBe(1440)
     expect(wrapper.vm.panelHeight).toBe(960)
+  })
+
+  test('操作数模式按引用 ID 和类型定位已有字段', async () => {
+    const vars = standaloneOptions(150)
+    const wrapper = mountPicker({
+      operandMode: true,
+      allowedKinds: ['LITERAL', 'REFERENCE'],
+      vars,
+      value: { kind: 'REFERENCE', code: 'oldCode', refId: 99, refType: 'VARIABLE' }
+    })
+    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+
+    wrapper.vm.openPopover()
+    await Vue.nextTick()
+    await Vue.nextTick()
+    await Vue.nextTick()
+
+    expect(wrapper.vm.activeCategory).toBe('standalone')
+    expect(wrapper.vm.currentValue).toBe('v99')
+    expect(wrapper.vm.rightPage).toBe(2)
+  })
+
+  test('空操作数打开后默认聚焦手输阈值', async () => {
+    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'REFERENCE'], vars: standaloneOptions(1) })
+    const focusManualInput = jest.spyOn(wrapper.vm, 'focusManualInput')
+    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+
+    wrapper.vm.openPopover()
+    await Vue.nextTick()
+    await Vue.nextTick()
+
+    expect(wrapper.vm.activeCategory).toBe('manual')
+    expect(wrapper.vm.manualKind).toBe('LITERAL')
+    expect(focusManualInput).toHaveBeenCalled()
+  })
+
+  test('关闭面板前移走弹层内焦点并仅处理当前弹层', () => {
+    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL'], vars: standaloneOptions(1) })
+    const popper = document.createElement('div')
+    const input = document.createElement('input')
+    const reference = document.createElement('button')
+    popper.appendChild(input)
+    document.body.appendChild(popper)
+    document.body.appendChild(reference)
+    wrapper.vm.$refs.popover = { popperElm: popper, doClose: jest.fn() }
+    wrapper.vm.$refs.reference = reference
+    input.focus()
+
+    wrapper.vm.closePopover()
+
+    expect(document.activeElement).toBe(reference)
+    expect(popper.hasAttribute('inert')).toBe(true)
+    document.body.removeChild(popper)
+    document.body.removeChild(reference)
   })
 
   test('object field short code value matches full object option without duplicate display code', async () => {

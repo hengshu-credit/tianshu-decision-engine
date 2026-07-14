@@ -17,7 +17,7 @@
         <expression-palette
           :vars="vars"
           :functions="functions"
-          :allowed-kinds="contextMeta.allowedKinds"
+          :allowed-kinds="effectiveAllowedKinds"
           :expected-type="expectedType || contextMeta.expectedType"
           @insert="insertTemplate"
         />
@@ -71,6 +71,7 @@ export default {
     vars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
     listOptions: { type: Array, default: () => [] },
+    allowedKinds: { type: Array, default: () => [] },
     context: { type: String, default: 'READ_EXPRESSION' },
     expectedType: { type: String, default: '' },
     title: { type: String, default: '配置表达式' }
@@ -87,6 +88,7 @@ export default {
   },
   computed: {
     contextMeta() { return getExpressionContext(this.context) },
+    effectiveAllowedKinds() { return this.allowedKinds.length ? this.allowedKinds : this.contextMeta.allowedKinds },
     selectedNode() { return getExpressionNode(this.draft, this.selectedPath) },
     canUndo() { return this.historyIndex > 0 },
     canRedo() { return this.historyIndex >= 0 && this.historyIndex < this.history.length - 1 },
@@ -174,7 +176,7 @@ export default {
       this.validationErrors = []
     },
     apply() {
-      this.validationErrors = validateOperand(this.draft, { allowedKinds: this.contextMeta.allowedKinds })
+      this.validationErrors = validateOperand(this.draft, { allowedKinds: this.effectiveAllowedKinds })
       if (this.validationErrors.length) return
       const result = cloneOperand(this.draft)
       this.$emit('input', result)

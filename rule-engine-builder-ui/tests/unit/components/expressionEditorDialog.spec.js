@@ -48,4 +48,13 @@ describe('ExpressionEditorDialog', () => {
     wrapper.vm.apply()
     expect(wrapper.emitted().input[0][0]).toEqual({ kind: 'LITERAL', value: '600', valueType: 'NUMBER' })
   })
+
+  test('调用位置可收紧允许的节点类型', () => {
+    const wrapper = mountEditor({ allowedKinds: ['REFERENCE'] })
+    wrapper.vm.insertTemplate({ kind: 'LITERAL', value: '600', valueType: 'NUMBER' })
+    wrapper.vm.apply()
+
+    expect(wrapper.emitted().input).toBeUndefined()
+    expect(wrapper.vm.validationErrors[0].message).toContain('不支持')
+  })
 })

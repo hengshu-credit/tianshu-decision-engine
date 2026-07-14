@@ -71,6 +71,7 @@
               </div>
               <div v-if="manualKind" class="vp-manual-editor">
                 <el-input
+                  ref="manualInput"
                   v-model="manualValue"
                   size="small"
                   clearable
@@ -196,7 +197,9 @@
           </div>
           <div
             slot="reference"
+            ref="reference"
             class="vp-reference"
+            tabindex="-1"
             @click.stop="openPopover"
           >
             <el-input
@@ -370,6 +373,7 @@ export default {
     },
     popoverVisible(val) {
       this.updateDocumentListener(val)
+      this.setPickerInert(!val)
       if (!val) {
         this.searchText = ''
         this.referenceKeyword = ''
@@ -417,6 +421,11 @@ export default {
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
       if (!this.value) return null
+      if (this.operandMode && typeof this.value === 'object') {
+        var operandOption = this.findOptionByIdentity(this.value.refId, this.value.refType) ||
+          this.findOptionByCode(this.value.code || this.value.value)
+        return operandOption ? operandOption.varCode : (this.value.code || this.value.value || null)
+      }
       if (this.valueKey === 'id') {
         var found = this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
         return found ? found.varCode : null
@@ -457,8 +466,7 @@ export default {
         } else if (item.key === 'function') {
           item.count = this.allowsOperandKind('FUNCTION') ? this.functions.length : 0
         } else {
-          var items = this.categoryItems(item.key)
-          item.count = this.searchText ? this.filterItemsByKeyword(items).length : items.length
+          item.count = this.categoryItems(item.key).length
         }
       }.bind(this))
       return list.filter(function (item) {
@@ -880,24 +888,28 @@ export default {
       this.closePopover()
     },
     closePopover() {
-      var doClose = function () {
-        this.popoverVisible = false
-        var popover = this.$refs.popover
-        if (popover && typeof popover.doClose === 'function') {
-          popover.doClose()
-        }
-        this.hidePickerPoppers()
-      }.bind(this)
-      doClose()
-      this.$nextTick(doClose)
-      setTimeout(doClose, 0)
+      this.moveFocusBeforeClose()
+      this.popoverVisible = false
+      var popover = this.$refs.popover
+      if (popover && typeof popover.doClose === 'function') popover.doClose()
+      this.setPickerInert(true)
     },
-    hidePickerPoppers() {
+    moveFocusBeforeClose() {
       if (typeof document === 'undefined') return
-      var poppers = document.querySelectorAll('.var-picker-popover')
-      for (var i = 0; i < poppers.length; i++) {
-        poppers[i].style.display = 'none'
-      }
+      var popover = this.$refs.popover
+      var popper = popover && popover.popperElm
+      var active = document.activeElement
+      if (!popper || !active || !popper.contains(active)) return
+      var reference = this.$refs.reference
+      if (reference && typeof reference.focus === 'function') reference.focus()
+      else if (typeof active.blur === 'function') active.blur()
+    },
+    setPickerInert(inert) {
+      var popover = this.$refs.popover
+      var popper = popover && popover.popperElm
+      if (!popper || !popper.setAttribute) return
+      if (inert) popper.setAttribute('inert', '')
+      else popper.removeAttribute('inert')
     },
     /** 获取选项的实际值（varCode 或 id） */
     getOptionValue(v) {
@@ -937,9 +949,8 @@ export default {
       this.searchText = value || ''
       this.openPopover()
       this.$nextTick(function () {
-        if (this.isGroupedFieldCategory(this.activeCategory) && this.searchText && this.filteredRightItems.length === 1) {
-          this.expandedObject = this.fieldGroupKey(this.filteredRightItems[0]) || this.filteredRightItems[0].varCode
-        }
+        this.switchToSearchMatchCategory()
+        this.$nextTick(this.expandSingleSearchGroup)
       })
     },
     /** 点击输入框时弹出选择器面板 */
@@ -949,15 +960,38 @@ export default {
     openPopover() {
       if (this.groupedByCategory && (this.hasVarOptions || this.operandMode)) {
         var wasVisible = this.popoverVisible
+        this.setPickerInert(false)
         this.popoverVisible = true
         if (!this.referenceKeyword) this.searchText = ''
-        if (!wasVisible) this.$nextTick(this.focusCurrentValueInPicker)
+        if (!wasVisible) {
+          this.$nextTick(function () {
+            if (this.operandMode && !this.value && this.allowsOperandKind('LITERAL')) {
+              this.activeCategory = 'manual'
+              this.selectManualKind('LITERAL')
+              this.focusManualInput()
+            } else {
+              this.focusCurrentValueInPicker()
+            }
+          })
+        }
       }
     },
+    focusManualInput() {
+      this.$nextTick(function () {
+        var input = this.$refs.manualInput
+        if (input && typeof input.focus === 'function') input.focus()
+      })
+    },
     focusCurrentValueInPicker() {
-      var option = this.valueKey === 'id'
-        ? this.findOptionByIdentity(this.value, null)
-        : this.findOptionByCode(this.value)
+      var option
+      if (this.operandMode && this.value && typeof this.value === 'object') {
+        option = this.findOptionByIdentity(this.value.refId, this.value.refType) ||
+          this.findOptionByCode(this.value.code || this.value.value)
+      } else {
+        option = this.valueKey === 'id'
+          ? this.findOptionByIdentity(this.value, null)
+          : this.findOptionByCode(this.value)
+      }
       if (!option) return
 
       var category = this.optionCategory(option)
@@ -1018,6 +1052,18 @@ export default {
           target.scrollIntoView({ block: 'nearest' })
         }
       })
+    },
+    switchToSearchMatchCategory() {
+      if (!this.searchText || this.filteredRightItems.length) return
+      var category = this.categoryList.find(function (item) {
+        return item.key !== 'manual' && this.filterItemsByKeyword(this.categoryItems(item.key)).length > 0
+      }.bind(this))
+      if (category) this.activeCategory = category.key
+    },
+    expandSingleSearchGroup() {
+      if (this.isGroupedFieldCategory(this.activeCategory) && this.searchText && this.filteredRightItems.length === 1) {
+        this.expandedObject = this.fieldGroupKey(this.filteredRightItems[0]) || this.filteredRightItems[0].varCode
+      }
     },
     updateDocumentListener(visible) {
       if (typeof document === 'undefined') return
@@ -1336,7 +1382,7 @@ export default {
   max-height: 960px;
 }
 .vp-left {
-  width: 100px;
+  width: 132px;
   flex-shrink: 0;
   border-right: 1px solid #ebeef5;
   overflow-y: auto;
@@ -1351,7 +1397,9 @@ export default {
   cursor: pointer;
   transition: background 0.15s;
   border-bottom: 1px solid #f5f5f5;
+  white-space: nowrap;
 }
+.vp-cat-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vp-cat-item:hover {
   background: #f5f7fa;
 }
@@ -1362,6 +1410,10 @@ export default {
   border-right: 2px solid #1890ff;
 }
 .vp-cat-count {
+  flex: none;
+  min-width: 24px;
+  box-sizing: border-box;
+  text-align: center;
   font-size: 10px;
   color: #c0c4cc;
   background: #f0f2f5;
