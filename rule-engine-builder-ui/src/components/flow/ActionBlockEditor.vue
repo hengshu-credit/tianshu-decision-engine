@@ -36,13 +36,11 @@
               <el-button type="text" size="mini" class="danger" @click="removeBranch(block, branchIndex)">删除</el-button>
             </div>
             <div v-if="branch.type !== 'else'" class="condition-row">
-              <operand-picker :value="branch.leftOperand" :vars="vars" :functions="functions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setOperand(branch, 'leftOperand', value)" />
-              <el-select v-model="branch.operator" size="mini" class="operator" @change="sync">
-                <el-option label="==" value="==" /><el-option label="!=" value="!=" />
-                <el-option label=">" value=">" /><el-option label=">=" value=">=" />
-                <el-option label="<" value="<" /><el-option label="<=" value="<=" />
+              <operand-picker :value="branch.leftOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setConditionLeftOperand(branch, value)" />
+              <el-select v-model="branch.operator" size="mini" class="operator" @change="onConditionOperatorChange(branch)">
+                <el-option v-for="option in operatorOptions(branch)" :key="option.value" :label="option.label" :value="option.value" />
               </el-select>
-              <operand-picker :value="branch.rightOperand" :vars="vars" :functions="functions" :selected-vars="selectedVars" :allowed-kinds="valueKinds" :expected-type="operandType(branch.leftOperand)" placeholder="选择右操作数" size="mini" @input="value => setOperand(branch, 'rightOperand', value)" />
+              <operand-picker v-if="operatorRequiresValue(branch)" :value="branch.rightOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="rightAllowedKinds(branch)" :context="rightContext(branch)" :expected-type="rightExpectedType(branch)" placeholder="选择右操作数" size="mini" @input="value => setOperand(branch, 'rightOperand', value)" />
             </div>
             <div class="nested-body">
               <div v-for="(action, actionIndex) in branch.actions" :key="actionIndex" class="assignment-with-delete">
@@ -138,11 +136,11 @@
         <template v-else-if="block.type === 'ternary'">
           <assignment-target :block="block" />
           <div class="condition-row">
-            <operand-picker :value="block.leftOperand" :vars="vars" :functions="functions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setOperand(block, 'leftOperand', value)" />
-            <el-select v-model="block.operator" size="mini" class="operator" @change="sync">
-              <el-option label="==" value="==" /><el-option label="!=" value="!=" /><el-option label=">" value=">" /><el-option label="<" value="<" />
+            <operand-picker :value="block.leftOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setConditionLeftOperand(block, value)" />
+            <el-select v-model="block.operator" size="mini" class="operator" @change="onConditionOperatorChange(block)">
+              <el-option v-for="option in operatorOptions(block)" :key="option.value" :label="option.label" :value="option.value" />
             </el-select>
-            <operand-picker :value="block.rightOperand" :vars="vars" :functions="functions" :selected-vars="selectedVars" :allowed-kinds="valueKinds" placeholder="选择右操作数" size="mini" @input="value => setOperand(block, 'rightOperand', value)" />
+            <operand-picker v-if="operatorRequiresValue(block)" :value="block.rightOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="rightAllowedKinds(block)" :context="rightContext(block)" :expected-type="rightExpectedType(block)" placeholder="选择右操作数" size="mini" @input="value => setOperand(block, 'rightOperand', value)" />
           </div>
           <div class="inline-row">
             <span class="mini-label success">真</span>
@@ -203,6 +201,14 @@ import AssignmentRow from './ActionAssignmentRow.vue'
 import AssignmentTarget from './ActionAssignmentTarget.vue'
 import { actionDataToBlocks, BLOCK_TYPES, blocksToActionData, generateScript, newBlock } from '@/utils/actionDataCodegen'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import {
+  conditionOperatorAllowsVarValue,
+  conditionOperatorRequiresValue,
+  findConditionOperator,
+  getConditionOperatorOptions,
+  normalizeConditionOperator
+} from '@/constants/conditionOperators'
+import { inferOperandType } from '@/utils/operand'
 
 export default {
   name: 'ActionBlockEditor',
@@ -213,6 +219,7 @@ export default {
     vars: { type: Array, default: () => [] },
     selectedVars: { type: Array, default: () => [] },
     functions: { type: Array, default: () => [] },
+    listOptions: { type: Array, default: () => [] },
     rules: { type: Array, default: () => [] },
     currentRuleId: { type: [String, Number], default: null },
     currentRuleCode: { type: String, default: '' },
@@ -250,7 +257,39 @@ export default {
     },
     addArrayOperand(values) { values.push(null); this.sync() },
     removeArrayOperand(values, index) { values.splice(index, 1); this.sync() },
-    operandType(operand) { return (operand && operand.valueType) || '' },
+    operandType(operand) { return inferOperandType(operand) || 'STRING' },
+    operatorOptions(holder) { return getConditionOperatorOptions(this.operandType(holder && holder.leftOperand)) },
+    operatorRequiresValue(holder) { return conditionOperatorRequiresValue(holder && holder.operator, this.operandType(holder && holder.leftOperand)) },
+    rightContext(holder) {
+      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+      return (option && option.rightContext) || 'READ_EXPRESSION'
+    },
+    rightExpectedType(holder) {
+      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+      return (option && option.rightValueType) || this.operandType(holder && holder.leftOperand)
+    },
+    rightAllowedKinds(holder) {
+      const context = this.rightContext(holder)
+      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
+      return conditionOperatorAllowsVarValue(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+        ? getExpressionContext(context).allowedKinds
+        : ['LITERAL']
+    },
+    setConditionLeftOperand(holder, value) {
+      this.$set(holder, 'leftOperand', value || null)
+      this.$set(holder, 'operator', normalizeConditionOperator(holder.operator || '==', this.operandType(value)))
+      this.onConditionOperatorChange(holder)
+    },
+    onConditionOperatorChange(holder) {
+      const operator = normalizeConditionOperator(holder.operator || '==', this.operandType(holder.leftOperand))
+      this.$set(holder, 'operator', operator)
+      if (!conditionOperatorRequiresValue(operator, this.operandType(holder.leftOperand))) {
+        this.$set(holder, 'rightOperand', null)
+      } else if (holder.rightOperand && !this.rightAllowedKinds(holder).includes(holder.rightOperand.kind)) {
+        this.$set(holder, 'rightOperand', null)
+      }
+      this.sync()
+    },
     addBlock(type) { this.blocks.push(newBlock(type)); this.sync() },
     removeBlock(index) { this.blocks.splice(index, 1); this.sync() },
     moveBlock(index, direction) {
@@ -383,7 +422,7 @@ export default {
 .assignment-with-delete > :first-child { flex: 1; }
 .eq { color: #909399; font-weight: 600; }
 .mini-label { color: #606266; font-size: 12px; white-space: nowrap; }
-.operator { width: 78px; flex: 0 0 78px; }
+.operator { width: 148px; flex: 0 0 148px; }
 .grow { flex: 1; }
 .wide-button { width: 100%; }
 .button-row { margin-top: 6px; }

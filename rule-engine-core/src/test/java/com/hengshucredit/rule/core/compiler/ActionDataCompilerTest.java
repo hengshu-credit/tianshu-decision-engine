@@ -29,6 +29,20 @@ public class ActionDataCompilerTest {
     }
 
     @Test
+    public void compileListConditionUsesServerListFunction() {
+        JSONArray actionData = JSON.parseArray("[{\"type\":\"if-block\",\"branches\":[{"
+                + "\"type\":\"if\",\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"mobile\",\"valueType\":\"STRING\"},"
+                + "\"operator\":\"in_list\",\"rightOperand\":{\"kind\":\"LIST_QUERY\",\"listIds\":[9,10],"
+                + "\"itemTypes\":[\"MOBILE\"],\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"IN_LIST\"},"
+                + "\"actions\":[{\"type\":\"assign\",\"targetOperand\":{\"kind\":\"PATH\",\"value\":\"hit\"},"
+                + "\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"true\",\"valueType\":\"BOOLEAN\"}}]}]}]");
+
+        String script = ActionDataCompiler.compile(actionData);
+
+        assertTrue(script.contains("listMatch([mobile], [9, 10], \"ANY_FIELD_ANY_LIST\", \"IN_LIST\", [\"MOBILE\"])"));
+    }
+
+    @Test
     public void compileUsesFieldLevelVarIds() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(1L, "scoreInput");

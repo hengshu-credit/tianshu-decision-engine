@@ -89,6 +89,7 @@
                 :vars="varPickerOptions"
                 :selected-vars="selectedVarPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 @update="data => updateRuleActionData(index, data)"
               />
             </div>

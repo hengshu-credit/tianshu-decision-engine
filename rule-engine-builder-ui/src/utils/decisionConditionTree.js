@@ -1,7 +1,5 @@
-import {
-  compileConditionExpression,
-  normalizeConditionOperator
-} from '@/constants/conditionOperators'
+import { normalizeConditionOperator } from '@/constants/conditionOperators'
+import { compileConditionOperands } from '@/utils/conditionOperand'
 import {
   collectOperandReferences,
   compileOperand,
@@ -133,14 +131,5 @@ export function compileConditionTreeExpression(node) {
 
 function compileConditionLeafExpression(leaf) {
   if (!leaf || !leaf.leftOperand) return 'true'
-  const left = compileOperand(leaf.leftOperand)
-  const right = leaf.rightOperand
-  const rightValue = right && right.kind === 'LITERAL' ? right.value : compileOperand(right)
-  return compileConditionExpression(
-    left,
-    leaf.leftOperand.valueType,
-    leaf.operator || '==',
-    rightValue,
-    right && right.kind === 'LITERAL' ? 'CONST' : 'VAR'
-  )
+  return compileConditionOperands(leaf.leftOperand, leaf.operator, leaf.rightOperand)
 }

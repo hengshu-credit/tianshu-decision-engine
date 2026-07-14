@@ -194,6 +194,7 @@
                     :vars="varPickerOptions"
                     :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
+                    :list-options="projectLists"
                     @update="onActionDataUpdate"
                   />
                 </div>

@@ -1,23 +1,12 @@
-import { compileConditionExpression } from '@/constants/conditionOperators'
 import { compileOperand, createLiteralOperand, createPathOperand, OPERAND_KINDS } from '@/utils/operand'
+import { compileConditionOperands } from '@/utils/conditionOperand'
 
 function quoteString(value) {
   return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
 }
 
 function compileCondition(leftOperand, operator, rightOperand) {
-  const left = compileOperand(leftOperand)
-  if (!left) return 'true'
-  const rightValue = rightOperand && rightOperand.kind === OPERAND_KINDS.LITERAL
-    ? rightOperand.value
-    : compileOperand(rightOperand)
-  return compileConditionExpression(
-    left,
-    leftOperand.valueType,
-    operator || '==',
-    rightValue,
-    rightOperand && rightOperand.kind === OPERAND_KINDS.LITERAL ? 'CONST' : 'VAR'
-  )
+  return compileConditionOperands(leftOperand, operator, rightOperand)
 }
 
 function generateAssignment(action, indent) {

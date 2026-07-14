@@ -124,4 +124,30 @@ describe('ActionBlockEditor', () => {
     expect(lastPayload.ruleName).toBe('旧规则')
     expect(lastPayload.outputField).toBe('result')
   })
+
+  test('动作条件按左表达式类型提供完整操作符并支持无右值', () => {
+    const ctx = createEditorContext([])
+    const leaf = {
+      leftOperand: { kind: 'REFERENCE', code: 'name', valueType: 'STRING', refId: 1, refType: 'VARIABLE' },
+      operator: 'is_null',
+      rightOperand: { kind: 'LITERAL', value: 'unused', valueType: 'STRING' }
+    }
+
+    expect(ctx.operatorOptions(leaf).map(item => item.value)).toEqual(expect.arrayContaining(['regex_match', 'contains', 'in_list']))
+    expect(ctx.operatorRequiresValue(leaf)).toBe(false)
+    ctx.onConditionOperatorChange(leaf)
+    expect(leaf.rightOperand).toBeNull()
+  })
+
+  test('动作条件名单操作符使用专用名单配置上下文', () => {
+    const ctx = createEditorContext([])
+    const leaf = {
+      leftOperand: { kind: 'REFERENCE', code: 'mobile', valueType: 'STRING', refId: 1, refType: 'VARIABLE' },
+      operator: 'in_list',
+      rightOperand: null
+    }
+
+    expect(ctx.rightAllowedKinds(leaf)).toEqual(['LIST_QUERY'])
+    expect(ctx.rightContext(leaf)).toBe('LIST_QUERY_CONFIG')
+  })
 })

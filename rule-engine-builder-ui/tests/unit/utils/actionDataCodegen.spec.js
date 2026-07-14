@@ -62,6 +62,24 @@ describe('generateScript', () => {
     }])).toContain('if (true) {')
   })
 
+  test('动作条件的名单配置生成可执行服务端名单函数', () => {
+    const script = generateScript([{
+      type: 'if-block',
+      branches: [{
+        type: 'if',
+        leftOperand: ref('mobile'),
+        operator: 'in_list',
+        rightOperand: {
+          kind: 'LIST_QUERY', listIds: [9, 10], itemTypes: ['MOBILE'],
+          combinationMode: 'ANY_FIELD_ANY_LIST', matchMode: 'IN_LIST', valueType: 'BOOLEAN'
+        },
+        actions: [assign(ref('hit'), literal('true', 'BOOLEAN'))]
+      }]
+    }])
+
+    expect(script).toContain('listMatch([mobile], [9, 10], "ANY_FIELD_ANY_LIST", "IN_LIST", ["MOBILE"])')
+  })
+
   test('Switch 的匹配值可以是阈值或字段路径', () => {
     const script = generateScript([{
       type: 'switch-block',

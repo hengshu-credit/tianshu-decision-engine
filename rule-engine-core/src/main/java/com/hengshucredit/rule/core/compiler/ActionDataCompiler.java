@@ -427,14 +427,12 @@ public class ActionDataCompiler {
     }
 
     private static String buildOperandCondition(JSONObject leftOperand, String operator,
-                                                JSONObject rightOperand, VarContext varContext) {
-        String left = OperandCompiler.compile(leftOperand, varContext);
-        if (empty(left)) return "true";
-        String op = empty(operator) ? "==" : operator;
-        boolean literal = rightOperand != null && "LITERAL".equals(rightOperand.getString("kind"));
-        String right = literal ? rightOperand.getString("value") : OperandCompiler.compile(rightOperand, varContext);
-        return ConditionExpressionBuilder.build(left,
-                leftOperand == null ? null : leftOperand.getString("valueType"), op, right, !literal);
+                                                 JSONObject rightOperand, VarContext varContext) {
+        JSONObject leaf = new JSONObject();
+        leaf.put("leftOperand", leftOperand);
+        leaf.put("operator", operator);
+        leaf.put("rightOperand", rightOperand);
+        return ConditionOperandCompiler.compile(leaf, varContext);
     }
 
     private static String compileOperandSwitchBlock(JSONObject block, int indent, VarContext varContext) {

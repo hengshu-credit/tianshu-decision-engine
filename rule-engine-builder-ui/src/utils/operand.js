@@ -287,6 +287,15 @@ export function compileOperand(operand) {
   return ''
 }
 
+export function compileListQueryOperand(operand, queryExpressions = []) {
+  const queries = (queryExpressions || []).filter(Boolean)
+  return 'listMatch([' + queries.join(', ') + '], '
+    + compileListLiteral(operand && operand.listIds, 'NUMBER') + ', '
+    + compileLiteral(operand && operand.combinationMode, 'STRING') + ', '
+    + compileLiteral(operand && operand.matchMode, 'STRING') + ', '
+    + compileListLiteral(operand && operand.itemTypes, 'STRING') + ')'
+}
+
 export function collectOperandReferences(operand, out = []) {
   const result = out
   const seen = new Set(result.map(referenceKey))

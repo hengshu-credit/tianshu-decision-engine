@@ -207,6 +207,7 @@
                     :vars="varPickerOptions"
                     :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
+                    :list-options="projectLists"
                     :rules="projectRules"
                     :current-rule-id="definitionId"
                     :current-rule-code="currentRuleCode"
