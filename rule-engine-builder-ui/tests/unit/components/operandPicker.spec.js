@@ -116,11 +116,12 @@ describe('OperandPicker', () => {
     })
   })
 
-  test('只读触发器聚焦时不会自动打开面板', () => {
+  test('只读触发器聚焦或点击时都会打开面板', () => {
     const wrapper = mountPicker({ vars: references })
     wrapper.vm.popoverVisible = false
     wrapper.vm.onInputFocus()
-    expect(wrapper.vm.popoverVisible).toBe(false)
+    expect(wrapper.vm.popoverVisible).toBe(true)
+    wrapper.vm.popoverVisible = false
     wrapper.vm.onInputClick()
     expect(wrapper.vm.popoverVisible).toBe(true)
   })
