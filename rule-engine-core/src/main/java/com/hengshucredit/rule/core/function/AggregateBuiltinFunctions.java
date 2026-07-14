@@ -11,6 +11,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 /**
  * 内置聚合函数实现：对单层序列做 sum / count / max / min / avg。
@@ -200,6 +202,56 @@ public class AggregateBuiltinFunctions {
 
     public boolean hasKey(Object target, Object key) {
         return target instanceof Map && ((Map<?, ?>) target).containsKey(key);
+    }
+
+    public boolean hasMapValue(Object target, Object value) {
+        if (!(target instanceof Map)) return false;
+        for (Object candidate : ((Map<?, ?>) target).values()) {
+            if (valueEquals(candidate, value)) return true;
+        }
+        return false;
+    }
+
+    public boolean regexMatchValue(Object target, Object regex) {
+        if (target == null || regex == null) return false;
+        try {
+            return Pattern.compile(String.valueOf(regex)).matcher(String.valueOf(target)).find();
+        } catch (PatternSyntaxException e) {
+            return false;
+        }
+    }
+
+    public boolean containsElementValue(Object target, Object value) {
+        String keyword = value == null ? "" : String.valueOf(value);
+        for (Object element : normalizeToElements(target)) {
+            if (element != null && String.valueOf(element).contains(keyword)) return true;
+        }
+        return false;
+    }
+
+    public boolean elementStartsWithValue(Object target, Object value) {
+        String prefix = value == null ? "" : String.valueOf(value);
+        for (Object element : normalizeToElements(target)) {
+            if (element != null && String.valueOf(element).startsWith(prefix)) return true;
+        }
+        return false;
+    }
+
+    public boolean elementEndsWithValue(Object target, Object value) {
+        String suffix = value == null ? "" : String.valueOf(value);
+        for (Object element : normalizeToElements(target)) {
+            if (element != null && String.valueOf(element).endsWith(suffix)) return true;
+        }
+        return false;
+    }
+
+    public long sizeOfValue(Object value) {
+        if (value == null) return 0L;
+        if (value instanceof CharSequence) return ((CharSequence) value).length();
+        if (value instanceof Map) return ((Map<?, ?>) value).size();
+        if (value instanceof Collection) return ((Collection<?>) value).size();
+        if (value.getClass().isArray()) return Array.getLength(value);
+        return 0L;
     }
 
     /**

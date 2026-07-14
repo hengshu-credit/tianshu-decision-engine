@@ -16,6 +16,8 @@ const ORDER_OPERATORS = [
 
 const STRING_OPERATORS = [
   ...COMMON_OPERATORS,
+  { label: '正则匹配', value: 'regex_match', rightContext: 'READ_EXPRESSION' },
+  { label: '正则不匹配', value: 'not_regex_match', rightContext: 'READ_EXPRESSION' },
   { label: '包含', value: 'contains' },
   { label: '不包含', value: 'not_contains' },
   { label: '以...开头', value: 'starts_with' },
@@ -24,6 +26,10 @@ const STRING_OPERATORS = [
   { label: '不以...结尾', value: 'not_ends_with' },
   { label: '在列表中', value: 'in', valuePlaceholder: '逗号分隔多个值', noVarValue: true },
   { label: '不在列表中', value: 'not_in', valuePlaceholder: '逗号分隔多个值', noVarValue: true },
+  { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
   { label: '为空字符串', value: 'is_empty', noValue: true },
   { label: '非空字符串', value: 'not_empty', noValue: true },
   { label: '任意', value: '*', noValue: true }
@@ -34,6 +40,10 @@ const NUMBER_OPERATORS = [
   ...ORDER_OPERATORS,
   { label: '在列表中', value: 'in', valuePlaceholder: '逗号分隔多个数值', noVarValue: true },
   { label: '不在列表中', value: 'not_in', valuePlaceholder: '逗号分隔多个数值', noVarValue: true },
+  { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
   { label: '任意', value: '*', noValue: true }
 ]
 
@@ -44,6 +54,10 @@ const BOOLEAN_OPERATORS = [
   { label: '为 false', value: 'is_false', noValue: true },
   { label: '为空', value: 'is_null', noValue: true },
   { label: '不为空', value: 'not_null', noValue: true },
+  { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
   { label: '任意', value: '*', noValue: true }
 ]
 
@@ -51,6 +65,10 @@ const ENUM_OPERATORS = [
   ...COMMON_OPERATORS,
   { label: '在枚举中', value: 'in', valuePlaceholder: '逗号分隔多个枚举值', noVarValue: true },
   { label: '不在枚举中', value: 'not_in', valuePlaceholder: '逗号分隔多个枚举值', noVarValue: true },
+  { label: '在数组内', value: 'in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '不在数组内', value: 'not_in_array', rightContext: 'READ_EXPRESSION', rightValueType: 'LIST' },
+  { label: '在名单内', value: 'in_list', rightContext: 'LIST_QUERY_VALUE' },
+  { label: '不在名单内', value: 'not_in_list', rightContext: 'LIST_QUERY_VALUE' },
   { label: '任意', value: '*', noValue: true }
 ]
 
@@ -59,6 +77,15 @@ const LIST_OPERATORS = [
   { label: '不包含元素', value: 'not_contains' },
   { label: '包含任一元素', value: 'contains_any', valuePlaceholder: '逗号分隔多个元素', noVarValue: true },
   { label: '包含全部元素', value: 'contains_all', valuePlaceholder: '逗号分隔多个元素', noVarValue: true },
+  { label: '包含在数组元素内', value: 'array_element_contains', rightContext: 'READ_EXPRESSION' },
+  { label: '不包含在数组元素内', value: 'array_element_not_contains', rightContext: 'READ_EXPRESSION' },
+  { label: '包含元素以...开头', value: 'array_element_starts_with', rightContext: 'READ_EXPRESSION' },
+  { label: '包含元素以...结尾', value: 'array_element_ends_with', rightContext: 'READ_EXPRESSION' },
+  { label: '元素数量等于', value: 'size_eq', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '元素数量大于', value: 'size_gt', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '元素数量大于等于', value: 'size_gte', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '元素数量小于', value: 'size_lt', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '元素数量小于等于', value: 'size_lte', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
   { label: '为空列表', value: 'is_empty', noValue: true },
   { label: '非空列表', value: 'not_empty', noValue: true },
   { label: '为空', value: 'is_null', noValue: true },
@@ -69,6 +96,13 @@ const LIST_OPERATORS = [
 const MAP_OPERATORS = [
   { label: '包含键', value: 'has_key' },
   { label: '不包含键', value: 'not_has_key' },
+  { label: '包含值', value: 'has_value', rightContext: 'READ_EXPRESSION' },
+  { label: '不包含值', value: 'not_has_value', rightContext: 'READ_EXPRESSION' },
+  { label: '键数量等于', value: 'size_eq', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '键数量大于', value: 'size_gt', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '键数量大于等于', value: 'size_gte', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '键数量小于', value: 'size_lt', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
+  { label: '键数量小于等于', value: 'size_lte', rightContext: 'READ_EXPRESSION', rightValueType: 'NUMBER' },
   { label: '为空映射', value: 'is_empty', noValue: true },
   { label: '非空映射', value: 'not_empty', noValue: true },
   { label: '为空', value: 'is_null', noValue: true },
@@ -195,6 +229,12 @@ export function compileConditionExpression(left, varType, operator, value, value
   if (op === 'not_starts_with') return '!startsWithValue(' + left + ', ' + rhs + ')'
   if (op === 'ends_with') return 'endsWithValue(' + left + ', ' + rhs + ')'
   if (op === 'not_ends_with') return '!endsWithValue(' + left + ', ' + rhs + ')'
+  if (op === 'regex_match') return 'regexMatchValue(' + left + ', ' + rhs + ')'
+  if (op === 'not_regex_match') return '!regexMatchValue(' + left + ', ' + rhs + ')'
+  if (op === 'in_array') return 'containsValue(' + rhs + ', ' + left + ')'
+  if (op === 'not_in_array') return '!containsValue(' + rhs + ', ' + left + ')'
+  if (op === 'in_list') return 'isInLists(' + left + ', ' + rhs + ')'
+  if (op === 'not_in_list') return '!isInLists(' + left + ', ' + rhs + ')'
   if (op === 'in') return left + ' in ' + formatList(varType, value)
   if (op === 'not_in') return '!' + '(' + left + ' in ' + formatList(varType, value) + ')'
   if (op === 'between' || op === 'not_between') {
@@ -209,5 +249,13 @@ export function compileConditionExpression(left, varType, operator, value, value
   }
   if (op === 'has_key') return 'hasKey(' + left + ', ' + rhs + ')'
   if (op === 'not_has_key') return '!hasKey(' + left + ', ' + rhs + ')'
+  if (op === 'has_value') return 'hasMapValue(' + left + ', ' + rhs + ')'
+  if (op === 'not_has_value') return '!hasMapValue(' + left + ', ' + rhs + ')'
+  if (op === 'array_element_contains') return 'containsElementValue(' + left + ', ' + rhs + ')'
+  if (op === 'array_element_not_contains') return '!containsElementValue(' + left + ', ' + rhs + ')'
+  if (op === 'array_element_starts_with') return 'elementStartsWithValue(' + left + ', ' + rhs + ')'
+  if (op === 'array_element_ends_with') return 'elementEndsWithValue(' + left + ', ' + rhs + ')'
+  const sizeOperators = { size_eq: '==', size_gt: '>', size_gte: '>=', size_lt: '<', size_lte: '<=' }
+  if (sizeOperators[op]) return 'sizeOfValue(' + left + ') ' + sizeOperators[op] + ' ' + rhs
   return left + ' ' + op + ' ' + rhs
 }

@@ -28,6 +28,12 @@ final class ConditionExpressionBuilder {
         if ("not_starts_with".equals(op)) return "!startsWithValue(" + left + ", " + rhs + ")";
         if ("ends_with".equals(op)) return "endsWithValue(" + left + ", " + rhs + ")";
         if ("not_ends_with".equals(op)) return "!endsWithValue(" + left + ", " + rhs + ")";
+        if ("regex_match".equals(op)) return "regexMatchValue(" + left + ", " + rhs + ")";
+        if ("not_regex_match".equals(op)) return "!regexMatchValue(" + left + ", " + rhs + ")";
+        if ("in_array".equals(op)) return "containsValue(" + rhs + ", " + left + ")";
+        if ("not_in_array".equals(op)) return "!containsValue(" + rhs + ", " + left + ")";
+        if ("in_list".equals(op)) return "isInLists(" + left + ", " + rhs + ")";
+        if ("not_in_list".equals(op)) return "!isInLists(" + left + ", " + rhs + ")";
         if ("in".equals(op)) return left + " in " + formatList(varType, value);
         if ("not_in".equals(op)) return "!(" + left + " in " + formatList(varType, value) + ")";
         if ("between".equals(op) || "not_between".equals(op)) {
@@ -47,7 +53,24 @@ final class ConditionExpressionBuilder {
         }
         if ("has_key".equals(op)) return "hasKey(" + left + ", " + rhs + ")";
         if ("not_has_key".equals(op)) return "!hasKey(" + left + ", " + rhs + ")";
+        if ("has_value".equals(op)) return "hasMapValue(" + left + ", " + rhs + ")";
+        if ("not_has_value".equals(op)) return "!hasMapValue(" + left + ", " + rhs + ")";
+        if ("array_element_contains".equals(op)) return "containsElementValue(" + left + ", " + rhs + ")";
+        if ("array_element_not_contains".equals(op)) return "!containsElementValue(" + left + ", " + rhs + ")";
+        if ("array_element_starts_with".equals(op)) return "elementStartsWithValue(" + left + ", " + rhs + ")";
+        if ("array_element_ends_with".equals(op)) return "elementEndsWithValue(" + left + ", " + rhs + ")";
+        String sizeOperator = sizeOperator(op);
+        if (sizeOperator != null) return "sizeOfValue(" + left + ") " + sizeOperator + " " + rhs;
         return left + " " + op + " " + rhs;
+    }
+
+    private static String sizeOperator(String operator) {
+        if ("size_eq".equals(operator)) return "==";
+        if ("size_gt".equals(operator)) return ">";
+        if ("size_gte".equals(operator)) return ">=";
+        if ("size_lt".equals(operator)) return "<";
+        if ("size_lte".equals(operator)) return "<=";
+        return null;
     }
 
     static String formatConstant(String varType, String value) {

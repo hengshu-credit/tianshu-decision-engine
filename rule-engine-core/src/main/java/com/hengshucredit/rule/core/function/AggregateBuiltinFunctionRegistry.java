@@ -64,6 +64,12 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("startsWithValue", DELEGATE, "startsWithValue", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("endsWithValue", DELEGATE, "endsWithValue", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("hasKey", DELEGATE, "hasKey", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("hasMapValue", DELEGATE, "hasMapValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("regexMatchValue", DELEGATE, "regexMatchValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("containsElementValue", DELEGATE, "containsElementValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("elementStartsWithValue", DELEGATE, "elementStartsWithValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("elementEndsWithValue", DELEGATE, "elementEndsWithValue", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("sizeOfValue", DELEGATE, "sizeOfValue", SINGLE_OBJECT);
         runner.addFunctionOfServiceMethod("nvl", DELEGATE, "nvl", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("roundScale", DELEGATE, "roundScale", THREE_OBJECTS);
 

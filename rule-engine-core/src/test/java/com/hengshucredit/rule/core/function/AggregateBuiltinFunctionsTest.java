@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class AggregateBuiltinFunctionsTest {
@@ -75,5 +76,19 @@ public class AggregateBuiltinFunctionsTest {
         assertEquals(Boolean.TRUE, output.get("endsWithValue"));
         assertEquals(Boolean.TRUE, output.get("hasKey"));
         assertEquals(12.35d, ((Number) output.get("roundScale")).doubleValue(), 0.000001d);
+    }
+
+    @Test
+    public void advancedConditionHelpersWorkForRegexArrayMapAndSize() {
+        AggregateBuiltinFunctions functions = new AggregateBuiltinFunctions();
+        assertTrue(functions.regexMatchValue("VIP-001", "^VIP-[0-9]+$"));
+        assertFalse(functions.regexMatchValue("VIP", "["));
+        assertTrue(functions.containsElementValue(Arrays.asList("NORMAL", "VIP-GOLD"), "VIP"));
+        assertTrue(functions.elementStartsWithValue(Arrays.asList("NORMAL", "VIP-GOLD"), "VIP"));
+        assertTrue(functions.elementEndsWithValue(Arrays.asList("NORMAL", "GOLD-VIP"), "VIP"));
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("level", "GOLD");
+        assertTrue(functions.hasMapValue(map, "GOLD"));
+        assertEquals(2L, functions.sizeOfValue(Arrays.asList("A", "B")));
     }
 }

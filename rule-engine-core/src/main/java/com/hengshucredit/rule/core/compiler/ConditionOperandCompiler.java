@@ -27,6 +27,11 @@ final class ConditionOperandCompiler {
         if (empty(left)) return "true";
         String operator = leaf.getString("operator");
         JSONObject rightOperand = leaf.getJSONObject("rightOperand");
+        if (("in_list".equals(operator) || "not_in_list".equals(operator))
+                && rightOperand != null && "LIST_QUERY".equals(rightOperand.getString("kind"))) {
+            String expression = OperandCompiler.compileListQuery(rightOperand, left);
+            return "not_in_list".equals(operator) ? "!" + expression : expression;
+        }
         boolean literal = rightOperand != null && "LITERAL".equals(rightOperand.getString("kind"));
         String right = literal ? rightOperand.getString("value") : OperandCompiler.compile(rightOperand, varContext);
         return ConditionExpressionBuilder.build(left,

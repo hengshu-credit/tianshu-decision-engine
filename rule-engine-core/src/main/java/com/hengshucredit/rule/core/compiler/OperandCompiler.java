@@ -126,6 +126,23 @@ public final class OperandCompiler {
         return "toStringValue";
     }
 
+    static String compileListQuery(JSONObject operand, String queryExpression) {
+        if (operand == null || !"LIST_QUERY".equals(operand.getString("kind"))) {
+            throw new IllegalArgumentException("名单查询配置无效");
+        }
+        JSONArray listIds = operand.getJSONArray("listIds");
+        JSONArray itemTypes = operand.getJSONArray("itemTypes");
+        String combinationMode = operand.getString("combinationMode");
+        String matchMode = operand.getString("matchMode");
+        if (listIds == null || listIds.isEmpty()) throw new IllegalArgumentException("名单查询至少选择一个名单");
+        if (empty(queryExpression)) throw new IllegalArgumentException("名单查询值不能为空");
+        if (empty(combinationMode)) throw new IllegalArgumentException("名单组合模式不能为空");
+        if (empty(matchMode)) throw new IllegalArgumentException("名单匹配模式不能为空");
+        return "listMatch([" + queryExpression + "], " + compileArrayValues(listIds, "NUMBER") + ", "
+                + compileLiteral(combinationMode, "STRING") + ", " + compileLiteral(matchMode, "STRING") + ", "
+                + compileArrayValues(itemTypes, "STRING") + ")";
+    }
+
     public static String compileLiteral(Object value, String valueType) {
         String text = value == null ? "" : String.valueOf(value);
         String type = valueType == null ? "STRING" : valueType.trim().toUpperCase();
