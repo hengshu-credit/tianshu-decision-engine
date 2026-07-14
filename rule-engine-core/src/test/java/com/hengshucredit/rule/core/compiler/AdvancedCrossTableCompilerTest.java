@@ -78,6 +78,35 @@ public class AdvancedCrossTableCompilerTest {
         assertTrue(result.getCompiledScript().contains("decision.rate = 0.2"));
     }
 
+    @Test
+    public void numericDimensionsCoerceLiteralSegmentOperandsToNumbers() {
+        String json = "{"
+                + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"NUMBER\"},"
+                + "\"rowDimensions\":[{\"varCode\":\"credit_limit\",\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\"range\",\"minOperand\":{\"kind\":\"LITERAL\",\"value\":\"0\",\"valueType\":\"STRING\"},"
+                + "\"maxOperand\":{\"kind\":\"LITERAL\",\"value\":\"2000\",\"valueType\":\"STRING\"}}]}],"
+                + "\"colDimensions\":[{\"varCode\":\"available_credit_limit\",\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\">=\",\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"STRING\"}}]}],"
+                + "\"cells\":[[{\"kind\":\"LITERAL\",\"value\":\"3000\",\"valueType\":\"STRING\"}]]}";
+
+        CompileResult result = compiler.compile(json);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("credit_limit >= 0"));
+        assertTrue(result.getCompiledScript().contains("credit_limit < 2000"));
+        assertTrue(result.getCompiledScript().contains("available_credit_limit >= 500"));
+        assertFalse(result.getCompiledScript().contains("credit_limit >= \"0\""));
+        assertTrue(result.getCompiledScript().contains("rate = 3000"));
+        assertFalse(result.getCompiledScript().contains("rate = \"3000\""));
+
+        Map<String, Object> context = new HashMap<>();
+        context.put("credit_limit", 1000.0);
+        context.put("available_credit_limit", 750.0);
+        RuleResult execution = engine.execute(result.getCompiledScript(), context);
+        assertTrue(execution.getErrorMessage(), execution.isSuccess());
+        assertEquals(3000, ((Number) ((Map<?, ?>) execution.getResult()).get("rate")).intValue());
+    }
+
     private String modelJson() {
         return "{"
                 + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"DOUBLE\"},"

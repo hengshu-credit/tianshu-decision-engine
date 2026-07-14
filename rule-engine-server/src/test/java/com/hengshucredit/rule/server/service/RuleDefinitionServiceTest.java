@@ -2,19 +2,25 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.publish.RulePushService;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.util.Map;
+import java.util.Arrays;
+import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -22,6 +28,40 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleDefinitionServiceTest {
+
+    @Test
+    public void pageListForProjectIncludesRuleOutputFieldsForFlowCalls() {
+        RuleDefinitionService service = new RuleDefinitionService();
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(11L);
+        definition.setRuleCode("MONTHLY_REPAYMENT_MATRIX");
+        RuleDefinitionOutputField output = new RuleDefinitionOutputField();
+        output.setDefinitionId(11L);
+        output.setFieldName("monthly_success_repayment_amount");
+        output.setScriptName("monthly_success_repayment_amount");
+
+        ReflectionTestUtils.setField(service, "baseMapper", mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
+            if ("selectPage".equals(method.getName())) {
+                Page<RuleDefinition> page = (Page<RuleDefinition>) args[0];
+                page.setRecords(Collections.singletonList(definition));
+                page.setTotal(1);
+                return page;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleDefinitionOutputFieldMapper.class, (proxy, method, args) -> {
+            if ("selectList".equals(method.getName())) return Arrays.asList(output);
+            return defaultValue(method.getReturnType());
+        }));
+
+        IPage<RuleDefinition> page = service.pageListForProject(1, 20, 7L, null, null,
+                null, null, null, null, null, null, null, null);
+
+        assertEquals(1, page.getRecords().size());
+        assertEquals(1, page.getRecords().get(0).getOutputFieldsJson().size());
+        assertEquals("monthly_success_repayment_amount",
+                page.getRecords().get(0).getOutputFieldsJson().get(0).getScriptName());
+    }
 
     @Test
     public void compareVersionsReportsChangedSections() {

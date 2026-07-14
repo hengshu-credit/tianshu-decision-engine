@@ -460,7 +460,31 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
                               .like(RuleDefinition::getRuleCode, keyword));
         }
         wrapper.orderByDesc(RuleDefinition::getCreateTime);
-        return page(new Page<>(pageNum, pageSize), wrapper);
+        IPage<RuleDefinition> result = page(new Page<>(pageNum, pageSize), wrapper);
+        attachOutputFields(result.getRecords());
+        return result;
+    }
+
+    private void attachOutputFields(List<RuleDefinition> definitions) {
+        if (definitions == null || definitions.isEmpty()) return;
+        List<Long> definitionIds = new ArrayList<>();
+        for (RuleDefinition definition : definitions) {
+            if (definition != null && definition.getId() != null) definitionIds.add(definition.getId());
+        }
+        if (definitionIds.isEmpty()) return;
+
+        List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                        .in(RuleDefinitionOutputField::getDefinitionId, definitionIds)
+                        .orderByAsc(RuleDefinitionOutputField::getDefinitionId)
+                        .orderByAsc(RuleDefinitionOutputField::getSortOrder));
+        Map<Long, List<RuleDefinitionOutputField>> fieldsByDefinition = new LinkedHashMap<>();
+        for (RuleDefinitionOutputField field : fields) {
+            fieldsByDefinition.computeIfAbsent(field.getDefinitionId(), key -> new ArrayList<>()).add(field);
+        }
+        for (RuleDefinition definition : definitions) {
+            definition.setOutputFieldsJson(fieldsByDefinition.getOrDefault(definition.getId(), Collections.emptyList()));
+        }
     }
 
     public void updateScriptMode(Long definitionId, String scriptMode) {

@@ -90,7 +90,7 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
 
                     script.append(") {\n    ").append(resolvedResCode).append(" = ");
                     if (cellValue instanceof JSONObject) {
-                        script.append(OperandCompiler.compile((JSONObject) cellValue, varContext));
+                        appendTypedOperand(script, (JSONObject) cellValue, resType, varContext);
                     } else {
                         appendValue(script, String.valueOf(cellValue), resType);
                     }
@@ -180,9 +180,18 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
     private void appendSegmentValue(StringBuilder sb, JSONObject operand, String legacyValue,
                                     String legacyType, VarContext varContext) {
         if (operand != null) {
-            sb.append(OperandCompiler.compile(operand, varContext));
+            appendTypedOperand(sb, operand, legacyType, varContext);
         } else {
             appendValue(sb, legacyValue, legacyType);
+        }
+    }
+
+    private void appendTypedOperand(StringBuilder sb, JSONObject operand, String expectedType,
+                                    VarContext varContext) {
+        if ("LITERAL".equals(operand.getString("kind"))) {
+            sb.append(OperandCompiler.compileLiteral(operand.get("value"), expectedType));
+        } else {
+            sb.append(OperandCompiler.compile(operand, varContext));
         }
     }
 
