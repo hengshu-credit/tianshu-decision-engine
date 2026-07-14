@@ -1,10 +1,12 @@
 package com.hengshucredit.rule.server.service;
 
+import com.alibaba.fastjson.JSON;
 import org.junit.Assert;
 import org.junit.Test;
 
 import java.math.BigDecimal;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -87,6 +89,24 @@ public class OperandValueResolverTest {
 
         Assert.assertEquals(new BigDecimal("4500"), OperandValueResolver.resolve(json, values));
         Assert.assertEquals(Arrays.asList("monthlyRepayment", "usedAmount", "riskFactor", "riskAmount"), Arrays.asList(OperandValueResolver.collectPaths(json).toArray()));
+    }
+
+    @Test
+    public void resolvesAllRegisteredBuiltinFunctionFamilies() {
+        Assert.assertEquals(9d, ((Number) OperandValueResolver.resolve("{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"9\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"2\",\"valueType\":\"NUMBER\"}]}", Collections.<String, Object>emptyMap())).doubleValue(), 0d);
+        Assert.assertEquals("ABC", OperandValueResolver.resolve("{\"kind\":\"FUNCTION\",\"functionCode\":\"strUpper\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"abc\",\"valueType\":\"STRING\"}]}", Collections.<String, Object>emptyMap()));
+        Assert.assertEquals("B", OperandValueResolver.resolve("{\"kind\":\"FUNCTION\",\"functionCode\":\"arrGet\",\"args\":[{\"kind\":\"ARRAY\",\"items\":[{\"kind\":\"LITERAL\",\"value\":\"A\",\"valueType\":\"STRING\"},{\"kind\":\"LITERAL\",\"value\":\"B\",\"valueType\":\"STRING\"}]},{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"}]}", Collections.<String, Object>emptyMap()));
+        Assert.assertTrue(String.valueOf(OperandValueResolver.resolve("{\"kind\":\"FUNCTION\",\"functionCode\":\"currentDate\",\"args\":[]}", Collections.<String, Object>emptyMap())).matches("\\d{4}-\\d{2}-\\d{2}"));
+    }
+
+    @Test
+    public void delegatesManagedFunctionReferencesByStableId() {
+        Object result = OperandValueResolver.resolve(
+                JSON.parseObject("{\"kind\":\"FUNCTION\",\"functionId\":501,\"functionCode\":\"projectRisk\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"9\",\"valueType\":\"NUMBER\"}]}"),
+                Collections.<String, Object>emptyMap(), Collections.<String, Object>emptyMap(),
+                (functionId, functionCode, args) -> functionCode + ":" + functionId + ":" + args.get(0));
+
+        Assert.assertEquals("projectRisk:501:9", result);
     }
 
     @Test

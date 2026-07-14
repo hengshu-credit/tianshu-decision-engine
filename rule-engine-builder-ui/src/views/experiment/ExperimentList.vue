@@ -135,6 +135,7 @@
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -181,6 +182,7 @@
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -310,7 +312,7 @@ export default {
         routingMode: 'RATIO',
         testRoutingMode: 'CONDITION',
         conditionRuleCode: '',
-        requestKeyPath: 'requestId',
+        requestKeyPath: '',
         testExclusive: 1,
         status: 1,
         groups: [this.newGroup('CHAMPION', 'champion', '冠军组', 100)]

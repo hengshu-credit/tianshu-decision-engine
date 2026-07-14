@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.pmml.PMMLModelExecutor;
+import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.mapper.*;
 import org.dmg.pmml.Model;
@@ -790,7 +791,8 @@ public class RuleModelService {
 
         List<RuleModelInputField> inputFields = listInputFields(modelId);
         Map<String, Object> constantValues = constantReferenceValues(model.getProjectId());
-        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(inputFields, params, constantValues);
+        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
+                inputFields, params, constantValues, this::invokeOperandFunction);
         Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
         if ("PMML".equals(model.getModelFormat())) {
             return executePmml(model, boundParams);
@@ -968,7 +970,8 @@ public class RuleModelService {
                     if (operand == null) {
                         throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换参数 " + (i + 1) + " 未配置");
                     }
-                    args.add(OperandValueResolver.resolve(operand, context, constantValues));
+                    args.add(OperandValueResolver.resolve(
+                            operand, context, constantValues, this::invokeOperandFunction));
                 }
             }
             String outputKey = outputKey(field, original);
@@ -980,6 +983,12 @@ public class RuleModelService {
     private Map<String, Object> constantReferenceValues(Long projectId) {
         return variableService == null
                 ? Collections.emptyMap() : variableService.buildRefConstantValueMap(projectId);
+    }
+
+    private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {
+        return ruleFunctionService == null
+                ? BuiltinFunctionInvoker.invoke(functionCode, args)
+                : ruleFunctionService.invoke(functionId, args);
     }
 
     private String outputKey(RuleModelOutputField field, Map<String, Object> outputs) {

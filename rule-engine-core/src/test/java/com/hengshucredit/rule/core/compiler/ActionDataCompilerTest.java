@@ -161,6 +161,29 @@ public class ActionDataCompilerTest {
     }
 
     @Test
+    public void nestedAmountExpressionExecutesEndToEnd() {
+        JSONArray actionData = JSON.parseArray("[{\"type\":\"assign\","
+                + "\"targetOperand\":{\"kind\":\"REFERENCE\",\"refId\":105,\"refType\":\"VARIABLE\",\"code\":\"amount\"},"
+                + "\"valueOperand\":{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":["
+                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numCeil\",\"args\":[{\"kind\":\"OPERATION\",\"operator\":\"/\",\"operands\":["
+                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"LITERAL\",\"value\":\"4200\",\"valueType\":\"NUMBER\"},{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":["
+                + "{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":["
+                + "{\"kind\":\"FUNCTION\",\"functionCode\":\"numMin\",\"args\":[{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"REFERENCE\",\"refId\":101,\"refType\":\"VARIABLE\",\"code\":\"monthlyRepayment\"},{\"kind\":\"REFERENCE\",\"refId\":102,\"refType\":\"VARIABLE\",\"code\":\"usedAmount\"}]},{\"kind\":\"LITERAL\",\"value\":\"9000\",\"valueType\":\"NUMBER\"}]},"
+                + "{\"kind\":\"REFERENCE\",\"refId\":103,\"refType\":\"VARIABLE\",\"code\":\"riskFactor\"},{\"kind\":\"LITERAL\",\"value\":\"0.3\",\"valueType\":\"NUMBER\"}]},{\"kind\":\"OPERATION\",\"operator\":\"*\",\"operands\":[{\"kind\":\"REFERENCE\",\"refId\":104,\"refType\":\"VARIABLE\",\"code\":\"riskAmount\"},{\"kind\":\"LITERAL\",\"value\":\"0.5\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"7000\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}]},{\"kind\":\"LITERAL\",\"value\":\"500\",\"valueType\":\"NUMBER\"}]}}]");
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("monthlyRepayment", 5000);
+        params.put("usedAmount", 6000);
+        params.put("riskFactor", 1.2);
+        params.put("riskAmount", 4000);
+
+        RuleResult result = new QLExpressEngine().execute(
+                ActionDataCompiler.compile(actionData) + "\namount", params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(4500d, ((Number) result.getResult()).doubleValue(), 0d);
+    }
+
+    @Test
     public void foreachBlockExecutesNestedActions() {
         JSONArray actionData = JSON.parseArray("["
                 + "{\"type\":\"assign\",\"target\":\"total\",\"value\":\"0\"},"

@@ -21,26 +21,38 @@
 
     <el-form ref="form" :model="form" :rules="rules" label-width="96px" size="small" class="base-form">
       <el-row :gutter="12">
-        <el-col :span="6">
+        <el-col :span="5">
           <el-form-item label="项目" prop="projectId">
             <el-select v-model="form.projectId" filterable placeholder="选择项目" style="width:100%;" @change="onProjectChange">
               <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
             </el-select>
           </el-form-item>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <el-form-item label="实验编码" prop="experimentCode">
             <el-input v-model="form.experimentCode" placeholder="EXP_RISK_CHAMPION" />
           </el-form-item>
         </el-col>
-        <el-col :span="6">
+        <el-col :span="5">
           <el-form-item label="实验名称" prop="experimentName">
             <el-input v-model="form.experimentName" placeholder="冠军挑战实验" />
           </el-form-item>
         </el-col>
-        <el-col :span="3">
+        <el-col :span="6">
           <el-form-item label="请求键">
-            <el-input v-model="form.requestKeyPath" placeholder="requestId" />
+            <operand-picker
+              :value="form.requestKeyOperand"
+              :vars="varPickerOptions"
+              :functions="projectFunctions"
+              :list-options="projectLists"
+              :allowed-kinds="requestKeyKinds"
+              context="READ_EXPRESSION"
+              expected-type="STRING"
+              placeholder="选择字段或配置表达式"
+              editor-title="配置分流请求键"
+              @input="onRequestKeyInput"
+            />
+            <div class="request-key-help">可组合字段、方法、阈值和运算；为空时按常用请求号自动识别。</div>
           </el-form-item>
         </el-col>
         <el-col :span="3">
@@ -106,6 +118,7 @@
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -191,6 +204,7 @@
                 :group="row.conditionConfig"
                 :vars="varPickerOptions"
                 :functions="projectFunctions"
+                :list-options="projectLists"
                 :get-var-options-fn="getVarOptions"
                 :selected-vars="selectedVarPickerOptions"
               />
@@ -359,6 +373,7 @@ import { listDefinitions, listInputFields, listOutputFields } from '@/api/defini
 import { getExperiment, listExperimentLogs, saveExperiment, listVersions, compareVersions, rollbackVersion } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import GroupActionForm from './GroupActionForm.vue'
 import {
@@ -369,11 +384,12 @@ import {
   compileConditionTreeExpression,
   normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
-import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
+import { collectOperandReferences, syncOperandReference, validateOperand } from '@/utils/operand'
+import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'ExperimentDetail',
-  components: { ConditionGroupEditor, MonacoEditor, GroupActionForm },
+  components: { ConditionGroupEditor, OperandPicker, MonacoEditor, GroupActionForm },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -405,7 +421,8 @@ export default {
       versionList: [],
       versionCompare: null,
       versionPreview: '',
-      nextUid: 1
+      nextUid: 1,
+      requestKeyKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
     }
   },
   computed: {
@@ -436,6 +453,16 @@ export default {
         seen[key] = true
         rows.push(field)
       }
+      collectOperandReferences(this.form.requestKeyOperand).forEach(reference => {
+        push(this.normalizeExperimentField({
+          source: '分流请求键',
+          groupName: '',
+          ruleCode: '',
+          fieldName: reference.code || reference.path,
+          fieldLabel: reference.label,
+          fieldType: reference.valueType
+        }))
+      })
       ;(this.form.groups || []).forEach(group => {
         if (group.conditionConfig && !this.isFallbackGroup(group)) {
           walkConditionLeaves(group.conditionConfig, leaf => {
@@ -498,7 +525,8 @@ export default {
         routingMode: 'RATIO',
         testRoutingMode: 'CONDITION',
         conditionRuleCode: '',
-        requestKeyPath: 'requestId',
+        requestKeyPath: '',
+        requestKeyOperand: null,
         testExclusive: 1,
         status: 1,
         groups: [this.withUid(this.newGroup('CHAMPION', 'champion', '冠军组', 100))]
@@ -561,7 +589,12 @@ export default {
     async loadDetail() {
       const res = await getExperiment(this.experimentId)
       const data = res.data || {}
-      this.form = { ...this.emptyForm(), ...JSON.parse(JSON.stringify(data)), groups: (data.groups || []).map(g => this.normalizeGroupForEdit(g)) }
+      this.form = {
+        ...this.emptyForm(),
+        ...JSON.parse(JSON.stringify(data)),
+        requestKeyOperand: this.parseRequestKeyOperand(data.requestKeyPath),
+        groups: (data.groups || []).map(g => this.normalizeGroupForEdit(g))
+      }
       await this.loadRules(this.form.projectId)
       await this.loadExperimentRefs(this.form.projectId)
     },
@@ -593,6 +626,18 @@ export default {
     normalizeFieldListResponse(res) {
       const data = res && res.data ? res.data : res
       return Array.isArray(data) ? data : []
+    },
+    parseRequestKeyOperand(value) {
+      if (!value) return null
+      if (typeof value === 'object') return JSON.parse(JSON.stringify(value))
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        return null
+      }
+    },
+    onRequestKeyInput(operand) {
+      this.$set(this.form, 'requestKeyOperand', operand || null)
     },
     ruleFieldsForGroup(group, direction) {
       if (!group || !group.ruleCode) return []
@@ -714,9 +759,18 @@ export default {
             this.$message.error(error)
             return resolve(false)
           }
+          if (this.form.requestKeyOperand) {
+            const operandErrors = validateOperand(this.form.requestKeyOperand, { allowedKinds: this.requestKeyKinds })
+            if (operandErrors.length) {
+              this.$message.error('请求键：' + operandErrors[0].message)
+              return resolve(false)
+            }
+          }
           this.saving = true
           try {
             const data = { ...this.form, groups: this.prepareGroupsForSave() }
+            data.requestKeyPath = data.requestKeyOperand ? JSON.stringify(data.requestKeyOperand) : ''
+            delete data.requestKeyOperand
             const res = await saveExperiment(data)
             this.$message.success('保存成功')
             if (!this.form.id && res.data && res.data.id) {
@@ -799,6 +853,12 @@ export default {
     },
     collectSelectedVarItems() {
       const result = []
+      collectOperandReferences(this.form.requestKeyOperand).forEach(reference => result.push({
+        varCode: reference.code,
+        _varId: reference.refId,
+        _refType: reference.refType,
+        varType: reference.valueType
+      }))
       ;(this.form.groups || []).forEach(group => {
         if (!group.conditionConfig || this.isFallbackGroup(group)) return
         walkConditionLeaves(group.conditionConfig, leaf => {
@@ -816,6 +876,11 @@ export default {
     },
     _syncModelVarRefs() {
       let changed = false
+      const requestKey = syncOperandReference(this.form.requestKeyOperand, this.varPickerOptions)
+      if (requestKey.changed) {
+        this.$set(this.form, 'requestKeyOperand', requestKey.operand)
+        changed = true
+      }
       const sync = (leaf, field) => {
         const result = syncOperandReference(leaf[field], this.varPickerOptions)
         if (!result.changed) return
@@ -995,6 +1060,13 @@ export default {
     border-radius: 4px;
     padding: 14px;
     margin-bottom: 12px;
+  }
+
+  .request-key-help {
+    margin-top: 4px;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
   }
 
   .tab-toolbar {

@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -21,6 +22,11 @@ import com.hengshucredit.rule.model.entity.RuleModelInputField;
 /** 在模型调用等 Java 运行时场景中解析统一 Operand。 */
 public final class OperandValueResolver {
 
+    @FunctionalInterface
+    public interface FunctionInvoker {
+        Object invoke(Long functionId, String functionCode, List<Object> args);
+    }
+
     private OperandValueResolver() {
     }
 
@@ -30,8 +36,13 @@ public final class OperandValueResolver {
 
     public static Object resolve(String operandJson, Map<String, Object> values,
                                  Map<String, Object> referenceValues) {
+        return resolve(operandJson, values, referenceValues, null);
+    }
+
+    public static Object resolve(String operandJson, Map<String, Object> values,
+                                 Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         if (operandJson == null || operandJson.trim().isEmpty()) return null;
-        return resolve(JSON.parseObject(operandJson), values, referenceValues);
+        return resolve(JSON.parseObject(operandJson), values, referenceValues, functionInvoker);
     }
 
     public static Object resolve(JSONObject operand, Map<String, Object> values) {
@@ -40,6 +51,11 @@ public final class OperandValueResolver {
 
     public static Object resolve(JSONObject operand, Map<String, Object> values,
                                  Map<String, Object> referenceValues) {
+        return resolve(operand, values, referenceValues, null);
+    }
+
+    public static Object resolve(JSONObject operand, Map<String, Object> values,
+                                 Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         if (operand == null) throw new IllegalArgumentException("表达式参数不能为空");
         String kind = operand.getString("kind");
         if (kind == null || kind.trim().isEmpty()) throw new IllegalArgumentException("表达式节点类型不能为空");
@@ -60,12 +76,12 @@ public final class OperandValueResolver {
             String path = firstText(operand.getString("value"), operand.getString("code"));
             return readPath(values, path);
         }
-        if ("FUNCTION".equals(kind)) return call(operand, values, referenceValues);
-        if ("OPERATION".equals(kind)) return operation(operand, values, referenceValues);
-        if ("ACCESS".equals(kind)) return access(operand, values, referenceValues);
+        if ("FUNCTION".equals(kind)) return call(operand, values, referenceValues, functionInvoker);
+        if ("OPERATION".equals(kind)) return operation(operand, values, referenceValues, functionInvoker);
+        if ("ACCESS".equals(kind)) return access(operand, values, referenceValues, functionInvoker);
         if ("CAST".equals(kind)) return cast(operand.getString("targetType"),
-                resolveRequired(operand.getJSONObject("operand"), values, referenceValues));
-        if ("ARRAY".equals(kind)) return resolveArray(operand.getJSONArray("items"), values, referenceValues);
+                resolveRequired(operand.getJSONObject("operand"), values, referenceValues, functionInvoker));
+        if ("ARRAY".equals(kind)) return resolveArray(operand.getJSONArray("items"), values, referenceValues, functionInvoker);
         if ("LIST_QUERY".equals(kind)) {
             throw new IllegalArgumentException("名单查询节点只能由服务端名单执行器解析");
         }
@@ -79,26 +95,38 @@ public final class OperandValueResolver {
         return paths;
     }
 
+    static List<JSONObject> collectReferences(String operandJson) {
+        List<JSONObject> references = new ArrayList<>();
+        if (operandJson == null || operandJson.trim().isEmpty()) return references;
+        collectReferences(JSON.parseObject(operandJson), references);
+        return references;
+    }
+
     public static Map<String, Object> bindModelInputs(List<RuleModelInputField> fields, Map<String, Object> values) {
         return bindModelInputs(fields, values, java.util.Collections.emptyMap());
     }
 
     public static Map<String, Object> bindModelInputs(List<RuleModelInputField> fields, Map<String, Object> values,
                                                        Map<String, Object> referenceValues) {
+        return bindModelInputs(fields, values, referenceValues, null);
+    }
+
+    public static Map<String, Object> bindModelInputs(List<RuleModelInputField> fields, Map<String, Object> values,
+                                                       Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         Map<String, Object> result = new java.util.LinkedHashMap<>();
         if (values != null) result.putAll(values);
         if (fields == null) return result;
         for (RuleModelInputField field : fields) {
             String fieldName = firstText(field.getFieldName(), field.getScriptName());
             if (fieldName == null) continue;
-            Object value = resolve(field.getSourceOperand(), values, referenceValues);
+            Object value = resolve(field.getSourceOperand(), values, referenceValues, functionInvoker);
             boolean sourceIsConstant = isConstantReference(field.getSourceOperand());
             boolean defaultIsConstant = false;
             if (value == null && !sourceIsConstant) {
                 value = readPath(values, firstText(field.getScriptName(), field.getFieldName()));
             }
             if (value == null && !sourceIsConstant) {
-                value = resolve(field.getDefaultOperand(), values, referenceValues);
+                value = resolve(field.getDefaultOperand(), values, referenceValues, functionInvoker);
                 defaultIsConstant = isConstantReference(field.getDefaultOperand());
             }
             if (value == null && !sourceIsConstant && !defaultIsConstant
@@ -141,15 +169,29 @@ public final class OperandValueResolver {
         for (JSONObject child : children(operand)) collectPaths(child, paths);
     }
 
+    private static void collectReferences(JSONObject operand, List<JSONObject> references) {
+        if (operand == null) return;
+        String kind = operand.getString("kind");
+        if ("PATH".equals(kind) || "REFERENCE".equals(kind)) {
+            references.add(operand);
+            return;
+        }
+        for (JSONObject child : children(operand)) collectReferences(child, references);
+    }
+
     private static Object call(JSONObject operand, Map<String, Object> values,
-                               Map<String, Object> referenceValues) {
+                               Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         String code = operand.getString("functionCode");
         JSONArray args = operand.getJSONArray("args");
         List<Object> resolved = new ArrayList<>();
         if (args != null) {
             for (int i = 0; i < args.size(); i++) {
-                resolved.add(resolve(args.getJSONObject(i), values, referenceValues));
+                resolved.add(resolve(args.getJSONObject(i), values, referenceValues, functionInvoker));
             }
+        }
+        Long functionId = operand.getLong("functionId");
+        if (functionId != null && functionInvoker != null) {
+            return functionInvoker.invoke(functionId, code, resolved);
         }
         if ("max".equals(code)) return numericExtreme(resolved, true);
         if ("min".equals(code)) return numericExtreme(resolved, false);
@@ -158,16 +200,16 @@ public final class OperandValueResolver {
         if ("numCeil".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.CEILING);
         if ("numFloor".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.FLOOR);
         if ("numRoundInteger".equals(code)) return numberArg(resolved, 0, code).setScale(0, RoundingMode.HALF_UP);
-        throw new IllegalArgumentException("模型字段 Operand 暂不支持运行时方法: " + code);
+        return BuiltinFunctionInvoker.invoke(code, resolved);
     }
 
     private static Object operation(JSONObject operand, Map<String, Object> values,
-                                    Map<String, Object> referenceValues) {
+                                    Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         String operator = operand.getString("operator");
         JSONArray operands = operand.getJSONArray("operands");
         if (empty(operator)) throw new IllegalArgumentException("运算符不能为空");
         if (operands == null || operands.isEmpty()) throw new IllegalArgumentException("运算参数不能为空");
-        List<Object> resolved = resolveArray(operands, values, referenceValues);
+        List<Object> resolved = resolveArray(operands, values, referenceValues, functionInvoker);
         if (resolved.size() == 1) {
             Object value = resolved.get(0);
             if ("!".equals(operator)) return !booleanValue(value);
@@ -228,9 +270,9 @@ public final class OperandValueResolver {
     }
 
     private static Object access(JSONObject operand, Map<String, Object> values,
-                                 Map<String, Object> referenceValues) {
-        Object target = resolveRequired(operand.getJSONObject("target"), values, referenceValues);
-        Object accessor = resolveRequired(operand.getJSONObject("accessor"), values, referenceValues);
+                                 Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
+        Object target = resolveRequired(operand.getJSONObject("target"), values, referenceValues, functionInvoker);
+        Object accessor = resolveRequired(operand.getJSONObject("accessor"), values, referenceValues, functionInvoker);
         if ("INDEX".equalsIgnoreCase(operand.getString("accessType"))) {
             int index = number(accessor).intValueExact();
             if (target instanceof List) {
@@ -259,19 +301,19 @@ public final class OperandValueResolver {
     }
 
     private static List<Object> resolveArray(JSONArray items, Map<String, Object> values,
-                                             Map<String, Object> referenceValues) {
+                                             Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         List<Object> result = new ArrayList<>();
         if (items == null) return result;
         for (int i = 0; i < items.size(); i++) {
-            result.add(resolveRequired(items.getJSONObject(i), values, referenceValues));
+            result.add(resolveRequired(items.getJSONObject(i), values, referenceValues, functionInvoker));
         }
         return result;
     }
 
     private static Object resolveRequired(JSONObject operand, Map<String, Object> values,
-                                          Map<String, Object> referenceValues) {
+                                          Map<String, Object> referenceValues, FunctionInvoker functionInvoker) {
         if (operand == null) throw new IllegalArgumentException("表达式参数不能为空");
-        return resolve(operand, values, referenceValues);
+        return resolve(operand, values, referenceValues, functionInvoker);
     }
 
     private static Object numericExtreme(List<Object> values, boolean max) {

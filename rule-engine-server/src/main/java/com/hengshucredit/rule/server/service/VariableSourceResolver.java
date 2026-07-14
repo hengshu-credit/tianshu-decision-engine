@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
+import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -53,6 +54,9 @@ public class VariableSourceResolver {
 
     @Resource
     private RuleModelService ruleModelService;
+
+    @Resource
+    private RuleFunctionService ruleFunctionService;
 
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         return resolve(projectId, inputParams, VariableResolveOptions.defaults());
@@ -594,7 +598,8 @@ public class VariableSourceResolver {
             if (fieldName == null || scriptName == null) {
                 continue;
             }
-            Object value = OperandValueResolver.resolve(field.getSourceOperand(), resolvedParams);
+            Object value = OperandValueResolver.resolve(field.getSourceOperand(), resolvedParams,
+                    Collections.<String, Object>emptyMap(), this::invokeOperandFunction);
             if (value == null) value = readPath(resolvedParams, scriptName);
             if (value == null && !fieldName.equals(scriptName)) {
                 value = readPath(resolvedParams, fieldName);
@@ -610,7 +615,8 @@ public class VariableSourceResolver {
                 value = findUniqueNestedFieldValue(resolvedParams, fieldName);
             }
             if (value == null) {
-                value = OperandValueResolver.resolve(field.getDefaultOperand(), resolvedParams);
+                value = OperandValueResolver.resolve(field.getDefaultOperand(), resolvedParams,
+                        Collections.<String, Object>emptyMap(), this::invokeOperandFunction);
             }
             if (value == null && hasText(field.getDefaultValue())) {
                 value = parseJsonOrRaw(field.getDefaultValue());
@@ -911,9 +917,16 @@ public class VariableSourceResolver {
             JSONObject operand = value instanceof JSONObject
                     ? (JSONObject) value
                     : JSON.parseObject(JSON.toJSONString(value));
-            result.add(OperandValueResolver.resolve(operand, params));
+            result.add(OperandValueResolver.resolve(operand, params,
+                    Collections.<String, Object>emptyMap(), this::invokeOperandFunction));
         }
         return result;
+    }
+
+    private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {
+        return ruleFunctionService == null
+                ? BuiltinFunctionInvoker.invoke(functionCode, args)
+                : ruleFunctionService.invoke(functionId, args);
     }
 
     private List<Long> buildLongList(Object source) {

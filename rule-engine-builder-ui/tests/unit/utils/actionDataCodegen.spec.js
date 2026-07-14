@@ -15,6 +15,8 @@ const ref = (code, valueType = 'STRING') => ({
   refId: 1, refType: 'VARIABLE', resolved: true
 })
 const assign = (target, value) => ({ type: 'assign', targetOperand: target, valueOperand: value })
+const fn = (functionCode, ...args) => ({ kind: 'FUNCTION', functionCode, args })
+const op = (operator, ...operands) => ({ kind: 'OPERATION', operator, operands })
 
 describe('generateScript', () => {
   test.each([null, undefined, []])('空动作返回空脚本', value => {
@@ -104,6 +106,32 @@ describe('generateScript', () => {
     expect(generateScript([{
       type: 'func-call', targetOperand: ref('maxScore'), functionCode: 'max', args: [ref('a', 'NUMBER'), ref('b', 'NUMBER')]
     }])).toBe('maxScore = max(a, b)')
+  })
+
+  test('额度计算支持字段、函数、阈值和多层运算嵌套', () => {
+    const formula = op('*',
+      fn('numCeil', op('/',
+        fn('numMax', literal('4200', 'NUMBER'),
+          fn('numMin',
+            op('+',
+              op('*',
+                fn('numMin', fn('numMax', ref('月成功还款额', 'NUMBER'), ref('已使用额度', 'NUMBER')), literal('9000', 'NUMBER')),
+                ref('风险系数', 'NUMBER'),
+                literal('0.3', 'NUMBER')
+              ),
+              op('*', ref('风险额度', 'NUMBER'), literal('0.5', 'NUMBER'))
+            ),
+            literal('7000', 'NUMBER')
+          )
+        ),
+        literal('500', 'NUMBER')
+      )),
+      literal('500', 'NUMBER')
+    )
+
+    expect(generateScript([assign(ref('amount', 'NUMBER'), formula)])).toBe(
+      'amount = (numCeil((numMax(4200, numMin(((numMin(numMax(月成功还款额, 已使用额度), 9000) * 风险系数 * 0.3) + (风险额度 * 0.5)), 7000)) / 500)) * 500)'
+    )
   })
 
   test('ForEach 列表使用 Operand', () => {

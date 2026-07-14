@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
@@ -138,7 +139,7 @@ public class RuleExperimentServiceTest {
         RuleExperiment experiment = experiment("CONDITION", "CONDITION");
         experiment.setId(3L);
         experiment.setProjectId(1L);
-        experiment.setRequestKeyPath("request.id");
+        experiment.setRequestKeyPath("{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"VARIABLE\",\"code\":\"request.id\",\"value\":\"request.id\",\"valueType\":\"STRING\"}");
         experiment.setGroups(Collections.singletonList(
                 group("champion", "CHAMPION", 100, 0, "customer.level == \"A\"", null)));
         RuleExperimentService resolverService = new RuleExperimentService() {
@@ -186,7 +187,23 @@ public class RuleExperimentServiceTest {
         assertEquals("score_f1_fields.HYBASE_X115", paths.get(0));
         assertEquals("customer.level", paths.get(1));
         assertEquals("request.id", paths.get(2));
+        assertEquals(Long.valueOf(12), fields.getInputFields().get(2).getVarId());
+        assertEquals("VARIABLE", fields.getInputFields().get(2).getRefType());
         assertEquals("decision", fields.getOutputFields().get(0).getScriptName());
+    }
+
+    @Test
+    public void requestKeySupportsRecursiveOperandExpression() throws Exception {
+        RuleExperiment experiment = experiment("RATIO", "CONDITION");
+        experiment.setRequestKeyPath("{\"kind\":\"CAST\",\"targetType\":\"STRING\",\"operand\":{\"kind\":\"FUNCTION\",\"functionCode\":\"numMax\",\"args\":[{\"kind\":\"REFERENCE\",\"refId\":21,\"refType\":\"VARIABLE\",\"code\":\"score\"},{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}]}}");
+        Map<String, Object> params = new HashMap<>();
+        params.put("score", 680);
+
+        Method method = RuleExperimentService.class.getDeclaredMethod(
+                "resolveRequestKey", RuleExperiment.class, RuleExperimentExecuteRequest.class, Map.class);
+        method.setAccessible(true);
+
+        assertEquals("680.0", method.invoke(new RuleExperimentService(), experiment, null, params));
     }
 
     private RuleExperiment experiment(String routingMode, String testRoutingMode) {

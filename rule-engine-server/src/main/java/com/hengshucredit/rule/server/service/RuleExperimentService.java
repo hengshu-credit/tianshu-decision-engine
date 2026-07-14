@@ -7,6 +7,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.dto.RuleExperimentGroupResult;
@@ -78,6 +79,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
+
+    @Resource
+    private RuleFunctionService ruleFunctionService;
 
     public IPage<RuleExperiment> pageExperiments(int pageNum, int pageSize, Long projectId,
                                                  Integer status, String keyword) {
@@ -168,15 +172,19 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             inputs.addAll(conditionFields.getInputFields());
         }
         if (hasText(experiment.getRequestKeyPath())) {
-            String path = experiment.getRequestKeyPath().trim().replaceFirst("^\\$\\.", "");
-            RuleDefinitionInputField requestKey = new RuleDefinitionInputField();
-            requestKey.setFieldName(path);
-            requestKey.setScriptName(path);
-            requestKey.setFieldLabel(path);
-            requestKey.setFieldType("STRING");
-            requestKey.setRefType("VARIABLE");
-            requestKey.setStatus(1);
-            inputs.add(requestKey);
+            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+                String path = firstNonBlank(operand.getString("code"), operand.getString("value"));
+                if (!hasText(path)) continue;
+                RuleDefinitionInputField requestKey = new RuleDefinitionInputField();
+                requestKey.setVarId(operand.getLong("refId"));
+                requestKey.setFieldName(path);
+                requestKey.setScriptName(path);
+                requestKey.setFieldLabel(firstNonBlank(operand.getString("label"), path));
+                requestKey.setFieldType(firstNonBlank(operand.getString("valueType"), "STRING"));
+                requestKey.setRefType(firstNonBlank(operand.getString("refType"), "VARIABLE"));
+                requestKey.setStatus(1);
+                inputs.add(requestKey);
+            }
         }
         return new RuleFieldAnalyzer.ResolvedFields(
                 deduplicateInputs(inputs), deduplicateOutputs(outputs));
@@ -727,9 +735,6 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (!hasText(experiment.getTestRoutingMode())) {
             experiment.setTestRoutingMode(ROUTING_CONDITION);
         }
-        if (!hasText(experiment.getRequestKeyPath())) {
-            experiment.setRequestKeyPath("requestId");
-        }
     }
 
     private void normalizeGroup(RuleExperimentGroup group) {
@@ -752,7 +757,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         if (request != null && hasText(request.getRequestKey())) {
             return request.getRequestKey();
         }
-        Object configured = readPath(params, experiment.getRequestKeyPath());
+        Object configured = hasText(experiment.getRequestKeyPath())
+                ? OperandValueResolver.resolve(experiment.getRequestKeyPath(), params,
+                Collections.<String, Object>emptyMap(), this::invokeOperandFunction)
+                : null;
         if (configured != null && hasText(String.valueOf(configured))) {
             return String.valueOf(configured);
         }
@@ -764,6 +772,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
         }
         return null;
+    }
+
+    private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {
+        return ruleFunctionService == null
+                ? BuiltinFunctionInvoker.invoke(functionCode, args)
+                : ruleFunctionService.invoke(functionId, args);
     }
 
     private LocalDateTime resolveRequestTime(RuleExperimentExecuteRequest request, Map<String, Object> params) {
@@ -809,6 +823,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 return value;
             }
         }
+        return null;
+    }
+
+    private String firstNonBlank(String... values) {
+        if (values == null) return null;
+        for (String value : values) if (hasText(value)) return value;
         return null;
     }
 

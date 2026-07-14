@@ -19,6 +19,9 @@ function createContext(overrides = {}) {
     $refs: { form: { validate: cb => cb(true) } },
     projectRefs: [],
     projectVars: [],
+    projectFunctions: [],
+    projectLists: [],
+    varPickerOptions: [],
     rulesForProject: [],
     ruleFieldMap: {},
     nextUid: 1,
@@ -37,6 +40,7 @@ function createContext(overrides = {}) {
     ctx[name] = ExperimentDetail.methods[name].bind(ctx)
   })
   ctx.experimentGuideCards = overrides.experimentGuideCards || ExperimentDetail.data.call(ctx).experimentGuideCards
+  ctx.requestKeyKinds = ExperimentDetail.data.call(ctx).requestKeyKinds
   ctx.form = overrides.form || ctx.emptyForm()
   Object.defineProperty(ctx, 'productionFormGroups', {
     get() { return ExperimentDetail.computed.productionFormGroups.call(ctx) }
@@ -133,6 +137,36 @@ describe('ExperimentDetail', () => {
 
     expect(ctx.experimentInputFields.map(f => f.fieldName)).toEqual(['amount', 'age'])
     expect(ctx.experimentOutputFields.map(f => f.fieldName)).toEqual(['riskLevel'])
+  })
+
+  test('请求键使用统一表达式保存并归集引用字段', async () => {
+    saveExperiment.mockResolvedValue({ data: { id: 12 } })
+    const ctx = createContext()
+    ctx.form.projectId = 1
+    ctx.form.experimentCode = 'EXP_KEY'
+    ctx.form.experimentName = '组合请求键'
+    ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].conditionConfig = null
+    ctx.form.requestKeyOperand = {
+      kind: 'CAST',
+      targetType: 'STRING',
+      operand: {
+        kind: 'OPERATION',
+        operator: '+',
+        operands: [
+          { kind: 'REFERENCE', refId: 8, refType: 'VARIABLE', code: 'customerId', label: '客户ID', valueType: 'STRING' },
+          { kind: 'LITERAL', value: '-RISK', valueType: 'STRING' }
+        ]
+      }
+    }
+
+    expect(ctx.experimentInputFields.map(field => field.fieldName)).toContain('customerId')
+
+    await ctx.handleSave()
+
+    const payload = saveExperiment.mock.calls[0][0]
+    expect(JSON.parse(payload.requestKeyPath)).toEqual(ctx.form.requestKeyOperand)
+    expect(payload.requestKeyOperand).toBeUndefined()
   })
 
   test('新建保存成功后跳转到详情页', async () => {
