@@ -68,6 +68,80 @@ public class OperandCompilerTest {
         Assert.assertEquals("max(request.score, 600)", compile("{\"kind\":\"FUNCTION\",\"functionCode\":\"max\",\"args\":[{\"kind\":\"PATH\",\"value\":\"request.score\"},{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}]}"));
     }
 
+    @Test
+    public void compilesRecursiveExpressionNodes() {
+        Assert.assertEquals("(request.amount + 100)", compile("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[{\"kind\":\"PATH\",\"value\":\"request.amount\"},{\"kind\":\"LITERAL\",\"value\":\"100\",\"valueType\":\"NUMBER\"}]}"));
+        Assert.assertEquals("objGet(request.payload, \"score\")", compile("{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}"));
+        Assert.assertEquals("arrGet(request.items, 0)", compile("{\"kind\":\"ACCESS\",\"accessType\":\"INDEX\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.items\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"0\",\"valueType\":\"NUMBER\"}}"));
+        Assert.assertEquals("toNumberValue(\"12.5\")", compile("{\"kind\":\"CAST\",\"targetType\":\"NUMBER\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"12.5\",\"valueType\":\"STRING\"}}"));
+        Assert.assertEquals("[1, \"A\"]", compile("{\"kind\":\"ARRAY\",\"items\":[{\"kind\":\"LITERAL\",\"value\":\"1\",\"valueType\":\"NUMBER\"},{\"kind\":\"LITERAL\",\"value\":\"A\",\"valueType\":\"STRING\"}]}"));
+        Assert.assertEquals("listQuery([1, 2], [\"MOBILE\"], \"ANY_FIELD_ALL_LISTS\", \"IN_LIST\")", compile("{\"kind\":\"LIST_QUERY\",\"listIds\":[1,2],\"itemTypes\":[\"MOBILE\"],\"combinationMode\":\"ANY_FIELD_ALL_LISTS\",\"matchMode\":\"IN_LIST\"}"));
+    }
+
+    @Test
+    public void compilesAmountFormulaWithStableReferences() {
+        JSONObject expression = operation("*",
+                function("numCeil", operation("/",
+                        function("max", number("4200"), function("min",
+                                operation("+",
+                                        operation("*", function("min", function("max", reference(101, "monthlyRepayment"), reference(102, "usedAmount")), number("9000")), reference(103, "riskFactor"), number("0.3")),
+                                        operation("*", reference(104, "riskAmount"), number("0.5"))),
+                                number("7000"))),
+                        number("500"))),
+                number("500"));
+
+        Assert.assertEquals("(numCeil((max(4200, min(((min(max(monthlyRepayment, usedAmount), 9000) * riskFactor * 0.3) + (riskAmount * 0.5)), 7000)) / 500)) * 500)", OperandCompiler.compile(expression, null));
+    }
+
+    @Test
+    public void rejectsInvalidExpressionNodes() {
+        assertCompileFails("{\"kind\":\"UNKNOWN\"}", "不支持");
+        assertCompileFails("{\"kind\":\"OPERATION\",\"operator\":\"+\",\"operands\":[null]}", "参数");
+        assertCompileFails("{\"kind\":\"REFERENCE\",\"code\":\"score\"}", "ID");
+    }
+
+    private void assertCompileFails(String json, String message) {
+        try {
+            compile(json);
+            Assert.fail("Expected compile to fail");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));
+        }
+    }
+
+    private JSONObject number(String value) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "LITERAL");
+        node.put("value", value);
+        node.put("valueType", "NUMBER");
+        return node;
+    }
+
+    private JSONObject reference(long id, String code) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "REFERENCE");
+        node.put("refId", id);
+        node.put("refType", "VARIABLE");
+        node.put("code", code);
+        return node;
+    }
+
+    private JSONObject function(String code, JSONObject... args) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "FUNCTION");
+        node.put("functionCode", code);
+        node.put("args", args);
+        return node;
+    }
+
+    private JSONObject operation(String operator, JSONObject... operands) {
+        JSONObject node = new JSONObject();
+        node.put("kind", "OPERATION");
+        node.put("operator", operator);
+        node.put("operands", operands);
+        return node;
+    }
+
     private String compile(String json) {
         return OperandCompiler.compile(JSON.parseObject(json), null);
     }

@@ -55,7 +55,8 @@ public class ActionDataCompiler {
 
     private static String compileAssign(JSONObject b, int indent, VarContext varContext) {
         if (b.getJSONObject("targetOperand") != null || b.getJSONObject("valueOperand") != null) {
-            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            JSONObject targetOperand = b.getJSONObject("targetOperand");
+            String target = targetOperand == null ? "" : OperandCompiler.compile(targetOperand, varContext);
             String value = OperandCompiler.compile(b.getJSONObject("valueOperand"), varContext);
             if (empty(target) || empty(value)) return "";
             StringBuilder code = new StringBuilder(pad(indent)).append(target).append(" = ").append(value);
@@ -138,7 +139,8 @@ public class ActionDataCompiler {
                 }
             }
             String call = functionCode + "(" + args + ")";
-            String target = OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext);
+            JSONObject targetOperand = b.getJSONObject("targetOperand");
+            String target = targetOperand == null ? "" : OperandCompiler.compile(targetOperand, varContext);
             return empty(target) ? pad(indent) + call : appendRuntimeSync(pad(indent) + target + " = " + call, target, indent);
         }
         String funcName = b.getString("funcName");

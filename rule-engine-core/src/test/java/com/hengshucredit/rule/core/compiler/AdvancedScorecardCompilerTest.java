@@ -57,9 +57,9 @@ public class AdvancedScorecardCompilerTest {
     public void compilesUnifiedOperandsForConditionsAndThresholdResults() {
         CompileResult result = compiler.compile("{"
                 + "\"initialScore\":100,"
-                + "\"resultVar\":{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"totalScore\",\"value\":\"totalScore\",\"valueType\":\"NUMBER\"}},"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"REFERENCE\",\"refId\":1,\"refType\":\"VARIABLE\",\"code\":\"totalScore\",\"value\":\"totalScore\",\"valueType\":\"NUMBER\"}},"
                 + "\"dimensionGroups\":[{\"dimensions\":[{\"rules\":[{\"conditions\":[{"
-                + "\"leftOperand\":{\"kind\":\"REFERENCE\",\"code\":\"creditScore\",\"value\":\"creditScore\",\"valueType\":\"NUMBER\"},"
+                + "\"leftOperand\":{\"kind\":\"REFERENCE\",\"refId\":2,\"refType\":\"VARIABLE\",\"code\":\"creditScore\",\"value\":\"creditScore\",\"valueType\":\"NUMBER\"},"
                 + "\"operator\":\">=\",\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}}],\"score\":20}]}]}],"
                 + "\"thresholds\":[{\"min\":120,\"max\":200,\"resultOperand\":{\"kind\":\"LITERAL\",\"value\":\"PASS\",\"valueType\":\"STRING\"}}]}"
         );

@@ -63,10 +63,10 @@ public class AdvancedCrossTableCompilerTest {
     public void compilesUnifiedOperandsForDimensionsSegmentsAndCells() {
         String json = "{"
                 + "\"resultVar\":{\"operand\":{\"kind\":\"PATH\",\"value\":\"decision.rate\",\"code\":\"decision.rate\"},\"varType\":\"DOUBLE\"},"
-                + "\"rowDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"age\",\"value\":\"age\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
+                + "\"rowDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"refId\":1,\"refType\":\"VARIABLE\",\"code\":\"age\",\"value\":\"age\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
                 + "{\"operator\":\">=\",\"valueOperand\":{\"kind\":\"LITERAL\",\"value\":\"18\",\"valueType\":\"NUMBER\"}}]}],"
-                + "\"colDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"limit\",\"value\":\"limit\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
-                + "{\"operator\":\">\",\"valueOperand\":{\"kind\":\"REFERENCE\",\"code\":\"minLimit\",\"value\":\"minLimit\",\"valueType\":\"NUMBER\"}}]}],"
+                + "\"colDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"refId\":2,\"refType\":\"VARIABLE\",\"code\":\"limit\",\"value\":\"limit\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\">\",\"valueOperand\":{\"kind\":\"REFERENCE\",\"refId\":3,\"refType\":\"VARIABLE\",\"code\":\"minLimit\",\"value\":\"minLimit\",\"valueType\":\"NUMBER\"}}]}],"
                 + "\"cells\":[[{\"kind\":\"LITERAL\",\"value\":\"0.2\",\"valueType\":\"NUMBER\"}]]}"
                 ;
 

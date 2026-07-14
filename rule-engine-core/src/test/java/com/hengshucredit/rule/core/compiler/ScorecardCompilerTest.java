@@ -88,9 +88,9 @@ public class ScorecardCompilerTest {
                 + "\"scoreItems\":[{"
                 + "\"leftOperand\":{\"kind\":\"PATH\",\"value\":\"request.age\",\"code\":\"request.age\",\"valueType\":\"NUMBER\"},"
                 + "\"condOperator\":\">=\","
-                + "\"rightOperand\":{\"kind\":\"REFERENCE\",\"value\":\"adultAge\",\"code\":\"adultAge\",\"valueType\":\"NUMBER\"},"
+                + "\"rightOperand\":{\"kind\":\"REFERENCE\",\"refId\":1,\"refType\":\"VARIABLE\",\"value\":\"adultAge\",\"code\":\"adultAge\",\"valueType\":\"NUMBER\"},"
                 + "\"score\":10,\"weight\":1}],"
-                + "\"thresholds\":[{\"min\":10,\"max\":20,\"resultOperand\":{\"kind\":\"REFERENCE\",\"value\":\"passLevel\",\"code\":\"passLevel\"}}]}"
+                + "\"thresholds\":[{\"min\":10,\"max\":20,\"resultOperand\":{\"kind\":\"REFERENCE\",\"refId\":2,\"refType\":\"VARIABLE\",\"value\":\"passLevel\",\"code\":\"passLevel\"}}]}"
         );
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
