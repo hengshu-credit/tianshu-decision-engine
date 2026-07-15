@@ -183,6 +183,23 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void apiRequestBodyUsesFormEncodingWhenConfigured() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("member_id", "merchant-1");
+        body.put("data_type", "json");
+        body.put("empty", null);
+
+        Object requestBody = new ExternalApiInvokeService().buildHttpRequestBody(
+                body, MediaType.APPLICATION_FORM_URLENCODED);
+
+        assertTrue(requestBody instanceof MultiValueMap);
+        MultiValueMap<String, ?> form = (MultiValueMap<String, ?>) requestBody;
+        assertEquals("merchant-1", form.getFirst("member_id"));
+        assertEquals("json", form.getFirst("data_type"));
+        assertEquals(null, form.getFirst("empty"));
+    }
+
+    @Test
     public void tokenContentTypeDefaultsToJson() {
         assertEquals(MediaType.APPLICATION_JSON,
                 new ExternalApiInvokeService().resolveTokenContentType(new LinkedHashMap<>()));
@@ -571,6 +588,122 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void invokeAppliesApiSecurityProfileBeforeSendingRequest() throws Exception {
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/integration/jk13113", exchange -> {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[1024];
+            int len;
+            while ((len = exchange.getRequestBody().read(chunk)) >= 0) {
+                buffer.write(chunk, 0, len);
+            }
+            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+            byte[] response = "{\"status\":0}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(10L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(102L);
+            config.setDatasourceId(10L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/integration/jk13113");
+            config.setContentType("application/json");
+            config.setAuthMode("NONE");
+            config.setAuthApiConfig("{\"securityProfile\":\"TIANCHUANG_MD5_SORTED\","
+                    + "\"securityConfig\":{\"tokenId\":\"TOKEN001\"}}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("appId", "APP001");
+            params.put("name", "张三");
+            params.put("idCard", "110101199001011234");
+            params.put("mobile", "13800138000");
+            service.invoke(102L, params);
+
+            assertTrue(requestBody.get().contains("\"tokenKey\":"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void invokeDecryptsSecurityProfileResponseBeforeMapping() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/openapi/queryData/FRAI001C", exchange -> {
+            byte[] response = ("{\"response\":\""
+                    + "7tIn6QIzHDaXVCTpzEIwl7FmdP9vNGs8CoBZXbs1U7c=\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(11L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(103L);
+            config.setDatasourceId(11L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/openapi/queryData/FRAI001C");
+            config.setContentType("application/json");
+            config.setAuthMode("NONE");
+            config.setAuthApiConfig("{\"securityProfile\":\"BAIHANG_HMAC_SHA1_3DES\",\"securityConfig\":{"
+                    + "\"secretId\":\"secret-id\","
+                    + "\"secretKey\":\"MDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1u\"}}");
+            config.setResponseMapping("{\"status\":\"body.response.p2pEscapeDebtStatus\"}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("requestRefId", "REQ202607150001");
+            params.put("name", "张三");
+            params.put("certNo", "110101199001011234");
+            params.put("applyDate", "20260715120000");
+            params.put("queryReason", "1");
+            Map<String, Object> result = service.invoke(103L, params);
+
+            assertEquals("0", ((Map<?, ?>) result.get("body")).get("status"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void sensitiveRequestFieldsAreMaskedBeforeLogging() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("username", "alice");
@@ -645,6 +778,62 @@ public class ExternalApiInvokeServiceTest {
             service.invoke(100L, new LinkedHashMap<>());
 
             assertEquals("Bearer header-token-123456", authHeader.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void tokenApiCanWriteRawTokenToCustomHeader() throws Exception {
+        AtomicReference<String> tokenHeader = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            byte[] response = "{\"token_id\":\"ice-token-123\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/score", exchange -> {
+            tokenHeader.set(exchange.getRequestHeaders().getFirst("token_id"));
+            byte[] response = "{\"code\":\"00\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(9L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"method\":\"POST\","
+                    + "\"tokenPath\":\"body.token_id\",\"tokenHeaderName\":\"token_id\",\"tokenPrefix\":\"\"}");
+            datasource.setTokenCacheSeconds(0);
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(101L);
+            config.setDatasourceId(9L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/score");
+            config.setContentType("application/json");
+            config.setAuthMode("INHERIT");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, config));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            service.invoke(101L, new LinkedHashMap<>());
+
+            assertEquals("ice-token-123", tokenHeader.get());
         } finally {
             server.stop(0);
         }

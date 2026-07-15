@@ -1,18 +1,31 @@
 import { shallowMount } from '@vue/test-utils'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 
+const focusManualInput = jest.fn()
+
 function mountPicker(propsData = {}) {
   return shallowMount(OperandPicker, {
     propsData: { value: null, vars: [], functions: [], allowedKinds: ['LITERAL', 'REFERENCE', 'FUNCTION', 'OPERATION'], ...propsData },
     stubs: {
       VarPicker: { name: 'VarPicker', template: '<div />' },
       ExpressionEditorDialog: { name: 'ExpressionEditorDialog', template: '<div />' },
+      'el-input': {
+        name: 'ElInput',
+        template: '<input />',
+        methods: { focus: focusManualInput }
+      },
+      'el-select': { name: 'ElSelect', template: '<select><slot /></select>' },
+      'el-option': { name: 'ElOption', template: '<option />' },
       'el-tooltip': { template: '<span><slot /></span>' }
     }
   })
 }
 
 describe('统一 OperandPicker', () => {
+  beforeEach(() => {
+    focusManualInput.mockClear()
+  })
+
   test('选择带参数函数时先进入表达式编辑器，应用后才更新外部值', () => {
     const fn = { id: 9, funcCode: 'max', paramsJson: '[{"name":"a","type":"NUMBER"},{"name":"b","type":"NUMBER"}]' }
     const wrapper = mountPicker({ functions: [fn] })
@@ -45,14 +58,50 @@ describe('统一 OperandPicker', () => {
     expect(wrapper.vm.editorVisible).toBe(true)
   })
 
-  test('手输阈值和路径以空节点打开统一表达式画布', () => {
+  test('手输阈值在当前选择框切换为输入并支持修改类型', async() => {
     const wrapper = mountPicker({ expectedType: 'NUMBER' })
 
-    wrapper.vm.openManualEditor('LITERAL')
-    expect(wrapper.vm.editorValue).toEqual({ kind: 'LITERAL', value: '', valueType: 'NUMBER' })
-    expect(wrapper.vm.editorVisible).toBe(true)
+    wrapper.vm.openManualInput('LITERAL')
+    await wrapper.vm.$nextTick()
 
-    wrapper.vm.openManualEditor('PATH')
-    expect(wrapper.vm.editorValue).toMatchObject({ kind: 'PATH', value: '', resolved: false })
+    expect(wrapper.find('.operand-manual-editor').exists()).toBe(true)
+    expect(wrapper.vm.editorVisible).toBe(false)
+    expect(wrapper.vm.manualOperand).toEqual({ kind: 'LITERAL', value: '', valueType: 'NUMBER' })
+    expect(focusManualInput).toHaveBeenCalled()
+
+    wrapper.vm.patchManualOperand({ valueType: 'BOOLEAN' })
+    wrapper.vm.patchManualOperand({ value: 'true' })
+
+    const emitted = wrapper.emitted().input
+    expect(emitted[emitted.length - 1][0]).toEqual({ kind: 'LITERAL', value: 'true', valueType: 'BOOLEAN' })
+    expect(wrapper.vm.editorVisible).toBe(false)
+  })
+
+  test('手输路径在当前选择框录入并按稳定 ID 解析', () => {
+    const wrapper = mountPicker({
+      allowedKinds: ['PATH', 'REFERENCE'],
+      vars: [{
+        varCode: 'request.age',
+        varLabel: '客户年龄',
+        varType: 'INTEGER',
+        _varId: 8,
+        _refType: 'DATA_OBJECT',
+        _ref: { category: 'object' }
+      }]
+    })
+
+    wrapper.vm.openManualInput('PATH')
+    wrapper.vm.updateManualValue('request.age')
+    wrapper.vm.resolveManualPath()
+
+    const emitted = wrapper.emitted().input
+    expect(emitted[emitted.length - 1][0]).toMatchObject({
+      kind: 'PATH',
+      value: 'request.age',
+      refId: 8,
+      refType: 'DATA_OBJECT',
+      resolved: true
+    })
+    expect(wrapper.vm.editorVisible).toBe(false)
   })
 })

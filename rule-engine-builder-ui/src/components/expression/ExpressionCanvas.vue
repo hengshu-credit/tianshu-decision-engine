@@ -32,6 +32,7 @@
         <el-select
           :value="node.valueType || expectedType || 'STRING'"
           size="mini"
+          popper-class="expression-editor-select-popper"
           @input="$emit('patchNode', { path: path.slice(), fields: { valueType: $event } })"
         >
           <el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" />
@@ -124,9 +125,23 @@ export default {
     children() { return expressionChildEntries(this.node, this.path) },
     collapsed() { return this.collapsedPathKeys.includes(expressionPathKey(this.path)) },
     descendantCount() { return expressionDescendantCount(this.node) },
-    pathKey() { return expressionPathKey(this.path) }
+    pathKey() { return expressionPathKey(this.path) },
+    editingManual() { return this.isSelected(this.path) && this.node && ['LITERAL', 'PATH'].includes(this.node.kind) }
+  },
+  watch: {
+    editingManual(value) {
+      if (value) this.focusManualInput()
+    }
+  },
+  mounted() {
+    if (this.editingManual) this.focusManualInput()
   },
   methods: {
+    focusManualInput() {
+      this.$nextTick(() => {
+        if (this.$refs.manualInput && typeof this.$refs.manualInput.focus === 'function') this.$refs.manualInput.focus()
+      })
+    },
     isSelected(path) { return pathsEqual(path, this.selectedPath) },
     summary(node) { return operandDisplay(node) || '待配置' },
     kindName(kind) {

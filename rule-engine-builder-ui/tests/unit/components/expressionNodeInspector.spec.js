@@ -12,6 +12,15 @@ function mountInspector(node) {
 }
 
 describe('ExpressionNodeInspector', () => {
+  test('阈值类型选择器显示在全屏表达式编辑器上方并可修改类型', () => {
+    const wrapper = mountInspector(createLiteralOperand('1', 'NUMBER'))
+    const select = wrapper.findComponent({ name: 'ElSelect' })
+
+    expect(select.attributes('popper-class')).toBe('expression-editor-select-popper')
+    wrapper.vm.patch({ valueType: 'BOOLEAN' })
+    expect(wrapper.emitted().input[0][0].valueType).toBe('BOOLEAN')
+  })
+
   test('函数参数支持添加和删减', async () => {
     const wrapper = shallowMount(ExpressionNodeInspector, {
       propsData: { node: { kind: 'FUNCTION', functionCode: 'max', args: [null, null] } },

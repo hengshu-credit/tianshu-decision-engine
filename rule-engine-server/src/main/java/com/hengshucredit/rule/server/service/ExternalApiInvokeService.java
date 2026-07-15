@@ -61,6 +61,9 @@ public class ExternalApiInvokeService {
     @Resource
     private RuleRuntimeCallLogService runtimeCallLogService;
 
+    @Resource
+    private ExternalApiSecurityService externalApiSecurityService = new ExternalApiSecurityService();
+
     private final ConcurrentMap<String, TokenCache> tokenCaches = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ApiResponseCache> responseCaches = new ConcurrentHashMap<>();
 
@@ -209,6 +212,8 @@ public class ExternalApiInvokeService {
         applyAuth(builder, headers, datasource, apiConfig, params);
 
         Object requestBody = buildBody(apiConfig, params);
+        requestBody = externalApiSecurityService.prepareRequest(url, requestBody, apiConfig.getAuthApiConfig());
+        requestBody = buildHttpRequestBody(requestBody, headers.getContentType());
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         int timeout = apiConfig.getTimeoutMs() == null ? 3000 : apiConfig.getTimeoutMs();
         requestFactory.setConnectTimeout(timeout);
@@ -231,6 +236,7 @@ public class ExternalApiInvokeService {
 
         Map<String, Object> result = new LinkedHashMap<>();
         Object responseBody = parseJsonOrRaw(response.getBody());
+        responseBody = externalApiSecurityService.processResponse(responseBody, apiConfig.getAuthApiConfig());
         trace.responseStatus = response.getStatusCodeValue();
         trace.responseBody = responseBody;
         result.put("success", response.getStatusCode().is2xxSuccessful());
@@ -351,9 +357,19 @@ public class ExternalApiInvokeService {
             String cacheKey = apiConfig.getId() + ":" + authMode + ":" + tokenUrl;
             String token = requestToken(config, params, tokenUrl, cacheKey, cacheSeconds);
             if (token != null && !token.isEmpty()) {
-                headers.setBearerAuth(token);
+                applyTokenHeader(headers, config, token);
             }
         }
+    }
+
+    private void applyTokenHeader(HttpHeaders headers, Map<String, Object> config, String token) {
+        if (!config.containsKey("tokenHeaderName") && !config.containsKey("tokenPrefix")) {
+            headers.setBearerAuth(token);
+            return;
+        }
+        String headerName = stringValue(config.get("tokenHeaderName"));
+        String prefix = config.containsKey("tokenPrefix") ? stringValue(config.get("tokenPrefix")) : "Bearer ";
+        headers.set(headerName, prefix + token);
     }
 
     private String requestToken(Map<String, Object> config, Map<String, Object> params, String tokenUrl,
@@ -469,6 +485,20 @@ public class ExternalApiInvokeService {
             return form;
         }
         return body;
+    }
+
+    Object buildHttpRequestBody(Object body, MediaType contentType) {
+        if (!(body instanceof Map) || contentType == null
+                || !MediaType.APPLICATION_FORM_URLENCODED.includes(contentType)) {
+            return body;
+        }
+        MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        for (Map.Entry<String, Object> entry : parseNestedMap(body).entrySet()) {
+            if (entry.getValue() != null) {
+                form.add(entry.getKey(), String.valueOf(entry.getValue()));
+            }
+        }
+        return form;
     }
 
     private Object readToken(ResponseEntity<String> response, Object parsed, String tokenPath) {

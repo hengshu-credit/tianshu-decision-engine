@@ -11,7 +11,7 @@
 
       <template v-if="node.kind === 'LITERAL'">
         <label>阈值类型</label>
-        <el-select :value="node.valueType" size="small" @input="patch({ valueType: $event })">
+        <el-select :value="node.valueType" size="small" popper-class="expression-editor-select-popper" @input="patch({ valueType: $event })">
           <el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" />
         </el-select>
         <label>阈值</label>
@@ -22,7 +22,7 @@
         <div class="inline-heading"><label>同级运算项</label><el-button type="text" @click="addOperationTerm">增加运算项</el-button></div>
         <div v-for="(term, index) in node.terms || []" :key="index" class="argument-row operation-term-row">
           <span v-if="index === 0" class="operation-start">起始项</span>
-          <el-select v-else :value="term.operator" size="mini" @input="patchTermOperator(index, $event)">
+          <el-select v-else :value="term.operator" size="mini" popper-class="expression-editor-select-popper" @input="patchTermOperator(index, $event)">
             <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
           </el-select>
           <span>{{ term.operand ? '已配置' : '待配置' }}</span>
@@ -53,7 +53,7 @@
 
       <template v-else-if="node.kind === 'CAST'">
         <label>目标类型</label>
-        <el-select :value="node.targetType" size="small" @input="patch({ targetType: $event, valueType: $event })">
+        <el-select :value="node.targetType" size="small" popper-class="expression-editor-select-popper" @input="patch({ targetType: $event, valueType: $event })">
           <el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" />
         </el-select>
       </template>
@@ -68,11 +68,11 @@
 
       <template v-else-if="node.kind === 'LIST_QUERY'">
         <label>名单（可多选）</label>
-        <el-select :value="node.listIds" size="small" multiple filterable @input="patch({ listIds: $event })">
+        <el-select :value="node.listIds" size="small" multiple filterable popper-class="expression-editor-select-popper" @input="patch({ listIds: $event })">
           <el-option v-for="item in listOptions" :key="item.id" :label="item.listName || item.name || item.listCode" :value="item.id" />
         </el-select>
         <label>字段与名单组合</label>
-        <el-select :value="node.combinationMode" size="small" @input="patch({ combinationMode: $event })">
+        <el-select :value="node.combinationMode" size="small" popper-class="expression-editor-select-popper" @input="patch({ combinationMode: $event })">
           <el-option v-for="item in listCombinationModes" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
         <p class="field-tip">{{ listCombinationDescription }}</p>
@@ -82,7 +82,7 @@
         </el-radio-group>
         <p class="field-tip">“不在名单内”由条件操作符控制，这里只配置名单内容如何匹配，避免重复取反。</p>
         <label>内容类型</label>
-        <el-select :value="node.itemTypes" size="small" multiple clearable collapse-tags placeholder="不选表示任意类型" @input="patch({ itemTypes: $event })">
+        <el-select :value="node.itemTypes" size="small" multiple clearable collapse-tags popper-class="expression-editor-select-popper" placeholder="不选表示任意类型" @input="patch({ itemTypes: $event })">
           <el-option v-for="item in listItemTypes" :key="item.value" :label="item.label" :value="item.value" />
         </el-select>
       </template>

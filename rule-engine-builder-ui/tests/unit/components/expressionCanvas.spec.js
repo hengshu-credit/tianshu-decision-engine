@@ -2,6 +2,14 @@ import { shallowMount } from '@vue/test-utils'
 import ExpressionCanvas from '@/components/expression/ExpressionCanvas.vue'
 import { createOperationOperand } from '@/utils/operand'
 
+const focusManualInput = jest.fn()
+
+const ElInputStub = {
+  name: 'ElInput',
+  template: '<input />',
+  methods: { focus: focusManualInput }
+}
+
 describe('ExpressionCanvas', () => {
   const node = {
     kind: 'FUNCTION',
@@ -41,18 +49,25 @@ describe('ExpressionCanvas', () => {
     expect(children[1].classList.contains('canvas-node')).toBe(true)
   })
 
-  test('选中阈值和路径时输入控件出现在画布节点内', () => {
+  test('选中阈值和路径时输入控件出现在画布节点内', async() => {
+    focusManualInput.mockClear()
     const literal = shallowMount(ExpressionCanvas, {
       propsData: { node: { kind: 'LITERAL', value: '', valueType: 'NUMBER' }, selectedPath: [], path: [] },
-      stubs: ['el-input', 'el-select', 'el-option']
+      stubs: { 'el-input': ElInputStub, 'el-select': true, 'el-option': true }
     })
+    await literal.vm.$nextTick()
     expect(literal.find('.canvas-inline-editor').exists()).toBe(true)
+    expect(literal.findComponent({ name: 'ElSelect' }).attributes('popper-class')).toBe('expression-editor-select-popper')
+    expect(focusManualInput).toHaveBeenCalled()
 
+    focusManualInput.mockClear()
     const path = shallowMount(ExpressionCanvas, {
       propsData: { node: { kind: 'PATH', value: '', resolved: false }, selectedPath: [], path: [] },
-      stubs: ['el-input', 'el-select', 'el-option']
+      stubs: { 'el-input': ElInputStub, 'el-select': true, 'el-option': true }
     })
+    await path.vm.$nextTick()
     expect(path.find('.canvas-path-editor').exists()).toBe(true)
+    expect(focusManualInput).toHaveBeenCalled()
   })
 
   test('运算项显示项间运算符且保持同一子层', () => {

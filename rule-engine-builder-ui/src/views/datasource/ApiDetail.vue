@@ -200,6 +200,37 @@
             <el-form-item v-else label="自定义配置">
               <monaco-editor v-model="form.authApiConfig" language="json" height="180px" />
             </el-form-item>
+
+            <el-divider content-position="left">报文安全</el-divider>
+            <el-row :gutter="12">
+              <el-col :lg="8" :md="24">
+                <el-form-item label="报文安全方案">
+                  <el-select v-model="apiSecurityConfig.securityProfile" style="width:100%" @change="onSecurityProfileChange">
+                    <el-option v-for="item in securityProfileOptions" :key="item.value" :label="item.label" :value="item.value" />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col v-if="apiSecurityConfig.securityProfile === 'TIANCHUANG_MD5_SORTED'" :lg="16" :md="24">
+                <el-form-item label="天创Token ID">
+                  <el-input v-model="apiSecurityConfig.tokenId" type="password" show-password autocomplete="new-password" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row v-if="apiSecurityConfig.securityProfile === 'BAIHANG_HMAC_SHA1_3DES'" :gutter="12">
+              <el-col :lg="12" :md="24">
+                <el-form-item label="百行Secret ID">
+                  <el-input v-model="apiSecurityConfig.secretId" type="password" show-password autocomplete="new-password" />
+                </el-form-item>
+              </el-col>
+              <el-col :lg="12" :md="24">
+                <el-form-item label="百行Secret Key">
+                  <el-input v-model="apiSecurityConfig.secretKey" type="password" show-password autocomplete="new-password" placeholder="Base64编码的24字节密钥" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <div class="field-help">
+              朴道 SM 数字信封和融360 RSA 的资料不完整，仅保存停用配置；随机凭据必须在启用前替换。
+            </div>
           </div>
         </el-tab-pane>
 
@@ -734,6 +765,7 @@ export default {
       responseMappingRows: [this.emptyResponseMappingRow()],
       responseConditionRows: [],
       apiAuthConfig: this.emptyAuthConfig('INHERIT'),
+      apiSecurityConfig: this.emptySecurityConfig(),
       billingConfig: this.emptyBillingConfig(),
       asyncShared: this.emptyAsyncShared(),
       asyncPollConfig: this.emptyAsyncPollConfig(),
@@ -761,6 +793,11 @@ export default {
         { label: 'OAuth2', value: 'OAUTH2' },
         { label: 'Token接口', value: 'TOKEN_API' },
         { label: '自定义', value: 'CUSTOM' }
+      ],
+      securityProfileOptions: [
+        { label: '无', value: 'NONE' },
+        { label: '天创排序MD5', value: 'TIANCHUANG_MD5_SORTED' },
+        { label: '百行HMAC-SHA1 + 3DES', value: 'BAIHANG_HMAC_SHA1_3DES' }
       ],
       exceptionStrategyOptions: [
         { label: '快速失败', value: 'FAIL_FAST' },
@@ -917,6 +954,9 @@ export default {
       if (type === 'API_KEY') common.name = 'X-API-Key'
       return common
     },
+    emptySecurityConfig() {
+      return { securityProfile: 'NONE', tokenId: '', secretId: '', secretKey: '' }
+    },
     emptyAsyncShared() {
       return { taskIdPath: 'body.taskId' }
     },
@@ -943,7 +983,7 @@ export default {
       }
     },
     async loadDatasourceOptions() {
-      const res = await listDatasources({ pageNum: 1, pageSize: 500, status: 1 })
+      const res = await listDatasources({ pageNum: 1, pageSize: 500 })
       this.datasourceOptions = (res.data && res.data.records) || []
     },
     async loadDataObjectOptions(projectId) {
@@ -978,6 +1018,9 @@ export default {
       this.apiAuthConfig = this.emptyAuthConfig(type)
       if (type === 'INHERIT' || type === 'NONE') this.form.authApiConfig = ''
     },
+    onSecurityProfileChange(profile) {
+      this.apiSecurityConfig = { ...this.emptySecurityConfig(), securityProfile: profile }
+    },
     resolveDatasourceProjectId(datasourceId) {
       const datasource = this.datasourceOptions.find(item => String(item.id) === String(datasourceId))
       return datasource && datasource.projectId ? datasource.projectId : 0
@@ -1004,13 +1047,23 @@ export default {
     syncAuthConfigFromForm() {
       const type = this.form.authMode
       const base = this.emptyAuthConfig(type)
+      this.apiSecurityConfig = this.emptySecurityConfig()
       if (!this.form.authApiConfig) {
         this.apiAuthConfig = base
         return
       }
-      if (type === 'CUSTOM') return
       try {
         const parsed = JSON.parse(this.form.authApiConfig)
+        const securityConfig = parsed.securityConfig && typeof parsed.securityConfig === 'object'
+          ? parsed.securityConfig
+          : {}
+        this.apiSecurityConfig = {
+          securityProfile: parsed.securityProfile || 'NONE',
+          tokenId: securityConfig.tokenId || '',
+          secretId: securityConfig.secretId || '',
+          secretKey: securityConfig.secretKey || ''
+        }
+        if (type === 'CUSTOM') return
         const merged = { ...base, ...parsed }
         if (parsed.headers && typeof parsed.headers !== 'string') merged.headers = this.stringifyJson(parsed.headers)
         if (parsed.body && typeof parsed.body !== 'string') merged.body = this.stringifyJson(parsed.body)
@@ -1193,25 +1246,25 @@ export default {
     },
     buildApiAuthConfig() {
       const type = this.form.authMode
-      if (!type || type === 'INHERIT' || type === 'NONE') return ''
+      let config = {}
       if (type === 'BASIC') {
-        return this.stringifyJson({
+        config = {
           username: this.apiAuthConfig.username,
           password: this.apiAuthConfig.password
-        })
+        }
       }
-      if (type === 'BEARER') return this.stringifyJson({ token: this.apiAuthConfig.token })
+      if (type === 'BEARER') config = { token: this.apiAuthConfig.token }
       if (type === 'API_KEY') {
-        return this.stringifyJson({
+        config = {
           location: this.apiAuthConfig.location,
           name: this.apiAuthConfig.name,
           value: this.apiAuthConfig.value
-        })
+        }
       }
       if (type === 'TOKEN_API' || type === 'OAUTH2') {
         const headers = this.parseJsonText(this.apiAuthConfig.headers, '鉴权请求头')
         const body = this.parseJsonText(this.apiAuthConfig.body, '鉴权请求体')
-        return this.stringifyJson({
+        config = {
           tokenUrl: this.apiAuthConfig.tokenUrl,
           method: this.apiAuthConfig.method,
           contentType: this.apiAuthConfig.contentType,
@@ -1219,9 +1272,34 @@ export default {
           body,
           tokenPath: this.apiAuthConfig.tokenPath,
           expiresInPath: this.apiAuthConfig.expiresInPath
-        })
+        }
       }
-      return this.blankToNull(this.form.authApiConfig) || ''
+      if (type === 'CUSTOM' && this.form.authApiConfig) {
+        config = this.parseJsonText(this.form.authApiConfig, '接口鉴权配置')
+        delete config.securityProfile
+        delete config.securityConfig
+      }
+      const securityConfig = this.buildSecurityConfig()
+      config = { ...config, ...securityConfig }
+      return Object.keys(config).length ? this.stringifyJson(config) : ''
+    },
+    buildSecurityConfig() {
+      if (this.apiSecurityConfig.securityProfile === 'TIANCHUANG_MD5_SORTED') {
+        return {
+          securityProfile: 'TIANCHUANG_MD5_SORTED',
+          securityConfig: { tokenId: this.apiSecurityConfig.tokenId }
+        }
+      }
+      if (this.apiSecurityConfig.securityProfile === 'BAIHANG_HMAC_SHA1_3DES') {
+        return {
+          securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
+          securityConfig: {
+            secretId: this.apiSecurityConfig.secretId,
+            secretKey: this.apiSecurityConfig.secretKey
+          }
+        }
+      }
+      return {}
     },
     buildNameValueConfig(rows) {
       const result = {}

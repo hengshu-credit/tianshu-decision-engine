@@ -63,7 +63,7 @@ describe('OperandPicker', () => {
     expect(wrapper.vm.activeCategory).toBe('manual')
   })
 
-  test('手输阈值请求进入统一表达式画布', () => {
+  test('手输阈值只请求当前输入位接管', () => {
     const wrapper = mountPicker({ vars: references, expectedType: 'NUMBER' })
     wrapper.vm.requestManualEdit('LITERAL')
 
@@ -71,7 +71,7 @@ describe('OperandPicker', () => {
     expect(wrapper.emitted().input).toBeUndefined()
   })
 
-  test('手输路径请求进入统一表达式画布', () => {
+  test('手输路径只请求当前输入位接管', () => {
     const wrapper = mountPicker({ vars: references })
     wrapper.vm.requestManualEdit('PATH')
 

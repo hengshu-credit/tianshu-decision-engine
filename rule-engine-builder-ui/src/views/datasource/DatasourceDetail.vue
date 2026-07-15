@@ -163,6 +163,18 @@
               </el-form-item>
             </el-col>
           </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="Token Header名称">
+                <el-input v-model="authConfig.tokenHeaderName" placeholder="默认 Authorization；冰鉴填写 token_id" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Token前缀">
+                <el-input v-model="authConfig.tokenPrefix" placeholder="默认 Bearer；冰鉴留空" />
+              </el-form-item>
+            </el-col>
+          </el-row>
         </template>
         <template v-else>
           <el-form-item label="自定义JSON">
@@ -265,6 +277,7 @@ export default {
         username: '', password: '', token: '', name: 'X-API-Key', value: '', location: 'HEADER',
         tokenUrl: '/oauth/token', method: 'POST', contentType: 'application/json',
         tokenPath: 'body.access_token', expiresInPath: 'body.expires_in',
+        tokenHeaderName: 'Authorization', tokenPrefix: 'Bearer ',
         headers: '{}', body: '{"grant_type":"client_credentials"}'
       }
       if (type === 'TOKEN_API' || type === 'OAUTH2') {
@@ -324,7 +337,9 @@ export default {
           headers: this.parseJsonText(this.authConfig.headers, '鉴权请求头'),
           body: this.parseJsonText(this.authConfig.body, '鉴权请求体'),
           tokenPath: this.authConfig.tokenPath,
-          expiresInPath: this.authConfig.expiresInPath
+          expiresInPath: this.authConfig.expiresInPath,
+          tokenHeaderName: this.authConfig.tokenHeaderName,
+          tokenPrefix: this.authConfig.tokenPrefix
         })
       }
       return this.blankToNull(rawAuthConfig)

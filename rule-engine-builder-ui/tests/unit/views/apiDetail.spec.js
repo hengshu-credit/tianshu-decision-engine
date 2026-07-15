@@ -1,5 +1,6 @@
 import ApiDetail from '@/views/datasource/ApiDetail.vue'
 import * as dataObjectApi from '@/api/dataObject'
+import * as datasourceApi from '@/api/datasource'
 
 afterEach(() => { jest.clearAllMocks() })
 
@@ -20,6 +21,7 @@ function createContext(overrides = {}) {
     responseMappingJsonText: '{}',
     syncingMapping: false,
     apiAuthConfig: ApiDetail.methods.emptyAuthConfig('INHERIT'),
+    apiSecurityConfig: { securityProfile: 'NONE', tokenId: '', secretId: '', secretKey: '' },
     billingConfig: ApiDetail.methods.emptyBillingConfig(),
     asyncShared: ApiDetail.methods.emptyAsyncShared(),
     asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
@@ -34,6 +36,17 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
+  test('loadDatasourceOptions includes disabled datasources for configuration', async () => {
+    const disabledDatasource = { id: 2, datasourceCode: 'icekredit_qingyun', status: 0 }
+    datasourceApi.listDatasources.mockResolvedValue({ data: { records: [disabledDatasource] } })
+    const ctx = createContext()
+
+    await ctx.loadDatasourceOptions()
+
+    expect(datasourceApi.listDatasources).toHaveBeenCalledWith({ pageNum: 1, pageSize: 500 })
+    expect(ctx.datasourceOptions).toEqual([disabledDatasource])
+  })
+
   test('applyTemplate fills rule engine mapping template', () => {
     const ctx = createContext({
       form: {
@@ -288,5 +301,57 @@ describe('ApiDetail helpers', () => {
 
     expect(ctx.dataObjectTree).toEqual([requestNode])
     expect(ctx.fieldsForObject(10)).toEqual(requestNode.flatVariables)
+  })
+
+  test('security profile is saved independently from auth mode', () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), authMode: 'NONE' },
+      apiSecurityConfig: {
+        securityProfile: 'TIANCHUANG_MD5_SORTED',
+        tokenId: 'token-1',
+        secretId: '',
+        secretKey: ''
+      }
+    })
+
+    expect(JSON.parse(ctx.buildApiAuthConfig())).toEqual({
+      securityProfile: 'TIANCHUANG_MD5_SORTED',
+      securityConfig: { tokenId: 'token-1' }
+    })
+  })
+
+  test('saved baihang security profile loads structured fields', () => {
+    const ctx = createContext()
+    ctx.form.authMode = 'NONE'
+    ctx.form.authApiConfig = '{"securityProfile":"BAIHANG_HMAC_SHA1_3DES","securityConfig":{"secretId":"id","secretKey":"key"}}'
+
+    ctx.syncAuthConfigFromForm()
+
+    expect(ctx.apiSecurityConfig).toEqual({
+      securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
+      tokenId: '',
+      secretId: 'id',
+      secretKey: 'key'
+    })
+  })
+
+  test('switching security profile clears fields from previous profile', () => {
+    const ctx = createContext({
+      apiSecurityConfig: {
+        securityProfile: 'TIANCHUANG_MD5_SORTED',
+        tokenId: 'old-token',
+        secretId: '',
+        secretKey: ''
+      }
+    })
+
+    ctx.onSecurityProfileChange('BAIHANG_HMAC_SHA1_3DES')
+
+    expect(ctx.apiSecurityConfig).toEqual({
+      securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
+      tokenId: '',
+      secretId: '',
+      secretKey: ''
+    })
   })
 })

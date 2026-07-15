@@ -427,7 +427,7 @@ describe('VarPicker', () => {
     expect(wrapper.find('.vp-manual-editor').exists()).toBe(false)
   })
 
-  test('操作数模式点击手输类型只发出画布编辑请求', () => {
+  test('操作数模式点击手输类型只发出当前输入位编辑请求', () => {
     const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'PATH'], vars: standaloneOptions(1) })
 
     wrapper.vm.requestManualEdit('LITERAL')

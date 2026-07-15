@@ -335,3 +335,7 @@ export default {
 .expression-fade-enter-active, .expression-fade-leave-active { transition: opacity .16s ease; }
 .expression-fade-enter, .expression-fade-leave-to { opacity: 0; }
 </style>
+
+<style>
+.expression-editor-select-popper { z-index: 3300 !important; }
+</style>
