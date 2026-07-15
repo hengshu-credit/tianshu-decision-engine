@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ApiDocDTO;
+import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.*;
@@ -68,6 +69,8 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         
         // 保存项目
         save(project);
+        project.setTraceScopeCode(TraceIdGenerator.projectScopeCode(project.getId()));
+        updateById(project);
         projectAuthService.saveLegacyToken(project, token);
         
         log.info("Created project with access token: {}", project.getProjectCode());

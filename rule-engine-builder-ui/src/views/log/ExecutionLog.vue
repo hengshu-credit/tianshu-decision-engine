@@ -41,6 +41,7 @@
         </el-form-item>
         <el-form-item label="鉴权编码"><el-input v-model="qp.authCode" clearable placeholder="如 BASIC_MAIN" style="width:150px" /></el-form-item>
         <el-form-item label="Token 编码"><el-input v-model="qp.tokenCode" clearable placeholder="如 TOKEN_..." style="width:160px" /></el-form-item>
+        <el-form-item label="Trace ID"><el-input v-model="qp.traceId" clearable placeholder="完整 trace_id" style="width:250px" /></el-form-item>
         <el-form-item label="时间范围">
           <el-date-picker v-model="timeRange" type="datetimerange" range-separator="-"
             start-placeholder="开始时间" end-placeholder="结束时间" value-format="yyyy-MM-dd HH:mm:ss"
@@ -59,6 +60,7 @@
       <el-table-column prop="ruleCode" label="规则编码" min-width="140" show-overflow-tooltip>
         <template slot-scope="{row}">{{ ruleMap[row.ruleCode] || row.ruleCode }}</template>
       </el-table-column>
+      <el-table-column prop="traceId" label="会话 trace" min-width="190" show-overflow-tooltip />
       <el-table-column prop="modelType" label="模型类型" min-width="80" align="center">
         <template slot-scope="{row}">{{ modelTypeMap[row.modelType] || row.modelType }}</template>
       </el-table-column>
@@ -82,7 +84,7 @@
       </el-table-column>
       <el-table-column label="追踪" min-width="70" align="center">
         <template slot-scope="{row}">
-          <el-tag v-if="row.success === 1 && row.traceInfo" type="success" size="mini"><i class="el-icon-view"></i> 有</el-tag>
+          <el-tag v-if="row.traceInfo" :type="row.success === 1 ? 'success' : 'danger'" size="mini"><i class="el-icon-view"></i> 有</el-tag>
           <span v-else style="color:#bfbfbf">-</span>
         </template>
       </el-table-column>
@@ -97,6 +99,10 @@
       <div style="padding:16px" v-if="detail">
         <el-tabs v-model="detailTab">
           <el-tab-pane label="基本信息" name="basic">
+            <div class="uiue-card trace-id-card">
+              <div class="uiue-card-title">共享执行会话</div>
+              <code>{{ detail.traceId || '-' }}</code>
+            </div>
             <div class="uiue-card auth-attribution-card">
               <div class="uiue-card-title">鉴权归因</div>
               <div class="auth-attribution-grid">
@@ -152,7 +158,7 @@ export default {
       total: 0,
       qp: {
         pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '', modelType: '',
-        authType: '', authCode: '', tokenCode: ''
+        authType: '', authCode: '', tokenCode: '', traceId: ''
       },
       /** 时间范围，默认最近三个月 */
       timeRange: null,
@@ -440,6 +446,7 @@ export default {
       this.qp.authType = ''
       this.qp.authCode = ''
       this.qp.tokenCode = ''
+      this.qp.traceId = ''
       this.qp.pageNum = 1
       this.initDefaultTimeRange()
       clearPageState('ExecutionLog')
@@ -506,6 +513,16 @@ export default {
   color: #909399;
   font-size: 12px;
   line-height: 1.4;
+}
+.trace-id-card {
+  margin-bottom: 12px;
+}
+.trace-id-card code {
+  display: block;
+  margin-top: 10px;
+  color: #303133;
+  font-family: Consolas, Monaco, monospace;
+  word-break: break-all;
 }
 .auth-attribution-card {
   margin-bottom: 12px;

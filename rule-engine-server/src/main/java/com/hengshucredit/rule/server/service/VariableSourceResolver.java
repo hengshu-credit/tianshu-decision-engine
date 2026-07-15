@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.ConstantValueCodec;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
@@ -58,19 +59,29 @@ public class VariableSourceResolver {
     @Resource
     private RuleFunctionService ruleFunctionService;
 
+    @Resource
+    private RuntimeTraceService runtimeTraceService;
+
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         return resolve(projectId, inputParams, VariableResolveOptions.defaults());
     }
 
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams, VariableResolveOptions options) {
-        VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
         Map<String, Object> resolvedParams = new LinkedHashMap<>();
         if (inputParams != null) {
             resolvedParams.putAll(inputParams);
         }
+        return resolveInto(projectId, resolvedParams, options);
+    }
+
+    public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                           VariableResolveOptions options) {
+        VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
+        Map<String, Object> resolvedParams = target == null ? new LinkedHashMap<String, Object>() : target;
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
         removeCallerConstantValues(variables, resolvedParams);
+        applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(), variables, models);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
@@ -163,7 +174,6 @@ public class VariableSourceResolver {
                                     VariableResolveOptions effectiveOptions,
                                     Map<String, Map<String, Object>> apiResponseCache) {
         if ("CONSTANT".equals(variable.getVarSource())) {
-            resolvedParams.put(scriptName, parseDefaultValue(variable));
             return;
         }
         resolveOneSourceVariable(variable, scriptName, parseJsonMap(variable.getSourceConfig()),
@@ -460,9 +470,23 @@ public class VariableSourceResolver {
     private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams) {
         RuleModel detail = loadModelDetail(model);
         Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
-        Map<String, Object> modelResult = ruleModelService.execute(model.getId(), modelParams);
-        if (!modelSucceeded(modelResult)) {
-            throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
+        RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
+                "MODEL", model.getProjectId(), model.getId(), modelCode);
+        long start = System.currentTimeMillis();
+        Map<String, Object> modelResult;
+        try {
+            modelResult = ruleModelService.execute(model.getId(), modelParams);
+            if (!modelSucceeded(modelResult)) {
+                throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
+            }
+            completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
+            logModelExecution(model, modelParams, modelResult, null,
+                    System.currentTimeMillis() - start, runtimeTrace);
+        } catch (RuntimeException e) {
+            completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
+            logModelExecution(model, modelParams, null, e.getMessage(),
+                    System.currentTimeMillis() - start, runtimeTrace);
+            throw e;
         }
         Object outputs = modelResult.get("outputs");
         Object modelValue = outputs instanceof Map ? outputs : modelResult;
@@ -735,6 +759,8 @@ public class VariableSourceResolver {
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = loadDbDatasource(datasourceId);
         Map<String, Object> request = buildDbLogRequest(datasource, variable, config, sql, queryParams, maxRows, startTime);
+        RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
+                "DATABASE", variable.getProjectId(), datasourceId, resolveScriptName(variable));
         try {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
             String resultPath = stringValue(config.get("resultPath"));
@@ -745,11 +771,15 @@ public class VariableSourceResolver {
                 extracted = defaultDbValue(rows, maxRows);
             }
             Map<String, Object> response = buildDbLogResponse("SUCCESS", rows, resultPath, extracted, startTime, null);
-            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request, response, null, System.currentTimeMillis() - start);
+            completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
+            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request,
+                    response, null, System.currentTimeMillis() - start, runtimeTrace);
             return extracted;
         } catch (Exception e) {
             Map<String, Object> response = buildDbLogResponse("FAILED", null, stringValue(config.get("resultPath")), null, startTime, e.getMessage());
-            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request, response, e.getMessage(), System.currentTimeMillis() - start);
+            completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
+            logVariableSource("DATABASE", "DB_VARIABLE_QUERY", variable, datasourceId, request,
+                    response, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
             throw e;
         }
     }
@@ -860,9 +890,6 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("名单变量 returnMode 仅支持 BOOLEAN 或 NUMBER");
         }
         long start = System.currentTimeMillis();
-        ListMatchMatrix matrix = listMatchMatrix == null ? new ListMatchMatrix(ruleListService) : listMatchMatrix;
-        boolean hit = matrix.match(listIds, queryValues, combinationMode, matchMode, itemTypes,
-                options == null ? null : options.getListMatchTime());
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("listIds", listIds);
         request.put("queryValues", queryValues);
@@ -872,9 +899,24 @@ public class VariableSourceResolver {
         if (options != null && options.getListMatchTime() != null) {
             request.put("matchTime", options.getListMatchTime());
         }
+        RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
+                "LIST", variable.getProjectId(), listIds.get(0), resolveScriptName(variable));
+        ListMatchMatrix matrix = listMatchMatrix == null ? new ListMatchMatrix(ruleListService) : listMatchMatrix;
+        boolean hit;
+        try {
+            hit = matrix.match(listIds, queryValues, combinationMode, matchMode, itemTypes,
+                    options == null ? null : options.getListMatchTime());
+            completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
+        } catch (RuntimeException e) {
+            completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
+            logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request,
+                    null, e.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
+            throw e;
+        }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("hit", hit);
-        logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request, response, null, System.currentTimeMillis() - start);
+        logVariableSource("LIST", "LIST_VARIABLE_MATCH", variable, listIds.get(0), request,
+                response, null, System.currentTimeMillis() - start, runtimeTrace);
         if ("BOOLEAN".equals(returnMode)) {
             return hit;
         }
@@ -882,11 +924,13 @@ public class VariableSourceResolver {
     }
 
     private void logVariableSource(String moduleType, String actionType, RuleVariable variable, Long targetId,
-                                   Object requestBody, Object responseBody, String errorMessage, long costTimeMs) {
+                                   Object requestBody, Object responseBody, String errorMessage, long costTimeMs,
+                                   RuntimeTraceService.ModuleTrace runtimeTrace) {
         if (runtimeCallLogService == null || variable == null) {
             return;
         }
         RuleRuntimeCallLog log = new RuleRuntimeCallLog();
+        applyRuntimeTrace(log, runtimeTrace);
         log.setModuleType(moduleType);
         log.setActionType(actionType);
         log.setProjectId(variable.getProjectId());
@@ -901,6 +945,51 @@ public class VariableSourceResolver {
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
         runtimeCallLogService.safeSave(log);
+    }
+
+    private void logModelExecution(RuleModel model, Object requestBody, Object responseBody,
+                                   String errorMessage, long costTimeMs,
+                                   RuntimeTraceService.ModuleTrace runtimeTrace) {
+        if (runtimeCallLogService == null || model == null) {
+            return;
+        }
+        RuleRuntimeCallLog log = new RuleRuntimeCallLog();
+        applyRuntimeTrace(log, runtimeTrace);
+        log.setModuleType("MODEL");
+        log.setActionType("MODEL_EXECUTE");
+        log.setProjectId(model.getProjectId());
+        log.setTargetRefId(model.getId());
+        log.setTargetCode(model.getModelCode());
+        log.setTargetName(model.getModelName());
+        log.setSuccess(errorMessage == null ? 1 : 0);
+        log.setRequestMethod("EXECUTE");
+        log.setResponseStatus(errorMessage == null ? 200 : 500);
+        log.setRequestBody(runtimeCallLogService.toJson(requestBody));
+        log.setResponseBody(runtimeCallLogService.toJson(responseBody));
+        log.setErrorMessage(errorMessage);
+        log.setCostTimeMs(costTimeMs);
+        runtimeCallLogService.safeSave(log);
+    }
+
+    private RuntimeTraceService.ModuleTrace startRuntimeTrace(String moduleType, Long projectId,
+                                                               Long resourceId, String resourceCode) {
+        return runtimeTraceService == null ? null
+                : runtimeTraceService.startModule(moduleType, projectId, resourceId, resourceCode);
+    }
+
+    private void completeRuntimeTrace(RuntimeTraceService.ModuleTrace runtimeTrace, boolean success,
+                                      String errorMessage, long durationMs) {
+        if (runtimeTraceService != null) {
+            runtimeTraceService.completeModule(runtimeTrace, success, errorMessage, durationMs);
+        }
+    }
+
+    private void applyRuntimeTrace(RuleRuntimeCallLog log, RuntimeTraceService.ModuleTrace runtimeTrace) {
+        if (log == null || runtimeTrace == null) {
+            return;
+        }
+        log.setTraceId(runtimeTrace.getTraceId());
+        log.setRuleTraceId(runtimeTrace.getRuleTraceId());
     }
 
     private String resolveRuntimeLogMethod(String moduleType) {
@@ -1141,6 +1230,24 @@ public class VariableSourceResolver {
                     resolvedParams.remove(scriptName);
                 }
             }
+        }
+    }
+
+    private void applyConstantValues(List<RuleVariable> variables, Map<String, Object> resolvedParams) {
+        if (variables == null || resolvedParams == null) {
+            return;
+        }
+        for (RuleVariable variable : variables) {
+            if (variable == null || !"CONSTANT".equals(variable.getVarSource())) {
+                continue;
+            }
+            String scriptName = resolveScriptName(variable);
+            if (scriptName == null) {
+                continue;
+            }
+            Object value = parseDefaultValue(variable);
+            resolvedParams.put(scriptName, value);
+            RuntimeContextBridge.registerConstant(scriptName, value);
         }
     }
 

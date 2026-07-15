@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertSame;
 
 public class VariableSourceResolverTest {
 
@@ -97,6 +98,23 @@ public class VariableSourceResolverTest {
         Map<String, Object> resolved = resolver.resolve(1L, params);
 
         assertEquals("", resolved.get("EMPTY_STRING"));
+    }
+
+    @Test
+    public void resolveIntoContinuesOnExactTargetMap() throws Exception {
+        RuleVariable variable = variable("CREDIT_AMOUNT", "CONSTANT", null);
+        variable.setVarType("INTEGER");
+        variable.setDefaultValue("5000");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()));
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("CREDIT_AMOUNT", 3000);
+
+        Map<String, Object> resolved = resolver.resolveInto(
+                1L, values, VariableResolveOptions.defaults());
+
+        assertSame(values, resolved);
+        assertEquals(5000, resolved.get("CREDIT_AMOUNT"));
     }
 
     @Test

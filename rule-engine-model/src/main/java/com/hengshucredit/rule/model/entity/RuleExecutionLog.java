@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 public class RuleExecutionLog {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private String traceId;
     private String ruleCode;
     private String projectCode;
     private Integer ruleVersion;

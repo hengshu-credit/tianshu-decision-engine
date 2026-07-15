@@ -49,11 +49,12 @@ public class RuleExperimentController {
                                                      @RequestParam(required = false) Long experimentId,
                                                      @RequestParam(required = false) String experimentCode,
                                                      @RequestParam(required = false) String requestKey,
+                                                     @RequestParam(required = false) String traceId,
                                                      @RequestParam(required = false) String stage,
                                                      @RequestParam(required = false) String groupCode,
                                                      @RequestParam(required = false) Integer success) {
         return R.ok(experimentService.pageExecutionLogs(pageNum, pageSize, experimentId, experimentCode,
-                requestKey, stage, groupCode, success));
+                requestKey, traceId, stage, groupCode, success));
     }
 
     @PostMapping

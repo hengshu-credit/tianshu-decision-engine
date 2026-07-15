@@ -62,6 +62,9 @@ public class ExternalApiInvokeService {
     private RuleRuntimeCallLogService runtimeCallLogService;
 
     @Resource
+    private RuntimeTraceService runtimeTraceService;
+
+    @Resource
     private ExternalApiSecurityService externalApiSecurityService = new ExternalApiSecurityService();
 
     private final ConcurrentMap<String, TokenCache> tokenCaches = new ConcurrentHashMap<>();
@@ -84,6 +87,10 @@ public class ExternalApiInvokeService {
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
         trace.requestParams = params == null ? new HashMap<>() : params;
+        if (runtimeTraceService != null) {
+            trace.runtimeTrace = runtimeTraceService.startModule(
+                    "DATASOURCE", datasource.getProjectId(), apiConfig.getId(), apiConfig.getApiCode());
+        }
         if (cachedResponse != null && cachedResponse.expiresAt > start) {
             Map<String, Object> cached = copyCachedResponse(cachedResponse.response, true, false, 0);
             logDatasourceCall(apiConfig, datasource, trace, true, cached, null, 0);
@@ -1063,10 +1070,17 @@ public class ExternalApiInvokeService {
 
     private void logDatasourceCall(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource, InvokeTrace trace,
                                    boolean success, Map<String, Object> response, String errorMessage, long costTimeMs) {
+        if (runtimeTraceService != null && trace != null) {
+            runtimeTraceService.completeModule(trace.runtimeTrace, success, errorMessage, costTimeMs);
+        }
         if (runtimeCallLogService == null) {
             return;
         }
         RuleRuntimeCallLog log = new RuleRuntimeCallLog();
+        if (trace != null && trace.runtimeTrace != null) {
+            log.setTraceId(trace.runtimeTrace.getTraceId());
+            log.setRuleTraceId(trace.runtimeTrace.getRuleTraceId());
+        }
         log.setModuleType("DATASOURCE");
         log.setActionType("API_INVOKE");
         log.setProjectId(datasource.getProjectId());
@@ -1224,6 +1238,7 @@ public class ExternalApiInvokeService {
     }
 
     private static class InvokeTrace {
+        private RuntimeTraceService.ModuleTrace runtimeTrace;
         private String requestMethod;
         private String requestUrl;
         private Map<String, Object> requestHeaders;

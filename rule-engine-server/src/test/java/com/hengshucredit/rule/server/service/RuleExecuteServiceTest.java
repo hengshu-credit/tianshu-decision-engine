@@ -21,7 +21,9 @@ import java.util.Map;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleExecuteServiceTest {
@@ -41,7 +43,8 @@ public class RuleExecuteServiceTest {
         ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
         ReflectionTestUtils.setField(service, "billingService", billingService);
         ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
-        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        NoOpRuntimeInvoker runtimeInvoker = new NoOpRuntimeInvoker();
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtimeInvoker);
         ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
 
         RulePublished published = new RulePublished();
@@ -55,6 +58,7 @@ public class RuleExecuteServiceTest {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("applicantId", "A001");
         params.put("age", "22");
+        params.put("requestMeta", Collections.<String, Object>singletonMap("channel", "APP"));
         ProjectAuthContext authContext = ProjectAuthContext.temporary(1L, "project_a", 11L,
                 "BASIC_MAIN", ProjectAuthType.BASIC, 21L, "TOKEN_A", "GRACE");
         RuleExecuteService.ExecutionOutcome outcome = service.executePublishedWithOptions(
@@ -68,13 +72,29 @@ public class RuleExecuteServiceTest {
         assertNotNull(resolver.requiredScriptNames);
         assertTrue(resolver.requiredScriptNames.contains("externalScore"));
         assertNotNull(logService.saved);
+        assertEquals(1, logService.saveCount);
         assertEquals("RISK_RULE", logService.saved.getRuleCode());
         assertEquals("biz-app", logService.saved.getClientAppName());
         assertEquals("BASIC_MAIN", logService.saved.getAuthCode());
         assertEquals("TOKEN_A", logService.saved.getTokenCode());
         assertEquals("GRACE", logService.saved.getAuthPhase());
-        assertTrue(logService.saved.getInputParams().contains("externalScore"));
+        assertTrue(logService.saved.getInputParams().contains("\"age\":22"));
+        assertTrue(logService.saved.getInputParams().contains("\"channel\":\"APP\""));
+        assertFalse(logService.saved.getInputParams().contains("DERIVED"));
+        assertFalse(logService.saved.getInputParams().contains("externalScore"));
+        assertEquals(outcome.getResult().getTraceId(), logService.saved.getTraceId());
+        assertTrue(logService.saved.getTraceInfo().contains(outcome.getResult().getTraceId()));
+        assertSame(outcome.getExecuteParams(), resolver.target);
+        assertSame(outcome.getExecuteParams(), runtimeInvoker.values);
+        assertFalse(runtimeInvoker.originalInput.containsKey("externalScore"));
         assertEquals(authContext, billingService.authContext);
+
+        RuleExecuteService.ExecutionOutcome experimentOutcome = service.executePublishedWithOptions(
+                published, params, 1L, "biz-app", VariableResolveOptions.defaults(),
+                "EXPERIMENT_TEST", authContext);
+        assertTrue(experimentOutcome.getResult().isSuccess());
+        assertEquals("普通执行日志不得重复记录实验组内部规则", 1, logService.saveCount);
+        assertNotNull("实验组内部规则仍需生成 trace", experimentOutcome.getResult().getTraceId());
     }
 
     private static class FakeDefinitionService extends RuleDefinitionService {
@@ -86,6 +106,7 @@ public class RuleExecuteServiceTest {
             definition.setRuleCode("RISK_RULE");
             definition.setCurrentVersion(3);
             definition.setModelType("SCRIPT");
+            definition.setScope("PROJECT");
             return definition;
         }
 
@@ -107,6 +128,7 @@ public class RuleExecuteServiceTest {
             RuleProject project = new RuleProject();
             project.setId(1L);
             project.setProjectCode("project_a");
+            project.setTraceScopeCode("0001");
             return project;
         }
     }
@@ -121,22 +143,27 @@ public class RuleExecuteServiceTest {
     private static class RecordingVariableSourceResolver extends VariableSourceResolver {
         private Long projectId;
         private Set<String> requiredScriptNames;
+        private Map<String, Object> target;
 
         @Override
-        public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams, VariableResolveOptions options) {
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
             this.projectId = projectId;
             this.requiredScriptNames = options == null ? null : options.getRequiredScriptNames();
-            Map<String, Object> resolved = new LinkedHashMap<>(inputParams);
-            resolved.put("externalScore", 80);
-            return resolved;
+            this.target = target;
+            target.put("externalScore", 80);
+            ((Map<String, Object>) target.get("requestMeta")).put("channel", "DERIVED");
+            return target;
         }
     }
 
     private static class RecordingLogService extends RuleExecutionLogService {
         private RuleExecutionLog saved;
+        private int saveCount;
 
         @Override
         public boolean save(RuleExecutionLog entity) {
+            saveCount++;
             this.saved = entity;
             return true;
         }
@@ -155,6 +182,9 @@ public class RuleExecuteServiceTest {
     }
 
     private static class NoOpRuntimeInvoker extends RuleRuntimeInvoker {
+        private Map<String, Object> values;
+        private Map<String, Object> originalInput;
+
         @Override
         public void register(com.alibaba.qlexpress4.Express4Runner runner) {
         }
@@ -166,6 +196,31 @@ public class RuleExecuteServiceTest {
         @Override
         public void enter(String ruleCode, Long projectId, String projectCode,
                           Map<String, Object> context, boolean testMode) {
+        }
+
+        @Override
+        public void enter(RuleDefinition definition, String projectCode,
+                          Map<String, Object> values, Map<String, Object> originalInput,
+                          boolean testMode) {
+            this.values = values;
+            this.originalInput = new LinkedHashMap<>(originalInput);
+        }
+
+        @Override
+        public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
+                          Map<String, Object> values, Map<String, Object> originalInput,
+                          boolean testMode) {
+            this.values = values;
+            this.originalInput = new LinkedHashMap<>(originalInput);
+        }
+
+        @Override
+        public void completeRoot(RuleResult result) {
+            result.setTraceId("QLP000120260715123456789ABCDEF012345");
+            Map<String, Object> trace = new LinkedHashMap<>();
+            trace.put("traceId", result.getTraceId());
+            trace.put("children", Collections.emptyList());
+            result.setTraces(Collections.<Object>singletonList(trace));
         }
 
         @Override

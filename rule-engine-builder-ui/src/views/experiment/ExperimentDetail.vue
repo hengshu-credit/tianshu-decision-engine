@@ -265,6 +265,9 @@
             <el-form-item label="请求键">
               <el-input v-model="logQuery.requestKey" clearable placeholder="请求唯一键" style="width:160px;" />
             </el-form-item>
+            <el-form-item label="Trace ID">
+              <el-input v-model="logQuery.traceId" clearable placeholder="实验或子规则 trace_id" style="width:250px;" />
+            </el-form-item>
             <el-form-item label="组编码">
               <el-input v-model="logQuery.groupCode" clearable placeholder="组编码" style="width:140px;" />
             </el-form-item>
@@ -291,6 +294,7 @@
             <template slot-scope="{ row }">{{ groupTypeLabel(row.groupType) }}</template>
           </el-table-column>
           <el-table-column prop="ruleCode" label="执行规则" min-width="150" show-overflow-tooltip />
+          <el-table-column prop="experimentTraceId" label="实验 trace" min-width="190" show-overflow-tooltip />
           <el-table-column prop="routeReason" label="分流原因" min-width="220" show-overflow-tooltip />
           <el-table-column label="结果" width="70" align="center">
             <template slot-scope="{ row }"><el-tag :type="row.success === 1 ? 'success' : 'danger'" size="mini">{{ row.success === 1 ? '成功' : '失败' }}</el-tag></template>
@@ -325,6 +329,8 @@
           <el-descriptions-item label="分流组">{{ logDetail.groupName || logDetail.groupCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="执行规则">{{ logDetail.ruleCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="结果">{{ logDetail.success === 1 ? '成功' : '失败' }}</el-descriptions-item>
+          <el-descriptions-item label="实验 trace_id" :span="2">{{ logDetail.experimentTraceId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="子规则 trace_id" :span="2">{{ logDetail.childTraceId || '-' }}</el-descriptions-item>
           <el-descriptions-item label="分流原因" :span="2">{{ logDetail.routeReason || '-' }}</el-descriptions-item>
           <el-descriptions-item label="错误信息" :span="2">{{ logDetail.errorMessage || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -338,7 +344,11 @@
         </div>
         <div class="detail-block">
           <div class="detail-block-title">执行轨迹</div>
-          <pre class="log-pre">{{ pretty(logDetail.traceInfo) }}</pre>
+          <trace-tree
+            :trace-info="logDetail.traceInfo"
+            :input-params="logDetail.inputParams"
+            :output-result="logDetail.outputResult"
+          />
         </div>
       </div>
     </el-drawer>
@@ -376,6 +386,7 @@ import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import GroupActionForm from './GroupActionForm.vue'
+import TraceTree from '@/components/common/TraceTree.vue'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -389,7 +400,7 @@ import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
   name: 'ExperimentDetail',
-  components: { ConditionGroupEditor, OperandPicker, MonacoEditor, GroupActionForm },
+  components: { ConditionGroupEditor, OperandPicker, MonacoEditor, GroupActionForm, TraceTree },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -414,7 +425,7 @@ export default {
       logLoading: false,
       logs: [],
       logTotal: 0,
-      logQuery: { pageNum: 1, pageSize: 10, requestKey: '', stage: '', groupCode: '', success: '' },
+      logQuery: { pageNum: 1, pageSize: 10, requestKey: '', traceId: '', stage: '', groupCode: '', success: '' },
       logDetailVisible: false,
       logDetail: null,
       versionVisible: false,
@@ -963,7 +974,7 @@ export default {
       this.loadLogs()
     },
     resetLogQuery() {
-      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize, requestKey: '', stage: '', groupCode: '', success: '' }
+      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize, requestKey: '', traceId: '', stage: '', groupCode: '', success: '' }
       this.loadLogs()
     },
     openLogDetail(row) {

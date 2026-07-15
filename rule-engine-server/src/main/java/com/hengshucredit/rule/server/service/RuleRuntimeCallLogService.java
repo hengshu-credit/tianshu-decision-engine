@@ -15,7 +15,7 @@ import java.time.LocalDateTime;
 public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMapper, RuleRuntimeCallLog> {
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
-                                              String targetCode, Integer success,
+                                              String targetCode, String traceId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<>();
         if (hasText(moduleType)) {
@@ -26,6 +26,10 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         }
         if (hasText(targetCode)) {
             wrapper.like(RuleRuntimeCallLog::getTargetCode, targetCode);
+        }
+        if (hasText(traceId)) {
+            wrapper.and(w -> w.eq(RuleRuntimeCallLog::getTraceId, traceId)
+                    .or().eq(RuleRuntimeCallLog::getRuleTraceId, traceId));
         }
         if (success != null) {
             wrapper.eq(RuleRuntimeCallLog::getSuccess, success);

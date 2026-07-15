@@ -226,4 +226,95 @@ describe('TraceTree', () => {
 
     expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', thresholdText: '成年年龄 adultAge = 18', result: true })
   })
+
+  test('共享会话追踪将子规则和模块调用展示为可辨识边框节点', () => {
+    const childTrace = {
+      schemaVersion: 2,
+      traceKind: 'RULE',
+      traceId: 'RSP000120260715101112345000000000001',
+      ruleCode: 'CHILD_RULE',
+      ruleName: '子规则集',
+      modelType: 'RULE_SET',
+      status: 'SUCCESS',
+      durationMs: 6,
+      events: [],
+      expressionTrace: [assignNode('CREDIT_AMOUNT', 3000)],
+      children: []
+    }
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify([{
+        schemaVersion: 2,
+        traceKind: 'RULE',
+        traceId: 'DFP000120260715101112345000000000002',
+        ruleCode: 'CREDIT_FLOW',
+        ruleName: '授信决策流',
+        modelType: 'FLOW',
+        status: 'SUCCESS',
+        durationMs: 18,
+        events: [{
+          type: 'MODULE_CALL',
+          moduleType: 'EXTERNAL_API',
+          resourceCode: 'creditProfile',
+          traceId: 'APP000120260715101112345000000000003',
+          status: 'SUCCESS',
+          durationMs: 4
+        }],
+        expressionTrace: [assignNode('result', 101)],
+        children: [childTrace]
+      }])
+    })
+
+    expect(wrapper.vm.ruleTraceFrame.ruleCode).toBe('CREDIT_FLOW')
+    expect(wrapper.find('.rule-trace-frame--root').exists()).toBe(true)
+    expect(wrapper.find('.rule-trace-module').exists()).toBe(true)
+    expect(wrapper.find('.rule-trace-children').exists()).toBe(true)
+    expect(wrapper.text()).toContain('授信决策流')
+    expect(wrapper.text()).toContain('外数 API')
+    expect(wrapper.text()).toContain('creditProfile')
+    expect(wrapper.findAll('trace-tree-stub')).toHaveLength(2)
+
+    const childWrapper = mountTraceTree({ traceInfo: JSON.stringify(childTrace), nested: true })
+    expect(childWrapper.vm.ruleExpressionModelType).toBe('')
+    expect(childWrapper.find('trace-tree-stub').props('modelType')).toBe('')
+    childWrapper.destroy()
+  })
+
+  test('分流实验追踪按路由条件到实际规则顺序展示', () => {
+    const childTrace = {
+      schemaVersion: 2,
+      traceKind: 'RULE',
+      traceId: 'TBP000120260715101112345000000000011',
+      ruleCode: 'CREDIT_TABLE',
+      ruleName: '授信决策表',
+      modelType: 'TABLE',
+      status: 'SUCCESS',
+      durationMs: 7,
+      events: [],
+      expressionTrace: [assignNode('result', 101)],
+      children: []
+    }
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify({
+        schemaVersion: 2,
+        traceKind: 'EXPERIMENT_GROUP',
+        experimentTraceId: 'EXP000120260715101112345000000000012',
+        childTraceId: childTrace.traceId,
+        stage: 'TEST',
+        routingTrace: [
+          { type: 'ROUTING_START', stage: 'TEST', routingMode: 'RATIO' },
+          { type: 'RANDOM_VALUE', value: 37 },
+          { type: 'GROUP_SELECTED', groupCode: 'TEST_A', reason: '测试组比例分流命中' }
+        ],
+        ruleExecution: { type: 'RULE_EXECUTION', traceId: childTrace.traceId, trace: [childTrace] }
+      })
+    })
+
+    expect(wrapper.vm.experimentTraceFrame.stage).toBe('TEST')
+    expect(wrapper.find('.experiment-trace-frame').exists()).toBe(true)
+    expect(wrapper.findAll('.experiment-route-step')).toHaveLength(3)
+    expect(wrapper.text()).toContain('随机值 37')
+    expect(wrapper.text()).toContain('命中 TEST_A')
+    expect(wrapper.text()).toContain(childTrace.traceId)
+    expect(wrapper.findAll('trace-tree-stub')).toHaveLength(1)
+  })
 })

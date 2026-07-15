@@ -25,6 +25,7 @@ public class ExecutionLogController {
             @RequestParam(required = false) String source,
             @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) String ruleCode,
+            @RequestParam(required = false) String traceId,
             @RequestParam(required = false) String authType,
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String tokenCode,
@@ -35,6 +36,7 @@ public class ExecutionLogController {
         if (source != null && !source.isEmpty()) wrapper.eq(RuleExecutionLog::getSource, source);
         if (projectCode != null && !projectCode.isEmpty()) wrapper.eq(RuleExecutionLog::getProjectCode, projectCode);
         if (ruleCode != null && !ruleCode.isEmpty()) wrapper.eq(RuleExecutionLog::getRuleCode, ruleCode);
+        if (traceId != null && !traceId.isEmpty()) wrapper.eq(RuleExecutionLog::getTraceId, traceId);
         if (authType != null && !authType.isEmpty()) wrapper.eq(RuleExecutionLog::getAuthType, authType);
         if (authCode != null && !authCode.isEmpty()) wrapper.like(RuleExecutionLog::getAuthCode, authCode);
         if (tokenCode != null && !tokenCode.isEmpty()) wrapper.like(RuleExecutionLog::getTokenCode, tokenCode);

@@ -16,6 +16,7 @@ SET character_set_connection = utf8mb4;
 CREATE TABLE IF NOT EXISTS `rule_project` (
   `id`           BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_code` VARCHAR(64)  NOT NULL                COMMENT '项目编码',
+  `trace_scope_code` CHAR(4)  DEFAULT NULL            COMMENT 'Trace项目作用域码',
   `project_name` VARCHAR(128) NOT NULL                COMMENT '项目名称（中文）',
   `description`  VARCHAR(512) DEFAULT NULL             COMMENT '项目描述',
   `status`       TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
@@ -26,6 +27,7 @@ CREATE TABLE IF NOT EXISTS `rule_project` (
   `update_time`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_project_code` (`project_code`),
+  UNIQUE KEY `uk_project_trace_scope` (`trace_scope_code`),
   UNIQUE KEY `uk_access_token` (`access_token`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则项目表';
 
@@ -491,6 +493,7 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 -- ALTER TABLE rule_execution_log REMOVE PARTITIONING;
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `id`              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+   `trace_id`        CHAR(36)      DEFAULT NULL             COMMENT '全局唯一Trace ID',
    `rule_code`       VARCHAR(128)  NOT NULL                COMMENT '规则编码',
    `project_code`    VARCHAR(128)  DEFAULT NULL             COMMENT '项目编码',
    `rule_version`    INT           DEFAULT NULL             COMMENT '规则版本号',
@@ -515,6 +518,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    KEY `idx_rule_code` (`rule_code`, `create_time`),
    KEY `idx_project_code` (`project_code`, `create_time`),
    KEY `idx_source` (`source`, `create_time`),
+    KEY `idx_execution_trace` (`trace_id`, `create_time`),
     KEY `idx_client_app` (`client_app_name`, `create_time`),
     KEY `idx_execution_log_auth` (`auth_id`, `token_id`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
@@ -803,6 +807,8 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `trace_id`        CHAR(36)     DEFAULT NULL            COMMENT '全局唯一Trace ID',
+  `rule_trace_id`   CHAR(36)     DEFAULT NULL            COMMENT '发起调用的规则Trace ID',
   `module_type`     VARCHAR(32)  NOT NULL                COMMENT '模块类型：DATASOURCE/DATABASE/LIST/MODEL',
   `action_type`     VARCHAR(64)  NOT NULL                COMMENT '动作类型：API_INVOKE/AUTH_TEST/QUERY/EXECUTE等',
   `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
@@ -824,6 +830,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   PRIMARY KEY (`id`),
   KEY `idx_runtime_log_module_time` (`module_type`, `create_time`),
   KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),
+  KEY `idx_runtime_trace` (`trace_id`, `rule_trace_id`),
   KEY `idx_runtime_log_success` (`success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表';
 
@@ -876,6 +883,8 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `experiment_trace_id` CHAR(36) DEFAULT NULL            COMMENT '本次分流实验Trace ID',
+  `child_trace_id`  CHAR(36)     DEFAULT NULL            COMMENT '实际执行组规则Trace ID',
   `request_key`     VARCHAR(128) DEFAULT NULL            COMMENT '请求唯一键',
   `stage`           VARCHAR(32)  NOT NULL                COMMENT '阶段：PRODUCTION/TEST',
   `group_id`        BIGINT       DEFAULT NULL            COMMENT '实验组ID',
@@ -894,11 +903,31 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   PRIMARY KEY (`id`),
   KEY `idx_exp_log_request` (`experiment_id`, `request_key`, `stage`),
   KEY `idx_exp_log_group` (`group_id`, `create_time`),
+  KEY `idx_exp_trace` (`experiment_trace_id`, `child_trace_id`),
   KEY `idx_exp_log_create` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表';
 
 -- ============================================================
--- 19.3 rule_experiment_version - 分流实验版本历史表
+-- 19.3 rule_trace_registry - 全局Trace编号注册表
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_trace_registry` (
+  `trace_id`        CHAR(36)     NOT NULL                COMMENT '全局唯一Trace ID',
+  `trace_type`      CHAR(2)      NOT NULL                COMMENT '两位执行类型码',
+  `scope_type`      CHAR(1)      NOT NULL                COMMENT '作用域：G/P',
+  `scope_code`      CHAR(4)      NOT NULL                COMMENT '四位Base36作用域码',
+  `project_id`      BIGINT       DEFAULT NULL            COMMENT '项目ID',
+  `resource_type`   VARCHAR(32)  NOT NULL                COMMENT '资源类型',
+  `resource_id`     BIGINT       DEFAULT NULL            COMMENT '资源ID',
+  `resource_code`   VARCHAR(128) DEFAULT NULL            COMMENT '资源编码快照',
+  `parent_trace_id` CHAR(36)     DEFAULT NULL            COMMENT '父规则Trace ID',
+  `create_time`     DATETIME(3)  NOT NULL DEFAULT CURRENT_TIMESTAMP(3) COMMENT '创建时间',
+  PRIMARY KEY (`trace_id`),
+  KEY `idx_trace_parent` (`parent_trace_id`),
+  KEY `idx_trace_resource` (`resource_type`, `resource_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局Trace编号注册表';
+
+-- ============================================================
+-- 19.4 rule_experiment_version - 分流实验版本历史表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_experiment_version` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT 'primary id',

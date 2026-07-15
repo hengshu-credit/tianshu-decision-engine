@@ -7,6 +7,7 @@ import java.util.List;
 
 @Data
 public class RuleExperimentExecuteResult {
+    private String experimentTraceId;
     private String experimentCode;
     private String experimentName;
     private String requestKey;

@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 public class RuleRuntimeCallLog {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private String traceId;
+    private String ruleTraceId;
     private String moduleType;
     private String actionType;
     private Long projectId;

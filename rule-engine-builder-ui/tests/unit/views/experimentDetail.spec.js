@@ -28,7 +28,7 @@ function createContext(overrides = {}) {
     logs: [],
     logTotal: 0,
     logLoading: false,
-    logQuery: { pageNum: 1, pageSize: 10, requestKey: '', stage: '', groupCode: '', success: '' },
+    logQuery: { pageNum: 1, pageSize: 10, requestKey: '', traceId: '', stage: '', groupCode: '', success: '' },
     saving: false,
     versionVisible: false,
     versionList: [],
@@ -114,10 +114,13 @@ describe('ExperimentDetail', () => {
     const ctx = createContext()
     ctx.form.id = 9
     ctx.logQuery.requestKey = 'REQ'
+    ctx.logQuery.traceId = 'EXP0001'
 
     await ctx.loadLogs()
 
-    expect(listExperimentLogs).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10, requestKey: 'REQ', experimentId: 9 })
+    expect(listExperimentLogs).toHaveBeenCalledWith({
+      pageNum: 1, pageSize: 10, requestKey: 'REQ', traceId: 'EXP0001', experimentId: 9
+    })
     expect(ctx.logs[0].requestKey).toBe('REQ001')
     expect(ctx.logTotal).toBe(1)
   })

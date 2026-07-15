@@ -7,6 +7,7 @@ import java.util.Map;
 
 @Data
 public class RuleExperimentGroupResult {
+    private String traceId;
     private String stage;
     private String groupCode;
     private String groupName;

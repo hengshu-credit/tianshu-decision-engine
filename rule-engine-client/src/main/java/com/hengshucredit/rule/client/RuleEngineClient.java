@@ -135,15 +135,18 @@ public class RuleEngineClient {
             return r;
         }
 
-        runtimeRuleInvoker.enter(ruleCode, params);
-        RuleResult result;
+        String originalInputJson = toJsonSafely(params);
+        runtimeRuleInvoker.enter(cached, params);
+        RuleResult result = new RuleResult();
         try {
-            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+            result = engine.execute(cached.getCompiledScript(), params, true);
         } finally {
+            result.setExecuteTimeMs(System.currentTimeMillis() - start);
+            runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
 
-        reportLog(ruleCode, cached, params, result, System.currentTimeMillis() - start);
+        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start);
         return result;
     }
 
@@ -167,53 +170,33 @@ public class RuleEngineClient {
             return r;
         }
 
-        runtimeRuleInvoker.enter(ruleCode, params);
-        RuleResult result;
+        String originalInputJson = toJsonSafely(params);
+        runtimeRuleInvoker.enter(cached, params);
+        RuleResult result = new RuleResult();
         try {
-            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+            result = engine.execute(cached.getCompiledScript(), params, true);
         } finally {
+            result.setExecuteTimeMs(System.currentTimeMillis() - start);
+            runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
 
-        reportLog(ruleCode, cached, params, result, System.currentTimeMillis() - start);
+        reportLog(ruleCode, cached, originalInputJson, result, System.currentTimeMillis() - start);
         return result;
     }
 
-    private void reportLog(String ruleCode, CachedRule cached, Map<String, Object> params,
+    private void reportLog(String ruleCode, CachedRule cached, String originalInputJson,
                            RuleResult result, long costMs) {
         try {
             RuleExecutionLog entry = new RuleExecutionLog();
+            entry.setTraceId(result.getTraceId());
             entry.setRuleCode(ruleCode);
             entry.setProjectCode(cached.getProjectCode());
             entry.setRuleVersion(cached.getVersion());
             entry.setModelType(cached.getModelType());
             entry.setSource("CLIENT");
             entry.setClientAppName(config.getAppName());
-            entry.setInputParams(toJsonSafely(params));
-            entry.setOutputResult(toJsonSafely(result.getResult()));
-            entry.setSuccess(result.isSuccess() ? 1 : 0);
-            entry.setErrorMessage(result.getErrorMessage());
-            entry.setExecuteTimeMs(costMs);
-            if (result.getTraces() != null) {
-                entry.setTraceInfo(toJsonSafely(result.getTraces()));
-            }
-            logReporter.report(Collections.singletonList(entry));
-        } catch (Exception e) {
-            log.debug("Log report failed: {}", e.getMessage());
-        }
-    }
-
-    private void reportLog(String ruleCode, CachedRule cached, Object params,
-                           RuleResult result, long costMs) {
-        try {
-            RuleExecutionLog entry = new RuleExecutionLog();
-            entry.setRuleCode(ruleCode);
-            entry.setProjectCode(cached.getProjectCode());
-            entry.setRuleVersion(cached.getVersion());
-            entry.setModelType(cached.getModelType());
-            entry.setSource("CLIENT");
-            entry.setClientAppName(config.getAppName());
-            entry.setInputParams(toJsonSafely(params));
+            entry.setInputParams(originalInputJson);
             entry.setOutputResult(toJsonSafely(result.getResult()));
             entry.setSuccess(result.isSuccess() ? 1 : 0);
             entry.setErrorMessage(result.getErrorMessage());

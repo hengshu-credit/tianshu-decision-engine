@@ -10,6 +10,7 @@ public class RuleProject {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String projectCode;
+    private String traceScopeCode;
     private String projectName;
     private String description;
     private Integer status;

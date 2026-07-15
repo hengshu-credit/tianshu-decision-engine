@@ -82,6 +82,31 @@ public class SchemaSyncServiceTest {
                 "ADD UNIQUE KEY `uk_billing_summary_key` (`summary_date`, `project_code`, `billing_code`, `billing_target`, `target_ref_id`, `auth_id`)"));
     }
 
+    @Test
+    public void traceSchemaCreatesRegistryAndAddsLinkColumns() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate(
+                "trace_scope_code", "trace_id", "rule_trace_id", "experiment_trace_id", "child_trace_id");
+        jdbcTemplate.missingTables.add("rule_trace_registry");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureTraceSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_trace_registry`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_project` ADD COLUMN `trace_scope_code`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_execution_log` ADD COLUMN `trace_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_runtime_call_log` ADD COLUMN `rule_trace_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_experiment_execution_log` ADD COLUMN `experiment_trace_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_experiment_execution_log` ADD COLUMN `child_trace_id`"));
+    }
+
     private boolean containsSql(List<String> sqlList, String fragment) {
         for (String sql : sqlList) {
             if (sql.contains(fragment)) {

@@ -207,6 +207,7 @@ describe('ExecutionLog — 筛选与分页', () => {
     wrapper.vm.qp.authType = 'BASIC'
     wrapper.vm.qp.authCode = 'BASIC_MAIN'
     wrapper.vm.qp.tokenCode = 'TOKEN_A'
+    wrapper.vm.qp.traceId = 'QLP0001'
     requestApi.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.resetQuery()
     expect(wrapper.vm.qp.source).toBe('')
@@ -214,6 +215,7 @@ describe('ExecutionLog — 筛选与分页', () => {
     expect(wrapper.vm.qp.authType).toBe('')
     expect(wrapper.vm.qp.authCode).toBe('')
     expect(wrapper.vm.qp.tokenCode).toBe('')
+    expect(wrapper.vm.qp.traceId).toBe('')
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 

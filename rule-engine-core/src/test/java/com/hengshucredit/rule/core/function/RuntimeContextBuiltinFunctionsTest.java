@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class RuntimeContextBuiltinFunctionsTest {
@@ -47,5 +48,22 @@ public class RuntimeContextBuiltinFunctionsTest {
         assertTrue(functions.currentRule().isEmpty());
         assertEquals("", functions.currentRuleName());
         assertTrue(functions.currentMatchedConditions().isEmpty());
+    }
+
+    @Test
+    public void constantCannotBeAssignedThroughRuntimeFunction() {
+        Map<String, Object> captured = new LinkedHashMap<>();
+        RuntimeContextBridge.bind(captured::put);
+        RuntimeContextBridge.registerConstant("CREDIT_AMOUNT", 5000);
+
+        boolean rejected = false;
+        try {
+            functions.setRuntimeValue("CREDIT_AMOUNT", 3000);
+        } catch (IllegalStateException expected) {
+            rejected = true;
+        }
+
+        assertTrue(rejected);
+        assertFalse(captured.containsKey("CREDIT_AMOUNT"));
     }
 }

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.core.engine;
 
+import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Test;
 
@@ -15,7 +16,7 @@ import static org.junit.Assert.assertTrue;
 public class QLExpressEngineTest {
 
     @Test
-    public void executeTruncatesOversizedTraceButKeepsResult() {
+    public void executeKeepsCompleteOversizedTrace() {
         StringBuilder script = new StringBuilder();
         script.append("x = 0\n");
         for (int i = 0; i < 1200; i++) {
@@ -32,10 +33,9 @@ public class QLExpressEngineTest {
         assertEquals(1200, ((Number) result.getResult()).intValue());
         assertNotNull(result.getTraces());
         assertEquals(1, result.getTraces().size());
-        assertTrue(result.getTraces().get(0) instanceof Map);
-        Map<?, ?> traceSummary = (Map<?, ?>) result.getTraces().get(0);
-        assertEquals("TRACE_TRUNCATED", traceSummary.get("type"));
-        assertTrue(((Number) traceSummary.get("originalJsonLength")).intValue() > 100000);
+        String traceJson = JSON.toJSONString(result.getTraces());
+        assertTrue(traceJson.length() > 100000);
+        assertFalse(traceJson.contains("TRACE_TRUNCATED"));
     }
 
     @Test
@@ -56,6 +56,34 @@ public class QLExpressEngineTest {
             assertTrue(result.getErrorMessage(), result.isSuccess());
             assertEquals(Integer.valueOf(22), captured.get("age"));
             assertEquals(22, ((Number) result.getResult()).intValue());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
+    public void tracedDirectAssignmentWritesLatestValueBackToSharedContext() {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("CREDIT_AMOUNT", 1000);
+
+        RuleResult result = new QLExpressEngine().execute(
+                "CREDIT_AMOUNT = 3000; CREDIT_AMOUNT", context, true);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(3000, ((Number) context.get("CREDIT_AMOUNT")).intValue());
+    }
+
+    @Test
+    public void directScriptAssignmentCannotChangeConstant() {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("CREDIT_AMOUNT", 5000);
+        RuntimeContextBridge.registerConstant("CREDIT_AMOUNT", 5000);
+        try {
+            RuleResult result = new QLExpressEngine().execute(
+                    "CREDIT_AMOUNT = 3000; CREDIT_AMOUNT", context, true);
+
+            assertFalse(result.isSuccess());
+            assertEquals(5000, ((Number) context.get("CREDIT_AMOUNT")).intValue());
         } finally {
             RuntimeContextBridge.clear();
         }

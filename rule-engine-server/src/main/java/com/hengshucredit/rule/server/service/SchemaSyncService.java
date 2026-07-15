@@ -56,6 +56,7 @@ public class SchemaSyncService {
             ensureListTables();
             ensureExperimentTables();
             ensureRuntimeCallLogTable();
+            ensureTraceSchema();
             ensureProjectAuthSchema();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
@@ -305,6 +306,61 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表'");
         }
         ensureUtf8mb4Table("rule_runtime_call_log");
+    }
+
+    private void ensureTraceSchema() {
+        if (!tableExists("rule_trace_registry")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_trace_registry` ("
+                    + "`trace_id` CHAR(36) NOT NULL,"
+                    + "`trace_type` CHAR(2) NOT NULL,"
+                    + "`scope_type` CHAR(1) NOT NULL,"
+                    + "`scope_code` CHAR(4) NOT NULL,"
+                    + "`project_id` BIGINT DEFAULT NULL,"
+                    + "`resource_type` VARCHAR(32) NOT NULL,"
+                    + "`resource_id` BIGINT DEFAULT NULL,"
+                    + "`resource_code` VARCHAR(128) DEFAULT NULL,"
+                    + "`parent_trace_id` CHAR(36) DEFAULT NULL,"
+                    + "`create_time` DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),"
+                    + "PRIMARY KEY (`trace_id`),"
+                    + "KEY `idx_trace_parent` (`parent_trace_id`),"
+                    + "KEY `idx_trace_resource` (`resource_type`, `resource_id`, `create_time`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='全局Trace编号注册表'");
+        }
+        if (tableExists("rule_project")) {
+            addColumnIfMissing("rule_project", "trace_scope_code",
+                    "`trace_scope_code` CHAR(4) DEFAULT NULL COMMENT 'Trace项目作用域码' AFTER `project_code`");
+            jdbcTemplate.execute("UPDATE `rule_project` SET `trace_scope_code` = LPAD(UPPER(CONV(`id`, 10, 36)), 4, '0') "
+                    + "WHERE `trace_scope_code` IS NULL AND `id` BETWEEN 1 AND 1679615");
+            if (!indexExists("rule_project", "uk_project_trace_scope")) {
+                jdbcTemplate.execute("ALTER TABLE `rule_project` ADD UNIQUE KEY `uk_project_trace_scope` (`trace_scope_code`)");
+            }
+        }
+        addTraceColumns("rule_execution_log", false);
+        addTraceColumns("rule_runtime_call_log", true);
+        if (tableExists("rule_experiment_execution_log")) {
+            addColumnIfMissing("rule_experiment_execution_log", "experiment_trace_id",
+                    "`experiment_trace_id` CHAR(36) DEFAULT NULL COMMENT '本次分流实验Trace ID' AFTER `experiment_code`");
+            addColumnIfMissing("rule_experiment_execution_log", "child_trace_id",
+                    "`child_trace_id` CHAR(36) DEFAULT NULL COMMENT '实际执行组规则Trace ID' AFTER `experiment_trace_id`");
+            if (!indexExists("rule_experiment_execution_log", "idx_exp_trace")) {
+                jdbcTemplate.execute("ALTER TABLE `rule_experiment_execution_log` ADD INDEX `idx_exp_trace` (`experiment_trace_id`, `child_trace_id`)");
+            }
+        }
+    }
+
+    private void addTraceColumns(String table, boolean runtimeCall) {
+        if (!tableExists(table)) return;
+        addColumnIfMissing(table, "trace_id",
+                "`trace_id` CHAR(36) DEFAULT NULL COMMENT '全局唯一Trace ID' AFTER `id`");
+        if (runtimeCall) {
+            addColumnIfMissing(table, "rule_trace_id",
+                    "`rule_trace_id` CHAR(36) DEFAULT NULL COMMENT '发起调用的规则Trace ID' AFTER `trace_id`");
+        }
+        String indexName = runtimeCall ? "idx_runtime_trace" : "idx_execution_trace";
+        if (!indexExists(table, indexName)) {
+            String columns = runtimeCall ? "`trace_id`, `rule_trace_id`" : "`trace_id`, `create_time`";
+            jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD INDEX `" + indexName + "` (" + columns + ")");
+        }
     }
 
     private void ensureProjectAuthSchema() {

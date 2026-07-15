@@ -3,9 +3,12 @@ package com.hengshucredit.rule.server.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleProject;
+import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Method;
 
@@ -45,5 +48,39 @@ public class RuleProjectServiceTest {
         assertTrue(sql.contains("rule_definition_ref"));
         assertTrue(sql.contains("rdr.definition_id = rule_definition.id"));
         assertTrue(sql.contains("rdr.project_id = 12"));
+    }
+
+    @Test
+    public void projectCreationPersistsFixedTraceScopeCodeAfterIdAllocation() {
+        RecordingProjectService service = new RecordingProjectService();
+        ReflectionTestUtils.setField(service, "projectAuthService", new ProjectAuthService(null) {
+            @Override
+            public RuleProjectAuth saveLegacyToken(RuleProject project, String token) {
+                return null;
+            }
+        });
+        RuleProject project = new RuleProject();
+        project.setProjectCode("PROJECT_A");
+
+        service.createProjectWithToken(project);
+
+        assertEquals("00A7", project.getTraceScopeCode());
+        assertTrue(service.updated);
+    }
+
+    private static class RecordingProjectService extends RuleProjectService {
+        private boolean updated;
+
+        @Override
+        public boolean save(RuleProject entity) {
+            entity.setId(367L);
+            return true;
+        }
+
+        @Override
+        public boolean updateById(RuleProject entity) {
+            updated = true;
+            return true;
+        }
     }
 }

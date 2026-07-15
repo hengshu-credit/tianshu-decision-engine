@@ -5,6 +5,7 @@ import java.util.List;
 
 @Data
 public class RuleResult {
+    private String traceId;
     private Object result;
     private List<Object> traces;
     private boolean success;

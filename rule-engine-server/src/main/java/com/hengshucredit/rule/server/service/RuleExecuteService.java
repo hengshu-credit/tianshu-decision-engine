@@ -15,7 +15,10 @@ import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
+import java.lang.reflect.Array;
+import java.util.ArrayList;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -77,8 +80,8 @@ public class RuleExecuteService {
                 ? content.getCompiledScript()
                 : funcPrefix + "\n" + content.getCompiledScript();
         VariableResolveOptions resolveOptions = withDefinitionInputFields(VariableResolveOptions.defaults(), definitionId);
-        Map<String, Object> boundParams = bindDefinitionInputs(definitionId, params);
-        Map<String, Object> executeParams = variableSourceResolver.resolve(definition.getProjectId(), boundParams, resolveOptions);
+        Map<String, Object> executeParams = bindDefinitionInputs(definitionId, params);
+        Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = null;
         if (definition.getProjectId() != null) {
             RuleProject project = projectService.getById(definition.getProjectId());
@@ -86,21 +89,29 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(definition.getRuleCode(), definition.getProjectId(), projectCode, executeParams, true);
-        RuleResult result;
+        runtimeRuleInvoker.enter(definition, projectCode, executeParams, originalInput, true);
+        long executionStart = System.currentTimeMillis();
+        RuleResult result = new RuleResult();
         try {
+            variableSourceResolver.resolveInto(definition.getProjectId(), executeParams, resolveOptions);
             result = qlExpressEngine.execute(fullScript, executeParams, true);
+        } catch (RuntimeException e) {
+            result.setSuccess(false);
+            result.setErrorMessage(e.getMessage());
         } finally {
+            result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
+            runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
 
         RuleExecutionLog log = new RuleExecutionLog();
+        log.setTraceId(result.getTraceId());
         log.setRuleCode(definition.getRuleCode());
         log.setProjectCode(projectCode);
         log.setRuleVersion(definition.getCurrentVersion());
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
-        log.setInputParams(toJsonSafely(executeParams));
+        log.setInputParams(toJsonSafely(originalInput));
         log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
@@ -149,9 +160,9 @@ public class RuleExecuteService {
         Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
         prepareProjectFunctions(executionProjectId, false);
 
-        Map<String, Object> safeParams = bindDefinitionInputs(published.getDefinitionId(), params);
+        Map<String, Object> executeParams = bindDefinitionInputs(published.getDefinitionId(), params);
+        Map<String, Object> originalInput = snapshotMap(executeParams);
         VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId());
-        Map<String, Object> executeParams = variableSourceResolver.resolve(executionProjectId, safeParams, effectiveOptions);
         String projectCode = published.getProjectCode();
         if (projectCode == null && executionProjectId != null) {
             RuleProject project = projectService.getById(executionProjectId);
@@ -159,15 +170,26 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(published.getRuleCode(), executionProjectId, projectCode, executeParams);
-        RuleResult result;
+        RuleDefinition executionDefinition = definition == null
+                ? publishedDefinition(published, executionProjectId) : definition;
+        runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
+                executeParams, originalInput, false);
+        long executionStart = System.currentTimeMillis();
+        RuleResult result = new RuleResult();
         try {
+            variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
             result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
+        } catch (RuntimeException e) {
+            result.setSuccess(false);
+            result.setErrorMessage(e.getMessage());
         } finally {
+            result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
+            runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
 
         RuleExecutionLog log = new RuleExecutionLog();
+        log.setTraceId(result.getTraceId());
         log.setRuleCode(published.getRuleCode());
         log.setProjectCode(projectCode);
         log.setRuleVersion(published.getVersion());
@@ -175,7 +197,7 @@ public class RuleExecuteService {
         log.setSource(source == null ? "CLIENT_SERVER" : source);
         log.setClientAppName(clientAppName);
         applyAuthAttribution(log, authContext);
-        log.setInputParams(toJsonSafely(executeParams));
+        log.setInputParams(toJsonSafely(originalInput));
         log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
@@ -183,11 +205,28 @@ public class RuleExecuteService {
         if (result.getTraces() != null) {
             log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
-        logService.save(log);
+        if (!isExperimentSource(source)) {
+            logService.save(log);
+        }
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(),
                 result.getErrorMessage(), authContext);
 
         return new ExecutionOutcome(result, executeParams);
+    }
+
+    private RuleDefinition publishedDefinition(RulePublished published, Long executionProjectId) {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(published.getDefinitionId());
+        definition.setProjectId(executionProjectId);
+        definition.setRuleCode(published.getRuleCode());
+        definition.setRuleName(published.getRuleCode());
+        definition.setModelType(published.getModelType());
+        definition.setScope(executionProjectId != null && executionProjectId > 0 ? "PROJECT" : "GLOBAL");
+        return definition;
+    }
+
+    private boolean isExperimentSource(String source) {
+        return source != null && source.startsWith("EXPERIMENT_");
     }
 
     private void applyAuthAttribution(RuleExecutionLog log, ProjectAuthContext authContext) {
@@ -266,6 +305,42 @@ public class RuleExecuteService {
             return "";
         }
         return value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private Map<String, Object> snapshotMap(Map<String, Object> source) {
+        Map<String, Object> snapshot = new LinkedHashMap<>();
+        if (source == null) {
+            return snapshot;
+        }
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            snapshot.put(entry.getKey(), snapshotValue(entry.getValue()));
+        }
+        return snapshot;
+    }
+
+    private Object snapshotValue(Object value) {
+        if (value instanceof Map) {
+            Map<String, Object> snapshot = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                snapshot.put(String.valueOf(entry.getKey()), snapshotValue(entry.getValue()));
+            }
+            return snapshot;
+        }
+        if (value instanceof List) {
+            List<Object> snapshot = new ArrayList<>();
+            for (Object item : (List<?>) value) {
+                snapshot.add(snapshotValue(item));
+            }
+            return snapshot;
+        }
+        if (value != null && value.getClass().isArray()) {
+            List<Object> snapshot = new ArrayList<>();
+            for (int i = 0; i < Array.getLength(value); i++) {
+                snapshot.add(snapshotValue(Array.get(value, i)));
+            }
+            return snapshot;
+        }
+        return value;
     }
 
     public static class ExecutionOutcome {

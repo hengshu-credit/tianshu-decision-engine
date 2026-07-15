@@ -38,5 +38,7 @@ describe('ModuleCallLog', () => {
     expect(wrapper.vm.pretty(rows)).toBe(JSON.stringify(rows, null, 2))
     expect(wrapper.vm.pretty({ resultPath: '', extractedValue: 1 })).toContain('"extractedValue": 1')
     expect(wrapper.vm.pretty(rows)).not.toContain('[object Object]')
+    expect(wrapper.vm.actionLabel('MODEL_EXECUTE')).toBe('规则内模型执行')
+    expect(wrapper.vm.query.traceId).toBe('')
   })
 })

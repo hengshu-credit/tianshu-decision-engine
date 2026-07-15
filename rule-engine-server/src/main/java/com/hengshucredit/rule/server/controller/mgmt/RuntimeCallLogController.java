@@ -27,9 +27,11 @@ public class RuntimeCallLogController {
             @RequestParam(required = false) String moduleType,
             @RequestParam(required = false) String actionType,
             @RequestParam(required = false) String targetCode,
+            @RequestParam(required = false) String traceId,
             @RequestParam(required = false) Integer success,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return R.ok(logService.pageList(pageNum, pageSize, moduleType, actionType, targetCode, success, startTime, endTime));
+        return R.ok(logService.pageList(pageNum, pageSize, moduleType, actionType,
+                targetCode, traceId, success, startTime, endTime));
     }
 }

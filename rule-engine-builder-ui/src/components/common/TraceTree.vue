@@ -1,6 +1,127 @@
 <template>
   <div class="trace-wrap">
-    <div v-if="hasTraceData">
+    <div v-if="experimentTraceFrame" class="experiment-trace-session">
+      <section class="experiment-trace-frame">
+        <div class="rule-trace-head">
+          <div class="rule-trace-identity">
+            <span class="experiment-trace-type">分流实验</span>
+            <div>
+              <div class="rule-trace-name">{{ experimentTraceFrame.stage === 'TEST' ? '空跑测试组执行' : '生产组执行' }}</div>
+              <div class="rule-trace-code">从分流判断到实际规则执行</div>
+            </div>
+          </div>
+        </div>
+        <div class="experiment-trace-ids">
+          <div>experiment_trace_id：<code>{{ experimentTraceFrame.experimentTraceId }}</code></div>
+          <div>child_trace_id：<code>{{ experimentTraceFrame.childTraceId }}</code></div>
+        </div>
+        <div class="experiment-route-list">
+          <div
+            v-for="(event, index) in experimentRoutingTrace"
+            :key="index + '-' + event.type"
+            class="experiment-route-step"
+          >
+            <div class="experiment-route-index">{{ index + 1 }}</div>
+            <div class="experiment-route-main">
+              <div class="experiment-route-label">{{ experimentRouteLabel(event) }}</div>
+              <code v-if="event.expression" class="experiment-route-expression">{{ event.expression }}</code>
+              <trace-tree
+                v-if="event.trace"
+                :trace-info="traceJson(event.trace)"
+                :var-map="varMap"
+                :input-params="inputParams"
+                :function-name-map="functionNameMap"
+                :nested="true"
+              />
+            </div>
+          </div>
+        </div>
+        <div v-if="experimentRuleTrace" class="experiment-rule-execution">
+          <div class="rule-trace-section-title">实际规则执行</div>
+          <trace-tree
+            :trace-info="traceJson(experimentRuleTrace)"
+            :var-map="varMap"
+            :input-params="inputParams"
+            :output-result="outputResult"
+            :function-name-map="functionNameMap"
+            :nested="true"
+          />
+        </div>
+      </section>
+    </div>
+    <div v-else-if="ruleTraceFrame" class="rule-trace-session">
+      <section
+        class="rule-trace-frame"
+        :class="nested ? 'rule-trace-frame--child' : 'rule-trace-frame--root'"
+      >
+        <div class="rule-trace-head">
+          <div class="rule-trace-identity">
+            <span class="rule-trace-type">{{ ruleModelTypeLabel(ruleTraceFrame.modelType) }}</span>
+            <div>
+              <div class="rule-trace-name">{{ ruleTraceFrame.ruleName || ruleTraceFrame.ruleCode || '未命名规则' }}</div>
+              <div class="rule-trace-code">{{ ruleTraceFrame.ruleCode || '-' }}</div>
+            </div>
+          </div>
+          <div class="rule-trace-meta">
+            <span class="rule-trace-status" :class="'is-' + String(ruleTraceFrame.status || '').toLowerCase()">
+              {{ ruleTraceStatusLabel(ruleTraceFrame.status) }}
+            </span>
+            <span>{{ ruleTraceFrame.durationMs || 0 }} ms</span>
+          </div>
+        </div>
+
+        <div class="rule-trace-id">trace_id：<code>{{ ruleTraceFrame.traceId }}</code></div>
+
+        <div v-if="ruleModuleEvents.length" class="rule-trace-modules">
+          <div class="rule-trace-section-title">过程调用</div>
+          <div
+            v-for="event in ruleModuleEvents"
+            :key="event.traceId"
+            class="rule-trace-module"
+          >
+            <span class="rule-trace-module-type">{{ moduleTypeLabel(event.moduleType) }}</span>
+            <span class="rule-trace-module-resource">{{ event.resourceCode || '-' }}</span>
+            <code>{{ event.traceId }}</code>
+            <span class="rule-trace-module-status" :class="'is-' + String(event.status || '').toLowerCase()">
+              {{ ruleTraceStatusLabel(event.status) }} · {{ event.durationMs || 0 }} ms
+            </span>
+          </div>
+        </div>
+
+        <div v-if="ruleTraceFrame.expressionTrace && ruleTraceFrame.expressionTrace.length" class="rule-trace-expression">
+          <div class="rule-trace-section-title">规则执行过程</div>
+          <trace-tree
+            :trace-info="traceJson(ruleTraceFrame.expressionTrace)"
+            :var-map="varMap"
+            :model-type="ruleExpressionModelType"
+            :input-params="inputParams"
+            :output-result="outputResult"
+            :rule-name="ruleTraceFrame.ruleName"
+            :rule-version="ruleVersion"
+            :execute-time-ms="ruleTraceFrame.durationMs"
+            :model-data="modelData"
+            :definition-model="definitionModel"
+            :function-name-map="functionNameMap"
+          />
+        </div>
+
+        <div v-if="ruleTraceChildren.length" class="rule-trace-children">
+          <div class="rule-trace-section-title">子规则执行</div>
+          <trace-tree
+            v-for="child in ruleTraceChildren"
+            :key="child.traceId"
+            :trace-info="traceJson(child)"
+            :var-map="varMap"
+            :model-type="child.modelType"
+            :input-params="inputParams"
+            :output-result="outputResult"
+            :function-name-map="functionNameMap"
+            :nested="true"
+          />
+        </div>
+      </section>
+    </div>
+    <div v-else-if="hasTraceData">
 
       <!-- ========== 决策流追踪（卡片式） ========== -->
       <!-- 执行日志详情：统一不展示各模型顶部标题横幅（规则名/耗时/版本/结果） -->
@@ -466,7 +587,9 @@ export default {
     /** 规则完整 modelJson 对象（交叉表矩阵高亮依赖 rowHeaders/cells 等） */
     definitionModel: { type: Object, default: null },
     /** 函数编码 → 中文名称（项目自定义函数，来自执行日志页加载） */
-    functionNameMap: { type: Object, default: function () { return {} } }
+    functionNameMap: { type: Object, default: function () { return {} } },
+    /** 是否为共享会话中的子规则追踪 */
+    nested: { type: Boolean, default: false }
   },
   data: function () {
     return { fullscreen: false }
@@ -486,6 +609,39 @@ export default {
       try {
         return JSON.parse(this.traceInfo)
       } catch (e) { return null }
+    },
+    ruleTraceFrame: function () {
+      var data = this.rawTraceData
+      if (Array.isArray(data) && data.length === 1) data = data[0]
+      if (!data || data.traceKind !== 'RULE' || Number(data.schemaVersion) < 2) return null
+      return data
+    },
+    experimentTraceFrame: function () {
+      var data = this.rawTraceData
+      if (Array.isArray(data) && data.length === 1) data = data[0]
+      if (!data || data.traceKind !== 'EXPERIMENT_GROUP' || Number(data.schemaVersion) < 2) return null
+      return data
+    },
+    experimentRoutingTrace: function () {
+      return this.experimentTraceFrame && Array.isArray(this.experimentTraceFrame.routingTrace)
+        ? this.experimentTraceFrame.routingTrace : []
+    },
+    experimentRuleTrace: function () {
+      var execution = this.experimentTraceFrame && this.experimentTraceFrame.ruleExecution
+      return execution && execution.trace ? execution.trace : null
+    },
+    ruleTraceChildren: function () {
+      return this.ruleTraceFrame && Array.isArray(this.ruleTraceFrame.children)
+        ? this.ruleTraceFrame.children : []
+    },
+    ruleModuleEvents: function () {
+      var events = this.ruleTraceFrame && Array.isArray(this.ruleTraceFrame.events)
+        ? this.ruleTraceFrame.events : []
+      return events.filter(function (event) { return event && event.type === 'MODULE_CALL' })
+    },
+    ruleExpressionModelType: function () {
+      if (this.nested && !this.modelData && !this.definitionModel) return ''
+      return this.modelType || (this.ruleTraceFrame && this.ruleTraceFrame.modelType) || ''
     },
     traceData: function () {
       var d = this.rawTraceData
@@ -1176,6 +1332,47 @@ export default {
     }
   },
   methods: {
+    traceJson: function (value) {
+      try { return JSON.stringify(value) } catch (e) { return '' }
+    },
+    experimentRouteLabel: function (event) {
+      if (!event) return '未知分流步骤'
+      if (event.type === 'ROUTING_START') {
+        var stage = event.stage === 'TEST' ? '空跑测试' : '生产分流'
+        var mode = event.routingMode === 'CONDITION' ? '条件分流' : '比例分流'
+        return stage + '开始 · ' + mode
+      }
+      if (event.type === 'RANDOM_VALUE') return '随机值 ' + event.value
+      if (event.type === 'CONDITION_EVALUATED') {
+        return (event.groupCode || '实验组') + ' 条件' + (event.matched ? '满足' : '不满足')
+      }
+      if (event.type === 'CONDITION_RULE') {
+        return '条件规则 ' + (event.ruleCode || '-') + ' 返回 ' + this.fmtVal(event.result)
+      }
+      if (event.type === 'GROUP_SELECTED') {
+        return '命中 ' + (event.groupCode || '-') + (event.reason ? ' · ' + event.reason : '')
+      }
+      return event.type || '分流步骤'
+    },
+    ruleModelTypeLabel: function (modelType) {
+      var labels = {
+        TABLE: '决策表', TREE: '决策树', FLOW: '决策流', RULE_SET: '规则集',
+        CROSS: '交叉表', SCORE: '评分卡', CROSS_ADV: '复杂交叉表',
+        SCORE_ADV: '复杂评分卡', SCRIPT: 'QL 脚本'
+      }
+      return labels[modelType] || modelType || '规则'
+    },
+    moduleTypeLabel: function (moduleType) {
+      var labels = {
+        DATASOURCE: '外数 API', EXTERNAL_API: '外数 API', DATABASE: '数据库查询',
+        LIST: '名单查询', MODEL: '模型执行'
+      }
+      return labels[moduleType] || moduleType || '过程调用'
+    },
+    ruleTraceStatusLabel: function (status) {
+      var labels = { SUCCESS: '成功', FAILED: '失败', RUNNING: '执行中' }
+      return labels[status] || status || '未知'
+    },
     /**
      * 决策流卡片等处：模板中使用的函数展示名
      */
@@ -2752,6 +2949,160 @@ export default {
 
 <style scoped>
 .trace-wrap { font-size: 13px; color: #303133; line-height: 1.5; }
+
+/* ── 分流实验：路由判断到实际规则执行 ── */
+.experiment-trace-frame {
+  padding: 14px;
+  border: 1px solid rgba(114, 46, 209, 0.38);
+  border-radius: 8px;
+  background: rgba(249, 240, 255, 0.18);
+}
+.experiment-trace-type {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #F9F0FF;
+  color: #722ED1;
+  font-size: 11px;
+  font-weight: 700;
+}
+.experiment-trace-ids {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  color: #909399;
+  font-size: 11px;
+  word-break: break-all;
+}
+.experiment-trace-ids code { color: #606266; font-family: Consolas, Monaco, monospace; }
+.experiment-route-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 14px;
+}
+.experiment-route-step {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 8px;
+}
+.experiment-route-index {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #F9F0FF;
+  border: 1px solid #D3ADF7;
+  color: #722ED1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+}
+.experiment-route-main {
+  min-width: 0;
+  padding: 4px 9px;
+  border-left: 2px solid rgba(179, 127, 235, 0.55);
+  color: #303133;
+}
+.experiment-route-label { min-height: 16px; font-size: 12px; font-weight: 600; }
+.experiment-route-expression {
+  display: block;
+  margin-top: 4px;
+  color: #606266;
+  font-family: Consolas, Monaco, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.experiment-route-main > .trace-wrap { margin-top: 8px; }
+.experiment-rule-execution {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(228, 231, 237, 0.9);
+}
+
+/* ── 共享会话中的规则追踪信封 ── */
+.rule-trace-frame {
+  padding: 14px;
+  border: 1px solid rgba(64, 158, 255, 0.42);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.7);
+}
+.rule-trace-frame--root { box-shadow: 0 2px 8px rgba(30, 64, 175, 0.05); }
+.rule-trace-frame--child {
+  border-color: rgba(103, 194, 58, 0.5);
+  background: rgba(240, 249, 235, 0.22);
+  box-shadow: none;
+}
+.rule-trace-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.rule-trace-identity,
+.rule-trace-meta,
+.rule-trace-module {
+  display: flex;
+  align-items: center;
+}
+.rule-trace-identity { gap: 10px; min-width: 0; }
+.rule-trace-type {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #ECF5FF;
+  color: #1677D2;
+  font-size: 11px;
+  font-weight: 700;
+}
+.rule-trace-name { color: #303133; font-size: 14px; font-weight: 700; }
+.rule-trace-code { margin-top: 2px; color: #909399; font-family: Consolas, Monaco, monospace; font-size: 11px; }
+.rule-trace-meta { flex-shrink: 0; gap: 10px; color: #909399; font-size: 12px; }
+.rule-trace-status { font-weight: 700; }
+.rule-trace-status.is-success,
+.rule-trace-module-status.is-success { color: #529B2E; }
+.rule-trace-status.is-failed,
+.rule-trace-module-status.is-failed { color: #C45656; }
+.rule-trace-status.is-running,
+.rule-trace-module-status.is-running { color: #E6A23C; }
+.rule-trace-id {
+  margin-top: 8px;
+  color: #909399;
+  font-size: 11px;
+  word-break: break-all;
+}
+.rule-trace-id code,
+.rule-trace-module code { color: #606266; font-family: Consolas, Monaco, monospace; }
+.rule-trace-section-title {
+  margin-bottom: 8px;
+  color: #606266;
+  font-size: 12px;
+  font-weight: 700;
+}
+.rule-trace-modules,
+.rule-trace-expression,
+.rule-trace-children {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(228, 231, 237, 0.9);
+}
+.rule-trace-module {
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 8px;
+  border: 1px solid rgba(228, 231, 237, 0.9);
+  border-radius: 5px;
+  background: rgba(250, 250, 250, 0.72);
+  font-size: 11px;
+}
+.rule-trace-module + .rule-trace-module { margin-top: 6px; }
+.rule-trace-module-type { color: #606266; font-weight: 700; }
+.rule-trace-module-resource { color: #303133; }
+.rule-trace-module-status { margin-left: auto; font-weight: 600; }
+.rule-trace-children > .trace-wrap + .trace-wrap { margin-top: 10px; }
 
 /* ── 区块（默认视图） ── */
 .t-sec { padding: 16px 0; }

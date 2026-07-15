@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class RuleExperimentServiceTest {
 
@@ -49,6 +50,22 @@ public class RuleExperimentServiceTest {
         params.put("amount", 50);
         Object fallback = chooseProductionGroup(experiment, groups, params);
         assertEquals("fallback", routeGroup(fallback).getGroupCode());
+    }
+
+    @Test
+    public void ratioRoutingTraceContainsBucketAndSelectedGroup() throws Exception {
+        RuleExperiment experiment = experiment("RATIO", "CONDITION");
+        List<RuleExperimentGroup> groups = Collections.singletonList(
+                group("champion", "CHAMPION", 100, 0, "", null));
+
+        Object choice = chooseProductionGroup(experiment, groups, Collections.<String, Object>emptyMap());
+        Field traceField = choice.getClass().getDeclaredField("routeTrace");
+        traceField.setAccessible(true);
+        List<?> routeTrace = (List<?>) traceField.get(choice);
+
+        assertTrue(routeTrace.toString().contains("ROUTING_START"));
+        assertTrue(routeTrace.toString().contains("RANDOM_VALUE"));
+        assertTrue(routeTrace.toString().contains("GROUP_SELECTED"));
     }
 
     @Test

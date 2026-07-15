@@ -1,11 +1,16 @@
 package com.hengshucredit.rule.server.controller.sync;
 
+import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.core.trace.TraceIdGenerator;
+import com.hengshucredit.rule.model.dto.RuleTraceFrame;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.model.entity.RuleTraceRegistry;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
+import com.hengshucredit.rule.server.service.RuleTraceRegistryService;
 import org.junit.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -92,6 +97,62 @@ public class LogReportControllerTest {
         assertEquals("BASIC_MAIN", billingService.authContext.getAuthCode());
     }
 
+    @Test
+    public void registersClientRootAndChildTraceWithDatabaseUniqueness() {
+        CapturingTraceRegistryService traceRegistryService = new CapturingTraceRegistryService();
+        LogReportController controller = newController(
+                new CapturingLogService(), new CapturingBillingService(), traceRegistryService);
+        RuleTraceFrame root = trace("SCRIPT", "RC_TEST", "QL", null);
+        RuleTraceFrame child = trace("RULE_SET", "RC_CHILD", "RS", root.getTraceId());
+        root.getChildren().add(child);
+        RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode("RC_TEST");
+        log.setTraceId(root.getTraceId());
+        log.setTraceInfo(JSON.toJSONString(Collections.singletonList(root)));
+
+        MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
+        R<Void> result = controller.report(Collections.singletonList(log), request);
+
+        assertEquals(200, result.getCode());
+        assertEquals(2, traceRegistryService.saved.size());
+        assertEquals(root.getTraceId(), traceRegistryService.saved.get(0).getTraceId());
+        assertEquals(root.getTraceId(), traceRegistryService.saved.get(1).getParentTraceId());
+    }
+
+    @Test
+    public void validatesWholeBatchBeforeRegisteringAnyClientTrace() {
+        CapturingTraceRegistryService traceRegistryService = new CapturingTraceRegistryService();
+        LogReportController controller = newController(
+                new CapturingLogService(), new CapturingBillingService(), traceRegistryService);
+        RuleTraceFrame root = trace("SCRIPT", "RC_TEST", "QL", null);
+        RuleExecutionLog valid = new RuleExecutionLog();
+        valid.setRuleCode("RC_TEST");
+        valid.setTraceId(root.getTraceId());
+        valid.setTraceInfo(JSON.toJSONString(Collections.singletonList(root)));
+        RuleExecutionLog invalid = new RuleExecutionLog();
+        invalid.setRuleCode("RC_OTHER");
+        invalid.setProjectCode("OTHER_PROJECT");
+
+        MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
+        R<Void> result = controller.report(java.util.Arrays.asList(valid, invalid), request);
+
+        assertEquals(403, result.getCode());
+        assertEquals(0, traceRegistryService.saved.size());
+    }
+
+    private RuleTraceFrame trace(String modelType, String ruleCode, String typeCode, String parentTraceId) {
+        RuleTraceFrame trace = new RuleTraceFrame();
+        trace.setTraceId(TraceIdGenerator.generate(typeCode, "P", "0001"));
+        trace.setModelType(modelType);
+        trace.setRuleCode(ruleCode);
+        trace.setScope("PROJECT");
+        return trace;
+    }
+
     private static MockHttpServletRequest requestWithProject(String projectCode) {
         MockHttpServletRequest request = new MockHttpServletRequest();
         request.setAttribute("projectId", 1L);
@@ -101,9 +162,16 @@ public class LogReportControllerTest {
 
     private static LogReportController newController(RuleExecutionLogService logService,
                                                      RuleBillingService billingService) {
+        return newController(logService, billingService, new CapturingTraceRegistryService());
+    }
+
+    private static LogReportController newController(RuleExecutionLogService logService,
+                                                     RuleBillingService billingService,
+                                                     RuleTraceRegistryService traceRegistryService) {
         LogReportController controller = new LogReportController();
         setField(controller, "logService", logService);
         setField(controller, "billingService", billingService);
+        setField(controller, "traceRegistryService", traceRegistryService);
         return controller;
     }
 
@@ -141,6 +209,15 @@ public class LogReportControllerTest {
         public void recordEngineExecutionLog(RuleExecutionLog log, ProjectAuthContext context) {
             billed.add(log);
             authContext = context;
+        }
+    }
+
+    private static class CapturingTraceRegistryService extends RuleTraceRegistryService {
+        private final List<RuleTraceRegistry> saved = new ArrayList<>();
+
+        @Override
+        public void registerExisting(RuleTraceRegistry registry) {
+            saved.add(registry);
         }
     }
 }

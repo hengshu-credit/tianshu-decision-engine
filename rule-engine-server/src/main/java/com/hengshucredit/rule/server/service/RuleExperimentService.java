@@ -8,6 +8,7 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
+import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
 import com.hengshucredit.rule.model.dto.RuleExperimentGroupResult;
@@ -19,6 +20,7 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExperimentVersion;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.mapper.RuleExperimentExecutionLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleExperimentGroupMapper;
 import com.hengshucredit.rule.server.mapper.RuleExperimentMapper;
@@ -85,6 +87,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     @Resource
     private RuleVariableService variableService;
+
+    @Resource
+    private RuleTraceRegistryService traceRegistryService;
+
+    @Resource
+    private RuleProjectService projectService;
 
     public IPage<RuleExperiment> pageExperiments(int pageNum, int pageSize, Long projectId,
                                                  Integer status, String keyword) {
@@ -195,7 +203,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     public IPage<RuleExperimentExecutionLog> pageExecutionLogs(int pageNum, int pageSize, Long experimentId,
                                                                String experimentCode, String requestKey,
-                                                               String stage, String groupCode, Integer success) {
+                                                               String traceId, String stage, String groupCode,
+                                                               Integer success) {
         LambdaQueryWrapper<RuleExperimentExecutionLog> wrapper = new LambdaQueryWrapper<>();
         if (experimentId != null) {
             wrapper.eq(RuleExperimentExecutionLog::getExperimentId, experimentId);
@@ -205,6 +214,10 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (hasText(requestKey)) {
             wrapper.like(RuleExperimentExecutionLog::getRequestKey, requestKey);
+        }
+        if (hasText(traceId)) {
+            wrapper.and(w -> w.eq(RuleExperimentExecutionLog::getExperimentTraceId, traceId)
+                    .or().eq(RuleExperimentExecutionLog::getChildTraceId, traceId));
         }
         if (hasText(stage)) {
             wrapper.eq(RuleExperimentExecutionLog::getStage, stage);
@@ -256,6 +269,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         List<RuleExperimentGroup> groups = listGroups(experiment.getId());
         validateRuntimeGroups(experiment, groups);
+        String experimentTraceId = allocateExperimentTrace(experiment);
 
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
@@ -266,13 +280,15 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         String clientAppName = request == null ? null : request.getClientAppName();
 
         RuleExperimentExecuteResult result = new RuleExperimentExecuteResult();
+        result.setExperimentTraceId(experimentTraceId);
         result.setExperimentCode(experiment.getExperimentCode());
         result.setExperimentName(experiment.getExperimentName());
         result.setRequestKey(requestKey);
 
         RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
         RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, params,
-                requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true);
+                requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
+                experimentTraceId, productionChoice.routeTrace);
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
@@ -286,7 +302,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             }
             boolean invokeExternal = testGroup.getInvokeExternalSource() == null || testGroup.getInvokeExternalSource() == 1;
             RuleExperimentGroupResult testResult = runGroup(experiment, testGroup, params,
-                    requestKey, requestTime, clientAppName, "TEST", testChoice.reason, invokeExternal);
+                    requestKey, requestTime, clientAppName, "TEST", testChoice.reason, invokeExternal,
+                    experimentTraceId, testChoice.routeTrace);
             result.getTestGroups().add(testResult);
             result.getTags().add(testGroup.getGroupCode());
         }
@@ -295,6 +312,28 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setErrorMessage(productionResult.getErrorMessage());
         result.setExecuteTimeMs(System.currentTimeMillis() - start);
         return result;
+    }
+
+    private String allocateExperimentTrace(RuleExperiment experiment) {
+        Long projectId = experiment.getProjectId();
+        boolean global = projectId == null || projectId <= 0;
+        String scopeType = global ? "G" : "P";
+        String scopeCode = global ? TraceIdGenerator.GLOBAL_SCOPE_CODE : projectScopeCode(projectId);
+        String typeCode = TraceIdGenerator.moduleTypeCode("EXPERIMENT");
+        return traceRegistryService == null
+                ? TraceIdGenerator.generate(typeCode, scopeType, scopeCode)
+                : traceRegistryService.allocate(typeCode, scopeType, scopeCode, projectId,
+                        "EXPERIMENT", experiment.getId(), experiment.getExperimentCode(), null);
+    }
+
+    private String projectScopeCode(Long projectId) {
+        if (projectService != null) {
+            RuleProject project = projectService.getById(projectId);
+            if (project != null && hasText(project.getTraceScopeCode())) {
+                return project.getTraceScopeCode();
+            }
+        }
+        return TraceIdGenerator.projectScopeCode(projectId);
     }
 
     private Map<String, Object> bindExperimentParams(RuleExperiment experiment, Map<String, Object> params) {
@@ -325,6 +364,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                               String clientAppName) {
         List<RuleExperimentGroup> productionGroups = productionGroups(groups);
         RuleExperimentGroup champion = championGroup(groups);
+        List<Map<String, Object>> routeTrace = routingStart("PRODUCTION", experiment.getRoutingMode());
         if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasInlineConditionGroups(productionGroups)) {
             RuleExperimentGroup fallback = null;
             for (RuleExperimentGroup group : productionGroups) {
@@ -334,36 +374,44 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                     }
                     continue;
                 }
-                if (matchesConditionGroup(group, params)) {
-                    return new RouteChoice(group, "冠军挑战条件分流命中: " + group.getGroupCode());
+                if (matchesConditionGroup(group, params, routeTrace)) {
+                    return routeChoice(group, "冠军挑战条件分流命中: " + group.getGroupCode(), routeTrace);
                 }
             }
             if (fallback != null) {
-                return new RouteChoice(fallback, "冠军挑战条件未命中，执行兜底动作");
+                return routeChoice(fallback, "冠军挑战条件未命中，执行兜底动作", routeTrace);
             }
-            return new RouteChoice(champion, "冠军挑战条件未命中，回退冠军组");
+            return routeChoice(champion, "冠军挑战条件未命中，回退冠军组", routeTrace);
         }
         if (ROUTING_CONDITION.equals(experiment.getRoutingMode()) && hasText(experiment.getConditionRuleCode())) {
             RulePublished routingRule = findPublishedRule(experiment, experiment.getConditionRuleCode());
             RuleExecuteService.ExecutionOutcome outcome = executeService.executePublishedWithOptions(
                     routingRule, params, experiment.getProjectId(), clientAppName,
                     VariableResolveOptions.defaults(), "EXPERIMENT_ROUTE");
+            Map<String, Object> conditionRuleTrace = new LinkedHashMap<>();
+            conditionRuleTrace.put("type", "CONDITION_RULE");
+            conditionRuleTrace.put("ruleCode", experiment.getConditionRuleCode());
+            conditionRuleTrace.put("traceId", outcome.getResult().getTraceId());
+            conditionRuleTrace.put("result", outcome.getResult().getResult());
+            conditionRuleTrace.put("trace", outcome.getResult().getTraces());
+            routeTrace.add(conditionRuleTrace);
             String groupCode = extractRouteGroupCode(outcome.getResult().getResult());
             RuleExperimentGroup matched = findGroupByRouteValue(productionGroups, groupCode);
             if (matched != null) {
-                return new RouteChoice(matched, "条件分流规则返回组编码: " + groupCode);
+                return routeChoice(matched, "条件分流规则返回组编码: " + groupCode, routeTrace);
             }
-            return new RouteChoice(champion, "条件分流未命中有效组，回退冠军组");
+            return routeChoice(champion, "条件分流未命中有效组，回退冠军组", routeTrace);
         }
         int bucket = routeBucket(experiment.getExperimentCode(), requestKey);
+        routeTrace.add(routeEvent("RANDOM_VALUE", "value", bucket));
         BigDecimal cursor = BigDecimal.ZERO;
         for (RuleExperimentGroup group : productionGroups) {
             cursor = cursor.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
             if (new BigDecimal(bucket).compareTo(cursor) < 0) {
-                return new RouteChoice(group, "比例分流命中桶位: " + bucket);
+                return routeChoice(group, "比例分流命中桶位: " + bucket, routeTrace);
             }
         }
-        return new RouteChoice(champion, "比例分流未命中有效区间，回退冠军组");
+        return routeChoice(champion, "比例分流未命中有效区间，回退冠军组", routeTrace);
     }
 
     private List<RouteChoice> chooseTestGroups(RuleExperiment experiment, List<RuleExperimentGroup> groups,
@@ -373,14 +421,18 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             return Collections.emptyList();
         }
         if (ROUTING_RATIO.equals(experiment.getTestRoutingMode())) {
-            RuleExperimentGroup chosen = chooseRatioGroup(testGroups, experiment.getExperimentCode() + ":TEST", requestKey);
+            List<Map<String, Object>> routeTrace = routingStart("TEST", experiment.getTestRoutingMode());
+            int bucket = routeBucket(experiment.getExperimentCode() + ":TEST", requestKey);
+            routeTrace.add(routeEvent("RANDOM_VALUE", "value", bucket));
+            RuleExperimentGroup chosen = chooseRatioGroup(testGroups, bucket);
             if (chosen == null) {
                 chosen = testGroups.get(0);
             }
-            return Collections.singletonList(new RouteChoice(chosen, "测试组比例分流命中"));
+            return Collections.singletonList(routeChoice(chosen, "测试组比例分流命中", routeTrace));
         }
 
         List<RouteChoice> choices = new ArrayList<>();
+        List<Map<String, Object>> routeTrace = routingStart("TEST", experiment.getTestRoutingMode());
         RuleExperimentGroup fallback = null;
         boolean exclusive = experiment.getTestExclusive() == null || experiment.getTestExclusive() == 1;
         for (RuleExperimentGroup testGroup : testGroups) {
@@ -390,22 +442,21 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 }
                 continue;
             }
-            if (!matchesConditionGroup(testGroup, params)) {
+            if (!matchesConditionGroup(testGroup, params, routeTrace)) {
                 continue;
             }
-            choices.add(new RouteChoice(testGroup, "测试组条件命中"));
+            choices.add(routeChoice(testGroup, "测试组条件命中", routeTrace));
             if (exclusive) {
                 break;
             }
         }
         if (choices.isEmpty() && fallback != null) {
-            choices.add(new RouteChoice(fallback, "测试组条件未命中，执行兜底动作"));
+            choices.add(routeChoice(fallback, "测试组条件未命中，执行兜底动作", routeTrace));
         }
         return choices;
     }
 
-    private RuleExperimentGroup chooseRatioGroup(List<RuleExperimentGroup> groups, String experimentCode, String requestKey) {
-        int bucket = routeBucket(experimentCode, requestKey);
+    private RuleExperimentGroup chooseRatioGroup(List<RuleExperimentGroup> groups, int bucket) {
         BigDecimal cursor = BigDecimal.ZERO;
         for (RuleExperimentGroup group : groups) {
             cursor = cursor.add(group.getTrafficRatio() == null ? BigDecimal.ZERO : group.getTrafficRatio());
@@ -420,7 +471,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                Map<String, Object> params, String requestKey,
                                                LocalDateTime requestTime, String clientAppName,
                                                String stage, String routeReason,
-                                               boolean invokeExternalSource) {
+                                               boolean invokeExternalSource,
+                                               String experimentTraceId,
+                                               List<Map<String, Object>> routeTrace) {
         RulePublished published = findPublishedRule(experiment, group.getRuleCode());
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setSkipApiSources(!invokeExternalSource);
@@ -430,7 +483,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         RuleExecuteService.ExecutionOutcome outcome = executeService.executePublishedWithOptions(
                 published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
-        saveExecutionLog(experiment, group, groupResult, outcome.getExecuteParams(), requestKey, stage, routeReason);
+        saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
+                experimentTraceId, routeTrace);
         return groupResult;
     }
 
@@ -439,6 +493,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                     String stage, String routeReason) {
         RuleResult ruleResult = outcome.getResult();
         RuleExperimentGroupResult result = new RuleExperimentGroupResult();
+        result.setTraceId(ruleResult.getTraceId());
         result.setStage(stage);
         result.setGroupCode(group.getGroupCode());
         result.setGroupName(group.getGroupName());
@@ -457,8 +512,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
 
     private void saveExecutionLog(RuleExperiment experiment, RuleExperimentGroup group,
                                   RuleExperimentGroupResult result, Map<String, Object> inputParams,
-                                  String requestKey, String stage, String routeReason) {
+                                  String requestKey, String stage, String routeReason,
+                                  String experimentTraceId,
+                                  List<Map<String, Object>> routeTrace) {
         RuleExperimentExecutionLog log = new RuleExperimentExecutionLog();
+        log.setExperimentTraceId(experimentTraceId);
+        log.setChildTraceId(result.getTraceId());
         log.setExperimentId(experiment.getId());
         log.setExperimentCode(experiment.getExperimentCode());
         log.setRequestKey(requestKey);
@@ -472,10 +531,29 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setInputParams(toJsonSafely(inputParams));
         log.setOutputResult(toJsonSafely(result.getResult()));
-        log.setTraceInfo(toJsonSafely(result.getTraces()));
+        log.setTraceInfo(toJsonSafely(buildExperimentTrace(
+                experimentTraceId, result.getTraceId(), stage, routeTrace, result.getTraces())));
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         executionLogMapper.insert(log);
+    }
+
+    private Map<String, Object> buildExperimentTrace(String experimentTraceId, String childTraceId,
+                                                     String stage, List<Map<String, Object>> routeTrace,
+                                                     List<Object> childTrace) {
+        Map<String, Object> trace = new LinkedHashMap<>();
+        trace.put("schemaVersion", 2);
+        trace.put("traceKind", "EXPERIMENT_GROUP");
+        trace.put("experimentTraceId", experimentTraceId);
+        trace.put("childTraceId", childTraceId);
+        trace.put("stage", stage);
+        trace.put("routingTrace", routeTrace == null ? Collections.emptyList() : routeTrace);
+        Map<String, Object> ruleExecution = new LinkedHashMap<>();
+        ruleExecution.put("type", "RULE_EXECUTION");
+        ruleExecution.put("traceId", childTraceId);
+        ruleExecution.put("trace", childTrace);
+        trace.put("ruleExecution", ruleExecution);
+        return trace;
     }
 
     private String toJsonSafely(Object value) {
@@ -512,13 +590,53 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return result;
     }
 
+    private List<Map<String, Object>> routingStart(String stage, String routingMode) {
+        List<Map<String, Object>> trace = new ArrayList<>();
+        Map<String, Object> start = routeEvent("ROUTING_START", "stage", stage);
+        start.put("routingMode", routingMode);
+        trace.add(start);
+        return trace;
+    }
+
+    private RouteChoice routeChoice(RuleExperimentGroup group, String reason,
+                                    List<Map<String, Object>> routeTrace) {
+        List<Map<String, Object>> trace = new ArrayList<>(routeTrace);
+        Map<String, Object> selected = routeEvent("GROUP_SELECTED", "reason", reason);
+        selected.put("groupCode", group == null ? null : group.getGroupCode());
+        selected.put("groupType", group == null ? null : group.getGroupType());
+        trace.add(selected);
+        return new RouteChoice(group, reason, trace);
+    }
+
+    private Map<String, Object> routeEvent(String type, String key, Object value) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", type);
+        event.put(key, value);
+        return event;
+    }
+
     private boolean matchesConditionGroup(RuleExperimentGroup group, Map<String, Object> params) {
+        return matchesConditionGroup(group, params, null);
+    }
+
+    private boolean matchesConditionGroup(RuleExperimentGroup group, Map<String, Object> params,
+                                          List<Map<String, Object>> routeTrace) {
         if (!hasText(group.getConditionExpression())) {
             return true;
         }
-        RuleResult result = qlExpressEngine.execute(group.getConditionExpression(), params, false);
+        RuleResult result = qlExpressEngine.execute(group.getConditionExpression(), params, true);
         Object value = result.getResult();
-        return result.isSuccess() && Boolean.TRUE.equals(value);
+        boolean matched = result.isSuccess() && Boolean.TRUE.equals(value);
+        if (routeTrace != null) {
+            Map<String, Object> condition = routeEvent("CONDITION_EVALUATED", "groupCode", group.getGroupCode());
+            condition.put("expression", group.getConditionExpression());
+            condition.put("matched", matched);
+            condition.put("result", value);
+            condition.put("trace", result.getTraces());
+            condition.put("errorMessage", result.getErrorMessage());
+            routeTrace.add(condition);
+        }
+        return matched;
     }
 
     private boolean hasExecutedTestGroup(Long experimentId, Long groupId, String requestKey) {
@@ -944,10 +1062,13 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private static class RouteChoice {
         private final RuleExperimentGroup group;
         private final String reason;
+        private final List<Map<String, Object>> routeTrace;
 
-        private RouteChoice(RuleExperimentGroup group, String reason) {
+        private RouteChoice(RuleExperimentGroup group, String reason,
+                            List<Map<String, Object>> routeTrace) {
             this.group = group;
             this.reason = reason;
+            this.routeTrace = routeTrace;
         }
     }
 }

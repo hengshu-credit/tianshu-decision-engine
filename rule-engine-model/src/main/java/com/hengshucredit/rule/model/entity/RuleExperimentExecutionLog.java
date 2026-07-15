@@ -14,6 +14,8 @@ import java.time.LocalDateTime;
 public class RuleExperimentExecutionLog {
     @TableId(type = IdType.AUTO)
     private Long id;
+    private String experimentTraceId;
+    private String childTraceId;
     private Long experimentId;
     private String experimentCode;
     private String requestKey;

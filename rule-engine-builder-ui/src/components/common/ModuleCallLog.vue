@@ -18,6 +18,9 @@
         <el-form-item :label="profile.targetLabel">
           <el-input v-model="query.targetCode" clearable placeholder="前缀筛选" style="width:150px" />
         </el-form-item>
+        <el-form-item label="Trace ID">
+          <el-input v-model="query.traceId" clearable placeholder="模块或规则 trace_id" style="width:250px" />
+        </el-form-item>
         <el-form-item label="结果">
           <el-select v-model="query.success" clearable placeholder="全部" style="width:100px">
             <el-option label="成功" :value="1" />
@@ -37,6 +40,7 @@
       </el-table-column>
       <el-table-column prop="targetCode" :label="profile.targetLabel" min-width="150" show-overflow-tooltip />
       <el-table-column prop="targetName" label="名称" min-width="150" show-overflow-tooltip />
+      <el-table-column prop="traceId" label="模块 trace" min-width="190" show-overflow-tooltip />
       <el-table-column v-if="profile.showMethod" prop="requestMethod" :label="profile.methodLabel" width="90" align="center" />
       <el-table-column v-if="profile.showResource" prop="requestUrl" :label="profile.resourceLabel" min-width="220" show-overflow-tooltip>
         <template slot-scope="{ row }">{{ row.requestUrl || profile.emptyResource }}</template>
@@ -81,6 +85,8 @@
           <el-descriptions-item label="名称">{{ detail.targetName || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="profile.showProject" label="项目编码">{{ detail.projectCode || '-' }}</el-descriptions-item>
           <el-descriptions-item label="结果">{{ detail.success === 1 ? '成功' : '失败' }}</el-descriptions-item>
+          <el-descriptions-item label="模块 trace_id" :span="2">{{ detail.traceId || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="规则 trace_id" :span="2">{{ detail.ruleTraceId || '-' }}</el-descriptions-item>
           <el-descriptions-item v-if="detail.requestUrl" :label="profile.resourceLabel" :span="2">{{ detail.requestUrl }}</el-descriptions-item>
           <el-descriptions-item label="错误信息" :span="2">{{ detail.errorMessage || '-' }}</el-descriptions-item>
         </el-descriptions>
@@ -213,7 +219,7 @@ export default {
       loading: false,
       rows: [],
       total: 0,
-      query: { pageNum: 1, pageSize: 10, actionType: '', targetCode: '', success: '' },
+      query: { pageNum: 1, pageSize: 10, actionType: '', targetCode: '', traceId: '', success: '' },
       detailVisible: false,
       detail: null,
       actionMap: {
@@ -224,7 +230,8 @@ export default {
         TEST_CONNECTION_DRAFT: '草稿连接测试',
         DB_VARIABLE_QUERY: 'DB变量查询',
         LIST_VARIABLE_MATCH: '名单变量匹配',
-        EXECUTE: '执行测试'
+        EXECUTE: '执行测试',
+        MODEL_EXECUTE: '规则内模型执行'
       }
     }
   },
@@ -262,7 +269,10 @@ export default {
         { label: 'DB变量查询', value: 'DB_VARIABLE_QUERY' }
       ]
       const list = [{ label: '名单变量匹配', value: 'LIST_VARIABLE_MATCH' }]
-      const model = [{ label: '执行测试', value: 'EXECUTE' }]
+      const model = [
+        { label: '执行测试', value: 'EXECUTE' },
+        { label: '规则内模型执行', value: 'MODEL_EXECUTE' }
+      ]
       if (this.moduleType === 'DATASOURCE') return datasource
       if (this.moduleType === 'DATABASE') return database
       if (this.moduleType === 'LIST') return list
@@ -291,7 +301,7 @@ export default {
       this.load()
     },
     resetQuery() {
-      this.query = { pageNum: 1, pageSize: this.query.pageSize, actionType: '', targetCode: '', success: '' }
+      this.query = { pageNum: 1, pageSize: this.query.pageSize, actionType: '', targetCode: '', traceId: '', success: '' }
       this.load()
     },
     openDetail(row) {
