@@ -1,3 +1,38 @@
+-- 全量快照恢复：清空本文件覆盖的表并重置自增 ID，请勿用于需要保留现有业务数据的数据库。
+SET @OLD_FOREIGN_KEY_CHECKS = @@FOREIGN_KEY_CHECKS;
+SET FOREIGN_KEY_CHECKS = 0;
+TRUNCATE TABLE rule_engine.rule_auth_access_log;
+TRUNCATE TABLE rule_engine.rule_data_object_field_option;
+TRUNCATE TABLE rule_engine.rule_data_object_field;
+TRUNCATE TABLE rule_engine.rule_data_object;
+TRUNCATE TABLE rule_engine.rule_definition_input_field;
+TRUNCATE TABLE rule_engine.rule_definition_output_field;
+TRUNCATE TABLE rule_engine.rule_definition_content;
+TRUNCATE TABLE rule_engine.rule_definition_ref;
+TRUNCATE TABLE rule_engine.rule_definition_version;
+TRUNCATE TABLE rule_engine.rule_published;
+TRUNCATE TABLE rule_engine.rule_definition;
+TRUNCATE TABLE rule_engine.rule_execution_log;
+TRUNCATE TABLE rule_engine.rule_external_api_config;
+TRUNCATE TABLE rule_engine.rule_external_datasource;
+TRUNCATE TABLE rule_engine.rule_function_version;
+TRUNCATE TABLE rule_engine.rule_function;
+TRUNCATE TABLE rule_engine.rule_list_record_log;
+TRUNCATE TABLE rule_engine.rule_list_record;
+TRUNCATE TABLE rule_engine.rule_list_library;
+TRUNCATE TABLE rule_engine.rule_model_input_field;
+TRUNCATE TABLE rule_engine.rule_model_output_field;
+TRUNCATE TABLE rule_engine.rule_model_version;
+TRUNCATE TABLE rule_engine.rule_model;
+TRUNCATE TABLE rule_engine.rule_project_auth_token;
+TRUNCATE TABLE rule_engine.rule_project_auth;
+TRUNCATE TABLE rule_engine.rule_project;
+TRUNCATE TABLE rule_engine.rule_runtime_call_log;
+TRUNCATE TABLE rule_engine.rule_db_datasource;
+TRUNCATE TABLE rule_engine.rule_variable_option;
+TRUNCATE TABLE rule_engine.rule_variable;
+SET FOREIGN_KEY_CHECKS = @OLD_FOREIGN_KEY_CHECKS;
+
 INSERT INTO rule_engine.rule_auth_access_log (project_id,project_code,auth_id,auth_code,auth_type,token_id,token_code,auth_phase,request_method,request_uri,request_id,client_ip,success,failure_reason,create_time) VALUES
 	 (NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'POST','/api/rule/auth/token','1e12d2bb-fdf3-4086-a16b-955128291927','0:0:0:0:0:0:0:1',0,'RATE_LIMITED','2026-07-15 03:11:29'),
 	 (1,'BNLP',2,'CODEX_UI_BASIC_0715','BASIC',NULL,NULL,'DIRECT','POST','/api/rule/auth/token','3dc7b137-caa5-4816-9f0e-a4468ca006e5','0:0:0:0:0:0:0:1',1,NULL,'2026-07-15 03:13:41'),
@@ -2032,8 +2067,12 @@ INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,scr
 	 (0,'GLOBAL','black_hit','是否命中黑名单','black_hit','NUMBER','LIST','{"listId": 1, "itemTypes": ["MOBILE", "ID_CARD", "ADDRESS", "IP"], "matchMode": "IN_LIST", "queryField": "mobile_no", "returnMode": "NUMBER", "forceRefresh": false}','-1','','','',0,1,'2026-07-04 03:35:32','2026-07-04 03:35:32'),
 	 (0,'GLOBAL','engine_bdrules','引擎黑规则结果','engine_bdrules','LIST','API','{"resultPath": "body.data.result", "apiConfigId": 1, "forceRefresh": false, "paramMapping": {}, "fallbackValue": null, "exceptionStrategy": "ERROR"}','','','','',0,1,'2026-07-04 03:51:57','2026-07-04 03:51:57'),
 	 (0,'GLOBAL','black_user_count','黑名单人数','black_user_count','NUMBER','DB','{"sql": "SELECT count(1) user_count\\r\\nFROM rule_engine.rule_list_record AS rlr\\r\\nWHERE list_id = 1 and item_content = ?", "params": ["$.mobile_no", "$.idcard_no"], "maxRows": 1, "resultPath": "0.user_count", "datasourceId": 1, "forceRefresh": false, "fallbackValue": null, "exceptionStrategy": "ERROR"}','','','','',0,1,'2026-07-04 04:05:12','2026-07-07 23:58:40'),
-	 (0,'GLOBAL','idcard_birthday','身份证生日','idcard_birthday','DATE','COMPUTED',NULL,'','','','',0,1,'2026-07-07 00:36:27','2026-07-07 00:36:27'),
-	 (0,'GLOBAL','NULL_NUMBER','空值','NULL_NUMBER','NUMBER','CONSTANT',NULL,'null','','null','',0,1,'2026-07-09 17:38:54','2026-07-09 17:41:44'),
+	 (0,'GLOBAL','idcard_birthday','身份证生日','idcard_birthday','DATE','COMPUTED',NULL,'','','','',0,1,'2026-07-07 00:36:27','2026-07-07 00:36:27');
+ALTER TABLE rule_engine.rule_variable AUTO_INCREMENT = 199;
+INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time) VALUES
+	 (0,'GLOBAL','NULL_NUMBER','空值','NULL_NUMBER','NUMBER','CONSTANT',NULL,'null','','null','',0,1,'2026-07-09 17:38:54','2026-07-09 17:41:44');
+ALTER TABLE rule_engine.rule_variable AUTO_INCREMENT = 203;
+INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time) VALUES
 	 (0,'GLOBAL','REJECT','拒绝','REJECT','NUMBER','CONSTANT',NULL,'101','','101','',0,1,'2026-07-09 17:44:38','2026-07-14 23:04:58'),
 	 (0,'GLOBAL','PASS','通过','PASS','NUMBER','CONSTANT',NULL,'100','','100','',0,1,'2026-07-09 17:45:07','2026-07-09 17:45:07');
 INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time) VALUES
@@ -2053,6 +2092,23 @@ INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,scr
 	 (0,'GLOBAL','monthly_successful_repayment_amount','月成功还款额','monthly_successful_repayment_amount','NUMBER','COMPUTED',NULL,'','2000~10000','5000','由授信额度与可用额度二维交叉表计算',0,1,'2026-07-14 23:31:31','2026-07-14 23:31:31'),
 	 (0,'GLOBAL','risk_factor','风险系数','risk_factor','DOUBLE','COMPUTED',NULL,'','0.600~1.225','0.991','由年龄与反欺诈评分 score 二维交叉表计算',0,1,'2026-07-14 23:33:23','2026-07-14 23:33:23'),
 	 (0,'GLOBAL','risk_limit','风险额度','risk_limit','NUMBER','COMPUTED',NULL,'','2000~10000','7000','由年龄与反欺诈评分 score 二维交叉表计算',0,1,'2026-07-14 23:34:08','2026-07-14 23:34:08');
+-- 原始变量 ID 恢复完成后重新应用当前内置常量目录，保留已有常量 ID 并补齐缺失项。
+INSERT INTO rule_engine.rule_variable (project_id,`scope`,var_code,var_label,script_name,var_type,var_source,source_config,default_value,value_range,example_value,description,sort_order,status,create_time,update_time) VALUES
+	 (0,'GLOBAL','NEGATIVE_INFINITY','负无穷','NEGATIVE_INFINITY','DOUBLE','CONSTANT',NULL,'-Infinity','','-Infinity','系统常量：数值比较下界。',-1000,1,NOW(),NOW()),
+	 (0,'GLOBAL','NULL_VALUE','空值','NULL_VALUE','OBJECT','CONSTANT',NULL,'null','','null','系统常量：缺失值。',-999,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_STRING','空字符串','EMPTY_STRING','STRING','CONSTANT',NULL,'','','','系统常量：空字符串。',-998,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_LIST','空列表','EMPTY_LIST','LIST','CONSTANT',NULL,'[]','','[]','系统常量：空列表。',-997,1,NOW(),NOW()),
+	 (0,'GLOBAL','EMPTY_MAP','空映射','EMPTY_MAP','MAP','CONSTANT',NULL,'{}','','{}','系统常量：空键值映射。',-996,1,NOW(),NOW()),
+	 (0,'GLOBAL','FALSE_VALUE','布尔假','FALSE_VALUE','BOOLEAN','CONSTANT',NULL,'false','','false','系统常量：布尔假。',-995,1,NOW(),NOW()),
+	 (0,'GLOBAL','TRUE_VALUE','布尔真','TRUE_VALUE','BOOLEAN','CONSTANT',NULL,'true','','true','系统常量：布尔真。',-994,1,NOW(),NOW()),
+	 (0,'GLOBAL','NEGATIVE_ONE','负一','NEGATIVE_ONE','NUMBER','CONSTANT',NULL,'-1','','-1','系统常量：数值负一。',-993,1,NOW(),NOW()),
+	 (0,'GLOBAL','ZERO','零','ZERO','NUMBER','CONSTANT',NULL,'0','','0','系统常量：数值零。',-992,1,NOW(),NOW()),
+	 (0,'GLOBAL','ONE','一','ONE','NUMBER','CONSTANT',NULL,'1','','1','系统常量：数值一。',-991,1,NOW(),NOW()),
+	 (0,'GLOBAL','POSITIVE_INFINITY','正无穷','POSITIVE_INFINITY','DOUBLE','CONSTANT',NULL,'Infinity','','Infinity','系统常量：数值比较上界。',-990,1,NOW(),NOW())
+ON DUPLICATE KEY UPDATE
+	 var_label=VALUES(var_label),script_name=VALUES(script_name),var_type=VALUES(var_type),var_source=VALUES(var_source),
+	 default_value=VALUES(default_value),example_value=VALUES(example_value),description=VALUES(description),
+	 sort_order=VALUES(sort_order),status=VALUES(status),update_time=NOW();
 INSERT INTO rule_engine.rule_variable_option (variable_id,option_value,option_label,sort_order) VALUES
 	 (13,'0','女性',0),
 	 (13,'1','男性',1),
