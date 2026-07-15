@@ -17,10 +17,15 @@ public class RuleEngineAutoConfigurationTest {
     }
 
     @Test
-    public void legacyConfigurationKeepsExistingExternalReporterBehavior() {
+    public void legacyConfigurationUsesHttpReporterForTrustedAttribution() {
         RuleEngineClientProperties properties = new RuleEngineClientProperties();
         properties.setToken("legacy-token");
 
-        assertTrue(RuleEngineAutoConfiguration.shouldUseExternalReporter(properties));
+        assertFalse(RuleEngineAutoConfiguration.shouldUseExternalReporter(properties));
+    }
+
+    @Test
+    public void unauthenticatedConfigurationMayUseExternalReporter() {
+        assertTrue(RuleEngineAutoConfiguration.shouldUseExternalReporter(new RuleEngineClientProperties()));
     }
 }

@@ -211,15 +211,20 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             return;
         }
         LocalDateTime now = LocalDateTime.now();
-        List<RuleBillingConfig> configs = findActiveEngineConfigs(definition, now);
+        Long executionProjectId = authContext != null && authContext.getProjectId() != null
+                ? authContext.getProjectId()
+                : definition.getProjectId();
+        List<RuleBillingConfig> configs = findActiveEngineConfigs(definition, now, executionProjectId);
         if (configs.isEmpty()) {
             return;
         }
-        RuleProject project = definition.getProjectId() == null ? null : findProject(definition.getProjectId());
+        RuleProject project = executionProjectId == null ? null : findProject(executionProjectId);
         for (RuleBillingConfig config : configs) {
             RuleBillingRecord record = new RuleBillingRecord();
-            record.setProjectId(definition.getProjectId());
-            record.setProjectCode(project == null ? definition.getProjectCode() : project.getProjectCode());
+            record.setProjectId(executionProjectId);
+            record.setProjectCode(project == null
+                    ? authContext == null ? definition.getProjectCode() : authContext.getProjectCode()
+                    : project.getProjectCode());
             record.setBillingCode(config.getBillingCode());
             record.setBillingName(config.getBillingName());
             record.setBillingTarget(TARGET_ENGINE);
@@ -239,23 +244,28 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     public void recordEngineExecutionLog(RuleExecutionLog log) {
+        recordEngineExecutionLog(log, null);
+    }
+
+    public void recordEngineExecutionLog(RuleExecutionLog log, ProjectAuthContext authContext) {
         if (log == null || !hasText(log.getRuleCode())) {
             return;
         }
-        RuleDefinition definition = findDefinitionByRuleCode(log.getRuleCode());
+        RuleDefinition definition = authContext == null
+                ? findDefinitionByRuleCode(log.getRuleCode())
+                : findDefinitionByRuleCode(log.getRuleCode(), authContext.getProjectId());
         if (definition == null) {
             return;
         }
         boolean success = log.getSuccess() != null && log.getSuccess() == 1;
-        ProjectAuthContext authContext = null;
-        if (log.getAuthId() != null) {
-            authContext = log.getTokenId() == null
-                    ? ProjectAuthContext.direct(definition.getProjectId(), log.getProjectCode(), log.getAuthId(),
-                    log.getAuthCode(), log.getAuthType())
-                    : ProjectAuthContext.temporary(definition.getProjectId(), log.getProjectCode(), log.getAuthId(),
-                    log.getAuthCode(), log.getAuthType(), log.getTokenId(), log.getTokenCode(), log.getAuthPhase());
-        }
         recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage(), authContext);
+    }
+
+    public boolean isRuleAccessible(Long projectId, String ruleCode) {
+        if (projectId == null || !hasText(ruleCode)) {
+            return false;
+        }
+        return definitionMapper.selectCount(projectRuleWrapper(ruleCode, projectId)) > 0;
     }
 
     public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
@@ -325,7 +335,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         return record;
     }
 
-    protected List<RuleBillingConfig> findActiveEngineConfigs(RuleDefinition definition, LocalDateTime now) {
+    protected List<RuleBillingConfig> findActiveEngineConfigs(RuleDefinition definition, LocalDateTime now,
+                                                               Long executionProjectId) {
         return list(new LambdaQueryWrapper<RuleBillingConfig>()
                 .eq(RuleBillingConfig::getStatus, 1)
                 .eq(RuleBillingConfig::getBillingTarget, TARGET_ENGINE)
@@ -335,7 +346,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
                 .and(w -> w.eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_GLOBAL)
                         .or()
                         .eq(RuleBillingConfig::getScope, RuleVariableService.SCOPE_PROJECT)
-                        .eq(RuleBillingConfig::getProjectId, definition.getProjectId()))
+                        .eq(RuleBillingConfig::getProjectId, executionProjectId))
                 .and(w -> w.isNull(RuleBillingConfig::getEffectiveTime)
                         .or()
                         .le(RuleBillingConfig::getEffectiveTime, now))
@@ -351,6 +362,19 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     protected RuleDefinition findDefinitionByRuleCode(String ruleCode) {
         return definitionMapper.selectOne(new LambdaQueryWrapper<RuleDefinition>()
                 .eq(RuleDefinition::getRuleCode, ruleCode));
+    }
+
+    protected RuleDefinition findDefinitionByRuleCode(String ruleCode, Long projectId) {
+        return definitionMapper.selectOne(projectRuleWrapper(ruleCode, projectId));
+    }
+
+    private LambdaQueryWrapper<RuleDefinition> projectRuleWrapper(String ruleCode, Long projectId) {
+        return new LambdaQueryWrapper<RuleDefinition>()
+                .eq(RuleDefinition::getRuleCode, ruleCode)
+                .and(w -> w.eq(RuleDefinition::getProjectId, projectId)
+                        .or()
+                        .exists("SELECT 1 FROM rule_definition_ref rdr "
+                                + "WHERE rdr.definition_id = rule_definition.id AND rdr.project_id = " + projectId));
     }
 
     protected void insertRecord(RuleBillingRecord record) {

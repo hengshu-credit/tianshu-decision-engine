@@ -50,8 +50,10 @@ public class TokenExchangeHttpTest {
         requestBody.set(new String(readAll(exchange), StandardCharsets.UTF_8));
         byte[] response = ("{\"code\":200,\"data\":{" +
                 "\"accessToken\":\"temporary-token\"," +
-                "\"expiresAt\":\"2099-07-15T10:00:00\"," +
-                "\"graceExpiresAt\":\"2099-07-15T10:10:00\"}}").getBytes(StandardCharsets.UTF_8);
+                "\"expiresInSeconds\":7200," +
+                "\"graceExpiresInSeconds\":7800," +
+                "\"expiresAt\":\"2000-01-01T00:00:00\"," +
+                "\"graceExpiresAt\":\"2000-01-01T00:00:00\"}}").getBytes(StandardCharsets.UTF_8);
         exchange.sendResponseHeaders(200, response.length);
         exchange.getResponseBody().write(response);
         exchange.close();

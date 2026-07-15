@@ -69,6 +69,8 @@ public class ProjectAuthTokenServiceTest {
         assertNotEquals(first.getAccessToken(), second.getAccessToken());
         assertEquals(NOW.plusSeconds(7200), first.getExpiresAt());
         assertEquals(first.getExpiresAt().plusSeconds(600), first.getGraceExpiresAt());
+        assertEquals(Integer.valueOf(7200), first.getExpiresInSeconds());
+        assertEquals(Integer.valueOf(7800), first.getGraceExpiresInSeconds());
         assertEquals("Bearer", first.getTokenType());
         assertEquals("BASIC_MAIN", first.getAuthCode());
         assertEquals("credit", first.getProjectCode());

@@ -15,4 +15,6 @@ public class ProjectTokenResponse {
     private LocalDateTime issuedAt;
     private LocalDateTime expiresAt;
     private LocalDateTime graceExpiresAt;
+    private Integer expiresInSeconds;
+    private Integer graceExpiresInSeconds;
 }

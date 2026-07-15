@@ -87,14 +87,6 @@ public class ProjectAuthService {
         if (request == null) return null;
 
         String authorization = request.getHeader("Authorization");
-        if (startsWithIgnoreCase(authorization, "Basic ")) {
-            return authenticateBasic(authorization.substring(6).trim());
-        }
-
-        if (StringUtils.hasText(request.getHeader("X-Rule-Access-Key"))) {
-            return authenticateHmac(request);
-        }
-
         if (startsWithIgnoreCase(authorization, "Bearer ")) {
             String bearer = authorization.substring(7).trim();
             ProjectAuthContext tokenContext = authenticateBearerToken(bearer);
@@ -109,10 +101,18 @@ public class ProjectAuthService {
             return authenticateLegacyToken(legacyToken);
         }
 
-        ProjectAuthContext bodyContext = authenticateTokenBody(request);
-        if (bodyContext != null) return bodyContext;
+        if (startsWithIgnoreCase(authorization, "Basic ")) {
+            return authenticateBasic(authorization.substring(6).trim());
+        }
 
-        return authenticateApiKey(request);
+        if (StringUtils.hasText(request.getHeader("X-Rule-Access-Key"))) {
+            return authenticateHmac(request);
+        }
+
+        ProjectAuthContext apiKeyContext = authenticateApiKey(request);
+        if (apiKeyContext != null) return apiKeyContext;
+
+        return authenticateTokenBody(request);
     }
 
     public ProjectAuthContext authenticateLegacyToken(String token) {
@@ -148,6 +148,8 @@ public class ProjectAuthService {
         }
 
         LocalDateTime now = currentDateTime();
+        int tokenTtlSeconds = tokenTtlSeconds(auth);
+        int tokenGraceSeconds = tokenGraceSeconds(auth);
         String tokenValue = generateTokenValue();
         RuleProjectAuthToken token = new RuleProjectAuthToken();
         token.setProjectId(context.getProjectId());
@@ -156,8 +158,8 @@ public class ProjectAuthService {
         token.setLookupKey(credentialCipher.lookupKey(ProjectAuthType.BEARER_TOKEN, tokenValue));
         token.setTokenCiphertext(credentialCipher.encrypt(tokenValue));
         token.setIssuedTime(now);
-        token.setExpireTime(now.plusSeconds(tokenTtlSeconds(auth)));
-        token.setGraceExpireTime(token.getExpireTime().plusSeconds(tokenGraceSeconds(auth)));
+        token.setExpireTime(now.plusSeconds(tokenTtlSeconds));
+        token.setGraceExpireTime(token.getExpireTime().plusSeconds(tokenGraceSeconds));
         token.setStatus(1);
         insertToken(token);
 
@@ -171,6 +173,8 @@ public class ProjectAuthService {
         response.setIssuedAt(token.getIssuedTime());
         response.setExpiresAt(token.getExpireTime());
         response.setGraceExpiresAt(token.getGraceExpireTime());
+        response.setExpiresInSeconds(tokenTtlSeconds);
+        response.setGraceExpiresInSeconds(tokenTtlSeconds + tokenGraceSeconds);
         return response;
     }
 
@@ -231,6 +235,26 @@ public class ProjectAuthService {
         return toAuthDto(auth, false);
     }
 
+    @Transactional
+    public ProjectAuthDTO regenerateAuthSecret(Long projectId, Long authId) {
+        RuleProjectAuth auth = requireAuth(projectId, authId);
+        if (!ProjectAuthType.API_KEY.equals(auth.getAuthType())
+                && !ProjectAuthType.HMAC_SHA256.equals(auth.getAuthType())) {
+            throw new IllegalArgumentException("Only API Key and HMAC credentials support automatic regeneration");
+        }
+        String secret = generateCredentialValue();
+        if (ProjectAuthType.API_KEY.equals(auth.getAuthType())) {
+            String lookupKey = credentialCipher.lookupKey(ProjectAuthType.API_KEY, secret);
+            if (findAuthByLookupKey(lookupKey) != null) {
+                throw new IllegalStateException("Unable to generate a unique API key");
+            }
+            auth.setLookupKey(lookupKey);
+        }
+        auth.setSecretCiphertext(credentialCipher.encrypt(secret));
+        updateAuth(auth);
+        return toAuthDto(auth, true);
+    }
+
     public ProjectAuthDTO getFullAuth(Long projectId, Long authId) {
         return toAuthDto(requireAuth(projectId, authId), true);
     }
@@ -262,13 +286,17 @@ public class ProjectAuthService {
     }
 
     public IPage<RuleAuthAccessLog> pageAccessLogs(Long projectId, int pageNum, int pageSize,
-                                                   String authCode, String tokenCode, Integer success) {
+                                                   String authType, String authCode, String tokenCode,
+                                                   Integer success, String beginTime, String endTime) {
         requireProject(projectId);
         LambdaQueryWrapper<RuleAuthAccessLog> wrapper = new LambdaQueryWrapper<RuleAuthAccessLog>()
                 .eq(RuleAuthAccessLog::getProjectId, projectId);
+        if (StringUtils.hasText(authType)) wrapper.eq(RuleAuthAccessLog::getAuthType, authType);
         if (StringUtils.hasText(authCode)) wrapper.like(RuleAuthAccessLog::getAuthCode, authCode);
         if (StringUtils.hasText(tokenCode)) wrapper.like(RuleAuthAccessLog::getTokenCode, tokenCode);
         if (success != null) wrapper.eq(RuleAuthAccessLog::getSuccess, success);
+        if (StringUtils.hasText(beginTime)) wrapper.ge(RuleAuthAccessLog::getCreateTime, beginTime + " 00:00:00");
+        if (StringUtils.hasText(endTime)) wrapper.le(RuleAuthAccessLog::getCreateTime, endTime + " 23:59:59");
         wrapper.orderByDesc(RuleAuthAccessLog::getCreateTime);
         return accessLogMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
     }
@@ -337,6 +365,29 @@ public class ProjectAuthService {
             insertAccessLog(accessLog);
         } catch (RuntimeException e) {
             log.error("Unable to persist project authentication access log", e);
+        }
+    }
+
+    public void recordManagementAccess(HttpServletRequest request, Long projectId,
+                                       Long authId, Long tokenId) {
+        RuleProject project = requireProject(projectId);
+        RuleProjectAuth auth = requireAuth(projectId, authId);
+        ProjectAuthContext context;
+        if (tokenId == null) {
+            context = ProjectAuthContext.direct(project.getId(), project.getProjectCode(), auth.getId(),
+                    auth.getAuthCode(), auth.getAuthType());
+        } else {
+            RuleProjectAuthToken token = requireToken(projectId, authId, tokenId);
+            context = ProjectAuthContext.temporary(project.getId(), project.getProjectCode(), auth.getId(),
+                    auth.getAuthCode(), auth.getAuthType(), token.getId(), token.getTokenCode(), "MANAGEMENT");
+        }
+        recordAccess(request, context, true, null);
+    }
+
+    public void recordLegacyManagementAccess(HttpServletRequest request, Long projectId) {
+        RuleProjectAuth auth = findAuthByCode(legacyAuthCode(projectId));
+        if (auth != null) {
+            recordManagementAccess(request, projectId, auth.getId(), null);
         }
     }
 
@@ -622,7 +673,7 @@ public class ProjectAuthService {
         Enumeration<String> headerNames = request.getHeaderNames();
         while (headerNames != null && headerNames.hasMoreElements()) {
             String name = headerNames.nextElement();
-            if ("Authorization".equalsIgnoreCase(name)) continue;
+            if (!isApiKeyHeaderCandidate(name)) continue;
             addCredential(credentials, "HEADER", name, request.getHeader(name));
         }
         Enumeration<String> parameterNames = request.getParameterNames();
@@ -631,6 +682,22 @@ public class ProjectAuthService {
             addCredential(credentials, "QUERY", name, request.getParameter(name));
         }
         return credentials;
+    }
+
+    private boolean isApiKeyHeaderCandidate(String name) {
+        if (!StringUtils.hasText(name)
+                || "Authorization".equalsIgnoreCase(name)
+                || "Accept".equalsIgnoreCase(name)
+                || "Connection".equalsIgnoreCase(name)
+                || "Content-Length".equalsIgnoreCase(name)
+                || "Content-Type".equalsIgnoreCase(name)
+                || "Host".equalsIgnoreCase(name)
+                || "User-Agent".equalsIgnoreCase(name)
+                || "X-Request-Id".equalsIgnoreCase(name)
+                || name.regionMatches(true, 0, "X-Forwarded-", 0, 12)) {
+            return false;
+        }
+        return !name.regionMatches(true, 0, "X-Rule-", 0, 7);
     }
 
     private void addCredential(List<PresentedCredential> credentials, String placement,
@@ -662,12 +729,7 @@ public class ProjectAuthService {
         return requestId;
     }
 
-    private String resolveClientIp(HttpServletRequest request) {
-        String forwarded = request.getHeader("X-Forwarded-For");
-        if (StringUtils.hasText(forwarded)) {
-            int comma = forwarded.indexOf(',');
-            return (comma < 0 ? forwarded : forwarded.substring(0, comma)).trim();
-        }
+    protected String resolveClientIp(HttpServletRequest request) {
         return request.getRemoteAddr();
     }
 

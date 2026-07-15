@@ -1,0 +1,123 @@
+===== PARAGRAPHS =====
+200727 占信分综合风险分层分v1.1
+开始接入
+欢迎您成为融360的商户，在开始接口调用之前请先确保完成以下事项：
+1、完成产品签约、权限开通；
+2、您需要获取一个APP_ID点击查看，并完成必要的开发环境配置；
+3、开放平台通过 HTTPS 通信进行调用，包含系统调用和页面转跳两类接口，相关概念参照接口调用；参数的加解密和验签参考 介绍文档；
+4、融360开放平台提供了Java 、PHP 和 Python 的服务端 SDK 供商家快速接入服务使用，SDK 能够在 开发工具包下载页 获取。
+5、具体接口问题参考 FAQ，若无法解决请随时联系我们。
+接口信息
+请求参数
+系统参数
+* 业务参数
+响应参数
+请求示例
+开发工具包下载页
+java
+OpenapiClient sample= new OpenapiClient();
+sample.setMethod("tianji.api.Agentce.antifraudForRiskV11");
+sample.setField("name", "测试1");
+sample.setField("idNumber", "32112319971212****");
+sample.setField("phone", "1576422****");
+JSONObject ret= sample.execute();
+System.out.println(ret.toString());
+php
+$sample= new OpenapiClient();
+$sample->setMethod('tianji.api.Agentce.antifraudForRiskV11');
+$sample->setField('name', '测试1');
+$sample->setField('idNumber', '32112319971212****');
+$sample->setField('phone', '1576422****');
+$ret= $sample->execute();
+正常响应示例
+命中示例
+{
+    "error":200,
+    "msg":null,
+    "tianji_api_Agentce_antifraudForRiskV11_response":{
+        "riskScore":659
+    },
+    "request_id":"15405341977896463840"
+}
+未命中示例
+{
+    "error":200,
+    "msg":null,
+    "tianji_api_agentce_antifraudForRiskV11_response":{
+    },
+    "request_id":"16414361467427389992"
+}
+异常示例
+错误示例1
+{
+    "error": 10028,
+    "msg": '访问接口超时，请稍候再试',
+    "tianji_api_Agentce_antifraudForRiskV11_response": {}
+}
+错误码说明
+接口错误码
+系统错误码
+
+===== TABLE 1 =====
+API 相关	API 信息
+沙箱环境网关	https://openapisandbox.rong360.com/gateway?logid=xxxxxx 【logid为请求的唯一标识】
+线上环境网关	https://openapi.rong360.com/gateway?logid=xxxxxx 【logid为请求的唯一标识】
+中文名称	占信分综合风险分层分v1.1
+描述信息	该API适用于进行占信分综合风险分层分v1.1的查询
+
+===== TABLE 2 =====
+字段	类型	必需	说明
+method	string	是	tianji.api.Agentce.antifraudForRiskV11
+sign	string	是	API请求的签名
+sign_type	string	是	签名方式，目前仅支持RSA
+biz_data	JSON	是	请求的业务数据，此处数据格式为Json封装。具体见业务参数
+app_id	string	是	分配给机构的唯一标识 点击查看
+version	string	是	API协议版本，默认值：1.0
+format	string	是	响应格式。目前仅支持json
+timestamp	string	是	时间戳
+
+===== TABLE 3 =====
+字段	类型	必需	描述
+name	string	是	用户名
+idNumber	string	是	身份证号码
+phone	string	是	电话号码
+isMd5	int	否	是否加密（1为MD5加密请求，phone和idNumber参数加密）
+isSha256	int	否	是否加密（1为sha256加密请求，phone和idNumber参数加密）
+
+===== TABLE 4 =====
+字段	类型	说明
+riskScore	uint	300-850：分数越高风险越低
+
+===== TABLE 5 =====
+状态码	说明
+90102*	90102*开头的错误码，异常错误信息（解决方案：联系融360产品运营或技术支持排查问题）
+10000	操作失败，请稍后重试（解决方案：联系融360产品运营或技术支持排查问题）
+10001	参数传入非法（解决方案：对照文档自行检查传入的参数点击查看业务参数）
+10005	用户没有权限访问（解决方案：邮件申请开通接口权限）
+10011	身份证格式错误（解决方案：自行检查传入的身份证格式）
+10013	网络异常（解决方案：联系融360产品运营或技术支持排查问题）
+10019	您访问的接口不存在（解决方案：自行检查传入的method是否正确,点击查看method）
+10020	手机号格式错误（解决方案：自行检查传入的手机号格式）
+10023	数据源服务异常,不要走开,马上就好（解决方案：联系融360产品运营或技术支持排查问题）
+10026	访问频率过快，请稍候再试（解决方案：客户方控制下接口访问频率）
+10027	您的账号已被关闭，请联系融360商务开通
+10028	访问接口超时，请稍候再试
+
+===== TABLE 6 =====
+状态码	说明
+200	访问成功
+1000	系统错误
+1001	HTTPS请求的方法不正确
+1002	无效的app_id
+1003	IP禁止访问API
+1004	验证签名失败, 确认你传入的是否是密钥对，或者进行生成签名的字符串是否正确，注意需要urlencode
+1005	无效的产品线,你传的产品的method有问题。可以仔细查看文档
+1006	没有该方法的访问权限
+2001	传入参数不完整，缺少method
+2002	传入参数不完整，缺少sign
+2003	传入参数不完整，缺少sign_type
+2004	传入参数不完整，缺少biz_data
+2007	传入参数不完整，缺少app_id
+2008	传入参数不完整，缺少version
+2009	传入参数不完整，缺少format
+2010	传入参数不完整，缺少timestamp

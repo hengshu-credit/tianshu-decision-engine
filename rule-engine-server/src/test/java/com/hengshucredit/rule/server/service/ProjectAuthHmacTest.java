@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
+import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 
@@ -79,6 +80,15 @@ public class ProjectAuthHmacTest {
         byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
         assertNotNull(service.authenticate(signedRequest(body, NOW, "nonce-replay")));
         assertNull(service.authenticate(signedRequest(body, NOW, "nonce-replay")));
+    }
+
+    @Test
+    public void canonicalRequestUsesPublishedFieldOrder() {
+        assertEquals("POST\n/api/rule/sync/execute/R1\ntrace=true\n"
+                        + "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a\n"
+                        + "1721000000\nnonce-1",
+                HmacRequestSigner.canonical("POST", "/api/rule/sync/execute/R1", "trace=true",
+                        "1721000000", "nonce-1", "{}".getBytes(StandardCharsets.UTF_8)));
     }
 
     private CachedBodyHttpServletRequest signedRequest(byte[] body, long timestamp, String nonce)

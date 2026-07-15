@@ -12,6 +12,8 @@ import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
 import org.junit.Before;
 import org.junit.Test;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.Collections;
@@ -56,7 +58,7 @@ public class ProjectAuthControllerTest {
         expected.setId(11L);
         service.auth = expected;
 
-        R<ProjectAuthDTO> response = controller.create(7L, request);
+        R<ProjectAuthDTO> response = controller.create(7L, request, new MockHttpServletRequest());
 
         assertEquals(200, response.getCode());
         assertSame(expected, response.getData());
@@ -68,10 +70,29 @@ public class ProjectAuthControllerTest {
     public void returnsBadRequestForCrossProjectAccess() {
         service.error = new IllegalArgumentException("Authentication configuration not found for project");
 
-        R<ProjectAuthDTO> response = controller.getFull(8L, 11L);
+        R<ProjectAuthDTO> response = controller.getFull(
+                8L, 11L, new MockHttpServletRequest(), new MockHttpServletResponse());
 
         assertEquals(400, response.getCode());
         assertEquals("Authentication configuration not found for project", response.getMessage());
+    }
+
+    @Test
+    public void fullCredentialResponsesDisableCachingAndWriteAudit() {
+        ProjectAuthDTO full = new ProjectAuthDTO();
+        full.setId(11L);
+        service.auth = full;
+        MockHttpServletRequest request = new MockHttpServletRequest(
+                "GET", "/api/rule/project/7/auth/11/full");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        R<ProjectAuthDTO> result = controller.getFull(7L, 11L, request, response);
+
+        assertSame(full, result.getData());
+        assertEquals("no-store", response.getHeader("Cache-Control"));
+        assertEquals("no-cache", response.getHeader("Pragma"));
+        assertSame(request, service.auditRequest);
+        assertEquals(Long.valueOf(11L), service.auditAuthId);
     }
 
     @Test
@@ -83,11 +104,13 @@ public class ProjectAuthControllerTest {
 
         R<IPage<ProjectAuthTokenDTO>> tokenResponse = controller.listTokens(7L, 11L, 2, 20);
         R<IPage<RuleAuthAccessLog>> logResponse = controller.listAccessLogs(
-                7L, 3, 30, "BASIC_MAIN", "TOKEN_A", 1);
+                7L, 3, 30, "BASIC", "BASIC_MAIN", "TOKEN_A", 1,
+                "2026-07-01", "2026-07-15");
 
         assertSame(tokens, tokenResponse.getData());
         assertSame(logs, logResponse.getData());
         assertEquals(Long.valueOf(11L), service.authId);
+        assertEquals("BASIC", service.authType);
         assertEquals("BASIC_MAIN", service.authCode);
         assertEquals("TOKEN_A", service.tokenCode);
         assertEquals(Integer.valueOf(1), service.success);
@@ -102,9 +125,12 @@ public class ProjectAuthControllerTest {
         private IPage<ProjectAuthTokenDTO> tokens;
         private IPage<RuleAuthAccessLog> logs;
         private String authCode;
+        private String authType;
         private String tokenCode;
         private Integer success;
         private IllegalArgumentException error;
+        private MockHttpServletRequest auditRequest;
+        private Long auditAuthId;
 
         private FakeProjectAuthService(CredentialCipher cipher) {
             super(cipher);
@@ -132,6 +158,13 @@ public class ProjectAuthControllerTest {
         }
 
         @Override
+        public void recordManagementAccess(javax.servlet.http.HttpServletRequest request,
+                                           Long projectId, Long authId, Long tokenId) {
+            this.auditRequest = (MockHttpServletRequest) request;
+            this.auditAuthId = authId;
+        }
+
+        @Override
         public IPage<ProjectAuthTokenDTO> pageTokens(Long projectId, Long authId, int pageNum, int pageSize) {
             this.projectId = projectId;
             this.authId = authId;
@@ -140,8 +173,10 @@ public class ProjectAuthControllerTest {
 
         @Override
         public IPage<RuleAuthAccessLog> pageAccessLogs(Long projectId, int pageNum, int pageSize,
-                                                       String authCode, String tokenCode, Integer success) {
+                                                       String authType, String authCode, String tokenCode,
+                                                       Integer success, String beginTime, String endTime) {
             this.projectId = projectId;
+            this.authType = authType;
             this.authCode = authCode;
             this.tokenCode = tokenCode;
             this.success = success;

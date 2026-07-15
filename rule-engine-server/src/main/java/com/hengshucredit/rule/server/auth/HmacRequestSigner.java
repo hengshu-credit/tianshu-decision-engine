@@ -28,9 +28,9 @@ public final class HmacRequestSigner {
         return value(method) + "\n"
                 + value(requestUri) + "\n"
                 + value(rawQuery) + "\n"
+                + sha256Hex(body == null ? new byte[0] : body) + "\n"
                 + value(timestamp) + "\n"
-                + value(nonce) + "\n"
-                + sha256Hex(body == null ? new byte[0] : body);
+                + value(nonce);
     }
 
     public static String sha256Hex(byte[] value) {

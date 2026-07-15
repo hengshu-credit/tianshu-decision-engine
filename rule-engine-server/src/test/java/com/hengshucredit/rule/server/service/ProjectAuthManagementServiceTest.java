@@ -21,6 +21,7 @@ import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 
 public class ProjectAuthManagementServiceTest {
@@ -96,6 +97,24 @@ public class ProjectAuthManagementServiceTest {
         service.revokeToken(7L, created.getId(), service.tokens.get(0).getId());
         assertEquals(Integer.valueOf(0), service.tokens.get(0).getStatus());
         assertNotNull(service.tokens.get(0).getRevokedTime());
+    }
+
+    @Test
+    public void apiKeySecretCanBeRegeneratedAndReturnedOnce() {
+        ProjectAuthSaveRequest request = new ProjectAuthSaveRequest();
+        request.setAuthCode("API_ROTATE");
+        request.setAuthName("Rotate API Key");
+        request.setAuthType(ProjectAuthType.API_KEY);
+        request.setPlacement("HEADER");
+        request.setParameterName("X-Rotate-Key");
+        ProjectAuthDTO created = service.createAuth(7L, request);
+        String oldSecret = service.getFullAuth(7L, created.getId()).getSecret();
+
+        ProjectAuthDTO regenerated = service.regenerateAuthSecret(7L, created.getId());
+
+        assertNotNull(regenerated.getSecret());
+        assertNotEquals(oldSecret, regenerated.getSecret());
+        assertEquals(regenerated.getSecret(), cipher.decrypt(service.auths.get(0).getSecretCiphertext()));
     }
 
     @Test(expected = IllegalArgumentException.class)

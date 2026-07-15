@@ -34,6 +34,20 @@ public class ProjectAuthBodyFilter extends OncePerRequestFilter {
     @Override
     protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
                                     FilterChain filterChain) throws ServletException, IOException {
-        filterChain.doFilter(new CachedBodyHttpServletRequest(request), response);
+        if (request.getContentLengthLong() > CachedBodyHttpServletRequest.MAX_BODY_SIZE) {
+            rejectOversizedBody(response);
+            return;
+        }
+        try {
+            filterChain.doFilter(new CachedBodyHttpServletRequest(request), response);
+        } catch (RequestBodyTooLargeException e) {
+            rejectOversizedBody(response);
+        }
+    }
+
+    private void rejectOversizedBody(HttpServletResponse response) throws IOException {
+        response.setStatus(HttpServletResponse.SC_REQUEST_ENTITY_TOO_LARGE);
+        response.setContentType("application/json;charset=UTF-8");
+        response.getWriter().write("{\"code\":413,\"message\":\"Request body too large\"}");
     }
 }

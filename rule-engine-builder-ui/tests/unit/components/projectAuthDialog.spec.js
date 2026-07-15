@@ -38,7 +38,7 @@ async function mountDialog() {
       'el-button': true, 'el-form': true, 'el-form-item': true,
       'el-input': true, 'el-select': true, 'el-option': true,
       'el-switch': true, 'el-input-number': true, 'el-pagination': true,
-      'el-alert': true, 'el-empty': true
+      'el-alert': true, 'el-empty': true, 'el-date-picker': true
     }
   })
   await Vue.nextTick()
@@ -85,6 +85,37 @@ describe('ProjectAuthDialog', () => {
     wrapper.destroy()
   })
 
+  test('按鉴权方式动态校验必填凭证', async () => {
+    const wrapper = await mountDialog()
+    wrapper.vm.authForm.authType = 'BASIC'
+    let error
+    wrapper.vm.authRules.identifier[0].validator({ field: 'identifier' }, '', value => { error = value })
+    expect(error).toBeInstanceOf(Error)
+
+    wrapper.vm.authForm.authType = 'HMAC_SHA256'
+    error = 'pending'
+    wrapper.vm.authRules.identifier[0].validator({ field: 'identifier' }, '', value => { error = value })
+    expect(error).toBeUndefined()
+
+    wrapper.vm.authForm.authType = 'API_KEY'
+    wrapper.vm.authRules.parameterName[0].validator({ field: 'parameterName' }, '', value => { error = value })
+    expect(error).toBeInstanceOf(Error)
+    wrapper.destroy()
+  })
+
+  test('访问审计支持鉴权方式和日期筛选', async () => {
+    const wrapper = await mountDialog()
+    wrapper.vm.logQuery.authType = 'BASIC'
+    wrapper.vm.logDateRange = ['2026-07-01', '2026-07-15']
+
+    await wrapper.vm.loadAccessLogs()
+
+    expect(projectApi.listProjectAuthAccessLogs).toHaveBeenLastCalledWith(7, expect.objectContaining({
+      authType: 'BASIC', beginTime: '2026-07-01', endTime: '2026-07-15'
+    }))
+    wrapper.destroy()
+  })
+
   test('可再次获取并展示完整账号密码', async () => {
     const wrapper = await mountDialog()
     projectApi.getProjectAuthFull.mockResolvedValue({
@@ -97,6 +128,20 @@ describe('ProjectAuthDialog', () => {
     expect(projectApi.getProjectAuthFull).toHaveBeenCalledWith(7, 11)
     expect(wrapper.vm.fullCredential.identifier).toBe('partner')
     expect(wrapper.vm.fullCredential.secret).toBe('secret')
+    expect(wrapper.vm.fullDialogVisible).toBe(true)
+    wrapper.destroy()
+  })
+
+  test('可重置 API Key 并立即展示新完整值', async () => {
+    const wrapper = await mountDialog()
+    projectApi.regenerateProjectAuthSecret.mockResolvedValue({
+      data: { id: 12, authType: 'API_KEY', secret: 'new-api-key' }
+    })
+
+    await wrapper.vm.regenerateAuth({ id: 12, authType: 'API_KEY' })
+
+    expect(projectApi.regenerateProjectAuthSecret).toHaveBeenCalledWith(7, 12)
+    expect(wrapper.vm.fullCredential.secret).toBe('new-api-key')
     expect(wrapper.vm.fullDialogVisible).toBe(true)
     wrapper.destroy()
   })

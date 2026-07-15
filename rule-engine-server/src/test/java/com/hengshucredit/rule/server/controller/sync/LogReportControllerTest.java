@@ -32,8 +32,28 @@ public class LogReportControllerTest {
     public void rejectsLogFromOtherProject() {
         LogReportController controller = newController(new CapturingLogService(), new CapturingBillingService());
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
         RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode("RC_TEST");
         log.setProjectCode("OTHER");
+
+        R<Void> result = controller.report(Collections.singletonList(log), request);
+
+        assertEquals(403, result.getCode());
+    }
+
+    @Test
+    public void rejectsRuleOutsideAuthenticatedProjectEvenWhenProjectCodeIsBlank() {
+        CapturingBillingService billingService = new CapturingBillingService();
+        billingService.ruleAccessible = false;
+        LogReportController controller = newController(new CapturingLogService(), billingService);
+        RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode("OTHER_PROJECT_RULE");
+
+        MockHttpServletRequest request = requestWithProject("RISK_DEMO");
+        ProjectAuthContext.direct(1L, "RISK_DEMO", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC).attach(request);
 
         R<Void> result = controller.report(Collections.singletonList(log), request);
 
@@ -69,6 +89,7 @@ public class LogReportControllerTest {
         assertEquals("VALID", logService.saved.get(0).getAuthPhase());
         assertEquals(1, billingService.billed.size());
         assertEquals("RC_TEST", billingService.billed.get(0).getRuleCode());
+        assertEquals("BASIC_MAIN", billingService.authContext.getAuthCode());
     }
 
     private static MockHttpServletRequest requestWithProject(String projectCode) {
@@ -108,10 +129,18 @@ public class LogReportControllerTest {
 
     private static class CapturingBillingService extends RuleBillingService {
         private final List<RuleExecutionLog> billed = new ArrayList<>();
+        private boolean ruleAccessible = true;
+        private ProjectAuthContext authContext;
 
         @Override
-        public void recordEngineExecutionLog(RuleExecutionLog log) {
+        public boolean isRuleAccessible(Long projectId, String ruleCode) {
+            return ruleAccessible;
+        }
+
+        @Override
+        public void recordEngineExecutionLog(RuleExecutionLog log, ProjectAuthContext context) {
             billed.add(log);
+            authContext = context;
         }
     }
 }

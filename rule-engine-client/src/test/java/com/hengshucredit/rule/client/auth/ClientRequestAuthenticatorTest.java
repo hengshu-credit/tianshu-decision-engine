@@ -8,7 +8,6 @@ import java.io.IOException;
 import java.time.LocalDateTime;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 
 public class ClientRequestAuthenticatorTest {
 
@@ -50,8 +49,8 @@ public class ClientRequestAuthenticatorTest {
         assertEquals("AK_TEST", authenticated.header("X-Rule-Access-Key"));
         assertEquals("1721000000", authenticated.header("X-Rule-Timestamp"));
         assertEquals("nonce-1", authenticated.header("X-Rule-Nonce"));
-        assertNotNull(authenticated.header("X-Rule-Signature"));
-        assertEquals(64, authenticated.header("X-Rule-Signature").length());
+        assertEquals("1e202287921deb2a91c7efc328a40cb38d7ed22211578587f449630da47cfca7",
+                authenticated.header("X-Rule-Signature"));
     }
 
     private static class FixedTokenExchangeManager extends TokenExchangeManager {

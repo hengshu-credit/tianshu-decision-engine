@@ -1,25 +1,27 @@
 package com.hengshucredit.rule.server.auth;
 
-import org.springframework.util.StreamUtils;
-
 import javax.servlet.ReadListener;
 import javax.servlet.ServletInputStream;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletRequestWrapper;
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
 public class CachedBodyHttpServletRequest extends HttpServletRequestWrapper {
 
+    public static final int MAX_BODY_SIZE = 5 * 1024 * 1024;
+
     private final byte[] cachedBody;
 
     public CachedBodyHttpServletRequest(HttpServletRequest request) throws IOException {
         super(request);
-        this.cachedBody = StreamUtils.copyToByteArray(request.getInputStream());
+        this.cachedBody = readBody(request.getInputStream());
     }
 
     public byte[] getCachedBody() {
@@ -56,5 +58,20 @@ public class CachedBodyHttpServletRequest extends HttpServletRequestWrapper {
         String encoding = getCharacterEncoding();
         Charset charset = encoding == null ? StandardCharsets.UTF_8 : Charset.forName(encoding);
         return new BufferedReader(new InputStreamReader(getInputStream(), charset));
+    }
+
+    private byte[] readBody(InputStream input) throws IOException {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        byte[] buffer = new byte[8192];
+        int total = 0;
+        int read;
+        while ((read = input.read(buffer)) >= 0) {
+            total += read;
+            if (total > MAX_BODY_SIZE) {
+                throw new RequestBodyTooLargeException();
+            }
+            output.write(buffer, 0, read);
+        }
+        return output.toByteArray();
     }
 }

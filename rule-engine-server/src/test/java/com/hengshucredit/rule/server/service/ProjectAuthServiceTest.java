@@ -5,6 +5,7 @@ import com.hengshucredit.rule.model.entity.RuleAuthAccessLog;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
+import com.hengshucredit.rule.server.auth.CachedBodyHttpServletRequest;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
@@ -93,6 +94,51 @@ public class ProjectAuthServiceTest {
 
         assertEquals("LEGACY_9", service.authenticate(headerRequest).getAuthCode());
         assertEquals("LEGACY_9", service.authenticate(queryRequest).getAuthCode());
+    }
+
+    @Test
+    public void legacyTokenTakesPriorityOverBasicWhenBothArePresented() {
+        RuleProject project = project(9L, "priority", null);
+        service.projects.add(project);
+        service.auths.add(auth(13L, project.getId(), "LEGACY_PRIORITY", ProjectAuthType.LEGACY_TOKEN,
+                null, "old-token", null));
+        service.auths.add(auth(14L, project.getId(), "BASIC_PRIORITY", ProjectAuthType.BASIC,
+                "partner", "secret", null));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("X-Rule-Token", "old-token");
+        request.addHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(
+                "partner:secret".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals("LEGACY_PRIORITY", service.authenticate(request).getAuthCode());
+    }
+
+    @Test
+    public void apiKeyTakesPriorityOverTokenJsonCredentials() throws Exception {
+        RuleProject project = project(9L, "priority", null);
+        service.projects.add(project);
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("placement", "HEADER");
+        config.put("parameterName", "X-Partner-Key");
+        service.auths.add(auth(13L, project.getId(), "API_PRIORITY", ProjectAuthType.API_KEY,
+                null, "api-secret", JSON.toJSONString(config)));
+        service.auths.add(auth(14L, project.getId(), "BASIC_PRIORITY", ProjectAuthType.BASIC,
+                "partner", "secret", null));
+        MockHttpServletRequest raw = new MockHttpServletRequest("POST", "/api/rule/auth/token");
+        raw.addHeader("X-Partner-Key", "api-secret");
+        raw.setContent("{\"username\":\"partner\",\"password\":\"secret\"}"
+                .getBytes(StandardCharsets.UTF_8));
+
+        assertEquals("API_PRIORITY",
+                service.authenticate(new CachedBodyHttpServletRequest(raw)).getAuthCode());
+    }
+
+    @Test
+    public void clientIpDoesNotTrustCallerControlledForwardedHeader() {
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr("10.0.0.8");
+        request.addHeader("X-Forwarded-For", "198.51.100.7");
+
+        assertEquals("10.0.0.8", service.clientIp(request));
     }
 
     @Test
@@ -189,6 +235,10 @@ public class ProjectAuthServiceTest {
 
         private InMemoryProjectAuthService(CredentialCipher cipher) {
             super(cipher);
+        }
+
+        private String clientIp(MockHttpServletRequest request) {
+            return resolveClientIp(request);
         }
 
         @Override

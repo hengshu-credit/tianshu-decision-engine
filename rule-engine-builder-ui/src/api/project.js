@@ -56,6 +56,10 @@ export function getProjectAuthFull(projectId, authId) {
   return request({ url: `/rule/project/${projectId}/auth/${authId}/full`, method: 'get' })
 }
 
+export function regenerateProjectAuthSecret(projectId, authId) {
+  return request({ url: `/rule/project/${projectId}/auth/${authId}/regenerate`, method: 'post' })
+}
+
 export function listProjectAuthTokens(projectId, authId, params) {
   return request({ url: `/rule/project/${projectId}/auth/${authId}/tokens`, method: 'get', params })
 }

@@ -96,9 +96,9 @@ public class ClientRequestAuthenticator {
         String canonical = request.method() + "\n"
                 + request.url().encodedPath() + "\n"
                 + valueOrEmpty(request.url().encodedQuery()) + "\n"
+                + sha256Hex(body) + "\n"
                 + timestamp + "\n"
-                + nonce + "\n"
-                + sha256Hex(body);
+                + nonce;
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
             mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));

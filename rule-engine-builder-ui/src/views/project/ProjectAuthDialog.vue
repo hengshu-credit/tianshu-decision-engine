@@ -45,10 +45,11 @@
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="225" align="center">
+          <el-table-column label="操作" min-width="300" align="center">
             <template slot-scope="{ row }">
               <el-button type="text" size="small" @click="viewFullAuth(row)">完整值</el-button>
               <el-button v-if="row.authType !== 'LEGACY_TOKEN'" type="text" size="small" @click="openEditAuth(row)">编辑</el-button>
+              <el-button v-if="row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'" type="text" size="small" @click="regenerateAuth(row)">重置密钥</el-button>
               <el-button type="text" size="small" @click="openTokens(row)">Token</el-button>
               <el-button type="text" size="small" @click="toggleAuth(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
             </template>
@@ -94,12 +95,23 @@
 
       <el-tab-pane label="访问审计" name="logs">
         <el-form :inline="true" size="small" class="log-filter" @keyup.enter.native="queryAccessLogs">
+          <el-form-item label="鉴权方式">
+            <el-select v-model="logQuery.authType" clearable placeholder="全部" style="width:130px">
+              <el-option label="兼容令牌" value="LEGACY_TOKEN" />
+              <el-option label="账号密码" value="BASIC" />
+              <el-option label="API Key" value="API_KEY" />
+              <el-option label="HMAC-SHA256" value="HMAC_SHA256" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="鉴权编码"><el-input v-model="logQuery.authCode" clearable placeholder="如 BASIC_MAIN" /></el-form-item>
           <el-form-item label="Token 编码"><el-input v-model="logQuery.tokenCode" clearable placeholder="如 TOKEN_..." /></el-form-item>
           <el-form-item label="结果">
             <el-select v-model="logQuery.success" clearable placeholder="全部" style="width:100px">
               <el-option label="成功" :value="1" /><el-option label="失败" :value="0" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="访问日期">
+            <el-date-picker v-model="logDateRange" type="daterange" value-format="yyyy-MM-dd" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
           </el-form-item>
           <el-form-item><el-button type="primary" @click="queryAccessLogs">查询</el-button><el-button @click="resetAccessLogs">重置</el-button></el-form-item>
         </el-form>
@@ -131,12 +143,12 @@
           </el-select>
         </el-form-item>
         <template v-if="authForm.authType === 'BASIC'">
-          <el-form-item label="账号"><el-input v-model="authForm.identifier" autocomplete="off" /></el-form-item>
-          <el-form-item label="密码"><el-input v-model="authForm.secret" show-password autocomplete="new-password" /></el-form-item>
+          <el-form-item label="账号" prop="identifier"><el-input v-model="authForm.identifier" autocomplete="off" /></el-form-item>
+          <el-form-item label="密码" prop="secret"><el-input v-model="authForm.secret" show-password autocomplete="new-password" /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'API_KEY'">
-          <el-form-item label="传递位置"><el-select v-model="authForm.placement" style="width:100%"><el-option label="请求头 Header" value="HEADER" /><el-option label="查询参数 Query" value="QUERY" /></el-select></el-form-item>
-          <el-form-item label="参数名"><el-input v-model="authForm.parameterName" placeholder="X-Rule-Api-Key" /></el-form-item>
+          <el-form-item label="传递位置" prop="placement"><el-select v-model="authForm.placement" style="width:100%"><el-option label="请求头 Header" value="HEADER" /><el-option label="查询参数 Query" value="QUERY" /></el-select></el-form-item>
+          <el-form-item label="参数名" prop="parameterName"><el-input v-model="authForm.parameterName" placeholder="X-Rule-Api-Key" /></el-form-item>
           <el-form-item label="API Key"><el-input v-model="authForm.secret" show-password placeholder="新建时留空则自动生成" /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'HMAC_SHA256'">
@@ -170,7 +182,7 @@
 <script>
 import {
   listProjectAuths, createProjectAuth, updateProjectAuth, updateProjectAuthStatus,
-  getProjectAuthFull, listProjectAuthTokens, getProjectAuthTokenFull,
+  getProjectAuthFull, regenerateProjectAuthSecret, listProjectAuthTokens, getProjectAuthTokenFull,
   revokeProjectAuthToken, listProjectAuthAccessLogs
 } from '@/api/project'
 
@@ -181,6 +193,20 @@ export default {
     project: { type: Object, default: () => ({}) }
   },
   data() {
+    const validateBasicField = (rule, value, callback) => {
+      if (this.authForm.authType === 'BASIC' && !String(value || '').trim()) {
+        callback(new Error(rule.field === 'identifier' ? '请输入账号' : '请输入密码'))
+        return
+      }
+      callback()
+    }
+    const validateApiParameter = (rule, value, callback) => {
+      if (this.authForm.authType === 'API_KEY' && !String(value || '').trim()) {
+        callback(new Error('请输入 API Key 参数名'))
+        return
+      }
+      callback()
+    }
     return {
       activeTab: 'auth',
       authLoading: false,
@@ -191,7 +217,11 @@ export default {
       authRules: {
         authCode: [{ required: true, message: '请输入鉴权编码', trigger: 'blur' }],
         authName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-        authType: [{ required: true, message: '请选择鉴权方式', trigger: 'change' }]
+        authType: [{ required: true, message: '请选择鉴权方式', trigger: 'change' }],
+        identifier: [{ validator: validateBasicField, trigger: 'blur' }],
+        secret: [{ validator: validateBasicField, trigger: 'blur' }],
+        placement: [{ required: true, message: '请选择 API Key 传递位置', trigger: 'change' }],
+        parameterName: [{ validator: validateApiParameter, trigger: 'blur' }]
       },
       fullDialogVisible: false,
       fullCredential: {},
@@ -205,7 +235,8 @@ export default {
       logLoading: false,
       accessLogs: [],
       logTotal: 0,
-      logQuery: { pageNum: 1, pageSize: 10, authCode: '', tokenCode: '', success: '' }
+      logDateRange: [],
+      logQuery: { pageNum: 1, pageSize: 10, authType: '', authCode: '', tokenCode: '', success: '' }
     }
   },
   watch: {
@@ -278,6 +309,18 @@ export default {
       this.fullCredential = res.data || {}
       this.fullDialogVisible = true
     },
+    async regenerateAuth(row) {
+      try {
+        await this.$confirm('重置后原 API Key 或 HMAC Secret 立即失效，已签发的临时 Token 不受影响。确认继续吗？', '重置鉴权密钥', { type: 'warning' })
+        const res = await regenerateProjectAuthSecret(this.project.id, row.id)
+        this.fullCredential = res.data || {}
+        this.fullDialogVisible = true
+        this.$message.success('密钥已重置，请立即更新调用方配置')
+        await this.loadAuths()
+      } catch (e) {
+        // 用户取消重置时不需要提示。
+      }
+    },
     async openTokens(row) {
       this.selectedAuth = row
       this.tokenQuery.pageNum = 1
@@ -320,13 +363,18 @@ export default {
       this.loadAccessLogs()
     },
     resetAccessLogs() {
-      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize, authCode: '', tokenCode: '', success: '' }
+      this.logDateRange = []
+      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize, authType: '', authCode: '', tokenCode: '', success: '' }
       this.loadAccessLogs()
     },
     async loadAccessLogs() {
       this.logLoading = true
       try {
         const params = { ...this.logQuery }
+        if (this.logDateRange && this.logDateRange.length === 2) {
+          params.beginTime = this.logDateRange[0]
+          params.endTime = this.logDateRange[1]
+        }
         Object.keys(params).forEach(key => {
           if (params[key] === '' || params[key] === null || params[key] === undefined) delete params[key]
         })

@@ -4,11 +4,14 @@ import com.hengshucredit.rule.model.dto.ApiDocDTO;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleProjectService;
+import com.hengshucredit.rule.server.service.ProjectAuthService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -19,6 +22,9 @@ public class RuleProjectController {
 
     @Resource
     private RuleProjectService projectService;
+
+    @Resource
+    private ProjectAuthService projectAuthService;
 
     @GetMapping("/list")
     public R<IPage<RuleProject>> list(
@@ -39,8 +45,12 @@ public class RuleProjectController {
     }
 
     @PostMapping
-    public R<Map<String, Object>> create(@RequestBody RuleProject project) {
+    public R<Map<String, Object>> create(@RequestBody RuleProject project,
+                                         HttpServletRequest request,
+                                         HttpServletResponse response) {
+        noStore(response);
         String token = projectService.createProjectWithToken(project);
+        projectAuthService.recordLegacyManagementAccess(request, project.getId());
         Map<String, Object> result = new HashMap<>();
         result.put("project", project);
         result.put("accessToken", token);
@@ -72,8 +82,12 @@ public class RuleProjectController {
      * 获取项目完整Token（需登录后查看）
      */
     @GetMapping("/{id}/token/full")
-    public R<String> getFullToken(@PathVariable Long id) {
+    public R<String> getFullToken(@PathVariable Long id,
+                                  HttpServletRequest request,
+                                  HttpServletResponse response) {
+        noStore(response);
         String token = projectService.getFullToken(id);
+        projectAuthService.recordLegacyManagementAccess(request, id);
         return R.ok(token);
     }
 
@@ -81,8 +95,12 @@ public class RuleProjectController {
      * 重新生成项目AccessToken（支持禁用旧Token后重新生成）
      */
     @PostMapping("/{id}/token/regenerate")
-    public R<String> regenerateToken(@PathVariable Long id) {
+    public R<String> regenerateToken(@PathVariable Long id,
+                                     HttpServletRequest request,
+                                     HttpServletResponse response) {
+        noStore(response);
         String token = projectService.regenerateToken(id);
+        projectAuthService.recordLegacyManagementAccess(request, id);
         return R.ok(token);
     }
 
@@ -92,5 +110,10 @@ public class RuleProjectController {
     @GetMapping("/{id}/api-doc")
     public R<ApiDocDTO> exportApiDoc(@PathVariable Long id) {
         return R.ok(projectService.exportApiDoc(id));
+    }
+
+    private void noStore(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Pragma", "no-cache");
     }
 }

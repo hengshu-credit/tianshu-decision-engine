@@ -35,9 +35,10 @@ spring:
 
 rule-engine:
   project-auth:
-    active-key-id: v1
+    active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:
-      v1: ${RULE_AUTH_MASTER_KEY:tianshu-dev-auth-master-key-change-me}
+      v1: ${RULE_AUTH_LEGACY_MASTER_KEY:}
+      v2: ${RULE_AUTH_MASTER_KEY:}
     hmac-time-window-seconds: 300
     token-failure-limit: 10
     token-failure-window-seconds: 300

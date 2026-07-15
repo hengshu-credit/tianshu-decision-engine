@@ -76,8 +76,14 @@ public class RuleEngineAutoConfiguration {
 
     static boolean shouldUseExternalReporter(RuleEngineClientProperties properties) {
         String authType = properties.getAuthType();
-        return !ClientAuthConfig.BASIC.equalsIgnoreCase(authType)
+        return !hasText(properties.getToken())
+                && !ClientAuthConfig.LEGACY_TOKEN.equalsIgnoreCase(authType)
+                && !ClientAuthConfig.BASIC.equalsIgnoreCase(authType)
                 && !ClientAuthConfig.API_KEY.equalsIgnoreCase(authType)
                 && !ClientAuthConfig.HMAC_SHA256.equalsIgnoreCase(authType);
+    }
+
+    private static boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 }

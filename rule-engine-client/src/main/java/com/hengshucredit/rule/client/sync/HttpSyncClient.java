@@ -2,6 +2,7 @@ package com.hengshucredit.rule.client.sync;
 
 import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
+import com.hengshucredit.rule.client.auth.ProjectClientAuthenticationException;
 import com.hengshucredit.rule.client.cache.CachedRule;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.alibaba.fastjson.JSON;
@@ -52,6 +53,7 @@ public class HttpSyncClient {
                     .get();
             Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
+                throwIfAuthenticationFailure(response);
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
                     if (json.getIntValue("code") == 200 && json.get("data") != null) {
@@ -59,6 +61,8 @@ public class HttpSyncClient {
                     }
                 }
             }
+        } catch (ProjectClientAuthenticationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Failed to fetch rule {}: {}", ruleCode, e.getMessage());
         }
@@ -73,6 +77,7 @@ public class HttpSyncClient {
                     .get();
             Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
+                throwIfAuthenticationFailure(response);
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
                     if (json.getIntValue("code") == 200) {
@@ -86,6 +91,8 @@ public class HttpSyncClient {
                     }
                 }
             }
+        } catch (ProjectClientAuthenticationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Failed to fetch all rules: {}", e.getMessage());
         }
@@ -106,6 +113,7 @@ public class HttpSyncClient {
                     .get();
             Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
+                throwIfAuthenticationFailure(response);
                 if (response.isSuccessful() && response.body() != null) {
                     JSONObject json = JSON.parseObject(response.body().string());
                     if (json.getIntValue("code") == 200) {
@@ -118,6 +126,8 @@ public class HttpSyncClient {
                     }
                 }
             }
+        } catch (ProjectClientAuthenticationException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Failed to fetch functions for project {}: {}", projectId, e.getMessage());
         }
@@ -150,8 +160,30 @@ public class HttpSyncClient {
         }
     }
 
-    private Request authenticate(Request request) throws java.io.IOException {
-        return authenticator == null ? request : authenticator.authenticate(request);
+    private Request authenticate(Request request) {
+        try {
+            return authenticator == null ? request : authenticator.authenticate(request);
+        } catch (java.io.IOException e) {
+            throw new ProjectClientAuthenticationException("Project authentication failed: " + e.getMessage(), e);
+        }
+    }
+
+    private void throwIfAuthenticationFailure(Response response) {
+        if (response.code() != 401 && response.code() != 403) {
+            return;
+        }
+        String message = null;
+        try {
+            if (response.body() != null) {
+                message = JSON.parseObject(response.body().string()).getString("message");
+            }
+        } catch (RuntimeException | java.io.IOException ignored) {
+            // Fall back to the HTTP status when the error body is not valid JSON.
+        }
+        if (message == null || message.trim().isEmpty()) {
+            message = "HTTP " + response.code();
+        }
+        throw new ProjectClientAuthenticationException("Project authentication failed: " + message);
     }
 
     private CachedRule toCachedRule(JSONObject obj) {

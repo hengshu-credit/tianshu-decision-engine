@@ -1,0 +1,150 @@
+
+===== PAGE 1 =====
+⽂档版本
+时间 版本 描述
+2023-09-01V1.0.0初稿
+接⼝信息
+接⼝类型：HTTPS POST
+接⼝请求⽅式：ContentType application/x-www-form-urlencoded
+测试URL：https://test.xunxin-ai.com/product/encrypt/negative/v4/black
+⽣产URL：https://api.xunxin-ai.com/product/encrypt/negative/v4/black
+请求参数
+参数 必选 类型 描述 说明
+member_id 是 string商户号 宝付提供给商户的唯⼀编号
+data_type 是 string加密类型 json
+data_content是 string加密数据 由请求参数的集合加密参数，具体参照业务请求参数
+业务请求参数
+参数 必选 类型 描述 说明
+member_id 是 string 商户号 宝付提供给商户的唯⼀编号
+senc_member_id是 string ⼆级商户号 实际调⽤商户的唯⼀编号
+trans_id 是 string(50)商户请求订单号 系统保持唯⼀
+trade_date 是 string(14)交易时间 格式：yyyyMMddHHmmss
+encrypt_type 是 string 身份信息加密⽅式
+MD5：标准32位⼩写
+SHA256：标准64位⼩写
+SM3：标准64位⼩写
+id_no 是 string 身份证号 身份信息加密类型其中⼀种加密处理(注：身份证最后⼀位X⼤写)
+id_name 是 string 姓名 身份信息加密类型其中⼀种加密处理,姓名中带点的统⼀⽤·后再加密
+phone_no 是 string ⼿机号 身份信息加密类型其中⼀种加密处理
+versions 是 string 业务版本号 1.4.0
+fee_type 是 string 计费⽅式 QUERY/查询计费
+QUERY_RESULT/查得计费
+响应参数
+参数 是否⼀定有值 类型 描述 说明
+success 是 boolean响应状态 true/false,此字段是通信及请求
+权限标识，⾮交易标识，交易是否成功需要查看data来判断
+errorCode否 string 错误码 success为false为接⼝响应错误代码，详⻅数据字典-错误码
+errorMsg 否 string 错误信息 success为false为接⼝响应错误描述
+data 否 string 业务成功数据 success为true时有值，详⻅业务响应参数
+业务响应参数
+参数 是否⼀定有值 类型 描述 说明
+code 是 string 查询响应码
+0：查询成功
+1：查询未命中
+9：其他异常
+desc 是 string 查询响应描述
+trans_id 是 string 商户请求订单号
+trade_no 是 string 交易流⽔号 宝付交易响应流⽔号
+fee 是 string 收费标示 Y：收费
+N：不收费
+versions 是 string 业务版本号
+result_detail 否 object 核查结果详情 当code=0时有值，其他状态为空
+result_code 否 string 探查结果编码 1：A(Overdue) 
+4：U
+max_overdue_amt 否 string 最⼤逾期⾦额 0 /(1-1000]/（1000-2000]等⾦额区间
+max_overdue_days 否 string 最⻓逾期天数
+区间，格式：dd-dd
+值：1-15
+16-30
+31-60
+61-90
+91-120
+121-150
+151-180
+>180
+latest_overdue_time 否 string 最近逾期时间 格式：yyyy-MM
+currently_overdue 否 string 当前逾期机构数 0/1/2/3/…
+currently_performance否 string 当前履约机构数 0/1/2/3/…
+acc_exc 否 string 异常还款机构数 0/1/2/3/…
+acc_sleep 否 string 睡眠机构数 0/1/2/3/…
+⾦额区间描述
+⾦额区间（左开右闭区间）
+(1~1000]
+(1000~2000]
+(2000~3000]
+(3000~4000]
+(4000~6000]
+(6000~8000]
+(8000~10000]
+(10000~20000]
+(20000~40000]
+(40000~60000]
+(60000~80000]
+(80000~100000]
+(100000~150000]
+(150000~200000]
+(200000~250000]
+(250000~300000]
+(300000~350000]
+(350000~400000]
+(400000~450000]
+(450000~500000]
+(500000~550000]
+(550000~600000]
+(600000~650000]
+(650000~700000]
+(700000~750000]
+(750000~800000]
+(800000~850000]
+(850000~900000]
+(900000~950000]
+(950000~1000000]
+>1000000
+查询成功响应示例
+{
+"success": true,
+"data": {
+"fee": "Y",
+"code": "0",
+"desc": "查询成功",
+"trans_id": "req2019011111071431229908",
+"trade_no": "20190111110930136000005183116997",
+"versions": "1.4.0",
+"result_detail": {
+"result_code": "1",
+"currently_overdue": "3",
+"max_overdue_amt": "2000-3000",
+"acc_sleep": "30",
+"currently_performance": "27",
+"max_overdue_days": "16-30",
+"latest_overdue_time": "2018-07",
+"acc_exc": "0"
+}
+},
+"errorCode": null,
+"errorMsg": null
+}
+查询未命中响应示例
+{
+"success": true,
+"data": {
+"fee": "N",
+"code": "1",
+"desc": "查询未命中",
+"trans_id": "req2019011111093362640203",
+"trade_no": "20190111111036171000005183162644",
+"id_no": "b03cac39c8a925b8e9fd4d6dff5b9d56",
+"id_name": "6d3f345e1d2bdf0288e4be89ed57b130",
+"versions": "1.4.0",
+"result_detail": null
+},
+"errorCode": null,
+"errorMsg": null
+}
+响应异常示例
+{
+"success": false,
+"data":null,
+"errorCode":"S1000",
+"errorMsg":"请求参数有误"
+}

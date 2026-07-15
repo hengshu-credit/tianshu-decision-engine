@@ -184,6 +184,7 @@ jest.mock('@/api/project', () => ({
   updateProjectAuth: jest.fn(),
   updateProjectAuthStatus: jest.fn(),
   getProjectAuthFull: jest.fn(),
+  regenerateProjectAuthSecret: jest.fn(),
   listProjectAuthTokens: jest.fn(),
   getProjectAuthTokenFull: jest.fn(),
   revokeProjectAuthToken: jest.fn(),

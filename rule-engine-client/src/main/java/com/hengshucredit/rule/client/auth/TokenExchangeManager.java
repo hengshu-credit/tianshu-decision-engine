@@ -11,19 +11,24 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.concurrent.TimeUnit;
 
 public class TokenExchangeManager {
 
     private static final Logger log = LoggerFactory.getLogger(TokenExchangeManager.class);
     private static final MediaType JSON_TYPE = MediaType.parse("application/json; charset=utf-8");
+    private static final long REFRESH_RETRY_BACKOFF_SECONDS = 5L;
 
     private final String tokenUrl;
     private final ClientAuthConfig authConfig;
     private final OkHttpClient httpClient;
     private final ClientRequestAuthenticator baseAuthenticator;
     private TokenState currentToken;
+    private Instant nextRefreshAttemptAt;
+    private IOException lastRefreshFailure;
 
     public TokenExchangeManager(String serverUrl, int timeoutMs, ClientAuthConfig authConfig) {
         String baseUrl = serverUrl.endsWith("/")
@@ -38,10 +43,18 @@ public class TokenExchangeManager {
     }
 
     public synchronized String getAccessToken() throws IOException {
-        LocalDateTime now = currentDateTime();
+        Instant now = currentInstant();
         int refreshAhead = Math.max(0, authConfig.getRefreshAheadSeconds());
         if (currentToken != null && now.isBefore(currentToken.getExpiresAt().minusSeconds(refreshAhead))) {
             return currentToken.getAccessToken();
+        }
+        if (nextRefreshAttemptAt != null && now.isBefore(nextRefreshAttemptAt)) {
+            if (currentToken != null && !now.isAfter(currentToken.getGraceExpiresAt())) {
+                return currentToken.getAccessToken();
+            }
+            throw lastRefreshFailure == null
+                    ? new IOException("Project token refresh is temporarily unavailable")
+                    : lastRefreshFailure;
         }
         try {
             TokenState refreshed = requestToken();
@@ -50,9 +63,14 @@ public class TokenExchangeManager {
                 throw new IOException("Token endpoint returned an incomplete token");
             }
             currentToken = refreshed;
+            nextRefreshAttemptAt = null;
+            lastRefreshFailure = null;
             return currentToken.getAccessToken();
         } catch (IOException e) {
-            if (currentToken != null && !now.isAfter(currentToken.getGraceExpiresAt())) {
+            Instant failureTime = currentInstant();
+            nextRefreshAttemptAt = failureTime.plusSeconds(REFRESH_RETRY_BACKOFF_SECONDS);
+            lastRefreshFailure = e;
+            if (currentToken != null && !failureTime.isAfter(currentToken.getGraceExpiresAt())) {
                 log.warn("Project token refresh failed; retaining the previous token during its grace period: {}",
                         e.getMessage());
                 return currentToken.getAccessToken();
@@ -62,6 +80,7 @@ public class TokenExchangeManager {
     }
 
     protected TokenState requestToken() throws IOException {
+        Instant requestStartedAt = currentInstant();
         Request request = new Request.Builder()
                 .url(tokenUrl)
                 .post(RequestBody.create("", JSON_TYPE))
@@ -75,9 +94,16 @@ public class TokenExchangeManager {
                 throw new IOException(message == null ? "Token exchange failed" : message);
             }
             JSONObject data = json.getJSONObject("data");
-            return new TokenState(data.getString("accessToken"),
-                    parseTime(data.getString("expiresAt")),
-                    parseTime(data.getString("graceExpiresAt")));
+            Integer expiresInSeconds = data.getInteger("expiresInSeconds");
+            Integer graceExpiresInSeconds = data.getInteger("graceExpiresInSeconds");
+            if (expiresInSeconds != null && graceExpiresInSeconds != null
+                    && expiresInSeconds > 0 && graceExpiresInSeconds >= expiresInSeconds) {
+                return new TokenState(data.getString("accessToken"),
+                        requestStartedAt.plusSeconds(expiresInSeconds),
+                        requestStartedAt.plusSeconds(graceExpiresInSeconds));
+            }
+            return new TokenState(data.getString("accessToken"), parseLegacyTime(data.getString("expiresAt")),
+                    parseLegacyTime(data.getString("graceExpiresAt")));
         } catch (IOException e) {
             throw e;
         } catch (RuntimeException e) {
@@ -85,13 +111,14 @@ public class TokenExchangeManager {
         }
     }
 
-    protected LocalDateTime currentDateTime() {
-        return LocalDateTime.now();
+    protected Instant currentInstant() {
+        return Instant.now();
     }
 
-    private LocalDateTime parseTime(String value) throws IOException {
+    private Instant parseLegacyTime(String value) throws IOException {
         try {
-            return value == null ? null : LocalDateTime.parse(value);
+            return value == null ? null : LocalDateTime.parse(value)
+                    .atZone(ZoneId.systemDefault()).toInstant();
         } catch (RuntimeException e) {
             throw new IOException("Token endpoint returned an invalid expiration time", e);
         }
@@ -99,10 +126,10 @@ public class TokenExchangeManager {
 
     public static class TokenState {
         private final String accessToken;
-        private final LocalDateTime expiresAt;
-        private final LocalDateTime graceExpiresAt;
+        private final Instant expiresAt;
+        private final Instant graceExpiresAt;
 
-        public TokenState(String accessToken, LocalDateTime expiresAt, LocalDateTime graceExpiresAt) {
+        public TokenState(String accessToken, Instant expiresAt, Instant graceExpiresAt) {
             this.accessToken = accessToken;
             this.expiresAt = expiresAt;
             this.graceExpiresAt = graceExpiresAt;
@@ -112,11 +139,11 @@ public class TokenExchangeManager {
             return accessToken;
         }
 
-        public LocalDateTime getExpiresAt() {
+        public Instant getExpiresAt() {
             return expiresAt;
         }
 
-        public LocalDateTime getGraceExpiresAt() {
+        public Instant getGraceExpiresAt() {
             return graceExpiresAt;
         }
     }

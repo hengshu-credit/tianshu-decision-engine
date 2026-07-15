@@ -48,6 +48,42 @@ public class CredentialCipherTest {
                 cipher.lookupKey("BASIC", "same-value"));
     }
 
+    @Test(expected = IllegalStateException.class)
+    public void rejectsPublicDevelopmentMasterKey() {
+        ProjectAuthProperties properties = properties("v1", "v1",
+                "tianshu-dev-auth-master-key-change-me");
+
+        properties.validateMasterKeys();
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void rejectsMissingActiveMasterKey() {
+        new ProjectAuthProperties().validateMasterKeys();
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void rejectsLowEntropyMasterKey() {
+        properties("v1", "v1", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").validateMasterKeys();
+    }
+
+    @Test
+    public void acceptsExplicitStrongMasterKey() {
+        ProjectAuthProperties properties = properties("v1", "v1",
+                "test-only-master-key-with-at-least-32-characters");
+
+        properties.validateMasterKeys();
+    }
+
+    @Test
+    public void acceptsLegacyDevelopmentKeyWhenActiveKeyIsStrong() {
+        ProjectAuthProperties properties = properties("v2", "v1",
+                "tianshu-dev-auth-master-key-change-me");
+        properties.getMasterKeys().put("v2",
+                "test-only-master-key-with-at-least-32-characters");
+
+        properties.validateMasterKeys();
+    }
+
     private ProjectAuthProperties properties(String activeKeyId, String keyId, String key) {
         ProjectAuthProperties properties = new ProjectAuthProperties();
         properties.setActiveKeyId(activeKeyId);

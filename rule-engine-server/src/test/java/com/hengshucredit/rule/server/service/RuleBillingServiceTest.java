@@ -39,6 +39,23 @@ public class RuleBillingServiceTest {
     }
 
     @Test
+    public void sharedRuleBillingUsesAuthenticatedCallingProject() {
+        InMemoryBillingService service = serviceWithConfig();
+        RuleDefinition globalDefinition = definition();
+        globalDefinition.setProjectId(0L);
+        globalDefinition.setProjectCode(null);
+        ProjectAuthContext context = ProjectAuthContext.direct(9L, "calling-project", 11L,
+                "BASIC_MAIN", ProjectAuthType.BASIC);
+
+        service.recordEngineExecution(globalDefinition, true, 12L, null, context);
+
+        RuleBillingRecord record = service.records.get(0);
+        assertEquals(Long.valueOf(9L), record.getProjectId());
+        assertEquals("calling-project", record.getProjectCode());
+        assertEquals(Long.valueOf(9L), service.configProjectId);
+    }
+
+    @Test
     public void dailySummaryGroupsTokensByAuthButKeepsDifferentAuthSeparate() {
         InMemoryBillingService service = new InMemoryBillingService();
         LocalDate date = LocalDate.of(2026, 7, 15);
@@ -112,10 +129,13 @@ public class RuleBillingServiceTest {
         private List<RuleBillingConfig> configs = Collections.emptyList();
         private final List<RuleBillingRecord> records = new ArrayList<>();
         private final List<RuleBillingSummary> summaries = new ArrayList<>();
+        private Long configProjectId;
 
         @Override
         protected List<RuleBillingConfig> findActiveEngineConfigs(RuleDefinition definition,
-                                                                  LocalDateTime now) {
+                                                                  LocalDateTime now,
+                                                                  Long executionProjectId) {
+            configProjectId = executionProjectId;
             return configs;
         }
 
@@ -123,7 +143,7 @@ public class RuleBillingServiceTest {
         protected RuleProject findProject(Long projectId) {
             RuleProject project = new RuleProject();
             project.setId(projectId);
-            project.setProjectCode("credit");
+            project.setProjectCode(Long.valueOf(9L).equals(projectId) ? "calling-project" : "credit");
             return project;
         }
 

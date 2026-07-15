@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -34,28 +36,63 @@ public class ProjectAuthController {
 
     @PostMapping
     public R<ProjectAuthDTO> create(@PathVariable Long projectId,
-                                    @RequestBody ProjectAuthSaveRequest request) {
-        return execute(() -> projectAuthService.createAuth(projectId, request));
+                                    @RequestBody ProjectAuthSaveRequest request,
+                                    HttpServletRequest httpRequest) {
+        return execute(() -> {
+            ProjectAuthDTO result = projectAuthService.createAuth(projectId, request);
+            projectAuthService.recordManagementAccess(httpRequest, projectId, result.getId(), null);
+            return result;
+        });
     }
 
     @PutMapping("/{authId:\\d+}")
     public R<ProjectAuthDTO> update(@PathVariable Long projectId,
                                     @PathVariable Long authId,
-                                    @RequestBody ProjectAuthSaveRequest request) {
-        return execute(() -> projectAuthService.updateAuth(projectId, authId, request));
+                                    @RequestBody ProjectAuthSaveRequest request,
+                                    HttpServletRequest httpRequest) {
+        return execute(() -> {
+            ProjectAuthDTO result = projectAuthService.updateAuth(projectId, authId, request);
+            projectAuthService.recordManagementAccess(httpRequest, projectId, authId, null);
+            return result;
+        });
     }
 
     @PutMapping("/{authId:\\d+}/status")
     public R<ProjectAuthDTO> updateStatus(@PathVariable Long projectId,
                                           @PathVariable Long authId,
-                                          @RequestParam Integer status) {
-        return execute(() -> projectAuthService.setAuthStatus(projectId, authId, status));
+                                          @RequestParam Integer status,
+                                          HttpServletRequest httpRequest) {
+        return execute(() -> {
+            ProjectAuthDTO result = projectAuthService.setAuthStatus(projectId, authId, status);
+            projectAuthService.recordManagementAccess(httpRequest, projectId, authId, null);
+            return result;
+        });
     }
 
     @GetMapping("/{authId:\\d+}/full")
     public R<ProjectAuthDTO> getFull(@PathVariable Long projectId,
-                                     @PathVariable Long authId) {
-        return execute(() -> projectAuthService.getFullAuth(projectId, authId));
+                                     @PathVariable Long authId,
+                                     HttpServletRequest request,
+                                     HttpServletResponse response) {
+        noStore(response);
+        return execute(() -> {
+            ProjectAuthDTO result = projectAuthService.getFullAuth(projectId, authId);
+            projectAuthService.recordManagementAccess(request, projectId, authId, null);
+            return result;
+        });
+    }
+
+    @PostMapping("/{authId:\\d+}/regenerate")
+    public R<ProjectAuthDTO> regenerate(@PathVariable Long projectId,
+                                        @PathVariable Long authId,
+                                        HttpServletRequest request,
+                                        HttpServletResponse response) {
+        noStore(response);
+        return execute(() -> {
+            ProjectAuthDTO result = projectAuthService.regenerateAuthSecret(projectId, authId);
+            projectAuthService.recordManagementAccess(request, projectId, authId, null);
+            return result;
+        });
     }
 
     @GetMapping("/{authId:\\d+}/tokens")
@@ -70,15 +107,27 @@ public class ProjectAuthController {
     @GetMapping("/{authId:\\d+}/tokens/{tokenId:\\d+}/full")
     public R<ProjectAuthTokenDTO> getFullToken(@PathVariable Long projectId,
                                                @PathVariable Long authId,
-                                               @PathVariable Long tokenId) {
-        return execute(() -> projectAuthService.getFullToken(projectId, authId, tokenId));
+                                               @PathVariable Long tokenId,
+                                               HttpServletRequest request,
+                                               HttpServletResponse response) {
+        noStore(response);
+        return execute(() -> {
+            ProjectAuthTokenDTO result = projectAuthService.getFullToken(projectId, authId, tokenId);
+            projectAuthService.recordManagementAccess(request, projectId, authId, tokenId);
+            return result;
+        });
     }
 
     @PostMapping("/{authId:\\d+}/tokens/{tokenId:\\d+}/revoke")
     public R<ProjectAuthTokenDTO> revokeToken(@PathVariable Long projectId,
                                               @PathVariable Long authId,
-                                              @PathVariable Long tokenId) {
-        return execute(() -> projectAuthService.revokeToken(projectId, authId, tokenId));
+                                              @PathVariable Long tokenId,
+                                              HttpServletRequest request) {
+        return execute(() -> {
+            ProjectAuthTokenDTO result = projectAuthService.revokeToken(projectId, authId, tokenId);
+            projectAuthService.recordManagementAccess(request, projectId, authId, tokenId);
+            return result;
+        });
     }
 
     @GetMapping("/access-logs")
@@ -86,11 +135,14 @@ public class ProjectAuthController {
             @PathVariable Long projectId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
+            @RequestParam(required = false) String authType,
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String tokenCode,
-            @RequestParam(required = false) Integer success) {
+            @RequestParam(required = false) Integer success,
+            @RequestParam(required = false) String beginTime,
+            @RequestParam(required = false) String endTime) {
         return execute(() -> projectAuthService.pageAccessLogs(
-                projectId, pageNum, pageSize, authCode, tokenCode, success));
+                projectId, pageNum, pageSize, authType, authCode, tokenCode, success, beginTime, endTime));
     }
 
     private <T> R<T> execute(Supplier<T> action) {
@@ -99,5 +151,10 @@ public class ProjectAuthController {
         } catch (IllegalArgumentException e) {
             return R.fail(400, e.getMessage());
         }
+    }
+
+    private void noStore(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-store");
+        response.setHeader("Pragma", "no-cache");
     }
 }

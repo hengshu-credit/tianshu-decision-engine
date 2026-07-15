@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.ArrayList;
 import java.util.List;
 
 @RestController
@@ -25,19 +26,21 @@ public class LogReportController {
     public R<Void> report(@RequestBody List<RuleExecutionLog> logs, HttpServletRequest request) {
         if (logs != null && !logs.isEmpty()) {
             ProjectAuthContext authContext = ProjectAuthContext.from(request);
-            String projectCode = authContext != null ? authContext.getProjectCode()
-                    : request.getAttribute("projectCode") == null
-                    ? null
-                    : String.valueOf(request.getAttribute("projectCode"));
-            if (projectCode == null || projectCode.trim().isEmpty()) {
+            if (authContext == null || authContext.getProjectId() == null) {
                 return R.fail(401, "Unauthorized project token");
             }
+            String projectCode = authContext.getProjectCode();
+            List<RuleExecutionLog> scopedLogs = new ArrayList<>();
             for (RuleExecutionLog log : logs) {
                 if (log == null) {
                     continue;
                 }
+                if (log.getRuleCode() == null || log.getRuleCode().trim().isEmpty()
+                        || !billingService.isRuleAccessible(authContext.getProjectId(), log.getRuleCode())) {
+                    return R.fail(403, "Rule is not available to authenticated project");
+                }
                 if (log.getProjectCode() != null && !log.getProjectCode().isEmpty()
-                        && !projectCode.equals(log.getProjectCode())) {
+                        && !log.getProjectCode().equals(projectCode)) {
                     return R.fail(403, "Project token does not match log project");
                 }
                 log.setProjectCode(projectCode);
@@ -45,10 +48,11 @@ public class LogReportController {
                 if (log.getSource() == null || log.getSource().trim().isEmpty()) {
                     log.setSource("CLIENT");
                 }
+                scopedLogs.add(log);
             }
-            logService.saveBatch(logs);
-            for (RuleExecutionLog log : logs) {
-                billingService.recordEngineExecutionLog(log);
+            logService.saveBatch(scopedLogs);
+            for (RuleExecutionLog log : scopedLogs) {
+                billingService.recordEngineExecutionLog(log, authContext);
             }
         }
         return R.ok();

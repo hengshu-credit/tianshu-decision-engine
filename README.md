@@ -314,9 +314,9 @@ HMAC 请求固定携带 `X-Rule-Access-Key`、`X-Rule-Timestamp`、`X-Rule-Nonce
 HTTP_METHOD\n
 REQUEST_URI\n
 RAW_QUERY\n
+SHA256_HEX(REQUEST_BODY)\n
 UNIX_TIMESTAMP_SECONDS\n
-NONCE\n
-SHA256_HEX(REQUEST_BODY)
+NONCE
 ```
 
 直接调用 `/token` 时，只提交当前鉴权方式的凭证。例如账号密码使用 HTTP Basic：
@@ -345,10 +345,10 @@ SDK 行为：
 - 默认本地使用 QLExpress 执行脚本，适合只依赖入参、常量、计算变量和已同步函数的规则。
 - 如果规则依赖 API 变量、数据库变量或名单变量，必须开启 `server-side-execution: true`，或直接调用服务端接口 `POST /api/rule/sync/execute/{ruleCode}`。这些外部变量只在服务端通过 `VariableSourceResolver` 解析，本地 SDK 不会直连外部 API、数据库或名单库。
 - SDK 在 Token 到期前 60 秒自动续期；续期失败时继续使用旧 Token，直到其宽限期结束。
-- Spring Boot 自动配置使用账号密码、API Key 或 HMAC 时，执行日志固定通过受鉴权的 HTTP 接口上报，由服务端写入可信的鉴权及 Token 归因；原项目令牌仍保留既有 Kafka 日志上报选择。
+- Spring Boot 自动配置使用任一项目鉴权方式（包括原项目令牌）时，执行日志固定通过受鉴权的 HTTP 接口上报，由服务端写入可信的鉴权及 Token 归因；未配置项目鉴权时才保留外部日志上报器选择。
 - 可异步上报执行日志。
 
-项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；生产环境必须通过 `RULE_AUTH_MASTER_KEY` 配置独立主密钥并妥善保管，不能使用默认开发密钥。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
+项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 `RULE_AUTH_MASTER_KEY` 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 `v2` 密钥；升级前若已有旧 `v1` 密文，还需通过 `RULE_AUTH_LEGACY_MASTER_KEY` 保留原主密钥，待旧凭证全部修改或重置后才能移除。可通过 `RULE_AUTH_ACTIVE_KEY_ID` 显式选择活动密钥版本。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 `authCode` 和 `tokenCode`，按日汇总到鉴权配置维度。
 
 ## 10. 版本、日志和计费
 

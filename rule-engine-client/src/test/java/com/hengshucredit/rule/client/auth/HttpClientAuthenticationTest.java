@@ -17,6 +17,7 @@ import java.util.Collections;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class HttpClientAuthenticationTest {
 
@@ -36,6 +37,8 @@ public class HttpClientAuthenticationTest {
             logAuth.set(exchange.getRequestHeaders().getFirst("X-Test-Auth"));
             respond(exchange, "{\"code\":200}");
         });
+        server.createContext("/api/rule/sync/unauthorized", exchange ->
+                respond(exchange, 401, "{\"code\":401,\"message\":\"Project token expired\"}"));
         server.start();
         serverUrl = "http://127.0.0.1:" + server.getAddress().getPort();
     }
@@ -58,9 +61,39 @@ public class HttpClientAuthenticationTest {
         assertEquals("shared", logAuth.get());
     }
 
+    @Test
+    public void syncDoesNotTurnAuthenticationFailureIntoMissingRule() {
+        HttpSyncClient syncClient = new HttpSyncClient(serverUrl, 1000, new HeaderAuthenticator());
+
+        try {
+            syncClient.fetchRule("unauthorized");
+        } catch (ProjectClientAuthenticationException e) {
+            assertTrue(e.getMessage().contains("Project token expired"));
+            return;
+        }
+        throw new AssertionError("Expected project authentication failure");
+    }
+
+    @Test
+    public void tokenRefreshFailureIsReturnedToCaller() {
+        HttpSyncClient syncClient = new HttpSyncClient(serverUrl, 1000, new FailingAuthenticator());
+
+        try {
+            syncClient.fetchAll();
+        } catch (ProjectClientAuthenticationException e) {
+            assertTrue(e.getMessage().contains("token refresh failed"));
+            return;
+        }
+        throw new AssertionError("Expected token refresh failure");
+    }
+
     private void respond(HttpExchange exchange, String body) throws IOException {
+        respond(exchange, 200, body);
+    }
+
+    private void respond(HttpExchange exchange, int status, String body) throws IOException {
         byte[] data = body.getBytes(StandardCharsets.UTF_8);
-        exchange.sendResponseHeaders(200, data.length);
+        exchange.sendResponseHeaders(status, data.length);
         exchange.getResponseBody().write(data);
         exchange.close();
     }
@@ -73,6 +106,17 @@ public class HttpClientAuthenticationTest {
         @Override
         public Request authenticate(Request request) {
             return request.newBuilder().header("X-Test-Auth", "shared").build();
+        }
+    }
+
+    private static class FailingAuthenticator extends ClientRequestAuthenticator {
+        private FailingAuthenticator() {
+            super("http://localhost", 1000, null);
+        }
+
+        @Override
+        public Request authenticate(Request request) throws IOException {
+            throw new IOException("token refresh failed");
         }
     }
 }
