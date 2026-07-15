@@ -1,7 +1,7 @@
 // tests/__mocks__/element-ui.js
 const mockPlugin = {}
 const components = {}
-const install = (Vue) => {
+const install = () => {
   mockPlugin.installed = true
 }
 

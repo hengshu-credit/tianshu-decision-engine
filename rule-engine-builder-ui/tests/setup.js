@@ -31,7 +31,7 @@ jest.mock('element-ui', () => ({
   Loading: {
     service: jest.fn(() => ({ close: jest.fn() }))
   },
-  directive: (name, definition) => {
+  directive: (name) => {
     if (name === 'loading') {
       return { bind: jest.fn(), update: jest.fn(), unbind: jest.fn() }
     }
@@ -40,7 +40,7 @@ jest.mock('element-ui', () => ({
 
 // 3. mock axios（支持 axios.create() 实例）
 jest.mock('axios', () => {
-  const mockRequest = jest.fn((config) => {
+  const mockRequest = jest.fn(() => {
     return Promise.resolve({ data: { code: 200, data: [] } })
   })
   const mockInstance = {
@@ -68,7 +68,7 @@ jest.mock('axios', () => {
 // 4. mock @/api/request
 // request.js 实际导出的是一个 axios 实例（可调用函数 + get/post/put/delete 方法）。
 // mock 需要模拟两种用法：request(config) 和 request.get(url, config) 等。
-const mockRequestFn = jest.fn(config => {
+const mockRequestFn = jest.fn(() => {
   return Promise.resolve({ data: { code: 200, data: [] } })
 })
 mockRequestFn.get = mockRequestFn

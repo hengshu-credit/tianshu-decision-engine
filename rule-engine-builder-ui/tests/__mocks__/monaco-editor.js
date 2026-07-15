@@ -46,7 +46,8 @@ module.exports = {
     getLanguages: jest.fn(() => []),
     register: jest.fn(),
     registerCompletionItemProvider: jest.fn(),
-    setLanguageConfiguration: jest.fn()
+    setLanguageConfiguration: jest.fn(),
+    HoverProvider: {}
   },
   // Token 类型
   languageserver: {},
@@ -63,8 +64,6 @@ module.exports = {
   Selection: jest.fn(),
   // 常见命令
   Commands: {},
-  // hover 提供
-  languages.HoverProvider = {},
   // 标记范围
   MarkerSeverity: {},
   // IDisposable

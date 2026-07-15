@@ -367,7 +367,10 @@ public class ExternalApiInvokeService {
             headers.setBearerAuth(token);
             return;
         }
-        String headerName = stringValue(config.get("tokenHeaderName"));
+        String headerName = stringValue(config.get("tokenHeaderName")).trim();
+        if (headerName.isEmpty()) {
+            throw new IllegalArgumentException("Token Header名称不能为空");
+        }
         String prefix = config.containsKey("tokenPrefix") ? stringValue(config.get("tokenPrefix")) : "Bearer ";
         headers.set(headerName, prefix + token);
     }

@@ -6,6 +6,7 @@ import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.Test;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.MultiValueMap;
@@ -837,6 +838,16 @@ public class ExternalApiInvokeServiceTest {
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void tokenApiRejectsBlankCustomHeaderName() {
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("tokenHeaderName", " ");
+        config.put("tokenPrefix", "");
+
+        ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(), "applyTokenHeader",
+                new HttpHeaders(), config, "token-value");
     }
 
     @SuppressWarnings("unchecked")

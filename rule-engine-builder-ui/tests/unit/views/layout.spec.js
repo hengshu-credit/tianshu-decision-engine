@@ -6,9 +6,6 @@
  * 由于 Layout 依赖 SCSS 变量（@/styles/variables.scss）和 Element UI 组件，
  * 且 setup.js 中已将其 mock 为空 stub，这里直接测试核心导航逻辑。
  */
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-
 afterEach(() => { jest.clearAllMocks() })
 
 // ─── 核心导航逻辑测试（activeMenuIndex 计算属性）────────────────────────────
