@@ -95,16 +95,6 @@
               </el-form>
             </div>
 
-            <div v-if="activeElement.type === 'end-event'" class="prop-section">
-              <el-alert
-                :title="endNodeAppearance(activeElement.properties.terminationScope).name"
-                :description="endNodeDescription(activeElement.properties.terminationScope)"
-                :type="endNodeAppearance(activeElement.properties.terminationScope).tagType"
-                :closable="false"
-                show-icon
-              />
-            </div>
-
             <div class="prop-section">
               <div class="section-title">
                 <span>条件表达式</span>
@@ -162,6 +152,16 @@
                   <el-tag :type="nodeTypeTag(activeElement.type)" size="small">{{ nodeTypeLabel(activeElement.type) }}</el-tag>
                 </el-form-item>
               </el-form>
+            </div>
+
+            <div v-if="activeElement.type === 'end-event'" class="prop-section">
+              <el-alert
+                :title="endNodeAppearance(activeElement.properties.terminationScope).name"
+                :description="endNodeDescription(activeElement.properties.terminationScope)"
+                :type="endNodeAppearance(activeElement.properties.terminationScope).tagType"
+                :closable="false"
+                show-icon
+              />
             </div>
 
             <!-- ===== 条件节点：只显示分支出口 ===== -->

@@ -98,4 +98,15 @@ describe('flow designer style regressions', () => {
     const flow = readSource('src/views/designer/DecisionFlow.vue')
     expect(flow).not.toContain("errors.push('缺少结束节点')")
   })
+
+  test('决策流结束节点说明显示在节点属性而不是连线属性中', () => {
+    const source = readSource('src/views/designer/DecisionFlow.vue')
+    const edgeTemplateIndex = source.indexOf('<template v-if="isEdge">')
+    const nodeTemplateIndex = source.indexOf('<template v-else>', edgeTemplateIndex)
+    const alertIndex = source.indexOf("activeElement.type === 'end-event'")
+    const conditionNodeIndex = source.indexOf("activeElement.type === 'exclusive-gateway'", nodeTemplateIndex)
+
+    expect(alertIndex).toBeGreaterThan(nodeTemplateIndex)
+    expect(alertIndex).toBeLessThan(conditionNodeIndex)
+  })
 })

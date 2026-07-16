@@ -94,6 +94,9 @@ public class GraphScriptGenerator {
             if ("ALL_RULES".equals(node.getString("terminationScope"))) {
                 appendIndent(script, indent);
                 script.append("terminateAllRules()\n");
+            } else if (!hasOutputVars(outputVars)) {
+                appendIndent(script, indent);
+                script.append("return null\n");
             } else {
                 appendIndent(script, indent);
                 RuleScriptResultCollector.appendResultMapAssignment(script, outputVars);
@@ -145,6 +148,14 @@ public class GraphScriptGenerator {
                 generateScript(mergeNode, stopAt, nodeMap, outEdgeMap, script, visited, indent, varContext, outputVars);
             }
         }
+    }
+
+    private static boolean hasOutputVars(Collection<String> outputVars) {
+        if (outputVars == null) return false;
+        for (String outputVar : outputVars) {
+            if (outputVar != null && !outputVar.trim().isEmpty()) return true;
+        }
+        return false;
     }
 
     /**

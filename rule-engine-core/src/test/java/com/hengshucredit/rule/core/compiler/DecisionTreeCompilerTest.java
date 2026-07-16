@@ -9,6 +9,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class DecisionTreeCompilerTest {
@@ -69,6 +70,25 @@ public class DecisionTreeCompilerTest {
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertTrue(result.getCompiledScript(), result.getCompiledScript().contains("return _result"));
+    }
+
+    @Test
+    public void executeCurrentRuleEndWithoutOutputsReturnsNull() {
+        CompileResult result = compiler.compile("{"
+                + "\"nodes\":["
+                + "{\"id\":\"start\",\"type\":\"start\"},"
+                + "{\"id\":\"end\",\"type\":\"end\",\"terminationScope\":\"CURRENT_RULE\"}"
+                + "],"
+                + "\"edges\":[{\"source\":\"start\",\"target\":\"end\"}]"
+                + "}");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript(), result.getCompiledScript().contains("return null"));
+
+        RuleResult ruleResult = engine.execute(result.getCompiledScript(), new HashMap<>());
+
+        assertTrue(ruleResult.getErrorMessage(), ruleResult.isSuccess());
+        assertNull(ruleResult.getResult());
     }
 
     @Test
