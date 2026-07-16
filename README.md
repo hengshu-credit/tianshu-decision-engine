@@ -108,7 +108,17 @@ sequenceDiagram
 
 ## 5. 本地启动
 
-### 5.1 后端
+### 5.1 数据库与基础设施
+
+```bash
+docker compose up -d
+```
+
+`schema.sql` 只包含数据库、表和索引等结构 DDL；`export_202607161151.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-export.sql`。根编排中的 `mysql-init` 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。
+
+需要手工完整恢复时，固定顺序为：删除 `rule_engine` 数据库，执行 `schema.sql`，再执行 `export_202607161151.sql`。export 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。
+
+### 5.2 后端
 
 ```bash
 mvn clean install -DskipTests
@@ -130,7 +140,7 @@ mvn spring-boot:run
 
 可通过环境变量 `CONSOLE_USERNAME`、`CONSOLE_PASSWORD` 覆盖。
 
-### 5.2 前端
+### 5.3 前端
 
 ```bash
 cd rule-engine-builder-ui

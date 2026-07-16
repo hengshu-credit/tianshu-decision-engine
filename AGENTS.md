@@ -113,7 +113,7 @@ npm run test:coverage # 覆盖率报告
 ### 基础设施
 
 ```bash
-# 根目录 docker-compose 已包含 mysql + redis + 初始化（schema.sql 作为 init.sql 挂载）
+# 根目录 docker-compose 已包含 mysql + redis + 初始化（空数据卷依次执行 schema 与 export）
 docker-compose up -d
 # 单独启动：
 cd rule-engine-mysql && docker-compose up -d   # MySQL（仅 compose 文件，无 dockerfile）
@@ -122,8 +122,10 @@ cd rule-engine-redis && docker-compose up -d    # Redis
 
 ### 数据库初始化
 
-- Schema：`rule-engine-server/src/main/resources/sql/schema.sql`（被根 `docker-compose.yaml` 挂载为 `init.sql` 自动建表）
-- 示例数据：`data-example.sql` / `data-tianshu-example.sql`（手动导入）；`export_*.sql` 为历史导出，非初始化脚本，勿随意执行
+- `schema.sql` 只包含数据库、表和索引等结构 DDL；`export_202607161151.sql` 是当前唯一的初始数据快照，不生产 `data-system.sql`
+- 空 Docker 数据卷首次启动依次执行 `01-schema.sql` 和 `02-export.sql`；根编排的 `mysql-init` 对已有数据卷只重复执行 schema，不自动重放会覆盖数据的 export
+- 手工完整恢复顺序：删除 `rule_engine` 数据库、执行 `schema.sql`、执行 `export_202607161151.sql`；export 会清空其覆盖的全部数据表
+- `data-example.sql` / `data-tianshu-example.sql` 仅作为可选示例数据脚本手动导入，不属于系统初始数据来源
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
 
 ## 核心编译器（rule-engine-core）

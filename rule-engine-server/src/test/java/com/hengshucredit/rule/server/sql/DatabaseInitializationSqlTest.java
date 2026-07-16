@@ -104,6 +104,28 @@ public class DatabaseInitializationSqlTest {
         assertVariableId(export, 209L, "EMPTY_MAP");
     }
 
+    @Test
+    public void dockerFreshInitializationLoadsSchemaBeforeSnapshot() throws Exception {
+        Path root = repositoryRoot();
+        String rootCompose = read(root.resolve("docker-compose.yaml"));
+        String mysqlCompose = read(root.resolve("rule-engine-mysql/docker-compose.yaml"));
+        assertFreshInitMounts(rootCompose,
+                "./rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
+                "./rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro");
+        assertFreshInitMounts(mysqlCompose,
+                "../rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro",
+                "../rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro");
+        Assert.assertFalse("mysql-init must not replay destructive export",
+                rootCompose.contains("export_202607161151.sql:/data.sql"));
+    }
+
+    private static void assertFreshInitMounts(String compose, String schemaMount, String exportMount) {
+        Assert.assertTrue("missing schema init mount", compose.contains(schemaMount));
+        Assert.assertTrue("missing export init mount", compose.contains(exportMount));
+        Assert.assertTrue("schema must be mounted before export",
+                compose.indexOf(schemaMount) < compose.indexOf(exportMount));
+    }
+
     private static void assertVariableId(String export, long id, String code) {
         Pattern row = Pattern.compile("\\(" + id
                 + "\\s*,\\s*0\\s*,\\s*'GLOBAL'\\s*,\\s*'" + code + "'");
@@ -135,6 +157,11 @@ public class DatabaseInitializationSqlTest {
             return modulePath;
         }
         return cwd.resolve("rule-engine-server/src/main/resources/sql");
+    }
+
+    private static Path repositoryRoot() {
+        Path cwd = Paths.get("").toAbsolutePath().normalize();
+        return Files.isDirectory(cwd.resolve("rule-engine-server")) ? cwd : cwd.getParent();
     }
 
     private static String read(Path path) throws Exception {

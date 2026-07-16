@@ -16,7 +16,8 @@ services:
       - ./rule-engine-mysql/logs:/var/log/mysql
       - ./rule-engine-mysql/data:/var/lib/mysql
       - ./rule-engine-mysql/conf.d:/etc/mysql/conf.d
-      - ./rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./rule-engine-server/src/main/resources/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./rule-engine-server/src/main/resources/sql/export_202607161151.sql:/docker-entrypoint-initdb.d/02-export.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -uroot -p\"$${MYSQL_ROOT_PASSWORD}\" || exit 1"]
       interval: 10s

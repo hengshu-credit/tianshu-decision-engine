@@ -112,6 +112,13 @@ cd rule-engine-mysql && docker-compose up -d   # MySQL
 cd rule-engine-redis && docker-compose up -d    # Redis
 ```
 
+### 数据库初始化
+
+- `schema.sql` 只包含数据库、表和索引等结构 DDL；`export_202607161151.sql` 是当前唯一的初始数据快照，不生产 `data-system.sql`
+- 空 Docker 数据卷首次启动依次执行 `01-schema.sql` 和 `02-export.sql`；根编排的 `mysql-init` 对已有数据卷只重复执行 schema，不自动重放会覆盖数据的 export
+- 手工完整恢复顺序：删除 `rule_engine` 数据库、执行 `schema.sql`、执行 `export_202607161151.sql`；export 会清空其覆盖的全部数据表
+- `data-example.sql` / `data-tianshu-example.sql` 仅作为可选示例数据脚本手动导入，不属于系统初始数据来源
+
 ### 截图采集
 
 ```bash
