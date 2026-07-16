@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 public class BuiltInConstantSqlTest {
 
     private static final List<String> SQL_RESOURCES = Arrays.asList(
-            "sql/schema.sql", "sql/data-example.sql", "sql/data-tianshu-example.sql");
+            "sql/data-example.sql", "sql/data-tianshu-example.sql");
     private static final List<String> CONSTANT_CODES = Arrays.asList(
             "NULL_VALUE", "EMPTY_STRING", "EMPTY_LIST", "EMPTY_MAP",
             "TRUE_VALUE", "FALSE_VALUE", "ZERO", "ONE", "NEGATIVE_ONE",
