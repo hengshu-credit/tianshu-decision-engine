@@ -5,6 +5,7 @@ import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
@@ -28,6 +29,57 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleExecuteServiceTest {
+
+    @Test
+    public void allRulesTerminationReturnsRootOutputContractAsSuccess() {
+        RuleExecuteService service = new RuleExecuteService();
+        QLExpressEngine engine = new QLExpressEngine();
+        TerminationDefinitionService definitionService = new TerminationDefinitionService();
+        FakeProjectService projectService = new FakeProjectService();
+        RecordingLogService logService = new RecordingLogService();
+        RecordingBillingService billingService = new RecordingBillingService();
+        PassThroughVariableResolver resolver = new PassThroughVariableResolver();
+        ExecutionParameterBinder binder = new ExecutionParameterBinder();
+        RuleRuntimeInvoker runtimeInvoker = new RuleRuntimeInvoker();
+
+        ReflectionTestUtils.setField(runtimeInvoker, "definitionService", definitionService);
+        ReflectionTestUtils.setField(runtimeInvoker, "projectService", projectService);
+        ReflectionTestUtils.setField(runtimeInvoker, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(runtimeInvoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(runtimeInvoker, "executionParameterBinder", binder);
+
+        ReflectionTestUtils.setField(service, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(service, "definitionService", definitionService);
+        ReflectionTestUtils.setField(service, "projectService", projectService);
+        ReflectionTestUtils.setField(service, "logService", logService);
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", billingService);
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtimeInvoker);
+        ReflectionTestUtils.setField(service, "executionParameterBinder", binder);
+
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L);
+        published.setRuleCode("RISK_RULE");
+        published.setProjectCode("project_a");
+        published.setVersion(3);
+        published.setModelType("DECISION_FLOW");
+        published.setCompiledScript("decision = \"STOP\"; "
+                + "setRuntimeValue(\"decision\", decision); "
+                + "terminateAllRules(); "
+                + "setRuntimeValue(\"afterEnd\", true)");
+
+        RuleResult result = service.executePublished(
+                published, Collections.<String, Object>emptyMap(), 1L, "biz-app");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getResult() instanceof Map);
+        assertEquals("STOP", ((Map<?, ?>) result.getResult()).get("decision"));
+        assertTrue(((Map<?, ?>) result.getResult()).containsKey("notAssigned"));
+        assertEquals(null, ((Map<?, ?>) result.getResult()).get("notAssigned"));
+        assertFalse(logService.saved.getOutputResult().contains("afterEnd"));
+    }
 
     @Test
     public void previewExecutionCompilesAndRunsCurrentDesignerModelWithCurrentFields() {
@@ -205,6 +257,22 @@ public class RuleExecuteServiceTest {
         }
     }
 
+    private static class TerminationDefinitionService extends FakeDefinitionService {
+        @Override
+        public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+            RuleDefinitionOutputField decision = new RuleDefinitionOutputField();
+            decision.setScriptName("decision");
+            RuleDefinitionOutputField notAssigned = new RuleDefinitionOutputField();
+            notAssigned.setScriptName("notAssigned");
+            return java.util.Arrays.asList(decision, notAssigned);
+        }
+
+        @Override
+        public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+            return Collections.emptyList();
+        }
+    }
+
     private static class FakeProjectService extends RuleProjectService {
         @Override
         public RuleProject getById(Serializable id) {
@@ -247,6 +315,14 @@ public class RuleExecuteServiceTest {
         public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
                                                VariableResolveOptions options) {
             requiredScriptNames = options.getRequiredScriptNames();
+            return target;
+        }
+    }
+
+    private static class PassThroughVariableResolver extends VariableSourceResolver {
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
             return target;
         }
     }

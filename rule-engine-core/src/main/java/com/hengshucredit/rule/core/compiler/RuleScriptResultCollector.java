@@ -67,7 +67,14 @@ public final class RuleScriptResultCollector {
         if (uniq.isEmpty()) {
             return;
         }
-        script.append("\n_result = {");
+        script.append("\n");
+        appendResultMapAssignment(script, uniq);
+        script.append("_result\n");
+    }
+
+    public static void appendResultMapAssignment(StringBuilder script, Collection<String> varCodes) {
+        LinkedHashSet<String> uniq = uniqueNonEmpty(varCodes);
+        script.append("_result = {");
         boolean first = true;
         for (String code : uniq) {
             if (!first) {
@@ -76,7 +83,7 @@ public final class RuleScriptResultCollector {
             first = false;
             script.append("\"").append(escapeJsonKeyForMapLiteral(code)).append("\": ").append(code);
         }
-        script.append("}\n_result\n");
+        script.append("}\n");
     }
 
     /**

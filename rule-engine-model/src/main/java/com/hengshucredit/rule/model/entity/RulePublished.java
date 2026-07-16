@@ -3,6 +3,7 @@ package com.hengshucredit.rule.model.entity;
 import com.baomidou.mybatisplus.annotation.*;
 import lombok.Data;
 import java.time.LocalDateTime;
+import java.util.List;
 
 @Data
 @TableName("rule_engine.rule_published")
@@ -18,6 +19,9 @@ public class RulePublished {
     private String compiledScript;
     private String compiledType;
     private String modelJson;
+    /** 仅用于同步给客户端，不映射数据库字段 */
+    @TableField(exist = false)
+    private List<String> outputScriptNames;
     private Integer status;
     private String publishBy;
     private LocalDateTime publishTime;

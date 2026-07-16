@@ -5,6 +5,8 @@ import org.junit.Test;
 import org.springframework.data.redis.listener.Topic;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
@@ -20,6 +22,24 @@ public class RedisSubscriberTest {
         assertEquals(2, topics.size());
         assertEquals("rule:push:credit_project", ((Topic) topics.get(0)).getTopic());
         assertEquals("rule:push:broadcast", ((Topic) topics.get(1)).getTopic());
+    }
+
+    @Test
+    public void storesRootOutputScriptNamesFromPublishMessage() throws Exception {
+        L1MemoryCache cache = new L1MemoryCache(10);
+        RedisSubscriber subscriber = new RedisSubscriber(cache, null, "credit_project");
+        Method handleMessage = RedisSubscriber.class.getDeclaredMethod("handleMessage", String.class);
+        handleMessage.setAccessible(true);
+
+        handleMessage.invoke(subscriber, "{"
+                + "\"action\":\"PUBLISH\","
+                + "\"ruleCode\":\"ROOT\","
+                + "\"version\":1,"
+                + "\"outputScriptNames\":[\"decision\",\"notAssigned\"]"
+                + "}");
+
+        assertEquals(Arrays.asList("decision", "notAssigned"),
+                cache.get("ROOT").getOutputScriptNames());
     }
 
     private Object getField(Object target, String fieldName) throws Exception {

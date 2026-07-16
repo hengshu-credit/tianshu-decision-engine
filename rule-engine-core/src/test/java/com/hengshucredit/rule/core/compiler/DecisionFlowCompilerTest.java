@@ -40,6 +40,48 @@ public class DecisionFlowCompilerTest {
     }
 
     @Test
+    public void compileFlowWithoutEndNodeSuccessfully() {
+        CompileResult result = compiler.compile("{"
+                + "\"nodes\":[{\"id\":\"start\",\"type\":\"start\"}],"
+                + "\"edges\":[]"
+                + "}");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+    }
+
+    @Test
+    public void compileCurrentRuleEndAsReturn() {
+        CompileResult result = compiler.compile("{"
+                + "\"nodes\":["
+                + "{\"id\":\"start\",\"type\":\"start\"},"
+                + "{\"id\":\"task\",\"type\":\"task\",\"actionData\":[{\"type\":\"assign\",\"target\":\"decisionResult\",\"value\":\"\\\"PASS\\\"\"}]},"
+                + "{\"id\":\"end\",\"type\":\"end\",\"terminationScope\":\"CURRENT_RULE\"}"
+                + "],"
+                + "\"edges\":["
+                + "{\"source\":\"start\",\"target\":\"task\"},"
+                + "{\"source\":\"task\",\"target\":\"end\"}"
+                + "]"
+                + "}");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript(), result.getCompiledScript().contains("return _result"));
+    }
+
+    @Test
+    public void compileAllRulesEndAsTerminationFunctionCall() {
+        CompileResult result = compiler.compile("{"
+                + "\"nodes\":["
+                + "{\"id\":\"start\",\"type\":\"start\"},"
+                + "{\"id\":\"end\",\"type\":\"end\",\"terminationScope\":\"ALL_RULES\"}"
+                + "],"
+                + "\"edges\":[{\"source\":\"start\",\"target\":\"end\"}]"
+                + "}");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript(), result.getCompiledScript().contains("terminateAllRules()"));
+    }
+
+    @Test
     public void rejectFlowWithCycle() {
         CompileResult result = compiler.compile("{"
                 + "\"nodes\":["

@@ -83,4 +83,19 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('loadRuleCallOptions(this.definitionId)')
     })
   })
+
+  test('决策树和决策流添加结束节点时统一二次确认并持久化结束范围', () => {
+    const files = ['DecisionFlow.vue', 'DecisionTree.vue']
+
+    files.forEach(file => {
+      const source = readSource('src/views/designer/' + file)
+      expect(source).toContain('<end-node-scope-dialog')
+      expect(source).toContain('@confirm="confirmEndNode"')
+      expect(source).toContain("if (type === 'end-event')")
+      expect(source).toContain('backendNode.terminationScope = normalizeEndScope(props.terminationScope)')
+    })
+
+    const flow = readSource('src/views/designer/DecisionFlow.vue')
+    expect(flow).not.toContain("errors.push('缺少结束节点')")
+  })
 })

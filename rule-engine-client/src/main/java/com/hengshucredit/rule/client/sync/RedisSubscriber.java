@@ -262,6 +262,7 @@ public class RedisSubscriber {
         cached.setCompiledScript(push.getCompiledScript());
         cached.setCompiledType(push.getCompiledType());
         cached.setModelJson(push.getModelJson());
+        cached.setOutputScriptNames(push.getOutputScriptNames());
         cached.setLastUpdateTime(System.currentTimeMillis());
         return cached;
     }

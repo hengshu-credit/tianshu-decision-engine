@@ -58,6 +58,7 @@ public class QLExpressEngine {
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
+            rethrowControlledTermination(e);
             RuntimeContextBridge.restoreConstants(context);
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
@@ -91,6 +92,7 @@ public class QLExpressEngine {
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
+            rethrowControlledTermination(e);
             RuntimeContextBridge.restoreConstants(context);
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
@@ -103,5 +105,15 @@ public class QLExpressEngine {
 
     public Express4Runner getRunner() {
         return runner;
+    }
+
+    private static void rethrowControlledTermination(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof RuleTerminationSignal) {
+                throw (RuleTerminationSignal) current;
+            }
+            current = current.getCause();
+        }
     }
 }

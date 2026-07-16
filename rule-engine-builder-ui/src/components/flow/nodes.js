@@ -10,6 +10,7 @@ import {
   DiamondNode, DiamondNodeModel
 } from '@logicflow/core'
 import { wouldCreateCycleFromNewEdge } from '@/utils/flowGraphCycle'
+import { normalizeEndScope, getEndNodeAppearance } from '@/utils/endNodeScope'
 
 // ============================================================
 // 工具函数
@@ -100,19 +101,20 @@ function StartEventFactory(CircleNode, CircleNodeModel) {
 }
 
 // ============================================================
-// 2. 结束事件 - 红色圆形
+// 2. 结束事件 - 橙色表示返回当前规则，红色表示终止整体规则
 // ============================================================
 function EndEventFactory(CircleNode, CircleNodeModel) {
   class EndEventView extends CircleNode {
     getShape() {
-      const { x, y, r } = this.props.model
+      const { x, y, r, properties } = this.props.model
+      const appearance = getEndNodeAppearance(properties && properties.terminationScope)
       return h('g', {}, [
         h('circle', {
           cx: x,
           cy: y,
           r,
-          fill: '#ff4d4f',
-          stroke: '#cf1322',
+          fill: appearance.fill,
+          stroke: appearance.stroke,
           strokeWidth: 2
         }),
         h('text', {
@@ -123,13 +125,18 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
           fill: '#fff',
           fontSize: 12,
           fontWeight: 'bold'
-        }, '结束')
+        }, appearance.text)
       ])
     }
   }
 
   class EndEventModel extends CircleNodeModel {
     initNodeData(data) {
+      if (!data.properties) data.properties = {}
+      data.properties.terminationScope = normalizeEndScope(data.properties.terminationScope)
+      if (!data.properties.nodeName) {
+        data.properties.nodeName = getEndNodeAppearance(data.properties.terminationScope).name
+      }
       super.initNodeData(data)
       this.r = 25
       this.text.editable = false
@@ -139,8 +146,9 @@ function EndEventFactory(CircleNode, CircleNodeModel) {
     }
     getNodeStyle() {
       const style = super.getNodeStyle()
-      style.stroke = '#cf1322'
-      style.fill = '#ff4d4f'
+      const appearance = getEndNodeAppearance(this.properties && this.properties.terminationScope)
+      style.stroke = appearance.stroke
+      style.fill = appearance.fill
       return style
     }
     getConnectedSourceRules() {
@@ -386,7 +394,7 @@ export const NODE_PANEL_LIST = [
     group: '事件节点',
     items: [
       { type: 'start-event', label: '开始事件', icon: 'el-icon-video-play', color: '#52c41a' },
-      { type: 'end-event', label: '结束事件', icon: 'el-icon-remove', color: '#ff4d4f' }
+      { type: 'end-event', label: '结束事件', icon: 'el-icon-remove', color: '#FF4D4F' }
     ]
   },
   {
@@ -414,13 +422,6 @@ export function getDefaultFlowData() {
         x: 160,
         y: 300,
         properties: { nodeName: '开始', nodeCode: 'START_' + Date.now(), nodeDesc: '流程开始节点' }
-      },
-      {
-        id: uuid(),
-        type: 'end-event',
-        x: 800,
-        y: 300,
-        properties: { nodeName: '结束', nodeCode: 'END_' + Date.now(), nodeDesc: '流程结束节点' }
       }
     ],
     edges: []

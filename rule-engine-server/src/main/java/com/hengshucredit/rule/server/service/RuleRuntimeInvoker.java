@@ -4,6 +4,8 @@ import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -11,6 +13,7 @@ import com.hengshucredit.rule.model.dto.RuleTraceFrame;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
@@ -34,6 +37,7 @@ public class RuleRuntimeInvoker {
     private static final Logger log = LoggerFactory.getLogger(RuleRuntimeInvoker.class);
     private static final Class<?>[] ONE_STRING = new Class<?>[]{String.class};
     private static final Class<?>[] TWO_STRINGS = new Class<?>[]{String.class, String.class};
+    private static final Class<?>[] NO_ARGS = new Class<?>[]{};
 
     @Resource
     private RulePublishedMapper publishedMapper;
@@ -68,6 +72,7 @@ public class RuleRuntimeInvoker {
             runner.addFunctionOfServiceMethod("executeRuleField", this, "executeRuleField", TWO_STRINGS);
             runner.addFunctionOfServiceMethod("executeRuleById", this, "executeRuleById", ONE_STRING);
             runner.addFunctionOfServiceMethod("executeRuleFieldById", this, "executeRuleFieldById", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("terminateAllRules", this, "terminateAllRules", NO_ARGS);
         } catch (Exception e) {
             registered.set(false);
             log.warn("Register rule runtime functions failed: {}", e.getMessage());
@@ -119,7 +124,7 @@ public class RuleRuntimeInvoker {
         RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson);
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
-                definition.getRuleCode(), rootTrace);
+                definition.getRuleCode(), rootTrace, resolveOutputScriptNames(definition.getId()));
         currentSession.set(session);
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
@@ -178,6 +183,22 @@ public class RuleRuntimeInvoker {
     public Object executeRuleFieldById(String ruleId, String outputField) {
         Object result = doExecuteRule(parseRuleId(ruleId), null);
         return extractOutput(result, outputField);
+    }
+
+    public Object terminateAllRules() {
+        if (currentSession.get() == null) {
+            throw new IllegalStateException("terminateAllRules 只能在规则执行过程中调用");
+        }
+        throw new RuleTerminationSignal();
+    }
+
+    public Map<String, Object> collectTerminationResult() {
+        RuleExecutionSession session = currentSession.get();
+        if (session == null) {
+            return Collections.emptyMap();
+        }
+        return RuleTerminationResultCollector.collect(
+                session.getValues(), session.getRootOutputScriptNames());
     }
 
     private Object extractOutput(Object result, String outputField) {
@@ -287,6 +308,9 @@ public class RuleRuntimeInvoker {
                 throw new IllegalStateException("执行调用规则失败[" + targetRuleCode + "]: " + result.getErrorMessage());
             }
             return result.getResult();
+        } catch (RuleTerminationSignal e) {
+            childTrace.setStatus("SUCCESS");
+            throw e;
         } catch (RuntimeException e) {
             childTrace.setStatus("FAILED");
             throw e;
@@ -357,6 +381,23 @@ public class RuleRuntimeInvoker {
             return names;
         }
         for (RuleDefinitionInputField field : fields) {
+            if (field != null && hasText(field.getScriptName())) {
+                names.add(field.getScriptName().trim());
+            }
+        }
+        return names;
+    }
+
+    private List<String> resolveOutputScriptNames(Long definitionId) {
+        if (definitionService == null || definitionId == null) {
+            return Collections.emptyList();
+        }
+        List<RuleDefinitionOutputField> fields = definitionService.listOutputFields(definitionId);
+        if (fields == null || fields.isEmpty()) {
+            return Collections.emptyList();
+        }
+        List<String> names = new java.util.ArrayList<>();
+        for (RuleDefinitionOutputField field : fields) {
             if (field != null && hasText(field.getScriptName())) {
                 names.add(field.getScriptName().trim());
             }

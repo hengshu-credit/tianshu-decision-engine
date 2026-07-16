@@ -196,6 +196,10 @@ public class HttpSyncClient {
         rule.setCompiledScript(obj.getString("compiledScript"));
         rule.setCompiledType(obj.getString("compiledType"));
         rule.setModelJson(obj.getString("modelJson"));
+        JSONArray outputScriptNames = obj.getJSONArray("outputScriptNames");
+        if (outputScriptNames != null) {
+            rule.setOutputScriptNames(outputScriptNames.toJavaList(String.class));
+        }
         rule.setLastUpdateTime(System.currentTimeMillis());
         return rule;
     }

@@ -42,7 +42,6 @@ public class DecisionFlowCompiler implements RuleCompiler {
             // --- 结构校验 ---
             Set<String> nodeIds = new HashSet<>();
             int startCount = 0;
-            int endCount = 0;
             String startId = null;
 
             for (int i = 0; i < nodes.size(); i++) {
@@ -61,12 +60,10 @@ public class DecisionFlowCompiler implements RuleCompiler {
                     startCount++;
                     startId = id;
                 }
-                if ("end".equals(type)) endCount++;
             }
 
             if (startCount == 0) return CompileResult.fail("缺少开始节点（start）");
             if (startCount > 1) return CompileResult.fail("开始节点（start）只能有一个，当前有 " + startCount + " 个");
-            if (endCount == 0) return CompileResult.fail("缺少结束节点（end）");
 
             for (int i = 0; i < edges.size(); i++) {
                 JSONObject e = edges.getJSONObject(i);
@@ -101,10 +98,9 @@ public class DecisionFlowCompiler implements RuleCompiler {
                 outEdgeMap.computeIfAbsent(src, k -> new ArrayList<>()).add(e);
             }
 
-            String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext);
-
             LinkedHashSet<String> outputVars = new LinkedHashSet<>();
             ActionDataOutputVarCollector.collectFromGraphTaskNodes(nodes, outputVars, varContext);
+            String script = GraphScriptGenerator.generate(nodeMap, outEdgeMap, startId, varContext, outputVars);
             StringBuilder sb = new StringBuilder(script);
             if (!outputVars.isEmpty()) {
                 RuleScriptResultCollector.prependOutputNullInits(sb, outputVars);
