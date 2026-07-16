@@ -151,6 +151,16 @@
               </el-form>
             </div>
 
+            <div v-if="activeElement.type === 'end-event'" class="prop-section">
+              <el-alert
+                :title="endNodeAppearance(activeElement.properties.terminationScope).name"
+                :description="endNodeDescription(activeElement.properties.terminationScope)"
+                :type="endNodeAppearance(activeElement.properties.terminationScope).tagType"
+                :closable="false"
+                show-icon
+              />
+            </div>
+
             <!-- ===== 条件节点：只显示分支出口 ===== -->
             <template v-if="activeElement.type === 'exclusive-gateway'">
               <div class="prop-section">
@@ -241,6 +251,11 @@
       />
     </div>
 
+    <end-node-scope-dialog
+      :visible.sync="endNodeScopeVisible"
+      @confirm="confirmEndNode"
+    />
+
     <!-- 测试执行弹窗 -->
         <designer-test-dialog
       :visible.sync="testVisible"
@@ -273,6 +288,7 @@ import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleCallMixin from '@/mixins/ruleCallMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
+import EndNodeScopeDialog from '@/components/flow/EndNodeScopeDialog.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import {
@@ -295,10 +311,11 @@ import {
 } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { clampDesignerPanelWidth } from '@/utils/designerPanelWidth'
+import { END_SCOPE_ALL_RULES, normalizeEndScope, getEndNodeAppearance } from '@/utils/endNodeScope'
 
 export default {
   name: 'DecisionTree',
-  components: { DesignerTestDialog, ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
+  components: { DesignerTestDialog, EndNodeScopeDialog, ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
   mixins: [varPickerMixin, ruleCallMixin],
   data() {
     return {
@@ -318,6 +335,7 @@ export default {
       actionMode: 'visual',
       currentActionData: [],
       testVisible: false,
+      endNodeScopeVisible: false,
       testParamsTemplate: {},
       testParamsJson: '{}',
       testResult: null,
@@ -662,9 +680,22 @@ export default {
     },
 
     addNode(type) {
+      if (type === 'end-event') {
+        this.endNodeScopeVisible = true
+        return
+      }
+      this.addNodeToCanvas(type)
+    },
+
+    confirmEndNode(scope) {
+      this.endNodeScopeVisible = false
+      this.addNodeToCanvas('end-event', normalizeEndScope(scope))
+    },
+
+    addNodeToCanvas(type, terminationScope) {
       const labelMap = {
         'start-event': '开始',
-        'end-event': '结束',
+        'end-event': getEndNodeAppearance(terminationScope).name,
         'exclusive-gateway': '条件判断',
         'script-task': '执行动作',
         'join-gateway': '聚合'
@@ -681,7 +712,8 @@ export default {
           nodeCode: type.toUpperCase().replace(/-/g, '_') + '_' + idSuffix,
           nodeDesc: '',
           actionData: [],
-          gatewayDirection: 'Diverging'
+          gatewayDirection: 'Diverging',
+          ...(type === 'end-event' ? { terminationScope: normalizeEndScope(terminationScope) } : {})
         }
       }
       this.lf.addNode(nodeData)
@@ -716,6 +748,16 @@ export default {
         'join-gateway': '聚合节点'
       }
       return map[type] || type
+    },
+
+    endNodeAppearance(scope) {
+      return getEndNodeAppearance(scope)
+    },
+
+    endNodeDescription(scope) {
+      return normalizeEndScope(scope) === END_SCOPE_ALL_RULES
+        ? '执行到此节点时，根规则及后续所有规则都会立即终止。'
+        : '执行到此节点时，当前规则立即返回；外层规则仍可继续执行。'
     },
 
     nodeTypeTag(type) {
@@ -877,17 +919,22 @@ export default {
         else if (n.type === 'end') type = 'end-event'
         else if (n.type === 'decision') type = 'exclusive-gateway'
         else if (n.type === 'join') type = 'join-gateway'
+        const properties = {
+          nodeName: n.name || '',
+          nodeCode: n.id,
+          nodeDesc: '',
+          actionData: n.actionData || []
+        }
+        if (type === 'end-event') {
+          properties.terminationScope = normalizeEndScope(n.terminationScope)
+          if (!properties.nodeName) properties.nodeName = getEndNodeAppearance(properties.terminationScope).name
+        }
         return {
           id: n.id,
           type,
           x: n.x || 160 + i * 200,
           y: n.y || 300,
-          properties: {
-            nodeName: n.name || '',
-            nodeCode: n.id,
-            nodeDesc: '',
-            actionData: n.actionData || []
-          }
+          properties
         }
       })
       const lfEdges = (old.edges || []).map((e, i) => ({
@@ -932,7 +979,7 @@ export default {
       const nodes = (graphData.nodes || []).map(n => {
         const props = n.properties || {}
         const actionData = props.actionData || []
-        return {
+        const backendNode = {
           id: n.id,
           type: this.lfTypeToBackend(n.type),
           name: props.nodeName || '',
@@ -946,6 +993,10 @@ export default {
           rightVarId: props.rightVarId || null,
           rightRefType: props.rightRefType || null
         }
+        if (n.type === 'end-event') {
+          backendNode.terminationScope = normalizeEndScope(props.terminationScope)
+        }
+        return backendNode
       })
 
       const edges = (graphData.edges || []).map(e => {
