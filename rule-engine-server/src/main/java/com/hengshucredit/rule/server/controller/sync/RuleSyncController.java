@@ -2,11 +2,13 @@ package com.hengshucredit.rule.server.controller.sync;
 
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
+import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.web.bind.annotation.*;
@@ -31,6 +33,9 @@ public class RuleSyncController {
     @Resource
     private RuleExecuteService executeService;
 
+    @Resource
+    private RuleDefinitionService definitionService;
+
     @GetMapping("/{ruleCode}")
     public R<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
@@ -41,7 +46,7 @@ public class RuleSyncController {
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getRuleCode, ruleCode)
                         .eq(RulePublished::getStatus, 1), scope));
-        return R.ok(published);
+        return R.ok(withOutputScriptNames(published));
     }
 
     @GetMapping("/all")
@@ -53,6 +58,9 @@ public class RuleSyncController {
         List<RulePublished> list = publishedMapper.selectList(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getStatus, 1), scope));
+        for (RulePublished published : list) {
+            withOutputScriptNames(published);
+        }
         return R.ok(list);
     }
 
@@ -134,6 +142,21 @@ public class RuleSyncController {
         return "SELECT 1 FROM rule_definition_ref rdr " +
                 "WHERE rdr.definition_id = rule_published.definition_id " +
                 "AND rdr.project_id = " + projectId;
+    }
+
+    private RulePublished withOutputScriptNames(RulePublished published) {
+        if (published == null || published.getDefinitionId() == null) {
+            return published;
+        }
+        List<RuleDefinitionOutputField> fields = definitionService.listOutputFields(published.getDefinitionId());
+        if (fields != null) {
+            published.setOutputScriptNames(fields.stream()
+                    .map(RuleDefinitionOutputField::getScriptName)
+                    .filter(name -> name != null && !name.trim().isEmpty())
+                    .map(String::trim)
+                    .collect(Collectors.toList()));
+        }
+        return published;
     }
 
     private ProjectScope resolveProjectScope(HttpServletRequest request) {

@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -123,6 +124,9 @@ public class RuleExecuteService {
         try {
             variableSourceResolver.resolveInto(definition.getProjectId(), executeParams, resolveOptions);
             result = qlExpressEngine.execute(fullScript, executeParams, true);
+        } catch (RuleTerminationSignal e) {
+            result.setSuccess(true);
+            result.setResult(runtimeRuleInvoker.collectTerminationResult());
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
@@ -214,6 +218,9 @@ public class RuleExecuteService {
         try {
             variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
             result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
+        } catch (RuleTerminationSignal e) {
+            result.setSuccess(true);
+            result.setResult(runtimeRuleInvoker.collectTerminationResult());
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());

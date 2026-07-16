@@ -7,6 +7,8 @@ import com.hengshucredit.rule.client.cache.L1MemoryCache;
 import com.hengshucredit.rule.client.sync.HttpSyncClient;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
@@ -26,6 +28,7 @@ class ClientRuleRuntimeInvoker {
     private static final Logger log = LoggerFactory.getLogger(ClientRuleRuntimeInvoker.class);
     private static final Class<?>[] ONE_STRING = new Class<?>[]{String.class};
     private static final Class<?>[] TWO_STRINGS = new Class<?>[]{String.class, String.class};
+    private static final Class<?>[] NO_ARGS = new Class<?>[]{};
 
     private final L1MemoryCache l1Cache;
     private final HttpSyncClient httpSyncClient;
@@ -49,6 +52,7 @@ class ClientRuleRuntimeInvoker {
         try {
             runner.addFunctionOfServiceMethod("executeRule", this, "executeRule", ONE_STRING);
             runner.addFunctionOfServiceMethod("executeRuleField", this, "executeRuleField", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("terminateAllRules", this, "terminateAllRules", NO_ARGS);
         } catch (Exception e) {
             registered.set(false);
             log.warn("Register client rule runtime functions failed: {}", e.getMessage());
@@ -66,6 +70,8 @@ class ClientRuleRuntimeInvoker {
     void enter(CachedRule rule, Object context) {
         ExecutionFrame frame = new ExecutionFrame();
         frame.context = context;
+        frame.rootOutputScriptNames = rule == null || rule.getOutputScriptNames() == null
+                ? Collections.<String>emptyList() : rule.getOutputScriptNames();
         frame.rootTrace = createTraceFrame(rule, null);
         frame.traceStack.addLast(frame.rootTrace);
         if (rule != null && hasText(rule.getRuleCode())) {
@@ -118,6 +124,28 @@ class ClientRuleRuntimeInvoker {
         return null;
     }
 
+    public Object terminateAllRules() {
+        if (currentFrame.get() == null) {
+            throw new IllegalStateException("terminateAllRules 只能在规则执行过程中调用");
+        }
+        throw new RuleTerminationSignal();
+    }
+
+    @SuppressWarnings("unchecked")
+    Map<String, Object> collectTerminationResult() {
+        ExecutionFrame frame = currentFrame.get();
+        if (frame == null) {
+            return Collections.emptyMap();
+        }
+        Map<String, Object> values;
+        if (frame.context instanceof Map) {
+            values = (Map<String, Object>) frame.context;
+        } else {
+            values = JSONObject.parseObject(JSONObject.toJSONString(frame.context));
+        }
+        return RuleTerminationResultCollector.collect(values, frame.rootOutputScriptNames);
+    }
+
     private Object doExecuteRule(String ruleCode) {
         if (!hasText(ruleCode)) {
             throw new IllegalArgumentException("调用规则编码不能为空");
@@ -150,6 +178,9 @@ class ClientRuleRuntimeInvoker {
                 throw new IllegalStateException("执行调用规则失败[" + ruleCode + "]: " + result.getErrorMessage());
             }
             return result.getResult();
+        } catch (RuleTerminationSignal e) {
+            childTrace.setStatus("SUCCESS");
+            throw e;
         } catch (RuntimeException e) {
             childTrace.setStatus("FAILED");
             throw e;
@@ -251,6 +282,7 @@ class ClientRuleRuntimeInvoker {
         private Object context;
         private final Deque<String> stack = new ArrayDeque<>();
         private final Deque<RuleTraceFrame> traceStack = new ArrayDeque<>();
+        private List<String> rootOutputScriptNames = Collections.emptyList();
         private RuleTraceFrame rootTrace;
     }
 }

@@ -2,11 +2,13 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -24,8 +26,74 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class RuleRuntimeInvokerTest {
+
+    @Test
+    public void childCurrentRuleReturnAllowsParentToContinue() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        ReflectionTestUtils.setField(invoker, "definitionService", new CurrentRuleReturnDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        invoker.register(engine.getRunner());
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        invoker.enter("PARENT", 0L, null, values, true);
+        try {
+            RuleResult result = engine.execute("childResult = executeRuleById(\"5\"); "
+                    + "setRuntimeValue(\"parentContinued\", true); childResult", values, true);
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals("CHILD", ((Map<?, ?>) result.getResult()).get("decision"));
+            assertEquals(Boolean.TRUE, values.get("parentContinued"));
+            assertFalse(values.containsKey("childAfterEnd"));
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
+    public void childAllRulesTerminationStopsParentAndKeepsRootOutputContract() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        NestedTerminationDefinitionService definitionService = new NestedTerminationDefinitionService();
+        ReflectionTestUtils.setField(invoker, "definitionService", definitionService);
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        invoker.register(engine.getRunner());
+
+        RuleDefinition root = new RuleDefinition();
+        root.setId(10L);
+        root.setProjectId(0L);
+        root.setRuleCode("PARENT");
+        root.setRuleName("父规则");
+        root.setModelType("RULE_SET");
+        root.setScope("GLOBAL");
+        Map<String, Object> values = new LinkedHashMap<>();
+        invoker.enter(root, null, values, values, true, "{}");
+        try {
+            try {
+                engine.execute("executeRuleById(\"4\"); "
+                        + "setRuntimeValue(\"parentAfterChild\", true)", values, true);
+                fail("子规则的整体结束节点应终止父规则");
+            } catch (RuleTerminationSignal expected) {
+                Map<String, Object> result = invoker.collectTerminationResult();
+                assertEquals("STOP", result.get("decision"));
+                assertTrue(result.containsKey("notAssigned"));
+                assertEquals(null, result.get("notAssigned"));
+                assertFalse(values.containsKey("parentAfterChild"));
+                assertFalse(values.containsKey("childAfterEnd"));
+            }
+        } finally {
+            invoker.exit();
+        }
+    }
 
     @Test
     public void runtimeBridgeWritesComputedValuesIntoCurrentExecutionFrame() {
@@ -244,6 +312,77 @@ public class RuleRuntimeInvokerTest {
             amount.setScriptName("CREDIT_AMOUNT");
             amount.setFieldType("INTEGER");
             return Collections.singletonList(amount);
+        }
+    }
+
+    private static class NestedTerminationDefinitionService extends RuleDefinitionService {
+        @Override
+        public RuleDefinition getById(Serializable id) {
+            RuleDefinition definition = new RuleDefinition();
+            definition.setId(4L);
+            definition.setProjectId(0L);
+            definition.setRuleCode("TERMINATING_CHILD");
+            definition.setRuleName("整体终止子规则");
+            definition.setModelType("FLOW");
+            definition.setScope("GLOBAL");
+            definition.setStatus(1);
+            return definition;
+        }
+
+        @Override
+        public RuleDefinitionContent getContent(Long definitionId) {
+            RuleDefinitionContent content = new RuleDefinitionContent();
+            content.setDefinitionId(definitionId);
+            content.setCompileStatus(1);
+            content.setCompiledScript("setRuntimeValue(\"decision\", \"STOP\"); "
+                    + "terminateAllRules(); "
+                    + "setRuntimeValue(\"childAfterEnd\", true)");
+            content.setModelJson("{}");
+            return content;
+        }
+
+        @Override
+        public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+            return Collections.emptyList();
+        }
+
+        @Override
+        public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+            RuleDefinitionOutputField decision = new RuleDefinitionOutputField();
+            decision.setScriptName("decision");
+            RuleDefinitionOutputField notAssigned = new RuleDefinitionOutputField();
+            notAssigned.setScriptName("notAssigned");
+            return java.util.Arrays.asList(decision, notAssigned);
+        }
+    }
+
+    private static class CurrentRuleReturnDefinitionService extends RuleDefinitionService {
+        @Override
+        public RuleDefinition getById(Serializable id) {
+            RuleDefinition definition = new RuleDefinition();
+            definition.setId(5L);
+            definition.setProjectId(0L);
+            definition.setRuleCode("RETURNING_CHILD");
+            definition.setRuleName("返回子规则");
+            definition.setModelType("FLOW");
+            definition.setScope("GLOBAL");
+            definition.setStatus(1);
+            return definition;
+        }
+
+        @Override
+        public RuleDefinitionContent getContent(Long definitionId) {
+            RuleDefinitionContent content = new RuleDefinitionContent();
+            content.setDefinitionId(definitionId);
+            content.setCompileStatus(1);
+            content.setCompiledScript("_result = {\"decision\": \"CHILD\"}; return _result; "
+                    + "setRuntimeValue(\"childAfterEnd\", true)");
+            return content;
+        }
+
+        @Override
+        public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+            return Collections.emptyList();
         }
     }
 

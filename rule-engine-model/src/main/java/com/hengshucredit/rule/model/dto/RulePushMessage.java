@@ -2,6 +2,8 @@ package com.hengshucredit.rule.model.dto;
 
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class RulePushMessage {
     private String ruleCode;
@@ -10,6 +12,7 @@ public class RulePushMessage {
     private String compiledScript;
     private String compiledType;
     private String modelJson;
+    private List<String> outputScriptNames;
     private Long publishTime;
     /** 动作类型：PUBLISH / UNPUBLISH / DELETE / FUNC_UPDATE / FUNC_DELETE */
     private String action;

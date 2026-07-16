@@ -11,6 +11,7 @@ import com.hengshucredit.rule.client.log.NoOpLogReporter;
 import com.hengshucredit.rule.client.sync.HttpSyncClient;
 import com.hengshucredit.rule.client.sync.RedisSubscriber;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.alibaba.fastjson.JSON;
@@ -140,6 +141,9 @@ public class RuleEngineClient {
         RuleResult result = new RuleResult();
         try {
             result = engine.execute(cached.getCompiledScript(), params, true);
+        } catch (RuleTerminationSignal e) {
+            result.setSuccess(true);
+            result.setResult(runtimeRuleInvoker.collectTerminationResult());
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - start);
             runtimeRuleInvoker.completeRoot(result);
@@ -175,6 +179,9 @@ public class RuleEngineClient {
         RuleResult result = new RuleResult();
         try {
             result = engine.execute(cached.getCompiledScript(), params, true);
+        } catch (RuleTerminationSignal e) {
+            result.setSuccess(true);
+            result.setResult(runtimeRuleInvoker.collectTerminationResult());
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - start);
             runtimeRuleInvoker.completeRoot(result);

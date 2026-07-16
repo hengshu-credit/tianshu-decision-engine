@@ -152,6 +152,14 @@ public class RulePublishService {
         pushMessage.setCompiledScript(fullScript);
         pushMessage.setCompiledType(content.getCompiledType());
         pushMessage.setModelJson(content.getModelJson());
+        List<RuleDefinitionOutputField> outputFields = definitionService.listOutputFields(definitionId);
+        if (outputFields != null) {
+            pushMessage.setOutputScriptNames(outputFields.stream()
+                    .map(RuleDefinitionOutputField::getScriptName)
+                    .filter(name -> name != null && !name.trim().isEmpty())
+                    .map(String::trim)
+                    .collect(Collectors.toList()));
+        }
         pushMessage.setProjectCode(projectCode);
         pushMessage.setPublishTime(System.currentTimeMillis());
         pushMessage.setAction("PUBLISH");
