@@ -15,6 +15,30 @@ import static org.junit.Assert.assertTrue;
 
 public class QLExpressEngineTest {
 
+    public static class TerminationDelegate {
+        public Object terminateAllRules() {
+            throw new RuleTerminationSignal();
+        }
+    }
+
+    @Test(expected = RuleTerminationSignal.class)
+    public void controlledTerminationEscapesMapExecution() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod(
+                "terminateAllRules", new TerminationDelegate(), "terminateAllRules", new Class<?>[]{});
+
+        engine.execute("terminateAllRules()", new HashMap<>());
+    }
+
+    @Test(expected = RuleTerminationSignal.class)
+    public void controlledTerminationEscapesObjectExecution() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod(
+                "terminateAllRules", new TerminationDelegate(), "terminateAllRules", new Class<?>[]{});
+
+        engine.execute("terminateAllRules()", new Object(), false);
+    }
+
     @Test
     public void executeKeepsCompleteOversizedTrace() {
         StringBuilder script = new StringBuilder();
