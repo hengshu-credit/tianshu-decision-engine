@@ -1,0 +1,43 @@
+\n===== PAGE 1 =====\n通智分 B4
+通智分 B4
+ http://server:port/yrzx/score/tongzhi/b4 (server:port 在联调时提供 )
+请求方式： http/get
+编码 :UTF-8
+输出格式： JSON
+注： account 与 key 由提供商提供
+参数名 是否必填 是否签名 参数描述
+account 是 是 账户开立时分配，每个接入方的唯一标识
+cid 是 是 身份证号
+name 是 是 姓名
+mobile 是 是 手机号
+reqid 是 是 请求流水号，不大于 20 位
+verify 是 否 签名 Md5(account+cid+name+mobile+reqid+key)
+字段名称 是否签名 描述
+code 是 返回码，具体见返回码字典
+简要描述
+请求 URL
+对接方式
+输入参数
+返回参数\n===== PAGE 2 =====\n字段名称 是否签名 描述
+msg 否 返回码的中文描述，
+具体见返回码字典
+uid 是 流水号
+reqid 否 请求流水号，不大于 20 位
+result 否 二级节点
+verify 否 签名
+字段名称 描述
+score 分数 300-900
+返回码 描述
+001 成功
+002 账号不存在
+003 余额不足
+004 请给该账户授权
+020 参数为空或格式错误
+008 reqid 为空或长度大于 20
+009 账号为空
+011 verify 为空或格式错误
+012 接口错误，请联系提供商
+013 校验签名错误
+999 无结果返回
+result 二级节点
+返回码字典

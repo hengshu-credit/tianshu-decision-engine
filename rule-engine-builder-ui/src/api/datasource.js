@@ -44,6 +44,14 @@ export function invokeApiConfig(id, data) {
   return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data })
 }
 
+export function invokeApiConfigPreview(id, data) {
+  return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data })
+}
+
+export function previewApiConfigRequest(id, data) {
+  return request({ url: `/rule/datasource/api-config/${id}/request-preview`, method: 'post', data })
+}
+
 export function testDatasourceAuth(id, data) {
   return request({ url: `/rule/datasource/${id}/auth-test`, method: 'post', data })
 }

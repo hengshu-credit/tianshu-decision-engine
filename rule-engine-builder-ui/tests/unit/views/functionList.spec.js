@@ -261,6 +261,46 @@ describe('FunctionList — 函数操作', () => {
     })
   })
 
+  test('随机函数在线测试省略开闭参数时按闭区间传递', async () => {
+    const row = {
+      id: 7,
+      funcCode: 'randomInt',
+      funcName: '随机整数'
+    }
+    wrapper.vm.handleTestFunction(row)
+    wrapper.vm.functionTestParamsText = JSON.stringify({ lower: 1, upper: 3 })
+    functionApi.testFunction.mockResolvedValueOnce({ data: { success: true, result: 2 } })
+
+    await wrapper.vm.doTestFunction()
+
+    expect(functionApi.testFunction).toHaveBeenCalledWith(7, {
+      lower: 1,
+      upper: 3,
+      includeLower: true,
+      includeUpper: true
+    })
+  })
+
+  test('随机函数在线测试不传参数时使用默认闭区间', async () => {
+    const row = {
+      id: 8,
+      funcCode: 'randomDecimal',
+      funcName: '随机小数'
+    }
+    wrapper.vm.handleTestFunction(row)
+    wrapper.vm.functionTestParamsText = '{}'
+    functionApi.testFunction.mockResolvedValueOnce({ data: { success: true, result: 0.5 } })
+
+    await wrapper.vm.doTestFunction()
+
+    expect(functionApi.testFunction).toHaveBeenCalledWith(8, {
+      lower: 0,
+      upper: 1,
+      includeLower: true,
+      includeUpper: true
+    })
+  })
+
   test('handleDelete 调用删除 API', async () => {
     functionApi.deleteFunction.mockResolvedValueOnce({ data: true })
     const row = { id: 99, funcName: '测试函数' }

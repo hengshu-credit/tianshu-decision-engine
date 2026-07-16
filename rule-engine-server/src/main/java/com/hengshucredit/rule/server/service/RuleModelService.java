@@ -953,8 +953,16 @@ public class RuleModelService {
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
-        Map<String, Object> referenceValues = referenceValues(model.getProjectId(), context);
-        for (RuleModelOutputField field : listOutputFields(model.getId())) {
+        Map<String, Object> referenceValues = new LinkedHashMap<>(referenceValues(model.getProjectId(), context));
+        List<RuleModelOutputField> outputFields = listOutputFields(model.getId());
+        for (RuleModelOutputField field : outputFields) {
+            Object rawValue = original.get(outputKey(field, original));
+            OperandValueResolver.write(field.getTargetOperand(), context, rawValue);
+            if (field.getVarId() != null && field.getRefType() != null && !field.getRefType().trim().isEmpty()) {
+                referenceValues.put(field.getRefType().trim().toUpperCase() + ":" + field.getVarId(), rawValue);
+            }
+        }
+        for (RuleModelOutputField field : outputFields) {
             String transformJson = field.getTransformOperand();
             if (transformJson == null || transformJson.trim().isEmpty()) continue;
             com.alibaba.fastjson.JSONObject transform = com.alibaba.fastjson.JSON.parseObject(transformJson);

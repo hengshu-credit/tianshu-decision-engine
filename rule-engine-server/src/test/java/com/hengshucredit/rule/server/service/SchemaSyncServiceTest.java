@@ -32,26 +32,31 @@ public class SchemaSyncServiceTest {
     }
 
     @Test
-    public void externalApiAsyncColumnsAreAddedWhenMissing() throws Exception {
+    public void externalApiScriptAndAsyncColumnsAreAddedWhenMissing() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
-        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("async_result_mode", "async_poll_config", "async_callback_config", "test_sample_params");
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("request_script", "response_script",
+                "async_result_mode", "async_poll_config", "async_callback_config", "test_sample_params");
         setField(service, "jdbcTemplate", jdbcTemplate);
 
         Method method = SchemaSyncService.class.getDeclaredMethod("ensureExternalApiCacheColumns");
         method.setAccessible(true);
         method.invoke(service);
 
-        assertEquals(5, jdbcTemplate.sqlList.size());
+        assertEquals(7, jdbcTemplate.sqlList.size());
         assertEquals("ALTER TABLE `rule_external_api_config` MODIFY COLUMN `content_type` VARCHAR(128) DEFAULT NULL COMMENT '请求Content-Type，空表示不主动设置'",
                 jdbcTemplate.sqlList.get(0));
-        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_result_mode` VARCHAR(32) DEFAULT NULL COMMENT '异步结果获取方式：POLL/CALLBACK' AFTER `fallback_value`",
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `request_script` LONGTEXT DEFAULT NULL COMMENT '请求发送前QLExpress处理脚本' AFTER `body_template`",
                 jdbcTemplate.sqlList.get(1));
-        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_poll_config` JSON DEFAULT NULL COMMENT '异步轮询配置JSON' AFTER `async_result_mode`",
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `response_script` LONGTEXT DEFAULT NULL COMMENT '响应映射前QLExpress处理脚本' AFTER `response_mapping`",
                 jdbcTemplate.sqlList.get(2));
-        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_callback_config` JSON DEFAULT NULL COMMENT '异步回调配置JSON' AFTER `async_poll_config`",
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_result_mode` VARCHAR(32) DEFAULT NULL COMMENT '异步结果获取方式：POLL/CALLBACK' AFTER `fallback_value`",
                 jdbcTemplate.sqlList.get(3));
-        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `test_sample_params` LONGTEXT DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`",
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_poll_config` JSON DEFAULT NULL COMMENT '异步轮询配置JSON' AFTER `async_result_mode`",
                 jdbcTemplate.sqlList.get(4));
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `async_callback_config` JSON DEFAULT NULL COMMENT '异步回调配置JSON' AFTER `async_poll_config`",
+                jdbcTemplate.sqlList.get(5));
+        assertEquals("ALTER TABLE `rule_external_api_config` ADD COLUMN `test_sample_params` LONGTEXT DEFAULT NULL COMMENT 'API调用测试样例JSON' AFTER `description`",
+                jdbcTemplate.sqlList.get(6));
     }
 
     @Test
@@ -107,6 +112,23 @@ public class SchemaSyncServiceTest {
                 "ALTER TABLE `rule_experiment_execution_log` ADD COLUMN `child_trace_id`"));
     }
 
+    @Test
+    public void experimentGroupsAddStableRuleReferenceWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("rule_id");
+        jdbcTemplate.missingIndexes.add("idx_experiment_group_rule");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureExperimentRuleReferenceSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_experiment_group` ADD COLUMN `rule_id`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ADD KEY `idx_experiment_group_rule` (`rule_id`)"));
+    }
+
     private boolean containsSql(List<String> sqlList, String fragment) {
         for (String sql : sqlList) {
             if (sql.contains(fragment)) {
@@ -126,6 +148,7 @@ public class SchemaSyncServiceTest {
         private final List<String> sqlList = new ArrayList<>();
         private final Set<String> missingColumns;
         private final Set<String> missingTables = new HashSet<>();
+        private final Set<String> missingIndexes = new HashSet<>();
 
         private FakeJdbcTemplate(String... missingColumns) {
             this.missingColumns = new HashSet<>(Arrays.asList(missingColumns));
@@ -144,6 +167,10 @@ public class SchemaSyncServiceTest {
             }
             if (sql.contains("INFORMATION_SCHEMA.COLUMNS") && args != null && args.length > 1
                     && missingColumns.contains(String.valueOf(args[1]))) {
+                return requiredType.cast(Integer.valueOf(0));
+            }
+            if (sql.contains("INFORMATION_SCHEMA.STATISTICS") && args != null && args.length > 1
+                    && missingIndexes.contains(String.valueOf(args[1]))) {
                 return requiredType.cast(Integer.valueOf(0));
             }
             return requiredType.cast(Integer.valueOf(1));

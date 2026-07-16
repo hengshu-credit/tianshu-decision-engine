@@ -68,14 +68,7 @@ public class RuleCompileService {
 
         // 构建变量上下文：通过 varId 查询正确的 scriptName，
         // 以及通过 varCode 回溯 scriptName（设计器未保存 _varId 时兜底）
-        Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
-        Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
-        Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
-        Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(definition.getProjectId());
-        VarContext varContext = new VarContext(varIdToScriptName, varCodeToScriptName,
-                refIdToScriptName, constantIdToExpression,
-                functionService.buildFunctionCodeMap(definition.getProjectId()),
-                functionService.buildFunctionArityMap(definition.getProjectId()));
+        VarContext varContext = buildVarContext(definition.getProjectId());
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
 
@@ -90,6 +83,39 @@ public class RuleCompileService {
         contentMapper.updateById(content);
 
         return result;
+    }
+
+    /** 编译设计器当前草稿，不覆盖已保存内容或编译状态。 */
+    public CompileResult compilePreview(Long definitionId, String modelJson, String modelType) {
+        RuleDefinition definition = definitionService.getById(definitionId);
+        if (definition == null) {
+            return CompileResult.fail("规则定义不存在");
+        }
+        if (modelJson == null || modelJson.trim().isEmpty()) {
+            return CompileResult.fail("规则模型内容不能为空");
+        }
+        String effectiveType = modelType == null || modelType.trim().isEmpty()
+                ? definition.getModelType() : modelType.trim().toUpperCase();
+        RuleCompiler compiler = compilers.get(effectiveType);
+        if (compiler == null) {
+            return CompileResult.fail("暂不支持的模型类型: " + effectiveType);
+        }
+        String cycleError = ruleCallCycleService.validateNoCycle(definitionId, modelJson);
+        if (cycleError != null) {
+            return CompileResult.fail(cycleError);
+        }
+        return compiler.compile(modelJson, buildVarContext(definition.getProjectId()));
+    }
+
+    private VarContext buildVarContext(Long projectId) {
+        Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(projectId);
+        Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(projectId);
+        Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(projectId);
+        Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(projectId);
+        return new VarContext(varIdToScriptName, varCodeToScriptName,
+                refIdToScriptName, constantIdToExpression,
+                functionService.buildFunctionCodeMap(projectId),
+                functionService.buildFunctionArityMap(projectId));
     }
 
     /**

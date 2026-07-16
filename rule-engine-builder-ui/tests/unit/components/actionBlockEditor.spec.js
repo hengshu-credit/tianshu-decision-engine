@@ -76,8 +76,7 @@ describe('ActionBlockEditor', () => {
     })
     const block = ctx.blocks[0]
 
-    ctx.$set(block, 'ruleCode', 'score_card')
-    await ctx.onRuleSelect(block, 'score_card')
+    await ctx.onRuleSelect(block, ctx.rules[0])
 
     const payload = ctx.emitted[0].payload[0]
     expect(payload.ruleId).toBe(8)
@@ -94,7 +93,7 @@ describe('ActionBlockEditor', () => {
       ]
     })
 
-    await ctx.onRuleSelect(ctx.blocks[0], 'flow_a')
+    await ctx.onRuleSelect(ctx.blocks[0], ctx.rules[0])
 
     const payload = ctx.emitted[0].payload[0]
     expect(ctx.$message.warning).toHaveBeenCalled()
@@ -113,8 +112,7 @@ describe('ActionBlockEditor', () => {
     const block = ctx.blocks[0]
 
     ctx.rememberRuleCallSnapshot(block, true)
-    ctx.$set(block, 'ruleCode', 'new_rule')
-    await ctx.onRuleSelect(block, 'new_rule')
+    await ctx.onRuleSelect(block, ctx.rules[0])
 
     const lastPayload = ctx.emitted[ctx.emitted.length - 1].payload[0]
     expect(validateRuleCallCycle).toHaveBeenCalledWith(block)
@@ -123,6 +121,26 @@ describe('ActionBlockEditor', () => {
     expect(lastPayload.ruleCode).toBe('old_rule')
     expect(lastPayload.ruleName).toBe('旧规则')
     expect(lastPayload.outputField).toBe('result')
+  })
+
+  test('规则调用默认共享全部输出，不启用额外字段映射', () => {
+    const ctx = createEditorContext([])
+
+    expect(ctx.hasRuleOutputMapping({ outputField: '', targetOperand: null })).toBe(false)
+  })
+
+  test('关闭额外字段映射时成对清空输出字段和目标字段', () => {
+    const ctx = createEditorContext([])
+    const block = {
+      outputField: 'score',
+      targetOperand: { kind: 'REFERENCE', refId: 9, refType: 'VARIABLE', code: 'risk_score' }
+    }
+
+    ctx.toggleRuleOutputMapping(block, false)
+
+    expect(block.outputField).toBe('')
+    expect(block.targetOperand).toBeNull()
+    expect(ctx.emitted).toHaveLength(1)
   })
 
   test('动作条件按左表达式类型提供完整操作符并支持无右值', () => {

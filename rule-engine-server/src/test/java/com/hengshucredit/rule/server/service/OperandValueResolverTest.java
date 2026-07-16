@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -140,6 +141,23 @@ public class OperandValueResolverTest {
         Assert.assertEquals(99, references.get("VARIABLE:7"));
         Assert.assertEquals(36, references.get("DATA_OBJECT:8"));
         Assert.assertEquals("ACTIVE", references.get("CONSTANT:9"));
+    }
+
+    @Test
+    public void bindsModelInputByStableIdWhenLegacySourceOperandIsMissing() {
+        RuleModelInputField field = new RuleModelInputField();
+        field.setFieldName("HYBASE_X115");
+        field.setScriptName("HYBASE_X115");
+        field.setRefType("DATA_OBJECT");
+        field.setVarId(25L);
+
+        Map<String, Object> referenceValues = new LinkedHashMap<>();
+        referenceValues.put("DATA_OBJECT:25", 0d);
+
+        Map<String, Object> bound = OperandValueResolver.bindModelInputs(
+                Collections.singletonList(field), Collections.<String, Object>emptyMap(), referenceValues);
+
+        Assert.assertEquals(0d, ((Number) bound.get("HYBASE_X115")).doubleValue(), 0d);
     }
 
     @Test

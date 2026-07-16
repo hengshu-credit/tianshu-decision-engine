@@ -148,11 +148,8 @@ export default {
       this.resetParams()
     },
     async loadTestSchema() {
-      const currentModel = this.modelJsonProvider ? this.modelJsonProvider() : this.modelJson
-      if (!this.definitionId && !currentModel) return
-      const modelJson = typeof currentModel === 'string'
-        ? currentModel
-        : (currentModel ? JSON.stringify(currentModel) : null)
+      const modelJson = this.currentModelJson()
+      if (!this.definitionId && !modelJson) return
       try {
         const response = await getRuleTestSchema({
           targetType: this.targetType || 'RULE',
@@ -209,7 +206,13 @@ export default {
       this.result = null
       this.lastInput = params
       try {
-        const res = await executeRule({ definitionId: this.definitionId, params })
+        const res = await executeRule({
+          definitionId: this.definitionId,
+          projectId: this.projectId,
+          modelType: this.modelType || undefined,
+          modelJson: this.currentModelJson(),
+          params
+        })
         this.result = normalizeTestResult(res)
         this.activeTab = this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {
@@ -221,6 +224,12 @@ export default {
     },
     close() {
       this.innerVisible = false
+    },
+    currentModelJson() {
+      const currentModel = this.modelJsonProvider ? this.modelJsonProvider() : this.modelJson
+      return typeof currentModel === 'string'
+        ? currentModel
+        : (currentModel ? JSON.stringify(currentModel) : null)
     },
     formatJson(value) {
       if (value === null || value === undefined) return '{}'

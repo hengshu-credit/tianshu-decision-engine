@@ -54,5 +54,19 @@ describe('DesignerTestDialog unified schema', () => {
       credit_time: ''
     })
     expect(wrapper.vm.paramsJson).not.toContain('DAY')
+
+    definitionApi.executeRule.mockResolvedValue({ data: { success: true, result: 101 } })
+    await wrapper.vm.execute()
+    expect(definitionApi.executeRule).toHaveBeenCalledWith({
+      definitionId: 7,
+      projectId: 1,
+      modelType: 'FLOW',
+      modelJson: JSON.stringify(modelJson),
+      params: {
+        score_f1_fields: { HYBASE_X115: 0 },
+        idcard_no: '',
+        credit_time: ''
+      }
+    })
   })
 })

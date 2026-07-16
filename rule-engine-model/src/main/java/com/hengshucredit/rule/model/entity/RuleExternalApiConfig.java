@@ -29,6 +29,8 @@ public class RuleExternalApiConfig {
     private String requestMapping;
     private String responseMapping;
     private String bodyTemplate;
+    private String requestScript;
+    private String responseScript;
     private String authMode;
     private String authApiConfig;
     private Integer tokenCacheSeconds;

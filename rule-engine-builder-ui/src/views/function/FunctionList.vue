@@ -375,11 +375,26 @@ export default {
       }
       return sampleValueForVarType(item && item.type)
     },
+    normalizeFunctionTestParams(params) {
+      const code = this.functionTestTarget && this.functionTestTarget.funcCode
+      const isRandomFunction = code === 'randomInt' || code === 'randomDecimal'
+      if (!isRandomFunction || !params || typeof params !== 'object' || Array.isArray(params)) return params
+      const keys = Object.keys(params)
+      if (keys.length === 0) {
+        return { lower: 0, upper: 1, includeLower: true, includeUpper: true }
+      }
+      const hasOwn = key => Object.prototype.hasOwnProperty.call(params, key)
+      if (hasOwn('lower') && hasOwn('upper') && !hasOwn('includeLower') && !hasOwn('includeUpper')) {
+        return { ...params, includeLower: true, includeUpper: true }
+      }
+      return params
+    },
     async doTestFunction() {
       if (!this.functionTestTarget || !this.functionTestTarget.id) return
       let params
       try {
         params = this.functionTestParamsText ? JSON.parse(this.functionTestParamsText) : {}
+        params = this.normalizeFunctionTestParams(params)
       } catch (e) {
         this.$message.error('测试入参不是合法 JSON')
         return

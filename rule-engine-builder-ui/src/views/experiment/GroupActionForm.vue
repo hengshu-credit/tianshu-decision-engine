@@ -20,9 +20,12 @@
     <el-row :gutter="8" class="action-row">
       <el-col :span="showRatio ? 14 : 24">
         <div class="field-label">执行规则</div>
-        <el-select v-model="row.ruleCode" filterable placeholder="选择规则" size="mini" style="width:100%;">
-          <el-option v-for="r in rulesForProject" :key="r.ruleCode" :label="ruleLabel(r)" :value="r.ruleCode" />
-        </el-select>
+        <rule-execution-selector
+          :rule-id="row.ruleId"
+          :rule-code="row.ruleCode"
+          :rules="rulesForProject"
+          @select="onRuleSelect"
+        />
       </el-col>
       <el-col v-if="showRatio" :span="10">
         <div class="field-label">比例%</div>
@@ -37,8 +40,11 @@
 </template>
 
 <script>
+import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
+
 export default {
   name: 'GroupActionForm',
+  components: { RuleExecutionSelector },
   props: {
     row: { type: Object, required: true },
     rulesForProject: { type: Array, default: () => [] },
@@ -47,8 +53,9 @@ export default {
     showInvoke: { type: Boolean, default: false }
   },
   methods: {
-    ruleLabel(rule) {
-      return (rule.ruleName || rule.ruleCode) + ' / ' + rule.ruleCode
+    onRuleSelect(rule) {
+      this.$set(this.row, 'ruleId', rule ? rule.id : null)
+      this.$set(this.row, 'ruleCode', rule ? rule.ruleCode : '')
     }
   }
 }

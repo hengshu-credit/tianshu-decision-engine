@@ -90,6 +90,10 @@
                 :selected-vars="selectedVarPickerOptions"
                 :functions="projectFunctions"
                 :list-options="projectLists"
+                :rules="projectRules"
+                :current-rule-id="definitionId"
+                :current-rule-code="currentRuleCode"
+                :validate-rule-call-cycle="validateRuleCallCycle"
                 @update="data => updateRuleActionData(index, data)"
               />
             </div>
@@ -181,6 +185,7 @@ import {
   publishRule
 } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import ruleCallMixin from '@/mixins/ruleCallMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
@@ -200,7 +205,7 @@ import { buildSampleParamsFromCodes, collectActionDataInputCodes } from '@/utils
 export default {
   name: 'RuleSet',
   components: { DesignerTestDialog, ScriptPanel, ConditionGroupEditor, ActionBlockEditor },
-  mixins: [varPickerMixin],
+  mixins: [varPickerMixin, ruleCallMixin],
   data() {
     return {
       definitionId: null,
@@ -247,6 +252,7 @@ export default {
   created() {
     this.definitionId = this.$route.params.id
     this.loadProjectVars(this.definitionId)
+    this.loadRuleCallOptions(this.definitionId)
     this.loadContent()
   },
   methods: {
@@ -384,10 +390,19 @@ export default {
     async handleSave() {
       try {
         this.normalizeModel()
-        await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.serializeModel()) })
-        await refreshFields(this.definitionId, JSON.stringify(this.serializeModel()))
+        this.repairLegacyRuleCallRefs(this.model)
+        const model = this.serializeModel()
+        const ruleCallErrors = this.validateRuleCallsInModel(model)
+        if (ruleCallErrors.length) {
+          this.showRuleCallErrors(ruleCallErrors)
+          return false
+        }
+        const modelJson = JSON.stringify(model)
+        await saveContent({ definitionId: this.definitionId, modelJson })
+        await refreshFields(this.definitionId, modelJson)
         this.refreshProjectRefs()
         this.$message.success('保存成功')
+        return true
       } catch (e) {
         this.$message.error('保存失败: ' + (e && e.message ? e.message : '未知错误'))
         throw e
@@ -401,8 +416,11 @@ export default {
       })
       return copy
     },
+    buildRuleCallValidationModel() {
+      return this.serializeModel()
+    },
     async handleCompile() {
-      await this.handleSave()
+      if (await this.handleSave() === false) return
       const res = await compileRule(this.definitionId)
       const body = res && res.data ? res.data : res
       if (body && body.success) {

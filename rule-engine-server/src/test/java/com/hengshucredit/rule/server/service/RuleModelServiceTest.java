@@ -20,6 +20,7 @@ import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
@@ -263,6 +264,41 @@ public class RuleModelServiceTest {
                 service, "applyOutputTransforms", model, Collections.emptyMap(), rawOutputs);
 
         assertEquals(120.0, ((Number) result.get("probability")).doubleValue(), 0.000001);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void outputTransformCanReadCurrentRawOutputByTargetStableId() {
+        RuleFunctionService functionService = new RuleFunctionService() {
+            @Override
+            public Object invoke(Long functionId, List<Object> args) {
+                return ((Number) args.get(0)).doubleValue() + ((Number) args.get(1)).doubleValue();
+            }
+        };
+
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setFieldName("score");
+        output.setVarId(130L);
+        output.setRefType("VARIABLE");
+        output.setTargetOperand("{\"kind\":\"REFERENCE\",\"refId\":130,\"refType\":\"VARIABLE\",\"code\":\"score\"}");
+        output.setTransformOperand(transformOperand(31L,
+                "{\"kind\":\"REFERENCE\",\"refId\":130,\"refType\":\"VARIABLE\",\"code\":\"stale_score\"}",
+                "{\"kind\":\"LITERAL\",\"value\":\"200\",\"valueType\":\"NUMBER\"}"));
+
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "ruleFunctionService", functionService);
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class, (proxy, method, args) -> {
+            if ("selectList".equals(method.getName())) return Collections.singletonList(output);
+            return defaultValue(method.getReturnType());
+        }));
+        RuleModel model = model();
+        Map<String, Object> rawOutputs = new LinkedHashMap<>();
+        rawOutputs.put("score", 500d);
+
+        Map<String, Object> result = ReflectionTestUtils.invokeMethod(
+                service, "applyOutputTransforms", model, Collections.emptyMap(), rawOutputs);
+
+        assertEquals(700d, ((Number) result.get("score")).doubleValue(), 0d);
     }
 
     private static RuleModel model() {

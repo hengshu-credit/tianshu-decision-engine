@@ -413,6 +413,21 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         return ref;
     }
 
+    public boolean isDefinitionAvailableInProject(Long definitionId, Long projectId) {
+        if (definitionId == null || projectId == null) return false;
+        RuleDefinition definition = getById(definitionId);
+        if (definition == null) return false;
+        if (projectId.equals(definition.getProjectId())) return true;
+        boolean global = "GLOBAL".equals(definition.getScope())
+                || definition.getProjectId() == null
+                || definition.getProjectId() == 0L;
+        if (!global || projectId == 0L) return global && projectId == 0L;
+        Long refCount = refMapper.selectCount(new LambdaQueryWrapper<RuleDefinitionRef>()
+                .eq(RuleDefinitionRef::getDefinitionId, definitionId)
+                .eq(RuleDefinitionRef::getProjectId, projectId));
+        return refCount != null && refCount > 0;
+    }
+
     /**
      * 获取项目中可用的规则（包括项目级规则和已添加的全局规则）
      * 已添加的全局规则通过关联表 rule_definition_ref 来记录
@@ -463,11 +478,11 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         }
         wrapper.orderByDesc(RuleDefinition::getCreateTime);
         IPage<RuleDefinition> result = page(new Page<>(pageNum, pageSize), wrapper);
-        attachOutputFields(result.getRecords());
+        attachFieldMetadata(result.getRecords());
         return result;
     }
 
-    private void attachOutputFields(List<RuleDefinition> definitions) {
+    private void attachFieldMetadata(List<RuleDefinition> definitions) {
         if (definitions == null || definitions.isEmpty()) return;
         List<Long> definitionIds = new ArrayList<>();
         for (RuleDefinition definition : definitions) {
@@ -475,17 +490,28 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         }
         if (definitionIds.isEmpty()) return;
 
-        List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
+        List<RuleDefinitionInputField> inputFields = inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionInputField>()
+                        .in(RuleDefinitionInputField::getDefinitionId, definitionIds)
+                        .orderByAsc(RuleDefinitionInputField::getDefinitionId)
+                        .orderByAsc(RuleDefinitionInputField::getSortOrder));
+        Map<Long, List<RuleDefinitionInputField>> inputsByDefinition = new LinkedHashMap<>();
+        for (RuleDefinitionInputField field : inputFields) {
+            inputsByDefinition.computeIfAbsent(field.getDefinitionId(), key -> new ArrayList<>()).add(field);
+        }
+
+        List<RuleDefinitionOutputField> outputFields = outputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDefinitionOutputField>()
                         .in(RuleDefinitionOutputField::getDefinitionId, definitionIds)
                         .orderByAsc(RuleDefinitionOutputField::getDefinitionId)
                         .orderByAsc(RuleDefinitionOutputField::getSortOrder));
-        Map<Long, List<RuleDefinitionOutputField>> fieldsByDefinition = new LinkedHashMap<>();
-        for (RuleDefinitionOutputField field : fields) {
-            fieldsByDefinition.computeIfAbsent(field.getDefinitionId(), key -> new ArrayList<>()).add(field);
+        Map<Long, List<RuleDefinitionOutputField>> outputsByDefinition = new LinkedHashMap<>();
+        for (RuleDefinitionOutputField field : outputFields) {
+            outputsByDefinition.computeIfAbsent(field.getDefinitionId(), key -> new ArrayList<>()).add(field);
         }
         for (RuleDefinition definition : definitions) {
-            definition.setOutputFieldsJson(fieldsByDefinition.getOrDefault(definition.getId(), Collections.emptyList()));
+            definition.setInputFieldsJson(inputsByDefinition.getOrDefault(definition.getId(), Collections.emptyList()));
+            definition.setOutputFieldsJson(outputsByDefinition.getOrDefault(definition.getId(), Collections.emptyList()));
         }
     }
 

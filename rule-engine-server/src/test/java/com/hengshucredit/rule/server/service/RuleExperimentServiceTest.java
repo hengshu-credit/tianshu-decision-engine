@@ -4,6 +4,8 @@ import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
+import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import org.junit.Before;
@@ -172,24 +174,40 @@ public class RuleExperimentServiceTest {
         };
         setField(resolverService, "definitionService", new RuleDefinitionService() {
             @Override
-            public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
-                RuleDefinitionInputField input = new RuleDefinitionInputField();
-                input.setScriptName("score_f1_fields.HYBASE_X115");
-                input.setFieldType("DOUBLE");
-                return Collections.singletonList(input);
+            public RuleDefinition getById(java.io.Serializable id) {
+                RuleDefinition definition = new RuleDefinition();
+                definition.setId(7L);
+                definition.setProjectId(1L);
+                definition.setModelType("FLOW");
+                return definition;
             }
 
             @Override
-            public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
-                RuleDefinitionOutputField output = new RuleDefinitionOutputField();
-                output.setScriptName("decision");
-                return Collections.singletonList(output);
+            public RuleDefinitionContent getContent(Long definitionId) {
+                RuleDefinitionContent content = new RuleDefinitionContent();
+                content.setDefinitionId(definitionId);
+                content.setModelJson("{\"nodes\":[]}");
+                return content;
+            }
+
+            @Override
+            public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+                RuleDefinitionInputField stale = new RuleDefinitionInputField();
+                stale.setScriptName("stale_intermediate");
+                return Collections.singletonList(stale);
             }
         });
         setField(resolverService, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
             @Override
             public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
                 RuleDefinitionInputField input = new RuleDefinitionInputField();
+                RuleDefinitionOutputField output = new RuleDefinitionOutputField();
+                if (definitionId != null) {
+                    input.setScriptName("score_f1_fields.HYBASE_X115");
+                    input.setFieldType("DOUBLE");
+                    output.setScriptName("decision");
+                    return new ResolvedFields(Collections.singletonList(input), Collections.singletonList(output));
+                }
                 input.setScriptName("customer.level");
                 input.setFieldType("STRING");
                 return new ResolvedFields(Collections.singletonList(input), Collections.emptyList());
@@ -204,6 +222,7 @@ public class RuleExperimentServiceTest {
         assertEquals("score_f1_fields.HYBASE_X115", paths.get(0));
         assertEquals("customer.level", paths.get(1));
         assertEquals("request.id", paths.get(2));
+        assertTrue(!paths.contains("stale_intermediate"));
         assertEquals(Long.valueOf(12), fields.getInputFields().get(2).getVarId());
         assertEquals("VARIABLE", fields.getInputFields().get(2).getRefType());
         assertEquals("decision", fields.getOutputFields().get(0).getScriptName());
@@ -221,6 +240,60 @@ public class RuleExperimentServiceTest {
         method.setAccessible(true);
 
         assertEquals("680.0", method.invoke(new RuleExperimentService(), experiment, null, params));
+    }
+
+    @Test
+    public void referencedDefinitionsPreferStableGroupRuleIds() {
+        RuleExperiment experiment = experiment("RATIO", "CONDITION");
+        RuleExperimentGroup group = group("champion", "CHAMPION", 100, 0, "", null);
+        group.setRuleId(42L);
+        group.setRuleCode("OLD_RULE_CODE");
+        experiment.setGroups(Collections.singletonList(group));
+        RuleExperimentService resolverService = new RuleExperimentService() {
+            @Override
+            public RuleExperiment getDetail(Long id) {
+                return experiment;
+            }
+        };
+
+        assertEquals(Collections.singletonList(42L), resolverService.listReferencedDefinitionIds(1L));
+    }
+
+    @Test
+    public void linkedGlobalGroupResolutionUsesDefinitionIdWithoutProjectCodeFilter() throws Exception {
+        RuleExperiment experiment = experiment("RATIO", "CONDITION");
+        experiment.setProjectId(7L);
+        experiment.setProjectCode("P0007");
+        RuleExperimentGroup group = group("champion", "CHAMPION", 100, 0, "", null);
+        group.setRuleId(88L);
+        final boolean[] availabilityChecked = {false};
+
+        setField(service, "definitionService", new RuleDefinitionService() {
+            @Override
+            public RuleDefinition getById(java.io.Serializable id) {
+                RuleDefinition definition = new RuleDefinition();
+                definition.setId(88L);
+                definition.setRuleCode("GLOBAL_SCORE");
+                definition.setStatus(1);
+                return definition;
+            }
+
+            @Override
+            public boolean isDefinitionAvailableInProject(Long definitionId, Long projectId) {
+                availabilityChecked[0] = true;
+                assertEquals(Long.valueOf(88L), definitionId);
+                assertEquals(Long.valueOf(7L), projectId);
+                return true;
+            }
+        });
+
+        Method method = RuleExperimentService.class.getDeclaredMethod(
+                "syncGroupRuleReference", RuleExperiment.class, RuleExperimentGroup.class);
+        method.setAccessible(true);
+        method.invoke(service, experiment, group);
+
+        assertTrue(availabilityChecked[0]);
+        assertEquals("GLOBAL_SCORE", group.getRuleCode());
     }
 
     private RuleExperiment experiment(String routingMode, String testRoutingMode) {

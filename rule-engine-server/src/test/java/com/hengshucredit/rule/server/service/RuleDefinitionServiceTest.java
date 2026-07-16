@@ -2,12 +2,15 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionRefMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.publish.RulePushService;
@@ -60,11 +63,15 @@ public class RuleDefinitionServiceTest {
     }
 
     @Test
-    public void pageListForProjectIncludesRuleOutputFieldsForFlowCalls() {
+    public void pageListForProjectIncludesRuleFieldMetadataForChildCalls() {
         RuleDefinitionService service = new RuleDefinitionService();
         RuleDefinition definition = new RuleDefinition();
         definition.setId(11L);
         definition.setRuleCode("MONTHLY_REPAYMENT_MATRIX");
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setDefinitionId(11L);
+        input.setFieldName("credit_amount");
+        input.setScriptName("CREDIT_AMOUNT");
         RuleDefinitionOutputField output = new RuleDefinitionOutputField();
         output.setDefinitionId(11L);
         output.setFieldName("monthly_success_repayment_amount");
@@ -83,14 +90,41 @@ public class RuleDefinitionServiceTest {
             if ("selectList".equals(method.getName())) return Arrays.asList(output);
             return defaultValue(method.getReturnType());
         }));
+        ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleDefinitionInputFieldMapper.class, (proxy, method, args) -> {
+            if ("selectList".equals(method.getName())) return Arrays.asList(input);
+            return defaultValue(method.getReturnType());
+        }));
 
         IPage<RuleDefinition> page = service.pageListForProject(1, 20, 7L, null, null,
                 null, null, null, null, null, null, null, null);
 
         assertEquals(1, page.getRecords().size());
+        assertEquals(1, page.getRecords().get(0).getInputFieldsJson().size());
+        assertEquals("CREDIT_AMOUNT",
+                page.getRecords().get(0).getInputFieldsJson().get(0).getScriptName());
         assertEquals(1, page.getRecords().get(0).getOutputFieldsJson().size());
         assertEquals("monthly_success_repayment_amount",
                 page.getRecords().get(0).getOutputFieldsJson().get(0).getScriptName());
+    }
+
+    @Test
+    public void linkedGlobalRuleIsAvailableInsideProject() {
+        RuleDefinitionService service = new RuleDefinitionService();
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(88L);
+        definition.setProjectId(0L);
+        definition.setScope("GLOBAL");
+
+        ReflectionTestUtils.setField(service, "baseMapper", mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
+            if ("selectById".equals(method.getName())) return definition;
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "refMapper", mapper(RuleDefinitionRefMapper.class, (proxy, method, args) -> {
+            if ("selectCount".equals(method.getName())) return 1L;
+            return defaultValue(method.getReturnType());
+        }));
+
+        assertTrue(service.isDefinitionAvailableInProject(88L, 7L));
     }
 
     @Test

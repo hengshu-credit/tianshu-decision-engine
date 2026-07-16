@@ -202,6 +202,8 @@ jest.mock('@/api/datasource', () => ({
   updateApiConfig: jest.fn(),
   deleteApiConfig: jest.fn(),
   invokeApiConfig: jest.fn(),
+  invokeApiConfigPreview: jest.fn(),
+  previewApiConfigRequest: jest.fn(),
   testDatasourceAuth: jest.fn(),
   __esModule: true
 }))

@@ -173,6 +173,7 @@ class ClientRuleRuntimeInvoker {
         trace.setRuleCode(rule == null ? null : rule.getRuleCode());
         trace.setRuleName(rule == null ? null : rule.getRuleCode());
         trace.setModelType(modelType);
+        trace.setModelJson(rule == null ? null : rule.getModelJson());
         trace.setScope(global ? "GLOBAL" : "PROJECT");
         trace.setStatus("RUNNING");
         return trace;

@@ -144,21 +144,33 @@ public final class OperandValueResolver {
             if (fieldName == null) continue;
             Object value = resolve(field.getSourceOperand(), values, referenceValues, functionInvoker);
             boolean sourceIsConstant = isConstantReference(field.getSourceOperand());
+            String managedRefKey = managedRefKey(field);
+            boolean managedReferencePresent = empty(field.getSourceOperand())
+                    && managedRefKey != null && referenceValues != null
+                    && referenceValues.containsKey(managedRefKey);
+            if (managedReferencePresent) {
+                value = referenceValues.get(managedRefKey);
+            }
             boolean defaultIsConstant = false;
-            if (value == null && !sourceIsConstant) {
+            if (value == null && !sourceIsConstant && !managedReferencePresent) {
                 value = readPath(values, firstText(field.getScriptName(), field.getFieldName()));
             }
-            if (value == null && !sourceIsConstant) {
+            if (value == null && !sourceIsConstant && !managedReferencePresent) {
                 value = resolve(field.getDefaultOperand(), values, referenceValues, functionInvoker);
                 defaultIsConstant = isConstantReference(field.getDefaultOperand());
             }
-            if (value == null && !sourceIsConstant && !defaultIsConstant
+            if (value == null && !sourceIsConstant && !managedReferencePresent && !defaultIsConstant
                     && field.getDefaultValue() != null && !field.getDefaultValue().trim().isEmpty()) {
                 value = parseJsonOrRaw(field.getDefaultValue());
             }
             result.put(fieldName, value);
         }
         return result;
+    }
+
+    private static String managedRefKey(RuleModelInputField field) {
+        if (field == null || field.getVarId() == null || empty(field.getRefType())) return null;
+        return field.getRefType().trim().toUpperCase() + ":" + field.getVarId();
     }
 
     public static void write(String operandJson, Map<String, Object> values, Object value) {

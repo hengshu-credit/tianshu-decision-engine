@@ -15,6 +15,7 @@ public class RuleTraceFrame {
     private String ruleCode;
     private String ruleName;
     private String modelType;
+    private String modelJson;
     private String scope;
     private String status;
     private long durationMs;

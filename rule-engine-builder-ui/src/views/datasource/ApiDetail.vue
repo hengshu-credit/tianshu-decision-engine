@@ -201,35 +201,63 @@
               <monaco-editor v-model="form.authApiConfig" language="json" height="180px" />
             </el-form-item>
 
-            <el-divider content-position="left">报文安全</el-divider>
-            <el-row :gutter="12">
-              <el-col :lg="8" :md="24">
-                <el-form-item label="报文安全方案">
-                  <el-select v-model="apiSecurityConfig.securityProfile" style="width:100%" @change="onSecurityProfileChange">
-                    <el-option v-for="item in securityProfileOptions" :key="item.value" :label="item.label" :value="item.value" />
-                  </el-select>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="脚本处理" name="scripts">
+          <div class="tab-section">
+            <el-alert
+              type="info"
+              :closable="false"
+              show-icon
+              title="简单字段继续使用映射；仅把动态时间、签名、加解密和响应解包写入脚本。请求预览不会访问任何外部地址。"
+            />
+            <div class="section-toolbar script-variable-toolbar">
+              <div>
+                <div class="section-title">脚本变量</div>
+                <div class="field-help">脚本通过 mapGet(vars, &quot;变量名&quot;) 读取；敏感变量会在预览和调用日志中脱敏。</div>
+              </div>
+              <el-button size="mini" icon="el-icon-plus" @click="addScriptVariableRow">添加变量</el-button>
+            </div>
+            <el-table :data="scriptVariableRows" border size="mini" class="config-table">
+              <el-table-column label="变量名" min-width="180">
+                <template slot-scope="{ row }">
+                  <el-input v-model="row.name" placeholder="如 appSecret" />
+                </template>
+              </el-table-column>
+              <el-table-column label="变量值" min-width="280">
+                <template slot-scope="{ row }">
+                  <el-input v-model="row.value" :type="row.sensitive ? 'password' : 'text'" :show-password="row.sensitive" autocomplete="new-password" />
+                </template>
+              </el-table-column>
+              <el-table-column label="敏感" width="90" align="center">
+                <template slot-scope="{ row }">
+                  <el-switch v-model="row.sensitive" />
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="80" align="center">
+                <template slot-scope="{ $index }">
+                  <el-button type="text" size="mini" class="btn-delete" @click="removeScriptVariableRow($index)">删除</el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+
+            <el-row :gutter="12" class="script-editors">
+              <el-col :lg="12" :md="24">
+                <el-form-item label="请求前置脚本">
+                  <monaco-editor v-model="form.requestScript" language="javascript" height="300px" />
+                  <div class="field-help">上下文：input/body/headers/query/vars/token/endpoint/method/nowMillis/requestId。用 apiPut(body, key, value) 原地写入。</div>
                 </el-form-item>
               </el-col>
-              <el-col v-if="apiSecurityConfig.securityProfile === 'TIANCHUANG_MD5_SORTED'" :lg="16" :md="24">
-                <el-form-item label="天创Token ID">
-                  <el-input v-model="apiSecurityConfig.tokenId" type="password" show-password autocomplete="new-password" />
+              <el-col :lg="12" :md="24">
+                <el-form-item label="响应后置脚本">
+                  <monaco-editor v-model="form.responseScript" language="javascript" height="300px" />
+                  <div class="field-help">上下文：input/body/rawBody/httpStatus/headers/vars。非空返回值会替换 body，再执行响应映射。</div>
                 </el-form-item>
               </el-col>
             </el-row>
-            <el-row v-if="apiSecurityConfig.securityProfile === 'BAIHANG_HMAC_SHA1_3DES'" :gutter="12">
-              <el-col :lg="12" :md="24">
-                <el-form-item label="百行Secret ID">
-                  <el-input v-model="apiSecurityConfig.secretId" type="password" show-password autocomplete="new-password" />
-                </el-form-item>
-              </el-col>
-              <el-col :lg="12" :md="24">
-                <el-form-item label="百行Secret Key">
-                  <el-input v-model="apiSecurityConfig.secretKey" type="password" show-password autocomplete="new-password" placeholder="Base64编码的24字节密钥" />
-                </el-form-item>
-              </el-col>
-            </el-row>
-            <div class="field-help">
-              朴道 SM 数字信封和融360 RSA 的资料不完整，仅保存停用配置；随机凭据必须在启用前替换。
+            <div class="field-help script-function-help">
+              可用函数：apiMd5/apiSha1/apiSha256/apiSm3、apiHmacSha1Base64/apiHmacSha256Base64、apiTripleDesEncryptBase64/apiTripleDesDecryptBase64、apiRsaEncryptBase64/apiRsaSignBase64、apiUrlEncode、apiBase64Encode/apiBase64Decode、apiTimestamp/apiTimestampMillis/apiUuid32、apiPut/apiRemove。
             </div>
           </div>
         </el-tab-pane>
@@ -703,9 +731,13 @@
                 <el-button size="mini" @click="regenerateTestParams">生成测试 JSON</el-button>
                 <el-button size="mini" @click="loadSavedSample">加载已存样例</el-button>
                 <el-button size="mini" :disabled="!form.id" @click="saveCurrentSample">保存样例</el-button>
+                <el-button size="mini" type="success" :disabled="!form.datasourceId" :loading="previewLoading" @click="runRequestPreview">生成请求预览</el-button>
                 <el-button size="mini" type="primary" :disabled="!form.id" :loading="invokeLoading" @click="runInvokeApi">执行测试</el-button>
               </div>
             </div>
+            <el-form-item label="预览Token">
+              <el-input v-model="previewToken" placeholder="Token/OAuth接口预览可填占位值；不会请求Token地址" />
+            </el-form-item>
             <el-row :gutter="12">
               <el-col :lg="12" :md="24">
                 <el-form-item label="测试参数">
@@ -713,11 +745,14 @@
                 </el-form-item>
               </el-col>
               <el-col :lg="12" :md="24">
-                <el-form-item label="测试结果">
-                  <monaco-editor v-model="invokeResultText" language="json" height="240px" read-only />
+                <el-form-item label="请求预览">
+                  <monaco-editor v-model="requestPreviewText" language="json" height="240px" read-only />
                 </el-form-item>
               </el-col>
             </el-row>
+            <el-form-item label="执行结果">
+              <monaco-editor v-model="invokeResultText" language="json" height="220px" read-only />
+            </el-form-item>
             <div v-if="!form.id" class="empty-state">新接口需要先保存后才能执行真实调用。</div>
           </div>
         </el-tab-pane>
@@ -730,8 +765,9 @@
 import {
   createApiConfig,
   getApiConfig,
-  invokeApiConfig,
+  invokeApiConfigPreview,
   listDatasources,
+  previewApiConfigRequest,
   updateApiConfig
 } from '@/api/datasource'
 import { getVariableTree, listDataObjects } from '@/api/dataObject'
@@ -750,8 +786,11 @@ export default {
       dataObjectTree: [],
       saving: false,
       invokeLoading: false,
+      previewLoading: false,
+      previewToken: '',
       invokeParamsText: '{}',
       invokeResultText: '',
+      requestPreviewText: '',
       form: this.emptyForm(),
       activeConfigTab: 'auth',
       requestBodyMode: 'MAPPING',
@@ -765,7 +804,7 @@ export default {
       responseMappingRows: [this.emptyResponseMappingRow()],
       responseConditionRows: [],
       apiAuthConfig: this.emptyAuthConfig('INHERIT'),
-      apiSecurityConfig: this.emptySecurityConfig(),
+      scriptVariableRows: [this.emptyScriptVariableRow()],
       billingConfig: this.emptyBillingConfig(),
       asyncShared: this.emptyAsyncShared(),
       asyncPollConfig: this.emptyAsyncPollConfig(),
@@ -793,11 +832,6 @@ export default {
         { label: 'OAuth2', value: 'OAUTH2' },
         { label: 'Token接口', value: 'TOKEN_API' },
         { label: '自定义', value: 'CUSTOM' }
-      ],
-      securityProfileOptions: [
-        { label: '无', value: 'NONE' },
-        { label: '天创排序MD5', value: 'TIANCHUANG_MD5_SORTED' },
-        { label: '百行HMAC-SHA1 + 3DES', value: 'BAIHANG_HMAC_SHA1_3DES' }
       ],
       exceptionStrategyOptions: [
         { label: '快速失败', value: 'FAIL_FAST' },
@@ -893,6 +927,8 @@ export default {
       this.form = this.emptyForm()
       this.activeConfigTab = 'auth'
       this.invokeResultText = ''
+      this.requestPreviewText = ''
+      this.previewToken = ''
       if (this.isCreateMode) {
         if (this.$route.query.datasourceId) {
           this.form.datasourceId = Number(this.$route.query.datasourceId)
@@ -911,6 +947,7 @@ export default {
         id: null, datasourceId: null, apiCode: '', apiName: '', requestMethod: 'POST', endpointUrl: '',
         contentType: 'application/json', requestMode: 'SYNC', requestObjectId: null, responseObjectId: null,
         headerConfig: '', queryConfig: '', requestMapping: '', responseMapping: '', bodyTemplate: '',
+        requestScript: '', responseScript: '',
         authMode: 'INHERIT', authApiConfig: '', tokenCacheSeconds: 0, timeoutMs: 3000, retryCount: 0,
         retryIntervalMs: 200, responseCacheSeconds: 0, exceptionStrategy: 'FAIL_FAST', fallbackValue: '',
         asyncResultMode: 'POLL', asyncPollConfig: '', asyncCallbackConfig: '', asyncCallbackUrl: '',
@@ -954,8 +991,8 @@ export default {
       if (type === 'API_KEY') common.name = 'X-API-Key'
       return common
     },
-    emptySecurityConfig() {
-      return { securityProfile: 'NONE', tokenId: '', secretId: '', secretKey: '' }
+    emptyScriptVariableRow() {
+      return { name: '', value: '', sensitive: true }
     },
     emptyAsyncShared() {
       return { taskIdPath: 'body.taskId' }
@@ -1018,9 +1055,6 @@ export default {
       this.apiAuthConfig = this.emptyAuthConfig(type)
       if (type === 'INHERIT' || type === 'NONE') this.form.authApiConfig = ''
     },
-    onSecurityProfileChange(profile) {
-      this.apiSecurityConfig = { ...this.emptySecurityConfig(), securityProfile: profile }
-    },
     resolveDatasourceProjectId(datasourceId) {
       const datasource = this.datasourceOptions.find(item => String(item.id) === String(datasourceId))
       return datasource && datasource.projectId ? datasource.projectId : 0
@@ -1047,21 +1081,19 @@ export default {
     syncAuthConfigFromForm() {
       const type = this.form.authMode
       const base = this.emptyAuthConfig(type)
-      this.apiSecurityConfig = this.emptySecurityConfig()
+      this.scriptVariableRows = [this.emptyScriptVariableRow()]
       if (!this.form.authApiConfig) {
         this.apiAuthConfig = base
         return
       }
       try {
         const parsed = JSON.parse(this.form.authApiConfig)
-        const securityConfig = parsed.securityConfig && typeof parsed.securityConfig === 'object'
-          ? parsed.securityConfig
-          : {}
-        this.apiSecurityConfig = {
-          securityProfile: parsed.securityProfile || 'NONE',
-          tokenId: securityConfig.tokenId || '',
-          secretId: securityConfig.secretId || '',
-          secretKey: securityConfig.secretKey || ''
+        if (Array.isArray(parsed.scriptVariables) && parsed.scriptVariables.length) {
+          this.scriptVariableRows = parsed.scriptVariables.map(item => ({
+            name: item && item.name != null ? String(item.name) : '',
+            value: item && item.value != null ? item.value : '',
+            sensitive: !item || item.sensitive !== false
+          }))
         }
         if (type === 'CUSTOM') return
         const merged = { ...base, ...parsed }
@@ -1276,30 +1308,26 @@ export default {
       }
       if (type === 'CUSTOM' && this.form.authApiConfig) {
         config = this.parseJsonText(this.form.authApiConfig, '接口鉴权配置')
-        delete config.securityProfile
-        delete config.securityConfig
       }
-      const securityConfig = this.buildSecurityConfig()
-      config = { ...config, ...securityConfig }
+      const scriptVariables = this.buildScriptVariables()
+      if (scriptVariables.length) config.scriptVariables = scriptVariables
+      else delete config.scriptVariables
       return Object.keys(config).length ? this.stringifyJson(config) : ''
     },
-    buildSecurityConfig() {
-      if (this.apiSecurityConfig.securityProfile === 'TIANCHUANG_MD5_SORTED') {
-        return {
-          securityProfile: 'TIANCHUANG_MD5_SORTED',
-          securityConfig: { tokenId: this.apiSecurityConfig.tokenId }
+    buildScriptVariables() {
+      const result = []
+      const names = {}
+      ;(this.scriptVariableRows || []).forEach(row => {
+        const name = row && row.name != null ? String(row.name).trim() : ''
+        if (!name) return
+        if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+          throw new Error('脚本变量名仅支持字母、数字和下划线，且不能以数字开头：' + name)
         }
-      }
-      if (this.apiSecurityConfig.securityProfile === 'BAIHANG_HMAC_SHA1_3DES') {
-        return {
-          securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
-          securityConfig: {
-            secretId: this.apiSecurityConfig.secretId,
-            secretKey: this.apiSecurityConfig.secretKey
-          }
-        }
-      }
-      return {}
+        if (names[name]) throw new Error('脚本变量名不能重复：' + name)
+        names[name] = true
+        result.push({ name, value: row.value, sensitive: row.sensitive !== false })
+      })
+      return result
     },
     buildNameValueConfig(rows) {
       const result = {}
@@ -1468,6 +1496,13 @@ export default {
     addHeaderRow() {
       this.headerRows.push(this.emptyNameValueRow())
     },
+    addScriptVariableRow() {
+      this.scriptVariableRows.push(this.emptyScriptVariableRow())
+    },
+    removeScriptVariableRow(index) {
+      this.scriptVariableRows.splice(index, 1)
+      if (!this.scriptVariableRows.length) this.scriptVariableRows.push(this.emptyScriptVariableRow())
+    },
     addQueryRow() {
       this.queryRows.push(this.emptyNameValueRow())
     },
@@ -1512,6 +1547,8 @@ export default {
         data[key] = this.blankToNull(data[key])
         this.assertJson(data[key], jsonFields[key])
       })
+      data.requestScript = this.blankToNull(data.requestScript)
+      data.responseScript = this.blankToNull(data.responseScript)
       return data
     },
     handleBack() {
@@ -1687,11 +1724,19 @@ export default {
     buildApiInvokeParamTemplate(row) {
       const sample = {}
       const paths = []
+      const addPath = path => {
+        if (path && paths.indexOf(path) < 0) paths.push(path)
+      }
       const addPaths = value => {
         collectReferencePaths(this.parseConfigForTemplate(value), { allowBarePath: false }).forEach(path => {
-          if (paths.indexOf(path) < 0) paths.push(path)
+          addPath(path)
         })
       }
+
+      const requestObjectId = row && row.requestObjectId
+      this.fieldsForObject(requestObjectId).forEach(field => {
+        addPath(this.stripSelectedObjectPrefix(this.fieldScriptPath(field), requestObjectId))
+      })
 
       addPaths(row && row.headerConfig)
       addPaths(row && row.queryConfig)
@@ -1742,6 +1787,28 @@ export default {
       })
       return result
     },
+    async runRequestPreview() {
+      let params
+      try {
+        params = this.invokeParamsText ? JSON.parse(this.invokeParamsText) : {}
+      } catch (e) {
+        this.$message.error('测试参数不是合法 JSON')
+        return
+      }
+      this.previewLoading = true
+      try {
+        const config = this.normalizeForm(this.form)
+        const res = await previewApiConfigRequest(this.form.id || 0, {
+          config,
+          params,
+          previewToken: this.previewToken || ''
+        })
+        this.requestPreviewText = JSON.stringify(res.data || {}, null, 2)
+        this.$message.success('请求预览已生成，未访问外部地址')
+      } finally {
+        this.previewLoading = false
+      }
+    },
     async runInvokeApi() {
       if (!this.form.id) {
         this.$message.warning('请先保存接口后再执行测试')
@@ -1756,7 +1823,8 @@ export default {
       }
       this.invokeLoading = true
       try {
-        const res = await invokeApiConfig(this.form.id, params)
+        const config = this.normalizeForm(this.form)
+        const res = await invokeApiConfigPreview(this.form.id, { config, params })
         this.invokeResultText = JSON.stringify(res.data || {}, null, 2)
         this.$message.success('调用完成')
       } finally {

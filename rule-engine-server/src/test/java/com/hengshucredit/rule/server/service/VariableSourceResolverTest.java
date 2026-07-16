@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 
 public class VariableSourceResolverTest {
@@ -156,6 +157,21 @@ public class VariableSourceResolverTest {
 
         assertEquals(null, resolved.get("riskScore"));
         assertEquals(0, apiService.callCount);
+    }
+
+    @Test
+    public void explicitEmptyRequiredNamesSkipAllSourceVariables() throws Exception {
+        RuleVariable variable = variable("legacyListHit", "LIST", "{\"listId\":9,\"queryField\":\"mobile\"}");
+        FakeRuleListService listService = new FakeRuleListService(true);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), listService);
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<String>());
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertFalse(resolved.containsKey("legacyListHit"));
+        assertEquals(null, listService.lastListId);
     }
 
     @Test

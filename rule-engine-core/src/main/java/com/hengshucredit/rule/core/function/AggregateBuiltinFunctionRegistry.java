@@ -11,6 +11,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final DecisionBuiltinFunctions DECISION_DELEGATE = new DecisionBuiltinFunctions();
     private static final DigestBuiltinFunctions DIGEST_DELEGATE = new DigestBuiltinFunctions();
     private static final RuntimeContextBuiltinFunctions RUNTIME_CONTEXT_DELEGATE = new RuntimeContextBuiltinFunctions();
+    private static final RandomBuiltinFunctions RANDOM_DELEGATE = new RandomBuiltinFunctions();
     private static final Class<?>[] NO_ARGS = {};
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
     private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
@@ -37,6 +38,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE = {double.class, double.class, double.class};
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, String.class};
     private static final Class<?>[] DOUBLE_DOUBLE_DOUBLE_DOUBLE_STRING = {double.class, double.class, double.class, double.class, String.class};
+    private static final Class<?>[] OBJECT_VARARGS = {Object[].class};
 
     private AggregateBuiltinFunctionRegistry() {
     }
@@ -93,6 +95,8 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("numCeil", DECISION_DELEGATE, "numCeil", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("numFloor", DECISION_DELEGATE, "numFloor", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("numRoundInteger", DECISION_DELEGATE, "numRoundInteger", new Class<?>[]{double.class});
+        runner.addFunctionOfServiceMethod("randomInt", RANDOM_DELEGATE, "randomInt", OBJECT_VARARGS);
+        runner.addFunctionOfServiceMethod("randomDecimal", RANDOM_DELEGATE, "randomDecimal", OBJECT_VARARGS);
 
         runner.addFunctionOfServiceMethod("strLength", DECISION_DELEGATE, "strLength", SINGLE_STRING);
         runner.addFunctionOfServiceMethod("strTrim", DECISION_DELEGATE, "strTrim", SINGLE_STRING);

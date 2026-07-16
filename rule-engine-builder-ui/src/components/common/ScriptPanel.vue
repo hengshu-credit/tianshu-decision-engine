@@ -182,7 +182,12 @@ export default {
         return this.handleValidateScript()
       }
       if (this.onBeforeCompile) {
-        try { await this.onBeforeCompile() } catch (e) { /* ignore */ }
+        try {
+          const canCompile = await this.onBeforeCompile()
+          if (canCompile === false) return
+        } catch (e) {
+          return
+        }
       }
       this.compiling = true
       try {

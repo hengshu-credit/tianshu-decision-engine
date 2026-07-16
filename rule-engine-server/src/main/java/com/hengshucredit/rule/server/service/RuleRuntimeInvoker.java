@@ -93,16 +93,30 @@ public class RuleRuntimeInvoker {
                       Map<String, Object> values, Map<String, Object> originalInput,
                       boolean testMode) {
         enter(definition, definition == null ? null : definition.getProjectId(), projectCode,
-                values, originalInput, testMode);
+                values, originalInput, testMode, resolveDefinitionModelJson(definition));
+    }
+
+    public void enter(RuleDefinition definition, String projectCode,
+                      Map<String, Object> values, Map<String, Object> originalInput,
+                      boolean testMode, String modelJson) {
+        enter(definition, definition == null ? null : definition.getProjectId(), projectCode,
+                values, originalInput, testMode, modelJson);
     }
 
     public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
                       Map<String, Object> values, Map<String, Object> originalInput,
                       boolean testMode) {
+        enter(definition, executionProjectId, projectCode, values, originalInput,
+                testMode, resolveDefinitionModelJson(definition));
+    }
+
+    public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
+                      Map<String, Object> values, Map<String, Object> originalInput,
+                      boolean testMode, String modelJson) {
         if (definition == null) {
             throw new IllegalArgumentException("规则定义不能为空");
         }
-        RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null);
+        RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson);
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
                 definition.getRuleCode(), rootTrace);
@@ -234,8 +248,10 @@ public class RuleRuntimeInvoker {
         Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
         String projectCode = hasText(publishedProjectCode)
                 ? publishedProjectCode : resolveProjectCode(projectId);
+        String childModelJson = useCurrentContent
+                ? currentContent.getModelJson() : (published == null ? null : published.getModelJson());
         RuleTraceFrame childTrace = createTraceFrame(definition, projectCode,
-                session.currentTrace().getTraceId());
+                session.currentTrace().getTraceId(), childModelJson);
         session.currentTrace().getChildren().add(childTrace);
         session.getTraceStack().addLast(childTrace);
         session.getRuleStack().addLast(targetRuleCode);
@@ -357,7 +373,7 @@ public class RuleRuntimeInvoker {
     }
 
     private RuleTraceFrame createTraceFrame(RuleDefinition definition, String projectCode,
-                                            String parentTraceId) {
+                                            String parentTraceId, String modelJson) {
         String modelType = definition != null && hasText(definition.getModelType())
                 ? definition.getModelType() : "SCRIPT";
         Long projectId = definition == null ? null : definition.getProjectId();
@@ -380,9 +396,18 @@ public class RuleRuntimeInvoker {
         trace.setRuleName(definition != null && hasText(definition.getRuleName())
                 ? definition.getRuleName() : ruleCode);
         trace.setModelType(modelType);
+        trace.setModelJson(modelJson);
         trace.setScope(global ? "GLOBAL" : "PROJECT");
         trace.setStatus("RUNNING");
         return trace;
+    }
+
+    private String resolveDefinitionModelJson(RuleDefinition definition) {
+        if (definitionService == null || definition == null || definition.getId() == null) {
+            return null;
+        }
+        RuleDefinitionContent content = definitionService.getContent(definition.getId());
+        return content == null ? null : content.getModelJson();
     }
 
     private String resolveTraceScopeCode(Long projectId) {

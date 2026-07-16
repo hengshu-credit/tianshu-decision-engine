@@ -2,8 +2,11 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.Test;
 import org.springframework.http.HttpHeaders;
@@ -16,16 +19,82 @@ import java.lang.reflect.Proxy;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class ExternalApiInvokeServiceTest {
+
+    @Test
+    public void previewInvocationUsesCurrentDraftConfigInsteadOfPersistedConfig() throws Exception {
+        AtomicReference<String> requestedPath = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/saved", exchange -> {
+            requestedPath.set("saved");
+            byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/draft", exchange -> {
+            requestedPath.set("draft");
+            byte[] response = "{\"score\":88}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(8L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig saved = basicApiConfig(100L, 8L, "/saved");
+            RuleExternalApiConfig draft = basicApiConfig(100L, 8L, "/draft");
+            saved.setResponseCacheSeconds(60);
+            draft.setResponseCacheSeconds(60);
+            ExternalApiInvokeService service = new ExternalApiInvokeService();
+            ReflectionTestUtils.setField(service, "apiConfigMapper",
+                    mapperProxy(RuleExternalApiConfigMapper.class, saved));
+            ReflectionTestUtils.setField(service, "datasourceMapper",
+                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+
+            service.invoke(100L, Collections.emptyMap());
+            assertEquals("saved", requestedPath.get());
+            Map<String, Object> result = service.invoke(draft, Collections.emptyMap());
+
+            assertEquals("draft", requestedPath.get());
+            assertTrue(String.valueOf(result.get("body")).contains("88"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private RuleExternalApiConfig basicApiConfig(Long id, Long datasourceId, String endpointUrl) {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setId(id);
+        config.setDatasourceId(datasourceId);
+        config.setRequestMethod("GET");
+        config.setEndpointUrl(endpointUrl);
+        config.setContentType("application/json");
+        config.setAuthMode("NONE");
+        config.setResponseCacheSeconds(0);
+        config.setTimeoutMs(3000);
+        config.setRetryCount(0);
+        config.setRetryIntervalMs(0);
+        config.setExceptionStrategy("FAIL_FAST");
+        return config;
+    }
 
     @Test
     public void responseMappingReplacesBodyWithMappedFields() {
@@ -589,122 +658,6 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
-    public void invokeAppliesApiSecurityProfileBeforeSendingRequest() throws Exception {
-        AtomicReference<String> requestBody = new AtomicReference<>();
-        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/integration/jk13113", exchange -> {
-            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            byte[] chunk = new byte[1024];
-            int len;
-            while ((len = exchange.getRequestBody().read(chunk)) >= 0) {
-                buffer.write(chunk, 0, len);
-            }
-            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
-            byte[] response = "{\"status\":0}".getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, response.length);
-            exchange.getResponseBody().write(response);
-            exchange.close();
-        });
-        server.start();
-        try {
-            RuleExternalDatasource datasource = new RuleExternalDatasource();
-            datasource.setId(10L);
-            datasource.setProtocol("HTTP");
-            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-            datasource.setAuthType("NONE");
-
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
-            config.setId(102L);
-            config.setDatasourceId(10L);
-            config.setRequestMethod("POST");
-            config.setEndpointUrl("/integration/jk13113");
-            config.setContentType("application/json");
-            config.setAuthMode("NONE");
-            config.setAuthApiConfig("{\"securityProfile\":\"TIANCHUANG_MD5_SORTED\","
-                    + "\"securityConfig\":{\"tokenId\":\"TOKEN001\"}}");
-            config.setResponseCacheSeconds(0);
-            config.setTimeoutMs(3000);
-            config.setRetryCount(0);
-            config.setRetryIntervalMs(0);
-            config.setExceptionStrategy("FAIL_FAST");
-
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
-            ReflectionTestUtils.setField(service, "apiConfigMapper",
-                    mapperProxy(RuleExternalApiConfigMapper.class, config));
-            ReflectionTestUtils.setField(service, "datasourceMapper",
-                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
-            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
-
-            Map<String, Object> params = new LinkedHashMap<>();
-            params.put("appId", "APP001");
-            params.put("name", "张三");
-            params.put("idCard", "110101199001011234");
-            params.put("mobile", "13800138000");
-            service.invoke(102L, params);
-
-            assertTrue(requestBody.get().contains("\"tokenKey\":"));
-        } finally {
-            server.stop(0);
-        }
-    }
-
-    @Test
-    public void invokeDecryptsSecurityProfileResponseBeforeMapping() throws Exception {
-        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
-        server.createContext("/openapi/queryData/FRAI001C", exchange -> {
-            byte[] response = ("{\"response\":\""
-                    + "7tIn6QIzHDaXVCTpzEIwl7FmdP9vNGs8CoBZXbs1U7c=\"}").getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, response.length);
-            exchange.getResponseBody().write(response);
-            exchange.close();
-        });
-        server.start();
-        try {
-            RuleExternalDatasource datasource = new RuleExternalDatasource();
-            datasource.setId(11L);
-            datasource.setProtocol("HTTP");
-            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
-            datasource.setAuthType("NONE");
-
-            RuleExternalApiConfig config = new RuleExternalApiConfig();
-            config.setId(103L);
-            config.setDatasourceId(11L);
-            config.setRequestMethod("POST");
-            config.setEndpointUrl("/openapi/queryData/FRAI001C");
-            config.setContentType("application/json");
-            config.setAuthMode("NONE");
-            config.setAuthApiConfig("{\"securityProfile\":\"BAIHANG_HMAC_SHA1_3DES\",\"securityConfig\":{"
-                    + "\"secretId\":\"secret-id\","
-                    + "\"secretKey\":\"MDEyMzQ1Njc4OWFiY2RlZmdoaWprbG1u\"}}");
-            config.setResponseMapping("{\"status\":\"body.response.p2pEscapeDebtStatus\"}");
-            config.setResponseCacheSeconds(0);
-            config.setTimeoutMs(3000);
-            config.setRetryCount(0);
-            config.setRetryIntervalMs(0);
-            config.setExceptionStrategy("FAIL_FAST");
-
-            ExternalApiInvokeService service = new ExternalApiInvokeService();
-            ReflectionTestUtils.setField(service, "apiConfigMapper",
-                    mapperProxy(RuleExternalApiConfigMapper.class, config));
-            ReflectionTestUtils.setField(service, "datasourceMapper",
-                    mapperProxy(RuleExternalDatasourceMapper.class, datasource));
-            ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
-
-            Map<String, Object> params = new LinkedHashMap<>();
-            params.put("requestRefId", "REQ202607150001");
-            params.put("name", "张三");
-            params.put("certNo", "110101199001011234");
-            params.put("applyDate", "20260715120000");
-            params.put("queryReason", "1");
-            Map<String, Object> result = service.invoke(103L, params);
-
-            assertEquals("0", ((Map<?, ?>) result.get("body")).get("status"));
-        } finally {
-            server.stop(0);
-        }
-    }
-
-    @Test
     public void sensitiveRequestFieldsAreMaskedBeforeLogging() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("username", "alice");
@@ -840,6 +793,256 @@ public class ExternalApiInvokeServiceTest {
         }
     }
 
+    @Test
+    public void tokenResponseScriptCanUnwrapXmlBeforeTokenPathExtraction() throws Exception {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/xml-token", exchange -> {
+            byte[] response = "<string>{\"access_token\":\"xml-token-123\"}</string>"
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/xml-score", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(114L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/xml-token\",\"method\":\"POST\","
+                    + "\"tokenPath\":\"body.access_token\","
+                    + "\"tokenResponseScript\":\"jsonParse(strRegexExtract(rawBody, \\\"\\\\{.*\\\\}\\\", 0))\"}");
+            datasource.setTokenCacheSeconds(0);
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(114L);
+            config.setDatasourceId(114L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/xml-score");
+            config.setContentType("application/json");
+            config.setAuthMode("INHERIT");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            configuredService(config, datasource).invoke(114L, new LinkedHashMap<>());
+
+            assertEquals("Bearer xml-token-123", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void requestAndResponseScriptsRunAroundHttpTransportAndMapping() throws Exception {
+        AtomicReference<Map<String, Object>> receivedBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/script-score", exchange -> {
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[256];
+            int length;
+            while ((length = exchange.getRequestBody().read(chunk)) >= 0) buffer.write(chunk, 0, length);
+            receivedBody.set(com.alibaba.fastjson.JSON.parseObject(
+                    new String(buffer.toByteArray(), StandardCharsets.UTF_8), LinkedHashMap.class));
+            byte[] response = "{\"encryptedScore\":\"720\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(110L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(110L);
+            config.setDatasourceId(110L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/script-score");
+            config.setContentType("application/json");
+            config.setAuthMode("NONE");
+            config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
+            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secret\",\"value\":\"S001\",\"sensitive\":true}]}");
+            config.setRequestScript("apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
+            config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result");
+            config.setResponseMapping("{\"score\":\"body.score\"}");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setRetryIntervalMs(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            ExternalApiInvokeService service = configuredService(config, datasource);
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("mobile_no", "13800138000");
+
+            Map<String, Object> result = service.invoke(110L, params);
+
+            assertEquals("caa2bb3d3bb8a610f0d76c6c3c0898dd", receivedBody.get().get("sign"));
+            assertEquals(720, ((Number) ((Map<String, Object>) result.get("body")).get("score")).intValue());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void requestPreviewUsesPlaceholderTokenAndNeverCallsTokenEndpoint() throws Exception {
+        AtomicInteger tokenCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            tokenCalls.incrementAndGet();
+            byte[] response = "{\"token\":\"unexpected\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(111L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\"}");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(111L);
+            config.setDatasourceId(111L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/never-called");
+            config.setContentType("application/json");
+            config.setAuthMode("INHERIT");
+            config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
+            config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secretKey\",\"value\":\"S001\",\"sensitive\":true}]}");
+            config.setRequestScript("apiPut(body, \"signature\", apiMd5(mapGet(vars, \"secretKey\") + token)); body");
+
+            ExternalApiInvokeService service = configuredService(config, datasource);
+            Map<String, Object> params = new LinkedHashMap<>();
+            params.put("mobile_no", "13800138000");
+
+            Map<String, Object> preview = service.previewRequest(config, params, "preview-token");
+
+            assertEquals(0, tokenCalls.get());
+            assertEquals(false, preview.get("networkCalled"));
+            assertEquals("******", ((Map<String, Object>) preview.get("headers")).get("Authorization"));
+            assertEquals("******", ((Map<String, Object>) preview.get("body")).get("signature"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void requestScriptFailureStopsBeforeHttpRequest() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/must-not-run", exchange -> {
+            calls.incrementAndGet();
+            exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(112L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(112L);
+            config.setDatasourceId(112L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/must-not-run");
+            config.setContentType("application/json");
+            config.setAuthMode("NONE");
+            config.setRequestScript("apiTripleDesEncryptBase64(\"payload\", \"bad-key\")");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            try {
+                configuredService(config, datasource).invoke(112L, new LinkedHashMap<>());
+            } catch (IllegalStateException expected) {
+                assertTrue(expected.getMessage().contains("请求脚本执行失败"));
+            }
+            assertEquals(0, calls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void ruleEngineDatasourceRunsRequestAndResponseScriptsWithoutHttp() {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(113L);
+        datasource.setProtocol("RULE_ENGINE");
+        datasource.setDatasourceCode("tianshu_rule_engine");
+        datasource.setAuthType("NONE");
+
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setId(113L);
+        config.setDatasourceId(113L);
+        config.setApiCode("rule_script_test");
+        config.setRequestMethod("POST");
+        config.setEndpointUrl("RULE_SCRIPT_TEST");
+        config.setAuthMode("NONE");
+        config.setRequestMapping("{\"ruleCode\":\"RULE_SCRIPT_TEST\",\"params\":{\"mobile_no\":\"$.mobile_no\"}}");
+        config.setRequestScript("apiPut(body, \"signed\", \"YES\"); body");
+        config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", mapGet(body, \"rawScore\")); _result");
+        config.setResponseMapping("{\"score\":\"body.score\"}");
+        config.setResponseCacheSeconds(0);
+        config.setRetryCount(0);
+        config.setExceptionStrategy("FAIL_FAST");
+
+        RulePublished published = new RulePublished();
+        published.setId(1L);
+        published.setRuleCode("RULE_SCRIPT_TEST");
+        published.setStatus(1);
+        AtomicReference<Map<String, Object>> ruleInput = new AtomicReference<>();
+
+        ExternalApiInvokeService service = configuredService(config, datasource);
+        ReflectionTestUtils.setField(service, "publishedMapper",
+                selectOneMapperProxy(RulePublishedMapper.class, published));
+        ReflectionTestUtils.setField(service, "ruleExecuteService", new RuleExecuteService() {
+            @Override
+            public RuleResult executePublished(RulePublished ignored, Map<String, Object> params,
+                                               Long projectId, String clientAppName) {
+                ruleInput.set(params);
+                RuleResult result = new RuleResult();
+                Map<String, Object> body = new LinkedHashMap<>();
+                body.put("rawScore", 680);
+                result.setResult(body);
+                result.setSuccess(true);
+                return result;
+            }
+        });
+
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("mobile_no", "13800138000");
+        Map<String, Object> response = service.invoke(113L, params);
+
+        assertEquals("YES", ruleInput.get().get("signed"));
+        assertEquals("13800138000", ruleInput.get().get("mobile_no"));
+        assertEquals(680, ((Number) ((Map<String, Object>) response.get("body")).get("score")).intValue());
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void tokenApiRejectsBlankCustomHeaderName() {
         Map<String, Object> config = new LinkedHashMap<>();
@@ -867,6 +1070,28 @@ public class ExternalApiInvokeServiceTest {
             }
             return null;
         });
+    }
+
+    @SuppressWarnings("unchecked")
+    private <T> T selectOneMapperProxy(Class<T> type, Object selectOneResult) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, (proxy, method, args) -> {
+            if ("selectOne".equals(method.getName())) return selectOneResult;
+            if ("toString".equals(method.getName())) return type.getSimpleName() + "Proxy";
+            if ("hashCode".equals(method.getName())) return System.identityHashCode(proxy);
+            if ("equals".equals(method.getName())) return proxy == args[0];
+            return null;
+        });
+    }
+
+    private ExternalApiInvokeService configuredService(RuleExternalApiConfig config,
+                                                       RuleExternalDatasource datasource) {
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ReflectionTestUtils.setField(service, "apiConfigMapper",
+                mapperProxy(RuleExternalApiConfigMapper.class, config));
+        ReflectionTestUtils.setField(service, "datasourceMapper",
+                mapperProxy(RuleExternalDatasourceMapper.class, datasource));
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        return service;
     }
 
     private static class RecordingBillingService extends RuleBillingService {

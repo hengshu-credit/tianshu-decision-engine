@@ -379,7 +379,7 @@
 
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions, listInputFields, listOutputFields } from '@/api/definition'
+import { listProjectDefinitions } from '@/api/definition'
 import { getExperiment, listExperimentLogs, saveExperiment, listVersions, compareVersions, rollbackVersion } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
@@ -397,6 +397,7 @@ import {
 } from '@/utils/decisionConditionTree'
 import { collectOperandReferences, syncOperandReference, validateOperand } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
 
 export default {
   name: 'ExperimentDetail',
@@ -552,6 +553,7 @@ export default {
         groupType: type,
         groupCode: code,
         groupName: name,
+        ruleId: null,
         ruleCode: '',
         trafficRatio: ratio || 0,
         conditionValue: code,
@@ -572,6 +574,7 @@ export default {
     },
     normalizeGroupForEdit(group) {
       const copy = this.withUid({ ...group })
+      if (copy.ruleId === undefined) copy.ruleId = null
       copy.conditionConfig = this.parseConditionConfig(copy.conditionConfig)
       if (!copy.conditionConfig && !copy.conditionExpression) {
         copy.conditionConfig = this.createConditionRoot()
@@ -615,28 +618,37 @@ export default {
         this.ruleFieldMap = {}
         return
       }
-      const res = await listDefinitions({ pageNum: 1, pageSize: 1000, projectId, status: 1 })
-      this.rulesForProject = (res.data && res.data.records) || []
-      await this.loadRuleFieldMap()
+      const res = await listProjectDefinitions(projectId, { pageNum: 1, pageSize: 1000, status: 1 })
+      const page = res && res.data ? res.data : res
+      const rows = Array.isArray(page) ? page : (page && page.records) || []
+      this.rulesForProject = normalizeRuleOptions(rows)
+      this.loadRuleFieldMap()
+      this.repairLegacyGroupRuleRefs()
     },
-    async loadRuleFieldMap() {
+    loadRuleFieldMap() {
       const map = {}
-      await Promise.all((this.rulesForProject || []).map(async rule => {
+      ;(this.rulesForProject || []).forEach(rule => {
         if (!rule.id) return
-        const [inputRes, outputRes] = await Promise.all([
-          listInputFields(rule.id).catch(() => []),
-          listOutputFields(rule.id).catch(() => [])
-        ])
-        map[rule.ruleCode] = {
-          input: this.normalizeFieldListResponse(inputRes),
-          output: this.normalizeFieldListResponse(outputRes)
+        map[rule.id] = {
+          input: rule.inputFields || [],
+          output: rule.outputFields || []
         }
-      }))
+      })
       this.ruleFieldMap = map
     },
-    normalizeFieldListResponse(res) {
-      const data = res && res.data ? res.data : res
-      return Array.isArray(data) ? data : []
+    repairLegacyGroupRuleRefs() {
+      (this.form.groups || []).forEach(group => {
+        let rule = null
+        if (group.ruleId != null) {
+          rule = this.rulesForProject.find(item => String(item.id) === String(group.ruleId))
+        } else if (group.ruleCode) {
+          const matches = this.rulesForProject.filter(item => String(item.ruleCode) === String(group.ruleCode))
+          if (matches.length === 1) rule = matches[0]
+        }
+        if (!rule) return
+        this.$set(group, 'ruleId', rule.id)
+        this.$set(group, 'ruleCode', rule.ruleCode)
+      })
     },
     parseRequestKeyOperand(value) {
       if (!value) return null
@@ -651,8 +663,8 @@ export default {
       this.$set(this.form, 'requestKeyOperand', operand || null)
     },
     ruleFieldsForGroup(group, direction) {
-      if (!group || !group.ruleCode) return []
-      const entry = this.ruleFieldMap[group.ruleCode] || {}
+      if (!group || group.ruleId == null) return []
+      const entry = this.ruleFieldMap[group.ruleId] || {}
       return ((entry && entry[direction]) || []).map(field => this.normalizeExperimentField({
         source: direction === 'input' ? '执行规则' : '执行规则',
         groupName: group.groupName || group.groupCode,
@@ -675,7 +687,10 @@ export default {
     onProjectChange(projectId) {
       const project = this.projects.find(p => p.id === projectId)
       this.form.projectCode = project ? project.projectCode : ''
-      this.form.groups.forEach(g => { g.ruleCode = '' })
+      this.form.groups.forEach(g => {
+        g.ruleId = null
+        g.ruleCode = ''
+      })
       this.loadRules(projectId)
       this.loadExperimentRefs(projectId)
     },
@@ -800,7 +815,7 @@ export default {
       if (champions.length !== 1) return '必须且只能配置一组冠军组'
       if (this.form.routingMode === 'RATIO' && this.ratioTotal !== 100) return '冠军组和挑战组随机分流比例之和必须为100%'
       if (this.form.testRoutingMode === 'RATIO' && this.testFormGroups.length > 0 && this.testRatioTotal !== 100) return '测试组随机分流比例之和必须为100%'
-      const missing = this.form.groups.find(g => !g.groupCode || !g.ruleCode)
+      const missing = this.form.groups.find(g => !g.groupCode || g.ruleId == null)
       if (missing) return '每个实验组都必须配置组编码和执行规则'
       const duplicateCode = this.findDuplicateGroupCode()
       if (duplicateCode) return '实验组编码不能重复: ' + duplicateCode

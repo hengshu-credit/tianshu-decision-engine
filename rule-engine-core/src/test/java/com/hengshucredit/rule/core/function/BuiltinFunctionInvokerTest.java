@@ -44,6 +44,18 @@ public class BuiltinFunctionInvokerTest {
         assertNull(BuiltinFunctionInvoker.invoke("hmacSha256", Arrays.<Object>asList("abc", "")));
     }
 
+    @Test
+    public void invokesRandomBuiltinsWithZeroTwoAndFourArguments() {
+        long defaultInt = ((Number) BuiltinFunctionInvoker.invoke("randomInt", Collections.emptyList())).longValue();
+        assertTrue(defaultInt == 0L || defaultInt == 1L);
+        assertEquals(5L, ((Number) BuiltinFunctionInvoker.invoke("randomInt",
+                Arrays.<Object>asList(5, 5))).longValue());
+        assertEquals(2L, ((Number) BuiltinFunctionInvoker.invoke("randomInt",
+                Arrays.<Object>asList(1, 3, false, false))).longValue());
+        assertEquals(0.5D, ((Number) BuiltinFunctionInvoker.invoke("randomDecimal",
+                Arrays.<Object>asList(0.5D, 0.5D))).doubleValue(), 0D);
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsUnregisteredOrUnsafeFunctionCode() {
         BuiltinFunctionInvoker.invoke("getClass().getName", Collections.emptyList());

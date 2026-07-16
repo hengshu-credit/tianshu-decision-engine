@@ -154,9 +154,12 @@
           <el-table-column label="组名称" width="150"><template slot-scope="{ row }"><el-input v-model="row.groupName" /></template></el-table-column>
           <el-table-column label="执行规则" min-width="220">
             <template slot-scope="{ row }">
-              <el-select v-model="row.ruleCode" filterable placeholder="选择规则" style="width:100%;">
-                <el-option v-for="r in rulesForProject" :key="r.ruleCode" :label="ruleLabel(r)" :value="r.ruleCode" />
-              </el-select>
+              <rule-execution-selector
+                :rule-id="row.ruleId"
+                :rule-code="row.ruleCode"
+                :rules="rulesForProject"
+                @select="rule => onGroupRuleSelect(row, rule)"
+              />
             </template>
           </el-table-column>
           <el-table-column v-if="form.routingMode === 'RATIO'" label="比例%" width="120"><template slot-scope="{ row }"><el-input-number v-model="row.trafficRatio" :min="0" :max="100" :precision="2" style="width:100%;" /></template></el-table-column>
@@ -193,9 +196,12 @@
           <el-table-column label="组名称" width="150"><template slot-scope="{ row }"><el-input v-model="row.groupName" /></template></el-table-column>
           <el-table-column label="执行规则" min-width="220">
             <template slot-scope="{ row }">
-              <el-select v-model="row.ruleCode" filterable placeholder="选择规则" style="width:100%;">
-                <el-option v-for="r in rulesForProject" :key="r.ruleCode" :label="ruleLabel(r)" :value="r.ruleCode" />
-              </el-select>
+              <rule-execution-selector
+                :rule-id="row.ruleId"
+                :rule-code="row.ruleCode"
+                :rules="rulesForProject"
+                @select="rule => onGroupRuleSelect(row, rule)"
+              />
             </template>
           </el-table-column>
           <el-table-column v-if="form.testRoutingMode === 'RATIO'" label="比例%" width="120"><template slot-scope="{ row }"><el-input-number v-model="row.trafficRatio" :min="0" :max="100" :precision="2" style="width:100%;" /></template></el-table-column>
@@ -239,10 +245,11 @@
 
 <script>
 import { listProjects } from '@/api/project'
-import { getRuleTestSchema, listDefinitions } from '@/api/definition'
+import { getRuleTestSchema, listProjectDefinitions } from '@/api/definition'
 import { deleteExperiment, executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
   createEmptyGroup,
@@ -253,11 +260,12 @@ import {
   normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
 import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
+import { normalizeRuleOptions } from '@/utils/ruleCallConfig'
 import { normalizeTestSchema } from '@/utils/testSchema'
 
 export default {
   name: 'ExperimentList',
-  components: { ConditionGroupEditor, MonacoEditor },
+  components: { ConditionGroupEditor, RuleExecutionSelector, MonacoEditor },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -323,6 +331,7 @@ export default {
         groupType: type,
         groupCode: code,
         groupName: name,
+        ruleId: null,
         ruleCode: '',
         trafficRatio: ratio || 0,
         conditionValue: code,
@@ -343,6 +352,7 @@ export default {
     },
     normalizeGroupForEdit(group) {
       const copy = { ...group }
+      if (copy.ruleId === undefined) copy.ruleId = null
       copy.conditionConfig = this.parseConditionConfig(copy.conditionConfig)
       if (!copy.conditionConfig && !copy.conditionExpression) {
         copy.conditionConfig = this.createConditionRoot()
@@ -373,8 +383,11 @@ export default {
         this.rulesForProject = []
         return
       }
-      const res = await listDefinitions({ pageNum: 1, pageSize: 1000, projectId, status: 1 })
-      this.rulesForProject = (res.data && res.data.records) || []
+      const res = await listProjectDefinitions(projectId, { pageNum: 1, pageSize: 1000, status: 1 })
+      const page = res && res.data ? res.data : res
+      const rows = Array.isArray(page) ? page : (page && page.records) || []
+      this.rulesForProject = normalizeRuleOptions(rows)
+      this.repairLegacyGroupRuleRefs()
     },
     async loadExperiments() {
       this.loading = true
@@ -409,9 +422,28 @@ export default {
     onProjectChange(projectId) {
       const project = this.projects.find(p => p.id === projectId)
       this.form.projectCode = project ? project.projectCode : ''
-      this.form.groups.forEach(g => { g.ruleCode = '' })
+      this.form.groups.forEach(g => {
+        g.ruleId = null
+        g.ruleCode = ''
+      })
       this.loadRules(projectId)
       this.loadExperimentRefs(projectId)
+    },
+    onGroupRuleSelect(group, rule) {
+      this.$set(group, 'ruleId', rule ? rule.id : null)
+      this.$set(group, 'ruleCode', rule ? rule.ruleCode : '')
+    },
+    repairLegacyGroupRuleRefs() {
+      (this.form.groups || []).forEach(group => {
+        let rule = null
+        if (group.ruleId != null) {
+          rule = this.rulesForProject.find(item => String(item.id) === String(group.ruleId))
+        } else if (group.ruleCode) {
+          const matches = this.rulesForProject.filter(item => String(item.ruleCode) === String(group.ruleCode))
+          if (matches.length === 1) rule = matches[0]
+        }
+        if (rule) this.onGroupRuleSelect(group, rule)
+      })
     },
     async loadExperimentRefs(projectId) {
       if (!projectId) {
@@ -510,7 +542,7 @@ export default {
       if (champions.length !== 1) return '必须且只能配置一组冠军组'
       if (this.form.routingMode === 'RATIO' && this.ratioTotal !== 100) return '冠军组和挑战组分流比例之和必须为100%'
       if (this.form.testRoutingMode === 'RATIO' && this.testFormGroups.length > 0 && this.testRatioTotal !== 100) return '测试组分流比例之和必须为100%'
-      const missing = this.form.groups.find(g => !g.groupCode || !g.ruleCode)
+      const missing = this.form.groups.find(g => !g.groupCode || g.ruleId == null)
       if (missing) return '每个实验组都必须配置组编码和执行规则'
       const duplicateCode = this.findDuplicateGroupCode()
       if (duplicateCode) return '实验组编码不能重复: ' + duplicateCode
@@ -675,9 +707,6 @@ export default {
     },
     routeModeLabel(mode) {
       return mode === 'RATIO' ? '随机分流' : '条件分流'
-    },
-    ruleLabel(rule) {
-      return (rule.ruleName || rule.ruleCode) + ' / ' + rule.ruleCode
     },
     cleanParams(params) {
       Object.keys(params).forEach(k => {

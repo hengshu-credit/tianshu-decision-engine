@@ -16,6 +16,8 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
+import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleExperimentVersion;
@@ -126,11 +128,15 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         RuleExperiment experiment = getDetail(experimentId);
         if (experiment == null) return Collections.emptyList();
         Set<String> ruleCodes = new LinkedHashSet<>();
+        Set<Long> definitionIds = new LinkedHashSet<>();
         if (hasText(experiment.getConditionRuleCode())) ruleCodes.add(experiment.getConditionRuleCode());
         for (RuleExperimentGroup group : experiment.getGroups() == null ? Collections.<RuleExperimentGroup>emptyList() : experiment.getGroups()) {
-            if (hasText(group.getRuleCode())) ruleCodes.add(group.getRuleCode());
+            if (group.getRuleId() != null) {
+                definitionIds.add(group.getRuleId());
+            } else if (hasText(group.getRuleCode())) {
+                ruleCodes.add(group.getRuleCode());
+            }
         }
-        Set<Long> definitionIds = new LinkedHashSet<>();
         for (String ruleCode : ruleCodes) {
             LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
                     .eq(RulePublished::getRuleCode, ruleCode)
@@ -155,8 +161,19 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         List<RuleDefinitionInputField> inputs = new ArrayList<>();
         List<RuleDefinitionOutputField> outputs = new ArrayList<>();
         for (Long definitionId : listReferencedDefinitionIds(experimentId)) {
-            List<RuleDefinitionInputField> ruleInputs = definitionService.listInputFields(definitionId);
-            List<RuleDefinitionOutputField> ruleOutputs = definitionService.listOutputFields(definitionId);
+            RuleDefinition definition = definitionService.getById(definitionId);
+            RuleDefinitionContent content = definitionService.getContent(definitionId);
+            List<RuleDefinitionInputField> ruleInputs;
+            List<RuleDefinitionOutputField> ruleOutputs;
+            if (definition != null && content != null && hasText(content.getModelJson())) {
+                RuleFieldAnalyzer.ResolvedFields ruleFields = ruleFieldAnalyzer.resolveFields(
+                        definitionId, content.getModelJson(), definition.getModelType(), definition.getProjectId());
+                ruleInputs = ruleFields.getInputFields();
+                ruleOutputs = ruleFields.getOutputFields();
+            } else {
+                ruleInputs = definitionService.listInputFields(definitionId);
+                ruleOutputs = definitionService.listOutputFields(definitionId);
+            }
             if (ruleInputs != null) inputs.addAll(ruleInputs);
             if (ruleOutputs != null) outputs.addAll(ruleOutputs);
         }
@@ -235,6 +252,12 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Transactional
     public RuleExperiment saveExperiment(RuleExperiment experiment) {
         normalizeExperiment(experiment);
+        if (experiment.getGroups() != null) {
+            for (RuleExperimentGroup group : experiment.getGroups()) {
+                normalizeGroup(group);
+                syncGroupRuleReference(experiment, group);
+            }
+        }
         validateExperiment(experiment);
         if (experiment.getId() == null) {
             save(experiment);
@@ -245,7 +268,6 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         if (experiment.getGroups() != null) {
             for (RuleExperimentGroup group : experiment.getGroups()) {
-                normalizeGroup(group);
                 group.setExperimentId(experiment.getId());
                 groupMapper.insert(group);
             }
@@ -474,7 +496,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                boolean invokeExternalSource,
                                                String experimentTraceId,
                                                List<Map<String, Object>> routeTrace) {
-        RulePublished published = findPublishedRule(experiment, group.getRuleCode());
+        RulePublished published = findPublishedRule(experiment, group);
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setSkipApiSources(!invokeExternalSource);
         if (GROUP_TEST.equals(group.getGroupType())) {
@@ -657,14 +679,59 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getRuleCode, ruleCode)
                 .eq(RulePublished::getStatus, 1);
-        if (hasText(experiment.getProjectCode())) {
-            wrapper.eq(RulePublished::getProjectCode, experiment.getProjectCode());
-        }
         RulePublished published = publishedMapper.selectOne(wrapper);
         if (published == null) {
             throw new IllegalArgumentException("已发布规则不存在或未启用: " + ruleCode);
         }
+        ensurePublishedRuleAvailable(experiment, published);
         return published;
+    }
+
+    private RulePublished findPublishedRule(RuleExperiment experiment, RuleExperimentGroup group) {
+        if (group == null) {
+            throw new IllegalArgumentException("实验组不能为空");
+        }
+        if (group.getRuleId() == null) {
+            return findPublishedRule(experiment, group.getRuleCode());
+        }
+        LambdaQueryWrapper<RulePublished> wrapper = new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getDefinitionId, group.getRuleId())
+                .eq(RulePublished::getStatus, 1);
+        RulePublished published = publishedMapper.selectOne(wrapper);
+        if (published == null) {
+            throw new IllegalArgumentException("已发布规则不存在或未启用: " + group.getRuleId());
+        }
+        ensurePublishedRuleAvailable(experiment, published);
+        return published;
+    }
+
+    private void ensurePublishedRuleAvailable(RuleExperiment experiment, RulePublished published) {
+        if (definitionService == null || definitionService.isDefinitionAvailableInProject(
+                published.getDefinitionId(), experiment.getProjectId())) {
+            return;
+        }
+        throw new IllegalArgumentException("规则不属于当前项目或未关联到当前项目: " + published.getDefinitionId());
+    }
+
+    private void syncGroupRuleReference(RuleExperiment experiment, RuleExperimentGroup group) {
+        RuleDefinition definition;
+        if (group.getRuleId() != null) {
+            definition = definitionService.getById(group.getRuleId());
+        } else if (hasText(group.getRuleCode())) {
+            definition = definitionService.getOne(new LambdaQueryWrapper<RuleDefinition>()
+                    .eq(RuleDefinition::getRuleCode, group.getRuleCode()), false);
+        } else {
+            throw new IllegalArgumentException("实验组缺少执行规则");
+        }
+        if (definition == null || !Integer.valueOf(1).equals(definition.getStatus())) {
+            throw new IllegalArgumentException("规则不存在或未启用: "
+                    + (group.getRuleId() == null ? group.getRuleCode() : group.getRuleId()));
+        }
+        if (!definitionService.isDefinitionAvailableInProject(definition.getId(), experiment.getProjectId())) {
+            throw new IllegalArgumentException("规则不属于当前项目或未关联到当前项目: " + definition.getId());
+        }
+        group.setRuleId(definition.getId());
+        group.setRuleCode(definition.getRuleCode());
     }
 
     private void validateExperiment(RuleExperiment experiment) {

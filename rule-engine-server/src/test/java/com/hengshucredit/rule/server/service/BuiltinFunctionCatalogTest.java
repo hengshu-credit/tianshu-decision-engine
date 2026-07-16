@@ -74,6 +74,8 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("hmacSha256"));
         assertTrue(codeSet.contains("numCeil"));
         assertTrue(codeSet.contains("numLog10"));
+        assertTrue(codeSet.contains("randomInt"));
+        assertTrue(codeSet.contains("randomDecimal"));
         assertTrue(codeSet.contains("arrSortBy"));
         assertTrue(codeSet.contains("arrPluck"));
         assertTrue(codeSet.contains("mapPut"));

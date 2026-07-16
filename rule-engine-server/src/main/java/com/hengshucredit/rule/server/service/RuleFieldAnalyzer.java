@@ -153,6 +153,8 @@ public class RuleFieldAnalyzer {
             enrichFieldFromMeta(field, varMetaMap, existingOutputVarMap, existingOutputRefTypeMap);
             preparedOutputFields.add(field);
         }
+        preparedOutputFields.addAll(loadRuleCallOutputFields(modelJson));
+        preparedOutputFields = deduplicateOutputFields(preparedOutputFields);
         preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
         preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
         return new ResolvedFields(preparedInputFields, preparedOutputFields);
@@ -508,6 +510,30 @@ public class RuleFieldAnalyzer {
         return result;
     }
 
+    private List<RuleDefinitionOutputField> loadRuleCallOutputFields(String modelJson) {
+        List<RuleDefinitionOutputField> result = new ArrayList<>();
+        if (outputFieldMapper == null || modelJson == null || modelJson.isEmpty()) {
+            return result;
+        }
+        Set<Long> ruleIds = new LinkedHashSet<>();
+        collectRuleCallIds(parseObject(modelJson), ruleIds);
+        for (Long ruleId : ruleIds) {
+            List<RuleDefinitionOutputField> fields = outputFieldMapper.selectList(
+                    new LambdaQueryWrapper<RuleDefinitionOutputField>()
+                            .eq(RuleDefinitionOutputField::getDefinitionId, ruleId)
+                            .and(w -> w.isNull(RuleDefinitionOutputField::getStatus).or().eq(RuleDefinitionOutputField::getStatus, 1))
+                            .orderByAsc(RuleDefinitionOutputField::getSortOrder)
+                            .orderByAsc(RuleDefinitionOutputField::getId));
+            if (fields == null) {
+                continue;
+            }
+            for (RuleDefinitionOutputField field : fields) {
+                result.add(copyDefinitionOutputField(field));
+            }
+        }
+        return result;
+    }
+
     private void collectRuleCallIds(Object value, Set<Long> ruleIds) {
         if (value instanceof JSONObject) {
             JSONObject obj = (JSONObject) value;
@@ -541,6 +567,35 @@ public class RuleFieldAnalyzer {
         field.setTransformParams(source.getTransformParams());
         field.setStatus(source.getStatus());
         return field;
+    }
+
+    private RuleDefinitionOutputField copyDefinitionOutputField(RuleDefinitionOutputField source) {
+        RuleDefinitionOutputField field = new RuleDefinitionOutputField();
+        field.setVarId(source.getVarId());
+        field.setRefType(source.getRefType());
+        field.setFieldName(source.getFieldName());
+        field.setFieldLabel(source.getFieldLabel());
+        field.setScriptName(source.getScriptName());
+        field.setFieldType(source.getFieldType());
+        field.setTransformType(source.getTransformType());
+        field.setTransformParams(source.getTransformParams());
+        field.setValidValues(source.getValidValues());
+        field.setStatus(source.getStatus());
+        return field;
+    }
+
+    private List<RuleDefinitionOutputField> deduplicateOutputFields(List<RuleDefinitionOutputField> fields) {
+        Map<String, RuleDefinitionOutputField> dedup = new LinkedHashMap<>();
+        for (RuleDefinitionOutputField field : fields) {
+            String scriptName = trimToNull(field.getScriptName());
+            String fieldName = trimToNull(field.getFieldName());
+            String key = scriptName != null ? scriptName.toLowerCase()
+                    : (fieldName == null ? null : fieldName.toLowerCase());
+            if (key != null) {
+                dedup.putIfAbsent(key, field);
+            }
+        }
+        return new ArrayList<>(dedup.values());
     }
 
     private List<RuleDefinitionInputField> removeOutputFields(List<RuleDefinitionInputField> inputFields,
@@ -732,7 +787,6 @@ public class RuleFieldAnalyzer {
             variable.setSourceConfig(sourceConfig);
             depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
         }
-        int before = result.size();
         for (String depName : depNames) {
             RuleDefinitionInputField depField = new RuleDefinitionInputField();
             depField.setScriptName(depName);
@@ -754,9 +808,6 @@ public class RuleFieldAnalyzer {
                 addInputFieldIfAbsent(result, seen, field);
             }
             expandFieldRecursive(depField, varMetaMap, seen, visited, result);
-        }
-        if (result.size() == before) {
-            addInputFieldIfAbsent(result, seen, field);
         }
     }
 

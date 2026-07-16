@@ -1,5 +1,6 @@
 import ExperimentDetail from '@/views/experiment/ExperimentDetail.vue'
 import { listExperimentLogs, saveExperiment, listVersions, compareVersions } from '@/api/experiment'
+import { listProjectDefinitions } from '@/api/definition'
 
 const leaf = (code, value, label = code) => ({
   type: 'leaf',
@@ -71,15 +72,18 @@ describe('ExperimentDetail', () => {
   test('允许调整冠军组类型，但保存前必须只有一个冠军组', () => {
     const ctx = createContext()
     ctx.form.groups[0].ruleCode = 'rule_challenger'
+    ctx.form.groups[0].ruleId = 1
     ctx.form.groups[0].trafficRatio = 40
     ctx.form.groups[0].groupType = 'CHALLENGER'
     ctx.form.groups.push(ctx.withUid(ctx.newGroup('CHAMPION', 'champion_2', '冠军组2', 60)))
     ctx.form.groups[1].ruleCode = 'rule_champion'
+    ctx.form.groups[1].ruleId = 2
 
     expect(ctx.validateGroups()).toBe('')
 
     ctx.form.groups.push(ctx.withUid(ctx.newGroup('CHAMPION', 'champion_3', '冠军组3', 0)))
     ctx.form.groups[2].ruleCode = 'rule_champion_2'
+    ctx.form.groups[2].ruleId = 3
     expect(ctx.validateGroups()).toBe('必须且只能配置一组冠军组')
   })
 
@@ -128,7 +132,7 @@ describe('ExperimentDetail', () => {
   test('输入输出字段归集条件字段和执行规则字段', () => {
     const ctx = createContext({
       ruleFieldMap: {
-        champion_rule: {
+        8: {
           input: [{ scriptName: 'age', fieldLabel: '年龄', fieldType: 'NUMBER' }],
           output: [{ scriptName: 'riskLevel', fieldLabel: '风险等级', fieldType: 'STRING' }]
         }
@@ -136,6 +140,7 @@ describe('ExperimentDetail', () => {
     })
     ctx.form.routingMode = 'CONDITION'
     ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].ruleId = 8
     ctx.form.groups[0].conditionConfig.children[0] = leaf('amount', '1000', '申请金额')
 
     expect(ctx.experimentInputFields.map(f => f.fieldName)).toEqual(['amount', 'age'])
@@ -149,6 +154,7 @@ describe('ExperimentDetail', () => {
     ctx.form.experimentCode = 'EXP_KEY'
     ctx.form.experimentName = '组合请求键'
     ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].ruleId = 8
     ctx.form.groups[0].conditionConfig = null
     ctx.form.requestKeyOperand = {
       kind: 'CAST',
@@ -178,6 +184,7 @@ describe('ExperimentDetail', () => {
     ctx.form.experimentCode = 'EXP_A'
     ctx.form.experimentName = '实验A'
     ctx.form.groups[0].ruleCode = 'champion_rule'
+    ctx.form.groups[0].ruleId = 8
     ctx.form.groups[0].conditionConfig = null
 
     await ctx.handleSave()
@@ -199,6 +206,41 @@ describe('ExperimentDetail', () => {
     expect(listVersions).toHaveBeenCalledWith(9)
     expect(compareVersions).toHaveBeenCalledWith(9, 2, 1)
     expect(ctx.versionCompare.groupsChanged).toBe(true)
+  })
+
+  test('项目规则列表直接使用 ID 键控的输入输出元数据', async () => {
+    listProjectDefinitions.mockResolvedValue({ data: { records: [{
+      id: 8,
+      projectId: 1,
+      scope: 'PROJECT',
+      ruleCode: 'score_card',
+      modelType: 'SCORE',
+      status: 1,
+      inputFieldsJson: [{ scriptName: 'CREDIT_AMOUNT' }],
+      outputFieldsJson: [{ scriptName: 'score' }]
+    }] } })
+    const ctx = createContext()
+    ctx.form.groups[0].ruleCode = 'score_card'
+
+    await ctx.loadRules(1)
+
+    expect(listProjectDefinitions).toHaveBeenCalledWith(1, { pageNum: 1, pageSize: 1000, status: 1 })
+    expect(ctx.form.groups[0].ruleId).toBe(8)
+    expect(ctx.ruleFieldMap[8].input[0].scriptName).toBe('CREDIT_AMOUNT')
+    expect(ctx.ruleFieldMap[8].output[0].scriptName).toBe('score')
+  })
+
+  test('切换项目会同时清空实验组规则 ID 和编码快照', () => {
+    const ctx = createContext({ projects: [{ id: 2, projectCode: 'P2' }] })
+    ctx.form.groups[0].ruleId = 8
+    ctx.form.groups[0].ruleCode = 'score_card'
+    ctx.loadRules = jest.fn()
+    ctx.loadExperimentRefs = jest.fn()
+
+    ctx.onProjectChange(2)
+
+    expect(ctx.form.groups[0].ruleId).toBeNull()
+    expect(ctx.form.groups[0].ruleCode).toBe('')
   })
 
   test('experimentGuideCards 解释冠军挑战和空跑测试', () => {

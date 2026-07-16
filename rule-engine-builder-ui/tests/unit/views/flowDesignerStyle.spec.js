@@ -57,4 +57,30 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('max-width: 80vw;')
     })
   })
+
+  test('执行规则动作先选规则，再说明共享上下文并按需展开单字段映射', () => {
+    const source = readSource('src/components/flow/ActionBlockEditor.vue')
+    const selectorIndex = source.indexOf('<rule-execution-selector')
+    const sharedContextIndex = source.indexOf('子规则全部输出会写入当前共享上下文')
+    const mappingSwitchIndex = source.indexOf('额外映射单个输出字段')
+
+    expect(selectorIndex).toBeGreaterThan(-1)
+    expect(sharedContextIndex).toBeGreaterThan(selectorIndex)
+    expect(mappingSwitchIndex).toBeGreaterThan(sharedContextIndex)
+  })
+
+  test('决策流、决策树和规则集统一接入规则调用上下文', () => {
+    const files = ['DecisionFlow.vue', 'DecisionTree.vue', 'RuleSet.vue']
+
+    files.forEach(file => {
+      const source = readSource('src/views/designer/' + file)
+      expect(source).toContain("import ruleCallMixin from '@/mixins/ruleCallMixin'")
+      expect(source).toContain('mixins: [varPickerMixin, ruleCallMixin]')
+      expect(source).toContain(':rules="projectRules"')
+      expect(source).toContain(':current-rule-id="definitionId"')
+      expect(source).toContain(':current-rule-code="currentRuleCode"')
+      expect(source).toContain(':validate-rule-call-cycle="validateRuleCallCycle"')
+      expect(source).toContain('loadRuleCallOptions(this.definitionId)')
+    })
+  })
 })

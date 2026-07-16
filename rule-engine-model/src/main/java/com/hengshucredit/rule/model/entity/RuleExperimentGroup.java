@@ -19,6 +19,7 @@ public class RuleExperimentGroup {
     private String groupCode;
     private String groupName;
     private String groupType;
+    private Long ruleId;
     private String ruleCode;
     private BigDecimal trafficRatio;
     private String conditionValue;

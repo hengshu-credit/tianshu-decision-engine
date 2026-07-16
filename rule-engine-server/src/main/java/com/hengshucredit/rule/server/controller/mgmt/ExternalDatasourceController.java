@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.controller.mgmt;
 
+import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
@@ -10,6 +11,7 @@ import com.hengshucredit.rule.server.service.RuleExternalDatasourceService;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
+import java.util.Collections;
 import java.util.Map;
 
 @RestController
@@ -102,6 +104,46 @@ public class ExternalDatasourceController {
             return R.ok(externalApiInvokeService.invoke(id, params));
         } catch (Exception e) {
             return R.fail("调用失败：" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/api-config/{id:\\d+}/invoke-preview")
+    @SuppressWarnings("unchecked")
+    public R<Map<String, Object>> invokeApiConfigPreview(@PathVariable Long id,
+                                                         @RequestBody Map<String, Object> body) {
+        try {
+            RuleExternalApiConfig config = JSON.parseObject(
+                    JSON.toJSONString(body.get("config")), RuleExternalApiConfig.class);
+            if (config == null) {
+                return R.fail("API接口配置不能为空");
+            }
+            config.setId(id);
+            Map<String, Object> params = body.get("params") instanceof Map
+                    ? (Map<String, Object>) body.get("params") : Collections.emptyMap();
+            return R.ok(externalApiInvokeService.invoke(config, params));
+        } catch (Exception e) {
+            return R.fail("调用失败：" + e.getMessage());
+        }
+    }
+
+    @PostMapping("/api-config/{id:\\d+}/request-preview")
+    @SuppressWarnings("unchecked")
+    public R<Map<String, Object>> previewApiConfigRequest(@PathVariable Long id,
+                                                          @RequestBody Map<String, Object> body) {
+        try {
+            RuleExternalApiConfig config = JSON.parseObject(
+                    JSON.toJSONString(body.get("config")), RuleExternalApiConfig.class);
+            if (config == null) {
+                return R.fail("API接口配置不能为空");
+            }
+            config.setId(id);
+            Map<String, Object> params = body.get("params") instanceof Map
+                    ? (Map<String, Object>) body.get("params") : Collections.emptyMap();
+            String previewToken = body.get("previewToken") == null
+                    ? "" : String.valueOf(body.get("previewToken"));
+            return R.ok(externalApiInvokeService.previewRequest(config, params, previewToken));
+        } catch (Exception e) {
+            return R.fail("请求预览失败：" + e.getMessage());
         }
     }
 

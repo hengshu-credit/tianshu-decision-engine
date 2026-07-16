@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
@@ -27,6 +28,88 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleExecuteServiceTest {
+
+    @Test
+    public void previewExecutionCompilesAndRunsCurrentDesignerModelWithCurrentFields() {
+        RuleExecuteService service = new RuleExecuteService();
+        RecordingLogService logService = new RecordingLogService();
+        RecordingBillingService billingService = new RecordingBillingService();
+        RecordingPreviewResolver resolver = new RecordingPreviewResolver();
+
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", logService);
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", billingService);
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        NoOpRuntimeInvoker runtimeInvoker = new NoOpRuntimeInvoker();
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtimeInvoker);
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "compileService", new RuleCompileService() {
+            @Override
+            public CompileResult compilePreview(Long definitionId, String modelJson, String modelType) {
+                assertEquals("{\"script\":\"draft\"}", modelJson);
+                assertEquals("SCRIPT", modelType);
+                return CompileResult.ok("decision = draftValue; decision", "QLEXPRESS");
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+                RuleDefinitionInputField field = new RuleDefinitionInputField();
+                field.setScriptName("draftValue");
+                field.setFieldType("INTEGER");
+                return new ResolvedFields(Collections.singletonList(field), Collections.emptyList());
+            }
+        });
+
+        RuleResult result = service.testExecutePreview(10L, "{\"script\":\"draft\"}", "SCRIPT",
+                Collections.<String, Object>singletonMap("draftValue", "7"));
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(Integer.valueOf(7), result.getResult());
+        assertTrue(resolver.requiredScriptNames.contains("draftValue"));
+        assertTrue(logService.saved.getInputParams().contains("\"draftValue\":7"));
+        assertEquals("{\"script\":\"draft\"}", runtimeInvoker.modelJson);
+    }
+
+    @Test
+    public void previewExecutionWithNoInputsRequiresNoSourceVariables() {
+        RuleExecuteService service = new RuleExecuteService();
+        RecordingPreviewResolver resolver = new RecordingPreviewResolver();
+
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "compileService", new RuleCompileService() {
+            @Override
+            public CompileResult compilePreview(Long definitionId, String modelJson, String modelType) {
+                return CompileResult.ok("decision = 1; decision", "QLEXPRESS");
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+                return new ResolvedFields(Collections.emptyList(), Collections.emptyList());
+            }
+        });
+
+        RuleResult result = service.testExecutePreview(10L, "{\"script\":\"draft\"}", "SCRIPT",
+                Collections.emptyMap());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertNotNull(resolver.requiredScriptNames);
+        assertTrue(resolver.requiredScriptNames.isEmpty());
+    }
 
     @Test
     public void executePublishedResolvesExternalVariablesBeforeRunningScript() {
@@ -157,6 +240,17 @@ public class RuleExecuteServiceTest {
         }
     }
 
+    private static class RecordingPreviewResolver extends VariableSourceResolver {
+        private Set<String> requiredScriptNames;
+
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
+            requiredScriptNames = options.getRequiredScriptNames();
+            return target;
+        }
+    }
+
     private static class RecordingLogService extends RuleExecutionLogService {
         private RuleExecutionLog saved;
         private int saveCount;
@@ -184,6 +278,7 @@ public class RuleExecuteServiceTest {
     private static class NoOpRuntimeInvoker extends RuleRuntimeInvoker {
         private Map<String, Object> values;
         private Map<String, Object> originalInput;
+        private String modelJson;
 
         @Override
         public void register(com.alibaba.qlexpress4.Express4Runner runner) {
@@ -207,11 +302,29 @@ public class RuleExecuteServiceTest {
         }
 
         @Override
+        public void enter(RuleDefinition definition, String projectCode,
+                          Map<String, Object> values, Map<String, Object> originalInput,
+                          boolean testMode, String modelJson) {
+            this.values = values;
+            this.originalInput = new LinkedHashMap<>(originalInput);
+            this.modelJson = modelJson;
+        }
+
+        @Override
         public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
                           Map<String, Object> values, Map<String, Object> originalInput,
                           boolean testMode) {
             this.values = values;
             this.originalInput = new LinkedHashMap<>(originalInput);
+        }
+
+        @Override
+        public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
+                          Map<String, Object> values, Map<String, Object> originalInput,
+                          boolean testMode, String modelJson) {
+            this.values = values;
+            this.originalInput = new LinkedHashMap<>(originalInput);
+            this.modelJson = modelJson;
         }
 
         @Override

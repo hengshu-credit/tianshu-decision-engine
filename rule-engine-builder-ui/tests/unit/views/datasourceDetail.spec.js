@@ -33,4 +33,15 @@ describe('DatasourceDetail token config', () => {
     expect(config.tokenHeaderName).toBe('Authorization')
     expect(config.tokenPrefix).toBe('Bearer ')
   })
+
+  test('token response script is preserved for xml or encrypted token responses', () => {
+    const ctx = createContext()
+    ctx.authConfig.tokenResponseScript = 'jsonParse(strRegexExtract(rawBody, "\\{.*\\}", 0))'
+
+    const saved = JSON.parse(ctx.buildAuthConfig('TOKEN_API', ''))
+    const loaded = ctx.parseAuthConfig(JSON.stringify(saved), 'TOKEN_API')
+
+    expect(saved.tokenResponseScript).toBe(ctx.authConfig.tokenResponseScript)
+    expect(loaded.tokenResponseScript).toBe(ctx.authConfig.tokenResponseScript)
+  })
 })

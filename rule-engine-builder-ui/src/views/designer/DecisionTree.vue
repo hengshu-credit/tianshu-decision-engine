@@ -195,6 +195,10 @@
                     :selected-vars="selectedVarPickerOptions"
                     :functions="projectFunctions"
                     :list-options="projectLists"
+                    :rules="projectRules"
+                    :current-rule-id="definitionId"
+                    :current-rule-code="currentRuleCode"
+                    :validate-rule-call-cycle="validateRuleCallCycle"
                     @update="onActionDataUpdate"
                   />
                 </div>
@@ -266,6 +270,7 @@ import {
 import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
 import { generateScript, normalizeGraphActionData } from '@/utils/actionDataCodegen'
 import varPickerMixin from '@/mixins/varPickerMixin'
+import ruleCallMixin from '@/mixins/ruleCallMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
@@ -294,7 +299,7 @@ import { clampDesignerPanelWidth } from '@/utils/designerPanelWidth'
 export default {
   name: 'DecisionTree',
   components: { DesignerTestDialog, ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
-  mixins: [varPickerMixin],
+  mixins: [varPickerMixin, ruleCallMixin],
   data() {
     return {
       definitionId: null,
@@ -356,6 +361,7 @@ export default {
   },
   mounted() {
     this.initLogicFlow()
+    this.loadRuleCallOptions(this.definitionId)
     this.loadContent()
   },
   beforeDestroy() {
@@ -975,16 +981,28 @@ export default {
     },
 
     async handleSave() {
-      const modelJson = JSON.stringify(this.buildBackendModel())
+      const model = this.buildBackendModel()
+      this.repairLegacyRuleCallRefs(model)
+      const ruleCallErrors = this.validateRuleCallsInModel(model)
+      if (ruleCallErrors.length) {
+        this.showRuleCallErrors(ruleCallErrors)
+        return false
+      }
+      const modelJson = JSON.stringify(model)
       await saveContent({ definitionId: this.definitionId, modelJson })
       await refreshFields(this.definitionId, modelJson)
       this.refreshProjectRefs()
 
       this.$message.success('保存成功')
+      return true
+    },
+
+    buildRuleCallValidationModel() {
+      return this.buildBackendModel()
     },
 
     async handleCompile() {
-      await this.handleSave()
+      if (await this.handleSave() === false) return
       const res = await compileRule(this.definitionId)
       if (isSuccessResult(res)) {
         this.$message.success('编译成功')

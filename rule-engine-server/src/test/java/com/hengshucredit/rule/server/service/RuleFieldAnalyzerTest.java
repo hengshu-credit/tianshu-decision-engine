@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
@@ -398,6 +399,26 @@ public class RuleFieldAnalyzerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void sourceVariableWithoutDependenciesDoesNotBecomeExternalInput() throws Exception {
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
+
+        Map<String, Object> apiMeta = new HashMap<>();
+        apiMeta.put("varSource", "API");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"resultPath\":\"body.items\"}");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("engine_bdrules", apiMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField apiField = inputField("engine_bdrules", "VARIABLE", "API", 195L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Collections.singletonList(apiField), varMetaMap);
+
+        assertTrue("API variables without dependencies must not become external inputs", result.isEmpty());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void constantsAreNotExpandedAsTestInputFields() throws Exception {
         Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
         Map<String, Object> constantMeta = new HashMap<>();
@@ -481,6 +502,32 @@ public class RuleFieldAnalyzerTest {
 
         assertFalse("当前规则已计算的中间变量不应作为测试入参", names(filtered).contains("age"));
         assertTrue(names(filtered).contains("HYBASE_X115"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void ruleCallOutputsArePropagatedAndCanRemoveIntermediateInputs() throws Exception {
+        RuleDefinitionOutputField riskFactor = new RuleDefinitionOutputField();
+        riskFactor.setScriptName("risk_factor");
+        riskFactor.setFieldName("risk_factor");
+        riskFactor.setRefType("VARIABLE");
+        riskFactor.setVarId(218L);
+        riskFactor.setStatus(1);
+        setField(analyzer, "outputFieldMapper", outputFieldMapper(Collections.singletonList(riskFactor)));
+
+        String json = "{\"nodes\":[{\"actionData\":[{\"type\":\"rule-call\",\"ruleId\":11}]}]}";
+        Method loadRuleCallOutputs = RuleFieldAnalyzer.class.getDeclaredMethod("loadRuleCallOutputFields", String.class);
+        loadRuleCallOutputs.setAccessible(true);
+        List<RuleDefinitionOutputField> calledOutputs =
+                (List<RuleDefinitionOutputField>) loadRuleCallOutputs.invoke(analyzer, json);
+
+        assertEquals(Collections.singletonList("risk_factor"), outputNames(calledOutputs));
+        RuleDefinitionInputField intermediate = inputField("risk_factor", "VARIABLE", "INPUT", 218L);
+        Method removeOutputs = RuleFieldAnalyzer.class.getDeclaredMethod("removeOutputFields", List.class, List.class);
+        removeOutputs.setAccessible(true);
+        List<RuleDefinitionInputField> filtered = (List<RuleDefinitionInputField>) removeOutputs.invoke(
+                analyzer, Collections.singletonList(intermediate), calledOutputs);
+        assertTrue("子规则产出的中间字段不应成为父规则外部输入", filtered.isEmpty());
     }
 
     @Test
@@ -570,8 +617,19 @@ public class RuleFieldAnalyzerTest {
                 (proxy, method, args) -> "selectList".equals(method.getName()) ? fields : null);
     }
 
+    private static RuleDefinitionOutputFieldMapper outputFieldMapper(List<RuleDefinitionOutputField> fields) {
+        return (RuleDefinitionOutputFieldMapper) Proxy.newProxyInstance(
+                RuleDefinitionOutputFieldMapper.class.getClassLoader(),
+                new Class<?>[]{RuleDefinitionOutputFieldMapper.class},
+                (proxy, method, args) -> "selectList".equals(method.getName()) ? fields : null);
+    }
+
     private static List<String> names(List<RuleDefinitionInputField> fields) {
         return fields.stream().map(RuleDefinitionInputField::getScriptName).collect(Collectors.toList());
+    }
+
+    private static List<String> outputNames(List<RuleDefinitionOutputField> fields) {
+        return fields.stream().map(RuleDefinitionOutputField::getScriptName).collect(Collectors.toList());
     }
 
     private static void setField(Object target, String name, Object value) throws Exception {

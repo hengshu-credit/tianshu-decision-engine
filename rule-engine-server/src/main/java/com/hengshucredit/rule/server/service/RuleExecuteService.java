@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
@@ -58,6 +59,12 @@ public class RuleExecuteService {
     @Resource
     private ExecutionParameterBinder executionParameterBinder;
 
+    @Resource
+    private RuleCompileService compileService;
+
+    @Resource
+    private RuleFieldAnalyzer ruleFieldAnalyzer;
+
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
@@ -75,12 +82,33 @@ public class RuleExecuteService {
             return r;
         }
 
+        return executeTest(definition, content.getCompiledScript(), content.getModelJson(),
+                definitionService.listInputFields(definitionId), params);
+    }
+
+    public RuleResult testExecutePreview(Long definitionId, String modelJson, String modelType,
+                                         Map<String, Object> params) {
+        RuleDefinition definition = definitionService.getById(definitionId);
+        if (definition == null) {
+            return failedResult("规则定义不存在");
+        }
+        CompileResult compileResult = compileService.compilePreview(definitionId, modelJson, modelType);
+        if (!compileResult.isSuccess()) {
+            return failedResult(compileResult.getErrorMessage());
+        }
+        RuleFieldAnalyzer.ResolvedFields fields = ruleFieldAnalyzer.resolveFields(
+                definitionId, modelJson, modelType, definition.getProjectId());
+        return executeTest(definition, compileResult.getCompiledScript(), modelJson,
+                fields.getInputFields(), params);
+    }
+
+    private RuleResult executeTest(RuleDefinition definition, String compiledScript, String modelJson,
+                                   List<RuleDefinitionInputField> inputFields,
+                                   Map<String, Object> params) {
         String funcPrefix = prepareProjectFunctions(definition.getProjectId(), true);
-        String fullScript = funcPrefix.isEmpty()
-                ? content.getCompiledScript()
-                : funcPrefix + "\n" + content.getCompiledScript();
-        VariableResolveOptions resolveOptions = withDefinitionInputFields(VariableResolveOptions.defaults(), definitionId);
-        Map<String, Object> executeParams = bindDefinitionInputs(definitionId, params);
+        String fullScript = funcPrefix.isEmpty() ? compiledScript : funcPrefix + "\n" + compiledScript;
+        VariableResolveOptions resolveOptions = withInputFields(VariableResolveOptions.defaults(), inputFields);
+        Map<String, Object> executeParams = bindInputs(inputFields, params);
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = null;
         if (definition.getProjectId() != null) {
@@ -89,7 +117,7 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        runtimeRuleInvoker.enter(definition, projectCode, executeParams, originalInput, true);
+        runtimeRuleInvoker.enter(definition, projectCode, executeParams, originalInput, true, modelJson);
         long executionStart = System.currentTimeMillis();
         RuleResult result = new RuleResult();
         try {
@@ -122,6 +150,13 @@ public class RuleExecuteService {
         logService.save(log);
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(), result.getErrorMessage());
 
+        return result;
+    }
+
+    private RuleResult failedResult(String message) {
+        RuleResult result = new RuleResult();
+        result.setSuccess(false);
+        result.setErrorMessage(message);
         return result;
     }
 
@@ -173,7 +208,7 @@ public class RuleExecuteService {
         RuleDefinition executionDefinition = definition == null
                 ? publishedDefinition(published, executionProjectId) : definition;
         runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
-                executeParams, originalInput, false);
+                executeParams, originalInput, false, published.getModelJson());
         long executionStart = System.currentTimeMillis();
         RuleResult result = new RuleResult();
         try {
@@ -241,11 +276,20 @@ public class RuleExecuteService {
 
     private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId) {
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
-        if (definitionId == null || (effective.getRequiredScriptNames() != null && !effective.getRequiredScriptNames().isEmpty())) {
+        if (definitionId == null || effective.getRequiredScriptNames() != null) {
             return effective;
         }
-        List<RuleDefinitionInputField> inputFields = definitionService.listInputFields(definitionId);
+        return withInputFields(effective, definitionService.listInputFields(definitionId));
+    }
+
+    private VariableResolveOptions withInputFields(VariableResolveOptions options,
+                                                   List<RuleDefinitionInputField> inputFields) {
+        VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
+        if (effective.getRequiredScriptNames() != null) {
+            return effective;
+        }
         if (inputFields == null || inputFields.isEmpty()) {
+            effective.setRequiredScriptNames(Collections.emptySet());
             return effective;
         }
         Set<String> names = new LinkedHashSet<>();
@@ -254,15 +298,16 @@ public class RuleExecuteService {
                 names.add(field.getScriptName().trim());
             }
         }
-        if (!names.isEmpty()) {
-            effective.setRequiredScriptNames(names);
-        }
+        effective.setRequiredScriptNames(names);
         return effective;
     }
 
     private Map<String, Object> bindDefinitionInputs(Long definitionId, Map<String, Object> params) {
+        return bindInputs(definitionService.listInputFields(definitionId), params);
+    }
+
+    private Map<String, Object> bindInputs(List<RuleDefinitionInputField> fields, Map<String, Object> params) {
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
-        List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
         return executionParameterBinder.bindRuleInputs(fields, safeParams);
     }
 

@@ -55,6 +55,7 @@ public class SchemaSyncService {
             ensureVariableSourceConfigColumn();
             ensureListTables();
             ensureExperimentTables();
+            ensureExperimentRuleReferenceSchema();
             ensureRuntimeCallLogTable();
             ensureTraceSchema();
             ensureProjectAuthSchema();
@@ -308,6 +309,15 @@ public class SchemaSyncService {
         ensureUtf8mb4Table("rule_runtime_call_log");
     }
 
+    private void ensureExperimentRuleReferenceSchema() {
+        if (!tableExists("rule_experiment_group")) return;
+        addColumnIfMissing("rule_experiment_group", "rule_id",
+                "`rule_id` BIGINT DEFAULT NULL COMMENT '执行规则定义ID' AFTER `group_type`");
+        if (!indexExists("rule_experiment_group", "idx_experiment_group_rule")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_experiment_group` ADD KEY `idx_experiment_group_rule` (`rule_id`)");
+        }
+    }
+
     private void ensureTraceSchema() {
         if (!tableExists("rule_trace_registry")) {
             jdbcTemplate.execute("CREATE TABLE `rule_trace_registry` ("
@@ -515,6 +525,10 @@ public class SchemaSyncService {
         }
         addColumnIfMissing(table, "response_cache_seconds",
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
+        addColumnIfMissing(table, "request_script",
+                "`request_script` LONGTEXT DEFAULT NULL COMMENT '请求发送前QLExpress处理脚本' AFTER `body_template`");
+        addColumnIfMissing(table, "response_script",
+                "`response_script` LONGTEXT DEFAULT NULL COMMENT '响应映射前QLExpress处理脚本' AFTER `response_mapping`");
         addColumnIfMissing(table, "billing_condition",
                 "`billing_condition` JSON DEFAULT NULL COMMENT '计费条件JSON，空表示正常计费' AFTER `billing_item_code`");
         addColumnIfMissing(table, "async_result_mode",

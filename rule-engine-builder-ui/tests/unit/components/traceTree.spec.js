@@ -227,7 +227,7 @@ describe('TraceTree', () => {
     expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', thresholdText: '成年年龄 adultAge = 18', result: true })
   })
 
-  test('共享会话追踪将子规则和模块调用展示为可辨识边框节点', () => {
+  test('共享会话追踪复用各子规则原有表达式追踪样式', () => {
     const childTrace = {
       schemaVersion: 2,
       traceKind: 'RULE',
@@ -235,6 +235,10 @@ describe('TraceTree', () => {
       ruleCode: 'CHILD_RULE',
       ruleName: '子规则集',
       modelType: 'RULE_SET',
+      modelJson: JSON.stringify({
+        executionMode: 'SERIAL',
+        rules: [{ ruleCode: 'CREDIT_CHILD', ruleName: '授信额度子规则' }]
+      }),
       status: 'SUCCESS',
       durationMs: 6,
       events: [],
@@ -265,7 +269,7 @@ describe('TraceTree', () => {
     })
 
     expect(wrapper.vm.ruleTraceFrame.ruleCode).toBe('CREDIT_FLOW')
-    expect(wrapper.find('.rule-trace-frame--root').exists()).toBe(true)
+    expect(wrapper.find('.rule-trace-frame--root').exists()).toBe(false)
     expect(wrapper.find('.rule-trace-module').exists()).toBe(true)
     expect(wrapper.find('.rule-trace-children').exists()).toBe(true)
     expect(wrapper.text()).toContain('授信决策流')
@@ -274,12 +278,16 @@ describe('TraceTree', () => {
     expect(wrapper.findAll('trace-tree-stub')).toHaveLength(2)
 
     const childWrapper = mountTraceTree({ traceInfo: JSON.stringify(childTrace), nested: true })
-    expect(childWrapper.vm.ruleExpressionModelType).toBe('')
-    expect(childWrapper.find('trace-tree-stub').props('modelType')).toBe('')
+    expect(childWrapper.vm.ruleExpressionModelType).toBe('RULE_SET')
+    expect(childWrapper.find('trace-tree-stub').props('modelType')).toBe('RULE_SET')
+    expect(childWrapper.find('trace-tree-stub').props('definitionModel')).toEqual({
+      executionMode: 'SERIAL',
+      rules: [{ ruleCode: 'CREDIT_CHILD', ruleName: '授信额度子规则' }]
+    })
     childWrapper.destroy()
   })
 
-  test('分流实验追踪按路由条件到实际规则顺序展示', () => {
+  test('分流实验条件和随机分流复用现有条件树样式', () => {
     const childTrace = {
       schemaVersion: 2,
       traceKind: 'RULE',
@@ -310,11 +318,38 @@ describe('TraceTree', () => {
     })
 
     expect(wrapper.vm.experimentTraceFrame.stage).toBe('TEST')
-    expect(wrapper.find('.experiment-trace-frame').exists()).toBe(true)
-    expect(wrapper.findAll('.experiment-route-step')).toHaveLength(3)
-    expect(wrapper.text()).toContain('随机值 37')
-    expect(wrapper.text()).toContain('命中 TEST_A')
+    expect(wrapper.find('.experiment-trace-frame').exists()).toBe(false)
+    const routingTree = wrapper.find('decision-tree-trace-node-stub')
+    expect(routingTree.exists()).toBe(true)
+    expect(routingTree.props('node').label).toContain('随机值 37')
+    expect(routingTree.props('node').children[0]).toMatchObject({ branchLabel: 'TEST_A', status: 'hit' })
+    expect(wrapper.findAll('.experiment-route-step')).toHaveLength(0)
     expect(wrapper.text()).toContain(childTrace.traceId)
     expect(wrapper.findAll('trace-tree-stub')).toHaveLength(1)
+  })
+
+  test('交叉表追踪将结构化单元格显示为业务值而不是对象字符串', () => {
+    const simple = mountTraceTree({
+      modelType: 'CROSS',
+      definitionModel: {
+        rowHeaders: ['A'],
+        colHeaders: ['B'],
+        cells: [['']],
+        cellOperands: [[{ kind: 'LITERAL', value: 101, valueType: 'INTEGER' }]]
+      }
+    })
+    expect(simple.vm.traceCrossSimpleCellDisplay(0, 0)).toBe('101')
+    simple.destroy()
+
+    const advanced = mountTraceTree({
+      modelType: 'CROSS_ADV',
+      definitionModel: {
+        rowDimensions: [{ segments: [{ operator: '==', value: 'A' }] }],
+        colDimensions: [{ segments: [{ operator: '==', value: 'B' }] }],
+        cells: [[{ kind: 'LITERAL', value: 1.147, valueType: 'DOUBLE' }]]
+      }
+    })
+    expect(advanced.vm.traceAdvCellDisplay(0, 0)).toBe('1.147')
+    advanced.destroy()
   })
 })

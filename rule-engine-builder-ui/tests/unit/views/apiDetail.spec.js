@@ -21,7 +21,7 @@ function createContext(overrides = {}) {
     responseMappingJsonText: '{}',
     syncingMapping: false,
     apiAuthConfig: ApiDetail.methods.emptyAuthConfig('INHERIT'),
-    apiSecurityConfig: { securityProfile: 'NONE', tokenId: '', secretId: '', secretKey: '' },
+    scriptVariableRows: [ApiDetail.methods.emptyScriptVariableRow()],
     billingConfig: ApiDetail.methods.emptyBillingConfig(),
     asyncShared: ApiDetail.methods.emptyAsyncShared(),
     asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
@@ -279,6 +279,28 @@ describe('ApiDetail helpers', () => {
     })
   })
 
+  test('buildApiInvokeParamTemplate includes request object fields without mappings', () => {
+    const ctx = createContext({
+      form: {
+        ...ApiDetail.methods.emptyForm(),
+        requestObjectId: 7
+      },
+      dataObjectOptions: [{ id: 7, objectCode: 'TSRequestBody', scriptName: '' }],
+      dataObjectTree: [{
+        object: { id: 7, objectCode: 'TSRequestBody', scriptName: '' },
+        flatVariables: [
+          { scriptName: 'clientAppName', varType: 'STRING' },
+          { scriptName: 'params', varType: 'OBJECT' }
+        ]
+      }]
+    })
+
+    expect(JSON.parse(ctx.buildApiInvokeParamTemplate(ctx.form))).toEqual({
+      clientAppName: '',
+      params: {}
+    })
+  })
+
   test('loadDataObjectOptions accepts variable tree wrapped in response data tree', async () => {
     const ctx = createContext()
     const requestNode = {
@@ -303,55 +325,88 @@ describe('ApiDetail helpers', () => {
     expect(ctx.fieldsForObject(10)).toEqual(requestNode.flatVariables)
   })
 
-  test('security profile is saved independently from auth mode', () => {
+  test('script variables are saved independently from auth mode', () => {
     const ctx = createContext({
       form: { ...ApiDetail.methods.emptyForm(), authMode: 'NONE' },
-      apiSecurityConfig: {
-        securityProfile: 'TIANCHUANG_MD5_SORTED',
-        tokenId: 'token-1',
-        secretId: '',
-        secretKey: ''
-      }
+      scriptVariableRows: [
+        { name: 'appKey', value: 'A001', sensitive: false },
+        { name: 'secret_key', value: 'S001', sensitive: true }
+      ]
     })
 
     expect(JSON.parse(ctx.buildApiAuthConfig())).toEqual({
-      securityProfile: 'TIANCHUANG_MD5_SORTED',
-      securityConfig: { tokenId: 'token-1' }
+      scriptVariables: [
+        { name: 'appKey', value: 'A001', sensitive: false },
+        { name: 'secret_key', value: 'S001', sensitive: true }
+      ]
     })
   })
 
-  test('saved baihang security profile loads structured fields', () => {
+  test('saved script variables load without changing names', () => {
     const ctx = createContext()
     ctx.form.authMode = 'NONE'
-    ctx.form.authApiConfig = '{"securityProfile":"BAIHANG_HMAC_SHA1_3DES","securityConfig":{"secretId":"id","secretKey":"key"}}'
+    ctx.form.authApiConfig = '{"scriptVariables":[{"name":"appKey","value":"A001","sensitive":false},{"name":"secret_key","value":"S001","sensitive":true}]}'
 
     ctx.syncAuthConfigFromForm()
 
-    expect(ctx.apiSecurityConfig).toEqual({
-      securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
-      tokenId: '',
-      secretId: 'id',
-      secretKey: 'key'
-    })
+    expect(ctx.scriptVariableRows).toEqual([
+      { name: 'appKey', value: 'A001', sensitive: false },
+      { name: 'secret_key', value: 'S001', sensitive: true }
+    ])
   })
 
-  test('switching security profile clears fields from previous profile', () => {
+  test('script variable validation rejects duplicate and invalid names', () => {
     const ctx = createContext({
-      apiSecurityConfig: {
-        securityProfile: 'TIANCHUANG_MD5_SORTED',
-        tokenId: 'old-token',
-        secretId: '',
-        secretKey: ''
-      }
+      scriptVariableRows: [
+        { name: 'app-key', value: 'A', sensitive: false },
+        { name: 'app-key', value: 'B', sensitive: true }
+      ]
     })
 
-    ctx.onSecurityProfileChange('BAIHANG_HMAC_SHA1_3DES')
+    expect(() => ctx.buildScriptVariables()).toThrow('脚本变量名')
+  })
 
-    expect(ctx.apiSecurityConfig).toEqual({
-      securityProfile: 'BAIHANG_HMAC_SHA1_3DES',
-      tokenId: '',
-      secretId: '',
-      secretKey: ''
+  test('online invocation executes the current api draft used to generate parameters', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2, endpointUrl: '/draft-score' },
+      invokeParamsText: '{"customer":{"idNo":"A001"}}',
+      invokeLoading: false,
+      invokeResultText: '',
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
     })
+    const draft = { id: 8, datasourceId: 2, endpointUrl: '/draft-score' }
+    ctx.normalizeForm = jest.fn().mockReturnValue(draft)
+    datasourceApi.invokeApiConfigPreview.mockResolvedValue({ data: { success: true } })
+
+    await ctx.runInvokeApi()
+
+    expect(datasourceApi.invokeApiConfigPreview).toHaveBeenCalledWith(8, {
+      config: draft,
+      params: { customer: { idNo: 'A001' } }
+    })
+    expect(ctx.invokeResultText).toContain('"success": true')
+  })
+
+  test('request preview uses non-network preparation endpoint', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2, endpointUrl: '/draft-score' },
+      invokeParamsText: '{"mobile_no":"13800138000"}',
+      previewLoading: false,
+      requestPreviewText: '',
+      previewToken: 'token-placeholder',
+      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+    })
+    const draft = { id: 8, datasourceId: 2, endpointUrl: '/draft-score' }
+    ctx.normalizeForm = jest.fn().mockReturnValue(draft)
+    datasourceApi.previewApiConfigRequest.mockResolvedValue({ data: { networkCalled: false } })
+
+    await ctx.runRequestPreview()
+
+    expect(datasourceApi.previewApiConfigRequest).toHaveBeenCalledWith(8, {
+      config: draft,
+      params: { mobile_no: '13800138000' },
+      previewToken: 'token-placeholder'
+    })
+    expect(ctx.requestPreviewText).toContain('"networkCalled": false')
   })
 })

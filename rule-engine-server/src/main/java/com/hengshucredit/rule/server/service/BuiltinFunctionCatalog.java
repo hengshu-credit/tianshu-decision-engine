@@ -18,6 +18,7 @@ final class BuiltinFunctionCatalog {
     private static final String DECISION_CLASS = "com.hengshucredit.rule.core.function.DecisionBuiltinFunctions";
     private static final String DIGEST_CLASS = "com.hengshucredit.rule.core.function.DigestBuiltinFunctions";
     private static final String RUNTIME_CONTEXT_CLASS = "com.hengshucredit.rule.core.function.RuntimeContextBuiltinFunctions";
+    private static final String RANDOM_CLASS = "com.hengshucredit.rule.core.function.RandomBuiltinFunctions";
 
     private BuiltinFunctionCatalog() {
     }
@@ -68,6 +69,22 @@ final class BuiltinFunctionCatalog {
         list.add(fn("numAbs", "数值绝对值", "返回数值绝对值", p("value", "NUMBER", "数值", -12.3), "NUMBER", DECISION_CLASS, "numAbs"));
         list.add(fn("numPow", "数值幂运算", "返回 value 的 exponent 次幂", params(p("value", "NUMBER", "底数", 2), p("exponent", "NUMBER", "指数", 3)), "NUMBER", DECISION_CLASS, "numPow"));
         list.add(fn("numBetween", "数值区间判断", "判断 value 是否在 [min, max] 闭区间内", params(p("value", "NUMBER", "数值", 85), p("min", "NUMBER", "下限", 60), p("max", "NUMBER", "上限", 100)), "BOOLEAN", DECISION_CLASS, "numBetween"));
+        list.add(fn("randomInt", "随机整数",
+                "生成随机整数；支持 randomInt()、randomInt(lower, upper) 和 randomInt(lower, upper, includeLower, includeUpper)，默认闭区间；仅用于普通业务抽样，不用于安全随机",
+                params(
+                        p("lower", "NUMBER", "下界", 0),
+                        p("upper", "NUMBER", "上界", 1),
+                        p("includeLower", "BOOLEAN", "包含下界", true),
+                        p("includeUpper", "BOOLEAN", "包含上界", true)),
+                "NUMBER", RANDOM_CLASS, "randomIntForManagement"));
+        list.add(fn("randomDecimal", "随机小数",
+                "生成随机小数；支持 randomDecimal()、randomDecimal(lower, upper) 和 randomDecimal(lower, upper, includeLower, includeUpper)，默认闭区间；仅用于普通业务抽样，不用于安全随机",
+                params(
+                        p("lower", "NUMBER", "下界", 0),
+                        p("upper", "NUMBER", "上界", 1),
+                        p("includeLower", "BOOLEAN", "包含下界", true),
+                        p("includeUpper", "BOOLEAN", "包含上界", true)),
+                "NUMBER", RANDOM_CLASS, "randomDecimalForManagement"));
 
         list.add(fn("strLength", "字符串长度", "返回字符串长度，null 返回 0", p("text", "STRING", "文本", "ABC123"), "NUMBER", DECISION_CLASS, "strLength"));
         list.add(fn("strTrim", "字符串去空白", "去除字符串首尾空白", p("text", "STRING", "文本", "  ABC123  "), "STRING", DECISION_CLASS, "strTrim"));

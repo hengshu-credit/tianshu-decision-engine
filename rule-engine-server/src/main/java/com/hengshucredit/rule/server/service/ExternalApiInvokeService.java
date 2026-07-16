@@ -33,6 +33,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 
@@ -65,7 +66,7 @@ public class ExternalApiInvokeService {
     private RuntimeTraceService runtimeTraceService;
 
     @Resource
-    private ExternalApiSecurityService externalApiSecurityService = new ExternalApiSecurityService();
+    private ExternalApiScriptService externalApiScriptService = new ExternalApiScriptService();
 
     private final ConcurrentMap<String, TokenCache> tokenCaches = new ConcurrentHashMap<>();
     private final ConcurrentMap<String, ApiResponseCache> responseCaches = new ConcurrentHashMap<>();
@@ -75,13 +76,27 @@ public class ExternalApiInvokeService {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不存在");
         }
+        return invoke(apiConfig, params, true);
+    }
+
+    /** 使用页面当前配置执行测试，不要求先覆盖数据库中的已保存配置。 */
+    public Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params) {
+        return invoke(apiConfig, params, false);
+    }
+
+    private Map<String, Object> invoke(RuleExternalApiConfig apiConfig, Map<String, Object> params,
+                                       boolean useResponseCache) {
+        if (apiConfig == null) {
+            throw new IllegalArgumentException("API接口配置不能为空");
+        }
         RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
         if (datasource == null) {
             throw new IllegalArgumentException("外数数据源不存在");
         }
         int retryCount = apiConfig.getRetryCount() == null ? 0 : Math.max(apiConfig.getRetryCount(), 0);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
-        int responseCacheSeconds = apiConfig.getResponseCacheSeconds() == null ? 0 : Math.max(apiConfig.getResponseCacheSeconds(), 0);
+        int responseCacheSeconds = useResponseCache && apiConfig.getResponseCacheSeconds() != null
+                ? Math.max(apiConfig.getResponseCacheSeconds(), 0) : 0;
         String responseCacheKey = buildResponseCacheKey(apiConfig.getId(), params == null ? new HashMap<>() : params);
         ApiResponseCache cachedResponse = responseCacheSeconds > 0 ? responseCaches.get(responseCacheKey) : null;
         long start = System.currentTimeMillis();
@@ -183,6 +198,46 @@ public class ExternalApiInvokeService {
         }
     }
 
+    /** 只构造最终请求并脱敏返回，不访问令牌接口、外部 HTTP 地址或内部规则。 */
+    public Map<String, Object> previewRequest(RuleExternalApiConfig apiConfig, Map<String, Object> params,
+                                              String previewToken) {
+        if (apiConfig == null) {
+            throw new IllegalArgumentException("API接口配置不能为空");
+        }
+        RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
+        if (datasource == null) {
+            throw new IllegalArgumentException("外数数据源不存在");
+        }
+        Map<String, Object> input = params == null ? new LinkedHashMap<>() : params;
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (isRuleEngineDatasource(datasource)) {
+            Map<String, Object> mapping = parseJsonMap(apiConfig.getRequestMapping());
+            Object mapped = mapping.get("params");
+            Map<String, Object> body = mapped == null ? new LinkedHashMap<>(input)
+                    : parseNestedMap(resolveRequestMappingObject(mapped, input));
+            body = requireScriptBodyMap(executeRequestScript(apiConfig, input, body,
+                    new LinkedHashMap<>(), new LinkedHashMap<>(), previewToken,
+                    apiConfig.getEndpointUrl(), "POST"));
+            result.put("method", "POST");
+            result.put("url", "rule-engine://local/" + firstText(mapping.get("ruleCode"),
+                    apiConfig.getEndpointUrl(), apiConfig.getApiCode()));
+            result.put("headers", new LinkedHashMap<>());
+            result.put("query", new LinkedHashMap<>());
+            result.put("body", maskSensitiveForPreview(body));
+        } else {
+            PreparedHttpRequest prepared = prepareHttpRequest(apiConfig, datasource, input, true, previewToken);
+            result.put("method", prepared.method.name());
+            result.put("url", prepared.baseUrl);
+            result.put("contentType", prepared.headers.getContentType() == null
+                    ? null : prepared.headers.getContentType().toString());
+            result.put("headers", maskSensitiveForPreview(headersForScript(prepared.headers)));
+            result.put("query", maskSensitiveForPreview(prepared.query));
+            result.put("body", maskSensitiveForPreview(prepared.scriptBody));
+        }
+        result.put("networkCalled", false);
+        return result;
+    }
+
     String buildResponseCacheKey(Long apiConfigId, Map<String, Object> params) {
         return apiConfigId + ":" + JSON.toJSONString(params == null ? new HashMap<>() : params);
     }
@@ -208,42 +263,27 @@ public class ExternalApiInvokeService {
         if (isRuleEngineDatasource(datasource)) {
             return doInvokeRuleEngine(apiConfig, datasource, params, trace);
         }
-        String url = buildUrl(datasource.getBaseUrl(), apiConfig.getEndpointUrl());
-        HttpHeaders headers = new HttpHeaders();
-        if (hasText(apiConfig.getContentType())) {
-            headers.setContentType(MediaType.parseMediaType(apiConfig.getContentType()));
-        }
-        applyJsonHeaders(headers, apiConfig.getHeaderConfig(), params);
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url);
-        applyQueryParams(builder, apiConfig.getQueryConfig(), params);
-        applyAuth(builder, headers, datasource, apiConfig, params);
-
-        Object requestBody = buildBody(apiConfig, params);
-        requestBody = externalApiSecurityService.prepareRequest(url, requestBody, apiConfig.getAuthApiConfig());
-        requestBody = buildHttpRequestBody(requestBody, headers.getContentType());
+        PreparedHttpRequest prepared = prepareHttpRequest(apiConfig, datasource, params, false, null);
         SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
         int timeout = apiConfig.getTimeoutMs() == null ? 3000 : apiConfig.getTimeoutMs();
         requestFactory.setConnectTimeout(timeout);
         requestFactory.setReadTimeout(timeout);
         RestTemplate restTemplate = new RestTemplate(requestFactory);
-        HttpMethod method = HttpMethod.resolve(apiConfig.getRequestMethod());
-        if (method == null) {
-            method = HttpMethod.POST;
-        }
-        trace.requestMethod = method.name();
-        trace.requestUrl = builder.build(true).toUriString();
-        trace.requestHeaders = headersToLog(headers);
-        trace.requestBody = requestBody;
+        trace.requestMethod = prepared.method.name();
+        trace.requestUrl = prepared.finalUrl;
+        trace.requestHeaders = headersToLog(prepared.headers);
+        trace.requestBody = prepared.requestBody;
         trace.requestIssued = true;
         ResponseEntity<String> response = restTemplate.exchange(
-                builder.build(true).toUri(),
-                method,
-                new HttpEntity<>(requestBody, headers),
+                prepared.finalUrl,
+                prepared.method,
+                new HttpEntity<>(prepared.requestBody, prepared.headers),
                 String.class);
 
         Map<String, Object> result = new LinkedHashMap<>();
         Object responseBody = parseJsonOrRaw(response.getBody());
-        responseBody = externalApiSecurityService.processResponse(responseBody, apiConfig.getAuthApiConfig());
+        responseBody = executeResponseScript(apiConfig, params, responseBody, response.getBody(),
+                response.getStatusCodeValue(), response.getHeaders());
         trace.responseStatus = response.getStatusCodeValue();
         trace.responseBody = responseBody;
         result.put("success", response.getStatusCode().is2xxSuccessful());
@@ -286,6 +326,9 @@ public class ExternalApiInvokeService {
         }
         Object mapped = config.get("params");
         Map<String, Object> ruleParams = mapped == null ? params : parseNestedMap(resolveRequestMappingObject(mapped, params));
+        ruleParams = requireScriptBodyMap(executeRequestScript(apiConfig, params, ruleParams,
+                new LinkedHashMap<>(), new LinkedHashMap<>(), "",
+                "rule-engine://local/" + ruleCode, "POST"));
         trace.requestMethod = "POST";
         trace.requestUrl = "rule-engine://local/" + ruleCode;
         trace.requestBody = ruleParams;
@@ -293,13 +336,136 @@ public class ExternalApiInvokeService {
         RuleResult result = ruleExecuteService.executePublished(published, ruleParams, datasource.getProjectId(), "RULE_ENGINE_DATASOURCE");
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("success", result.isSuccess());
-        response.put("body", result.getResult());
+        Object responseBody = executeResponseScript(apiConfig, params, result.getResult(),
+                JSON.toJSONString(result.getResult()), result.isSuccess() ? 200 : 500, new HttpHeaders());
+        response.put("body", responseBody);
         response.put("errorMessage", result.getErrorMessage());
         response.put("executeTimeMs", result.getExecuteTimeMs());
         response.put("traces", result.getTraces());
         trace.responseStatus = result.isSuccess() ? 200 : 500;
-        trace.responseBody = response;
+        trace.responseBody = responseBody;
         return applyResponseMapping(apiConfig, response);
+    }
+
+    private PreparedHttpRequest prepareHttpRequest(RuleExternalApiConfig apiConfig,
+                                                   RuleExternalDatasource datasource,
+                                                   Map<String, Object> params,
+                                                   boolean preview,
+                                                   String previewToken) {
+        String url = buildUrl(datasource.getBaseUrl(), apiConfig.getEndpointUrl());
+        HttpHeaders headers = new HttpHeaders();
+        if (hasText(apiConfig.getContentType())) {
+            headers.setContentType(MediaType.parseMediaType(apiConfig.getContentType()));
+        }
+        applyJsonHeaders(headers, apiConfig.getHeaderConfig(), params);
+        UriComponentsBuilder initialBuilder = UriComponentsBuilder.fromHttpUrl(url);
+        applyQueryParams(initialBuilder, apiConfig.getQueryConfig(), params);
+        String token = applyAuth(initialBuilder, headers, datasource, apiConfig, params, preview, previewToken);
+
+        Map<String, Object> scriptHeaders = headersForScript(headers);
+        Map<String, Object> scriptQuery = queryForScript(initialBuilder);
+        Object scriptBody = executeRequestScript(apiConfig, params, buildBody(apiConfig, params),
+                scriptHeaders, scriptQuery, token, url, firstText(apiConfig.getRequestMethod(), "POST"));
+        replaceHeaders(headers, scriptHeaders);
+        UriComponentsBuilder finalBuilder = UriComponentsBuilder.fromHttpUrl(url);
+        applyPreparedQuery(finalBuilder, scriptQuery);
+
+        PreparedHttpRequest prepared = new PreparedHttpRequest();
+        prepared.baseUrl = url;
+        prepared.finalUrl = finalBuilder.build(true).toUriString();
+        prepared.headers = headers;
+        prepared.query = scriptQuery;
+        prepared.scriptBody = scriptBody;
+        prepared.requestBody = buildHttpRequestBody(scriptBody, headers.getContentType());
+        prepared.method = HttpMethod.resolve(apiConfig.getRequestMethod());
+        if (prepared.method == null) prepared.method = HttpMethod.POST;
+        return prepared;
+    }
+
+    private Object executeRequestScript(RuleExternalApiConfig apiConfig, Map<String, Object> input,
+                                        Object body, Map<String, Object> headers,
+                                        Map<String, Object> query, String token,
+                                        String endpoint, String method) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("input", input);
+        context.put("body", body);
+        context.put("headers", headers);
+        context.put("query", query);
+        context.put("vars", externalApiScriptService.parseScriptVariables(apiConfig.getAuthApiConfig()));
+        context.put("token", token == null ? "" : token);
+        context.put("endpoint", endpoint);
+        context.put("method", method);
+        context.put("nowMillis", System.currentTimeMillis());
+        context.put("requestId", resolveRequestId(input));
+        return externalApiScriptService.executeRequest(apiConfig.getRequestScript(), context);
+    }
+
+    private Object executeResponseScript(RuleExternalApiConfig apiConfig, Map<String, Object> input,
+                                         Object body, String rawBody, int httpStatus,
+                                         HttpHeaders responseHeaders) {
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("input", input);
+        context.put("body", body);
+        context.put("rawBody", rawBody);
+        context.put("httpStatus", httpStatus);
+        context.put("headers", headersForScript(responseHeaders));
+        context.put("vars", externalApiScriptService.parseScriptVariables(apiConfig.getAuthApiConfig()));
+        return externalApiScriptService.executeResponse(apiConfig.getResponseScript(), context);
+    }
+
+    private String resolveRequestId(Map<String, Object> input) {
+        String value = firstText(input == null ? null : input.get("request_id"),
+                input == null ? null : input.get("requestId"));
+        return hasText(value) ? value : UUID.randomUUID().toString().replace("-", "");
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> requireScriptBodyMap(Object body) {
+        if (!(body instanceof Map)) {
+            throw new IllegalArgumentException("内部规则请求脚本必须返回对象");
+        }
+        return (Map<String, Object>) body;
+    }
+
+    private Map<String, Object> headersForScript(HttpHeaders headers) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (headers == null) return result;
+        for (Map.Entry<String, List<String>> entry : headers.entrySet()) {
+            if (entry.getValue() == null || entry.getValue().isEmpty()) continue;
+            result.put(entry.getKey(), entry.getValue().size() == 1
+                    ? entry.getValue().get(0) : new ArrayList<>(entry.getValue()));
+        }
+        return result;
+    }
+
+    private void replaceHeaders(HttpHeaders headers, Map<String, Object> values) {
+        headers.clear();
+        for (Map.Entry<String, Object> entry : values.entrySet()) {
+            if (entry.getValue() instanceof Iterable) {
+                for (Object item : (Iterable<?>) entry.getValue()) headers.add(entry.getKey(), stringValue(item));
+            } else if (entry.getValue() != null) {
+                headers.set(entry.getKey(), stringValue(entry.getValue()));
+            }
+        }
+    }
+
+    private Map<String, Object> queryForScript(UriComponentsBuilder builder) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : builder.build(false).getQueryParams().entrySet()) {
+            result.put(entry.getKey(), entry.getValue().size() == 1
+                    ? entry.getValue().get(0) : new ArrayList<>(entry.getValue()));
+        }
+        return result;
+    }
+
+    private void applyPreparedQuery(UriComponentsBuilder builder, Map<String, Object> query) {
+        for (Map.Entry<String, Object> entry : query.entrySet()) {
+            if (entry.getValue() instanceof Iterable) {
+                for (Object item : (Iterable<?>) entry.getValue()) builder.queryParam(entry.getKey(), item);
+            } else if (entry.getValue() != null) {
+                builder.queryParam(entry.getKey(), entry.getValue());
+            }
+        }
     }
 
     private String buildLinkedGlobalRuleExistsSql(Long projectId) {
@@ -330,8 +496,9 @@ public class ExternalApiInvokeService {
         }
     }
 
-    private void applyAuth(UriComponentsBuilder builder, HttpHeaders headers, RuleExternalDatasource datasource,
-                           RuleExternalApiConfig apiConfig, Map<String, Object> params) {
+    private String applyAuth(UriComponentsBuilder builder, HttpHeaders headers, RuleExternalDatasource datasource,
+                             RuleExternalApiConfig apiConfig, Map<String, Object> params,
+                             boolean preview, String previewToken) {
         String authMode = apiConfig.getAuthMode();
         String authConfig = apiConfig.getAuthApiConfig();
         if (authMode == null || authMode.trim().isEmpty() || "INHERIT".equals(authMode)) {
@@ -339,7 +506,7 @@ public class ExternalApiInvokeService {
             authConfig = datasource.getAuthConfig();
         }
         if (authMode == null || "NONE".equals(authMode)) {
-            return;
+            return "";
         }
         Map<String, Object> config = parseJsonMap(authConfig);
         if ("BASIC".equals(authMode)) {
@@ -362,11 +529,14 @@ public class ExternalApiInvokeService {
                     : (datasource.getTokenCacheSeconds() == null ? 0 : datasource.getTokenCacheSeconds());
             String tokenUrl = buildTokenUrl(datasource, stringValue(config.get("tokenUrl")));
             String cacheKey = apiConfig.getId() + ":" + authMode + ":" + tokenUrl;
-            String token = requestToken(config, params, tokenUrl, cacheKey, cacheSeconds);
+            String token = preview ? firstText(previewToken, "")
+                    : requestToken(config, params, tokenUrl, cacheKey, cacheSeconds);
             if (token != null && !token.isEmpty()) {
                 applyTokenHeader(headers, config, token);
             }
+            return token;
         }
+        return "";
     }
 
     private void applyTokenHeader(HttpHeaders headers, Map<String, Object> config, String token) {
@@ -408,6 +578,7 @@ public class ExternalApiInvokeService {
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(tokenUrl, method, new HttpEntity<>(body, headers), String.class);
         Object parsed = parseJsonOrRaw(response.getBody());
+        parsed = executeTokenResponseScript(config, params, response, parsed);
         Object token = readToken(response, parsed, stringValue(config.get("tokenPath")));
         String tokenText = token == null ? "" : stripBearerPrefix(String.valueOf(token));
         int ttlSeconds = resolveTokenTtlSeconds(config, response, parsed, cacheSeconds);
@@ -443,6 +614,7 @@ public class ExternalApiInvokeService {
         RestTemplate restTemplate = new RestTemplate();
         ResponseEntity<String> response = restTemplate.exchange(tokenUrl, method, new HttpEntity<>(body, headers), String.class);
         Object parsed = parseJsonOrRaw(response.getBody());
+        parsed = executeTokenResponseScript(config, params, response, parsed);
         Object token = readToken(response, parsed, stringValue(config.get("tokenPath")));
         int ttlSeconds = resolveTokenTtlSeconds(config, response, parsed,
                 datasource.getTokenCacheSeconds() == null ? 0 : datasource.getTokenCacheSeconds());
@@ -466,6 +638,20 @@ public class ExternalApiInvokeService {
         trace.responseStatus = response.getStatusCodeValue();
         trace.responseBody = responseDetail;
         return result;
+    }
+
+    private Object executeTokenResponseScript(Map<String, Object> config, Map<String, Object> params,
+                                              ResponseEntity<String> response, Object parsed) {
+        String script = stringValue(config.get("tokenResponseScript"));
+        if (!hasText(script)) return parsed;
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("input", params);
+        context.put("body", parsed);
+        context.put("rawBody", response.getBody());
+        context.put("httpStatus", response.getStatusCodeValue());
+        context.put("headers", headersForScript(response.getHeaders()));
+        context.put("vars", externalApiScriptService.parseScriptVariables(JSON.toJSONString(config)));
+        return externalApiScriptService.executeResponse(script, context);
     }
 
     private String buildTokenUrl(RuleExternalDatasource datasource, String tokenUrl) {
@@ -1183,11 +1369,29 @@ public class ExternalApiInvokeService {
         return value;
     }
 
+    private Object maskSensitiveForPreview(Object value) {
+        if (value instanceof Map) {
+            Map<String, Object> masked = new LinkedHashMap<>();
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) value).entrySet()) {
+                String key = entry.getKey() == null ? "" : String.valueOf(entry.getKey());
+                masked.put(key, isSensitiveKey(key) ? "******" : maskSensitiveForPreview(entry.getValue()));
+            }
+            return masked;
+        }
+        if (value instanceof Iterable) {
+            List<Object> masked = new ArrayList<>();
+            for (Object item : (Iterable<?>) value) masked.add(maskSensitiveForPreview(item));
+            return masked;
+        }
+        return value;
+    }
+
     private boolean isSensitiveKey(String name) {
         String lower = name == null ? "" : name.toLowerCase();
         return lower.contains("password") || lower.contains("token")
                 || lower.contains("secret") || lower.contains("key")
-                || lower.contains("authorization");
+                || lower.contains("authorization") || lower.contains("signature")
+                || lower.equals("sign") || lower.contains("private");
     }
 
     private Map<String, Object> headersToLog(HttpHeaders headers) {
@@ -1247,6 +1451,16 @@ public class ExternalApiInvokeService {
         private Integer responseStatus;
         private Object responseBody;
         private boolean requestIssued;
+    }
+
+    private static class PreparedHttpRequest {
+        private String baseUrl;
+        private String finalUrl;
+        private HttpMethod method;
+        private HttpHeaders headers;
+        private Map<String, Object> query;
+        private Object scriptBody;
+        private Object requestBody;
     }
 
     private static class TokenCache {

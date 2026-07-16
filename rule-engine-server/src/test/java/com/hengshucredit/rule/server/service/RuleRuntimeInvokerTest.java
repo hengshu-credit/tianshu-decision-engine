@@ -124,6 +124,7 @@ public class RuleRuntimeInvokerTest {
             assertEquals(1, root.getChildren().size());
             RuleTraceFrame child = root.getChildren().get(0);
             assertTrue(child.getTraceId().startsWith("RSG0000"));
+            assertEquals("{\"rules\":[{\"ruleCode\":\"CREDIT_CHILD\"}]}", child.getModelJson());
             assertNotEquals(root.getTraceId(), child.getTraceId());
             assertEquals(child.getTraceId(), variableResolver.ruleTraceIdDuringResolve);
             assertFalse(child.getExpressionTrace().isEmpty());
@@ -233,6 +234,7 @@ public class RuleRuntimeInvokerTest {
             content.setDefinitionId(definitionId);
             content.setCompileStatus(1);
             content.setCompiledScript("CREDIT_AMOUNT = 3000; CREDIT_AMOUNT");
+            content.setModelJson("{\"rules\":[{\"ruleCode\":\"CREDIT_CHILD\"}]}");
             return content;
         }
 

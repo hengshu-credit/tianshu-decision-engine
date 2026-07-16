@@ -217,6 +217,12 @@ public class RuleDefinitionController {
         Map<String, Object> params = body.get("params") != null
                 ? (Map<String, Object>) body.get("params")
                 : Collections.emptyMap();
+        String modelJson = body.get("modelJson") == null ? null
+                : normalizeModelJson(body.get("modelJson").toString());
+        if (modelJson != null && !modelJson.trim().isEmpty()) {
+            String modelType = body.get("modelType") == null ? null : body.get("modelType").toString();
+            return R.ok(executeService.testExecutePreview(definitionId, modelJson, modelType, params));
+        }
         return R.ok(executeService.testExecute(definitionId, params));
     }
 

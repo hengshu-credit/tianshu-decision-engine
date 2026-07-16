@@ -102,21 +102,36 @@
         </template>
 
         <template v-else-if="block.type === 'rule-call'">
-          <div class="inline-row">
-            <span class="mini-label">结果</span>
-            <operand-picker :value="block.targetOperand" :vars="vars" :selected-vars="selectedVars" :allowed-kinds="writeKinds" writable-only placeholder="选择结果字段（可空）" size="mini" @input="value => setOperand(block, 'targetOperand', value)" />
+          <rule-execution-selector
+            :rule-id="block.ruleId"
+            :rule-code="block.ruleCode"
+            :rules="rules"
+            :current-rule-id="currentRuleId"
+            :current-rule-code="currentRuleCode"
+            @visible-change="visible => rememberRuleCallSnapshot(block, visible)"
+            @select="rule => onRuleSelect(block, rule)"
+          />
+          <div class="shared-context-hint">
+            <i class="el-icon-info" /> 子规则全部输出会写入当前共享上下文，后续动作可直接引用最新值
           </div>
-          <div class="inline-row">
-            <span class="mini-label">规则</span>
-            <el-select v-model="block.ruleCode" size="mini" filterable placeholder="选择要执行的规则" class="grow" @visible-change="visible => rememberRuleCallSnapshot(block, visible)" @change="onRuleSelect(block, $event)">
-              <el-option v-for="rule in rules" :key="rule.id || rule.ruleCode" :label="ruleLabel(rule)" :value="rule.ruleCode" />
-            </el-select>
+          <div class="mapping-toggle-row">
+            <el-switch
+              :value="hasRuleOutputMapping(block)"
+              active-text="额外映射单个输出字段"
+              @change="enabled => toggleRuleOutputMapping(block, enabled)"
+            />
           </div>
-          <div class="inline-row">
-            <span class="mini-label">输出字段</span>
-            <el-select v-model="block.outputField" size="mini" filterable clearable placeholder="选择具体输出字段（可空）" class="grow" @change="sync">
-              <el-option v-for="field in ruleOutputFields(block)" :key="field.id || field.scriptName || field.fieldName" :label="fieldLabel(field)" :value="field.scriptName || field.fieldName" />
-            </el-select>
+          <div v-if="hasRuleOutputMapping(block)" class="rule-output-mapping">
+            <div class="inline-row">
+              <span class="mini-label">子规则输出</span>
+              <el-select v-model="block.outputField" size="mini" filterable clearable placeholder="选择输出字段" class="grow" @change="sync">
+                <el-option v-for="field in ruleOutputFields(block)" :key="field.id || field.scriptName || field.fieldName" :label="fieldLabel(field)" :value="field.scriptName || field.fieldName" />
+              </el-select>
+            </div>
+            <div class="inline-row">
+              <span class="mini-label">写入字段</span>
+              <operand-picker :value="block.targetOperand" :vars="vars" :selected-vars="selectedVars" :allowed-kinds="writeKinds" writable-only placeholder="选择当前上下文字段" size="mini" @input="value => setOperand(block, 'targetOperand', value)" />
+            </div>
           </div>
         </template>
 
@@ -197,6 +212,7 @@
 
 <script>
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import AssignmentRow from './ActionAssignmentRow.vue'
 import AssignmentTarget from './ActionAssignmentTarget.vue'
 import { actionDataToBlocks, BLOCK_TYPES, blocksToActionData, generateScript, newBlock } from '@/utils/actionDataCodegen'
@@ -212,7 +228,7 @@ import { inferOperandType } from '@/utils/operand'
 
 export default {
   name: 'ActionBlockEditor',
-  components: { AssignmentRow, AssignmentTarget, OperandPicker },
+  components: { AssignmentRow, AssignmentTarget, OperandPicker, RuleExecutionSelector },
   provide() { return { actionEditor: this } },
   props: {
     actionData: { type: Array, default: () => [] },
@@ -337,12 +353,19 @@ export default {
     rememberRuleCallSnapshot(block, visible) {
       if (!visible || !block) return
       Object.defineProperty(block, '__ruleCallSnapshot', {
-        value: { ruleId: block.ruleId == null ? null : block.ruleId, ruleCode: block.ruleCode || '', ruleName: block.ruleName || '', modelType: block.modelType || '', outputField: block.outputField || '' },
+        value: {
+          ruleId: block.ruleId == null ? null : block.ruleId,
+          ruleCode: block.ruleCode || '',
+          ruleName: block.ruleName || '',
+          modelType: block.modelType || '',
+          outputField: block.outputField || '',
+          targetOperand: block.targetOperand ? JSON.parse(JSON.stringify(block.targetOperand)) : null
+        },
         enumerable: false, configurable: true, writable: true
       })
     },
     restoreRuleCallSnapshot(block) {
-      const snapshot = block.__ruleCallSnapshot || { ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '' }
+      const snapshot = block.__ruleCallSnapshot || { ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '', targetOperand: null }
       Object.keys(snapshot).forEach(key => this.$set(block, key, snapshot[key]))
       this.clearRuleCallSnapshot(block)
     },
@@ -358,10 +381,23 @@ export default {
         return (error && error.message) || '规则调用环校验失败'
       }
     },
-    async onRuleSelect(block, ruleCode) {
-      const rule = (this.rules || []).find(item => String(item.ruleCode) === String(ruleCode))
+    hasRuleOutputMapping(block) {
+      return !!(block && (block.outputField || block.targetOperand))
+    },
+    toggleRuleOutputMapping(block, enabled) {
+      if (!enabled) {
+        this.$set(block, 'outputField', '')
+        this.$set(block, 'targetOperand', null)
+      }
+      this.sync()
+    },
+    async onRuleSelect(block, selectedRule) {
+      const rule = selectedRule && typeof selectedRule === 'object'
+        ? selectedRule
+        : (this.rules || []).find(item => String(item.id) === String(selectedRule) || String(item.ruleCode) === String(selectedRule))
       if (!rule) {
-        this.$set(block, 'ruleId', null); this.$set(block, 'ruleName', ''); this.$set(block, 'modelType', '')
+        this.$set(block, 'ruleId', null); this.$set(block, 'ruleCode', ''); this.$set(block, 'ruleName', ''); this.$set(block, 'modelType', '')
+        this.$set(block, 'outputField', ''); this.$set(block, 'targetOperand', null)
         this.clearRuleCallSnapshot(block); this.sync(); return
       }
       if (this.isCurrentRule(rule)) {
@@ -369,9 +405,13 @@ export default {
         this.restoreRuleCallSnapshot(block); this.sync(); return
       }
       this.$set(block, 'ruleId', rule.id || null)
+      this.$set(block, 'ruleCode', rule.ruleCode || '')
       this.$set(block, 'ruleName', rule.ruleName || '')
       this.$set(block, 'modelType', rule.modelType || '')
-      if (!this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) this.$set(block, 'outputField', '')
+      if (!this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) {
+        this.$set(block, 'outputField', '')
+        this.$set(block, 'targetOperand', null)
+      }
       this.sync()
       const validation = await this.validateSelectedRuleCall(block)
       if (validation !== true) {
@@ -390,8 +430,10 @@ export default {
       return name + code + (rule.modelType ? ' - ' + rule.modelType : '')
     },
     ruleOutputFields(block) {
-      const rule = (this.rules || []).find(item => String(item.ruleCode) === String(block.ruleCode))
-      return rule ? (rule.outputFieldsJson || rule.outputFields || []) : []
+      const rule = (this.rules || []).find(item =>
+        (block.ruleId != null && String(item.id) === String(block.ruleId)) ||
+        (block.ruleId == null && String(item.ruleCode) === String(block.ruleCode)))
+      return rule ? (rule.outputFields || rule.outputFieldsJson || []) : []
     },
     fieldLabel(field) {
       const name = field.fieldLabel || field.fieldName || field.scriptName || ''
@@ -436,4 +478,8 @@ export default {
 .item-var { width: 90px; flex: 0 0 90px; }
 .part-type { width: 85px; flex: 0 0 85px; }
 .result-row { margin-top: 8px; }
+.shared-context-hint { margin-top: 8px; padding: 7px 9px; border-radius: 4px; color: #606266; background: #f0f7ff; font-size: 12px; line-height: 1.5; }
+.shared-context-hint i { color: #409eff; }
+.mapping-toggle-row { margin-top: 8px; }
+.rule-output-mapping { margin-top: 8px; padding: 8px; border: 1px dashed #dcdfe6; border-radius: 4px; background: #fff; }
 </style>

@@ -772,7 +772,9 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `query_config`         JSON         DEFAULT NULL            COMMENT 'Query参数配置JSON',
   `request_mapping`      JSON         DEFAULT NULL            COMMENT '入参映射配置JSON',
   `response_mapping`     JSON         DEFAULT NULL            COMMENT '响应映射配置JSON',
+  `response_script`      LONGTEXT     DEFAULT NULL            COMMENT '响应映射前QLExpress处理脚本',
   `body_template`        LONGTEXT     DEFAULT NULL            COMMENT '请求体模板',
+  `request_script`       LONGTEXT     DEFAULT NULL            COMMENT '请求发送前QLExpress处理脚本',
   `auth_mode`            VARCHAR(32)  NOT NULL DEFAULT 'INHERIT' COMMENT '接口鉴权：INHERIT/NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
   `auth_api_config`      JSON         DEFAULT NULL            COMMENT '接口级鉴权与token获取配置JSON',
   `token_cache_seconds`  INT          NOT NULL DEFAULT 0      COMMENT '接口token缓存秒数',
@@ -864,6 +866,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `group_code`      VARCHAR(128) NOT NULL                COMMENT '组编码',
   `group_name`      VARCHAR(128) NOT NULL                COMMENT '组名称',
   `group_type`      VARCHAR(32)  NOT NULL                COMMENT '组类型：CHAMPION/CHALLENGER/TEST',
+  `rule_id`         BIGINT       DEFAULT NULL            COMMENT '执行规则定义ID',
   `rule_code`       VARCHAR(128) NOT NULL                COMMENT '执行规则编码',
   `traffic_ratio`   DECIMAL(8,4) NOT NULL DEFAULT 0.0000 COMMENT '比例分流权重',
   `condition_value` VARCHAR(128) DEFAULT NULL            COMMENT '条件分流返回值',
@@ -876,6 +879,7 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_group` (
   `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_experiment_group_code` (`experiment_id`, `group_code`),
+  KEY `idx_experiment_group_rule` (`rule_id`),
   KEY `idx_experiment_group_type` (`experiment_id`, `group_type`, `status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验组表';
 

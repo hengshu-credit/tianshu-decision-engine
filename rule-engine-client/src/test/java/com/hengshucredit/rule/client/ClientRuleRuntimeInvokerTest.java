@@ -46,9 +46,11 @@ public class ClientRuleRuntimeInvokerTest {
         assertEquals(3000, ((Number) result.getResult()).intValue());
         RuleTraceFrame rootTrace = (RuleTraceFrame) result.getTraces().get(0);
         assertTrue(rootTrace.getTraceId().startsWith("QLP0001"));
+        assertEquals("{\"code\":\"ROOT\"}", rootTrace.getModelJson());
         assertEquals(1, rootTrace.getChildren().size());
         RuleTraceFrame childTrace = rootTrace.getChildren().get(0);
         assertTrue(childTrace.getTraceId().startsWith("RSP0001"));
+        assertEquals("{\"code\":\"CHILD\"}", childTrace.getModelJson());
         assertNotEquals(rootTrace.getTraceId(), childTrace.getTraceId());
     }
 
@@ -58,6 +60,7 @@ public class ClientRuleRuntimeInvokerTest {
         rule.setProjectCode("P001");
         rule.setModelType(modelType);
         rule.setCompiledScript(script);
+        rule.setModelJson("{\"code\":\"" + code + "\"}");
         rule.setVersion(1);
         return rule;
     }

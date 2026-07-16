@@ -175,6 +175,10 @@
               </el-form-item>
             </el-col>
           </el-row>
+          <el-form-item label="Token响应脚本">
+            <monaco-editor v-model="authConfig.tokenResponseScript" language="javascript" height="150px" />
+            <div class="field-help">可选。用于 XML 包裹、加密响应等场景；上下文为 body/rawBody/httpStatus/headers/input，返回解析后的对象，再按 Token 路径提取。</div>
+          </el-form-item>
         </template>
         <template v-else>
           <el-form-item label="自定义JSON">
@@ -278,6 +282,7 @@ export default {
         tokenUrl: '/oauth/token', method: 'POST', contentType: 'application/json',
         tokenPath: 'body.access_token', expiresInPath: 'body.expires_in',
         tokenHeaderName: 'Authorization', tokenPrefix: 'Bearer ',
+        tokenResponseScript: '',
         headers: '{}', body: '{"grant_type":"client_credentials"}'
       }
       if (type === 'TOKEN_API' || type === 'OAUTH2') {
@@ -339,7 +344,8 @@ export default {
           tokenPath: this.authConfig.tokenPath,
           expiresInPath: this.authConfig.expiresInPath,
           tokenHeaderName: this.authConfig.tokenHeaderName,
-          tokenPrefix: this.authConfig.tokenPrefix
+          tokenPrefix: this.authConfig.tokenPrefix,
+          tokenResponseScript: this.authConfig.tokenResponseScript
         })
       }
       return this.blankToNull(rawAuthConfig)
