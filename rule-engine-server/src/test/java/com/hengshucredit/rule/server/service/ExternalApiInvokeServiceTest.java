@@ -820,7 +820,7 @@ public class ExternalApiInvokeServiceTest {
             datasource.setAuthType("TOKEN_API");
             datasource.setAuthConfig("{\"tokenUrl\":\"/xml-token\",\"method\":\"POST\","
                     + "\"tokenPath\":\"body.access_token\","
-                    + "\"tokenResponseScript\":\"jsonParse(strRegexExtract(rawBody, \\\"\\\\{.*\\\\}\\\", 0))\"}");
+                    + "\"tokenResponseScript\":\"jsonParse(strSubstring(rawBody, 8, strLength(rawBody) - 9))\"}");
             datasource.setTokenCacheSeconds(0);
 
             RuleExternalApiConfig config = new RuleExternalApiConfig();
@@ -841,6 +841,86 @@ public class ExternalApiInvokeServiceTest {
         } finally {
             server.stop(0);
         }
+    }
+
+    @Test
+    public void tokenApiCanExposeTokenToScriptWithoutWritingAuthorizationHeader() throws Exception {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        AtomicReference<String> requestBody = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/script-token", exchange -> {
+            byte[] response = "{\"access_token\":\"form-token-123\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/script-score", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+            byte[] chunk = new byte[256];
+            int length;
+            while ((length = exchange.getRequestBody().read(chunk)) >= 0) buffer.write(chunk, 0, length);
+            requestBody.set(new String(buffer.toByteArray(), StandardCharsets.UTF_8));
+            byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(115L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/script-token\",\"method\":\"POST\","
+                    + "\"tokenPath\":\"body.access_token\",\"tokenPlacement\":\"SCRIPT_ONLY\"}");
+            datasource.setTokenCacheSeconds(0);
+
+            RuleExternalApiConfig config = new RuleExternalApiConfig();
+            config.setId(115L);
+            config.setDatasourceId(115L);
+            config.setRequestMethod("POST");
+            config.setEndpointUrl("/script-score");
+            config.setContentType("application/x-www-form-urlencoded");
+            config.setAuthMode("INHERIT");
+            config.setRequestScript("apiPut(body, \"ACCESS_TOKEN\", token); body");
+            config.setResponseCacheSeconds(0);
+            config.setTimeoutMs(3000);
+            config.setRetryCount(0);
+            config.setExceptionStrategy("FAIL_FAST");
+
+            configuredService(config, datasource).invoke(115L, new LinkedHashMap<>());
+
+            assertEquals(null, authorization.get());
+            assertEquals("ACCESS_TOKEN=form-token-123", requestBody.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void requestPreviewResolvesEndpointPlaceholdersFromScriptVariables() {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(116L);
+        datasource.setProtocol("HTTPS");
+        datasource.setBaseUrl("https://vendor.example.com");
+        datasource.setAuthType("NONE");
+
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setId(116L);
+        config.setDatasourceId(116L);
+        config.setRequestMethod("POST");
+        config.setEndpointUrl("/api/v1/score/${appId}");
+        config.setContentType("application/json");
+        config.setAuthMode("NONE");
+        config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"appId\",\"value\":\"APP001\",\"sensitive\":false}]}");
+
+        Map<String, Object> preview = configuredService(config, datasource)
+                .previewRequest(config, new LinkedHashMap<>(), null);
+
+        assertEquals("https://vendor.example.com/api/v1/score/APP001", preview.get("url"));
+        assertEquals(false, preview.get("networkCalled"));
     }
 
     @Test
@@ -877,9 +957,9 @@ public class ExternalApiInvokeServiceTest {
             config.setAuthMode("NONE");
             config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
             config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secret\",\"value\":\"S001\",\"sensitive\":true}]}");
-            config.setRequestScript("apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
-            config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result");
-            config.setResponseMapping("{\"score\":\"body.score\"}");
+            config.setRequestScript("apiPut(state, \"transientKey\", \"EPHEMERAL\"); apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
+            config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result = mapPut(_result, \"shared\", mapGet(state, \"transientKey\")); _result");
+            config.setResponseMapping("{\"score\":\"body.score\",\"shared\":\"body.shared\"}");
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
@@ -894,6 +974,7 @@ public class ExternalApiInvokeServiceTest {
 
             assertEquals("caa2bb3d3bb8a610f0d76c6c3c0898dd", receivedBody.get().get("sign"));
             assertEquals(720, ((Number) ((Map<String, Object>) result.get("body")).get("score")).intValue());
+            assertEquals("EPHEMERAL", ((Map<String, Object>) result.get("body")).get("shared"));
         } finally {
             server.stop(0);
         }

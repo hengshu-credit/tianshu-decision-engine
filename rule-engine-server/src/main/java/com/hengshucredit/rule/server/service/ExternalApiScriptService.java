@@ -72,7 +72,11 @@ public class ExternalApiScriptService {
         }
         Map<String, Object> safeContext = context == null ? new LinkedHashMap<>() : context;
         try {
-            QLResult result = runner.execute(script, safeContext, QLOptions.builder().cache(true).build());
+            QLResult result = runner.execute(script, safeContext, QLOptions.builder()
+                    .cache(true)
+                    .timeoutMillis(2000L)
+                    .maxArrLength(10000)
+                    .build());
             return result.getResult() == null ? safeContext.get("body") : result.getResult();
         } catch (Exception e) {
             throw new IllegalArgumentException(phase + "脚本执行失败：" + sanitize(e.getMessage(), safeContext));
@@ -99,6 +103,7 @@ public class ExternalApiScriptService {
     private void registerApiFunctions(ExternalApiScriptFunctions functions) {
         runner.addFunctionOfServiceMethod("apiUuid32", functions, "apiUuid32", new Class<?>[]{});
         runner.addFunctionOfServiceMethod("apiTimestampMillis", functions, "apiTimestampMillis", new Class<?>[]{});
+        runner.addFunctionOfServiceMethod("apiRandomBase64", functions, "apiRandomBase64", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("apiTimestamp", functions, "apiTimestamp", new Class<?>[]{String.class});
         runner.addFunctionOfServiceMethod("apiUrlEncode", functions, "apiUrlEncode", new Class<?>[]{String.class});
         runner.addFunctionOfServiceMethod("apiBase64Encode", functions, "apiBase64Encode", new Class<?>[]{String.class});
@@ -110,7 +115,10 @@ public class ExternalApiScriptService {
         runner.addFunctionOfServiceMethod("apiPut", functions, "apiPut", new Class<?>[]{Object.class, String.class, Object.class});
         runner.addFunctionOfServiceMethod("apiRemove", functions, "apiRemove", new Class<?>[]{Object.class, String.class});
         runner.addFunctionOfServiceMethod("apiHmacSha1Base64", functions, "apiHmacSha1Base64", new Class<?>[]{String.class, String.class});
+        runner.addFunctionOfServiceMethod("apiHmacSha1Base64Key", functions, "apiHmacSha1Base64Key", new Class<?>[]{String.class, String.class});
         runner.addFunctionOfServiceMethod("apiHmacSha256Base64", functions, "apiHmacSha256Base64", new Class<?>[]{String.class, String.class});
+        runner.addFunctionOfServiceMethod("apiHmacSha256Base64Key", functions, "apiHmacSha256Base64Key", new Class<?>[]{String.class, String.class});
+        runner.addFunctionOfServiceMethod("apiSortedKeyValue", functions, "apiSortedKeyValue", new Class<?>[]{Object.class, String.class, String.class});
         runner.addFunctionOfServiceMethod("apiTripleDesEncryptBase64", functions, "apiTripleDesEncryptBase64", new Class<?>[]{String.class, String.class});
         runner.addFunctionOfServiceMethod("apiTripleDesDecryptBase64", functions, "apiTripleDesDecryptBase64", new Class<?>[]{String.class, String.class});
         runner.addFunctionOfServiceMethod("apiRsaEncryptBase64", functions, "apiRsaEncryptBase64", new Class<?>[]{String.class, String.class});

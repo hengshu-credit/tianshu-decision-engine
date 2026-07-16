@@ -2,6 +2,10 @@ package com.hengshucredit.rule.server.service;
 
 import org.junit.Test;
 
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -18,6 +22,29 @@ public class ExternalApiScriptFunctionsTest {
                 functions.apiSm3("abc"));
         assertEquals("3nybhbi3iqa8ino29wqQcBydtNk=",
                 functions.apiHmacSha1Base64("The quick brown fox jumps over the lazy dog", "key"));
+        assertEquals("3nybhbi3iqa8ino29wqQcBydtNk=",
+                functions.apiHmacSha1Base64Key("The quick brown fox jumps over the lazy dog", "a2V5"));
+    }
+
+    @Test
+    public void sortedKeyValueSupportsCanonicalSigningWithoutVendorBranches() {
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("name", "张三");
+        values.put("appId", "APP001");
+        values.put("mobile", "13800138000");
+        values.put("idCard", "110101199001011234");
+
+        assertEquals("idCard=110101199001011234,mobile=13800138000,name=张三",
+                functions.apiSortedKeyValue(values, ",", "appId,tokenKey"));
+    }
+
+    @Test
+    public void secureRandomBase64CreatesRequestedKeyLength() {
+        String first = functions.apiRandomBase64(24D);
+        String second = functions.apiRandomBase64(24D);
+
+        assertEquals(24, Base64.getDecoder().decode(first).length);
+        assertFalse(first.equals(second));
     }
 
     @Test
@@ -42,4 +69,3 @@ public class ExternalApiScriptFunctionsTest {
         throw new AssertionError("expected invalid 3DES key to fail");
     }
 }
-

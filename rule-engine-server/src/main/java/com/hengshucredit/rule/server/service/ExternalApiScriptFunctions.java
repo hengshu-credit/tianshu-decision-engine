@@ -11,6 +11,7 @@ import java.security.KeyFactory;
 import java.security.MessageDigest;
 import java.security.PrivateKey;
 import java.security.PublicKey;
+import java.security.SecureRandom;
 import java.security.Signature;
 import java.security.interfaces.RSAKey;
 import java.security.spec.PKCS8EncodedKeySpec;
@@ -18,8 +19,11 @@ import java.security.spec.X509EncodedKeySpec;
 import java.text.SimpleDateFormat;
 import java.util.Base64;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 
 /** 外数 API 脚本可使用的受控编码、摘要和密码函数。 */
@@ -33,6 +37,16 @@ public class ExternalApiScriptFunctions {
 
     public long apiTimestampMillis() {
         return System.currentTimeMillis();
+    }
+
+    public String apiRandomBase64(double byteLength) {
+        int length = (int) byteLength;
+        if (length < 1 || length > 64 || byteLength != length) {
+            throw new IllegalArgumentException("随机密钥长度必须是 1 到 64 的整数");
+        }
+        byte[] value = new byte[length];
+        new SecureRandom().nextBytes(value);
+        return Base64.getEncoder().encodeToString(value);
     }
 
     public String apiTimestamp(String pattern) {
@@ -103,8 +117,41 @@ public class ExternalApiScriptFunctions {
         return hmacBase64("HmacSHA1", value, key);
     }
 
+    public String apiHmacSha1Base64Key(String value, String base64Key) {
+        return hmacBase64Key("HmacSHA1", value, base64Key);
+    }
+
     public String apiHmacSha256Base64(String value, String key) {
         return hmacBase64("HmacSHA256", value, key);
+    }
+
+    public String apiHmacSha256Base64Key(String value, String base64Key) {
+        return hmacBase64Key("HmacSHA256", value, base64Key);
+    }
+
+    public String apiSortedKeyValue(Object source, String separator, String excludedKeys) {
+        if (!(source instanceof Map)) {
+            throw new IllegalArgumentException("排序键值串来源必须是 Map");
+        }
+        String actualSeparator = separator == null ? "" : separator;
+        Set<String> excluded = new HashSet<>();
+        if (excludedKeys != null) {
+            for (String item : excludedKeys.split(",")) {
+                if (!item.trim().isEmpty()) excluded.add(item.trim());
+            }
+        }
+        Map<String, Object> sorted = new TreeMap<>();
+        for (Map.Entry<?, ?> entry : ((Map<?, ?>) source).entrySet()) {
+            String key = String.valueOf(entry.getKey());
+            if (!excluded.contains(key)) sorted.put(key, entry.getValue());
+        }
+        StringBuilder result = new StringBuilder();
+        for (Map.Entry<String, Object> entry : sorted.entrySet()) {
+            if (result.length() > 0) result.append(actualSeparator);
+            result.append(entry.getKey()).append('=');
+            if (entry.getValue() != null) result.append(entry.getValue());
+        }
+        return result.toString();
     }
 
     public String apiTripleDesEncryptBase64(String value, String base64Key) {
@@ -178,6 +225,21 @@ public class ExternalApiScriptFunctions {
             return Base64.getEncoder().encodeToString(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
         } catch (GeneralSecurityException e) {
             throw new IllegalStateException("当前运行环境不支持 " + algorithm);
+        }
+    }
+
+    private String hmacBase64Key(String algorithm, String value, String base64Key) {
+        if (value == null || base64Key == null || base64Key.isEmpty()) {
+            throw new IllegalArgumentException("HMAC 原文和密钥不能为空");
+        }
+        try {
+            byte[] key = Base64.getDecoder().decode(base64Key);
+            if (key.length == 0) throw new IllegalArgumentException("empty key");
+            Mac mac = Mac.getInstance(algorithm);
+            mac.init(new SecretKeySpec(key, algorithm));
+            return Base64.getEncoder().encodeToString(mac.doFinal(value.getBytes(StandardCharsets.UTF_8)));
+        } catch (GeneralSecurityException | IllegalArgumentException e) {
+            throw new IllegalArgumentException("HMAC 计算失败，请检查 Base64 密钥格式");
         }
     }
 

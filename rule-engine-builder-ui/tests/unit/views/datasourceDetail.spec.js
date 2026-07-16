@@ -36,12 +36,23 @@ describe('DatasourceDetail token config', () => {
 
   test('token response script is preserved for xml or encrypted token responses', () => {
     const ctx = createContext()
-    ctx.authConfig.tokenResponseScript = 'jsonParse(strRegexExtract(rawBody, "\\{.*\\}", 0))'
+    ctx.authConfig.tokenResponseScript = 'jsonParse(strSubstring(rawBody, 8, strLength(rawBody) - 9))'
 
     const saved = JSON.parse(ctx.buildAuthConfig('TOKEN_API', ''))
     const loaded = ctx.parseAuthConfig(JSON.stringify(saved), 'TOKEN_API')
 
     expect(saved.tokenResponseScript).toBe(ctx.authConfig.tokenResponseScript)
     expect(loaded.tokenResponseScript).toBe(ctx.authConfig.tokenResponseScript)
+  })
+
+  test('token placement can be configured as script only and defaults to header', () => {
+    const ctx = createContext()
+    ctx.authConfig.tokenPlacement = 'SCRIPT_ONLY'
+
+    const saved = JSON.parse(ctx.buildAuthConfig('TOKEN_API', ''))
+    const oldConfig = ctx.parseAuthConfig('{"tokenUrl":"/token"}', 'TOKEN_API')
+
+    expect(saved.tokenPlacement).toBe('SCRIPT_ONLY')
+    expect(oldConfig.tokenPlacement).toBe('HEADER')
   })
 })

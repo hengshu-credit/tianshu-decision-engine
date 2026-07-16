@@ -246,18 +246,18 @@
               <el-col :lg="12" :md="24">
                 <el-form-item label="请求前置脚本">
                   <monaco-editor v-model="form.requestScript" language="javascript" height="300px" />
-                  <div class="field-help">上下文：input/body/headers/query/vars/token/endpoint/method/nowMillis/requestId。用 apiPut(body, key, value) 原地写入。</div>
+                  <div class="field-help">上下文：input/body/headers/query/vars/token/state/endpoint/method/nowMillis/requestId。用 apiPut(body, key, value) 原地写入。</div>
                 </el-form-item>
               </el-col>
               <el-col :lg="12" :md="24">
                 <el-form-item label="响应后置脚本">
                   <monaco-editor v-model="form.responseScript" language="javascript" height="300px" />
-                  <div class="field-help">上下文：input/body/rawBody/httpStatus/headers/vars。非空返回值会替换 body，再执行响应映射。</div>
+                  <div class="field-help">上下文：input/body/rawBody/httpStatus/headers/vars/state。非空返回值会替换 body，再执行响应映射。</div>
                 </el-form-item>
               </el-col>
             </el-row>
             <div class="field-help script-function-help">
-              可用函数：apiMd5/apiSha1/apiSha256/apiSm3、apiHmacSha1Base64/apiHmacSha256Base64、apiTripleDesEncryptBase64/apiTripleDesDecryptBase64、apiRsaEncryptBase64/apiRsaSignBase64、apiUrlEncode、apiBase64Encode/apiBase64Decode、apiTimestamp/apiTimestampMillis/apiUuid32、apiPut/apiRemove。
+              可用函数：apiMd5/apiSha1/apiSha256/apiSm3、apiHmacSha1Base64/apiHmacSha256Base64、apiHmacSha1Base64Key/apiHmacSha256Base64Key、apiSortedKeyValue、apiTripleDesEncryptBase64/apiTripleDesDecryptBase64、apiRsaEncryptBase64/apiRsaSignBase64、apiRandomBase64、apiUrlEncode、apiBase64Encode/apiBase64Decode、apiTimestamp/apiTimestampMillis/apiUuid32、apiPut/apiRemove。请求与响应可通过 state 共享仅本次调用有效的临时值。
             </div>
           </div>
         </el-tab-pane>
@@ -1095,7 +1095,10 @@ export default {
             sensitive: !item || item.sensitive !== false
           }))
         }
-        if (type === 'CUSTOM') return
+        if (type === 'CUSTOM') {
+          this.apiAuthConfig = base
+          return
+        }
         const merged = { ...base, ...parsed }
         if (parsed.headers && typeof parsed.headers !== 'string') merged.headers = this.stringifyJson(parsed.headers)
         if (parsed.body && typeof parsed.body !== 'string') merged.body = this.stringifyJson(parsed.body)
@@ -1632,7 +1635,7 @@ export default {
     endpointHelp() {
       return this.isRuleEngineDatasource()
         ? '内部规则引擎接口会按规则编码查找已发布版本，不发起外部 HTTP 请求。'
-        : 'HTTP 接口可填写相对路径或完整 URL；完整 URL 会覆盖数据源基础地址。'
+        : 'HTTP 接口可填写相对路径或完整 URL；完整 URL 会覆盖数据源基础地址。支持 ${appId}、${vars.appId} 和 ${input.channel} 占位。'
     },
     dataObjectLabel(item) {
       const code = item.scriptName || item.objectCode || ''

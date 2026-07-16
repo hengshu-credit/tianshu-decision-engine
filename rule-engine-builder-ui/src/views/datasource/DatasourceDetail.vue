@@ -164,12 +164,20 @@
             </el-col>
           </el-row>
           <el-row :gutter="12">
-            <el-col :span="12">
+            <el-col :span="8">
+              <el-form-item label="Token放置方式">
+                <el-select v-model="authConfig.tokenPlacement" style="width:100%">
+                  <el-option label="写入请求Header" value="HEADER" />
+                  <el-option label="仅供请求脚本使用" value="SCRIPT_ONLY" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
               <el-form-item label="Token Header名称">
                 <el-input v-model="authConfig.tokenHeaderName" placeholder="默认 Authorization；冰鉴填写 token_id" />
               </el-form-item>
             </el-col>
-            <el-col :span="12">
+            <el-col :span="8">
               <el-form-item label="Token前缀">
                 <el-input v-model="authConfig.tokenPrefix" placeholder="默认 Bearer；冰鉴留空" />
               </el-form-item>
@@ -281,7 +289,7 @@ export default {
         username: '', password: '', token: '', name: 'X-API-Key', value: '', location: 'HEADER',
         tokenUrl: '/oauth/token', method: 'POST', contentType: 'application/json',
         tokenPath: 'body.access_token', expiresInPath: 'body.expires_in',
-        tokenHeaderName: 'Authorization', tokenPrefix: 'Bearer ',
+        tokenPlacement: 'HEADER', tokenHeaderName: 'Authorization', tokenPrefix: 'Bearer ',
         tokenResponseScript: '',
         headers: '{}', body: '{"grant_type":"client_credentials"}'
       }
@@ -343,6 +351,7 @@ export default {
           body: this.parseJsonText(this.authConfig.body, '鉴权请求体'),
           tokenPath: this.authConfig.tokenPath,
           expiresInPath: this.authConfig.expiresInPath,
+          tokenPlacement: this.authConfig.tokenPlacement,
           tokenHeaderName: this.authConfig.tokenHeaderName,
           tokenPrefix: this.authConfig.tokenPrefix,
           tokenResponseScript: this.authConfig.tokenResponseScript
