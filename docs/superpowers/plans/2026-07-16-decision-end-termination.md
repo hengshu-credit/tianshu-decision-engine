@@ -45,9 +45,9 @@ public void compileFlowWithoutEndNodeSuccessfully() {
 }
 
 @Test
-public void currentRuleEndReturnsBeforeFollowingTask() {
-    // start -> first -> end(CURRENT_RULE), plus a downstream task that must not execute
-    // assert compiled script contains "return _result" and execution keeps downstream value null
+public void currentRuleEndReturnsCurrentOutputMap() {
+    // start -> task(assign decisionResult) -> end(CURRENT_RULE)
+    // assert compiled script contains "return _result" and execution returns decisionResult
 }
 
 @Test
