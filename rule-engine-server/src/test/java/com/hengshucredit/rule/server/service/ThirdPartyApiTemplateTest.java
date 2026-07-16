@@ -117,8 +117,14 @@ public class ThirdPartyApiTemplateTest {
         String block = sql.substring(start, next < 0 ? sql.length() : next);
         int columnStart = block.indexOf('(');
         int valuesStart = block.indexOf(")\nVALUES", columnStart);
+        int valuesMarkerLength = ")\nVALUES".length();
+        if (valuesStart < 0) {
+            valuesStart = block.indexOf(")\r\nVALUES", columnStart);
+            valuesMarkerLength = ")\r\nVALUES".length();
+        }
+        assertFalse("INSERT VALUES marker not found", valuesStart < 0);
         List<String> columns = splitTopLevel(block.substring(columnStart + 1, valuesStart), ',');
-        String values = block.substring(valuesStart + ")\nVALUES".length());
+        String values = block.substring(valuesStart + valuesMarkerLength);
         List<String> tuples = tupleValues(values);
         List<Map<String, String>> rows = new ArrayList<>();
         for (String tuple : tuples) {
