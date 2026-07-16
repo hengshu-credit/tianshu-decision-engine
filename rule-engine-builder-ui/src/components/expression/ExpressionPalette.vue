@@ -21,7 +21,7 @@
     />
 
     <section class="palette-content">
-      <div v-if="showSearch" class="palette-search">
+      <div class="palette-search">
         <el-input
           v-model="keyword"
           size="small"
@@ -36,24 +36,55 @@
         <template v-if="activeCategory === 'manual'">
           <div class="palette-manual-kinds">
             <button
-              v-if="allows('LITERAL')"
+              v-for="item in pagedItems"
+              :key="item.key"
               type="button"
               class="palette-manual-kind"
-              @click="insertManual('LITERAL')"
+              @click="insertManual(item.key)"
             >
-              <i class="el-icon-edit-outline" />
-              <span><strong>输入阈值</strong><small>数值、文本、布尔值或日期</small></span>
-            </button>
-            <button
-              v-if="allows('PATH')"
-              type="button"
-              class="palette-manual-kind"
-              @click="insertManual('PATH')"
-            >
-              <i class="el-icon-link" />
-              <span><strong>输入字段路径</strong><small>优先反解为已有字段并保留稳定 ID</small></span>
+              <i :class="item.icon" />
+              <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
             </button>
           </div>
+        </template>
+
+        <template v-else-if="isGroupedReferenceCategory">
+          <table class="palette-reference-table">
+            <thead><tr><th>类型</th><th>对象编码</th><th>对象名称</th></tr></thead>
+            <tbody>
+              <template v-for="group in pagedItems">
+                <tr :key="group.groupKey" class="palette-reference-group" @click="toggleGroup(group)">
+                  <td><span class="palette-group-toggle"><i :class="expandedGroupKey === group.groupKey ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" />{{ group.children.length }}</span></td>
+                  <td class="palette-reference-code">{{ group.groupCode }}</td>
+                  <td class="palette-reference-name">{{ group.groupLabel }}</td>
+                </tr>
+                <tr v-if="expandedGroupKey === group.groupKey" :key="group.groupKey + '-children'" class="palette-reference-children-row">
+                  <td colspan="3">
+                    <button
+                      v-for="child in pagedGroupChildren(group)"
+                      :key="referenceKey(child)"
+                      type="button"
+                      class="palette-reference-child"
+                      @click.stop="emitInsert(referenceTemplate(child))"
+                    >
+                      <code>{{ childRelativePath(child) }}</code>
+                      <span class="palette-type-badge" :class="'palette-type-badge--' + typeChar(child.varType)">{{ typeChar(child.varType) }}</span>
+                      <span>{{ childDisplayName(child) }}</span>
+                    </button>
+                    <el-pagination
+                      v-if="group.children.length > pageSize"
+                      small
+                      layout="prev,pager,next"
+                      :current-page="groupChildPage(group)"
+                      :page-size="pageSize"
+                      :total="group.children.length"
+                      @current-change="setGroupChildPage(group, $event)"
+                    />
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
         </template>
 
         <template v-else-if="isReferenceCategory">
@@ -83,7 +114,7 @@
         </template>
 
         <template v-else-if="activeCategory === 'list'">
-          <button class="palette-action palette-list-query" type="button" @click="insertListQuery">
+          <button v-if="pagedItems.length" class="palette-action palette-list-query" type="button" @click="insertListQuery">
             <i class="el-icon-collection" />
             <span><strong>配置名单查询</strong><small>选择名单、字段及组合命中模式</small></span>
           </button>
@@ -91,15 +122,12 @@
 
         <template v-else-if="activeCategory === 'operation'">
           <div class="palette-grid">
-            <button v-for="operator in operators" :key="operator" type="button" @click="emitInsert(operationTemplate(operator))">{{ operator }}</button>
+            <button v-for="item in pagedItems" :key="item.key" type="button" @click="emitInsert(operationTemplate(item.value))">{{ item.label }}</button>
           </div>
         </template>
 
         <template v-else-if="activeCategory === 'transform'">
-          <button v-if="allows('ACCESS')" class="palette-action" type="button" @click="emitInsert(accessTemplate('KEY'))">取字典 Key</button>
-          <button v-if="allows('ACCESS')" class="palette-action" type="button" @click="emitInsert(accessTemplate('INDEX'))">取数组 Index</button>
-          <button v-if="allows('CAST')" class="palette-action" type="button" @click="emitInsert(castTemplate('NUMBER'))">类型转换</button>
-          <button v-if="allows('ARRAY')" class="palette-action" type="button" @click="emitInsert(arrayTemplate())">数组</button>
+          <button v-for="item in pagedItems" :key="item.key" class="palette-action" type="button" @click="insertTransform(item.key)">{{ item.label }}</button>
         </template>
 
         <div v-if="showEmpty" class="palette-empty">
@@ -142,6 +170,12 @@ import {
 } from '@/utils/operand'
 import { varTypeLabel } from '@/constants/varTypes'
 import { REFERENCE_PICKER_CATEGORIES, pickerReferenceCategory } from '@/utils/pickerCategories'
+import {
+  filterReferenceGroups,
+  groupReferenceOptions,
+  referenceChildDisplayName,
+  referenceChildRelativePath
+} from '@/utils/referenceGroups'
 import { createFunctionTemplate } from './expressionTree'
 
 const OPERATORS = ['+', '-', '*', '/', '%', '==', '!=', '>', '>=', '<', '<=', '&&', '||']
@@ -159,6 +193,8 @@ export default {
     return {
       activeCategory: '',
       keyword: '',
+      expandedGroupKey: '',
+      groupChildPages: {},
       page: 1,
       pageSize: 50,
       operators: OPERATORS,
@@ -192,13 +228,40 @@ export default {
     isReferenceCategory() {
       return REFERENCE_PICKER_CATEGORIES.some(item => item.key === this.activeCategory)
     },
+    isGroupedReferenceCategory() {
+      return this.activeCategory === 'object' || this.activeCategory === 'model'
+    },
+    manualItems() {
+      const items = []
+      if (this.allows('LITERAL')) items.push({ key: 'LITERAL', label: '输入阈值', description: '数值、文本、布尔值或日期', icon: 'el-icon-edit-outline' })
+      if (this.allows('PATH')) items.push({ key: 'PATH', label: '输入字段路径', description: '优先反解为已有字段并保留稳定 ID', icon: 'el-icon-link' })
+      return items
+    },
+    operationItems() {
+      return this.operators.map(value => ({ key: value, value, label: value, searchTexts: [value, '运算符'] }))
+    },
+    transformItems() {
+      const items = []
+      if (this.allows('ACCESS')) items.push({ key: 'KEY', label: '取字典 Key', searchTexts: ['取字典 key', '对象取值'] }, { key: 'INDEX', label: '取数组 Index', searchTexts: ['取数组 index', '数组下标'] })
+      if (this.allows('CAST')) items.push({ key: 'CAST', label: '类型转换', searchTexts: ['类型转换', 'cast'] })
+      if (this.allows('ARRAY')) items.push({ key: 'ARRAY', label: '数组', searchTexts: ['数组', 'array'] })
+      return items
+    },
     activeItems() {
-      if (this.isReferenceCategory) return this.vars.filter(item => pickerReferenceCategory(item) === this.activeCategory)
+      if (this.isReferenceCategory) {
+        const items = this.vars.filter(item => pickerReferenceCategory(item) === this.activeCategory)
+        return this.isGroupedReferenceCategory ? groupReferenceOptions(items, this.activeCategory) : items
+      }
       if (this.activeCategory === 'function') return this.functions
+      if (this.activeCategory === 'manual') return this.manualItems
+      if (this.activeCategory === 'list') return [{ key: 'LIST_QUERY', label: '配置名单查询', searchTexts: ['名单查询', '名单', 'list'] }]
+      if (this.activeCategory === 'operation') return this.operationItems
+      if (this.activeCategory === 'transform') return this.transformItems
       return []
     },
     filteredItems() {
       const key = this.keyword.trim().toLowerCase()
+      if (this.isGroupedReferenceCategory) return filterReferenceGroups(this.activeItems, key, this.searchTexts)
       if (!key) return this.activeItems
       return this.activeItems.filter(item => this.searchTexts(item).some(value => value.includes(key)))
     },
@@ -209,14 +272,11 @@ export default {
     needsPaging() {
       return this.filteredItems.length > this.pageSize
     },
-    showSearch() {
-      return this.isReferenceCategory || this.activeCategory === 'function'
-    },
     searchPlaceholder() {
-      return this.activeCategory === 'function' ? '搜索方法名称或编码' : '搜索字段名称或编码'
+      return '搜索当前分类的名称或编码'
     },
     showEmpty() {
-      return (this.isReferenceCategory || this.activeCategory === 'function') && this.filteredItems.length === 0
+      return this.filteredItems.length === 0
     },
     paletteStyle() {
       return {
@@ -228,6 +288,13 @@ export default {
     categories: {
       immediate: true,
       handler() { this.ensureActiveCategory() }
+    },
+    filteredItems(items) {
+      if (this.isGroupedReferenceCategory && this.keyword && items.length === 1) {
+        this.expandedGroupKey = items[0].groupKey
+      } else if (this.expandedGroupKey && !items.some(item => item.groupKey === this.expandedGroupKey)) {
+        this.expandedGroupKey = ''
+      }
     }
   },
   beforeDestroy() {
@@ -242,7 +309,7 @@ export default {
     },
     selectCategory(key) {
       this.activeCategory = key
-      this.keyword = ''
+      this.expandedGroupKey = ''
       this.page = 1
     },
     insertManual(kind) {
@@ -262,6 +329,8 @@ export default {
       }))
     },
     searchTexts(item) {
+      if (Array.isArray(item.searchTexts)) return item.searchTexts.map(value => String(value).toLowerCase())
+      if (item.description) return [item.label, item.description, item.key].filter(Boolean).map(value => String(value).toLowerCase())
       if (this.activeCategory === 'function') {
         return [this.functionCode(item), item.funcName, item.functionLabel, item.functionName]
           .filter(Boolean).map(value => String(value).toLowerCase())
@@ -271,6 +340,17 @@ export default {
         .filter(Boolean).map(value => String(value).toLowerCase())
     },
     referenceTemplate(item) { return createReferenceOperand(item) },
+    toggleGroup(group) {
+      this.expandedGroupKey = this.expandedGroupKey === group.groupKey ? '' : group.groupKey
+    },
+    groupChildPage(group) { return this.groupChildPages[group.groupKey] || 1 },
+    setGroupChildPage(group, page) { this.$set(this.groupChildPages, group.groupKey, page) },
+    pagedGroupChildren(group) {
+      const start = (this.groupChildPage(group) - 1) * this.pageSize
+      return group.children.slice(start, start + this.pageSize)
+    },
+    childRelativePath(item) { return referenceChildRelativePath(item, this.activeCategory) },
+    childDisplayName(item) { return referenceChildDisplayName(item, this.activeCategory) },
     functionTemplate(fn) { return createFunctionTemplate(fn) },
     operationTemplate(operator) {
       return createOperationOperand([
@@ -281,6 +361,11 @@ export default {
     accessTemplate(type) { return createAccessOperand(null, type, createLiteralOperand('', type === 'INDEX' ? 'NUMBER' : 'STRING')) },
     castTemplate(type) { return createCastOperand(type, null) },
     arrayTemplate() { return createArrayOperand([null]) },
+    insertTransform(key) {
+      if (key === 'KEY' || key === 'INDEX') this.emitInsert(this.accessTemplate(key))
+      else if (key === 'CAST') this.emitInsert(this.castTemplate('NUMBER'))
+      else if (key === 'ARRAY') this.emitInsert(this.arrayTemplate())
+    },
     functionCode(fn) { return fn.functionCode || fn.funcCode || fn.functionName || fn.funcName || fn.name || '' },
     functionKey(fn) { return String(fn.functionId != null ? fn.functionId : (fn.id != null ? fn.id : this.functionCode(fn))) },
     referenceKey(item) {
@@ -389,6 +474,12 @@ export default {
 .palette-reference-table td:first-child { text-align: center; }
 .palette-reference-table tbody tr { cursor: pointer; }
 .palette-reference-table tbody tr:hover { background: #edf5ff; }
+.palette-reference-group { cursor: pointer; }
+.palette-group-toggle { display: inline-flex; align-items: center; gap: 3px; color: #607089; font-size: 11px; }
+.palette-reference-children-row td { padding: 6px 8px; background: #f8fafc; }
+.palette-reference-child { display: grid; width: 100%; grid-template-columns: minmax(90px, 1fr) 22px minmax(90px, 1fr); align-items: center; gap: 8px; padding: 7px 9px; border: 0; border-bottom: 1px solid #edf1f5; background: transparent; color: #26364d; cursor: pointer; text-align: left; }
+.palette-reference-child:hover { background: #e9f3ff; }
+.palette-reference-child code { overflow: hidden; color: #6f7f92; text-overflow: ellipsis; white-space: nowrap; }
 .palette-reference-code { color: #6f7f92; font-family: Consolas, monospace; }
 .palette-reference-name { color: #26364d; font-weight: 500; }
 .palette-type-badge { display: inline-flex; width: 20px; height: 20px; align-items: center; justify-content: center; border-radius: 4px; background: #c0c4cc; color: #fff; font-size: 11px; font-weight: 700; }

@@ -1229,8 +1229,37 @@ public class RuleFieldAnalyzer {
             field.setCreateTime(LocalDateTime.now());
             fields.add(field);
         }
+        if ("RULE_SET".equals(type)) {
+            applyRuleSetResultVarMetadata(model, fields);
+        }
 
         return fields;
+    }
+
+    private void applyRuleSetResultVarMetadata(JSONObject model, List<RuleDefinitionOutputField> fields) {
+        JSONObject resultVar = model.getJSONObject("resultVar");
+        if (resultVar == null) return;
+        JSONObject operand = resultVar.getJSONObject("operand");
+        String code = firstNonBlank(operand != null ? operand.getString("code") : null,
+                operand != null ? operand.getString("value") : null,
+                resultVar.getString("varCode"));
+        if (code == null) return;
+        for (RuleDefinitionOutputField field : fields) {
+            if (!code.equals(field.getScriptName())) continue;
+            String fieldType = firstNonBlank(operand != null ? operand.getString("valueType") : null,
+                    resultVar.getString("varType"));
+            if (fieldType != null) field.setFieldType(fieldType);
+            Long refId = operand != null && operand.getLong("refId") != null
+                    ? operand.getLong("refId") : resultVar.getLong("_varId");
+            String refType = firstNonBlank(operand != null ? operand.getString("refType") : null,
+                    resultVar.getString("_refType"));
+            field.setVarId(refId);
+            field.setRefType(normalizeRefType(refType));
+            String label = firstNonBlank(resultVar.getString("varLabel"),
+                    operand != null ? operand.getString("label") : null);
+            if (label != null) field.setFieldLabel(label);
+            return;
+        }
     }
 
     // ==================== 决策表 ====================
@@ -1338,6 +1367,18 @@ public class RuleFieldAnalyzer {
     // ==================== 规则集 ====================
 
     private void extractFromRuleSet(JSONObject model, Set<String> varCodes, boolean isInput) {
+        if (!isInput) {
+            JSONObject resultVar = model.getJSONObject("resultVar");
+            if (resultVar != null) {
+                JSONObject operand = resultVar.getJSONObject("operand");
+                if (operand != null) {
+                    OperandDependencyCollector.collect(operand, varCodes);
+                } else {
+                    String varCode = resultVar.getString("varCode");
+                    if (varCode != null && !varCode.trim().isEmpty()) varCodes.add(varCode);
+                }
+            }
+        }
         JSONArray rules = model.getJSONArray("rules");
         if (rules == null) {
             return;
@@ -1466,7 +1507,10 @@ public class RuleFieldAnalyzer {
     private void collectActionBlockVars(JSONObject block, Set<String> varCodes, boolean isInput) {
         if (block == null) return;
         String type = getString(block, "type");
-        if (!isInput) {
+        boolean disabledRuleCallMapping = "rule-call".equals(type)
+                && block.containsKey("enableOutputMapping")
+                && !Boolean.TRUE.equals(block.getBoolean("enableOutputMapping"));
+        if (!isInput && !disabledRuleCallMapping) {
             OperandDependencyCollector.collect(block.getJSONObject("targetOperand"), varCodes);
             addVarName(varCodes, getString(block, "target"));
             addVarName(varCodes, getString(block, "outputVar"));

@@ -7,12 +7,17 @@ import {
   expressionPathKey,
   firstEditablePath,
   getExpressionNode,
+  indentExpressionTerm,
   insertExpressionOperation,
+  moveExpressionNode,
+  moveExpressionSibling,
+  outdentExpressionOperation,
   removeExpressionNode,
   setExpressionNode,
   wrapExpressionNode
 } from '@/components/expression/expressionTree'
 import { createLiteralOperand, createOperationOperand } from '@/utils/operand'
+import { compileOperand } from '@/utils/operand'
 
 describe('expressionTree', () => {
   test('按路径替换和删除递归参数且不修改原值', () => {
@@ -123,5 +128,75 @@ describe('expressionTree', () => {
     expect(expressionPathKey([])).toBe('$')
     expect(expressionAncestorKeys(['args', 0, 'items', 1])).toEqual(['$', 'args', 'args.0', 'args.0.items'])
     expect(existingCollapsedPaths(source, ['$', 'args.0', 'missing'])).toEqual(['$'])
+  })
+
+  test('缩进运算项会把它与前一项组成显式括号', () => {
+    const source = createOperationOperand([
+      { operand: { kind: 'PATH', value: 'a', code: 'a' } },
+      { operator: '+', operand: { kind: 'PATH', value: 'b', code: 'b' } },
+      { operator: '*', operand: { kind: 'PATH', value: 'c', code: 'c' } }
+    ])
+
+    const groupedLeft = indentExpressionTerm(source, ['terms', 1, 'operand'])
+    expect(groupedLeft.changed).toBe(true)
+    expect(compileOperand(groupedLeft.root)).toBe('((a + b) * c)')
+    expect(groupedLeft.selectedPath).toEqual(['terms', 0, 'operand', 'terms', 1, 'operand'])
+
+    const groupedRight = indentExpressionTerm(source, ['terms', 2, 'operand'])
+    expect(compileOperand(groupedRight.root)).toBe('(a + (b * c))')
+  })
+
+  test('反缩进会展开当前嵌套运算但保留运算符顺序', () => {
+    const source = createOperationOperand([
+      { operand: { kind: 'PATH', value: 'a', code: 'a' } },
+      {
+        operator: '+',
+        operand: createOperationOperand([
+          { operand: { kind: 'PATH', value: 'b', code: 'b' } },
+          { operator: '*', operand: { kind: 'PATH', value: 'c', code: 'c' } }
+        ])
+      }
+    ])
+
+    const result = outdentExpressionOperation(source, ['terms', 1, 'operand'])
+
+    expect(result.changed).toBe(true)
+    expect(compileOperand(result.root)).toBe('(a + b * c)')
+    expect(result.selectedPath).toEqual(['terms', 1, 'operand'])
+  })
+
+  test('同级移动只交换操作数，运算符继续属于原槽位', () => {
+    const source = createOperationOperand([
+      { operand: { kind: 'PATH', value: 'a', code: 'a' } },
+      { operator: '+', operand: { kind: 'PATH', value: 'b', code: 'b' } },
+      { operator: '*', operand: { kind: 'PATH', value: 'c', code: 'c' } }
+    ])
+
+    const result = moveExpressionSibling(source, ['terms', 2, 'operand'], -1)
+
+    expect(result.changed).toBe(true)
+    expect(compileOperand(result.root)).toBe('(a + c * b)')
+    expect(result.selectedPath).toEqual(['terms', 1, 'operand'])
+  })
+
+  test('拖拽可移入空槽但拒绝覆盖、后代循环和不合法缩进', () => {
+    const source = {
+      kind: 'FUNCTION',
+      functionCode: 'max',
+      args: [
+        { kind: 'PATH', value: 'a', code: 'a' },
+        null,
+        { kind: 'PATH', value: 'c', code: 'c' }
+      ]
+    }
+
+    const moved = moveExpressionNode(source, ['args', 0], ['args', 1])
+    expect(moved.changed).toBe(true)
+    expect(moved.root.args[0]).toBeNull()
+    expect(moved.root.args[1].code).toBe('a')
+    expect(moveExpressionNode(source, ['args', 0], ['args', 2]).changed).toBe(false)
+    expect(moveExpressionNode(source, [], ['args', 1]).changed).toBe(false)
+    expect(indentExpressionTerm(source, ['args', 0]).changed).toBe(false)
+    expect(outdentExpressionOperation(source, []).changed).toBe(false)
   })
 })

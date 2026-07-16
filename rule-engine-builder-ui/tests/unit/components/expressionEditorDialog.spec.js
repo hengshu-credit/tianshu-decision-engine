@@ -21,6 +21,7 @@ function mountEditor(propsData = {}) {
       ExpressionPalette: true,
       ExpressionCanvas: true,
       ExpressionNodeInspector: true,
+      ExpressionFormulaPreview: true,
       'el-button': { template: '<button @click="$emit(\'click\')"><slot /></button>' },
       'el-alert': true
     }
@@ -141,5 +142,48 @@ describe('ExpressionEditorDialog', () => {
 
     wrapper.vm.selectPathCandidate({ path: [], candidate: wrapper.vm.pathCandidates[1] })
     expect(wrapper.vm.draft).toMatchObject({ kind: 'PATH', refId: 2, refType: 'MODEL_OUTPUT', resolved: true })
+  })
+
+  test('画布分组、反分组和同级移动都进入撤销历史', () => {
+    const value = createOperationOperand([
+      { operand: { kind: 'PATH', value: 'a', code: 'a' } },
+      { operator: '+', operand: { kind: 'PATH', value: 'b', code: 'b' } },
+      { operator: '*', operand: { kind: 'PATH', value: 'c', code: 'c' } }
+    ])
+    const wrapper = mountEditor({ value })
+
+    wrapper.vm.indentPath(['terms', 2, 'operand'])
+    expect(wrapper.vm.draft.terms[1].operand.kind).toBe('OPERATION')
+    wrapper.vm.outdentPath(['terms', 1, 'operand'])
+    expect(wrapper.vm.draft.terms).toHaveLength(3)
+    wrapper.vm.movePath({ path: ['terms', 2, 'operand'], offset: -1 })
+    expect(wrapper.vm.draft.terms[1].operand.code).toBe('c')
+    expect(wrapper.vm.history).toHaveLength(4)
+  })
+
+  test('脚本确认后用结构化 Operand 替换草稿并进入撤销历史', () => {
+    const wrapper = mountEditor({ value: { kind: 'PATH', value: 'age', code: 'age' } })
+    const parsed = createOperationOperand([
+      { operand: { kind: 'PATH', value: 'age', code: 'age' } },
+      { operator: '+', operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } }
+    ])
+
+    wrapper.vm.replaceDraftFromScript(parsed)
+
+    expect(wrapper.vm.draft.kind).toBe('OPERATION')
+    expect(wrapper.vm.history).toHaveLength(2)
+  })
+
+  test('嵌入模式暴露草稿与校验结果且不使用全屏定位', () => {
+    const wrapper = mountEditor({
+      embedded: true,
+      value: { kind: 'LITERAL', value: '8', valueType: 'NUMBER' }
+    })
+
+    expect(wrapper.find('.expression-editor').classes()).toContain('expression-editor--embedded')
+    expect(wrapper.find('.expression-editor__header').exists()).toBe(false)
+    expect(wrapper.find('.expression-editor__footer').exists()).toBe(false)
+    expect(wrapper.vm.getDraft()).toEqual({ kind: 'LITERAL', value: '8', valueType: 'NUMBER' })
+    expect(wrapper.vm.validateDraft()).toEqual([])
   })
 })

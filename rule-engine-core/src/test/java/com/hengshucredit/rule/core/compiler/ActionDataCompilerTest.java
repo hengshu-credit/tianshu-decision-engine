@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ActionDataCompilerTest {
@@ -121,6 +122,22 @@ public class ActionDataCompilerTest {
 
         assertTrue(script.contains("executeRuleById(\"1\")"));
         assertTrue(script.contains("score = executeRuleFieldById(\"2\", \"score\")"));
+    }
+
+    @Test
+    public void compileRuleCallIgnoresRetainedMappingWhenExplicitlyDisabled() {
+        JSONArray actionData = JSON.parseArray("["
+                + "{\"type\":\"rule-call\",\"ruleId\":2,\"ruleCode\":\"SCORE\","
+                + "\"enableOutputMapping\":false,\"outputField\":\"score\","
+                + "\"targetOperand\":{\"kind\":\"REFERENCE\",\"refId\":5,"
+                + "\"refType\":\"VARIABLE\",\"code\":\"risk.score\",\"resolved\":true}}"
+                + "]");
+
+        String script = ActionDataCompiler.compile(actionData);
+
+        assertEquals("executeRuleById(\"2\")", script);
+        assertFalse(script.contains("executeRuleField"));
+        assertFalse(script.contains("risk.score ="));
     }
 
     @Test

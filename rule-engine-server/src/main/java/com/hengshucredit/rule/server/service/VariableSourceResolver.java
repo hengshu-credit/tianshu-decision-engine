@@ -83,7 +83,8 @@ public class VariableSourceResolver {
         removeCallerConstantValues(variables, resolvedParams);
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
-        Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(), variables, models);
+        Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(),
+                variables, models, effectiveOptions.isRequiredNamesUpstreamOnly());
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
         resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
         return resolvedParams;
@@ -288,7 +289,8 @@ public class VariableSourceResolver {
         return map;
     }
 
-    private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables, List<RuleModel> models) {
+    private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables,
+                                                   List<RuleModel> models, boolean upstreamOnly) {
         if (initial == null || initial.isEmpty()) {
             return initial;
         }
@@ -307,7 +309,7 @@ public class VariableSourceResolver {
             }
         }
         Set<String> expanded = new LinkedHashSet<>(initial);
-        addModelsSatisfiedByRequiredInputs(expanded, modelMap);
+        if (!upstreamOnly) addModelsSatisfiedByRequiredInputs(expanded, modelMap);
         List<String> queue = new ArrayList<>(initial);
         int index = 0;
         while (index < queue.size()) {
@@ -327,7 +329,7 @@ public class VariableSourceResolver {
                         queue.add(dependency);
                     }
                 }
-                addModelsSatisfiedByRequiredInputs(expanded, modelMap);
+                if (!upstreamOnly) addModelsSatisfiedByRequiredInputs(expanded, modelMap);
             }
         }
         return expanded;

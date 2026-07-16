@@ -77,7 +77,10 @@
         </el-menu>
       </el-aside>
       <el-main class="layout-main">
-        <router-view />
+        <keep-alive :max="12">
+          <router-view v-if="$route.meta.keepAlive" :key="$route.fullPath" />
+        </keep-alive>
+        <router-view v-if="!$route.meta.keepAlive" :key="$route.fullPath" />
       </el-main>
     </el-container>
   </el-container>

@@ -12,13 +12,12 @@ function mountInspector(node) {
 }
 
 describe('ExpressionNodeInspector', () => {
-  test('阈值类型选择器显示在全屏表达式编辑器上方并可修改类型', () => {
+  test('阈值只在画布当前卡片编辑，检查器不再重复生成输入行', () => {
     const wrapper = mountInspector(createLiteralOperand('1', 'NUMBER'))
-    const select = wrapper.findComponent({ name: 'ElSelect' })
 
-    expect(select.attributes('popper-class')).toBe('expression-editor-select-popper')
-    wrapper.vm.patch({ valueType: 'BOOLEAN' })
-    expect(wrapper.emitted().input[0][0].valueType).toBe('BOOLEAN')
+    expect(wrapper.findComponent({ name: 'ElSelect' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'ElInput' }).exists()).toBe(false)
+    expect(wrapper.find('.inline-edit-tip').text()).toContain('当前卡片')
   })
 
   test('函数参数支持添加和删减', async () => {

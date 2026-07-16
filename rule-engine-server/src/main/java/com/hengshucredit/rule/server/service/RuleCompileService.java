@@ -1,5 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.*;
 import com.hengshucredit.rule.core.engine.QLExpressEngineFactory;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
@@ -105,6 +108,84 @@ public class RuleCompileService {
             return CompileResult.fail(cycleError);
         }
         return compiler.compile(modelJson, buildVarContext(definition.getProjectId()));
+    }
+
+    /** 编译单个结构化表达式，不读取或修改规则内容、编译状态和版本。 */
+    public CompileResult compileExpression(Long definitionId, Map<String, Object> operand) {
+        RuleDefinition definition = definitionService.getById(definitionId);
+        if (definition == null) {
+            return CompileResult.fail("规则定义不存在");
+        }
+        if (operand == null || operand.isEmpty()) {
+            return CompileResult.fail("表达式不能为空");
+        }
+        try {
+            Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
+            Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
+            Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
+            Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(definition.getProjectId());
+            VarContext context = new VarContext(varIdToScriptName, varCodeToScriptName,
+                    refIdToScriptName, constantIdToExpression,
+                    functionService.buildFunctionCodeMap(definition.getProjectId()),
+                    functionService.buildFunctionArityMap(definition.getProjectId()));
+            JSONObject json = (JSONObject) JSON.toJSON(operand);
+            validateExpressionReferences(json, refIdToScriptName, constantIdToExpression);
+            return CompileResult.ok(OperandCompiler.compile(json, context), "QLEXPRESS");
+        } catch (RuntimeException e) {
+            return CompileResult.fail(e.getMessage() == null ? "表达式编译失败" : e.getMessage());
+        }
+    }
+
+    private void validateExpressionReferences(JSONObject operand,
+                                              Map<String, String> refIdToScriptName,
+                                              Map<Long, String> constantIdToExpression) {
+        if (operand == null) return;
+        String kind = operand.getString("kind");
+        if ("REFERENCE".equals(kind)) {
+            Long refId = operand.getLong("refId");
+            String refType = operand.getString("refType");
+            if (refId == null || refType == null || refType.trim().isEmpty()) {
+                throw new IllegalArgumentException("受管字段引用缺少 ID 或引用类型");
+            }
+            if ("CONSTANT".equalsIgnoreCase(refType)) {
+                if (!constantIdToExpression.containsKey(refId)) {
+                    throw new IllegalArgumentException("常量引用不存在、已停用或值不合法，ID=" + refId);
+                }
+            } else {
+                String key = refType.trim().toUpperCase() + ":" + refId;
+                if (!refIdToScriptName.containsKey(key)) {
+                    throw new IllegalArgumentException("字段引用不存在或已停用，" + key);
+                }
+            }
+        }
+        if ("FUNCTION".equals(kind)) {
+            validateExpressionArray(operand.getJSONArray("args"), refIdToScriptName, constantIdToExpression);
+        } else if ("OPERATION".equals(kind)) {
+            JSONArray terms = operand.getJSONArray("terms");
+            if (terms != null) {
+                for (int i = 0; i < terms.size(); i++) {
+                    JSONObject term = terms.getJSONObject(i);
+                    validateExpressionReferences(term == null ? null : term.getJSONObject("operand"),
+                            refIdToScriptName, constantIdToExpression);
+                }
+            }
+        } else if ("ACCESS".equals(kind)) {
+            validateExpressionReferences(operand.getJSONObject("target"), refIdToScriptName, constantIdToExpression);
+            validateExpressionReferences(operand.getJSONObject("accessor"), refIdToScriptName, constantIdToExpression);
+        } else if ("CAST".equals(kind)) {
+            validateExpressionReferences(operand.getJSONObject("operand"), refIdToScriptName, constantIdToExpression);
+        } else if ("ARRAY".equals(kind)) {
+            validateExpressionArray(operand.getJSONArray("items"), refIdToScriptName, constantIdToExpression);
+        }
+    }
+
+    private void validateExpressionArray(JSONArray values,
+                                         Map<String, String> refIdToScriptName,
+                                         Map<Long, String> constantIdToExpression) {
+        if (values == null) return;
+        for (int i = 0; i < values.size(); i++) {
+            validateExpressionReferences(values.getJSONObject(i), refIdToScriptName, constantIdToExpression);
+        }
     }
 
     private VarContext buildVarContext(Long projectId) {

@@ -119,6 +119,12 @@ jest.mock('@/api/definition', () => ({
   migrateFields: jest.fn(),
   __esModule: true
 }))
+jest.mock('@/api/expression', () => ({
+  compileExpression: jest.fn(),
+  getExpressionTestSchema: jest.fn(),
+  executeExpression: jest.fn(),
+  __esModule: true
+}))
 jest.mock('@/api/variable', () => ({
   listVariablesByProject: jest.fn(),
   getVariableOptions: jest.fn(),

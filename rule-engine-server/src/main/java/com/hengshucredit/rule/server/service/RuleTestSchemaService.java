@@ -24,9 +24,13 @@ public class RuleTestSchemaService {
     private FieldDependencyResolver fieldDependencyResolver;
 
     public RuleTestSchema build(RuleTestSchemaRequest request) {
-        ResolutionPlan plan = fieldDependencyResolver.resolve(request);
+        return build(fieldDependencyResolver.resolve(request));
+    }
+
+    public RuleTestSchema build(ResolutionPlan plan) {
         RuleTestSchema schema = new RuleTestSchema();
         schema.setInputs(new ArrayList<>(plan.getExternalInputs()));
+        schema.setRuntimeNodes(new ArrayList<>(plan.getRuntimeNodes()));
         schema.setOutputs(new ArrayList<>(plan.getOutputs()));
         schema.setDiagnostics(new ArrayList<>(plan.getDiagnostics()));
         Map<String, Object> params = new LinkedHashMap<>();

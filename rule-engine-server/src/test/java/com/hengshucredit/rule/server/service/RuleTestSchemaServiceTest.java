@@ -26,6 +26,7 @@ public class RuleTestSchemaServiceTest {
                 field("age", "INTEGER", "INPUT")
         ));
         plan.setOutputs(Collections.singletonList(field("score_f1.score", "DOUBLE", "MODEL_OUTPUT")));
+        plan.setRuntimeNodes(Collections.singletonList(field("score_f1.score", "DOUBLE", "MODEL")));
         FieldDependencyResolver resolver = new FieldDependencyResolver() {
             @Override
             public ResolutionPlan resolve(RuleTestSchemaRequest request) {
@@ -44,6 +45,19 @@ public class RuleTestSchemaServiceTest {
         assertEquals(Integer.valueOf(0), schema.getSampleParams().get("age"));
         assertFalse(schema.getSampleParams().containsKey("score_f1.score"));
         assertFalse(schema.getSampleParams().containsKey("DAY"));
+        assertEquals(1, schema.getRuntimeNodes().size());
+        assertEquals("score_f1.score", schema.getRuntimeNodes().get(0).getScriptName());
+    }
+
+    @Test
+    public void buildsSchemaDirectlyFromExistingResolutionPlan() {
+        ResolutionPlan plan = new ResolutionPlan();
+        plan.setExternalInputs(Collections.singletonList(field("request.amount", "NUMBER", "INPUT")));
+        RuleTestSchemaService service = new RuleTestSchemaService();
+
+        RuleTestSchema schema = service.build(plan);
+
+        assertTrue(schema.getSampleParams().get("request") instanceof Map);
     }
 
     @Test

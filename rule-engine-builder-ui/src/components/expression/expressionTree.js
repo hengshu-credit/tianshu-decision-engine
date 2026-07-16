@@ -183,6 +183,150 @@ export function wrapExpressionNode(current, template) {
   return source
 }
 
+function operationTermLocation(root, path) {
+  if (!Array.isArray(path) || path.length < 3) return null
+  const suffix = path.slice(-3)
+  if (suffix[0] !== 'terms' || !Number.isInteger(suffix[1]) || suffix[2] !== 'operand') return null
+  const parentPath = path.slice(0, -3)
+  const parent = getExpressionNode(root, parentPath)
+  if (!parent || parent.kind !== 'OPERATION' || !(parent.terms || [])[suffix[1]]) return null
+  return { parent, parentPath, index: suffix[1] }
+}
+
+function unchanged(root, selectedPath) {
+  return { root, selectedPath: (selectedPath || []).slice(), changed: false }
+}
+
+export function indentExpressionTerm(root, selectedPath = []) {
+  const location = operationTermLocation(root, selectedPath)
+  if (!location || location.index < 1) return unchanged(root, selectedPath)
+  const terms = cloneOperand(location.parent.terms || [])
+  const previousIndex = location.index - 1
+  const previous = terms[previousIndex]
+  const current = terms[location.index]
+  if (!previous || !previous.operand || !current || !current.operand || !current.operator) return unchanged(root, selectedPath)
+
+  const nested = createOperationOperand([
+    { operand: previous.operand },
+    { operator: current.operator, operand: current.operand }
+  ], location.parent.valueType)
+  const grouped = { operand: nested }
+  if (previousIndex > 0 && previous.operator) grouped.operator = previous.operator
+  terms.splice(previousIndex, 2, grouped)
+  const nextParent = { ...cloneOperand(location.parent), terms }
+  const nextPath = location.parentPath.concat(['terms', previousIndex, 'operand', 'terms', 1, 'operand'])
+  return {
+    root: setExpressionNode(root, location.parentPath, nextParent),
+    selectedPath: nextPath,
+    changed: true
+  }
+}
+
+export function outdentExpressionOperation(root, selectedPath = []) {
+  const location = operationTermLocation(root, selectedPath)
+  const current = getExpressionNode(root, selectedPath)
+  if (!location || !current || current.kind !== 'OPERATION' || (current.terms || []).length < 2) {
+    return unchanged(root, selectedPath)
+  }
+
+  const parentTerms = cloneOperand(location.parent.terms || [])
+  const wrapper = parentTerms[location.index]
+  const expanded = cloneOperand(current.terms).map((term, index) => {
+    const next = { operand: term.operand }
+    if (index === 0) {
+      if (location.index > 0 && wrapper.operator) next.operator = wrapper.operator
+    } else if (term.operator) {
+      next.operator = term.operator
+    }
+    return next
+  })
+  parentTerms.splice(location.index, 1, ...expanded)
+  const nextParent = { ...cloneOperand(location.parent), terms: parentTerms }
+  const nextPath = location.parentPath.concat(['terms', location.index, 'operand'])
+  return {
+    root: setExpressionNode(root, location.parentPath, nextParent),
+    selectedPath: nextPath,
+    changed: true
+  }
+}
+
+export function moveExpressionSibling(root, selectedPath = [], offset = 0) {
+  const location = operationTermLocation(root, selectedPath)
+  if (location) {
+    const targetIndex = location.index + Number(offset)
+    if (!Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= location.parent.terms.length || targetIndex === location.index) {
+      return unchanged(root, selectedPath)
+    }
+    const terms = cloneOperand(location.parent.terms)
+    const sourceOperand = terms[location.index].operand
+    terms[location.index].operand = terms[targetIndex].operand
+    terms[targetIndex].operand = sourceOperand
+    return {
+      root: setExpressionNode(root, location.parentPath, { ...cloneOperand(location.parent), terms }),
+      selectedPath: location.parentPath.concat(['terms', targetIndex, 'operand']),
+      changed: true
+    }
+  }
+
+  if (!Array.isArray(selectedPath) || selectedPath.length < 2) return unchanged(root, selectedPath)
+  const index = selectedPath[selectedPath.length - 1]
+  const key = selectedPath[selectedPath.length - 2]
+  if (!Number.isInteger(index) || !['args', 'items'].includes(key)) return unchanged(root, selectedPath)
+  const parentPath = selectedPath.slice(0, -2)
+  const parent = getExpressionNode(root, parentPath)
+  const values = parent && parent[key]
+  const targetIndex = index + Number(offset)
+  if (!Array.isArray(values) || !Number.isInteger(targetIndex) || targetIndex < 0 || targetIndex >= values.length || targetIndex === index) {
+    return unchanged(root, selectedPath)
+  }
+  const nextValues = cloneOperand(values)
+  const source = nextValues[index]
+  nextValues[index] = nextValues[targetIndex]
+  nextValues[targetIndex] = source
+  return {
+    root: setExpressionNode(root, parentPath, { ...cloneOperand(parent), [key]: nextValues }),
+    selectedPath: parentPath.concat([key, targetIndex]),
+    changed: true
+  }
+}
+
+function pathStartsWith(path, prefix) {
+  return prefix.length <= path.length && prefix.every((value, index) => value === path[index])
+}
+
+function isOperandSlot(root, path) {
+  if (!Array.isArray(path) || !path.length) return false
+  const operation = operationTermLocation(root, path)
+  if (operation) return true
+
+  const key = path[path.length - 1]
+  const parent = getExpressionNode(root, path.slice(0, -1))
+  if (key === 'target' || key === 'accessor') return parent && parent.kind === 'ACCESS'
+  if (key === 'operand') return parent && parent.kind === 'CAST'
+
+  if (path.length < 2 || !Number.isInteger(key)) return false
+  const collectionKey = path[path.length - 2]
+  const collectionParent = getExpressionNode(root, path.slice(0, -2))
+  if (collectionKey === 'args') return collectionParent && collectionParent.kind === 'FUNCTION' && key < (collectionParent.args || []).length
+  if (collectionKey === 'items') return collectionParent && collectionParent.kind === 'ARRAY' && key < (collectionParent.items || []).length
+  return false
+}
+
+export function moveExpressionNode(root, fromPath = [], toPath = []) {
+  if (!fromPath.length || !toPath.length || pathsEqual(fromPath, toPath)) return unchanged(root, fromPath)
+  if (pathStartsWith(toPath, fromPath) || !isOperandSlot(root, toPath)) return unchanged(root, fromPath)
+  const source = getExpressionNode(root, fromPath)
+  const target = getExpressionNode(root, toPath)
+  if (!source || target != null) return unchanged(root, fromPath)
+
+  const withTarget = setExpressionNode(root, toPath, source)
+  return {
+    root: setExpressionNode(withTarget, fromPath, null),
+    selectedPath: toPath.slice(),
+    changed: true
+  }
+}
+
 export function pathsEqual(left, right) {
   return JSON.stringify(left || []) === JSON.stringify(right || [])
 }

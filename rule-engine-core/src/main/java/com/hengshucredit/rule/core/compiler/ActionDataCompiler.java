@@ -297,6 +297,12 @@ public class ActionDataCompiler {
         Long ruleId = b.getLong("ruleId");
         if (ruleId == null && empty(ruleCode)) return "";
         String outputField = b.getString("outputField");
+        boolean outputMappingEnabled = b.containsKey("enableOutputMapping")
+                ? Boolean.TRUE.equals(b.getBoolean("enableOutputMapping"))
+                : !empty(outputField) || b.getJSONObject("targetOperand") != null || !empty(b.getString("target"));
+        if (!outputMappingEnabled) {
+            outputField = null;
+        }
         String call;
         if (ruleId != null) {
             call = empty(outputField)
@@ -307,9 +313,9 @@ public class ActionDataCompiler {
                     ? "executeRule(" + quoteString(ruleCode) + ")"
                     : "executeRuleField(" + quoteString(ruleCode) + ", " + quoteString(outputField) + ")";
         }
-        String target = b.getJSONObject("targetOperand") != null
+        String target = outputMappingEnabled && b.getJSONObject("targetOperand") != null
                 ? OperandCompiler.compile(b.getJSONObject("targetOperand"), varContext)
-                : b.getString("target");
+                : (outputMappingEnabled ? b.getString("target") : null);
         if (empty(target)) {
             return pad(indent) + call;
         }

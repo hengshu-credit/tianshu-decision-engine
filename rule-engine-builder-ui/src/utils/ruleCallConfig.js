@@ -87,6 +87,12 @@ export function repairLegacyRuleCallRefs(model, rules) {
   return repaired
 }
 
+export function isRuleOutputMappingEnabled(call) {
+  if (!call) return false
+  if (typeof call.enableOutputMapping === 'boolean') return call.enableOutputMapping
+  return !!(call.outputField || call.targetOperand)
+}
+
 export function validateRuleCallBlock(call, context = {}) {
   if (!call || (call.ruleId == null && !call.ruleCode)) return '执行规则动作未选择要调用的规则'
   if (call.ruleId == null) return '执行规则动作缺少稳定规则 ID，请重新选择规则'
@@ -96,12 +102,14 @@ export function validateRuleCallBlock(call, context = {}) {
   const rule = (context.rules || []).find(item => String(item.id) === String(call.ruleId))
   if (!rule) return '所选规则已不存在或不在当前项目可用范围内'
   if (rule.status != null && Number(rule.status) !== 1) return '所选规则未启用，不能执行'
-  const hasOutput = !!call.outputField
-  const hasTarget = !!call.targetOperand
-  if (hasOutput !== hasTarget) return '输出字段和目标字段必须同时配置'
-  if (hasOutput && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
-    String(field.scriptName || field.fieldName) === String(call.outputField))) {
-    return '映射的输出字段已不存在，请重新选择'
+  if (isRuleOutputMappingEnabled(call)) {
+    const hasOutput = !!call.outputField
+    const hasTarget = !!call.targetOperand
+    if (!hasOutput || !hasTarget) return '输出字段和目标字段必须同时配置'
+    if (hasOutput && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
+      String(field.scriptName || field.fieldName) === String(call.outputField))) {
+      return '映射的输出字段已不存在，请重新选择'
+    }
   }
   return ''
 }

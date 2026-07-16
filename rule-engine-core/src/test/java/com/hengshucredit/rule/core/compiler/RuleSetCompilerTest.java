@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.core.compiler;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Before;
 import org.junit.Test;
@@ -124,5 +125,106 @@ public class RuleSetCompilerTest {
         assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
         assertFalse(compiled.getCompiledScript().contains("\"R0001\""));
         assertTrue(compiled.getCompiledScript().contains("\"R0002\""));
+    }
+
+    @Test
+    public void testOptionalListResultVarReceivesHitsWithoutChangingTopLevelResult() {
+        Map<String, String> refIdMap = new LinkedHashMap<>();
+        refIdMap.put("VARIABLE:12", "hitRules");
+        VarContext context = new VarContext(new LinkedHashMap<Long, String>(),
+                new LinkedHashMap<String, String>(), refIdMap);
+        CompileResult compiled = compiler.compile("{"
+                + "\"executionMode\":\"PARALLEL\","
+                + "\"resultVar\":{\"varCode\":\"legacyHits\",\"varType\":\"LIST\",\"_varId\":12,\"_refType\":\"VARIABLE\","
+                + "\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"legacyHits\",\"valueType\":\"LIST\",\"refId\":12,\"refType\":\"VARIABLE\",\"resolved\":true}},"
+                + "\"rules\":[{\"ruleCode\":\"R0001\",\"conditionRoot\":{\"type\":\"group\",\"operator\":\"AND\",\"children\":[]}}]"
+                + "}", context);
+
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        assertTrue(compiled.getCompiledScript().contains("hitRules = _ruleSetHits"));
+        Map<String, Object> captured = new LinkedHashMap<>();
+        RuntimeContextBridge.bind(captured::put);
+        try {
+            RuleResult result = engine.execute(compiled.getCompiledScript(), new LinkedHashMap<String, Object>());
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertTrue(result.getResult() instanceof List);
+            assertEquals(1, ((List<?>) result.getResult()).size());
+            assertTrue(captured.get("hitRules") instanceof List);
+            assertEquals(1, ((List<?>) captured.get("hitRules")).size());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
+    public void testDataObjectListResultVarReceivesEmptyHitList() {
+        Map<String, String> refIdMap = new LinkedHashMap<>();
+        refIdMap.put("DATA_OBJECT:33", "request.hitRules");
+        VarContext context = new VarContext(new LinkedHashMap<Long, String>(), new LinkedHashMap<String, String>(), refIdMap);
+        CompileResult compiled = compiler.compile("{"
+                + "\"resultVar\":{\"varCode\":\"request.hitRules\",\"varType\":\"LIST\",\"_varId\":33,\"_refType\":\"DATA_OBJECT\","
+                + "\"operand\":{\"kind\":\"PATH\",\"value\":\"request.hitRules\",\"code\":\"request.hitRules\",\"valueType\":\"LIST\",\"refId\":33,\"refType\":\"DATA_OBJECT\",\"resolved\":true}},"
+                + "\"rules\":[{\"ruleCode\":\"R0001\",\"conditionRoot\":{\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\">\",\"value\":\"100\"}}]"
+                + "}", context);
+
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("hitRules", null);
+        Map<String, Object> params = new LinkedHashMap<>();
+        params.put("request", request);
+        params.put("score", 10);
+        RuleResult result = engine.execute(compiled.getCompiledScript(), params);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getResult() instanceof List);
+        assertTrue(((List<?>) result.getResult()).isEmpty());
+        assertTrue(request.get("hitRules") instanceof List);
+        assertTrue(((List<?>) request.get("hitRules")).isEmpty());
+    }
+
+    @Test
+    public void testResultVarRejectsNonListType() {
+        CompileResult compiled = compiler.compile("{"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"score\",\"valueType\":\"NUMBER\",\"refId\":12,\"refType\":\"VARIABLE\",\"resolved\":true}},"
+                + "\"rules\":[]"
+                + "}");
+
+        assertFalse(compiled.isSuccess());
+        assertTrue(compiled.getErrorMessage().contains("LIST"));
+    }
+
+    @Test
+    public void testResultVarRejectsMissingTypedReferenceEvenWhenLegacyMappingsMatch() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(12L, "legacyHitRules");
+        Map<String, String> varCodeMap = new LinkedHashMap<>();
+        varCodeMap.put("legacyHits", "legacyHitRules");
+        VarContext context = new VarContext(varIdMap, varCodeMap, new LinkedHashMap<String, String>());
+
+        CompileResult compiled = compiler.compile("{"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"REFERENCE\",\"code\":\"legacyHits\",\"valueType\":\"LIST\",\"refId\":12,\"refType\":\"VARIABLE\",\"resolved\":true}},"
+                + "\"rules\":[]"
+                + "}", context);
+
+        assertFalse(compiled.isSuccess());
+        assertTrue(compiled.getErrorMessage().contains("VARIABLE:12"));
+    }
+
+    @Test
+    public void testResultVarDoesNotReuseSameIdFromAnotherReferenceType() {
+        Map<Long, String> varIdMap = new LinkedHashMap<>();
+        varIdMap.put(33L, "wrongVariable");
+        Map<String, String> refIdMap = new LinkedHashMap<>();
+        refIdMap.put("VARIABLE:33", "wrongVariable");
+        VarContext context = new VarContext(varIdMap, new LinkedHashMap<String, String>(), refIdMap);
+
+        CompileResult compiled = compiler.compile("{"
+                + "\"resultVar\":{\"operand\":{\"kind\":\"PATH\",\"code\":\"request.hitRules\",\"valueType\":\"LIST\",\"refId\":33,\"refType\":\"DATA_OBJECT\",\"resolved\":true}},"
+                + "\"rules\":[]"
+                + "}", context);
+
+        assertFalse(compiled.isSuccess());
+        assertTrue(compiled.getErrorMessage().contains("DATA_OBJECT:33"));
     }
 }

@@ -122,6 +122,10 @@
             />
           </div>
           <div v-if="hasRuleOutputMapping(block)" class="rule-output-mapping">
+            <div class="mapping-header">
+              <span class="mini-label">单字段映射</span>
+              <el-button type="text" size="mini" icon="el-icon-delete" class="danger" @click="clearRuleOutputMapping(block)">一键清空</el-button>
+            </div>
             <div class="inline-row">
               <span class="mini-label">子规则输出</span>
               <el-select v-model="block.outputField" size="mini" filterable clearable placeholder="选择输出字段" class="grow" @change="sync">
@@ -225,6 +229,7 @@ import {
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
 import { inferOperandType } from '@/utils/operand'
+import { isRuleOutputMappingEnabled } from '@/utils/ruleCallConfig'
 
 export default {
   name: 'ActionBlockEditor',
@@ -358,6 +363,7 @@ export default {
           ruleCode: block.ruleCode || '',
           ruleName: block.ruleName || '',
           modelType: block.modelType || '',
+          enableOutputMapping: isRuleOutputMappingEnabled(block),
           outputField: block.outputField || '',
           targetOperand: block.targetOperand ? JSON.parse(JSON.stringify(block.targetOperand)) : null
         },
@@ -382,13 +388,15 @@ export default {
       }
     },
     hasRuleOutputMapping(block) {
-      return !!(block && (block.outputField || block.targetOperand))
+      return isRuleOutputMappingEnabled(block)
     },
     toggleRuleOutputMapping(block, enabled) {
-      if (!enabled) {
-        this.$set(block, 'outputField', '')
-        this.$set(block, 'targetOperand', null)
-      }
+      this.$set(block, 'enableOutputMapping', !!enabled)
+      this.sync()
+    },
+    clearRuleOutputMapping(block) {
+      this.$set(block, 'outputField', '')
+      this.$set(block, 'targetOperand', null)
       this.sync()
     },
     async onRuleSelect(block, selectedRule) {
@@ -482,4 +490,5 @@ export default {
 .shared-context-hint i { color: #409eff; }
 .mapping-toggle-row { margin-top: 8px; }
 .rule-output-mapping { margin-top: 8px; padding: 8px; border: 1px dashed #dcdfe6; border-radius: 4px; background: #fff; }
+.mapping-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
 </style>

@@ -171,6 +171,16 @@ describe('generateScript', () => {
     }])).toBe('score = executeRuleField("score_card", "score")')
     expect(generateScript([{ type: 'rule-call', targetOperand: null, ruleCode: 'credit_flow' }])).toBe('executeRule("credit_flow")')
   })
+
+  test('规则调用显式关闭映射时忽略保留的映射字段', () => {
+    expect(generateScript([{
+      type: 'rule-call',
+      ruleCode: 'score_card',
+      enableOutputMapping: false,
+      outputField: 'score',
+      targetOperand: ref('risk_score', 'NUMBER')
+    }])).toBe('executeRule("score_card")')
+  })
 })
 
 describe('动作数据转换', () => {
@@ -228,6 +238,35 @@ describe('动作数据转换', () => {
     expect(model.nodes[0].actionData[0].targetOperand).toMatchObject({ kind: 'PATH', value: 'result' })
     expect(model.logicflow.nodes[0].properties.actionData[0].valueOperand).toMatchObject({ kind: 'LITERAL', value: '1' })
   })
+
+  test('旧规则调用存在映射字段时迁移为显式开启状态', () => {
+    const blocks = actionDataToBlocks([{
+      type: 'rule-call',
+      ruleId: 8,
+      ruleCode: 'score_card',
+      outputField: 'score',
+      targetOperand: ref('risk_score', 'NUMBER')
+    }])
+
+    expect(blocks[0].enableOutputMapping).toBe(true)
+  })
+
+  test('显式关闭映射时保留已有映射字段', () => {
+    const blocks = actionDataToBlocks([{
+      type: 'rule-call',
+      ruleId: 8,
+      ruleCode: 'score_card',
+      enableOutputMapping: false,
+      outputField: 'score',
+      targetOperand: ref('risk_score', 'NUMBER')
+    }])
+
+    expect(blocks[0]).toMatchObject({
+      enableOutputMapping: false,
+      outputField: 'score',
+      targetOperand: { code: 'risk_score' }
+    })
+  })
 })
 
 describe('newBlock', () => {
@@ -249,6 +288,10 @@ describe('newBlock', () => {
     ['rule-call', 'targetOperand']
   ])('%s 使用标准 Operand 字段', (type, key) => {
     expect(newBlock(type)).toHaveProperty(key)
+  })
+
+  test('新规则调用默认显式关闭额外输出映射', () => {
+    expect(newBlock('rule-call').enableOutputMapping).toBe(false)
   })
 
   test('未知类型退化为标准赋值块', () => {

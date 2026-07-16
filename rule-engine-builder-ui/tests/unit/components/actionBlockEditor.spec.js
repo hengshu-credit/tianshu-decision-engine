@@ -129,15 +129,44 @@ describe('ActionBlockEditor', () => {
     expect(ctx.hasRuleOutputMapping({ outputField: '', targetOperand: null })).toBe(false)
   })
 
-  test('关闭额外字段映射时成对清空输出字段和目标字段', () => {
+  test('额外字段映射开关可以显式开启', () => {
+    const ctx = createEditorContext([])
+    const block = { enableOutputMapping: false, outputField: '', targetOperand: null }
+
+    ctx.toggleRuleOutputMapping(block, true)
+
+    expect(block.enableOutputMapping).toBe(true)
+    expect(ctx.hasRuleOutputMapping(block)).toBe(true)
+    expect(ctx.emitted).toHaveLength(1)
+  })
+
+  test('关闭额外字段映射时保留输出字段和目标字段', () => {
     const ctx = createEditorContext([])
     const block = {
+      enableOutputMapping: true,
       outputField: 'score',
       targetOperand: { kind: 'REFERENCE', refId: 9, refType: 'VARIABLE', code: 'risk_score' }
     }
 
     ctx.toggleRuleOutputMapping(block, false)
 
+    expect(block.enableOutputMapping).toBe(false)
+    expect(block.outputField).toBe('score')
+    expect(block.targetOperand.code).toBe('risk_score')
+    expect(ctx.emitted).toHaveLength(1)
+  })
+
+  test('一键清空只清除映射字段并保持开关开启', () => {
+    const ctx = createEditorContext([])
+    const block = {
+      enableOutputMapping: true,
+      outputField: 'score',
+      targetOperand: { kind: 'REFERENCE', refId: 9, refType: 'VARIABLE', code: 'risk_score' }
+    }
+
+    ctx.clearRuleOutputMapping(block)
+
+    expect(block.enableOutputMapping).toBe(true)
     expect(block.outputField).toBe('')
     expect(block.targetOperand).toBeNull()
     expect(ctx.emitted).toHaveLength(1)

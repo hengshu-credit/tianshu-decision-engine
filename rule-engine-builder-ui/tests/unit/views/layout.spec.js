@@ -63,6 +63,10 @@ describe('Layout — activeMenuIndex 计算逻辑', () => {
     expect(computeActiveMenuIndex('/designer/script/8')).toBe('/rule')
   })
 
+  test('表达式配置路由继续高亮「规则管理」', () => {
+    expect(computeActiveMenuIndex('/designer/expression/8/session-1')).toBe('/rule')
+  })
+
   test('路径为 /project/:id 时高亮「项目管理」', () => {
     expect(computeActiveMenuIndex('/project/1')).toBe('/project')
     expect(computeActiveMenuIndex('/project/123')).toBe('/project')
@@ -190,7 +194,8 @@ describe('Layout — 设计器页面路由覆盖', () => {
     { path: '/designer/score/1', expectedMenu: '/rule' },
     { path: '/designer/cross-adv/1', expectedMenu: '/rule' },
     { path: '/designer/score-adv/1', expectedMenu: '/rule' },
-    { path: '/designer/script/1', expectedMenu: '/rule' }
+    { path: '/designer/script/1', expectedMenu: '/rule' },
+    { path: '/designer/expression/1/session-1', expectedMenu: '/rule' }
   ]
 
   designerRoutes.forEach(({ path, expectedMenu }) => {

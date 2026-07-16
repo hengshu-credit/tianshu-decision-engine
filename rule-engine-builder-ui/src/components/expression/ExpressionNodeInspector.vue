@@ -10,12 +10,11 @@
       </div>
 
       <template v-if="node.kind === 'LITERAL'">
-        <label>阈值类型</label>
-        <el-select :value="node.valueType" size="small" popper-class="expression-editor-select-popper" @input="patch({ valueType: $event })">
-          <el-option v-for="type in valueTypes" :key="type.value" :label="type.label" :value="type.value" />
-        </el-select>
-        <label>阈值</label>
-        <el-input :value="node.value" size="small" placeholder="请输入阈值" @input="patch({ value: $event })" />
+        <p class="field-tip inline-edit-tip">阈值类型和内容请直接在中间画布的当前卡片内修改。</p>
+      </template>
+
+      <template v-else-if="node.kind === 'PATH'">
+        <p class="field-tip inline-edit-tip">字段路径请直接在中间画布的当前卡片内修改。</p>
       </template>
 
       <template v-else-if="node.kind === 'OPERATION'">

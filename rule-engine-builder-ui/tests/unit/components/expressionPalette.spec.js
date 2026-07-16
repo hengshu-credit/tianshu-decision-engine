@@ -13,6 +13,19 @@ function variable(id, code, category = 'standalone', refType = 'VARIABLE') {
   }
 }
 
+function objectField(id, objectCode, objectLabel, fieldCode, fieldLabel) {
+  return {
+    id,
+    _varId: id,
+    _refType: 'DATA_OBJECT',
+    varCode: `${objectCode}.${fieldCode}`,
+    varLabel: `${objectLabel}/${fieldLabel}`,
+    varLabelText: `${objectLabel}/${fieldLabel}`,
+    varType: 'NUMBER',
+    _ref: { category: 'object', refType: 'DATA_OBJECT', objectCode, objectLabel }
+  }
+}
+
 function mountPalette(propsData = {}) {
   return shallowMount(ExpressionPalette, {
     propsData: {
@@ -80,16 +93,74 @@ describe('ExpressionPalette', () => {
     expect(wrapper.vm.categories.find(item => item.key === 'standalone').count).toBe(120)
   })
 
-  test('切换分类会清空搜索并回到第一页', () => {
-    const wrapper = mountPalette({ vars: [variable(1, 'age')] })
+  test('切换分类保留同一个搜索词并回到第一页', () => {
+    const wrapper = mountPalette({ vars: [variable(1, 'age')], functions: [{ id: 2, funcCode: 'ageOf' }] })
     wrapper.vm.keyword = 'age'
     wrapper.vm.page = 3
 
     wrapper.vm.selectCategory('function')
 
     expect(wrapper.vm.activeCategory).toBe('function')
-    expect(wrapper.vm.keyword).toBe('')
+    expect(wrapper.vm.keyword).toBe('age')
     expect(wrapper.vm.page).toBe(1)
+  })
+
+  test('所有资源分类都展示搜索框且静态资源也参与过滤', async() => {
+    const wrapper = mountPalette()
+
+    for (const category of ['manual', 'list', 'operation', 'transform']) {
+      wrapper.vm.selectCategory(category)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.palette-search').exists()).toBe(true)
+    }
+
+    wrapper.vm.selectCategory('operation')
+    wrapper.vm.keyword = '&&'
+    expect(wrapper.vm.filteredItems.map(item => item.value)).toEqual(['&&'])
+
+    wrapper.vm.selectCategory('manual')
+    wrapper.vm.keyword = '路径'
+    expect(wrapper.vm.filteredItems.map(item => item.key)).toEqual(['PATH'])
+  })
+
+  test('数据对象先展示对象行，展开后点击子字段才插入稳定引用', async() => {
+    const wrapper = mountPalette({
+      vars: [
+        objectField(11, 'LoanApply', '借款申请', 'amount', '申请金额'),
+        objectField(12, 'LoanApply', '借款申请', 'term', '期限'),
+        objectField(13, 'Profile', '客户画像', 'age', '年龄')
+      ]
+    })
+    wrapper.vm.selectCategory('object')
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.findAll('.palette-reference-group')).toHaveLength(2)
+    await wrapper.find('.palette-reference-group').trigger('click')
+    expect(wrapper.emitted().insert).toBeUndefined()
+    expect(wrapper.findAll('.palette-reference-child')).toHaveLength(2)
+
+    await wrapper.find('.palette-reference-child').trigger('click')
+    expect(wrapper.emitted().insert[0][0]).toMatchObject({
+      kind: 'REFERENCE',
+      refId: 11,
+      refType: 'DATA_OBJECT'
+    })
+  })
+
+  test('搜索只命中一个对象时自动展开匹配字段', async() => {
+    const wrapper = mountPalette({
+      vars: [
+        objectField(11, 'LoanApply', '借款申请', 'amount', '申请金额'),
+        objectField(13, 'Profile', '客户画像', 'age', '年龄')
+      ]
+    })
+    wrapper.vm.selectCategory('object')
+    wrapper.vm.keyword = 'amount'
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.filteredItems).toHaveLength(1)
+    expect(wrapper.vm.expandedGroupKey).toBe('object:LoanApply')
+    expect(wrapper.findAll('.palette-reference-child')).toHaveLength(1)
   })
 
   test('手输资源只创建空节点且不显示资源区输入框', async () => {

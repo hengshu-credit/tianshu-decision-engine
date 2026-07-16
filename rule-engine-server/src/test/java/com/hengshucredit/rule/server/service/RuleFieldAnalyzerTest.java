@@ -46,6 +46,40 @@ public class RuleFieldAnalyzerTest {
     }
 
     @Test
+    public void ruleSetResultVarIsAListOutputWithStableDataObjectReference() {
+        String json = "{"
+                + "\"resultVar\":{\"varCode\":\"request.hitRules\",\"varType\":\"LIST\",\"_varId\":33,\"_refType\":\"DATA_OBJECT\","
+                + "\"operand\":{\"kind\":\"PATH\",\"value\":\"request.hitRules\",\"code\":\"request.hitRules\",\"valueType\":\"LIST\",\"refId\":33,\"refType\":\"DATA_OBJECT\",\"resolved\":true}},"
+                + "\"rules\":[]"
+                + "}";
+
+        List<RuleDefinitionOutputField> outputs = analyzer.extractOutputFields(json, "RULE_SET");
+        List<String> inputs = analyzer.extractInputFields(json, "RULE_SET").stream()
+                .map(RuleDefinitionInputField::getScriptName).collect(Collectors.toList());
+
+        assertEquals(1, outputs.size());
+        assertEquals("request.hitRules", outputs.get(0).getScriptName());
+        assertEquals("LIST", outputs.get(0).getFieldType());
+        assertEquals(Long.valueOf(33), outputs.get(0).getVarId());
+        assertEquals("DATA_OBJECT", outputs.get(0).getRefType());
+        assertFalse(inputs.contains("request.hitRules"));
+    }
+
+    @Test
+    public void disabledRuleCallMappingDoesNotExposeRetainedTargetAsOutput() {
+        String json = "{\"rules\":[{\"actionData\":[{"
+                + "\"type\":\"rule-call\",\"ruleId\":8,\"ruleCode\":\"score_card\","
+                + "\"enableOutputMapping\":false,\"outputField\":\"score\","
+                + "\"targetOperand\":{\"kind\":\"REFERENCE\",\"code\":\"risk_score\",\"valueType\":\"NUMBER\",\"refId\":9,\"refType\":\"VARIABLE\",\"resolved\":true}"
+                + "}]}]}";
+
+        List<String> outputs = analyzer.extractOutputFields(json, "RULE_SET").stream()
+                .map(RuleDefinitionOutputField::getScriptName).collect(Collectors.toList());
+
+        assertFalse(outputs.contains("risk_score"));
+    }
+
+    @Test
     public void scriptExtractsInputsFromRightHandSide() {
         String json = "{"
                 + "\"script\":\"riskScore = request.params.score + modelScore\\nresult.level = riskScore >= 60 ? \\\"PASS\\\" : \\\"REJECT\\\"\","

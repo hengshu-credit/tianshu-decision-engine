@@ -11,6 +11,7 @@ import java.util.Map;
 @Data
 public class RuleTestSchema {
     private List<ResolvedField> inputs = new ArrayList<>();
+    private List<ResolvedField> runtimeNodes = new ArrayList<>();
     private List<ResolvedField> outputs = new ArrayList<>();
     private Map<String, Object> sampleParams = new LinkedHashMap<>();
     private List<String> diagnostics = new ArrayList<>();

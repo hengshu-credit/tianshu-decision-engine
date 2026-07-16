@@ -75,57 +75,63 @@ const routes = [
         path: 'designer/table/:id',
         name: 'DecisionTable',
         component: () => import('@/views/designer/DecisionTable.vue'),
-        meta: { title: '决策表设计器' }
+        meta: { title: '决策表设计器', keepAlive: true }
       },
       {
         path: 'designer/tree/:id',
         name: 'DecisionTree',
         component: () =>
           import(/* webpackChunkName: "designer-decision-tree" */ '@/views/designer/DecisionTree.vue'),
-        meta: { title: '决策树设计器' }
+        meta: { title: '决策树设计器', keepAlive: true }
       },
       {
         path: 'designer/flow/:id',
         name: 'DecisionFlow',
         component: () =>
           import(/* webpackChunkName: "designer-decision-flow" */ '@/views/designer/DecisionFlow.vue'),
-        meta: { title: '决策流设计器' }
+        meta: { title: '决策流设计器', keepAlive: true }
       },
       {
         path: 'designer/ruleset/:id',
         name: 'RuleSet',
         component: () => import('@/views/designer/RuleSet.vue'),
-        meta: { title: '规则集设计器' }
+        meta: { title: '规则集设计器', keepAlive: true }
       },
       {
         path: 'designer/cross/:id',
         name: 'CrossTable',
         component: () => import('@/views/designer/CrossTable.vue'),
-        meta: { title: '交叉表设计器' }
+        meta: { title: '交叉表设计器', keepAlive: true }
       },
       {
         path: 'designer/score/:id',
         name: 'Scorecard',
         component: () => import('@/views/designer/Scorecard.vue'),
-        meta: { title: '评分卡设计器' }
+        meta: { title: '评分卡设计器', keepAlive: true }
       },
       {
         path: 'designer/cross-adv/:id',
         name: 'AdvancedCrossTable',
         component: () => import('@/views/designer/AdvancedCrossTable.vue'),
-        meta: { title: '复杂交叉表设计器' }
+        meta: { title: '复杂交叉表设计器', keepAlive: true }
       },
       {
         path: 'designer/score-adv/:id',
         name: 'AdvancedScorecard',
         component: () => import('@/views/designer/AdvancedScorecard.vue'),
-        meta: { title: '复杂评分卡设计器' }
+        meta: { title: '复杂评分卡设计器', keepAlive: true }
       },
       {
         path: 'designer/script/:id',
         name: 'ScriptEditor',
         component: () => import('@/views/designer/ScriptEditor.vue'),
-        meta: { title: 'QL脚本编辑器' }
+        meta: { title: 'QL脚本编辑器', keepAlive: true }
+      },
+      {
+        path: 'designer/expression/:ruleId/:sessionId',
+        name: 'ExpressionEditor',
+        component: () => import('@/views/expression/ExpressionEditorPage.vue'),
+        meta: { title: '配置表达式', keepAlive: true, menu: '/rule' }
       },
       {
         path: 'variable',

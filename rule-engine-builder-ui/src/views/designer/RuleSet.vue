@@ -31,6 +31,29 @@
       <span v-else><i class="el-icon-s-custom" /> 已加载 {{ varPickerOptions.length }} 个变量/常量/对象字段</span>
     </div>
 
+    <div class="rs-output-config">
+      <div class="output-config-title">
+        <span><i class="el-icon-collection-tag" /> 命中结果输出字段</span>
+        <el-tag size="mini" type="info">可选</el-tag>
+      </div>
+      <div class="output-config-body">
+        <operand-picker
+          :value="model.resultVar && model.resultVar.operand"
+          :vars="varPickerOptions"
+          :selected-vars="listResultVarSelectedOptions"
+          :allowed-kinds="resultOutputKinds"
+          type-filter="LIST"
+          writable-only
+          clearable
+          placeholder="选择 LIST 字段或手输路径"
+          width="320px"
+          @input="onResultVarInput"
+          @path-resolve="onResultPathResolve"
+        />
+        <span class="output-config-hint">保存完整的 list[rule] 命中列表；未配置时仅保留原有顶层返回值</span>
+      </div>
+    </div>
+
     <div class="rs-summary">
       <div class="summary-item">
         <span class="summary-label">排序规则</span>
@@ -188,6 +211,7 @@ import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleCallMixin from '@/mixins/ruleCallMixin'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
 import { actionDataToBlocks, newBlock } from '@/utils/actionDataCodegen'
@@ -199,20 +223,22 @@ import {
   walkConditionLeaves,
   normalizeConditionTreeOperands
 } from '@/utils/decisionConditionTree'
-import { collectOperandReferences, syncOperandReference } from '@/utils/operand'
+import { collectOperandReferences, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { buildSampleParamsFromCodes, collectActionDataInputCodes } from '@/utils/testSampleParams'
 
 export default {
   name: 'RuleSet',
-  components: { DesignerTestDialog, ScriptPanel, ConditionGroupEditor, ActionBlockEditor },
+  components: { DesignerTestDialog, ScriptPanel, OperandPicker, ConditionGroupEditor, ActionBlockEditor },
   mixins: [varPickerMixin, ruleCallMixin],
   data() {
     return {
       definitionId: null,
       model: {
         executionMode: 'SERIAL',
+        resultVar: {},
         rules: []
       },
+      resultOutputKinds: ['PATH', 'REFERENCE'],
       scriptMode: 'visual',
       contentLoaded: false,
       draggedIndex: -1,
@@ -238,6 +264,10 @@ export default {
         return '并行全部运行：按优先级和页面顺序检查全部规则，命中的规则都会执行动作并进入返回列表'
       }
       return '串行命中退出：按优先级和页面顺序检查规则，命中第一条后执行动作并停止'
+    },
+    listResultVarSelectedOptions() {
+      return (this.selectedVarPickerOptions || []).filter(item =>
+        String(item.varType || item.valueType || '').toUpperCase() === 'LIST')
     },
     testVarCodeList() {
       const s = new Set()
@@ -272,9 +302,14 @@ export default {
     },
     normalizeModel() {
       if (!this.model || typeof this.model !== 'object') {
-        this.model = { executionMode: 'SERIAL', rules: [] }
+        this.model = { executionMode: 'SERIAL', resultVar: {}, rules: [] }
       }
       if (!this.model.executionMode) this.$set(this.model, 'executionMode', 'SERIAL')
+      if (!this.model.resultVar || typeof this.model.resultVar !== 'object') this.$set(this.model, 'resultVar', {})
+      if (!this.model.resultVar.operand) {
+        const operand = operandFromReferenceFields(this.model.resultVar)
+        if (operand) this.$set(this.model.resultVar, 'operand', operand)
+      }
       if (!Array.isArray(this.model.rules)) this.$set(this.model, 'rules', [])
       const legacyCols = Array.isArray(this.model.conditions) ? this.model.conditions : []
       this.model.rules.forEach((rule, index) => {
@@ -307,7 +342,14 @@ export default {
         this.$set(leaf, field, result.operand)
         changed = true
       }
-      ;(this.model.rules || []).forEach(rule => {
+      if (this.model.resultVar && this.model.resultVar.operand) {
+        const result = syncOperandReference(this.model.resultVar.operand, this.varPickerOptions)
+        if (result.changed) {
+          this.setResultVarOperand(result.operand)
+          changed = true
+        }
+      }
+      (this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
           sync(leaf, 'leftOperand')
           sync(leaf, 'rightOperand')
@@ -324,6 +366,7 @@ export default {
         _varId: reference.refId,
         _refType: reference.refType
       }))
+      addOperand(this.model.resultVar && this.model.resultVar.operand)
       ;(this.model.rules || []).forEach(rule => {
         walkConditionLeaves(rule.conditionRoot, leaf => {
           addOperand(leaf.leftOperand)
@@ -332,6 +375,61 @@ export default {
         items.push(...this.collectActionDataVarItems(rule.actionData || []))
       })
       return items
+    },
+    resultVarError(operand) {
+      if (!operand) return ''
+      if (String(operand.valueType || '').toUpperCase() !== 'LIST') return '规则集命中结果输出字段必须是 LIST 类型'
+      if (operand.resolved !== true || operand.refId == null || !operand.refType) return '规则集命中结果输出字段必须反查到稳定字段引用'
+      if (!['VARIABLE', 'DATA_OBJECT'].includes(operand.refType)) return '规则集命中结果输出字段仅支持普通变量或数据对象字段'
+      if (!['PATH', 'REFERENCE'].includes(operand.kind)) return '规则集命中结果输出字段必须是字段引用'
+      return ''
+    },
+    setResultVarOperand(operand) {
+      const value = JSON.parse(JSON.stringify(operand))
+      const code = value.code || value.value || ''
+      this.$set(this.model, 'resultVar', {
+        operand: value,
+        varCode: code,
+        varLabel: value.label || code,
+        varType: value.valueType || '',
+        _varId: value.refId,
+        _refType: value.refType
+      })
+    },
+    onResultVarInput(operand) {
+      if (!operand) {
+        this.$set(this.model, 'resultVar', {})
+        return
+      }
+      const error = this.resultVarError(operand)
+      if (!error) {
+        this.setResultVarOperand(operand)
+      } else if (operand.kind !== 'PATH' && operand.resolved === true && this.$message) {
+        this.$message.warning(error)
+      }
+    },
+    onResultPathResolve(payload) {
+      const operand = payload && payload.operand
+      const candidates = payload && payload.candidates || []
+      if (candidates.length > 1) {
+        if (this.$message) this.$message.warning('该路径匹配到多个字段，请从候选项中选择唯一字段')
+        return
+      }
+      if (!operand || operand.resolved !== true) {
+        if (this.$message) this.$message.warning('未找到该路径对应的字段，无法配置规则集输出')
+        return
+      }
+      const error = this.resultVarError(operand)
+      if (error) {
+        if (this.$message) this.$message.warning(error)
+        return
+      }
+      this.setResultVarOperand(operand)
+    },
+    validateResultVar() {
+      const resultVar = this.model && this.model.resultVar
+      if (!resultVar || !Object.keys(resultVar).length) return ''
+      return this.resultVarError(resultVar.operand)
     },
     addRule() {
       this.model.rules.push({
@@ -390,6 +488,11 @@ export default {
     async handleSave() {
       try {
         this.normalizeModel()
+        const resultVarError = this.validateResultVar()
+        if (resultVarError) {
+          this.$message.warning(resultVarError)
+          return false
+        }
         this.repairLegacyRuleCallRefs(this.model)
         const model = this.serializeModel()
         const ruleCallErrors = this.validateRuleCallsInModel(model)
@@ -414,6 +517,7 @@ export default {
         delete rule.uid
         rule.status = rule.enabled === false ? 0 : 1
       })
+      if (!copy.resultVar || !copy.resultVar.operand) delete copy.resultVar
       return copy
     },
     buildRuleCallValidationModel() {
@@ -612,6 +716,35 @@ export default {
   margin: 8px 0;
   font-size: 12px;
   color: #52c41a;
+}
+.rs-output-config {
+  margin: 12px 0;
+  padding: 12px;
+  border: 1px solid #dbeafe;
+  border-radius: 6px;
+  background: #f8fbff;
+}
+.output-config-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  color: #1f2937;
+  font-size: 13px;
+  font-weight: 700;
+}
+.output-config-title i {
+  color: #1677ff;
+}
+.output-config-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.output-config-hint {
+  color: #64748b;
+  font-size: 12px;
 }
 .rs-summary {
   display: grid;

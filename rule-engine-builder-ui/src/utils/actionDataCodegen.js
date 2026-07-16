@@ -1,5 +1,6 @@
 import { compileOperand, createLiteralOperand, createPathOperand, OPERAND_KINDS } from '@/utils/operand'
 import { compileConditionOperands } from '@/utils/conditionOperand'
+import { isRuleOutputMappingEnabled } from '@/utils/ruleCallConfig'
 
 function quoteString(value) {
   return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
@@ -123,10 +124,11 @@ function generateBlock(block, indent) {
 
     case 'rule-call': {
       if (!block.ruleCode) return ''
-      const call = block.outputField
+      const outputMappingEnabled = isRuleOutputMappingEnabled(block)
+      const call = outputMappingEnabled && block.outputField
         ? 'executeRuleField(' + quoteString(block.ruleCode) + ', ' + quoteString(block.outputField) + ')'
         : 'executeRule(' + quoteString(block.ruleCode) + ')'
-      const target = compileOperand(block.targetOperand)
+      const target = outputMappingEnabled ? compileOperand(block.targetOperand) : ''
       return target ? pad + target + ' = ' + call : pad + call
     }
 
@@ -221,6 +223,8 @@ function normalizeActionBlock(source) {
     block.parts = (block.parts || []).map(part => part.operand
       ? part
       : { type: part.type, operand: part.type === 'expr' ? legacyReferenceOperand(part.content) : createLiteralOperand(part.content || '') })
+  } else if (block.type === 'rule-call' && typeof block.enableOutputMapping !== 'boolean') {
+    block.enableOutputMapping = !!(block.outputField || block.targetOperand)
   }
 
   removeKeys(block, [
@@ -296,7 +300,7 @@ export function newBlock(type) {
     case 'template-str':
       return { type: 'template-str', targetOperand: null, parts: [{ type: 'text', operand: null }] }
     case 'rule-call':
-      return { type: 'rule-call', targetOperand: null, ruleId: null, ruleCode: '', ruleName: '', modelType: '', outputField: '' }
+      return { type: 'rule-call', targetOperand: null, ruleId: null, ruleCode: '', ruleName: '', modelType: '', enableOutputMapping: false, outputField: '' }
     default:
       return newAssignment()
   }

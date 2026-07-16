@@ -230,6 +230,7 @@
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
 import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
+import { groupReferenceOptions, referenceChildRelativePath } from '@/utils/referenceGroups'
 import {
   createFunctionOperand,
   createReferenceOperand,
@@ -528,35 +529,23 @@ export default {
       return category === 'object' || category === 'model'
     },
     groupFieldItems(list, category) {
-      var byGroup = {}
-      list.forEach(function (v) {
-        var key = this.fieldGroupCodeByCategory(v, category)
-        if (!byGroup[key]) byGroup[key] = []
-        byGroup[key].push(v)
-      }.bind(this))
-      var result = []
-      var keys = Object.keys(byGroup).sort(function (a, b) { return a.localeCompare(b) })
-      for (var i = 0; i < keys.length; i++) {
-        var group = byGroup[keys[i]]
-        group.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
-        var first = Object.assign({}, group[0], {
-          children: group,
+      return groupReferenceOptions(list, category).map(function (group) {
+        var first = Object.assign({}, group, {
           _fieldGroup: true,
-          _fieldGroupKey: this.fieldGroupKeyByCategory(keys[i], category),
+          _fieldGroupKey: this.fieldGroupKeyByCategory(group.groupCode, category),
           _fieldGroupCategory: category
         })
         if (category === 'object') {
           first._objectGroup = true
-          first._objectGroupKey = keys[i]
+          first._objectGroupKey = group.groupCode
           first.varType = 'OBJECT'
         } else if (category === 'model') {
           first._modelGroup = true
-          first._modelGroupKey = keys[i]
+          first._modelGroupKey = group.groupCode
           first.varType = 'MODEL'
         }
-        result.push(first)
-      }
-      return result
+        return first
+      }.bind(this))
     },
     isFieldGroup(item) {
       return !!(item && (item._fieldGroup || item._objectGroup || item._modelGroup))
@@ -631,23 +620,10 @@ export default {
       return objectCode ? objectCode + '.' + code : code
     },
     objectFieldRelativePath(item) {
-      if (!item) return ''
-      var code = item.varCode || ''
-      var ref = item._ref || {}
-      var objectCode = ref.objectScriptName || ref.objectCode || item.objectCode || ''
-      if (objectCode && code.indexOf(objectCode + '.') === 0) {
-        return code.substring(objectCode.length + 1)
-      }
-      return code
+      return referenceChildRelativePath(item, 'object')
     },
     modelFieldRelativePath(item) {
-      if (!item) return ''
-      var code = item.varCode || ''
-      var modelCode = this.modelGroupCode(item)
-      if (modelCode && code.indexOf(modelCode + '.') === 0) {
-        return code.substring(modelCode.length + 1)
-      }
-      return code
+      return referenceChildRelativePath(item, 'model')
     },
     fieldChildRelativePath(item) {
       var ref = (item && item._ref) || {}

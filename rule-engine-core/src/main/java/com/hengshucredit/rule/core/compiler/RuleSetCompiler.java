@@ -43,6 +43,7 @@ public class RuleSetCompiler implements RuleCompiler {
             String executionMode = model.getString("executionMode");
             boolean serial = executionMode == null || "SERIAL".equalsIgnoreCase(executionMode);
             List<RuleEntry> entries = normalizeRules(rules);
+            String resultTarget = resolveResultTarget(model.getJSONObject("resultVar"), varContext);
 
             StringBuilder script = new StringBuilder();
             script.append("_ruleSetHits = [];\n");
@@ -55,6 +56,11 @@ public class RuleSetCompiler implements RuleCompiler {
                 appendRule(script, entries.get(i), serial, varContext, i);
             }
             script.append("_ruleSetResult = _ruleSetHits;\n");
+            if (resultTarget != null) {
+                script.append(resultTarget).append(" = _ruleSetHits;\n");
+                script.append("setRuntimeValue(").append(ActionOperandCompiler.quoteString(resultTarget))
+                        .append(", ").append(resultTarget).append(");\n");
+            }
             script.append("_ruleSetResult\n");
 
             return CompileResult.ok(script.toString(), "QLEXPRESS");
@@ -89,6 +95,49 @@ public class RuleSetCompiler implements RuleCompiler {
             }
         });
         return entries;
+    }
+
+    private String resolveResultTarget(JSONObject resultVar, VarContext varContext) {
+        if (resultVar == null || resultVar.isEmpty()) {
+            return null;
+        }
+        JSONObject operand = resultVar.getJSONObject("operand");
+        String valueType = operand != null ? operand.getString("valueType") : resultVar.getString("varType");
+        if (!"LIST".equalsIgnoreCase(valueType)) {
+            throw new IllegalArgumentException("规则集命中结果输出字段必须是 LIST 类型");
+        }
+
+        Long refId = operand != null && operand.getLong("refId") != null
+                ? operand.getLong("refId") : resultVar.getLong("_varId");
+        String refType = firstNonBlank(operand != null ? operand.getString("refType") : null,
+                resultVar.getString("_refType"));
+        if (refId == null || refType == null) {
+            throw new IllegalArgumentException("规则集命中结果输出字段缺少稳定字段 ID 或引用类型");
+        }
+        if (!"VARIABLE".equalsIgnoreCase(refType) && !"DATA_OBJECT".equalsIgnoreCase(refType)) {
+            throw new IllegalArgumentException("规则集命中结果输出字段仅支持普通变量或数据对象字段");
+        }
+
+        String code;
+        if (operand == null) {
+            code = resultVar.getString("varCode");
+        } else {
+            String kind = operand.getString("kind");
+            if (!"PATH".equals(kind) && !"REFERENCE".equals(kind)) {
+                throw new IllegalArgumentException("规则集命中结果输出字段必须是字段引用");
+            }
+            code = firstNonBlank(operand.getString("code"), operand.getString("value"));
+        }
+        if (code == null || code.trim().isEmpty()) {
+            throw new IllegalArgumentException("规则集命中结果输出字段路径不能为空");
+        }
+
+        String resultTarget = varContext != null ? varContext.getScriptName(refType, refId) : null;
+        if (resultTarget == null || resultTarget.trim().isEmpty()) {
+            throw new IllegalArgumentException("规则集命中结果输出字段引用不存在或已停用，"
+                    + refType.trim().toUpperCase() + ":" + refId);
+        }
+        return resultTarget;
     }
 
     private void appendRule(StringBuilder script, RuleEntry entry, boolean serial, VarContext varContext, int maxPreviousHits) {

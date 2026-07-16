@@ -57,6 +57,7 @@ describe('ExpressionCanvas', () => {
     })
     await literal.vm.$nextTick()
     expect(literal.find('.canvas-inline-editor').exists()).toBe(true)
+    expect(literal.find('.canvas-node .canvas-inline-editor').exists()).toBe(true)
     expect(literal.findComponent({ name: 'ElSelect' }).attributes('popper-class')).toBe('expression-editor-select-popper')
     expect(focusManualInput).toHaveBeenCalled()
 
@@ -80,5 +81,52 @@ describe('ExpressionCanvas', () => {
 
     expect(wrapper.findAll('.canvas-child')).toHaveLength(3)
     expect(wrapper.findAll('.canvas-edge-operator').wrappers.map(item => item.text())).toEqual(['+', '*'])
+  })
+
+  test('根运算只展示子项，不再生成与公式预览重复的根卡片', () => {
+    const operation = createOperationOperand([
+      { operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } },
+      { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } }
+    ])
+    const wrapper = shallowMount(ExpressionCanvas, { propsData: { node: operation, path: [] } })
+
+    expect(wrapper.find('.canvas-node-row').exists()).toBe(false)
+    expect(wrapper.findAll('.canvas-child')).toHaveLength(2)
+  })
+
+  test('Tab、Shift+Tab 与结构按钮发出当前路径', () => {
+    const wrapper = shallowMount(ExpressionCanvas, {
+      propsData: {
+        node: { kind: 'PATH', value: 'score', code: 'score' },
+        path: ['terms', 1, 'operand'],
+        selectedPath: ['terms', 1, 'operand']
+      }
+    })
+    const preventDefault = jest.fn()
+    const stopPropagation = jest.fn()
+
+    wrapper.vm.handleTab({ shiftKey: false, preventDefault, stopPropagation })
+    wrapper.vm.handleTab({ shiftKey: true, preventDefault, stopPropagation })
+    wrapper.vm.move(-1)
+
+    expect(wrapper.emitted().indent[0][0]).toEqual(['terms', 1, 'operand'])
+    expect(wrapper.emitted().outdent[0][0]).toEqual(['terms', 1, 'operand'])
+    expect(wrapper.emitted().move[0][0]).toEqual({ path: ['terms', 1, 'operand'], offset: -1 })
+  })
+
+  test('原生拖拽通过路径载荷请求移动节点', () => {
+    const wrapper = shallowMount(ExpressionCanvas, {
+      propsData: { node: null, path: ['args', 1], selectedPath: [] }
+    })
+    const event = {
+      dataTransfer: {
+        getData: jest.fn(() => '["args",0]'),
+        setData: jest.fn()
+      }
+    }
+
+    wrapper.vm.onDrop(event)
+
+    expect(wrapper.emitted().moveNode[0][0]).toEqual({ fromPath: ['args', 0], toPath: ['args', 1] })
   })
 })

@@ -76,6 +76,7 @@ import VarPicker from './VarPicker.vue'
 import ExpressionEditorDialog from '@/components/expression/ExpressionEditorDialog.vue'
 import { cloneOperand, createLiteralOperand, createPathOperand, resolvePathOperand, VALUE_OPERAND_KINDS } from '@/utils/operand'
 import { createFunctionTemplate } from '@/components/expression/expressionTree'
+import { createExpressionSessionId } from '@/utils/expressionSession'
 
 export default {
   name: 'OperandPicker',
@@ -100,6 +101,8 @@ export default {
       manualKind: '',
       manualOperand: null,
       manualPathCandidates: [],
+      expressionSessionId: '',
+      lastAppliedExpressionRevision: 0,
       valueTypes: [
         { label: '文本', value: 'STRING' },
         { label: '数字', value: 'NUMBER' },
@@ -128,14 +131,16 @@ export default {
       return this.writableOnly ? 'WRITE_TARGET' : 'READ_EXPRESSION'
     }
   },
+  activated() {
+    this.consumePendingExpression()
+  },
   methods: {
     onQuickInput(operand) {
       if (operand && operand.kind === 'FUNCTION') {
         const template = createFunctionTemplate(this.findFunction(operand) || operand)
         if (template.args.length) {
           this.suppressQuickSelect = true
-          this.editorValue = template
-          this.editorVisible = true
+          this.openExpressionEditor(template)
           return
         }
       }
@@ -149,8 +154,65 @@ export default {
       this.$emit('select', operand)
     },
     openEditor() {
-      this.editorValue = cloneOperand(this.manualOperand || this.value)
-      this.editorVisible = true
+      return this.openExpressionEditor(this.manualOperand || this.value)
+    },
+    async openExpressionEditor(operand) {
+      const editorValue = cloneOperand(operand)
+      const ruleId = this.designerRuleId()
+      if (ruleId == null || !this.$store || !this.$router) {
+        this.editorValue = editorValue
+        this.editorVisible = true
+        return
+      }
+
+      const sourceKey = `operand-picker-${this._uid}`
+      const sessionId = createExpressionSessionId(ruleId, sourceKey)
+      await this.$store.dispatch('expressionSessions/openSession', {
+        sessionId,
+        ruleId,
+        sourceKey,
+        draft: editorValue,
+        vars: this.vars,
+        functions: this.functions,
+        listOptions: this.listOptions,
+        allowedKinds: this.allowedKinds,
+        context: this.editorContext,
+        expectedType: this.expectedType,
+        title: this.editorTitle
+      })
+      this.expressionSessionId = sessionId
+      this.editorVisible = false
+      await this.$router.push({
+        name: 'ExpressionEditor',
+        params: { ruleId: String(ruleId), sessionId }
+      })
+    },
+    designerRuleId() {
+      const route = this.$route
+      if (!route || !route.path || !route.path.startsWith('/designer/') || route.path.startsWith('/designer/expression/')) return null
+      const value = route.params && route.params.id
+      if (value == null || value === '') return null
+      const numeric = Number(value)
+      return Number.isNaN(numeric) ? value : numeric
+    },
+    async consumePendingExpression() {
+      if (!this.expressionSessionId || !this.$store) return
+      const getter = this.$store.getters['expressionSessions/pendingCompiledResult']
+      if (typeof getter !== 'function') return
+      const result = getter(this.expressionSessionId)
+      if (!result || result.revision <= this.lastAppliedExpressionRevision) return
+
+      this.lastAppliedExpressionRevision = result.revision
+      const value = cloneOperand(result.operand)
+      this.$emit('input', value)
+      this.$emit('select', value)
+      this.manualKind = ''
+      this.manualOperand = null
+      this.manualPathCandidates = []
+      await this.$store.dispatch('expressionSessions/markApplied', {
+        sessionId: this.expressionSessionId,
+        revision: result.revision
+      })
     },
     openManualInput(kind) {
       this.manualKind = kind
@@ -182,12 +244,20 @@ export default {
       this.manualOperand = result.operand
       this.manualPathCandidates = result.candidates
       this.emitManualOperand()
+      this.emitPathResolve(result)
     },
     selectManualPathCandidate(candidate) {
       const result = resolvePathOperand(this.manualOperand, [candidate])
       this.manualOperand = result.operand
       this.manualPathCandidates = []
       this.emitManualOperand()
+      this.emitPathResolve(result)
+    },
+    emitPathResolve(result) {
+      this.$emit('path-resolve', {
+        operand: cloneOperand(result && result.operand),
+        candidates: (result && result.candidates || []).slice()
+      })
     },
     emitManualOperand() {
       const value = cloneOperand(this.manualOperand)

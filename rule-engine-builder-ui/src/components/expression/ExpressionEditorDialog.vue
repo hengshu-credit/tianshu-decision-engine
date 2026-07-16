@@ -1,7 +1,15 @@
 <template>
   <transition name="expression-fade">
-    <div v-if="visible" class="expression-editor" role="dialog" aria-modal="true" :aria-label="title" @keydown.esc.stop.prevent="cancel">
-      <header class="expression-editor__header">
+    <div
+      v-if="visible"
+      class="expression-editor"
+      :class="{ 'expression-editor--embedded': embedded }"
+      role="dialog"
+      :aria-modal="embedded ? null : 'true'"
+      :aria-label="title"
+      @keydown.esc.stop.prevent="cancel"
+    >
+      <header v-if="!embedded" class="expression-editor__header">
         <div>
           <h2>{{ title }}</h2>
           <p>先选中中间位置，再从左侧点击字段、方法或运算符；方法参数会自动展开。</p>
@@ -23,10 +31,7 @@
           @insert="insertTemplate"
         />
         <section class="expression-workspace">
-          <div class="formula-preview">
-            <span>公式预览</span>
-            <code>{{ formulaPreview || '请选择中间位置并添加内容' }}</code>
-          </div>
+          <expression-formula-preview :operand="draft" :vars="vars" :functions="functions" @confirm="replaceDraftFromScript" />
           <div class="workspace-tools">
             <span>复杂公式可折叠子表达式，当前编辑位置会自动展开。</span>
             <div>
@@ -49,6 +54,10 @@
               @manualInput="updateManualPath"
               @resolvePath="resolveManualPath"
               @selectPathCandidate="selectPathCandidate"
+              @indent="indentPath"
+              @outdent="outdentPath"
+              @move="movePath"
+              @moveNode="moveNode"
             />
           </div>
         </section>
@@ -60,7 +69,7 @@
         />
       </main>
 
-      <footer class="expression-editor__footer">
+      <footer v-if="!embedded" class="expression-editor__footer">
         <span>提示：支持多层函数、字段、阈值、四则运算、取 Key / Index 和类型转换。</span>
         <div><el-button @click="cancel">取消</el-button><el-button type="primary" @click="apply">应用公式</el-button></div>
       </footer>
@@ -72,7 +81,8 @@
 import ExpressionCanvas from './ExpressionCanvas.vue'
 import ExpressionNodeInspector from './ExpressionNodeInspector.vue'
 import ExpressionPalette from './ExpressionPalette.vue'
-import { compileOperand, cloneOperand, createPathOperand, resolvePathOperand, validateOperand } from '@/utils/operand'
+import ExpressionFormulaPreview from './ExpressionFormulaPreview.vue'
+import { cloneOperand, createPathOperand, resolvePathOperand, validateOperand } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   collapsedExpressionPaths,
@@ -84,6 +94,10 @@ import {
   firstEditablePath,
   getExpressionNode,
   insertExpressionOperation,
+  indentExpressionTerm,
+  moveExpressionNode,
+  moveExpressionSibling,
+  outdentExpressionOperation,
   removeExpressionNode,
   setExpressionNode,
   wrapExpressionNode
@@ -91,7 +105,7 @@ import {
 
 export default {
   name: 'ExpressionEditorDialog',
-  components: { ExpressionCanvas, ExpressionNodeInspector, ExpressionPalette },
+  components: { ExpressionCanvas, ExpressionFormulaPreview, ExpressionNodeInspector, ExpressionPalette },
   props: {
     visible: { type: Boolean, default: false },
     value: { type: Object, default: null },
@@ -101,7 +115,8 @@ export default {
     allowedKinds: { type: Array, default: () => [] },
     context: { type: String, default: 'READ_EXPRESSION' },
     expectedType: { type: String, default: '' },
-    title: { type: String, default: '配置表达式' }
+    title: { type: String, default: '配置表达式' },
+    embedded: { type: Boolean, default: false }
   },
   data() {
     return {
@@ -121,10 +136,7 @@ export default {
     effectiveAllowedKinds() { return this.allowedKinds.length ? this.allowedKinds : this.contextMeta.allowedKinds },
     selectedNode() { return getExpressionNode(this.draft, this.selectedPath) },
     canUndo() { return this.historyIndex > 0 },
-    canRedo() { return this.historyIndex >= 0 && this.historyIndex < this.history.length - 1 },
-    formulaPreview() {
-      try { return compileOperand(this.draft) } catch (e) { return '' }
-    }
+    canRedo() { return this.historyIndex >= 0 && this.historyIndex < this.history.length - 1 }
   },
   watch: {
     visible: {
@@ -242,6 +254,54 @@ export default {
       this.pathCandidates = []
       this.candidatePathKey = ''
     },
+    applyTreeResult(result) {
+      if (!result || !result.changed) return
+      this.commit(result.root)
+      this.selectedPath = result.selectedPath.slice()
+      this.revealPath(this.selectedPath)
+      this.validationErrors = []
+      this.clearPathCandidates()
+    },
+    replaceDraftFromScript(operand) {
+      this.commit(operand)
+      this.selectedPath = firstEditablePath(this.draft)
+      this.revealPath(this.selectedPath)
+      this.validationErrors = []
+      this.clearPathCandidates()
+    },
+    getDraft() {
+      return cloneOperand(this.draft)
+    },
+    validateDraft() {
+      this.validationErrors = validateOperand(this.draft, { allowedKinds: this.effectiveAllowedKinds })
+      return this.validationErrors.slice()
+    },
+    indentPath(path) {
+      this.applyTreeResult(indentExpressionTerm(this.draft, path))
+    },
+    outdentPath(path) {
+      this.applyTreeResult(outdentExpressionOperation(this.draft, path))
+    },
+    movePath({ path, offset }) {
+      this.applyTreeResult(moveExpressionSibling(this.draft, path, offset))
+    },
+    moveNode({ fromPath, toPath }) {
+      let result = moveExpressionNode(this.draft, fromPath, toPath)
+      if (!result.changed) {
+        const siblingLocation = path => {
+          const operationPath = path.length >= 3 && path[path.length - 3] === 'terms' && path[path.length - 1] === 'operand'
+          return operationPath
+            ? { index: path[path.length - 2], keyPath: path.slice(0, -2) }
+            : { index: path[path.length - 1], keyPath: path.slice(0, -1) }
+        }
+        const source = siblingLocation(fromPath)
+        const target = siblingLocation(toPath)
+        if (Number.isInteger(source.index) && Number.isInteger(target.index) && JSON.stringify(source.keyPath) === JSON.stringify(target.keyPath)) {
+          result = moveExpressionSibling(this.draft, fromPath, target.index - source.index)
+        }
+      }
+      this.applyTreeResult(result)
+    },
     commit(value) {
       const snapshot = cloneOperand(value)
       this.history = this.history.slice(0, this.historyIndex + 1).concat([snapshot])
@@ -289,7 +349,7 @@ export default {
       this.collapsedPathKeys = this.collapsedPathKeys.filter(key => !ancestors.has(key))
     },
     apply() {
-      this.validationErrors = validateOperand(this.draft, { allowedKinds: this.effectiveAllowedKinds })
+      this.validateDraft()
       if (this.validationErrors.length) return
       const result = cloneOperand(this.draft)
       this.$emit('input', result)
@@ -316,6 +376,7 @@ export default {
 
 <style scoped>
 .expression-editor { position: fixed; z-index: 3200; inset: 0; display: grid; grid-template-rows: 68px minmax(0, 1fr) 64px; background: #fff; color: #26364d; }
+.expression-editor--embedded { position: relative; z-index: auto; inset: auto; width: 100%; height: 100%; min-height: 0; grid-template-rows: minmax(0, 1fr); overflow: hidden; border: 1px solid #e1e7ef; border-radius: 8px; }
 .expression-editor__header, .expression-editor__footer { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 0 22px; border-bottom: 1px solid #e7ecf2; background: #fff; }
 .expression-editor__header h2 { margin: 0; font-size: 19px; }
 .expression-editor__header p { margin: 4px 0 0; color: #8290a3; font-size: 12px; }
@@ -323,9 +384,6 @@ export default {
 .close-button { width: 34px; height: 34px; margin-left: 5px; border: 0; border-radius: 6px; background: #f3f6f9; color: #526278; cursor: pointer; }
 .expression-editor__body { display: flex; min-width: 0; min-height: 0; overflow: auto; }
 .expression-workspace { display: flex; min-width: 420px; min-height: 0; flex: 1; flex-direction: column; padding: 18px; background: #f4f7fb; }
-.formula-preview { display: grid; min-height: 52px; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 12px; margin-bottom: 12px; padding: 9px 13px; border: 1px solid #dce5ef; border-radius: 7px; background: #fff; }
-.formula-preview span { color: #7d8a9d; font-size: 12px; }
-.formula-preview code { max-height: 96px; overflow: auto; color: #174ea6; font-family: Consolas, monospace; overflow-wrap: anywhere; white-space: normal; }
 .workspace-tools { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -4px 0 10px; color: #7d8a9d; font-size: 12px; }
 .workspace-tools > div { display: flex; flex: none; gap: 6px; }
 .canvas-scroll { flex: 1; overflow: auto; padding: 12px 8px 50px; }

@@ -391,6 +391,25 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void upstreamOnlyRequiredNamesDoNotExecuteUnreferencedSatisfiedModel() throws Exception {
+        SequencedModelService modelService = new SequencedModelService(
+                Collections.singletonList(model(100L, "unreferenced_model")),
+                Collections.singletonMap(100L, modelDetail(100L, "unreferenced_model",
+                        input("feature", "sharedInput"))),
+                Collections.singletonMap(100L, singletonMap("score", 660)));
+        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), modelService);
+
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("sharedInput")));
+        options.setRequiredNamesUpstreamOnly(true);
+        resolver.resolve(1L, singletonMap("sharedInput", 12), options);
+
+        assertEquals(Collections.emptyList(), modelService.executeOrder);
+    }
+
+    @Test
     public void apiVariableCanUseConstantDefaultAsMappedParam() throws Exception {
         RuleVariable threshold = variable("riskThreshold", "CONSTANT", null);
         threshold.setVarType("INTEGER");

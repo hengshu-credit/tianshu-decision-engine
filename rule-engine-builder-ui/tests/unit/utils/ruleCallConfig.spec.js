@@ -1,5 +1,6 @@
 import {
   collectRuleCallBlocks,
+  isRuleOutputMappingEnabled,
   normalizeRuleOption,
   repairLegacyRuleCallRefs,
   validateRuleCallBlock
@@ -51,6 +52,33 @@ describe('ruleCallConfig', () => {
       rules,
       currentRuleId: 3
     })).toContain('输出字段和目标字段必须同时配置')
+  })
+
+  test('显式关闭映射时保留字段但不参与映射校验', () => {
+    expect(isRuleOutputMappingEnabled({
+      enableOutputMapping: false,
+      outputField: 'score',
+      targetOperand: null
+    })).toBe(false)
+    expect(validateRuleCallBlock({
+      ruleId: 8,
+      enableOutputMapping: false,
+      outputField: 'score',
+      targetOperand: null
+    }, { rules, currentRuleId: 3 })).toBe('')
+  })
+
+  test('旧配置按已有映射字段推断为开启', () => {
+    expect(isRuleOutputMappingEnabled({ outputField: 'score' })).toBe(true)
+  })
+
+  test('显式开启映射后必须完整选择输出字段和目标字段', () => {
+    expect(validateRuleCallBlock({
+      ruleId: 8,
+      enableOutputMapping: true,
+      outputField: '',
+      targetOperand: null
+    }, { rules, currentRuleId: 3 })).toContain('输出字段和目标字段必须同时配置')
   })
 
   test('拒绝调用当前规则自身', () => {
