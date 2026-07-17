@@ -1,15 +1,87 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.mapper.RuleModelMapper;
+import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.Assert;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.lang.reflect.Proxy;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class RuleVariableServiceTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void buildRefMapReadsModelMetadataOnceWithoutContent() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        AtomicInteger queryCount = new AtomicInteger();
+        AtomicReference<String> selectedColumns = new AtomicReference<>();
+        RuleVariableService service = new FakeRuleVariableService(Collections.emptyList());
+        RuleModelMapper mapper = (RuleModelMapper) Proxy.newProxyInstance(
+                RuleModelMapper.class.getClassLoader(), new Class<?>[]{RuleModelMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectList".equals(method.getName())) {
+                        queryCount.incrementAndGet();
+                        LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
+                        selectedColumns.set(wrapper.getSqlSelect());
+                        RuleModel model = new RuleModel();
+                        model.setId(101L);
+                        model.setModelCode("buffalo_det_face");
+                        return Collections.singletonList(model);
+                    }
+                    return null;
+                });
+        ReflectionTestUtils.setField(service, "modelMapper", mapper);
+
+        Map<String, String> refs = service.buildRefScriptNameMap(1L);
+
+        Assert.assertEquals("buffalo_det_face", refs.get("MODEL:101"));
+        Assert.assertEquals(1, queryCount.get());
+        Assert.assertNotNull(selectedColumns.get());
+        Assert.assertFalse(selectedColumns.get().isEmpty());
+        Assert.assertFalse(selectedColumns.get().contains("model_content"));
+    }
+
+    @Test
+    public void modelOutputReferenceUsesCanonicalFieldName() {
+        RuleVariableService service = new FakeRuleVariableService(Collections.emptyList());
+        RuleModel model = new RuleModel();
+        model.setId(101L);
+        model.setModelCode("buffalo_det_face");
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setId(201L);
+        output.setModelId(101L);
+        output.setFieldName("faces");
+        output.setScriptName("buffalo_det_face_faces");
+
+        RuleModelMapper modelMapper = (RuleModelMapper) Proxy.newProxyInstance(
+                RuleModelMapper.class.getClassLoader(), new Class<?>[]{RuleModelMapper.class},
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.singletonList(model) : null);
+        RuleModelOutputFieldMapper outputMapper = (RuleModelOutputFieldMapper) Proxy.newProxyInstance(
+                RuleModelOutputFieldMapper.class.getClassLoader(), new Class<?>[]{RuleModelOutputFieldMapper.class},
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.singletonList(output) : null);
+        ReflectionTestUtils.setField(service, "modelMapper", modelMapper);
+        ReflectionTestUtils.setField(service, "modelOutputFieldMapper", outputMapper);
+
+        Map<String, String> refs = service.buildRefScriptNameMap(1L);
+
+        Assert.assertEquals("buffalo_det_face.faces", refs.get("MODEL_OUTPUT:201"));
+    }
 
     @Test
     public void buildsTrustedConstantExpressionsByStableId() {

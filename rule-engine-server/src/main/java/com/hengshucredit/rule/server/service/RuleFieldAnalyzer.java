@@ -260,7 +260,8 @@ public class RuleFieldAnalyzer {
             }
         }
 
-        LambdaQueryWrapper<RuleModel> modelWrapper = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<RuleModel> modelWrapper = new LambdaQueryWrapper<RuleModel>()
+                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
         if (projectId != null && projectId > 0) {
             modelWrapper.and(w -> w.eq(RuleModel::getScope, RuleVariableService.SCOPE_GLOBAL)
                     .or()
@@ -313,7 +314,7 @@ public class RuleFieldAnalyzer {
                         .orderByAsc(RuleModelOutputField::getId));
         for (RuleModelOutputField field : fields) {
             String modelCode = modelCodeMap.get(field.getModelId());
-            String outputScript = firstNonBlank(field.getScriptName(), field.getFieldName());
+            String outputScript = firstNonBlank(field.getFieldName(), field.getFeatureName(), field.getScriptName());
             if (modelCode == null || outputScript == null) {
                 continue;
             }
@@ -670,21 +671,25 @@ public class RuleFieldAnalyzer {
             if (result.size() == before) {
                 addInputFieldIfAbsent(result, seen, field);
             }
+            visited.remove(visitKey);
             return;
         }
 
         // 仅当未展开过且携带 varId 时递归穿透（visited 仅防止重复展开，不阻止叶子落库）
         if (field.getVarId() != null && ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType))) {
             expandModelOrOutputFields(field, meta, varMetaMap, seen, visited, result);
+            visited.remove(visitKey);
             return;
         }
         if ("DB".equals(varSource) || "API".equals(varSource) || "COMPUTED".equals(varSource)) {
             expandSourceVariableFields(field, meta, varMetaMap, seen, visited, result);
+            visited.remove(visitKey);
             return;
         }
 
         // 叶子字段（INPUT / CONSTANT / DATA_OBJECT / 未知引用 / 无法解析的依赖）：保留
         addInputFieldIfAbsent(result, seen, field);
+        visited.remove(visitKey);
     }
 
     private void expandModelOrOutputFields(RuleDefinitionInputField field, Map<String, Object> meta,
@@ -706,16 +711,21 @@ public class RuleFieldAnalyzer {
         }
         int before = result.size();
         boolean hasOperandBinding = false;
+        boolean hasResolvedDependency = false;
         for (RuleModelInputField modelField : modelFields) {
             if (trimToNull(modelField.getSourceOperand()) != null || trimToNull(modelField.getDefaultOperand()) != null) {
                 hasOperandBinding = true;
             }
-            for (RuleDefinitionInputField expanded : copyModelInputFields(modelField)) {
+            List<RuleDefinitionInputField> expandedFields = copyModelInputFields(modelField);
+            if (!expandedFields.isEmpty()) {
+                hasResolvedDependency = true;
+            }
+            for (RuleDefinitionInputField expanded : expandedFields) {
                 enrichFieldFromMeta(expanded, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
                 expandFieldRecursive(expanded, varMetaMap, seen, visited, result);
             }
         }
-        if (result.size() == before && !hasOperandBinding) {
+        if (result.size() == before && !hasOperandBinding && !hasResolvedDependency) {
             addInputFieldIfAbsent(result, seen, field);
         }
     }
@@ -1034,6 +1044,9 @@ public class RuleFieldAnalyzer {
             if (refId == null && obj.containsKey("varId")) {
                 refId = obj.getLong("varId");
             }
+            if (refId == null && obj.containsKey("refId")) {
+                refId = obj.getLong("refId");
+            }
             String refType = normalizeRefType(obj.getString("_refType"));
             if (refType == null) {
                 refType = normalizeRefType(obj.getString("refType"));
@@ -1041,6 +1054,8 @@ public class RuleFieldAnalyzer {
             if (refId != null) {
                 addExplicitRef(refs, obj.getString("varCode"), refId, refType);
                 addExplicitRef(refs, obj.getString("refCode"), refId, refType);
+                addExplicitRef(refs, obj.getString("code"), refId, refType);
+                addExplicitRef(refs, obj.getString("value"), refId, refType);
                 addExplicitRef(refs, obj.getString("condVar"), refId, refType);
                 addExplicitRef(refs, obj.getString("target"), refId, refType);
                 addExplicitRef(refs, obj.getString("matchVar"), refId, refType);
@@ -1174,6 +1189,23 @@ public class RuleFieldAnalyzer {
         }
 
         return fields;
+    }
+
+    /**
+     * 提取规则模型中直接引用的模型或模型输出字段，供执行阶段触发对应模型推理。
+     * 普通脚本标识符不属于模型引用，不能加入变量来源解析范围。
+     */
+    public List<RuleDefinitionInputField> extractDirectModelInputFields(String modelJson, String modelType) {
+        List<RuleDefinitionInputField> result = new ArrayList<>();
+        Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
+        for (RuleDefinitionInputField field : extractInputFields(modelJson, modelType)) {
+            applyExplicitRef(field, explicitRefMap);
+            String refType = normalizeRefType(field.getRefType());
+            if ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
+                result.add(field);
+            }
+        }
+        return result;
     }
 
     /**
@@ -1444,6 +1476,26 @@ public class RuleFieldAnalyzer {
             Set<String> outputVars = new LinkedHashSet<>();
             extractFromGraphModel(model, outputVars, false);
             varCodes.removeAll(outputVars);
+            Set<String> localVars = new LinkedHashSet<>();
+            collectActionLocalVars(model, localVars);
+            varCodes.removeAll(localVars);
+        }
+    }
+
+    private void collectActionLocalVars(Object value, Set<String> localVars) {
+        if (value instanceof JSONObject) {
+            JSONObject obj = (JSONObject) value;
+            if ("foreach".equals(getString(obj, "type"))) {
+                addVarName(localVars, getString(obj, "itemVar"));
+            }
+            for (String key : obj.keySet()) {
+                collectActionLocalVars(obj.get(key), localVars);
+            }
+        } else if (value instanceof JSONArray) {
+            JSONArray array = (JSONArray) value;
+            for (int i = 0; i < array.size(); i++) {
+                collectActionLocalVars(array.get(i), localVars);
+            }
         }
     }
 

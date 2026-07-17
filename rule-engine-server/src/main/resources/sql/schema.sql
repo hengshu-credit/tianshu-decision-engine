@@ -486,8 +486,8 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
    `token_id`        BIGINT        DEFAULT NULL             COMMENT '临时Token ID',
    `token_code`      VARCHAR(128)  DEFAULT NULL             COMMENT '临时Token编码快照',
    `auth_phase`      VARCHAR(16)   DEFAULT NULL             COMMENT '鉴权阶段',
-   `input_params`    TEXT          DEFAULT NULL             COMMENT '输入参数（JSON）',
-   `output_result`   TEXT          DEFAULT NULL             COMMENT '输出结果（JSON）',
+   `input_params`    LONGTEXT      DEFAULT NULL             COMMENT '输入参数（JSON）',
+   `output_result`   LONGTEXT      DEFAULT NULL             COMMENT '输出结果（JSON）',
    `trace_info`      LONGTEXT      DEFAULT NULL             COMMENT '表达式追踪树（JSON）',
    `success`         TINYINT       NOT NULL DEFAULT 1       COMMENT '执行结果：0-失败，1-成功',
    `error_message`   VARCHAR(1024) DEFAULT NULL             COMMENT '错误信息',
@@ -1116,3 +1116,30 @@ END$$
 DELIMITER ;
 CALL `rule_engine`.`ensure_operand_columns`();
 DROP PROCEDURE `rule_engine`.`ensure_operand_columns`;
+
+-- ONNX 图像入参与原始输出可能超过 TEXT 的 64 KiB 上限；已有数据卷也需幂等升级。
+DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_execution_log_payload_columns`;
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_execution_log_payload_columns`()
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log'
+      AND COLUMN_NAME = 'input_params' AND DATA_TYPE <> 'longtext'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_execution_log`
+      MODIFY COLUMN `input_params` LONGTEXT DEFAULT NULL COMMENT '输入参数（JSON）';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log'
+      AND COLUMN_NAME = 'output_result' AND DATA_TYPE <> 'longtext'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_execution_log`
+      MODIFY COLUMN `output_result` LONGTEXT DEFAULT NULL COMMENT '输出结果（JSON）';
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_execution_log_payload_columns`();
+DROP PROCEDURE `rule_engine`.`ensure_execution_log_payload_columns`;

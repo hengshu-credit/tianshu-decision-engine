@@ -321,20 +321,24 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
                 map.put(refKey("DATA_OBJECT", f.getId()), scriptName);
             }
         }
-        for (RuleModel m : listModels(projectId)) {
+        List<RuleModel> models = listModels(projectId);
+        for (RuleModel m : models) {
             String scriptName = trimToNull(m.getModelCode());
             if (m.getId() != null && scriptName != null) {
                 map.put(refKey("MODEL", m.getId()), scriptName);
             }
         }
-        Map<Long, String> modelCodeMap = listModels(projectId).stream()
+        Map<Long, String> modelCodeMap = models.stream()
                 .filter(m -> m.getId() != null && trimToNull(m.getModelCode()) != null)
                 .collect(Collectors.toMap(RuleModel::getId, m -> trimToNull(m.getModelCode()), (a, b) -> a));
         for (RuleModelOutputField f : listModelOutputFields(modelCodeMap.keySet())) {
             String modelCode = modelCodeMap.get(f.getModelId());
-            String outputScript = trimToNull(f.getScriptName());
+            String outputScript = trimToNull(f.getFieldName());
             if (outputScript == null) {
-                outputScript = trimToNull(f.getFieldName());
+                outputScript = trimToNull(f.getFeatureName());
+            }
+            if (outputScript == null) {
+                outputScript = trimToNull(f.getScriptName());
             }
             if (f.getId() != null && modelCode != null && outputScript != null) {
                 map.put(refKey("MODEL_OUTPUT", f.getId()), modelCode + "." + outputScript);
@@ -397,7 +401,8 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     private List<RuleModel> listModels(Long projectId) {
         if (modelMapper == null) return Collections.emptyList();
-        LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<RuleModel>()
+                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
         appendScopeCondition(wrapper, RuleModel::getScope, RuleModel::getProjectId, projectId);
         wrapper.eq(RuleModel::getStatus, 1);
         return modelMapper.selectList(wrapper);

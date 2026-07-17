@@ -73,6 +73,9 @@ final class BuiltinFunctionCatalog {
         list.add(fn("facenoxLiveness", "Facenox 活体判定", "按 realLogit - spoofLogit 与阈值计算活体结果并保留原始 logits", params(
                 p("logits", "OBJECT", "原始 logits", Arrays.asList(1.2, 0.2)),
                 p("threshold", "NUMBER", "差值阈值", 0.5)), "MAP", DECISION_CLASS, "facenoxLiveness"));
+        list.add(fn("facenoxLivenessList", "Facenox 活体结果列表", "逐人脸计算活体结果并保留每张人脸的原始 logits", params(
+                p("results", "LIST", "模型人脸结果", sampleFacenoxResults()),
+                p("threshold", "NUMBER", "差值阈值", 0.5)), "LIST", DECISION_CLASS, "facenoxLivenessList"));
         list.add(fn("numPow", "数值幂运算", "返回 value 的 exponent 次幂", params(p("value", "NUMBER", "底数", 2), p("exponent", "NUMBER", "指数", 3)), "NUMBER", DECISION_CLASS, "numPow"));
         list.add(fn("numBetween", "数值区间判断", "判断 value 是否在 [min, max] 闭区间内", params(p("value", "NUMBER", "数值", 85), p("min", "NUMBER", "下限", 60), p("max", "NUMBER", "上限", 100)), "BOOLEAN", DECISION_CLASS, "numBetween"));
         list.add(fn("randomInt", "随机整数",
@@ -378,6 +381,12 @@ final class BuiltinFunctionCatalog {
                 order("SUCCESS", 7.5, "C")
         ));
         return root;
+    }
+
+    private static List<Map<String, Object>> sampleFacenoxResults() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("logits", Arrays.asList(1.2, 0.2));
+        return Arrays.asList(result);
     }
 
     private static List<Map<String, Object>> sampleRows() {

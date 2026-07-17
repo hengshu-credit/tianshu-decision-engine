@@ -171,6 +171,14 @@ public class DecisionBuiltinFunctions {
         return result;
     }
 
+    public List<Map<String, Object>> facenoxLivenessList(Object results, double threshold) {
+        List<Map<String, Object>> livenessResults = new ArrayList<>();
+        for (Object result : toElements(results)) {
+            livenessResults.add(facenoxLiveness(objGet(result, "logits"), threshold));
+        }
+        return livenessResults;
+    }
+
     public double numRoundInteger(double value) {
         return Math.round(value);
     }

@@ -108,7 +108,8 @@ public class RuleExecuteService {
                                    Map<String, Object> params) {
         String funcPrefix = prepareProjectFunctions(definition.getProjectId(), true);
         String fullScript = funcPrefix.isEmpty() ? compiledScript : funcPrefix + "\n" + compiledScript;
-        VariableResolveOptions resolveOptions = withInputFields(VariableResolveOptions.defaults(), inputFields);
+        VariableResolveOptions resolveOptions = withInputFields(
+                VariableResolveOptions.defaults(), inputFields, modelJson, definition.getModelType());
         Map<String, Object> executeParams = bindInputs(inputFields, params);
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = null;
@@ -132,6 +133,7 @@ public class RuleExecuteService {
             result.setErrorMessage(e.getMessage());
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
+            collectDeclaredOutputsIfNeeded(result, definition.getModelType());
             runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
@@ -162,6 +164,17 @@ public class RuleExecuteService {
         result.setSuccess(false);
         result.setErrorMessage(message);
         return result;
+    }
+
+    private void collectDeclaredOutputsIfNeeded(RuleResult result, String modelType) {
+        boolean visualModel = modelType != null && !"SCRIPT".equalsIgnoreCase(modelType.trim());
+        if (result == null || !result.isSuccess() || (!visualModel && result.getResult() != null)) {
+            return;
+        }
+        Map<String, Object> outputs = runtimeRuleInvoker.collectTerminationResult();
+        if (!outputs.isEmpty()) {
+            result.setResult(outputs);
+        }
     }
 
     public RuleResult executePublished(RulePublished published, Map<String, Object> params,
@@ -201,7 +214,8 @@ public class RuleExecuteService {
 
         Map<String, Object> executeParams = bindDefinitionInputs(published.getDefinitionId(), params);
         Map<String, Object> originalInput = snapshotMap(executeParams);
-        VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId());
+        VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId(),
+                published.getModelJson(), published.getModelType());
         String projectCode = published.getProjectCode();
         if (projectCode == null && executionProjectId != null) {
             RuleProject project = projectService.getById(executionProjectId);
@@ -226,6 +240,7 @@ public class RuleExecuteService {
             result.setErrorMessage(e.getMessage());
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
+            collectDeclaredOutputsIfNeeded(result, published.getModelType());
             runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
@@ -281,32 +296,41 @@ public class RuleExecuteService {
         log.setAuthPhase(authContext.getAuthPhase());
     }
 
-    private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId) {
+    private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId,
+                                                              String modelJson, String modelType) {
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
         if (definitionId == null || effective.getRequiredScriptNames() != null) {
             return effective;
         }
-        return withInputFields(effective, definitionService.listInputFields(definitionId));
+        return withInputFields(effective, definitionService.listInputFields(definitionId), modelJson, modelType);
     }
 
     private VariableResolveOptions withInputFields(VariableResolveOptions options,
-                                                   List<RuleDefinitionInputField> inputFields) {
+                                                   List<RuleDefinitionInputField> inputFields,
+                                                   String modelJson, String modelType) {
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
         if (effective.getRequiredScriptNames() != null) {
             return effective;
         }
-        if (inputFields == null || inputFields.isEmpty()) {
-            effective.setRequiredScriptNames(Collections.emptySet());
-            return effective;
-        }
         Set<String> names = new LinkedHashSet<>();
-        for (RuleDefinitionInputField field : inputFields) {
-            if (field != null && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
-                names.add(field.getScriptName().trim());
+        if (inputFields != null) {
+            for (RuleDefinitionInputField field : inputFields) {
+                addRequiredScriptName(names, field);
+            }
+        }
+        if (ruleFieldAnalyzer != null && modelJson != null && !modelJson.trim().isEmpty()) {
+            for (RuleDefinitionInputField field : ruleFieldAnalyzer.extractDirectModelInputFields(modelJson, modelType)) {
+                addRequiredScriptName(names, field);
             }
         }
         effective.setRequiredScriptNames(names);
         return effective;
+    }
+
+    private void addRequiredScriptName(Set<String> names, RuleDefinitionInputField field) {
+        if (field != null && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
+            names.add(field.getScriptName().trim());
+        }
     }
 
     private Map<String, Object> bindDefinitionInputs(Long definitionId, Map<String, Object> params) {

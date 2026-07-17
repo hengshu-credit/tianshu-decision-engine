@@ -79,6 +79,15 @@ public class RuleExecuteServiceTest {
         assertTrue(((Map<?, ?>) result.getResult()).containsKey("notAssigned"));
         assertEquals(null, ((Map<?, ?>) result.getResult()).get("notAssigned"));
         assertFalse(logService.saved.getOutputResult().contains("afterEnd"));
+
+        published.setCompiledScript("decision = \"PASS\"; setRuntimeValue(\"decision\", decision);");
+        RuleResult normalResult = service.executePublished(
+                published, Collections.<String, Object>emptyMap(), 1L, "biz-app");
+
+        assertTrue(normalResult.getErrorMessage(), normalResult.isSuccess());
+        assertTrue(normalResult.getResult() instanceof Map);
+        assertEquals("PASS", ((Map<?, ?>) normalResult.getResult()).get("decision"));
+        assertTrue(((Map<?, ?>) normalResult.getResult()).containsKey("notAssigned"));
     }
 
     @Test
@@ -181,13 +190,19 @@ public class RuleExecuteServiceTest {
         NoOpRuntimeInvoker runtimeInvoker = new NoOpRuntimeInvoker();
         ReflectionTestUtils.setField(service, "runtimeRuleInvoker", runtimeInvoker);
         ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
 
         RulePublished published = new RulePublished();
         published.setDefinitionId(10L);
         published.setRuleCode("RISK_RULE");
         published.setProjectCode("project_a");
         published.setVersion(3);
-        published.setModelType("SCRIPT");
+        published.setModelType("FLOW");
+        published.setModelJson("{\"nodes\":[{\"id\":\"n1\",\"type\":\"task\",\"actionData\":[{"
+                + "\"type\":\"assign\",\"target\":\"decision\","
+                + "\"valueOperand\":{\"kind\":\"REFERENCE\",\"refId\":3,"
+                + "\"refType\":\"MODEL_OUTPUT\",\"code\":\"facenox_antispoof.results\","
+                + "\"value\":\"facenox_antispoof.results\"}}]}]}");
         published.setCompiledScript("decision = age >= 18 && externalScore >= 60 ? \"PASS\" : \"REJECT\";\ndecision");
 
         Map<String, Object> params = new LinkedHashMap<>();
@@ -206,6 +221,7 @@ public class RuleExecuteServiceTest {
         assertEquals(Long.valueOf(1), resolver.projectId);
         assertNotNull(resolver.requiredScriptNames);
         assertTrue(resolver.requiredScriptNames.contains("externalScore"));
+        assertTrue(resolver.requiredScriptNames.contains("facenox_antispoof.results"));
         assertNotNull(logService.saved);
         assertEquals(1, logService.saveCount);
         assertEquals("RISK_RULE", logService.saved.getRuleCode());

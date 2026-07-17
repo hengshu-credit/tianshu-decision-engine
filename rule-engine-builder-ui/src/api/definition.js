@@ -93,7 +93,7 @@ export function rollbackVersion(definitionId, version) {
 }
 
 export function executeRule(data) {
-  return request({ url: '/rule/definition/execute', method: 'post', data })
+  return request({ url: '/rule/definition/execute', method: 'post', data, timeout: 3 * 60 * 1000 })
 }
 
 export function getRuleTestSchema(data) {

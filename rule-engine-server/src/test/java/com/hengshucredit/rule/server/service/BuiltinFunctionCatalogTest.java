@@ -88,6 +88,7 @@ public class BuiltinFunctionCatalogTest {
         assertTrue(codeSet.contains("currentMatchedConditions"));
         assertTrue(codeSet.contains("cosineSimilarity"));
         assertTrue(codeSet.contains("facenoxLiveness"));
+        assertTrue(codeSet.contains("facenoxLivenessList"));
         assertTrue(codeSet.contains("isInLists"));
         assertTrue(codeSet.contains("isInListsNumber"));
         assertTrue(codeSet.contains("listMatch"));

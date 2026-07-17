@@ -136,6 +136,25 @@ public class DatabaseInitializationSqlTest {
                 rootCompose.contains("export_202607161151.sql:/data.sql"));
     }
 
+    @Test
+    public void executionLogSupportsLargeJsonPayloadsAndUpgradesExistingSchema() throws Exception {
+        String schema = read(sqlDirectory().resolve("schema.sql"));
+        Matcher matcher = TABLE_BLOCK.matcher(schema);
+        String tableBody = null;
+        while (matcher.find()) {
+            if ("rule_execution_log".equals(matcher.group(1))) {
+                tableBody = matcher.group(2);
+                break;
+            }
+        }
+
+        Assert.assertNotNull("rule_execution_log table missing", tableBody);
+        Assert.assertTrue(tableBody.matches("(?is).*`input_params`\\s+LONGTEXT.*"));
+        Assert.assertTrue(tableBody.matches("(?is).*`output_result`\\s+LONGTEXT.*"));
+        Assert.assertTrue(schema.contains("MODIFY COLUMN `input_params` LONGTEXT"));
+        Assert.assertTrue(schema.contains("MODIFY COLUMN `output_result` LONGTEXT"));
+    }
+
     private static void assertFreshInitMounts(String compose, String schemaMount, String exportMount) {
         Assert.assertTrue("missing schema init mount", compose.contains(schemaMount));
         Assert.assertTrue("missing export init mount", compose.contains(exportMount));

@@ -289,6 +289,25 @@ public class DecisionBuiltinFunctionsTest {
         assertEquals(Boolean.TRUE, result.get("isSpoof"));
     }
 
+    @Test
+    public void facenoxLivenessListCalculatesEveryFaceAndKeepsOriginalLogits() {
+        List<Double> firstLogits = Arrays.asList(1.2d, 0.2d);
+        List<Double> secondLogits = Arrays.asList(-0.5d, 0.7d);
+        Map<String, Object> first = new LinkedHashMap<>();
+        first.put("logits", firstLogits);
+        Map<String, Object> second = new LinkedHashMap<>();
+        second.put("logits", secondLogits);
+
+        List<Map<String, Object>> result = functions.facenoxLivenessList(
+                Arrays.<Object>asList(first, second), 0.3d);
+
+        assertEquals(2, result.size());
+        assertSame(firstLogits, result.get(0).get("logits"));
+        assertEquals(Boolean.TRUE, result.get(0).get("isReal"));
+        assertSame(secondLogits, result.get(1).get("logits"));
+        assertEquals(Boolean.FALSE, result.get(1).get("isReal"));
+    }
+
     private static Map<String, Object> sampleJson() {
         Map<String, Object> root = new LinkedHashMap<>();
         Map<String, Object> customer = new LinkedHashMap<>();

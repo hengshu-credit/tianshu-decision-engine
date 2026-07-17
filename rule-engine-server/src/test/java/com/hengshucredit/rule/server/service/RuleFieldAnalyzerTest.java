@@ -1,16 +1,26 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleModelMapper;
+import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.Test;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
@@ -19,6 +29,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
@@ -28,6 +39,54 @@ import static org.junit.Assert.assertTrue;
 public class RuleFieldAnalyzerTest {
 
     private final RuleFieldAnalyzer analyzer = new RuleFieldAnalyzer();
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelMetadataLookupDoesNotReadLargeModelContent() throws Exception {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModelOutputField.class);
+        AtomicReference<String> selectedColumns = new AtomicReference<>();
+        RuleModel model = new RuleModel();
+        model.setId(101L);
+        model.setModelCode("buffalo_det_face");
+        model.setModelName("Buffalo detector");
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setId(201L);
+        output.setModelId(101L);
+        output.setFieldName("faces");
+        output.setScriptName("buffalo_det_face_faces");
+        output.setFieldType("LIST");
+
+        setField(analyzer, "ruleVariableMapper", mapper(RuleVariableMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName()) ? Collections.emptyList() : null));
+        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName()) ? Collections.emptyList() : null));
+        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName()) ? Collections.emptyList() : null));
+        setField(analyzer, "modelOutputFieldMapper", mapper(RuleModelOutputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.singletonList(output) : null));
+        setField(analyzer, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectList".equals(method.getName())) {
+                LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
+                selectedColumns.set(wrapper.getSqlSelect());
+                return Collections.singletonList(model);
+            }
+            return null;
+        }));
+
+        Method build = RuleFieldAnalyzer.class.getDeclaredMethod("buildVarMetaMap", Long.class);
+        build.setAccessible(true);
+        Map<String, Map<String, Object>> metadata =
+                (Map<String, Map<String, Object>>) build.invoke(analyzer, 1L);
+
+        assertEquals(Long.valueOf(101L), metadata.get("buffalo_det_face").get("id"));
+        assertTrue(metadata.containsKey("buffalo_det_face.faces"));
+        assertEquals(Long.valueOf(201L), metadata.get("buffalo_det_face.faces").get("id"));
+        assertFalse(metadata.containsKey("buffalo_det_face.buffalo_det_face_faces"));
+        assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
+        assertFalse(selectedColumns.get().contains("model_content"));
+    }
 
     @Test
     public void unifiedOperandsContributeInputAndOutputDependencies() {
@@ -176,6 +235,22 @@ public class RuleFieldAnalyzerTest {
         assertTrue(inputs.contains("idcard_no"));
         assertTrue(inputs.contains("credit_time"));
         assertFalse(inputs.contains("DAY"));
+    }
+
+    @Test
+    public void graphForeachItemVariableIsNotAnExternalInput() {
+        String json = "{\"nodes\":[{\"id\":\"n1\",\"type\":\"task\",\"actionData\":[{"
+                + "\"type\":\"foreach\",\"itemVar\":\"item\","
+                + "\"listOperand\":{\"kind\":\"REFERENCE\",\"code\":\"model.results\",\"value\":\"model.results\"},"
+                + "\"actions\":[{\"type\":\"func-call\",\"target\":\"summary\",\"args\":["
+                + "{\"kind\":\"PATH\",\"code\":\"item\",\"value\":\"item\"}]}]}]}]}";
+
+        List<String> inputs = analyzer.extractInputFields(json, "FLOW").stream()
+                .map(RuleDefinitionInputField::getScriptName)
+                .collect(Collectors.toList());
+
+        assertTrue(inputs.contains("model.results"));
+        assertFalse(inputs.contains("item"));
     }
 
     @Test
@@ -360,6 +435,35 @@ public class RuleFieldAnalyzerTest {
                 .filter(f -> "score_f1_fields.HYBASE_X115".equals(f.getScriptName())).findFirst().get();
         assertEquals("底层字段应携带引擎变量关联", Long.valueOf(25), leaf.getVarId());
         assertEquals("DATA_OBJECT", leaf.getRefType());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void repeatedModelOutputDependencyDoesNotBecomeExternalInput() throws Exception {
+        RuleDefinitionInputField modelOutput = new RuleDefinitionInputField();
+        modelOutput.setScriptName("face_detector.faces");
+        modelOutput.setRefType("MODEL_OUTPUT");
+        modelOutput.setVarId(130L);
+
+        Map<String, Object> modelOutputMeta = new HashMap<>();
+        modelOutputMeta.put("varSource", "MODEL_OUTPUT");
+        modelOutputMeta.put("modelId", 1L);
+        Map<String, Object> leafMeta = new HashMap<>();
+        leafMeta.put("varSource", "DATA_OBJECT");
+        leafMeta.put("id", 25L);
+        leafMeta.put("refType", "DATA_OBJECT");
+        leafMeta.put("scriptName", "request.face_image");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("face_detector.faces", modelOutputMeta);
+        varMetaMap.put("request.face_image", leafMeta);
+
+        RuleFieldAnalyzer analyzer = new TestableRuleFieldAnalyzer(Collections.singletonList("request.face_image"));
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        List<RuleDefinitionInputField> fields = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Arrays.asList(modelOutput, modelOutput), varMetaMap);
+
+        assertEquals(Collections.singletonList("request.face_image"), names(fields));
     }
 
     /** 覆盖 loadModelInputFields，避免依赖 MyBatis mapper 实现 */
@@ -656,6 +760,11 @@ public class RuleFieldAnalyzerTest {
                 RuleDefinitionOutputFieldMapper.class.getClassLoader(),
                 new Class<?>[]{RuleDefinitionOutputFieldMapper.class},
                 (proxy, method, args) -> "selectList".equals(method.getName()) ? fields : null);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> T mapper(Class<T> type, InvocationHandler handler) {
+        return (T) Proxy.newProxyInstance(type.getClassLoader(), new Class<?>[]{type}, handler);
     }
 
     private static List<String> names(List<RuleDefinitionInputField> fields) {
