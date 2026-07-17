@@ -59,6 +59,7 @@ public class SchemaSyncService {
             ensureRuntimeCallLogTable();
             ensureTraceSchema();
             ensureProjectAuthSchema();
+            ensureApiDocScenarioSchema();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelRuntimeColumns();
@@ -451,6 +452,31 @@ public class SchemaSyncService {
         addAuthAttributionColumns("rule_billing_record", "occur_time", true);
         addAuthAttributionColumns("rule_billing_summary", "summary_date", false);
         ensureBillingSummaryAuthUniqueKey();
+    }
+
+    private void ensureApiDocScenarioSchema() {
+        if (tableExists("rule_api_doc_scenario")) return;
+        jdbcTemplate.execute("CREATE TABLE `rule_api_doc_scenario` ("
+                + "`id` BIGINT NOT NULL AUTO_INCREMENT,"
+                + "`definition_id` BIGINT NOT NULL,"
+                + "`scenario_name` VARCHAR(128) NOT NULL,"
+                + "`description` VARCHAR(512) DEFAULT NULL,"
+                + "`request_json` JSON NOT NULL,"
+                + "`response_json` JSON NOT NULL,"
+                + "`response_source` VARCHAR(16) NOT NULL DEFAULT 'MANUAL',"
+                + "`outer_code` INT DEFAULT NULL,"
+                + "`business_code_path` VARCHAR(256) DEFAULT NULL,"
+                + "`business_code` VARCHAR(256) DEFAULT NULL,"
+                + "`rule_version` INT NOT NULL,"
+                + "`include_in_doc` TINYINT NOT NULL DEFAULT 0,"
+                + "`sort_order` INT NOT NULL DEFAULT 0,"
+                + "`status` TINYINT NOT NULL DEFAULT 1,"
+                + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                + "PRIMARY KEY (`id`),"
+                + "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),"
+                + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"
+                + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule API documentation scenarios'");
     }
 
     private void addAuthAttributionColumns(String table, String timeColumn, boolean includeToken) {

@@ -255,6 +255,28 @@ public class RuleDefinitionServiceTest {
         assertTrue(pushService.message.getCompiledScript().contains("\"score\": score"));
     }
 
+    @Test
+    public void deleteWithContentDeletesApiDocumentationScenarios() {
+        RuleDefinitionService service = new RuleDefinitionService();
+        RecordingApiDocScenarioService scenarioService = new RecordingApiDocScenarioService();
+        ReflectionTestUtils.setField(service, "baseMapper",
+                mapper(RuleDefinitionMapper.class, (proxy, method, args) -> defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "inputFieldMapper",
+                mapper(RuleDefinitionInputFieldMapper.class,
+                        (proxy, method, args) -> defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "outputFieldMapper",
+                mapper(RuleDefinitionOutputFieldMapper.class,
+                        (proxy, method, args) -> defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "contentMapper",
+                mapper(RuleDefinitionContentMapper.class,
+                        (proxy, method, args) -> defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "apiDocScenarioService", scenarioService);
+
+        service.deleteWithContent(12L);
+
+        assertEquals(Long.valueOf(12L), scenarioService.deletedDefinitionId);
+    }
+
     private static RuleDefinitionVersion version(int version, String modelJson, String script) {
         RuleDefinitionVersion result = new RuleDefinitionVersion();
         result.setDefinitionId(1L);
@@ -297,6 +319,15 @@ public class RuleDefinitionServiceTest {
         @Override
         public void push(com.hengshucredit.rule.model.dto.RulePushMessage message) {
             this.message = message;
+        }
+    }
+
+    private static class RecordingApiDocScenarioService extends RuleApiDocScenarioService {
+        private Long deletedDefinitionId;
+
+        @Override
+        public void deleteByDefinition(Long definitionId) {
+            this.deletedDefinitionId = definitionId;
         }
     }
 }

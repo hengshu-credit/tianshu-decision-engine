@@ -50,6 +50,7 @@
               <el-button type="text" size="small" @click="viewFullAuth(row)">完整值</el-button>
               <el-button v-if="row.authType !== 'LEGACY_TOKEN'" type="text" size="small" @click="openEditAuth(row)">编辑</el-button>
               <el-button v-if="row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'" type="text" size="small" @click="regenerateAuth(row)">重置密钥</el-button>
+              <el-button v-if="row.authType === 'LEGACY_TOKEN'" type="text" size="small" @click="regenerateLegacyToken(row)">重置令牌</el-button>
               <el-button type="text" size="small" @click="openTokens(row)">Token</el-button>
               <el-button type="text" size="small" @click="toggleAuth(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
             </template>
@@ -168,7 +169,7 @@
     <el-dialog title="完整鉴权值" :visible.sync="fullDialogVisible" width="560px" append-to-body>
       <el-alert title="完整值来自加密存储，请仅在受控环境查看和复制。" type="warning" :closable="false" show-icon />
       <div v-if="fullCredential.identifier" class="secret-row"><span class="secret-label">账号 / Access Key</span><code>{{ fullCredential.identifier }}</code><el-button type="text" @click="copyValue(fullCredential.identifier)">复制</el-button></div>
-      <div class="secret-row"><span class="secret-label">密码 / 密钥</span><code>{{ fullCredential.secret || '—' }}</code><el-button v-if="fullCredential.secret" type="text" @click="copyValue(fullCredential.secret)">复制</el-button></div>
+      <div class="secret-row"><span class="secret-label">令牌 / 密钥</span><code>{{ fullCredential.secret || '—' }}</code><el-button v-if="fullCredential.secret" type="text" @click="copyValue(fullCredential.secret)">复制</el-button></div>
       <span slot="footer"><el-button size="small" type="primary" @click="fullDialogVisible = false">关闭</el-button></span>
     </el-dialog>
 
@@ -183,7 +184,7 @@
 import {
   listProjectAuths, createProjectAuth, updateProjectAuth, updateProjectAuthStatus,
   getProjectAuthFull, regenerateProjectAuthSecret, listProjectAuthTokens, getProjectAuthTokenFull,
-  revokeProjectAuthToken, listProjectAuthAccessLogs
+  revokeProjectAuthToken, listProjectAuthAccessLogs, getFullToken, regenerateToken
 } from '@/api/project'
 
 export default {
@@ -305,9 +306,27 @@ export default {
       await this.loadAuths()
     },
     async viewFullAuth(row) {
+      if (row.authType === 'LEGACY_TOKEN') {
+        const res = await getFullToken(this.project.id)
+        this.fullCredential = { identifier: '', secret: res.data || '' }
+        this.fullDialogVisible = true
+        return
+      }
       const res = await getProjectAuthFull(this.project.id, row.id)
       this.fullCredential = res.data || {}
       this.fullDialogVisible = true
+    },
+    async regenerateLegacyToken() {
+      try {
+        await this.$confirm('重置后原兼容令牌立即失效，确认继续吗？', '重置兼容令牌', { type: 'warning' })
+        const res = await regenerateToken(this.project.id)
+        this.fullCredential = { identifier: '', secret: res.data || '' }
+        this.fullDialogVisible = true
+        this.$message.success('兼容令牌已重置，请立即更新调用方配置')
+        await this.loadAuths()
+      } catch (e) {
+        // 用户取消重置时不需要提示。
+      }
     },
     async regenerateAuth(row) {
       try {

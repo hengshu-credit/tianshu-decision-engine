@@ -190,6 +190,31 @@ CREATE TABLE IF NOT EXISTS `rule_definition_output_field` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则输出字段表';
 
 -- ============================================================
+-- 2.3 rule_api_doc_scenario - 规则 API 文档测试场景
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
+  `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
+  `definition_id`      BIGINT       NOT NULL                COMMENT '规则定义ID',
+  `scenario_name`      VARCHAR(128) NOT NULL                COMMENT '场景名称',
+  `description`        VARCHAR(512) DEFAULT NULL            COMMENT '场景说明',
+  `request_json`       JSON         NOT NULL                COMMENT '完整请求报文',
+  `response_json`      JSON         NOT NULL                COMMENT '完整响应报文',
+  `response_source`    VARCHAR(16)  NOT NULL DEFAULT 'MANUAL' COMMENT '响应来源：MANUAL/EXECUTED',
+  `outer_code`         INT          DEFAULT NULL            COMMENT '平台外层响应码',
+  `business_code_path` VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码路径',
+  `business_code`      VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码展示值',
+  `rule_version`       INT          NOT NULL                COMMENT '保存时规则版本',
+  `include_in_doc`     TINYINT      NOT NULL DEFAULT 0      COMMENT '是否加入API文档',
+  `sort_order`         INT          NOT NULL DEFAULT 0      COMMENT '展示顺序',
+  `status`             TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
+  `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),
+  KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景';
+
+-- ============================================================
 -- 3. rule_definition_content - 规则内容表（设计态）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_definition_content` (

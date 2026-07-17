@@ -53,6 +53,14 @@ function makeStub(tag) {
   return { render: h => h(tag) }
 }
 
+function makeSlotStub(tag) {
+  return {
+    render(h) {
+      return h(tag, [this.$slots.label, this.$slots.default])
+    }
+  }
+}
+
 async function mountAndWait() {
   // load() 先调用 refreshFields 重新解析字段，再调用 getDefinitionDetail 获取详情
   definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
@@ -85,8 +93,8 @@ async function mountAndWait() {
       'el-button': makeStub('button'),
       'el-tag': makeStub('span'),
       'el-alert': makeStub('div'),
-      'el-tabs': makeStub('div'),
-      'el-tab-pane': makeStub('div'),
+      'el-tabs': makeSlotStub('div'),
+      'el-tab-pane': makeSlotStub('div'),
       'el-table': makeStub('table'),
       'el-table-column': makeStub('td'),
       'el-input-number': makeStub('input'),
@@ -143,6 +151,13 @@ describe('RuleDetail — 初始化与数据加载', () => {
     expect(wrapper.vm.testParams).toBeDefined()
     expect(typeof wrapper.vm.testParams).toBe('object')
     expect(Object.keys(wrapper.vm.testParams).length).toBe(0)
+  })
+
+  test('renders API test scenario tab with current rule', () => {
+    const panel = wrapper.find('api-scenario-panel-stub')
+    expect(panel.exists()).toBe(true)
+    expect(panel.props('rule').id).toBe(1)
+    expect(wrapper.text()).toContain('API 测试用例')
   })
 })
 

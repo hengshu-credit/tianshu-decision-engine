@@ -147,3 +147,44 @@ export function updateOutputField(fieldId, data) {
   return request({ url: `/rule/definition/outputField/${fieldId}`, method: 'put', data })
 }
 
+export function listApiScenarios(definitionId) {
+  return request({ url: `/rule/definition/${definitionId}/api-scenarios`, method: 'get' })
+}
+
+export function createApiScenario(definitionId, data) {
+  return request({ url: `/rule/definition/${definitionId}/api-scenarios`, method: 'post', data })
+}
+
+export function updateApiScenario(definitionId, scenarioId, data) {
+  return request({ url: `/rule/definition/${definitionId}/api-scenarios/${scenarioId}`, method: 'put', data })
+}
+
+export function deleteApiScenario(definitionId, scenarioId) {
+  return request({ url: `/rule/definition/${definitionId}/api-scenarios/${scenarioId}`, method: 'delete' })
+}
+
+export function copyApiScenario(definitionId, scenarioId, scenarioName) {
+  return request({
+    url: `/rule/definition/${definitionId}/api-scenarios/${scenarioId}/copy`,
+    method: 'post',
+    data: { scenarioName }
+  })
+}
+
+export function sortApiScenarios(definitionId, scenarioIds) {
+  return request({
+    url: `/rule/definition/${definitionId}/api-scenarios/sort`,
+    method: 'put',
+    data: { scenarioIds }
+  })
+}
+
+export function executeApiScenario(definitionId, data, timeout = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
+  return request({
+    url: `/rule/definition/${definitionId}/api-scenarios/execute`,
+    method: 'post',
+    data,
+    timeout
+  })
+}
+

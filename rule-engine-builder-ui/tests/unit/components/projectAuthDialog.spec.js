@@ -146,6 +146,18 @@ describe('ProjectAuthDialog', () => {
     wrapper.destroy()
   })
 
+  test('兼容令牌在鉴权弹窗内完成重置', async () => {
+    const wrapper = await mountDialog()
+    projectApi.regenerateToken.mockResolvedValue({ data: 'new-legacy-token' })
+
+    await wrapper.vm.regenerateLegacyToken({ authType: 'LEGACY_TOKEN' })
+
+    expect(projectApi.regenerateToken).toHaveBeenCalledWith(7)
+    expect(wrapper.vm.fullCredential.secret).toBe('new-legacy-token')
+    expect(wrapper.vm.fullDialogVisible).toBe(true)
+    wrapper.destroy()
+  })
+
   test('Token 列表和撤销操作都绑定当前鉴权', async () => {
     const wrapper = await mountDialog()
     projectApi.listProjectAuthTokens.mockResolvedValue({

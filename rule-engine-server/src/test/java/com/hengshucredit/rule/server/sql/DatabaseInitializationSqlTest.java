@@ -155,6 +155,17 @@ public class DatabaseInitializationSqlTest {
         Assert.assertTrue(schema.contains("MODIFY COLUMN `output_result` LONGTEXT"));
     }
 
+    @Test
+    public void schemaCreatesApiDocumentationScenarioTable() throws Exception {
+        String schema = read(sqlDirectory().resolve("schema.sql"));
+
+        Assert.assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario`"));
+        Assert.assertTrue(schema.contains(
+                "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`)"));
+        Assert.assertTrue(schema.contains(
+                "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
+    }
+
     private static void assertFreshInitMounts(String compose, String schemaMount, String exportMount) {
         Assert.assertTrue("missing schema init mount", compose.contains(schemaMount));
         Assert.assertTrue("missing export init mount", compose.contains(exportMount));

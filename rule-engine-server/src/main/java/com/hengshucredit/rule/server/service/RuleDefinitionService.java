@@ -57,6 +57,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     @Resource
     private RuleCallCycleService ruleCallCycleService;
 
+    @Resource
+    private RuleApiDocScenarioService apiDocScenarioService;
+
     public IPage<RuleDefinition> pageList(RuleQueryDTO query) {
         LambdaQueryWrapper<RuleDefinition> wrapper = buildWrapper(query);
         wrapper.orderByDesc(RuleDefinition::getCreateTime);
@@ -180,6 +183,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
                 .eq(RuleDefinitionInputField::getDefinitionId, id));
         outputFieldMapper.delete(new LambdaQueryWrapper<RuleDefinitionOutputField>()
                 .eq(RuleDefinitionOutputField::getDefinitionId, id));
+        apiDocScenarioService.deleteByDefinition(id);
         removeById(id);
         contentMapper.delete(new LambdaQueryWrapper<RuleDefinitionContent>()
                 .eq(RuleDefinitionContent::getDefinitionId, id));

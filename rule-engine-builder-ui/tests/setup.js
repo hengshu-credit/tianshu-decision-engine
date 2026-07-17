@@ -116,6 +116,14 @@ jest.mock('@/api/definition', () => ({
   listOutputFields: jest.fn(),
   updateInputField: jest.fn(),
   updateOutputField: jest.fn(),
+  listApiScenarios: jest.fn(),
+  createApiScenario: jest.fn(),
+  updateApiScenario: jest.fn(),
+  deleteApiScenario: jest.fn(),
+  copyApiScenario: jest.fn(),
+  sortApiScenarios: jest.fn(),
+  executeApiScenario: jest.fn(),
+  DEFAULT_RULE_REQUEST_TIMEOUT_MS: 180000,
   migrateFields: jest.fn(),
   __esModule: true
 }))

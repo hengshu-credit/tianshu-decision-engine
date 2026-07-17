@@ -539,6 +539,7 @@
 import TraceNode from './TraceNode.vue'
 import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
 import { compileOperand, operandDisplay } from '@/utils/operand'
+import { resolveTraceReferences } from '@/utils/traceReference'
 
 /** 运算符中文映射 */
 var OP_CN = {
@@ -598,7 +599,7 @@ export default {
     rawTraceData: function () {
       if (!this.traceInfo) return null
       try {
-        return JSON.parse(this.traceInfo)
+        return resolveTraceReferences(JSON.parse(this.traceInfo))
       } catch (e) { return null }
     },
     ruleTraceFrame: function () {
@@ -823,14 +824,28 @@ export default {
       }
       return nodes
     },
+    ruleSetOutputHits: function () {
+      var output = this.parsedOutput
+      if (!Array.isArray(output)) return null
+      var hits = {}
+      for (var i = 0; i < output.length; i++) {
+        if (output[i] && output[i].ruleCode) hits[String(output[i].ruleCode)] = output[i]
+      }
+      return hits
+    },
     ruleSetRows: function () {
       var rules = this.ruleSetModelRules
       var rows = []
       for (var i = 0; i < rules.length; i++) {
         var rule = rules[i]
         var ifNode = this.ruleSetIfNodes[i] || null
-        var status = this._ruleSetRowStatus(ifNode)
         var ruleCode = rule.ruleCode || ('R' + String(i + 1).padStart(4, '0'))
+        var traceStatus = this._ruleSetRowStatus(ifNode)
+        var status = traceStatus
+        if (this.ruleSetOutputHits !== null) {
+          status = this.ruleSetOutputHits[String(ruleCode)]
+            ? 'hit' : (traceStatus === 'skipped' ? 'skipped' : 'miss')
+        }
         rows.push({
           key: ruleCode + '-' + i,
           ruleCode: ruleCode,
@@ -848,21 +863,25 @@ export default {
     },
     ruleSetHitRows: function () {
       var result = []
-      for (var i = 0; i < this.ruleSetRows.length; i++) {
-        if (this.ruleSetRows[i].hit) result.push(this.ruleSetRows[i])
-      }
-      if (result.length > 0) return result
-      var po = this.parsedOutput
-      if (!Array.isArray(po)) return []
-      for (var j = 0; j < po.length; j++) {
-        var hit = po[j]
-        if (hit && hit.ruleCode) {
-          result.push({
-            key: 'output-' + j + '-' + hit.ruleCode,
-            ruleCode: hit.ruleCode,
-            ruleName: hit.ruleName || hit.ruleCode
+      var output = this.parsedOutput
+      if (Array.isArray(output)) {
+        var rowsByCode = {}
+        for (var i = 0; i < this.ruleSetRows.length; i++) {
+          rowsByCode[String(this.ruleSetRows[i].ruleCode)] = this.ruleSetRows[i]
+        }
+        for (var j = 0; j < output.length; j++) {
+          var outputHit = output[j]
+          if (!outputHit || !outputHit.ruleCode) continue
+          result.push(rowsByCode[String(outputHit.ruleCode)] || {
+            key: 'output-' + j + '-' + outputHit.ruleCode,
+            ruleCode: outputHit.ruleCode,
+            ruleName: outputHit.ruleName || outputHit.ruleCode
           })
         }
+        return result
+      }
+      for (var k = 0; k < this.ruleSetRows.length; k++) {
+        if (this.ruleSetRows[k].hit) result.push(this.ruleSetRows[k])
       }
       return result
     },
@@ -1597,6 +1616,9 @@ export default {
       if (v === true) return 'true'
       if (v === false) return 'false'
       if (v === null || v === undefined) return '空'
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch (e) { return String(v) }
+      }
       return String(v)
     },
     /** 面向展示的值格式化：布尔值转中文，其他原样 */
@@ -1604,6 +1626,9 @@ export default {
       if (v === true) return '是'
       if (v === false) return '否'
       if (v === null || v === undefined) return '空'
+      if (typeof v === 'object') {
+        try { return JSON.stringify(v) } catch (e) { return String(v) }
+      }
       return String(v)
     },
     _isFlowFormat: function () {
@@ -1810,7 +1835,10 @@ export default {
     },
     _findTraceVariableValue: function (node, varCode) {
       if (!node || !varCode) return undefined
-      if (node.type === 'VARIABLE' && node.token === varCode && node.value !== undefined) return node.value
+      if (this._traceOperandCode(node) === varCode) {
+        var value = this._traceOperandValue(node)
+        if (value !== undefined) return value
+      }
       if (node.children) {
         for (var i = 0; i < node.children.length; i++) {
           var v = this._findTraceVariableValue(node.children[i], varCode)
@@ -1831,7 +1859,7 @@ export default {
       var op = this._ruleSetTraceOperator(operator)
       if (node.type === 'OPERATOR' && node.token === op && node.children && node.children.length >= 1) {
         var left = node.children[0]
-        if (left && left.token === varCode) return node
+        if (this._traceOperandCode(left) === varCode) return node
       }
       if (node.children) {
         for (var i = 0; i < node.children.length; i++) {
@@ -1844,7 +1872,7 @@ export default {
     _findFunctionConditionTrace: function (node, varCode, operator) {
       if (!node) return null
       var func = this._ruleSetTraceFunction(operator)
-      if (func && (node.type === 'FUNCTION' || node.type === 'METHOD') && node.token === func && node.children && node.children[0] && node.children[0].token === varCode) {
+      if (func && (node.type === 'FUNCTION' || node.type === 'METHOD') && node.token === func && node.children && this._traceOperandCode(node.children[0]) === varCode) {
         return node
       }
       if (node.children) {
@@ -1854,6 +1882,25 @@ export default {
         }
       }
       return null
+    },
+    _traceOperandCode: function (node) {
+      if (!node) return ''
+      if (node.type === 'VARIABLE') return node.token || ''
+      if (node.type === 'FIELD') {
+        var owner = node.children && node.children[0]
+        var ownerCode = this._traceOperandCode(owner)
+        return ownerCode ? ownerCode + '.' + (node.token || '') : (node.token || '')
+      }
+      return ''
+    },
+    _traceOperandValue: function (node) {
+      if (!node) return undefined
+      if (node.value !== undefined) return node.value
+      if (node.type === 'FIELD' && node.children && node.children[0]) {
+        var ownerValue = this._traceOperandValue(node.children[0])
+        if (ownerValue && typeof ownerValue === 'object') return ownerValue[node.token]
+      }
+      return undefined
     },
     _ruleSetTraceOperator: function (operator) {
       if (operator === 'is_null' || operator === 'is_true' || operator === 'is_false') return '=='
@@ -1993,17 +2040,19 @@ export default {
       for (var i = 0; i < actions.length; i++) {
         var a = actions[i]
         if (!a || a.type !== 'assign') continue
+        var targetCode = a.targetOperand ? compileOperand(a.targetOperand) : (a.target || '?')
         result.push({
-          targetCode: a.target || '?',
-          targetName: this._actionTargetName(a),
-          valueText: this._displayVal(a.value)
+          targetCode: targetCode,
+          targetName: this._actionTargetName(a, targetCode),
+          valueText: a.valueOperand ? operandDisplay(a.valueOperand) : this._displayVal(a.value)
         })
       }
       return result
     },
-    _actionTargetName: function (action) {
-      var code = action && action.target ? action.target : ''
-      var label = this.varMap[code] || action.varLabel || ''
+    _actionTargetName: function (action, targetCode) {
+      var code = targetCode || (action && action.target ? action.target : '')
+      var operandLabel = action && action.targetOperand ? action.targetOperand.label : ''
+      var label = operandLabel || this.varMap[code] || action.varLabel || ''
       if (!label) return code || '?'
       return String(label).replace(new RegExp('\\s*' + this._escapeRegExp(code) + '$'), '').trim() || label
     },

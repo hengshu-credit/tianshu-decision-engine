@@ -207,6 +207,11 @@
         />
         <div v-if="!rule.outputFieldsJson || rule.outputFieldsJson.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
       </el-tab-pane>
+
+      <el-tab-pane>
+        <span slot="label"><i class="el-icon-document-checked" /> API 测试用例</span>
+        <api-scenario-panel v-if="rule.id" :rule="rule" />
+      </el-tab-pane>
     </el-tabs>
 
     <!-- 规则测试对话框 -->
@@ -375,6 +380,7 @@ import {
 } from '@/utils/referenceCatalog'
 import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
 import { normalizeTestSchema, schemaFieldsToTestFields, flattenSchemaSample } from '@/utils/testSchema'
+import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -390,7 +396,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'RuleDetail',
-  components: {},
+  components: { ApiScenarioPanel },
   data() {
     return {
       loading: false,

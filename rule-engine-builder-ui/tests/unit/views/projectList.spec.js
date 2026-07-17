@@ -2,7 +2,10 @@
 import { mount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
 import * as projectApi from '@/api/project'
+import * as apiDoc from '@/utils/apiDoc'
 import ProjectList from '@/views/project/ProjectList.vue'
+
+jest.mock('@/utils/apiDoc', () => ({ generateApiDocHtml: jest.fn(() => '<!DOCTYPE html><html></html>') }))
 
 afterEach(() => { jest.clearAllMocks() })
 
@@ -87,8 +90,8 @@ describe('ProjectList — 初始化与数据加载', () => {
     expect(wrapper.vm.dialogVisible).toBe(false)
   })
 
-  test('tokenDialogVisible 初始值为 false', () => {
-    expect(wrapper.vm.tokenDialogVisible).toBe(false)
+  test('项目列表不再逐项目查询脱敏令牌', () => {
+    expect(projectApi.getMaskedToken).not.toHaveBeenCalled()
   })
 
   test('分页参数初始化正确', () => {
@@ -214,18 +217,6 @@ describe('ProjectList — 项目操作', () => {
     expect(wrapper.vm.form.id).toBe(1)
   })
 
-  test('handleViewToken 打开令牌弹窗', async () => {
-    projectApi.getFullToken.mockResolvedValue({ code: 200, data: 'secret-token-12345678' })
-    const row = { id: 1, projectName: '项目A', maskedToken: '****abc' }
-    wrapper.vm.handleViewToken(row)
-    // API 调用是异步的，等待 Promise resolve
-    await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
-    expect(wrapper.vm.tokenDialogVisible).toBe(true)
-    expect(wrapper.vm.currentTokenProject).toBe('项目A')
-    expect(wrapper.vm.fullToken).toBe('secret-token-12345678')
-  })
-
   test('handleAuth 打开当前项目的多鉴权配置', () => {
     const row = { id: 1, projectCode: 'project_a', projectName: '项目A' }
 
@@ -245,51 +236,32 @@ describe('ProjectList — 项目操作', () => {
     expect(projectApi.deleteProject).toHaveBeenCalledWith(1)
   })
 
-  test('handleExportDoc 导出 API 文档', async () => {
-    projectApi.exportApiDoc.mockResolvedValue({ data: 'http://example.com/doc.pdf' })
-    const row = { id: 1, projectName: '测试项目' }
-    wrapper.vm.handleExportDoc(row)
-    await Vue.nextTick()
-    expect(projectApi.exportApiDoc).toHaveBeenCalledWith(1)
-  })
-
-  test('generateDocHtml 使用外部同步执行接口和真实 Java SDK 示例', () => {
-    const html = wrapper.vm.generateDocHtml({
-      project: { id: 1, projectCode: 'project_a', projectName: '项目A', status: 1 },
-      dataObjects: [],
-      rules: [{
-        id: 10,
-        ruleCode: 'RULE_SET_001',
-        ruleName: '规则集示例',
-        modelType: 'RULE_SET',
-        modelTypeLabel: '规则集',
-        status: 1,
-        statusLabel: '启用',
-        inputVariables: [{ varCode: 'score', varType: 'INTEGER', varSource: 'INPUT', varLabel: '评分' }],
-        outputVariables: [{ varCode: 'decision', varType: 'STRING', varLabel: '决策' }],
-        inputDataObjects: [],
-        outputDataObjects: []
-      }]
+  test('handleExportDoc 使用模块化生成器并内嵌 hengshucredit SVG', async () => {
+    const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
+    projectApi.exportApiDoc.mockResolvedValue({ code: 200, data: doc })
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      text: jest.fn().mockResolvedValue('<svg id="hengshucredit"></svg>')
     })
+    global.URL.createObjectURL = jest.fn(() => 'blob:api-doc')
+    global.URL.revokeObjectURL = jest.fn()
 
-    expect(html).toContain('/api/rule/sync/execute/RULE_SET_001')
-    expect(html).not.toContain('/api/rule/definition/execute')
-    expect(html).toContain('clientAppName')
-    expect(html).toContain('RuleEngineClient.builder()')
-    expect(html).toContain('.serverSideExecution(true)')
-    expect(html).toContain('X-Rule-Token')
-    expect(html).toContain('/api/rule/auth/token')
-    expect(html).toContain('Authorization: Bearer')
-    expect(html).toContain('.basicAuth(')
-    expect(html).toContain('API Key')
-    expect(html).toContain('HMAC')
-    expect(html).toContain('规则集命中列表')
-    expect(html).toContain('&quot;result&quot;: [')
-    expect(html).not.toContain('from rule_engine_client import RuleEngineClient')
+    await wrapper.vm.handleExportDoc({ id: 1 })
+
+    expect(projectApi.exportApiDoc).toHaveBeenCalledWith(1)
+    expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('images/hengshucredit_animated.svg'))
+    expect(apiDoc.generateApiDocHtml).toHaveBeenCalledWith(doc, {
+      logoSvg: '<svg id="hengshucredit"></svg>'
+    })
+    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc')
+    expect(wrapper.vm.generateDocHtml).toBeUndefined()
   })
 
   test('handleSubmit 新建项目时调用 createProject', async () => {
-    projectApi.createProject.mockResolvedValue({ code: 200, data: { accessToken: 'tok' } })
+    projectApi.createProject.mockResolvedValue({ code: 200, data: {
+      project: { id: 9, projectCode: 'new_project', projectName: '新项目' },
+      accessToken: 'tok'
+    } })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', description: '', status: 1 }
     withFormRef(wrapper)
     wrapper.vm.handleSubmit()
@@ -310,13 +282,36 @@ describe('ProjectList — 项目操作', () => {
   })
 
   test('handleSubmit 成功后关闭弹窗并刷新', async () => {
-    projectApi.createProject.mockResolvedValue({ code: 200, data: { accessToken: 'tok' } })
+    projectApi.createProject.mockResolvedValue({ code: 200, data: {
+      project: { id: 9, projectCode: 'new_project', projectName: '新项目' },
+      accessToken: 'tok'
+    } })
     wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }
     withFormRef(wrapper)
     wrapper.vm.handleSubmit()
     await new Promise(r => setTimeout(r, 50))
     await Vue.nextTick()
     expect(wrapper.vm.dialogVisible).toBe(false)
+  })
+
+  test('新建项目成功后打开统一鉴权弹窗', async () => {
+    projectApi.createProject.mockResolvedValue({
+      code: 200,
+      data: {
+        project: { id: 9, projectCode: 'new_project', projectName: '新项目' },
+        accessToken: 'secret'
+      }
+    })
+    wrapper.vm.form = { id: null, projectCode: 'new_project', projectName: '新项目', status: 1 }
+    withFormRef(wrapper)
+
+    wrapper.vm.handleSubmit()
+    await new Promise(r => setTimeout(r, 50))
+    await Vue.nextTick()
+
+    expect(wrapper.vm.authDialogVisible).toBe(true)
+    expect(wrapper.vm.currentAuthProject.id).toBe(9)
+    expect(wrapper.vm).not.toHaveProperty('tokenDialogVisible')
   })
 })
 

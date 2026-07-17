@@ -48,6 +48,25 @@ function compareNode(varCode, operator, actual, threshold, result) {
   }
 }
 
+function fieldCompareNode(rootCode, field, operator, actual, threshold, result) {
+  return {
+    type: 'OPERATOR',
+    token: operator,
+    evaluated: true,
+    value: result,
+    children: [
+      {
+        type: 'FIELD',
+        token: field,
+        evaluated: true,
+        value: actual,
+        children: [variableNode(rootCode, { [field]: actual })]
+      },
+      valueNode(threshold)
+    ]
+  }
+}
+
 function ruleSetIfNode(condNode, hit, hitInfo) {
   return {
     type: 'IF',
@@ -125,6 +144,81 @@ describe('TraceTree', () => {
     })
 
     expect(wrapper.vm.finalText).toBe('PASS')
+  })
+
+  test('完整规则帧先还原绝对引用再传递表达式追踪', () => {
+    const faces = { faces: [{ score: 0.98 }] }
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify([{
+        schemaVersion: 2,
+        traceKind: 'RULE',
+        traceId: 'DFG000020260717120000000000000000001',
+        ruleCode: 'FACE_IDENTITY',
+        ruleName: '人脸活体与证件一致性核验',
+        modelType: 'FLOW',
+        status: 'SUCCESS',
+        expressionTrace: [
+          assignNode('facenox_detector_face_faces', faces),
+          assignNode('buffalo_det_face_faces', {
+            $ref: '$[0].expressionTrace[0].children[1].value'
+          })
+        ],
+        children: []
+      }])
+    })
+
+    expect(wrapper.vm.ruleTraceFrame.expressionTrace[1].value).toEqual(faces)
+    expect(wrapper.find('trace-tree-stub').props('traceInfo')).not.toContain('$ref')
+  })
+
+  test.each(['TABLE', 'TREE', 'FLOW', 'RULE_SET', 'CROSS', 'SCORE', 'CROSS_ADV', 'SCORE_ADV', 'SCRIPT'])(
+    '%s 追踪在渲染前清除 Fastjson 引用占位',
+    modelType => {
+      const wrapper = mountTraceTree({
+        modelType,
+        traceInfo: JSON.stringify([
+          assignNode('source', { decision: 'PASS' }),
+          assignNode('result', { $ref: '$[0].children[1].value' })
+        ])
+      })
+
+      expect(JSON.stringify(wrapper.vm.rawTraceData)).not.toContain('$ref')
+      expect(wrapper.text()).not.toContain('$ref')
+      wrapper.destroy()
+    }
+  )
+
+  test('决策流对象参数和结果显示为可读 JSON', () => {
+    const faces = { faces: [{ score: 0.98 }] }
+    const wrapper = mountTraceTree({
+      modelType: 'FLOW',
+      traceInfo: JSON.stringify([
+        assignNode('facenox_detector_face_faces', faces),
+        {
+          type: 'FUNCTION',
+          token: 'setRuntimeValue',
+          evaluated: true,
+          value: { $ref: '$[0].children[1].value' },
+          children: [
+            valueNode('facenox_detector_face_faces', '"facenox_detector_face_faces"'),
+            {
+              type: 'VARIABLE',
+              token: 'facenox_detector_face_faces',
+              evaluated: true,
+              value: { $ref: '$[0].children[1].value' },
+              children: []
+            }
+          ]
+        },
+        assignNode('_result', 'DONE')
+      ])
+    })
+    const functionCard = wrapper.vm.flowCards.find(card => card.stepType === 'function')
+
+    expect(functionCard.funcArgs[1].value).toBe(JSON.stringify(faces))
+    expect(functionCard.resultDisplay).toBe(JSON.stringify(faces))
+    expect(wrapper.vm._displayVal(faces)).toBe(JSON.stringify(faces))
+    expect(wrapper.text()).not.toContain('[object Object]')
   })
 
   test('规则集追踪按规则独立成行并展示命中摘要', () => {
@@ -225,6 +319,80 @@ describe('TraceTree', () => {
     const item = wrapper.vm._buildRuleSetConditionLeaf(leaf, null)
 
     expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', thresholdText: '成年年龄 adultAge = 18', result: true })
+  })
+
+  test('规则集统一操作数动作展示目标和值', () => {
+    const wrapper = mountTraceTree({})
+    const actions = wrapper.vm._buildRuleSetActionItems([{
+      type: 'assign',
+      targetOperand: {
+        kind: 'PATH', value: 'result', code: 'result', label: '决策结果', valueType: 'ENUM'
+      },
+      valueOperand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' }
+    }])
+
+    expect(actions).toEqual([{
+      targetCode: 'result', targetName: '决策结果', valueText: '1'
+    }])
+  })
+
+  test('规则集对象字段从 FIELD 追踪取值并以输出结果校准命中状态', () => {
+    const hit1 = { ruleCode: 'R0001', ruleName: '年龄规则', priority: 1, order: 1 }
+    const hit2 = { ruleCode: 'R0002', ruleName: '评分规则', priority: 1, order: 2 }
+    const wrapper = mountTraceTree({
+      modelType: 'RULE_SET',
+      definitionModel: {
+        executionMode: 'PARALLEL',
+        rules: [
+          {
+            ruleCode: 'R0001',
+            ruleName: '年龄规则',
+            priority: 1,
+            enabled: true,
+            conditionRoot: {
+              type: 'group',
+              op: 'AND',
+              children: [{
+                type: 'leaf',
+                operator: '<',
+                leftOperand: { kind: 'REFERENCE', value: 'age', code: 'age', label: '年龄', valueType: 'NUMBER' },
+                rightOperand: { kind: 'LITERAL', value: '18', valueType: 'NUMBER' }
+              }]
+            },
+            actionData: []
+          },
+          {
+            ruleCode: 'R0002',
+            ruleName: '评分规则',
+            priority: 1,
+            enabled: true,
+            conditionRoot: {
+              type: 'group',
+              op: 'AND',
+              children: [{
+                type: 'leaf',
+                operator: '>=',
+                leftOperand: { kind: 'REFERENCE', value: 'score_f1.score', code: 'score_f1.score', label: '欺诈分F1/评分', valueType: 'DOUBLE' },
+                rightOperand: { kind: 'LITERAL', value: '0', valueType: 'DOUBLE' }
+              }]
+            },
+            actionData: []
+          }
+        ]
+      },
+      traceInfo: JSON.stringify([
+        ruleSetIfNode(compareNode('age', '<', 17, 18, true), true, hit1),
+        ruleSetIfNode(fieldCompareNode('score_f1', 'score', '>=', 260, 0, true), true, hit2)
+      ]),
+      outputResult: JSON.stringify([hit2])
+    })
+
+    expect(wrapper.vm.ruleSetRows[0]).toMatchObject({ ruleCode: 'R0001', status: 'miss', hit: false })
+    expect(wrapper.vm.ruleSetRows[1]).toMatchObject({ ruleCode: 'R0002', status: 'hit', hit: true })
+    expect(wrapper.vm.ruleSetRows[1].conditions[0]).toMatchObject({
+      varCode: 'score_f1.score', actualText: '260', result: true
+    })
+    expect(wrapper.vm.ruleSetHitRows.map(row => row.ruleCode)).toEqual(['R0002'])
   })
 
   test('共享会话追踪复用各子规则原有表达式追踪样式', () => {

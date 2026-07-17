@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ApiDocDTO;
+import com.hengshucredit.rule.model.dto.ProjectAuthDTO;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
@@ -175,6 +176,9 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     @Resource
     private RuleModelVarParser ruleModelVarParser;
 
+    @Resource
+    private RuleApiDocScenarioService apiDocScenarioService;
+
     /**
      * 导出项目API文档
      */
@@ -193,6 +197,23 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         projectInfo.setDescription(project.getDescription());
         projectInfo.setStatus(project.getStatus());
         doc.setProject(projectInfo);
+
+        List<ApiDocDTO.AuthenticationInfo> authenticationInfos = new ArrayList<>();
+        List<ProjectAuthDTO> authentications = projectAuthService.listAuths(projectId);
+        if (authentications != null) {
+            for (ProjectAuthDTO authentication : authentications) {
+                if (authentication == null || !Integer.valueOf(1).equals(authentication.getStatus())) continue;
+                ApiDocDTO.AuthenticationInfo info = new ApiDocDTO.AuthenticationInfo();
+                info.setAuthName(authentication.getAuthName());
+                info.setAuthType(authentication.getAuthType());
+                info.setPlacement(authentication.getPlacement());
+                info.setParameterName(authentication.getParameterName());
+                info.setTokenTtlSeconds(authentication.getTokenTtlSeconds());
+                info.setTokenGraceSeconds(authentication.getTokenGraceSeconds());
+                authenticationInfos.add(info);
+            }
+        }
+        doc.setAuthentications(authenticationInfos);
 
         // ========== 1. 先构建变量列表和 Map ==========
         List<RuleVariable> variables = variableMapper.selectList(
@@ -385,6 +406,26 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             }
             ruleInfo.setInputDataObjects(inputDOs);
             ruleInfo.setOutputDataObjects(outputDOs);
+
+            List<ApiDocDTO.ScenarioInfo> scenarioInfos = new ArrayList<>();
+            List<RuleApiDocScenario> scenarios = apiDocScenarioService.listExportable(
+                    def.getId(), def.getPublishedVersion());
+            if (scenarios != null) {
+                for (RuleApiDocScenario scenario : scenarios) {
+                    ApiDocDTO.ScenarioInfo scenarioInfo = new ApiDocDTO.ScenarioInfo();
+                    scenarioInfo.setId(scenario.getId());
+                    scenarioInfo.setScenarioName(scenario.getScenarioName());
+                    scenarioInfo.setDescription(scenario.getDescription());
+                    scenarioInfo.setRequestJson(scenario.getRequestJson());
+                    scenarioInfo.setResponseJson(scenario.getResponseJson());
+                    scenarioInfo.setOuterCode(scenario.getOuterCode());
+                    scenarioInfo.setBusinessCodePath(scenario.getBusinessCodePath());
+                    scenarioInfo.setBusinessCode(scenario.getBusinessCode());
+                    scenarioInfo.setSortOrder(scenario.getSortOrder());
+                    scenarioInfos.add(scenarioInfo);
+                }
+            }
+            ruleInfo.setScenarios(scenarioInfos);
 
             ruleInfos.add(ruleInfo);
         }

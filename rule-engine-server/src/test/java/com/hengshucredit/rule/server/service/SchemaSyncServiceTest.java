@@ -88,6 +88,22 @@ public class SchemaSyncServiceTest {
     }
 
     @Test
+    public void apiDocScenarioSchemaCreatesTableWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();
+        jdbcTemplate.missingTables.add("rule_api_doc_scenario");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureApiDocScenarioSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_api_doc_scenario`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
+    }
+
+    @Test
     public void traceSchemaCreatesRegistryAndAddsLinkColumns() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
         FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate(
