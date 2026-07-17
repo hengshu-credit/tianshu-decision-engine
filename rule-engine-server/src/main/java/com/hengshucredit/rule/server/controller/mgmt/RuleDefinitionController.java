@@ -391,10 +391,6 @@ public class RuleDefinitionController {
             return null;
         }
         String json = modelJson.trim();
-        if ((json.startsWith("\"") && json.endsWith("\""))
-                || (json.startsWith("'") && json.endsWith("'"))) {
-            json = json.substring(1, json.length() - 1);
-        }
         if (json.startsWith("modelJson=")) {
             json = json.substring("modelJson=".length());
         }
@@ -406,6 +402,18 @@ public class RuleDefinitionController {
             } catch (Exception e) {
                 throw new IllegalArgumentException("模型 JSON URL 解码失败: " + e.getMessage(), e);
             }
+        }
+        if (json.startsWith("\"") && json.endsWith("\"")) {
+            try {
+                Object decoded = com.alibaba.fastjson.JSON.parse(json);
+                if (decoded instanceof String) {
+                    json = ((String) decoded).trim();
+                }
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException("模型 JSON 字符串解码失败: " + e.getMessage(), e);
+            }
+        } else if (json.startsWith("'") && json.endsWith("'")) {
+            json = json.substring(1, json.length() - 1);
         }
         return json;
     }

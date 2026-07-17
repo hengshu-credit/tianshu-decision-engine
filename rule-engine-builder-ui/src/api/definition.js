@@ -33,7 +33,12 @@ export function saveContent(data) {
 }
 
 export function refreshFields(definitionId, modelJson) {
-  return request({ url: `/rule/definition/refreshFields/${definitionId}`, method: 'post', data: modelJson })
+  return request({
+    url: `/rule/definition/refreshFields/${definitionId}`,
+    method: 'post',
+    data: modelJson,
+    headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
+  })
 }
 
 export function getDetail(id) {
@@ -92,8 +97,10 @@ export function rollbackVersion(definitionId, version) {
   return request({ url: `/rule/definition/rollback/${definitionId}/${version}`, method: 'post' })
 }
 
-export function executeRule(data) {
-  return request({ url: '/rule/definition/execute', method: 'post', data, timeout: 3 * 60 * 1000 })
+export const DEFAULT_RULE_REQUEST_TIMEOUT_MS = 180000
+
+export function executeRule(data, timeoutMs = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {
+  return request({ url: '/rule/definition/execute', method: 'post', data, timeout: timeoutMs })
 }
 
 export function getRuleTestSchema(data) {

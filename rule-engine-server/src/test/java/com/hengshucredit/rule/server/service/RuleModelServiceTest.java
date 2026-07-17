@@ -61,7 +61,8 @@ public class RuleModelServiceTest {
                 (proxy, method, args) -> "selectList".equals(method.getName())
                         ? Collections.emptyList() : defaultValue(method.getReturnType())));
         ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
-        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null) {
+        ReflectionTestUtils.setField(service, "modelExecutionTimeoutExecutor", new ModelExecutionTimeoutExecutor());
+        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null, null) {
             @Override
             public Map<String, Object> execute(byte[] modelBytes, String config, Map<String, Object> params) {
                 Map<String, Object> output = new LinkedHashMap<>();
@@ -118,7 +119,7 @@ public class RuleModelServiceTest {
         RuleModel model = service.uploadAndParse(
                 new MockMultipartFile("file", "anti-spoof-mn3.onnx", "application/octet-stream", new byte[]{1, 2, 3}),
                 null, "GLOBAL", "mn3", "MN3", "NEURAL_NET", null, "initial", "{\"face_image\":\"base64\"}",
-                "MN3_ANTISPOOF", "{}");
+                "MN3_ANTISPOOF", "{}", 1, 90000);
 
         assertEquals(Long.valueOf(42L), model.getId());
         assertEquals(Arrays.asList("image", "faces"), Arrays.asList(inputs.get(0).getFieldName(), inputs.get(1).getFieldName()));
@@ -129,6 +130,8 @@ public class RuleModelServiceTest {
         assertTrue(insertedModel.get().getModelConfig().contains("MN3_ANTISPOOF"));
         assertTrue(insertedModel.get().getModelConfig().contains("output1"));
         assertTrue(insertedModel.get().getModelConfig().contains("testParams"));
+        assertEquals(Integer.valueOf(1), insertedModel.get().getPreloadOnStartup());
+        assertEquals(Integer.valueOf(90000), insertedModel.get().getExecutionTimeoutMs());
     }
 
     @Test
@@ -158,6 +161,42 @@ public class RuleModelServiceTest {
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
         assertFalse(selectedColumns.get().contains("model_content"));
         assertEquals(null, result.getRecords().get(0).getModelContent());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void updateMetadataDoesNotReadOrWriteLargeModelContent() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        AtomicReference<String> selectedColumns = new AtomicReference<>();
+        AtomicReference<RuleModel> updatedModel = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectOne".equals(method.getName())) {
+                LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
+                selectedColumns.set(wrapper.getSqlSelect());
+                RuleModel existing = model();
+                existing.setModelContent(null);
+                return existing;
+            }
+            if ("updateById".equals(method.getName())) {
+                updatedModel.set((RuleModel) args[0]);
+                return 1;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+
+        RuleModel changes = new RuleModel();
+        changes.setId(1L);
+        changes.setModelName("updated");
+        changes.setPreloadOnStartup(1);
+        changes.setExecutionTimeoutMs(90000);
+        service.update(changes);
+
+        assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
+        assertFalse(selectedColumns.get().contains("model_content"));
+        assertEquals(null, updatedModel.get().getModelContent());
+        assertEquals(Integer.valueOf(1), updatedModel.get().getPreloadOnStartup());
+        assertEquals(Integer.valueOf(90000), updatedModel.get().getExecutionTimeoutMs());
     }
 
     @Test

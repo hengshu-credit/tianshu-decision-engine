@@ -1,10 +1,8 @@
 package com.hengshucredit.rule.server.service.onnx;
 
 import org.opencv.core.Mat;
-import org.opencv.core.MatOfByte;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
-import org.opencv.objdetect.FaceDetectorYN;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -13,26 +11,30 @@ import java.util.Map;
 
 public class YunetFaceDetectionExecutor {
 
+    private final YunetDetectorCache detectorCache;
+
+    public YunetFaceDetectionExecutor() {
+        this(new YunetDetectorCache());
+    }
+
+    public YunetFaceDetectionExecutor(YunetDetectorCache detectorCache) {
+        this.detectorCache = detectorCache;
+    }
+
     public List<Map<String, Object>> detect(byte[] modelBytes, String imageBase64, OnnxTaskConfig config) {
         Mat bgr = ImageTensorUtils.decodeBase64(imageBase64);
         Mat rgb = new Mat();
         Mat faces = new Mat();
-        MatOfByte modelBuffer = new MatOfByte(modelBytes);
-        MatOfByte configBuffer = new MatOfByte();
         try {
             Imgproc.cvtColor(bgr, rgb, Imgproc.COLOR_BGR2RGB);
-            FaceDetectorYN detector = FaceDetectorYN.create("ONNX", modelBuffer, configBuffer,
-                    new Size(rgb.cols(), rgb.rows()),
-                    (float) config.getDouble("confidenceThreshold"),
-                    (float) config.getDouble("nmsThreshold"), config.getInt("topK"));
-            detector.setInputSize(new Size(rgb.cols(), rgb.rows()));
-            detector.detect(rgb, faces);
-            return toFaces(faces, rgb.cols(), rgb.rows(), config.getInt("minFaceSize"), 5);
+            return detectorCache.withDetector(modelBytes, config, detector -> {
+                detector.setInputSize(new Size(rgb.cols(), rgb.rows()));
+                detector.detect(rgb, faces);
+                return toFaces(faces, rgb.cols(), rgb.rows(), config.getInt("minFaceSize"), 5);
+            });
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("YuNet 人脸检测失败: " + e.getMessage(), e);
         } finally {
-            configBuffer.release();
-            modelBuffer.release();
             faces.release();
             rgb.release();
             bgr.release();

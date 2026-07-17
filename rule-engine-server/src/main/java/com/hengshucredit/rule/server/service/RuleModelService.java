@@ -31,6 +31,9 @@ public class RuleModelService {
 
     public static final String SCOPE_GLOBAL = "GLOBAL";
     public static final String SCOPE_PROJECT = "PROJECT";
+    public static final int DEFAULT_EXECUTION_TIMEOUT_MS = 120000;
+    public static final int MIN_EXECUTION_TIMEOUT_MS = 100;
+    public static final int MAX_EXECUTION_TIMEOUT_MS = 1800000;
 
     private final PMMLModelExecutor pmmlExecutor = new PMMLModelExecutor();
 
@@ -60,6 +63,8 @@ public class RuleModelService {
     private OnnxRuntimeSessionManager onnxSessionManager;
     @Resource
     private OnnxModelExecutionService onnxModelExecutionService;
+    @Resource
+    private ModelExecutionTimeoutExecutor modelExecutionTimeoutExecutor;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -171,12 +176,20 @@ public class RuleModelService {
             String modelCode, String modelName, String modelType, String description,
             String changeLog, String testParams) {
         return uploadAndParse(file, projectId, scope, modelCode, modelName, modelType, description,
-                changeLog, testParams, null, null);
+                changeLog, testParams, null, null, 0, DEFAULT_EXECUTION_TIMEOUT_MS);
     }
 
     public RuleModel uploadAndParse(MultipartFile file, Long projectId, String scope,
             String modelCode, String modelName, String modelType, String description,
             String changeLog, String testParams, String onnxTaskType, String onnxConfig) {
+        return uploadAndParse(file, projectId, scope, modelCode, modelName, modelType, description,
+                changeLog, testParams, onnxTaskType, onnxConfig, 0, DEFAULT_EXECUTION_TIMEOUT_MS);
+    }
+
+    public RuleModel uploadAndParse(MultipartFile file, Long projectId, String scope,
+            String modelCode, String modelName, String modelType, String description,
+            String changeLog, String testParams, String onnxTaskType, String onnxConfig,
+            Integer preloadOnStartup, Integer executionTimeoutMs) {
         try {
             byte[] fileBytes = file.getBytes();
             String modelContent = Base64.getEncoder().encodeToString(fileBytes);
@@ -241,6 +254,8 @@ public class RuleModelService {
             if (!modelConfig.isEmpty()) {
                 model.setModelConfig(com.alibaba.fastjson.JSON.toJSONString(modelConfig));
             }
+            model.setPreloadOnStartup(normalizedPreload(preloadOnStartup));
+            model.setExecutionTimeoutMs(normalizedExecutionTimeout(executionTimeoutMs));
             model.setInputFieldCount(inputFields != null ? inputFields.size() : 0);
             model.setOutputFieldCount(outputFields != null ? outputFields.size() : 0);
             model.setCurrentVersion(1);
@@ -326,7 +341,8 @@ public class RuleModelService {
      * 更新模型元信息（不包括文件内容和编码/项目等核心字段）
      */
     public void update(RuleModel model) {
-        RuleModel existing = modelMapper.selectById(model.getId());
+        RuleModel existing = modelMapper.selectOne(
+                withoutModelContent().eq(RuleModel::getId, model.getId()));
         if (existing == null) {
             throw new IllegalArgumentException("模型不存在");
         }
@@ -335,6 +351,12 @@ public class RuleModelService {
         existing.setDescription(model.getDescription());
         existing.setTargetCategories(model.getTargetCategories());
         existing.setModelVersion(model.getModelVersion());
+        if (model.getPreloadOnStartup() != null) {
+            existing.setPreloadOnStartup(normalizedPreload(model.getPreloadOnStartup()));
+        }
+        if (model.getExecutionTimeoutMs() != null) {
+            existing.setExecutionTimeoutMs(normalizedExecutionTimeout(model.getExecutionTimeoutMs()));
+        }
         if (model.getStatus() != null) {
             existing.setStatus(model.getStatus());
         }
@@ -860,6 +882,12 @@ public class RuleModelService {
             throw new IllegalArgumentException("模型文件内容为空");
         }
 
+        int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
+        return modelExecutionTimeoutExecutor.execute(() -> executeConfiguredModel(model, params), timeoutMs);
+    }
+
+    private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params) {
+        Long modelId = model.getId();
         List<RuleModelInputField> inputFields = listInputFields(modelId);
         Map<String, Object> referenceValues = referenceValues(model.getProjectId(), params);
         Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
@@ -879,6 +907,23 @@ public class RuleModelService {
         result.put("modelFormat", model.getModelFormat());
         result.put("inputParams", boundParams);
         return result;
+    }
+
+    private int normalizedExecutionTimeout(Integer timeoutMs) {
+        int value = timeoutMs == null ? DEFAULT_EXECUTION_TIMEOUT_MS : timeoutMs;
+        if (value < MIN_EXECUTION_TIMEOUT_MS || value > MAX_EXECUTION_TIMEOUT_MS) {
+            throw new IllegalArgumentException("模型执行超时时间须在 " + MIN_EXECUTION_TIMEOUT_MS
+                    + " 至 " + MAX_EXECUTION_TIMEOUT_MS + " 毫秒之间");
+        }
+        return value;
+    }
+
+    private int normalizedPreload(Integer preloadOnStartup) {
+        int value = preloadOnStartup == null ? 0 : preloadOnStartup;
+        if (value != 0 && value != 1) {
+            throw new IllegalArgumentException("启动预加载配置只能为 0 或 1");
+        }
+        return value;
     }
 
     private Map<String, Object> executeOnnx(RuleModel model, Map<String, Object> params) {

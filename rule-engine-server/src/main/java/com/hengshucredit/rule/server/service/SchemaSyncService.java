@@ -61,6 +61,7 @@ public class SchemaSyncService {
             ensureProjectAuthSchema();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
+            ensureModelRuntimeColumns();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldUniqueKey();
         } catch (Exception e) {
@@ -544,6 +545,15 @@ public class SchemaSyncService {
     private void ensureModelFieldForeignKeysRemoved() {
         dropForeignKeyIfExists("rule_model_input_field", "fk_input_var");
         dropForeignKeyIfExists("rule_model_output_field", "fk_output_var");
+    }
+
+    private void ensureModelRuntimeColumns() {
+        String table = "rule_model";
+        if (!tableExists(table)) return;
+        addColumnIfMissing(table, "preload_on_startup",
+                "`preload_on_startup` TINYINT NOT NULL DEFAULT 0 COMMENT '服务启动时预加载：0-否，1-是' AFTER `model_config`");
+        addColumnIfMissing(table, "execution_timeout_ms",
+                "`execution_timeout_ms` INT NOT NULL DEFAULT 120000 COMMENT '单次模型执行超时时间（毫秒）' AFTER `preload_on_startup`");
     }
 
     private void ensureDataObjectFieldUniqueKey() {

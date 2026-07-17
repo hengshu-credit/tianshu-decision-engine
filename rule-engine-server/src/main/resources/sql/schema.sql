@@ -603,6 +603,8 @@ CREATE TABLE IF NOT EXISTS `rule_model` (
   `model_file_name`    VARCHAR(256) DEFAULT NULL             COMMENT '上传时的文件名',
   `model_file_size`    BIGINT       DEFAULT NULL             COMMENT '文件大小（字节）',
   `model_config`       JSON         DEFAULT NULL             COMMENT '模型特有配置（格式无关JSON）',
+  `preload_on_startup` TINYINT      NOT NULL DEFAULT 0       COMMENT '服务启动时预加载：0-否，1-是',
+  `execution_timeout_ms` INT        NOT NULL DEFAULT 120000  COMMENT '单次模型执行超时时间（毫秒）',
   `input_field_count`  INT          DEFAULT NULL             COMMENT '输入字段数量',
   `output_field_count` INT          DEFAULT NULL             COMMENT '输出字段数量',
   `target_categories`  VARCHAR(256) DEFAULT NULL             COMMENT '目标变量类别数（分类模型）',

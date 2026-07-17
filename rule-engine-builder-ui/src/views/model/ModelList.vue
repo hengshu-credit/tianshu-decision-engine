@@ -80,6 +80,12 @@
         <el-table-column label="模型格式" min-width="90" align="center">
           <template slot-scope="{ row }"><el-tag size="mini" type="info">{{ row.modelFormat }}</el-tag></template>
         </el-table-column>
+        <el-table-column label="启动预加载" min-width="90" align="center">
+          <template slot-scope="{ row }">{{ row.modelFormat === 'ONNX' && row.preloadOnStartup === 1 ? '是' : '否' }}</template>
+        </el-table-column>
+        <el-table-column label="执行超时" min-width="90" align="center">
+          <template slot-scope="{ row }">{{ row.executionTimeoutMs || 120000 }} ms</template>
+        </el-table-column>
         <el-table-column label="字段数" min-width="80" align="center">
           <template slot-scope="{ row }">{{ row.inputFieldCount || 0 }}进 / {{ row.outputFieldCount || 0 }}出</template>
         </el-table-column>
@@ -180,6 +186,14 @@
             </el-form-item>
           </template>
         </template>
+        <el-form-item v-if="isOnnxFile" label="启动预加载">
+          <el-switch v-model="uploadForm.preloadOnStartup" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
+          <div style="color:#909399;font-size:11px;margin-top:2px;">服务启动时加载到内存，避免第一次推理再加载模型</div>
+        </el-form-item>
+        <el-form-item label="执行超时">
+          <el-input-number v-model="uploadForm.executionTimeoutMs" :min="100" :max="1800000" :step="1000" />
+          <span style="margin-left:8px;color:#909399;">毫秒</span>
+        </el-form-item>
         <el-form-item label="变更说明">
           <el-input v-model="uploadForm.changeLog" type="textarea" :rows="2" placeholder="简要描述本次变更内容" />
         </el-form-item>
@@ -223,6 +237,13 @@
         <el-form-item label="模型大类">{{ modelTypeLabel(editForm.modelType) }}</el-form-item>
         <el-form-item label="模型格式">{{ editForm.modelFormat }}</el-form-item>
         <el-form-item label="作用范围">{{ editForm.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-form-item>
+        <el-form-item v-if="editForm.modelFormat === 'ONNX'" label="启动预加载">
+          <el-switch v-model="editForm.preloadOnStartup" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
+        </el-form-item>
+        <el-form-item label="执行超时">
+          <el-input-number v-model="editForm.executionTimeoutMs" :min="100" :max="1800000" :step="1000" />
+          <span style="margin-left:8px;color:#909399;">毫秒</span>
+        </el-form-item>
         <el-form-item label="目标类别">
           <el-input v-model="editForm.targetCategories" placeholder="分类模型的目标变量类别数，如 2" />
         </el-form-item>
@@ -289,7 +310,7 @@ export default {
       // 上传
       uploadVisible: false, uploading: false, uploadProgress: 0,
       onnxTasks: ONNX_TASKS,
-      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {} },
+      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {}, preloadOnStartup: 0, executionTimeoutMs: 120000 },
       uploadRules: {
         modelCode: [{
           required: true,
@@ -340,7 +361,7 @@ export default {
 
       // 编辑模型
       editVisible: false, editLoading: false,
-      editForm: { id: null, modelCode: '', modelName: '', modelType: '', modelFormat: '', scope: '', targetCategories: '', modelVersion: '', description: '', status: 1 },
+      editForm: { id: null, modelCode: '', modelName: '', modelType: '', modelFormat: '', scope: '', targetCategories: '', modelVersion: '', description: '', status: 1, preloadOnStartup: 0, executionTimeoutMs: 120000 },
       editRules: {
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }]
       }
@@ -443,7 +464,7 @@ export default {
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
 
     handleUpload() {
-      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {} }
+      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {}, preloadOnStartup: 0, executionTimeoutMs: 120000 }
       this.uploadProgress = 0
       this.fileList = []; this.selectedFile = null; this.selectedFileName = ''
       this.uploadVisible = true
@@ -485,6 +506,8 @@ export default {
           formData.append('description', this.uploadForm.description || '')
           formData.append('changeLog', this.uploadForm.changeLog || '')
           formData.append('testParams', this.uploadForm.testParams || '')
+          formData.append('preloadOnStartup', this.uploadForm.preloadOnStartup)
+          formData.append('executionTimeoutMs', this.uploadForm.executionTimeoutMs)
           if (this.isOnnxFile) {
             formData.append('onnxTaskType', this.uploadForm.onnxTaskType)
             formData.append('onnxConfig', JSON.stringify(this.uploadForm.onnxConfig || {}))
@@ -526,7 +549,9 @@ export default {
         targetCategories: row.targetCategories || '',
         modelVersion: row.modelVersion || '',
         description: row.description || '',
-        status: row.status || 1
+        status: row.status == null ? 1 : row.status,
+        preloadOnStartup: row.preloadOnStartup === 1 ? 1 : 0,
+        executionTimeoutMs: row.executionTimeoutMs || 120000
       }
       this.editVisible = true
       this.$nextTick(() => { if (this.$refs.editForm) this.$refs.editForm.clearValidate() })
@@ -542,7 +567,9 @@ export default {
             description: this.editForm.description,
             targetCategories: this.editForm.targetCategories || null,
             modelVersion: this.editForm.modelVersion || null,
-            status: this.editForm.status
+            status: this.editForm.status,
+            preloadOnStartup: this.editForm.preloadOnStartup,
+            executionTimeoutMs: this.editForm.executionTimeoutMs
           })
           this.$message.success('保存成功')
           this.editVisible = false

@@ -24,6 +24,8 @@
       <el-descriptions-item label="发布版本">{{ model.publishedVersion || '-' }}</el-descriptions-item>
       <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 推理任务">{{ onnxTaskLabel }}</el-descriptions-item>
       <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 原始节点">{{ onnxNodeSummary }}</el-descriptions-item>
+      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="启动预加载">{{ model.preloadOnStartup === 1 ? '是' : '否' }}</el-descriptions-item>
+      <el-descriptions-item label="执行超时">{{ model.executionTimeoutMs || 120000 }} ms</el-descriptions-item>
     </el-descriptions>
 
     <!-- 描述 -->
@@ -298,6 +300,7 @@
         </div>
 
         <el-alert v-if="model.modelFormat && !supportsOnlineExecution" :title="model.modelFormat + ' 格式暂不支持在线执行'" type="warning" :closable="false" style="margin-bottom:12px;" />
+        <el-alert v-else :title="'模型执行超时 ' + (model.executionTimeoutMs || 120000) + ' ms；页面请求超时 ' + modelRequestTimeoutMs + ' ms'" type="info" :closable="false" style="margin-bottom:12px;" />
 
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
@@ -467,6 +470,9 @@ export default {
       const inputs = metadata.inputs ? Object.keys(metadata.inputs).length : 0
       const outputs = metadata.outputs ? Object.keys(metadata.outputs).length : 0
       return inputs + ' 入 / ' + outputs + ' 出'
+    },
+    modelRequestTimeoutMs() {
+      return (this.model.executionTimeoutMs || 120000) + 5000
     },
     inputFieldsTotal() {
       return this.model && this.model.inputFields ? this.model.inputFields.length : 0
@@ -1220,7 +1226,7 @@ export default {
         params = buildNestedSchemaParams(this.testFields, this.testParams)
       }
       try {
-        const res = await api.executeModel(this.model.id, params)
+        const res = await api.executeModel(this.model.id, params, this.modelRequestTimeoutMs)
         this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)

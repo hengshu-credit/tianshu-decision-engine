@@ -19,6 +19,7 @@ final class BuiltinFunctionCatalog {
     private static final String DIGEST_CLASS = "com.hengshucredit.rule.core.function.DigestBuiltinFunctions";
     private static final String RUNTIME_CONTEXT_CLASS = "com.hengshucredit.rule.core.function.RuntimeContextBuiltinFunctions";
     private static final String RANDOM_CLASS = "com.hengshucredit.rule.core.function.RandomBuiltinFunctions";
+    private static final String IMAGE_CLASS = "com.hengshucredit.rule.core.function.ImageInputFunctions";
 
     private BuiltinFunctionCatalog() {
     }
@@ -76,6 +77,9 @@ final class BuiltinFunctionCatalog {
         list.add(fn("facenoxLivenessList", "Facenox 活体结果列表", "逐人脸计算活体结果并保留每张人脸的原始 logits", params(
                 p("results", "LIST", "模型人脸结果", sampleFacenoxResults()),
                 p("threshold", "NUMBER", "差值阈值", 0.5)), "LIST", DECISION_CLASS, "facenoxLivenessList"));
+        list.add(fn("imageToBase64", "图片转 Base64", "自动识别 Base64、Data URI 或 HTTP(S) URL；URL 下载最多 10 MB，超时由参数明确配置", params(
+                p("image", "STRING", "图片 Base64 或 URL", "dGVzdC1pbWFnZS1jb250ZW50"),
+                p("timeoutMs", "NUMBER", "URL 下载超时（毫秒）", 10000)), "STRING", IMAGE_CLASS, "imageToBase64"));
         list.add(fn("numPow", "数值幂运算", "返回 value 的 exponent 次幂", params(p("value", "NUMBER", "底数", 2), p("exponent", "NUMBER", "指数", 3)), "NUMBER", DECISION_CLASS, "numPow"));
         list.add(fn("numBetween", "数值区间判断", "判断 value 是否在 [min, max] 闭区间内", params(p("value", "NUMBER", "数值", 85), p("min", "NUMBER", "下限", 60), p("max", "NUMBER", "上限", 100)), "BOOLEAN", DECISION_CLASS, "numBetween"));
         list.add(fn("randomInt", "随机整数",

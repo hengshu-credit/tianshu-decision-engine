@@ -129,6 +129,24 @@ public final class RuntimeContextBridge {
         }
     }
 
+    public static boolean containsRegisteredConstants(Object context) {
+        if (!(context instanceof Map)) {
+            return false;
+        }
+        Map<String, Object> constants = CONSTANT_VALUES.get();
+        if (constants == null || constants.isEmpty()) {
+            return false;
+        }
+        Map<?, ?> values = (Map<?, ?>) context;
+        for (Map.Entry<String, Object> entry : constants.entrySet()) {
+            if (!values.containsKey(entry.getKey())
+                    || !Objects.deepEquals(entry.getValue(), values.get(entry.getKey()))) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     @SuppressWarnings("unchecked")
     public static void restoreConstants(Object context) {
         if (!(context instanceof Map)) {

@@ -22,6 +22,10 @@ public final class ImageTensorUtils {
     private ImageTensorUtils() {
     }
 
+    static void ensureLoaded() {
+        // 调用本方法会触发类初始化，确保任何 OpenCV 对象创建前原生库已加载。
+    }
+
     public static Mat decodeBase64(String encoded) {
         if (encoded == null || encoded.trim().isEmpty()) {
             throw new IllegalArgumentException("图片 Base64 不能为空");

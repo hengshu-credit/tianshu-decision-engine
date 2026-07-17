@@ -1,7 +1,9 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import org.junit.After;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -13,6 +15,11 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
 public class RuleFunctionServiceTest {
+
+    @After
+    public void clearRuntimeContext() {
+        RuntimeContextBridge.clear();
+    }
 
     @Test
     public void testFunctionExecutesScriptFunctionWithContextParams() {
@@ -79,6 +86,30 @@ public class RuleFunctionServiceTest {
         Object result = ReflectionTestUtils.invokeMethod(service, "invoke", 1L, Arrays.asList(12.345));
 
         assertEquals(12.35, ((Number) result).doubleValue(), 0.000001);
+    }
+
+    @Test
+    public void invokeFunctionInsideRuleDoesNotTreatOuterConstantsAsInnerParameters() {
+        RuleFunction function = javaFunction("imageToBase64",
+                "[{\"name\":\"image\",\"type\":\"STRING\"},{\"name\":\"timeoutMs\",\"type\":\"NUMBER\"}]",
+                "com.hengshucredit.rule.core.function.ImageInputFunctions",
+                "imageToBase64");
+        function.setId(2L);
+        function.setStatus(1);
+        RuleFunctionService service = serviceWithFunction(function);
+        RuntimeContextBridge.registerConstant("NULL_NUMBER", null);
+
+        Object result = ReflectionTestUtils.invokeMethod(service, "invoke", 2L,
+                Arrays.asList("AQID", 10000d));
+
+        assertEquals("AQID", result);
+        try {
+            RuntimeContextBridge.setValue("NULL_NUMBER", 1);
+        } catch (IllegalStateException expected) {
+            assertTrue(expected.getMessage().contains("NULL_NUMBER"));
+            return;
+        }
+        throw new AssertionError("Expected outer constant protection to remain active");
     }
 
     @Test

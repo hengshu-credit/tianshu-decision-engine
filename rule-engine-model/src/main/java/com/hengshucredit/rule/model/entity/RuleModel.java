@@ -36,6 +36,11 @@ public class RuleModel {
     /** 格式特有配置（JSON） */
     private String modelConfig;
 
+    /** 是否在服务启动时预加载模型：0-否，1-是 */
+    private Integer preloadOnStartup;
+    /** 单次模型执行超时时间（毫秒） */
+    private Integer executionTimeoutMs;
+
     /** 字段统计 */
     private Integer inputFieldCount;
     private Integer outputFieldCount;

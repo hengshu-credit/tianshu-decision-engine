@@ -265,10 +265,14 @@ describe('ModelList — 上传模型', () => {
     const file = { name: 'det_10g.onnx', raw }
     wrapper.vm.handleFileChange(file, [file])
     wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
+    wrapper.vm.uploadForm.preloadOnStartup = 1
+    wrapper.vm.uploadForm.executionTimeoutMs = 90000
     modelApi.uploadModel.mockImplementation((formData, onProgress) => {
       onProgress({ loaded: 50, total: 100 })
       expect(formData.get('onnxTaskType')).toBe('SCRFD_FACE_DETECTION')
       expect(JSON.parse(formData.get('onnxConfig'))).toMatchObject({ inputWidth: 640, inputHeight: 640 })
+      expect(formData.get('preloadOnStartup')).toBe('1')
+      expect(formData.get('executionTimeoutMs')).toBe('90000')
       return Promise.resolve({ data: { id: 10 } })
     })
 
@@ -288,13 +292,15 @@ describe('ModelList — 模型操作', () => {
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('handleEdit 填充编辑表单', () => {
-    const row = { id: 1, modelName: '测试模型', modelCode: 'test_code', modelType: 'LR', modelFormat: 'PMML', scope: 'PROJECT', status: 1 }
+    const row = { id: 1, modelName: '测试模型', modelCode: 'test_code', modelType: 'NEURAL_NET', modelFormat: 'ONNX', scope: 'PROJECT', status: 1, preloadOnStartup: 1, executionTimeoutMs: 90000 }
     wrapper.vm.handleEdit(row)
     expect(wrapper.vm.editVisible).toBe(true)
     expect(wrapper.vm.editForm.id).toBe(1)
     expect(wrapper.vm.editForm.modelName).toBe('测试模型')
     expect(wrapper.vm.editForm.modelCode).toBe('test_code')
     expect(wrapper.vm.editForm.status).toBe(1)
+    expect(wrapper.vm.editForm.preloadOnStartup).toBe(1)
+    expect(wrapper.vm.editForm.executionTimeoutMs).toBe(90000)
   })
 
   test('handleToGlobal 填充转换表单', () => {
@@ -346,7 +352,7 @@ describe('ModelList — 边界情况', () => {
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
+        'el-input': true, 'el-input-number': true, 'el-button': true, 'el-tag': true,
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-radio': true, 'el-radio-group': true,
         'el-upload': true, 'el-pagination': true, 'el-switch': true, 'el-loading': true,
@@ -370,7 +376,7 @@ describe('ModelList — 边界情况', () => {
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
+        'el-input': true, 'el-input-number': true, 'el-button': true, 'el-tag': true,
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-radio': true, 'el-radio-group': true,
         'el-upload': true, 'el-pagination': true, 'el-switch': true, 'el-loading': true,

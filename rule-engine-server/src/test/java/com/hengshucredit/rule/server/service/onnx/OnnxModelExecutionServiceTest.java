@@ -25,7 +25,7 @@ public class OnnxModelExecutionServiceTest {
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("image", Base64.getEncoder().encodeToString(Files.readAllBytes(image)));
 
-            Map<String, Object> output = new OnnxModelExecutionService(manager).execute(
+            Map<String, Object> output = new OnnxModelExecutionService(manager, new YunetDetectorCache()).execute(
                     Files.readAllBytes(model), "{\"onnxTaskType\":\"YUNET_FACE_DETECTION\"}", params);
 
             assertEquals(1, ((List<?>) output.get("faces")).size());

@@ -12,6 +12,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final DigestBuiltinFunctions DIGEST_DELEGATE = new DigestBuiltinFunctions();
     private static final RuntimeContextBuiltinFunctions RUNTIME_CONTEXT_DELEGATE = new RuntimeContextBuiltinFunctions();
     private static final RandomBuiltinFunctions RANDOM_DELEGATE = new RandomBuiltinFunctions();
+    private static final ImageInputFunctions IMAGE_DELEGATE = new ImageInputFunctions();
     private static final Class<?>[] NO_ARGS = {};
     private static final Class<?>[] SINGLE_OBJECT = {Object.class};
     private static final Class<?>[] TWO_OBJECTS = {Object.class, Object.class};
@@ -97,6 +98,7 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("cosineSimilarity", DECISION_DELEGATE, "cosineSimilarity", TWO_OBJECTS);
         runner.addFunctionOfServiceMethod("facenoxLiveness", DECISION_DELEGATE, "facenoxLiveness", OBJECT_DOUBLE);
         runner.addFunctionOfServiceMethod("facenoxLivenessList", DECISION_DELEGATE, "facenoxLivenessList", OBJECT_DOUBLE);
+        runner.addFunctionOfServiceMethod("imageToBase64", IMAGE_DELEGATE, "imageToBase64", STRING_DOUBLE);
         runner.addFunctionOfServiceMethod("numRoundInteger", DECISION_DELEGATE, "numRoundInteger", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("randomInt", RANDOM_DELEGATE, "randomInt", OBJECT_VARARGS);
         runner.addFunctionOfServiceMethod("randomDecimal", RANDOM_DELEGATE, "randomDecimal", OBJECT_VARARGS);

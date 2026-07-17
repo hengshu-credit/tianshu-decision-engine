@@ -105,6 +105,23 @@ describe('ExpressionPalette', () => {
     expect(wrapper.vm.page).toBe(1)
   })
 
+  test('函数带描述时仍可按函数编码搜索', () => {
+    const wrapper = mountPalette({
+      functions: [{
+        id: 171,
+        funcCode: 'imageToBase64',
+        funcName: '图片转 Base64',
+        description: '自动识别 Base64 或 URL'
+      }]
+    })
+
+    wrapper.vm.selectCategory('function')
+    wrapper.vm.keyword = 'imageToBase64'
+
+    expect(wrapper.vm.filteredItems).toHaveLength(1)
+    expect(wrapper.vm.filteredItems[0].funcCode).toBe('imageToBase64')
+  })
+
   test('所有资源分类都展示搜索框且静态资源也参与过滤', async() => {
     const wrapper = mountPalette()
 

@@ -38,6 +38,7 @@ public class QLExpressEngine {
     public RuleResult execute(String script, Map<String, Object> context, boolean trace) {
         RuleResult ruleResult = new RuleResult();
         long start = System.currentTimeMillis();
+        boolean protectConstants = RuntimeContextBridge.containsRegisteredConstants(context);
         try {
             RuntimeContextBridge.assertScriptDoesNotAssignConstants(script);
             QLOptions options = QLOptions.builder()
@@ -46,20 +47,26 @@ public class QLExpressEngine {
                     .build();
             QLResult result = runner.execute(script, context != null ? context : Collections.emptyMap(), options);
             RuntimeContextBridge.syncTraceAssignments(result.getExpressionTraces(), context);
-            RuntimeContextBridge.assertConstantsUnchanged(context);
+            if (protectConstants) {
+                RuntimeContextBridge.assertConstantsUnchanged(context);
+            }
             ruleResult.setResult(result.getResult());
             ruleResult.setSuccess(true);
             if (trace && result.getExpressionTraces() != null) {
                 ruleResult.setTraces(Collections.singletonList(result.getExpressionTraces()));
             }
         } catch (StackOverflowError e) {
-            RuntimeContextBridge.restoreConstants(context);
+            if (protectConstants) {
+                RuntimeContextBridge.restoreConstants(context);
+            }
             log.error("QLExpress execution stack overflow", e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
             rethrowControlledTermination(e);
-            RuntimeContextBridge.restoreConstants(context);
+            if (protectConstants) {
+                RuntimeContextBridge.restoreConstants(context);
+            }
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());
@@ -72,6 +79,7 @@ public class QLExpressEngine {
     public RuleResult execute(String script, Object context, boolean trace) {
         RuleResult ruleResult = new RuleResult();
         long start = System.currentTimeMillis();
+        boolean protectConstants = RuntimeContextBridge.containsRegisteredConstants(context);
         try {
             RuntimeContextBridge.assertScriptDoesNotAssignConstants(script);
             QLOptions options = QLOptions.builder()
@@ -80,20 +88,26 @@ public class QLExpressEngine {
                     .build();
             QLResult result = runner.execute(script, context != null ? context : Collections.emptyMap(), options);
             RuntimeContextBridge.syncTraceAssignments(result.getExpressionTraces(), context);
-            RuntimeContextBridge.assertConstantsUnchanged(context);
+            if (protectConstants) {
+                RuntimeContextBridge.assertConstantsUnchanged(context);
+            }
             ruleResult.setResult(result.getResult());
             ruleResult.setSuccess(true);
             if (trace && result.getExpressionTraces() != null) {
                 ruleResult.setTraces(Collections.singletonList(result.getExpressionTraces()));
             }
         } catch (StackOverflowError e) {
-            RuntimeContextBridge.restoreConstants(context);
+            if (protectConstants) {
+                RuntimeContextBridge.restoreConstants(context);
+            }
             log.error("QLExpress execution stack overflow", e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage("QLExpress execution failed: StackOverflowError");
         } catch (Exception e) {
             rethrowControlledTermination(e);
-            RuntimeContextBridge.restoreConstants(context);
+            if (protectConstants) {
+                RuntimeContextBridge.restoreConstants(context);
+            }
             log.error("QLExpress execution error: {}", e.getMessage(), e);
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());

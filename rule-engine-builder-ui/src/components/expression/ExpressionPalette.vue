@@ -330,11 +330,11 @@ export default {
     },
     searchTexts(item) {
       if (Array.isArray(item.searchTexts)) return item.searchTexts.map(value => String(value).toLowerCase())
-      if (item.description) return [item.label, item.description, item.key].filter(Boolean).map(value => String(value).toLowerCase())
       if (this.activeCategory === 'function') {
         return [this.functionCode(item), item.funcName, item.functionLabel, item.functionName]
           .filter(Boolean).map(value => String(value).toLowerCase())
       }
+      if (item.description) return [item.label, item.description, item.key].filter(Boolean).map(value => String(value).toLowerCase())
       const ref = item._ref || {}
       return [item.varCode, item.varLabel, item.refCode, item.label, ref.objectLabel, ref.modelLabel]
         .filter(Boolean).map(value => String(value).toLowerCase())

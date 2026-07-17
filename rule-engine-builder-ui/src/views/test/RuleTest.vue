@@ -82,6 +82,9 @@
         </div>
 
         <div style="margin-top: 16px; text-align: center;">
+          <span style="margin-right:6px;color:#606266;">页面请求超时</span>
+          <el-input-number v-model="requestTimeoutMs" :min="1000" :max="1800000" :step="1000" size="small" style="width:150px;margin-right:6px;" />
+          <span style="margin-right:12px;color:#909399;">毫秒</span>
           <el-button type="primary" :loading="executing" :disabled="!selectedRuleId" @click="handleExecute">
             <i class="el-icon-video-play" /> 执行测试
           </el-button>
@@ -186,7 +189,8 @@ export default {
       varMap: {},
       functionNameMap: {},
       modelData: null,
-      definitionModel: null
+      definitionModel: null,
+      requestTimeoutMs: 180000
     }
   },
   created() {
@@ -949,7 +953,7 @@ export default {
       this.executing = true
       this.result = null
       try {
-        const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap })
+        const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap }, this.requestTimeoutMs)
         this.result = normalizeTestResult(res)
         // 执行完成后切换到追踪树标签页
         this.traceTab = 'tree'

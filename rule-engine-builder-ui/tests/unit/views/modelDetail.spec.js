@@ -60,6 +60,8 @@ function mockModel(id = 1) {
     modelFileSize: 102400,
     currentVersion: 1,
     publishedVersion: 1,
+    preloadOnStartup: 1,
+    executionTimeoutMs: 90000,
     inputFields: [
       { id: 1, fieldName: 'age', fieldLabel: '年龄', fieldType: 'INTEGER', varId: 10, scriptName: 'age' },
       { id: 2, fieldName: 'income', fieldLabel: '收入', fieldType: 'DOUBLE', varId: null, scriptName: '' }
@@ -724,6 +726,7 @@ describe('ModelDetail — 模型测试执行', () => {
     expect(wrapper.vm.testResult.success).toBe(true)
     expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: { result: 100 } })
     expect(wrapper.vm.testExecuting).toBe(false)
+    expect(modelApi.executeModel).toHaveBeenCalledWith(1, { age: 30, score: 85.5 }, 95000)
   })
 
   test('doTest JSON 模式解析参数', async () => {

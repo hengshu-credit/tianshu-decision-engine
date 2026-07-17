@@ -507,6 +507,10 @@ describe('RuleTest — 执行与结果展示', () => {
     expect(wrapper.vm.result).not.toBeNull()
     expect(wrapper.vm.result.success).toBe(true)
     expect(wrapper.vm.result.result.taxRate).toBe(0.03)
+    expect(definitionApi.executeRule).toHaveBeenCalledWith({
+      definitionId: 4,
+      params: { taxpayerType: '小规模纳税人', goodsCategory: '服务' }
+    }, 180000)
   })
 
   test('handleExecute 保留 false 输出', async () => {

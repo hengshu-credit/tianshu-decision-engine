@@ -214,6 +214,9 @@
       <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载...</div>
       <template v-else>
         <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          <span style="color:#606266;">页面请求超时</span>
+          <el-input-number v-model="requestTimeoutMs" :min="1000" :max="1800000" :step="1000" size="mini" style="width:150px;" />
+          <span style="color:#909399;">毫秒</span>
           <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
           <el-button size="mini" icon="el-icon-delete" @click="handleClearParams">清空参数</el-button>
           <el-tooltip content="从输入字段自动生成表单填写" placement="top">
@@ -423,6 +426,7 @@ export default {
       testExecuting: false,
       testResult: null,
       testDialogKey: 1,
+      requestTimeoutMs: 180000,
       versionVisible: false,
       versionLoading: false,
       versions: [],
@@ -1098,7 +1102,7 @@ export default {
         params = this.buildNestedTestParams(this.testFields, this.testParams)
       }
       try {
-        const res = await api.executeRule({ definitionId: this.rule.id, params })
+        const res = await api.executeRule({ definitionId: this.rule.id, params }, this.requestTimeoutMs)
         this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)

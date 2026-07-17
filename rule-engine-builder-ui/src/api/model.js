@@ -62,8 +62,8 @@ export function listAllModelsByProject(projectId) {
 }
 
 /** 执行模型测试 */
-export function executeModel(id, params) {
-  return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params })
+export function executeModel(id, params, timeoutMs) {
+  return request({ url: `/rule/model/execute/${id}`, method: 'post', data: params, timeout: timeoutMs })
 }
 
 /** 保存模型测试参数（JSON） */

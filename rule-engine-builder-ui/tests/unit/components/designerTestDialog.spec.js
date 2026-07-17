@@ -67,6 +67,6 @@ describe('DesignerTestDialog unified schema', () => {
         idcard_no: '',
         credit_time: ''
       }
-    })
+    }, 180000)
   })
 })

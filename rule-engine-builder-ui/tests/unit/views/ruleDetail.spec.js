@@ -307,7 +307,7 @@ describe('RuleDetail execute test request', () => {
     expect(definitionApi.executeRule).toHaveBeenCalledWith({
       definitionId: 1,
       params: { age: 55 }
-    })
+    }, 180000)
     expect(wrapper.vm.testResult).toMatchObject({ hasOutput: true, output: false })
   })
 

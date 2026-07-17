@@ -7,6 +7,11 @@
     :close-on-click-modal="false"
   >
     <div class="designer-test-dialog">
+      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+        <span>页面请求超时</span>
+        <el-input-number v-model="requestTimeoutMs" :min="1000" :max="1800000" :step="1000" size="small" />
+        <span style="color:#909399;">毫秒</span>
+      </div>
       <div class="editor-label">输入参数 JSON</div>
       <el-alert
         v-if="schemaDiagnostics.length"
@@ -114,7 +119,8 @@ export default {
       editorKey: 1,
       activeTab: 'output',
       resolvedTemplate: null,
-      schemaDiagnostics: []
+      schemaDiagnostics: [],
+      requestTimeoutMs: 180000
     }
   },
   computed: {
@@ -212,7 +218,7 @@ export default {
           modelType: this.modelType || undefined,
           modelJson: this.currentModelJson(),
           params
-        })
+        }, this.requestTimeoutMs)
         this.result = normalizeTestResult(res)
         this.activeTab = this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {

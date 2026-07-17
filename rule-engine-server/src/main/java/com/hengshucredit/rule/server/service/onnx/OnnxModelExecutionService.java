@@ -11,9 +11,20 @@ import java.util.Map;
 public class OnnxModelExecutionService {
 
     private final OnnxRuntimeSessionManager sessionManager;
+    private final YunetDetectorCache yunetDetectorCache;
 
-    public OnnxModelExecutionService(OnnxRuntimeSessionManager sessionManager) {
+    public OnnxModelExecutionService(OnnxRuntimeSessionManager sessionManager, YunetDetectorCache yunetDetectorCache) {
         this.sessionManager = sessionManager;
+        this.yunetDetectorCache = yunetDetectorCache;
+    }
+
+    public void preload(byte[] modelBytes, String configJson) {
+        OnnxTaskConfig config = OnnxTaskConfig.parse(configJson);
+        if (config.getTaskType() == OnnxTaskType.YUNET_FACE_DETECTION) {
+            yunetDetectorCache.preload(modelBytes, config);
+            return;
+        }
+        sessionManager.session(modelBytes);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String configJson, Map<String, Object> params) {
@@ -22,7 +33,7 @@ public class OnnxModelExecutionService {
         switch (config.getTaskType()) {
             case YUNET_FACE_DETECTION:
                 Map<String, Object> yunet = new LinkedHashMap<>();
-                yunet.put("faces", new YunetFaceDetectionExecutor().detect(modelBytes, image, config));
+                yunet.put("faces", new YunetFaceDetectionExecutor(yunetDetectorCache).detect(modelBytes, image, config));
                 return yunet;
             case FACENOX_ANTISPOOF:
                 return new FacenoxAntispoofExecutor(sessionManager).execute(modelBytes, image, faces(params));
