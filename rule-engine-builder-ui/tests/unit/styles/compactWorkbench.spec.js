@@ -71,4 +71,13 @@ describe('compact workbench styles', () => {
     expectDeclaration(ruleSet, '.rs-designer', 'padding: 16px;')
     expectDeclaration(ruleSet, '.rs-rule-card', 'padding: 10px;')
   })
+
+  test('wraps the experiment base form instead of clipping fields on narrow screens', () => {
+    const experimentDetail = fs.readFileSync(path.join(projectRoot, 'src/views/experiment/ExperimentDetail.vue'), 'utf8')
+
+    expect(experimentDetail).toContain('@media (max-width: 1600px)')
+    expect(experimentDetail).toContain('.base-form ::v-deep .el-row')
+    expect(experimentDetail).toContain('grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));')
+    expect(experimentDetail).toContain(".base-form ::v-deep .el-row > [class*='el-col-']")
+  })
 })

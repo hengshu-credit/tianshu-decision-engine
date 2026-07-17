@@ -52,7 +52,8 @@ public class DatabaseInitializationSqlTest {
         Set<String> insertTables = collectTables(INSERT, export);
         Set<String> truncateTables = collectTables(TRUNCATE, export);
         Assert.assertFalse("export must contain INSERT targets", insertTables.isEmpty());
-        Assert.assertEquals("TRUNCATE targets must equal INSERT targets", insertTables, truncateTables);
+        Assert.assertTrue("every INSERT target must be truncated before restore",
+                truncateTables.containsAll(insertTables));
         Assert.assertTrue(export.contains("SET @OLD_FOREIGN_KEY_CHECKS = @@FOREIGN_KEY_CHECKS"));
         Assert.assertTrue(export.contains("SET FOREIGN_KEY_CHECKS = 0"));
         Assert.assertTrue(export.contains("SET FOREIGN_KEY_CHECKS = @OLD_FOREIGN_KEY_CHECKS"));
@@ -85,6 +86,22 @@ public class DatabaseInitializationSqlTest {
             }
         }
         Assert.assertFalse("export INSERT statements were not parsed", insertCount.isEmpty());
+    }
+
+    @Test
+    public void latestExportDoesNotPersistEnvironmentBoundProjectAuthenticationData() throws Exception {
+        String export = read(latestExport());
+        Set<String> insertTables = collectTables(INSERT, export);
+        Set<String> truncateTables = collectTables(TRUNCATE, export);
+        List<String> environmentBoundTables = Arrays.asList(
+                "rule_project_auth", "rule_project_auth_token", "rule_auth_access_log");
+
+        for (String table : environmentBoundTables) {
+            Assert.assertFalse(table + " must not contain environment-bound snapshot data",
+                    insertTables.contains(table));
+            Assert.assertTrue(table + " must still be cleared when restoring the snapshot",
+                    truncateTables.contains(table));
+        }
     }
 
     @Test

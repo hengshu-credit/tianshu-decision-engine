@@ -1153,6 +1153,18 @@ export default {
     background: #fff;
   }
 
+  @media (max-width: 1600px) {
+    .base-form ::v-deep .el-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    }
+
+    .base-form ::v-deep .el-row > [class*='el-col-'] {
+      float: none;
+      width: 100%;
+    }
+  }
+
   @media (max-width: 1200px) {
     .usage-guide {
       grid-template-columns: repeat(2, minmax(0, 1fr));

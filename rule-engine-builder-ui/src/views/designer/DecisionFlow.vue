@@ -1635,6 +1635,12 @@ export default {
   opacity: 0;
 }
 
+@media (max-width: 1200px) {
+  .flow-property {
+    max-width: 60%;
+  }
+}
+
 /* 测试相关 */
 .test-hint { font-size: 12px; color: #909399; margin-bottom: 8px; }
 .test-result { margin-top: 12px; }

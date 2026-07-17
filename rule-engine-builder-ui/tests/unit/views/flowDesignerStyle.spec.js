@@ -55,6 +55,8 @@ describe('flow designer style regressions', () => {
     ;[tree, flow].forEach(source => {
       expect(source).toContain('clampDesignerPanelWidth(width, window.innerWidth)')
       expect(source).toContain('max-width: 80vw;')
+      expect(source).toContain('@media (max-width: 1200px)')
+      expect(source).toContain('max-width: 60%;')
     })
   })
 
