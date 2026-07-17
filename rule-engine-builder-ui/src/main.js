@@ -8,6 +8,7 @@ import './styles/index.scss'
 
 // 覆盖 Element UI 主题色为主色 #2639E9
 import './styles/element-override.scss'
+import './styles/compact-workbench.scss'
 
 // Monaco Editor 通过 AMD loader 方式加载
 // - 生产：vs/ 目录由 copy-webpack-plugin 复制到 dist/，base 为相对路径 './'

@@ -1,0 +1,79 @@
+/*
+ * 规则工作台的平衡紧凑样式。
+ * 仅对显式挂载 uiue-compact-workbench 的页面生效，避免影响普通管理页面。
+ */
+.uiue-compact-workbench {
+  .el-input__inner {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .el-input--prefix .el-input__inner {
+    padding-left: 28px;
+  }
+
+  .el-input--suffix .el-input__inner {
+    padding-right: 28px;
+  }
+
+  .el-input-number .el-input__inner {
+    padding-left: 36px;
+    padding-right: 36px;
+  }
+
+  .el-input-number.is-without-controls .el-input__inner {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .el-textarea__inner {
+    padding: 6px 8px;
+  }
+
+  .el-form-item {
+    margin-bottom: 12px;
+  }
+
+  .el-form--inline .el-form-item {
+    margin-right: 12px;
+  }
+
+  .el-table th,
+  .el-table td {
+    padding: 6px 0;
+  }
+
+  .el-table .cell {
+    padding-left: 8px;
+    padding-right: 8px;
+  }
+
+  .el-card__header,
+  .el-card__body {
+    padding: 12px 16px;
+  }
+
+  .el-tabs--border-card > .el-tabs__content {
+    padding: 12px;
+  }
+
+  .el-descriptions-item__label,
+  .el-descriptions-item__content {
+    padding: 8px 10px;
+  }
+}
+
+.uiue-list-page.uiue-compact-workbench {
+  padding: 16px;
+}
+
+@media (max-width: 1200px) {
+  .uiue-list-page.uiue-compact-workbench {
+    padding: 12px;
+  }
+
+  .uiue-compact-workbench .el-table .cell {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+}

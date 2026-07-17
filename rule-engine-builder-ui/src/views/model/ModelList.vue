@@ -147,6 +147,39 @@
             <span slot="tip" class="el-upload__tip">支持 PMML、PICKLE、DILL、ONNX 格式</span>
           </el-upload>
         </el-form-item>
+        <template v-if="isOnnxFile">
+          <el-form-item label="ONNX 推理任务" required>
+            <el-select v-model="uploadForm.onnxTaskType" style="width:100%;" filterable placeholder="请选择该模型的推理任务" @change="onOnnxTaskChange">
+              <el-option v-for="task in onnxTasks" :key="task.value" :label="task.label" :value="task.value">
+                <span>{{ task.label }}</span>
+                <span style="float:right;color:#909399;font-size:12px;">{{ task.description }}</span>
+              </el-option>
+            </el-select>
+          </el-form-item>
+          <template v-if="uploadForm.onnxTaskType === 'YUNET_FACE_DETECTION' || uploadForm.onnxTaskType === 'SCRFD_FACE_DETECTION'">
+            <el-form-item label="置信度阈值">
+              <el-input-number v-model="uploadForm.onnxConfig.confidenceThreshold" :min="0" :max="1" :step="0.05" :precision="2" />
+            </el-form-item>
+            <el-form-item label="NMS 阈值">
+              <el-input-number v-model="uploadForm.onnxConfig.nmsThreshold" :min="0" :max="1" :step="0.05" :precision="2" />
+            </el-form-item>
+          </template>
+          <template v-if="uploadForm.onnxTaskType === 'YUNET_FACE_DETECTION'">
+            <el-form-item label="最小人脸尺寸">
+              <el-input-number v-model="uploadForm.onnxConfig.minFaceSize" :min="1" :step="1" />
+            </el-form-item>
+            <el-form-item label="候选上限">
+              <el-input-number v-model="uploadForm.onnxConfig.topK" :min="1" :step="100" />
+            </el-form-item>
+          </template>
+          <template v-if="uploadForm.onnxTaskType === 'SCRFD_FACE_DETECTION'">
+            <el-form-item label="模型输入尺寸">
+              <el-input-number v-model="uploadForm.onnxConfig.inputWidth" :min="32" :step="32" />
+              <span style="margin:0 8px;color:#909399;">×</span>
+              <el-input-number v-model="uploadForm.onnxConfig.inputHeight" :min="32" :step="32" />
+            </el-form-item>
+          </template>
+        </template>
         <el-form-item label="变更说明">
           <el-input v-model="uploadForm.changeLog" type="textarea" :rows="2" placeholder="简要描述本次变更内容" />
         </el-form-item>
@@ -159,6 +192,7 @@
         </el-form-item>
       </el-form>
       <div slot="footer">
+        <el-progress v-if="uploading" :percentage="uploadProgress" style="margin-bottom:10px;" />
         <el-button size="small" @click="uploadVisible=false">取消</el-button>
         <el-button size="small" type="primary" @click="handleDoUpload" :loading="uploading">上传</el-button>
       </div>
@@ -217,6 +251,7 @@ import { clearPageState, restorePageState, savePageState } from '@/utils/pageSta
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import { ONNX_TASKS, createOnnxConfig } from '@/constants/onnxTasks'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -252,8 +287,9 @@ export default {
       filteredModelNames: [],
 
       // 上传
-      uploadVisible: false, uploading: false,
-      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '' },
+      uploadVisible: false, uploading: false, uploadProgress: 0,
+      onnxTasks: ONNX_TASKS,
+      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {} },
       uploadRules: {
         modelCode: [{
           required: true,
@@ -276,7 +312,7 @@ export default {
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }],
         modelType: [{ required: true, message: '请选择模型大类', trigger: 'change' }]
       },
-      fileList: [], selectedFile: null,
+      fileList: [], selectedFile: null, selectedFileName: '',
 
       // 转为全局模型
       toGlobalVisible: false, toGlobalLoading: false,
@@ -308,6 +344,12 @@ export default {
       editRules: {
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }]
       }
+    }
+  },
+  computed: {
+    isOnnxFile() {
+      const name = (this.selectedFile && this.selectedFile.name) || this.selectedFileName
+      return !!(name && name.toLowerCase().endsWith('.onnx'))
     }
   },
   created() {
@@ -401,21 +443,34 @@ export default {
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
 
     handleUpload() {
-      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '' }
-      this.fileList = []; this.selectedFile = null
+      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {} }
+      this.uploadProgress = 0
+      this.fileList = []; this.selectedFile = null; this.selectedFileName = ''
       this.uploadVisible = true
       this.$nextTick(() => { if (this.$refs.uploadForm) this.$refs.uploadForm.clearValidate() })
     },
     handleFileChange(file, files) {
       this.selectedFile = file.raw
+      this.selectedFileName = file.name || (file.raw && file.raw.name) || ''
       this.fileList = files.slice(-1)
+      if (this.isOnnxFile) this.uploadForm.modelType = 'NEURAL_NET'
+      if (!this.isOnnxFile) {
+        this.uploadForm.onnxTaskType = ''
+        this.uploadForm.onnxConfig = {}
+      }
+    },
+    onOnnxTaskChange(taskType) {
+      this.uploadForm.onnxTaskType = taskType
+      this.uploadForm.onnxConfig = createOnnxConfig(taskType)
     },
     handleDoUpload() {
       this.$refs.uploadForm.validate(async valid => {
         if (!valid) return
         if (!this.selectedFile) { this.$message.warning('请选择模型文件'); return }
         if (this.uploadForm.scope === 'PROJECT' && !this.uploadForm.projectId) { this.$message.warning('请选择所属项目'); return }
+        if (this.isOnnxFile && !this.uploadForm.onnxTaskType) { this.$message.warning('请选择 ONNX 推理任务'); return }
         this.uploading = true
+        this.uploadProgress = 0
         try {
           const formData = new FormData()
           formData.append('file', this.selectedFile)
@@ -430,7 +485,13 @@ export default {
           formData.append('description', this.uploadForm.description || '')
           formData.append('changeLog', this.uploadForm.changeLog || '')
           formData.append('testParams', this.uploadForm.testParams || '')
-          await api.uploadModel(formData)
+          if (this.isOnnxFile) {
+            formData.append('onnxTaskType', this.uploadForm.onnxTaskType)
+            formData.append('onnxConfig', JSON.stringify(this.uploadForm.onnxConfig || {}))
+          }
+          await api.uploadModel(formData, event => {
+            if (event && event.total) this.uploadProgress = Math.round(event.loaded * 100 / event.total)
+          })
           this.$message.success('上传成功')
           this.uploadVisible = false
           this.load()

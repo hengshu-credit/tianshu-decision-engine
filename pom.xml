@@ -34,6 +34,8 @@
         <jpmml.version>1.5.15</jpmml.version>
         <jsch.version>0.1.55</jsch.version>
         <poi.version>5.2.5</poi.version>
+        <onnxruntime.version>1.26.0</onnxruntime.version>
+        <opencv.version>4.9.0-0</opencv.version>
     </properties>
 
     <dependencyManagement>
@@ -116,6 +118,16 @@
                 <groupId>org.apache.poi</groupId>
                 <artifactId>poi-ooxml</artifactId>
                 <version>${poi.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.microsoft.onnxruntime</groupId>
+                <artifactId>onnxruntime</artifactId>
+                <version>${onnxruntime.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.openpnp</groupId>
+                <artifactId>opencv</artifactId>
+                <version>${opencv.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

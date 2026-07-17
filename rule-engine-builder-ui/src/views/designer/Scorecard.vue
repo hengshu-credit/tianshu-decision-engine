@@ -1,5 +1,5 @@
 <template>
-  <div class="sc-designer">
+  <div class="sc-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="sc-header">
       <div class="sc-title-area">
@@ -615,7 +615,7 @@ export default {
 <style lang="scss" scoped>
 .sc-designer {
   background: #f3f3f3;
-  padding: 20px;
+  padding: 16px;
   min-height: 100%;
 }
 
@@ -626,9 +626,9 @@ export default {
   justify-content: space-between;
   background: #fff;
   border-radius: 4px;
-  padding: 14px 20px;
+  padding: 12px 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -656,15 +656,15 @@ export default {
 .sc-card {
   background: #fff;
   border-radius: 4px;
-  padding: 16px 20px;
+  padding: 12px 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .sc-card-title {
   font-size: 14px;
   font-weight: bold;
   color: #333;
-  margin-bottom: 14px;
+  margin-bottom: 10px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -678,14 +678,14 @@ export default {
 /* 基础配置 */
 .base-config-row {
   display: flex;
-  gap: 24px;
+  gap: 16px;
   flex-wrap: wrap;
   align-items: center;
 }
 .base-config-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 .base-config-label {
   font-size: 13px;
@@ -734,7 +734,7 @@ export default {
 .score-items {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 .score-item-card {
   border: 1px solid #e8e8e8;
@@ -750,7 +750,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
+  padding: 8px 10px;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
 }
@@ -771,24 +771,24 @@ export default {
   flex: 1;
 }
 .score-item-body {
-  padding: 12px;
+  padding: 10px;
   background: #fff;
 }
 .score-item-row {
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   &:last-child { margin-bottom: 0; }
 }
 .condition-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 .cond-var { flex: 3; min-width: 0; }
 .cond-op { flex: 2; min-width: 90px; }
 .cond-val { flex: 2; min-width: 0; }
 .score-weight-row {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-end;
 }
 .item-field-label {
@@ -871,14 +871,14 @@ export default {
 .threshold-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 .threshold-item {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 8px 10px;
   border: 1px solid #f0f0f0;
   border-radius: 6px;
   background: #fafafa;
@@ -971,5 +971,9 @@ export default {
   font-size: 12px;
   color: #cf1322;
   i { color: #f5222d; font-size: 14px; }
+}
+@media (max-width: 1200px) {
+  .sc-designer { padding: 12px; }
+  .base-config-row { gap: 12px; }
 }
 </style>

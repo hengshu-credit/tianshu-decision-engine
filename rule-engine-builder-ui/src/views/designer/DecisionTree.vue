@@ -1,5 +1,5 @@
 <template>
-  <div class="tree-designer">
+  <div class="tree-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="tree-toolbar">
       <div class="toolbar-left">

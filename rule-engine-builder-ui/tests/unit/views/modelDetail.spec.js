@@ -182,6 +182,27 @@ describe('ModelDetail — 初始化与数据加载', () => {
   test('testVisible 初始值为 false', () => {
     expect(wrapper.vm.testVisible).toBe(false)
   })
+
+  test('ONNX 详情解析任务类型和真实节点元数据并允许在线执行', async () => {
+    const onnxModel = {
+      ...mockModel(),
+      modelFormat: 'ONNX',
+      modelConfig: JSON.stringify({
+        onnxTaskType: 'ARCFACE_RECOGNITION',
+        nodeMetadata: { inputs: { 'input.1': { shape: [-1, 3, 112, 112] } }, outputs: { 683: { shape: [1, 512] } } }
+      })
+    }
+    const localWrapper = await mountAndWait(onnxModel)
+    expect(localWrapper.vm.supportsOnlineExecution).toBe(true)
+    expect(localWrapper.vm.onnxTaskLabel).toContain('ArcFace')
+    expect(localWrapper.vm.onnxNodeSummary).toBe('1 入 / 1 出')
+    localWrapper.destroy()
+  })
+
+  test('非 PMML 和 ONNX 格式不显示为可在线执行', () => {
+    wrapper.vm.model = { ...mockModel(), modelFormat: 'PICKLE' }
+    expect(wrapper.vm.supportsOnlineExecution).toBe(false)
+  })
 })
 
 describe('ModelDetail — 变量关联加载', () => {

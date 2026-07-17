@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page experiment-page">
+  <div class="uiue-list-page experiment-page uiue-compact-workbench">
     <div class="page-head">
       <div>
         <h2>分流实验</h2>

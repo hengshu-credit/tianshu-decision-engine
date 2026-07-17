@@ -121,6 +121,56 @@ public class DecisionBuiltinFunctions {
         return Math.floor(value);
     }
 
+    public double cosineSimilarity(Object leftEmbedding, Object rightEmbedding) {
+        List<Object> left = toElements(leftEmbedding);
+        List<Object> right = toElements(rightEmbedding);
+        if (left.isEmpty() || left.size() != right.size()) {
+            throw new IllegalArgumentException("向量维度必须一致且不能为空");
+        }
+        double dot = 0d;
+        double leftNorm = 0d;
+        double rightNorm = 0d;
+        for (int i = 0; i < left.size(); i++) {
+            BigDecimal leftValue = toBigDecimal(left.get(i));
+            BigDecimal rightValue = toBigDecimal(right.get(i));
+            if (leftValue == null || rightValue == null) {
+                throw new IllegalArgumentException("向量元素必须为数值");
+            }
+            double leftNumber = leftValue.doubleValue();
+            double rightNumber = rightValue.doubleValue();
+            dot += leftNumber * rightNumber;
+            leftNorm += leftNumber * leftNumber;
+            rightNorm += rightNumber * rightNumber;
+        }
+        if (leftNorm == 0d || rightNorm == 0d) {
+            throw new IllegalArgumentException("零向量无法计算余弦相似度");
+        }
+        return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
+    }
+
+    public Map<String, Object> facenoxLiveness(Object logits, double threshold) {
+        List<Object> values = toElements(logits);
+        if (values.size() != 2) {
+            throw new IllegalArgumentException("facenox logits 必须包含 realLogit 和 spoofLogit 两个数值");
+        }
+        BigDecimal realLogit = toBigDecimal(values.get(0));
+        BigDecimal spoofLogit = toBigDecimal(values.get(1));
+        if (realLogit == null || spoofLogit == null) {
+            throw new IllegalArgumentException("facenox logits 必须为数值");
+        }
+        double logitDiff = realLogit.subtract(spoofLogit).doubleValue();
+        boolean real = logitDiff >= threshold;
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("logits", logits);
+        result.put("realLogit", realLogit.doubleValue());
+        result.put("spoofLogit", spoofLogit.doubleValue());
+        result.put("logitDiff", logitDiff);
+        result.put("confidence", Math.abs(logitDiff));
+        result.put("isReal", real);
+        result.put("isSpoof", !real);
+        return result;
+    }
+
     public double numRoundInteger(double value) {
         return Math.round(value);
     }

@@ -49,6 +49,7 @@ INSERT INTO rule_engine.rule_data_object_field (project_id,`scope`,object_id,var
 	 (0,'GLOBAL',5,'idcard_front_image','证件正面图片','idcard_front_image','STRING',NULL,NULL,NULL,NULL,4,1,'2026-07-04 02:50:28','2026-07-04 02:50:28'),
 	 (0,'GLOBAL',5,'idcard_back_image','证件反面图片','idcard_back_image','STRING',NULL,NULL,NULL,NULL,5,1,'2026-07-04 02:50:40','2026-07-04 02:50:40'),
 	 (0,'GLOBAL',5,'face_image','人脸图片','face_image','STRING',NULL,NULL,NULL,NULL,6,1,'2026-07-04 02:51:14','2026-07-04 02:51:14'),
+	 (0,'GLOBAL',5,'idcard_image','证件照片','idcard_image','STRING',NULL,NULL,NULL,NULL,7,1,'2026-07-17 00:00:00','2026-07-17 00:00:00'),
 	 (0,'GLOBAL',6,'HYBASE_X115','HYBASE_X115','HYBASE_X115','NUMBER',NULL,NULL,NULL,NULL,0,1,'2026-07-04 03:19:24','2026-07-04 03:19:24'),
 	 (0,'GLOBAL',6,'HYBASE_X142','HYBASE_X142','HYBASE_X142','NUMBER',NULL,NULL,NULL,NULL,1,1,'2026-07-04 03:19:33','2026-07-04 03:19:33'),
 	 (0,'GLOBAL',6,'HYBASE_X245','HYBASE_X245','HYBASE_X245','NUMBER',NULL,NULL,NULL,NULL,2,1,'2026-07-04 03:19:42','2026-07-04 03:19:42'),

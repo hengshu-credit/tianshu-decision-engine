@@ -1,5 +1,5 @@
 <template>
-  <div class="dt-designer">
+  <div class="dt-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="dt-header">
       <div class="dt-title-area">
@@ -548,7 +548,7 @@ export default {
 .dt-designer {
   background: #fff;
   border-radius: 4px;
-  padding: 16px 20px;
+  padding: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   min-height: 100%;
   width: 100%;
@@ -602,7 +602,7 @@ export default {
 .dt-rules-wrap {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 12px;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
@@ -611,7 +611,7 @@ export default {
 .dt-rule-card {
   border: 1px solid #ebeef5;
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   background: #fafafa;
   width: 100%;
   max-width: 100%;
@@ -621,7 +621,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 .dt-rule-no {
   font-weight: 600;
@@ -631,7 +631,7 @@ export default {
 .dt-rule-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: 12px;
   align-items: flex-start;
   width: 100%;
   box-sizing: border-box;
@@ -643,7 +643,7 @@ export default {
   background: #fff;
   border: 1px solid #e8e8e8;
   border-radius: 6px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   box-sizing: border-box;
 }
 .dt-act-panel {
@@ -652,7 +652,7 @@ export default {
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   box-sizing: border-box;
 }
 .dt-act-panel-head {
@@ -674,14 +674,14 @@ export default {
 .dt-act-rows {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
   width: 100%;
 }
 .dt-act-field {
   background: #fafffe;
   border: 1px solid #d9f7f0;
   border-radius: 6px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -689,7 +689,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   flex-wrap: wrap;
 }
 .dt-act-title {
@@ -707,7 +707,7 @@ export default {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   ::v-deep .var-picker-wrap { flex: 1 1 0; width: auto !important; min-width: 0; }
 }
 .dt-act-eq { color: #909399; font-weight: 600; }
@@ -731,6 +731,9 @@ export default {
     min-width: 260px;
     max-width: 400px;
   }
+}
+@media (max-width: 1200px) {
+  .dt-designer { padding: 12px; }
 }
 .col-tag {
   display: inline-block;

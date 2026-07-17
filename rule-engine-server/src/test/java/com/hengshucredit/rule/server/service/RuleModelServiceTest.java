@@ -11,13 +11,23 @@ import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleModelVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
+import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.Test;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
 import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -26,9 +36,129 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelServiceTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void executeOnnxReturnsStandardResultAndLogicalOutputs() {
+        RuleModel model = model();
+        model.setModelCode("face_detector");
+        model.setModelFormat("ONNX");
+        model.setModelContent(java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3}));
+        model.setModelConfig("{\"onnxTaskType\":\"YUNET_FACE_DETECTION\"}");
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectById".equals(method.getName())) return model;
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleModelInputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.emptyList() : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.emptyList() : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null) {
+            @Override
+            public Map<String, Object> execute(byte[] modelBytes, String config, Map<String, Object> params) {
+                Map<String, Object> output = new LinkedHashMap<>();
+                output.put("faces", Collections.singletonList(Collections.singletonMap("confidence", 0.99d)));
+                return output;
+            }
+        });
+
+        Map<String, Object> result = service.execute(1L, Collections.singletonMap("image", "base64"));
+
+        assertEquals(true, result.get("success"));
+        assertEquals("ONNX", result.get("modelFormat"));
+        assertEquals("face_detector", result.get("modelCode"));
+        assertEquals(1, ((List<?>) ((Map<String, Object>) result.get("outputs")).get("faces")).size());
+    }
+
+    @Test
+    public void uploadOnnxValidatesMetadataAndCreatesTaskTemplateFields() {
+        List<RuleModelInputField> inputs = new ArrayList<>();
+        List<RuleModelOutputField> outputs = new ArrayList<>();
+        AtomicReference<RuleModel> insertedModel = new AtomicReference<>();
+        AtomicReference<String> persistedContent = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "onnxSessionManager", new OnnxRuntimeSessionManager() {
+            @Override
+            public Map<String, Object> inspect(byte[] modelBytes) {
+                Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("inputs", Collections.singletonMap("input", Collections.singletonMap("shape", Arrays.asList(1, 3, 128, 128))));
+                metadata.put("outputs", Collections.singletonMap("output1", Collections.singletonMap("shape", Arrays.asList(1, 2))));
+                return metadata;
+            }
+        });
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("insert".equals(method.getName())) {
+                RuleModel model = (RuleModel) args[0];
+                persistedContent.set(model.getModelContent());
+                model.setId(42L);
+                insertedModel.set(model);
+                return 1;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleModelInputFieldMapper.class, (proxy, method, args) -> {
+            if ("insert".equals(method.getName())) inputs.add((RuleModelInputField) args[0]);
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class, (proxy, method, args) -> {
+            if ("insert".equals(method.getName())) outputs.add((RuleModelOutputField) args[0]);
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "versionMapper", mapper(RuleModelVersionMapper.class,
+                (proxy, method, args) -> defaultValue(method.getReturnType())));
+
+        RuleModel model = service.uploadAndParse(
+                new MockMultipartFile("file", "anti-spoof-mn3.onnx", "application/octet-stream", new byte[]{1, 2, 3}),
+                null, "GLOBAL", "mn3", "MN3", "NEURAL_NET", null, "initial", "{\"face_image\":\"base64\"}",
+                "MN3_ANTISPOOF", "{}");
+
+        assertEquals(Long.valueOf(42L), model.getId());
+        assertEquals(Arrays.asList("image", "faces"), Arrays.asList(inputs.get(0).getFieldName(), inputs.get(1).getFieldName()));
+        assertEquals(Arrays.asList("results", "rawOutputs"), Arrays.asList(outputs.get(0).getFieldName(), outputs.get(1).getFieldName()));
+        assertEquals(null, inputs.get(0).getScriptName());
+        assertEquals(null, model.getModelContent());
+        assertEquals("AQID", persistedContent.get());
+        assertTrue(insertedModel.get().getModelConfig().contains("MN3_ANTISPOOF"));
+        assertTrue(insertedModel.get().getModelConfig().contains("output1"));
+        assertTrue(insertedModel.get().getModelConfig().contains("testParams"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void pageListDoesNotReadOrReturnLargeModelContent() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        AtomicReference<String> selectedColumns = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectPage".equals(method.getName())) {
+                LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[1];
+                selectedColumns.set(wrapper.getSqlSelect());
+                RuleModel model = model();
+                model.setProjectId(null);
+                model.setModelContent("large-base64-content");
+                Page<RuleModel> page = (Page<RuleModel>) args[0];
+                page.setRecords(Collections.singletonList(model));
+                page.setTotal(1);
+                return page;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+
+        Page<RuleModel> result = (Page<RuleModel>) service.pageList(
+                1, 10, null, null, null, null, null, null, null, null);
+
+        assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
+        assertFalse(selectedColumns.get().contains("model_content"));
+        assertEquals(null, result.getRecords().get(0).getModelContent());
+    }
 
     @Test
     public void modelFieldEntitiesRemoveLegacyMissingAndTransformFields() {

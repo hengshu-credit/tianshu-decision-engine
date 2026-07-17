@@ -15,12 +15,14 @@ export function checkModelCode(modelCode, scope, projectId, excludeId) {
 }
 
 /** 上传模型文件 */
-export function uploadModel(formData) {
+export function uploadModel(formData, onUploadProgress) {
   return request({
     url: '/rule/model/upload',
     method: 'post',
     data: formData,
-    headers: { 'Content-Type': 'multipart/form-data' }
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30 * 60 * 1000,
+    onUploadProgress
   })
 }
 

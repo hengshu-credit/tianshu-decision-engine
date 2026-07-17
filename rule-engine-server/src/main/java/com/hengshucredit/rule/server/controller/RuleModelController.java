@@ -64,10 +64,13 @@ public class RuleModelController {
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String description,
             @RequestParam(required = false) String changeLog,
-            @RequestParam(required = false) String testParams) {
+            @RequestParam(required = false) String testParams,
+            @RequestParam(required = false) String onnxTaskType,
+            @RequestParam(required = false) String onnxConfig) {
         try {
             RuleModel model = modelService.uploadAndParse(
-                    file, projectId, scope, modelCode, modelName, modelType, description, changeLog, testParams);
+                    file, projectId, scope, modelCode, modelName, modelType, description, changeLog, testParams,
+                    onnxTaskType, onnxConfig);
             return R.ok(model);
         } catch (IllegalArgumentException e) {
             return R.fail(e.getMessage());

@@ -1,5 +1,5 @@
 <template>
-  <div class="ct-designer">
+  <div class="ct-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="ct-header">
       <div class="ct-title-area">
@@ -452,7 +452,7 @@ export default {
 .ct-designer {
   background: #fff;
   border-radius: 4px;
-  padding: 20px;
+  padding: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.1);
   min-height: 100%;
 }
@@ -462,7 +462,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   flex-wrap: wrap;
   gap: 8px;
 }
@@ -490,9 +490,9 @@ export default {
 .ct-dim-panel {
   display: flex;
   align-items: flex-start;
-  gap: 16px;
-  margin-bottom: 20px;
-  padding: 16px;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding: 12px;
   background: #fafafa;
   border-radius: 6px;
   border: 1px solid #eeeeee;
@@ -508,7 +508,7 @@ export default {
   font-size: 13px;
   font-weight: 600;
   color: #555;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 .dim-icon {
   font-size: 15px;
@@ -540,7 +540,7 @@ export default {
   overflow-x: auto;
   border-radius: 6px;
   border: 1px solid #e8e8e8;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 .ct-matrix {
   border-collapse: collapse;
@@ -593,7 +593,7 @@ export default {
 /* 列头单元格 */
 .col-header-cell {
   background: #e8f3ff;
-  padding: 6px;
+  padding: 4px;
   text-align: center;
 }
 .header-cell-inner {
@@ -614,13 +614,13 @@ export default {
 .add-col-cell {
   background: #f9f9f9;
   text-align: center;
-  padding: 6px;
+  padding: 4px;
 }
 
 /* 行头单元格 */
 .row-header-cell {
   background: #f0fff4;
-  padding: 6px;
+  padding: 4px;
 }
 .row-header-inner {
   display: flex;
@@ -638,7 +638,7 @@ export default {
 /* 数据单元格 */
 .data-cell {
   background: #fff;
-  padding: 5px;
+  padding: 4px;
   transition: background 0.15s;
   &.cell-filled {
     background: #fafffe;
@@ -669,7 +669,7 @@ export default {
 
 /* 查询逻辑预览 */
 .ct-preview {
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: #f0f7ff;
   border-radius: 4px;
   font-size: 13px;
@@ -700,5 +700,9 @@ export default {
   font-size: 12px;
   color: #cf1322;
   i { color: #f5222d; font-size: 14px; }
+}
+@media (max-width: 1200px) {
+  .ct-designer { padding: 12px; }
+  .ct-dim-panel { gap: 10px; }
 }
 </style>

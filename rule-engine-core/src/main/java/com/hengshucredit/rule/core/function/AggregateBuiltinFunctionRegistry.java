@@ -94,6 +94,8 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("numLog10", DECISION_DELEGATE, "numLog10", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("numCeil", DECISION_DELEGATE, "numCeil", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("numFloor", DECISION_DELEGATE, "numFloor", new Class<?>[]{double.class});
+        runner.addFunctionOfServiceMethod("cosineSimilarity", DECISION_DELEGATE, "cosineSimilarity", TWO_OBJECTS);
+        runner.addFunctionOfServiceMethod("facenoxLiveness", DECISION_DELEGATE, "facenoxLiveness", OBJECT_DOUBLE);
         runner.addFunctionOfServiceMethod("numRoundInteger", DECISION_DELEGATE, "numRoundInteger", new Class<?>[]{double.class});
         runner.addFunctionOfServiceMethod("randomInt", RANDOM_DELEGATE, "randomInt", OBJECT_VARARGS);
         runner.addFunctionOfServiceMethod("randomDecimal", RANDOM_DELEGATE, "randomDecimal", OBJECT_VARARGS);

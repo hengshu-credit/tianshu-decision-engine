@@ -1,5 +1,5 @@
 <template>
-  <div class="rs-designer">
+  <div class="rs-designer uiue-compact-workbench uiue-compact-designer">
     <div class="rs-header">
       <div class="rs-title-area">
         <el-button type="text" icon="el-icon-back" class="rs-back" @click="$router.back()" />
@@ -669,7 +669,7 @@ export default {
 .rs-designer {
   background: #fff;
   border-radius: 4px;
-  padding: 16px 20px;
+  padding: 16px;
   box-shadow: 0 1px 3px rgba(0,0,0,0.08);
   min-height: 100%;
   box-sizing: border-box;
@@ -718,8 +718,8 @@ export default {
   color: #52c41a;
 }
 .rs-output-config {
-  margin: 12px 0;
-  padding: 12px;
+  margin: 10px 0;
+  padding: 10px;
   border: 1px solid #dbeafe;
   border-radius: 6px;
   background: #f8fbff;
@@ -728,7 +728,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
   color: #1f2937;
   font-size: 13px;
   font-weight: 700;
@@ -739,7 +739,7 @@ export default {
 .output-config-body {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-wrap: wrap;
 }
 .output-config-hint {
@@ -749,9 +749,9 @@ export default {
 .rs-summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-  gap: 10px;
-  margin: 12px 0;
-  padding: 10px 12px;
+  gap: 8px;
+  margin: 10px 0;
+  padding: 8px 10px;
   border: 1px solid #ebeef5;
   border-radius: 6px;
   background: #f8fafc;
@@ -776,13 +776,13 @@ export default {
 .rs-rule-list {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
 }
 .rs-rule-card {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   background: #fff;
-  padding: 12px;
+  padding: 10px;
 }
 .rs-rule-card.is-disabled {
   background: #f8fafc;
@@ -793,7 +793,7 @@ export default {
   grid-template-columns: 26px 42px 108px minmax(110px, 150px) minmax(160px, 1fr) 120px auto;
   align-items: center;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 .drag-handle {
   cursor: move;
@@ -822,14 +822,14 @@ export default {
 .rs-rule-body {
   display: grid;
   grid-template-columns: minmax(360px, 1.1fr) minmax(340px, .9fr);
-  gap: 14px;
+  gap: 12px;
 }
 .condition-panel,
 .action-panel {
   min-width: 0;
   border: 1px solid #ebeef5;
   border-radius: 6px;
-  padding: 10px;
+  padding: 8px;
   background: #fbfdff;
 }
 .panel-title {
@@ -898,5 +898,8 @@ export default {
   .rule-actions {
     justify-content: flex-start;
   }
+}
+@media (max-width: 1200px) {
+  .rs-designer { padding: 12px; }
 }
 </style>

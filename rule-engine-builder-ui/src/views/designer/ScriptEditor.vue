@@ -1,5 +1,5 @@
 <template>
-  <div class="se-designer">
+  <div class="se-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="se-header">
       <div class="se-title-area">

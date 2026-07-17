@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page experiment-detail-page">
+  <div class="uiue-list-page experiment-detail-page uiue-compact-workbench">
     <div class="detail-header">
       <div>
         <div class="detail-title">{{ form.id ? '分流实验详情' : '新建分流实验' }}</div>

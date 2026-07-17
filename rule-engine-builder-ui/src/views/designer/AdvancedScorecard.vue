@@ -1,5 +1,5 @@
 <template>
-  <div class="asc-designer">
+  <div class="asc-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="asc-header">
       <div class="asc-title-area">

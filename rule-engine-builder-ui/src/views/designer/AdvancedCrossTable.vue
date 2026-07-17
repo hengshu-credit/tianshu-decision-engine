@@ -1,5 +1,5 @@
 <template>
-  <div class="act-designer">
+  <div class="act-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="act-header">
       <div class="act-title-area">

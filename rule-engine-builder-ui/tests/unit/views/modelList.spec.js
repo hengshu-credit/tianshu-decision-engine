@@ -246,6 +246,39 @@ describe('ModelList — 上传模型', () => {
     expect(wrapper.vm.fileList.length).toBe(1)
     expect(wrapper.vm.fileList[0].name).toBe('file2.pmml')
   })
+
+  test('选择 ONNX 文件后显示任务配置并切换到神经网络类型', () => {
+    const file = { name: 'det_10g.onnx', raw: { name: 'det_10g.onnx' } }
+    wrapper.vm.handleFileChange(file, [file])
+    expect(wrapper.vm.isOnnxFile).toBe(true)
+    expect(wrapper.vm.uploadForm.modelType).toBe('NEURAL_NET')
+    wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
+    expect(wrapper.vm.uploadForm.onnxConfig).toMatchObject({ inputWidth: 640, inputHeight: 640 })
+  })
+
+  test('上传 ONNX 时提交任务类型、配置并更新进度', async () => {
+    wrapper.vm.handleUpload()
+    wrapper.vm.uploadForm.scope = 'GLOBAL'
+    wrapper.vm.uploadForm.modelCode = 'buffalo_face_detector'
+    wrapper.vm.uploadForm.modelName = 'Buffalo 人脸检测'
+    const raw = new Blob(['onnx'])
+    const file = { name: 'det_10g.onnx', raw }
+    wrapper.vm.handleFileChange(file, [file])
+    wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
+    modelApi.uploadModel.mockImplementation((formData, onProgress) => {
+      onProgress({ loaded: 50, total: 100 })
+      expect(formData.get('onnxTaskType')).toBe('SCRFD_FACE_DETECTION')
+      expect(JSON.parse(formData.get('onnxConfig'))).toMatchObject({ inputWidth: 640, inputHeight: 640 })
+      return Promise.resolve({ data: { id: 10 } })
+    })
+
+    wrapper.vm.handleDoUpload()
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    expect(modelApi.uploadModel).toHaveBeenCalled()
+    expect(wrapper.vm.uploadProgress).toBe(50)
+    expect(wrapper.vm.uploading).toBe(false)
+  })
 })
 
 describe('ModelList — 模型操作', () => {

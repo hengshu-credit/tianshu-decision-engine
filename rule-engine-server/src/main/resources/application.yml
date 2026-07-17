@@ -7,6 +7,10 @@ server:
 spring:
   application:
     name: rule-engine-server
+  servlet:
+    multipart:
+      max-file-size: 512MB
+      max-request-size: 512MB
   # 未配置 Kafka 时排除自动装配，避免启动期连接失败；需要日志入 Kafka 时请配置 spring.kafka
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver

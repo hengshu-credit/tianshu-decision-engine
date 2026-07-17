@@ -7,6 +7,10 @@ import com.hengshucredit.rule.core.pmml.PMMLModelExecutor;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.mapper.*;
+import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
+import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
+import com.hengshucredit.rule.server.service.onnx.OnnxTaskConfig;
+import com.hengshucredit.rule.server.service.onnx.OnnxTaskType;
 import org.dmg.pmml.Model;
 import org.dmg.pmml.PMML;
 import org.jpmml.evaluator.*;
@@ -52,6 +56,10 @@ public class RuleModelService {
     private RuleFunctionService ruleFunctionService;
     @Resource
     private RuleVariableService variableService;
+    @Resource
+    private OnnxRuntimeSessionManager onnxSessionManager;
+    @Resource
+    private OnnxModelExecutionService onnxModelExecutionService;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -162,30 +170,50 @@ public class RuleModelService {
     public RuleModel uploadAndParse(MultipartFile file, Long projectId, String scope,
             String modelCode, String modelName, String modelType, String description,
             String changeLog, String testParams) {
+        return uploadAndParse(file, projectId, scope, modelCode, modelName, modelType, description,
+                changeLog, testParams, null, null);
+    }
+
+    public RuleModel uploadAndParse(MultipartFile file, Long projectId, String scope,
+            String modelCode, String modelName, String modelType, String description,
+            String changeLog, String testParams, String onnxTaskType, String onnxConfig) {
         try {
-            String modelContent = Base64.getEncoder().encodeToString(file.getBytes());
+            byte[] fileBytes = file.getBytes();
+            String modelContent = Base64.getEncoder().encodeToString(fileBytes);
 
             String modelFormat = detectFormat(file.getOriginalFilename());
 
-            Map<String, Object> modelConfig = null;
+            Map<String, Object> modelConfig = new LinkedHashMap<>();
             List<RuleModelInputField> inputFields = null;
             List<RuleModelOutputField> outputFields = null;
 
-            if (testParams != null && !testParams.isEmpty()) {
-                modelConfig = new HashMap<>();
-                modelConfig.put("testParams", testParams);
-            }
-
             if ("PMML".equals(modelFormat)) {
-                String rawContent = new String(file.getBytes(), StandardCharsets.UTF_8);
+                String rawContent = new String(fileBytes, StandardCharsets.UTF_8);
                 PmmlParseResult result = parsePmml(rawContent);
-                modelConfig = result.getModelConfig();
+                if (result.getModelConfig() != null) modelConfig.putAll(result.getModelConfig());
                 inputFields = result.getInputFields();
                 outputFields = result.getOutputFields();
                 if (modelType == null || modelType.isEmpty()) {
                     modelType = result.getModelType();
                 }
+            } else if ("ONNX".equals(modelFormat)) {
+                com.alibaba.fastjson.JSONObject rawConfig;
+                try {
+                    rawConfig = onnxConfig == null || onnxConfig.trim().isEmpty()
+                            ? new com.alibaba.fastjson.JSONObject()
+                            : com.alibaba.fastjson.JSON.parseObject(onnxConfig);
+                } catch (RuntimeException e) {
+                    throw new IllegalArgumentException("ONNX 配置不是有效 JSON", e);
+                }
+                rawConfig.put("onnxTaskType", onnxTaskType);
+                OnnxTaskConfig taskConfig = OnnxTaskConfig.parse(rawConfig.toJSONString());
+                modelConfig.putAll(taskConfig.toJsonObject());
+                modelConfig.put("nodeMetadata", onnxSessionManager.inspect(fileBytes));
+                inputFields = buildOnnxInputFields(taskConfig.getTaskType());
+                outputFields = buildOnnxOutputFields(taskConfig.getTaskType());
             }
+
+            if (testParams != null && !testParams.isEmpty()) modelConfig.put("testParams", testParams);
 
             String projectCode = null;
             String projectName = null;
@@ -210,7 +238,7 @@ public class RuleModelService {
             model.setModelContent(modelContent);
             model.setModelFileName(file.getOriginalFilename());
             model.setModelFileSize(file.getSize());
-            if (modelConfig != null) {
+            if (!modelConfig.isEmpty()) {
                 model.setModelConfig(com.alibaba.fastjson.JSON.toJSONString(modelConfig));
             }
             model.setInputFieldCount(inputFields != null ? inputFields.size() : 0);
@@ -242,10 +270,38 @@ public class RuleModelService {
 
             saveVersionSnapshot(model.getId(), 1, modelContent, model.getModelConfig(), changeLog, null);
 
+            model.setModelContent(null);
             return model;
         } catch (IOException e) {
             throw new RuntimeException("读取模型文件失败: " + e.getMessage(), e);
         }
+    }
+
+    private List<RuleModelInputField> buildOnnxInputFields(OnnxTaskType taskType) {
+        List<RuleModelInputField> fields = new ArrayList<>();
+        for (OnnxTaskType.FieldSpec spec : taskType.getInputs()) {
+            RuleModelInputField field = new RuleModelInputField();
+            field.setFieldName(spec.getName());
+            field.setFieldLabel(spec.getLabel());
+            field.setFieldType(spec.getType());
+            field.setDataType("CONTINUOUS");
+            field.setTransformType("NONE");
+            fields.add(field);
+        }
+        return fields;
+    }
+
+    private List<RuleModelOutputField> buildOnnxOutputFields(OnnxTaskType taskType) {
+        List<RuleModelOutputField> fields = new ArrayList<>();
+        for (OnnxTaskType.FieldSpec spec : taskType.getOutputs()) {
+            RuleModelOutputField field = new RuleModelOutputField();
+            field.setFieldName(spec.getName());
+            field.setFieldLabel(spec.getLabel());
+            field.setFieldType(spec.getType());
+            field.setIsProbability(0);
+            fields.add(field);
+        }
+        return fields;
     }
 
     /**
@@ -379,7 +435,7 @@ public class RuleModelService {
     public IPage<RuleModel> pageList(int pageNum, int pageSize, Long projectId,
             String scope, String modelType, String modelFormat, String modelCode,
             String modelName, String projectCode, String projectName) {
-        LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
 
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleModel::getScope, scope);
@@ -440,6 +496,7 @@ public class RuleModelService {
         wrapper.orderByDesc(RuleModel::getId);
         IPage<RuleModel> result = modelMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
         fillProjectName(result.getRecords());
+        clearModelContent(result.getRecords());
         return result;
     }
 
@@ -447,7 +504,7 @@ public class RuleModelService {
      * 获取模型详情（含字段信息）
      */
     public RuleModel getDetail(Long modelId) {
-        RuleModel model = modelMapper.selectById(modelId);
+        RuleModel model = modelMapper.selectOne(withoutModelContent().eq(RuleModel::getId, modelId));
         if (model == null) return null;
 
         model.setInputFields(inputFieldMapper.selectList(
@@ -460,6 +517,7 @@ public class RuleModelService {
                         .eq(RuleModelOutputField::getModelId, modelId)
                         .orderByAsc(RuleModelOutputField::getSortOrder)));
 
+        model.setModelContent(null);
         return model;
     }
 
@@ -467,7 +525,7 @@ public class RuleModelService {
      * 查询项目下所有模型（非分页，设计器使用）
      */
     public List<RuleModel> listByProject(Long projectId) {
-        LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
+        LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
         if (projectId != null && projectId > 0) {
             wrapper.and(w -> w
                     .eq(RuleModel::getScope, SCOPE_GLOBAL)
@@ -482,7 +540,20 @@ public class RuleModelService {
         List<RuleModel> models = modelMapper.selectList(wrapper);
         fillInputFields(models);
         fillOutputFields(models);
+        clearModelContent(models);
         return models;
+    }
+
+    private LambdaQueryWrapper<RuleModel> withoutModelContent() {
+        return new LambdaQueryWrapper<RuleModel>()
+                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
+    }
+
+    private void clearModelContent(List<RuleModel> models) {
+        if (models == null) return;
+        for (RuleModel model : models) {
+            if (model != null) model.setModelContent(null);
+        }
     }
 
     /**
@@ -797,6 +868,9 @@ public class RuleModelService {
         if ("PMML".equals(model.getModelFormat())) {
             return executePmml(model, boundParams);
         }
+        if ("ONNX".equals(model.getModelFormat())) {
+            return executeOnnx(model, boundParams);
+        }
 
         Map<String, Object> result = new HashMap<>();
         result.put("success", false);
@@ -804,6 +878,27 @@ public class RuleModelService {
         result.put("modelCode", model.getModelCode());
         result.put("modelFormat", model.getModelFormat());
         result.put("inputParams", boundParams);
+        return result;
+    }
+
+    private Map<String, Object> executeOnnx(RuleModel model, Map<String, Object> params) {
+        long startTime = System.currentTimeMillis();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("modelCode", model.getModelCode());
+        result.put("modelFormat", "ONNX");
+        try {
+            byte[] modelBytes = Base64.getDecoder().decode(model.getModelContent());
+            Map<String, Object> rawOutputs = onnxModelExecutionService.execute(
+                    modelBytes, model.getModelConfig(), params);
+            result.put("success", true);
+            result.put("outputs", applyOutputTransforms(model, params, rawOutputs));
+        } catch (RuntimeException e) {
+            String message = e.getMessage();
+            result.put("success", false);
+            result.put("error", "ONNX 执行失败: " + (message == null || message.isEmpty() ? e : message));
+        }
+        result.put("inputParams", params);
+        result.put("executeTimeMs", System.currentTimeMillis() - startTime);
         return result;
     }
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page uiue-compact-workbench">
     <!-- 页面头部 -->
     <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
       <h2 style="margin:0;">{{ model.modelName || '模型详情' }}</h2>
@@ -22,6 +22,8 @@
       <el-descriptions-item label="文件大小">{{ formatFileSize(model.modelFileSize) }}</el-descriptions-item>
       <el-descriptions-item label="设计版本">{{ model.currentVersion }}</el-descriptions-item>
       <el-descriptions-item label="发布版本">{{ model.publishedVersion || '-' }}</el-descriptions-item>
+      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 推理任务">{{ onnxTaskLabel }}</el-descriptions-item>
+      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 原始节点">{{ onnxNodeSummary }}</el-descriptions-item>
     </el-descriptions>
 
     <!-- 描述 -->
@@ -295,7 +297,7 @@
           </el-tooltip>
         </div>
 
-        <el-alert v-if="model.modelFormat !== 'PMML'" :title="model.modelFormat + ' 格式暂不支持在线执行，仅 PMML 格式支持'" type="warning" :closable="false" style="margin-bottom:12px;" />
+        <el-alert v-if="model.modelFormat && !supportsOnlineExecution" :title="model.modelFormat + ' 格式暂不支持在线执行'" type="warning" :closable="false" style="margin-bottom:12px;" />
 
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
@@ -367,6 +369,7 @@
 
 <script>
 import * as api from '@/api/model'
+import { getOnnxTaskLabel } from '@/constants/onnxTasks'
 import { getRuleTestSchema } from '@/api/definition'
 import { listVariablesByProject, listVariables } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
@@ -447,6 +450,24 @@ export default {
     }
   },
   computed: {
+    parsedModelConfig() {
+      const config = this.model && this.model.modelConfig
+      if (!config) return {}
+      if (typeof config === 'object') return config
+      try { return JSON.parse(config) } catch (e) { return {} }
+    },
+    supportsOnlineExecution() {
+      return this.model && (this.model.modelFormat === 'PMML' || this.model.modelFormat === 'ONNX')
+    },
+    onnxTaskLabel() {
+      return getOnnxTaskLabel(this.parsedModelConfig.onnxTaskType)
+    },
+    onnxNodeSummary() {
+      const metadata = this.parsedModelConfig.nodeMetadata || {}
+      const inputs = metadata.inputs ? Object.keys(metadata.inputs).length : 0
+      const outputs = metadata.outputs ? Object.keys(metadata.outputs).length : 0
+      return inputs + ' 入 / ' + outputs + ' 出'
+    },
     inputFieldsTotal() {
       return this.model && this.model.inputFields ? this.model.inputFields.length : 0
     },

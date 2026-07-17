@@ -1,5 +1,5 @@
 <template>
-  <div class="flow-designer">
+  <div class="flow-designer uiue-compact-workbench uiue-compact-designer">
     <!-- 顶部工具栏 -->
     <div class="flow-toolbar">
       <div class="toolbar-left">

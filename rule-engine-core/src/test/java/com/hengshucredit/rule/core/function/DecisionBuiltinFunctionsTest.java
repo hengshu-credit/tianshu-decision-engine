@@ -15,6 +15,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class DecisionBuiltinFunctionsTest {
@@ -245,6 +246,47 @@ public class DecisionBuiltinFunctionsTest {
         assertTrue(Pattern.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}", String.valueOf(output.get("date"))));
         assertEquals("AB", output.get("upper"));
         assertEquals(13d, ((Number) output.get("score")).doubleValue(), 0d);
+    }
+
+    @Test
+    public void cosineSimilaritySupportsListsAndPrimitiveArrays() {
+        assertEquals(1d, functions.cosineSimilarity(
+                Arrays.asList(1d, 2d, 3d), new float[]{1f, 2f, 3f}), 0.000001d);
+        assertEquals(-1d, functions.cosineSimilarity(
+                new double[]{1d, 0d}, Arrays.asList(-2d, 0d)), 0.000001d);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void cosineSimilarityRejectsDifferentDimensions() {
+        functions.cosineSimilarity(Arrays.asList(1d), Arrays.asList(1d, 2d));
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void cosineSimilarityRejectsZeroVector() {
+        functions.cosineSimilarity(Arrays.asList(0d, 0d), Arrays.asList(1d, 1d));
+    }
+
+    @Test
+    public void facenoxLivenessKeepsOriginalLogitsAndCalculatesDecisionFields() {
+        List<Double> logits = Arrays.asList(1.2d, 0.2d);
+
+        Map<String, Object> result = functions.facenoxLiveness(logits, 0.5d);
+
+        assertSame(logits, result.get("logits"));
+        assertEquals(1d, ((Number) result.get("logitDiff")).doubleValue(), 0.000001d);
+        assertEquals(1d, ((Number) result.get("confidence")).doubleValue(), 0.000001d);
+        assertEquals(Boolean.TRUE, result.get("isReal"));
+        assertEquals(Boolean.FALSE, result.get("isSpoof"));
+    }
+
+    @Test
+    public void facenoxLivenessUsesAbsoluteDifferenceForSpoofConfidence() {
+        Map<String, Object> result = functions.facenoxLiveness(Arrays.asList(-0.5d, 0.7d), 0.3d);
+
+        assertEquals(-1.2d, ((Number) result.get("logitDiff")).doubleValue(), 0.000001d);
+        assertEquals(1.2d, ((Number) result.get("confidence")).doubleValue(), 0.000001d);
+        assertEquals(Boolean.FALSE, result.get("isReal"));
+        assertEquals(Boolean.TRUE, result.get("isSpoof"));
     }
 
     private static Map<String, Object> sampleJson() {

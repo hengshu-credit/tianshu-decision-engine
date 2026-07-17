@@ -67,6 +67,12 @@ final class BuiltinFunctionCatalog {
         list.add(fn("numDiv", "数值相除", "两个数值相除，按 scale 四舍五入；除数为 0 返回 null", params(p("left", "NUMBER", "被除数", 10), p("right", "NUMBER", "除数", 3), p("scale", "NUMBER", "小数位", 2)), "NUMBER", DECISION_CLASS, "numDiv"));
         list.add(fn("numRound", "数值四舍五入", "按指定小数位四舍五入", params(p("value", "NUMBER", "数值", 12.3456), p("scale", "NUMBER", "小数位", 2)), "NUMBER", DECISION_CLASS, "numRound"));
         list.add(fn("numAbs", "数值绝对值", "返回数值绝对值", p("value", "NUMBER", "数值", -12.3), "NUMBER", DECISION_CLASS, "numAbs"));
+        list.add(fn("cosineSimilarity", "余弦相似度", "计算两个等长非零向量的原始余弦相似度，不包含业务阈值", params(
+                p("leftEmbedding", "OBJECT", "左向量", Arrays.asList(1.0, 0.0)),
+                p("rightEmbedding", "OBJECT", "右向量", Arrays.asList(1.0, 0.0))), "NUMBER", DECISION_CLASS, "cosineSimilarity"));
+        list.add(fn("facenoxLiveness", "Facenox 活体判定", "按 realLogit - spoofLogit 与阈值计算活体结果并保留原始 logits", params(
+                p("logits", "OBJECT", "原始 logits", Arrays.asList(1.2, 0.2)),
+                p("threshold", "NUMBER", "差值阈值", 0.5)), "MAP", DECISION_CLASS, "facenoxLiveness"));
         list.add(fn("numPow", "数值幂运算", "返回 value 的 exponent 次幂", params(p("value", "NUMBER", "底数", 2), p("exponent", "NUMBER", "指数", 3)), "NUMBER", DECISION_CLASS, "numPow"));
         list.add(fn("numBetween", "数值区间判断", "判断 value 是否在 [min, max] 闭区间内", params(p("value", "NUMBER", "数值", 85), p("min", "NUMBER", "下限", 60), p("max", "NUMBER", "上限", 100)), "BOOLEAN", DECISION_CLASS, "numBetween"));
         list.add(fn("randomInt", "随机整数",
