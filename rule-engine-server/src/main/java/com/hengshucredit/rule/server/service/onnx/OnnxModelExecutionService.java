@@ -11,20 +11,14 @@ import java.util.Map;
 public class OnnxModelExecutionService {
 
     private final OnnxRuntimeSessionManager sessionManager;
-    private final YunetDetectorCache yunetDetectorCache;
 
-    public OnnxModelExecutionService(OnnxRuntimeSessionManager sessionManager, YunetDetectorCache yunetDetectorCache) {
+    public OnnxModelExecutionService(OnnxRuntimeSessionManager sessionManager) {
         this.sessionManager = sessionManager;
-        this.yunetDetectorCache = yunetDetectorCache;
     }
 
     public void preload(byte[] modelBytes, String configJson) {
         OnnxTaskConfig config = OnnxTaskConfig.parse(configJson);
-        if (config.getTaskType() == OnnxTaskType.YUNET_FACE_DETECTION) {
-            yunetDetectorCache.preload(modelBytes, config);
-            return;
-        }
-        sessionManager.session(modelBytes);
+        sessionManager.session(modelBytes, config.getRuntimeConfig());
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String configJson, Map<String, Object> params) {
@@ -33,22 +27,30 @@ public class OnnxModelExecutionService {
         switch (config.getTaskType()) {
             case YUNET_FACE_DETECTION:
                 Map<String, Object> yunet = new LinkedHashMap<>();
-                yunet.put("faces", new YunetFaceDetectionExecutor(yunetDetectorCache).detect(modelBytes, image, config));
+                yunet.put("faces", new YunetFaceDetectionExecutor(sessionManager, config.getRuntimeConfig())
+                        .detect(modelBytes, image, config));
                 return yunet;
             case FACENOX_ANTISPOOF:
-                return new FacenoxAntispoofExecutor(sessionManager).execute(modelBytes, image, faces(params));
+                return new FacenoxAntispoofExecutor(sessionManager, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             case MN3_ANTISPOOF:
-                return new Mn3AntispoofExecutor(sessionManager).execute(modelBytes, image, faces(params));
+                return new Mn3AntispoofExecutor(sessionManager, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             case SCRFD_FACE_DETECTION:
-                return new ScrfdFaceDetectionExecutor(sessionManager).execute(modelBytes, image, config);
+                return new ScrfdFaceDetectionExecutor(sessionManager, config.getRuntimeConfig())
+                        .execute(modelBytes, image, config);
             case ARCFACE_RECOGNITION:
-                return new ArcFaceRecognitionExecutor(sessionManager).execute(modelBytes, image, faces(params));
+                return new ArcFaceRecognitionExecutor(sessionManager, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             case LANDMARK_2D106:
-                return new LandmarkExecutor(sessionManager, false).execute(modelBytes, image, faces(params));
+                return new LandmarkExecutor(sessionManager, false, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             case LANDMARK_3D68:
-                return new LandmarkExecutor(sessionManager, true).execute(modelBytes, image, faces(params));
+                return new LandmarkExecutor(sessionManager, true, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             case GENDER_AGE:
-                return new GenderAgeExecutor(sessionManager).execute(modelBytes, image, faces(params));
+                return new GenderAgeExecutor(sessionManager, config.getRuntimeConfig())
+                        .execute(modelBytes, image, faces(params));
             default:
                 throw new IllegalArgumentException("不支持的 ONNX 任务类型: " + config.getTaskType());
         }

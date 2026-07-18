@@ -20,7 +20,7 @@ public class OnnxModelWarmupRunnerTest {
         AtomicInteger detailLoads = new AtomicInteger();
         java.util.List<RuleModel> models = Arrays.asList(model("ONNX", 1, 1), model("ONNX", 1, 0),
                 model("PMML", 1, 1), model("ONNX", 0, 1));
-        OnnxModelExecutionService executionService = new OnnxModelExecutionService(null, null) {
+        OnnxModelExecutionService executionService = new OnnxModelExecutionService(null) {
             @Override
             public void preload(byte[] modelBytes, String configJson) {
                 preloads.incrementAndGet();
@@ -53,7 +53,7 @@ public class OnnxModelWarmupRunnerTest {
         RuleModel second = model("ONNX", 1, 1);
         second.setId(2L);
         AtomicInteger preloads = new AtomicInteger();
-        OnnxModelExecutionService executionService = new OnnxModelExecutionService(null, null) {
+        OnnxModelExecutionService executionService = new OnnxModelExecutionService(null) {
             @Override
             public void preload(byte[] modelBytes, String configJson) {
                 if (preloads.getAndIncrement() == 0) {

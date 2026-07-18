@@ -80,6 +80,14 @@
         <el-table-column label="模型格式" min-width="90" align="center">
           <template slot-scope="{ row }"><el-tag size="mini" type="info">{{ row.modelFormat }}</el-tag></template>
         </el-table-column>
+        <el-table-column label="执行设备" min-width="90" align="center">
+          <template slot-scope="{ row }">
+            <el-tag v-if="row.modelFormat === 'ONNX'" :type="modelExecutionProvider(row) === 'CUDA' ? 'success' : 'info'" size="mini">
+              {{ modelExecutionProvider(row) }}
+            </el-tag>
+            <span v-else>—</span>
+          </template>
+        </el-table-column>
         <el-table-column label="启动预加载" min-width="90" align="center">
           <template slot-scope="{ row }">{{ row.modelFormat === 'ONNX' && row.preloadOnStartup === 1 ? '是' : '否' }}</template>
         </el-table-column>
@@ -185,6 +193,40 @@
               <el-input-number v-model="uploadForm.onnxConfig.inputHeight" :min="32" :step="32" />
             </el-form-item>
           </template>
+          <el-form-item v-if="uploadSupportsGpu" label="执行设备">
+            <el-radio-group v-model="uploadForm.executionProvider">
+              <el-radio label="CPU">CPU（默认）</el-radio>
+              <el-radio label="CUDA">GPU（CUDA）</el-radio>
+            </el-radio-group>
+            <div class="runtime-hint" :class="{ 'runtime-hint-error': uploadUsesCuda && !runtimeCapabilities.cudaAvailable }">
+              {{ cudaRuntimeHint }}
+            </div>
+          </el-form-item>
+          <template v-if="uploadSupportsGpu && uploadUsesCuda">
+            <el-form-item label="GPU 设备号">
+              <el-input-number v-model="uploadForm.cudaDeviceId" :min="0" :step="1" :precision="0" />
+            </el-form-item>
+            <el-form-item label="显存上限">
+              <el-input-number v-model="uploadForm.cudaGpuMemLimitMb" :min="0" :step="1024" :precision="0" />
+              <span class="runtime-unit">MB，0 表示不显式限制</span>
+            </el-form-item>
+            <el-form-item label="显存扩展策略">
+              <el-select v-model="uploadForm.cudaArenaExtendStrategy" style="width:260px;">
+                <el-option label="按 2 的幂次扩展" value="kNextPowerOfTwo" />
+                <el-option label="按实际申请量扩展" value="kSameAsRequested" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="cuDNN 算法">
+              <el-select v-model="uploadForm.cudaCudnnConvAlgoSearch" style="width:260px;">
+                <el-option label="EXHAUSTIVE（精确搜索）" value="EXHAUSTIVE" />
+                <el-option label="HEURISTIC（启发式）" value="HEURISTIC" />
+                <el-option label="DEFAULT（默认算法）" value="DEFAULT" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="默认 CUDA 流">
+              <el-switch v-model="uploadForm.cudaDoCopyInDefaultStream" active-text="启用" inactive-text="停用" />
+            </el-form-item>
+          </template>
         </template>
         <el-form-item v-if="isOnnxFile" label="启动预加载">
           <el-switch v-model="uploadForm.preloadOnStartup" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
@@ -237,6 +279,40 @@
         <el-form-item label="模型大类">{{ modelTypeLabel(editForm.modelType) }}</el-form-item>
         <el-form-item label="模型格式">{{ editForm.modelFormat }}</el-form-item>
         <el-form-item label="作用范围">{{ editForm.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-form-item>
+        <el-form-item v-if="editSupportsGpu" label="执行设备">
+          <el-radio-group v-model="editForm.executionProvider">
+            <el-radio label="CPU">CPU（默认）</el-radio>
+            <el-radio label="CUDA">GPU（CUDA）</el-radio>
+          </el-radio-group>
+          <div class="runtime-hint" :class="{ 'runtime-hint-error': editUsesCuda && !runtimeCapabilities.cudaAvailable }">
+            {{ cudaRuntimeHint }}
+          </div>
+        </el-form-item>
+        <template v-if="editSupportsGpu && editUsesCuda">
+          <el-form-item label="GPU 设备号">
+            <el-input-number v-model="editForm.cudaDeviceId" :min="0" :step="1" :precision="0" />
+          </el-form-item>
+          <el-form-item label="显存上限">
+            <el-input-number v-model="editForm.cudaGpuMemLimitMb" :min="0" :step="1024" :precision="0" />
+            <span class="runtime-unit">MB，0 表示不显式限制</span>
+          </el-form-item>
+          <el-form-item label="显存扩展策略">
+            <el-select v-model="editForm.cudaArenaExtendStrategy" style="width:260px;">
+              <el-option label="按 2 的幂次扩展" value="kNextPowerOfTwo" />
+              <el-option label="按实际申请量扩展" value="kSameAsRequested" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="cuDNN 算法">
+            <el-select v-model="editForm.cudaCudnnConvAlgoSearch" style="width:260px;">
+              <el-option label="EXHAUSTIVE（精确搜索）" value="EXHAUSTIVE" />
+              <el-option label="HEURISTIC（启发式）" value="HEURISTIC" />
+              <el-option label="DEFAULT（默认算法）" value="DEFAULT" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="默认 CUDA 流">
+            <el-switch v-model="editForm.cudaDoCopyInDefaultStream" active-text="启用" inactive-text="停用" />
+          </el-form-item>
+        </template>
         <el-form-item v-if="editForm.modelFormat === 'ONNX'" label="启动预加载">
           <el-switch v-model="editForm.preloadOnStartup" :active-value="1" :inactive-value="0" active-text="是" inactive-text="否" />
         </el-form-item>
@@ -272,7 +348,7 @@ import { clearPageState, restorePageState, savePageState } from '@/utils/pageSta
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
-import { ONNX_TASKS, createOnnxConfig } from '@/constants/onnxTasks'
+import { ONNX_TASKS, createOnnxConfig, createOnnxRuntimeConfig, onnxRuntimePayload, parseOnnxModelConfig } from '@/constants/onnxTasks'
 
 const MODEL_TYPE_LABELS = {
   LR: 'LR（逻辑回归）',
@@ -283,6 +359,18 @@ const MODEL_TYPE_LABELS = {
   NEURAL_NET: 'NeuralNet（神经网络）',
   SVM: 'SVM'
 }
+
+const createUploadForm = () => ({
+  projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '',
+  changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {}, preloadOnStartup: 0,
+  executionTimeoutMs: 120000, ...createOnnxRuntimeConfig()
+})
+
+const createEditForm = () => ({
+  id: null, modelCode: '', modelName: '', modelType: '', modelFormat: '', scope: '', targetCategories: '',
+  modelVersion: '', description: '', status: 1, preloadOnStartup: 0, executionTimeoutMs: 120000,
+  onnxTaskType: '', originalModelConfig: {}, ...createOnnxRuntimeConfig()
+})
 
 export default {
   name: 'ModelList',
@@ -310,7 +398,11 @@ export default {
       // 上传
       uploadVisible: false, uploading: false, uploadProgress: 0,
       onnxTasks: ONNX_TASKS,
-      uploadForm: { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {}, preloadOnStartup: 0, executionTimeoutMs: 120000 },
+      runtimeCapabilities: {
+        onnxRuntimeVersion: '', availableProviders: ['CPU'], cudaAvailable: false, cudaError: '',
+        cpuFallbackEnabled: true, activeCpuFallbackCount: 0
+      },
+      uploadForm: createUploadForm(),
       uploadRules: {
         modelCode: [{
           required: true,
@@ -361,7 +453,7 @@ export default {
 
       // 编辑模型
       editVisible: false, editLoading: false,
-      editForm: { id: null, modelCode: '', modelName: '', modelType: '', modelFormat: '', scope: '', targetCategories: '', modelVersion: '', description: '', status: 1, preloadOnStartup: 0, executionTimeoutMs: 120000 },
+      editForm: createEditForm(),
       editRules: {
         modelName: [{ required: true, message: '请输入模型名称', trigger: 'blur' }]
       }
@@ -371,11 +463,43 @@ export default {
     isOnnxFile() {
       const name = (this.selectedFile && this.selectedFile.name) || this.selectedFileName
       return !!(name && name.toLowerCase().endsWith('.onnx'))
+    },
+    uploadSupportsGpu() {
+      const task = this.onnxTasks.find(item => item.value === this.uploadForm.onnxTaskType)
+      return this.isOnnxFile && !!(task && task.supportsGpu)
+    },
+    editSupportsGpu() {
+      const task = this.onnxTasks.find(item => item.value === this.editForm.onnxTaskType)
+      return this.editForm.modelFormat === 'ONNX' && this.editForm.modelType === 'NEURAL_NET'
+        && !!(task && task.supportsGpu)
+    },
+    uploadUsesCuda() {
+      return this.uploadForm.executionProvider === 'CUDA'
+    },
+    editUsesCuda() {
+      return this.editForm.executionProvider === 'CUDA'
+    },
+    cudaRuntimeHint() {
+      const activeFallbackCount = Number(this.runtimeCapabilities.activeCpuFallbackCount) || 0
+      if (activeFallbackCount > 0) {
+        return '当前服务已有 ' + activeFallbackCount
+          + ' 个模型的 CUDA 运行配置已自动回退 CPU，正在通过 CPU 执行；'
+          + '其他 GPU 模型初始化或推理失败时也会自动回退 CPU，首次回退可能增加耗时；修复 GPU 环境后请重启服务。'
+      }
+      if (this.runtimeCapabilities.cudaAvailable) {
+        return '当前服务已检测到 CUDA Execution Provider（ONNX Runtime '
+          + (this.runtimeCapabilities.onnxRuntimeVersion || '-')
+          + '）。GPU 初始化或推理失败时将自动回退 CPU；首次回退可能增加耗时，修复 GPU 环境后请重启服务。'
+      }
+      return '当前服务 CUDA 环境不可用：'
+        + (this.runtimeCapabilities.cudaError || '请检查 CUDA、cuDNN 与 ONNX Runtime GPU 依赖')
+        + '。模型运行时将自动回退 CPU；首次回退可能增加耗时，修复 GPU 环境后请重启服务。'
     }
   },
   created() {
     this.restoreCachedState()
     this.loadProjects()
+    this.loadRuntimeCapabilities()
   },
   mounted() {
     this.load()
@@ -462,9 +586,24 @@ export default {
       this.load()
     },
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
+    modelExecutionProvider(row) {
+      return createOnnxRuntimeConfig(parseOnnxModelConfig(row && row.modelConfig)).executionProvider
+    },
+    async loadRuntimeCapabilities() {
+      try {
+        const res = await api.getRuntimeCapabilities()
+        this.runtimeCapabilities = { ...this.runtimeCapabilities, ...(res.data || {}) }
+      } catch (e) {
+        this.runtimeCapabilities = {
+          ...this.runtimeCapabilities,
+          cudaAvailable: false,
+          cudaError: e.message || '运行时能力查询失败'
+        }
+      }
+    },
 
     handleUpload() {
-      this.uploadForm = { projectId: '', scope: 'PROJECT', modelCode: '', modelName: '', modelType: 'LR', description: '', changeLog: '', testParams: '', onnxTaskType: '', onnxConfig: {}, preloadOnStartup: 0, executionTimeoutMs: 120000 }
+      this.uploadForm = createUploadForm()
       this.uploadProgress = 0
       this.fileList = []; this.selectedFile = null; this.selectedFileName = ''
       this.uploadVisible = true
@@ -510,7 +649,10 @@ export default {
           formData.append('executionTimeoutMs', this.uploadForm.executionTimeoutMs)
           if (this.isOnnxFile) {
             formData.append('onnxTaskType', this.uploadForm.onnxTaskType)
-            formData.append('onnxConfig', JSON.stringify(this.uploadForm.onnxConfig || {}))
+            formData.append('onnxConfig', JSON.stringify({
+              ...(this.uploadForm.onnxConfig || {}),
+              ...onnxRuntimePayload(this.uploadForm)
+            }))
           }
           await api.uploadModel(formData, event => {
             if (event && event.total) this.uploadProgress = Math.round(event.loaded * 100 / event.total)
@@ -539,6 +681,7 @@ export default {
       } catch (e) { if (e !== 'cancel') this.$message.error(e.message || '删除失败') }
     },
     handleEdit(row) {
+      const originalModelConfig = parseOnnxModelConfig(row.modelConfig)
       this.editForm = {
         id: row.id,
         modelCode: row.modelCode,
@@ -551,7 +694,10 @@ export default {
         description: row.description || '',
         status: row.status == null ? 1 : row.status,
         preloadOnStartup: row.preloadOnStartup === 1 ? 1 : 0,
-        executionTimeoutMs: row.executionTimeoutMs || 120000
+        executionTimeoutMs: row.executionTimeoutMs || 120000,
+        onnxTaskType: originalModelConfig.onnxTaskType || '',
+        originalModelConfig,
+        ...createOnnxRuntimeConfig(originalModelConfig)
       }
       this.editVisible = true
       this.$nextTick(() => { if (this.$refs.editForm) this.$refs.editForm.clearValidate() })
@@ -561,7 +707,7 @@ export default {
         if (!valid) return
         this.editLoading = true
         try {
-          await api.updateModel({
+          const payload = {
             id: this.editForm.id,
             modelName: this.editForm.modelName,
             description: this.editForm.description,
@@ -570,7 +716,14 @@ export default {
             status: this.editForm.status,
             preloadOnStartup: this.editForm.preloadOnStartup,
             executionTimeoutMs: this.editForm.executionTimeoutMs
-          })
+          }
+          if (this.editSupportsGpu) {
+            payload.modelConfig = JSON.stringify({
+              ...this.editForm.originalModelConfig,
+              ...onnxRuntimePayload(this.editForm)
+            })
+          }
+          await api.updateModel(payload)
           this.$message.success('保存成功')
           this.editVisible = false
           this.load()
@@ -603,6 +756,9 @@ export default {
 .linkage-hint { font-size:12px; color:#909399; margin-bottom:12px; padding:8px 12px; background:#f5f7fa; border-radius:4px; }
 .tab-filter-row { display:flex; gap:8px; align-items:center; margin-bottom:12px; flex-wrap:wrap; }
 .tab-empty { text-align:center; padding:48px 0; color:#c0c4cc; font-size:14px; }
+.runtime-hint { margin-top:4px; color:#909399; font-size:11px; line-height:1.5; }
+.runtime-hint-error { color:#e6a23c; }
+.runtime-unit { margin-left:8px; color:#909399; }
 
 /* 重置按钮点击后去除 focus 高亮 */
 .tab-filter-row .el-button:not(.el-button--primary):focus,

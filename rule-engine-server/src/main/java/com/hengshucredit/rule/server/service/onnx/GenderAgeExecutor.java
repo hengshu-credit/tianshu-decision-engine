@@ -12,7 +12,11 @@ public final class GenderAgeExecutor {
     private final OnnxInferenceRunner runner;
 
     public GenderAgeExecutor(OnnxRuntimeSessionManager sessionManager) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, OnnxRuntimeConfig.cpu());
+    }
+
+    public GenderAgeExecutor(OnnxRuntimeSessionManager sessionManager, OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String imageBase64,

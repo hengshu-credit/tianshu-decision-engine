@@ -5,6 +5,11 @@ export function checkModelHealth() {
   return request({ url: '/rule/model/health', method: 'get' })
 }
 
+/** 查询 ONNX Runtime execution provider 能力 */
+export function getRuntimeCapabilities() {
+  return request({ url: '/rule/model/runtimeCapabilities', method: 'get' })
+}
+
 /** 检查模型编码是否冲突 */
 export function checkModelCode(modelCode, scope, projectId, excludeId) {
   return request({

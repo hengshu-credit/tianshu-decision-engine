@@ -4,6 +4,7 @@ import 'element-ui/lib/theme-chalk/index.css'
 import App from './App.vue'
 import router from './router'
 import store from './store'
+import ElementTabFocusGuard from '@/plugins/elementTabFocusGuard'
 import './styles/index.scss'
 
 // 覆盖 Element UI 主题色为主色 #2639E9
@@ -39,6 +40,7 @@ import MonacoEditor from '@/components/MonacoEditor.vue'
 Vue.component('MonacoEditor', MonacoEditor)
 
 Vue.use(ElementUI, { size: 'small' })
+Vue.use(ElementTabFocusGuard)
 Vue.config.productionTip = false
 
 new Vue({

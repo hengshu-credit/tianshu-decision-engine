@@ -68,7 +68,12 @@ public class AntispoofExecutorsTest {
     }
 
     private static List<Map<String, Object>> faces(Path detector, String image) throws Exception {
-        return new YunetFaceDetectionExecutor().detect(Files.readAllBytes(detector), image,
-                OnnxTaskConfig.parse("{\"onnxTaskType\":\"YUNET_FACE_DETECTION\"}"));
+        OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
+        try {
+            return new YunetFaceDetectionExecutor(manager).detect(Files.readAllBytes(detector), image,
+                    OnnxTaskConfig.parse("{\"onnxTaskType\":\"YUNET_FACE_DETECTION\"}"));
+        } finally {
+            manager.close();
+        }
     }
 }

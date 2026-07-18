@@ -159,6 +159,29 @@ describe('ModelDetail — 初始化与数据加载', () => {
     expect(wrapper.vm.model.modelCode).toBe('risk_score_model')
   })
 
+  test('ONNX 模型详情展示保存的 CUDA 执行配置', async () => {
+    const wrapper = await mountAndWait({
+      ...mockModel(),
+      modelType: 'NEURAL_NET',
+      modelFormat: 'ONNX',
+      modelConfig: JSON.stringify({
+        onnxTaskType: 'ARCFACE_RECOGNITION',
+        executionProvider: 'CUDA',
+        cudaDeviceId: 1,
+        cudaGpuMemLimitMb: 8192,
+        cudaArenaExtendStrategy: 'kSameAsRequested',
+        cudaCudnnConvAlgoSearch: 'HEURISTIC',
+        cudaDoCopyInDefaultStream: true
+      })
+    })
+
+    expect(wrapper.vm.onnxExecutionProvider).toBe('CUDA')
+    expect(wrapper.vm.onnxGpuSummary).toContain('GPU 1')
+    expect(wrapper.vm.onnxGpuSummary).toContain('8192 MB')
+    expect(wrapper.vm.onnxGpuSummary).toContain('HEURISTIC')
+    wrapper.destroy()
+  })
+
   test('modelTypeLabel 返回正确的标签', () => {
     expect(wrapper.vm.modelTypeLabel('XGBOOST')).toBe('XGBoost')
     expect(wrapper.vm.modelTypeLabel('LR')).toBe('LR（逻辑回归）')

@@ -122,6 +122,7 @@ flowchart LR
 - MySQL 8
 - Redis
 - Node.js 14+，建议 22.14.x
+- 可选 NVIDIA GPU：使用 ONNX CUDA 推理时，需安装与项目 ONNX Runtime GPU 版本兼容的 NVIDIA 驱动、CUDA 和 cuDNN，并确保其动态库在服务进程的 `PATH`/`LD_LIBRARY_PATH` 中；未启用时模型默认使用 CPU。
 
 ## 5. 本地启动
 
@@ -156,6 +157,8 @@ mvn spring-boot:run
 - 密码: `1qaz@WSX`
 
 可通过环境变量 `CONSOLE_USERNAME`、`CONSOLE_PASSWORD` 覆盖。
+
+ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。
 
 ### 5.3 前端
 

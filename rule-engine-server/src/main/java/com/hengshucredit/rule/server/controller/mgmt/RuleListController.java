@@ -122,8 +122,10 @@ public class RuleListController {
             @PathVariable Long listId,
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
-            @RequestParam(required = false) Long recordId) {
-        return R.ok(listService.pageLogs(listId, pageNum, pageSize, recordId));
+            @RequestParam(required = false) Long recordId,
+            @RequestParam(required = false) String itemType,
+            @RequestParam(required = false) String itemContent) {
+        return R.ok(listService.pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent));
     }
 
     @GetMapping("/template")

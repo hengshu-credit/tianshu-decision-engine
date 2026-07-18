@@ -13,7 +13,12 @@ public final class LandmarkExecutor {
     private final boolean threeDimensional;
 
     public LandmarkExecutor(OnnxRuntimeSessionManager sessionManager, boolean threeDimensional) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, threeDimensional, OnnxRuntimeConfig.cpu());
+    }
+
+    public LandmarkExecutor(OnnxRuntimeSessionManager sessionManager, boolean threeDimensional,
+                            OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
         this.threeDimensional = threeDimensional;
     }
 

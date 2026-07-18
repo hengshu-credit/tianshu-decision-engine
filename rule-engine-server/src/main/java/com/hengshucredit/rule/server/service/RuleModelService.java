@@ -9,6 +9,7 @@ import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.mapper.*;
 import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
 import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
+import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeConfig;
 import com.hengshucredit.rule.server.service.onnx.OnnxTaskConfig;
 import com.hengshucredit.rule.server.service.onnx.OnnxTaskType;
 import org.dmg.pmml.Model;
@@ -357,10 +358,33 @@ public class RuleModelService {
         if (model.getExecutionTimeoutMs() != null) {
             existing.setExecutionTimeoutMs(normalizedExecutionTimeout(model.getExecutionTimeoutMs()));
         }
+        if ("ONNX".equals(existing.getModelFormat())
+                && model.getModelConfig() != null && !model.getModelConfig().trim().isEmpty()) {
+            existing.setModelConfig(mergeOnnxRuntimeConfig(existing.getModelConfig(), model.getModelConfig()));
+        }
         if (model.getStatus() != null) {
             existing.setStatus(model.getStatus());
         }
         modelMapper.updateById(existing);
+    }
+
+    private String mergeOnnxRuntimeConfig(String existingConfig, String requestedConfig) {
+        try {
+            com.alibaba.fastjson.JSONObject existing = existingConfig == null || existingConfig.trim().isEmpty()
+                    ? new com.alibaba.fastjson.JSONObject()
+                    : com.alibaba.fastjson.JSON.parseObject(existingConfig);
+            com.alibaba.fastjson.JSONObject requested = com.alibaba.fastjson.JSON.parseObject(requestedConfig);
+            OnnxRuntimeConfig.from(requested).applyTo(existing);
+            return existing.toJSONString();
+        } catch (IllegalArgumentException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("ONNX 运行配置不是有效 JSON", e);
+        }
+    }
+
+    public Map<String, Object> runtimeCapabilities() {
+        return onnxSessionManager.runtimeCapabilities();
     }
 
     /**

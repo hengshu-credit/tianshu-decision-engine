@@ -127,15 +127,20 @@ describe('ListDetail — 名单内容管理', () => {
     }))
   })
 
-  test('追踪记录时按 recordId 加载该 value 的历史变更', async () => {
+  test('追踪记录时按 itemType 和 itemContent 加载全部匹配日志', async () => {
     ruleListApi.listRecordLogs.mockClear()
-    wrapper.vm.handleTrace({ id: 1, itemContent: '13800138000' })
+    wrapper.vm.handleTrace({ id: 1, itemType: 'MOBILE', itemContent: '13800138000' })
     await Vue.nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.activeTab).toBe('logs')
     expect(wrapper.vm.traceRecord.itemContent).toBe('13800138000')
-    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, { pageNum: 1, pageSize: 100, recordId: 1 })
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
+      pageNum: 1,
+      pageSize: 10,
+      itemType: 'MOBILE',
+      itemContent: '13800138000'
+    })
 
     ruleListApi.listRecordLogs.mockClear()
     wrapper.vm.clearTrace()
@@ -143,7 +148,38 @@ describe('ListDetail — 名单内容管理', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.traceRecord).toBe(null)
-    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, { pageNum: 1, pageSize: 100 })
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, { pageNum: 1, pageSize: 10 })
+  })
+
+  test('名单日志使用服务端分页且翻页保留追踪条件', async () => {
+    wrapper.vm.handleTrace({ id: 1, itemType: 'MOBILE', itemContent: '13800138000' })
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    ruleListApi.listRecordLogs.mockClear()
+
+    wrapper.vm.onLogPageChange(2)
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
+      pageNum: 2,
+      pageSize: 10,
+      itemType: 'MOBILE',
+      itemContent: '13800138000'
+    })
+    expect(wrapper.vm.logTotal).toBe(1)
+
+    ruleListApi.listRecordLogs.mockClear()
+    wrapper.vm.onLogSizeChange(30)
+    await Vue.nextTick()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
+      pageNum: 1,
+      pageSize: 30,
+      itemType: 'MOBILE',
+      itemContent: '13800138000'
+    })
   })
 
   test('删除记录调用删除接口并刷新数据', async () => {
@@ -164,6 +200,7 @@ describe('ListDetail route id change', () => {
 
   test('uses the latest listId when saving after a reused-route change', async () => {
     ruleListApi.createRecord.mockResolvedValue({ data: { id: 3 } })
+    wrapper.vm.logQuery = { pageNum: 3, pageSize: 30 }
     wrapper.vm.$options.watch['$route.params.id'].call(wrapper.vm, 12, 9)
     await Vue.nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
@@ -176,6 +213,7 @@ describe('ListDetail route id change', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.listId).toBe(12)
+    expect(wrapper.vm.logQuery).toEqual({ pageNum: 1, pageSize: 30 })
     expect(ruleListApi.createRecord).toHaveBeenLastCalledWith(12, expect.objectContaining({
       itemContent: '110101199001010011',
       itemType: 'ID_CARD',

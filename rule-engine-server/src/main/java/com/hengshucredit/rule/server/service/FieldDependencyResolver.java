@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.dto.ResolutionPlan;
 import com.hengshucredit.rule.model.dto.ResolvedField;
 import com.hengshucredit.rule.model.dto.RuleTestSchemaRequest;
@@ -107,7 +108,7 @@ public class FieldDependencyResolver {
         }
         List<RuleDefinitionInputField> rawInputs = new ArrayList<>();
         for (RuleModelInputField field : safe(modelService.listInputFields(modelId))) {
-            rawInputs.add(copyModelInput(field));
+            rawInputs.addAll(copyModelInputDependencies(field));
         }
         List<RuleDefinitionInputField> inputs = ruleFieldAnalyzer.resolveInputFields(rawInputs, model.getProjectId());
         ResolutionPlan plan = new ResolutionPlan();
@@ -228,6 +229,29 @@ public class FieldDependencyResolver {
         field.setValidValues(source.getValidValues());
         field.setStatus(source.getStatus());
         return field;
+    }
+
+    private List<RuleDefinitionInputField> copyModelInputDependencies(RuleModelInputField source) {
+        if (!hasText(source.getSourceOperand())) {
+            return Collections.singletonList(copyModelInput(source));
+        }
+        List<RuleDefinitionInputField> dependencies = new ArrayList<>();
+        for (JSONObject operand : OperandValueResolver.collectReferences(source.getSourceOperand())) {
+            String refType = firstText(operand.getString("refType"), "VARIABLE");
+            if ("CONSTANT".equalsIgnoreCase(refType)) continue;
+            String path = firstText(operand.getString("value"), operand.getString("code"));
+            if (!hasText(path)) continue;
+            RuleDefinitionInputField dependency = new RuleDefinitionInputField();
+            dependency.setVarId(operand.getLong("refId"));
+            dependency.setRefType(refType.toUpperCase(Locale.ROOT));
+            dependency.setFieldName(path);
+            dependency.setFieldLabel(firstText(operand.getString("label"), path));
+            dependency.setScriptName(path);
+            dependency.setFieldType(source.getFieldType());
+            dependency.setStatus(1);
+            dependencies.add(dependency);
+        }
+        return dependencies;
     }
 
     private String sourceType(String refType) {

@@ -24,6 +24,12 @@
       <el-descriptions-item label="发布版本">{{ model.publishedVersion || '-' }}</el-descriptions-item>
       <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 推理任务">{{ onnxTaskLabel }}</el-descriptions-item>
       <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 原始节点">{{ onnxNodeSummary }}</el-descriptions-item>
+      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="执行设备">
+        <el-tag :type="onnxExecutionProvider === 'CUDA' ? 'success' : 'info'" size="mini">{{ onnxExecutionProvider }}</el-tag>
+      </el-descriptions-item>
+      <el-descriptions-item v-if="model.modelFormat === 'ONNX' && onnxExecutionProvider === 'CUDA'" label="GPU 参数">
+        {{ onnxGpuSummary }}
+      </el-descriptions-item>
       <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="启动预加载">{{ model.preloadOnStartup === 1 ? '是' : '否' }}</el-descriptions-item>
       <el-descriptions-item label="执行超时">{{ model.executionTimeoutMs || 120000 }} ms</el-descriptions-item>
     </el-descriptions>
@@ -470,6 +476,19 @@ export default {
       const inputs = metadata.inputs ? Object.keys(metadata.inputs).length : 0
       const outputs = metadata.outputs ? Object.keys(metadata.outputs).length : 0
       return inputs + ' 入 / ' + outputs + ' 出'
+    },
+    onnxExecutionProvider() {
+      return String(this.parsedModelConfig.executionProvider || 'CPU').toUpperCase() === 'CUDA' ? 'CUDA' : 'CPU'
+    },
+    onnxGpuSummary() {
+      const config = this.parsedModelConfig
+      const deviceId = Number.isInteger(Number(config.cudaDeviceId)) ? Number(config.cudaDeviceId) : 0
+      const memory = Number.isFinite(Number(config.cudaGpuMemLimitMb)) ? Number(config.cudaGpuMemLimitMb) : 0
+      const arena = config.cudaArenaExtendStrategy || 'kNextPowerOfTwo'
+      const algorithm = config.cudaCudnnConvAlgoSearch || 'EXHAUSTIVE'
+      const defaultStream = config.cudaDoCopyInDefaultStream !== false ? '默认流' : '独立流'
+      return 'GPU ' + deviceId + '，显存 ' + (memory > 0 ? memory + ' MB' : '不显式限制')
+        + '，' + arena + '，' + algorithm + '，' + defaultStream
     },
     modelRequestTimeoutMs() {
       return (this.model.executionTimeoutMs || 120000) + 5000

@@ -98,6 +98,15 @@
           <el-table-column prop="remark" label="备注" min-width="150" show-overflow-tooltip />
           <el-table-column prop="createTime" label="操作时间" min-width="160" />
         </el-table>
+        <el-pagination
+          :current-page="logQuery.pageNum"
+          :page-size="logQuery.pageSize"
+          :total="logTotal"
+          layout="total,sizes,prev,pager,next"
+          :page-sizes="[10,30,50,100,200,500]"
+          @current-change="onLogPageChange"
+          @size-change="onLogSizeChange"
+        />
       </el-tab-pane>
     </el-tabs>
 
@@ -154,7 +163,9 @@ export default {
       logs: [],
       traceRecord: null,
       total: 0,
+      logTotal: 0,
       query: { pageNum: 1, pageSize: 10, itemType: '', status: '', keyword: '', effectiveOnly: false },
+      logQuery: { pageNum: 1, pageSize: 10 },
       dialogVisible: false,
       validRange: [],
       form: this.emptyForm(),
@@ -189,6 +200,8 @@ export default {
       this.records = []
       this.logs = []
       this.traceRecord = null
+      this.logTotal = 0
+      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize }
       this.activeTab = 'records'
       this.dialogVisible = false
       this.form = this.emptyForm()
@@ -221,10 +234,14 @@ export default {
     async loadLogs() {
       this.logLoading = true
       try {
-        const params = { pageNum: 1, pageSize: 100 }
-        if (this.traceRecord && this.traceRecord.id) params.recordId = this.traceRecord.id
+        const params = { ...this.logQuery }
+        if (this.traceRecord && this.traceRecord.itemType && this.traceRecord.itemContent) {
+          params.itemType = this.traceRecord.itemType
+          params.itemContent = this.traceRecord.itemContent
+        }
         const res = await listRecordLogs(this.listId, params)
         this.logs = (res.data && res.data.records) || []
+        this.logTotal = (res.data && res.data.total) || 0
       } finally {
         this.logLoading = false
       }
@@ -247,12 +264,24 @@ export default {
       this.dialogVisible = true
     },
     handleTrace(row) {
+      if (!row || !row.itemType || !String(row.itemContent || '').trim()) return
       this.traceRecord = row
+      this.logQuery.pageNum = 1
       this.activeTab = 'logs'
       this.loadLogs()
     },
     clearTrace() {
       this.traceRecord = null
+      this.logQuery.pageNum = 1
+      this.loadLogs()
+    },
+    onLogPageChange(page) {
+      this.logQuery.pageNum = page
+      this.loadLogs()
+    },
+    onLogSizeChange(size) {
+      this.logQuery.pageSize = size
+      this.logQuery.pageNum = 1
       this.loadLogs()
     },
     submit() {

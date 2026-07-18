@@ -19,7 +19,11 @@ public class ScrfdFaceDetectionExecutor {
     private final OnnxInferenceRunner runner;
 
     public ScrfdFaceDetectionExecutor(OnnxRuntimeSessionManager sessionManager) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, OnnxRuntimeConfig.cpu());
+    }
+
+    public ScrfdFaceDetectionExecutor(OnnxRuntimeSessionManager sessionManager, OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String imageBase64, OnnxTaskConfig config) {

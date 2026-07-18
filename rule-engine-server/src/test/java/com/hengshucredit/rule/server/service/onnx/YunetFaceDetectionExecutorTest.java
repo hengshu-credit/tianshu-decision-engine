@@ -17,19 +17,28 @@ public class YunetFaceDetectionExecutorTest {
 
     @Test
     public void detectsAllFacesAndKeepsFiveLandmarks() throws Exception {
-        Path model = Paths.get("../.tmp/facenox-face-antispoof-onnx/models/detector.onnx");
+        Path model = Paths.get("C:/Users/Administrator/Downloads/face-antispoof-onnx-main/models/detector.onnx");
         Assume.assumeTrue(Files.isRegularFile(model));
         String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get("../assets/docs/face.jpg")));
         OnnxTaskConfig config = OnnxTaskConfig.parse("{\"onnxTaskType\":\"YUNET_FACE_DETECTION\"}");
+        OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
 
-        List<Map<String, Object>> faces = new YunetFaceDetectionExecutor().detect(Files.readAllBytes(model), base64, config);
+        try {
+            List<Map<String, Object>> faces = new YunetFaceDetectionExecutor(manager)
+                    .detect(Files.readAllBytes(model), base64, config);
 
-        assertEquals(1, faces.size());
-        Map<String, Object> face = faces.get(0);
-        assertTrue(((Number) face.get("confidence")).doubleValue() >= 0.8d);
-        assertEquals(5, ((List<?>) face.get("landmarks")).size());
-        Map<?, ?> bbox = (Map<?, ?>) face.get("bbox");
-        assertTrue(((Number) bbox.get("width")).doubleValue() >= 60d);
-        assertTrue(((Number) bbox.get("height")).doubleValue() >= 60d);
+            assertEquals(1, faces.size());
+            Map<String, Object> face = faces.get(0);
+            assertTrue(((Number) face.get("confidence")).doubleValue() > 0.8d);
+            assertEquals(5, ((List<?>) face.get("landmarks")).size());
+            Map<?, ?> bbox = (Map<?, ?>) face.get("bbox");
+            assertEquals(297d, ((Number) bbox.get("x")).doubleValue(), 25d);
+            assertEquals(70d, ((Number) bbox.get("y")).doubleValue(), 25d);
+            assertEquals(152d, ((Number) bbox.get("width")).doubleValue(), 25d);
+            assertEquals(209d, ((Number) bbox.get("height")).doubleValue(), 25d);
+            assertEquals(1, manager.getCachedSessionCount());
+        } finally {
+            manager.close();
+        }
     }
 }

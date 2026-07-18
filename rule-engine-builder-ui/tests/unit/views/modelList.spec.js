@@ -14,7 +14,8 @@ jest.mock('@/api/model', () => ({
   deleteModel: jest.fn(),
   updateModel: jest.fn(),
   toGlobalModel: jest.fn(),
-  checkModelCode: jest.fn()
+  checkModelCode: jest.fn(),
+  getRuntimeCapabilities: jest.fn()
 }))
 
 jest.mock('@/api/project', () => ({
@@ -60,6 +61,9 @@ function createTestVue() {
 async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
   modelApi.listModels.mockResolvedValue({ data: { records: mockModels(), total: 3 } })
+  modelApi.getRuntimeCapabilities.mockResolvedValue({
+    data: { onnxRuntimeVersion: '1.26.0', availableProviders: ['CPU', 'CUDA'], cudaAvailable: true, cudaError: null }
+  })
 
   const wrapper = mount(ModelList, {
     localVue: createTestVue(),
@@ -101,6 +105,43 @@ describe('ModelList — 初始化与数据加载', () => {
 
   test('mounted 后调用 listModels', () => {
     expect(modelApi.listModels).toHaveBeenCalled()
+  })
+
+  test('mounted 后加载 ONNX Runtime GPU 能力', () => {
+    expect(modelApi.getRuntimeCapabilities).toHaveBeenCalled()
+    expect(wrapper.vm.runtimeCapabilities.cudaAvailable).toBe(true)
+  })
+
+  test('CUDA 可用时仍提示推理失败会自动回退 CPU', () => {
+    expect(wrapper.vm.cudaRuntimeHint).toContain('自动回退 CPU')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('重启服务')
+  })
+
+  test('CUDA 环境不可用时提示模型将自动回退 CPU', async () => {
+    wrapper.vm.runtimeCapabilities = {
+      ...wrapper.vm.runtimeCapabilities,
+      cudaAvailable: false,
+      cudaError: '缺少 cublasLt64_12.dll'
+    }
+    await Vue.nextTick()
+
+    expect(wrapper.vm.cudaRuntimeHint).toContain('缺少 cublasLt64_12.dll')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('自动回退 CPU')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('重启服务')
+  })
+
+  test('已有模型触发回退时提示数量和当前 CPU 执行状态', async () => {
+    wrapper.vm.runtimeCapabilities = {
+      ...wrapper.vm.runtimeCapabilities,
+      activeCpuFallbackCount: 3
+    }
+    await Vue.nextTick()
+
+    expect(wrapper.vm.cudaRuntimeHint).toContain('已有 3 个')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('正在通过 CPU 执行')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('自动回退 CPU')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('首次回退可能增加耗时')
+    expect(wrapper.vm.cudaRuntimeHint).toContain('重启服务')
   })
 
   test('models 数据正确赋值', () => {
@@ -227,6 +268,8 @@ describe('ModelList — 上传模型', () => {
     expect(wrapper.vm.uploadForm.modelName).toBe('')
     expect(wrapper.vm.uploadForm.modelType).toBe('LR')
     expect(wrapper.vm.uploadForm.scope).toBe('PROJECT')
+    expect(wrapper.vm.uploadForm.executionProvider).toBe('CPU')
+    expect(wrapper.vm.uploadForm.cudaDeviceId).toBe(0)
     expect(wrapper.vm.fileList).toEqual([])
     expect(wrapper.vm.selectedFile).toBeNull()
   })
@@ -254,6 +297,7 @@ describe('ModelList — 上传模型', () => {
     expect(wrapper.vm.uploadForm.modelType).toBe('NEURAL_NET')
     wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
     expect(wrapper.vm.uploadForm.onnxConfig).toMatchObject({ inputWidth: 640, inputHeight: 640 })
+    expect(wrapper.vm.uploadSupportsGpu).toBe(true)
   })
 
   test('上传 ONNX 时提交任务类型、配置并更新进度', async () => {
@@ -265,12 +309,27 @@ describe('ModelList — 上传模型', () => {
     const file = { name: 'det_10g.onnx', raw }
     wrapper.vm.handleFileChange(file, [file])
     wrapper.vm.onOnnxTaskChange('SCRFD_FACE_DETECTION')
+    wrapper.vm.uploadForm.executionProvider = 'CUDA'
+    wrapper.vm.uploadForm.cudaDeviceId = 0
+    wrapper.vm.uploadForm.cudaGpuMemLimitMb = 8192
+    wrapper.vm.uploadForm.cudaArenaExtendStrategy = 'kSameAsRequested'
+    wrapper.vm.uploadForm.cudaCudnnConvAlgoSearch = 'HEURISTIC'
+    wrapper.vm.uploadForm.cudaDoCopyInDefaultStream = true
     wrapper.vm.uploadForm.preloadOnStartup = 1
     wrapper.vm.uploadForm.executionTimeoutMs = 90000
     modelApi.uploadModel.mockImplementation((formData, onProgress) => {
       onProgress({ loaded: 50, total: 100 })
       expect(formData.get('onnxTaskType')).toBe('SCRFD_FACE_DETECTION')
-      expect(JSON.parse(formData.get('onnxConfig'))).toMatchObject({ inputWidth: 640, inputHeight: 640 })
+      expect(JSON.parse(formData.get('onnxConfig'))).toMatchObject({
+        inputWidth: 640,
+        inputHeight: 640,
+        executionProvider: 'CUDA',
+        cudaDeviceId: 0,
+        cudaGpuMemLimitMb: 8192,
+        cudaArenaExtendStrategy: 'kSameAsRequested',
+        cudaCudnnConvAlgoSearch: 'HEURISTIC',
+        cudaDoCopyInDefaultStream: true
+      })
       expect(formData.get('preloadOnStartup')).toBe('1')
       expect(formData.get('executionTimeoutMs')).toBe('90000')
       return Promise.resolve({ data: { id: 10 } })
@@ -292,7 +351,11 @@ describe('ModelList — 模型操作', () => {
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
   test('handleEdit 填充编辑表单', () => {
-    const row = { id: 1, modelName: '测试模型', modelCode: 'test_code', modelType: 'NEURAL_NET', modelFormat: 'ONNX', scope: 'PROJECT', status: 1, preloadOnStartup: 1, executionTimeoutMs: 90000 }
+    const row = {
+      id: 1, modelName: '测试模型', modelCode: 'test_code', modelType: 'NEURAL_NET', modelFormat: 'ONNX',
+      scope: 'PROJECT', status: 1, preloadOnStartup: 1, executionTimeoutMs: 90000,
+      modelConfig: JSON.stringify({ onnxTaskType: 'MN3_ANTISPOOF', executionProvider: 'CUDA', cudaDeviceId: 1, cudaGpuMemLimitMb: 4096 })
+    }
     wrapper.vm.handleEdit(row)
     expect(wrapper.vm.editVisible).toBe(true)
     expect(wrapper.vm.editForm.id).toBe(1)
@@ -301,6 +364,37 @@ describe('ModelList — 模型操作', () => {
     expect(wrapper.vm.editForm.status).toBe(1)
     expect(wrapper.vm.editForm.preloadOnStartup).toBe(1)
     expect(wrapper.vm.editForm.executionTimeoutMs).toBe(90000)
+    expect(wrapper.vm.editForm.executionProvider).toBe('CUDA')
+    expect(wrapper.vm.editForm.cudaDeviceId).toBe(1)
+    expect(wrapper.vm.editForm.cudaGpuMemLimitMb).toBe(4096)
+    expect(wrapper.vm.editSupportsGpu).toBe(true)
+  })
+
+  test('编辑 ONNX GPU 配置时保留已有任务配置', async () => {
+    const row = {
+      id: 1, modelName: '测试模型', modelCode: 'test_code', modelType: 'NEURAL_NET', modelFormat: 'ONNX',
+      scope: 'PROJECT', status: 1, preloadOnStartup: 1, executionTimeoutMs: 90000,
+      modelConfig: JSON.stringify({ onnxTaskType: 'MN3_ANTISPOOF', nodeMetadata: { inputs: {} }, testParams: '{}', executionProvider: 'CPU' })
+    }
+    wrapper.vm.handleEdit(row)
+    wrapper.vm.editForm.executionProvider = 'CUDA'
+    wrapper.vm.editForm.cudaDeviceId = 0
+    wrapper.vm.editForm.cudaGpuMemLimitMb = 6144
+    modelApi.updateModel.mockResolvedValue({ data: true })
+
+    wrapper.vm.handleDoEdit()
+    await new Promise(resolve => setTimeout(resolve, 20))
+
+    const payload = modelApi.updateModel.mock.calls[0][0]
+    const config = JSON.parse(payload.modelConfig)
+    expect(config).toMatchObject({
+      onnxTaskType: 'MN3_ANTISPOOF',
+      nodeMetadata: { inputs: {} },
+      testParams: '{}',
+      executionProvider: 'CUDA',
+      cudaDeviceId: 0,
+      cudaGpuMemLimitMb: 6144
+    })
   })
 
   test('handleToGlobal 填充转换表单', () => {

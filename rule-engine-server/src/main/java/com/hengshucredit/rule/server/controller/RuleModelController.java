@@ -35,6 +35,14 @@ public class RuleModelController {
     }
 
     /**
+     * 查询 ONNX Runtime execution provider 能力，供模型配置页面展示。
+     */
+    @GetMapping("/runtimeCapabilities")
+    public R<Map<String, Object>> runtimeCapabilities() {
+        return R.ok(modelService.runtimeCapabilities());
+    }
+
+    /**
      * 检查模型编码是否与现有模型冲突
      * @param modelCode 模型编码
      * @param scope GLOBAL / PROJECT

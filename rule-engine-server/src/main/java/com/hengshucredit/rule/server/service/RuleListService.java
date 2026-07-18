@@ -143,11 +143,16 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         return recordMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
     }
 
-    public IPage<RuleListRecordLog> pageLogs(Long listId, int pageNum, int pageSize, Long recordId) {
+    public IPage<RuleListRecordLog> pageLogs(Long listId, int pageNum, int pageSize, Long recordId,
+                                             String itemType, String itemContent) {
         LambdaQueryWrapper<RuleListRecordLog> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleListRecordLog::getListId, listId);
         if (recordId != null) {
             wrapper.eq(RuleListRecordLog::getRecordId, recordId);
+        }
+        if (hasText(itemType) && hasText(itemContent)) {
+            wrapper.eq(RuleListRecordLog::getItemType, normalizeItemType(itemType));
+            wrapper.eq(RuleListRecordLog::getItemContent, itemContent);
         }
         wrapper.orderByDesc(RuleListRecordLog::getCreateTime);
         IPage<RuleListRecordLog> page = logMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);

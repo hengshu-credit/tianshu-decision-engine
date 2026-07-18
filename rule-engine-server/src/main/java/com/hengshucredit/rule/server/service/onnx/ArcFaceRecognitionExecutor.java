@@ -12,7 +12,11 @@ public final class ArcFaceRecognitionExecutor {
     private final OnnxInferenceRunner runner;
 
     public ArcFaceRecognitionExecutor(OnnxRuntimeSessionManager sessionManager) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, OnnxRuntimeConfig.cpu());
+    }
+
+    public ArcFaceRecognitionExecutor(OnnxRuntimeSessionManager sessionManager, OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String imageBase64,

@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleListRecord;
 import com.hengshucredit.rule.model.entity.RuleListRecordLog;
@@ -11,6 +13,9 @@ import org.apache.poi.ss.usermodel.Row;
 import org.apache.poi.ss.usermodel.Sheet;
 import org.apache.poi.ss.usermodel.Workbook;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.springframework.mock.web.MockMultipartFile;
 
@@ -26,6 +31,11 @@ import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleListServiceTest {
+
+    @BeforeClass
+    public static void initTableInfo() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleListRecordLog.class);
+    }
 
     @Test
     public void templateUsesUiItemTypeLabelsAndDropdown() {
@@ -89,11 +99,43 @@ public class RuleListServiceTest {
         logMapper.previous = previous;
         setField(service, "logMapper", logMapper.proxy());
 
-        IPage<RuleListRecordLog> page = service.pageLogs(9L, 1, 10, null);
+        IPage<RuleListRecordLog> page = service.pageLogs(9L, 1, 10, null, null, null);
 
         String content = page.getRecords().get(0).getChangeContent();
         assertTrue(content.contains("2026-06-01 00:00:00 至 2026-06-30 23:59:59"));
         assertTrue(content.contains("2026-07-01 00:00:00 至 2026-12-31 23:59:59"));
+    }
+
+    @Test
+    public void pageLogsFiltersByExactItemTypeAndContentBeforePaging() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeLogMapper logMapper = new FakeLogMapper();
+        setField(service, "logMapper", logMapper.proxy());
+
+        service.pageLogs(9L, 2, 30, null, "MOBILE", " 13800138000 ");
+
+        assertEquals(2L, logMapper.selectedPage.getCurrent());
+        assertEquals(30L, logMapper.selectedPage.getSize());
+        String sqlSegment = logMapper.selectedWrapper.getSqlSegment();
+        assertTrue(sqlSegment, sqlSegment.contains("listId"));
+        assertTrue(sqlSegment, sqlSegment.contains("itemType"));
+        assertTrue(sqlSegment, sqlSegment.contains("itemContent"));
+        assertTrue(logMapper.selectedWrapper.getParamNameValuePairs().containsValue(9L));
+        assertTrue(logMapper.selectedWrapper.getParamNameValuePairs().containsValue("MOBILE"));
+        assertTrue(logMapper.selectedWrapper.getParamNameValuePairs().containsValue(" 13800138000 "));
+    }
+
+    @Test
+    public void pageLogsKeepsLegacyRecordIdFilter() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeLogMapper logMapper = new FakeLogMapper();
+        setField(service, "logMapper", logMapper.proxy());
+
+        service.pageLogs(9L, 1, 10, 77L, null, null);
+
+        String sqlSegment = logMapper.selectedWrapper.getSqlSegment();
+        assertTrue(sqlSegment, sqlSegment.contains("recordId"));
+        assertTrue(logMapper.selectedWrapper.getParamNameValuePairs().containsValue(77L));
     }
 
     @Test
@@ -192,6 +234,8 @@ public class RuleListServiceTest {
         private RuleListRecordLog inserted;
         private RuleListRecordLog pageRecord;
         private RuleListRecordLog previous;
+        private Page<RuleListRecordLog> selectedPage;
+        private LambdaQueryWrapper<RuleListRecordLog> selectedWrapper;
 
         private RuleListRecordLogMapper proxy() {
             return (RuleListRecordLogMapper) Proxy.newProxyInstance(
@@ -200,6 +244,8 @@ public class RuleListServiceTest {
                     (proxy, method, args) -> {
                         if ("selectPage".equals(method.getName())) {
                             Page<RuleListRecordLog> page = (Page<RuleListRecordLog>) args[0];
+                            selectedPage = page;
+                            selectedWrapper = (LambdaQueryWrapper<RuleListRecordLog>) args[1];
                             page.setRecords(pageRecord == null ? Collections.emptyList() : Collections.singletonList(pageRecord));
                             page.setTotal(page.getRecords().size());
                             return page;

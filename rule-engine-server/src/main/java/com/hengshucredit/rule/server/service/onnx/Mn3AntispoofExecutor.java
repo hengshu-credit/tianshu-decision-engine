@@ -12,7 +12,11 @@ public final class Mn3AntispoofExecutor {
     private final OnnxInferenceRunner runner;
 
     public Mn3AntispoofExecutor(OnnxRuntimeSessionManager sessionManager) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, OnnxRuntimeConfig.cpu());
+    }
+
+    public Mn3AntispoofExecutor(OnnxRuntimeSessionManager sessionManager, OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String imageBase64, List<Map<String, Object>> faces) {

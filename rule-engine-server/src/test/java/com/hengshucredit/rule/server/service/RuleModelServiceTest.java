@@ -62,7 +62,7 @@ public class RuleModelServiceTest {
                         ? Collections.emptyList() : defaultValue(method.getReturnType())));
         ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
         ReflectionTestUtils.setField(service, "modelExecutionTimeoutExecutor", new ModelExecutionTimeoutExecutor());
-        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null, null) {
+        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null) {
             @Override
             public Map<String, Object> execute(byte[] modelBytes, String config, Map<String, Object> params) {
                 Map<String, Object> output = new LinkedHashMap<>();
@@ -197,6 +197,46 @@ public class RuleModelServiceTest {
         assertEquals(null, updatedModel.get().getModelContent());
         assertEquals(Integer.valueOf(1), updatedModel.get().getPreloadOnStartup());
         assertEquals(Integer.valueOf(90000), updatedModel.get().getExecutionTimeoutMs());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void updateOnnxRuntimeConfigKeepsTaskMetadataAndTestParams() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        AtomicReference<RuleModel> updatedModel = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectOne".equals(method.getName())) {
+                RuleModel existing = model();
+                existing.setModelFormat("ONNX");
+                existing.setModelConfig("{\"onnxTaskType\":\"MN3_ANTISPOOF\","
+                        + "\"nodeMetadata\":{\"inputs\":{}},\"testParams\":\"{\\\"image\\\":\\\"sample\\\"}\"}");
+                existing.setModelContent(null);
+                return existing;
+            }
+            if ("updateById".equals(method.getName())) {
+                updatedModel.set((RuleModel) args[0]);
+                return 1;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+
+        RuleModel changes = new RuleModel();
+        changes.setId(1L);
+        changes.setModelName("MN3");
+        changes.setModelConfig("{\"executionProvider\":\"CUDA\",\"cudaDeviceId\":1,"
+                + "\"cudaGpuMemLimitMb\":4096,\"cudaArenaExtendStrategy\":\"kSameAsRequested\","
+                + "\"cudaCudnnConvAlgoSearch\":\"HEURISTIC\",\"cudaDoCopyInDefaultStream\":true}");
+
+        service.update(changes);
+
+        String config = updatedModel.get().getModelConfig();
+        assertTrue(config.contains("MN3_ANTISPOOF"));
+        assertTrue(config.contains("nodeMetadata"));
+        assertTrue(config.contains("testParams"));
+        assertTrue(config.contains("\"executionProvider\":\"CUDA\""));
+        assertTrue(config.contains("\"cudaDeviceId\":1"));
+        assertTrue(config.contains("\"cudaGpuMemLimitMb\":4096"));
     }
 
     @Test

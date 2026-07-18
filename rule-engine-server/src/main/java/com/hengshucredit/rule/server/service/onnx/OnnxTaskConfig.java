@@ -7,10 +7,12 @@ public final class OnnxTaskConfig {
 
     private final OnnxTaskType taskType;
     private final JSONObject values;
+    private final OnnxRuntimeConfig runtimeConfig;
 
-    private OnnxTaskConfig(OnnxTaskType taskType, JSONObject values) {
+    private OnnxTaskConfig(OnnxTaskType taskType, JSONObject values, OnnxRuntimeConfig runtimeConfig) {
         this.taskType = taskType;
         this.values = values;
+        this.runtimeConfig = runtimeConfig;
     }
 
     public static OnnxTaskConfig parse(String json) {
@@ -23,7 +25,9 @@ public final class OnnxTaskConfig {
         OnnxTaskType taskType = OnnxTaskType.fromCode(values.getString("onnxTaskType"));
         values.put("onnxTaskType", taskType.name());
         applyDefaults(taskType, values);
-        return new OnnxTaskConfig(taskType, values);
+        OnnxRuntimeConfig runtimeConfig = OnnxRuntimeConfig.from(values);
+        runtimeConfig.applyTo(values);
+        return new OnnxTaskConfig(taskType, values, runtimeConfig);
     }
 
     private static void applyDefaults(OnnxTaskType taskType, JSONObject values) {
@@ -50,6 +54,10 @@ public final class OnnxTaskConfig {
 
     public OnnxTaskType getTaskType() {
         return taskType;
+    }
+
+    public OnnxRuntimeConfig getRuntimeConfig() {
+        return runtimeConfig;
     }
 
     public String getString(String key) {

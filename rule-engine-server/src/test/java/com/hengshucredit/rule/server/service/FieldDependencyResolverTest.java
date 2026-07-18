@@ -8,6 +8,9 @@ import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleExperiment;
 import com.hengshucredit.rule.model.entity.RuleExperimentGroup;
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -20,6 +23,55 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class FieldDependencyResolverTest {
+
+    @Test
+    public void modelSchemaUsesReferencesInsideSourceOperandInsteadOfStaleLegacyField() {
+        RuleModel model = new RuleModel();
+        model.setId(2L);
+        model.setProjectId(1L);
+        RuleModelInputField input = new RuleModelInputField();
+        input.setFieldName("image");
+        input.setScriptName("oaid");
+        input.setFieldType("STRING");
+        input.setSourceOperand("{\"kind\":\"FUNCTION\",\"functionId\":9,\"functionCode\":\"imageToBase64\",\"args\":["
+                + "{\"kind\":\"REFERENCE\",\"refId\":42,\"refType\":\"VARIABLE\","
+                + "\"code\":\"authorization_for_contracts_execution.face_image\","
+                + "\"value\":\"authorization_for_contracts_execution.face_image\"},"
+                + "{\"kind\":\"LITERAL\",\"value\":\"10000\",\"valueType\":\"NUMBER\"}]}");
+        FieldDependencyResolver resolver = new FieldDependencyResolver();
+        ReflectionTestUtils.setField(resolver, "modelService", new RuleModelService() {
+            @Override
+            public RuleModel getDetail(Long id) {
+                return model;
+            }
+
+            @Override
+            public List<RuleModelInputField> listInputFields(Long modelId) {
+                return Collections.singletonList(input);
+            }
+
+            @Override
+            public List<RuleModelOutputField> listOutputFields(Long modelId) {
+                return Collections.emptyList();
+            }
+        });
+        ReflectionTestUtils.setField(resolver, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public List<RuleDefinitionInputField> resolveInputFields(List<RuleDefinitionInputField> fields, Long projectId) {
+                return fields;
+            }
+        });
+
+        RuleTestSchemaRequest request = new RuleTestSchemaRequest();
+        request.setTargetType("MODEL");
+        request.setTargetId(2L);
+        ResolutionPlan plan = resolver.resolve(request);
+
+        assertEquals(1, plan.getExternalInputs().size());
+        assertEquals(Long.valueOf(42L), plan.getExternalInputs().get(0).getRefId());
+        assertEquals("authorization_for_contracts_execution.face_image",
+                plan.getExternalInputs().get(0).getScriptName());
+    }
 
     @Test
     public void savedRuleUsesPersistedResolvedFieldsWithoutOutputsAsInputs() {

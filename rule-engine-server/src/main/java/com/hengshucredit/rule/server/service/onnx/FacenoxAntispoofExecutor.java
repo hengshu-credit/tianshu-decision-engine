@@ -12,7 +12,11 @@ public final class FacenoxAntispoofExecutor {
     private final OnnxInferenceRunner runner;
 
     public FacenoxAntispoofExecutor(OnnxRuntimeSessionManager sessionManager) {
-        this.runner = new OnnxInferenceRunner(sessionManager);
+        this(sessionManager, OnnxRuntimeConfig.cpu());
+    }
+
+    public FacenoxAntispoofExecutor(OnnxRuntimeSessionManager sessionManager, OnnxRuntimeConfig runtimeConfig) {
+        this.runner = new OnnxInferenceRunner(sessionManager, runtimeConfig);
     }
 
     public Map<String, Object> execute(byte[] modelBytes, String imageBase64, List<Map<String, Object>> faces) {
