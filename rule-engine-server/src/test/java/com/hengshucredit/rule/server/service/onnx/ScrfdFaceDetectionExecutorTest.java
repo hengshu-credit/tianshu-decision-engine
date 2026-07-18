@@ -1,12 +1,7 @@
 package com.hengshucredit.rule.server.service.onnx;
 
-import org.junit.Assume;
 import org.junit.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -40,13 +35,11 @@ public class ScrfdFaceDetectionExecutorTest {
 
     @Test
     public void detectsFaceWithRealBuffaloDetectorAndPreservesRawNodes() throws Exception {
-        Path model = Paths.get("C:/Users/Administrator/Downloads/buffalo_l/det_10g.onnx");
-        Path image = Paths.get("../assets/docs/face.jpg");
-        Assume.assumeTrue(Files.isRegularFile(model) && Files.isRegularFile(image));
+        byte[] model = OnnxTestAssets.read("onnx/buffalo_l/det_10g.onnx");
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
             Map<String, Object> output = new ScrfdFaceDetectionExecutor(manager).execute(
-                    Files.readAllBytes(model), Base64.getEncoder().encodeToString(Files.readAllBytes(image)),
+                    model, OnnxTestAssets.imageBase64(),
                     OnnxTaskConfig.parse("{\"onnxTaskType\":\"SCRFD_FACE_DETECTION\"}"));
 
             List<?> faces = (List<?>) output.get("faces");

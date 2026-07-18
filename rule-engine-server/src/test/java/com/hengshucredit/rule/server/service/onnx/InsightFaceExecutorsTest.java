@@ -1,12 +1,7 @@
 package com.hengshucredit.rule.server.service.onnx;
 
-import org.junit.Assume;
 import org.junit.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
@@ -17,21 +12,13 @@ public class InsightFaceExecutorsTest {
 
     @Test
     public void runsBuffaloRecognitionLandmarksAndGenderAgePerFace() throws Exception {
-        Path directory = Paths.get("C:/Users/Administrator/Downloads/buffalo_l");
-        Path imagePath = Paths.get("../assets/docs/face.jpg");
-        Assume.assumeTrue(Files.isRegularFile(directory.resolve("det_10g.onnx"))
-                && Files.isRegularFile(directory.resolve("w600k_r50.onnx"))
-                && Files.isRegularFile(directory.resolve("2d106det.onnx"))
-                && Files.isRegularFile(directory.resolve("1k3d68.onnx"))
-                && Files.isRegularFile(directory.resolve("genderage.onnx"))
-                && Files.isRegularFile(imagePath));
-        String image = Base64.getEncoder().encodeToString(Files.readAllBytes(imagePath));
+        String image = OnnxTestAssets.imageBase64();
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
-            List<Map<String, Object>> faces = faces(manager, directory, image);
+            List<Map<String, Object>> faces = faces(manager, image);
 
             Map<String, Object> recognition = new ArcFaceRecognitionExecutor(manager).execute(
-                    Files.readAllBytes(directory.resolve("w600k_r50.onnx")), image, faces);
+                    OnnxTestAssets.read("onnx/buffalo_l/w600k_r50.onnx"), image, faces);
             Map<?, ?> recognitionItem = first(recognition);
             List<?> embedding = (List<?>) recognitionItem.get("embedding");
             List<?> normalized = (List<?>) recognitionItem.get("normalizedEmbedding");
@@ -41,17 +28,17 @@ public class InsightFaceExecutorsTest {
             assertTrue(((Map<?, ?>) recognition.get("rawOutputs")).containsKey("683"));
 
             Map<String, Object> landmark2d = new LandmarkExecutor(manager, false).execute(
-                    Files.readAllBytes(directory.resolve("2d106det.onnx")), image, faces);
+                    OnnxTestAssets.read("onnx/buffalo_l/2d106det.onnx"), image, faces);
             assertEquals(106, ((List<?>) first(landmark2d).get("landmarks")).size());
             assertTrue(((Map<?, ?>) landmark2d.get("rawOutputs")).containsKey("fc1"));
 
             Map<String, Object> landmark3d = new LandmarkExecutor(manager, true).execute(
-                    Files.readAllBytes(directory.resolve("1k3d68.onnx")), image, faces);
+                    OnnxTestAssets.read("onnx/buffalo_l/1k3d68.onnx"), image, faces);
             assertEquals(68, ((List<?>) first(landmark3d).get("landmarks")).size());
             assertEquals(3, ((List<?>) ((List<?>) first(landmark3d).get("landmarks")).get(0)).size());
 
             Map<String, Object> genderAge = new GenderAgeExecutor(manager).execute(
-                    Files.readAllBytes(directory.resolve("genderage.onnx")), image, faces);
+                    OnnxTestAssets.read("onnx/buffalo_l/genderage.onnx"), image, faces);
             Map<?, ?> genderAgeItem = first(genderAge);
             assertTrue(((Number) genderAgeItem.get("gender")).intValue() == 0
                     || ((Number) genderAgeItem.get("gender")).intValue() == 1);
@@ -62,10 +49,10 @@ public class InsightFaceExecutorsTest {
     }
 
     @SuppressWarnings("unchecked")
-    private static List<Map<String, Object>> faces(OnnxRuntimeSessionManager manager, Path directory,
+    private static List<Map<String, Object>> faces(OnnxRuntimeSessionManager manager,
                                                     String image) throws Exception {
         return (List<Map<String, Object>>) (List<?>) new ScrfdFaceDetectionExecutor(manager).execute(
-                Files.readAllBytes(directory.resolve("det_10g.onnx")), image,
+                OnnxTestAssets.read("onnx/buffalo_l/det_10g.onnx"), image,
                 OnnxTaskConfig.parse("{\"onnxTaskType\":\"SCRFD_FACE_DETECTION\"}"))
                 .get("faces");
     }

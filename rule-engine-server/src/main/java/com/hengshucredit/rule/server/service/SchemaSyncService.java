@@ -1,6 +1,5 @@
 package com.hengshucredit.rule.server.service;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,15 +9,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StreamUtils;
 
 import javax.annotation.PostConstruct;
-import java.io.*;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -29,9 +24,6 @@ import java.util.regex.Pattern;
 public class SchemaSyncService {
 
     private static final Logger log = LoggerFactory.getLogger(SchemaSyncService.class);
-
-    @Value("${rule.schema.path:#{null}}")
-    private String schemaPath;
 
     @Autowired(required = false)
     private JdbcTemplate jdbcTemplate;
@@ -74,30 +66,8 @@ public class SchemaSyncService {
      * Read the current schema.sql and return its content.
      */
     public String readSchema() throws IOException {
-        Path path = resolveSchemaPath();
-        if (path != null && Files.exists(path)) {
-            return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-        }
         ClassPathResource resource = new ClassPathResource("sql/schema.sql");
         return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
-    }
-
-    /**
-     * Replace a specific table's CREATE TABLE block in schema.sql.
-     */
-    public void updateTableBlock(String tableName, String newCreateStatement) throws IOException {
-        Path path = resolveSchemaPath();
-        if (path == null || !Files.exists(path)) return;
-
-        String content = new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
-        String escaped = Pattern.quote(tableName);
-        Pattern pattern = Pattern.compile(
-                "(CREATE TABLE IF NOT EXISTS `" + escaped + "` \\([\\s\\S]*?\\)[^;]*;)");
-        Matcher matcher = pattern.matcher(content);
-        if (matcher.find()) {
-            content = content.substring(0, matcher.start()) + newCreateStatement + content.substring(matcher.end());
-            Files.write(path, content.getBytes(StandardCharsets.UTF_8));
-        }
     }
 
     /**
@@ -659,15 +629,4 @@ public class SchemaSyncService {
         }
     }
 
-    private Path resolveSchemaPath() {
-        if (schemaPath != null && !schemaPath.isEmpty()) {
-            return Paths.get(schemaPath);
-        }
-        String userDir = System.getProperty("user.dir");
-        Path candidate = Paths.get(userDir, "src", "main", "resources", "sql", "schema.sql");
-        if (Files.exists(candidate)) return candidate;
-        candidate = Paths.get(userDir, "rule-engine-server", "src", "main", "resources", "sql", "schema.sql");
-        if (Files.exists(candidate)) return candidate;
-        return null;
-    }
 }

@@ -1,12 +1,8 @@
 package com.hengshucredit.rule.server.service.onnx;
 
 import com.alibaba.fastjson.JSON;
-import org.junit.Assume;
 import org.junit.Test;
 
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -156,9 +152,7 @@ public class OnnxRuntimeSessionManagerTest {
 
     @Test
     public void inspectsRealMn3ModelAndReusesSessionByContentHash() throws Exception {
-        Path modelPath = Paths.get("C:/Users/Administrator/Downloads/anti-spoof-mn3.onnx");
-        Assume.assumeTrue(Files.isRegularFile(modelPath));
-        byte[] model = Files.readAllBytes(modelPath);
+        byte[] model = OnnxTestAssets.read("onnx/mn3/anti-spoof-mn3.onnx");
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
             Map<String, Object> metadata = manager.inspect(model);
@@ -189,9 +183,8 @@ public class OnnxRuntimeSessionManagerTest {
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
             for (String name : Arrays.asList("det_10g.onnx", "w600k_r50.onnx", "2d106det.onnx", "1k3d68.onnx", "genderage.onnx")) {
-                Path path = Paths.get("C:/Users/Administrator/Downloads/buffalo_l", name);
-                Assume.assumeTrue(Files.isRegularFile(path));
-                Map<String, Object> metadata = manager.inspect(Files.readAllBytes(path));
+                Map<String, Object> metadata = manager.inspect(
+                        OnnxTestAssets.read("onnx/buffalo_l/" + name));
                 assertFalse(((Map<?, ?>) metadata.get("inputs")).isEmpty());
                 assertFalse(((Map<?, ?>) metadata.get("outputs")).isEmpty());
             }
@@ -204,11 +197,10 @@ public class OnnxRuntimeSessionManagerTest {
     public void inspectAvailableAntispoofModels() throws Exception {
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
-            for (Path path : Arrays.asList(
-                    Paths.get("C:/Users/Administrator/Downloads/anti-spoof-mn3.onnx"),
-                    Paths.get("../.tmp/facenox-face-antispoof-onnx/models/best/98.20/best_model.onnx"))) {
-                Assume.assumeTrue(Files.isRegularFile(path));
-                Map<String, Object> metadata = manager.inspect(Files.readAllBytes(path));
+            for (String path : Arrays.asList(
+                    "onnx/mn3/anti-spoof-mn3.onnx",
+                    "onnx/facenox/best_model.onnx")) {
+                Map<String, Object> metadata = manager.inspect(OnnxTestAssets.read(path));
                 assertFalse(((Map<?, ?>) metadata.get("inputs")).isEmpty());
                 assertFalse(((Map<?, ?>) metadata.get("outputs")).isEmpty());
             }

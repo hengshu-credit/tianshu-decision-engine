@@ -1,29 +1,32 @@
 package com.hengshucredit.rule.server.service.onnx;
 
 import com.alibaba.fastjson.JSON;
+import org.junit.Assume;
 import org.junit.Test;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.Base64;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class CudaEnvironmentDiagnosticTest {
 
     @Test
     public void runsTianshuFaceDetectionAndRecognitionOnCuda() throws Exception {
+        Assume.assumeTrue(Boolean.getBoolean("tianshu.cuda.diagnostic"));
         System.out.println("PATH=" + System.getenv("PATH"));
         System.out.println("java.library.path=" + System.getProperty("java.library.path"));
         System.loadLibrary("cublasLt64_12");
         System.loadLibrary("cublas64_12");
         System.loadLibrary("cufft64_11");
         System.loadLibrary("cudart64_12");
-        Path cudnnBin = Paths.get(System.getProperty("tianshu.cudnn.bin"));
+        String cudnnBinProperty = System.getProperty("tianshu.cudnn.bin");
+        assertNotNull("tianshu.cudnn.bin is required when CUDA diagnostics are enabled", cudnnBinProperty);
+        Path cudnnBin = Paths.get(cudnnBinProperty);
         for (String library : new String[]{
                 "cudnn_graph64_9.dll",
                 "cudnn_ops64_9.dll",
@@ -36,21 +39,19 @@ public class CudaEnvironmentDiagnosticTest {
         }) {
             System.load(cudnnBin.resolve(library).toString());
         }
-        Path modelDirectory = Paths.get("C:/Users/Administrator/Downloads/buffalo_l");
-        Path imagePath = Paths.get("../assets/docs/face.jpg");
         OnnxRuntimeConfig cuda = OnnxRuntimeConfig.from(JSON.parseObject(
                 "{\"executionProvider\":\"CUDA\",\"cudaDeviceId\":0}"));
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
-            String image = Base64.getEncoder().encodeToString(Files.readAllBytes(imagePath));
+            String image = OnnxTestAssets.imageBase64();
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> faces = (List<Map<String, Object>>) (List<?>)
                     new ScrfdFaceDetectionExecutor(manager, cuda).execute(
-                            Files.readAllBytes(modelDirectory.resolve("det_10g.onnx")), image,
+                            OnnxTestAssets.read("onnx/buffalo_l/det_10g.onnx"), image,
                             OnnxTaskConfig.parse("{\"onnxTaskType\":\"SCRFD_FACE_DETECTION\"}"))
                             .get("faces");
             Map<String, Object> recognition = new ArcFaceRecognitionExecutor(manager, cuda).execute(
-                    Files.readAllBytes(modelDirectory.resolve("w600k_r50.onnx")), image, faces);
+                    OnnxTestAssets.read("onnx/buffalo_l/w600k_r50.onnx"), image, faces);
             Map<?, ?> first = (Map<?, ?>) ((List<?>) recognition.get("results")).get(0);
             List<?> embedding = (List<?>) first.get("normalizedEmbedding");
 

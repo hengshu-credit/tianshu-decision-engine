@@ -12,9 +12,17 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class SchemaSyncServiceTest {
+
+    @Test
+    public void schemaResourceHasNoFilesystemOverrideOrWritebackEntryPoint() {
+        assertFalse(hasDeclaredField(SchemaSyncService.class, "schemaPath"));
+        assertFalse(hasDeclaredMethod(SchemaSyncService.class, "resolveSchemaPath"));
+        assertFalse(hasDeclaredMethod(SchemaSyncService.class, "updateTableBlock"));
+    }
 
     @Test
     public void listTablesAreConvertedToUtf8mb4() throws Exception {
@@ -150,6 +158,20 @@ public class SchemaSyncServiceTest {
             if (sql.contains(fragment)) {
                 return true;
             }
+        }
+        return false;
+    }
+
+    private boolean hasDeclaredField(Class<?> type, String name) {
+        for (Field field : type.getDeclaredFields()) {
+            if (name.equals(field.getName())) return true;
+        }
+        return false;
+    }
+
+    private boolean hasDeclaredMethod(Class<?> type, String name) {
+        for (Method method : type.getDeclaredMethods()) {
+            if (name.equals(method.getName())) return true;
         }
         return false;
     }

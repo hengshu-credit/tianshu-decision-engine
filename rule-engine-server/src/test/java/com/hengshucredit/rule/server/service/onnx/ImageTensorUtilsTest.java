@@ -3,17 +3,13 @@ package com.hengshucredit.rule.server.service.onnx;
 import org.junit.Test;
 import org.opencv.core.Mat;
 
-import java.nio.file.Files;
-import java.nio.file.Paths;
-import java.util.Base64;
-
 import static org.junit.Assert.assertEquals;
 
 public class ImageTensorUtilsTest {
 
     @Test
     public void decodesPlainBase64AndDataUrl() throws Exception {
-        String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get("../assets/docs/face.jpg")));
+        String base64 = OnnxTestAssets.imageBase64();
 
         Mat plain = ImageTensorUtils.decodeBase64(base64);
         Mat dataUrl = ImageTensorUtils.decodeBase64("data:image/jpeg;base64," + base64);
@@ -30,7 +26,7 @@ public class ImageTensorUtilsTest {
 
     @Test
     public void expandedCropIsSquareAndReflectPadsOutsideImage() throws Exception {
-        String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get("../assets/docs/face.jpg")));
+        String base64 = OnnxTestAssets.imageBase64();
         Mat image = ImageTensorUtils.decodeBase64(base64);
         FaceRegion face = new FaceRegion(100d, 10d, 200d, 100d, 0.9d, null);
         Mat crop = ImageTensorUtils.expandedSquareCrop(image, face, 1.5d);
@@ -45,7 +41,7 @@ public class ImageTensorUtilsTest {
 
     @Test
     public void facenoxBatchUsesRgbChwAndUnitScale() throws Exception {
-        String base64 = Base64.getEncoder().encodeToString(Files.readAllBytes(Paths.get("../assets/docs/face.jpg")));
+        String base64 = OnnxTestAssets.imageBase64();
         Mat image = ImageTensorUtils.decodeBase64(base64);
         FaceRegion face = new FaceRegion(270d, 40d, 210d, 260d, 0.9d, null);
         try {
