@@ -8,6 +8,11 @@ function mountTraceTree(propsData) {
     stubs: {
       'trace-node': true,
       'decision-tree-trace-node': true,
+      'rule-set-condition-trace-node': {
+        name: 'RuleSetConditionTraceNode',
+        props: ['node'],
+        render: h => h('div', { class: 'rule-set-condition-trace-node-stub' })
+      },
       'el-button': true,
       'el-badge': true
     }
@@ -35,15 +40,15 @@ function valueNode(value, token = String(value), evaluated = true) {
   return { type: 'VALUE', token, value, evaluated, children: [] }
 }
 
-function compareNode(varCode, operator, actual, threshold, result) {
+function compareNode(varCode, operator, actual, threshold, result, evaluated = true) {
   return {
     type: 'OPERATOR',
     token: operator,
-    evaluated: true,
+    evaluated,
     value: result,
     children: [
-      variableNode(varCode, actual),
-      valueNode(threshold)
+      variableNode(varCode, actual, evaluated),
+      valueNode(threshold, String(threshold), evaluated)
     ]
   }
 }
@@ -64,6 +69,16 @@ function fieldCompareNode(rootCode, field, operator, actual, threshold, result) 
       },
       valueNode(threshold)
     ]
+  }
+}
+
+function logicalNode(operator, children, result, evaluated = true) {
+  return {
+    type: 'OPERATOR',
+    token: operator,
+    evaluated,
+    value: result,
+    children
   }
 }
 
@@ -303,8 +318,8 @@ describe('TraceTree', () => {
     expect(wrapper.vm.ruleSetHitRows.map(row => row.ruleCode)).toEqual(['R0001'])
     expect(wrapper.findAll('.rs-table tbody tr')).toHaveLength(2)
     expect(wrapper.text()).toContain('R0001 黑名单规则')
-    expect(wrapper.text()).toContain('实际值 1')
-    expect(wrapper.text()).toContain('阈值 1')
+    const conditionNode = wrapper.findComponent({ name: 'RuleSetConditionTraceNode' })
+    expect(conditionNode.props('node').children[0]).toMatchObject({ actualText: '1', thresholdText: '1' })
   })
 
   test('规则集追踪展示统一操作数中的路径与引用阈值', () => {
@@ -519,5 +534,93 @@ describe('TraceTree', () => {
     })
     expect(advanced.vm.traceAdvCellDisplay(0, 0)).toBe('1.147')
     advanced.destroy()
+  })
+
+  test('规则集追踪保留三层 AND OR 条件组结构并传给递归节点', () => {
+    const hitInfo = { ruleCode: 'R-NESTED', ruleName: '多层条件规则', priority: 5, order: 1 }
+    const wrapper = mountTraceTree({
+      modelType: 'RULE_SET',
+      definitionModel: {
+        rules: [{
+          ruleCode: 'R-NESTED',
+          ruleName: '多层条件规则',
+          conditionRoot: {
+            type: 'group',
+            op: 'AND',
+            children: [
+              { type: 'leaf', varCode: 'age', varLabel: '年龄', varType: 'NUMBER', operator: '>=', value: '18' },
+              {
+                type: 'group',
+                op: 'OR',
+                children: [
+                  { type: 'leaf', varCode: 'score', varLabel: '评分', varType: 'NUMBER', operator: '>=', value: '60' },
+                  { type: 'leaf', varCode: 'vip', varLabel: 'VIP', varType: 'BOOLEAN', operator: '==', value: 'true' }
+                ]
+              }
+            ]
+          },
+          actionData: []
+        }]
+      },
+      traceInfo: JSON.stringify([
+        ruleSetIfNode(logicalNode('&&', [
+          compareNode('age', '>=', 20, 18, true),
+          logicalNode('||', [
+            compareNode('score', '>=', 50, 60, false),
+            compareNode('vip', '==', true, true, true)
+          ], true)
+        ], true), true, hitInfo)
+      ]),
+      outputResult: JSON.stringify([hitInfo])
+    })
+
+    const tree = wrapper.vm.ruleSetRows[0].conditionTree
+    expect(tree).toMatchObject({ kind: 'group', operator: 'AND', result: true })
+    expect(tree.children[0]).toMatchObject({ kind: 'condition', varCode: 'age', result: true })
+    expect(tree.children[1]).toMatchObject({ kind: 'group', operator: 'OR', result: true })
+    expect(tree.children[1].children[0]).toMatchObject({ kind: 'condition', varCode: 'score', result: false })
+    expect(tree.children[1].children[1]).toMatchObject({ kind: 'condition', varCode: 'vip', result: true })
+    const node = wrapper.findComponent({ name: 'RuleSetConditionTraceNode' })
+    expect(node.exists()).toBe(true)
+    expect(node.props('node')).toEqual(tree)
+  })
+
+  test('规则集短路后保留内层结构但不把未执行条件推算为已执行', () => {
+    const rule = {
+      ruleCode: 'R-SHORT',
+      conditionRoot: {
+        type: 'group',
+        op: 'AND',
+        children: [
+          { type: 'leaf', varCode: 'age', varType: 'NUMBER', operator: '>=', value: '18' },
+          {
+            type: 'group',
+            op: 'OR',
+            children: [
+              { type: 'leaf', varCode: 'score', varType: 'NUMBER', operator: '>=', value: '60' },
+              { type: 'leaf', varCode: 'vip', varType: 'BOOLEAN', operator: '==', value: 'true' }
+            ]
+          }
+        ]
+      },
+      actionData: []
+    }
+    const skippedOr = logicalNode('||', [
+      compareNode('score', '>=', 80, 60, undefined, false),
+      compareNode('vip', '==', true, true, undefined, false)
+    ], undefined, false)
+    const wrapper = mountTraceTree({
+      modelType: 'RULE_SET',
+      definitionModel: { rules: [rule] },
+      traceInfo: JSON.stringify([
+        ruleSetIfNode(logicalNode('&&', [compareNode('age', '>=', 16, 18, false), skippedOr], false), false, null)
+      ]),
+      inputParams: JSON.stringify({ age: 16, score: 80, vip: true }),
+      outputResult: JSON.stringify([])
+    })
+
+    const nested = wrapper.vm.ruleSetRows[0].conditionTree.children[1]
+    expect(nested).toMatchObject({ kind: 'group', operator: 'OR', result: null })
+    expect(nested.children.map(child => child.result)).toEqual([null, null])
   })
 })

@@ -87,6 +87,16 @@ public class TokenAuthInterceptorTest {
     }
 
     @Test
+    public void allowsCorsPreflightWithoutProjectCredentials() throws Exception {
+        FakeProjectAuthService service = service(null);
+        TokenAuthInterceptor interceptor = interceptor(service);
+        MockHttpServletRequest request = new MockHttpServletRequest("OPTIONS", "/api/rule/sync/execute/demo");
+
+        assertTrue(interceptor.preHandle(request, new MockHttpServletResponse(), new Object()));
+        assertEquals(null, service.lastSuccess);
+    }
+
+    @Test
     public void rateLimitedTokenExchangeReturns429BeforeAuthentication() throws Exception {
         FakeProjectAuthService service = service(null);
         service.tokenRequestAllowed = false;

@@ -409,7 +409,8 @@
                 <div class="rs-rule-meta">优先级 {{ row.priority }} / 顺序 {{ row.order }}</div>
               </td>
               <td class="rs-cond-cell">
-                <div v-if="row.conditions.length" class="rs-cond-tree">
+                <rule-set-condition-trace-node v-if="row.conditionTree" :node="row.conditionTree" />
+                <div v-else-if="row.conditions.length" class="rs-cond-tree">
                   <template v-for="(item, idx) in row.conditions">
                     <div v-if="item.kind === 'join'" :key="row.key + '-join-' + idx" class="rs-cond-join">{{ item.text }}</div>
                     <div v-else :key="row.key + '-cond-' + idx" class="rs-cond-line" :class="{ 'is-pass': item.result === true, 'is-fail': item.result === false }">
@@ -538,6 +539,7 @@
 <script>
 import TraceNode from './TraceNode.vue'
 import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
+import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 
@@ -561,7 +563,7 @@ var BUILTIN_FUNC_CN = {
 
 export default {
   name: 'TraceTree',
-  components: { TraceNode, DecisionTreeTraceNode },
+  components: { TraceNode, DecisionTreeTraceNode, RuleSetConditionTraceNode },
   props: {
     traceInfo: { type: String, default: '' },
     varMap: { type: Object, default: function () { return {} } },
@@ -855,6 +857,7 @@ export default {
           status: status,
           statusText: status === 'hit' ? '命中' : status === 'skipped' ? '跳过' : '未命中',
           hit: status === 'hit',
+          conditionTree: this._buildRuleSetConditionTree(rule.conditionRoot, this._ruleSetConditionNode(ifNode)),
           conditions: this._buildRuleSetConditionItems(rule.conditionRoot, this._ruleSetConditionNode(ifNode)),
           actions: this._buildRuleSetActionItems(rule.actionData)
         })
@@ -1799,6 +1802,32 @@ export default {
       this._appendRuleSetConditionItems(root, traceNode, items)
       return items
     },
+    _buildRuleSetConditionTree: function (node, traceNode) {
+      if (!node) return null
+      if (node.type !== 'group') return this._buildRuleSetConditionLeaf(node, traceNode)
+      var operator = String(node.op || node.operator || 'AND').toUpperCase() === 'OR' ? 'OR' : 'AND'
+      var traceOperator = operator === 'OR' ? '||' : '&&'
+      var matchedTrace = traceNode && traceNode.type === 'OPERATOR' && traceNode.token === traceOperator
+        ? traceNode : null
+      var children = []
+      var sourceChildren = node.children || []
+      for (var i = 0; i < sourceChildren.length; i++) {
+        var childTrace = matchedTrace && matchedTrace.children ? matchedTrace.children[i] : traceNode
+        var child = this._buildRuleSetConditionTree(sourceChildren[i], childTrace)
+        if (child) children.push(child)
+      }
+      var skipped = matchedTrace && matchedTrace.evaluated === false
+      var result = skipped ? null : matchedTrace && typeof matchedTrace.value === 'boolean'
+        ? matchedTrace.value : this._ruleSetGroupResult(operator, children)
+      return { kind: 'group', operator: operator, result: result, children: children }
+    },
+    _ruleSetGroupResult: function (operator, children) {
+      var results = (children || []).map(function (child) { return child.result })
+      if (operator === 'OR' && results.indexOf(true) >= 0) return true
+      if (operator === 'AND' && results.indexOf(false) >= 0) return false
+      if (!results.length || results.indexOf(null) >= 0 || results.indexOf(undefined) >= 0) return null
+      return operator === 'OR' ? false : true
+    },
     _appendRuleSetConditionItems: function (node, traceNode, items) {
       if (!node) return
       if (node.type === 'group') {
@@ -1816,8 +1845,9 @@ export default {
       var varCode = this._ruleSetLeafCode(leaf)
       var actual = this._actualFromTraceOrInput(varCode, traceNode)
       var matched = this._findRuleSetConditionTrace(leaf, traceNode)
-      var result = matched && matched.value !== undefined ? this._ruleSetConditionTraceResult(leaf.operator, matched.value) : null
-      if (result === null && actual !== undefined) result = this._evalRuleSetLeaf(leaf, actual)
+      var skipped = traceNode && traceNode.evaluated === false
+      var result = !skipped && matched && matched.value !== undefined ? this._ruleSetConditionTraceResult(leaf.operator, matched.value) : null
+      if (!skipped && result === null && actual !== undefined) result = this._evalRuleSetLeaf(leaf, actual)
       return {
         kind: 'condition',
         varCode: varCode || '?',

@@ -11,11 +11,16 @@ import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.multipart.MultipartHttpServletRequest;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -83,6 +88,16 @@ public class RuleSyncController {
     public R<RuleResult> execute(@PathVariable String ruleCode,
                                  @RequestBody(required = false) Map<String, Object> body,
                                  HttpServletRequest request) {
+        return executeBody(ruleCode, body, request);
+    }
+
+    @PostMapping(value = "/execute/{ruleCode}", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public R<RuleResult> executeMultipart(@PathVariable String ruleCode,
+                                          MultipartHttpServletRequest request) {
+        return executeBody(ruleCode, buildMultipartBody(request.getParameterMap(), request.getFileMap()), request);
+    }
+
+    private R<RuleResult> executeBody(String ruleCode, Map<String, Object> body, HttpServletRequest request) {
         ProjectScope scope = resolveProjectScope(request);
         if (scope == null) {
             return R.fail(401, "Unauthorized project token");
@@ -103,6 +118,45 @@ public class RuleSyncController {
                 : String.valueOf(body.get("clientAppName"));
         return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName,
                 ProjectAuthContext.from(request)));
+    }
+
+    static Map<String, Object> buildMultipartBody(Map<String, String[]> fields,
+                                                   Map<String, MultipartFile> files) {
+        Map<String, Object> body = new LinkedHashMap<>();
+        if (fields != null) {
+            fields.forEach((path, values) -> {
+                Object value = values == null || values.length == 0
+                        ? ""
+                        : values.length == 1 ? values[0] : Arrays.asList(values);
+                putNestedValue(body, path, value);
+            });
+        }
+        if (files != null) {
+            files.forEach((path, file) -> putNestedValue(body, path, file));
+        }
+        return body;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static void putNestedValue(Map<String, Object> target, String path, Object value) {
+        if (path == null || path.trim().isEmpty()) {
+            return;
+        }
+        String[] parts = path.split("\\.");
+        Map<String, Object> current = target;
+        for (int index = 0; index < parts.length; index++) {
+            String part = parts[index];
+            if (index == parts.length - 1) {
+                current.put(part, value);
+            } else {
+                Object child = current.get(part);
+                if (!(child instanceof Map)) {
+                    child = new LinkedHashMap<String, Object>();
+                    current.put(part, child);
+                }
+                current = (Map<String, Object>) child;
+            }
+        }
     }
 
     /**

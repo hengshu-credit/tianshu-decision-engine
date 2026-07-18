@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.core.compiler;
 
+import com.alibaba.qlexpress4.runtime.trace.ExpressionTrace;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
@@ -93,6 +94,57 @@ public class RuleSetCompilerTest {
         assertEquals("R0002", ((Map<?, ?>) hits.get(0)).get("ruleCode"));
         assertEquals("R0003", ((Map<?, ?>) hits.get(1)).get("ruleCode"));
         assertEquals("R0001", ((Map<?, ?>) hits.get(2)).get("ruleCode"));
+    }
+
+    @Test
+    public void testNestedAndOrConditionGroupsKeepBackendExecutionSemantics() {
+        CompileResult compiled = compiler.compile("{"
+                + "\"executionMode\":\"PARALLEL\","
+                + "\"rules\":[{\"ruleCode\":\"R-NESTED\",\"conditionRoot\":{"
+                + "\"type\":\"group\",\"op\":\"AND\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"18\"},"
+                + "{\"type\":\"group\",\"op\":\"OR\",\"children\":["
+                + "{\"type\":\"leaf\",\"varCode\":\"score\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"60\"},"
+                + "{\"type\":\"leaf\",\"varCode\":\"vip\",\"varType\":\"BOOLEAN\",\"operator\":\"==\",\"value\":\"true\"}"
+                + "]}]}}]}");
+
+        assertTrue(compiled.getErrorMessage(), compiled.isSuccess());
+        Map<String, Object> hitParams = new LinkedHashMap<>();
+        hitParams.put("age", 20);
+        hitParams.put("score", 50);
+        hitParams.put("vip", true);
+        RuleResult hitResult = engine.execute(compiled.getCompiledScript(), hitParams, true);
+        assertTrue(hitResult.getErrorMessage(), hitResult.isSuccess());
+        assertEquals(1, ((List<?>) hitResult.getResult()).size());
+        assertNotNull(hitResult.getTraces());
+        List<?> expressionRoots = (List<?>) hitResult.getTraces().get(0);
+        ExpressionTrace nestedAnd = findOperatorWithDirectChild(expressionRoots, "&&", "||");
+        assertNotNull("后端追踪应保留 AND 下嵌套 OR 的条件层级", nestedAnd);
+        assertTrue(nestedAnd.isEvaluated());
+
+        Map<String, Object> missParams = new LinkedHashMap<>();
+        missParams.put("age", 20);
+        missParams.put("score", 50);
+        missParams.put("vip", false);
+        RuleResult missResult = engine.execute(compiled.getCompiledScript(), missParams);
+        assertTrue(missResult.getErrorMessage(), missResult.isSuccess());
+        assertTrue(((List<?>) missResult.getResult()).isEmpty());
+    }
+
+    private ExpressionTrace findOperatorWithDirectChild(List<?> traces, String operator, String childOperator) {
+        if (traces == null) return null;
+        for (Object item : traces) {
+            if (!(item instanceof ExpressionTrace)) continue;
+            ExpressionTrace trace = (ExpressionTrace) item;
+            if (operator.equals(trace.getToken()) && trace.getChildren() != null) {
+                for (ExpressionTrace child : trace.getChildren()) {
+                    if (childOperator.equals(child.getToken())) return trace;
+                }
+            }
+            ExpressionTrace nested = findOperatorWithDirectChild(trace.getChildren(), operator, childOperator);
+            if (nested != null) return nested;
+        }
+        return null;
     }
 
     @Test

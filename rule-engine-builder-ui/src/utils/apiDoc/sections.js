@@ -1,6 +1,7 @@
 import { escapeAttribute, escapeHtml } from './escape'
 import { buildExampleBody } from './model'
 import { EXAMPLE_CREDENTIALS, generateCodeSamples } from './codeSamples'
+import { renderFieldTreeRows } from './fieldTree'
 
 function prettyJson(value) {
   if (typeof value === 'string') {
@@ -137,8 +138,8 @@ export function buildEndpointScenarios(rule) {
 }
 
 function renderFields(title, fields) {
-  const rows = (fields || []).map(field => `<tr><td><code>${escapeHtml(field.path)}</code></td><td>${escapeHtml(field.type)}</td><td>${field.required ? '是' : '否'}</td><td>${escapeHtml(field.label || field.description || '—')}</td><td><code>${escapeHtml(prettyJson(field.exampleValue))}</code></td></tr>`).join('')
-  return `<h3>${escapeHtml(title)}</h3><div class="table-wrap"><table><thead><tr><th>字段路径</th><th>类型</th><th>必填</th><th>说明</th><th>示例值</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">无字段</td></tr>'}</tbody></table></div>`
+  const rows = renderFieldTreeRows(fields)
+  return `<h3>${escapeHtml(title)}</h3><div class="table-wrap"><table class="field-tree"><thead><tr><th>字段名称</th><th>类型</th><th>必填</th><th>说明</th><th>示例值</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="muted">无字段</td></tr>'}</tbody></table></div>`
 }
 
 function renderScenarioTabs(rule) {
@@ -160,12 +161,12 @@ function renderCodeTabs(rule, authentications, endpoint) {
   }).join('')
 }
 
-export function renderRuleEndpoint(rule, authentications) {
+export function renderRuleEndpoint(rule, authentications, active = false) {
   const path = `/api/rule/sync/execute/${encodeURIComponent(rule.ruleCode)}`
   const body = prettyJson({ clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
   const responseFields = [{ path: 'code', type: 'INTEGER', required: true, label: '平台响应码', exampleValue: 200 }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: 'success' }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
   const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
-  return `<section id="endpoint-${escapeAttribute(rule.ruleCode)}" class="panel endpoint-panel" data-endpoint-id="${escapeAttribute(rule.ruleCode)}">
+  return `<section id="endpoint-${escapeAttribute(rule.ruleCode)}" class="panel endpoint-panel${active ? ' active' : ''}" data-endpoint-id="${escapeAttribute(rule.ruleCode)}" data-endpoint-value="${escapeAttribute(rule.id || rule.ruleCode)}">
     <div class="endpoint-head"><span class="method">POST</span><code class="path">${escapeHtml(path)}</code><span class="badge">${escapeHtml(rule.ruleName || rule.ruleCode)}</span></div>
     <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>
     <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>按“认证鉴权”页当前 Tab 传递</td></tr></tbody></table></div>

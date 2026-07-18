@@ -128,12 +128,18 @@ describe('ExecutionLog — 初始化与数据加载', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('mounted 后调用 listProjects', () => {
-    expect(projectApi.listProjects).toHaveBeenCalled()
+  test('mounted 时不再预拉取 1000 条项目和规则元数据', () => {
+    expect(projectApi.listProjects).not.toHaveBeenCalled()
+    expect(definitionApi.listDefinitions).not.toHaveBeenCalled()
   })
 
   test('mounted 后加载日志列表', () => {
     expect(requestApi).toHaveBeenCalled()
+  })
+
+  test('初始日志请求严格使用当前页码和分页大小', () => {
+    const call = requestApi.mock.calls.find(args => args[0] && args[0].url === '/rule/log/list')
+    expect(call[0].params).toMatchObject({ pageNum: 1, pageSize: 10 })
   })
 
   test('list 数据正确赋值', () => {
@@ -225,6 +231,47 @@ describe('ExecutionLog — 筛选与分页', () => {
     requestApi.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.qp.pageNum = 1
     expect(wrapper.vm.qp.pageNum).toBe(1)
+  })
+
+  test('缓存中的非法 1000 页大小回落为默认 10', () => {
+    window.sessionStorage.setItem('qlexpress.pageState.ExecutionLog', JSON.stringify({
+      qp: { pageNum: 3, pageSize: 1000 }
+    }))
+
+    wrapper.vm.restoreCachedState()
+
+    expect(wrapper.vm.qp.pageNum).toBe(3)
+    expect(wrapper.vm.qp.pageSize).toBe(10)
+    window.sessionStorage.removeItem('qlexpress.pageState.ExecutionLog')
+  })
+
+  test('项目和规则筛选器仅在展开时按小页加载', async () => {
+    projectApi.listProjects.mockReset()
+    definitionApi.listDefinitions.mockReset()
+    projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
+    definitionApi.listDefinitions.mockResolvedValue({ data: { records: [] } })
+
+    await wrapper.vm.onProjectFilterVisible(true)
+    await wrapper.vm.onRuleFilterVisible(true)
+
+    expect(projectApi.listProjects).toHaveBeenCalledWith({ pageNum: 1, pageSize: 50, keyword: '' })
+    expect(definitionApi.listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 50, keyword: '', projectCode: '' })
+  })
+
+  test('日志详情按项目编码和规则编码精确补取缺失元数据', async () => {
+    projectApi.listProjects.mockReset()
+    definitionApi.listDefinitions.mockReset()
+    projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects().slice(0, 1) } })
+    definitionApi.listDefinitions.mockResolvedValue({ data: { records: [{ id: 9, ruleCode: 'age_rule', ruleName: '年龄规则' }] } })
+    wrapper.vm.projectList = []
+    wrapper.vm.ruleList = []
+
+    await wrapper.vm.ensureDetailMetadata({ projectCode: 'project_a', ruleCode: 'age_rule' })
+
+    expect(projectApi.listProjects).toHaveBeenCalledWith({ pageNum: 1, pageSize: 1, projectCode: 'project_a' })
+    expect(definitionApi.listDefinitions).toHaveBeenCalledWith({ pageNum: 1, pageSize: 10, projectCode: 'project_a', ruleCode: 'age_rule' })
+    expect(wrapper.vm.projectMap.project_a).toBe('项目A')
+    expect(wrapper.vm.ruleMap.age_rule).toBe('年龄规则')
   })
 })
 

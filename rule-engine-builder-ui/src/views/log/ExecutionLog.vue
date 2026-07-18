@@ -9,12 +9,15 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目">
-          <el-select v-model="qp.projectCode" clearable filterable placeholder="全部项目" @change="onProjectChange">
+          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="全部项目"
+            :remote-method="searchProjects" :loading="projectOptionsLoading"
+            @visible-change="onProjectFilterVisible" @change="onProjectChange">
             <el-option v-for="p in projectList" :key="p.projectCode" :label="p.projectName" :value="p.projectCode" />
           </el-select>
         </el-form-item>
         <el-form-item label="规则">
-          <el-select v-model="qp.ruleCode" clearable filterable placeholder="全部规则">
+          <el-select v-model="qp.ruleCode" clearable filterable remote reserve-keyword placeholder="全部规则"
+            :remote-method="searchRules" :loading="ruleOptionsLoading" @visible-change="onRuleFilterVisible">
             <el-option v-for="r in filteredRules" :key="r.ruleCode" :label="r.ruleName" :value="r.ruleCode" />
           </el-select>
         </el-form-item>
@@ -181,6 +184,10 @@ export default {
       projectMap: {},
       projectList: [],
       ruleList: [],
+      projectOptionsLoading: false,
+      ruleOptionsLoading: false,
+      projectOptionsLoaded: false,
+      ruleOptionsLoaded: false,
       modelTypeMap: {
         'TABLE': '决策表',
         'TREE': '决策树',
@@ -217,26 +224,27 @@ export default {
   },
   watch: {
     detailVis: function (val) {
-      if (val) {
-        this.detailTab = 'basic'
-        this.loadVarMap()
-        this.loadFunctionNameMap()
-        this.loadModelJson()
-      }
+      if (val) this.detailTab = 'basic'
     }
   },
   created: function () {
     this.initDefaultTimeRange()
     this.restoreCachedState()
     this.load()
-    this.loadProjects()
-    this.loadRules()
   },
   methods: {
     restoreCachedState: function () {
       var state = restorePageState('ExecutionLog')
       if (state.qp) this.qp = Object.assign({}, this.qp, state.qp)
       if (state.timeRange) this.timeRange = state.timeRange
+      this.normalizePagination()
+    },
+    normalizePagination: function () {
+      var allowedPageSizes = [10, 30, 50, 100, 200, 500]
+      var pageNum = Number(this.qp.pageNum)
+      var pageSize = Number(this.qp.pageSize)
+      this.qp.pageNum = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1
+      this.qp.pageSize = allowedPageSizes.indexOf(pageSize) >= 0 ? pageSize : 10
     },
     saveCachedState: function () {
       savePageState('ExecutionLog', {
@@ -247,6 +255,7 @@ export default {
     async load () {
       this.loading = true
       try {
+        this.normalizePagination()
         this.saveCachedState()
         var params = Object.assign({}, this.qp)
         if (this.timeRange && this.timeRange.length === 2) {
@@ -260,36 +269,87 @@ export default {
         this.loading = false
       }
     },
-    async loadProjects () {
+    async loadProjects (keyword) {
+      this.projectOptionsLoading = true
       try {
-        var r = await listProjects({ pageNum: 1, pageSize: 1000 })
+        var r = await listProjects({ pageNum: 1, pageSize: 50, keyword: keyword || '' })
         var list = r.data && r.data.records ? r.data.records : []
-        this.projectList = list
-        var map = {}
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].projectCode && list[i].projectName) {
-            map[list[i].projectCode] = list[i].projectName
-          }
-        }
-        this.projectMap = map
+        this.mergeProjects(list)
+        this.projectOptionsLoaded = true
       } catch (e) {
         console.warn('加载项目列表失败:', e)
+      } finally {
+        this.projectOptionsLoading = false
       }
     },
-    async loadRules () {
+    async loadRules (keyword) {
+      this.ruleOptionsLoading = true
       try {
-        var r = await listRules({ pageNum: 1, pageSize: 1000 })
+        var r = await listRules({
+          pageNum: 1,
+          pageSize: 50,
+          keyword: keyword || '',
+          projectCode: this.qp.projectCode || ''
+        })
         var list = r.data && r.data.records ? r.data.records : []
-        this.ruleList = list
-        var map = {}
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].ruleCode && list[i].ruleName) {
-            map[list[i].ruleCode] = list[i].ruleName
-          }
-        }
-        this.ruleMap = map
+        this.mergeRules(list)
+        this.ruleOptionsLoaded = true
       } catch (e) {
         console.warn('加载规则列表失败:', e)
+      } finally {
+        this.ruleOptionsLoading = false
+      }
+    },
+    mergeProjects: function (list) {
+      var byCode = {}
+      this.projectList.concat(list || []).forEach(function (project) {
+        if (project && project.projectCode) byCode[project.projectCode] = project
+      })
+      this.projectList = Object.keys(byCode).map(function (code) { return byCode[code] })
+      var map = Object.assign({}, this.projectMap)
+      this.projectList.forEach(function (project) {
+        if (project.projectName) map[project.projectCode] = project.projectName
+      })
+      this.projectMap = map
+    },
+    mergeRules: function (list) {
+      var byCode = {}
+      this.ruleList.concat(list || []).forEach(function (rule) {
+        if (rule && rule.ruleCode) byCode[rule.ruleCode] = rule
+      })
+      this.ruleList = Object.keys(byCode).map(function (code) { return byCode[code] })
+      var map = Object.assign({}, this.ruleMap)
+      this.ruleList.forEach(function (rule) {
+        if (rule.ruleName) map[rule.ruleCode] = rule.ruleName
+      })
+      this.ruleMap = map
+    },
+    onProjectFilterVisible: function (visible) {
+      if (visible && !this.projectOptionsLoaded) return this.loadProjects('')
+      return Promise.resolve()
+    },
+    onRuleFilterVisible: function (visible) {
+      if (visible && !this.ruleOptionsLoaded) return this.loadRules('')
+      return Promise.resolve()
+    },
+    searchProjects: function (keyword) {
+      return this.loadProjects(keyword || '')
+    },
+    searchRules: function (keyword) {
+      return this.loadRules(keyword || '')
+    },
+    async ensureDetailMetadata (row) {
+      var projectCode = row && row.projectCode
+      var ruleCode = row && row.ruleCode
+      var hasProject = this.projectList.some(function (project) { return project.projectCode === projectCode })
+      if (projectCode && !hasProject) {
+        var projectResult = await listProjects({ pageNum: 1, pageSize: 1, projectCode: projectCode })
+        this.mergeProjects(projectResult.data && projectResult.data.records ? projectResult.data.records : [])
+      }
+      var hasRule = this.ruleList.some(function (rule) { return rule.ruleCode === ruleCode })
+      if (ruleCode && !hasRule) {
+        var ruleResult = await listRules({ pageNum: 1, pageSize: 10, projectCode: projectCode || '', ruleCode: ruleCode })
+        this.mergeRules(ruleResult.data && ruleResult.data.records ? ruleResult.data.records : [])
       }
     },
     async loadVarMap () {
@@ -415,6 +475,7 @@ export default {
       this.detail = Object.assign({}, row)
       this.detailVis = true
       try {
+        await this.ensureDetailMetadata(row)
         await this.loadVarMap()
         await this.loadFunctionNameMap()
         await this.loadModelJson()
@@ -432,6 +493,8 @@ export default {
     },
     onProjectChange: function () {
       this.qp.ruleCode = ''
+      this.ruleList = []
+      this.ruleOptionsLoaded = false
     },
     /** handleQuery: 保留方法（别名），内部调用 load() */
     handleQuery: function () {

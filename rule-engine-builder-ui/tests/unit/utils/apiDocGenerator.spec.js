@@ -49,6 +49,18 @@ describe('完整 API 文档生成器', () => {
     expect(html).not.toContain('modelJson')
   })
 
+  test('左侧品牌与管理端 header-title 保持相同结构并在下方显示项目信息', () => {
+    const html = generateApiDocHtml(doc, { logoSvg: '<svg id="hengshucredit"></svg>' })
+
+    expect(html).toContain('class="brand-header-title"')
+    expect(html).toContain('class="brand-logo"')
+    expect(html).toContain('class="brand-main-text">天枢决策引擎')
+    expect(html).toContain('class="brand-sub-text">天工开物, 枢衡定策')
+    expect(html).toContain('class="brand-project"')
+    expect(html).toContain('授信决策')
+    expect(html).toContain('credit')
+  })
+
   test('文档数据中的 script 闭合标签不会突破内联数据脚本', () => {
     const malicious = JSON.parse(JSON.stringify(doc))
     malicious.project.description = '</script><script>alert(1)</script>'
@@ -72,5 +84,45 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('200 / 执行成功')
     expect(html).not.toContain('风险拒绝')
     expect(html).not.toContain('REJECT')
+  })
+
+  test('内置字段树折叠交互且不依赖外部脚本', () => {
+    const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>' })
+
+    expect(html).toContain('data-field-toggle')
+    expect(html).toContain("closest('[data-field-toggle]')")
+    expect(html).toContain('aria-expanded')
+    expect(html).not.toContain('<script src=')
+  })
+
+  test('接口以单页 Tab 切换并包含两侧拖拽栏', () => {
+    const multiple = JSON.parse(JSON.stringify(doc))
+    multiple.rules.push({
+      id: 9,
+      ruleCode: 'SECOND',
+      ruleName: '第二接口',
+      requestFields: [],
+      responseFields: [],
+      scenarios: []
+    })
+
+    const html = generateApiDocHtml(multiple, { logoSvg: '<svg></svg>' })
+
+    expect(html).toContain('data-resize="nav"')
+    expect(html).toContain('data-resize="runner"')
+    expect(html).toContain('data-endpoint-nav="8"')
+    expect(html).toContain('data-endpoint-nav="9"')
+    expect((html.match(/endpoint-panel active/g) || [])).toHaveLength(1)
+    expect(html).toContain('scrollIntoView')
+  })
+
+  test('完整文档内联编辑器运行时且不加载外部资源', () => {
+    const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>' })
+
+    expect(html).toContain('window.ApiDocEditors')
+    expect(html).toContain('data-code-editor="runner-body"')
+    expect(html).toContain('new FormData()')
+    expect(html).not.toContain('monaco')
+    expect(html).not.toContain('<script src=')
   })
 })

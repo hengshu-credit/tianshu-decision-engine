@@ -16,6 +16,7 @@ import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.Serializable;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -208,6 +209,9 @@ public class RuleExecuteServiceTest {
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("applicantId", "A001");
         params.put("age", "22");
+        params.put("enabled", "false");
+        params.put("tags", "[\"A\",\"B\"]");
+        params.put("profile", "{\"level\":\"A\"}");
         params.put("requestMeta", Collections.<String, Object>singletonMap("channel", "APP"));
         ProjectAuthContext authContext = ProjectAuthContext.temporary(1L, "project_a", 11L,
                 "BASIC_MAIN", ProjectAuthType.BASIC, 21L, "TOKEN_A", "GRACE");
@@ -217,6 +221,9 @@ public class RuleExecuteServiceTest {
         assertTrue(outcome.getResult().getErrorMessage(), outcome.getResult().isSuccess());
         assertEquals("PASS", outcome.getResult().getResult());
         assertEquals(Integer.valueOf(22), outcome.getExecuteParams().get("age"));
+        assertEquals(Boolean.FALSE, outcome.getExecuteParams().get("enabled"));
+        assertEquals(Arrays.asList("A", "B"), outcome.getExecuteParams().get("tags"));
+        assertEquals("A", ((Map<?, ?>) outcome.getExecuteParams().get("profile")).get("level"));
         assertEquals(Integer.valueOf(80), outcome.getExecuteParams().get("externalScore"));
         assertEquals(Long.valueOf(1), resolver.projectId);
         assertNotNull(resolver.requiredScriptNames);
@@ -269,7 +276,16 @@ public class RuleExecuteServiceTest {
             RuleDefinitionInputField age = new RuleDefinitionInputField();
             age.setScriptName("age");
             age.setFieldType("INTEGER");
-            return java.util.Arrays.asList(externalScore, age);
+            RuleDefinitionInputField enabled = new RuleDefinitionInputField();
+            enabled.setScriptName("enabled");
+            enabled.setFieldType("BOOLEAN");
+            RuleDefinitionInputField tags = new RuleDefinitionInputField();
+            tags.setScriptName("tags");
+            tags.setFieldType("ARRAY");
+            RuleDefinitionInputField profile = new RuleDefinitionInputField();
+            profile.setScriptName("profile");
+            profile.setFieldType("OBJECT");
+            return Arrays.asList(externalScore, age, enabled, tags, profile);
         }
     }
 

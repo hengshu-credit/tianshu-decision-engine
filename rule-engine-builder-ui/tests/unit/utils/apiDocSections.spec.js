@@ -1,7 +1,8 @@
 import {
   buildEndpointScenarios,
   renderAuthentication,
-  renderResponseContract
+  renderResponseContract,
+  renderRuleEndpoint
 } from '@/utils/apiDoc/sections'
 
 describe('API 文档内容区块', () => {
@@ -70,5 +71,17 @@ describe('API 文档内容区块', () => {
     expect(html).toContain('401')
     expect(html).toContain('data.success')
     expect(html).toContain('不是业务决策 code')
+  })
+
+  test('接口请求体和响应体使用可折叠树形字段表', () => {
+    const html = renderRuleEndpoint({
+      ruleCode: 'RISK',
+      requestFields: [{ path: 'params.customer.age', type: 'INTEGER', label: '年龄' }],
+      responseFields: [{ path: 'data.result.decision', type: 'STRING', label: '决策结果' }]
+    }, [])
+
+    expect(html).toContain('data-field-toggle="params"')
+    expect(html).toContain('data-field-toggle="data"')
+    expect(html).toContain('--field-depth:2')
   })
 })
