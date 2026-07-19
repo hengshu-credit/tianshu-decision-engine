@@ -313,11 +313,15 @@ import {
   FLOW_MENU_OPTIONS,
   FLOW_THEME_COLOR,
   addConnectedNode,
+  createAnchorGesture,
   createDynamicGroup,
   createFlowNodeData,
   getBusinessGraphData,
   getPersistableGraphData,
-  resolveAnchorDirection
+  isAnchorClickGesture,
+  layoutGraphByAnchors,
+  resolveAnchorDirection,
+  updateAnchorGesture
 } from '@/components/flow/flowDesignerGraph'
 import {
   normalizeDefaultEdgeLineType,
@@ -375,6 +379,7 @@ export default {
       anchorMenuOptions: FLOW_MENU_OPTIONS.tree,
       anchorMenu: { visible: false, x: 0, y: 0 },
       pendingConnectedNode: null,
+      anchorGesture: null,
       zoomPercent: 100,
       scriptMode: 'visual',
       nodeProps: {},
@@ -622,6 +627,9 @@ export default {
       this.lf.on('edge:dbclick', ({ data }) => this.selectEdgeData(data))
       this.lf.on('history:change', () => this.updateZoom())
       this.lf.on('graph:rendered', this.onGraphRendered)
+      this.lf.on('anchor:mousedown', this.onAnchorMouseDown)
+      this.lf.on('anchor:drag', this.onAnchorDrag)
+      this.lf.on('anchor:dragend', this.onAnchorDragEnd)
       this.lf.on('anchor:click', this.onAnchorClick)
       this.lf.on('selection:selected', () => this.updateSelectedBusinessNodeCount())
 
@@ -649,7 +657,26 @@ export default {
       miniMap.show()
     },
 
-    onAnchorClick({ data, e, nodeModel }) {
+    onAnchorMouseDown(payload) {
+      this.anchorGesture = createAnchorGesture(payload)
+    },
+
+    onAnchorDrag(payload) {
+      this.anchorGesture = updateAnchorGesture(this.anchorGesture, payload)
+    },
+
+    onAnchorDragEnd(payload) {
+      const gesture = updateAnchorGesture(this.anchorGesture, payload)
+      this.anchorGesture = null
+      if (!payload.edgeModel && isAnchorClickGesture(gesture)) this.openAnchorMenu(payload)
+    },
+
+    onAnchorClick(payload) {
+      this.anchorGesture = null
+      this.openAnchorMenu(payload)
+    },
+
+    openAnchorMenu({ data, e, nodeModel }) {
       const sourceNode = nodeModel || (data && this.lf.getNodeModelById(data.id))
       if (!sourceNode || sourceNode.type === 'end-event' || sourceNode.isGroup) {
         this.closeAnchorMenu()
@@ -951,20 +978,17 @@ export default {
         this.$message.info('至少需要两个节点才能执行一键美化')
         return
       }
-      this.lf.extension.dagre.layout({
-        rankdir: 'TB',
-        align: 'UL',
-        nodesep: 80,
-        ranksep: 120,
-        marginx: 80,
-        marginy: 80,
-        isDefaultAnchor: false
-      })
-      this.$nextTick(() => {
-        this.lf.fitView(40, 40)
-        this.updateZoom()
-      })
-      this.$message.success('画布已按从上到下自动排布')
+      try {
+        this.lf.render(layoutGraphByAnchors(canvasGraph))
+        this.$nextTick(() => {
+          this.lf.fitView(40, 40)
+          this.updateZoom()
+        })
+        this.$message.success('画布已根据连线锚点自动排布，请点击保存后生效')
+      } catch (error) {
+        try { this.lf.render(JSON.parse(JSON.stringify(canvasGraph))) } catch (e) { /* ignore */ }
+        this.$message.error('一键美化失败: ' + (error.message || '未知错误'))
+      }
     },
 
     toggleMiniMap() {
@@ -1482,6 +1506,19 @@ export default {
     border-color: #FFFFFF !important;
     font-weight: 600;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
+  }
+  &.el-button--primary:hover,
+  &.el-button--primary:focus {
+    background-color: #EEF2FF !important;
+    border-color: #D6DEFF !important;
+    color: #1428A0 !important;
+    box-shadow: 0 2px 5px rgba(15, 23, 42, 0.2);
+  }
+  &.el-button--primary:active {
+    background-color: #DDE5FF !important;
+    border-color: #C3CEFF !important;
+    color: #1428A0 !important;
+    box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.16);
   }
   &.el-button--warning { background: #F59E0B; color: #fff; border-color: #F59E0B; }
   &.is-disabled,

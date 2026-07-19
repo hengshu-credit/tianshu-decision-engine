@@ -6,6 +6,7 @@ import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
 import * as requestApi from '@/api/request'
 import * as runtimeLogApi from '@/api/runtimeLog'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExecutionLog from '@/views/log/ExecutionLog.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -121,6 +122,15 @@ async function mountFailing() {
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
+
+test('uses project code and name fuzzy filters', async () => {
+  const wrapper = await mountEmpty()
+
+  expect(ExecutionLog.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+  expect(wrapper.vm.qp).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+
+  wrapper.destroy()
+})
 
 // ─── 测试用例 ─────────────────────────────────────────────
 
@@ -365,6 +375,7 @@ describe('ExecutionLog — 规则集命中统计', () => {
 
     expect(runtimeLogApi.getRuleSetStats).toHaveBeenCalledWith({
       projectCode: 'project_a',
+      projectName: '',
       ruleCode: 'RS-A',
       startTime: wrapper.vm.timeRange[0],
       endTime: wrapper.vm.timeRange[1]

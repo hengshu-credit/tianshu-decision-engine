@@ -1,4 +1,5 @@
 import DatasourceList from '@/views/datasource/DatasourceList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 function createContext(overrides = {}) {
   const ctx = {
@@ -14,6 +15,18 @@ function createContext(overrides = {}) {
 }
 
 describe('DatasourceList helpers', () => {
+  test('uses project fuzzy filters in datasource and API lists', () => {
+    const context = {}
+    Object.keys(DatasourceList.methods).forEach(name => {
+      context[name] = DatasourceList.methods[name].bind(context)
+    })
+    const data = DatasourceList.data.call(context)
+
+    expect(DatasourceList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(data.datasourceQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(data.apiQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+  })
+
   test('created loads api config list on first entry', () => {
     expect(DatasourceList.created.toString()).toContain('this.loadApiConfigs()')
   })

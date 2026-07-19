@@ -4,6 +4,7 @@ import Vue from 'vue'
 import * as projectApi from '@/api/project'
 import * as apiDoc from '@/utils/apiDoc'
 import ProjectList from '@/views/project/ProjectList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 jest.mock('@/utils/apiDoc', () => ({ generateApiDocHtml: jest.fn(() => '<!DOCTYPE html><html></html>') }))
 
@@ -98,6 +99,25 @@ describe('ProjectList — 初始化与数据加载', () => {
     expect(wrapper.vm.qp.pageNum).toBe(1)
     expect(wrapper.vm.qp.pageSize).toBe(10)
     expect(wrapper.vm.qp.status).toBe('')
+  })
+})
+
+describe('ProjectList 项目筛选交互', () => {
+  test('项目编码和名称支持直接输入后查询', async () => {
+    const wrapper = await mountAndWait()
+    const filters = wrapper.findAllComponents(ProjectFilterSelect)
+
+    expect(filters).toHaveLength(2)
+    filters.at(0).vm.$emit('input', 'RISK')
+    filters.at(1).vm.$emit('input', '风控')
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.handleQuery()
+
+    expect(projectApi.listProjects).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectCode: 'RISK',
+      projectName: '风控'
+    }))
+    wrapper.destroy()
   })
 })
 

@@ -86,8 +86,16 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
     @Resource
     private RuleProjectMapper projectMapper;
 
-    public IPage<RuleListLibrary> pageLibraries(int pageNum, int pageSize, Long projectId, String scope,
+    @Resource
+    private ProjectFilterService projectFilterService;
+
+    public IPage<RuleListLibrary> pageLibraries(int pageNum, int pageSize, Long projectId,
+                                                String projectCode, String projectName, String scope,
                                                 String listType, Integer status, String keyword) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleListLibrary> wrapper = new LambdaQueryWrapper<>();
         if (hasText(scope)) {
             wrapper.eq(RuleListLibrary::getScope, scope);
@@ -101,6 +109,10 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
             } else if (SCOPE_PROJECT.equals(scope)) {
                 wrapper.eq(RuleListLibrary::getProjectId, projectId);
             }
+        }
+        if (projectMatches.isActive()) {
+            wrapper.eq(RuleListLibrary::getScope, SCOPE_PROJECT)
+                    .in(RuleListLibrary::getProjectId, projectMatches.getProjectIds());
         }
         if (hasText(listType)) {
             wrapper.eq(RuleListLibrary::getListType, normalizeListType(listType));

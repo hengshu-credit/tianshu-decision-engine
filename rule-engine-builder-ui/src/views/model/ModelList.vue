@@ -24,10 +24,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="模型大类">
           <el-select v-model="qp.modelType" clearable filterable placeholder="全部" style="width:120px;" @change="handleQuery">
@@ -68,7 +68,7 @@
           </template>
         </el-table-column>
         <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
-          <template slot-scope="{ row }">{{ row.projectName || (row.scope === 'GLOBAL' ? '—' : '—') }}</template>
+          <template slot-scope="{ row }">{{ modelProjectName(row) }}</template>
         </el-table-column>
         <el-table-column prop="modelCode" label="模型编码" min-width="140" show-overflow-tooltip />
         <el-table-column prop="modelName" label="模型名称" min-width="160" show-overflow-tooltip />
@@ -346,6 +346,7 @@ import { clearPageState, restorePageState, savePageState } from '@/utils/pageSta
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import { ONNX_TASKS, createOnnxConfig, createOnnxRuntimeConfig, onnxRuntimePayload, parseOnnxModelConfig } from '@/constants/onnxTasks'
 
 const MODEL_TYPE_LABELS = {
@@ -372,7 +373,7 @@ const createEditForm = () => ({
 
 export default {
   name: 'ModelList',
-  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       loading: false,
@@ -521,12 +522,6 @@ export default {
         this.filteredProjectNames = list.slice(0, 20)
       } catch (e) { this.projects = []; this.projectList = [] }
     },
-    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectCode: query || '' })
-    },
-    fetchProjectNameOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectName: query || '' })
-    },
     fetchModelCodeOptions({ query, pageNum, pageSize }) {
       return api.listModels({ ...this.qp, pageNum, pageSize, modelCode: query || '' })
     },
@@ -585,6 +580,9 @@ export default {
       this.load()
     },
     modelTypeLabel(t) { return MODEL_TYPE_LABELS[t] || t || '—' },
+    modelProjectName(row) {
+      return row && row.scope === 'GLOBAL' ? '—' : ((row && row.projectName) || '—')
+    },
     modelExecutionProvider(row) {
       return createOnnxRuntimeConfig(parseOnnxModelConfig(row && row.modelConfig)).executionProvider
     },

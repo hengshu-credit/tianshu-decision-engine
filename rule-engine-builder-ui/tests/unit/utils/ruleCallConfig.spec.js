@@ -47,11 +47,19 @@ describe('ruleCallConfig', () => {
     })
   })
 
-  test('单字段映射必须同时配置输出字段和目标字段', () => {
+  test('配置输出字段时必须同时配置目标字段', () => {
     expect(validateRuleCallBlock({ ruleId: 8, outputField: 'score', targetOperand: null }, {
       rules,
       currentRuleId: 3
-    })).toContain('输出字段和目标字段必须同时配置')
+    })).toContain('必须配置目标字段')
+  })
+
+  test('仅配置目标字段时接收子规则整体结果', () => {
+    expect(validateRuleCallBlock({
+      ruleId: 8,
+      outputField: '',
+      targetOperand: { kind: 'REF', value: 'hit_ruleset' }
+    }, { rules, currentRuleId: 3 })).toBe('')
   })
 
   test('显式关闭映射时保留字段但不参与映射校验', () => {
@@ -72,13 +80,13 @@ describe('ruleCallConfig', () => {
     expect(isRuleOutputMappingEnabled({ outputField: 'score' })).toBe(true)
   })
 
-  test('显式开启映射后必须完整选择输出字段和目标字段', () => {
+  test('显式开启映射后必须选择目标字段', () => {
     expect(validateRuleCallBlock({
       ruleId: 8,
       enableOutputMapping: true,
       outputField: '',
       targetOperand: null
-    }, { rules, currentRuleId: 3 })).toContain('输出字段和目标字段必须同时配置')
+    }, { rules, currentRuleId: 3 })).toContain('必须配置目标字段')
   })
 
   test('拒绝调用当前规则自身', () => {

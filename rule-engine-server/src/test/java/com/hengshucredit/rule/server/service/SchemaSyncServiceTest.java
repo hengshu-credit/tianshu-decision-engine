@@ -153,6 +153,26 @@ public class SchemaSyncServiceTest {
                 "ADD KEY `idx_experiment_group_rule` (`rule_id`)"));
     }
 
+    @Test
+    public void globalModelOwnershipIsRepairedIdempotently() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        assertTrue(hasDeclaredMethod(SchemaSyncService.class, "ensureModelScopeConsistency"));
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureModelScopeConsistency");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertEquals(1, jdbcTemplate.sqlList.size());
+        String sql = jdbcTemplate.sqlList.get(0);
+        assertTrue(sql, sql.contains("UPDATE `rule_model`"));
+        assertTrue(sql, sql.contains("`project_id` = NULL"));
+        assertTrue(sql, sql.contains("`project_code` = NULL"));
+        assertTrue(sql, sql.contains("`project_name` = NULL"));
+        assertTrue(sql, sql.contains("`scope` = 'GLOBAL'"));
+    }
+
     private boolean containsSql(List<String> sqlList, String fragment) {
         for (String sql : sqlList) {
             if (sql.contains(fragment)) {

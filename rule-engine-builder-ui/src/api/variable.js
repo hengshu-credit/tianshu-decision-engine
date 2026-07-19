@@ -25,6 +25,10 @@ export function updateVariable(data) {
   return request({ url: '/rule/variable', method: 'put', data })
 }
 
+export function toGlobalVariable(id) {
+  return request({ url: `/rule/variable/toGlobal/${id}`, method: 'post' })
+}
+
 export function deleteVariable(id) {
   return request({ url: `/rule/variable/${id}`, method: 'delete' })
 }

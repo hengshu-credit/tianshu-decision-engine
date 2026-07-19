@@ -658,7 +658,10 @@ export default {
     /** 加载当前项目下的所有变量，建立 id->变量 映射供关联使用 */
     async loadVars() {
       const projectId = this.model.projectId
-      if (projectId && projectId > 0) {
+      if (this.model.scope === 'GLOBAL') {
+        // 全局模型以 scope 为准，避免历史残留 projectId 泄漏项目级资源
+        await this.loadGlobalVars()
+      } else if (projectId && projectId > 0) {
         // 项目级模型：加载项目变量 + 全局变量 + 常量 + 数据对象字段
         await this.loadVarsByProject(projectId)
       } else {

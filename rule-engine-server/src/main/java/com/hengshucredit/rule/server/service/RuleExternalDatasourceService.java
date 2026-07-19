@@ -21,15 +21,26 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
     @Resource
     private RuleProjectMapper projectMapper;
 
+    @Resource
+    private ProjectFilterService projectFilterService;
+
     public IPage<RuleExternalDatasource> pageList(int pageNum, int pageSize, String scope, Long projectId,
+                                                  String projectCode, String projectName,
                                                   String datasourceCode, String datasourceName, String authType,
                                                   Integer status) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleExternalDatasource> wrapper = new LambdaQueryWrapper<>();
         if (hasText(scope)) {
             wrapper.eq(RuleExternalDatasource::getScope, scope);
         }
         if (projectId != null && projectId > 0) {
             wrapper.eq(RuleExternalDatasource::getProjectId, projectId);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleExternalDatasource::getProjectId, projectMatches.getProjectIds());
         }
         if (hasText(datasourceCode)) {
             wrapper.like(RuleExternalDatasource::getDatasourceCode, datasourceCode);

@@ -1,8 +1,13 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.server.mapper.RuleFunctionMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 import org.junit.After;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -10,6 +15,9 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -134,6 +142,32 @@ public class RuleFunctionServiceTest {
         throw new AssertionError("Expected disabled function error");
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void managementPagesOrderByLatestUpdateThenId() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleFunction.class);
+        List<String> sqlSegments = new ArrayList<>();
+        RuleFunctionMapper mapper = (RuleFunctionMapper) Proxy.newProxyInstance(
+                RuleFunctionMapper.class.getClassLoader(), new Class<?>[]{RuleFunctionMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectPage".equals(method.getName())) {
+                        sqlSegments.add(((LambdaQueryWrapper<RuleFunction>) args[1]).getSqlSegment());
+                        return args[0];
+                    }
+                    return null;
+                });
+        RuleFunctionService service = new RuleFunctionService();
+        ReflectionTestUtils.setField(service, "functionMapper", mapper);
+
+        service.pageByProject(null, 1, 10, null, null, null, null, null, null);
+        service.pageAll(1, 10, null, null, null, null, null, null, null);
+
+        assertEquals(2, sqlSegments.size());
+        for (String sqlSegment : sqlSegments) {
+            assertLatestUpdateOrder(sqlSegment);
+        }
+    }
+
     private static RuleFunctionService serviceWithFunction(RuleFunction function) {
         RuleFunctionService service = new RuleFunctionService() {
             @Override
@@ -182,5 +216,11 @@ public class RuleFunctionServiceTest {
         order.put("status", status);
         order.put("amount", amount);
         return order;
+    }
+
+    private static void assertLatestUpdateOrder(String sqlSegment) {
+        String normalized = sqlSegment.replace("`", "").replace(" ", "").toLowerCase();
+        assertTrue(sqlSegment, normalized.contains("orderbyupdate_timedesc,iddesc")
+                || normalized.contains("orderbyupdatetimedesc,iddesc"));
     }
 }

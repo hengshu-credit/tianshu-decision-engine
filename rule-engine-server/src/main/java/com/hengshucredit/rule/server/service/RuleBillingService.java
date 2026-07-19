@@ -48,14 +48,25 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     @Resource
     private RuleDefinitionMapper definitionMapper;
 
+    @Resource
+    private ProjectFilterService projectFilterService;
+
     public IPage<RuleBillingConfig> pageConfigs(int pageNum, int pageSize, String scope, Long projectId,
+                                                String projectCode, String projectName,
                                                 String billingTarget, String billingCode, Integer status) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleBillingConfig> wrapper = new LambdaQueryWrapper<>();
         if (hasText(scope)) {
             wrapper.eq(RuleBillingConfig::getScope, scope);
         }
         if (projectId != null && projectId > 0) {
             wrapper.eq(RuleBillingConfig::getProjectId, projectId);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleBillingConfig::getProjectId, projectMatches.getProjectIds());
         }
         if (hasText(billingTarget)) {
             wrapper.eq(RuleBillingConfig::getBillingTarget, billingTarget);
@@ -73,8 +84,12 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     public IPage<RuleBillingRecord> pageRecords(int pageNum, int pageSize, String billingTarget, String billingCode,
-                                                String projectCode, String authType, String authCode,
+                                                String projectCode, String projectName, String authType, String authCode,
                                                 String tokenCode, String beginTime, String endTime) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleBillingRecord> wrapper = new LambdaQueryWrapper<>();
         if (hasText(billingTarget)) {
             wrapper.eq(RuleBillingRecord::getBillingTarget, billingTarget);
@@ -84,6 +99,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         if (hasText(projectCode)) {
             wrapper.like(RuleBillingRecord::getProjectCode, projectCode);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleBillingRecord::getProjectCode, projectMatches.getProjectCodes());
         }
         if (hasText(authType)) {
             wrapper.eq(RuleBillingRecord::getAuthType, authType);
@@ -105,9 +123,13 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
     }
 
     public IPage<RuleBillingSummary> pageSummaries(int pageNum, int pageSize, String billingTarget,
-                                                   String billingCode, String projectCode, String authType,
+                                                   String billingCode, String projectCode, String projectName, String authType,
                                                    String authCode,
                                                    String beginDate, String endDate) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleBillingSummary> wrapper = new LambdaQueryWrapper<>();
         if (hasText(billingTarget)) {
             wrapper.eq(RuleBillingSummary::getBillingTarget, billingTarget);
@@ -117,6 +139,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         }
         if (hasText(projectCode)) {
             wrapper.like(RuleBillingSummary::getProjectCode, projectCode);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleBillingSummary::getProjectCode, projectMatches.getProjectCodes());
         }
         if (hasText(authType)) {
             wrapper.eq(RuleBillingSummary::getAuthType, authType);

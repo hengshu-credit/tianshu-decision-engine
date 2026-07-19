@@ -9,6 +9,12 @@
       <el-tab-pane label="计费配置" name="config">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleConfigQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="configQuery.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="configQuery.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="作用范围">
               <el-select v-model="configQuery.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />
@@ -88,6 +94,12 @@
       <el-tab-pane label="计费明细" name="record">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleRecordQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="recordQuery.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="recordQuery.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="计费对象">
               <el-select v-model="recordQuery.billingTarget" clearable placeholder="全部" style="width:120px;">
                 <el-option v-for="item in billingTargetOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -95,9 +107,6 @@
             </el-form-item>
             <el-form-item label="计费编码">
               <el-input v-model="recordQuery.billingCode" clearable placeholder="前缀筛选" style="width:150px;" />
-            </el-form-item>
-            <el-form-item label="项目编码">
-              <el-input v-model="recordQuery.projectCode" clearable placeholder="项目编码" style="width:150px;" />
             </el-form-item>
             <el-form-item label="鉴权方式">
               <el-select v-model="recordQuery.authType" clearable placeholder="全部" style="width:130px;">
@@ -155,6 +164,12 @@
       <el-tab-pane label="计费汇总" name="summary">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleSummaryQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="summaryQuery.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="summaryQuery.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="计费对象">
               <el-select v-model="summaryQuery.billingTarget" clearable placeholder="全部" style="width:120px;">
                 <el-option v-for="item in billingTargetOptions" :key="item.value" :label="item.label" :value="item.value" />
@@ -162,9 +177,6 @@
             </el-form-item>
             <el-form-item label="计费编码">
               <el-input v-model="summaryQuery.billingCode" clearable placeholder="前缀筛选" style="width:150px;" />
-            </el-form-item>
-            <el-form-item label="项目编码">
-              <el-input v-model="summaryQuery.projectCode" clearable placeholder="项目编码" style="width:150px;" />
             </el-form-item>
             <el-form-item label="鉴权方式">
               <el-select v-model="summaryQuery.authType" clearable placeholder="全部" style="width:130px;">
@@ -329,9 +341,11 @@ import { listProjects } from '@/api/project'
 import { listDefinitions } from '@/api/definition'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'BillingList',
+  components: { ProjectFilterSelect },
   data() {
     return {
       activeTab: 'config',
@@ -342,7 +356,7 @@ export default {
       configTotal: 0,
       configLoading: false,
       configDialogVisible: false,
-      configQuery: { pageNum: 1, pageSize: 10, scope: '', billingTarget: '', billingCode: '', status: '' },
+      configQuery: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', scope: '', billingTarget: '', billingCode: '', status: '' },
       configForm: this.emptyConfigForm(),
       configRules: {
         billingCode: [{ required: true, message: '请输入计费编码', trigger: 'blur' }],
@@ -354,7 +368,7 @@ export default {
       recordLoading: false,
       recordDateRange: [],
       recordQuery: {
-        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '',
+        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '', projectName: '',
         authType: '', authCode: '', tokenCode: '', beginTime: '', endTime: ''
       },
       summaryList: [],
@@ -362,7 +376,7 @@ export default {
       summaryLoading: false,
       summaryDateRange: [],
       summaryQuery: {
-        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '',
+        pageNum: 1, pageSize: 10, billingTarget: '', billingCode: '', projectCode: '', projectName: '',
         authType: '', authCode: '', beginDate: '', endDate: ''
       },
       refreshDate: '',
@@ -445,7 +459,7 @@ export default {
       this.loadConfigs()
     },
     resetConfigQuery() {
-      this.configQuery = { pageNum: 1, pageSize: this.configQuery.pageSize, scope: '', billingTarget: '', billingCode: '', status: '' }
+      this.configQuery = { pageNum: 1, pageSize: this.configQuery.pageSize, projectCode: '', projectName: '', scope: '', billingTarget: '', billingCode: '', status: '' }
       this.loadConfigs()
     },
     handleRecordQuery() {
@@ -455,7 +469,7 @@ export default {
     resetRecordQuery() {
       this.recordDateRange = []
       this.recordQuery = {
-        pageNum: 1, pageSize: this.recordQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '',
+        pageNum: 1, pageSize: this.recordQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '', projectName: '',
         authType: '', authCode: '', tokenCode: '', beginTime: '', endTime: ''
       }
       this.loadRecords()
@@ -467,7 +481,7 @@ export default {
     resetSummaryQuery() {
       this.summaryDateRange = []
       this.summaryQuery = {
-        pageNum: 1, pageSize: this.summaryQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '',
+        pageNum: 1, pageSize: this.summaryQuery.pageSize, billingTarget: '', billingCode: '', projectCode: '', projectName: '',
         authType: '', authCode: '', beginDate: '', endDate: ''
       }
       this.loadSummaries()

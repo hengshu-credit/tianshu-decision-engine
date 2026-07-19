@@ -26,10 +26,13 @@ public class BillingController {
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String billingTarget,
             @RequestParam(required = false) String billingCode,
             @RequestParam(required = false) Integer status) {
-        return R.ok(billingService.pageConfigs(pageNum, pageSize, scope, projectId, billingTarget, billingCode, status));
+        return R.ok(billingService.pageConfigs(pageNum, pageSize, scope, projectId, projectCode, projectName,
+                billingTarget, billingCode, status));
     }
 
     @PostMapping("/config")
@@ -57,12 +60,13 @@ public class BillingController {
             @RequestParam(required = false) String billingTarget,
             @RequestParam(required = false) String billingCode,
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String authType,
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String tokenCode,
             @RequestParam(required = false) String beginTime,
             @RequestParam(required = false) String endTime) {
-        return R.ok(billingService.pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode,
+        return R.ok(billingService.pageRecords(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
                 authType, authCode, tokenCode, beginTime, endTime));
     }
 
@@ -73,11 +77,12 @@ public class BillingController {
             @RequestParam(required = false) String billingTarget,
             @RequestParam(required = false) String billingCode,
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String authType,
             @RequestParam(required = false) String authCode,
             @RequestParam(required = false) String beginDate,
             @RequestParam(required = false) String endDate) {
-        return R.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode,
+        return R.ok(billingService.pageSummaries(pageNum, pageSize, billingTarget, billingCode, projectCode, projectName,
                 authType, authCode, beginDate, endDate));
     }
 

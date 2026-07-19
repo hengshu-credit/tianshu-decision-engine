@@ -169,6 +169,9 @@ describe('generateScript', () => {
     expect(generateScript([{
       type: 'rule-call', targetOperand: ref('score'), ruleCode: 'score_card', outputField: 'score'
     }])).toBe('score = executeRuleField("score_card", "score")')
+    expect(generateScript([{
+      type: 'rule-call', targetOperand: ref('hit_ruleset'), ruleCode: 'score_card', outputField: ''
+    }])).toBe('hit_ruleset = executeRule("score_card")')
     expect(generateScript([{ type: 'rule-call', targetOperand: null, ruleCode: 'credit_flow' }])).toBe('executeRule("credit_flow")')
   })
 

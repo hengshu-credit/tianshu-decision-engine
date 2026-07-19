@@ -6,6 +6,7 @@ import ElementUI from 'element-ui'
 
 import * as databaseApi from '@/api/database'
 import * as projectApi from '@/api/project'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import DatabaseList from '@/views/database/DatabaseList.vue'
 
 function createTestVue() {
@@ -60,6 +61,11 @@ describe('DatabaseList — JDBC URL 生成', () => {
   afterEach(() => {
     if (wrapper) wrapper.destroy()
     jest.clearAllMocks()
+  })
+
+  test('uses unified fuzzy filters for project code and name', () => {
+    expect(DatabaseList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(wrapper.vm.qp).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
   })
 
   test('MySQL 表单字段能生成 JDBC URL 并追加扩展参数', () => {

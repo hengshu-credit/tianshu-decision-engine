@@ -33,11 +33,14 @@ public class ExternalDatasourceController {
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String datasourceCode,
             @RequestParam(required = false) String datasourceName,
             @RequestParam(required = false) String authType,
             @RequestParam(required = false) Integer status) {
-        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, datasourceCode, datasourceName, authType, status));
+        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
+                datasourceCode, datasourceName, authType, status));
     }
 
     @GetMapping("/{id:\\d+}")
@@ -69,12 +72,15 @@ public class ExternalDatasourceController {
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long datasourceId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String datasourceCode,
             @RequestParam(required = false) String apiCode,
             @RequestParam(required = false) String apiName,
             @RequestParam(required = false) String requestMode,
             @RequestParam(required = false) Integer status) {
-        return R.ok(apiConfigService.pageList(pageNum, pageSize, datasourceId, datasourceCode, apiCode, apiName, requestMode, status));
+        return R.ok(apiConfigService.pageList(pageNum, pageSize, datasourceId, projectCode, projectName,
+                datasourceCode, apiCode, apiName, requestMode, status));
     }
 
     @GetMapping("/api-config/{id:\\d+}")

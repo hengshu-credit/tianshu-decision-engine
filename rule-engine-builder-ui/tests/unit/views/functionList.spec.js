@@ -6,6 +6,9 @@ import Vue from 'vue'
 import * as functionApi from '@/api/function'
 import * as projectApi from '@/api/project'
 import FunctionList from '@/views/function/FunctionList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import fs from 'fs'
+import path from 'path'
 
 afterEach(() => { jest.clearAllMocks() })
 
@@ -122,6 +125,26 @@ describe('FunctionList — 标签方法', () => {
   test('parseParams 正确解析 JSON', () => {
     expect(wrapper.vm.parseParams('[{"a":1}]')).toEqual([{ a: 1 }])
     expect(wrapper.vm.parseParams('not json')).toEqual([])
+  })
+
+  test('函数列表格式化并展示更新时间', () => {
+    expect(wrapper.vm.formatUpdateTime('2026-07-19T20:30:45')).toBe('2026-07-19 20:30:45')
+    expect(wrapper.vm.formatUpdateTime(null)).toBe('—')
+
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/function/FunctionList.vue'), 'utf8')
+    const functionTable = source.slice(source.indexOf('<el-table :data="funcList"'), source.indexOf('</el-table>', source.indexOf('<el-table :data="funcList"')))
+    expect(functionTable).toContain('label="更新时间"')
+    expect(functionTable).toContain('formatUpdateTime(row.updateTime)')
+  })
+})
+
+describe('FunctionList 项目筛选交互', () => {
+  test('顶部注册并绑定项目编码和项目名称筛选组件', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/function/FunctionList.vue'), 'utf8')
+
+    expect(FunctionList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(source).toContain('field="projectCode"')
+    expect(source).toContain('field="projectName"')
   })
 })
 

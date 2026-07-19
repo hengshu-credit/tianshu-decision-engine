@@ -842,7 +842,7 @@ export default {
 }
 .trace-tree-wrap {
   padding: 8px 0;
-  max-height: 500px;
+  // max-height: 20%;
   overflow: auto;
 }
 @media screen and (max-width: 1000px) {

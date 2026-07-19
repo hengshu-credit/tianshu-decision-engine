@@ -131,6 +131,17 @@ public class RuleVariableController {
         }
     }
 
+    /** 将项目级变量（含常量）转为全局变量。 */
+    @PostMapping("/toGlobal/{id:\\d+}")
+    public R<Void> toGlobal(@PathVariable Long id) {
+        try {
+            variableService.toGlobal(id);
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
     @DeleteMapping("/{id:\\d+}")
     public R<Void> delete(@PathVariable Long id) {
         variableService.deleteWithOptions(id);

@@ -55,6 +55,7 @@ public class SchemaSyncService {
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelRuntimeColumns();
+            ensureModelScopeConsistency();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldUniqueKey();
         } catch (Exception e) {
@@ -564,6 +565,13 @@ public class SchemaSyncService {
                 "`preload_on_startup` TINYINT NOT NULL DEFAULT 0 COMMENT '服务启动时预加载：0-否，1-是' AFTER `model_config`");
         addColumnIfMissing(table, "execution_timeout_ms",
                 "`execution_timeout_ms` INT NOT NULL DEFAULT 120000 COMMENT '单次模型执行超时时间（毫秒）' AFTER `preload_on_startup`");
+    }
+
+    private void ensureModelScopeConsistency() {
+        if (!tableExists("rule_model")) return;
+        jdbcTemplate.execute("UPDATE `rule_model` SET `project_id` = NULL, `project_code` = NULL, `project_name` = NULL "
+                + "WHERE `scope` = 'GLOBAL' AND (`project_id` IS NOT NULL OR `project_code` IS NOT NULL "
+                + "OR `project_name` IS NOT NULL)");
     }
 
     private void ensureDataObjectFieldUniqueKey() {

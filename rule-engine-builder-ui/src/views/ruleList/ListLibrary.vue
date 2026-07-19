@@ -9,6 +9,12 @@
       <el-tab-pane label="名单管理" name="list">
     <div class="uiue-search-container">
       <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
+        <el-form-item label="项目编码">
+          <project-filter-select v-model="query.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+        </el-form-item>
+        <el-form-item label="项目名称">
+          <project-filter-select v-model="query.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+        </el-form-item>
         <el-form-item label="作用范围">
           <el-select v-model="query.scope" clearable placeholder="全部" style="width:110px;">
             <el-option label="全局" value="GLOBAL" />
@@ -142,10 +148,11 @@ import { listProjects } from '@/api/project'
 import { listLibraries, createLibrary, updateLibrary, deleteLibrary } from '@/api/ruleList'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'ListLibrary',
-  components: { ModuleCallLog, RemoteFilterSelect },
+  components: { ModuleCallLog, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       loading: false,
@@ -153,7 +160,7 @@ export default {
       tableData: [],
       total: 0,
       projects: [],
-      query: { pageNum: 1, pageSize: 10, scope: '', listType: '', status: '', keyword: '' },
+      query: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', scope: '', listType: '', status: '', keyword: '' },
       dialogVisible: false,
       form: this.emptyForm(),
       listTypeOptions: [
@@ -206,7 +213,7 @@ export default {
     },
     handleQuery() { this.query.pageNum = 1; this.loadData() },
     resetQuery() {
-      this.query = { pageNum: 1, pageSize: this.query.pageSize, scope: '', listType: '', status: '', keyword: '' }
+      this.query = { pageNum: 1, pageSize: this.query.pageSize, projectCode: '', projectName: '', scope: '', listType: '', status: '', keyword: '' }
       this.loadData()
     },
     handleCreate() {

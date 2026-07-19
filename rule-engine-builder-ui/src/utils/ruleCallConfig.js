@@ -105,7 +105,7 @@ export function validateRuleCallBlock(call, context = {}) {
   if (isRuleOutputMappingEnabled(call)) {
     const hasOutput = !!call.outputField
     const hasTarget = !!call.targetOperand
-    if (!hasOutput || !hasTarget) return '输出字段和目标字段必须同时配置'
+    if (!hasTarget) return '启用结果映射后必须配置目标字段'
     if (hasOutput && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
       String(field.scriptName || field.fieldName) === String(call.outputField))) {
       return '映射的输出字段已不存在，请重新选择'

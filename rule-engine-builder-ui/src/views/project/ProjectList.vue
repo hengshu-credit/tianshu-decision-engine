@@ -19,10 +19,10 @@
     <div class="uiue-search-container">
       <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="项目编码">
-          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:160px;" />
+          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入筛选" style="width:160px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:160px;" />
+          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入筛选" style="width:160px;" />
         </el-form-item>
         <el-form-item label="启用状态">
           <el-select v-model="qp.status" clearable filterable placeholder="全部" style="width:100px;" @change="handleQuery">
@@ -87,11 +87,11 @@
 import { listProjects, createProject, updateProject, deleteProject, exportApiDoc } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import { generateApiDocHtml } from '@/utils/apiDoc'
-import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
   name: 'ProjectList',
-  components: { RemoteFilterSelect, ProjectAuthDialog },
+  components: { ProjectFilterSelect, ProjectAuthDialog },
   data() {
     return {
       workflowSteps: [
@@ -157,12 +157,6 @@ export default {
         this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
         this.filteredProjectNames = this.allProjectNames.slice(0, 20)
       } finally { this.loading = false }
-    },
-    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectCode: query || '' })
-    },
-    fetchProjectNameOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectName: query || '' })
     },
     queryProjectCode(query) {
       const q = (query || '').toLowerCase()

@@ -20,6 +20,7 @@ import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
 import com.hengshucredit.rule.server.service.parser.JavaEntityParser;
 import com.hengshucredit.rule.server.service.parser.JsonSchemaParser;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -27,6 +28,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -55,6 +57,9 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
 
     @Resource
     private RuleProjectMapper projectMapper;
+
+    @Resource
+    private ProjectFilterService projectFilterService;
 
     @Resource
     private RuleDataObjectMapper dataObjectMapper;
@@ -95,6 +100,14 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     public IPage<RuleVariable> pageList(int pageNum, int pageSize, Long projectId, String varType,
                                         String keyword, Boolean standaloneOnly, String varSource, String scope,
                                         String projectCode, String projectName, String varCode, String varLabel) {
+        ProjectFilterService.ProjectMatches projectMatches = null;
+        if ((projectCode != null && !projectCode.isEmpty())
+                || (projectName != null && !projectName.isEmpty())) {
+            projectMatches = projectFilterService.resolve(projectCode, projectName);
+            if (projectMatches.isEmpty()) {
+                return new Page<>(pageNum, pageSize);
+            }
+        }
         LambdaQueryWrapper<RuleVariable> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleVariable::getScope, scope);
@@ -134,36 +147,12 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
         if (varLabel != null && !varLabel.isEmpty()) {
             wrapper.like(RuleVariable::getVarLabel, varLabel);
         }
-        // 通过 projectCode 或 projectName 进行筛选
-        if (projectCode != null && !projectCode.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
-                    .stream().map(RuleProject::getId).collect(java.util.stream.Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleVariable::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleVariable::getScope, SCOPE_GLOBAL));
-            } else {
-                // 没查到项目，默认查全局
-                wrapper.eq(RuleVariable::getScope, SCOPE_GLOBAL);
-            }
-        } else if (projectName != null && !projectName.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
-                    .stream().map(RuleProject::getId).collect(java.util.stream.Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleVariable::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleVariable::getScope, SCOPE_GLOBAL));
-            } else {
-                // 没查到项目，默认查全局
-                wrapper.eq(RuleVariable::getScope, SCOPE_GLOBAL);
-            }
-        } else {
-            // 无任何项目筛选条件时，返回所有数据（全局+项目级），便于管理控制台查看全量资源
-            // 仅在用户显式指定了 scope 时才做 scope 过滤
+        if (projectMatches != null) {
+            wrapper.eq(RuleVariable::getScope, SCOPE_PROJECT)
+                    .in(RuleVariable::getProjectId, projectMatches.getProjectIds());
         }
-        wrapper.orderByAsc(RuleVariable::getSortOrder).orderByDesc(RuleVariable::getCreateTime);
+        wrapper.orderByDesc(RuleVariable::getUpdateTime)
+                .orderByDesc(RuleVariable::getId);
         IPage<RuleVariable> result = page(new Page<>(pageNum, pageSize), wrapper);
         fillProjectName(result.getRecords());
         return result;
@@ -406,7 +395,15 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     @Override
+    @Transactional
     public boolean updateById(RuleVariable entity) {
+        RuleVariable current = entity != null && entity.getId() != null ? getById(entity.getId()) : null;
+        if (current != null && SCOPE_PROJECT.equals(current.getScope())
+                && SCOPE_GLOBAL.equals(entity.getScope())) {
+            String targetCode = entity.getVarCode() != null ? entity.getVarCode() : current.getVarCode();
+            validateGlobalCodeAvailable(entity.getId(), targetCode);
+            entity.setProjectId(0L);
+        }
         RuleVariable merged = mergeForConstantCheck(entity);
         validateAndNormalizeConstant(merged);
         if (entity != null && entity.getDefaultValue() != null && merged != null
@@ -414,6 +411,44 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
             entity.setDefaultValue(merged.getDefaultValue());
         }
         return super.updateById(entity);
+    }
+
+    /**
+     * 将项目级变量（含常量）转为全局变量，保持用户原始编码不变。
+     */
+    @Transactional
+    public void toGlobal(Long variableId) {
+        RuleVariable variable = getById(variableId);
+        if (variable == null) {
+            throw new IllegalArgumentException("变量不存在");
+        }
+        if (SCOPE_GLOBAL.equals(variable.getScope())) {
+            throw new IllegalArgumentException("该变量已是全局变量，无需转换");
+        }
+        validateGlobalCodeAvailable(variable.getId(), variable.getVarCode());
+
+        int updated = getBaseMapper().update(null, new LambdaUpdateWrapper<RuleVariable>()
+                .eq(RuleVariable::getId, variableId)
+                .eq(RuleVariable::getScope, SCOPE_PROJECT)
+                .set(RuleVariable::getScope, SCOPE_GLOBAL)
+                .set(RuleVariable::getProjectId, 0L)
+                .set(RuleVariable::getUpdateTime, LocalDateTime.now()));
+        if (updated != 1) {
+            throw new IllegalArgumentException("变量状态已变化，请刷新后重试");
+        }
+    }
+
+    private void validateGlobalCodeAvailable(Long variableId, String varCode) {
+        if (varCode == null || varCode.isEmpty()) {
+            throw new IllegalArgumentException("变量编码不能为空");
+        }
+        long conflicts = count(new LambdaQueryWrapper<RuleVariable>()
+                .eq(RuleVariable::getScope, SCOPE_GLOBAL)
+                .eq(RuleVariable::getVarCode, varCode)
+                .ne(variableId != null, RuleVariable::getId, variableId));
+        if (conflicts > 0) {
+            throw new IllegalArgumentException("变量编码「" + varCode + "」已被其他全局变量使用");
+        }
     }
 
     /**

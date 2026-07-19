@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
@@ -21,6 +22,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -40,6 +42,9 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     @Resource
     private RuleProjectMapper projectMapper;
+
+    @Resource
+    private ProjectFilterService projectFilterService;
 
     @Resource
     private JavaEntityParser javaEntityParser;
@@ -177,7 +182,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             // 只查询全局数据对象
             wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
         }
-        wrapper.orderByDesc(RuleDataObject::getCreateTime);
+        wrapper.orderByDesc(RuleDataObject::getUpdateTime)
+                .orderByDesc(RuleDataObject::getId);
         return list(wrapper);
     }
 
@@ -188,7 +194,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleDataObject::getProjectId, projectId)
                .eq(RuleDataObject::getScope, SCOPE_PROJECT)
-               .orderByDesc(RuleDataObject::getCreateTime);
+               .orderByDesc(RuleDataObject::getUpdateTime)
+               .orderByDesc(RuleDataObject::getId);
         return list(wrapper);
     }
 
@@ -198,7 +205,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     public List<RuleDataObject> listGlobalOnly() {
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL)
-               .orderByDesc(RuleDataObject::getCreateTime);
+               .orderByDesc(RuleDataObject::getUpdateTime)
+               .orderByDesc(RuleDataObject::getId);
         return list(wrapper);
     }
 
@@ -206,7 +214,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                                           String projectCode, String projectName, String sourceType,
                                           String objectCode) {
         LambdaQueryWrapper<RuleDataObject> wrapper = buildObjectQuery(scope, projectId, projectCode, projectName, sourceType, objectCode);
-        wrapper.orderByDesc(RuleDataObject::getCreateTime);
+        wrapper.orderByDesc(RuleDataObject::getUpdateTime)
+                .orderByDesc(RuleDataObject::getId);
         return page(new Page<>(pageNum, pageSize), wrapper);
     }
 
@@ -261,7 +270,83 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
 
     @Override
     public boolean updateById(RuleDataObject entity) {
+        if (entity != null && entity.getId() != null && entity.getScope() != null) {
+            RuleDataObject existing = getById(entity.getId());
+            if (existing != null && !Objects.equals(existing.getScope(), entity.getScope())) {
+                if (SCOPE_PROJECT.equals(existing.getScope()) && SCOPE_GLOBAL.equals(entity.getScope())) {
+                    throw new IllegalArgumentException("请使用“转为全局”操作转换数据对象");
+                }
+                throw new IllegalArgumentException("数据对象作用范围不支持直接修改");
+            }
+        }
         return super.updateById(entity);
+    }
+
+    /**
+     * 将项目级数据对象及其所属字段转为全局，保留对象和字段的原始编码。
+     */
+    @Transactional
+    public void toGlobal(Long objectId) {
+        RuleDataObject object = getById(objectId);
+        if (object == null) {
+            throw new IllegalArgumentException("数据对象不存在");
+        }
+        if (SCOPE_GLOBAL.equals(object.getScope())) {
+            throw new IllegalArgumentException("该数据对象已是全局数据对象，无需转换");
+        }
+        long conflicts = count(new LambdaQueryWrapper<RuleDataObject>()
+                .eq(RuleDataObject::getScope, SCOPE_GLOBAL)
+                .eq(RuleDataObject::getObjectCode, object.getObjectCode())
+                .ne(RuleDataObject::getId, objectId));
+        if (conflicts > 0) {
+            throw new IllegalArgumentException("数据对象编码「" + object.getObjectCode() + "」已被其他全局数据对象使用");
+        }
+
+        List<RuleDataObjectField> fields = objectFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDataObjectField>()
+                        .eq(RuleDataObjectField::getObjectId, objectId));
+        validateGlobalDependencies(object, fields);
+
+        LocalDateTime now = LocalDateTime.now();
+        int updated = getBaseMapper().update(null, new LambdaUpdateWrapper<RuleDataObject>()
+                .eq(RuleDataObject::getId, objectId)
+                .eq(RuleDataObject::getScope, SCOPE_PROJECT)
+                .set(RuleDataObject::getScope, SCOPE_GLOBAL)
+                .set(RuleDataObject::getProjectId, 0L)
+                .set(RuleDataObject::getUpdateTime, now));
+        if (updated != 1) {
+            throw new IllegalArgumentException("数据对象状态已变化，请刷新后重试");
+        }
+        objectFieldMapper.update(null, new LambdaUpdateWrapper<RuleDataObjectField>()
+                .eq(RuleDataObjectField::getObjectId, objectId)
+                .set(RuleDataObjectField::getScope, SCOPE_GLOBAL)
+                .set(RuleDataObjectField::getProjectId, 0L)
+                .set(RuleDataObjectField::getUpdateTime, now));
+    }
+
+    private void validateGlobalDependencies(RuleDataObject object, List<RuleDataObjectField> fields) {
+        Set<String> errors = new LinkedHashSet<>();
+        validateReferencedObject(errors, "父对象", object.getParentObjectId(), object.getId());
+        for (RuleDataObjectField field : fields) {
+            String fieldName = field.getVarLabel() != null && !field.getVarLabel().isEmpty()
+                    ? field.getVarLabel() : field.getVarCode();
+            if (field.getRefObjectId() != null) {
+                validateReferencedObject(errors, "字段「" + fieldName + "」", field.getRefObjectId(), object.getId());
+            } else if (field.getRefObjectCode() != null && !field.getRefObjectCode().isEmpty()) {
+                errors.add("字段「" + fieldName + "」引用对象未关联资源 ID");
+            }
+        }
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("数据对象转全局失败：" + String.join("；", errors));
+        }
+    }
+
+    private void validateReferencedObject(Set<String> errors, String section, Long referencedId, Long convertingId) {
+        if (referencedId == null || referencedId.equals(convertingId)) return;
+        RuleDataObject referenced = getById(referencedId);
+        if (referenced == null || !SCOPE_GLOBAL.equals(referenced.getScope())) {
+            errors.add(section + "引用的对象不是全局资源：DATA_OBJECT:" + referencedId);
+        }
     }
 
     @Transactional
@@ -327,8 +412,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
                                                   String projectName, String sourceType, String objectCode) {
         List<RuleDataObject> objects = getBaseMapper().selectList(
                 buildObjectQuery(scope, projectId, projectCode, projectName, sourceType, objectCode)
-                        .orderByAsc(RuleDataObject::getProjectId)
-                        .orderByAsc(RuleDataObject::getId));
+                        .orderByDesc(RuleDataObject::getUpdateTime)
+                        .orderByDesc(RuleDataObject::getId));
         materializeJsonFieldsIfMissing(objects);
         List<Long> objectIds = objects.stream()
                 .map(RuleDataObject::getId)
@@ -350,6 +435,11 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
     private LambdaQueryWrapper<RuleDataObject> buildObjectQuery(String scope, Long projectId,
                                                                String projectCode, String projectName,
                                                                String sourceType, String objectCode) {
+        ProjectFilterService.ProjectMatches projectMatches = null;
+        if ((projectCode != null && !projectCode.isEmpty())
+                || (projectName != null && !projectName.isEmpty())) {
+            projectMatches = projectFilterService.resolve(projectCode, projectName);
+        }
         LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleDataObject::getScope, scope);
@@ -363,27 +453,13 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
             } else if (SCOPE_PROJECT.equals(scope)) {
                 wrapper.eq(RuleDataObject::getProjectId, projectId);
             }
-        } else if (projectCode != null && !projectCode.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleDataObject::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleDataObject::getScope, SCOPE_GLOBAL));
+        }
+        if (projectMatches != null) {
+            if (projectMatches.isEmpty()) {
+                wrapper.eq(RuleDataObject::getId, -1L);
             } else {
-                wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
-            }
-        } else if (projectName != null && !projectName.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleDataObject::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleDataObject::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleDataObject::getScope, SCOPE_GLOBAL);
+                wrapper.eq(RuleDataObject::getScope, SCOPE_PROJECT)
+                        .in(RuleDataObject::getProjectId, projectMatches.getProjectIds());
             }
         }
         if (sourceType != null && !sourceType.isEmpty()) {

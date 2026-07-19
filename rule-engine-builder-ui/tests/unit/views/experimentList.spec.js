@@ -1,4 +1,5 @@
 import ExperimentList from '@/views/experiment/ExperimentList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import { executeExperiment, listExperiments, saveExperiment } from '@/api/experiment'
 import { getRuleTestSchema, listProjectDefinitions } from '@/api/definition'
 
@@ -49,6 +50,18 @@ function createContext(overrides = {}) {
 describe('ExperimentList', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+  })
+
+  test('uses project code and name fuzzy filters for list queries', () => {
+    const context = {}
+    Object.keys(ExperimentList.methods).forEach(name => {
+      context[name] = ExperimentList.methods[name].bind(context)
+    })
+    const query = ExperimentList.data.call(context).query
+
+    expect(ExperimentList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(query).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(query.projectId).toBeUndefined()
   })
 
   test('validateGroups rejects production ratio that is not 100 percent', () => {

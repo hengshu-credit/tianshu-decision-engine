@@ -4,10 +4,14 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
+
+import javax.annotation.Resource;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -23,11 +27,47 @@ import java.util.Map;
 @Service
 public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper, RuleExecutionLog> {
 
-    public Map<String, Object> ruleSetStats(String projectCode, String ruleCode,
+    @Resource
+    private ProjectFilterService projectFilterService;
+
+    public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
+                                            String projectCode, String projectName, String ruleCode,
+                                            String traceId, String authType, String authCode, String tokenCode,
                                             LocalDateTime startTime, LocalDateTime endTime) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
+        LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<>();
+        if (hasText(modelType)) wrapper.eq(RuleExecutionLog::getModelType, modelType);
+        if (hasText(source)) wrapper.eq(RuleExecutionLog::getSource, source);
+        if (hasText(projectCode)) wrapper.like(RuleExecutionLog::getProjectCode, projectCode);
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleExecutionLog::getProjectCode, projectMatches.getProjectCodes());
+        }
+        if (hasText(ruleCode)) wrapper.eq(RuleExecutionLog::getRuleCode, ruleCode);
+        if (hasText(traceId)) wrapper.eq(RuleExecutionLog::getTraceId, traceId);
+        if (hasText(authType)) wrapper.eq(RuleExecutionLog::getAuthType, authType);
+        if (hasText(authCode)) wrapper.like(RuleExecutionLog::getAuthCode, authCode);
+        if (hasText(tokenCode)) wrapper.like(RuleExecutionLog::getTokenCode, tokenCode);
+        if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
+        if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
+        wrapper.orderByDesc(RuleExecutionLog::getCreateTime);
+        return page(new Page<>(pageNum, pageSize), wrapper);
+    }
+
+    public Map<String, Object> ruleSetStats(String projectCode, String projectName, String ruleCode,
+                                            LocalDateTime startTime, LocalDateTime endTime) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(null, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return buildRuleSetStats(Collections.emptyList(), ruleCode);
+        }
         LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<RuleExecutionLog>()
                 .isNotNull(RuleExecutionLog::getTraceInfo);
-        if (hasText(projectCode)) wrapper.eq(RuleExecutionLog::getProjectCode, projectCode);
+        if (hasText(projectCode)) wrapper.like(RuleExecutionLog::getProjectCode, projectCode);
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleExecutionLog::getProjectCode, projectMatches.getProjectCodes());
+        }
         if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
         if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
         wrapper.orderByAsc(RuleExecutionLog::getCreateTime);

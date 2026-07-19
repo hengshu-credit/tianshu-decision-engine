@@ -21,21 +21,34 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
     @Resource
     private RuleExternalDatasourceMapper datasourceMapper;
 
-    public IPage<RuleExternalApiConfig> pageList(int pageNum, int pageSize, Long datasourceId, String datasourceCode,
+    @Resource
+    private ProjectFilterService projectFilterService;
+
+    public IPage<RuleExternalApiConfig> pageList(int pageNum, int pageSize, Long datasourceId,
+                                                 String projectCode, String projectName, String datasourceCode,
                                                  String apiCode, String apiName, String requestMode, Integer status) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleExternalApiConfig> wrapper = new LambdaQueryWrapper<>();
         if (datasourceId != null && datasourceId > 0) {
             wrapper.eq(RuleExternalApiConfig::getDatasourceId, datasourceId);
         }
-        if (hasText(datasourceCode)) {
-            List<Long> ids = datasourceMapper.selectList(new LambdaQueryWrapper<RuleExternalDatasource>()
-                    .like(RuleExternalDatasource::getDatasourceCode, datasourceCode))
+        if (projectMatches.isActive() || hasText(datasourceCode)) {
+            LambdaQueryWrapper<RuleExternalDatasource> datasourceWrapper = new LambdaQueryWrapper<>();
+            if (projectMatches.isActive()) {
+                datasourceWrapper.in(RuleExternalDatasource::getProjectId, projectMatches.getProjectIds());
+            }
+            if (hasText(datasourceCode)) {
+                datasourceWrapper.like(RuleExternalDatasource::getDatasourceCode, datasourceCode);
+            }
+            List<Long> ids = datasourceMapper.selectList(datasourceWrapper)
                     .stream().map(RuleExternalDatasource::getId).collect(Collectors.toList());
             if (ids.isEmpty()) {
-                wrapper.eq(RuleExternalApiConfig::getDatasourceId, -1L);
-            } else {
-                wrapper.in(RuleExternalApiConfig::getDatasourceId, ids);
+                return new Page<>(pageNum, pageSize);
             }
+            wrapper.in(RuleExternalApiConfig::getDatasourceId, ids);
         }
         if (hasText(apiCode)) {
             wrapper.like(RuleExternalApiConfig::getApiCode, apiCode);

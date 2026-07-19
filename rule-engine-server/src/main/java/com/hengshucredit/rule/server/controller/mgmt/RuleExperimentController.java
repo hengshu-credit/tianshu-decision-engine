@@ -32,9 +32,12 @@ public class RuleExperimentController {
     public R<IPage<RuleExperiment>> list(@RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
                                          @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
                                          @RequestParam(required = false) Long projectId,
+                                         @RequestParam(required = false) String projectCode,
+                                         @RequestParam(required = false) String projectName,
                                          @RequestParam(required = false) Integer status,
                                          @RequestParam(required = false) String keyword) {
-        return R.ok(experimentService.pageExperiments(pageNum, pageSize, projectId, status, keyword));
+        return R.ok(experimentService.pageExperiments(pageNum, pageSize, projectId, projectCode, projectName,
+                status, keyword));
     }
 
     @GetMapping("/{id}")

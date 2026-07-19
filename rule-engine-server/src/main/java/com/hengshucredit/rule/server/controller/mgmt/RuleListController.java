@@ -40,11 +40,14 @@ public class RuleListController {
             @RequestParam(value = "pageNum", defaultValue = "1") int pageNum,
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) String listType,
             @RequestParam(required = false) Integer status,
             @RequestParam(required = false) String keyword) {
-        return R.ok(listService.pageLibraries(pageNum, pageSize, projectId, scope, listType, status, keyword));
+        return R.ok(listService.pageLibraries(pageNum, pageSize, projectId, projectCode, projectName,
+                scope, listType, status, keyword));
     }
 
     @GetMapping("/library/{id:\\d+}")

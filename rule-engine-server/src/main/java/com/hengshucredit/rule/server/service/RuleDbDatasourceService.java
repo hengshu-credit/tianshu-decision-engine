@@ -24,15 +24,26 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
     @Resource
     private DBConnectPools dbConnectPools;
 
+    @Resource
+    private ProjectFilterService projectFilterService;
+
     public IPage<RuleDbDatasource> pageList(int pageNum, int pageSize, String scope, Long projectId,
+                                            String projectCode, String projectName,
                                             String datasourceCode, String datasourceName, String dbType,
                                             Integer status) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleDbDatasource> wrapper = new LambdaQueryWrapper<>();
         if (hasText(scope)) {
             wrapper.eq(RuleDbDatasource::getScope, scope);
         }
         if (projectId != null && projectId > 0) {
             wrapper.eq(RuleDbDatasource::getProjectId, projectId);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleDbDatasource::getProjectId, projectMatches.getProjectIds());
         }
         if (hasText(datasourceCode)) {
             wrapper.like(RuleDbDatasource::getDatasourceCode, datasourceCode);

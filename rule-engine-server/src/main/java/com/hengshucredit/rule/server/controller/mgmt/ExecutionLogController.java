@@ -3,9 +3,7 @@ package com.hengshucredit.rule.server.controller.mgmt;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
-import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
-import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
@@ -25,6 +23,7 @@ public class ExecutionLogController {
             @RequestParam(required = false) String modelType,
             @RequestParam(required = false) String source,
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) String traceId,
             @RequestParam(required = false) String authType,
@@ -32,28 +31,17 @@ public class ExecutionLogController {
             @RequestParam(required = false) String tokenCode,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        LambdaQueryWrapper<RuleExecutionLog> wrapper = new LambdaQueryWrapper<>();
-        if (modelType != null && !modelType.isEmpty()) wrapper.eq(RuleExecutionLog::getModelType, modelType);
-        if (source != null && !source.isEmpty()) wrapper.eq(RuleExecutionLog::getSource, source);
-        if (projectCode != null && !projectCode.isEmpty()) wrapper.eq(RuleExecutionLog::getProjectCode, projectCode);
-        if (ruleCode != null && !ruleCode.isEmpty()) wrapper.eq(RuleExecutionLog::getRuleCode, ruleCode);
-        if (traceId != null && !traceId.isEmpty()) wrapper.eq(RuleExecutionLog::getTraceId, traceId);
-        if (authType != null && !authType.isEmpty()) wrapper.eq(RuleExecutionLog::getAuthType, authType);
-        if (authCode != null && !authCode.isEmpty()) wrapper.like(RuleExecutionLog::getAuthCode, authCode);
-        if (tokenCode != null && !tokenCode.isEmpty()) wrapper.like(RuleExecutionLog::getTokenCode, tokenCode);
-        // create_time 范围条件，命中分区裁剪（PARTITION BY RANGE(TO_DAYS(create_time))）
-        if (startTime != null) wrapper.ge(RuleExecutionLog::getCreateTime, startTime);
-        if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
-        wrapper.orderByDesc(RuleExecutionLog::getCreateTime);
-        return R.ok(logService.page(new Page<>(pageNum, pageSize), wrapper));
+        return R.ok(logService.pageList(pageNum, pageSize, modelType, source, projectCode, projectName,
+                ruleCode, traceId, authType, authCode, tokenCode, startTime, endTime));
     }
 
     @GetMapping("/rule-set-stats")
     public R<Map<String, Object>> ruleSetStats(
             @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String ruleCode,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
-        return R.ok(logService.ruleSetStats(projectCode, ruleCode, startTime, endTime));
+        return R.ok(logService.ruleSetStats(projectCode, projectName, ruleCode, startTime, endTime));
     }
 }

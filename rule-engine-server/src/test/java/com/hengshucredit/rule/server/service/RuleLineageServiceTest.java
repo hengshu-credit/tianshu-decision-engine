@@ -1,10 +1,14 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleModelInputField;
+import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
@@ -20,6 +24,9 @@ import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
+import org.junit.BeforeClass;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -38,6 +45,11 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
+
+    @BeforeClass
+    public static void initTableInfo() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+    }
 
     @Test
     public void allKeepsDirectionsSeparateAndStopsAtTwoHops() {
@@ -119,12 +131,76 @@ public class RuleLineageServiceTest {
         for (String selection : selections) {
             assertNotNull("前端可见的模型查询必须显式声明返回字段", selection);
             String normalized = selection.toLowerCase();
-            assertTrue(normalized.contains("model_code"));
-            assertTrue(normalized.contains("model_config"));
-            assertTrue(normalized.contains("model_file_name"));
-            assertTrue(normalized.contains("model_file_size"));
-            assertFalse(normalized.contains("model_content"));
+            assertTrue("模型编码必须保留，实际投影：" + normalized,
+                    normalized.contains("model_code") || normalized.contains("modelcode"));
+            assertTrue("模型配置必须保留，实际投影：" + normalized,
+                    normalized.contains("model_config") || normalized.contains("modelconfig"));
+            assertTrue("模型文件名必须保留，实际投影：" + normalized,
+                    normalized.contains("model_file_name") || normalized.contains("modelfilename"));
+            assertTrue("模型文件大小必须保留，实际投影：" + normalized,
+                    normalized.contains("model_file_size") || normalized.contains("modelfilesize"));
+            assertFalse("模型文件内容必须排除，实际投影：" + normalized,
+                    normalized.contains("model_content") || normalized.contains("modelcontent"));
         }
+    }
+
+    @Test
+    public void modelInputsFollowManagedOperandReferences() {
+        RuleModel upstream = model(5L, "detector");
+        RuleModel target = model(11L, "gender_age");
+
+        RuleModelOutputField upstreamOutput = new RuleModelOutputField();
+        upstreamOutput.setId(7L);
+        upstreamOutput.setModelId(5L);
+
+        List<RuleModelInputField> inputs = Arrays.asList(
+                modelInput(11L, 24L, "",
+                        "{\"kind\":\"FUNCTION\",\"args\":[{\"kind\":\"REFERENCE\",\"refId\":24,\"refType\":\"DATA_OBJECT\",\"code\":\"request.face\"}]}",
+                        null, 1),
+                modelInput(11L, 7L, "MODEL_OUTPUT",
+                        "{\"kind\":\"REFERENCE\",\"refId\":7,\"refType\":\"MODEL_OUTPUT\",\"code\":\"detector.faces\"}",
+                        null, 1),
+                modelInput(11L, null, null,
+                        "{\"kind\":\"LITERAL\",\"value\":\"fallback\"}",
+                        "{\"kind\":\"REFERENCE\",\"refId\":36,\"refType\":\"DATA_OBJECT\",\"code\":\"request.idcard\"}", 1),
+                modelInput(11L, 25L, "DATA_OBJECT", null, null, 1),
+                modelInput(11L, 99L, "DATA_OBJECT",
+                        "{\"kind\":\"PATH\",\"code\":\"request.unresolved\"}", null, 1),
+                modelInput(11L, 37L, "DATA_OBJECT", null, null, 0),
+                modelInput(11L, null, null,
+                        "{\"kind\":\"PATH\",\"refId\":50,\"refType\":\"DATA_OBJECT\",\"code\":\"request.parent.missingLeaf\"}",
+                        null, 1),
+                modelInput(11L, null, null,
+                        "{\"kind\":\"REFERENCE\",\"refId\":24,\"refType\":\"DATA_OBJECT\",\"code\":\"request.face\"}",
+                        null, 1));
+
+        RuleLineageService service = new RuleLineageService();
+        setMapper(service, "projectMapper", RuleProjectMapper.class, Collections.emptyList());
+        setMapper(service, "variableMapper", RuleVariableMapper.class, Collections.emptyList());
+        setMapper(service, "definitionMapper", RuleDefinitionMapper.class, Collections.emptyList());
+        setMapper(service, "definitionInputFieldMapper", RuleDefinitionInputFieldMapper.class, Collections.emptyList());
+        setMapper(service, "definitionOutputFieldMapper", RuleDefinitionOutputFieldMapper.class, Collections.emptyList());
+        setMapper(service, "modelMapper", RuleModelMapper.class, Arrays.asList(upstream, target));
+        setMapper(service, "modelInputFieldMapper", RuleModelInputFieldMapper.class, inputs);
+        setMapper(service, "modelOutputFieldMapper", RuleModelOutputFieldMapper.class,
+                Collections.singletonList(upstreamOutput));
+        setMapper(service, "externalDatasourceMapper", RuleExternalDatasourceMapper.class, Collections.emptyList());
+        setMapper(service, "externalApiConfigMapper", RuleExternalApiConfigMapper.class, Collections.emptyList());
+        setMapper(service, "dbDatasourceMapper", RuleDbDatasourceMapper.class, Collections.emptyList());
+        setMapper(service, "listLibraryMapper", RuleListLibraryMapper.class, Collections.emptyList());
+        setMapper(service, "dataObjectFieldMapper", RuleDataObjectFieldMapper.class, Arrays.asList(
+                dataField(24L, "face"), dataField(25L, "legacy"), dataField(36L, "idcard"),
+                dataField(37L, "disabled"), dataField(50L, "parent"), dataField(99L, "unresolved")));
+
+        Map<String, Object> graph = service.graph("MODEL", 11L, "UPSTREAM", 1);
+        Set<String> ids = nodeIds(graph);
+
+        assertEquals(new LinkedHashSet<>(Arrays.asList(
+                "MODEL:11", "DATA_FIELD:24", "MODEL:5", "DATA_FIELD:36",
+                "DATA_FIELD:25", "DATA_FIELD:50")), ids);
+        assertFalse(ids.contains("DATA_FIELD:37"));
+        assertFalse(ids.contains("DATA_FIELD:99"));
+        assertEquals("重复引用只能生成一条模型输入边", 5, edges(graph).size());
     }
 
     private static RuleLineageService serviceWithProjectBranch(boolean cycle) {
@@ -178,6 +254,35 @@ public class RuleLineageServiceTest {
         variable.setVarCode(code);
         variable.setVarLabel(code);
         return variable;
+    }
+
+    private static RuleModel model(Long id, String code) {
+        RuleModel model = new RuleModel();
+        model.setId(id);
+        model.setModelCode(code);
+        model.setModelName(code);
+        return model;
+    }
+
+    private static RuleModelInputField modelInput(Long modelId, Long varId, String refType,
+                                                   String sourceOperand, String defaultOperand,
+                                                   Integer status) {
+        RuleModelInputField field = new RuleModelInputField();
+        field.setModelId(modelId);
+        field.setVarId(varId);
+        field.setRefType(refType);
+        field.setSourceOperand(sourceOperand);
+        field.setDefaultOperand(defaultOperand);
+        field.setStatus(status);
+        return field;
+    }
+
+    private static RuleDataObjectField dataField(Long id, String code) {
+        RuleDataObjectField field = new RuleDataObjectField();
+        field.setId(id);
+        field.setVarCode(code);
+        field.setVarLabel(code);
+        return field;
     }
 
     @SuppressWarnings("unchecked")

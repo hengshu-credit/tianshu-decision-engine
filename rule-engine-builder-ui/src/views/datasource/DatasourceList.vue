@@ -15,6 +15,12 @@
       <el-tab-pane label="数据源" name="datasource">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleDatasourceQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="datasourceQuery.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="datasourceQuery.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="作用范围">
               <el-select v-model="datasourceQuery.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />
@@ -102,6 +108,12 @@
       <el-tab-pane label="API 接口" name="api">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleApiQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="apiQuery.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="apiQuery.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="数据源编码">
               <remote-filter-select v-model="apiQuery.datasourceCode" :fetch-options="fetchApiDatasourceCodeOptions" option-label-key="datasourceCode" option-value-key="datasourceCode" allow-free-input placeholder="前缀筛选" style="width:150px;" />
             </el-form-item>
@@ -648,10 +660,11 @@ import { collectReferencePaths, setPathValue } from '@/utils/testParamTemplate'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'DatasourceList',
-  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       apiGuideTemplates: [
@@ -667,7 +680,7 @@ export default {
       datasourceTotal: 0,
       datasourceLoading: false,
       datasourceDialogVisible: false,
-      datasourceQuery: { pageNum: 1, pageSize: 10, scope: '', datasourceCode: '', datasourceName: '', authType: '', status: '' },
+      datasourceQuery: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', scope: '', datasourceCode: '', datasourceName: '', authType: '', status: '' },
       datasourceForm: this.emptyDatasourceForm(),
       datasourceAuthConfig: this.emptyAuthConfig('NONE'),
       authTestDialogVisible: false,
@@ -694,7 +707,7 @@ export default {
       apiTotal: 0,
       apiLoading: false,
       apiDialogVisible: false,
-      apiQuery: { pageNum: 1, pageSize: 10, datasourceCode: '', apiCode: '', apiName: '', requestMode: '', status: '' },
+      apiQuery: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', datasourceCode: '', apiCode: '', apiName: '', requestMode: '', status: '' },
       apiForm: this.emptyApiForm(),
       invokeDialogVisible: false,
       invokeLoading: false,
@@ -866,7 +879,7 @@ export default {
       this.loadDatasources()
     },
     resetDatasourceQuery() {
-      this.datasourceQuery = { pageNum: 1, pageSize: this.datasourceQuery.pageSize, scope: '', datasourceCode: '', datasourceName: '', authType: '', status: '' }
+      this.datasourceQuery = { pageNum: 1, pageSize: this.datasourceQuery.pageSize, projectCode: '', projectName: '', scope: '', datasourceCode: '', datasourceName: '', authType: '', status: '' }
       this.loadDatasources()
     },
     handleApiQuery() {
@@ -874,7 +887,7 @@ export default {
       this.loadApiConfigs()
     },
     resetApiQuery() {
-      this.apiQuery = { pageNum: 1, pageSize: this.apiQuery.pageSize, datasourceCode: '', apiCode: '', apiName: '', requestMode: '', status: '' }
+      this.apiQuery = { pageNum: 1, pageSize: this.apiQuery.pageSize, projectCode: '', projectName: '', datasourceCode: '', apiCode: '', apiName: '', requestMode: '', status: '' }
       this.loadApiConfigs()
     },
     handleCreateDatasource() {

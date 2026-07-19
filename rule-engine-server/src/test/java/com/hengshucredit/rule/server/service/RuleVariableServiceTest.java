@@ -1,12 +1,14 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
 import org.apache.ibatis.session.Configuration;
 import org.junit.Assert;
@@ -22,6 +24,81 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class RuleVariableServiceTest {
+
+    @Test
+    public void toGlobalKeepsOriginalCodeAndClearsProjectOwnership() {
+        AtomicInteger updates = new AtomicInteger();
+        AtomicReference<LambdaUpdateWrapper<RuleVariable>> updateWrapper = new AtomicReference<>();
+        RuleVariableService service = toGlobalService(
+                variable(10L, "face_result", "PROJECT", 7L), 0L, 1, updates, updateWrapper);
+
+        service.toGlobal(10L);
+
+        Assert.assertEquals(1, updates.get());
+        Assert.assertNotNull(updateWrapper.get());
+        String sqlSet = updateWrapper.get().getSqlSet();
+        Assert.assertTrue(sqlSet, sqlSet.contains("scope"));
+        Assert.assertTrue(sqlSet, sqlSet.contains("projectId") || sqlSet.contains("project_id"));
+        Assert.assertTrue(sqlSet, sqlSet.contains("updateTime") || sqlSet.contains("update_time"));
+        Assert.assertFalse(sqlSet, sqlSet.contains("varCode") || sqlSet.contains("var_code"));
+        Assert.assertTrue(updateWrapper.get().getParamNameValuePairs().containsValue(0L));
+    }
+
+    @Test
+    public void toGlobalRejectsConflictingGlobalCodeWithoutUpdating() {
+        AtomicInteger updates = new AtomicInteger();
+        RuleVariableService service = toGlobalService(
+                variable(10L, "face_result", "PROJECT", 7L), 1L, 1, updates, new AtomicReference<>());
+
+        assertToGlobalRejected(service, 10L, "全局变量");
+
+        Assert.assertEquals(0, updates.get());
+    }
+
+    @Test
+    public void toGlobalRejectsAlreadyGlobalVariable() {
+        AtomicInteger updates = new AtomicInteger();
+        RuleVariableService service = toGlobalService(
+                variable(10L, "face_result", "GLOBAL", 0L), 0L, 1, updates, new AtomicReference<>());
+
+        assertToGlobalRejected(service, 10L, "已是全局变量");
+
+        Assert.assertEquals(0, updates.get());
+    }
+
+    @Test
+    public void toGlobalRejectsConcurrentScopeChange() {
+        AtomicInteger updates = new AtomicInteger();
+        RuleVariableService service = toGlobalService(
+                variable(10L, "face_result", "PROJECT", 7L), 0L, 0, updates, new AtomicReference<>());
+
+        assertToGlobalRejected(service, 10L, "状态已变化");
+
+        Assert.assertEquals(1, updates.get());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void pageListOrdersByLatestUpdateThenId() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleVariable.class);
+        AtomicReference<String> sqlSegment = new AtomicReference<>();
+        RuleVariableMapper mapper = (RuleVariableMapper) Proxy.newProxyInstance(
+                RuleVariableMapper.class.getClassLoader(), new Class<?>[]{RuleVariableMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectPage".equals(method.getName())) {
+                        sqlSegment.set(((LambdaQueryWrapper<RuleVariable>) args[1]).getSqlSegment());
+                        return args[0];
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        RuleVariableService service = new RuleVariableService();
+        ReflectionTestUtils.setField(service, "baseMapper", mapper);
+
+        service.pageList(1, 10, null, null, null, true, null,
+                null, null, null, null, null);
+
+        assertLatestUpdateOrder(sqlSegment.get());
+    }
 
     @Test
     @SuppressWarnings("unchecked")
@@ -57,6 +134,7 @@ public class RuleVariableServiceTest {
 
     @Test
     public void modelOutputReferenceUsesCanonicalFieldName() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
         RuleVariableService service = new FakeRuleVariableService(Collections.emptyList());
         RuleModel model = new RuleModel();
         model.setId(101L);
@@ -144,6 +222,66 @@ public class RuleVariableServiceTest {
         variable.setDefaultValue(value);
         variable.setStatus(status);
         return variable;
+    }
+
+    private static RuleVariable variable(Long id, String code, String scope, Long projectId) {
+        RuleVariable variable = new RuleVariable();
+        variable.setId(id);
+        variable.setVarCode(code);
+        variable.setVarLabel(code);
+        variable.setScope(scope);
+        variable.setProjectId(projectId);
+        variable.setVarType("STRING");
+        variable.setVarSource("COMPUTED");
+        variable.setStatus(1);
+        return variable;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static RuleVariableService toGlobalService(RuleVariable variable,
+                                                       long conflictCount,
+                                                       int updateResult,
+                                                       AtomicInteger updates,
+                                                       AtomicReference<LambdaUpdateWrapper<RuleVariable>> updateWrapper) {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleVariable.class);
+        RuleVariableMapper mapper = (RuleVariableMapper) Proxy.newProxyInstance(
+                RuleVariableMapper.class.getClassLoader(), new Class<?>[]{RuleVariableMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectById".equals(method.getName())) return variable;
+                    if ("selectCount".equals(method.getName())) return conflictCount;
+                    if ("update".equals(method.getName())) {
+                        updates.incrementAndGet();
+                        updateWrapper.set((LambdaUpdateWrapper<RuleVariable>) args[1]);
+                        return updateResult;
+                    }
+                    return defaultValue(method.getReturnType());
+                });
+        RuleVariableService service = new RuleVariableService();
+        ReflectionTestUtils.setField(service, "baseMapper", mapper);
+        return service;
+    }
+
+    private static void assertToGlobalRejected(RuleVariableService service, Long variableId, String messagePart) {
+        try {
+            service.toGlobal(variableId);
+            Assert.fail("Expected variable global conversion to fail");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(messagePart));
+        }
+    }
+
+    private static Object defaultValue(Class<?> returnType) {
+        if (returnType == boolean.class) return false;
+        if (returnType == int.class) return 0;
+        if (returnType == long.class) return 0L;
+        return null;
+    }
+
+    private static void assertLatestUpdateOrder(String sqlSegment) {
+        Assert.assertNotNull(sqlSegment);
+        String normalized = sqlSegment.replace("`", "").replace(" ", "").toLowerCase();
+        Assert.assertTrue(sqlSegment, normalized.contains("orderbyupdate_timedesc,iddesc")
+                || normalized.contains("orderbyupdatetimedesc,iddesc"));
     }
 
     private static class FakeRuleVariableService extends RuleVariableService {

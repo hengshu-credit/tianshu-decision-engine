@@ -4,6 +4,7 @@ import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
+import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
@@ -16,6 +17,7 @@ import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
 import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import org.apache.ibatis.builder.MapperBuilderAssistant;
@@ -32,14 +34,144 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Stream;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleModelServiceTest {
+
+    @Test
+    public void toGlobalRejectsProjectVariableDependencyWithoutUpdating() {
+        RuleModelInputField input = inputField("age", "INTEGER", 10L, "VARIABLE", "age");
+        AtomicReference<String> updateMethod = new AtomicReference<>();
+        RuleModelService service = toGlobalService(
+                Collections.singletonList(input), Collections.emptyList(),
+                Collections.emptyMap(), null, updateMethod, new AtomicReference<>());
+
+        assertToGlobalRejected(service, updateMethod, "输入字段", "VARIABLE:10");
+    }
+
+    @Test
+    public void toGlobalRejectsProjectDataObjectDependencyWithoutUpdating() {
+        RuleModelInputField input = inputField("amount", "NUMBER", null, null, null);
+        input.setSourceOperand("{\"kind\":\"REFERENCE\",\"refId\":20,\"refType\":\"DATA_OBJECT\",\"code\":\"request.amount\"}");
+        AtomicReference<String> updateMethod = new AtomicReference<>();
+        RuleModelService service = toGlobalService(
+                Collections.singletonList(input), Collections.emptyList(),
+                Collections.emptyMap(), null, updateMethod, new AtomicReference<>());
+
+        assertToGlobalRejected(service, updateMethod, "输入字段", "DATA_OBJECT:20");
+    }
+
+    @Test
+    public void toGlobalRejectsProjectModelDependencyWithoutUpdating() {
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setFieldName("score");
+        output.setTargetOperand("{\"kind\":\"REFERENCE\",\"refId\":30,\"refType\":\"MODEL_OUTPUT\",\"code\":\"project_model.score\"}");
+        AtomicReference<String> updateMethod = new AtomicReference<>();
+        RuleModelService service = toGlobalService(
+                Collections.emptyList(), Collections.singletonList(output),
+                Collections.emptyMap(), null, updateMethod, new AtomicReference<>());
+
+        assertToGlobalRejected(service, updateMethod, "输出字段", "MODEL_OUTPUT:30");
+    }
+
+    @Test
+    public void toGlobalRejectsProjectFunctionDependencyWithoutUpdating() {
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setFieldName("score");
+        output.setTransformOperand(transformOperand(7L,
+                "{\"kind\":\"LITERAL\",\"value\":\"0.2\",\"valueType\":\"NUMBER\"}",
+                "{\"kind\":\"LITERAL\",\"value\":\"600\",\"valueType\":\"NUMBER\"}"));
+        AtomicReference<String> updateMethod = new AtomicReference<>();
+        RuleModelService service = toGlobalService(
+                Collections.emptyList(), Collections.singletonList(output),
+                Collections.emptyMap(), function(7L, 1, twoParams()), updateMethod, new AtomicReference<>());
+
+        assertToGlobalRejected(service, updateMethod, "输出字段", "FUNCTION:7");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void toGlobalExplicitlyClearsProjectOwnership() {
+        RuleModelInputField input = inputField("age", "INTEGER", 10L, "VARIABLE", "age");
+        Map<String, String> globalRefs = Collections.singletonMap("VARIABLE:10", "age");
+        AtomicReference<String> updateMethod = new AtomicReference<>();
+        AtomicReference<LambdaUpdateWrapper<RuleModel>> updateWrapper = new AtomicReference<>();
+        RuleModelService service = toGlobalService(
+                Collections.singletonList(input), Collections.emptyList(),
+                globalRefs, null, updateMethod, updateWrapper);
+
+        service.toGlobal(1L, " global_model ");
+
+        assertEquals("update", updateMethod.get());
+        assertNotNull(updateWrapper.get());
+        String sqlSet = updateWrapper.get().getSqlSet();
+        assertTrue(sqlSet, sqlSet.contains("scope"));
+        assertTrue(sqlSet, sqlSet.contains("modelCode") || sqlSet.contains("model_code"));
+        assertTrue(sqlSet, sqlSet.contains("updateTime") || sqlSet.contains("update_time"));
+        assertTrue(sqlSet, sqlSet.contains("projectId") || sqlSet.contains("project_id"));
+        assertTrue(sqlSet, sqlSet.contains("projectCode") || sqlSet.contains("project_code"));
+        assertTrue(sqlSet, sqlSet.contains("projectName") || sqlSet.contains("project_name"));
+        long nullValues = updateWrapper.get().getParamNameValuePairs().values().stream()
+                .filter(java.util.Objects::isNull)
+                .count();
+        assertEquals(3L, nullValues);
+    }
+
+    @Test
+    public void globalModelExecutionIgnoresStaleProjectId() {
+        RuleModel globalModel = model();
+        globalModel.setScope(RuleModelService.SCOPE_GLOBAL);
+        globalModel.setProjectId(10L);
+        globalModel.setModelCode("global_model");
+        globalModel.setModelFormat("ONNX");
+        globalModel.setModelContent(java.util.Base64.getEncoder().encodeToString(new byte[]{1, 2, 3}));
+        globalModel.setModelConfig("{\"onnxTaskType\":\"MN3_ANTISPOOF\"}");
+        AtomicReference<Long> resolvedProjectId = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectById".equals(method.getName())) return globalModel;
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleModelInputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.emptyList() : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.emptyList() : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "variableService", new RuleVariableService() {
+            @Override
+            public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                resolvedProjectId.set(projectId);
+                return Collections.emptyMap();
+            }
+
+            @Override
+            public Map<String, Object> buildRefConstantValueMap(Long projectId) {
+                resolvedProjectId.set(projectId);
+                return Collections.emptyMap();
+            }
+        });
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "modelExecutionTimeoutExecutor", new ModelExecutionTimeoutExecutor());
+        ReflectionTestUtils.setField(service, "onnxModelExecutionService", new OnnxModelExecutionService(null) {
+            @Override
+            public Map<String, Object> execute(byte[] modelBytes, String config, Map<String, Object> params) {
+                return Collections.emptyMap();
+            }
+        });
+
+        service.execute(1L, Collections.emptyMap());
+
+        assertNull(resolvedProjectId.get());
+    }
 
     @Test
     public void uploadRejectsEveryFormatExceptOnnxAndPmml() {
@@ -201,7 +333,8 @@ public class RuleModelServiceTest {
                 1, 10, null, null, null, null, null, null, null, null);
 
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
-        assertFalse(selectedColumns.get().contains("model_content"));
+        String normalized = selectedColumns.get().toLowerCase();
+        assertFalse(normalized.contains("model_content") || normalized.contains("modelcontent"));
         assertEquals(null, result.getRecords().get(0).getModelContent());
     }
 
@@ -235,10 +368,70 @@ public class RuleModelServiceTest {
         service.update(changes);
 
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
-        assertFalse(selectedColumns.get().contains("model_content"));
+        String normalized = selectedColumns.get().toLowerCase();
+        assertFalse(normalized.contains("model_content") || normalized.contains("modelcontent"));
         assertEquals(null, updatedModel.get().getModelContent());
         assertEquals(Integer.valueOf(1), updatedModel.get().getPreloadOnStartup());
         assertEquals(Integer.valueOf(90000), updatedModel.get().getExecutionTimeoutMs());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void frontendVersionResponsesExcludeContentButRollbackStillUsesIt() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModelVersion.class);
+        List<String> selectedColumns = new ArrayList<>();
+        AtomicInteger selectOneCalls = new AtomicInteger();
+        AtomicReference<RuleModel> updatedModel = new AtomicReference<>();
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "versionMapper", mapper(RuleModelVersionMapper.class,
+                (proxy, method, args) -> {
+                    if ("selectList".equals(method.getName())) {
+                        LambdaQueryWrapper<RuleModelVersion> wrapper =
+                                (LambdaQueryWrapper<RuleModelVersion>) args[0];
+                        selectedColumns.add(wrapper.getSqlSelect());
+                        return Collections.singletonList(modelVersion(1, "list-content"));
+                    }
+                    if ("selectOne".equals(method.getName())) {
+                        LambdaQueryWrapper<RuleModelVersion> wrapper =
+                                (LambdaQueryWrapper<RuleModelVersion>) args[0];
+                        if (wrapper.getSqlSelect() != null) selectedColumns.add(wrapper.getSqlSelect());
+                        int call = selectOneCalls.incrementAndGet();
+                        if (call == 2) return modelVersion(1, "left-content");
+                        if (call == 3) return modelVersion(2, "right-content");
+                        if (call == 4) return modelVersion(1, "rollback-content");
+                        return modelVersion(1, "detail-content");
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class,
+                (proxy, method, args) -> {
+                    if ("selectById".equals(method.getName())) return model();
+                    if ("updateById".equals(method.getName())) {
+                        updatedModel.set((RuleModel) args[0]);
+                        return 1;
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
+
+        List<RuleModelVersion> versions = service.listVersions(1L);
+        RuleModelVersion detail = service.getVersion(1L, 1);
+        Map<String, Object> comparison = service.compareVersions(1L, 1, 2);
+        service.rollbackToVersion(1L, 1);
+
+        assertEquals(null, versions.get(0).getModelContent());
+        assertEquals(null, detail.getModelContent());
+        assertEquals(true, comparison.get("modelContentChanged"));
+        assertEquals(null, ((RuleModelVersion) comparison.get("left")).getModelContent());
+        assertEquals(null, ((RuleModelVersion) comparison.get("right")).getModelContent());
+        assertEquals("rollback-content", updatedModel.get().getModelContent());
+        assertEquals(2, selectedColumns.size());
+        for (String selection : selectedColumns) {
+            assertTrue(selection != null && !selection.isEmpty());
+            String normalized = selection.toLowerCase();
+            assertTrue(normalized.contains("model_config") || normalized.contains("modelconfig"));
+            assertTrue(normalized.contains("change_log") || normalized.contains("changelog"));
+            assertFalse(normalized.contains("model_content") || normalized.contains("modelcontent"));
+        }
     }
 
     @Test
@@ -564,6 +757,17 @@ public class RuleModelServiceTest {
         return model;
     }
 
+    private static RuleModelVersion modelVersion(int version, String content) {
+        RuleModelVersion snapshot = new RuleModelVersion();
+        snapshot.setId((long) version);
+        snapshot.setModelId(1L);
+        snapshot.setVersion(version);
+        snapshot.setModelContent(content);
+        snapshot.setModelConfig("{\"version\":" + version + "}");
+        snapshot.setChangeLog("v" + version);
+        return snapshot;
+    }
+
     private static RuleModelInputField inputField(String name, String type, Long varId, String refType, String scriptName) {
         RuleModelInputField field = new RuleModelInputField();
         field.setId(1L);
@@ -640,6 +844,70 @@ public class RuleModelServiceTest {
         function.setFuncName("概率转评分");
         function.setParamsJson(paramsJson);
         return function;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static RuleModelService toGlobalService(List<RuleModelInputField> inputs,
+                                                    List<RuleModelOutputField> outputs,
+                                                    Map<String, String> globalRefs,
+                                                    RuleFunction function,
+                                                    AtomicReference<String> updateMethod,
+                                                    AtomicReference<LambdaUpdateWrapper<RuleModel>> updateWrapper) {
+        RuleModel source = model();
+        source.setProjectCode("project_a");
+        source.setProjectName("项目A");
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
+            if ("selectById".equals(method.getName())) return source;
+            if ("update".equals(method.getName())) {
+                updateMethod.set(method.getName());
+                updateWrapper.set((LambdaUpdateWrapper<RuleModel>) args[1]);
+                return 1;
+            }
+            if ("updateById".equals(method.getName())) {
+                updateMethod.set(method.getName());
+                return 1;
+            }
+            if ("selectCount".equals(method.getName())) {
+                return 0L;
+            }
+            return defaultValue(method.getReturnType());
+        }));
+        ReflectionTestUtils.setField(service, "inputFieldMapper", mapper(RuleModelInputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? inputs : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "outputFieldMapper", mapper(RuleModelOutputFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? outputs : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(service, "variableService", new RuleVariableService() {
+            @Override
+            public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                assertNull(projectId);
+                return globalRefs;
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFunctionService", new RuleFunctionService() {
+            @Override
+            public RuleFunction getById(Long id) {
+                return function != null && function.getId().equals(id) ? function : null;
+            }
+        });
+        return service;
+    }
+
+    private static void assertToGlobalRejected(RuleModelService service,
+                                               AtomicReference<String> updateMethod,
+                                               String section,
+                                               String reference) {
+        try {
+            service.toGlobal(1L, "global_model");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage(), e.getMessage().contains(section));
+            assertTrue(e.getMessage(), e.getMessage().contains(reference));
+            assertNull(updateMethod.get());
+            return;
+        }
+        throw new AssertionError("Expected project dependency rejection: " + reference);
     }
 
     private static String twoParams() {

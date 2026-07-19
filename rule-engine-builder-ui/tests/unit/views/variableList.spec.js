@@ -12,6 +12,7 @@ jest.mock('@/api/variable', () => ({
   listVariablesByProject: jest.fn(),
   createVariable: jest.fn(),
   updateVariable: jest.fn(),
+  toGlobalVariable: jest.fn(),
   deleteVariable: jest.fn(),
   testVariable: jest.fn(),
   importJavaConstants: jest.fn(),
@@ -25,7 +26,8 @@ jest.mock('@/api/project', () => ({
 jest.mock('@/api/dataObject', () => ({
   batchValidateRules: jest.fn(),
   batchValidateAll: jest.fn(),
-  getVariableTree: jest.fn()
+  getVariableTree: jest.fn(),
+  toGlobalDataObject: jest.fn()
 }))
 
 jest.mock('@/api/function', () => ({ listAllFunctionsByProject: jest.fn() }))
@@ -51,6 +53,7 @@ import * as modelApi from '@/api/model'
 import * as ruleListApi from '@/api/ruleList'
 import * as definitionApi from '@/api/definition'
 import VariableList from '@/views/variable/VariableList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import fs from 'fs'
 import path from 'path'
 
@@ -155,6 +158,18 @@ describe('VariableList — 初始化与数据加载', () => {
   })
 })
 
+describe('VariableList 项目筛选交互', () => {
+  test('变量、数据对象和常量页签均提供编码与名称筛选', async () => {
+    const wrapper = await mountAndWait()
+    const filters = wrapper.findAllComponents(ProjectFilterSelect)
+
+    expect(filters).toHaveLength(6)
+    expect(filters.filter(item => item.props('field') === 'projectCode')).toHaveLength(3)
+    expect(filters.filter(item => item.props('field') === 'projectName')).toHaveLength(3)
+    wrapper.destroy()
+  })
+})
+
 describe('VariableList — 标签方法', () => {
   let wrapper
 
@@ -202,6 +217,25 @@ describe('VariableList — 标签方法', () => {
     expect(wrapper.vm.sourceTagColor('API')).toBe('info')
     expect(wrapper.vm.sourceTagColor('LIST')).toBe('danger')
     expect(wrapper.vm.sourceTagColor('UNKNOWN')).toBe('')
+  })
+
+  test('formatUpdateTime 格式化更新时间并兼容空值', () => {
+    expect(wrapper.vm.formatUpdateTime('2026-07-19T20:30:45')).toBe('2026-07-19 20:30:45')
+    expect(wrapper.vm.formatUpdateTime('2026-07-19 20:30:45')).toBe('2026-07-19 20:30:45')
+    expect(wrapper.vm.formatUpdateTime(null)).toBe('—')
+  })
+
+  test('变量、常量和数据对象均展示更新时间', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
+    const variableTable = source.slice(source.indexOf('<el-tab-pane label="变量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="变量列表"')))
+    const objectTable = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
+    const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
+
+    expect(variableTable).toContain('label="更新时间"')
+    expect(variableTable).toContain('formatUpdateTime(row.updateTime)')
+    expect(objectTable).toContain('更新时间：{{ formatUpdateTime(node.object.updateTime) }}')
+    expect(constantTable).toContain('label="更新时间"')
+    expect(constantTable).toContain('formatUpdateTime(row.updateTime)')
   })
 
   test('statusLabel 通过行数据返回正确的状态标签', () => {
@@ -322,6 +356,73 @@ describe('VariableList — 变量操作', () => {
     wrapper.vm.handleDelete(row)
     await Vue.nextTick()
     expect(variableApi.deleteVariable).toHaveBeenCalledWith(1)
+  })
+
+  test('项目级变量确认后转为全局并刷新变量列表', async () => {
+    variableApi.toGlobalVariable.mockResolvedValue({ data: true })
+    const loadData = jest.spyOn(wrapper.vm, 'loadData').mockResolvedValue()
+    const row = { id: 1, varLabel: '年龄', varSource: 'INPUT', scope: 'PROJECT' }
+
+    await wrapper.vm.handleToGlobal(row)
+
+    expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
+      '确认将「年龄」转为全局变量？转换后将不再归属原项目。',
+      '转为全局',
+      { type: 'warning' }
+    )
+    expect(variableApi.toGlobalVariable).toHaveBeenCalledWith(1)
+    expect(loadData).toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('转换成功，该变量已转为全局变量')
+  })
+
+  test('项目级常量确认后转为全局并刷新常量列表', async () => {
+    variableApi.toGlobalVariable.mockResolvedValue({ data: true })
+    const loadConstants = jest.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue()
+    const row = { id: 3, varLabel: '最大年龄', varSource: 'CONSTANT', scope: 'PROJECT' }
+
+    await wrapper.vm.handleToGlobal(row)
+
+    expect(variableApi.toGlobalVariable).toHaveBeenCalledWith(3)
+    expect(loadConstants).toHaveBeenCalled()
+  })
+
+  test('项目级数据对象确认后连同字段转为全局并刷新对象列表', async () => {
+    dataObjectApi.toGlobalDataObject.mockResolvedValue({ data: true })
+    const loadObjectTree = jest.spyOn(wrapper.vm, 'loadObjectTree').mockResolvedValue()
+    const object = { id: 5, objectLabel: '请求对象', objectCode: 'TSRequestBody', scope: 'PROJECT' }
+
+    await wrapper.vm.handleObjectToGlobal(object)
+
+    expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
+      '确认将「请求对象」及其字段转为全局？转换后将不再归属原项目。',
+      '转为全局',
+      { type: 'warning' }
+    )
+    expect(dataObjectApi.toGlobalDataObject).toHaveBeenCalledWith(5)
+    expect(loadObjectTree).toHaveBeenCalled()
+    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('转换成功，该数据对象及其字段已转为全局')
+  })
+
+  test('变量列表和常量列表仅为项目级记录显示转为全局入口', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
+    const variableTable = source.slice(source.indexOf('<el-tab-pane label="变量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="变量列表"')))
+    const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
+
+    expect(variableTable).toContain('row.scope === \'PROJECT\'')
+    expect(variableTable).toContain('转为全局')
+    expect(constantTable).toContain('row.scope === \'PROJECT\'')
+    expect(constantTable).toContain('转为全局')
+  })
+
+  test('数据对象仅为项目级记录显示转为全局入口', () => {
+    const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
+    const objectPanel = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
+    const objectDialog = source.slice(source.indexOf('<!-- Create/Edit Data Object Dialog -->'), source.indexOf('<!-- Create/Edit Object Field Dialog -->'))
+
+    expect(objectPanel).toContain("node.object.scope === 'PROJECT'")
+    expect(objectPanel).toContain('handleObjectToGlobal(node.object)')
+    expect(objectPanel).toContain('转为全局')
+    expect(objectDialog).toContain('<el-select v-model="objectForm.scope" :disabled="!!objectForm.id"')
   })
 
   test('handleImportCmd 打开对应导入弹窗', () => {

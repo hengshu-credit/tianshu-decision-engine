@@ -25,6 +25,9 @@ jest.mock('@/api/project', () => ({
 import * as modelApi from '@/api/model'
 import * as projectApi from '@/api/project'
 import ModelList from '@/views/model/ModelList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import fs from 'fs'
+import path from 'path'
 
 afterEach(() => { jest.clearAllMocks() })
 
@@ -49,6 +52,16 @@ const makeFormStub = (name) => ({
   name,
   render: h => h('form'),
   methods: { clearValidate: jest.fn(), validate: jest.fn(cb => cb && cb(true)), validateField: jest.fn(), resetFields: jest.fn() }
+})
+
+describe('ModelList 项目筛选交互', () => {
+  test('顶部注册并绑定项目编码和项目名称筛选组件', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/model/ModelList.vue'), 'utf8')
+
+    expect(ModelList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(source).toContain('field="projectCode"')
+    expect(source).toContain('field="projectName"')
+  })
 })
 
 // ─── 测试用例 ─────────────────────────────────────────────
@@ -431,6 +444,12 @@ describe('ModelList — 模型操作', () => {
     expect(wrapper.vm.toGlobalModelInfo.id).toBe(1)
     expect(wrapper.vm.toGlobalModelInfo.modelName).toBe('项目模型')
     expect(wrapper.vm.toGlobalForm.modelCode).toBe('')
+  })
+
+  test('全局模型项目列忽略残留项目名称', () => {
+    expect(ModelList.methods.modelProjectName).toEqual(expect.any(Function))
+    expect(ModelList.methods.modelProjectName({ scope: 'GLOBAL', projectName: '项目A' })).toBe('—')
+    expect(ModelList.methods.modelProjectName({ scope: 'PROJECT', projectName: '项目A' })).toBe('项目A')
   })
 
   test('handleQuery 按 scope 筛选', async () => {

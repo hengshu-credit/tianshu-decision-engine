@@ -35,11 +35,14 @@ public class DbDatasourceController {
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) String scope,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String projectName,
             @RequestParam(required = false) String datasourceCode,
             @RequestParam(required = false) String datasourceName,
             @RequestParam(required = false) String dbType,
             @RequestParam(required = false) Integer status) {
-        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, datasourceCode, datasourceName, dbType, status));
+        return R.ok(datasourceService.pageList(pageNum, pageSize, scope, projectId, projectCode, projectName,
+                datasourceCode, datasourceName, dbType, status));
     }
 
     @GetMapping("/{id:\\d+}")

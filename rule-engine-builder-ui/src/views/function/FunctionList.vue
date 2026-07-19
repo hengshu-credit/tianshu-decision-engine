@@ -13,10 +13,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="实现方式">
           <el-select v-model="qp.implType" clearable filterable placeholder="全部" style="width:110px;">
@@ -73,6 +73,9 @@
           </span>
           <span v-else style="color:#999">无参</span>
         </template>
+      </el-table-column>
+      <el-table-column label="更新时间" width="165" align="center">
+        <template slot-scope="{ row }">{{ formatUpdateTime(row.updateTime) }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="60" align="center">
         <template slot-scope="{ row }">
@@ -213,10 +216,11 @@ import { clearPageState, restorePageState, savePageState } from '@/utils/pageSta
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'FunctionList',
-  components: { MonacoEditor, RemoteFilterSelect },
+  components: { MonacoEditor, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       projects: [],
@@ -269,12 +273,6 @@ export default {
         this.filteredProjectCodes = list.slice(0, 20)
         this.filteredProjectNames = list.slice(0, 20)
       } catch (e) { this.projects = []; this.projectList = [] }
-    },
-    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectCode: query || '' })
-    },
-    fetchProjectNameOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectName: query || '' })
     },
     fetchFuncCodeOptions({ query, pageNum, pageSize }) {
       return listFunctions({ ...this.qp, pageNum, pageSize, funcCode: query || '' })
@@ -329,6 +327,10 @@ export default {
     },
     parseParams(json) {
       try { return JSON.parse(json) } catch (e) { return [] }
+    },
+    formatUpdateTime(value) {
+      if (!value) return '—'
+      return String(value).replace('T', ' ').slice(0, 19)
     },
     typeLabel: varTypeLabel,
     scopeLabel(scope) {

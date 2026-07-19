@@ -96,6 +96,18 @@ public class RuleDataObjectController {
         return R.ok();
     }
 
+    /** 将项目级数据对象及其字段转为全局。 */
+    @PostMapping("/toGlobal/{id:\\d+}")
+    public R<Void> toGlobal(@PathVariable Long id) {
+        try {
+            dataObjectService.toGlobal(id);
+            trySyncSchema();
+            return R.ok();
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
     @GetMapping("/project/{projectId:\\d+}")
     public R<List<RuleDataObject>> listByProject(@PathVariable Long projectId) {
         return R.ok(dataObjectService.listByProject(projectId));

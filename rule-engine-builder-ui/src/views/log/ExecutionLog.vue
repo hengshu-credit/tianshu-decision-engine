@@ -13,12 +13,11 @@
             <el-option label="客户端" value="CLIENT" />
           </el-select>
         </el-form-item>
-        <el-form-item label="项目">
-          <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="全部项目"
-            :remote-method="searchProjects" :loading="projectOptionsLoading"
-            @visible-change="onProjectFilterVisible" @change="onProjectChange">
-            <el-option v-for="p in projectList" :key="p.projectCode" :label="p.projectName" :value="p.projectCode" />
-          </el-select>
+        <el-form-item label="项目编码">
+          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" @change="onProjectChange" />
+        </el-form-item>
+        <el-form-item label="项目名称">
+          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
         </el-form-item>
         <el-form-item label="规则">
           <el-select v-model="qp.ruleCode" clearable filterable remote reserve-keyword placeholder="全部规则"
@@ -107,12 +106,11 @@
     <div v-else class="rule-set-stats">
       <div class="uiue-search-container">
         <el-form :inline="true" size="small">
-          <el-form-item label="项目">
-            <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="全部项目"
-              :remote-method="searchProjects" :loading="projectOptionsLoading"
-              @visible-change="onProjectFilterVisible" @change="onProjectChange">
-              <el-option v-for="p in projectList" :key="p.projectCode" :label="p.projectName" :value="p.projectCode" />
-            </el-select>
+          <el-form-item label="项目编码">
+            <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" @change="onProjectChange" />
+          </el-form-item>
+          <el-form-item label="项目名称">
+            <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
           </el-form-item>
           <el-form-item label="规则集">
             <el-select v-model="qp.ruleCode" clearable filterable remote reserve-keyword placeholder="全部规则集"
@@ -233,11 +231,12 @@ import { listAllModelsByProject } from '@/api/model'
 import { getRuleSetStats } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'ExecutionLog',
-  components: { TraceTree, AsyncState },
+  components: { TraceTree, AsyncState, ProjectFilterSelect },
   data () {
     return {
       activeView: 'logs',
@@ -245,7 +244,7 @@ export default {
       list: [],
       total: 0,
       qp: {
-        pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', source: '', modelType: '',
+        pageNum: 1, pageSize: 10, ruleCode: '', projectCode: '', projectName: '', source: '', modelType: '',
         authType: '', authCode: '', tokenCode: '', traceId: ''
       },
       /** 时间范围，默认最近三个月 */
@@ -337,6 +336,7 @@ export default {
       try {
         var params = {
           projectCode: this.qp.projectCode || '',
+          projectName: this.qp.projectName || '',
           ruleCode: this.qp.ruleCode || '',
           startTime: this.timeRange && this.timeRange[0] ? this.timeRange[0] : '',
           endTime: this.timeRange && this.timeRange[1] ? this.timeRange[1] : ''
@@ -617,6 +617,7 @@ export default {
     formatParams: function (s) { return this.fj(s) },
     onSourceChange: function () {
       this.qp.projectCode = ''
+      this.qp.projectName = ''
       this.qp.ruleCode = ''
     },
     onProjectChange: function () {
@@ -632,6 +633,7 @@ export default {
     resetQuery: function () {
       this.qp.source = ''
       this.qp.projectCode = ''
+      this.qp.projectName = ''
       this.qp.ruleCode = ''
       this.qp.modelType = ''
       this.qp.authType = ''

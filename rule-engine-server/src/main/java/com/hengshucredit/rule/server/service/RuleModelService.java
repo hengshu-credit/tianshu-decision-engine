@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.pmml.PMMLModelExecutor;
@@ -17,6 +18,7 @@ import org.dmg.pmml.PMML;
 import org.jpmml.evaluator.*;
 import org.jpmml.model.PMMLUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import javax.annotation.Resource;
@@ -50,6 +52,8 @@ public class RuleModelService {
     private RuleModelRefMapper refMapper;
     @Resource
     private RuleProjectMapper projectMapper;
+    @Resource
+    private ProjectFilterService projectFilterService;
     @Resource
     private RuleVariableMapper variableMapper;
     @Resource
@@ -108,7 +112,9 @@ public class RuleModelService {
      */
     private void fillProjectName(List<RuleModel> list) {
         if (list == null || list.isEmpty()) return;
+        list.forEach(this::normalizeProjectOwnership);
         List<Long> projectIds = list.stream()
+                .filter(m -> SCOPE_PROJECT.equals(m.getScope()))
                 .filter(m -> m.getProjectId() != null && m.getProjectId() > 0)
                 .map(RuleModel::getProjectId)
                 .distinct()
@@ -162,6 +168,7 @@ public class RuleModelService {
      * 填充模型的项目编码
      */
     private void fillProjectCode(RuleModel model) {
+        normalizeProjectOwnership(model);
         if (model == null || model.getProjectId() == null || model.getProjectId() <= 0) return;
         RuleProject project = projectMapper.selectById(model.getProjectId());
         if (project != null) {
@@ -434,27 +441,40 @@ public class RuleModelService {
     }
 
     public List<RuleModelVersion> listVersions(Long modelId) {
-        return versionMapper.selectList(new LambdaQueryWrapper<RuleModelVersion>()
+        List<RuleModelVersion> versions = versionMapper.selectList(withoutVersionContent()
                 .eq(RuleModelVersion::getModelId, modelId)
                 .orderByDesc(RuleModelVersion::getVersion));
+        clearVersionContent(versions);
+        return versions;
     }
 
     public RuleModelVersion getVersion(Long modelId, Integer version) {
+        RuleModelVersion snapshot = versionMapper.selectOne(withoutVersionContent()
+                .eq(RuleModelVersion::getModelId, modelId)
+                .eq(RuleModelVersion::getVersion, version));
+        if (snapshot != null) snapshot.setModelContent(null);
+        return snapshot;
+    }
+
+    private RuleModelVersion getVersionWithContent(Long modelId, Integer version) {
         return versionMapper.selectOne(new LambdaQueryWrapper<RuleModelVersion>()
                 .eq(RuleModelVersion::getModelId, modelId)
                 .eq(RuleModelVersion::getVersion, version));
     }
 
     public Map<String, Object> compareVersions(Long modelId, Integer leftVersion, Integer rightVersion) {
-        RuleModelVersion left = getVersion(modelId, leftVersion);
-        RuleModelVersion right = getVersion(modelId, rightVersion);
+        RuleModelVersion left = getVersionWithContent(modelId, leftVersion);
+        RuleModelVersion right = getVersionWithContent(modelId, rightVersion);
         if (left == null || right == null) {
             throw new IllegalArgumentException("Version not found");
         }
         Map<String, Object> result = new LinkedHashMap<>();
+        boolean modelContentChanged = !equalsText(left.getModelContent(), right.getModelContent());
+        left.setModelContent(null);
+        right.setModelContent(null);
         result.put("left", left);
         result.put("right", right);
-        result.put("modelContentChanged", !equalsText(left.getModelContent(), right.getModelContent()));
+        result.put("modelContentChanged", modelContentChanged);
         result.put("modelConfigChanged", !equalsText(left.getModelConfig(), right.getModelConfig()));
         return result;
     }
@@ -463,7 +483,7 @@ public class RuleModelService {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
         validateSupportedFormat(model);
-        RuleModelVersion snapshot = getVersion(modelId, version);
+        RuleModelVersion snapshot = getVersionWithContent(modelId, version);
         if (snapshot == null) throw new IllegalArgumentException("Version not found");
 
         model.setModelContent(snapshot.getModelContent());
@@ -485,6 +505,14 @@ public class RuleModelService {
     public IPage<RuleModel> pageList(int pageNum, int pageSize, Long projectId,
             String scope, String modelType, String modelFormat, String modelCode,
             String modelName, String projectCode, String projectName) {
+        ProjectFilterService.ProjectMatches projectMatches = null;
+        if ((projectCode != null && !projectCode.isEmpty())
+                || (projectName != null && !projectName.isEmpty())) {
+            projectMatches = projectFilterService.resolve(projectCode, projectName);
+            if (projectMatches.isEmpty()) {
+                return new Page<>(pageNum, pageSize);
+            }
+        }
         LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
 
         if (scope != null && !scope.isEmpty()) {
@@ -519,28 +547,9 @@ public class RuleModelService {
             wrapper.like(RuleModel::getModelName, modelName);
         }
 
-        if (projectCode != null && !projectCode.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleModel::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleModel::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleModel::getScope, SCOPE_GLOBAL);
-            }
-        } else if (projectName != null && !projectName.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleModel::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleModel::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleModel::getScope, SCOPE_GLOBAL);
-            }
+        if (projectMatches != null) {
+            wrapper.eq(RuleModel::getScope, SCOPE_PROJECT)
+                    .in(RuleModel::getProjectId, projectMatches.getProjectIds());
         }
 
         wrapper.orderByDesc(RuleModel::getId);
@@ -556,6 +565,7 @@ public class RuleModelService {
     public RuleModel getDetail(Long modelId) {
         RuleModel model = modelMapper.selectOne(withoutModelContent().eq(RuleModel::getId, modelId));
         if (model == null) return null;
+        normalizeProjectOwnership(model);
 
         model.setInputFields(inputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleModelInputField>()
@@ -588,6 +598,7 @@ public class RuleModelService {
         wrapper.eq(RuleModel::getStatus, 1)
                .orderByAsc(RuleModel::getModelCode);
         List<RuleModel> models = modelMapper.selectList(wrapper);
+        models.forEach(this::normalizeProjectOwnership);
         fillInputFields(models);
         fillOutputFields(models);
         clearModelContent(models);
@@ -596,13 +607,25 @@ public class RuleModelService {
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {
         return new LambdaQueryWrapper<RuleModel>()
-                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
+                .select(RuleModel.class, field -> !"modelContent".equals(field.getProperty()));
+    }
+
+    private LambdaQueryWrapper<RuleModelVersion> withoutVersionContent() {
+        return new LambdaQueryWrapper<RuleModelVersion>()
+                .select(RuleModelVersion.class, field -> !"modelContent".equals(field.getProperty()));
     }
 
     private void clearModelContent(List<RuleModel> models) {
         if (models == null) return;
         for (RuleModel model : models) {
             if (model != null) model.setModelContent(null);
+        }
+    }
+
+    private void clearVersionContent(List<RuleModelVersion> versions) {
+        if (versions == null) return;
+        for (RuleModelVersion version : versions) {
+            if (version != null) version.setModelContent(null);
         }
     }
 
@@ -917,7 +940,7 @@ public class RuleModelService {
     private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params) {
         Long modelId = model.getId();
         List<RuleModelInputField> inputFields = listInputFields(modelId);
-        Map<String, Object> referenceValues = referenceValues(model.getProjectId(), params);
+        Map<String, Object> referenceValues = referenceValues(referenceProjectId(model), params);
         Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
                 inputFields, params, referenceValues, this::invokeOperandFunction);
         Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
@@ -1130,7 +1153,7 @@ public class RuleModelService {
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
-        Map<String, Object> referenceValues = new LinkedHashMap<>(referenceValues(model.getProjectId(), context));
+        Map<String, Object> referenceValues = new LinkedHashMap<>(referenceValues(referenceProjectId(model), context));
         List<RuleModelOutputField> outputFields = listOutputFields(model.getId());
         for (RuleModelOutputField field : outputFields) {
             Object rawValue = original.get(outputKey(field, original));
@@ -1170,6 +1193,10 @@ public class RuleModelService {
         return OperandValueResolver.buildReferenceValues(
                 variableService.buildRefScriptNameMap(projectId), values,
                 variableService.buildRefConstantValueMap(projectId));
+    }
+
+    private Long referenceProjectId(RuleModel model) {
+        return model != null && SCOPE_PROJECT.equals(model.getScope()) ? model.getProjectId() : null;
     }
 
     private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {
@@ -1352,6 +1379,7 @@ public class RuleModelService {
     /**
      * 将项目级模型转为全局模型
      */
+    @Transactional
     public void toGlobal(Long modelId, String newModelCode) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
@@ -1365,11 +1393,113 @@ public class RuleModelService {
         if (existsModelCodeConflict(trimmedCode, SCOPE_GLOBAL, null, modelId)) {
             throw new IllegalArgumentException("该编码已被其他全局模型使用");
         }
-        model.setScope(SCOPE_GLOBAL);
-        model.setModelCode(trimmedCode);
+        validateGlobalDependencies(modelId);
+
+        int updated = modelMapper.update(null, new LambdaUpdateWrapper<RuleModel>()
+                .eq(RuleModel::getId, modelId)
+                .eq(RuleModel::getScope, SCOPE_PROJECT)
+                .set(RuleModel::getScope, SCOPE_GLOBAL)
+                .set(RuleModel::getModelCode, trimmedCode)
+                .set(RuleModel::getUpdateTime, LocalDateTime.now())
+                .set(RuleModel::getProjectId, null)
+                .set(RuleModel::getProjectCode, null)
+                .set(RuleModel::getProjectName, null));
+        if (updated != 1) {
+            throw new IllegalArgumentException("模型状态已变化，请刷新后重试");
+        }
+    }
+
+    private void validateGlobalDependencies(Long modelId) {
+        Map<String, String> globalRefs = variableService.buildRefScriptNameMap(null);
+        Set<String> errors = new LinkedHashSet<>();
+        List<RuleModelInputField> inputFields = inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelInputField>()
+                        .eq(RuleModelInputField::getModelId, modelId));
+        for (RuleModelInputField field : inputFields) {
+            String section = fieldSection("输入字段", field.getFieldLabel(), field.getFieldName());
+            validateGlobalReference(errors, section, field.getRefType(), field.getVarId(), globalRefs);
+            validateGlobalOperand(errors, section, field.getSourceOperand(), globalRefs);
+            validateGlobalOperand(errors, section, field.getDefaultOperand(), globalRefs);
+        }
+
+        List<RuleModelOutputField> outputFields = outputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelOutputField>()
+                        .eq(RuleModelOutputField::getModelId, modelId));
+        for (RuleModelOutputField field : outputFields) {
+            String section = fieldSection("输出字段", field.getFieldLabel(), field.getFieldName());
+            validateGlobalReference(errors, section, field.getRefType(), field.getVarId(), globalRefs);
+            validateGlobalOperand(errors, section, field.getTargetOperand(), globalRefs);
+            validateGlobalOperand(errors, section, field.getTransformOperand(), globalRefs);
+        }
+        if (!errors.isEmpty()) {
+            throw new IllegalArgumentException("模型转全局失败：" + String.join("；", errors));
+        }
+    }
+
+    private void validateGlobalOperand(Set<String> errors, String section, String operandJson,
+                                       Map<String, String> globalRefs) {
+        if (emptyText(operandJson)) return;
+        com.alibaba.fastjson.JSONObject operand;
+        try {
+            operand = com.alibaba.fastjson.JSON.parseObject(operandJson);
+        } catch (Exception ignored) {
+            // Operand 完整性由保存/发布校验负责；转换这里只检查能明确识别的作用域依赖。
+            return;
+        }
+        inspectGlobalOperand(operand, errors, section, globalRefs);
+    }
+
+    private void inspectGlobalOperand(Object node, Set<String> errors, String section,
+                                      Map<String, String> globalRefs) {
+        if (node instanceof com.alibaba.fastjson.JSONObject) {
+            com.alibaba.fastjson.JSONObject operand = (com.alibaba.fastjson.JSONObject) node;
+            String kind = operand.getString("kind");
+            if ("REFERENCE".equals(kind) || "PATH".equals(kind)) {
+                validateGlobalReference(errors, section, operand.getString("refType"),
+                        operand.getLong("refId"), globalRefs);
+            }
+            if ("FUNCTION".equals(kind)) {
+                validateGlobalFunction(errors, section, operand.getLong("functionId"));
+            }
+            for (Object value : operand.values()) {
+                inspectGlobalOperand(value, errors, section, globalRefs);
+            }
+        } else if (node instanceof com.alibaba.fastjson.JSONArray) {
+            for (Object item : (com.alibaba.fastjson.JSONArray) node) {
+                inspectGlobalOperand(item, errors, section, globalRefs);
+            }
+        }
+    }
+
+    private void validateGlobalReference(Set<String> errors, String section, String refType, Long refId,
+                                         Map<String, String> globalRefs) {
+        if (refId == null || emptyText(refType)) return;
+        String normalizedType = refType.trim().toUpperCase();
+        if ("DATA_FIELD".equals(normalizedType)) normalizedType = "DATA_OBJECT";
+        String refKey = normalizedType + ":" + refId;
+        if (!globalRefs.containsKey(refKey)) {
+            errors.add(section + "引用不是可用的全局资源：" + refKey);
+        }
+    }
+
+    private void validateGlobalFunction(Set<String> errors, String section, Long functionId) {
+        if (functionId == null) return;
+        RuleFunction function = ruleFunctionService == null ? null : ruleFunctionService.getById(functionId);
+        if (function == null || !Integer.valueOf(1).equals(function.getStatus())
+                || !RuleFunctionService.SCOPE_GLOBAL.equals(function.getScope())) {
+            errors.add(section + "引用不是可用的全局函数：FUNCTION:" + functionId);
+        }
+    }
+
+    private String fieldSection(String section, String fieldLabel, String fieldName) {
+        String displayName = !emptyText(fieldLabel) ? fieldLabel : fieldName;
+        return emptyText(displayName) ? section + "：" : section + "“" + displayName + "”：";
+    }
+
+    private void normalizeProjectOwnership(RuleModel model) {
+        if (model == null || !SCOPE_GLOBAL.equals(model.getScope())) return;
         model.setProjectId(null);
         model.setProjectCode(null);
         model.setProjectName(null);
-        modelMapper.updateById(model);
     }
 }

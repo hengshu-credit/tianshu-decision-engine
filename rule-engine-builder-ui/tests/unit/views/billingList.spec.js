@@ -3,6 +3,7 @@ import * as billingApi from '@/api/billing'
 import { listDefinitions } from '@/api/definition'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 function createContext(overrides = {}) {
   const ctx = {
@@ -27,6 +28,15 @@ function createContext(overrides = {}) {
 describe('BillingList target selector', () => {
   beforeEach(() => {
     jest.clearAllMocks()
+  })
+
+  test('uses project code and name fuzzy filters in all list queries', () => {
+    const data = BillingList.data.call({ emptyConfigForm: BillingList.methods.emptyConfigForm })
+
+    expect(BillingList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(data.configQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(data.recordQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+    expect(data.summaryQuery).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
   })
 
   test('loadTargetOptions loads rule definitions for ENGINE target', async () => {

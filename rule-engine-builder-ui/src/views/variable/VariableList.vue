@@ -32,8 +32,8 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <remote-filter-select v-model="qp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
-          <remote-filter-select v-model="qp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
+          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="qp.varSource" clearable filterable placeholder="来源" size="mini" style="width:100px;"
             @change="handleQuery">
             <el-option label="输入参数" value="INPUT" />
@@ -81,15 +81,19 @@
             </el-table-column>
             <el-table-column prop="defaultValue" label="默认值" min-width="90" show-overflow-tooltip />
             <el-table-column prop="valueRange" label="取值范围" min-width="120" show-overflow-tooltip />
+            <el-table-column label="更新时间" min-width="165" align="center">
+              <template slot-scope="{ row }">{{ formatUpdateTime(row.updateTime) }}</template>
+            </el-table-column>
             <el-table-column prop="status" label="状态" min-width="60" align="center">
               <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
             </el-table-column>
-            <el-table-column label="操作" min-width="190" align="center">
+            <el-table-column label="操作" min-width="250" align="center">
               <template slot-scope="{ row }">
                 <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
                 <el-button v-if="isTestableSource(row)" type="text" size="small" @click="handleViewSourceDetail(row)">详情</el-button>
                 <el-button v-if="isTestableSource(row)" type="text" size="small" @click="handleTestVariable(row)">测试</el-button>
                 <el-button type="text" size="small" @click="handleOptions(row)" v-if="row.varType==='ENUM'">选项</el-button>
+                <el-button v-if="row.scope === 'PROJECT'" type="text" size="small" @click="handleToGlobal(row)">转为全局</el-button>
                 <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
               </template>
             </el-table-column>
@@ -112,8 +116,8 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <remote-filter-select v-model="objQp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
-          <remote-filter-select v-model="objQp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
+          <project-filter-select v-model="objQp.projectCode" field="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <project-filter-select v-model="objQp.projectName" field="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="objQp.sourceType" clearable filterable placeholder="来源" size="mini" style="width:100px;" @change="onObjFilterChange">
             <el-option label="Java 实体" value="JAVA" />
             <el-option label="JSON" value="JSON" />
@@ -133,6 +137,7 @@
               <span v-if="node.object.objectLabel && node.object.objectLabel !== node.object.objectCode" class="var-group-label">{{ node.object.objectLabel }}</span>
               <el-tag size="mini" :type="node.object.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" style="margin-left:4px;">{{ node.object.scope === 'GLOBAL' ? '全局' : '项目' }}</el-tag>
               <span v-if="getProjectName(node.object.projectId)" style="font-size:12px;color:#888;margin-left:2px;">{{ getProjectName(node.object.projectId) }}</span>
+              <span class="var-group-update-time">更新时间：{{ formatUpdateTime(node.object.updateTime) }}</span>
             </div>
             <div class="var-group-toolbar">
               <el-input v-model="node.object.scriptName" size="mini" placeholder="脚本名称" style="width:130px;margin-left:6px;" @blur="onObjectScriptNameChange(node.object)" @click.native.stop />
@@ -143,6 +148,7 @@
               <el-tag size="mini" type="info" v-if="node.object.sourceType">{{ node.object.sourceType }}</el-tag>
               <span class="var-group-count">{{ countObjectFields(node.variables) }} 个字段</span>
               <el-button type="text" size="small" icon="el-icon-edit" @click.stop="handleEditObject(node.object)">编辑</el-button>
+              <el-button v-if="node.object.scope === 'PROJECT'" type="text" size="small" @click.stop="handleObjectToGlobal(node.object)">转为全局</el-button>
               <el-button type="text" size="small" icon="el-icon-plus" style="margin-left:auto;" @click.stop="handleAddObjectField(node)">添加字段</el-button>
               <el-button type="text" size="small" icon="el-icon-delete" class="btn-delete" @click.stop="handleDeleteObject(node.object)" />
             </div>
@@ -203,8 +209,8 @@
             <el-option label="全局" value="GLOBAL" />
             <el-option label="项目级" value="PROJECT" />
           </el-select>
-          <remote-filter-select v-model="constQp.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
-          <remote-filter-select v-model="constQp.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
+          <project-filter-select v-model="constQp.projectCode" field="projectCode" placeholder="项目编码" size="mini" style="width:110px;" />
+          <project-filter-select v-model="constQp.projectName" field="projectName" placeholder="项目名称" size="mini" style="width:130px;" />
           <el-select v-model="constQp.varType" clearable filterable placeholder="数据类型" size="mini" style="width:100px;" @change="handleConstQuery">
             <el-option v-for="opt in varTypeFilterOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
           </el-select>
@@ -233,12 +239,16 @@
           <el-table-column label="常量值（默认）" min-width="160">
             <template slot-scope="{row}"><code>{{ formatConstantValue(row.defaultValue, row.varType) }}</code></template>
           </el-table-column>
+          <el-table-column label="更新时间" min-width="165" align="center">
+            <template slot-scope="{ row }">{{ formatUpdateTime(row.updateTime) }}</template>
+          </el-table-column>
           <el-table-column prop="status" label="状态" min-width="60" align="center">
             <template slot-scope="{ row }"><el-tag :type="row.status===1?'success':'info'" size="mini">{{ row.status===1?'启用':'停用' }}</el-tag></template>
           </el-table-column>
-          <el-table-column label="操作" min-width="120" align="center">
+          <el-table-column label="操作" min-width="180" align="center">
             <template slot-scope="{ row }">
               <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
+              <el-button v-if="row.scope === 'PROJECT'" type="text" size="small" @click="handleToGlobal(row)">转为全局</el-button>
               <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
             </template>
           </el-table-column>
@@ -429,7 +439,7 @@
           <el-input v-model="objectForm.scriptName" placeholder="QLExpress 脚本中的引用名，如 taxRequest" />
         </el-form-item>
         <el-form-item label="作用范围">
-          <el-select v-model="objectForm.scope" style="width:100%;" @change="onObjScopeChange">
+          <el-select v-model="objectForm.scope" :disabled="!!objectForm.id" style="width:100%;" @change="onObjScopeChange">
             <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
             <el-option label="📁 项目级" value="PROJECT" />
           </el-select>
@@ -747,11 +757,11 @@
 </template>
 
 <script>
-import { listVariables, listVariablesByProject, createVariable, updateVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
+import { listVariables, listVariablesByProject, createVariable, updateVariable, toGlobalVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
-import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject, getVariableTree } from '@/api/dataObject'
+import { importJavaEntity, importJsonObject, importDdlTable, updateObjectType, updateObjectScriptName, toGlobalDataObject, deleteDataObject, batchValidateRules, createDataObjectField, updateDataObjectField, deleteDataObjectField, getDataObjectFieldOptions, saveDataObjectFieldOptions, createOrUpdateDataObject, getVariableTree } from '@/api/dataObject'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import { listLibraries } from '@/api/ruleList'
@@ -769,11 +779,12 @@ import { cloneOperand, collectOperandReferences, operandDisplay, validateOperand
 import { buildPickerOptions, buildReferenceCatalog } from '@/utils/referenceCatalog'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 
 export default {
   name: 'VariableList',
-  components: { MonacoEditor, OperandPicker, RemoteFilterSelect },
+  components: { MonacoEditor, OperandPicker, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       activeTab: 'list',
@@ -1268,12 +1279,6 @@ export default {
       const p = this.projectList.find(x => x.id === pid)
       return p ? p.projectName : ''
     },
-    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectCode: query || '' })
-    },
-    fetchProjectNameOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectName: query || '' })
-    },
     fetchVarCodeOptions({ query, pageNum, pageSize }) {
       return listVariables({ ...this.qp, pageNum, pageSize, standaloneOnly: true, varCode: query || '' })
     },
@@ -1535,6 +1540,16 @@ export default {
       this.objPageNum = 1
       this.loadObjectTree()
       this.loadData()
+    },
+    async handleObjectToGlobal(obj) {
+      try {
+        await this.$confirm(`确认将「${obj.objectLabel || obj.objectCode}」及其字段转为全局？转换后将不再归属原项目。`, '转为全局', { type: 'warning' })
+        await toGlobalDataObject(obj.id)
+        this.$message.success('转换成功，该数据对象及其字段已转为全局')
+        await this.loadObjectTree()
+      } catch (e) {
+        if (e !== 'cancel' && e !== 'close') this.$message.error('转换失败: ' + (e.message || '未知错误'))
+      }
     },
     /** 新建数据对象（从工具栏按钮） */
     handleCreateObject() {
@@ -1810,6 +1825,17 @@ export default {
           this.loadData()
           if (row.varSource === 'CONSTANT') this.loadConstants()
         }).catch(() => {})
+    },
+    async handleToGlobal(row) {
+      try {
+        await this.$confirm(`确认将「${row.varLabel || row.varCode}」转为全局变量？转换后将不再归属原项目。`, '转为全局', { type: 'warning' })
+        await toGlobalVariable(row.id)
+        this.$message.success('转换成功，该变量已转为全局变量')
+        if (row.varSource === 'CONSTANT') await this.loadConstants()
+        else await this.loadData()
+      } catch (e) {
+        if (e !== 'cancel' && e !== 'close') this.$message.error('转换失败: ' + (e.message || '未知错误'))
+      }
     },
     isTestableSource(row) {
       return row && ['API', 'DB', 'LIST'].indexOf(row.varSource) >= 0
@@ -2192,6 +2218,10 @@ export default {
     typeLabel: varTypeLabel,
     typeTagColor: varTypeTagColor,
     formatConstantValue,
+    formatUpdateTime(value) {
+      if (!value) return '—'
+      return String(value).replace('T', ' ').slice(0, 19)
+    },
     scopeTagLabel(scope) {
       return { GLOBAL: '全局', PROJECT: '项目级' }[scope] || '项目级'
     },
@@ -2229,6 +2259,7 @@ export default {
 .var-group-code { font-weight:bold; font-size:14px; color:#303133; font-family:Consolas,monospace; }
 .var-group-label { color:#909399; font-size:13px; }
 .var-group-count { font-size:12px; color:#909399; }
+.var-group-update-time { margin-left:auto; font-size:12px; color:#909399; }
 .var-group-body { padding:10px; background:#fff; }
 
 /* Object cards */

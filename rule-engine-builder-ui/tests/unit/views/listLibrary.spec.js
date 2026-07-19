@@ -6,6 +6,7 @@ import ElementUI from 'element-ui'
 
 import * as projectApi from '@/api/project'
 import * as ruleListApi from '@/api/ruleList'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ListLibrary from '@/views/ruleList/ListLibrary.vue'
 
 function createTestVue() {
@@ -58,6 +59,11 @@ describe('ListLibrary — 名单库管理', () => {
 
   beforeEach(async () => { wrapper = await mountPage() })
   afterEach(() => { if (wrapper) wrapper.destroy(); jest.clearAllMocks() })
+
+  test('uses unified fuzzy filters for project code and name', () => {
+    expect(ListLibrary.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(wrapper.vm.query).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
+  })
 
   test('初始化加载项目和名单库', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()

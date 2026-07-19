@@ -11,10 +11,11 @@
 
     <div class="uiue-search-container">
       <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
-        <el-form-item label="项目">
-          <el-select v-model="query.projectId" clearable filterable placeholder="全部项目" style="width:180px;">
-            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
-          </el-select>
+        <el-form-item label="项目编码">
+          <project-filter-select v-model="query.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+        </el-form-item>
+        <el-form-item label="项目名称">
+          <project-filter-select v-model="query.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
         </el-form-item>
         <el-form-item label="状态">
           <el-select v-model="query.status" clearable placeholder="全部" style="width:110px;">
@@ -251,6 +252,7 @@ import varPickerMixin from '@/mixins/varPickerMixin'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import MonacoEditor from '@/components/MonacoEditor'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -265,7 +267,7 @@ import { normalizeTestSchema } from '@/utils/testSchema'
 
 export default {
   name: 'ExperimentList',
-  components: { ConditionGroupEditor, RuleExecutionSelector, MonacoEditor },
+  components: { ConditionGroupEditor, RuleExecutionSelector, MonacoEditor, ProjectFilterSelect },
   mixins: [varPickerMixin],
   data() {
     return {
@@ -275,7 +277,7 @@ export default {
       projects: [],
       rulesForProject: [],
       contentLoaded: true,
-      query: { pageNum: 1, pageSize: 10, projectId: '', status: '', keyword: '' },
+      query: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', status: '', keyword: '' },
       formVisible: false,
       form: this.emptyForm(),
       rules: {
@@ -404,7 +406,7 @@ export default {
       this.loadExperiments()
     },
     resetQuery() {
-      this.query = { pageNum: 1, pageSize: this.query.pageSize, projectId: '', status: '', keyword: '' }
+      this.query = { pageNum: 1, pageSize: this.query.pageSize, projectCode: '', projectName: '', status: '', keyword: '' }
       this.loadExperiments()
     },
     async handleCreate() {

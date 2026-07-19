@@ -823,6 +823,23 @@ describe('ModelDetail — 边界情况', () => {
     wrapper.destroy()
   })
 
+  test('全局模型即使残留 projectId 也只加载全局资源', async () => {
+    const modelData = { ...mockModel(), scope: 'GLOBAL', projectId: 1, projectName: '项目A' }
+    const wrapper = await mountAndWait(modelData)
+    jest.clearAllMocks()
+    variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
+    dataObjectApi.getVariableTree.mockResolvedValue({ data: [] })
+    modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
+    functionApi.listAllFunctionsByProject.mockResolvedValue({ data: [] })
+
+    await wrapper.vm.loadVars()
+
+    expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
+    expect(variableApi.listVariables).toHaveBeenCalledWith(expect.objectContaining({ scope: 'GLOBAL' }))
+    expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(0)
+    wrapper.destroy()
+  })
+
   test('buildVarOptions 处理空数组', () => {
     const localWrapper = mount(ModelDetail, {
       localVue: createTestVue(),

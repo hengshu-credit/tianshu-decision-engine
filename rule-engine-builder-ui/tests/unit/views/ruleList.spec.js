@@ -19,9 +19,22 @@ jest.mock('@/api/project', () => ({
 import * as definitionApi from '@/api/definition'
 import * as projectApi from '@/api/project'
 import RuleList from '@/views/rule/RuleList.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import fs from 'fs'
+import path from 'path'
 
 afterEach(() => {
   jest.clearAllMocks()
+})
+
+describe('RuleList 项目筛选交互', () => {
+  test('顶部注册并绑定项目编码和项目名称筛选组件', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/rule/RuleList.vue'), 'utf8')
+
+    expect(RuleList.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
+    expect(source).toContain('field="projectCode"')
+    expect(source).toContain('field="projectName"')
+  })
 })
 
 // ─── Mock 数据 ───────────────────────────────────────────

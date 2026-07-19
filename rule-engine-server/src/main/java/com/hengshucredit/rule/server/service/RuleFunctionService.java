@@ -46,6 +46,9 @@ public class RuleFunctionService {
     private RuleProjectMapper projectMapper;
 
     @Resource
+    private ProjectFilterService projectFilterService;
+
+    @Resource
     private QLExpressEngine qlExpressEngine;
 
     @Resource
@@ -136,6 +139,14 @@ public class RuleFunctionService {
     public IPage<RuleFunction> pageByProject(Long projectId, int pageNum, int pageSize, String scope,
                                               String projectCode, String projectName, String funcCode, String funcLabel,
                                               String implType) {
+        ProjectFilterService.ProjectMatches projectMatches = null;
+        if ((projectCode != null && !projectCode.isEmpty())
+                || (projectName != null && !projectName.isEmpty())) {
+            projectMatches = projectFilterService.resolve(projectCode, projectName);
+            if (projectMatches.isEmpty()) {
+                return new Page<>(pageNum, pageSize);
+            }
+        }
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
@@ -165,31 +176,12 @@ public class RuleFunctionService {
         if (implType != null && !implType.isEmpty()) {
             wrapper.eq(RuleFunction::getImplType, implType);
         }
-        // 通过 projectCode 或 projectName 进行筛选
-        if (projectCode != null && !projectCode.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleFunction::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleFunction::getScope, SCOPE_GLOBAL);
-            }
-        } else if (projectName != null && !projectName.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleFunction::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleFunction::getScope, SCOPE_GLOBAL);
-            }
+        if (projectMatches != null) {
+            wrapper.eq(RuleFunction::getScope, SCOPE_PROJECT)
+                    .in(RuleFunction::getProjectId, projectMatches.getProjectIds());
         }
-        wrapper.orderByAsc(RuleFunction::getFuncCode);
+        wrapper.orderByDesc(RuleFunction::getUpdateTime)
+                .orderByDesc(RuleFunction::getId);
         IPage<RuleFunction> result = functionMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
         fillProjectName(result.getRecords());
         return result;
@@ -204,6 +196,14 @@ public class RuleFunctionService {
     public IPage<RuleFunction> pageAll(int pageNum, int pageSize, String scope, Long projectId,
                                         String projectCode, String projectName, String funcCode, String funcLabel,
                                         String implType) {
+        ProjectFilterService.ProjectMatches projectMatches = null;
+        if ((projectCode != null && !projectCode.isEmpty())
+                || (projectName != null && !projectName.isEmpty())) {
+            projectMatches = projectFilterService.resolve(projectCode, projectName);
+            if (projectMatches.isEmpty()) {
+                return new Page<>(pageNum, pageSize);
+            }
+        }
         LambdaQueryWrapper<RuleFunction> wrapper = new LambdaQueryWrapper<>();
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleFunction::getScope, scope);
@@ -231,33 +231,13 @@ public class RuleFunctionService {
             } else if (SCOPE_PROJECT.equals(scope)) {
                 wrapper.eq(RuleFunction::getProjectId, projectId);
             }
-        } else if (projectCode != null && !projectCode.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectCode, projectCode))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleFunction::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleFunction::getScope, SCOPE_GLOBAL);
-            }
-        } else if (projectName != null && !projectName.isEmpty()) {
-            List<Long> projectIds = projectMapper.selectList(
-                    new LambdaQueryWrapper<RuleProject>().like(RuleProject::getProjectName, projectName))
-                    .stream().map(RuleProject::getId).collect(Collectors.toList());
-            if (!projectIds.isEmpty()) {
-                wrapper.and(w -> w.in(RuleFunction::getProjectId, projectIds)
-                        .or()
-                        .eq(RuleFunction::getScope, SCOPE_GLOBAL));
-            } else {
-                wrapper.eq(RuleFunction::getScope, SCOPE_GLOBAL);
-            }
-        } else {
-            // 无任何项目筛选条件时，返回所有数据（全局+项目级），便于管理控制台查看全量资源
-            // 仅在用户显式指定了 scope 时才做 scope 过滤
         }
-        wrapper.orderByAsc(RuleFunction::getScope, RuleFunction::getProjectId, RuleFunction::getFuncCode);
+        if (projectMatches != null) {
+            wrapper.eq(RuleFunction::getScope, SCOPE_PROJECT)
+                    .in(RuleFunction::getProjectId, projectMatches.getProjectIds());
+        }
+        wrapper.orderByDesc(RuleFunction::getUpdateTime)
+                .orderByDesc(RuleFunction::getId);
         IPage<RuleFunction> result = functionMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
         fillProjectName(result.getRecords());
         return result;

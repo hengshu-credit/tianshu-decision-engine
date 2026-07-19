@@ -96,11 +96,22 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     @Resource
     private RuleProjectService projectService;
 
+    @Resource
+    private ProjectFilterService projectFilterService;
+
     public IPage<RuleExperiment> pageExperiments(int pageNum, int pageSize, Long projectId,
+                                                 String projectCode, String projectName,
                                                  Integer status, String keyword) {
+        ProjectFilterService.ProjectMatches projectMatches = projectFilterService.resolve(projectCode, projectName);
+        if (projectMatches.isActive() && projectMatches.isEmpty()) {
+            return new Page<>(pageNum, pageSize);
+        }
         LambdaQueryWrapper<RuleExperiment> wrapper = new LambdaQueryWrapper<>();
         if (projectId != null) {
             wrapper.eq(RuleExperiment::getProjectId, projectId);
+        }
+        if (projectMatches.isActive()) {
+            wrapper.in(RuleExperiment::getProjectId, projectMatches.getProjectIds());
         }
         if (status != null) {
             wrapper.eq(RuleExperiment::getStatus, status);

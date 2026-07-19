@@ -9,10 +9,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="项目编码">
-          <remote-filter-select v-model="queryParams.projectCode" :fetch-options="fetchProjectCodeOptions" option-label-key="projectCode" option-value-key="projectCode" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="queryParams.projectCode" field="projectCode" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="项目名称">
-          <remote-filter-select v-model="queryParams.projectName" :fetch-options="fetchProjectNameOptions" option-label-key="projectName" option-value-key="projectName" placeholder="输入筛选" style="width:140px;" />
+          <project-filter-select v-model="queryParams.projectName" field="projectName" placeholder="输入筛选" style="width:140px;" />
         </el-form-item>
         <el-form-item label="发布状态">
           <el-select v-model="queryParams.status" clearable filterable placeholder="全部" style="width:100px;">
@@ -138,10 +138,11 @@ import { listDefinitions, createDefinition, deleteDefinition, publishRule, unpub
 import { listProjects } from '@/api/project'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'RuleList',
-  components: { RemoteFilterSelect },
+  components: { RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       colorDanger: variables.colorDanger,
@@ -218,12 +219,6 @@ export default {
         this.filteredProjectCodes = []
         this.filteredProjectNames = []
       }
-    },
-    fetchProjectCodeOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectCode: query || '' })
-    },
-    fetchProjectNameOptions({ query, pageNum, pageSize }) {
-      return listProjects({ pageNum, pageSize, projectName: query || '' })
     },
     fetchRuleCodeOptions({ query, pageNum, pageSize }) {
       return listDefinitions({ ...this.queryParams, pageNum, pageSize, ruleCode: query || '' })

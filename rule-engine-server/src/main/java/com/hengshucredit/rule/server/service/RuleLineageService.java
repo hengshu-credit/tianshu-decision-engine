@@ -269,7 +269,7 @@ public class RuleLineageService {
 
     private LambdaQueryWrapper<RuleModel> withoutModelContent() {
         return new LambdaQueryWrapper<RuleModel>()
-                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
+                .select(RuleModel.class, field -> !"modelContent".equals(field.getProperty()));
     }
 
     private void addVariableSourceEdges(FullGraph graph, RuleVariable variable) {
@@ -305,16 +305,69 @@ public class RuleLineageService {
     }
 
     private void addModelFieldEdges(FullGraph graph) {
-        for (RuleModelInputField field : modelInputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>())) {
-            String from = refNodeKey(field.getRefType(), field.getVarId());
-            String to = nodeKey("MODEL", field.getModelId());
-            if (from != null) addEdge(graph, from, to, "模型输入");
+        List<RuleModelOutputField> outputFields = modelOutputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleModelOutputField>());
+        Map<Long, Long> outputModelIds = new LinkedHashMap<>();
+        for (RuleModelOutputField field : outputFields) {
+            if (field.getId() != null && field.getModelId() != null) {
+                outputModelIds.put(field.getId(), field.getModelId());
+            }
         }
-        for (RuleModelOutputField field : modelOutputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelOutputField>())) {
+        Set<String> inputEdgeKeys = new LinkedHashSet<>();
+        for (RuleModelInputField field : modelInputFieldMapper.selectList(new LambdaQueryWrapper<RuleModelInputField>())) {
+            if (Integer.valueOf(0).equals(field.getStatus())) continue;
+            String to = nodeKey("MODEL", field.getModelId());
+            boolean operandConfigured = hasText(field.getSourceOperand()) || hasText(field.getDefaultOperand());
+            if (operandConfigured) {
+                List<JSONObject> references = new ArrayList<>();
+                collectOperandReferences(field.getSourceOperand(), references);
+                collectOperandReferences(field.getDefaultOperand(), references);
+                for (JSONObject reference : references) {
+                    String from = modelInputRefNodeKey(
+                            reference.getString("refType"), reference.getLong("refId"), outputModelIds);
+                    addModelInputEdge(graph, inputEdgeKeys, from, to);
+                }
+                continue;
+            }
+            String from = modelInputRefNodeKey(field.getRefType(), field.getVarId(), outputModelIds);
+            addModelInputEdge(graph, inputEdgeKeys, from, to);
+        }
+        for (RuleModelOutputField field : outputFields) {
             String from = nodeKey("MODEL", field.getModelId());
             String to = refNodeKey(field.getRefType(), field.getVarId());
             if (to != null) addEdge(graph, from, to, "模型输出");
         }
+    }
+
+    private void collectOperandReferences(String operandJson, List<JSONObject> references) {
+        if (!hasText(operandJson)) return;
+        try {
+            references.addAll(OperandValueResolver.collectReferences(operandJson));
+        } catch (RuntimeException ignored) {
+            // Invalid historical operands are not guessed from mutable code or label fields.
+        }
+    }
+
+    private String modelInputRefNodeKey(String refType, Long refId, Map<Long, Long> outputModelIds) {
+        if (refId == null || !hasText(refType)) return null;
+        String type = normalizeType(refType);
+        if ("MODEL_OUTPUT".equals(type)) {
+            Long modelId = outputModelIds.get(refId);
+            return modelId == null ? null : nodeKey("MODEL", modelId);
+        }
+        return refNodeKey(type, refId);
+    }
+
+    private void addModelInputEdge(FullGraph graph, Set<String> inputEdgeKeys,
+                                   String from, String to) {
+        if (from == null || to == null) return;
+        if (inputEdgeKeys.add(from + "->" + to)) {
+            addEdge(graph, from, to, "模型输入");
+        }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.trim().isEmpty();
     }
 
     private void addProjectEdge(FullGraph graph, Long projectId, String targetKey) {

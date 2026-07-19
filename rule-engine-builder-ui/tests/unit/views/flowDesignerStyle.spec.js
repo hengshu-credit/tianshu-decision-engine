@@ -25,6 +25,10 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('background: #FFFFFF;')
       expect(source).toContain('color: #1D39C4;')
       expect(source).toContain('min-width: 88px;')
+      expect(source).toContain('&.el-button--primary:hover,')
+      expect(source).toContain('&.el-button--primary:focus {')
+      expect(source).toContain('background-color: #EEF2FF !important;')
+      expect(source).toContain('&.el-button--primary:active {')
     })
   })
 

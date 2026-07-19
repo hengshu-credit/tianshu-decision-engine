@@ -15,6 +15,12 @@
       <el-tab-pane label="数据源配置" name="datasource">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
+            <el-form-item label="项目编码">
+              <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入项目编码" style="width:150px;" />
+            </el-form-item>
+            <el-form-item label="项目名称">
+              <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入项目名称" style="width:150px;" />
+            </el-form-item>
             <el-form-item label="作用范围">
               <el-select v-model="qp.scope" clearable placeholder="全部" style="width:110px;">
                 <el-option label="全局" value="GLOBAL" />
@@ -327,10 +333,11 @@ import { listProjects } from '@/api/project'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 export default {
   name: 'DatabaseList',
-  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect },
+  components: { ModuleCallLog, MonacoEditor, RemoteFilterSelect, ProjectFilterSelect },
   data() {
     return {
       databaseGuideCards: [
@@ -343,7 +350,7 @@ export default {
       tableData: [],
       total: 0,
       loading: false,
-      qp: { pageNum: 1, pageSize: 10, scope: '', datasourceCode: '', datasourceName: '', dbType: '', status: '' },
+      qp: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', scope: '', datasourceCode: '', datasourceName: '', dbType: '', status: '' },
       dialogVisible: false,
       form: this.emptyForm(),
       rules: {
@@ -419,7 +426,7 @@ export default {
       this.loadData()
     },
     resetQuery() {
-      this.qp = { pageNum: 1, pageSize: this.qp.pageSize, scope: '', datasourceCode: '', datasourceName: '', dbType: '', status: '' }
+      this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectCode: '', projectName: '', scope: '', datasourceCode: '', datasourceName: '', dbType: '', status: '' }
       this.loadData()
     },
     handleCreate() {
