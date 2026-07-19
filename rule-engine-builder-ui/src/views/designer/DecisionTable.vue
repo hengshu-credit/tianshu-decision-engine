@@ -388,31 +388,22 @@ export default {
       const id = option && (option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id)))
       const refType = option && (option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType))
       if (id != null && id !== '') return (refType || 'REF') + ':' + id
-      return (option && option.varCode) || ''
+      return ''
     },
 
     findVarPickerOptionByModelItem(item) {
       if (!item) return null
       const id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
       const refType = item._refType || item.refType || (item.varObj && item.varObj.refType)
-      if (id != null && id !== '') {
+      if (id != null && id !== '' && refType) {
         const byId = this.varPickerOptions.find(option => {
           const optionId = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
           const optionType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType)
-          return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+          return String(optionId) === String(id) && optionType === refType
         })
         if (byId) return byId
       }
-      const code = item.varCode || item.refCode || ''
-      if (!code) return null
-      const exact = this.varPickerOptions.find(option => option.varCode === code)
-      if (exact) return exact
-      const leafMatches = this.varPickerOptions.filter(option => {
-        if (!option._ref || option._ref.category !== 'object') return false
-        const optionCode = option.varCode || ''
-        return optionCode.substring(optionCode.lastIndexOf('.') + 1) === code
-      })
-      return leafMatches.length === 1 ? leafMatches[0] : null
+      return null
     },
 
     /**
