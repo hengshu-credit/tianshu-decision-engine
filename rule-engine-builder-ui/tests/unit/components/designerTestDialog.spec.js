@@ -36,7 +36,15 @@ describe('DesignerTestDialog unified schema', () => {
         modelJson,
         paramsTemplate: { legacy: true }
       },
-      stubs: { MonacoEditor: true }
+      stubs: {
+        MonacoEditor: true,
+        'el-alert': true,
+        'el-button': true,
+        'el-dialog': true,
+        'el-input-number': true,
+        'el-tab-pane': true,
+        'el-tabs': true
+      }
     })
 
     await wrapper.vm.open()

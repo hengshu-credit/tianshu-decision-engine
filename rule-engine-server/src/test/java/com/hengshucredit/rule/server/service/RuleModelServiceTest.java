@@ -42,6 +42,48 @@ import static org.junit.Assert.assertTrue;
 public class RuleModelServiceTest {
 
     @Test
+    public void uploadRejectsEveryFormatExceptOnnxAndPmml() {
+        assertUnsupportedUpload("model.pkl");
+        assertUnsupportedUpload("model.pickle");
+        assertUnsupportedUpload("model.dill");
+        assertUnsupportedUpload("model.pb");
+        assertUnsupportedUpload("model.txt");
+        assertUnsupportedUpload("model.xml");
+        assertUnsupportedUpload("model.bin");
+        assertUnsupportedUpload(null);
+    }
+
+    @Test
+    public void unsupportedHistoricalModelIsReadOnlyAndCannotExecuteOrPublish() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
+        RuleModel unsupported = model();
+        unsupported.setModelFormat("PICKLE");
+        unsupported.setModelContent("AQID");
+        RuleModelService service = new RuleModelService();
+        ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class,
+                (proxy, method, args) -> {
+                    if ("selectById".equals(method.getName()) || "selectOne".equals(method.getName())) {
+                        return unsupported;
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
+
+        assertUnsupportedOperation(() -> service.execute(unsupported.getId(), Collections.emptyMap()));
+        assertUnsupportedOperation(() -> service.publish(unsupported.getId(), null, "tester"));
+        RuleModel update = new RuleModel();
+        update.setId(unsupported.getId());
+        update.setModelName("changed");
+        assertUnsupportedOperation(() -> service.update(update));
+    }
+
+    @Test
+    public void manualCreateRejectsUnsupportedModelFormat() {
+        RuleModel unsupported = model();
+        unsupported.setModelFormat("DILL");
+        assertUnsupportedOperation(() -> new RuleModelService().create(unsupported));
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     public void executeOnnxReturnsStandardResultAndLogicalOutputs() {
         RuleModel model = model();
@@ -515,6 +557,7 @@ public class RuleModelServiceTest {
         model.setId(1L);
         model.setProjectId(10L);
         model.setScope(RuleModelService.SCOPE_PROJECT);
+        model.setModelFormat("PMML");
         model.setCurrentVersion(1);
         model.setModelContent("content");
         model.setModelConfig("{}");
@@ -606,6 +649,34 @@ public class RuleModelServiceTest {
     private static String transformOperand(Long functionId, String firstArg, String secondArg) {
         return "{\"kind\":\"FUNCTION\",\"functionId\":" + functionId
                 + ",\"functionCode\":\"scoreByProbability\",\"args\":[" + firstArg + "," + secondArg + "]}";
+    }
+
+    private static void assertUnsupportedUpload(String fileName) {
+        RuleModelService service = new RuleModelService();
+        MockMultipartFile file = new MockMultipartFile(
+                "file", fileName, "application/octet-stream", new byte[]{1, 2, 3});
+        try {
+            service.uploadAndParse(file, null, "GLOBAL", "unsupported", "unsupported",
+                    "ML", null, null, null);
+        } catch (RuntimeException e) {
+            assertTrue("应返回明确的格式校验错误而不是 " + e.getClass().getSimpleName(),
+                    e instanceof IllegalArgumentException);
+            assertTrue(e.getMessage(), e.getMessage().contains("仅支持 ONNX 和 PMML"));
+            return;
+        }
+        throw new AssertionError("Expected unsupported model format: " + fileName);
+    }
+
+    private static void assertUnsupportedOperation(Runnable operation) {
+        try {
+            operation.run();
+        } catch (RuntimeException e) {
+            assertTrue("应返回明确的格式校验错误而不是 " + e.getClass().getSimpleName(),
+                    e instanceof IllegalArgumentException);
+            assertTrue(e.getMessage(), e.getMessage().contains("仅支持 ONNX 和 PMML"));
+            return;
+        }
+        throw new AssertionError("Expected unsupported model format rejection");
     }
 
     @SuppressWarnings("unchecked")

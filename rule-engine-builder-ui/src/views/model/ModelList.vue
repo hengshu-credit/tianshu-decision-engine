@@ -2,7 +2,7 @@
   <div class="uiue-list-page">
     <!-- 提示信息 -->
     <div class="linkage-hint">
-      <i class="el-icon-info" /> 模型支持从 PMML、PICKLE、DILL、ONNX 等格式文件导入，用于在规则设计时调用机器学习模型进行预测。
+      <i class="el-icon-info" /> 模型仅支持从 ONNX、PMML 格式文件导入，用于在规则设计时调用机器学习模型进行预测。
     </div>
 
     <el-tabs v-model="activeTab" type="border-card" class="page-tabs">
@@ -43,8 +43,6 @@
         <el-form-item label="模型格式">
           <el-select v-model="qp.modelFormat" clearable filterable placeholder="全部" style="width:110px;" @change="handleQuery">
             <el-option label="PMML" value="PMML" />
-            <el-option label="PICKLE" value="PICKLE" />
-            <el-option label="DILL" value="DILL" />
             <el-option label="ONNX" value="ONNX" />
           </el-select>
         </el-form-item>
@@ -155,10 +153,10 @@
           </el-select>
         </el-form-item>
         <el-form-item label="模型文件" prop="file">
-          <el-upload ref="upload" action="#" :auto-upload="false" :limit="1" accept=".pmml,.xml,.onnx,.pb,.pkl,.pickle,.dill"
+          <el-upload ref="upload" action="#" :auto-upload="false" :limit="1" :accept="supportedModelAccept"
               :on-change="handleFileChange" :file-list="fileList">
             <el-button size="small" type="primary">选择文件</el-button>
-            <span slot="tip" class="el-upload__tip">支持 PMML、PICKLE、DILL、ONNX 格式</span>
+            <span slot="tip" class="el-upload__tip">仅支持 ONNX、PMML 格式</span>
           </el-upload>
         </el-form-item>
         <template v-if="isOnnxFile">
@@ -383,6 +381,7 @@ export default {
       total: 0,
       projects: [],
       projectList: [],
+      supportedModelAccept: '.onnx,.pmml',
       filteredProjectCodes: [],
       filteredProjectNames: [],
 
@@ -610,8 +609,18 @@ export default {
       this.$nextTick(() => { if (this.$refs.uploadForm) this.$refs.uploadForm.clearValidate() })
     },
     handleFileChange(file, files) {
+      const fileName = file.name || (file.raw && file.raw.name) || ''
+      const lowerName = fileName.toLowerCase()
+      if (!lowerName.endsWith('.onnx') && !lowerName.endsWith('.pmml')) {
+        this.selectedFile = null
+        this.selectedFileName = ''
+        this.fileList = []
+        if (this.$refs.upload && this.$refs.upload.clearFiles) this.$refs.upload.clearFiles()
+        this.$message.error('仅支持 ONNX、PMML 格式的模型文件')
+        return
+      }
       this.selectedFile = file.raw
-      this.selectedFileName = file.name || (file.raw && file.raw.name) || ''
+      this.selectedFileName = fileName
       this.fileList = files.slice(-1)
       if (this.isOnnxFile) this.uploadForm.modelType = 'NEURAL_NET'
       if (!this.isOnnxFile) {

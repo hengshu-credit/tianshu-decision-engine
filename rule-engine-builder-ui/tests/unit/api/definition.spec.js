@@ -1,7 +1,13 @@
 jest.unmock('@/api/definition')
 
 import request from '@/api/request'
-import { executeRule, refreshFields } from '@/api/definition'
+import {
+  executeRule,
+  migrateReferences,
+  refreshFields,
+  scanAllReferenceIntegrity,
+  scanReferenceIntegrity
+} from '@/api/definition'
 
 describe('definition API', () => {
   beforeEach(() => {
@@ -31,6 +37,31 @@ describe('definition API', () => {
       method: 'post',
       data: modelJson,
       headers: { 'Content-Type': 'text/plain;charset=UTF-8' }
+    })
+  })
+
+  test('引用完整性扫描与人工迁移使用独立接口', async () => {
+    const migration = {
+      definitionId: 16,
+      patches: [{ path: '$.rules[0]', idField: '_varId', refTypeField: '_refType', refId: 9, refType: 'VARIABLE' }]
+    }
+
+    await scanReferenceIntegrity(16)
+    await scanAllReferenceIntegrity()
+    await migrateReferences(migration)
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/rule/definition/reference-integrity/scan/16',
+      method: 'get'
+    })
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/rule/definition/reference-integrity/scan-all',
+      method: 'get'
+    })
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/rule/definition/reference-integrity/migrate',
+      method: 'post',
+      data: migration
     })
   })
 })

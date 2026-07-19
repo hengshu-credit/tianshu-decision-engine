@@ -258,8 +258,9 @@ describe('ModelDetail — 变量关联加载', () => {
 
     expect(wrapper.vm.varMap).toBeDefined()
     expect(Object.keys(wrapper.vm.varMap).length).toBeGreaterThan(0)
-    expect(wrapper.vm.varMap[10]).toBeDefined()
-    expect(wrapper.vm.varMap[10].varCode).toBe('age')
+    expect(wrapper.vm.varMap['VARIABLE:10']).toBeDefined()
+    expect(wrapper.vm.varMap['VARIABLE:10'].varCode).toBe('age')
+    expect(wrapper.vm.varMap[10]).toBeUndefined()
 
     // varPickerGroups 四类结构
     expect(wrapper.vm.varPickerGroups.length).toBe(4)

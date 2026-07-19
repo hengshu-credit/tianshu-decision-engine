@@ -40,6 +40,45 @@
           </div>
         </div>
 
+        <div v-if="selectedRule" class="uiue-card fixed-cases-card">
+          <div class="uiue-card-title fixed-cases-title">
+            <span>固定测试用例收藏</span>
+            <span>
+              <el-button type="text" size="small" @click="saveCurrentTestCase"><i class="el-icon-star-off" /> 收藏当前输入与结果</el-button>
+              <el-button type="text" size="small" :loading="batchExecuting" :disabled="selectedTestCaseIds.length === 0" @click="executeSelectedTestCases"><i class="el-icon-video-play" /> 批量执行</el-button>
+            </span>
+          </div>
+          <async-state
+            :loading="testCasesLoading"
+            :error="testCasesError"
+            :empty="testCases.length === 0"
+            empty-text="暂无收藏用例，可将当前参数与结果保存为固定用例"
+            compact
+            @retry="loadTestCases"
+          >
+            <el-checkbox-group v-model="selectedTestCaseIds" class="fixed-case-list">
+              <div v-for="testCase in testCases" :key="testCase.id" class="fixed-case-row">
+                <el-checkbox :label="testCase.id">{{ testCase.scenarioName }}</el-checkbox>
+                <el-button type="text" size="mini" @click="applyTestCase(testCase)">载入</el-button>
+              </div>
+            </el-checkbox-group>
+          </async-state>
+          <el-table v-if="batchResults.length" :data="batchResults" border size="mini" class="batch-result-table">
+            <el-table-column prop="scenarioName" label="用例" min-width="130" />
+            <el-table-column label="执行结果" min-width="90">
+              <template slot-scope="{row}"><el-tag :type="row.success ? 'success' : 'danger'" size="mini">{{ row.success ? '成功' : '失败' }}</el-tag></template>
+            </el-table-column>
+            <el-table-column label="结果 Diff" min-width="220">
+              <template slot-scope="{row}">
+                <span v-if="row.diffs.length === 0" class="diff-pass">与收藏结果一致</span>
+                <div v-else class="diff-lines">
+                  <div v-for="(diff, index) in row.diffs" :key="index"><code>{{ diff.path }}</code>：{{ formatJson(diff.expected) }} → {{ formatJson(diff.actual) }}</div>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+
         <div class="uiue-card" style="margin-top: 12px;">
           <div class="uiue-card-title">
             输入参数
@@ -126,6 +165,17 @@
             </div>
 
             <div v-if="result.traces && result.traces.length > 0">
+              <div class="trace-filter-bar">
+                <span>追踪树筛选</span>
+                <el-select v-model="traceStatusFilter" size="mini" style="width:110px">
+                  <el-option label="全部状态" value="ALL" />
+                  <el-option label="成功" value="SUCCESS" />
+                  <el-option label="失败" value="FAILED" />
+                  <el-option label="命中" value="HIT" />
+                  <el-option label="未命中" value="MISS" />
+                </el-select>
+                <el-input v-model="traceKeyword" size="mini" clearable placeholder="规则、节点、表达式关键字" style="width:220px" />
+              </div>
               <el-tabs v-model="traceTab" style="margin-top: 8px;">
                 <el-tab-pane label="执行追踪（JSON）" name="json">
                   <el-collapse>
@@ -161,19 +211,21 @@
 </template>
 <script>
 import { listProjects } from '@/api/project'
-import { listDefinitions, executeRule, getContent, listInputFields, refreshFields, getRuleTestSchema } from '@/api/definition'
-import { listVariablesByProject, getVariableOptions, listVariables } from '@/api/variable'
-import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
+import { listDefinitions, executeRule, getContent, listInputFields, refreshFields, getRuleTestSchema, listApiScenarios, createApiScenario, executeApiScenario } from '@/api/definition'
+import { getVariableOptions } from '@/api/variable'
+import { getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
-import { listAllModelsByProject, getModel } from '@/api/model'
+import { getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
+import AsyncState from '@/components/common/AsyncState.vue'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import { normalizeTestResult } from '@/utils/testResult'
 import { normalizeTestSchema, schemaFieldsToTestFields, flattenSchemaSample } from '@/utils/testSchema'
+import { diffTestResults, filterTraceTree, scenarioParams } from '@/utils/testCaseTools'
 
 export default {
   name: 'RuleTest',
-  components: { TraceTree },
+  components: { TraceTree, AsyncState },
   data() {
     return {
       projects: [],
@@ -185,7 +237,16 @@ export default {
       params: [],
       executing: false,
       result: null,
+      lastRawResponse: null,
       traceTab: 'tree',
+      traceStatusFilter: 'ALL',
+      traceKeyword: '',
+      testCases: [],
+      selectedTestCaseIds: [],
+      testCasesLoading: false,
+      testCasesError: '',
+      batchExecuting: false,
+      batchResults: [],
       varMap: {},
       functionNameMap: {},
       modelData: null,
@@ -202,7 +263,8 @@ export default {
   computed: {
     traceInfoJson: function () {
       if (!this.result || !this.result.traces || this.result.traces.length === 0) return ''
-      return JSON.stringify(this.result.traces[0])
+      var filtered = filterTraceTree(this.result.traces[0], { status: this.traceStatusFilter, keyword: this.traceKeyword })
+      return filtered ? JSON.stringify(filtered) : ''
     },
     inputParamsJson: function () {
       // inputParamsJson 供 TraceTree 组件渲染入参，始终基于当前 params 构建
@@ -236,14 +298,18 @@ export default {
       } catch (e) { /* ignore */ }
     },
     async loadVarMap() {
+      this.varMap = {}
+      if (!this.selectedRuleId) return
       try {
-        var refs = await this.loadAllRuleRefs()
+        var response = await listInputFields(this.selectedRuleId)
+        var fields = this.unwrapResponse(response)
+        fields = Array.isArray(fields) ? fields : []
         var map = {}
-        for (var i = 0; i < refs.length; i++) {
-          if (refs[i].code && refs[i].label) {
-            map[refs[i].code] = refs[i].label
-          }
-        }
+        fields.forEach(function (field) {
+          if (!field || field.varId == null || !field.refType) return
+          var path = field.scriptName || field.fieldName
+          if (path) map[path] = field.fieldLabel || field.fieldName || path
+        })
         this.varMap = map
       } catch (e) { /* ignore */ }
     },
@@ -286,6 +352,7 @@ export default {
       this.rules = []
       this.params = []
       this.result = null
+      this.resetTestCases()
       this.selectedProjectId = null
 
       if (this.ruleScope === 'ALL') {
@@ -308,6 +375,7 @@ export default {
       this.rules = []
       this.params = []
       this.result = null
+      this.resetTestCases()
       if (!this.selectedProjectId) return
       try {
         const res = await listDefinitions({ pageNum: 1, pageSize: 1000, projectId: this.selectedProjectId })
@@ -322,6 +390,105 @@ export default {
       await this.loadFunctionNameMap()
       await this.loadVarMap()
       await this.loadVariables()
+      await this.loadTestCases()
+    },
+    resetTestCases() {
+      this.testCases = []
+      this.selectedTestCaseIds = []
+      this.batchResults = []
+      this.testCasesError = ''
+    },
+    async loadTestCases() {
+      this.resetTestCases()
+      if (!this.selectedRuleId) return
+      this.testCasesLoading = true
+      try {
+        const res = await listApiScenarios(this.selectedRuleId)
+        const data = this.unwrapResponse(res)
+        this.testCases = Array.isArray(data) ? data : []
+      } catch (e) {
+        this.testCasesError = '固定测试用例加载失败'
+      } finally {
+        this.testCasesLoading = false
+      }
+    },
+    async saveCurrentTestCase() {
+      if (!this.selectedRuleId) return
+      let promptResult
+      try {
+        promptResult = await this.$prompt('请输入固定用例名称', '收藏测试用例', {
+          inputValidator: value => Boolean(value && value.trim()),
+          inputErrorMessage: '用例名称不能为空'
+        })
+      } catch (e) {
+        return
+      }
+      const params = this.buildParamMap()
+      const response = this.lastRawResponse || { code: 200, data: { success: false, result: null, errorMessage: '尚未执行' } }
+      await createApiScenario(this.selectedRuleId, {
+        scenarioName: promptResult.value.trim(),
+        description: '规则测试页收藏的固定测试用例',
+        requestJson: JSON.stringify({ clientAppName: 'rule-test', params: params }),
+        responseJson: JSON.stringify(response),
+        responseSource: this.lastRawResponse ? 'EXECUTED' : 'MANUAL',
+        businessCodePath: '',
+        includeInDoc: 0,
+        status: 1
+      })
+      await this.loadTestCases()
+      this.notifySuccess('固定测试用例已收藏')
+    },
+    async applyTestCase(testCase) {
+      const values = scenarioParams(testCase && testCase.requestJson)
+      await this.loadVariables()
+      const existing = {}
+      this.params.forEach(param => { existing[param.key] = param })
+      const flattened = this.flattenCaseParams(values)
+      Object.keys(flattened).forEach(key => {
+        if (existing[key]) {
+          existing[key].value = flattened[key]
+        } else {
+          this.params.push({ key: key, label: '', value: flattened[key], type: this.valueType(flattened[key]), example: '', fromVar: false, options: [] })
+        }
+      })
+      this.result = null
+      this.lastRawResponse = null
+    },
+    async executeSelectedTestCases() {
+      const selected = this.testCases.filter(testCase => this.selectedTestCaseIds.indexOf(testCase.id) >= 0)
+      if (selected.length === 0) return
+      this.batchExecuting = true
+      this.batchResults = []
+      try {
+        for (const testCase of selected) {
+          try {
+            const request = JSON.parse(testCase.requestJson || '{}')
+            const actual = await executeApiScenario(this.selectedRuleId, request, this.requestTimeoutMs)
+            const expected = JSON.parse(testCase.responseJson || '{}')
+            this.batchResults.push({ scenarioName: testCase.scenarioName, success: true, diffs: diffTestResults(expected, actual) })
+          } catch (e) {
+            this.batchResults.push({ scenarioName: testCase.scenarioName, success: false, diffs: [{ path: '$', expected: '成功执行', actual: e.message || '执行失败' }] })
+          }
+        }
+      } finally {
+        this.batchExecuting = false
+      }
+    },
+    flattenCaseParams(value, prefix, target) {
+      const output = target || {}
+      const currentPrefix = prefix || ''
+      Object.keys(value || {}).forEach(key => {
+        const path = currentPrefix ? currentPrefix + '.' + key : key
+        const item = value[key]
+        if (item && typeof item === 'object' && !Array.isArray(item)) this.flattenCaseParams(item, path, output)
+        else output[path] = item
+      })
+      return output
+    },
+    valueType(value) {
+      if (typeof value === 'boolean') return 'BOOLEAN'
+      if (typeof value === 'number') return 'NUMBER'
+      return 'STRING'
     },
     async loadVariables() {
       if (!this.selectedRule) return  // 未选择规则，提前返回
@@ -345,109 +512,14 @@ export default {
             })
             return
           }
-        } catch (e) { /* compatibility fallback for older servers */ }
+        } catch (e) { /* 继续读取服务端已解析的结构化输入字段 */ }
         var fields = await this.loadInputFieldsFromServer()
         if (fields.length > 0) {
           await this.applyInputFieldsToParams(fields)
           return
         }
-
-        // 步骤1：解析 modelJson 中的变量 ID → varCode 映射
-        var ruleVarIdMap = await this.getRuleVarInfos()
-        var varIds = Object.keys(ruleVarIdMap)
-        console.log('[变量加载] 规则引用的变量 ID:', varIds)
-
-        if (varIds.length === 0) {
-          this.notifyInfo('无法解析规则中的变量引用，请检查规则配置')
-          return
-        }
-
-        // 步骤2：根据规则的 scope 加载项目中的所有变量
-        var res
-        if (this.selectedRule.scope === 'GLOBAL') {
-          res = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
-        } else {
-          var ruleProjectId = this.selectedRule.projectId
-          if (!ruleProjectId) {
-            this.notifyWarning('无法获取规则所属项目，加载变量失败')
-            return
-          }
-          res = await listVariablesByProject(ruleProjectId)
-        }
-
-        // listVariables 返回分页 { records, total }；listVariablesByProject 返回数组
-        var varPayload = this.unwrapResponse(res)
-        var allVars = varPayload && varPayload.records !== undefined ? varPayload.records : (varPayload || [])
-        console.log('[变量加载] 项目变量总数:', allVars.length)
-
-        // 步骤3：通过 varId 精确匹配，过滤出规则需要的变量
-        // 步骤3.5：若 varId 匹配数为 0，改用 varCode 回退匹配（兼容交叉表/复杂交叉表等旧数据）
-        var existingKeys = new Set(this.params.map(function (p) { return p.key }))
-        var loadedCount = 0
-        var idMatchedCount = 0
-        for (var i = 0; i < allVars.length; i++) {
-          var v = allVars[i]
-          // 通过 varId 精确关联（modelJson 中 _varId → 变量表的 id）
-          var info = ruleVarIdMap[v.id]
-          if (!info) continue
-          if (existingKeys.has(v.varCode)) continue
-          var param = {
-            key: v.varCode,
-            label: v.varLabel,
-            value: this.sampleValueForInputField(v, v.varType),
-            type: v.varType,
-            example: v.exampleValue,
-            fromVar: true,
-            options: []
-          }
-          if (v.varType === 'ENUM') {
-            try {
-              var optRes = await getVariableOptions(v.id)
-              param.options = this.unwrapResponse(optRes) || []
-            } catch (e) { /* ignore */ }
-          }
-          this.params.push(param)
-          existingKeys.add(v.varCode)
-          loadedCount++
-          idMatchedCount++
-        }
-        console.log('[变量加载] varId 精确匹配变量数:', idMatchedCount)
-        // varId 匹配为 0 时，通过 varCode 回退匹配（交叉表/复杂交叉表等旧数据）
-        if (idMatchedCount === 0) {
-          console.log('[变量加载] varId 匹配数为 0，尝试通过 varCode 回退匹配')
-          for (var vi = 0; vi < allVars.length; vi++) {
-            var vv = allVars[vi]
-            var vCode = vv.varCode || (vv.scriptName || '')
-            if (!vCode) continue
-            var vInfo = ruleVarIdMap[vCode]
-            if (!vInfo) continue
-            if (existingKeys.has(vCode)) continue
-            var vparam = {
-              key: vCode,
-              label: vv.varLabel || vCode,
-              value: this.sampleValueForInputField(vv, vv.varType),
-              type: vv.varType,
-              example: vv.exampleValue,
-              fromVar: true,
-              options: []
-            }
-            if (vv.varType === 'ENUM') {
-              try {
-                var vOptRes = await getVariableOptions(vv.id)
-                vparam.options = this.unwrapResponse(vOptRes) || []
-              } catch (e) { /* ignore */ }
-            }
-            this.params.push(vparam)
-            existingKeys.add(vCode)
-            loadedCount++
-          }
-          console.log('[变量加载] varCode 回退匹配后总变量数:', loadedCount)
-        }
-        if (loadedCount === 0) {
-          this.notifyInfo('未匹配到规则引用的变量（检查变量 ID 是否一致）')
-        }
+        this.notifyInfo('未获取到结构化输入字段，请先执行引用扫描并迁移为 ID + ref_type 后再测试')
       } catch (e) {
-        console.error('[变量加载] 失败:', e)
         this.notifyError('加载变量失败')
       }
     },
@@ -455,7 +527,7 @@ export default {
       try {
         await refreshFields(this.selectedRuleId)
       } catch (e) {
-        // 旧数据或保存中状态下可能刷新失败，继续尝试读取已有字段/回退解析 modelJson
+        // 保存中状态下可能刷新失败，继续读取服务端已有结构化字段；不按编码回退关联。
       }
       try {
         var res = await listInputFields(this.selectedRuleId)
@@ -467,12 +539,10 @@ export default {
     },
     async applyInputFieldsToParams(fields) {
       var existingKeys = new Set(this.params.map(function (p) { return p.key }))
-      var modelInputKeyMap = await this.buildModelInputFieldKeyMap()
       var loadedCount = 0
       for (var i = 0; i < fields.length; i++) {
         var f = fields[i]
-        var rawKey = f.scriptName || f.fieldName
-        var key = modelInputKeyMap[rawKey] || rawKey
+        var key = f.scriptName || f.fieldName
         if (!key || existingKeys.has(key)) continue
         var fieldType = await this.resolveInputFieldType(f)
         var param = {
@@ -517,55 +587,6 @@ export default {
       } catch (e) { /* ignore */ }
       return fieldType
     },
-    async buildModelInputFieldKeyMap() {
-      var map = {}
-      if (!this.selectedRule || !this.definitionModel) return map
-      var modelTexts = [JSON.stringify(this.definitionModel)]
-      var ruleIds = this.collectRuleCallIds(this.definitionModel)
-      for (var r = 0; r < ruleIds.length; r++) {
-        try {
-          var contentRes = await getContent(ruleIds[r])
-          var content = this.unwrapResponse(contentRes)
-          if (content && content.modelJson) modelTexts.push(content.modelJson)
-        } catch (e) { /* ignore */ }
-      }
-      var modelText = modelTexts.join('\n')
-      var pid = this.selectedRule.projectId || 0
-      try {
-        var res = await listAllModelsByProject(pid)
-        var data = this.unwrapResponse(res)
-        var models = Array.isArray(data) ? data : (data && data.records ? data.records : [])
-        for (var i = 0; i < models.length; i++) {
-          var model = models[i]
-          var modelCode = model && model.modelCode
-          if (!modelCode || modelText.indexOf(modelCode) < 0) continue
-          var detailRes = await getModel(model.id)
-          var detail = this.unwrapResponse(detailRes)
-          var fields = detail && Array.isArray(detail.inputFields) ? detail.inputFields : []
-          fields.forEach(function (field) {
-            if (!field || field.status === 0) return
-            var scriptName = field.scriptName || field.fieldName
-            if (scriptName && !map[scriptName]) {
-              map[scriptName] = modelCode + '_fields.' + scriptName
-            }
-          })
-        }
-      } catch (e) { /* ignore */ }
-      return map
-    },
-    collectRuleCallIds(value, out) {
-      var ids = out || []
-      if (!value || typeof value !== 'object') return ids
-      if (Array.isArray(value)) {
-        value.forEach(item => this.collectRuleCallIds(item, ids))
-        return ids
-      }
-      if (value.type === 'rule-call' && value.ruleId && ids.indexOf(value.ruleId) < 0) {
-        ids.push(value.ruleId)
-      }
-      Object.keys(value).forEach(key => this.collectRuleCallIds(value[key], ids))
-      return ids
-    },
     sampleValueForInputField(field, fieldType) {
       if (field && field.exampleValue !== undefined && field.exampleValue !== null && field.exampleValue !== '') {
         return field.exampleValue
@@ -574,336 +595,6 @@ export default {
         return field.defaultValue
       }
       return sampleValueForVarType(fieldType || (field && (field.fieldType || field.varType)))
-    },
-    async loadAllRuleRefs() {
-      var refs = []
-      var pid = this.selectedRule && this.selectedRule.projectId != null ? this.selectedRule.projectId : 0
-      try {
-        var varRes
-        if (this.selectedRule && this.selectedRule.scope === 'GLOBAL') {
-          varRes = await listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 10000 })
-        } else if (pid) {
-          varRes = await listVariablesByProject(pid)
-        } else {
-          varRes = await listVariables({ pageNum: 1, pageSize: 10000 })
-        }
-        var varData = this.unwrapResponse(varRes)
-        var vars = Array.isArray(varData) ? varData : (varData && varData.records ? varData.records : [])
-        vars.forEach(function (v) {
-          refs.push({
-            code: v.scriptName || v.varCode,
-            label: v.varLabel || v.varCode,
-            type: v.varType,
-            refType: v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
-          })
-        })
-      } catch (e) { /* ignore */ }
-
-      try {
-        var treeRes = await getVariableTree(pid || 0)
-        var treeData = this.unwrapResponse(treeRes)
-        var tree = Array.isArray(treeData) ? treeData : (treeData && treeData.tree ? treeData.tree : [])
-        this.collectDataObjectRefs(tree, refs)
-      } catch (e) { /* ignore */ }
-
-      try {
-        var modelRes = await listAllModelsByProject(pid || 0)
-        var modelData = this.unwrapResponse(modelRes)
-        var models = Array.isArray(modelData) ? modelData : (modelData && modelData.records ? modelData.records : [])
-        models.forEach(function (m) {
-          if (!m.modelCode) return
-          refs.push({ code: m.modelCode, label: m.modelName || m.modelCode, type: 'MODEL', refType: 'MODEL' })
-        })
-      } catch (e) { /* ignore */ }
-      return refs
-    },
-    collectDataObjectRefs(tree, refs) {
-      var visit = function (rows, objScriptName, objectLabel) {
-        (rows || []).forEach(function (row) {
-          var scriptName = row.scriptName || row.varCode || ''
-          var code = scriptName
-          if (objScriptName && code.indexOf(objScriptName + '.') !== 0) {
-            code = objScriptName + '.' + scriptName
-          }
-          refs.push({
-            code: code,
-            label: row.varLabel || row.varCode || code,
-            type: row.varType,
-            refType: 'DATA_OBJECT',
-            objectLabel: objectLabel
-          })
-          if (row.children && row.children.length) visit(row.children, objScriptName, objectLabel)
-        })
-      }
-      var rootNodes = tree || []
-      rootNodes.forEach(function (node) {
-        var obj = node.object || node
-        var objScriptName = obj.scriptName || obj.objectCode || ''
-        var objectLabel = obj.objectLabel || obj.objectCode || objScriptName
-        var rows = node.flatVariables || node.variables || []
-        visit(rows, objScriptName, objectLabel)
-      })
-    },
-    /**
-     * 从规则内容中解析出实际使用的变量信息（通过 varId 精确关联，避免 varCode 模糊匹配）
-     * 回退策略：当 _varId 不存在时，通过 varCode 匹配
-     * 返回 { varId → { varCode, varLabel, varType, defaultValue, exampleValue } }
-     * 注意：varId 可能是字符串类型（如 "1"、"2"），匹配时需做类型兼容
-     */
-    async getRuleVarInfos() {
-      if (!this.selectedRuleId || !this.selectedRule) return {}
-      try {
-        const res = await getContent(this.selectedRuleId)
-        const content = this.unwrapResponse(res)
-        if (!content || !content.modelJson) {
-          console.warn('[变量加载] 规则内容为空或无 modelJson')
-          return {}
-        }
-        const model = JSON.parse(content.modelJson)
-        const modelType = this.selectedRule.modelType
-        console.log('[变量加载] 开始解析规则:', this.selectedRule.ruleCode, '模型类型:', modelType)
-
-        // 用 Map 收集，varId 相同时只保留第一个（兼容同一变量多处引用）
-        // 注意：当无 _varId 时，也会将 varCode 作为 key 存入（用于回退匹配）
-        const varIdMap = {}
-        this.collectVarIds(model, modelType, varIdMap)
-        console.log('[变量加载] 解析到的变量映射 keys:', Object.keys(varIdMap))
-        return varIdMap
-      } catch (e) {
-        console.error('[变量加载] 解析规则变量失败:', e)
-        return {}
-      }
-    },
-    /**
-     * 根据模型类型收集变量 ID / varCode 到 varIdMap
-     * - 有 _varId 时：varIdMap[_varId] = { varCode }
-     * - 无 _varId 但有 varCode 时：varIdMap[varCode] = { varCode }（用于回退匹配）
-     * 仅收集带 _varId 或 varCode 的变量
-     */
-    collectVarIds(model, modelType, varIdMap) {
-      if (!model) return
-      switch (modelType) {
-        case 'TABLE': {
-          (model.rules || []).forEach(rule => {
-            this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
-            this.extractVarIdsFromConditions(rule.conditions, varIdMap)
-          })
-          this.extractVarIdsFromConditions(model.conditions, varIdMap)
-          break
-        }
-        case 'TREE': {
-          this.extractVarIdsFromTreeNodes(model.nodes, model.edges, varIdMap)
-          this.extractVarIdsFromConditionRoot(model.conditionRoot, varIdMap)
-          break
-        }
-        case 'FLOW': {
-          this.extractVarIdsFromFlowNodes(model.nodes, model.edges, varIdMap)
-          this.extractVarIdsFromConditionRoot(model.conditionRoot, varIdMap)
-          break
-        }
-        case 'RULE_SET': {
-          (model.rules || []).forEach(rule => {
-            this.extractVarIdsFromConditionRoot(rule.conditionRoot, varIdMap)
-            this.extractVarIdsFromConditions(rule.conditions, varIdMap)
-            this.extractVarIdsFromActionData(rule.actionData, varIdMap)
-          })
-          break
-        }
-        case 'CROSS': {
-          // 交叉表：行变量、列变量、结果变量
-          // 优先用 _varId（精确匹配），回退用 varCode
-          if (model.rowVar) {
-            if (model.rowVar._varId && model.rowVar.varCode) varIdMap[model.rowVar._varId] = { varCode: model.rowVar.varCode }
-            else if (model.rowVar.varCode) varIdMap[model.rowVar.varCode] = { varCode: model.rowVar.varCode }
-          }
-          if (model.colVar) {
-            if (model.colVar._varId && model.colVar.varCode) varIdMap[model.colVar._varId] = { varCode: model.colVar.varCode }
-            else if (model.colVar.varCode) varIdMap[model.colVar.varCode] = { varCode: model.colVar.varCode }
-          }
-          break
-        }
-        case 'CROSS_ADV': {
-          (model.rowDimensions || []).forEach(dim => {
-            if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
-            else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
-            this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
-          })
-          ;(model.colDimensions || []).forEach(dim => {
-            if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
-            else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
-            this.extractVarIdsFromConditionRoot(dim.conditionRoot, varIdMap)
-          })
-          break
-        }
-        case 'SCORE': {
-          // 评分卡：condVar 对应的 _varId 从评分项中提取
-          (model.scoreItems || []).forEach(item => {
-            this.extractVarIdsFromConditionRoot(item.conditionRoot, varIdMap)
-            // 优先使用 item._varId（由 var-picker 选择时填充）
-            if (item._varId && item.condVar) varIdMap[item._varId] = { varCode: item.condVar }
-            else if (!item._varId && item.condVar) varIdMap[item.condVar] = { varCode: item.condVar }
-          })
-          break
-        }
-        case 'SCORE_ADV': {
-          (model.dimensionGroups || []).forEach(group => {
-            (group.dimensions || []).forEach(dim => {
-              if (dim._varId && dim.varCode) varIdMap[dim._varId] = { varCode: dim.varCode }
-              else if (dim.varCode) varIdMap[dim.varCode] = { varCode: dim.varCode }
-              ;(dim.rules || []).forEach(rule => {
-                if (rule._varId && rule.condVar) varIdMap[rule._varId] = { varCode: rule.condVar }
-                else if (!rule._varId && rule.condVar) varIdMap[rule.condVar] = { varCode: rule.condVar }
-              })
-            })
-          })
-          break
-        }
-        case 'SCRIPT': {
-          (model.inputVars || []).forEach(v => {
-            if (v._varId && v.varCode) varIdMap[v._varId] = { varCode: v.varCode }
-            else if (v.varCode) varIdMap[v.varCode] = { varCode: v.varCode }
-          })
-          break
-        }
-        default: {
-          // 兜底：递归搜索所有 _varId 和 varCode
-          this.extractAllVarIds(model, varIdMap)
-        }
-      }
-      this.extractOperandVarIds(model, varIdMap)
-    },
-    extractOperandVarIds(obj, varIdMap) {
-      if (!obj || typeof obj !== 'object') return
-      if (Array.isArray(obj)) {
-        obj.forEach(item => this.extractOperandVarIds(item, varIdMap))
-        return
-      }
-      if ((obj.kind === 'PATH' || obj.kind === 'REFERENCE') && obj.refId != null) {
-        varIdMap[obj.refId] = { varCode: obj.code || obj.value || '' }
-      }
-      Object.keys(obj).forEach(key => {
-        if (key === 'targetOperand' || key === 'resultVar') return
-        this.extractOperandVarIds(obj[key], varIdMap)
-      })
-    },
-    /**
-     * 兜底：递归搜索所有 _varId
-     */
-    extractAllVarIds(obj, varIdMap) {
-      if (!obj || typeof obj !== 'object') return
-      if (Array.isArray(obj)) {
-        obj.forEach(item => this.extractAllVarIds(item, varIdMap))
-      } else {
-        if (obj._varId && obj.varCode && !varIdMap[obj._varId]) {
-          varIdMap[obj._varId] = { varCode: obj.varCode }
-        }
-        for (const key in obj) {
-          if (key !== '_varId' && key !== 'varCode') {
-            this.extractAllVarIds(obj[key], varIdMap)
-          }
-        }
-      }
-    },
-    /**
-     * 从 conditions 数组提取变量 ID
-     */
-    extractVarIdsFromConditions(conditions, varIdMap) {
-      if (!conditions) return
-      conditions.forEach(c => {
-        if (c._varId && c.varCode && !varIdMap[c._varId]) {
-          varIdMap[c._varId] = { varCode: c.varCode }
-        }
-      })
-    },
-    /**
-     * 从 conditionRoot 递归提取变量 ID
-     */
-    extractVarIdsFromConditionRoot(root, varIdMap) {
-      if (!root) return
-      if (root._varId && root.varCode && !varIdMap[root._varId]) {
-        varIdMap[root._varId] = { varCode: root.varCode }
-      }
-      if (root.children) {
-        root.children.forEach(child => this.extractVarIdsFromConditionRoot(child, varIdMap))
-      }
-    },
-    /**
-     * 从决策树 nodes + edges 递归提取变量 ID
-     */
-    extractVarIdsFromTreeNodes(nodes, edges, varIdMap) {
-      if (!nodes) return
-      nodes.forEach(node => {
-        if (node._varId && node.varCode && !varIdMap[node._varId]) {
-          varIdMap[node._varId] = { varCode: node.varCode }
-        }
-        if (node.actionData) {
-          this.extractVarIdsFromActionData(node.actionData, varIdMap)
-        }
-        if (node.children) {
-          this.extractVarIdsFromTreeNodes(node.children, null, varIdMap)
-        }
-      })
-    },
-    /**
-     * 从决策流 nodes + edges 递归提取变量 ID
-     */
-    extractVarIdsFromFlowNodes(nodes, edges, varIdMap) {
-      if (!nodes) return
-      nodes.forEach(node => {
-        if (node._varId && node.varCode && !varIdMap[node._varId]) {
-          varIdMap[node._varId] = { varCode: node.varCode }
-        }
-        if (node.properties && node.properties.inputVars) {
-          node.properties.inputVars.forEach(v => {
-            if (v._varId && v.varCode && !varIdMap[v._varId]) {
-              varIdMap[v._varId] = { varCode: v.varCode }
-            }
-          })
-        }
-        if (node.actionData) {
-          this.extractVarIdsFromActionData(node.actionData, varIdMap)
-        }
-        if (node.properties && node.properties.actionData) {
-          this.extractVarIdsFromActionData(node.properties.actionData, varIdMap)
-        }
-        if (node.children) {
-          this.extractVarIdsFromFlowNodes(node.children, null, varIdMap)
-        }
-      })
-    },
-    /**
-     * 从 actionData 数组提取变量 ID
-     */
-    extractVarIdsFromActionData(actionData, varIdMap) {
-      if (!actionData || !Array.isArray(actionData)) return
-      actionData.forEach(a => {
-        const addFieldRef = (idKey, codeKey) => {
-          if (a[idKey] && a[codeKey]) {
-            varIdMap[a[idKey]] = { varCode: a[codeKey] }
-          }
-        }
-        if (a._varId && a.varCode && !varIdMap[a._varId]) {
-          varIdMap[a._varId] = { varCode: a.varCode }
-        }
-        addFieldRef('_condVarId', 'condVar')
-        addFieldRef('_matchVarId', 'matchVar')
-        addFieldRef('_checkVarId', 'checkVar')
-        if (a.type === 'if-block' && a.branches) {
-          a.branches.forEach(branch => {
-            if (branch._condVarId && branch.condVar) {
-              varIdMap[branch._condVarId] = { varCode: branch.condVar }
-            } else if (branch._varId && branch.condVar && !varIdMap[branch._varId]) {
-              varIdMap[branch._varId] = { varCode: branch.condVar }
-            }
-            this.extractVarIdsFromActionData(branch.actions, varIdMap)
-          })
-        }
-        if (a.cases) {
-          a.cases.forEach(item => this.extractVarIdsFromActionData(item.actions, varIdMap))
-        }
-        this.extractVarIdsFromActionData(a.actions, varIdMap)
-        this.extractVarIdsFromActionData(a.defaultActions, varIdMap)
-      })
     },
     addParam() {
       this.params.push({ key: '', label: '', value: '', type: 'STRING', example: '', fromVar: false, options: [] })
@@ -954,10 +645,12 @@ export default {
       this.result = null
       try {
         const res = await executeRule({ definitionId: this.selectedRuleId, params: paramMap }, this.requestTimeoutMs)
+        this.lastRawResponse = res
         this.result = normalizeTestResult(res)
         // 执行完成后切换到追踪树标签页
         this.traceTab = 'tree'
       } catch (e) {
+        this.lastRawResponse = null
         this.result = { success: false, errorMessage: e.message || '执行异常', executeTimeMs: 0 }
       } finally {
         this.executing = false
@@ -966,6 +659,7 @@ export default {
     handleClear() {
       this.params = []
       this.result = null
+      this.lastRawResponse = null
     },
     handleClearParams() {
       this.params = []
@@ -982,6 +676,9 @@ export default {
     },
     notifyError(message) {
       if (this.$message && this.$message.error) this.$message.error(message)
+    },
+    notifySuccess(message) {
+      if (this.$message && this.$message.success) this.$message.success(message)
     },
     buildParamMap() {
       const paramMap = {}
@@ -1042,6 +739,54 @@ export default {
 .test-left {
   flex: 0 0 480px;
   min-width: 380px;
+}
+.fixed-cases-card {
+  margin-top: 12px;
+}
+.fixed-cases-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.case-state {
+  padding: 12px 0;
+  color: #909399;
+  text-align: center;
+}
+.case-state-error {
+  color: #f56c6c;
+}
+.fixed-case-list {
+  max-height: 168px;
+  overflow: auto;
+}
+.fixed-case-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid #f2f3f5;
+}
+.batch-result-table {
+  margin-top: 12px;
+}
+.diff-pass {
+  color: #67c23a;
+}
+.diff-lines {
+  max-height: 96px;
+  overflow: auto;
+  color: #f56c6c;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.trace-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #606266;
+  font-size: 12px;
 }
 .test-right {
   flex: 1;

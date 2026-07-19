@@ -256,7 +256,24 @@ export function resolvePathOperand(operand, options = []) {
     ? { ...operand }
     : createPathOperand(operand && operand.value)
   const value = source.value
-  const candidates = (options || []).filter(option => optionPaths(option).includes(value))
+  const exactCandidates = (options || []).filter(option => optionPaths(option).includes(value))
+  let candidates = exactCandidates
+  let anchorPath = value
+  if (!candidates.length) {
+    const parentMatches = []
+    ;(options || []).forEach(option => {
+      optionPaths(option).forEach(path => {
+        if (value.indexOf(path + '.') === 0 || value.indexOf(path + '[') === 0) {
+          parentMatches.push({ option, path })
+        }
+      })
+    })
+    const longest = parentMatches.reduce((length, item) => Math.max(length, item.path.length), 0)
+    const longestMatches = parentMatches.filter(item => item.path.length === longest)
+    candidates = longestMatches.map(item => item.option)
+      .filter((option, index, list) => list.indexOf(option) === index)
+    if (longestMatches.length) anchorPath = longestMatches[0].path
+  }
 
   if (candidates.length !== 1) {
     return {
@@ -278,11 +295,13 @@ export function resolvePathOperand(operand, options = []) {
     operand: {
       ...source,
       value,
-      code: match.code || value,
+      code: value,
       label: match.label || value,
       valueType: match.valueType,
       refId: match.refId,
       refType: match.refType,
+      anchorPath,
+      relativePath: value.substring(anchorPath.length),
       resolved: match.resolved
     },
     candidates: []
@@ -386,7 +405,17 @@ export function syncOperandReference(operand, options = []) {
 
   const current = createReferenceOperand(match)
   const next = operand.kind === OPERAND_KINDS.PATH
-    ? { ...operand, code: current.code, label: current.label, valueType: current.valueType, refId: current.refId, refType: current.refType, resolved: current.resolved }
+    ? {
+      ...operand,
+      code: current.code + (operand.relativePath || ''),
+      value: current.code + (operand.relativePath || ''),
+      anchorPath: current.code,
+      label: current.label,
+      valueType: current.valueType,
+      refId: current.refId,
+      refType: current.refType,
+      resolved: current.resolved
+    }
     : current
   return { operand: next, changed: JSON.stringify(next) !== JSON.stringify(operand) }
 }

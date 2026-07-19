@@ -223,6 +223,8 @@ jest.mock('@/api/datasource', () => ({
 }))
 jest.mock('@/api/runtimeLog', () => ({
   listRuntimeLogs: jest.fn(),
+  getExternalApiStats: jest.fn(),
+  getRuleSetStats: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/lineage', () => ({
@@ -295,6 +297,19 @@ jest.mock('@/components/common/TraceTree.vue', () => ({ name: 'TraceTree', templ
 jest.mock('@/components/flow/ActionBlockEditor.vue', () => ({ name: 'ActionBlockEditor', template: '<div />' }))
 jest.mock('@/components/common/VarPicker.vue', () => ({ name: 'VarPicker', template: '<div />', props: ['vars', 'value'] }))
 jest.mock('@/components/common/ScriptPanel.vue', () => ({ name: 'ScriptPanel', template: '<div />' }))
+
+// 注册测试环境实际使用的指令，createLocalVue() 会继承这些全局指令。
+// stub 覆盖完整生命周期，避免组件更新或销毁时产生额外 warning。
+const VueModule = require('vue')
+const VueConstructor = VueModule.default || VueModule
+const loadingDirectiveStub = {
+  bind: jest.fn(),
+  inserted: jest.fn(),
+  update: jest.fn(),
+  componentUpdated: jest.fn(),
+  unbind: jest.fn()
+}
+VueConstructor.directive('loading', loadingDirectiveStub)
 
 // 抑制日常 log，error/warn 保留以便调试
 global.console = {

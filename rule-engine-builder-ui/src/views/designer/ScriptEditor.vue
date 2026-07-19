@@ -567,13 +567,14 @@ export default {
         forceMoveMarkers: true
       }])
       // 同步记录引用的 varId（以最后一次插入同名变量时的 _varId 为准）
-      if (v._varId != null) {
+      const selectedRefType = v._refType || v.refType || null
+      if (v._varId != null && selectedRefType) {
         const existing = this.scriptVarRefs.find(r => r.refCode === code)
         if (existing) {
           existing.varId = v._varId
-          existing.refType = v._refType || v.refType || null
+          existing.refType = selectedRefType
         } else {
-          this.scriptVarRefs.push({ refCode: code, varId: v._varId, refType: v._refType || v.refType || null })
+          this.scriptVarRefs.push({ refCode: code, varId: v._varId, refType: selectedRefType })
         }
       }
       this.$nextTick(() => editor.focus())
@@ -582,27 +583,17 @@ export default {
       this.monacoEditor = editor
     },
     /**
-     * 从脚本内容中提取实际引用的变量，同步更新 scriptVarRefs。
-     * 遍历 projectRefs 中所有 refCode，检查是否在脚本中出现，
-     * 出现则说明被引用，保留对应的 varId。
+     * 仅清理通过选择器显式记录、但已不再出现在脚本中的引用。
+     * 禁止扫描资源目录后通过 refCode 反向推断 ID。
      */
     syncScriptVarRefsFromScript() {
       if (!this.script) return
       const script = this.script
-      const matched = []
-      // 遍历所有已知引用，检查脚本中是否出现
-      ;(this.projectRefs || []).forEach(ref => {
+      const matched = (this.scriptVarRefs || []).filter(ref => {
+        if (ref.varId == null || !ref.refType || !ref.refCode) return false
         // 使用 word boundary 匹配，防止 "amount" 匹配到 "billingAmount"
         const regex = new RegExp('\\b' + this.escapeRegex(ref.refCode) + '\\b')
-        if (regex.test(script)) {
-          // 尝试从旧映射中获取 varId
-          const old = this.scriptVarRefs.find(r => r.refCode === ref.refCode)
-          matched.push({
-            refCode: ref.refCode,
-            varId: old && old.varId ? old.varId : (ref.varObj && ref.varObj.id ? ref.varObj.id : null),
-            refType: old && old.refType ? old.refType : ref.refType
-          })
-        }
+        return regex.test(script)
       })
       this.scriptVarRefs = matched
     },

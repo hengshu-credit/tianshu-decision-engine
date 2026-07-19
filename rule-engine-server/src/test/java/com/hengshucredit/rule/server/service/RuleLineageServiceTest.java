@@ -1,8 +1,10 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
@@ -22,6 +24,7 @@ import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
@@ -31,6 +34,7 @@ import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class RuleLineageServiceTest {
@@ -88,6 +92,39 @@ public class RuleLineageServiceTest {
     @Test(expected = IllegalArgumentException.class)
     public void rejectsUnknownDirection() {
         serviceWithProjectBranch(false).graph("VARIABLE", 1L, "SIDEWAYS", 2);
+    }
+
+    @Test
+    public void modelQueriesExcludeFileContentAndKeepOtherMetadata() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        List<String> selections = new ArrayList<>();
+        RuleModelMapper mapper = RuleModelMapper.class.cast(Proxy.newProxyInstance(
+                RuleModelMapper.class.getClassLoader(),
+                new Class<?>[]{RuleModelMapper.class},
+                (proxy, method, args) -> {
+                    if ("selectList".equals(method.getName())) {
+                        @SuppressWarnings("unchecked")
+                        LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[0];
+                        selections.add(wrapper.getSqlSelect());
+                        return Collections.emptyList();
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
+        ReflectionTestUtils.setField(service, "modelMapper", mapper);
+
+        service.options("MODEL", "", null);
+        service.graph("VARIABLE", 1L, "ALL", 2);
+
+        assertEquals(2, selections.size());
+        for (String selection : selections) {
+            assertNotNull("前端可见的模型查询必须显式声明返回字段", selection);
+            String normalized = selection.toLowerCase();
+            assertTrue(normalized.contains("model_code"));
+            assertTrue(normalized.contains("model_config"));
+            assertTrue(normalized.contains("model_file_name"));
+            assertTrue(normalized.contains("model_file_size"));
+            assertFalse(normalized.contains("model_content"));
+        }
     }
 
     private static RuleLineageService serviceWithProjectBranch(boolean cycle) {

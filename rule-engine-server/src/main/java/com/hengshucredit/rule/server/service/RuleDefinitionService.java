@@ -52,6 +52,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     private RuleFieldAnalyzer fieldAnalyzer;
 
     @Resource
+    private RuleReferenceIntegrityService referenceIntegrityService;
+
+    @Resource
     private RuleDefinitionVersionMapper versionMapper;
 
     @Resource
@@ -197,6 +200,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     public void saveContent(Long definitionId, String modelJson) {
         RuleDefinition definition = getById(definitionId);
         if (definition != null) {
+            if (referenceIntegrityService != null) {
+                referenceIntegrityService.assertValid(definitionId, definition.getProjectId(), modelJson);
+            }
             String cycleError = ruleCallCycleService.validateNoCycle(definitionId, modelJson);
             if (cycleError != null) {
                 throw new IllegalArgumentException(cycleError);

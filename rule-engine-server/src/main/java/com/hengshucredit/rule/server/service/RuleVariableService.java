@@ -218,89 +218,6 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     }
 
     /**
-     * 构建 VarContext 所需的映射表（varId → scriptName）。
-     * 包含全局变量和指定项目的变量，返回的 map 可直接传入 {@link com.hengshucredit.rule.core.compiler.VarContext}。
-     *
-     * scriptName 规则：
-     * - 若 scriptName 非空，使用 scriptName（后端统一驼峰）
-     * - 若 scriptName 为空，回退到 varCode
-     *
-     * @param projectId 项目 ID（传 null 或 0 时仅查全局）
-     * @return varId → scriptName 映射（永不为 null）
-     */
-    public Map<Long, String> buildVarIdScriptNameMap(Long projectId) {
-        List<RuleVariable> vars;
-        if (projectId != null && projectId > 0) {
-            vars = listByProject(projectId, null);
-        } else {
-            vars = listGlobalOnly();
-        }
-        Map<Long, String> map = new HashMap<>();
-        for (RuleVariable v : vars) {
-            String scriptName = v.getScriptName();
-            if (scriptName != null && !scriptName.trim().isEmpty()) {
-                map.put(v.getId(), scriptName.trim());
-            } else {
-                // scriptName 为空时回退到 varCode（兼容旧数据）
-                map.put(v.getId(), v.getVarCode());
-            }
-        }
-        return map;
-    }
-
-    /**
-     * 构建 varCode → scriptName 映射。
-     * 用于编译器在 varId 缺失时，通过 varCode 回溯找到正确的 scriptName。
-     * 包含全局变量和指定项目的变量。严格区分大小写。
-     *
-     * 匹配规则：
-     * - 优先使用 scriptName 作为 key（对应前端的 refCode）
-     * - 若 scriptName 为空，使用 varCode 作为 key
-     *
-     * @param projectId 项目 ID（传 null 或 0 时仅查全局）
-     * @return varCode → scriptName 映射（永不为 null）
-     */
-    public Map<String, String> buildVarCodeScriptNameMap(Long projectId) {
-        List<RuleVariable> vars;
-        if (projectId != null && projectId > 0) {
-            vars = listByProject(projectId, null);
-        } else {
-            vars = listGlobalOnly();
-        }
-        Map<String, String> map = new HashMap<>();
-        for (RuleVariable v : vars) {
-            String scriptName = v.getScriptName();
-            if (scriptName != null && !scriptName.trim().isEmpty()) {
-                // 优先用 scriptName 作为 key，对应前端的 refCode
-                map.put(scriptName.trim(), scriptName.trim());
-            }
-            // 同时用 varCode 作为 key（兼容旧数据）
-            if (v.getVarCode() != null && !v.getVarCode().isEmpty()) {
-                String varCodeKey = v.getVarCode();
-                // 若 scriptName 已存在则不覆盖（scriptName 优先）
-                if (!map.containsKey(varCodeKey)) {
-                    map.put(varCodeKey, scriptName != null && !scriptName.trim().isEmpty()
-                            ? scriptName.trim() : v.getVarCode());
-                }
-            }
-        }
-        Map<Long, RuleDataObject> objectMap = buildObjectMap(projectId);
-        for (RuleDataObjectField f : listObjectFields(projectId)) {
-            String scriptName = buildObjectFieldScriptName(f, objectMap);
-            addCodeMapping(map, f.getScriptName(), scriptName);
-            addCodeMapping(map, f.getVarCode(), scriptName);
-        }
-        for (RuleModel m : listModels(projectId)) {
-            String scriptName = trimToNull(m.getModelCode());
-            if (scriptName == null) {
-                continue;
-            }
-            addCodeMapping(map, m.getModelCode(), scriptName);
-        }
-        return map;
-    }
-
-    /**
      * 构建 refType:id → scriptName 映射。
      * 用于编译时按字段 ID + 字段类型精确反查，避免不同资源表 ID 冲突。
      */
@@ -454,14 +371,6 @@ public class RuleVariableService extends ServiceImpl<RuleVariableMapper, RuleVar
     private String resolveVariableScriptName(RuleVariable v) {
         String scriptName = trimToNull(v.getScriptName());
         return scriptName != null ? scriptName : trimToNull(v.getVarCode());
-    }
-
-    private void addCodeMapping(Map<String, String> map, String key, String scriptName) {
-        String k = trimToNull(key);
-        String v = trimToNull(scriptName);
-        if (k != null && v != null && !map.containsKey(k)) {
-            map.put(k, v);
-        }
     }
 
     private String refKey(String refType, Long id) {

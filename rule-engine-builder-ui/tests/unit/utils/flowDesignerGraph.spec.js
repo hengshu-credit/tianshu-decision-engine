@@ -1,0 +1,188 @@
+import {
+  FLOW_MENU_OPTIONS,
+  FLOW_THEME_COLOR,
+  addConnectedNode,
+  calculateGroupBounds,
+  createFlowNodeData,
+  findAvailableNodePosition,
+  getBusinessGraphData,
+  getPersistableGraphData,
+  createDynamicGroup,
+  resolveAnchorDirection
+} from '@/components/flow/flowDesignerGraph'
+
+describe('flowDesignerGraph', () => {
+  test('四向锚点按相对节点中心识别方向', () => {
+    const node = { x: 200, y: 160 }
+
+    expect(resolveAnchorDirection({ x: 200, y: 100 }, node)).toBe('top')
+    expect(resolveAnchorDirection({ x: 280, y: 160 }, node)).toBe('right')
+    expect(resolveAnchorDirection({ x: 200, y: 220 }, node)).toBe('bottom')
+    expect(resolveAnchorDirection({ x: 120, y: 160 }, node)).toBe('left')
+  })
+
+  test('新增节点位置沿锚点方向推进并避开已有节点', () => {
+    const source = { id: 'source', x: 100, y: 100 }
+    const nodes = [source, { id: 'occupied', x: 280, y: 100 }]
+
+    expect(findAvailableNodePosition(nodes, source, 'right')).toEqual({ x: 460, y: 100 })
+    expect(findAvailableNodePosition(nodes, source, 'bottom')).toEqual({ x: 100, y: 280 })
+  })
+
+  test('快捷新增节点复用设计器节点默认业务属性', () => {
+    const node = createFlowNodeData('end-event', { x: 320, y: 260, terminationScope: 'ALL_RULES' })
+
+    expect(node).toMatchObject({
+      type: 'end-event',
+      x: 320,
+      y: 260,
+      properties: {
+        nodeName: '跳出整体规则',
+        terminationScope: 'ALL_RULES',
+        actionData: []
+      }
+    })
+    expect(node.properties.nodeCode).toMatch(/^END_EVENT_/)
+  })
+
+  test('新增下一个节点后使用相对锚点自动连线并选中新节点', () => {
+    const sourceNode = {
+      id: 'source',
+      x: 100,
+      y: 100,
+      isAllowConnectedAsSource: jest.fn(() => ({ isAllPass: true, msg: '' }))
+    }
+    const targetNode = {
+      id: 'target',
+      anchors: [
+        { id: 'target_top', x: 280, y: 80 },
+        { id: 'target_right', x: 360, y: 100 },
+        { id: 'target_bottom', x: 280, y: 120 },
+        { id: 'target_left', x: 200, y: 100 }
+      ],
+      isAllowConnectedAsTarget: jest.fn(() => ({ isAllPass: true, msg: '' }))
+    }
+    const lf = {
+      getGraphData: jest.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }], edges: [] })),
+      addNode: jest.fn(() => targetNode),
+      addEdge: jest.fn(() => ({ id: 'edge-1' })),
+      deleteNode: jest.fn(),
+      selectElementById: jest.fn()
+    }
+
+    const result = addConnectedNode(lf, {
+      sourceNode,
+      sourceAnchor: { id: 'source_right', x: 180, y: 100 },
+      type: 'script-task',
+      direction: 'right'
+    })
+
+    expect(lf.addNode).toHaveBeenCalledWith(expect.objectContaining({ type: 'script-task', x: 280, y: 100 }))
+    expect(lf.addEdge).toHaveBeenCalledWith(expect.objectContaining({
+      sourceNodeId: 'source',
+      targetNodeId: 'target',
+      sourceAnchorId: 'source_right',
+      targetAnchorId: 'target_left'
+    }))
+    expect(lf.selectElementById).toHaveBeenCalledWith('target')
+    expect(result).toEqual({ node: targetNode, edge: { id: 'edge-1' } })
+  })
+
+  test('自动连线规则拒绝时回滚已新增节点', () => {
+    const sourceNode = {
+      id: 'source',
+      x: 100,
+      y: 100,
+      isAllowConnectedAsSource: jest.fn(() => ({ isAllPass: false, msg: '禁止连接' }))
+    }
+    const targetNode = {
+      id: 'target',
+      anchors: [{ id: 'target_left', x: 200, y: 100 }],
+      isAllowConnectedAsTarget: jest.fn(() => ({ isAllPass: true, msg: '' }))
+    }
+    const lf = {
+      getGraphData: jest.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }] })),
+      addNode: jest.fn(() => targetNode),
+      addEdge: jest.fn(),
+      deleteNode: jest.fn()
+    }
+
+    expect(() => addConnectedNode(lf, {
+      sourceNode,
+      sourceAnchor: { id: 'source_right', x: 180, y: 100 },
+      type: 'script-task',
+      direction: 'right'
+    })).toThrow('禁止连接')
+    expect(lf.deleteNode).toHaveBeenCalledWith('target')
+    expect(lf.addEdge).not.toHaveBeenCalled()
+  })
+
+  test('分组边界包含所有成员并预留内边距', () => {
+    const models = [
+      { getBounds: () => ({ minX: 20, maxX: 180, minY: 60, maxY: 140 }) },
+      { getBounds: () => ({ minX: 190, maxX: 350, minY: 150, maxY: 210 }) }
+    ]
+
+    expect(calculateGroupBounds(models, 25)).toEqual({ x: 185, y: 135, width: 380, height: 200 })
+  })
+
+  test('将至少两个选中业务节点创建为可折叠动态分组', () => {
+    const models = {
+      a: { id: 'a', isGroup: false, getBounds: () => ({ minX: 20, maxX: 180, minY: 60, maxY: 140 }) },
+      b: { id: 'b', isGroup: false, getBounds: () => ({ minX: 190, maxX: 350, minY: 150, maxY: 210 }) }
+    }
+    const group = { id: 'group-1' }
+    const lf = {
+      extension: { dynamicGroup: { nodeGroupMap: new Map() } },
+      getSelectElements: jest.fn(() => ({ nodes: [{ id: 'a' }, { id: 'b' }] })),
+      getNodeModelById: jest.fn(id => models[id]),
+      addNode: jest.fn(() => group),
+      clearSelectElements: jest.fn(),
+      selectElementById: jest.fn()
+    }
+
+    expect(createDynamicGroup(lf)).toBe(group)
+    expect(lf.addNode).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'dynamic-group',
+      properties: expect.objectContaining({ children: ['a', 'b'], collapsible: true, autoResize: true })
+    }))
+    expect(lf.clearSelectElements).toHaveBeenCalled()
+    expect(lf.selectElementById).toHaveBeenCalledWith('group-1')
+  })
+
+  test('画布持久化保留分组但过滤折叠虚拟边，业务图过滤分组', () => {
+    const graph = {
+      nodes: [
+        { id: 'group', type: 'dynamic-group', properties: { children: ['a', 'b'] } },
+        { id: 'a', type: 'start-event' },
+        { id: 'b', type: 'script-task' }
+      ],
+      edges: [
+        { id: 'real', sourceNodeId: 'a', targetNodeId: 'b' },
+        { id: 'virtual', sourceNodeId: 'group', targetNodeId: 'b' }
+      ]
+    }
+    const lf = {
+      getGraphData: () => graph,
+      graphModel: { edges: [{ id: 'real', virtual: false }, { id: 'virtual', virtual: true }] }
+    }
+
+    const canvasGraph = getPersistableGraphData(lf)
+    expect(canvasGraph.nodes.map(node => node.id)).toEqual(['group', 'a', 'b'])
+    expect(canvasGraph.edges.map(edge => edge.id)).toEqual(['real'])
+    expect(getBusinessGraphData(canvasGraph)).toEqual({
+      nodes: [graph.nodes[1], graph.nodes[2]],
+      edges: [graph.edges[0]]
+    })
+  })
+
+  test('快捷菜单不提供开始节点且决策树不提供聚合节点', () => {
+    expect(FLOW_THEME_COLOR).toBe('#2639E9')
+    expect(FLOW_MENU_OPTIONS.flow.map(item => item.type)).toEqual([
+      'exclusive-gateway', 'script-task', 'join-gateway', 'end-event'
+    ])
+    expect(FLOW_MENU_OPTIONS.tree.map(item => item.type)).toEqual([
+      'exclusive-gateway', 'script-task', 'end-event'
+    ])
+  })
+})

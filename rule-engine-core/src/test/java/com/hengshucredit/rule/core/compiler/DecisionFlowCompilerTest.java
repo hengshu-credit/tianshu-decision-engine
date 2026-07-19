@@ -107,7 +107,10 @@ public class DecisionFlowCompilerTest {
         Map<Long, String> vars = new HashMap<>();
         vars.put(1L, "applicant.age");
         vars.put(2L, "policy.maxAge");
-        VarContext varContext = new VarContext(vars);
+        Map<String, String> refs = new HashMap<>();
+        refs.put("VARIABLE:1", "applicant.age");
+        refs.put("VARIABLE:2", "policy.maxAge");
+        VarContext varContext = new VarContext(vars, new HashMap<String, String>(), refs);
 
         CompileResult result = compiler.compile("{"
                 + "\"nodes\":["
@@ -121,9 +124,9 @@ public class DecisionFlowCompilerTest {
                 + "{\"source\":\"start\",\"target\":\"decision\"},"
                 + "{\"source\":\"decision\",\"target\":\"hit\",\"conditionConfig\":{"
                 + "\"type\":\"group\",\"op\":\"AND\",\"children\":["
-                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"operator\":\">=\",\"valueKind\":\"CONST\",\"value\":18,\"varType\":\"NUMBER\"},"
+                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"_refType\":\"VARIABLE\",\"operator\":\">=\",\"valueKind\":\"CONST\",\"value\":18,\"varType\":\"NUMBER\"},"
                 + "{\"type\":\"group\",\"op\":\"OR\",\"children\":["
-                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"operator\":\"<=\",\"valueKind\":\"VAR\",\"value\":\"maxAge\",\"_rightVarId\":2},"
+                + "{\"type\":\"leaf\",\"varCode\":\"age\",\"_varId\":1,\"_refType\":\"VARIABLE\",\"operator\":\"<=\",\"valueKind\":\"VAR\",\"value\":\"maxAge\",\"_rightVarId\":2,\"_rightRefType\":\"VARIABLE\"},"
                 + "{\"type\":\"leaf\",\"varCode\":\"status\",\"operator\":\"==\",\"valueKind\":\"CONST\",\"value\":\"ACTIVE\",\"varType\":\"STRING\"}"
                 + "]}"
                 + "]}},"

@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
@@ -27,6 +28,8 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -276,12 +279,24 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
-    public void responseCacheKeyUsesApiIdAndParams() {
+    public void responseCacheKeyUsesConfiguredComponentsInOrderAndMasksSensitiveValues() {
         Map<String, Object> params = new LinkedHashMap<>();
-        params.put("request_id", "r1");
+        params.put("name", "张三");
+        params.put("idCard", "110101199001010010");
+        params.put("mobile", "13800138000");
+        String config = "{\"components\":[{\"path\":\"name\"},{\"path\":\"idCard\"},{\"path\":\"mobile\"}]}";
 
-        assertEquals("7:{\"request_id\":\"r1\"}",
-                new ExternalApiInvokeService().buildResponseCacheKey(7L, params));
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        String key = service.buildResponseCacheKey(7L, config, params);
+        Map<String, Object> changed = new LinkedHashMap<>(params);
+        changed.put("mobile", "13900139000");
+
+        assertTrue(key.startsWith("7:"));
+        assertFalse(key.contains("张三"));
+        assertFalse(key.contains("110101199001010010"));
+        assertNotEquals(key, service.buildResponseCacheKey(7L, config, changed));
+        assertNull(service.buildResponseCacheKey(7L, config,
+                Collections.singletonMap("name", "张三")));
     }
 
     @Test
@@ -331,6 +346,31 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void responseConditionTreeSupportsNestedMultiSelectAndStringOperators() {
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("code", "2001");
+        body.put("message", "SUCCESS-001");
+        Map<String, Object> response = new LinkedHashMap<>();
+        response.put("httpStatus", 200);
+        response.put("body", body);
+        String condition = "{\"type\":\"group\",\"operator\":\"AND\",\"children\":["
+                + "{\"path\":\"httpStatus\",\"operator\":\"starts_with\",\"value\":\"2\"},"
+                + "{\"type\":\"group\",\"operator\":\"OR\",\"children\":["
+                + "{\"path\":\"body.code\",\"operator\":\"in\",\"values\":[\"2000\",\"2001\"]},"
+                + "{\"path\":\"body.message\",\"operator\":\"regex\",\"value\":\"^OK-.*\"}]}]}";
+
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+
+        assertTrue(service.matchesResponseCondition(condition, response));
+        assertFalse(service.matchesResponseCondition(
+                "{\"path\":\"body.code\",\"operator\":\"not_in\",\"values\":[\"2001\",\"2002\"]}",
+                response));
+        assertTrue(service.matchesResponseCondition(
+                "{\"path\":\"body.message\",\"operator\":\"regex\",\"value\":\"^SUCCESS-\\\\d+$\"}",
+                response));
+    }
+
+    @Test
     public void tianshuDatasourceUsesLocalRuleEnginePathEvenWhenLegacyProtocolIsHttps() {
         RuleExternalDatasource datasource = new RuleExternalDatasource();
         datasource.setProtocol("HTTPS");
@@ -365,6 +405,7 @@ public class ExternalApiInvokeServiceTest {
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
             config.setResponseCacheSeconds(60);
+            config.setCacheKeyConfig("{\"components\":[{\"path\":\"request_id\"}]}");
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
             config.setRetryIntervalMs(0);
@@ -389,6 +430,53 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(88, ((Map<?, ?>) second.get("body")).get("data") instanceof Map
                     ? ((Map<?, ?>) ((Map<?, ?>) second.get("body")).get("data")).get("score")
                     : null);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void incompleteConfiguredCacheKeyBypassesCacheAndIsLogged() throws Exception {
+        AtomicInteger callCount = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            callCount.incrementAndGet();
+            byte[] response = "{\"code\":\"2000\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(8L);
+            datasource.setProjectId(3L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(101L, 8L, "/score");
+            config.setApiCode("credit_score");
+            config.setApiName("信用评分");
+            config.setResponseCacheSeconds(60);
+            config.setCacheKeyConfig("{\"components\":[{\"path\":\"name\"},{\"path\":\"idCard\"}]}");
+            config.setSuccessCondition("{\"path\":\"body.code\",\"operator\":\"starts_with\",\"value\":\"2\"}");
+            config.setBillingCondition("{\"path\":\"body.code\",\"operator\":\"in\",\"values\":[\"2000\",\"2001\"]}");
+            RecordingRuntimeCallLogService logs = new RecordingRuntimeCallLogService();
+            ExternalApiInvokeService service = configuredService(config, datasource);
+            ReflectionTestUtils.setField(service, "runtimeCallLogService", logs);
+            Map<String, Object> params = Collections.singletonMap("name", "张三");
+
+            service.invoke(101L, params);
+            service.invoke(101L, params);
+
+            assertEquals(2, callCount.get());
+            assertEquals(2, logs.logs.size());
+            RuleRuntimeCallLog log = logs.logs.get(0);
+            assertEquals("CACHE_KEY_INCOMPLETE", log.getCacheStatus());
+            assertNull(log.getCacheKey());
+            assertEquals(Integer.valueOf(1), log.getProviderRequest());
+            assertEquals(Integer.valueOf(1), log.getRequestSuccess());
+            assertEquals(Integer.valueOf(1), log.getFound());
         } finally {
             server.stop(0);
         }
@@ -1182,6 +1270,15 @@ public class ExternalApiInvokeServiceTest {
         public void recordApiExecution(RuleExternalApiConfig apiConfig, RuleExternalDatasource datasource,
                                        boolean success, Long costTimeMs, String errorMessage) {
             recordCount.incrementAndGet();
+        }
+    }
+
+    private static class RecordingRuntimeCallLogService extends RuleRuntimeCallLogService {
+        private final java.util.List<RuleRuntimeCallLog> logs = new ArrayList<>();
+
+        @Override
+        public void safeSave(RuleRuntimeCallLog log) {
+            logs.add(log);
         }
     }
 }

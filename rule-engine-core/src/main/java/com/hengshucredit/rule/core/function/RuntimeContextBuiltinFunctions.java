@@ -3,6 +3,7 @@ package com.hengshucredit.rule.core.function;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** QLExpress 请求级运行时上下文函数。 */
@@ -27,5 +28,30 @@ public class RuntimeContextBuiltinFunctions {
 
     public List<String> currentMatchedConditions() {
         return RuntimeContextBridge.currentMatchedConditions();
+    }
+
+    public Object recordRuleSetItem(String ruleCode, String ruleName, Object hit) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", "RULE_SET_ITEM");
+        event.put("ruleCode", ruleCode);
+        event.put("ruleName", ruleName);
+        event.put("evaluated", true);
+        event.put("hit", booleanValue(hit));
+        RuntimeContextBridge.addTraceEvent(event);
+        return hit;
+    }
+
+    public Object recordRuleSetSummary(Object hit) {
+        Map<String, Object> event = new LinkedHashMap<>();
+        event.put("type", "RULE_SET_SUMMARY");
+        event.put("evaluated", true);
+        event.put("hit", booleanValue(hit));
+        RuntimeContextBridge.addTraceEvent(event);
+        return hit;
+    }
+
+    private boolean booleanValue(Object value) {
+        return value instanceof Boolean ? (Boolean) value
+                : value != null && "true".equalsIgnoreCase(String.valueOf(value));
     }
 }

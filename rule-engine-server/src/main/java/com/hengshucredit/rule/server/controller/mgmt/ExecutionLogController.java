@@ -10,6 +10,7 @@ import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.*;
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rule/log")
@@ -45,5 +46,14 @@ public class ExecutionLogController {
         if (endTime != null) wrapper.le(RuleExecutionLog::getCreateTime, endTime);
         wrapper.orderByDesc(RuleExecutionLog::getCreateTime);
         return R.ok(logService.page(new Page<>(pageNum, pageSize), wrapper));
+    }
+
+    @GetMapping("/rule-set-stats")
+    public R<Map<String, Object>> ruleSetStats(
+            @RequestParam(required = false) String projectCode,
+            @RequestParam(required = false) String ruleCode,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+        return R.ok(logService.ruleSetStats(projectCode, ruleCode, startTime, endTime));
     }
 }

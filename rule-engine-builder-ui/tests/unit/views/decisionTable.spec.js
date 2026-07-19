@@ -35,11 +35,11 @@ function mockRuleContent(id) {
             type: 'group',
             op: 'AND',
             children: [
-              { id: 'leaf-1', _varId: 1, varCode: 'age', varLabel: '年龄 age', varType: 'STRING', operator: '==', value: '1', type: 'leaf' }
+              { id: 'leaf-1', _varId: 1, _refType: 'VARIABLE', varCode: 'age', varLabel: '年龄 age', varType: 'STRING', operator: '==', value: '1', type: 'leaf' }
             ]
           },
           actions: [
-            { id: 'act-1', _varId: 5, varCode: 'result', varLabel: '结果 result', varType: 'STRING', actionDataType: 'ASSIGN', value: '100' }
+            { id: 'act-1', _varId: 5, _refType: 'VARIABLE', varCode: 'result', varLabel: '结果 result', varType: 'STRING', actionDataType: 'ASSIGN', value: '100' }
           ]
         }
       ]
@@ -276,9 +276,8 @@ describe('DecisionTable — 模型加载与同步', () => {
     expect(rule.conditionRoot.children.length).toBeGreaterThan(0)
   })
 
-  test('syncVarItem 通过 varCode 精确匹配更新 varLabel', () => {
-    // mockRuleContent 中叶节点已含 varCode='age'，syncVarItem 补充 varLabel
-    const leaf = { _varId: 1, varCode: 'age' }
+  test('syncVarItem 通过 ID 和 refType 更新展示标签', () => {
+    const leaf = { _varId: 1, _refType: 'VARIABLE', varCode: 'age' }
     const result = wrapper.vm.syncVarItem(leaf)
     expect(result).toBe(true)
     expect(leaf.varLabel).toBe('年龄 age')
@@ -294,8 +293,8 @@ describe('DecisionTable — 变量选择器使用流程', () => {
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('getVarByCode 通过 refCode 查找变量', () => {
-    const varItem = wrapper.vm.getVarByCode('age')
+  test('getVarByIdentity 通过 ID + ref_type 查找变量', () => {
+    const varItem = wrapper.vm.getVarByIdentity(1, 'VARIABLE')
     expect(varItem).toBeDefined()
     expect(varItem.varCode).toBe('age')
   })
@@ -306,14 +305,13 @@ describe('DecisionTable — 变量选择器使用流程', () => {
   })
 
   test('findRefByVarId 通过 varId 精确匹配', () => {
-    const ref = wrapper.vm.findRefByVarId(1)
+    const ref = wrapper.vm.findRefByVarId(1, 'VARIABLE')
     expect(ref).toBeDefined()
     expect(ref.refCode).toBe('age')
   })
 
-  test('syncVarItem 对仅有 varCode 的叶节点补充 varLabel', () => {
-    // 模拟旧数据场景：叶节点只有 varCode，通过 syncVarItem 补充 varLabel
-    const leaf = { _varId: 2, varCode: 'income' }
+  test('syncVarItem 对 ID 和 refType 完整的叶节点补充 varLabel', () => {
+    const leaf = { _varId: 2, _refType: 'VARIABLE', varCode: 'income' }
     const result = wrapper.vm.syncVarItem(leaf)
     expect(result).toBe(true)
     expect(leaf.varLabel).toBe('收入 income')

@@ -4,6 +4,7 @@ const rootDir = path.resolve(__dirname)
 module.exports = {
   testEnvironment: 'jsdom',
   setupFiles: ['<rootDir>/tests/setup.js'],
+  setupFilesAfterEnv: ['<rootDir>/tests/setupAfterEnv.js'],
   moduleNameMapper: {
     // @ 别名（用函数形式避免 $1 捕获组在部分 Jest 版本 Windows 上不展开）
     '^@/router$': path.join(rootDir, 'src/router/index.js'),
@@ -22,7 +23,8 @@ module.exports = {
     // 大型第三方模块
     '^monaco-editor$': path.join(rootDir, 'tests/__mocks__/monaco-editor.js'),
     '^@logicflow/core$': path.join(rootDir, 'tests/__mocks__/empty.js'),
-    '^@logicflow/extension$': path.join(rootDir, 'tests/__mocks__/empty.js')
+    '^@logicflow/extension$': path.join(rootDir, 'tests/__mocks__/empty.js'),
+    '^@logicflow/layout$': path.join(rootDir, 'tests/__mocks__/empty.js')
   },
   moduleFileExtensions: ['js', 'jsx', 'json', 'vue'],
   transform: {

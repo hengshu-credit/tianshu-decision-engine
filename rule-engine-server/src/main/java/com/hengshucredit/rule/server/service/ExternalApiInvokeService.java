@@ -22,11 +22,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import javax.annotation.Resource;
 import java.lang.reflect.Array;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
@@ -36,6 +39,8 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 
 @Service
 public class ExternalApiInvokeService {
@@ -97,16 +102,22 @@ public class ExternalApiInvokeService {
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
         int responseCacheSeconds = useResponseCache && apiConfig.getResponseCacheSeconds() != null
                 ? Math.max(apiConfig.getResponseCacheSeconds(), 0) : 0;
-        String responseCacheKey = buildResponseCacheKey(apiConfig.getId(), params == null ? new HashMap<>() : params);
-        ApiResponseCache cachedResponse = responseCacheSeconds > 0 ? responseCaches.get(responseCacheKey) : null;
+        Map<String, Object> invokeParams = params == null ? new HashMap<>() : params;
+        String responseCacheKey = responseCacheSeconds > 0
+                ? buildResponseCacheKey(apiConfig.getId(), apiConfig.getCacheKeyConfig(), invokeParams) : null;
+        ApiResponseCache cachedResponse = responseCacheKey == null ? null : responseCaches.get(responseCacheKey);
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
-        trace.requestParams = params == null ? new HashMap<>() : params;
+        trace.requestParams = invokeParams;
+        trace.cacheKey = responseCacheKey;
+        trace.cacheStatus = responseCacheSeconds <= 0 ? "DISABLED"
+                : responseCacheKey == null ? "CACHE_KEY_INCOMPLETE" : "MISS";
         if (runtimeTraceService != null) {
             trace.runtimeTrace = runtimeTraceService.startModule(
                     "DATASOURCE", datasource.getProjectId(), apiConfig.getId(), apiConfig.getApiCode());
         }
         if (cachedResponse != null && cachedResponse.expiresAt > start) {
+            trace.cacheStatus = "HIT";
             Map<String, Object> cached = copyCachedResponse(cachedResponse.response, true, false, 0);
             logDatasourceCall(apiConfig, datasource, trace, true, cached, null, 0);
             return cached;
@@ -114,11 +125,11 @@ public class ExternalApiInvokeService {
         Exception lastError = null;
         for (int i = 0; i <= retryCount; i++) {
             try {
-                Map<String, Object> result = doInvoke(apiConfig, datasource, params == null ? new HashMap<>() : params, trace);
+                Map<String, Object> result = doInvoke(apiConfig, datasource, invokeParams, trace);
                 long cost = System.currentTimeMillis() - start;
                 result.put("costTimeMs", cost);
                 result.put("cached", false);
-                if (responseCacheSeconds > 0) {
+                if (responseCacheSeconds > 0 && responseCacheKey != null) {
                     responseCaches.put(responseCacheKey, new ApiResponseCache(copyResponse(result),
                             System.currentTimeMillis() + responseCacheSeconds * 1000L));
                 }
@@ -142,6 +153,7 @@ public class ExternalApiInvokeService {
         long cost = System.currentTimeMillis() - start;
         String message = lastError == null ? "调用失败" : lastError.getMessage();
         if ("USE_CACHE".equals(apiConfig.getExceptionStrategy()) && cachedResponse != null) {
+            trace.cacheStatus = "STALE";
             Map<String, Object> cached = copyCachedResponse(cachedResponse.response, true, true, cost);
             logDatasourceCall(apiConfig, datasource, trace, true, cached, message, cost);
             return cached;
@@ -239,8 +251,51 @@ public class ExternalApiInvokeService {
         return result;
     }
 
-    String buildResponseCacheKey(Long apiConfigId, Map<String, Object> params) {
-        return apiConfigId + ":" + JSON.toJSONString(params == null ? new HashMap<>() : params);
+    String buildResponseCacheKey(Long apiConfigId, String cacheKeyConfig, Map<String, Object> params) {
+        if (apiConfigId == null || !hasText(cacheKeyConfig)) {
+            return null;
+        }
+        Map<String, Object> config = parseJsonMap(cacheKeyConfig);
+        Object componentsObject = config.get("components");
+        if (!(componentsObject instanceof Iterable)) {
+            return null;
+        }
+        List<Object> values = new ArrayList<>();
+        for (Object componentObject : (Iterable<?>) componentsObject) {
+            String path;
+            if (componentObject instanceof Map) {
+                Map<String, Object> component = parseNestedMap(componentObject);
+                path = firstText(component.get("path"), component.get("sourcePath"));
+            } else {
+                path = stringValue(componentObject);
+            }
+            if (!hasText(path)) {
+                return null;
+            }
+            Object value = readPath(params, path);
+            if (value == null || (value instanceof CharSequence && !hasText(String.valueOf(value)))) {
+                return null;
+            }
+            values.add(value);
+        }
+        if (values.isEmpty()) {
+            return null;
+        }
+        return apiConfigId + ":" + sha256(JSON.toJSONString(values));
+    }
+
+    private String sha256(String value) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(hash.length * 2);
+            for (byte item : hash) {
+                result.append(String.format("%02x", item & 0xff));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("当前运行环境不支持 SHA-256", e);
+        }
     }
 
     Map<String, Object> copyCachedResponse(Map<String, Object> cached, boolean hit, boolean stale, long costTimeMs) {
@@ -275,11 +330,18 @@ public class ExternalApiInvokeService {
         trace.requestHeaders = headersToLog(prepared.headers);
         trace.requestBody = prepared.requestBody;
         trace.requestIssued = true;
-        ResponseEntity<String> response = restTemplate.exchange(
-                prepared.finalUrl,
-                prepared.method,
-                new HttpEntity<>(prepared.requestBody, prepared.headers),
-                String.class);
+        ResponseEntity<String> response;
+        try {
+            response = restTemplate.exchange(
+                    prepared.finalUrl,
+                    prepared.method,
+                    new HttpEntity<>(prepared.requestBody, prepared.headers),
+                    String.class);
+        } catch (HttpStatusCodeException e) {
+            trace.responseStatus = e.getRawStatusCode();
+            trace.responseBody = parseJsonOrRaw(e.getResponseBodyAsString());
+            throw e;
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         Object responseBody = parseJsonOrRaw(response.getBody());
@@ -1023,7 +1085,7 @@ public class ExternalApiInvokeService {
             if (!(childrenObject instanceof Iterable)) {
                 return true;
             }
-            String op = firstText(condition.get("op"), "AND");
+            String op = firstText(condition.get("operator"), condition.get("op"), "AND");
             boolean hasChild = false;
             if ("OR".equalsIgnoreCase(op)) {
                 for (Object child : (Iterable<?>) childrenObject) {
@@ -1047,7 +1109,7 @@ public class ExternalApiInvokeService {
             return true;
         }
         Object actual = readMappedPath(response, body, path);
-        Object expected = condition.get("value");
+        Object expected = condition.containsKey("values") ? condition.get("values") : condition.get("value");
         if ("VAR".equalsIgnoreCase(firstText(condition.get("valueKind")))) {
             expected = readMappedPath(response, body, stringValue(expected));
         }
@@ -1097,6 +1159,20 @@ public class ExternalApiInvokeService {
         if ("not_starts_with".equals(op)) return !actualText.startsWith(expectedText);
         if ("ends_with".equals(op)) return actualText.endsWith(expectedText);
         if ("not_ends_with".equals(op)) return !actualText.endsWith(expectedText);
+        if ("regex".equals(op) || "matches".equals(op) || "string_matches".equals(op)) {
+            try {
+                return Pattern.compile(expectedText).matcher(actualText).matches();
+            } catch (PatternSyntaxException e) {
+                return false;
+            }
+        }
+        if ("not_regex".equals(op) || "not_matches".equals(op)) {
+            try {
+                return !Pattern.compile(expectedText).matcher(actualText).matches();
+            } catch (PatternSyntaxException e) {
+                return false;
+            }
+        }
         if ("in".equals(op) || "not_in".equals(op)) {
             boolean found = splitConditionValues(expected).stream().anyMatch(item -> valuesEqual(actual, item));
             return "in".equals(op) ? found : !found;
@@ -1169,18 +1245,17 @@ public class ExternalApiInvokeService {
         if ("QUERY".equalsIgnoreCase(mode)) {
             return true;
         }
-        String path = firstText(condition.get("path"), condition.get("field"));
-        if (!hasText(path)) {
+        Object tree = condition.containsKey("condition") ? condition.get("condition") : condition;
+        return responseConditionMatches(tree, response, response == null ? null : response.get("body"));
+    }
+
+    boolean matchesResponseCondition(String conditionConfig, Map<String, Object> response) {
+        if (!hasText(conditionConfig)) {
             return true;
         }
-        Object actual = readPath(response, path);
-        Object expected = condition.get("value");
-        String operator = firstText(condition.get("operator"), "==").toLowerCase();
-        boolean equal = valuesEqual(actual, expected);
-        if ("!=".equals(operator) || "<>".equals(operator) || "ne".equals(operator)) {
-            return !equal;
-        }
-        return equal;
+        Map<String, Object> condition = parseJsonMap(conditionConfig);
+        Object tree = condition.containsKey("condition") ? condition.get("condition") : condition;
+        return responseConditionMatches(tree, response, response == null ? null : response.get("body"));
     }
 
     private boolean shouldRecordSuccessBilling(RuleExternalApiConfig apiConfig, Map<String, Object> result) {
@@ -1342,18 +1417,54 @@ public class ExternalApiInvokeService {
         log.setTargetCode(apiConfig.getApiCode());
         log.setTargetName(apiConfig.getApiName());
         log.setSuccess(success ? 1 : 0);
+        Map<String, Object> conditionResponse = conditionResponse(response, trace);
+        boolean requestSuccess = hasText(apiConfig.getSuccessCondition())
+                ? hasProviderResponse(response, trace)
+                    && matchesResponseCondition(apiConfig.getSuccessCondition(), conditionResponse)
+                : defaultRequestSuccess(success, conditionResponse);
+        log.setRequestSuccess(requestSuccess ? 1 : 0);
+        log.setFound(requestSuccess && matchesBillingCondition(apiConfig.getBillingCondition(), conditionResponse) ? 1 : 0);
         if (trace != null) {
             log.setRequestMethod(trace.requestMethod);
             log.setRequestUrl(trace.requestUrl);
             log.setRequestHeaders(runtimeCallLogService.toJson(trace.requestHeaders));
             log.setRequestParams(runtimeCallLogService.toJson(maskSensitiveForLog(trace.requestParams)));
             log.setRequestBody(runtimeCallLogService.toJson(maskSensitiveForLog(trace.requestBody)));
-            log.setResponseStatus(trace.responseStatus);
+            Object responseStatus = trace.responseStatus == null ? conditionResponse.get("httpStatus") : trace.responseStatus;
+            log.setResponseStatus(responseStatus instanceof Number ? ((Number) responseStatus).intValue() : null);
+            log.setProviderRequest(trace.requestIssued ? 1 : 0);
+            log.setCacheStatus(trace.cacheStatus);
+            log.setCacheKey(trace.cacheKey);
         }
         log.setResponseBody(runtimeCallLogService.toJson(response != null ? response : (trace == null ? null : trace.responseBody)));
         log.setErrorMessage(errorMessage);
         log.setCostTimeMs(costTimeMs);
         runtimeCallLogService.safeSave(log);
+    }
+
+    private Map<String, Object> conditionResponse(Map<String, Object> response, InvokeTrace trace) {
+        Map<String, Object> result = response == null ? new LinkedHashMap<>() : copyResponse(response);
+        if (trace != null && trace.responseStatus != null) {
+            result.putIfAbsent("httpStatus", trace.responseStatus);
+            result.putIfAbsent("responseStatus", trace.responseStatus);
+        }
+        if (!result.containsKey("body") && trace != null && trace.responseBody != null) {
+            result.put("body", trace.responseBody);
+        }
+        return result;
+    }
+
+    private boolean hasProviderResponse(Map<String, Object> response, InvokeTrace trace) {
+        return response != null || (trace != null && trace.responseStatus != null);
+    }
+
+    private boolean defaultRequestSuccess(boolean success, Map<String, Object> response) {
+        Object status = response == null ? null : response.get("httpStatus");
+        if (status == null && response != null) {
+            status = response.get("responseStatus");
+        }
+        Integer httpStatus = status instanceof Number ? ((Number) status).intValue() : parseIndex(stringValue(status));
+        return httpStatus == null ? success : httpStatus >= 200 && httpStatus < 300;
     }
 
     private void logDatasourceAuthTest(RuleExternalDatasource datasource, InvokeTrace trace,
@@ -1519,6 +1630,8 @@ public class ExternalApiInvokeService {
         private Integer responseStatus;
         private Object responseBody;
         private boolean requestIssued;
+        private String cacheStatus;
+        private String cacheKey;
     }
 
     private static class PreparedHttpRequest {

@@ -201,15 +201,15 @@ describe('RuleDetail — 辅助方法', () => {
     expect(wrapper.vm.typeLabel('OBJECT')).toBe('对象')
   })
 
-  test('数据对象字段按完整路径解析展示名称', () => {
+  test('缺少 ID 的数据对象字段不会按路径回退关联', () => {
     wrapper.vm.buildVarOptions([], [{
       object: { objectCode: 'bankcard', objectLabel: '银行卡信息', scriptName: 'bankcard' },
       flatVariables: [{ id: 11, varCode: 'bank_card_no', varLabel: '银行卡号', scriptName: 'bank_card_no', varType: 'STRING' }]
     }])
     const row = { refType: 'DATA_OBJECT', scriptName: 'bankcard.bank_card_no', fieldLabel: '银行卡号' }
 
-    expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡信息/银行卡号')
-    expect(wrapper.vm.getFieldVarMap(row).varCodeText).toBe('bankcard.bank_card_no')
+    expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡号')
+    expect(wrapper.vm.getFieldVarMap(row)).toBeNull()
   })
 })
 

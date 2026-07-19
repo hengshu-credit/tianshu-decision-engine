@@ -19,3 +19,8 @@ rule-engine-mysql/data
 rule-engine-redis/data
 .worktrees/
 docs/superpowers/*
+.npm-cache-temp
+.upstream-logicflow-pack-temp
+.upstream-layoutflow-temp
+.codex-run-logs
+assets/

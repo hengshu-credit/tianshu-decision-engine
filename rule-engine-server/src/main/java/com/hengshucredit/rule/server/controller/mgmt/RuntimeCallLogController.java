@@ -12,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/rule/runtime-log")
@@ -33,5 +34,14 @@ public class RuntimeCallLogController {
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         return R.ok(logService.pageList(pageNum, pageSize, moduleType, actionType,
                 targetCode, traceId, success, startTime, endTime));
+    }
+
+    @GetMapping("/external-api-stats")
+    public R<Map<String, Object>> externalApiStats(
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) Long targetRefId,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+        return R.ok(logService.externalApiStats(projectId, targetRefId, startTime, endTime));
     }
 }

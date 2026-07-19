@@ -69,8 +69,7 @@ public class RuleCompileService {
             return CompileResult.fail(cycleError);
         }
 
-        // 构建变量上下文：通过 varId 查询正确的 scriptName，
-        // 以及通过 varCode 回溯 scriptName（设计器未保存 _varId 时兜底）
+        // 构建变量上下文：受管字段只通过 refType:id 查询正确的 scriptName。
         VarContext varContext = buildVarContext(definition.getProjectId());
 
         CompileResult result = compiler.compile(content.getModelJson(), varContext);
@@ -120,11 +119,9 @@ public class RuleCompileService {
             return CompileResult.fail("表达式不能为空");
         }
         try {
-            Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(definition.getProjectId());
-            Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(definition.getProjectId());
             Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(definition.getProjectId());
             Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(definition.getProjectId());
-            VarContext context = new VarContext(varIdToScriptName, varCodeToScriptName,
+            VarContext context = new VarContext(Collections.<Long, String>emptyMap(), Collections.<String, String>emptyMap(),
                     refIdToScriptName, constantIdToExpression,
                     functionService.buildFunctionCodeMap(definition.getProjectId()),
                     functionService.buildFunctionArityMap(definition.getProjectId()));
@@ -189,11 +186,9 @@ public class RuleCompileService {
     }
 
     private VarContext buildVarContext(Long projectId) {
-        Map<Long, String> varIdToScriptName = variableService.buildVarIdScriptNameMap(projectId);
-        Map<String, String> varCodeToScriptName = variableService.buildVarCodeScriptNameMap(projectId);
         Map<String, String> refIdToScriptName = variableService.buildRefScriptNameMap(projectId);
         Map<Long, String> constantIdToExpression = variableService.buildRefConstantExpressionMap(projectId);
-        return new VarContext(varIdToScriptName, varCodeToScriptName,
+        return new VarContext(Collections.<Long, String>emptyMap(), Collections.<String, String>emptyMap(),
                 refIdToScriptName, constantIdToExpression,
                 functionService.buildFunctionCodeMap(projectId),
                 functionService.buildFunctionArityMap(projectId));

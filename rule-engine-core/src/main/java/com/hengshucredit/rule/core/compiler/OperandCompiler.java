@@ -27,7 +27,15 @@ public final class OperandCompiler {
             if ("REFERENCE".equals(kind) && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
                 return varContext.resolveConstant(operand.getLong("refId"));
             }
-            return varContext.resolveVar(operand.getLong("refId"), operand.getString("refType"), code);
+            String resolved = varContext.resolveVar(operand.getLong("refId"), operand.getString("refType"), code);
+            String relativePath = operand.getString("relativePath");
+            if (!empty(relativePath)) {
+                if (!relativePath.startsWith(".") && !relativePath.startsWith("[")) {
+                    throw new IllegalArgumentException("相对字段路径必须以 . 或 [ 开头");
+                }
+                return resolved + relativePath;
+            }
+            return resolved;
         }
         if ("FUNCTION".equals(kind)) {
             JSONArray args = operand.getJSONArray("args");

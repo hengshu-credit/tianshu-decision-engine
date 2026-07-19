@@ -10,6 +10,7 @@ import com.hengshucredit.rule.server.service.RuleCallCycleService;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RulePublishService;
+import com.hengshucredit.rule.server.service.RuleReferenceIntegrityService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
 
@@ -39,6 +40,9 @@ public class RuleDefinitionController {
 
     @Resource
     private RuleCallCycleService ruleCallCycleService;
+
+    @Resource
+    private RuleReferenceIntegrityService referenceIntegrityService;
 
     @GetMapping("/list")
     public R<IPage<RuleDefinition>> list(
@@ -416,5 +420,30 @@ public class RuleDefinitionController {
             json = json.substring(1, json.length() - 1);
         }
         return json;
+    }
+
+    @GetMapping("/reference-integrity/scan/{definitionId}")
+    public R<RuleReferenceIntegrityService.AuditReport> scanReferenceIntegrity(
+            @PathVariable Long definitionId) {
+        try {
+            return R.ok(referenceIntegrityService.scan(definitionId));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/reference-integrity/scan-all")
+    public R<List<RuleReferenceIntegrityService.AuditReport>> scanAllReferenceIntegrity() {
+        return R.ok(referenceIntegrityService.scanAll());
+    }
+
+    @PostMapping("/reference-integrity/migrate")
+    public R<RuleReferenceIntegrityService.MigrationResult> migrateReferences(
+            @RequestBody RuleReferenceIntegrityService.MigrationRequest request) {
+        try {
+            return R.ok(referenceIntegrityService.migrate(request));
+        } catch (IllegalArgumentException e) {
+            return R.fail(e.getMessage());
+        }
     }
 }

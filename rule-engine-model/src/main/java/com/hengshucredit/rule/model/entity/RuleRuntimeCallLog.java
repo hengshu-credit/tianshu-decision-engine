@@ -24,6 +24,11 @@ public class RuleRuntimeCallLog {
     private String targetCode;
     private String targetName;
     private Integer success;
+    private Integer requestSuccess;
+    private Integer found;
+    private Integer providerRequest;
+    private String cacheStatus;
+    private String cacheKey;
     private String requestMethod;
     private String requestUrl;
     private String requestHeaders;

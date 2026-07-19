@@ -671,23 +671,52 @@
         <el-tab-pane label="缓存&计费" name="billing">
           <div class="tab-section">
             <el-row :gutter="12">
-              <el-col :lg="8" :md="24">
+              <el-col :lg="6" :md="24">
                 <el-form-item label="响应缓存秒">
                   <el-input-number v-model="form.responseCacheSeconds" :min="0" :step="60" style="width:100%" />
                 </el-form-item>
               </el-col>
-              <el-col :lg="8" :md="24">
+              <el-col :lg="9" :md="24">
                 <el-form-item label="计费名称">
                   <el-input v-model="form.billingItemCode" placeholder="如 EXT_CREDIT_REPORT" />
                   <div class="field-help">用于账单明细展示，可填写业务能理解的名称或编码，例如“征信报告查询”。</div>
                 </el-form-item>
               </el-col>
-              <el-col :lg="8" :md="24">
+              <el-col :lg="9" :md="24">
                 <el-form-item label="单次价格">
                   <el-input-number v-model="form.unitPrice" :min="0" :precision="6" :step="0.01" style="width:100%" />
                 </el-form-item>
               </el-col>
             </el-row>
+
+            <div class="config-card">
+              <div class="section-toolbar compact">
+                <div>
+                  <div class="section-title">缓存键</div>
+                  <div class="field-help">按下列顺序组合并生成脱敏摘要。任一字段缺失时绕过缓存，并记录 CACHE_KEY_INCOMPLETE。</div>
+                </div>
+                <el-button size="mini" icon="el-icon-plus" @click="addCacheKeyRow">添加字段</el-button>
+              </div>
+              <div v-for="(row, index) in cacheKeyRows" :key="'cache-key-' + index" class="cache-key-row">
+                <span class="cache-key-order">{{ index + 1 }}</span>
+                <el-select v-model="row.path" filterable allow-create default-first-option size="small" placeholder="如 customer.name" style="width:100%">
+                  <el-option v-for="item in requestPathOptions" :key="item.value" :label="item.label" :value="item.value" />
+                </el-select>
+                <el-button type="text" size="mini" :disabled="index === 0" @click="moveCacheKeyRow(index, -1)">上移</el-button>
+                <el-button type="text" size="mini" :disabled="index === cacheKeyRows.length - 1" @click="moveCacheKeyRow(index, 1)">下移</el-button>
+                <el-button type="text" size="mini" class="btn-delete" @click="removeCacheKeyRow(index)">删除</el-button>
+              </div>
+            </div>
+
+            <div class="config-card">
+              <div class="section-title">请求成功条件</div>
+              <div class="field-help">按响应 code 判断请求是否成功，支持且/或嵌套、条件多选、前缀、列表、字符串和正则匹配。</div>
+              <response-condition-tree-editor
+                :group="successConditionRoot"
+                :path-options="responsePathOptions"
+              />
+            </div>
+
             <el-form-item label="计费模式">
               <el-radio-group v-model="billingConfig.mode">
                 <el-radio-button label="QUERY">查询计费</el-radio-button>
@@ -697,26 +726,14 @@
                 查询计费：只要请求已发出就计费，本地参数校验失败不计费；查得计费：只有响应满足下面条件才计费。
               </div>
             </el-form-item>
-            <el-row v-if="billingConfig.mode === 'HIT'" :gutter="12">
-              <el-col :lg="8" :md="24">
-                <el-form-item label="判断字段">
-                  <el-input v-model="billingConfig.path" placeholder="如 body.hit 或 body.status" />
-                </el-form-item>
-              </el-col>
-              <el-col :lg="6" :md="12">
-                <el-form-item label="判断关系">
-                  <el-select v-model="billingConfig.operator" style="width:100%">
-                    <el-option label="等于" value="==" />
-                    <el-option label="不等于" value="!=" />
-                  </el-select>
-                </el-form-item>
-              </el-col>
-              <el-col :lg="10" :md="12">
-                <el-form-item label="判断值">
-                  <el-input v-model="billingConfig.value" placeholder="如 true、1、SUCCESS" />
-                </el-form-item>
-              </el-col>
-            </el-row>
+            <div v-if="billingConfig.mode === 'HIT'" class="config-card">
+              <div class="section-title">查得条件</div>
+              <div class="field-help">该条件树既决定是否按“查得”计费，也作为供应商查得率的统计口径。</div>
+              <response-condition-tree-editor
+                :group="billingConfig.conditionRoot"
+                :path-options="responsePathOptions"
+              />
+            </div>
           </div>
         </el-tab-pane>
 
@@ -771,6 +788,7 @@ import {
   updateApiConfig
 } from '@/api/datasource'
 import { getVariableTree, listDataObjects } from '@/api/dataObject'
+import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import { createEmptyGroup, createEmptyLeaf } from '@/utils/decisionConditionTree'
@@ -778,7 +796,7 @@ import { collectReferencePaths, sampleValueForVarType, setPathValue } from '@/ut
 
 export default {
   name: 'ApiDetail',
-  components: { ConditionGroupEditor, MonacoEditor },
+  components: { ConditionGroupEditor, MonacoEditor, ResponseConditionTreeEditor },
   data() {
     return {
       datasourceOptions: [],
@@ -805,6 +823,8 @@ export default {
       responseConditionRows: [],
       apiAuthConfig: this.emptyAuthConfig('INHERIT'),
       scriptVariableRows: [this.emptyScriptVariableRow()],
+      cacheKeyRows: [this.emptyCacheKeyRow()],
+      successConditionRoot: this.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
       billingConfig: this.emptyBillingConfig(),
       asyncShared: this.emptyAsyncShared(),
       asyncPollConfig: this.emptyAsyncPollConfig(),
@@ -874,6 +894,31 @@ export default {
         seen[item.varCode] = true
         return true
       })
+    },
+    requestPathOptions() {
+      const common = [
+        { label: '姓名 name', value: 'name' },
+        { label: '身份证号 idCard', value: 'idCard' },
+        { label: '手机号 mobile', value: 'mobile' }
+      ]
+      const fields = this.requestFieldOptions.map(field => {
+        const path = this.stripSelectedObjectPrefix(this.fieldScriptPath(field), this.form.requestObjectId)
+        return { label: this.fieldDisplayName(field) + ' ' + path, value: path }
+      }).filter(item => item.value)
+      return this.uniquePathOptions(common.concat(fields))
+    },
+    responsePathOptions() {
+      const common = [
+        { label: 'HTTP 状态码', value: 'httpStatus' },
+        { label: '响应编码', value: 'body.code' },
+        { label: '响应状态', value: 'body.status' },
+        { label: '响应消息', value: 'body.message' }
+      ]
+      const fields = this.responseFieldOptions.map(field => {
+        const path = this.stripSelectedObjectPrefix(this.fieldScriptPath(field), this.form.responseObjectId)
+        return { label: this.fieldDisplayName(field) + ' body.' + path, value: path ? 'body.' + path : '' }
+      }).filter(item => item.value)
+      return this.uniquePathOptions(common.concat(fields))
     },
     engineCallbackPlaceholder() {
       const code = this.form.apiCode || '{apiCode}'
@@ -949,7 +994,8 @@ export default {
         headerConfig: '', queryConfig: '', requestMapping: '', responseMapping: '', bodyTemplate: '',
         requestScript: '', responseScript: '',
         authMode: 'INHERIT', authApiConfig: '', tokenCacheSeconds: 0, timeoutMs: 3000, retryCount: 0,
-        retryIntervalMs: 200, responseCacheSeconds: 0, exceptionStrategy: 'FAIL_FAST', fallbackValue: '',
+        retryIntervalMs: 200, responseCacheSeconds: 0, cacheKeyConfig: '', successCondition: '',
+        exceptionStrategy: 'FAIL_FAST', fallbackValue: '',
         asyncResultMode: 'POLL', asyncPollConfig: '', asyncCallbackConfig: '', asyncCallbackUrl: '',
         asyncResultPath: '', billingItemCode: '', billingCondition: '', unitPrice: 0, description: '',
         testSampleParams: '', status: 1
@@ -978,8 +1024,30 @@ export default {
       root.children.push(createEmptyLeaf())
       return root
     },
+    emptyCacheKeyRow() {
+      return { path: '' }
+    },
+    emptyApiConditionRoot(path, operator, value) {
+      return {
+        type: 'group',
+        operator: 'AND',
+        children: [{
+          type: 'condition',
+          path: path || '',
+          operator: operator || '==',
+          value: value == null ? '' : value
+        }]
+      }
+    },
     emptyBillingConfig() {
-      return { mode: 'QUERY', path: '', operator: '==', value: '' }
+      return {
+        mode: 'QUERY',
+        conditionRoot: {
+          type: 'group',
+          operator: 'AND',
+          children: [{ type: 'condition', path: 'body.code', operator: '==', value: '0' }]
+        }
+      }
     },
     emptyAuthConfig(type) {
       const common = {
@@ -1076,6 +1144,8 @@ export default {
       this.responseMappingJsonText = this.stringifyJson(this.buildResponseMappingConfig())
       this.syncAuthConfigFromForm()
       this.syncAsyncConfigFromForm()
+      this.syncCacheKeyConfigFromForm()
+      this.syncSuccessConditionFromForm()
       this.syncBillingConfigFromForm()
     },
     syncAuthConfigFromForm() {
@@ -1127,14 +1197,51 @@ export default {
       const parsed = this.parseConfigForTemplate(this.form.billingCondition)
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         this.billingConfig = {
-          mode: parsed.mode || (parsed.path || parsed.field ? 'HIT' : 'QUERY'),
-          path: parsed.path || parsed.field || '',
-          operator: parsed.operator || '==',
-          value: this.valueToEditableText(parsed.value)
+          mode: parsed.mode || (parsed.condition || parsed.path || parsed.field ? 'HIT' : 'QUERY'),
+          conditionRoot: this.normalizeApiConditionRoot(parsed.condition || parsed, 'body.code', '==', '0')
         }
       } else {
         this.billingConfig = this.emptyBillingConfig()
       }
+    },
+    syncCacheKeyConfigFromForm() {
+      const parsed = this.parseConfigForTemplate(this.form.cacheKeyConfig)
+      const components = parsed && Array.isArray(parsed.components) ? parsed.components : []
+      this.cacheKeyRows = components.map(item => ({
+        path: typeof item === 'string' ? item : (item && (item.path || item.sourcePath)) || ''
+      }))
+      if (!this.cacheKeyRows.length) this.cacheKeyRows = [this.emptyCacheKeyRow()]
+    },
+    syncSuccessConditionFromForm() {
+      const parsed = this.parseConfigForTemplate(this.form.successCondition)
+      this.successConditionRoot = this.normalizeApiConditionRoot(parsed, 'httpStatus', 'starts_with', '2')
+    },
+    normalizeApiConditionRoot(condition, defaultPath, defaultOperator, defaultValue) {
+      const source = condition && condition.condition ? condition.condition : condition
+      if (!source || typeof source !== 'object' || Array.isArray(source)) {
+        return this.emptyApiConditionRoot(defaultPath, defaultOperator, defaultValue)
+      }
+      const normalize = node => {
+        if (node && node.type === 'group') {
+          return {
+            type: 'group',
+            operator: node.operator || node.op || 'AND',
+            children: Array.isArray(node.children) ? node.children.map(normalize) : []
+          }
+        }
+        const item = node || {}
+        const result = {
+          type: 'condition',
+          path: item.path || item.field || item.varCode || '',
+          operator: item.operator || '=='
+        }
+        if (Array.isArray(item.values)) result.values = item.values.map(value => String(value))
+        else result.value = item.value == null ? '' : this.valueToEditableText(item.value)
+        return result
+      }
+      const normalized = normalize(source)
+      if (normalized.type === 'group') return normalized
+      return { type: 'group', operator: 'AND', children: [normalized] }
     },
     rowsFromNameValueConfig(text) {
       const config = this.parseConfigForTemplate(text)
@@ -1258,6 +1365,8 @@ export default {
         this.syncResponseRowsFromJson(responseJson, false)
       }
       this.form.responseMapping = this.jsonTextOrBlank(this.buildResponseMappingConfig())
+      this.form.cacheKeyConfig = this.jsonTextOrBlank(this.buildCacheKeyConfig())
+      this.form.successCondition = this.jsonTextOrBlank(this.buildSuccessConditionConfig())
       this.form.billingCondition = this.jsonTextOrBlank(this.buildBillingConditionConfig())
       if (this.form.requestMode === 'ASYNC') {
         this.form.asyncPollConfig = this.form.asyncResultMode === 'POLL'
@@ -1397,11 +1506,50 @@ export default {
       if (!this.billingConfig || this.billingConfig.mode === 'QUERY') {
         return { mode: 'QUERY' }
       }
-      const result = { mode: 'HIT' }
-      if (this.billingConfig.path) result.path = this.billingConfig.path
-      result.operator = this.billingConfig.operator || '=='
-      result.value = this.parseJsonOrString(this.billingConfig.value)
+      return { mode: 'HIT', condition: this.sanitizeApiConditionTree(this.billingConfig.conditionRoot) }
+    },
+    buildCacheKeyConfig() {
+      const components = (this.cacheKeyRows || [])
+        .map(item => String(item && item.path ? item.path : '').trim())
+        .filter(Boolean)
+        .map(path => ({ path }))
+      return components.length ? { components } : {}
+    },
+    buildSuccessConditionConfig() {
+      return this.sanitizeApiConditionTree(this.successConditionRoot)
+    },
+    sanitizeApiConditionTree(node) {
+      if (!node || typeof node !== 'object') return this.emptyApiConditionRoot()
+      if (node.type === 'group') {
+        return {
+          type: 'group',
+          operator: node.operator === 'OR' ? 'OR' : 'AND',
+          children: (node.children || []).map(child => this.sanitizeApiConditionTree(child))
+        }
+      }
+      const result = {
+        type: 'condition',
+        path: String(node.path || '').trim(),
+        operator: node.operator || '=='
+      }
+      if (node.operator === 'in' || node.operator === 'not_in') {
+        result.values = (node.values || []).map(value => String(value).trim()).filter(Boolean)
+      } else {
+        result.value = node.value == null ? '' : String(node.value)
+      }
       return result
+    },
+    validateApiConditionTree(node, label) {
+      if (!node || typeof node !== 'object') throw new Error(label + '不能为空')
+      if (node.type === 'group') {
+        if (!Array.isArray(node.children) || !node.children.length) throw new Error(label + '至少需要一个判断条件')
+        node.children.forEach(child => this.validateApiConditionTree(child, label))
+        return
+      }
+      if (!node.path) throw new Error(label + '存在未填写的响应字段路径')
+      if ((node.operator === 'in' || node.operator === 'not_in') && (!node.values || !node.values.length)) {
+        throw new Error(label + '的列表判断至少需要一个值')
+      }
     },
     syncRequestJsonFromRows() {
       this.syncingMapping = true
@@ -1502,6 +1650,19 @@ export default {
     addScriptVariableRow() {
       this.scriptVariableRows.push(this.emptyScriptVariableRow())
     },
+    addCacheKeyRow() {
+      this.cacheKeyRows.push(this.emptyCacheKeyRow())
+    },
+    removeCacheKeyRow(index) {
+      this.cacheKeyRows.splice(index, 1)
+      if (!this.cacheKeyRows.length) this.cacheKeyRows.push(this.emptyCacheKeyRow())
+    },
+    moveCacheKeyRow(index, offset) {
+      const target = index + offset
+      if (target < 0 || target >= this.cacheKeyRows.length) return
+      const row = this.cacheKeyRows.splice(index, 1)[0]
+      this.cacheKeyRows.splice(target, 0, row)
+    },
     removeScriptVariableRow(index) {
       this.scriptVariableRows.splice(index, 1)
       if (!this.scriptVariableRows.length) this.scriptVariableRows.push(this.emptyScriptVariableRow())
@@ -1531,6 +1692,15 @@ export default {
     normalizeForm(form) {
       this.syncStructuredConfigToForm()
       const data = { ...form }
+      const cacheConfig = this.buildCacheKeyConfig()
+      if (Number(data.responseCacheSeconds) > 0 && !Array.isArray(cacheConfig.components)) {
+        throw new Error('启用响应缓存时必须配置缓存键字段')
+      }
+      const successCondition = this.buildSuccessConditionConfig()
+      this.validateApiConditionTree(successCondition, '请求成功条件')
+      if (this.billingConfig && this.billingConfig.mode === 'HIT') {
+        this.validateApiConditionTree(this.buildBillingConditionConfig().condition, '查得条件')
+      }
       if (!data.requestObjectId) data.requestObjectId = null
       if (!data.responseObjectId) data.responseObjectId = null
       const jsonFields = {
@@ -1542,6 +1712,8 @@ export default {
         bodyTemplate: '请求体模板',
         asyncPollConfig: '异步轮询配置',
         asyncCallbackConfig: '异步回调配置',
+        cacheKeyConfig: '缓存键配置',
+        successCondition: '请求成功条件',
         billingCondition: '计费条件',
         fallbackValue: '兜底返回',
         testSampleParams: '测试样例'
@@ -1667,6 +1839,14 @@ export default {
     },
     fieldScriptPath(field) {
       return field && (field.scriptName || field.varCode || '') ? String(field.scriptName || field.varCode) : ''
+    },
+    uniquePathOptions(options) {
+      const seen = {}
+      return (options || []).filter(item => {
+        if (!item || !item.value || seen[item.value]) return false
+        seen[item.value] = true
+        return true
+      })
     },
     fieldDisplayName(field) {
       if (!field) return ''
@@ -1990,6 +2170,33 @@ export default {
     margin-bottom: 12px;
     background: #fff;
   }
+  .config-card {
+    border: 1px solid #e5e7eb;
+    border-radius: 4px;
+    background: #f8fafc;
+    padding: 12px;
+    margin-bottom: 14px;
+  }
+  .config-card > .field-help {
+    margin-bottom: 10px;
+  }
+  .cache-key-row {
+    display: grid;
+    grid-template-columns: 28px minmax(220px, 1fr) auto auto auto;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .cache-key-order {
+    width: 24px;
+    height: 24px;
+    line-height: 24px;
+    text-align: center;
+    border-radius: 50%;
+    background: #e2e8f0;
+    color: #475569;
+    font-size: 12px;
+  }
   .response-condition-head {
     display: flex;
     align-items: center;
@@ -2032,6 +2239,9 @@ export default {
     .field-reference {
       width: auto;
       margin-top: 12px;
+    }
+    .cache-key-row {
+      grid-template-columns: 28px minmax(0, 1fr) auto;
     }
   }
 }

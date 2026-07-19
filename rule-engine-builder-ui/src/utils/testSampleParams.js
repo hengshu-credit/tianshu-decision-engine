@@ -198,10 +198,10 @@ export function addCode(out, code) {
 }
 
 export function refCodeById(projectRefs, varId, refType) {
-  if (varId == null || varId === '') return ''
+  if (varId == null || varId === '' || !refType) return ''
   const ref = (projectRefs || []).find(item => {
     const id = item && item.varObj ? item.varObj.id : null
-    return String(id) === String(varId) && (!refType || !item.refType || item.refType === refType)
+    return String(id) === String(varId) && item.refType === refType
   })
   return ref ? ref.refCode : ''
 }

@@ -5,6 +5,8 @@ import org.junit.After;
 import org.junit.Test;
 
 import java.util.Arrays;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
@@ -65,5 +67,22 @@ public class RuntimeContextBuiltinFunctionsTest {
 
         assertTrue(rejected);
         assertFalse(captured.containsKey("CREDIT_AMOUNT"));
+    }
+
+    @Test
+    public void recordsRuleSetItemAndOverallEventsWithoutBusinessFieldFallback() {
+        List<Map<String, Object>> events = new ArrayList<>();
+        RuntimeContextBridge.bindTraceEventListener(events::add);
+
+        functions.recordRuleSetItem("R0001", "年龄准入", true);
+        functions.recordRuleSetSummary(true);
+
+        assertEquals(2, events.size());
+        assertEquals("RULE_SET_ITEM", events.get(0).get("type"));
+        assertEquals("R0001", events.get(0).get("ruleCode"));
+        assertEquals(Boolean.TRUE, events.get(0).get("evaluated"));
+        assertEquals(Boolean.TRUE, events.get(0).get("hit"));
+        assertEquals("RULE_SET_SUMMARY", events.get(1).get("type"));
+        assertEquals(Boolean.TRUE, events.get(1).get("hit"));
     }
 }

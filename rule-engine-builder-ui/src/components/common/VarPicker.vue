@@ -390,16 +390,13 @@ export default {
     currentValue() {
       if (!this.value) return null
       if (this.operandMode && typeof this.value === 'object') {
-        var operandOption = this.findOptionByIdentity(this.value.refId, this.value.refType) ||
-          this.findOptionByCode(this.value.code || this.value.value)
+        var operandOption = this.findOptionByIdentity(this.value.refId, this.value.refType)
         return operandOption ? operandOption.varCode : (this.value.code || this.value.value || null)
       }
       if (this.valueKey === 'id') {
         var found = this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
         return found ? found.varCode : null
       }
-      var matched = this.findOptionByCode(this.value)
-      if (matched) return matched.varCode
       return this.value
     },
     /** 显示文本 */
@@ -407,7 +404,7 @@ export default {
       if (!this.value) return ''
       var v = this.valueKey === 'id'
         ? this.vars.find(function (item) { return String(item.id) === String(this.value) }.bind(this))
-        : this.findOptionByCode(this.value)
+        : null
       if (!v) return this.value
       var ref = v._ref || {}
       var label = this.optionLabel(v)
@@ -685,22 +682,19 @@ export default {
       return matches.length === 1 ? matches[0] : null
     },
     findOptionByIdentity(id, refType) {
-      if (id == null || id === '') return null
+      if (id == null || id === '' || !refType) return null
       return this.vars.find(function (v) {
         var optionId = v.id != null ? v.id : (v._varId != null ? v._varId : (v.varObj && v.varObj.id))
         var optionType = v._refType || v.refType || (v.varObj && v.varObj.refType) || (v._ref && v._ref.refType)
-        return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+        return String(optionId) === String(id) && optionType === refType
       }) || null
     },
     resolveSelectedOption(item) {
       if (item == null || item === '') return null
-      if (typeof item === 'string' || typeof item === 'number') {
-        return this.findOptionByCode(item) || this.findOptionByIdentity(item, null)
-      }
+      if (typeof item === 'string' || typeof item === 'number') return null
       var id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
       var refType = item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType)
-      return this.findOptionByIdentity(id, refType) ||
-        this.findOptionByCode(item.varCode || item.refCode)
+      return this.findOptionByIdentity(id, refType)
     },
     optionIdentityKey(item) {
       var id = item && (item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id)))
@@ -867,17 +861,6 @@ export default {
         objectLabel: objLabel
       })
     },
-    onCascaderChange(path) {
-      if (!path || !path.length) {
-        this.$emit('input', '')
-        this.$emit('select', null)
-        return
-      }
-      var refCode = path[path.length - 1]
-      this.$emit('input', refCode)
-      var varObj = this.vars.find(function (v) { return v.varCode === refCode }) || null
-      this.$emit('select', varObj)
-    },
     /** 输入框获得焦点时自动弹出选择器面板 */
     onInputFocus() {
       this.openPopover()
@@ -916,12 +899,11 @@ export default {
     focusCurrentValueInPicker() {
       var option
       if (this.operandMode && this.value && typeof this.value === 'object') {
-        option = this.findOptionByIdentity(this.value.refId, this.value.refType) ||
-          this.findOptionByCode(this.value.code || this.value.value)
+        option = this.findOptionByIdentity(this.value.refId, this.value.refType)
       } else {
         option = this.valueKey === 'id'
-          ? this.findOptionByIdentity(this.value, null)
-          : this.findOptionByCode(this.value)
+          ? this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
+          : null
       }
       if (!option) return
 
@@ -1080,14 +1062,13 @@ export default {
       }
       var varObj = this.valueKey === 'id'
         ? (this.vars.find(function (v) { return String(v.id) === String(val) }) || null)
-        : (this.vars.find(function (v) { return v.varCode === val }) || null)
+        : null
       this.$emit('select', varObj)
     },
     /** 手动输入模式下的输入事件 */
     onCustomInput(val) {
       this.$emit('input', val)
-      var varObj = this.vars.find(function (v) { return v.varCode === val }) || null
-      this.$emit('select', varObj || { varCode: val, varLabel: val, _custom: true })
+      this.$emit('select', { varCode: val, varLabel: val, _custom: true })
     },
     /** 手动输入模式下的清空事件 */
     onCustomClear() {

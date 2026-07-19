@@ -55,6 +55,7 @@ public class RuleSetCompiler implements RuleCompiler {
             for (int i = 0; i < entries.size(); i++) {
                 appendRule(script, entries.get(i), serial, varContext, i);
             }
+            script.append("recordRuleSetSummary(_ruleSetHitCount > 0);\n");
             script.append("_ruleSetResult = _ruleSetHits;\n");
             if (resultTarget != null) {
                 script.append(resultTarget).append(" = _ruleSetHits;\n");
@@ -146,22 +147,30 @@ public class RuleSetCompiler implements RuleCompiler {
             ruleConditions = new JSONArray();
         }
         String predicate = DecisionTableCompiler.buildRulePredicate(entry.rule, ruleConditions, new JSONArray(), varContext);
-        script.append("if (");
+        String evaluationVar = "_ruleSetEval" + maxPreviousHits;
         if (serial) {
-            script.append("!_ruleSetMatched && ");
+            script.append("if (!_ruleSetMatched) {\n");
         }
-        script.append("(").append(predicate).append(")) {\n");
+        script.append("    ").append(evaluationVar).append(" = (").append(predicate).append(");\n");
+        script.append("    recordRuleSetItem(")
+                .append(ActionOperandCompiler.quoteString(entry.ruleCode)).append(", ")
+                .append(ActionOperandCompiler.quoteString(entry.ruleName)).append(", ")
+                .append(evaluationVar).append(");\n");
+        script.append("    if (").append(evaluationVar).append(") {\n");
 
         appendActionData(script, entry.rule.getJSONArray("actionData"), varContext);
-        script.append("    _ruleSetHit = {\"ruleCode\": \"").append(escape(entry.ruleCode))
+        script.append("        _ruleSetHit = {\"ruleCode\": \"").append(escape(entry.ruleCode))
                 .append("\", \"ruleName\": \"").append(escape(entry.ruleName))
                 .append("\", \"priority\": ").append(entry.priority)
                 .append(", \"order\": ").append(entry.order).append("};\n");
         appendHitListAssignment(script, maxPreviousHits);
         if (serial) {
-            script.append("    _ruleSetMatched = true;\n");
+            script.append("        _ruleSetMatched = true;\n");
         }
-        script.append("}\n");
+        script.append("    }\n");
+        if (serial) {
+            script.append("}\n");
+        }
     }
 
     private void appendHitListAssignment(StringBuilder script, int maxPreviousHits) {

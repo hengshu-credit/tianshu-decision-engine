@@ -34,11 +34,29 @@
         </el-button-group>
         <el-divider direction="vertical" />
         <el-button-group>
+          <el-button size="mini" icon="el-icon-crop" :class="{ 'is-tool-active': selectionMode }" @click="toggleSelectionMode">选区</el-button>
+          <el-button size="mini" icon="el-icon-folder-add" :disabled="selectedBusinessNodeCount < 2" @click="groupSelectedNodes">分组</el-button>
+          <el-button size="mini" icon="el-icon-magic-stick" @click="beautifyGraph">一键美化</el-button>
+          <el-button size="mini" icon="el-icon-map-location" :class="{ 'is-tool-active': miniMapVisible }" @click="toggleMiniMap">小地图</el-button>
+        </el-button-group>
+        <el-divider direction="vertical" />
+        <el-button-group>
           <el-button size="mini" icon="el-icon-zoom-in" @click="zoomIn" />
           <el-button size="mini" icon="el-icon-zoom-out" @click="zoomOut" />
           <el-button size="mini" icon="el-icon-rank" @click="resetZoom" />
         </el-button-group>
         <span class="zoom-text">{{ zoomPercent }}%</span>
+        <el-divider direction="vertical" />
+        <graph-designer-navigator
+          :target.sync="graphNavigationTarget"
+          :options="graphNavigationOptions"
+          :issues="graphConfigurationIssues"
+          :show-mini-map="false"
+          @search="searchGraphElements"
+          @locate="locateGraphNavigationItem"
+          @locate-issue="locateGraphElement"
+          @check="checkGraphConfiguration"
+        />
         <el-divider direction="vertical" />
         <span class="toolbar-label">连线：</span>
         <el-select
@@ -63,7 +81,20 @@
     <!-- 主体：画布 + 属性面板 -->
     <div class="flow-body">
       <!-- LogicFlow 画布 -->
-      <div ref="canvasContainer" class="flow-canvas" />
+      <div
+        ref="canvasContainer"
+        class="flow-canvas"
+        :class="{ 'is-node-active': activeElement && activeElement.baseType === 'node' }"
+      />
+
+      <flow-node-add-menu
+        :visible="anchorMenu.visible"
+        :x="anchorMenu.x"
+        :y="anchorMenu.y"
+        :options="anchorMenuOptions"
+        @select="selectConnectedNodeType"
+        @close="closeAnchorMenu"
+      />
 
       <!-- 右侧属性面板 -->
       <transition name="panel-slide">
@@ -265,7 +296,8 @@
     </div>
 
     <end-node-scope-dialog
-      :visible.sync="endNodeScopeVisible"
+      :visible="endNodeScopeVisible"
+      @update:visible="onEndNodeScopeVisibleChange"
       @confirm="confirmEndNode"
     />
 
@@ -283,11 +315,23 @@
 
 <script>
 import LogicFlow from '@logicflow/core'
-import { SelectionSelect, Menu, Snapshot } from '@logicflow/extension'
-import '@logicflow/core/dist/style/index.css'
-import '@logicflow/extension/lib/style/index.css'
+import { SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap } from '@logicflow/extension'
+import { Dagre } from '@logicflow/layout'
+import '@logicflow/core/es/index.css'
+import '../../styles/logicflow-extension.css'
 
 import { registerCustomNodes, getDefaultFlowData } from '@/components/flow/nodes'
+import FlowNodeAddMenu from '@/components/flow/FlowNodeAddMenu.vue'
+import {
+  FLOW_MENU_OPTIONS,
+  FLOW_THEME_COLOR,
+  addConnectedNode,
+  createDynamicGroup,
+  createFlowNodeData,
+  getBusinessGraphData,
+  getPersistableGraphData,
+  resolveAnchorDirection
+} from '@/components/flow/flowDesignerGraph'
 import {
   normalizeDefaultEdgeLineType,
   migrateModelJsonForEdgeLineTypes,
@@ -326,17 +370,25 @@ import {
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { clampDesignerPanelWidth } from '@/utils/designerPanelWidth'
 import { END_SCOPE_ALL_RULES, normalizeEndScope, getEndNodeAppearance } from '@/utils/endNodeScope'
+import graphDesignerToolsMixin from '@/mixins/graphDesignerToolsMixin'
+import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
 
 export default {
   name: 'DecisionFlow',
-  components: { DesignerTestDialog, EndNodeScopeDialog, ScriptPanel, ActionBlockEditor, ConditionGroupEditor },
-  mixins: [varPickerMixin, ruleCallMixin],
+  components: { DesignerTestDialog, EndNodeScopeDialog, FlowNodeAddMenu, ScriptPanel, ActionBlockEditor, ConditionGroupEditor, GraphDesignerNavigator },
+  mixins: [varPickerMixin, ruleCallMixin, graphDesignerToolsMixin],
   data() {
     return {
       definitionId: null,
       lf: null,
       activeElement: null,
       hasSelection: false,
+      selectionMode: false,
+      miniMapVisible: true,
+      selectedBusinessNodeCount: 0,
+      anchorMenuOptions: FLOW_MENU_OPTIONS.flow,
+      anchorMenu: { visible: false, x: 0, y: 0 },
+      pendingConnectedNode: null,
       zoomPercent: 100,
       scriptMode: 'visual',
       nodeProps: {},
@@ -399,16 +451,9 @@ export default {
     this.loadContent()
   },
   beforeDestroy() {
-    if (this.lf) {
-      this.lf.off('node:click', this.onNodeClick)
-      this.lf.off('edge:click', this.onEdgeClick)
-      this.lf.off('blank:click', this.onBlankClick)
-      this.lf.off('node:dnd-add', this.onDndAdd)
-      if (this._connectionNotAllowedHandler) {
-        this.lf.off('connection:not-allowed', this._connectionNotAllowedHandler)
-      }
-    }
     this.stopPropertyResize()
+    if (this.lf) this.lf.destroy()
+    this.lf = null
   },
   methods: {
     startPropertyResize(event) {
@@ -497,12 +542,25 @@ export default {
       return changed
     },
     initLogicFlow() {
-      LogicFlow.use(SelectionSelect)
-      LogicFlow.use(Menu)
-      LogicFlow.use(Snapshot)
-
       this.lf = new LogicFlow({
         container: this.$refs.canvasContainer,
+        plugins: [SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap, Dagre],
+        pluginsOptions: {
+          dynamicGroup: {
+            cascadeDeleteChildren: false,
+            disallowEdgeConnectToGroup: true,
+            sensorOutline: { stroke: FLOW_THEME_COLOR, strokeWidth: 2 }
+          },
+          miniMap: {
+            width: 180,
+            height: 120,
+            showEdge: true,
+            isShowHeader: false,
+            isShowCloseIcon: false,
+            rightPosition: 16,
+            bottomPosition: 16
+          }
+        },
         grid: { size: 20, visible: true },
         keyboard: {
           enabled: true,
@@ -518,11 +576,13 @@ export default {
         style: {
           nodeText: { overflowMode: 'ellipsis', fontSize: 12 },
           edgeText: { fontSize: 12, background: { fill: '#fff' } },
-          polyline: { stroke: '#999', strokeWidth: 1.5 },
-          line: { stroke: '#999', strokeWidth: 1.5 },
-          bezier: { stroke: '#999', strokeWidth: 1.5 },
-          anchor: { stroke: '#1890ff', fill: '#fff', r: 4 },
-          anchorHover: { stroke: '#1890ff', fill: '#1890ff', r: 5 }
+          polyline: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
+          line: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
+          bezier: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
+          arrow: { stroke: FLOW_THEME_COLOR, fill: FLOW_THEME_COLOR },
+          anchor: { stroke: FLOW_THEME_COLOR, fill: '#fff', r: 4 },
+          anchorHover: { stroke: FLOW_THEME_COLOR, fill: FLOW_THEME_COLOR, r: 5 },
+          anchorLine: { stroke: FLOW_THEME_COLOR }
         },
         guards: { beforeClone: () => true, beforeDelete: () => true }
       })
@@ -555,11 +615,21 @@ export default {
     },
 
     bindEvents() {
-      this.lf.on('node:click', ({ data }) => this.selectNodeData(data))
-      this.lf.on('edge:click', ({ data }) => this.selectEdgeData(data))
+      this.lf.on('node:click', ({ data }) => {
+        this.closeAnchorMenu()
+        this.selectNodeData(data)
+        this.$nextTick(() => this.updateSelectedBusinessNodeCount())
+      })
+      this.lf.on('edge:click', ({ data }) => {
+        this.closeAnchorMenu()
+        this.selectEdgeData(data)
+        this.$nextTick(() => this.updateSelectedBusinessNodeCount())
+      })
       this.lf.on('blank:click', () => {
+        this.closeAnchorMenu()
         this.activeElement = null
         this.hasSelection = false
+        this.updateSelectedBusinessNodeCount()
       })
       this.lf.on('node:dnd-add', ({ data }) => {
         this.$nextTick(() => this.selectNodeData(data))
@@ -567,8 +637,18 @@ export default {
       this.lf.on('node:dbclick', ({ data }) => this.selectNodeData(data))
       this.lf.on('edge:dbclick', ({ data }) => this.selectEdgeData(data))
       this.lf.on('history:change', () => this.updateZoom())
+      this.lf.on('graph:rendered', this.onGraphRendered)
+      this.lf.on('anchor:click', this.onAnchorClick)
+      this.lf.on('selection:selected', () => this.updateSelectedBusinessNodeCount())
       this._connectionNotAllowedHandler = (payload) => this.handleConnectionNotAllowed(payload)
       this.lf.on('connection:not-allowed', this._connectionNotAllowedHandler)
+    },
+
+    onGraphRendered() {
+      const miniMap = this.lf && this.lf.extension.miniMap
+      if (!miniMap || !this.miniMapVisible) return
+      if (miniMap.isShow) miniMap.hide()
+      miniMap.show()
     },
 
     /**
@@ -580,6 +660,58 @@ export default {
         (payload && payload.data && (payload.data.msg || payload.data.message)) ||
         '该连线不被允许'
       this.$message.warning(msg)
+    },
+
+    onAnchorClick({ data, e, nodeModel }) {
+      const sourceNode = nodeModel || (data && this.lf.getNodeModelById(data.id))
+      if (!sourceNode || sourceNode.type === 'end-event' || sourceNode.isGroup) {
+        this.closeAnchorMenu()
+        return
+      }
+      const direction = resolveAnchorDirection(data, sourceNode)
+      const rect = this.$refs.canvasContainer.getBoundingClientRect()
+      const menuWidth = 188
+      const menuHeight = 190
+      const rawX = e && typeof e.clientX === 'number' ? e.clientX - rect.left + 10 : rect.width / 2
+      const rawY = e && typeof e.clientY === 'number' ? e.clientY - rect.top + 10 : rect.height / 2
+      this.pendingConnectedNode = { sourceNode, sourceAnchor: data, direction }
+      this.anchorMenu = {
+        visible: true,
+        x: Math.max(6, Math.min(rawX, rect.width - menuWidth)),
+        y: Math.max(6, Math.min(rawY, rect.height - menuHeight))
+      }
+    },
+
+    closeAnchorMenu() {
+      this.anchorMenu.visible = false
+      this.pendingConnectedNode = null
+    },
+
+    selectConnectedNodeType(option) {
+      this.anchorMenu.visible = false
+      if (option.type === 'end-event') {
+        this.endNodeScopeVisible = true
+        return
+      }
+      this.commitConnectedNode(option.type)
+    },
+
+    commitConnectedNode(type, terminationScope) {
+      const pending = this.pendingConnectedNode
+      this.pendingConnectedNode = null
+      if (!pending) return
+      try {
+        const result = addConnectedNode(this.lf, {
+          ...pending,
+          type,
+          terminationScope,
+          edgeType: this.globalEdgeLineType
+        })
+        this.selectNodeData({ id: result.node.id })
+        this.updateSelectedBusinessNodeCount()
+      } catch (error) {
+        this.$message.warning(error.message || '新增节点失败')
+      }
     },
 
     selectNodeData(data) {
@@ -699,6 +831,7 @@ export default {
     },
 
     addNode(type) {
+      this.pendingConnectedNode = null
       if (type === 'end-event') {
         this.endNodeScopeVisible = true
         return
@@ -708,34 +841,23 @@ export default {
 
     confirmEndNode(scope) {
       this.endNodeScopeVisible = false
-      this.addNodeToCanvas('end-event', normalizeEndScope(scope))
+      const normalizedScope = normalizeEndScope(scope)
+      if (this.pendingConnectedNode) {
+        this.commitConnectedNode('end-event', normalizedScope)
+        return
+      }
+      this.addNodeToCanvas('end-event', normalizedScope)
+    },
+
+    onEndNodeScopeVisibleChange(visible) {
+      this.endNodeScopeVisible = visible
+      if (!visible) this.pendingConnectedNode = null
     },
 
     addNodeToCanvas(type, terminationScope) {
-      const labelMap = {
-        'start-event': '开始',
-        'end-event': getEndNodeAppearance(terminationScope).name,
-        'exclusive-gateway': '条件判断',
-        'script-task': '执行动作',
-        'join-gateway': '聚合'
-      }
-      const idSuffix = Date.now() + '_' + Math.random().toString(36).substr(2, 4).toUpperCase()
       const xPos = 300 + Math.random() * 200
       const yPos = 200 + Math.random() * 150
-      const nodeData = {
-        type,
-        x: xPos,
-        y: yPos,
-        properties: {
-          nodeName: labelMap[type] || type,
-          nodeCode: type.toUpperCase().replace(/-/g, '_') + '_' + idSuffix,
-          nodeDesc: '',
-          actionData: [],
-          gatewayDirection: 'Diverging',
-          ...(type === 'end-event' ? { terminationScope: normalizeEndScope(terminationScope) } : {})
-        }
-      }
-      this.lf.addNode(nodeData)
+      this.lf.addNode(createFlowNodeData(type, { x: xPos, y: yPos, terminationScope }))
     },
 
     deleteSelected() {
@@ -747,6 +869,7 @@ export default {
       }
       this.activeElement = null
       this.hasSelection = false
+      this.updateSelectedBusinessNodeCount()
     },
 
     deleteCurrentNode() {
@@ -755,6 +878,7 @@ export default {
         this.lf.deleteNode(this.activeElement.id)
         this.activeElement = null
         this.hasSelection = false
+        this.updateSelectedBusinessNodeCount()
       }).catch(() => {})
     },
 
@@ -796,6 +920,72 @@ export default {
       return ''
     },
 
+    updateSelectedBusinessNodeCount() {
+      if (!this.lf) return
+      const selected = this.lf.getSelectElements(true) || {}
+      this.selectedBusinessNodeCount = (selected.nodes || []).filter(node => {
+        const model = this.lf.getNodeModelById(node.id)
+        return model && !model.isGroup
+      }).length
+      this.hasSelection = Boolean(this.activeElement) || this.selectedBusinessNodeCount > 0 || (selected.edges || []).length > 0
+    },
+
+    toggleSelectionMode() {
+      const selection = this.lf.extension.selectionSelect
+      this.selectionMode = !this.selectionMode
+      selection.setExclusiveMode(this.selectionMode)
+      if (this.selectionMode) {
+        this.closeAnchorMenu()
+        selection.openSelectionSelect()
+      } else {
+        selection.closeSelectionSelect()
+      }
+    },
+
+    groupSelectedNodes() {
+      try {
+        const group = createDynamicGroup(this.lf)
+        const selection = this.lf.extension.selectionSelect
+        selection.closeSelectionSelect()
+        selection.setExclusiveMode(false)
+        this.selectionMode = false
+        this.selectNodeData({ id: group.id })
+        this.updateSelectedBusinessNodeCount()
+        this.$message.success('分组创建成功；删除分组时组内节点会保留')
+      } catch (error) {
+        this.$message.warning(error.message || '创建分组失败')
+      }
+    },
+
+    beautifyGraph() {
+      const canvasGraph = getPersistableGraphData(this.lf)
+      const graph = getBusinessGraphData(canvasGraph)
+      if (graph.nodes.length < 2) {
+        this.$message.info('至少需要两个节点才能执行一键美化')
+        return
+      }
+      this.lf.extension.dagre.layout({
+        rankdir: 'TB',
+        align: 'UL',
+        nodesep: 80,
+        ranksep: 120,
+        marginx: 80,
+        marginy: 80,
+        isDefaultAnchor: false
+      })
+      this.$nextTick(() => {
+        this.lf.fitView(40, 40)
+        this.updateZoom()
+      })
+      this.$message.success('画布已按从上到下自动排布')
+    },
+
+    toggleMiniMap() {
+      this.miniMapVisible = !this.miniMapVisible
+      if (this.miniMapVisible) this.lf.extension.miniMap.show()
+      else this.lf.extension.miniMap.hide()
+    },
+
     zoomIn() { this.lf.zoom(true); this.updateZoom() },
     zoomOut() { this.lf.zoom(false); this.updateZoom() },
     resetZoom() { this.lf.resetZoom(); this.lf.resetTranslate(); this.updateZoom() },
@@ -812,7 +1002,8 @@ export default {
 
     handleValidate() {
       const errors = []
-      const graphData = this.lf.getGraphData()
+      const canvasGraph = getPersistableGraphData(this.lf)
+      const graphData = getBusinessGraphData(canvasGraph)
       const nodes = graphData.nodes || []
       const edges = graphData.edges || []
 
@@ -1001,7 +1192,8 @@ export default {
         this.edgeProps.conditionConfig = JSON.parse(JSON.stringify(this.edgeConditionRoot))
         this.onEdgeChange()
       }
-      const graphData = this.lf.getGraphData()
+      const canvasGraph = getPersistableGraphData(this.lf)
+      const graphData = getBusinessGraphData(canvasGraph)
 
       const nodes = (graphData.nodes || []).map(n => {
         const props = n.properties || {}
@@ -1044,7 +1236,7 @@ export default {
       })
 
       // 确保 logicflow 中的节点包含完整的 actionData（与 nodes 一致）
-      const logicflowNodes = (graphData.nodes || []).map(n => {
+      const logicflowNodes = (canvasGraph.nodes || []).map(n => {
         const base = { ...n }
         const actionData = (n.properties && n.properties.actionData) || []
         base.properties = { ...(n.properties || {}), actionData: Array.isArray(actionData) ? actionData : [] }
@@ -1054,7 +1246,7 @@ export default {
         nodes,
         edges,
         defaultEdgeLineType: this.globalEdgeLineType,
-        logicflow: { nodes: logicflowNodes, edges: graphData.edges || [] }
+        logicflow: { nodes: logicflowNodes, edges: canvasGraph.edges || [] }
       }
     },
 
@@ -1298,6 +1490,11 @@ export default {
   justify-content: center;
   white-space: nowrap;
   &:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.7); }
+  &.is-tool-active {
+    background: #FFFFFF;
+    border-color: #FFFFFF;
+    color: #1D39C4;
+  }
   &.el-button--primary {
     background: #FFFFFF;
     background-color: #FFFFFF !important;
@@ -1362,6 +1559,9 @@ export default {
   flex: 1;
   min-height: 0;
   min-width: 0;
+}
+.flow-canvas.is-node-active ::v-deep .lf-mini-map {
+  pointer-events: none;
 }
 
 /* 提示 */

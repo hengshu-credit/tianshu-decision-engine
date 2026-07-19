@@ -11,7 +11,7 @@
  *   - projectRefs: { refCode, refLabel, varType, varObj, category }[] — 可选的引用列表
  *   - projectVars: RuleVariable[]  — 兼容旧逻辑，为 projectRefs 的扁平变量
  *   - loadingVars: boolean
- *   - getVarByCode(code)           — 按 refCode 查找
+ *   - getVarByIdentity(id, type)   — 按 ID + ref_type 精确查找
  *   - getVarOptions(refCode)       — ENUM 选项
  */
 
@@ -294,9 +294,14 @@ export default {
       }
     },
 
-    getVarByCode(code) {
-      const ref = this.projectRefs.find(r => r.refCode === code)
-      return ref ? ref.varObj : (this.projectVars.find(v => v.varCode === code) || null)
+    getVarByIdentity(id, refType) {
+      if (id == null || id === '' || !refType) return null
+      const ref = this.projectRefs.find(item => {
+        const optionId = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
+        const optionType = item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType)
+        return String(optionId) === String(id) && optionType === refType
+      })
+      return ref ? ref.varObj : null
     },
 
     varPickerOptionKey(option) {
@@ -304,7 +309,7 @@ export default {
       const refType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType) || ''
       const id = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
       if (id != null && id !== '') return `${refType || 'REF'}:${id}`
-      return `${refType || (option._ref && option._ref.category) || 'CODE'}:${option.varCode || option.refCode || ''}`
+      return ''
     },
 
     findVarPickerOptionByModelItem(item) {
@@ -312,17 +317,15 @@ export default {
       const source = typeof item === 'string' || typeof item === 'number' ? { varCode: item } : item
       const id = source._varId != null ? source._varId : (source.id != null ? source.id : (source.varObj && source.varObj.id))
       const refType = source._refType || source.refType || (source.varObj && source.varObj.refType) || (source._ref && source._ref.refType)
-      if (id != null && id !== '') {
+      if (id != null && id !== '' && refType) {
         const byId = this.varPickerOptions.find(option => {
           const optionId = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
           const optionType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType)
-          return String(optionId) === String(id) && (!refType || !optionType || optionType === refType)
+          return String(optionId) === String(id) && optionType === refType
         })
         if (byId) return byId
       }
-      const code = source.varCode || source.refCode || source.condVar || source.target || source.matchVar || source.checkVar
-      if (!code) return null
-      return this.varPickerOptions.find(option => option.varCode === code) || Object.assign({}, source, { varCode: code })
+      return null
     },
 
     collectActionDataVarItems(actionData) {
@@ -484,19 +487,18 @@ export default {
      * 根据变量数据库 ID 在最新的 projectRefs 中查找对应引用
      */
     findRefByVarId(varId, refType) {
-      if (!varId) return null
-      return this.projectRefs.find(r => r.varObj && String(r.varObj.id) === String(varId) && (!refType || r.refType === refType)) || null
+      if (!varId || !refType) return null
+      return this.projectRefs.find(r => r.varObj && String(r.varObj.id) === String(varId) && r.refType === refType) || null
     },
 
     /**
-     * 同步单个变量引用项，根据 _varId 或 varLabel 回溯匹配，更新 varCode 和 varLabel。
+     * 同步单个变量引用项，只根据 _varId + _refType 更新展示编码和标签。
      * @param {Object} item - 包含 {varCode, varLabel, _varId?} 的模型项
      * @returns {boolean} 是否有更新
      */
     syncVarItem(item) {
       if (!item || !item.varCode) return false
-      // 1. 优先使用 _varId 精确匹配
-      if (item._varId) {
+      if (item._varId && item._refType) {
         const ref = this.findRefByVarId(item._varId, item._refType)
         if (ref) {
           let changed = false
@@ -510,27 +512,6 @@ export default {
           if (ref.varType && item.varType !== ref.varType) { item.varType = ref.varType; changed = true }
           if (item._refType !== ref.refType) { item._refType = ref.refType; changed = true }
           return changed
-        }
-      }
-      // 2. varCode 在当前 projectRefs 中能匹配，说明没变化
-      if (this.projectRefs.some(r => r.refCode === item.varCode)) {
-        return false
-      }
-      // 3. varCode 匹配不上（scriptName 可能已改），通过 varLabel 回溯
-      if (item.varLabel) {
-        const candidates = this.projectRefs.filter(r =>
-          r.varObj && r.varObj.varLabel && r.varObj.varLabel === item.varLabel
-        )
-        if (candidates.length === 1) {
-          const ref = candidates[0]
-          item.varCode = ref.refCode
-          if (typeof ref.refLabel === 'object') {
-            item.varLabel = ref.refLabel.label + ' ' + ref.refLabel.code
-          } else {
-            item.varLabel = ref.refLabel
-          }
-          if (ref.varType) item.varType = ref.varType
-          return true
         }
       }
       return false

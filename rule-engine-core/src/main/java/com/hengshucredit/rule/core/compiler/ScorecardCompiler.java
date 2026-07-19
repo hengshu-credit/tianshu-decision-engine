@@ -115,9 +115,11 @@ public class ScorecardCompiler implements RuleCompiler {
     }
 
     private String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {
-        if (varContext != null) {
-            return varContext.resolveVar(varId, refType, varCode);
+        boolean managedReference = varId != null || (refType != null && !refType.trim().isEmpty());
+        if (managedReference && varContext == null) {
+            throw new IllegalArgumentException("受管字段引用缺少变量上下文");
         }
+        if (varContext != null) return varContext.resolveVar(varId, refType, varCode);
         return varCode != null ? varCode : "";
     }
 

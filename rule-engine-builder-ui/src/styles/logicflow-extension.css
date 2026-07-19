@@ -1,0 +1,100 @@
+/* LogicFlow 2.3 中本项目启用的 Menu、SelectionSelect、MiniMap 插件样式。 */
+.lf-menu {
+  position: absolute;
+  z-index: 999;
+  display: none;
+  width: 150px;
+  margin: 0 0 0 10px;
+  padding: 6px;
+  background: #fff;
+  border: 1px solid #efefee;
+  border-radius: 8px;
+}
+
+.lf-menu > li {
+  position: relative;
+  padding: 6px;
+  font-size: 12px;
+  line-height: 14px;
+  list-style: none;
+  cursor: pointer;
+}
+
+.lf-menu-item {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  justify-content: flex-start;
+  list-style: none;
+  border-radius: 6px;
+}
+
+.lf-menu-item__disabled {
+  color: #aaa;
+  cursor: not-allowed !important;
+  opacity: 0.88;
+}
+
+.lf-selection-select {
+  position: absolute;
+  border: 2px dashed #2639E9;
+}
+
+.lf-mini-map {
+  position: absolute;
+  padding: 8px;
+  padding-top: 28px;
+  overflow: hidden;
+  background: #fefefe;
+  border: 1px solid #D9E0F2;
+  border-radius: 8px;
+  box-shadow: 0 0 10px 1px rgba(38, 57, 233, 0.14);
+}
+
+.lf-mini-map .lf-graph {
+  width: 100% !important;
+  height: 100% !important;
+}
+
+.lf-mini-map-graph {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.lf-minimap-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background-color: rgba(38, 57, 233, 0.16);
+  border: 1px solid rgba(38, 57, 233, 0.45);
+  border-radius: 2px;
+  cursor: grab;
+}
+
+.lf-mini-map-header {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  margin: 4px 6px;
+  line-height: 18px;
+}
+
+.lf-mini-map-close {
+  position: absolute;
+  top: 6px;
+  right: 2px;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+}
+
+.lf-mini-map-no-header {
+  padding-top: 8px;
+}
+
+.lf-mini-map-no-header .lf-mini-map-header,
+.lf-mini-map-no-close-icon .lf-mini-map-close {
+  display: none;
+}

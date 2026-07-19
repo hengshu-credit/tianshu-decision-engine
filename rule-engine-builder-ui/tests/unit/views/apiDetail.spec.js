@@ -22,6 +22,8 @@ function createContext(overrides = {}) {
     syncingMapping: false,
     apiAuthConfig: ApiDetail.methods.emptyAuthConfig('INHERIT'),
     scriptVariableRows: [ApiDetail.methods.emptyScriptVariableRow()],
+    cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()],
+    successConditionRoot: ApiDetail.methods.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
     billingConfig: ApiDetail.methods.emptyBillingConfig(),
     asyncShared: ApiDetail.methods.emptyAsyncShared(),
     asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
@@ -187,21 +189,57 @@ describe('ApiDetail helpers', () => {
     expect(config.score.cases[0]).toEqual({ path: 'body.backup.score' })
   })
 
-  test('billing mode serializes query and hit configs', () => {
-    const queryCtx = createContext({
-      billingConfig: { mode: 'QUERY', path: '', operator: '==', value: '' }
-    })
-    const hitCtx = createContext({
-      billingConfig: { mode: 'HIT', path: 'body.hit', operator: '==', value: 'true' }
+  test('cache key config keeps selected component order and requires every component', () => {
+    const ctx = createContext({
+      cacheKeyRows: [{ path: 'customer.name' }, { path: 'customer.idCard' }, { path: 'customer.mobile' }]
     })
 
+    expect(ctx.buildCacheKeyConfig()).toEqual({
+      components: [
+        { path: 'customer.name' },
+        { path: 'customer.idCard' },
+        { path: 'customer.mobile' }
+      ]
+    })
+  })
+
+  test('request success and billing hit serialize nested condition trees', () => {
+    const conditionRoot = {
+      type: 'group',
+      operator: 'AND',
+      children: [
+        { type: 'condition', path: 'httpStatus', operator: 'starts_with', value: '2' },
+        {
+          type: 'group',
+          operator: 'OR',
+          children: [
+            { type: 'condition', path: 'body.code', operator: 'in', values: ['2000', '2001'] },
+            { type: 'condition', path: 'body.message', operator: 'regex', value: '^SUCCESS.*' }
+          ]
+        }
+      ]
+    }
+    const queryCtx = createContext({
+      successConditionRoot: conditionRoot,
+      billingConfig: { mode: 'QUERY', conditionRoot: ApiDetail.methods.emptyApiConditionRoot() }
+    })
+    const hitCtx = createContext({
+      billingConfig: { mode: 'HIT', conditionRoot }
+    })
+
+    expect(queryCtx.buildSuccessConditionConfig()).toEqual(conditionRoot)
     expect(queryCtx.buildBillingConditionConfig()).toEqual({ mode: 'QUERY' })
     expect(hitCtx.buildBillingConditionConfig()).toEqual({
       mode: 'HIT',
-      path: 'body.hit',
-      operator: '==',
-      value: true
+      condition: conditionRoot
     })
+  })
+
+  test('normalizeForm rejects enabled cache without configured key components', () => {
+    const ctx = createContext({ cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()] })
+    ctx.form.responseCacheSeconds = 60
+
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('缓存键')
   })
 
   test('buildRequestMappingConfig nests dotted api field paths', () => {

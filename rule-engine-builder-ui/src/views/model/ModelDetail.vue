@@ -751,8 +751,8 @@ export default {
       return text.indexOf(prefix) === 0 ? text.substring(prefix.length) : text
     },
     refKey(id, refType) {
-      if (!id) return ''
-      return (refType || 'VARIABLE') + ':' + id
+      if (!id || !refType) return ''
+      return refType + ':' + id
     },
     getRowVarMap(row) {
       return resolveDetailReference(this.varMap, row)
@@ -793,8 +793,8 @@ export default {
       }[type] || type || '变量'
     },
     putVarMap(item) {
-      this.$set(this.varMap, this.refKey(item.id, item.refType), item)
-      if (!this.varMap[String(item.id)]) this.$set(this.varMap, String(item.id), item)
+      const key = this.refKey(item.id, item.refType)
+      if (key) this.$set(this.varMap, key, item)
     },
     syncModelOperandReferences() {
       const options = this.varPickerOptions

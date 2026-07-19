@@ -177,11 +177,11 @@ public class DecisionTableCompilerTest {
     public void testVarContext解析输入变量名() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(100L, "age");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [{\n" +
-                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":100,\"varCode\":\"ageInput\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":100,\"_refType\":\"VARIABLE\",\"varCode\":\"ageInput\",\"operator\":\">=\",\"value\":\"18\"},\n" +
                 "    \"actions\": []\n" +
                 "  }]\n" +
                 "}", ctx);
@@ -197,12 +197,12 @@ public class DecisionTableCompilerTest {
     public void testVarContext解析输出变量名() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(200L, "result");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [{\n" +
                 "    \"conditions\": [],\n" +
-                "    \"actions\": [{\"_varId\": 200, \"varCode\": \"resultCode\", \"varType\": \"STRING\", \"value\": \"OK\"}]\n" +
+                "    \"actions\": [{\"_varId\": 200, \"_refType\":\"VARIABLE\", \"varCode\": \"resultCode\", \"varType\": \"STRING\", \"value\": \"OK\"}]\n" +
                 "  }]\n" +
                 "}", ctx);
         assertTrue(r.isSuccess());
@@ -230,6 +230,16 @@ public class DecisionTableCompilerTest {
         String script = r.getCompiledScript();
         assertTrue(script.contains("request.params.taxpayerType"));
         assertFalse(script.contains("plainVariable"));
+    }
+
+    @Test
+    public void managedReferenceWithoutContextIsRejectedInsteadOfUsingVarCode() {
+        CompileResult result = new DecisionTableCompiler().compile("{\"rules\":[{\"conditionRoot\":{"
+                + "\"type\":\"leaf\",\"_varId\":32,\"_refType\":\"VARIABLE\","
+                + "\"varCode\":\"legacyAge\",\"operator\":\">\",\"value\":\"18\"},\"actions\":[]}]}");
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("变量上下文"));
     }
 
     /** 规则内 conditionRoot 树结构 */
@@ -352,11 +362,11 @@ public class DecisionTableCompilerTest {
     public void testConditionRoot叶节点带varId_通过VarContext解析() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(500L, "customerAge");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [{\n" +
-                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":500,\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":500,\"_refType\":\"VARIABLE\",\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
                 "    \"actions\": []\n" +
                 "  }]\n" +
                 "}", ctx);
@@ -386,19 +396,20 @@ public class DecisionTableCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(600L, "maxAge");
         varIdMap.put(601L, "customerAge");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [{\n" +
-                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":601,\"varCode\":\"ageIn\",\"operator\":\">=\",\"valueKind\":\"VAR\",\"value\":\"ageThreshold\"},\n" +
+                "    \"conditionRoot\": {\"type\":\"leaf\",\"_varId\":601,\"_refType\":\"VARIABLE\",\"varCode\":\"ageIn\",\"operator\":\">=\",\"valueKind\":\"VAR\",\"value\":\"ageThreshold\",\"_rightVarId\":600,\"_rightRefType\":\"VARIABLE\"},\n" +
                 "    \"actions\": []\n" +
                 "  }]\n" +
                 "}", ctx);
         assertTrue(r.isSuccess());
         String script = r.getCompiledScript();
-        // 左侧用 VarContext 解析为 customerAge，右侧保持原始 value
+        // 左右两侧都通过各自的 ID + refType 精确解析。
         assertTrue(script.contains("customerAge"));
-        assertTrue(script.contains("ageThreshold"));
+        assertTrue(script.contains("maxAge"));
+        assertFalse(script.contains("ageThreshold"));
     }
 
     /** conditionRoot 嵌套 group（OR）生成正确括号与 OR */
@@ -455,12 +466,12 @@ public class DecisionTableCompilerTest {
     public void test动作带varId_通过VarContext解析输出() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(700L, "taxAmount");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [{\n" +
                 "    \"conditions\": [],\n" +
-                "    \"actions\": [{\"_varId\":700,\"varCode\":\"taxTmp\",\"varType\":\"DOUBLE\",\"value\":\"1500.0\"}]\n" +
+                "    \"actions\": [{\"_varId\":700,\"_refType\":\"VARIABLE\",\"varCode\":\"taxTmp\",\"varType\":\"DOUBLE\",\"value\":\"1500.0\"}]\n" +
                 "  }]\n" +
                 "}", ctx);
         assertTrue(r.isSuccess());
@@ -475,12 +486,12 @@ public class DecisionTableCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(800L, "rate");
         varIdMap.put(801L, "discount");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"rules\": [\n" +
-                "    {\"conditions\": [], \"actions\": [{\"_varId\":800,\"varCode\":\"r1\",\"varType\":\"DOUBLE\",\"value\":\"0.05\"}]},\n" +
-                "    {\"conditions\": [], \"actions\": [{\"_varId\":801,\"varCode\":\"r2\",\"varType\":\"DOUBLE\",\"value\":\"0.1\"}]}\n" +
+                "    {\"conditions\": [], \"actions\": [{\"_varId\":800,\"_refType\":\"VARIABLE\",\"varCode\":\"r1\",\"varType\":\"DOUBLE\",\"value\":\"0.05\"}]},\n" +
+                "    {\"conditions\": [], \"actions\": [{\"_varId\":801,\"_refType\":\"VARIABLE\",\"varCode\":\"r2\",\"varType\":\"DOUBLE\",\"value\":\"0.1\"}]}\n" +
                 "  ]\n" +
                 "}", ctx);
         assertTrue(r.isSuccess());
@@ -494,10 +505,10 @@ public class DecisionTableCompilerTest {
     public void test全局动作列varId_行内回退全局定义() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(900L, "finalScore");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
-                "  \"actions\": [{\"_varId\":900,\"varCode\":\"fsTmp\",\"varType\":\"NUMBER\"}],\n" +
+                "  \"actions\": [{\"_varId\":900,\"_refType\":\"VARIABLE\",\"varCode\":\"fsTmp\",\"varType\":\"NUMBER\"}],\n" +
                 "  \"rules\": [\n" +
                 "    {\"conditions\": [], \"actions\": [{\"value\":\"100\"}]}\n" +
                 "  ]\n" +
@@ -570,17 +581,17 @@ public class DecisionTableCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(100L, "age");
         varIdMap.put(200L, "result");
-        VarContext ctx = new VarContext(varIdMap);
+        VarContext ctx = variableContext(varIdMap);
 
         CompileResult r = compile("{\n" +
                 "  \"hitPolicy\": \"FIRST\",\n" +
                 "  \"rules\": [\n" +
                 "    {\n" +
                 "      \"conditionRoot\": {\"type\":\"group\",\"op\":\"AND\",\"children\":[\n" +
-                "        {\"type\":\"leaf\",\"_varId\":100,\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
+                "        {\"type\":\"leaf\",\"_varId\":100,\"_refType\":\"VARIABLE\",\"varCode\":\"ageTmp\",\"operator\":\">=\",\"value\":\"18\"},\n" +
                 "        {\"type\":\"leaf\",\"varCode\":\"income\",\"operator\":\">=\",\"value\":\"5000\"}\n" +
                 "      ]},\n" +
-                "      \"actions\": [{\"_varId\":200,\"varCode\":\"resultTmp\",\"varType\":\"STRING\",\"value\":\"PASS\"}]\n" +
+                "      \"actions\": [{\"_varId\":200,\"_refType\":\"VARIABLE\",\"varCode\":\"resultTmp\",\"varType\":\"STRING\",\"value\":\"PASS\"}]\n" +
                 "    }\n" +
                 "  ]\n" +
                 "}", ctx);
@@ -743,5 +754,13 @@ public class DecisionTableCompilerTest {
         assertTrue(result.getErrorMessage(), result.isSuccess());
         Map<?, ?> resultMap = (Map<?, ?>) result.getResult();
         assertEquals("PASS", resultMap.get("decision"));
+    }
+
+    private VarContext variableContext(Map<Long, String> varIdMap) {
+        Map<String, String> refs = new LinkedHashMap<>();
+        for (Map.Entry<Long, String> entry : varIdMap.entrySet()) {
+            refs.put("VARIABLE:" + entry.getKey(), entry.getValue());
+        }
+        return new VarContext(varIdMap, new LinkedHashMap<String, String>(), refs);
     }
 }

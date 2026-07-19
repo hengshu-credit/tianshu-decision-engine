@@ -33,6 +33,22 @@ describe.each(DESIGNERS)('%s结束节点', (name, designer) => {
     expect(addNodeToCanvas).toHaveBeenCalledWith('end-event', END_SCOPE_ALL_RULES)
   })
 
+  test('锚点快捷新增结束节点时确认后自动连线', () => {
+    const commitConnectedNode = jest.fn()
+    const context = {
+      endNodeScopeVisible: true,
+      pendingConnectedNode: { type: 'end-event' },
+      commitConnectedNode,
+      addNodeToCanvas: jest.fn()
+    }
+
+    designer.methods.confirmEndNode.call(context, END_SCOPE_CURRENT_RULE)
+
+    expect(context.endNodeScopeVisible).toBe(false)
+    expect(commitConnectedNode).toHaveBeenCalledWith('end-event', END_SCOPE_CURRENT_RULE)
+    expect(context.addNodeToCanvas).not.toHaveBeenCalled()
+  })
+
   test.each([
     [END_SCOPE_CURRENT_RULE, '跳出当前规则'],
     [END_SCOPE_ALL_RULES, '跳出整体规则']

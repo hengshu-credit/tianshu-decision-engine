@@ -33,6 +33,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
@@ -710,6 +711,23 @@ public class RuleFieldAnalyzerTest {
         enrich.invoke(analyzer, field, varMetaMap, Collections.emptyMap(), Collections.emptyMap());
 
         assertEquals("NUMBER", field.getFieldType());
+    }
+
+    @Test
+    public void fieldMetadataNeverAssociatesByCodeWithoutIdAndRefType() throws Exception {
+        RuleDefinitionInputField field = inputField("riskFactor", null, "INPUT", null);
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("riskfactor", leafMeta("riskFactor", "INPUT", 241L));
+
+        Method enrich = RuleFieldAnalyzer.class.getDeclaredMethod("enrichFieldFromMeta",
+                RuleDefinitionInputField.class, Map.class, Map.class, Map.class);
+        enrich.setAccessible(true);
+        enrich.invoke(analyzer, field, varMetaMap,
+                Collections.singletonMap("riskFactor", 241L),
+                Collections.singletonMap("riskFactor", "VARIABLE"));
+
+        assertNull(field.getVarId());
+        assertNull(field.getRefType());
     }
 
     @Test

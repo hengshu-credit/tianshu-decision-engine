@@ -53,6 +53,9 @@ public class RulePublishService {
     @Resource
     private RuleCallCycleService ruleCallCycleService;
 
+    @Resource
+    private RuleReferenceIntegrityService referenceIntegrityService;
+
     /**
      * 将 SCRIPT 函数定义拼接到编译脚本前面，使客户端同步后可直接执行
      */
@@ -78,6 +81,14 @@ public class RulePublishService {
         RuleDefinitionContent content = definitionService.getContent(definitionId);
         if (content == null) {
             return "规则内容不存在";
+        }
+
+        if (referenceIntegrityService != null) {
+            try {
+                referenceIntegrityService.assertValid(definitionId, definition.getProjectId(), content.getModelJson());
+            } catch (IllegalArgumentException e) {
+                return e.getMessage();
+            }
         }
 
         String cycleError = ruleCallCycleService.validateNoCycle(definitionId, content.getModelJson());

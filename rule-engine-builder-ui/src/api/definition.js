@@ -97,6 +97,18 @@ export function rollbackVersion(definitionId, version) {
   return request({ url: `/rule/definition/rollback/${definitionId}/${version}`, method: 'post' })
 }
 
+export function scanReferenceIntegrity(definitionId) {
+  return request({ url: `/rule/definition/reference-integrity/scan/${definitionId}`, method: 'get' })
+}
+
+export function scanAllReferenceIntegrity() {
+  return request({ url: '/rule/definition/reference-integrity/scan-all', method: 'get' })
+}
+
+export function migrateReferences(data) {
+  return request({ url: '/rule/definition/reference-integrity/migrate', method: 'post', data })
+}
+
 export const DEFAULT_RULE_REQUEST_TIMEOUT_MS = 180000
 
 export function executeRule(data, timeoutMs = DEFAULT_RULE_REQUEST_TIMEOUT_MS) {

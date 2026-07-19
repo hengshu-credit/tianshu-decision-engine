@@ -5,6 +5,7 @@ import Vue from 'vue'
 import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
 import * as requestApi from '@/api/request'
+import * as runtimeLogApi from '@/api/runtimeLog'
 import ExecutionLog from '@/views/log/ExecutionLog.vue'
 
 afterEach(() => { jest.clearAllMocks() })
@@ -46,6 +47,7 @@ const defaultStubs = {
   'el-textarea': makeStub('textarea'), 'el-divider': makeStub('hr'),
   'el-alert': makeStub('div'), 'el-date-picker': makeStub('div'),
   'el-tooltip': makeStub('span'), 'el-badge': makeStub('span'),
+  'el-empty': makeStub('div'),
   'trace-tree': makeStub('div')
 }
 
@@ -323,5 +325,59 @@ describe('ExecutionLog — 边界情况', () => {
     // finally 块保证 loading 恢复为 false
     expect(wrapper.vm.loading).toBe(false)
     wrapper.destroy()
+  })
+})
+
+describe('ExecutionLog — 规则集命中统计', () => {
+  let wrapper
+
+  beforeEach(async () => {
+    runtimeLogApi.getRuleSetStats.mockResolvedValue({
+      data: {
+        overview: {
+          evaluationCount: 3,
+          hitCount: 1,
+          hitRate: 1 / 3,
+          failureRate: 1 / 3,
+          p95CostTimeMs: 200,
+          p99CostTimeMs: 200
+        },
+        ruleSets: [{
+          ruleCode: 'RS-A',
+          ruleName: '准入规则集',
+          evaluationCount: 2,
+          hitCount: 1,
+          hitRate: 0.5,
+          items: [{ ruleCode: 'A-1', ruleName: '年龄准入', evaluationCount: 2, hitCount: 1, hitRate: 0.5 }]
+        }]
+      }
+    })
+    wrapper = await mountAndWait()
+  })
+
+  afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('切换到规则集统计时按项目、规则集和时间范围加载数据', async () => {
+    wrapper.vm.qp.projectCode = 'project_a'
+    wrapper.vm.qp.ruleCode = 'RS-A'
+
+    await wrapper.vm.handleViewChange({ name: 'ruleSetStats' })
+
+    expect(runtimeLogApi.getRuleSetStats).toHaveBeenCalledWith({
+      projectCode: 'project_a',
+      ruleCode: 'RS-A',
+      startTime: wrapper.vm.timeRange[0],
+      endTime: wrapper.vm.timeRange[1]
+    })
+    expect(wrapper.vm.ruleSetStats.ruleSets[0].items[0].ruleCode).toBe('A-1')
+  })
+
+  test('统计加载失败时保留可重试错误状态', async () => {
+    runtimeLogApi.getRuleSetStats.mockRejectedValueOnce(new Error('network'))
+
+    await wrapper.vm.loadRuleSetStats()
+
+    expect(wrapper.vm.ruleSetStatsLoading).toBe(false)
+    expect(wrapper.vm.ruleSetStatsError).toBe('规则集命中统计加载失败')
   })
 })

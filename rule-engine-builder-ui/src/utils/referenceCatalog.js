@@ -198,15 +198,9 @@ export function buildDetailReferenceMap(state) {
   const map = {}
   const items = (state && state.items) || []
   items.forEach(item => {
-    const refType = item.refType || 'VARIABLE'
-    if (item.id != null) {
+    const refType = item.refType
+    if (item.id != null && refType) {
       map[`${refType}:${item.id}`] = item
-      if (!map[String(item.id)]) map[String(item.id)] = item
-    }
-    const code = item.varCodeText || item.varCode || item.scriptName
-    if (code) {
-      map[`${refType}:CODE:${code}`] = item
-      if (!map[`CODE:${code}`]) map[`CODE:${code}`] = item
     }
   })
   return map
@@ -214,13 +208,8 @@ export function buildDetailReferenceMap(state) {
 
 export function resolveDetailReference(referenceMap, row) {
   if (!referenceMap || !row) return null
-  const refType = row.refType || row._refType || 'VARIABLE'
+  const refType = row.refType || row._refType
   const refId = row.varId == null ? row._varId : row.varId
-  if (refId != null) {
-    const byId = referenceMap[`${refType}:${refId}`] || referenceMap[String(refId)]
-    if (byId) return byId
-  }
-  const code = row.scriptName || row.fieldName || row.varCode
-  if (!code) return null
-  return referenceMap[`${refType}:CODE:${code}`] || referenceMap[`CODE:${code}`] || null
+  if (refId == null || !refType) return null
+  return referenceMap[`${refType}:${refId}`] || null
 }

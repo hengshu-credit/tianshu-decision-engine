@@ -98,6 +98,31 @@ public class OperandCompilerTest {
     }
 
     @Test
+    public void managedReferenceNeverFallsBackToCodeOrBareId() {
+        Map<Long, String> ids = Collections.singletonMap(9L, "bare_id_name");
+        Map<String, String> codes = Collections.singletonMap("legacyCode", "code_name");
+        VarContext context = new VarContext(ids, codes, Collections.<String, String>emptyMap());
+
+        assertContextCompileFails(context,
+                "{\"kind\":\"REFERENCE\",\"refId\":9,\"refType\":\"VARIABLE\",\"code\":\"legacyCode\"}",
+                "VARIABLE:9");
+        assertContextCompileFails(context,
+                "{\"kind\":\"REFERENCE\",\"refId\":9,\"code\":\"legacyCode\"}",
+                "ID");
+    }
+
+    @Test
+    public void compilesRelativeLeafPathFromStableParentReference() {
+        VarContext context = new VarContext(Collections.<Long, String>emptyMap(),
+                Collections.<String, String>emptyMap(),
+                Collections.singletonMap("DATA_OBJECT:41", "request.items"));
+        JSONObject operand = JSON.parseObject("{\"kind\":\"PATH\",\"refId\":41,\"refType\":\"DATA_OBJECT\","
+                + "\"code\":\"request.items[0].name\",\"relativePath\":\"[0].name\",\"resolved\":true}");
+
+        Assert.assertEquals("request.items[0].name", OperandCompiler.compile(operand, context));
+    }
+
+    @Test
     public void compilesRecursiveExpressionNodes() {
         Assert.assertEquals("(request.amount + 100)", compile("{\"kind\":\"OPERATION\",\"terms\":[{\"operand\":{\"kind\":\"PATH\",\"value\":\"request.amount\"}},{\"operator\":\"+\",\"operand\":{\"kind\":\"LITERAL\",\"value\":\"100\",\"valueType\":\"NUMBER\"}}]}"));
         Assert.assertEquals("objGet(request.payload, \"score\")", compile("{\"kind\":\"ACCESS\",\"accessType\":\"KEY\",\"target\":{\"kind\":\"PATH\",\"value\":\"request.payload\"},\"accessor\":{\"kind\":\"LITERAL\",\"value\":\"score\",\"valueType\":\"STRING\"}}"));
@@ -143,6 +168,15 @@ public class OperandCompilerTest {
     private void assertCompileFails(String json, String message) {
         try {
             compile(json);
+            Assert.fail("Expected compile to fail");
+        } catch (IllegalArgumentException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));
+        }
+    }
+
+    private void assertContextCompileFails(VarContext context, String json, String message) {
+        try {
+            OperandCompiler.compile(JSON.parseObject(json), context);
             Assert.fail("Expected compile to fail");
         } catch (IllegalArgumentException expected) {
             Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));

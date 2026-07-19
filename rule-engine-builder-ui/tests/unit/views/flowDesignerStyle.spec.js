@@ -77,7 +77,7 @@ describe('flow designer style regressions', () => {
     files.forEach(file => {
       const source = readSource('src/views/designer/' + file)
       expect(source).toContain("import ruleCallMixin from '@/mixins/ruleCallMixin'")
-      expect(source).toContain('mixins: [varPickerMixin, ruleCallMixin]')
+      expect(source).toContain('mixins: [varPickerMixin, ruleCallMixin')
       expect(source).toContain(':rules="projectRules"')
       expect(source).toContain(':current-rule-id="definitionId"')
       expect(source).toContain(':current-rule-code="currentRuleCode"')
@@ -110,5 +110,31 @@ describe('flow designer style regressions', () => {
 
     expect(alertIndex).toBeGreaterThan(nodeTemplateIndex)
     expect(alertIndex).toBeLessThan(conditionNodeIndex)
+  })
+
+  test('决策树和决策流使用 LogicFlow 2 官方插件与主题色图样式', () => {
+    const packageJson = JSON.parse(readSource('package.json'))
+    const tree = readSource('src/views/designer/DecisionTree.vue')
+    const flow = readSource('src/views/designer/DecisionFlow.vue')
+
+    expect(packageJson.dependencies['@logicflow/core']).toBe('2.2.4')
+    expect(packageJson.dependencies['@logicflow/extension']).toBe('2.3.0')
+    expect(packageJson.dependencies['@logicflow/layout']).toBe('2.1.4')
+    ;[tree, flow].forEach(source => {
+      expect(source).toContain('plugins: [SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap, Dagre]')
+      expect(source).toContain("this.lf.on('anchor:click'")
+      expect(source).toContain('cascadeDeleteChildren: false')
+      expect(source).toContain('disallowEdgeConnectToGroup: true')
+      expect(source).toContain("stroke: FLOW_THEME_COLOR")
+      expect(source).toContain("fill: FLOW_THEME_COLOR")
+      expect(source).toContain('选区')
+      expect(source).toContain('分组')
+      expect(source).toContain('一键美化')
+      expect(source).toContain('小地图')
+      expect(source).toContain("'is-node-active': activeElement && activeElement.baseType === 'node'")
+      expect(source).toContain('.is-node-active ::v-deep .lf-mini-map')
+      expect(source).toContain('getPersistableGraphData(this.lf)')
+      expect(source).toContain('getBusinessGraphData(canvasGraph)')
+    })
   })
 })

@@ -324,6 +324,7 @@ public class RuleModelService {
      * 手动创建模型（不依赖文件上传）
      */
     public RuleModel create(RuleModel model) {
+        validateSupportedFormat(model);
         if (model.getScope() == null || model.getScope().isEmpty()) {
             model.setScope(SCOPE_PROJECT);
         }
@@ -347,6 +348,7 @@ public class RuleModelService {
         if (existing == null) {
             throw new IllegalArgumentException("模型不存在");
         }
+        validateSupportedFormat(existing);
         // 只更新允许变更的字段，避免覆盖文件内容等核心数据
         existing.setModelName(model.getModelName());
         existing.setDescription(model.getDescription());
@@ -408,6 +410,7 @@ public class RuleModelService {
     public void publish(Long modelId, String changeLog, String publishBy) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
+        validateSupportedFormat(model);
         validatePublishFields(modelId);
 
         int newVersion = (model.getCurrentVersion() != null ? model.getCurrentVersion() : 0) + 1;
@@ -459,6 +462,7 @@ public class RuleModelService {
     public void rollbackToVersion(Long modelId, Integer version) {
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
+        validateSupportedFormat(model);
         RuleModelVersion snapshot = getVersion(modelId, version);
         if (snapshot == null) throw new IllegalArgumentException("Version not found");
 
@@ -646,14 +650,13 @@ public class RuleModelService {
      * 检测模型格式
      */
     private String detectFormat(String fileName) {
-        if (fileName == null) return "PMML";
-        String lower = fileName.toLowerCase();
-        if (lower.endsWith(".pmml") || lower.endsWith(".xml")) return "PMML";
+        if (fileName == null || fileName.trim().isEmpty()) {
+            throw new IllegalArgumentException("模型文件名不能为空，仅支持 ONNX 和 PMML 格式");
+        }
+        String lower = fileName.trim().toLowerCase(java.util.Locale.ROOT);
+        if (lower.endsWith(".pmml")) return "PMML";
         if (lower.endsWith(".onnx")) return "ONNX";
-        if (lower.endsWith(".pb")) return "TENSORFLOW";
-        if (lower.endsWith(".pkl") || lower.endsWith(".pickle")) return "PICKLE";
-        if (lower.endsWith(".txt")) return "LIGHTGBM";
-        return "PMML";
+        throw new IllegalArgumentException("不支持的模型格式，仅支持 ONNX 和 PMML");
     }
 
     // ========== PMML 纯 JPMML 实现 ==========
@@ -902,6 +905,7 @@ public class RuleModelService {
         if (model == null) {
             throw new IllegalArgumentException("模型不存在");
         }
+        validateSupportedFormat(model);
         if (model.getModelContent() == null || model.getModelContent().isEmpty()) {
             throw new IllegalArgumentException("模型文件内容为空");
         }
@@ -931,6 +935,15 @@ public class RuleModelService {
         result.put("modelFormat", model.getModelFormat());
         result.put("inputParams", boundParams);
         return result;
+    }
+
+    private void validateSupportedFormat(RuleModel model) {
+        String format = model == null || model.getModelFormat() == null
+                ? "" : model.getModelFormat().trim().toUpperCase(java.util.Locale.ROOT);
+        if (!"ONNX".equals(format) && !"PMML".equals(format)) {
+            throw new IllegalArgumentException("不支持的模型格式 "
+                    + (format.isEmpty() ? "(empty)" : format) + "，仅支持 ONNX 和 PMML");
+        }
     }
 
     private int normalizedExecutionTimeout(Integer timeoutMs) {

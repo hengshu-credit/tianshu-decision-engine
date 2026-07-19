@@ -1,5 +1,10 @@
 <template>
   <div class="uiue-list-page">
+    <el-tabs v-model="activeView" class="log-view-tabs" @tab-click="handleViewChange">
+      <el-tab-pane label="执行明细" name="logs" />
+      <el-tab-pane label="规则集命中统计" name="ruleSetStats" />
+    </el-tabs>
+    <div v-if="activeView === 'logs'">
     <div class="uiue-search-container">
       <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="来源">
@@ -98,6 +103,83 @@
     <el-pagination style="margin-top:16px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
       layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100,200,500]"
       @current-change="p=>{qp.pageNum=p;load()}" @size-change="s=>{qp.pageSize=s;qp.pageNum=1;load()}" />
+    </div>
+    <div v-else class="rule-set-stats">
+      <div class="uiue-search-container">
+        <el-form :inline="true" size="small">
+          <el-form-item label="项目">
+            <el-select v-model="qp.projectCode" clearable filterable remote reserve-keyword placeholder="全部项目"
+              :remote-method="searchProjects" :loading="projectOptionsLoading"
+              @visible-change="onProjectFilterVisible" @change="onProjectChange">
+              <el-option v-for="p in projectList" :key="p.projectCode" :label="p.projectName" :value="p.projectCode" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="规则集">
+            <el-select v-model="qp.ruleCode" clearable filterable remote reserve-keyword placeholder="全部规则集"
+              :remote-method="searchRules" :loading="ruleOptionsLoading" @visible-change="onRuleFilterVisible">
+              <el-option v-for="r in filteredRuleSets" :key="r.ruleCode" :label="r.ruleName" :value="r.ruleCode" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="时间范围">
+            <el-date-picker v-model="timeRange" type="datetimerange" range-separator="-"
+              start-placeholder="开始时间" end-placeholder="结束时间" value-format="yyyy-MM-dd HH:mm:ss"
+              :default-time="['00:00:00','23:59:59']" :picker-options="pickerOptions" size="small" style="width:360px" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="loadRuleSetStats">查询</el-button>
+          </el-form-item>
+        </el-form>
+      </div>
+
+      <el-alert title="统计范围仅包含规则集；串行规则集中未执行、禁用及首条命中后跳过的规则不计入执行次数。" type="info" show-icon :closable="false" />
+      <async-state
+        :loading="ruleSetStatsLoading"
+        :error="ruleSetStatsError"
+        :empty="!ruleSetStats.ruleSets.length"
+        empty-text="当前筛选范围内暂无规则集追踪统计"
+        @retry="loadRuleSetStats"
+      >
+        <div class="stats-cards">
+          <div class="stats-card"><span>规则集执行次数</span><strong>{{ ruleSetStats.overview.evaluationCount || 0 }}</strong></div>
+          <div class="stats-card"><span>整体命中率</span><strong>{{ ratePercent(ruleSetStats.overview.hitRate) }}</strong></div>
+          <div class="stats-card"><span>失败率</span><strong>{{ ratePercent(ruleSetStats.overview.failureRate) }}</strong></div>
+          <div class="stats-card"><span>平均耗时</span><strong>{{ formatCost(ruleSetStats.overview.avgCostTimeMs) }}</strong></div>
+          <div class="stats-card"><span>P95 耗时</span><strong>{{ formatCost(ruleSetStats.overview.p95CostTimeMs) }}</strong></div>
+          <div class="stats-card"><span>P99 耗时</span><strong>{{ formatCost(ruleSetStats.overview.p99CostTimeMs) }}</strong></div>
+        </div>
+
+        <el-table :data="ruleSetStats.ruleSets" border size="small" class="rule-set-table">
+          <el-table-column type="expand">
+            <template slot-scope="{row}">
+              <div class="item-table-title">规则集内部规则命中明细</div>
+              <el-table v-if="row.items && row.items.length" :data="row.items" border size="mini">
+                <el-table-column prop="ruleCode" label="规则编码" min-width="150" />
+                <el-table-column prop="ruleName" label="规则名称" min-width="180" />
+                <el-table-column prop="evaluationCount" label="实际执行次数" min-width="110" align="right" />
+                <el-table-column prop="hitCount" label="命中次数" min-width="90" align="right" />
+                <el-table-column label="命中率" min-width="90" align="right">
+                  <template slot-scope="itemScope">{{ ratePercent(itemScope.row.hitRate) }}</template>
+                </el-table-column>
+              </el-table>
+              <el-empty v-else description="暂无实际执行的内部规则" :image-size="56" />
+            </template>
+          </el-table-column>
+          <el-table-column prop="ruleCode" label="规则集编码" min-width="150" />
+          <el-table-column prop="ruleName" label="规则集名称" min-width="180" />
+          <el-table-column prop="evaluationCount" label="执行次数" min-width="90" align="right" />
+          <el-table-column prop="hitCount" label="命中次数" min-width="90" align="right" />
+          <el-table-column label="命中率" min-width="90" align="right">
+            <template slot-scope="{row}">{{ ratePercent(row.hitRate) }}</template>
+          </el-table-column>
+          <el-table-column label="失败率" min-width="90" align="right">
+            <template slot-scope="{row}">{{ ratePercent(row.failureRate) }}</template>
+          </el-table-column>
+          <el-table-column label="平均/P95/P99 耗时" min-width="190" align="right">
+            <template slot-scope="{row}">{{ formatCost(row.avgCostTimeMs) }} / {{ formatCost(row.p95CostTimeMs) }} / {{ formatCost(row.p99CostTimeMs) }}</template>
+          </el-table-column>
+        </el-table>
+      </async-state>
+    </div>
     <el-drawer title="日志详情" :visible.sync="detailVis" size="84%">
       <div style="padding:16px" v-if="detail">
         <el-tabs v-model="detailTab">
@@ -148,14 +230,17 @@ import { listDefinitions as listRules, getContent } from '@/api/definition'
 import { listProjects } from '@/api/project'
 import { listAllFunctionsByProject } from '@/api/function'
 import { listAllModelsByProject } from '@/api/model'
+import { getRuleSetStats } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
+import AsyncState from '@/components/common/AsyncState.vue'
 import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
 
 export default {
   name: 'ExecutionLog',
-  components: { TraceTree },
+  components: { TraceTree, AsyncState },
   data () {
     return {
+      activeView: 'logs',
       loading: false,
       list: [],
       total: 0,
@@ -188,6 +273,12 @@ export default {
       ruleOptionsLoading: false,
       projectOptionsLoaded: false,
       ruleOptionsLoaded: false,
+      ruleSetStatsLoading: false,
+      ruleSetStatsError: '',
+      ruleSetStats: {
+        overview: {},
+        ruleSets: []
+      },
       modelTypeMap: {
         'TABLE': '决策表',
         'TREE': '决策树',
@@ -220,6 +311,9 @@ export default {
       }
       if (!pid) return this.ruleList
       return this.ruleList.filter(function (r) { return r.projectId === pid })
+    },
+    filteredRuleSets: function () {
+      return this.filteredRules.filter(function (rule) { return rule.modelType === 'RULE_SET' })
     }
   },
   watch: {
@@ -233,6 +327,40 @@ export default {
     this.load()
   },
   methods: {
+    async handleViewChange (tab) {
+      this.activeView = tab && tab.name ? tab.name : this.activeView
+      if (this.activeView === 'ruleSetStats') await this.loadRuleSetStats()
+    },
+    async loadRuleSetStats () {
+      this.ruleSetStatsLoading = true
+      this.ruleSetStatsError = ''
+      try {
+        var params = {
+          projectCode: this.qp.projectCode || '',
+          ruleCode: this.qp.ruleCode || '',
+          startTime: this.timeRange && this.timeRange[0] ? this.timeRange[0] : '',
+          endTime: this.timeRange && this.timeRange[1] ? this.timeRange[1] : ''
+        }
+        var result = await getRuleSetStats(params)
+        var data = result && result.data ? result.data : {}
+        this.ruleSetStats = {
+          overview: data.overview || {},
+          ruleSets: data.ruleSets || []
+        }
+      } catch (e) {
+        this.ruleSetStatsError = '规则集命中统计加载失败'
+      } finally {
+        this.ruleSetStatsLoading = false
+      }
+    },
+    ratePercent: function (value) {
+      var rate = Number(value)
+      return (isFinite(rate) ? rate * 100 : 0).toFixed(2) + '%'
+    },
+    formatCost: function (value) {
+      var cost = Number(value)
+      return (isFinite(cost) ? cost.toFixed(2) : '0.00') + ' ms'
+    },
     restoreCachedState: function () {
       var state = restorePageState('ExecutionLog')
       if (state.qp) this.qp = Object.assign({}, this.qp, state.qp)
@@ -555,6 +683,49 @@ export default {
 }
 </script>
 <style scoped>
+.log-view-tabs {
+  margin-bottom: 12px;
+}
+.rule-set-stats {
+  min-height: 260px;
+}
+.stats-cards {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(130px, 1fr));
+  gap: 12px;
+  margin: 16px 0;
+}
+.stats-card {
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  background: #fff;
+}
+.stats-card span {
+  display: block;
+  margin-bottom: 10px;
+  color: #909399;
+  font-size: 12px;
+}
+.stats-card strong {
+  color: #303133;
+  font-size: 22px;
+  line-height: 1;
+}
+.rule-set-table {
+  width: 100%;
+}
+.item-table-title {
+  margin: 0 0 10px 8px;
+  color: #606266;
+  font-weight: 600;
+}
+@media (max-width: 1280px) {
+  .stats-cards {
+    grid-template-columns: repeat(3, minmax(130px, 1fr));
+  }
+}
 .log-pre {
   background: #f5f5f5;
   padding: 12px;

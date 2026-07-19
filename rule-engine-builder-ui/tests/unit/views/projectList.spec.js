@@ -238,6 +238,7 @@ describe('ProjectList — 项目操作', () => {
 
   test('handleExportDoc 使用模块化生成器并内嵌 hengshucredit SVG', async () => {
     const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
+    const anchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     projectApi.exportApiDoc.mockResolvedValue({ code: 200, data: doc })
     global.fetch = jest.fn().mockResolvedValue({
       ok: true,
@@ -255,6 +256,7 @@ describe('ProjectList — 项目操作', () => {
     })
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc')
     expect(wrapper.vm.generateDocHtml).toBeUndefined()
+    anchorClick.mockRestore()
   })
 
   test('handleSubmit 新建项目时调用 createProject', async () => {
@@ -326,7 +328,7 @@ describe('ProjectList — 边界情况', () => {
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
+        'el-input': true, 'el-input-number': true, 'el-button': true, 'el-tag': true,
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
         'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,
@@ -350,7 +352,7 @@ describe('ProjectList — 边界情况', () => {
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
-        'el-input': true, 'el-button': true, 'el-tag': true,
+        'el-input': true, 'el-input-number': true, 'el-button': true, 'el-tag': true,
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
         'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,

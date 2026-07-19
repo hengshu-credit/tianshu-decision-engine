@@ -23,7 +23,20 @@ function mountPanel() {
       $prompt: jest.fn().mockResolvedValue({ value: '复制场景' })
     },
     stubs: {
-      MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' }
+      MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' },
+      'el-alert': true,
+      'el-button': true,
+      'el-dialog': true,
+      'el-form': true,
+      'el-form-item': true,
+      'el-input': true,
+      'el-input-number': true,
+      'el-radio-button': true,
+      'el-radio-group': true,
+      'el-switch': true,
+      'el-table': true,
+      'el-table-column': true,
+      'el-tag': true
     }
   })
   return wrapper

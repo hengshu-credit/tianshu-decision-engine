@@ -210,7 +210,7 @@ public class GraphScriptGenerator {
             return compileConditionNode(conditionConfig, varContext);
         }
         String expr = edge.getString("conditionExpression");
-        if (expr == null || expr.trim().isEmpty() || varContext == null) {
+        if (expr == null || expr.trim().isEmpty()) {
             return expr;
         }
         Matcher matcher = Pattern.compile("^(\\S+)\\s*(==|!=|>=|<=|>|<|in)\\s*(.+)$").matcher(expr.trim());
@@ -219,12 +219,12 @@ public class GraphScriptGenerator {
         }
         Long leftId = edge.containsKey("leftVarId") ? edge.getLong("leftVarId") : null;
         String leftRefType = edge.getString("leftRefType");
-        String left = varContext.resolveVar(leftId, leftRefType, matcher.group(1));
+        String left = resolveVar(leftId, leftRefType, matcher.group(1), varContext);
         String right = matcher.group(3);
         Long rightId = edge.containsKey("rightVarId") ? edge.getLong("rightVarId") : null;
         String rightRefType = edge.getString("rightRefType");
         if (rightId != null) {
-            right = varContext.resolveVar(rightId, rightRefType, right);
+            right = resolveVar(rightId, rightRefType, right, varContext);
         }
         return left + " " + matcher.group(2) + " " + right;
     }
@@ -311,7 +311,7 @@ public class GraphScriptGenerator {
 
         Long leftId = getLongAny(leaf, "_varId", "varId", "leftVarId");
         String leftRefType = firstNotEmpty(leaf.getString("_refType"), leaf.getString("refType"), leaf.getString("leftRefType"));
-        String left = varContext != null ? varContext.resolveVar(leftId, leftRefType, leftCode) : leftCode;
+        String left = resolveVar(leftId, leftRefType, leftCode, varContext);
 
         String right;
         if ("VAR".equals(leaf.getString("valueKind"))) {
@@ -319,7 +319,7 @@ public class GraphScriptGenerator {
             if (rightCode == null || rightCode.trim().isEmpty()) return "true";
             Long rightId = getLongAny(leaf, "_rightVarId", "rightVarId");
             String rightRefType = firstNotEmpty(leaf.getString("_rightRefType"), leaf.getString("rightRefType"));
-            right = varContext != null ? varContext.resolveVar(rightId, rightRefType, rightCode) : rightCode;
+            right = resolveVar(rightId, rightRefType, rightCode, varContext);
         } else {
             Object value = leaf.get("value");
             if (value == null || String.valueOf(value).trim().isEmpty()) return "true";
@@ -335,6 +335,14 @@ public class GraphScriptGenerator {
             }
         }
         return null;
+    }
+
+    private static String resolveVar(Long refId, String refType, String code, VarContext varContext) {
+        boolean managedReference = refId != null || (refType != null && !refType.trim().isEmpty());
+        if (managedReference && varContext == null) {
+            throw new IllegalArgumentException("受管字段引用缺少变量上下文");
+        }
+        return varContext == null ? code : varContext.resolveVar(refId, refType, code);
     }
 
     private static String firstNotEmpty(String... values) {

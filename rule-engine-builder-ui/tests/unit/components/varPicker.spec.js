@@ -282,7 +282,9 @@ describe('VarPicker', () => {
   test('打开已有字段时自动定位到字段所在分页', async () => {
     const wrapper = mountPicker({
       vars: standaloneOptions(150),
-      value: 'v99'
+      operandMode: true,
+      allowedKinds: ['REFERENCE'],
+      value: { kind: 'REFERENCE', refId: 99, refType: 'VARIABLE', code: 'v99', value: 'v99' }
     })
     wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
 
@@ -469,7 +471,7 @@ describe('VarPicker', () => {
     document.body.removeChild(reference)
   })
 
-  test('object field short code value matches full object option without duplicate display code', async () => {
+  test('object field short code does not reverse-link to a full object option', async () => {
     const wrapper = mountPicker({
       value: 'taxpayerType',
       allowCustom: false,
@@ -491,8 +493,8 @@ describe('VarPicker', () => {
     await Vue.nextTick()
 
     expect(wrapper.vm.customMode).toBe(false)
-    expect(wrapper.vm.currentValue).toBe('taxContext.taxpayerType')
-    expect(wrapper.vm.displayValue).toBe('fengkong/taxpayerType taxContext.taxpayerType')
+    expect(wrapper.vm.currentValue).toBe('taxpayerType')
+    expect(wrapper.vm.displayValue).toBe('taxpayerType')
   })
 
   test('autoSwitchCustom=false keeps unmatched values in picker mode', async () => {

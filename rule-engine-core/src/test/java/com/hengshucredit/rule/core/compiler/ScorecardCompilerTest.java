@@ -28,7 +28,10 @@ public class ScorecardCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(32L, "applicant.version");
         varIdMap.put(33L, "testResult");
-        VarContext ctx = new VarContext(varIdMap);
+        Map<String, String> refMap = new LinkedHashMap<>();
+        refMap.put("VARIABLE:32", "applicant.version");
+        refMap.put("VARIABLE:33", "testResult");
+        VarContext ctx = new VarContext(varIdMap, new LinkedHashMap<String, String>(), refMap);
 
         CompileResult result = compiler.compile("{\n" +
                 "  \"initialScore\": 2,\n" +
@@ -40,9 +43,10 @@ public class ScorecardCompilerTest {
                 "    \"condition\": \"oldVersion >= 10\",\n" +
                 "    \"score\": 1,\n" +
                 "    \"weight\": 1,\n" +
-                "    \"_varId\": 32\n" +
+                "    \"_varId\": 32,\n" +
+                "    \"_refType\": \"VARIABLE\"\n" +
                 "  }],\n" +
-                "  \"resultVar\": {\"varCode\":\"resultCode\", \"_varId\":33, \"varType\":\"NUMBER\"}\n" +
+                "  \"resultVar\": {\"varCode\":\"resultCode\", \"_varId\":33, \"_refType\":\"VARIABLE\", \"varType\":\"NUMBER\"}\n" +
                 "}", ctx);
 
         assertTrue(result.getErrorMessage(), result.isSuccess());

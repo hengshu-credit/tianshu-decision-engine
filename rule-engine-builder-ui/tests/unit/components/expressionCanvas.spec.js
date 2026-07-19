@@ -100,7 +100,8 @@ describe('ExpressionCanvas', () => {
         node: { kind: 'PATH', value: 'score', code: 'score' },
         path: ['terms', 1, 'operand'],
         selectedPath: ['terms', 1, 'operand']
-      }
+      },
+      stubs: { 'el-input': true }
     })
     const preventDefault = jest.fn()
     const stopPropagation = jest.fn()

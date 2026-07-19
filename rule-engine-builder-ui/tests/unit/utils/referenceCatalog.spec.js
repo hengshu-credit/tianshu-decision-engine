@@ -55,10 +55,19 @@ describe('referenceCatalog', () => {
     const referenceMap = buildDetailReferenceMap(detailState)
     expect(resolveDetailReference(referenceMap, {
       refType: 'DATA_OBJECT',
-      scriptName: 'bankcard.bank_card_no'
+      varId: 11,
+      scriptName: 'stale.display.code'
     })).toMatchObject({
       varLabelText: '银行卡信息/银行卡号',
       varCodeText: 'bankcard.bank_card_no'
     })
+    expect(resolveDetailReference(referenceMap, {
+      refType: 'DATA_OBJECT',
+      scriptName: 'bankcard.bank_card_no'
+    })).toBeNull()
+    expect(resolveDetailReference(referenceMap, {
+      varId: 11,
+      scriptName: 'bankcard.bank_card_no'
+    })).toBeNull()
   })
 })

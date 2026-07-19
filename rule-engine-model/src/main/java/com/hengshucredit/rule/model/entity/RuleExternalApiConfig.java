@@ -35,6 +35,8 @@ public class RuleExternalApiConfig {
     private String authApiConfig;
     private Integer tokenCacheSeconds;
     private Integer responseCacheSeconds;
+    private String cacheKeyConfig;
+    private String successCondition;
     private Integer timeoutMs;
     private Integer retryCount;
     private Integer retryIntervalMs;

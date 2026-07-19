@@ -32,6 +32,7 @@ public final class AggregateBuiltinFunctionRegistry {
     private static final Class<?>[] OBJECT_DOUBLE_STRING = {Object.class, double.class, String.class};
     private static final Class<?>[] OBJECT_OBJECT_STRING = {Object.class, Object.class, String.class};
     private static final Class<?>[] STRING_OBJECT = {String.class, Object.class};
+    private static final Class<?>[] TWO_STRINGS_OBJECT = {String.class, String.class, Object.class};
     private static final Class<?>[] STRING_OBJECT_STRING = {String.class, Object.class, String.class};
     private static final Class<?>[] STRING_STRING_STRING = {String.class, String.class, String.class};
     private static final Class<?>[] DOUBLE_STRING = {double.class, String.class};
@@ -222,5 +223,7 @@ public final class AggregateBuiltinFunctionRegistry {
         runner.addFunctionOfServiceMethod("currentRule", RUNTIME_CONTEXT_DELEGATE, "currentRule", NO_ARGS);
         runner.addFunctionOfServiceMethod("currentRuleName", RUNTIME_CONTEXT_DELEGATE, "currentRuleName", NO_ARGS);
         runner.addFunctionOfServiceMethod("currentMatchedConditions", RUNTIME_CONTEXT_DELEGATE, "currentMatchedConditions", NO_ARGS);
+        runner.addFunctionOfServiceMethod("recordRuleSetItem", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetItem", TWO_STRINGS_OBJECT);
+        runner.addFunctionOfServiceMethod("recordRuleSetSummary", RUNTIME_CONTEXT_DELEGATE, "recordRuleSetSummary", SINGLE_OBJECT);
     }
 }

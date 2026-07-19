@@ -298,16 +298,18 @@ public class DecisionTableCompiler implements RuleCompiler {
 
     /**
      * 通过 VarContext 解析变量引用名。
-     * 优先通过 varId 精确查 scriptName，回退到 varCode 查找。
+     * 受管引用必须通过 ID + ref_type 精确解析；无身份字段的局部标识符保持原样。
      */
     private static String resolveVar(Long varId, String varCode, VarContext varContext) {
         return resolveVar(varId, null, varCode, varContext);
     }
 
     private static String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {
-        if (varContext != null) {
-            return varContext.resolveVar(varId, refType, varCode);
+        boolean managedReference = varId != null || (refType != null && !refType.trim().isEmpty());
+        if (managedReference && varContext == null) {
+            throw new IllegalArgumentException("受管字段引用缺少变量上下文");
         }
+        if (varContext != null) return varContext.resolveVar(varId, refType, varCode);
         return varCode != null ? varCode : "";
     }
 

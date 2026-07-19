@@ -5,9 +5,11 @@ import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Before;
+import org.junit.After;
 import org.junit.Test;
 
 import java.util.LinkedHashMap;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
@@ -96,6 +98,30 @@ public class RuleSetCompilerTest {
         assertEquals("R0001", ((Map<?, ?>) hits.get(2)).get("ruleCode"));
     }
 
+    @After
+    public void tearDown() {
+        RuntimeContextBridge.clear();
+    }
+
+    @Test
+    public void serialModeRecordsOnlyReachedRuleEvaluationAndRuleSetOverallHit() {
+        CompileResult compiled = compiler.compile("{\"executionMode\":\"SERIAL\",\"rules\":["
+                + "{\"ruleCode\":\"R-LOW\",\"ruleName\":\"低优先级\",\"priority\":1,\"conditionRoot\":{\"type\":\"group\",\"op\":\"AND\",\"children\":[]}},"
+                + "{\"ruleCode\":\"R-HIGH\",\"ruleName\":\"高优先级\",\"priority\":9,\"conditionRoot\":{\"type\":\"group\",\"op\":\"AND\",\"children\":[]}}]}" );
+        List<Map<String, Object>> events = new ArrayList<>();
+        RuntimeContextBridge.bindTraceEventListener(events::add);
+
+        RuleResult result = engine.execute(compiled.getCompiledScript(), new LinkedHashMap<String, Object>());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(2, events.size());
+        assertEquals("RULE_SET_ITEM", events.get(0).get("type"));
+        assertEquals("R-HIGH", events.get(0).get("ruleCode"));
+        assertEquals(Boolean.TRUE, events.get(0).get("hit"));
+        assertEquals("RULE_SET_SUMMARY", events.get(1).get("type"));
+        assertEquals(Boolean.TRUE, events.get(1).get("hit"));
+    }
+
     @Test
     public void testNestedAndOrConditionGroupsKeepBackendExecutionSemantics() {
         CompileResult compiled = compiler.compile("{"
@@ -152,13 +178,16 @@ public class RuleSetCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(100L, "customerScore");
         varIdMap.put(200L, "riskDecision");
-        VarContext context = new VarContext(varIdMap);
+        Map<String, String> refMap = new LinkedHashMap<>();
+        refMap.put("VARIABLE:100", "customerScore");
+        refMap.put("VARIABLE:200", "riskDecision");
+        VarContext context = new VarContext(varIdMap, new LinkedHashMap<String, String>(), refMap);
 
         CompileResult compiled = compiler.compile("{\n" +
                 "  \"rules\":[{\n" +
                 "    \"ruleCode\":\"R0001\",\n" +
-                "    \"conditionRoot\":{\"type\":\"leaf\",\"_varId\":100,\"varCode\":\"scoreTmp\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"600\"},\n" +
-                "    \"actionData\":[{\"type\":\"assign\",\"target\":\"decisionTmp\",\"_targetVarId\":200,\"value\":\"\\\"PASS\\\"\"}]\n" +
+                "    \"conditionRoot\":{\"type\":\"leaf\",\"_varId\":100,\"_refType\":\"VARIABLE\",\"varCode\":\"scoreTmp\",\"varType\":\"NUMBER\",\"operator\":\">=\",\"value\":\"600\"},\n" +
+                "    \"actionData\":[{\"type\":\"assign\",\"target\":\"decisionTmp\",\"_targetVarId\":200,\"_targetRefType\":\"VARIABLE\",\"value\":\"\\\"PASS\\\"\"}]\n" +
                 "  }]\n" +
                 "}", context);
 

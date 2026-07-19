@@ -485,27 +485,6 @@ export default {
       this.$set(threshold, 'resultOperand', operand || null)
       this.$set(threshold, 'result', operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
     },
-    /** 手动输入结果变量编码时，自动关联到变量管理库中的变量 */
-    onResultVarCustomInput(val) {
-      if (!val) {
-        this.$set(this.model.resultVar, 'varLabel', '')
-        this.$set(this.model.resultVar, '_varId', null)
-        this.$set(this.model.resultVar, '_refType', null)
-        return
-      }
-      // 在已加载的变量列表中查找匹配的变量
-      const ref = this.projectRefs.find(r => r.refCode === val)
-      if (ref) {
-        this.$set(this.model.resultVar, 'varLabel', ref.refLabel.label || ref.refLabel)
-        this.$set(this.model.resultVar, '_varId', ref.varObj && ref.varObj.id ? ref.varObj.id : null)
-        this.$set(this.model.resultVar, '_refType', ref.refType || null)
-      } else {
-        // 未找到匹配时，只保留 varCode
-        this.$set(this.model.resultVar, 'varLabel', '')
-        this.$set(this.model.resultVar, '_varId', null)
-        this.$set(this.model.resultVar, '_refType', null)
-      }
-    },
     addScoreItem() {
       this.model.scoreItems.push({ leftOperand: null, rightOperand: null, condVar: '', condOperator: '==', condValue: '', condVarType: 'STRING', condition: '', conditionLabel: '', score: 1, weight: 1.0 })
     },

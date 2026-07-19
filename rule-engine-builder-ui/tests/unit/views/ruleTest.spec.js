@@ -28,33 +28,15 @@ function mockRules() {
   ]
 }
 
-// 交叉表 modelJson：taxpayerType（行）× goodsCategory（列）→ taxRate（结果）
-// 注意：交叉表旧数据没有 _varId，需通过 varCode 回退匹配
-function mockCrossTableModelJson() {
+function mockCrossTableSchema() {
   return {
-    rowVar: { varCode: 'taxpayerType', varLabel: '客商类型', varType: 'STRING' },
-    colVar: { varCode: 'goodsCategory', varLabel: '产品总线', varType: 'STRING' },
-    resultVar: { varCode: 'taxRate', varLabel: '风险定价费率', varType: 'NUMBER' },
-    rowHeaders: ['一般纳税人', '小规模纳税人'],
-    colHeaders: ['货物', '服务', '不动产', '无形资产'],
-    cells: [['0.13', '0.06', '0.09', '0.06'], ['0.03', '0.03', '0.05', '0.03']]
-  }
-}
-
-// 决策表 modelJson（含 _varId，用于精确匹配）
-function mockDecisionTableModelJson() {
-  return {
-    hitPolicy: 'FIRST',
-    conditions: [
-      { varCode: 'taxpayerType', varLabel: '客商类型', varType: 'STRING', _varId: 1 },
-      { varCode: 'goodsCategory', varLabel: '产品总线', varType: 'STRING', _varId: 2 }
-    ],
-    actions: [
-      { varCode: 'taxRate', varLabel: '风险定价费率', varType: 'NUMBER', _varId: 3 }
-    ],
-    rules: [
-      { conditions: [{ operator: '==', value: '小规模纳税人' }, { operator: '==', value: '服务' }], actions: [{ value: '0.03' }] }
-    ]
+    data: {
+      inputs: [
+        { refId: 1, refType: 'VARIABLE', scriptName: 'taxpayerType', label: '客商类型', valueType: 'STRING' },
+        { refId: 2, refType: 'VARIABLE', scriptName: 'goodsCategory', label: '产品总线', valueType: 'STRING' }
+      ],
+      sampleParams: { taxpayerType: '', goodsCategory: '' }
+    }
   }
 }
 
@@ -97,6 +79,8 @@ function makeStub(tag) {
 function createTestVue() {
   const localVue = createLocalVue()
   localVue.use(ElementUI)
+  localVue.component('el-checkbox', makeStub('label'))
+  localVue.component('el-checkbox-group', makeStub('div'))
   return localVue
 }
 
@@ -206,22 +190,6 @@ describe('RuleTest — 辅助方法', () => {
 
     await Vue.nextTick()
     await new Promise(r => setTimeout(r, 100))
-  })
-
-  test('从统一操作数按引用 ID 收集测试变量并忽略输出目标', () => {
-    const result = {}
-    wrapper.vm.collectVarIds({
-      rules: [{
-        conditionRoot: {
-          type: 'leaf',
-          leftOperand: { kind: 'REFERENCE', refId: 11, refType: 'VARIABLE', code: 'age' },
-          rightOperand: { kind: 'REFERENCE', refId: 12, refType: 'CONSTANT', code: 'adultAge' }
-        },
-        actionData: [{ targetOperand: { kind: 'REFERENCE', refId: 13, refType: 'VARIABLE', code: 'result' } }]
-      }]
-    }, 'RULE_SET', result)
-
-    expect(result).toEqual({ 11: { varCode: 'age' }, 12: { varCode: 'adultAge' } })
   })
 
   afterEach(() => { if (wrapper) wrapper.destroy() })
@@ -362,45 +330,33 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
 
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('交叉表规则：通过 varCode 回退匹配加载变量（无 _varId 时）', async () => {
+  test('旧交叉表只有 varCode 时拒绝回退匹配变量', async () => {
     // 选中"风险定价交叉表"（id=4，模型类型 CROSS）
     wrapper.vm.selectedRuleId = 4
     wrapper.vm.selectedRule = mockRules().find(r => r.id === 4)
 
-    // 模拟 getContent 返回交叉表 modelJson（无 _varId）
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockCrossTableModelJson()) }
-    })
-
-    // 模拟项目变量列表
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: { inputs: [], sampleParams: {} } })
+    definitionApi.refreshFields.mockResolvedValueOnce({ data: null })
+    definitionApi.listInputFields.mockResolvedValueOnce({ data: [] })
 
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
-    // 交叉表旧数据无 _varId，但有 varCode → 应只回退匹配行/列输入变量
-    expect(wrapper.vm.params.length).toBe(2)
-    const varCodes = wrapper.vm.params.map(p => p.key).sort()
-    expect(varCodes).toEqual(['goodsCategory', 'taxpayerType'])
+    expect(wrapper.vm.params).toEqual([])
+    expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
   })
 
-  test('决策表规则：通过 _varId 精确匹配加载变量', async () => {
+  test('决策表规则：通过服务端 ID + ref_type 测试结构加载变量', async () => {
     // 选中"客商×产品总线定价表"（id=1，模型类型 TABLE）
     wrapper.vm.selectedRuleId = 1
     wrapper.vm.selectedRule = mockRules().find(r => r.id === 1)
 
-    // 模拟 getContent 返回决策表 modelJson（含 _varId）
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockDecisionTableModelJson()) }
-    })
-
-    // 模拟项目变量列表
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
 
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
-    // 决策表有 _varId → 应只精确匹配条件输入变量
+    // 服务端结构已经通过 ID + ref_type 完成解析。
     expect(wrapper.vm.params.length).toBe(2)
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
     expect(varCodes).toEqual(['goodsCategory', 'taxpayerType'])
@@ -410,19 +366,10 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     wrapper.vm.selectedRuleId = 9
     wrapper.vm.selectedRule = { id: 9, ruleCode: 'RS_RISK', ruleName: '风险规则集', modelType: 'RULE_SET', projectId: 1 }
 
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: {
-        modelJson: JSON.stringify({
-          executionMode: 'SERIAL',
-          rules: [{
-            ruleCode: 'R0001',
-            conditionRoot: { type: 'leaf', varCode: 'taxpayerType', _varId: 1, operator: '==', value: '一般纳税人' },
-            actionData: [{ type: 'assign', target: 'taxRate', _targetVarId: 3, value: '0.13' }]
-          }]
-        })
-      }
-    })
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce({ data: {
+      inputs: [{ refId: 1, refType: 'VARIABLE', scriptName: 'taxpayerType', label: '客商类型', valueType: 'STRING' }],
+      sampleParams: { taxpayerType: '' }
+    } })
 
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
@@ -541,6 +488,54 @@ describe('RuleTest — 执行与结果展示', () => {
     expect(wrapper.vm.params).toEqual([])
     expect(wrapper.vm.result).toBeNull()
   })
+
+  test('加载固定测试用例并批量执行后生成结果 diff', async () => {
+    const cases = [
+      {
+        id: 11,
+        scenarioName: '命中用例',
+        requestJson: '{"clientAppName":"rule-test","params":{"age":18}}',
+        responseJson: '{"code":200,"data":{"success":true,"result":{"level":"A"}}}'
+      },
+      {
+        id: 12,
+        scenarioName: '差异用例',
+        requestJson: '{"clientAppName":"rule-test","params":{"age":17}}',
+        responseJson: '{"code":200,"data":{"success":true,"result":{"level":"A"}}}'
+      }
+    ]
+    wrapper.vm.selectedRuleId = 4
+    definitionApi.listApiScenarios.mockResolvedValueOnce({ data: cases })
+    await wrapper.vm.loadTestCases()
+    wrapper.vm.selectedTestCaseIds = [11, 12]
+    definitionApi.executeApiScenario
+      .mockResolvedValueOnce({ code: 200, data: { success: true, result: { level: 'A' }, executeTimeMs: 10 } })
+      .mockResolvedValueOnce({ code: 200, data: { success: true, result: { level: 'B' }, executeTimeMs: 20 } })
+
+    await wrapper.vm.executeSelectedTestCases()
+
+    expect(definitionApi.executeApiScenario).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.batchResults[0].diffs).toEqual([])
+    expect(wrapper.vm.batchResults[1].diffs[0]).toMatchObject({ path: '$.result.level', expected: 'A', actual: 'B' })
+  })
+
+  test('追踪树按状态和关键字筛选并保留祖先', () => {
+    wrapper.vm.result = {
+      traces: [{
+        status: 'SUCCESS',
+        children: [
+          { status: 'FAILED', ruleCode: 'R_FAIL', children: [] },
+          { status: 'SUCCESS', ruleCode: 'R_PASS', children: [] }
+        ]
+      }]
+    }
+    wrapper.vm.traceStatusFilter = 'FAILED'
+    wrapper.vm.traceKeyword = 'R_FAIL'
+
+    expect(JSON.parse(wrapper.vm.traceInfoJson).children).toEqual([
+      { status: 'FAILED', ruleCode: 'R_FAIL', children: [] }
+    ])
+  })
 })
 
 describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
@@ -589,11 +584,8 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     expect(wrapper.vm.selectedRule.ruleCode).toBe('RC_RATE_MATRIX')
     expect(wrapper.vm.selectedRule.modelType).toBe('CROSS')
 
-    // 2. 模拟加载变量（交叉表无 _varId，通过 varCode 回退匹配）
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockCrossTableModelJson()) }
-    })
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    // 2. 模拟服务端基于 ID + ref_type 解析出的测试结构
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
 
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
@@ -611,10 +603,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     wrapper.vm.selectedRule = mockRules().find(r => r.id === 4)
 
     // 2. 加载变量
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockCrossTableModelJson()) }
-    })
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
@@ -643,10 +632,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     wrapper.vm.selectedRule = mockRules().find(r => r.id === 4)
 
     // 2. 加载变量
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockCrossTableModelJson()) }
-    })
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 
@@ -677,10 +663,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     wrapper.vm.selectedRule = mockRules().find(r => r.id === 4)
 
     // 2. 加载变量
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: { modelJson: JSON.stringify(mockCrossTableModelJson()) }
-    })
-    variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
+    definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
     await Vue.nextTick()
 

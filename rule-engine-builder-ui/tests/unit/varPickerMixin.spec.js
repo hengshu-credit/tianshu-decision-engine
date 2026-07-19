@@ -162,25 +162,25 @@ describe('varPickerMixin', () => {
   })
 
   // ─── 方法测试 ────────────────────────────────────────────
-  test('getVarByCode 通过 refCode 查找变量', async () => {
+  test('getVarByIdentity 通过 ID + ref_type 查找变量', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    const varItem = vm.getVarByCode('age')
+    const varItem = vm.getVarByIdentity(1, 'VARIABLE')
     expect(varItem).toBeDefined()
     expect(varItem.varCode).toBe('age')
   })
 
-  test('getVarByCode 对未知编码返回 null', async () => {
+  test('getVarByIdentity 对缺失类型或未知 ID 返回 null', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    const varItem = vm.getVarByCode('nonExistent')
-    expect(varItem).toBeNull()
+    expect(vm.getVarByIdentity(1, null)).toBeNull()
+    expect(vm.getVarByIdentity(999, 'VARIABLE')).toBeNull()
   })
 
   test('findRefByVarId 通过 varId 精确匹配', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    const ref = vm.findRefByVarId(1)
+    const ref = vm.findRefByVarId(1, 'VARIABLE')
     expect(ref).toBeDefined()
     expect(ref.refCode).toBe('age')
   })
@@ -188,7 +188,7 @@ describe('varPickerMixin', () => {
   test('findRefByVarId 对未知 varId 返回 null', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
-    const ref = vm.findRefByVarId(999)
+    const ref = vm.findRefByVarId(999, 'VARIABLE')
     expect(ref).toBeNull()
   })
 
@@ -196,7 +196,7 @@ describe('varPickerMixin', () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)
     // syncVarItem 要求 item.varCode 存在，否则直接返回 false
-    const leaf = { _varId: 2, varCode: 'oldValue' }
+    const leaf = { _varId: 2, _refType: 'VARIABLE', varCode: 'oldValue' }
     const changed = vm.syncVarItem(leaf)
     expect(changed).toBe(true)
     expect(leaf.varCode).toBe('income')
@@ -209,6 +209,21 @@ describe('varPickerMixin', () => {
     const changed = vm.syncVarItem(leaf)
     expect(changed).toBe(false)
     expect(leaf.varCode).toBe('original')
+  })
+
+  test('syncVarItem 不通过 varCode、varLabel 或缺失 refType 的裸 ID 关联', async () => {
+    const vm = createMixinVM()
+    await vm.loadProjectVars(1)
+    const byCode = { varCode: 'age', varLabel: '年龄' }
+    const byLabel = { varCode: 'oldAge', varLabel: '年龄' }
+    const bareId = { _varId: 1, varCode: 'oldAge' }
+
+    expect(vm.syncVarItem(byCode)).toBe(false)
+    expect(vm.syncVarItem(byLabel)).toBe(false)
+    expect(vm.syncVarItem(bareId)).toBe(false)
+    expect(vm.findVarPickerOptionByModelItem(byCode)).toBeNull()
+    expect(vm.findVarPickerOptionByModelItem(byLabel)).toBeNull()
+    expect(vm.findVarPickerOptionByModelItem(bareId)).toBeNull()
   })
 
   test('syncActionDataVarRefs 通过字段级变量 ID 更新 actionData', async () => {
@@ -286,13 +301,7 @@ describe('varPickerMixin', () => {
     const vm = new (Vue.extend(ComponentDef))()
     await vm.loadProjectVars(1)
 
-    expect(vm.selectedVarPickerOptions.map(o => o.varCode)).toEqual([
-      'age',
-      'TaxRequest.amount',
-      'creditModel.score',
-      'income',
-      'level'
-    ])
+    expect(vm.selectedVarPickerOptions.map(o => o.varCode)).toEqual(['age', 'creditModel.score'])
   })
 
   // ─── 错误处理测试 ────────────────────────────────────────
@@ -329,7 +338,7 @@ describe('varPickerMixin', () => {
 
     await vm.refreshProjectRefs()
     expect(vm.projectRefs.length).toBe(initialCount + 1)
-    expect(vm.getVarByCode('balance')).toBeDefined()
+    expect(vm.getVarByIdentity(4, 'VARIABLE')).toBeDefined()
   })
 
   // ─── 空数据边界测试 ─────────────────────────────────────

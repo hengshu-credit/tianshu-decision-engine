@@ -93,6 +93,51 @@ describe('operand', () => {
     })
   })
 
+  test('手输叶子路径通过最长父节点反解 ID 和 refType', () => {
+    const result = resolvePathOperand(createPathOperand('request.items[0].name'), [
+      {
+        refCode: 'request',
+        refLabel: { label: '请求', code: 'request' },
+        varType: 'OBJECT',
+        id: 40,
+        refType: 'VARIABLE'
+      },
+      {
+        refCode: 'request.items',
+        refLabel: { label: '明细列表', code: 'request.items' },
+        varType: 'LIST',
+        id: 41,
+        refType: 'DATA_OBJECT'
+      }
+    ])
+
+    expect(result.candidates).toHaveLength(0)
+    expect(result.operand).toMatchObject({
+      kind: 'PATH',
+      value: 'request.items[0].name',
+      code: 'request.items[0].name',
+      anchorPath: 'request.items',
+      relativePath: '[0].name',
+      refId: 41,
+      refType: 'DATA_OBJECT',
+      resolved: true
+    })
+  })
+
+  test('父路径同长且关联不唯一时不猜测 ID', () => {
+    const result = resolvePathOperand(createPathOperand('payload.customer.name'), [
+      { refCode: 'payload.customer', _varId: 1, _refType: 'VARIABLE' },
+      { refCode: 'payload.customer', _varId: 2, _refType: 'DATA_OBJECT' }
+    ])
+
+    expect(result.candidates).toHaveLength(2)
+    expect(result.operand).toMatchObject({
+      resolved: false,
+      refId: null,
+      refType: ''
+    })
+  })
+
   test('重复路径不猜测资源', () => {
     const result = resolvePathOperand(createPathOperand('score'), [
       { varCode: 'score', _varId: 1, _refType: 'VARIABLE' },

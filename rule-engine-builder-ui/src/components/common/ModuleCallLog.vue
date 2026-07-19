@@ -8,6 +8,53 @@
       <el-button size="small" icon="el-icon-refresh" @click="load">刷新</el-button>
     </div>
 
+    <div v-if="moduleType === 'DATASOURCE'" class="stats-panel">
+      <div class="stats-heading">
+        <div>
+          <div class="log-title">外数供应商质量看板</div>
+          <div class="log-subtitle">全部指标从 API 外数调用日志表统计；缓存命中只计算缓存期内命中的数据。</div>
+        </div>
+        <el-button size="mini" icon="el-icon-refresh" @click="loadStats">刷新指标</el-button>
+      </div>
+      <async-state
+        :loading="statsLoading"
+        :error="statsError"
+        :empty="externalStats.providers.length === 0"
+        empty-text="暂无 API 外数调用数据"
+        @retry="loadStats"
+      >
+        <div class="stats-grid">
+          <div class="stat-card"><span>供应商查询次数</span><strong>{{ statsOverview.queryCount || 0 }}</strong></div>
+          <div class="stat-card"><span>缓存命中率</span><strong>{{ formatRate(statsOverview.cacheHitRate) }}</strong></div>
+          <div class="stat-card"><span>请求成功率</span><strong>{{ formatRate(statsOverview.requestSuccessRate) }}</strong></div>
+          <div class="stat-card"><span>失败率</span><strong>{{ formatRate(statsOverview.failureRate) }}</strong></div>
+          <div class="stat-card"><span>查得率</span><strong>{{ formatRate(statsOverview.foundRate) }}</strong></div>
+          <div class="stat-card"><span>平均耗时</span><strong>{{ formatMs(statsOverview.avgCostTimeMs) }}</strong></div>
+          <div class="stat-card"><span>P95 耗时</span><strong>{{ formatMs(statsOverview.p95CostTimeMs) }}</strong></div>
+          <div class="stat-card"><span>P99 耗时</span><strong>{{ formatMs(statsOverview.p99CostTimeMs) }}</strong></div>
+        </div>
+        <el-table :data="externalStats.providers" border size="small" class="provider-table">
+          <el-table-column prop="targetCode" label="接口编码" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="targetName" label="接口名称" min-width="140" show-overflow-tooltip />
+          <el-table-column prop="queryCount" label="查询次数" width="90" align="right" />
+          <el-table-column prop="requestSuccessRate" label="成功率" width="90" align="right">
+            <template slot-scope="{ row }">{{ formatRate(row.requestSuccessRate) }}</template>
+          </el-table-column>
+          <el-table-column prop="failureRate" label="失败率" width="90" align="right">
+            <template slot-scope="{ row }">{{ formatRate(row.failureRate) }}</template>
+          </el-table-column>
+          <el-table-column prop="foundRate" label="查得率" width="90" align="right">
+            <template slot-scope="{ row }">{{ formatRate(row.foundRate) }}</template>
+          </el-table-column>
+          <el-table-column prop="cacheHitRate" label="缓存命中率" width="110" align="right">
+            <template slot-scope="{ row }">{{ formatRate(row.cacheHitRate) }}</template>
+          </el-table-column>
+          <el-table-column prop="p95CostTimeMs" label="P95(ms)" width="90" align="right" />
+          <el-table-column prop="p99CostTimeMs" label="P99(ms)" width="90" align="right" />
+        </el-table>
+      </async-state>
+    </div>
+
     <div class="log-filter">
       <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
         <el-form-item label="动作">
@@ -124,6 +171,11 @@
           <div class="detail-grid">
             <div class="detail-kv"><span>请求方法</span><strong>{{ detail.requestMethod || '-' }}</strong></div>
             <div class="detail-kv"><span>响应状态</span><strong>{{ detail.responseStatus || '-' }}</strong></div>
+            <div class="detail-kv"><span>请求成功</span><strong>{{ binaryLabel(detail.requestSuccess) }}</strong></div>
+            <div class="detail-kv"><span>是否查得</span><strong>{{ binaryLabel(detail.found) }}</strong></div>
+            <div class="detail-kv"><span>供应商请求</span><strong>{{ binaryLabel(detail.providerRequest) }}</strong></div>
+            <div class="detail-kv"><span>缓存状态</span><strong>{{ detail.cacheStatus || '-' }}</strong></div>
+            <div class="detail-kv"><span>缓存键摘要</span><strong>{{ detail.cacheKey || '-' }}</strong></div>
           </div>
           <detail-block title="请求头" :content="pretty(detail.requestHeaders)" />
           <detail-block title="请求参数" :content="pretty(detail.requestParams)" />
@@ -136,7 +188,8 @@
 </template>
 
 <script>
-import { listRuntimeLogs } from '@/api/runtimeLog'
+import { getExternalApiStats, listRuntimeLogs } from '@/api/runtimeLog'
+import AsyncState from '@/components/common/AsyncState.vue'
 
 const PROFILES = {
   DATASOURCE: {
@@ -196,6 +249,7 @@ const PROFILES = {
 export default {
   name: 'ModuleCallLog',
   components: {
+    AsyncState,
     DetailBlock: {
       functional: true,
       props: {
@@ -217,6 +271,9 @@ export default {
   data() {
     return {
       loading: false,
+      statsLoading: false,
+      statsError: '',
+      externalStats: { overview: {}, providers: [] },
       rows: [],
       total: 0,
       query: { pageNum: 1, pageSize: 10, actionType: '', targetCode: '', traceId: '', success: '' },
@@ -238,6 +295,9 @@ export default {
   computed: {
     profile() {
       return PROFILES[this.moduleType] || PROFILES.DATASOURCE
+    },
+    statsOverview() {
+      return this.externalStats && this.externalStats.overview ? this.externalStats.overview : {}
     },
     dbRequest() {
       return this.parseJsonValue(this.detail && this.detail.requestBody)
@@ -282,6 +342,7 @@ export default {
   },
   created() {
     this.load()
+    if (this.moduleType === 'DATASOURCE') this.loadStats()
   },
   methods: {
     async load() {
@@ -294,6 +355,22 @@ export default {
         this.total = data.total || 0
       } finally {
         this.loading = false
+      }
+    },
+    async loadStats() {
+      this.statsLoading = true
+      this.statsError = ''
+      try {
+        const res = await getExternalApiStats()
+        const data = res && res.data ? res.data : {}
+        this.externalStats = {
+          overview: data.overview || {},
+          providers: data.providers || []
+        }
+      } catch (e) {
+        this.statsError = (e && e.message) || '外数供应商质量指标加载失败'
+      } finally {
+        this.statsLoading = false
       }
     },
     handleQuery() {
@@ -310,6 +387,19 @@ export default {
     },
     actionLabel(value) {
       return this.actionMap[value] || value || '-'
+    },
+    formatRate(value) {
+      const number = Number(value)
+      return Number.isFinite(number) ? (number * 100).toFixed(2) + '%' : '0.00%'
+    },
+    formatMs(value) {
+      const number = Number(value)
+      return (Number.isFinite(number) ? number.toFixed(number % 1 === 0 ? 0 : 2) : '0') + ' ms'
+    },
+    binaryLabel(value) {
+      if (value === 1) return '是'
+      if (value === 0) return '否'
+      return '-'
     },
     rowSummary(row) {
       if (this.moduleType === 'DATABASE') {
@@ -387,6 +477,52 @@ export default {
   font-size: 12px;
   margin-top: 3px;
 }
+.stats-panel {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #f8fafc;
+  padding: 14px;
+  margin-bottom: 16px;
+}
+.stats-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(140px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.stat-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  background: #fff;
+  padding: 10px 12px;
+}
+.stat-card span {
+  display: block;
+  color: #64748b;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+.stat-card strong {
+  color: #0f172a;
+  font-size: 20px;
+}
+.provider-table {
+  background: #fff;
+}
+.stats-empty {
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  color: #64748b;
+  text-align: center;
+  padding: 24px;
+}
 .log-filter {
   margin-bottom: 10px;
 }
@@ -440,5 +576,10 @@ export default {
   font-size: 12px;
   line-height: 1.5;
   font-family: Menlo, Monaco, Consolas, monospace;
+}
+@media (max-width: 1000px) {
+  .stats-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
 }
 </style>

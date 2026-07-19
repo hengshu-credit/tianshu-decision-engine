@@ -80,19 +80,6 @@ public class RuleCompileServiceTest {
         });
         ReflectionTestUtils.setField(service, "variableService", new RuleVariableService() {
             @Override
-            public Map<Long, String> buildVarIdScriptNameMap(Long projectId) {
-                Map<Long, String> values = new LinkedHashMap<>();
-                values.put(9L, "current_age");
-                values.put(10L, "current_score");
-                return values;
-            }
-
-            @Override
-            public Map<String, String> buildVarCodeScriptNameMap(Long projectId) {
-                return Collections.emptyMap();
-            }
-
-            @Override
             public Map<String, String> buildRefScriptNameMap(Long projectId) {
                 Map<String, String> values = new LinkedHashMap<>();
                 values.put("VARIABLE:9", "current_age");

@@ -81,7 +81,7 @@ public class RuleLineageService {
                 addOption(result, "RULE", item.getId(), item.getRuleCode(), item.getRuleName(), keyword);
             }
         } else if ("MODEL".equals(type)) {
-            LambdaQueryWrapper<RuleModel> wrapper = new LambdaQueryWrapper<>();
+            LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
             appendProjectScope(wrapper, projectId, RuleModel::getProjectId, RuleModel::getScope);
             wrapper.orderByDesc(RuleModel::getCreateTime);
             for (RuleModel item : modelMapper.selectList(wrapper)) {
@@ -240,7 +240,7 @@ public class RuleLineageService {
             addNode(graph, "RULE", item.getId(), item.getRuleCode(), item.getRuleName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("RULE", item.getId()));
         }
-        for (RuleModel item : modelMapper.selectList(new LambdaQueryWrapper<RuleModel>())) {
+        for (RuleModel item : modelMapper.selectList(withoutModelContent())) {
             addNode(graph, "MODEL", item.getId(), item.getModelCode(), item.getModelName());
             addProjectEdge(graph, item.getProjectId(), nodeKey("MODEL", item.getId()));
         }
@@ -265,6 +265,11 @@ public class RuleLineageService {
         addRuleFieldEdges(graph);
         addModelFieldEdges(graph);
         return graph;
+    }
+
+    private LambdaQueryWrapper<RuleModel> withoutModelContent() {
+        return new LambdaQueryWrapper<RuleModel>()
+                .select(RuleModel.class, field -> !"model_content".equals(field.getColumn()));
     }
 
     private void addVariableSourceEdges(FullGraph graph, RuleVariable variable) {

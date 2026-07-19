@@ -278,6 +278,16 @@ public class SchemaSyncService {
                     + "KEY `idx_runtime_log_success` (`success`, `create_time`)"
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表'");
         }
+        addColumnIfMissing("rule_runtime_call_log", "request_success",
+                "`request_success` TINYINT DEFAULT NULL COMMENT '按接口响应条件树判断的请求成功标记' AFTER `success`");
+        addColumnIfMissing("rule_runtime_call_log", "found",
+                "`found` TINYINT DEFAULT NULL COMMENT '按计费条件树判断的查得标记' AFTER `request_success`");
+        addColumnIfMissing("rule_runtime_call_log", "provider_request",
+                "`provider_request` TINYINT DEFAULT NULL COMMENT '是否实际向外部供应商发起请求' AFTER `found`");
+        addColumnIfMissing("rule_runtime_call_log", "cache_status",
+                "`cache_status` VARCHAR(32) DEFAULT NULL COMMENT '缓存状态' AFTER `provider_request`");
+        addColumnIfMissing("rule_runtime_call_log", "cache_key",
+                "`cache_key` VARCHAR(160) DEFAULT NULL COMMENT '脱敏后的缓存键摘要' AFTER `cache_status`");
         ensureUtf8mb4Table("rule_runtime_call_log");
     }
 
@@ -522,6 +532,10 @@ public class SchemaSyncService {
         }
         addColumnIfMissing(table, "response_cache_seconds",
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
+        addColumnIfMissing(table, "cache_key_config",
+                "`cache_key_config` JSON DEFAULT NULL COMMENT '缓存键组件配置JSON，组件按顺序且必须全部有值' AFTER `response_cache_seconds`");
+        addColumnIfMissing(table, "success_condition",
+                "`success_condition` JSON DEFAULT NULL COMMENT '请求成功响应条件树JSON' AFTER `cache_key_config`");
         addColumnIfMissing(table, "request_script",
                 "`request_script` LONGTEXT DEFAULT NULL COMMENT '请求发送前QLExpress处理脚本' AFTER `body_template`");
         addColumnIfMissing(table, "response_script",

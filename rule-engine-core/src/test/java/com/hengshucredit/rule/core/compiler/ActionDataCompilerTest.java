@@ -51,10 +51,10 @@ public class ActionDataCompilerTest {
         varIdMap.put(2L, "decisionOutput");
         varIdMap.put(3L, "statusInput");
         varIdMap.put(4L, "flagOutput");
-        VarContext context = new VarContext(varIdMap);
+        VarContext context = variableContext(varIdMap);
         JSONArray actionData = JSON.parseArray("["
-                + "{\"type\":\"ternary\",\"target\":\"decision\",\"_targetVarId\":2,\"condVar\":\"score\",\"_condVarId\":1,\"condOp\":\">=\",\"condValue\":\"60\",\"trueValue\":\"\\\"PASS\\\"\",\"falseValue\":\"\\\"REJECT\\\"\"},"
-                + "{\"type\":\"in-check\",\"target\":\"flag\",\"_targetVarId\":4,\"checkVar\":\"status\",\"_checkVarId\":3,\"inValues\":[\"\\\"A\\\"\"],\"trueValue\":\"true\",\"falseValue\":\"false\"}"
+                + "{\"type\":\"ternary\",\"target\":\"decision\",\"_targetVarId\":2,\"_targetRefType\":\"VARIABLE\",\"condVar\":\"score\",\"_condVarId\":1,\"_condVarRefType\":\"VARIABLE\",\"condOp\":\">=\",\"condValue\":\"60\",\"trueValue\":\"\\\"PASS\\\"\",\"falseValue\":\"\\\"REJECT\\\"\"},"
+                + "{\"type\":\"in-check\",\"target\":\"flag\",\"_targetVarId\":4,\"_targetRefType\":\"VARIABLE\",\"checkVar\":\"status\",\"_checkVarId\":3,\"_checkVarRefType\":\"VARIABLE\",\"inValues\":[\"\\\"A\\\"\"],\"trueValue\":\"true\",\"falseValue\":\"false\"}"
                 + "]");
 
         String script = ActionDataCompiler.compile(actionData, context);
@@ -67,9 +67,9 @@ public class ActionDataCompilerTest {
     public void compileFunctionArgsUseArgRefs() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(1L, "applicant.score");
-        VarContext context = new VarContext(varIdMap);
+        VarContext context = variableContext(varIdMap);
         JSONArray actionData = JSON.parseArray("["
-                + "{\"type\":\"func-call\",\"target\":\"risk\",\"funcName\":\"max\",\"args\":[\"score\",\"100\"],\"_argRefs\":[{\"_varId\":1},null]}"
+                + "{\"type\":\"func-call\",\"target\":\"risk\",\"funcName\":\"max\",\"args\":[\"score\",\"100\"],\"_argRefs\":[{\"_varId\":1,\"_refType\":\"VARIABLE\"},null]}"
                 + "]");
 
         String script = ActionDataCompiler.compile(actionData, context);
@@ -82,11 +82,11 @@ public class ActionDataCompilerTest {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(6L, "idcard_no");
         varIdMap.put(8L, "credit_time");
-        VarContext context = new VarContext(varIdMap);
+        VarContext context = variableContext(varIdMap);
         JSONArray actionData = JSON.parseArray("["
                 + "{\"type\":\"func-call\",\"target\":\"age\",\"funcName\":\"idCardAge\","
                 + "\"args\":[\"idcard_no\",\"credit_time\",\"DAY\"],"
-                + "\"_argRefs\":[{\"_varId\":6},{\"_varId\":8},null]}"
+                + "\"_argRefs\":[{\"_varId\":6,\"_refType\":\"VARIABLE\"},{\"_varId\":8,\"_refType\":\"VARIABLE\"},null]}"
                 + "]");
 
         String script = ActionDataCompiler.compile(actionData, context);
@@ -99,9 +99,9 @@ public class ActionDataCompilerTest {
     public void compileRuleCallSupportsWholeResultAndOutputField() {
         Map<Long, String> varIdMap = new LinkedHashMap<>();
         varIdMap.put(5L, "risk.decision");
-        VarContext context = new VarContext(varIdMap);
+        VarContext context = variableContext(varIdMap);
         JSONArray actionData = JSON.parseArray("["
-                + "{\"type\":\"rule-call\",\"target\":\"decision\",\"_targetVarId\":5,\"ruleCode\":\"credit_flow\"},"
+                + "{\"type\":\"rule-call\",\"target\":\"decision\",\"_targetVarId\":5,\"_targetRefType\":\"VARIABLE\",\"ruleCode\":\"credit_flow\"},"
                 + "{\"type\":\"rule-call\",\"target\":\"score\",\"ruleCode\":\"score_card\",\"outputField\":\"score\"}"
                 + "]");
 
@@ -268,5 +268,13 @@ public class ActionDataCompilerTest {
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertEquals(6, ((Number) result.getResult()).intValue());
+    }
+
+    private VarContext variableContext(Map<Long, String> varIdMap) {
+        Map<String, String> refs = new LinkedHashMap<>();
+        for (Map.Entry<Long, String> entry : varIdMap.entrySet()) {
+            refs.put("VARIABLE:" + entry.getKey(), entry.getValue());
+        }
+        return new VarContext(varIdMap, new LinkedHashMap<String, String>(), refs);
     }
 }

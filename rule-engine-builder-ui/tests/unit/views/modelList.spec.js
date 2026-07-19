@@ -163,6 +163,21 @@ describe('ModelList — 初始化与数据加载', () => {
     expect(wrapper.vm.loading).toBe(false)
   })
 
+  test('页面只承诺 ONNX 和 PMML 文件格式', () => {
+    const html = wrapper.html()
+
+    expect(wrapper.vm.supportedModelAccept).toBe('.onnx,.pmml')
+    expect(html).toContain('ONNX')
+    expect(html).toContain('PMML')
+    expect(html).not.toContain('PICKLE')
+    expect(html).not.toContain('DILL')
+    expect(html).not.toContain('.pkl')
+    expect(html).not.toContain('.pickle')
+    expect(html).not.toContain('.dill')
+    expect(html).not.toContain('.pb')
+    expect(html).not.toContain('.xml')
+  })
+
   test('modelTypeLabel 返回正确的标签', () => {
     expect(wrapper.vm.modelTypeLabel('XGBOOST')).toBe('XGBoost')
     expect(wrapper.vm.modelTypeLabel('LIGHTGBM')).toBe('LightGBM')
@@ -288,6 +303,18 @@ describe('ModelList — 上传模型', () => {
     wrapper.vm.handleFileChange(file2, [file1, file2])
     expect(wrapper.vm.fileList.length).toBe(1)
     expect(wrapper.vm.fileList[0].name).toBe('file2.pmml')
+  })
+
+  test('handleFileChange 拒绝所有非 ONNX 和 PMML 文件', () => {
+    const file = { name: 'model.pkl', raw: { name: 'model.pkl' } }
+    const errorMessage = jest.spyOn(wrapper.vm.$message, 'error').mockImplementation(() => {})
+
+    wrapper.vm.handleFileChange(file, [file])
+
+    expect(wrapper.vm.selectedFile).toBeNull()
+    expect(wrapper.vm.fileList).toEqual([])
+    expect(errorMessage).toHaveBeenCalledWith('仅支持 ONNX、PMML 格式的模型文件')
+    errorMessage.mockRestore()
   })
 
   test('选择 ONNX 文件后显示任务配置并切换到神经网络类型', () => {
