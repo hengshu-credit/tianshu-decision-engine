@@ -1,140 +1,193 @@
 <template>
-  <el-container class="layout-shell">
-    <el-header height="50px" class="layout-header">
-      <div class="header-title">
-        <img src="/images/hengshucredit_animated.svg" alt="logo" class="header-logo">
-        <div class="header-text">
-          <span class="header-main-text">天枢决策引擎</span>
-          <span class="header-sub-text">天工开物, 枢衡定策</span>
-        </div>
-      </div>
-      <div v-if="loginEnabled" class="header-actions">
-        <span class="user-label">{{ username }}</span>
-        <el-button type="text" @click="doLogout">退出</el-button>
-      </div>
-    </el-header>
-    <el-container class="layout-body">
-      <el-aside :width="sideBarWidth + 'px'" class="layout-aside">
-        <el-menu
-          :default-active="activeMenuIndex"
-          router
-          :background-color="menuBg"
-          :text-color="menuText"
-          :active-text-color="menuActiveText"
-        >
-          <el-menu-item index="/project">
-            <i class="el-icon-folder" />
-            <span>项目管理</span>
-          </el-menu-item>
-          <el-menu-item index="/rule">
-            <i class="el-icon-document" />
-            <span>规则管理</span>
-          </el-menu-item>
-          <el-menu-item index="/variable">
-            <i class="el-icon-collection-tag" />
-            <span>变量管理</span>
-          </el-menu-item>
-          <el-menu-item index="/list">
-            <i class="el-icon-tickets" />
-            <span>名单管理</span>
-          </el-menu-item>
-          <el-menu-item index="/datasource">
-            <i class="el-icon-link" />
-            <span>外数管理</span>
-          </el-menu-item>
-          <el-menu-item index="/database">
-            <i class="el-icon-set-up" />
-            <span>数据库管理</span>
-          </el-menu-item>
-          <el-menu-item index="/model">
-            <i class="el-icon-cpu" />
-            <span>模型管理</span>
-          </el-menu-item>
-          <el-menu-item index="/function">
-            <i class="el-icon-s-operation" />
-            <span>函数管理</span>
-          </el-menu-item>
-          <el-menu-item index="/test">
-            <i class="el-icon-video-play" />
-            <span>规则测试</span>
-          </el-menu-item>
-          <el-menu-item index="/lineage">
-            <i class="el-icon-share" />
-            <span>血缘分析</span>
-          </el-menu-item>
-          <el-menu-item index="/experiment">
-            <i class="el-icon-s-flag" />
-            <span>分流实验</span>
-          </el-menu-item>
-          <el-menu-item index="/log">
-            <i class="el-icon-document" />
-            <span>执行日志</span>
-          </el-menu-item>
-          <el-menu-item index="/billing">
-            <i class="el-icon-coin" />
-            <span>账单管理</span>
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
-      <el-main class="layout-main">
+  <div class="layout-shell">
+    <layout-sidebar
+      :width="sidebarWidth"
+      :compact="isSidebarCompact"
+      :active-menu="activeMenuIndex"
+      :menus="sidebarMenus"
+      :login-enabled="loginEnabled"
+      :username="username"
+      :avatar-initial="avatarInitial"
+      @navigate="navigateTo"
+      @toggle-collapse="toggleSidebar"
+      @resize="handleSidebarResize"
+      @resize-end="handleSidebarResizeEnd"
+      @logout="doLogout"
+    />
+    <section class="layout-workspace">
+      <workspace-tabs
+        :tabs="workspaceTabs"
+        :active-path="activeTabPath"
+        @activate="activateTab"
+        @operate="handleTabOperation"
+      />
+      <main class="layout-main">
         <keep-alive :max="12">
-          <router-view v-if="$route.meta.keepAlive" :key="$route.fullPath" />
+          <router-view v-if="$route.meta.keepAlive" :key="currentViewKey" />
         </keep-alive>
-        <router-view v-if="!$route.meta.keepAlive" :key="$route.fullPath" />
-      </el-main>
-    </el-container>
-  </el-container>
+        <router-view v-if="!$route.meta.keepAlive" :key="currentViewKey" />
+      </main>
+    </section>
+  </div>
 </template>
 
 <script>
-import variables from '@/styles/variables.scss'
+import { isNavigationFailure } from 'vue-router'
+import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
+import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
+import {
+  SIDEBAR_COMPACT_THRESHOLD,
+  SIDEBAR_MENUS,
+  SIDEBAR_MIN_WIDTH,
+  clampSidebarWidth,
+  getActiveMenuIndex,
+  getAvatarInitial,
+  isWorkspaceRoute,
+  readSidebarState,
+  routeToTab,
+  writeSidebarState
+} from '@/layout/layoutState'
+import { readWorkspaceTabs } from '@/store/modules/workspaceTabs'
 import { getConsoleAuthConfig, consoleLogout, getConsoleMe } from '@/api/auth'
+
+function browserSessionStorage() {
+  try {
+    return typeof window !== 'undefined' ? window.sessionStorage : null
+  } catch (e) {
+    return null
+  }
+}
 
 export default {
   name: 'Layout',
+  components: { LayoutSidebar, WorkspaceTabs },
   data() {
+    const sidebarState = readSidebarState(browserSessionStorage())
     return {
+      sidebarWidth: sidebarState.width,
+      lastExpandedWidth: sidebarState.lastExpandedWidth,
+      sidebarMenus: SIDEBAR_MENUS,
       loginEnabled: false,
       username: ''
     }
   },
   computed: {
-    sideBarWidth() { return parseInt(variables.sideBarWidth) },
-    menuBg() { return variables.menuBg },
-    menuText() { return variables.menuText },
-    menuActiveText() { return variables.menuActiveText },
-    /**
-     * 根据当前路由路径返回菜单激活状态。
-     * - 设计师页面 (/designer/*) → 高亮"规则管理"
-     * - 项目详情 (/project/:id) → 高亮"项目管理"
-     * - 其他路由直接匹配菜单 index
-     */
+    isSidebarCompact() {
+      return this.sidebarWidth < SIDEBAR_COMPACT_THRESHOLD
+    },
     activeMenuIndex() {
-      const path = this.$route.path
-      if (path.startsWith('/designer/')) return '/rule'
-      if (path.startsWith('/project/')) return '/project'
-      if (path.startsWith('/rule/')) return '/rule'
-      if (path.startsWith('/list/')) return '/list'
-      if (path.startsWith('/model/')) return '/model'
-      if (path.startsWith('/function/')) return '/function'
-      if (path.startsWith('/datasource/')) return '/datasource'
-      if (path.startsWith('/database/')) return '/database'
-      if (path.startsWith('/experiment/')) return '/experiment'
-      return path
+      return getActiveMenuIndex(this.$route.path)
+    },
+    workspaceTabs() {
+      return this.$store.getters['workspaceTabs/tabs'] || []
+    },
+    activeTabPath() {
+      return this.$store.getters['workspaceTabs/activePath'] || ''
+    },
+    currentViewKey() {
+      const viewKey = this.$store.getters['workspaceTabs/viewKey']
+      return viewKey ? viewKey(this.$route.fullPath) : this.$route.fullPath
+    },
+    avatarInitial() {
+      return getAvatarInitial(this.username)
     }
+  },
+  watch: {
+    '$route.fullPath'() {
+      this.openCurrentRoute()
+    }
+  },
+  created() {
+    this.restoreWorkspaceTabs()
   },
   async mounted() {
     await this.refreshAuthBar()
   },
   methods: {
-    /**
-     * 根据后端配置决定是否展示登录用户与退出按钮。
-     */
+    restoreWorkspaceTabs() {
+      if (!isWorkspaceRoute(this.$route)) return
+      const cached = readWorkspaceTabs(browserSessionStorage())
+      const cachedTabs = cached.tabs.map(tab => {
+        try {
+          const resolved = this.$router.resolve(tab.fullPath).route
+          return isWorkspaceRoute(resolved) ? routeToTab(resolved) : null
+        } catch (e) {
+          return null
+        }
+      }).filter(Boolean)
+      this.$store.dispatch('workspaceTabs/restore', {
+        cachedTabs,
+        currentTab: routeToTab(this.$route)
+      })
+    },
+    openCurrentRoute() {
+      if (!isWorkspaceRoute(this.$route)) return
+      this.$store.dispatch('workspaceTabs/open', routeToTab(this.$route))
+    },
+    navigateTo(fullPath) {
+      if (!fullPath || fullPath === this.$route.fullPath) return
+      return this.$router.push(fullPath).catch(error => {
+        if (isNavigationFailure(error)) return
+        throw error
+      })
+    },
+    activateTab(fullPath) {
+      if (!fullPath) return
+      this.$store.dispatch('workspaceTabs/activate', fullPath)
+      return this.navigateTo(fullPath)
+    },
+    async handleTabOperation({ operation, targetPath }) {
+      if (operation === 'refresh') {
+        if (targetPath !== this.$route.fullPath) {
+          this.$store.dispatch('workspaceTabs/activate', targetPath)
+          await this.navigateTo(targetPath)
+        }
+        await this.$store.dispatch('workspaceTabs/refresh', targetPath)
+        return
+      }
+
+      const result = await this.$store.dispatch('workspaceTabs/close', {
+        operation,
+        targetPath
+      })
+      if (result.nextPath !== this.$route.fullPath) {
+        await this.navigateTo(result.nextPath)
+      }
+    },
+    handleSidebarResize(width) {
+      const nextWidth = clampSidebarWidth(width)
+      this.sidebarWidth = nextWidth
+      if (nextWidth >= SIDEBAR_COMPACT_THRESHOLD) {
+        this.lastExpandedWidth = nextWidth
+      }
+    },
+    handleSidebarResizeEnd(width) {
+      this.handleSidebarResize(width)
+      this.persistSidebarState()
+    },
+    toggleSidebar() {
+      if (this.isSidebarCompact) {
+        this.sidebarWidth = Math.max(SIDEBAR_COMPACT_THRESHOLD, this.lastExpandedWidth)
+      } else {
+        this.lastExpandedWidth = this.sidebarWidth
+        this.sidebarWidth = SIDEBAR_MIN_WIDTH
+      }
+      this.persistSidebarState()
+    },
+    persistSidebarState() {
+      writeSidebarState(browserSessionStorage(), {
+        width: this.sidebarWidth,
+        lastExpandedWidth: this.lastExpandedWidth
+      })
+    },
     async refreshAuthBar() {
       try {
         const cfg = await getConsoleAuthConfig()
         this.loginEnabled = !!(cfg.data && cfg.data.loginEnabled)
-        if (!this.loginEnabled) return
+        if (!this.loginEnabled) {
+          this.username = ''
+          return
+        }
         const me = await getConsoleMe()
         this.username = (me.data && me.data.username) || ''
       } catch (e) {
@@ -142,9 +195,6 @@ export default {
         this.username = ''
       }
     },
-    /**
-     * 调用登出接口并回到登录页。
-     */
     async doLogout() {
       try {
         await consoleLogout()
@@ -157,109 +207,32 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-.layout-header {
-  background: $menuBg;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
-
-  .header-title {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transform: scale(0.8);
-    transform-origin: center left;
-
-    .header-logo {
-      height: 40px;
-      width: 40px;
-    }
-
-    .header-text {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;
-      align-items: flex-start;
-    }
-
-    .header-main-text {
-      font-size: 18px;
-      font-weight: bold;
-      color: #FFFFFF;
-      line-height: 1.25;
-      white-space: nowrap;
-    }
-
-    .header-sub-text {
-      font-size: 12px;
-      color: #22d3ee;
-      line-height: 1;
-      white-space: nowrap;
-      margin-top: 2px;
-    }
-  }
-
-  .header-actions {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    font-size: 14px;
-    color: #94A3B8;
-  }
-
-  .user-label {
-    max-width: 160px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
 .layout-shell {
+  display: flex;
+  width: 100%;
   height: 100vh;
+  min-width: 0;
   overflow: hidden;
+  background: #F3F4F6;
 }
 
-.layout-body {
-  flex: 1;
+.layout-workspace {
+  display: flex;
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
-}
-
-.layout-aside {
-  background: $menuBg;
-  overflow-y: auto;
-  overflow-x: hidden;
-  border-right: 1px solid rgba(255, 255, 255, 0.06);
-}
-
-::v-deep .el-menu {
-  border-right: none;
-
-  .el-menu-item {
-    color: $menuText;
-
-    &:hover {
-      background: $menuHover;
-    }
-
-    &.is-active {
-      color: $menuActiveText;
-      background: rgba($--color-primary, 0.25);
-      border-right: 3px solid $--color-primary;
-    }
-  }
+  flex: 1;
+  flex-direction: column;
 }
 
 .layout-main {
-  background: #F3F4F6;
-  padding: 16px;
-  height: 100%;
-  overflow-y: auto;
-  overflow-x: hidden;
   min-width: 0;
   min-height: 0;
+  padding: 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  flex: 1;
+  box-sizing: border-box;
+  background: #F3F4F6;
 }
 </style>

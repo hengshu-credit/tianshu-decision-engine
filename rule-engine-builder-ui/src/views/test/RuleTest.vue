@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page rule-test-page">
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
       <div class="test-left">
@@ -133,7 +133,7 @@
 
       <!-- 右侧：执行结果 -->
       <div class="test-right">
-        <div class="uiue-card" style="height: 100%;">
+        <div class="uiue-card test-result-card">
           <div class="uiue-card-title">执行结果</div>
           <div v-if="!result && !executing" class="result-empty">
             <i class="el-icon-video-play" style="font-size: 48px; color: #ddd;" />
@@ -143,7 +143,7 @@
             <i class="el-icon-loading" style="font-size: 32px; color: #2639E9;" />
             <p style="color: #999; margin-top: 12px;">规则执行中...</p>
           </div>
-          <div v-else>
+          <div v-else class="test-result-content">
             <el-alert
               :title="result.success ? '执行成功' : '执行失败'"
               :type="result.success ? 'success' : 'error'"
@@ -164,7 +164,7 @@
               <pre class="result-pre">{{ formatJson(result.output) }}</pre>
             </div>
 
-            <div v-if="result.traces && result.traces.length > 0">
+            <div v-if="result.traces && result.traces.length > 0" class="trace-section">
               <div class="trace-filter-bar">
                 <span>追踪树筛选</span>
                 <el-select v-model="traceStatusFilter" size="mini" style="width:110px">
@@ -176,15 +176,15 @@
                 </el-select>
                 <el-input v-model="traceKeyword" size="mini" clearable placeholder="规则、节点、表达式关键字" style="width:220px" />
               </div>
-              <el-tabs v-model="traceTab" style="margin-top: 8px;">
-                <el-tab-pane label="执行追踪（JSON）" name="json">
+              <el-tabs v-model="traceTab" class="trace-tabs">
+                <el-tab-pane label="执行追踪（JSON）" name="json" class="trace-pane trace-json-pane">
                   <el-collapse>
                     <el-collapse-item v-for="(trace, idx) in result.traces" :key="idx" :title="'步骤 ' + (idx + 1)">
                       <pre class="result-pre">{{ formatJson(trace) }}</pre>
                     </el-collapse-item>
                   </el-collapse>
                 </el-tab-pane>
-                <el-tab-pane label="表达式追踪树" name="tree">
+                <el-tab-pane label="表达式追踪树" name="tree" class="trace-pane trace-tree-pane">
                   <div class="trace-tree-wrap">
                     <trace-tree
                       :trace-info="traceInfoJson"
@@ -731,14 +731,23 @@ export default {
 }
 </script>
 <style lang="scss" scoped>
+.rule-test-page {
+  height: 100%;
+  min-height: 0;
+}
 .test-layout {
   display: flex;
   gap: 16px;
-  min-height: calc(100vh - 140px);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 .test-left {
   flex: 0 0 480px;
   min-width: 380px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .fixed-cases-card {
   margin-top: 12px;
@@ -784,6 +793,7 @@ export default {
 .trace-filter-bar {
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   gap: 8px;
   color: #606266;
   font-size: 12px;
@@ -791,6 +801,53 @@ export default {
 .test-right {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+}
+.test-result-card,
+.test-result-content,
+.trace-section,
+.trace-tabs {
+  min-height: 0;
+}
+.test-result-card,
+.test-result-content,
+.trace-section,
+.trace-tabs {
+  display: flex;
+  flex-direction: column;
+}
+.test-result-card {
+  height: 100%;
+  margin-bottom: 0;
+  overflow: hidden;
+}
+.test-result-content,
+.trace-section,
+.trace-tabs {
+  flex: 1;
+}
+.test-result-content,
+.trace-section {
+  overflow: hidden;
+}
+.trace-tabs {
+  margin-top: 8px;
+}
+.trace-tabs ::v-deep .el-tabs__header {
+  flex: 0 0 auto;
+}
+.trace-tabs ::v-deep .el-tabs__content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.trace-tabs ::v-deep .el-tab-pane {
+  height: 100%;
+  min-height: 0;
+}
+.trace-tabs ::v-deep #pane-json,
+.trace-tabs ::v-deep #pane-tree {
+  overflow: auto;
 }
 .rule-info {
   margin-top: 12px;
@@ -841,17 +898,48 @@ export default {
   word-break: break-all;
 }
 .trace-tree-wrap {
+  min-height: 100%;
   padding: 8px 0;
-  // max-height: 20%;
-  overflow: auto;
 }
 @media screen and (max-width: 1000px) {
+  .rule-test-page,
+  .test-layout,
+  .test-left,
+  .test-right,
+  .test-result-card,
+  .test-result-content,
+  .trace-section,
+  .trace-tabs {
+    height: auto;
+  }
   .test-layout {
     flex-direction: column;
+    overflow: visible;
+  }
+  .test-left,
+  .test-result-card,
+  .test-result-content,
+  .trace-section {
+    overflow: visible;
   }
   .test-left {
     flex: none;
     min-width: 0;
+  }
+  .trace-tabs {
+    display: block;
+    flex: none;
+  }
+  .trace-tabs ::v-deep .el-tabs__content {
+    overflow: visible;
+  }
+  .trace-tabs ::v-deep #pane-json,
+  .trace-tabs ::v-deep #pane-tree {
+    height: auto;
+    overflow: visible;
+  }
+  .trace-tree-wrap {
+    min-height: 0;
   }
 }
 </style>

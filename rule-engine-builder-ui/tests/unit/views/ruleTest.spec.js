@@ -5,6 +5,8 @@
 import { shallowMount, createLocalVue } from '@vue/test-utils'
 import Vue from 'vue'
 import ElementUI from 'element-ui'
+import fs from 'fs'
+import path from 'path'
 
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
@@ -438,6 +440,24 @@ describe('RuleTest — 执行与结果展示', () => {
   })
 
   afterEach(() => { if (wrapper) wrapper.destroy() })
+
+  test('执行结果包含独立滚动布局所需的高度链节点', async () => {
+    wrapper.vm.result = mockExecutionResult()
+    await Vue.nextTick()
+
+    expect(wrapper.find('.rule-test-page').exists()).toBe(true)
+    expect(wrapper.find('.test-result-card').exists()).toBe(true)
+    expect(wrapper.find('.test-result-content').exists()).toBe(true)
+    expect(wrapper.find('.trace-section').exists()).toBe(true)
+    expect(wrapper.find('.trace-tabs').exists()).toBe(true)
+  })
+
+  test('窄屏以同等选择器优先级解除追踪面板滚动', () => {
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/test/RuleTest.vue'), 'utf8')
+    const narrowStyles = source.slice(source.indexOf('@media screen and (max-width: 1000px)'))
+
+    expect(narrowStyles).toMatch(/\.trace-tabs ::v-deep #pane-json,\s*\.trace-tabs ::v-deep #pane-tree\s*\{[^}]*height: auto;[^}]*overflow: visible;/)
+  })
 
   test('handleExecute 成功时设置 result', async () => {
     definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
