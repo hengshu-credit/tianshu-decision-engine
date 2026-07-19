@@ -129,8 +129,15 @@ import { compileExpression, executeExpression, getExpressionTestSchema } from '@
 export default {
   name: 'ExpressionEditorPage',
   components: { ExpressionEditorDialog },
+  deactivated() {
+    this.persistDraft()
+  },
+  beforeDestroy() {
+    this.persistDraft()
+  },
   data() {
     return {
+      expressionSessionId: this.$route.params.sessionId,
       compiling: false,
       testVisible: false,
       schemaLoading: false,
@@ -146,7 +153,7 @@ export default {
   computed: {
     session() {
       const getter = this.$store.getters['expressionSessions/sessionById']
-      return typeof getter === 'function' ? getter(this.$route.params.sessionId) : null
+      return typeof getter === 'function' ? getter(this.expressionSessionId) : null
     },
     activeSession() {
       return this.session && this.session.status === 'ACTIVE' ? this.session : null
@@ -182,12 +189,16 @@ export default {
       const numeric = Number(value)
       return Number.isNaN(numeric) ? value : numeric
     },
-    async saveDraft() {
+    persistDraft() {
       if (!this.activeSession) return
-      await this.$store.dispatch('expressionSessions/saveDraft', {
+      return this.$store.dispatch('expressionSessions/saveDraft', {
         sessionId: this.activeSession.sessionId,
         draft: this.currentDraft()
       })
+    },
+    async saveDraft() {
+      if (!this.activeSession) return
+      await this.persistDraft()
       this.$message.success('表达式草稿已临时保存')
     },
     async saveAndCompile() {

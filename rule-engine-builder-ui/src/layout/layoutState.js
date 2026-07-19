@@ -120,6 +120,48 @@ export function isWorkspaceRoute(route) {
   return !!(route && route.path !== '/login' && Array.isArray(route.matched) && route.matched.length > 1)
 }
 
+export function isEditableShortcutTarget(target) {
+  const element = target && target.nodeType === 3 ? target.parentElement : target
+  if (!element || typeof element.closest !== 'function') return false
+  return !!element.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], .monaco-editor')
+}
+
+export function resolveTabSwitchPath(tabs, activePath, offset, loop) {
+  const source = Array.isArray(tabs) ? tabs : []
+  const index = source.findIndex(tab => tab.fullPath === activePath)
+  if (index < 0 || source.length < 2) return ''
+
+  let nextIndex = index + offset
+  if (loop) nextIndex = (nextIndex + source.length) % source.length
+  return source[nextIndex] ? source[nextIndex].fullPath : ''
+}
+
+export function resolveWorkspaceShortcut(event, tabs, activePath) {
+  if (!event || !event.ctrlKey || event.altKey || event.metaKey || !activePath) return null
+  const key = String(event.key || '').toLowerCase()
+
+  if (!event.shiftKey && (key === 'w' || key === 'r')) {
+    return {
+      type: 'operate',
+      operation: key === 'w' ? 'current' : 'refresh',
+      targetPath: activePath
+    }
+  }
+
+  if (key === 'tab') {
+    const targetPath = resolveTabSwitchPath(tabs, activePath, event.shiftKey ? -1 : 1, true)
+    return targetPath ? { type: 'activate', targetPath } : null
+  }
+
+  if (!event.shiftKey && (key === 'arrowleft' || key === 'arrowright')) {
+    if (isEditableShortcutTarget(event.target)) return null
+    const targetPath = resolveTabSwitchPath(tabs, activePath, key === 'arrowleft' ? -1 : 1, false)
+    return targetPath ? { type: 'activate', targetPath } : null
+  }
+
+  return null
+}
+
 function includesPath(tabs, path) {
   return tabs.some(tab => tab.fullPath === path)
 }

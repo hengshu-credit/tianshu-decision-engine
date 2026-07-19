@@ -1,3 +1,4 @@
+import Vue from 'vue'
 import { shallowMount } from '@vue/test-utils'
 import * as expressionApi from '@/api/expression'
 import ExpressionEditorPage from '@/views/expression/ExpressionEditorPage.vue'
@@ -31,15 +32,17 @@ function session(overrides = {}) {
   }
 }
 
-function mountPage(current = session()) {
+function mountPage(current = session(), options = {}) {
   const dispatch = jest.fn().mockResolvedValue()
   const back = jest.fn()
+  const route = options.route || { params: { ruleId: '9', sessionId: 'session-1' } }
+  const sessionGetter = options.sessionGetter || (() => current)
   const wrapper = shallowMount(ExpressionEditorPage, {
     mocks: {
-      $route: { params: { ruleId: '9', sessionId: 'session-1' } },
+      $route: route,
       $router: { back },
       $store: {
-        getters: { 'expressionSessions/sessionById': () => current },
+        getters: { 'expressionSessions/sessionById': sessionGetter },
         dispatch
       },
       $message: { success: jest.fn(), error: jest.fn() },
@@ -73,6 +76,40 @@ describe('ExpressionEditorPage', () => {
 
     expect(wrapper.findComponent(EditorStub).props('embedded')).toBe(true)
     await wrapper.vm.saveDraft()
+
+    expect(dispatch).toHaveBeenCalledWith('expressionSessions/saveDraft', {
+      sessionId: 'session-1',
+      draft
+    })
+  })
+
+  test('页签失活时静默暂存当前草稿', async() => {
+    const { wrapper, dispatch } = mountPage()
+
+    wrapper.vm.$options.deactivated[0].call(wrapper.vm)
+    await wrapper.vm.$nextTick()
+
+    expect(dispatch).toHaveBeenCalledWith('expressionSessions/saveDraft', {
+      sessionId: 'session-1',
+      draft
+    })
+    expect(wrapper.vm.$message.success).not.toHaveBeenCalled()
+  })
+
+  test('缓存实例切换路由后仍保存到创建时对应的会话', async() => {
+    const route = Vue.observable({ params: { ruleId: '9', sessionId: 'session-1' } })
+    const sessions = {
+      'session-1': session(),
+      'session-2': session({ sessionId: 'session-2', draft: { kind: 'LITERAL', value: '99', valueType: 'NUMBER' } })
+    }
+    const { wrapper, dispatch } = mountPage(sessions['session-1'], {
+      route,
+      sessionGetter: sessionId => sessions[sessionId]
+    })
+
+    route.params.sessionId = 'session-2'
+    await wrapper.vm.$nextTick()
+    await wrapper.vm.persistDraft()
 
     expect(dispatch).toHaveBeenCalledWith('expressionSessions/saveDraft', {
       sessionId: 'session-1',

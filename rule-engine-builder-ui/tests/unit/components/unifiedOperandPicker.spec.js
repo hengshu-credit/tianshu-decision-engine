@@ -65,7 +65,7 @@ describe('统一 OperandPicker', () => {
     const source = { kind: 'LITERAL', value: '100', valueType: 'NUMBER' }
     const wrapper = mountPicker({ value: source }, {
       mocks: {
-        $route: { path: '/designer/table/7', params: { id: '7' } },
+        $route: { path: '/designer/table/7', params: { id: '7' }, meta: { title: '决策表设计器' } },
         $router: { push },
         $store: { dispatch, getters: {} }
       }
@@ -77,6 +77,7 @@ describe('统一 OperandPicker', () => {
     expect(dispatch).toHaveBeenCalledWith('expressionSessions/openSession', expect.objectContaining({
       ruleId: 7,
       sourceKey: `operand-picker-${wrapper.vm._uid}`,
+      title: '决策表 · 表达式',
       draft: source
     }))
     expect(payload.draft).not.toBe(source)

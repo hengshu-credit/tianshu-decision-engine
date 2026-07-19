@@ -100,6 +100,16 @@ describe('WorkspaceTabs', () => {
     wrapper.destroy()
   })
 
+  test('关闭和刷新操作展示对应快捷键', async() => {
+    const wrapper = mountTabs()
+    await wrapper.find('[data-tab="/rule"]').trigger('contextmenu')
+
+    expect(wrapper.find('[data-operation="refresh"] .workspace-tab-operation__shortcut').text()).toBe('Ctrl+R')
+    expect(wrapper.find('[data-operation="current"] .workspace-tab-operation__shortcut').text()).toBe('Ctrl+W')
+    expect(wrapper.find('[data-operation="others"] .workspace-tab-operation__shortcut').exists()).toBe(false)
+    wrapper.destroy()
+  })
+
   test('统一操作入口作用于当前活动页签', () => {
     const wrapper = mountTabs()
     wrapper.vm.handleOverflowCommand('all')

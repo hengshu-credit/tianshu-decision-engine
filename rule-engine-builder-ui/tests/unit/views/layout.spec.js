@@ -13,6 +13,7 @@ import * as authApi from '@/api/auth'
 import Layout from '@/layout/index.vue'
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
+import expressionSessions from '@/store/modules/expressionSessions'
 import workspaceTabs from '@/store/modules/workspaceTabs'
 import {
   SIDEBAR_COMPACT_THRESHOLD,
@@ -23,9 +24,12 @@ import {
   clampSidebarWidth,
   getActiveMenuIndex,
   getAvatarInitial,
+  isEditableShortcutTarget,
   isWorkspaceRoute,
   readSidebarState,
   resolveCloseOperation,
+  resolveTabSwitchPath,
+  resolveWorkspaceShortcut,
   routeToTab,
   writeSidebarState
 } from '@/layout/layoutState'
@@ -193,19 +197,71 @@ describe('Layout — 页签规范化与关闭决策', () => {
   })
 })
 
+describe('Layout — 页签快捷键', () => {
+  const tabs = ['/a', '/b', '/c'].map(fullPath => ({ fullPath }))
+
+  test('Ctrl+W 与 Ctrl+R 映射到当前页签操作', () => {
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'w' }, tabs, '/b')).toEqual({
+      type: 'operate', operation: 'current', targetPath: '/b'
+    })
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'r' }, tabs, '/b')).toEqual({
+      type: 'operate', operation: 'refresh', targetPath: '/b'
+    })
+  })
+
+  test('Ctrl+Tab 与 Ctrl+Shift+Tab 在首尾循环', () => {
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'Tab' }, tabs, '/c')).toEqual({
+      type: 'activate', targetPath: '/a'
+    })
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, shiftKey: true, key: 'Tab' }, tabs, '/a')).toEqual({
+      type: 'activate', targetPath: '/c'
+    })
+  })
+
+  test('Ctrl+左右键不循环且边界无操作', () => {
+    expect(resolveTabSwitchPath(tabs, '/b', -1, false)).toBe('/a')
+    expect(resolveTabSwitchPath(tabs, '/b', 1, false)).toBe('/c')
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'ArrowLeft' }, tabs, '/a')).toBeNull()
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'ArrowRight' }, tabs, '/c')).toBeNull()
+  })
+
+  test('左右切换不抢占输入控件、可编辑元素和代码编辑器', () => {
+    const input = document.createElement('input')
+    const editable = document.createElement('div')
+    editable.setAttribute('contenteditable', 'true')
+    const monaco = document.createElement('div')
+    monaco.className = 'monaco-editor'
+    const monacoChild = document.createElement('span')
+    monaco.appendChild(monacoChild)
+
+    expect(isEditableShortcutTarget(input)).toBe(true)
+    expect(isEditableShortcutTarget(editable)).toBe(true)
+    expect(isEditableShortcutTarget(monacoChild)).toBe(true)
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, key: 'ArrowRight', target: input }, tabs, '/a')).toBeNull()
+  })
+
+  test('无 Ctrl 或含 Alt、Meta 的组合不接管', () => {
+    expect(resolveWorkspaceShortcut({ key: 'w' }, tabs, '/b')).toBeNull()
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, altKey: true, key: 'w' }, tabs, '/b')).toBeNull()
+    expect(resolveWorkspaceShortcut({ ctrlKey: true, metaKey: true, key: 'w' }, tabs, '/b')).toBeNull()
+  })
+})
+
 function createRoute(fullPath, title = '规则管理') {
   const path = fullPath.split('?')[0]
+  const expressionMatch = path.match(/^\/designer\/expression\/([^/]+)\/([^/]+)$/)
   return {
     fullPath,
     path,
-    name: path === '/project' ? 'ProjectList' : 'RuleList',
+    name: expressionMatch ? 'ExpressionEditor' : (path === '/project' ? 'ProjectList' : 'RuleList'),
+    params: expressionMatch ? { ruleId: expressionMatch[1], sessionId: expressionMatch[2] } : {},
     meta: { title },
     matched: [{ path: '' }, { path: path.slice(1) }]
   }
 }
 
 function mountLayout(route = createRoute('/rule')) {
-  const store = new Vuex.Store({ modules: { workspaceTabs } })
+  const store = new Vuex.Store({ modules: { expressionSessions, workspaceTabs } })
   const router = {
     push: jest.fn().mockResolvedValue(undefined),
     replace: jest.fn().mockResolvedValue(undefined),
@@ -259,6 +315,23 @@ describe('Layout — 全局布局集成', () => {
     wrapper.destroy()
   })
 
+  test('表达式路由使用会话来源标题且会话缺失时回退静态标题', async() => {
+    const route = createRoute('/designer/expression/7/session-1', '配置表达式')
+    const { wrapper, store } = mountLayout(route)
+
+    expect(wrapper.vm.routeTab(route).title).toBe('配置表达式')
+    await store.dispatch('expressionSessions/openSession', {
+      sessionId: 'session-1',
+      ruleId: 7,
+      sourceKey: 'picker-1',
+      title: '决策表 · 右操作数',
+      draft: null
+    })
+
+    expect(wrapper.vm.routeTab(route).title).toBe('决策表 · 右操作数')
+    wrapper.destroy()
+  })
+
   test('关闭全部页签后回到项目管理', async() => {
     const { wrapper, router } = mountLayout()
     await Vue.nextTick()
@@ -278,6 +351,28 @@ describe('Layout — 全局布局集成', () => {
 
     expect(wrapper.vm.currentViewKey).toBe('/rule::1')
     wrapper.destroy()
+  })
+
+  test('全局快捷键阻止默认行为并刷新当前业务页签', async() => {
+    const { wrapper } = mountLayout()
+    await Vue.nextTick()
+    const event = { ctrlKey: true, key: 'r', preventDefault: jest.fn() }
+
+    await wrapper.vm.handleWorkspaceShortcut(event)
+
+    expect(event.preventDefault).toHaveBeenCalled()
+    expect(wrapper.vm.currentViewKey).toBe('/rule::1')
+    wrapper.destroy()
+  })
+
+  test('布局销毁时清理全局快捷键监听', () => {
+    const removeSpy = jest.spyOn(window, 'removeEventListener')
+    const { wrapper } = mountLayout()
+
+    wrapper.destroy()
+
+    expect(removeSpy).toHaveBeenCalledWith('keydown', wrapper.vm.handleWorkspaceShortcut, true)
+    removeSpy.mockRestore()
   })
 
   test('折叠后为 64px，再展开恢复上次宽度并写入会话缓存', async() => {

@@ -37,8 +37,12 @@
         <i class="el-icon-more" />
       </button>
       <el-dropdown-menu slot="dropdown">
-        <el-dropdown-item command="refresh" :disabled="!activePath">刷新当前</el-dropdown-item>
-        <el-dropdown-item command="current" :disabled="!activePath">关闭当前</el-dropdown-item>
+        <el-dropdown-item command="refresh" :disabled="!activePath">
+          <span class="workspace-tab-operation"><span>刷新当前</span><span class="workspace-tab-operation__shortcut">Ctrl+R</span></span>
+        </el-dropdown-item>
+        <el-dropdown-item command="current" :disabled="!activePath">
+          <span class="workspace-tab-operation"><span>关闭当前</span><span class="workspace-tab-operation__shortcut">Ctrl+W</span></span>
+        </el-dropdown-item>
         <el-dropdown-item command="left" :disabled="isOperationDisabled('left', activePath)">关闭左侧</el-dropdown-item>
         <el-dropdown-item command="right" :disabled="isOperationDisabled('right', activePath)">关闭右侧</el-dropdown-item>
         <el-dropdown-item command="others" :disabled="isOperationDisabled('others', activePath)">关闭其他</el-dropdown-item>
@@ -63,7 +67,8 @@
         @click="performOperation(operation.key, contextMenu.targetPath)"
       >
         <i :class="operation.icon" />
-        {{ operation.label }}
+        <span>{{ operation.label }}</span>
+        <span v-if="operation.shortcut" class="workspace-tab-operation__shortcut">{{ operation.shortcut }}</span>
       </button>
     </div>
   </header>
@@ -85,8 +90,8 @@ export default {
         targetPath: ''
       },
       operations: [
-        { key: 'refresh', label: '刷新', icon: 'el-icon-refresh-right' },
-        { key: 'current', label: '关闭当前', icon: 'el-icon-close' },
+        { key: 'refresh', label: '刷新', icon: 'el-icon-refresh-right', shortcut: 'Ctrl+R' },
+        { key: 'current', label: '关闭当前', icon: 'el-icon-close', shortcut: 'Ctrl+W' },
         { key: 'left', label: '关闭左侧', icon: 'el-icon-back' },
         { key: 'right', label: '关闭右侧', icon: 'el-icon-right' },
         { key: 'others', label: '关闭其他', icon: 'el-icon-files' },
@@ -113,7 +118,7 @@ export default {
   },
   methods: {
     openContextMenu(event, targetPath) {
-      const menuWidth = 152
+      const menuWidth = 176
       const menuHeight = 224
       const viewportWidth = window.innerWidth || document.documentElement.clientWidth
       const viewportHeight = window.innerHeight || document.documentElement.clientHeight
@@ -313,7 +318,7 @@ export default {
   position: fixed;
   z-index: 3000;
   display: flex;
-  width: 152px;
+  width: 176px;
   padding: 6px;
   flex-direction: column;
   background: #FFFFFF;
@@ -364,5 +369,20 @@ export default {
       border-radius: 0 0 5px 5px;
     }
   }
+}
+
+.workspace-tab-operation {
+  display: flex;
+  min-width: 144px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.workspace-tab-operation__shortcut {
+  margin-left: auto;
+  color: #94A3B8;
+  font-size: 12px;
+  font-weight: 400;
 }
 </style>

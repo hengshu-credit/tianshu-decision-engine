@@ -76,7 +76,7 @@ import VarPicker from './VarPicker.vue'
 import ExpressionEditorDialog from '@/components/expression/ExpressionEditorDialog.vue'
 import { cloneOperand, createLiteralOperand, createPathOperand, resolvePathOperand, VALUE_OPERAND_KINDS } from '@/utils/operand'
 import { createFunctionTemplate } from '@/components/expression/expressionTree'
-import { createExpressionSessionId } from '@/utils/expressionSession'
+import { createExpressionSessionId, createExpressionSessionTitle } from '@/utils/expressionSession'
 
 export default {
   name: 'OperandPicker',
@@ -167,6 +167,7 @@ export default {
 
       const sourceKey = `operand-picker-${this._uid}`
       const sessionId = createExpressionSessionId(ruleId, sourceKey)
+      const routeTitle = this.$route && this.$route.meta && this.$route.meta.title
       await this.$store.dispatch('expressionSessions/openSession', {
         sessionId,
         ruleId,
@@ -178,7 +179,7 @@ export default {
         allowedKinds: this.allowedKinds,
         context: this.editorContext,
         expectedType: this.expectedType,
-        title: this.editorTitle
+        title: createExpressionSessionTitle(routeTitle, this.editorTitle, this.$attrs.placeholder)
       })
       this.expressionSessionId = sessionId
       this.editorVisible = false

@@ -44,6 +44,7 @@ import {
   getAvatarInitial,
   isWorkspaceRoute,
   readSidebarState,
+  resolveWorkspaceShortcut,
   routeToTab,
   writeSidebarState
 } from '@/layout/layoutState'
@@ -101,28 +102,39 @@ export default {
     this.restoreWorkspaceTabs()
   },
   async mounted() {
+    window.addEventListener('keydown', this.handleWorkspaceShortcut, true)
     await this.refreshAuthBar()
   },
+  beforeDestroy() {
+    window.removeEventListener('keydown', this.handleWorkspaceShortcut, true)
+  },
   methods: {
+    routeTab(route) {
+      const tab = routeToTab(route)
+      if (!route || route.name !== 'ExpressionEditor') return tab
+      const getter = this.$store.getters['expressionSessions/sessionById']
+      const session = typeof getter === 'function' ? getter(route.params.sessionId) : null
+      return { ...tab, title: session && session.title ? session.title : tab.title }
+    },
     restoreWorkspaceTabs() {
       if (!isWorkspaceRoute(this.$route)) return
       const cached = readWorkspaceTabs(browserSessionStorage())
       const cachedTabs = cached.tabs.map(tab => {
         try {
           const resolved = this.$router.resolve(tab.fullPath).route
-          return isWorkspaceRoute(resolved) ? routeToTab(resolved) : null
+          return isWorkspaceRoute(resolved) ? this.routeTab(resolved) : null
         } catch (e) {
           return null
         }
       }).filter(Boolean)
       this.$store.dispatch('workspaceTabs/restore', {
         cachedTabs,
-        currentTab: routeToTab(this.$route)
+        currentTab: this.routeTab(this.$route)
       })
     },
     openCurrentRoute() {
       if (!isWorkspaceRoute(this.$route)) return
-      this.$store.dispatch('workspaceTabs/open', routeToTab(this.$route))
+      this.$store.dispatch('workspaceTabs/open', this.routeTab(this.$route))
     },
     navigateTo(fullPath) {
       if (!fullPath || fullPath === this.$route.fullPath) return
@@ -135,6 +147,13 @@ export default {
       if (!fullPath) return
       this.$store.dispatch('workspaceTabs/activate', fullPath)
       return this.navigateTo(fullPath)
+    },
+    handleWorkspaceShortcut(event) {
+      const command = resolveWorkspaceShortcut(event, this.workspaceTabs, this.activeTabPath)
+      if (!command) return
+      if (event && typeof event.preventDefault === 'function') event.preventDefault()
+      if (command.type === 'activate') return this.activateTab(command.targetPath)
+      return this.handleTabOperation(command)
     },
     async handleTabOperation({ operation, targetPath }) {
       if (operation === 'refresh') {

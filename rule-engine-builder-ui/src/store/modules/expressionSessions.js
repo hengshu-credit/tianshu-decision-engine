@@ -3,10 +3,30 @@ function cloneValue(value) {
   return JSON.parse(JSON.stringify(value))
 }
 
-function activeSession(payload, current) {
+function uniqueSessionTitle(sessions, payload, current) {
+  if (current && current.title) {
+    return {
+      title: current.title,
+      titleBase: current.titleBase || current.title
+    }
+  }
+  const titleBase = payload.title || '配置表达式'
+  const usedTitles = Object.values(sessions)
+    .filter(session => session.sessionId !== payload.sessionId && String(session.ruleId) === String(payload.ruleId))
+    .map(session => session.title)
+  if (!usedTitles.includes(titleBase)) return { title: titleBase, titleBase }
+
+  let suffix = 2
+  while (usedTitles.includes(`${titleBase}（${suffix}）`)) suffix += 1
+  return { title: `${titleBase}（${suffix}）`, titleBase }
+}
+
+function activeSession(payload, current, sessions) {
   const retained = current && current.status === 'ACTIVE' ? current : null
+  const displayTitle = uniqueSessionTitle(sessions, payload, retained)
   return {
     ...cloneValue(payload),
+    ...displayTitle,
     status: 'ACTIVE',
     draft: retained ? retained.draft : cloneValue(payload.draft),
     savedAt: retained ? retained.savedAt : null,
@@ -17,20 +37,8 @@ function activeSession(payload, current) {
   }
 }
 
-function replacedSession(session) {
-  return {
-    sessionId: session.sessionId,
-    ruleId: session.ruleId,
-    sourceKey: session.sourceKey,
-    status: 'REPLACED',
-    compiledRevision: 0,
-    appliedRevision: 0
-  }
-}
-
 const state = () => ({
-  sessions: {},
-  activeByRule: {}
+  sessions: {}
 })
 
 const getters = {
@@ -49,15 +57,9 @@ const getters = {
 
 const mutations = {
   OPEN_SESSION(state, payload) {
-    const ruleKey = String(payload.ruleId)
-    const previousId = state.activeByRule[ruleKey]
     const nextSessions = { ...state.sessions }
-    if (previousId && previousId !== payload.sessionId && nextSessions[previousId]) {
-      nextSessions[previousId] = replacedSession(nextSessions[previousId])
-    }
-    nextSessions[payload.sessionId] = activeSession(payload, nextSessions[payload.sessionId])
+    nextSessions[payload.sessionId] = activeSession(payload, nextSessions[payload.sessionId], nextSessions)
     state.sessions = nextSessions
-    state.activeByRule = { ...state.activeByRule, [ruleKey]: payload.sessionId }
   },
   SAVE_DRAFT(state, payload) {
     const session = state.sessions[payload.sessionId]
