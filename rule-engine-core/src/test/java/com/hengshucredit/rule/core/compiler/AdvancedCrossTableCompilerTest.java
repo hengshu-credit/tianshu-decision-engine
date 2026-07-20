@@ -108,6 +108,23 @@ public class AdvancedCrossTableCompilerTest {
     }
 
     @Test
+    public void sourceStatusSegmentsCompileThroughUnifiedConditionCompiler() {
+        String json = "{"
+                + "\"resultVar\":{\"varCode\":\"rate\",\"varType\":\"NUMBER\"},"
+                + "\"rowDimensions\":[{\"operand\":{\"kind\":\"REFERENCE\",\"refId\":12,\"refType\":\"VARIABLE\",\"code\":\"apiScore\",\"valueType\":\"NUMBER\"},\"varType\":\"NUMBER\",\"segments\":["
+                + "{\"operator\":\"source_cache_hit\"}]}],"
+                + "\"colDimensions\":[{\"varCode\":\"enabled\",\"varType\":\"BOOLEAN\",\"segments\":["
+                + "{\"operator\":\"is_true\"}]}],"
+                + "\"cells\":[[\"1\"]]}";
+
+        CompileResult result = compiler.compile(json);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertTrue(result.getCompiledScript().contains("sourceStatus(\"VARIABLE\", \"12\", \"CACHE_STATE\", \"HIT\")"));
+        assertTrue(result.getCompiledScript().contains("enabled == true"));
+    }
+
+    @Test
     public void rangeBoundaryControlsWhetherEndpointsAreIncluded() {
         assertTrue(matchesRangeBoundary("[)", 0));
         assertFalse(matchesRangeBoundary("[)", 2000));

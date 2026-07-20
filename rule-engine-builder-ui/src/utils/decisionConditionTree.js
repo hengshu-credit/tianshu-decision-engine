@@ -1,4 +1,4 @@
-import { normalizeConditionOperator } from '@/constants/conditionOperators'
+import { isSourceStatusOperator, normalizeConditionOperator } from '@/constants/conditionOperators'
 import { compileConditionOperands } from '@/utils/conditionOperand'
 import {
   collectOperandReferences,
@@ -30,7 +30,7 @@ export function createEmptyLeaf() {
 export function normalizeConditionLeafOperator(leaf) {
   if (!leaf || typeof leaf !== 'object') return leaf
   const valueType = leaf.leftOperand && leaf.leftOperand.valueType
-  const nextOperator = normalizeConditionOperator(leaf.operator || '==', valueType || 'STRING')
+  const nextOperator = normalizeConditionOperator(leaf.operator || '==', valueType || 'STRING', leaf.leftOperand)
   if (nextOperator !== leaf.operator) leaf.operator = nextOperator
   return leaf
 }
@@ -105,7 +105,8 @@ export function hasUsableConditionLeaf(node) {
   walkConditionLeaves(node, leaf => {
     if (usable) return
     if (!compileOperand(leaf.leftOperand) || leaf.operator === '*') return
-    if (['is_null', 'not_null', 'is_empty', 'not_empty', 'is_true', 'is_false'].includes(leaf.operator)) {
+    if (['is_null', 'not_null', 'is_empty', 'not_empty', 'is_true', 'is_false'].includes(leaf.operator) ||
+      isSourceStatusOperator(leaf.operator)) {
       usable = true
       return
     }

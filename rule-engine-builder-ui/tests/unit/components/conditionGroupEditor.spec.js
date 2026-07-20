@@ -30,6 +30,7 @@ function mountEditor(leafOverrides = {}) {
             valueType: 'NUMBER',
             refId: 1,
             refType: 'VARIABLE',
+            varSource: 'INPUT',
             resolved: true
           },
           operator: '>',
@@ -49,6 +50,7 @@ function mountEditor(leafOverrides = {}) {
       'el-button': makeStub('button'),
       'el-button-group': makeStub('div'),
       'el-select': makeStub('div'),
+      'el-option-group': makeStub('div'),
       'el-option': true
     }
   })
@@ -124,5 +126,24 @@ describe('ConditionGroupEditor', () => {
     expect(wrapper.vm.leftOperandType(leaf)).toBe('NUMBER')
     expect(wrapper.vm.operatorOptions(leaf).map(item => item.value)).toEqual(expect.arrayContaining(['>', '>=', '<', '<=', 'between']))
     expect(wrapper.vm.operatorOptions(leaf).map(item => item.value)).not.toContain('starts_with')
+  })
+
+  test('API 引用展示来源状态组，选择缓存状态后清空并隐藏右值', async () => {
+    const wrapper = mountEditor({
+      leftOperand: {
+        kind: 'REFERENCE', code: 'creditScore', valueType: 'DOUBLE', refId: 8,
+        refType: 'VARIABLE', varSource: 'API', sourceType: 'variable', resolved: true
+      },
+      operator: 'source_cache_hit'
+    })
+    const leaf = wrapper.props('group').children[0]
+
+    expect(wrapper.vm.operatorGroups(leaf).map(group => group.label)).toEqual(['值判断', '来源状态'])
+    expect(wrapper.vm.operatorOptions(leaf).map(item => item.value)).toContain('source_cache_hit')
+    wrapper.vm.onOpChange(leaf)
+    await wrapper.vm.$nextTick()
+
+    expect(leaf.rightOperand).toBeNull()
+    expect(wrapper.findAllComponents(OperandPickerStub)).toHaveLength(1)
   })
 })

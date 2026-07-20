@@ -148,20 +148,20 @@
                       class="cond-var"
                       @input="value => setConditionOperand(cond, 'leftOperand', value)"
                     />
-                    <el-select v-model="cond.operator" size="mini" class="cond-op">
-                      <el-option label="等于" value="==" />
-                      <el-option label="不等于" value="!=" />
-                      <el-option label="大于" value=">" />
-                      <el-option label="大于等于" value=">=" />
-                      <el-option label="小于" value="<" />
-                      <el-option label="小于等于" value="<=" />
+                    <el-select v-model="cond.operator" size="mini" class="cond-op" @change="onConditionOperatorChange(cond)">
+                      <el-option-group v-for="operatorGroup in conditionOperatorGroups(cond)" :key="operatorGroup.label" :label="operatorGroup.label">
+                        <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+                      </el-option-group>
                     </el-select>
                     <operand-picker
+                      v-if="conditionRequiresValue(cond)"
                       :value="cond.rightOperand"
                       :vars="varPickerOptions"
                       :functions="projectFunctions"
                       :selected-vars="selectedVarPickerOptions"
-                      :allowed-kinds="valueOperandKinds"
+                      :allowed-kinds="conditionRightAllowedKinds(cond)"
+                      :context="conditionRightContext(cond)"
+                      :expected-type="conditionRightExpectedType(cond)"
                       placeholder="选择值或字段"
                       width="100%"
                       class="cond-val"
@@ -332,10 +332,21 @@ import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
-import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { collectOperandReferences, compileOperand, createLiteralOperand, inferOperandType, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import {
+  conditionOperatorAllowsVarValue,
+  conditionOperatorRequiresValue,
+  findConditionOperator,
+  getConditionOperatorGroups,
+  normalizeConditionOperator
+} from '@/constants/conditionOperators'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
+
+function conditionOperandType(condition) {
+  return inferOperandType(condition && condition.leftOperand) || 'STRING'
+}
 
 export default {
   name: 'AdvancedScorecard',
@@ -480,8 +491,43 @@ export default {
         condition.varLabel = value && (value.label || value.code || value.value) || ''
         condition._varId = value && value.refId != null ? value.refId : null
         condition._refType = value && value.refType || null
+        this.$set(condition, 'operator', normalizeConditionOperator(condition.operator || '==', conditionOperandType(condition), value))
+        this.onConditionOperatorChange(condition)
       } else {
         condition.value = compileOperand(value)
+      }
+    },
+    conditionOperandType(condition) {
+      return conditionOperandType(condition)
+    },
+    conditionOperatorGroups(condition) {
+      return getConditionOperatorGroups(conditionOperandType(condition), condition && condition.leftOperand)
+    },
+    conditionRequiresValue(condition) {
+      return conditionOperatorRequiresValue(condition && condition.operator, conditionOperandType(condition), condition && condition.leftOperand)
+    },
+    conditionRightContext(condition) {
+      const option = findConditionOperator(condition && condition.operator, conditionOperandType(condition), condition && condition.leftOperand)
+      return (option && option.rightContext) || 'READ_EXPRESSION'
+    },
+    conditionRightExpectedType(condition) {
+      const option = findConditionOperator(condition && condition.operator, conditionOperandType(condition), condition && condition.leftOperand)
+      return (option && option.rightValueType) || conditionOperandType(condition)
+    },
+    conditionRightAllowedKinds(condition) {
+      const context = this.conditionRightContext(condition)
+      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
+      return conditionOperatorAllowsVarValue(condition && condition.operator, conditionOperandType(condition), condition && condition.leftOperand)
+        ? getExpressionContext(context).allowedKinds
+        : ['LITERAL']
+    },
+    onConditionOperatorChange(condition) {
+      const type = conditionOperandType(condition)
+      const operator = normalizeConditionOperator(condition.operator || '==', type, condition.leftOperand)
+      this.$set(condition, 'operator', operator)
+      if (!conditionOperatorRequiresValue(operator, type, condition.leftOperand)) {
+        this.$set(condition, 'rightOperand', null)
+        condition.value = ''
       }
     },
     setThresholdOperand(threshold, value) {
@@ -725,7 +771,7 @@ export default {
   &:last-child { margin-bottom: 2px; }
 }
 .cond-var { flex: 3; min-width: 0; }
-.cond-op { flex: 2; min-width: 80px; }
+.cond-op { flex: 0 0 108px; width: 108px; }
 .cond-val { flex: 2; min-width: 0; }
 .score-input { width: 100%; }
 .cond-and { font-size: 11px; color: #1890ff; font-weight: bold; margin: 0 2px; flex-shrink: 0; }

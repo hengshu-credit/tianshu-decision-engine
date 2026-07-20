@@ -168,14 +168,55 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
         String op = seg.operator;
 
         if ("range".equals(op)) {
-            sb.append(scriptName).append(seg.rangeBoundary.startsWith("[") ? " >= " : " > ");
-            appendSegmentValue(sb, seg.minOperand, seg.min, seg.varType, varContext);
-            sb.append(" && ").append(scriptName).append(seg.rangeBoundary.endsWith("]") ? " <= " : " < ");
-            appendSegmentValue(sb, seg.maxOperand, seg.max, seg.varType, varContext);
+            boolean dateType = isDateType(seg.varType);
+            if (dateType) sb.append("dateToMillis(");
+            sb.append(scriptName);
+            if (dateType) sb.append(")");
+            sb.append(seg.rangeBoundary.startsWith("[") ? " >= " : " > ");
+            appendRangeValue(sb, seg.minOperand, seg.min, seg.varType, varContext, dateType);
+            sb.append(" && ");
+            if (dateType) sb.append("dateToMillis(");
+            sb.append(scriptName);
+            if (dateType) sb.append(")");
+            sb.append(seg.rangeBoundary.endsWith("]") ? " <= " : " < ");
+            appendRangeValue(sb, seg.maxOperand, seg.max, seg.varType, varContext, dateType);
         } else {
-            sb.append(scriptName).append(" ").append(op).append(" ");
-            appendSegmentValue(sb, seg.valueOperand, seg.value, seg.varType, varContext);
+            JSONObject leaf = new JSONObject();
+            leaf.put("leftOperand", dimensionOperand(seg));
+            leaf.put("operator", op);
+            leaf.put("rightOperand", segmentOperand(seg.valueOperand, seg.value, seg.varType));
+            sb.append(ConditionOperandCompiler.compile(leaf, varContext));
         }
+    }
+
+    private JSONObject dimensionOperand(SegmentInfo seg) {
+        if (seg.dimensionOperand != null) return seg.dimensionOperand;
+        JSONObject operand = new JSONObject();
+        operand.put("kind", seg.varId != null || (seg.refType != null && !seg.refType.trim().isEmpty())
+                ? "REFERENCE" : "PATH");
+        operand.put("code", seg.varCode);
+        operand.put("value", seg.varCode);
+        operand.put("valueType", seg.varType);
+        if (seg.varId != null) operand.put("refId", seg.varId);
+        if (seg.refType != null) operand.put("refType", seg.refType);
+        return operand;
+    }
+
+    private JSONObject segmentOperand(JSONObject operand, String value, String valueType) {
+        if (operand != null) return operand;
+        if (value == null) return null;
+        JSONObject literal = new JSONObject();
+        literal.put("kind", "LITERAL");
+        literal.put("value", value);
+        literal.put("valueType", valueType);
+        return literal;
+    }
+
+    private void appendRangeValue(StringBuilder sb, JSONObject operand, String legacyValue,
+                                  String legacyType, VarContext varContext, boolean dateType) {
+        if (dateType) sb.append("dateToMillis(");
+        appendSegmentValue(sb, operand, legacyValue, legacyType, varContext);
+        if (dateType) sb.append(")");
     }
 
     private void appendSegmentValue(StringBuilder sb, JSONObject operand, String legacyValue,
@@ -223,6 +264,13 @@ public class AdvancedCrossTableCompiler implements RuleCompiler {
             return rangeBoundary;
         }
         return "[)";
+    }
+
+    private static boolean isDateType(String varType) {
+        if (varType == null) return false;
+        String type = varType.trim().toUpperCase();
+        return "DATE".equals(type) || "DATETIME".equals(type) || "TIMESTAMP".equals(type)
+                || "LOCALDATE".equals(type) || "LOCALDATETIME".equals(type);
     }
 
     /** 维度分段信息 */

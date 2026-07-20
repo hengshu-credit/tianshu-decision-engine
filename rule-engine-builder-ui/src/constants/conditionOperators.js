@@ -47,6 +47,12 @@ const NUMBER_OPERATORS = [
   { label: '任意', value: '*', noValue: true }
 ]
 
+const DATE_OPERATORS = [
+  ...COMMON_OPERATORS,
+  ...ORDER_OPERATORS,
+  { label: '任意', value: '*', noValue: true }
+]
+
 const BOOLEAN_OPERATORS = [
   { label: '等于', value: '==' },
   { label: '不等于', value: '!=' },
@@ -116,17 +122,73 @@ const OBJECT_OPERATORS = [
   { label: '任意', value: '*', noValue: true }
 ]
 
+const SOURCE_OUTCOME_OPERATORS = [
+  { label: '调用成功', value: 'source_success', noValue: true, dimension: 'OUTCOME', expected: 'SUCCESS' },
+  { label: '调用异常', value: 'source_error', noValue: true, dimension: 'OUTCOME', expected: 'ERROR' },
+  { label: '调用超时', value: 'source_timeout', noValue: true, dimension: 'OUTCOME', expected: 'TIMEOUT' }
+]
+
+const API_STATUS_OPERATORS = [
+  ...SOURCE_OUTCOME_OPERATORS,
+  { label: '使用了兜底值', value: 'source_fallback', noValue: true, dimension: 'FALLBACK_USED', expected: 'TRUE' },
+  { label: '已启用缓存', value: 'source_cache_enabled', noValue: true, dimension: 'CACHE_CONFIGURED', expected: 'TRUE' },
+  { label: '未启用缓存', value: 'source_cache_disabled', noValue: true, dimension: 'CACHE_CONFIGURED', expected: 'FALSE' },
+  { label: '缓存命中', value: 'source_cache_hit', noValue: true, dimension: 'CACHE_STATE', expected: 'HIT' },
+  { label: '缓存未命中', value: 'source_cache_miss', noValue: true, dimension: 'CACHE_STATE', expected: 'MISS' },
+  { label: '缓存不可用', value: 'source_cache_unavailable', noValue: true, dimension: 'CACHE_STATE', expected: 'UNAVAILABLE' },
+  { label: '来自实时调用', value: 'source_origin_live', noValue: true, dimension: 'DATA_ORIGIN', expected: 'LIVE' },
+  { label: '来自有效缓存', value: 'source_origin_cache', noValue: true, dimension: 'DATA_ORIGIN', expected: 'CACHE' },
+  { label: '来自过期缓存', value: 'source_origin_stale_cache', noValue: true, dimension: 'DATA_ORIGIN', expected: 'STALE_CACHE' }
+]
+
+const DB_STATUS_OPERATORS = [
+  ...SOURCE_OUTCOME_OPERATORS,
+  { label: '使用了兜底值', value: 'source_fallback', noValue: true, dimension: 'FALLBACK_USED', expected: 'TRUE' },
+  { label: '查询有数据', value: 'source_has_data', noValue: true, dimension: 'DATA_STATE', expected: 'HAS_DATA' },
+  { label: '查询无数据', value: 'source_no_data', noValue: true, dimension: 'DATA_STATE', expected: 'NO_DATA' }
+]
+
+const LIST_STATUS_OPERATORS = [
+  ...SOURCE_OUTCOME_OPERATORS,
+  { label: '名单命中', value: 'source_match_hit', noValue: true, dimension: 'MATCH_STATE', expected: 'HIT' },
+  { label: '名单未命中', value: 'source_match_miss', noValue: true, dimension: 'MATCH_STATE', expected: 'MISS' }
+]
+
+const MODEL_STATUS_OPERATORS = [
+  ...SOURCE_OUTCOME_OPERATORS,
+  { label: '输出存在', value: 'source_output_present', noValue: true, dimension: 'PRESENCE', expected: 'PRESENT' },
+  { label: '输出缺失', value: 'source_output_missing', noValue: true, dimension: 'PRESENCE', expected: 'MISSING' }
+]
+
+const DATA_OBJECT_STATUS_OPERATORS = [
+  { label: '字段存在', value: 'source_field_present', noValue: true, dimension: 'PRESENCE', expected: 'PRESENT' },
+  { label: '字段缺失', value: 'source_field_missing', noValue: true, dimension: 'PRESENCE', expected: 'MISSING' },
+  { label: '类型转换异常', value: 'source_field_invalid', noValue: true, dimension: 'PRESENCE', expected: 'INVALID' }
+]
+
+const SOURCE_STATUS_OPERATORS = [
+  ...API_STATUS_OPERATORS,
+  ...DB_STATUS_OPERATORS,
+  ...LIST_STATUS_OPERATORS,
+  ...MODEL_STATUS_OPERATORS,
+  ...DATA_OBJECT_STATUS_OPERATORS
+]
+const SOURCE_STATUS_OPERATOR_VALUES = new Set(SOURCE_STATUS_OPERATORS.map(item => item.value))
+
 export function normalizeVarType(varType) {
   const type = String(varType || 'STRING').toUpperCase()
-  if (['BYTE', 'SHORT', 'INT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL', 'BIGDECIMAL'].includes(type)) return 'NUMBER'
+  if (['BYTE', 'SHORT', 'INT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL', 'BIGDECIMAL', 'PROBABILITY'].includes(type)) return 'NUMBER'
+  if (['DATE', 'DATETIME', 'TIMESTAMP', 'LOCALDATE', 'LOCALDATETIME'].includes(type)) return 'DATE'
   if (['BOOL'].includes(type)) return 'BOOLEAN'
-  if (['ARRAY', 'SET', 'COLLECTION'].includes(type)) return 'LIST'
+  if (['ARRAY', 'SET', 'COLLECTION', 'VECTOR'].includes(type)) return 'LIST'
+  if (type === 'MODEL') return 'OBJECT'
   return type
 }
 
-export function getConditionOperatorOptions(varType) {
+function valueOperatorOptions(varType) {
   const type = normalizeVarType(varType)
-  if (type === 'NUMBER' || type === 'DATE') return NUMBER_OPERATORS
+  if (type === 'NUMBER') return NUMBER_OPERATORS
+  if (type === 'DATE') return DATE_OPERATORS
   if (type === 'BOOLEAN') return BOOLEAN_OPERATORS
   if (type === 'ENUM') return ENUM_OPERATORS
   if (type === 'OBJECT') return OBJECT_OPERATORS
@@ -135,28 +197,65 @@ export function getConditionOperatorOptions(varType) {
   return STRING_OPERATORS
 }
 
-export function findConditionOperator(operator, varType) {
-  return getConditionOperatorOptions(varType).find(item => item.value === operator) || null
+function sourceStatusOptions(sourceContext) {
+  const context = sourceContext || {}
+  const ref = context._ref || {}
+  const refType = String(context.refType || context._refType || ref.refType || '').toUpperCase()
+  const varObj = context.varObj || ref.varObj || {}
+  const varSource = String(context.varSource || context.sourceType || ref.varSource || ref.sourceType || varObj.varSource || '').toUpperCase()
+  if (refType === 'DATA_OBJECT' || refType === 'DATA_FIELD') return DATA_OBJECT_STATUS_OPERATORS
+  if (refType === 'MODEL_OUTPUT' || refType === 'MODEL') return MODEL_STATUS_OPERATORS
+  if (refType !== 'VARIABLE') return []
+  if (varSource === 'API') return API_STATUS_OPERATORS
+  if (varSource === 'DB') return DB_STATUS_OPERATORS
+  if (varSource === 'LIST') return LIST_STATUS_OPERATORS
+  return []
 }
 
-export function conditionOperatorRequiresValue(operator, varType) {
-  const option = findConditionOperator(operator, varType)
+export function getConditionOperatorGroups(varType, sourceContext) {
+  const groups = [{ label: '值判断', options: valueOperatorOptions(varType) }]
+  const statusOptions = sourceStatusOptions(sourceContext)
+  if (statusOptions.length) groups.push({ label: '来源状态', options: statusOptions })
+  return groups
+}
+
+export function getConditionOperatorOptions(varType, sourceContext) {
+  return getConditionOperatorGroups(varType, sourceContext).reduce((result, group) => result.concat(group.options), [])
+}
+
+export function isSourceStatusOperator(operator) {
+  return SOURCE_STATUS_OPERATOR_VALUES.has(operator)
+}
+
+export function compileSourceStatusExpression(operand, operator) {
+  const option = SOURCE_STATUS_OPERATORS.find(item => item.value === operator)
+  if (!option || !operand || operand.refId == null || !operand.refType) return 'true'
+  return 'sourceStatus(' + escapeString(operand.refType) + ', ' + escapeString(operand.refId) + ', ' +
+    escapeString(option.dimension) + ', ' + escapeString(option.expected) + ')'
+}
+
+export function findConditionOperator(operator, varType, sourceContext) {
+  return getConditionOperatorOptions(varType, sourceContext).find(item => item.value === operator) || null
+}
+
+export function conditionOperatorRequiresValue(operator, varType, sourceContext) {
+  const option = findConditionOperator(operator, varType, sourceContext)
   return !(option && option.noValue)
 }
 
-export function conditionOperatorAllowsVarValue(operator, varType) {
-  const option = findConditionOperator(operator, varType)
+export function conditionOperatorAllowsVarValue(operator, varType, sourceContext) {
+  const option = findConditionOperator(operator, varType, sourceContext)
   return !!option && !option.noValue && !option.noVarValue
 }
 
-export function normalizeConditionOperator(operator, varType) {
-  const options = getConditionOperatorOptions(varType)
+export function normalizeConditionOperator(operator, varType, sourceContext) {
+  const options = getConditionOperatorOptions(varType, sourceContext)
   if (options.some(item => item.value === operator)) return operator
   return options.length ? options[0].value : '=='
 }
 
-export function conditionValuePlaceholder(operator, varType) {
-  const option = findConditionOperator(operator, varType)
+export function conditionValuePlaceholder(operator, varType, sourceContext) {
+  const option = findConditionOperator(operator, varType, sourceContext)
   if (option && option.valuePlaceholder) return option.valuePlaceholder
   const type = normalizeVarType(varType)
   if (type === 'NUMBER') return '数值'

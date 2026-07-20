@@ -129,6 +129,11 @@ public class ExternalApiInvokeService {
                 long cost = System.currentTimeMillis() - start;
                 result.put("costTimeMs", cost);
                 result.put("cached", false);
+                result.put("cacheConfigured", responseCacheSeconds > 0);
+                result.put("cacheStatus", trace.cacheStatus);
+                result.put("dataOrigin", "LIVE");
+                result.put("sourceOutcome", !result.containsKey("success") || booleanValue(result.get("success"))
+                        ? "SUCCESS" : "ERROR");
                 if (responseCacheSeconds > 0 && responseCacheKey != null) {
                     responseCaches.put(responseCacheKey, new ApiResponseCache(copyResponse(result),
                             System.currentTimeMillis() + responseCacheSeconds * 1000L));
@@ -155,6 +160,8 @@ public class ExternalApiInvokeService {
         if ("USE_CACHE".equals(apiConfig.getExceptionStrategy()) && cachedResponse != null) {
             trace.cacheStatus = "STALE";
             Map<String, Object> cached = copyCachedResponse(cachedResponse.response, true, true, cost);
+            cached.put("sourceOutcome", failureOutcome(lastError));
+            cached.put("fallback", true);
             logDatasourceCall(apiConfig, datasource, trace, true, cached, message, cost);
             return cached;
         }
@@ -168,11 +175,15 @@ public class ExternalApiInvokeService {
             fallback.put("body", parseJsonOrRaw(apiConfig.getFallbackValue()));
             fallback.put("errorMessage", message);
             fallback.put("costTimeMs", cost);
+            fallback.put("cacheConfigured", responseCacheSeconds > 0);
+            fallback.put("cacheStatus", trace.cacheStatus);
+            fallback.put("dataOrigin", "FALLBACK");
+            fallback.put("sourceOutcome", failureOutcome(lastError));
             logDatasourceCall(apiConfig, datasource, trace, false, fallback, message, cost);
             return fallback;
         }
         logDatasourceCall(apiConfig, datasource, trace, false, null, message, cost);
-        throw new IllegalStateException(message, lastError);
+        throw new ApiInvokeException(message, lastError, responseCacheSeconds > 0, trace.cacheStatus);
     }
 
     public Map<String, Object> testDatasourceAuth(Long datasourceId, Map<String, Object> params) {
@@ -303,7 +314,24 @@ public class ExternalApiInvokeService {
         response.put("cached", hit);
         response.put("cacheStale", stale);
         response.put("costTimeMs", costTimeMs);
+        response.put("cacheConfigured", true);
+        response.put("cacheStatus", stale ? "STALE" : (hit ? "HIT" : "MISS"));
+        response.put("dataOrigin", stale ? "STALE_CACHE" : (hit ? "CACHE" : "LIVE"));
         return response;
+    }
+
+    private String failureOutcome(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            String className = current.getClass().getSimpleName().toLowerCase();
+            String message = current.getMessage();
+            if (className.contains("timeout") || (message != null
+                    && (message.toLowerCase().contains("timeout") || message.contains("超时")))) {
+                return "TIMEOUT";
+            }
+            current = current.getCause();
+        }
+        return "ERROR";
     }
 
     @SuppressWarnings("unchecked")
@@ -1632,6 +1660,25 @@ public class ExternalApiInvokeService {
         private boolean requestIssued;
         private String cacheStatus;
         private String cacheKey;
+    }
+
+    static class ApiInvokeException extends IllegalStateException {
+        private final boolean cacheConfigured;
+        private final String cacheStatus;
+
+        ApiInvokeException(String message, Throwable cause, boolean cacheConfigured, String cacheStatus) {
+            super(message, cause);
+            this.cacheConfigured = cacheConfigured;
+            this.cacheStatus = cacheStatus;
+        }
+
+        boolean isCacheConfigured() {
+            return cacheConfigured;
+        }
+
+        String getCacheStatus() {
+            return cacheStatus;
+        }
     }
 
     private static class PreparedHttpRequest {

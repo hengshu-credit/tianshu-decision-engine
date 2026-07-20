@@ -1,7 +1,14 @@
-import { compileConditionExpression } from '@/constants/conditionOperators'
+import {
+  compileConditionExpression,
+  compileSourceStatusExpression,
+  isSourceStatusOperator
+} from '@/constants/conditionOperators'
 import { compileListQueryOperand, compileOperand, OPERAND_KINDS } from '@/utils/operand'
 
 export function compileConditionOperands(leftOperand, operator, rightOperand) {
+  if (isSourceStatusOperator(operator)) {
+    return compileSourceStatusExpression(leftOperand, operator)
+  }
   const left = compileOperand(leftOperand)
   if (!left) return 'true'
   const op = operator || '=='

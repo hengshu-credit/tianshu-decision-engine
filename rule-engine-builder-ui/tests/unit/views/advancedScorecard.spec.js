@@ -45,4 +45,24 @@ describe('AdvancedScorecard', () => {
 
     expect(AdvancedScorecard.methods.buildTestParamsTemplate.call(context)).toEqual({ age: 0, income: '' })
   })
+
+  test('条件按模型输出来源展示状态操作符并移除无用右值', () => {
+    const condition = {
+      leftOperand: {
+        kind: 'REFERENCE', code: 'risk.score', valueType: 'DOUBLE', refId: 21,
+        refType: 'MODEL_OUTPUT', sourceType: 'model'
+      },
+      operator: 'source_output_missing',
+      rightOperand: { kind: 'LITERAL', value: '0', valueType: 'NUMBER' }
+    }
+    const context = {
+      $set(target, key, value) { target[key] = value }
+    }
+
+    expect(AdvancedScorecard.methods.conditionOperatorGroups.call(context, condition).map(group => group.label)).toEqual(['值判断', '来源状态'])
+    AdvancedScorecard.methods.onConditionOperatorChange.call(context, condition)
+
+    expect(condition.rightOperand).toBeNull()
+    expect(AdvancedScorecard.methods.conditionRequiresValue.call(context, condition)).toBe(false)
+  })
 })

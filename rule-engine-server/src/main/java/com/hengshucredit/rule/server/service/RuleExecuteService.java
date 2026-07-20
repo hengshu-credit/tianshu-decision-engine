@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
@@ -110,7 +111,7 @@ public class RuleExecuteService {
         String fullScript = funcPrefix.isEmpty() ? compiledScript : funcPrefix + "\n" + compiledScript;
         VariableResolveOptions resolveOptions = withInputFields(
                 VariableResolveOptions.defaults(), inputFields, modelJson, definition.getModelType());
-        Map<String, Object> executeParams = bindInputs(inputFields, params);
+        Map<String, Object> executeParams = bindInputs(inputFields, params, resolveOptions);
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = null;
         if (definition.getProjectId() != null) {
@@ -124,6 +125,7 @@ public class RuleExecuteService {
         RuleResult result = new RuleResult();
         try {
             variableSourceResolver.resolveInto(definition.getProjectId(), executeParams, resolveOptions);
+            RuntimeContextBridge.replaceSourceStates(resolveOptions.getSourceStates());
             result = qlExpressEngine.execute(fullScript, executeParams, true);
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
@@ -212,10 +214,11 @@ public class RuleExecuteService {
         Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
         prepareProjectFunctions(executionProjectId, false);
 
-        Map<String, Object> executeParams = bindDefinitionInputs(published.getDefinitionId(), params);
-        Map<String, Object> originalInput = snapshotMap(executeParams);
-        VariableResolveOptions effectiveOptions = withDefinitionInputFields(resolveOptions, published.getDefinitionId(),
+        List<RuleDefinitionInputField> inputFields = definitionService.listInputFields(published.getDefinitionId());
+        VariableResolveOptions effectiveOptions = withInputFields(resolveOptions, inputFields,
                 published.getModelJson(), published.getModelType());
+        Map<String, Object> executeParams = bindInputs(inputFields, params, effectiveOptions);
+        Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = published.getProjectCode();
         if (projectCode == null && executionProjectId != null) {
             RuleProject project = projectService.getById(executionProjectId);
@@ -231,6 +234,7 @@ public class RuleExecuteService {
         RuleResult result = new RuleResult();
         try {
             variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
+            RuntimeContextBridge.replaceSourceStates(effectiveOptions.getSourceStates());
             result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
@@ -296,19 +300,14 @@ public class RuleExecuteService {
         log.setAuthPhase(authContext.getAuthPhase());
     }
 
-    private VariableResolveOptions withDefinitionInputFields(VariableResolveOptions options, Long definitionId,
-                                                              String modelJson, String modelType) {
-        VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
-        if (definitionId == null || effective.getRequiredScriptNames() != null) {
-            return effective;
-        }
-        return withInputFields(effective, definitionService.listInputFields(definitionId), modelJson, modelType);
-    }
-
     private VariableResolveOptions withInputFields(VariableResolveOptions options,
                                                    List<RuleDefinitionInputField> inputFields,
                                                    String modelJson, String modelType) {
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
+        if (effective.getStatusReferenceKeys() == null) {
+            effective.setStatusReferenceKeys(SourceStatusUsage.scan(modelJson));
+        }
+        effective.getSourceStates().clear();
         if (effective.getRequiredScriptNames() != null) {
             return effective;
         }
@@ -333,13 +332,10 @@ public class RuleExecuteService {
         }
     }
 
-    private Map<String, Object> bindDefinitionInputs(Long definitionId, Map<String, Object> params) {
-        return bindInputs(definitionService.listInputFields(definitionId), params);
-    }
-
-    private Map<String, Object> bindInputs(List<RuleDefinitionInputField> fields, Map<String, Object> params) {
+    private Map<String, Object> bindInputs(List<RuleDefinitionInputField> fields, Map<String, Object> params,
+                                           VariableResolveOptions options) {
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
-        return executionParameterBinder.bindRuleInputs(fields, safeParams);
+        return executionParameterBinder.bindRuleInputs(fields, safeParams, options);
     }
 
     private String prepareProjectFunctions(Long projectId, boolean includeScriptPrefix) {

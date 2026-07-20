@@ -38,7 +38,9 @@
             <div v-if="branch.type !== 'else'" class="condition-row">
               <operand-picker :value="branch.leftOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setConditionLeftOperand(branch, value)" />
               <el-select v-model="branch.operator" size="mini" class="operator" @change="onConditionOperatorChange(branch)">
-                <el-option v-for="option in operatorOptions(branch)" :key="option.value" :label="option.label" :value="option.value" />
+                <el-option-group v-for="groupItem in operatorGroups(branch)" :key="groupItem.label" :label="groupItem.label">
+                  <el-option v-for="option in groupItem.options" :key="option.value" :label="option.label" :value="option.value" />
+                </el-option-group>
               </el-select>
               <operand-picker v-if="operatorRequiresValue(branch)" :value="branch.rightOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="rightAllowedKinds(branch)" :context="rightContext(branch)" :expected-type="rightExpectedType(branch)" placeholder="选择右操作数" size="mini" @input="value => setOperand(branch, 'rightOperand', value)" />
             </div>
@@ -157,7 +159,9 @@
           <div class="condition-row">
             <operand-picker :value="block.leftOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="readKinds" placeholder="选择左操作数" size="mini" @input="value => setConditionLeftOperand(block, value)" />
             <el-select v-model="block.operator" size="mini" class="operator" @change="onConditionOperatorChange(block)">
-              <el-option v-for="option in operatorOptions(block)" :key="option.value" :label="option.label" :value="option.value" />
+              <el-option-group v-for="groupItem in operatorGroups(block)" :key="groupItem.label" :label="groupItem.label">
+                <el-option v-for="option in groupItem.options" :key="option.value" :label="option.label" :value="option.value" />
+              </el-option-group>
             </el-select>
             <operand-picker v-if="operatorRequiresValue(block)" :value="block.rightOperand" :vars="vars" :functions="functions" :list-options="listOptions" :selected-vars="selectedVars" :allowed-kinds="rightAllowedKinds(block)" :context="rightContext(block)" :expected-type="rightExpectedType(block)" placeholder="选择右操作数" size="mini" @input="value => setOperand(block, 'rightOperand', value)" />
           </div>
@@ -225,6 +229,7 @@ import {
   conditionOperatorAllowsVarValue,
   conditionOperatorRequiresValue,
   findConditionOperator,
+  getConditionOperatorGroups,
   getConditionOperatorOptions,
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
@@ -279,32 +284,33 @@ export default {
     addArrayOperand(values) { values.push(null); this.sync() },
     removeArrayOperand(values, index) { values.splice(index, 1); this.sync() },
     operandType(operand) { return inferOperandType(operand) || 'STRING' },
-    operatorOptions(holder) { return getConditionOperatorOptions(this.operandType(holder && holder.leftOperand)) },
-    operatorRequiresValue(holder) { return conditionOperatorRequiresValue(holder && holder.operator, this.operandType(holder && holder.leftOperand)) },
+    operatorOptions(holder) { return getConditionOperatorOptions(this.operandType(holder && holder.leftOperand), holder && holder.leftOperand) },
+    operatorGroups(holder) { return getConditionOperatorGroups(this.operandType(holder && holder.leftOperand), holder && holder.leftOperand) },
+    operatorRequiresValue(holder) { return conditionOperatorRequiresValue(holder && holder.operator, this.operandType(holder && holder.leftOperand), holder && holder.leftOperand) },
     rightContext(holder) {
-      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand), holder && holder.leftOperand)
       return (option && option.rightContext) || 'READ_EXPRESSION'
     },
     rightExpectedType(holder) {
-      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+      const option = findConditionOperator(holder && holder.operator, this.operandType(holder && holder.leftOperand), holder && holder.leftOperand)
       return (option && option.rightValueType) || this.operandType(holder && holder.leftOperand)
     },
     rightAllowedKinds(holder) {
       const context = this.rightContext(holder)
       if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
-      return conditionOperatorAllowsVarValue(holder && holder.operator, this.operandType(holder && holder.leftOperand))
+      return conditionOperatorAllowsVarValue(holder && holder.operator, this.operandType(holder && holder.leftOperand), holder && holder.leftOperand)
         ? getExpressionContext(context).allowedKinds
         : ['LITERAL']
     },
     setConditionLeftOperand(holder, value) {
       this.$set(holder, 'leftOperand', value || null)
-      this.$set(holder, 'operator', normalizeConditionOperator(holder.operator || '==', this.operandType(value)))
+      this.$set(holder, 'operator', normalizeConditionOperator(holder.operator || '==', this.operandType(value), value))
       this.onConditionOperatorChange(holder)
     },
     onConditionOperatorChange(holder) {
-      const operator = normalizeConditionOperator(holder.operator || '==', this.operandType(holder.leftOperand))
+      const operator = normalizeConditionOperator(holder.operator || '==', this.operandType(holder.leftOperand), holder.leftOperand)
       this.$set(holder, 'operator', operator)
-      if (!conditionOperatorRequiresValue(operator, this.operandType(holder.leftOperand))) {
+      if (!conditionOperatorRequiresValue(operator, this.operandType(holder.leftOperand), holder.leftOperand)) {
         this.$set(holder, 'rightOperand', null)
       } else if (holder.rightOperand && !this.rightAllowedKinds(holder).includes(holder.rightOperand.kind)) {
         this.$set(holder, 'rightOperand', null)

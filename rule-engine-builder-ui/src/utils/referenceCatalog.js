@@ -184,6 +184,8 @@ export function buildPickerOptions(catalog) {
     varType: ref.varType,
     varObj: ref.varObj,
     refType: ref.refType,
+    sourceType: ref.sourceType,
+    varSource: ref.varSource,
     constantValue: ref.constantValue,
     _varId: ref.id,
     _refType: ref.refType,

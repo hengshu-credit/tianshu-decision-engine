@@ -266,6 +266,7 @@ public class RuleRuntimeInvoker {
         String previousProjectCode = session.getCurrentProjectCode();
         Map<String, Object> previousRule = RuntimeContextBridge.currentRule();
         List<String> previousMatchedConditions = RuntimeContextBridge.currentMatchedConditions();
+        Map<String, Map<String, Object>> previousSourceStates = RuntimeContextBridge.currentSourceStates();
         Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
         String projectCode = hasText(publishedProjectCode)
                 ? publishedProjectCode : resolveProjectCode(projectId);
@@ -291,15 +292,17 @@ public class RuleRuntimeInvoker {
             RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
+            options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
             Set<String> requiredNames = requiredInputNames(targetDefinitionId);
             if (!requiredNames.isEmpty()) {
                 options.setRequiredScriptNames(requiredNames);
             }
             List<RuleDefinitionInputField> childFields = definitionService.listInputFields(targetDefinitionId);
             Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(
-                    childFields, session.getValues());
+                    childFields, session.getValues(), options);
             session.getValues().putAll(boundParams);
             variableSourceResolver.resolveInto(projectId, session.getValues(), options);
+            RuntimeContextBridge.replaceSourceStates(options.getSourceStates());
             RuleResult result = qlExpressEngine.execute(compiledScript, session.getValues(), true);
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
@@ -321,6 +324,7 @@ public class RuleRuntimeInvoker {
             session.setCurrentProjectId(previousProjectId);
             session.setCurrentProjectCode(previousProjectCode);
             RuntimeContextBridge.setRuleContext(previousRule, previousMatchedConditions);
+            RuntimeContextBridge.replaceSourceStates(previousSourceStates);
         }
     }
 

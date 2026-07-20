@@ -80,4 +80,17 @@ describe('compact workbench styles', () => {
     expect(experimentDetail).toContain('grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));')
     expect(experimentDetail).toContain(".base-form ::v-deep .el-row > [class*='el-col-']")
   })
+
+  test('field pickers flex to available space and comparison selectors stay compact', () => {
+    const picker = fs.readFileSync(path.join(projectRoot, 'src/components/common/VarPicker.vue'), 'utf8')
+    const conditionEditor = fs.readFileSync(path.join(projectRoot, 'src/components/decision/ConditionGroupEditor.vue'), 'utf8')
+    const advancedCross = fs.readFileSync(path.join(projectRoot, 'src/views/designer/AdvancedCrossTable.vue'), 'utf8')
+
+    expect(picker).toMatch(/\.var-picker-wrap\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;/)
+    expect(picker).toContain(':style="referenceStyle"')
+    expect(picker).toMatch(/padding-left:\s*var\(--vp-prefix-offset,\s*12px\);/)
+    expect(picker).not.toContain('padding-left: 82px;')
+    expect(conditionEditor).toMatch(/\.cg-field--op\s*\{\s*width:\s*108px;\s*\}/)
+    expect(advancedCross).toMatch(/\.seg-op\s*\{\s*flex:\s*0 0 96px;\s*width:\s*96px;\s*\}/)
+  })
 })

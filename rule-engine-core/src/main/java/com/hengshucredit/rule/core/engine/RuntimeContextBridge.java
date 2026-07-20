@@ -25,6 +25,7 @@ public final class RuntimeContextBridge {
     private static final ThreadLocal<List<String>> MATCHED_CONDITIONS = new ThreadLocal<>();
     private static final ThreadLocal<Map<String, Object>> CONSTANT_VALUES = new ThreadLocal<>();
     private static final ThreadLocal<Consumer<Map<String, Object>>> TRACE_EVENT_LISTENER = new ThreadLocal<>();
+    private static final ThreadLocal<Map<String, Map<String, Object>>> SOURCE_STATES = new ThreadLocal<>();
 
     private RuntimeContextBridge() {
     }
@@ -43,6 +44,7 @@ public final class RuntimeContextBridge {
         MATCHED_CONDITIONS.remove();
         CONSTANT_VALUES.remove();
         TRACE_EVENT_LISTENER.remove();
+        SOURCE_STATES.remove();
     }
 
     public static void setRuleContext(Map<String, Object> rule, List<String> matchedConditions) {
@@ -127,6 +129,67 @@ public final class RuntimeContextBridge {
                 throw new IllegalStateException("常量字段不允许赋值: " + entry.getKey());
             }
         }
+    }
+
+    public static void replaceSourceStates(Map<String, Map<String, Object>> states) {
+        if (states == null || states.isEmpty()) {
+            SOURCE_STATES.remove();
+            return;
+        }
+        Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> entry : states.entrySet()) {
+            copy.put(entry.getKey(), entry.getValue() == null
+                    ? new LinkedHashMap<String, Object>()
+                    : new LinkedHashMap<>(entry.getValue()));
+        }
+        SOURCE_STATES.set(copy);
+    }
+
+    public static Map<String, Map<String, Object>> currentSourceStates() {
+        Map<String, Map<String, Object>> states = SOURCE_STATES.get();
+        if (states == null || states.isEmpty()) return Collections.emptyMap();
+        Map<String, Map<String, Object>> copy = new LinkedHashMap<>();
+        for (Map.Entry<String, Map<String, Object>> entry : states.entrySet()) {
+            copy.put(entry.getKey(), entry.getValue() == null
+                    ? new LinkedHashMap<String, Object>()
+                    : new LinkedHashMap<>(entry.getValue()));
+        }
+        return copy;
+    }
+
+    public static void putSourceState(String refType, Long refId, String dimension, Object value) {
+        if (empty(refType) || refId == null || empty(dimension)) return;
+        Map<String, Map<String, Object>> states = SOURCE_STATES.get();
+        if (states == null) {
+            states = new LinkedHashMap<>();
+            SOURCE_STATES.set(states);
+        }
+        String key = sourceStateKey(refType, String.valueOf(refId));
+        Map<String, Object> state = states.get(key);
+        if (state == null) {
+            state = new LinkedHashMap<>();
+            states.put(key, state);
+        }
+        state.put(dimension.trim().toUpperCase(), value);
+    }
+
+    public static boolean sourceStatusMatches(String refType, String refId,
+                                              String dimension, String expected) {
+        if (empty(refType) || empty(refId) || empty(dimension) || expected == null) return false;
+        Map<String, Map<String, Object>> states = SOURCE_STATES.get();
+        if (states == null) return false;
+        Map<String, Object> state = states.get(sourceStateKey(refType, refId));
+        if (state == null) return false;
+        Object actual = state.get(dimension.trim().toUpperCase());
+        return actual != null && String.valueOf(actual).equalsIgnoreCase(expected.trim());
+    }
+
+    private static String sourceStateKey(String refType, String refId) {
+        return refType.trim().toUpperCase() + ":" + refId.trim();
+    }
+
+    private static boolean empty(String value) {
+        return value == null || value.trim().isEmpty();
     }
 
     public static boolean containsRegisteredConstants(Object context) {

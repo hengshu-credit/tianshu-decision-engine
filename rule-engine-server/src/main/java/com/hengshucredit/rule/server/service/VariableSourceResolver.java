@@ -17,6 +17,7 @@ import org.springframework.stereotype.Service;
 
 import javax.annotation.Resource;
 import java.lang.reflect.Array;
+import java.net.SocketTimeoutException;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -25,6 +26,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class VariableSourceResolver {
@@ -84,7 +86,7 @@ public class VariableSourceResolver {
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(),
-                variables, models, effectiveOptions.isRequiredNamesUpstreamOnly());
+                variables, models, effectiveOptions.isRequiredNamesUpstreamOnly(), effectiveOptions);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
         resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
         return resolvedParams;
@@ -121,7 +123,7 @@ public class VariableSourceResolver {
                     delayedModels.add(model);
                     continue;
                 }
-                resolveOneModel(model, modelCode, resolvedParams);
+                resolveOneModel(model, modelCode, resolvedParams, effectiveOptions);
                 progressed = true;
             }
             pendingModels = delayedModels;
@@ -163,7 +165,7 @@ public class VariableSourceResolver {
             if (modelCode == null || !isModelRequired(modelCode, requiredScriptNames)) {
                 continue;
             }
-            if (!shouldRefreshModel(modelCode, resolvedParams, options)) {
+            if (!shouldRefreshModel(model, modelCode, resolvedParams, options)) {
                 continue;
             }
             pending.add(model);
@@ -192,9 +194,9 @@ public class VariableSourceResolver {
                     resolvedParams.put(scriptName, null);
                     return;
                 }
-                value = resolveApiVariable(config, resolvedParams, apiResponseCache);
+                value = resolveApiVariable(variable, config, resolvedParams, effectiveOptions, apiResponseCache);
             } else if ("DB".equals(varSource)) {
-                value = resolveDbVariable(variable, config, resolvedParams);
+                value = resolveDbVariable(variable, config, resolvedParams, effectiveOptions);
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
             }
@@ -203,7 +205,15 @@ public class VariableSourceResolver {
             }
             resolvedParams.put(scriptName, value);
         } catch (Exception e) {
-            applyExceptionStrategy(variable, config, scriptName, resolvedParams, e);
+            boolean tracksStatus = effectiveOptions.requiresSourceStatus("VARIABLE", variable.getId());
+            if ("API".equals(variable.getVarSource())) {
+                recordApiFailureState(variable, e, effectiveOptions);
+            }
+            effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "OUTCOME",
+                    isTimeout(e) ? "TIMEOUT" : "ERROR");
+            boolean fallback = applyExceptionStrategy(variable, config, scriptName, resolvedParams, e, tracksStatus);
+            effectiveOptions.recordSourceState("VARIABLE", variable.getId(), "FALLBACK_USED",
+                    fallback ? "TRUE" : "FALSE");
         }
     }
 
@@ -224,6 +234,9 @@ public class VariableSourceResolver {
             return false;
         }
         if (options != null && options.isForceRefreshSource()) {
+            return true;
+        }
+        if (options != null && options.requiresSourceStatus("VARIABLE", variable.getId())) {
             return true;
         }
         Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
@@ -254,7 +267,7 @@ public class VariableSourceResolver {
             RuleModel dependencyModel = findRequiredModel(dependency, modelMap);
             String modelCode = dependencyModel == null ? null : trimToNull(dependencyModel.getModelCode());
             if (modelCode != null && !modelCode.equals(ownName) && isModelRequired(modelCode, requiredScriptNames)
-                    && shouldRefreshModel(modelCode, resolvedParams, options)) {
+                    && shouldRefreshModel(dependencyModel, modelCode, resolvedParams, options)) {
                 return true;
             }
         }
@@ -290,10 +303,8 @@ public class VariableSourceResolver {
     }
 
     private Set<String> expandRequiredScriptNames(Set<String> initial, List<RuleVariable> variables,
-                                                   List<RuleModel> models, boolean upstreamOnly) {
-        if (initial == null || initial.isEmpty()) {
-            return initial;
-        }
+                                                   List<RuleModel> models, boolean upstreamOnly,
+                                                   VariableResolveOptions options) {
         Map<String, RuleVariable> variableMap = new LinkedHashMap<>();
         for (RuleVariable variable : variables) {
             String scriptName = resolveScriptName(variable);
@@ -308,9 +319,13 @@ public class VariableSourceResolver {
                 modelMap.put(modelCode, model);
             }
         }
-        Set<String> expanded = new LinkedHashSet<>(initial);
+        Set<String> expanded = initial == null ? new LinkedHashSet<String>() : new LinkedHashSet<>(initial);
+        boolean addedStatusRoot = addStatusReferenceRoots(expanded, variables, models, options);
+        if (expanded.isEmpty()) {
+            return initial == null && !addedStatusRoot ? null : expanded;
+        }
         if (!upstreamOnly) addModelsSatisfiedByRequiredInputs(expanded, modelMap);
-        List<String> queue = new ArrayList<>(initial);
+        List<String> queue = new ArrayList<>(expanded);
         int index = 0;
         while (index < queue.size()) {
             String name = queue.get(index++);
@@ -333,6 +348,26 @@ public class VariableSourceResolver {
             }
         }
         return expanded;
+    }
+
+    private boolean addStatusReferenceRoots(Set<String> requiredNames, List<RuleVariable> variables,
+                                            List<RuleModel> models, VariableResolveOptions options) {
+        if (options == null || options.getStatusReferenceKeys() == null
+                || options.getStatusReferenceKeys().isEmpty()) return false;
+        boolean added = false;
+        for (RuleVariable variable : variables == null ? Collections.<RuleVariable>emptyList() : variables) {
+            if (options.requiresSourceStatus("VARIABLE", variable.getId())) {
+                String scriptName = resolveScriptName(variable);
+                if (hasText(scriptName)) added = requiredNames.add(scriptName) || added;
+            }
+        }
+        for (RuleModel model : models == null ? Collections.<RuleModel>emptyList() : models) {
+            if (requiresModelOutputStatus(loadModelDetail(model), options)) {
+                String modelCode = trimToNull(model.getModelCode());
+                if (modelCode != null) added = requiredNames.add(modelCode) || added;
+            }
+        }
+        return added;
     }
 
     private void addModelsSatisfiedByRequiredInputs(Set<String> requiredNames, Map<String, RuleModel> modelMap) {
@@ -469,7 +504,8 @@ public class VariableSourceResolver {
         return names;
     }
 
-    private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams) {
+    private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams,
+                                 VariableResolveOptions options) {
         RuleModel detail = loadModelDetail(model);
         Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
@@ -488,7 +524,10 @@ public class VariableSourceResolver {
             completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
             logModelExecution(model, modelParams, null, e.getMessage(),
                     System.currentTimeMillis() - start, runtimeTrace);
-            throw e;
+            if (!requiresModelOutputStatus(detail, options)) throw e;
+            recordModelOutcome(detail, options, isTimeout(e) ? "TIMEOUT" : "ERROR", null);
+            resolvedParams.put(modelCode, new LinkedHashMap<String, Object>());
+            return;
         }
         Object outputs = modelResult.get("outputs");
         Object modelValue = outputs instanceof Map ? outputs : modelResult;
@@ -499,6 +538,9 @@ public class VariableSourceResolver {
                 Object value = outputValues.get(firstText(field.getFieldName(), field.getScriptName()));
                 if (value == null && hasText(field.getScriptName())) value = outputValues.get(field.getScriptName());
                 if (value == null && hasText(field.getFeatureName())) value = outputValues.get(field.getFeatureName());
+                options.recordSourceState("MODEL_OUTPUT", field.getId(), "OUTCOME", "SUCCESS");
+                options.recordSourceState("MODEL_OUTPUT", field.getId(), "PRESENCE",
+                        value == null ? "MISSING" : "PRESENT");
                 OperandValueResolver.write(field.getTargetOperand(), resolvedParams, value);
             }
         }
@@ -592,11 +634,36 @@ public class VariableSourceResolver {
         return false;
     }
 
-    private boolean shouldRefreshModel(String modelCode, Map<String, Object> resolvedParams, VariableResolveOptions options) {
+    private boolean shouldRefreshModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams,
+                                       VariableResolveOptions options) {
         if (options != null && options.isForceRefreshSource()) {
             return true;
         }
+        if (requiresModelOutputStatus(loadModelDetail(model), options)) {
+            return true;
+        }
         return !resolvedParams.containsKey(modelCode);
+    }
+
+    private boolean requiresModelOutputStatus(RuleModel model, VariableResolveOptions options) {
+        if (model == null || options == null || model.getOutputFields() == null) return false;
+        for (RuleModelOutputField field : model.getOutputFields()) {
+            if (options.requiresSourceStatus("MODEL_OUTPUT", field.getId())) return true;
+        }
+        return false;
+    }
+
+    private void recordModelOutcome(RuleModel model, VariableResolveOptions options,
+                                    String outcome, String presence) {
+        if (model == null || options == null || model.getOutputFields() == null) return;
+        for (RuleModelOutputField field : model.getOutputFields()) {
+            options.recordSourceState("MODEL_OUTPUT", field.getId(), "OUTCOME", outcome);
+            if (presence != null) {
+                options.recordSourceState("MODEL_OUTPUT", field.getId(), "PRESENCE", presence);
+            } else if (!"SUCCESS".equals(outcome)) {
+                options.recordSourceState("MODEL_OUTPUT", field.getId(), "PRESENCE", "MISSING");
+            }
+        }
     }
 
     private boolean modelSucceeded(Map<String, Object> result) {
@@ -729,7 +796,8 @@ public class VariableSourceResolver {
         return result;
     }
 
-    private Object resolveApiVariable(Map<String, Object> config, Map<String, Object> params,
+    private Object resolveApiVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params,
+                                      VariableResolveOptions options,
                                       Map<String, Map<String, Object>> apiResponseCache) {
         Long apiConfigId = longValue(config.get("apiConfigId"));
         if (apiConfigId == null) {
@@ -742,11 +810,13 @@ public class VariableSourceResolver {
             response = externalApiInvokeService.invoke(apiConfigId, requestParams);
             apiResponseCache.put(cacheKey, response);
         }
+        recordApiState(variable, response, options);
         String resultPath = stringValue(config.get("resultPath"));
         return hasText(resultPath) ? readPath(response, resultPath) : response.get("body");
     }
 
-    private Object resolveDbVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params) throws Exception {
+    private Object resolveDbVariable(RuleVariable variable, Map<String, Object> config, Map<String, Object> params,
+                                     VariableResolveOptions options) throws Exception {
         Long datasourceId = longValue(config.get("datasourceId"));
         String sql = stringValue(config.get("sql"));
         if (datasourceId == null) {
@@ -765,6 +835,9 @@ public class VariableSourceResolver {
                 "DATABASE", variable.getProjectId(), datasourceId, resolveScriptName(variable));
         try {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
+            options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
+            options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
+                    rows == null || rows.isEmpty() ? "NO_DATA" : "HAS_DATA");
             String resultPath = stringValue(config.get("resultPath"));
             Object extracted = null;
             if (hasText(resultPath)) {
@@ -908,6 +981,8 @@ public class VariableSourceResolver {
         try {
             hit = matrix.match(listIds, queryValues, combinationMode, matchMode, itemTypes,
                     options == null ? null : options.getListMatchTime());
+            options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
+            options.recordSourceState("VARIABLE", variable.getId(), "MATCH_STATE", hit ? "HIT" : "MISS");
             completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
         } catch (RuntimeException e) {
             completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
@@ -1052,23 +1127,91 @@ public class VariableSourceResolver {
         }
     }
 
-    private void applyExceptionStrategy(RuleVariable variable, Map<String, Object> config, String scriptName,
-                                        Map<String, Object> resolvedParams, Exception e) {
+    private boolean applyExceptionStrategy(RuleVariable variable, Map<String, Object> config, String scriptName,
+                                           Map<String, Object> resolvedParams, Exception e,
+                                           boolean continueForStatus) {
         String strategy = stringValue(config.get("exceptionStrategy"));
         if (!hasText(strategy)) {
             strategy = "ERROR";
         }
         if ("SKIP".equals(strategy)) {
-            return;
+            return false;
         }
         if ("RETURN_DEFAULT".equals(strategy)) {
             Object fallback = config.containsKey("fallbackValue")
                     ? parseConfiguredValue(config.get("fallbackValue"), resolvedParams)
                     : parseDefaultValue(variable);
             resolvedParams.put(scriptName, fallback);
-            return;
+            return true;
+        }
+        if (continueForStatus) {
+            resolvedParams.put(scriptName, parseDefaultValue(variable));
+            return false;
         }
         throw new IllegalStateException("变量[" + variable.getVarCode() + "]外部取数失败：" + e.getMessage(), e);
+    }
+
+    private void recordApiState(RuleVariable variable, Map<String, Object> response,
+                                VariableResolveOptions options) {
+        if (variable == null || response == null || options == null) return;
+        boolean success = !response.containsKey("success") || booleanValue(response.get("success"));
+        boolean fallback = booleanValue(response.get("fallback"));
+        String sourceOutcome = stringValue(response.get("sourceOutcome"));
+        options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME",
+                hasText(sourceOutcome) ? sourceOutcome : (success ? "SUCCESS" : "ERROR"));
+        options.recordSourceState("VARIABLE", variable.getId(), "FALLBACK_USED", fallback ? "TRUE" : "FALSE");
+        Object configured = response.get("cacheConfigured");
+        if (configured != null) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_CONFIGURED",
+                    booleanValue(configured) ? "TRUE" : "FALSE");
+        }
+        String cacheStatus = stringValue(response.get("cacheStatus"));
+        if ("HIT".equals(cacheStatus) || "STALE".equals(cacheStatus)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", "HIT");
+        } else if ("MISS".equals(cacheStatus)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", "MISS");
+        } else if ("CACHE_KEY_INCOMPLETE".equals(cacheStatus) || "UNAVAILABLE".equals(cacheStatus)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", "UNAVAILABLE");
+        }
+        String origin = stringValue(response.get("dataOrigin"));
+        if (hasText(origin)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "DATA_ORIGIN", origin);
+        }
+    }
+
+    private void recordApiFailureState(RuleVariable variable, Throwable error,
+                                       VariableResolveOptions options) {
+        Throwable current = error;
+        while (current != null && !(current instanceof ExternalApiInvokeService.ApiInvokeException)) {
+            current = current.getCause();
+        }
+        if (!(current instanceof ExternalApiInvokeService.ApiInvokeException)) return;
+        ExternalApiInvokeService.ApiInvokeException apiError =
+                (ExternalApiInvokeService.ApiInvokeException) current;
+        options.recordSourceState("VARIABLE", variable.getId(), "CACHE_CONFIGURED",
+                apiError.isCacheConfigured() ? "TRUE" : "FALSE");
+        String cacheStatus = apiError.getCacheStatus();
+        if ("MISS".equals(cacheStatus)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", "MISS");
+        } else if ("CACHE_KEY_INCOMPLETE".equals(cacheStatus) || "UNAVAILABLE".equals(cacheStatus)) {
+            options.recordSourceState("VARIABLE", variable.getId(), "CACHE_STATE", "UNAVAILABLE");
+        }
+    }
+
+    private boolean isTimeout(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof SocketTimeoutException || current instanceof TimeoutException
+                    || current.getClass().getSimpleName().toLowerCase().contains("timeout")) {
+                return true;
+            }
+            String message = current.getMessage();
+            if (message != null && (message.toLowerCase().contains("timeout") || message.contains("超时"))) {
+                return true;
+            }
+            current = current.getCause();
+        }
+        return false;
     }
 
     private Map<String, Object> buildMappedParams(Object mappingObject, Map<String, Object> params) {

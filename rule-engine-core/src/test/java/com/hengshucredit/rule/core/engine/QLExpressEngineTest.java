@@ -86,6 +86,20 @@ public class QLExpressEngineTest {
     }
 
     @Test
+    public void sourceStatusFunctionIsRegisteredInDefaultEngine() {
+        RuntimeContextBridge.putSourceState("VARIABLE", 9L, "CACHE_STATE", "MISS");
+        try {
+            RuleResult result = new QLExpressEngine().execute(
+                    "sourceStatus(\"VARIABLE\", \"9\", \"CACHE_STATE\", \"MISS\")", new HashMap<>());
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(Boolean.TRUE, result.getResult());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
     public void tracedDirectAssignmentWritesLatestValueBackToSharedContext() {
         Map<String, Object> context = new LinkedHashMap<>();
         context.put("CREDIT_AMOUNT", 1000);

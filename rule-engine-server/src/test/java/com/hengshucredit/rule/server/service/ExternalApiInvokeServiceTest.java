@@ -313,6 +313,8 @@ public class ExternalApiInvokeServiceTest {
         assertEquals(Boolean.TRUE, response.get("success"));
         assertEquals(Boolean.TRUE, response.get("cached"));
         assertEquals(Boolean.TRUE, response.get("cacheStale"));
+        assertEquals("STALE", response.get("cacheStatus"));
+        assertEquals("STALE_CACHE", response.get("dataOrigin"));
         assertEquals(5L, response.get("costTimeMs"));
         assertEquals(88, ((Map<?, ?>) response.get("body")).get("score"));
     }
@@ -426,6 +428,11 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(1, callCount.get());
             assertEquals(Boolean.FALSE, first.get("cached"));
             assertEquals(Boolean.TRUE, second.get("cached"));
+            assertEquals(Boolean.TRUE, first.get("cacheConfigured"));
+            assertEquals("MISS", first.get("cacheStatus"));
+            assertEquals("LIVE", first.get("dataOrigin"));
+            assertEquals("HIT", second.get("cacheStatus"));
+            assertEquals("CACHE", second.get("dataOrigin"));
             assertEquals(0L, second.get("costTimeMs"));
             assertEquals(88, ((Map<?, ?>) second.get("body")).get("data") instanceof Map
                     ? ((Map<?, ?>) ((Map<?, ?>) second.get("body")).get("data")).get("score")
@@ -694,9 +701,13 @@ public class ExternalApiInvokeServiceTest {
                 mapperProxy(RuleExternalDatasourceMapper.class, datasource));
         ReflectionTestUtils.setField(service, "billingService", billingService);
 
-        service.invoke(99L, new LinkedHashMap<>());
+        Map<String, Object> response = service.invoke(99L, new LinkedHashMap<>());
 
         assertEquals(0, billingService.recordCount.get());
+        assertEquals("ERROR", response.get("sourceOutcome"));
+        assertEquals(Boolean.TRUE, response.get("fallback"));
+        assertEquals(Boolean.FALSE, response.get("cacheConfigured"));
+        assertEquals("FALLBACK", response.get("dataOrigin"));
     }
 
     @Test

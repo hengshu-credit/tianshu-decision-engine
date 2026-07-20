@@ -85,4 +85,19 @@ public class RuntimeContextBuiltinFunctionsTest {
         assertEquals("RULE_SET_SUMMARY", events.get(1).get("type"));
         assertEquals(Boolean.TRUE, events.get(1).get("hit"));
     }
+
+    @Test
+    public void sourceStatusUsesRefTypeAndIdAsStrictSidecarKey() {
+        RuntimeContextBridge.putSourceState("VARIABLE", 7L, "OUTCOME", "SUCCESS");
+        RuntimeContextBridge.putSourceState("VARIABLE", 7L, "CACHE_STATE", "HIT");
+        RuntimeContextBridge.putSourceState("MODEL_OUTPUT", 7L, "OUTCOME", "ERROR");
+
+        assertTrue(functions.sourceStatus("VARIABLE", "7", "OUTCOME", "SUCCESS"));
+        assertTrue(functions.sourceStatus("VARIABLE", "7", "CACHE_STATE", "HIT"));
+        assertFalse(functions.sourceStatus("MODEL_OUTPUT", "7", "OUTCOME", "SUCCESS"));
+        assertFalse(functions.sourceStatus("VARIABLE", "8", "OUTCOME", "SUCCESS"));
+
+        RuntimeContextBridge.clear();
+        assertFalse(functions.sourceStatus("VARIABLE", "7", "CACHE_STATE", "HIT"));
+    }
 }

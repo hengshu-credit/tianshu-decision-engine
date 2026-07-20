@@ -20,9 +20,15 @@ public class ExecutionParameterBinder {
 
     public Map<String, Object> bindRuleInputs(List<RuleDefinitionInputField> fields,
                                                Map<String, Object> params) {
+        return bindRuleInputs(fields, params, VariableResolveOptions.defaults());
+    }
+
+    public Map<String, Object> bindRuleInputs(List<RuleDefinitionInputField> fields,
+                                               Map<String, Object> params,
+                                               VariableResolveOptions options) {
         Map<String, Object> result = copyMap(params);
         for (RuleDefinitionInputField field : fields == null ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
-            bindOne(result, firstText(field.getScriptName(), field.getFieldName()), field.getFieldType());
+            bindRuleField(result, field, options == null ? VariableResolveOptions.defaults() : options);
         }
         return result;
     }
@@ -44,6 +50,29 @@ public class ExecutionParameterBinder {
         setPath(params, path, value);
         if (path.indexOf('.') >= 0) {
             params.remove(path);
+        }
+    }
+
+    private void bindRuleField(Map<String, Object> params, RuleDefinitionInputField field,
+                               VariableResolveOptions options) {
+        String path = firstText(field.getScriptName(), field.getFieldName());
+        if (path == null) return;
+        PathValue pathValue = readPath(params, path);
+        boolean tracksStatus = options.requiresSourceStatus(field.getRefType(), field.getVarId());
+        if (!pathValue.present) {
+            if (tracksStatus) options.recordSourceState(field.getRefType(), field.getVarId(), "PRESENCE", "MISSING");
+            return;
+        }
+        if (tracksStatus) options.recordSourceState(field.getRefType(), field.getVarId(), "PRESENCE", "PRESENT");
+        try {
+            Object value = coerce(path, field.getFieldType(), pathValue.value);
+            setPath(params, path, value);
+            if (path.indexOf('.') >= 0) params.remove(path);
+        } catch (IllegalArgumentException e) {
+            if (!tracksStatus) throw e;
+            options.recordSourceState(field.getRefType(), field.getVarId(), "PRESENCE", "INVALID");
+            setPath(params, path, null);
+            if (path.indexOf('.') >= 0) params.remove(path);
         }
     }
 

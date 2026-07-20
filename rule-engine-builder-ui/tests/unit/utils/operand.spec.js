@@ -167,14 +167,40 @@ describe('operand', () => {
   })
 
   test('引用操作数必须保留 ID 和 refType', () => {
-    expect(createReferenceOperand(references[1])).toMatchObject({
+    expect(createReferenceOperand({
+      ...references[1],
+      sourceType: 'model',
+      varSource: 'MODEL'
+    })).toMatchObject({
       kind: 'REFERENCE',
       refId: 21,
       refType: 'MODEL_OUTPUT',
       code: 'riskModel.score',
       valueType: 'DOUBLE',
+      sourceType: 'model',
+      varSource: 'MODEL',
       resolved: true
     })
+  })
+
+  test('路径解析、引用同步和依赖收集持续保留来源元数据', () => {
+    const apiRefs = [{
+      varCode: 'creditScore',
+      varLabel: '外部评分',
+      varType: 'DOUBLE',
+      varSource: 'API',
+      sourceType: 'variable',
+      _varId: 55,
+      _refType: 'VARIABLE'
+    }]
+    const resolved = resolvePathOperand(createPathOperand('creditScore'), apiRefs).operand
+    const synced = syncOperandReference({ ...resolved, varSource: '' }, apiRefs).operand
+
+    expect(resolved).toMatchObject({ sourceType: 'variable', varSource: 'API' })
+    expect(synced).toMatchObject({ sourceType: 'variable', varSource: 'API' })
+    expect(collectOperandReferences(synced)).toEqual([
+      expect.objectContaining({ refId: 55, refType: 'VARIABLE', sourceType: 'variable', varSource: 'API' })
+    ])
   })
 
   test('常量引用保留值预览并按名称编码和值显示', () => {

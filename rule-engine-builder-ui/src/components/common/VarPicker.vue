@@ -170,6 +170,7 @@
             slot="reference"
             ref="reference"
             class="vp-reference"
+            :style="referenceStyle"
             tabindex="0"
             role="button"
             aria-label="打开字段与表达式选择器"
@@ -385,6 +386,12 @@ export default {
     },
     operandKindMetaValue() {
       return operandKindMeta(this.value)
+    },
+    referenceStyle() {
+      const label = this.operandMode ? this.operandKindMetaValue.label : ''
+      return {
+        '--vp-prefix-offset': label ? Math.min(84, label.length * 12 + 24) + 'px' : '12px'
+      }
     },
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
@@ -1163,7 +1170,10 @@ export default {
 
 <style scoped>
 .var-picker-wrap {
-  display: inline-block;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
   vertical-align: middle;
   max-width: 100%;
 }
@@ -1196,6 +1206,8 @@ export default {
   width: 100%;
 }
 .vp-reference {
+  flex: 1 1 auto;
+  min-width: 0;
   width: 100%;
 }
 .vp-reference ::v-deep .el-input__prefix {
@@ -1204,7 +1216,7 @@ export default {
   left: 6px;
 }
 .vp-reference ::v-deep .el-input--prefix .el-input__inner {
-  padding-left: 82px;
+  padding-left: var(--vp-prefix-offset, 12px);
 }
 .vp-operand-kind {
   display: inline-flex;

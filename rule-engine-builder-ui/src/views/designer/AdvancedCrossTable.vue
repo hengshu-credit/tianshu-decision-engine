@@ -46,11 +46,10 @@
           </div>
           <div class="segments-area">
             <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
-              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg)">
-                <el-option label="等于" value="==" /><el-option label="不等于" value="!=" />
-                <el-option label="大于" value=">" /><el-option label="大于等于" value=">=" />
-                <el-option label="小于" value="<" /><el-option label="小于等于" value="<=" />
-                <el-option label="区间" value="range" />
+              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg, dim)">
+                <el-option-group v-for="operatorGroup in segmentOperatorGroups(dim, seg)" :key="operatorGroup.label" :label="operatorGroup.label">
+                  <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+                </el-option-group>
               </el-select>
               <template v-if="seg.operator === 'range'">
                 <el-select v-model="seg.rangeBoundary" size="mini" class="seg-boundary" aria-label="区间边界">
@@ -60,7 +59,7 @@
                 <span class="seg-sep">~</span>
                 <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
               </template>
-              <operand-picker v-else :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
+              <operand-picker v-else-if="segmentRequiresValue(seg, dim)" :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="segmentRightAllowedKinds(seg, dim)" :context="segmentRightContext(seg, dim)" :expected-type="segmentRightExpectedType(seg, dim)" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
               <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
               <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
             </div>
@@ -96,11 +95,10 @@
           </div>
           <div class="segments-area">
             <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
-              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg)">
-                <el-option label="等于" value="==" /><el-option label="不等于" value="!=" />
-                <el-option label="大于" value=">" /><el-option label="大于等于" value=">=" />
-                <el-option label="小于" value="<" /><el-option label="小于等于" value="<=" />
-                <el-option label="区间" value="range" />
+              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg, dim)">
+                <el-option-group v-for="operatorGroup in segmentOperatorGroups(dim, seg)" :key="operatorGroup.label" :label="operatorGroup.label">
+                  <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+                </el-option-group>
               </el-select>
               <template v-if="seg.operator === 'range'">
                 <el-select v-model="seg.rangeBoundary" size="mini" class="seg-boundary" aria-label="区间边界">
@@ -110,7 +108,7 @@
                 <span class="seg-sep">~</span>
                 <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
               </template>
-              <operand-picker v-else :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
+              <operand-picker v-else-if="segmentRequiresValue(seg, dim)" :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="segmentRightAllowedKinds(seg, dim)" :context="segmentRightContext(seg, dim)" :expected-type="segmentRightExpectedType(seg, dim)" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
               <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
               <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
             </div>
@@ -242,10 +240,22 @@ import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import { addCode, buildSampleParamsFromCodes, coerceSampleValue, isLeafRef, setParamPath } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
-import { collectOperandReferences, compileOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { collectOperandReferences, compileOperand, createLiteralOperand, inferOperandType, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import {
+  conditionOperatorAllowsVarValue,
+  conditionOperatorRequiresValue,
+  findConditionOperator,
+  getConditionOperatorGroups,
+  normalizeConditionOperator,
+  normalizeVarType
+} from '@/constants/conditionOperators'
 
 const RANGE_BOUNDARIES = ['[)', '()', '[]', '(]']
+
+function dimensionType(dim) {
+  return inferOperandType(dim && dim.operand) || (dim && dim.varType) || 'STRING'
+}
 
 export default {
   name: 'AdvancedCrossTable',
@@ -488,10 +498,49 @@ export default {
       const scalar = field === 'valueOperand' ? 'value' : field === 'minOperand' ? 'min' : 'max'
       segment[scalar] = compileOperand(value)
     },
-    onSegmentOperatorChange(segment) {
-      if (segment.operator !== 'range' || RANGE_BOUNDARIES.includes(segment.rangeBoundary)) return
-      if (this.$set) this.$set(segment, 'rangeBoundary', '[)')
-      else segment.rangeBoundary = '[)'
+    segmentOperatorGroups(dim, segment) {
+      const groups = getConditionOperatorGroups(dimensionType(dim), dim && dim.operand)
+        .map(group => ({ ...group, options: [...group.options] }))
+      if (['NUMBER', 'DATE'].includes(normalizeVarType(dimensionType(dim))) || (segment && segment.operator === 'range')) {
+        groups[0].options.push({ label: '区间', value: 'range' })
+      }
+      return groups
+    },
+    segmentRequiresValue(segment, dim) {
+      if (segment && segment.operator === 'range') return true
+      return conditionOperatorRequiresValue(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+    },
+    segmentRightContext(segment, dim) {
+      const option = findConditionOperator(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      return (option && option.rightContext) || 'READ_EXPRESSION'
+    },
+    segmentRightExpectedType(segment, dim) {
+      const option = findConditionOperator(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      return (option && option.rightValueType) || dimensionType(dim)
+    },
+    segmentRightAllowedKinds(segment, dim) {
+      const context = this.segmentRightContext(segment, dim)
+      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
+      return conditionOperatorAllowsVarValue(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+        ? getExpressionContext(context).allowedKinds
+        : ['LITERAL']
+    },
+    onSegmentOperatorChange(segment, dim) {
+      if (segment.operator === 'range') {
+        if (!RANGE_BOUNDARIES.includes(segment.rangeBoundary)) {
+          if (this.$set) this.$set(segment, 'rangeBoundary', '[)')
+          else segment.rangeBoundary = '[)'
+        }
+        return
+      }
+      const operator = normalizeConditionOperator(segment.operator || '==', dimensionType(dim), dim && dim.operand)
+      if (this.$set) this.$set(segment, 'operator', operator)
+      else segment.operator = operator
+      if (!conditionOperatorRequiresValue(operator, dimensionType(dim), dim && dim.operand)) {
+        if (this.$set) this.$set(segment, 'valueOperand', null)
+        else segment.valueOperand = null
+        segment.value = ''
+      }
     },
     setCellOperand(row, col, value) {
       this.$set(this.cellData[row], col, value)
@@ -650,7 +699,7 @@ export default {
 .segment-row {
   display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
 }
-.seg-op { flex: 2; min-width: 80px; }
+.seg-op { flex: 0 0 96px; width: 96px; }
 .seg-boundary { flex: 0 0 64px; }
 .seg-val { flex: 2; min-width: 0; }
 .seg-label { flex: 3; min-width: 0; }

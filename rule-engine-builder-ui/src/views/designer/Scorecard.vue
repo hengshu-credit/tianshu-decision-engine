@@ -98,21 +98,20 @@
                   class="cond-var"
                   @input="operand => setScoreItemOperand(item, 'leftOperand', operand)"
                 />
-                <el-select v-model="item.condOperator" size="small" class="cond-op">
-                  <el-option label="等于" value="==" />
-                  <el-option label="不等于" value="!=" />
-                  <el-option label="大于" value=">" />
-                  <el-option label="大于等于" value=">=" />
-                  <el-option label="小于" value="<" />
-                  <el-option label="小于等于" value="<=" />
+                <el-select v-model="item.condOperator" size="small" class="cond-op" @change="onConditionOperatorChange(item)">
+                  <el-option-group v-for="operatorGroup in conditionOperatorGroups(item)" :key="operatorGroup.label" :label="operatorGroup.label">
+                    <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+                  </el-option-group>
                 </el-select>
                 <operand-picker
+                  v-if="conditionRequiresValue(item)"
                   :value="item.rightOperand"
                   :vars="varPickerOptions"
                   :functions="projectFunctions"
                   :selected-vars="selectedVarPickerOptions"
-                  :allowed-kinds="valueOperandKinds"
-                  :expected-type="item.leftOperand && item.leftOperand.valueType"
+                  :allowed-kinds="conditionRightAllowedKinds(item)"
+                  :context="conditionRightContext(item)"
+                  :expected-type="conditionRightExpectedType(item)"
                   placeholder="选择阈值、路径或字段"
                   class="cond-val"
                   @input="operand => setScoreItemOperand(item, 'rightOperand', operand)"
@@ -292,10 +291,21 @@ import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { addCode, buildSampleParamsFromCodes } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
-import { collectOperandReferences, compileOperand, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import { collectOperandReferences, compileOperand, createLiteralOperand, inferOperandType, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
+import {
+  conditionOperatorAllowsVarValue,
+  conditionOperatorRequiresValue,
+  findConditionOperator,
+  getConditionOperatorGroups,
+  normalizeConditionOperator
+} from '@/constants/conditionOperators'
 
 const THRESHOLD_COLORS = ['#52c41a', '#1890ff', '#fa8c16', '#f5222d', '#722ed1', '#13c2c2', '#eb2f96']
+
+function scoreConditionType(item) {
+  return inferOperandType(item && item.leftOperand) || (item && item.condVarType) || 'STRING'
+}
 
 export default {
   name: 'Scorecard',
@@ -477,8 +487,40 @@ export default {
         this.$set(item, 'condVarType', (operand && operand.valueType) || 'STRING')
         this.$set(item, '_varId', operand && operand.refId != null ? operand.refId : null)
         this.$set(item, '_refType', (operand && operand.refType) || null)
+        this.$set(item, 'condOperator', normalizeConditionOperator(item.condOperator || '==', scoreConditionType(item), operand))
+        this.onConditionOperatorChange(item)
       } else {
         this.$set(item, 'condValue', operand && operand.kind === 'LITERAL' ? operand.value : compileOperand(operand))
+      }
+    },
+    conditionOperatorGroups(item) {
+      return getConditionOperatorGroups(scoreConditionType(item), item && item.leftOperand)
+    },
+    conditionRequiresValue(item) {
+      return conditionOperatorRequiresValue(item && item.condOperator, scoreConditionType(item), item && item.leftOperand)
+    },
+    conditionRightContext(item) {
+      const option = findConditionOperator(item && item.condOperator, scoreConditionType(item), item && item.leftOperand)
+      return (option && option.rightContext) || 'READ_EXPRESSION'
+    },
+    conditionRightExpectedType(item) {
+      const option = findConditionOperator(item && item.condOperator, scoreConditionType(item), item && item.leftOperand)
+      return (option && option.rightValueType) || scoreConditionType(item)
+    },
+    conditionRightAllowedKinds(item) {
+      const context = this.conditionRightContext(item)
+      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
+      return conditionOperatorAllowsVarValue(item && item.condOperator, scoreConditionType(item), item && item.leftOperand)
+        ? getExpressionContext(context).allowedKinds
+        : ['LITERAL']
+    },
+    onConditionOperatorChange(item) {
+      const type = scoreConditionType(item)
+      const operator = normalizeConditionOperator(item.condOperator || '==', type, item.leftOperand)
+      this.$set(item, 'condOperator', operator)
+      if (!conditionOperatorRequiresValue(operator, type, item.leftOperand)) {
+        this.$set(item, 'rightOperand', null)
+        this.$set(item, 'condValue', '')
       }
     },
     setThresholdOperand(threshold, operand) {
@@ -763,7 +805,7 @@ export default {
   gap: 6px;
 }
 .cond-var { flex: 3; min-width: 0; }
-.cond-op { flex: 2; min-width: 90px; }
+.cond-op { flex: 0 0 108px; width: 108px; }
 .cond-val { flex: 2; min-width: 0; }
 .score-weight-row {
   display: flex;

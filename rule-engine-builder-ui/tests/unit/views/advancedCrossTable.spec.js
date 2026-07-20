@@ -60,6 +60,29 @@ describe('AdvancedCrossTable', () => {
     expect(segment.rangeBoundary).toBe('[)')
   })
 
+  test('分段按数据对象来源展示字段状态操作符并清除值', () => {
+    const dim = {
+      operand: {
+        kind: 'REFERENCE', code: 'request.age', valueType: 'NUMBER', refId: 11,
+        refType: 'DATA_OBJECT', sourceType: 'dataObject'
+      },
+      varType: 'NUMBER'
+    }
+    const segment = {
+      operator: 'source_field_missing',
+      valueOperand: { kind: 'LITERAL', value: '18', valueType: 'NUMBER' }
+    }
+    const context = {
+      $set(target, key, value) { target[key] = value }
+    }
+
+    expect(AdvancedCrossTable.methods.segmentOperatorGroups.call(context, dim)[1].options.map(item => item.value)).toContain('source_field_missing')
+    AdvancedCrossTable.methods.onSegmentOperatorChange.call(context, segment, dim)
+
+    expect(segment.valueOperand).toBeNull()
+    expect(AdvancedCrossTable.methods.segmentRequiresValue.call(context, segment, dim)).toBe(false)
+  })
+
   test('保存模型时保留区间边界', () => {
     const context = {
       model: {

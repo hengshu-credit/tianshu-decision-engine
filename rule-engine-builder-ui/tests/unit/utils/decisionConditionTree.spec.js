@@ -85,6 +85,18 @@ describe('decisionConditionTree', () => {
     expect(hasUsableConditionLeaf(createEmptyGroup())).toBe(false)
   })
 
+  test('来源状态条件无需右操作数且按稳定引用编译', () => {
+    const leaf = {
+      type: 'leaf',
+      leftOperand: { ...ref('apiScore', 7, 'VARIABLE'), varSource: 'API' },
+      operator: 'source_cache_hit',
+      rightOperand: null
+    }
+    expect(hasUsableConditionLeaf(leaf)).toBe(true)
+    expect(compileConditionTreeExpression(leaf))
+      .toBe('sourceStatus("VARIABLE", "7", "CACHE_STATE", "HIT")')
+  })
+
   test('编译统一操作数条件', () => {
     expect(compileConditionTreeExpression({
       type: 'leaf', operator: '>=',

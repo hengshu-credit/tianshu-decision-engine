@@ -22,6 +22,8 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertSame;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 public class VariableSourceResolverTest {
 
@@ -84,6 +86,56 @@ public class VariableSourceResolverTest {
 
         assertEquals(99, resolved.get("riskScore"));
         assertEquals(0, apiService.callCount);
+    }
+
+    @Test
+    public void apiStatusForcesLookupAndCapturesCacheAndOriginMetadata() throws Exception {
+        RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        Map<String, Object> response = responseBody("score", 88);
+        response.put("success", true);
+        response.put("cacheConfigured", true);
+        response.put("cacheStatus", "HIT");
+        response.put("dataOrigin", "CACHE");
+        FakeApiService apiService = new FakeApiService(response);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<String>());
+        options.setStatusReferenceKeys(new LinkedHashSet<>(Collections.singletonList("VARIABLE:1")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, singletonMap("riskScore", 99), options);
+
+        assertEquals(88, resolved.get("riskScore"));
+        assertEquals(1, apiService.callCount);
+        assertEquals("SUCCESS", options.getSourceStates().get("VARIABLE:1").get("OUTCOME"));
+        assertEquals("HIT", options.getSourceStates().get("VARIABLE:1").get("CACHE_STATE"));
+        assertEquals("CACHE", options.getSourceStates().get("VARIABLE:1").get("DATA_ORIGIN"));
+        assertEquals("TRUE", options.getSourceStates().get("VARIABLE:1").get("CACHE_CONFIGURED"));
+    }
+
+    @Test
+    public void apiFallbackCanReportTimeoutAndStaleCacheAtTheSameTime() throws Exception {
+        RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        Map<String, Object> response = responseBody("score", 81);
+        response.put("success", false);
+        response.put("sourceOutcome", "TIMEOUT");
+        response.put("fallback", true);
+        response.put("cacheConfigured", true);
+        response.put("cacheStatus", "STALE");
+        response.put("dataOrigin", "STALE_CACHE");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(response), new FakeDbPools(Collections.emptyList()));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<String>());
+        options.setStatusReferenceKeys(new LinkedHashSet<>(Collections.singletonList("VARIABLE:1")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(81, resolved.get("riskScore"));
+        Map<String, Object> state = options.getSourceStates().get("VARIABLE:1");
+        assertEquals("TIMEOUT", state.get("OUTCOME"));
+        assertEquals("TRUE", state.get("FALLBACK_USED"));
+        assertEquals("HIT", state.get("CACHE_STATE"));
+        assertEquals("STALE_CACHE", state.get("DATA_ORIGIN"));
     }
 
     @Test
@@ -249,6 +301,51 @@ public class VariableSourceResolverTest {
         assertEquals(12.5, ((Number) modelService.lastParams.get("HY001")).doubleValue(), 0.000001);
         Map<String, Object> modelOutput = (Map<String, Object>) resolved.get("score_f1");
         assertEquals(660, modelOutput.get("score"));
+    }
+
+    @Test
+    public void explicitModelOutputStatusCapturesFailureAndContinues() throws Exception {
+        FakeModelService modelService = new FakeModelService() {
+            @Override
+            public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+                throw new IllegalStateException("model down");
+            }
+        };
+        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), modelService);
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<String>());
+        options.setStatusReferenceKeys(new LinkedHashSet<>(Collections.singletonList("MODEL_OUTPUT:201")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertTrue(resolved.get("score_f1") instanceof Map);
+        assertTrue(((Map<?, ?>) resolved.get("score_f1")).isEmpty());
+        assertEquals("ERROR", options.getSourceStates().get("MODEL_OUTPUT:201").get("OUTCOME"));
+        assertEquals("MISSING", options.getSourceStates().get("MODEL_OUTPUT:201").get("PRESENCE"));
+    }
+
+    @Test
+    public void unselectedModelFailureKeepsOriginalFailFastBehavior() throws Exception {
+        FakeModelService modelService = new FakeModelService() {
+            @Override
+            public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+                throw new IllegalStateException("model down");
+            }
+        };
+        VariableSourceResolver resolver = resolver(Collections.emptyList(),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()),
+                new FakeRuleListService(false), modelService);
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("score_f1.score")));
+
+        try {
+            resolver.resolve(1L, Collections.emptyMap(), options);
+            fail("未选择模型状态操作符时应保持原有异常行为");
+        } catch (IllegalStateException expected) {
+            assertEquals("model down", expected.getMessage());
+        }
     }
 
     @Test
@@ -467,6 +564,51 @@ public class VariableSourceResolverTest {
         Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap());
 
         assertEquals(12, resolved.get("riskScore"));
+    }
+
+    @Test
+    public void explicitDbErrorStatusContinuesEvenWithOriginalErrorStrategy() throws Exception {
+        RuleVariable variable = variable("riskScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(new IllegalStateException("db down")));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setStatusReferenceKeys(new LinkedHashSet<>(Collections.singletonList("VARIABLE:1")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertTrue(resolved.containsKey("riskScore"));
+        assertEquals(null, resolved.get("riskScore"));
+        assertEquals("ERROR", options.getSourceStates().get("VARIABLE:1").get("OUTCOME"));
+    }
+
+    @Test(expected = IllegalStateException.class)
+    public void unselectedDbErrorKeepsOriginalFailFastBehavior() throws Exception {
+        RuleVariable variable = variable("riskScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(new IllegalStateException("db down")));
+
+        resolver.resolve(1L, Collections.emptyMap(), VariableResolveOptions.defaults());
+    }
+
+    @Test
+    public void databaseAndListSourcesCaptureDataAndMatchStates() throws Exception {
+        RuleVariable dbVariable = variable("riskScore", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\",\"maxRows\":1}");
+        RuleVariable listVariable = variable("mobileHit", "LIST",
+                "{\"listIds\":[9],\"queryOperands\":[{\"kind\":\"PATH\",\"code\":\"mobile\"}],"
+                        + "\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"IN_LIST\",\"itemTypes\":[\"MOBILE\"],\"returnMode\":\"BOOLEAN\"}");
+        listVariable.setId(2L);
+        VariableSourceResolver resolver = resolver(Arrays.asList(dbVariable, listVariable),
+                new FakeApiService(Collections.emptyMap()), new FakeDbPools(Collections.emptyList()), new FakeRuleListService(true));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setStatusReferenceKeys(new LinkedHashSet<>(Arrays.asList("VARIABLE:1", "VARIABLE:2")));
+
+        resolver.resolve(1L, singletonMap("mobile", "13800138000"), options);
+
+        assertEquals("NO_DATA", options.getSourceStates().get("VARIABLE:1").get("DATA_STATE"));
+        assertEquals("HIT", options.getSourceStates().get("VARIABLE:2").get("MATCH_STATE"));
     }
 
     @Test
@@ -806,6 +948,7 @@ public class VariableSourceResolverTest {
             input.setStatus(1);
             model.setInputFields(Collections.singletonList(input));
             RuleModelOutputField output = new RuleModelOutputField();
+            output.setId(201L);
             output.setFieldName("score");
             output.setTargetOperand("{\"kind\":\"PATH\",\"value\":\"decision.score\"}");
             model.setOutputFields(Collections.singletonList(output));

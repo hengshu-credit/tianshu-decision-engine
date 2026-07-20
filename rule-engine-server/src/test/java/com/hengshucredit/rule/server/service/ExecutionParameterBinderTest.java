@@ -8,6 +8,7 @@ import org.junit.Test;
 import java.math.BigDecimal;
 import java.util.Arrays;
 import java.util.Map;
+import java.util.Collections;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -82,6 +83,41 @@ public class ExecutionParameterBinderTest {
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage().contains("enabled"));
             assertTrue(e.getMessage().contains("BOOLEAN"));
+        }
+    }
+
+    @Test
+    public void selectedDataObjectStatusCapturesMissingAndInvalidWithoutAbortingBinding() {
+        RuleDefinitionInputField missing = ruleField("request.age", "INTEGER");
+        missing.setVarId(11L);
+        missing.setRefType("DATA_OBJECT");
+        RuleDefinitionInputField invalid = ruleField("request.score", "DOUBLE");
+        invalid.setVarId(12L);
+        invalid.setRefType("DATA_OBJECT");
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setStatusReferenceKeys(new java.util.LinkedHashSet<>(Arrays.asList(
+                "DATA_OBJECT:11", "DATA_OBJECT:12")));
+
+        Map<String, Object> bound = binder.bindRuleInputs(Arrays.asList(missing, invalid),
+                JSON.parseObject("{\"request\":{\"score\":\"not-a-number\"}}"), options);
+
+        assertEquals("MISSING", options.getSourceStates().get("DATA_OBJECT:11").get("PRESENCE"));
+        assertEquals("INVALID", options.getSourceStates().get("DATA_OBJECT:12").get("PRESENCE"));
+        assertEquals(null, ((Map<?, ?>) bound.get("request")).get("score"));
+    }
+
+    @Test
+    public void unselectedInvalidDataObjectKeepsFailFastCompatibility() {
+        RuleDefinitionInputField field = ruleField("request.score", "DOUBLE");
+        field.setVarId(12L);
+        field.setRefType("DATA_OBJECT");
+        try {
+            binder.bindRuleInputs(Collections.singletonList(field),
+                    JSON.parseObject("{\"request\":{\"score\":\"not-a-number\"}}"),
+                    VariableResolveOptions.defaults());
+            fail("expected invalid number error");
+        } catch (IllegalArgumentException expected) {
+            assertTrue(expected.getMessage().contains("request.score"));
         }
     }
 

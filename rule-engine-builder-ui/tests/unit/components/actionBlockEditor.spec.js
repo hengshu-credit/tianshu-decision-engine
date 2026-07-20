@@ -197,4 +197,22 @@ describe('ActionBlockEditor', () => {
     expect(ctx.rightAllowedKinds(leaf)).toEqual(['LIST_QUERY'])
     expect(ctx.rightContext(leaf)).toBe('LIST_QUERY_CONFIG')
   })
+
+  test('动作条件按 API 来源展示缓存状态并清空右值', () => {
+    const ctx = createEditorContext([])
+    const leaf = {
+      leftOperand: {
+        kind: 'REFERENCE', code: 'apiResult', valueType: 'STRING', refId: 9,
+        refType: 'VARIABLE', varSource: 'API', sourceType: 'variable'
+      },
+      operator: 'source_origin_stale_cache',
+      rightOperand: { kind: 'LITERAL', value: 'unused', valueType: 'STRING' }
+    }
+
+    expect(ctx.operatorGroups(leaf).map(group => group.label)).toEqual(['值判断', '来源状态'])
+    ctx.onConditionOperatorChange(leaf)
+
+    expect(leaf.operator).toBe('source_origin_stale_cache')
+    expect(leaf.rightOperand).toBeNull()
+  })
 })

@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
@@ -19,6 +20,7 @@ import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -171,6 +173,59 @@ public class RuleExecuteServiceTest {
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertNotNull(resolver.requiredScriptNames);
         assertTrue(resolver.requiredScriptNames.isEmpty());
+    }
+
+    @Test
+    public void publishedExecutionScansAndInstallsExplicitSourceStatus() {
+        RuleExecuteService service = new RuleExecuteService();
+        SourceStatusResolver resolver = new SourceStatusResolver();
+        RuleDefinitionService definitionService = new FakeDefinitionService() {
+            @Override
+            public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+                RuleDefinitionInputField field = new RuleDefinitionInputField();
+                field.setVarId(77L);
+                field.setRefType("VARIABLE");
+                field.setScriptName("apiScore");
+                field.setFieldType("DOUBLE");
+                return Collections.singletonList(field);
+            }
+        };
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", definitionService);
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L);
+        published.setRuleCode("API_STATUS_RULE");
+        published.setProjectCode("project_a");
+        published.setVersion(1);
+        published.setModelType("SCORECARD");
+        published.setModelJson("{\"scoreItems\":[{\"leftOperand\":{\"kind\":\"REFERENCE\","
+                + "\"refType\":\"VARIABLE\",\"refId\":77,\"code\":\"apiScore\"},"
+                + "\"condOperator\":\"source_error\"}]}");
+        published.setCompiledScript("sourceStatus(\"VARIABLE\", \"77\", \"OUTCOME\", \"ERROR\")");
+
+        try {
+            VariableResolveOptions options = VariableResolveOptions.defaults();
+            options.setRequiredScriptNames(new LinkedHashSet<String>());
+            RuleResult result = service.executePublishedWithOptions(
+                    published, Collections.<String, Object>emptyMap(), 1L, "biz-app",
+                    options, "CLIENT_SERVER").getResult();
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(Boolean.TRUE, result.getResult());
+            assertTrue(resolver.statusReferenceKeys.contains("VARIABLE:77"));
+        } finally {
+            RuntimeContextBridge.clear();
+        }
     }
 
     @Test
@@ -355,6 +410,18 @@ public class RuleExecuteServiceTest {
         @Override
         public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
                                                VariableResolveOptions options) {
+            return target;
+        }
+    }
+
+    private static class SourceStatusResolver extends VariableSourceResolver {
+        private Set<String> statusReferenceKeys;
+
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
+            statusReferenceKeys = options.getStatusReferenceKeys();
+            options.recordSourceState("VARIABLE", 77L, "OUTCOME", "ERROR");
             return target;
         }
     }

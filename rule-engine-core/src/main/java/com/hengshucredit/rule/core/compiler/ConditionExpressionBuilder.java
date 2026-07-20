@@ -20,6 +20,9 @@ final class ConditionExpressionBuilder {
 
         String rhs = valueIsVariable ? value.trim() : formatConstant(varType, value);
         if ("==".equals(op) || "!=".equals(op) || ">".equals(op) || ">=".equals(op) || "<".equals(op) || "<=".equals(op)) {
+            if (isDateType(varType)) {
+                return dateMillis(left) + " " + op + " " + dateMillis(rhs);
+            }
             return left + " " + op + " " + rhs;
         }
         if ("contains".equals(op)) return "containsValue(" + left + ", " + rhs + ")";
@@ -39,8 +42,16 @@ final class ConditionExpressionBuilder {
         if ("between".equals(op) || "not_between".equals(op)) {
             List<String> parts = splitValues(value);
             if (parts.size() < 2) return "true";
-            String expr = "(" + left + " >= " + formatConstant(varType, parts.get(0))
-                    + " && " + left + " <= " + formatConstant(varType, parts.get(1)) + ")";
+            String rangeLeft = left;
+            String lower = formatConstant(varType, parts.get(0));
+            String upper = formatConstant(varType, parts.get(1));
+            if (isDateType(varType)) {
+                rangeLeft = dateMillis(left);
+                lower = dateMillis(lower);
+                upper = dateMillis(upper);
+            }
+            String expr = "(" + rangeLeft + " >= " + lower
+                    + " && " + rangeLeft + " <= " + upper + ")";
             return "between".equals(op) ? expr : "!" + expr;
         }
         if ("contains_any".equals(op) || "contains_all".equals(op)) {
@@ -126,6 +137,16 @@ final class ConditionExpressionBuilder {
         if ("BOOL".equals(type)) return "BOOLEAN";
         if ("ARRAY".equals(type) || "SET".equals(type) || "COLLECTION".equals(type)) return "LIST";
         return type;
+    }
+
+    private static boolean isDateType(String varType) {
+        String type = normalizeType(varType);
+        return "DATE".equals(type) || "DATETIME".equals(type) || "TIMESTAMP".equals(type)
+                || "LOCALDATE".equals(type) || "LOCALDATETIME".equals(type);
+    }
+
+    private static String dateMillis(String expression) {
+        return "dateToMillis(" + expression + ")";
     }
 
     private static String quote(String value) {

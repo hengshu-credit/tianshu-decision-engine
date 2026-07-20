@@ -90,6 +90,20 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
+  test('操作数前缀按标签内容计算紧凑偏移，不再预留固定大间距', () => {
+    const wrapper = mountPicker({
+      operandMode: true,
+      value: {
+        kind: 'REFERENCE', code: 'amount', valueType: 'NUMBER', refId: 1,
+        refType: 'VARIABLE', resolved: true
+      },
+      vars: standaloneOptions(1)
+    })
+
+    expect(wrapper.vm.operandKindMetaValue.label).toBe('变量')
+    expect(wrapper.vm.referenceStyle['--vp-prefix-offset']).toBe('48px')
+  })
+
   test('同编码但不同 ID 的字段使用独立行 key', async () => {
     const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const vars = standaloneOptions(2).map((item, index) => ({

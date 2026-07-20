@@ -42,7 +42,9 @@
             </div>
             <div class="cg-field cg-field--op">
               <el-select v-model="child.operator" size="mini" class="cg-sel-full" @change="onOpChange(child)">
-                <el-option v-for="option in operatorOptions(child)" :key="option.value" :label="option.label" :value="option.value" />
+                <el-option-group v-for="groupItem in operatorGroups(child)" :key="groupItem.label" :label="groupItem.label">
+                  <el-option v-for="option in groupItem.options" :key="option.value" :label="option.label" :value="option.value" />
+                </el-option-group>
               </el-select>
             </div>
             <div v-if="operatorRequiresValue(child)" class="cg-field cg-field--operand">
@@ -84,6 +86,7 @@ import {
   conditionOperatorAllowsVarValue,
   conditionOperatorRequiresValue,
   findConditionOperator,
+  getConditionOperatorGroups,
   getConditionOperatorOptions,
   normalizeConditionOperator
 } from '@/constants/conditionOperators'
@@ -117,31 +120,34 @@ export default {
       return inferOperandType(leaf && leaf.leftOperand) || 'STRING'
     },
     operatorOptions(leaf) {
-      return getConditionOperatorOptions(this.leftOperandType(leaf))
+      return getConditionOperatorOptions(this.leftOperandType(leaf), leaf && leaf.leftOperand)
+    },
+    operatorGroups(leaf) {
+      return getConditionOperatorGroups(this.leftOperandType(leaf), leaf && leaf.leftOperand)
     },
     operatorRequiresValue(leaf) {
-      return conditionOperatorRequiresValue(leaf && leaf.operator, this.leftOperandType(leaf))
+      return conditionOperatorRequiresValue(leaf && leaf.operator, this.leftOperandType(leaf), leaf && leaf.leftOperand)
     },
     rightAllowedKinds(leaf) {
       const context = this.rightContext(leaf)
       if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
-      return conditionOperatorAllowsVarValue(leaf && leaf.operator, this.leftOperandType(leaf))
+      return conditionOperatorAllowsVarValue(leaf && leaf.operator, this.leftOperandType(leaf), leaf && leaf.leftOperand)
         ? getExpressionContext(context).allowedKinds
         : ['LITERAL']
     },
     rightContext(leaf) {
-      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf))
+      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf), leaf && leaf.leftOperand)
       return (option && option.rightContext) || 'READ_EXPRESSION'
     },
     rightExpectedType(leaf) {
-      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf))
+      const option = findConditionOperator(leaf && leaf.operator, this.leftOperandType(leaf), leaf && leaf.leftOperand)
       return (option && option.rightValueType) || this.leftOperandType(leaf)
     },
     onOpChange(leaf) {
       const type = this.leftOperandType(leaf)
-      const operator = normalizeConditionOperator(leaf.operator || '==', type)
+      const operator = normalizeConditionOperator(leaf.operator || '==', type, leaf.leftOperand)
       if (operator !== leaf.operator) this.$set(leaf, 'operator', operator)
-      if (!conditionOperatorRequiresValue(operator, type)) {
+      if (!conditionOperatorRequiresValue(operator, type, leaf.leftOperand)) {
         this.$set(leaf, 'rightOperand', null)
         return
       }
@@ -152,7 +158,7 @@ export default {
     onLeftOperandChange(leaf, operand) {
       this.$set(leaf, 'leftOperand', operand || null)
       const type = this.leftOperandType(leaf)
-      this.$set(leaf, 'operator', normalizeConditionOperator(leaf.operator || '==', type))
+      this.$set(leaf, 'operator', normalizeConditionOperator(leaf.operator || '==', type, operand))
       this.onOpChange(leaf)
     },
     onRightOperandChange(leaf, operand) {
@@ -187,14 +193,14 @@ export default {
 .cg-row { margin-bottom: 10px; width: 100%; min-width: 0; }
 .cg-leaf {
   display: grid;
-  grid-template-columns: minmax(180px, 2fr) minmax(96px, 122px) minmax(180px, 2fr) auto;
+  grid-template-columns: minmax(160px, 2fr) 108px minmax(160px, 2fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
 }
 .cg-field { min-width: 0; display: flex; align-items: center; }
-.cg-field--op { width: 122px; }
+.cg-field--op { width: 108px; }
 .cg-field--any { color: #999; font-size: 12px; }
 .cg-field--actions { justify-content: flex-end; }
 .cg-sel-full { width: 100%; }

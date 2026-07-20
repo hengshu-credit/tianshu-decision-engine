@@ -2,7 +2,9 @@ import {
   compileConditionExpression,
   conditionOperatorRequiresValue,
   findConditionOperator,
+  getConditionOperatorGroups,
   getConditionOperatorOptions,
+  isSourceStatusOperator,
   normalizeConditionOperator,
   normalizeVarType
 } from '@/constants/conditionOperators'
@@ -37,7 +39,62 @@ describe('conditionOperators', () => {
 
   test('兼容 Java 常见数字类型名', () => {
     expect(normalizeVarType('Integer')).toBe('NUMBER')
+    expect(normalizeVarType('PROBABILITY')).toBe('NUMBER')
+    expect(normalizeVarType('VECTOR')).toBe('LIST')
+    expect(normalizeVarType('MODEL')).toBe('OBJECT')
     expect(normalizeConditionOperator('>', 'Integer')).toBe('>')
+  })
+
+  test('日期时间别名统一使用日期比较符', () => {
+    ['DATE', 'DATETIME', 'TIMESTAMP', 'LOCALDATE', 'LOCALDATETIME'].forEach(type => {
+      expect(normalizeVarType(type)).toBe('DATE')
+      expect(getConditionOperatorOptions(type).map(item => item.value)).toContain('between')
+    })
+  })
+
+  test('API 变量按实际值类型展示值操作符，并追加独立的调用和缓存状态操作符', () => {
+    const groups = getConditionOperatorGroups('DOUBLE', {
+      refType: 'VARIABLE',
+      varSource: 'API'
+    })
+
+    expect(groups.map(group => group.label)).toEqual(['值判断', '来源状态'])
+    expect(groups[0].options.map(item => item.value)).toContain('between')
+    expect(groups[1].options.map(item => item.value)).toEqual(expect.arrayContaining([
+      'source_success',
+      'source_error',
+      'source_timeout',
+      'source_fallback',
+      'source_cache_enabled',
+      'source_cache_disabled',
+      'source_cache_hit',
+      'source_cache_miss',
+      'source_cache_unavailable',
+      'source_origin_live',
+      'source_origin_cache',
+      'source_origin_stale_cache'
+    ]))
+    expect(groups[1].options.every(item => item.noValue)).toBe(true)
+  })
+
+  test('API 来源也可从 sourceType 元数据识别', () => {
+    const groups = getConditionOperatorGroups('DOUBLE', {
+      refType: 'VARIABLE', sourceType: 'API'
+    })
+    expect(groups[1].options.map(item => item.value)).toContain('source_cache_hit')
+  })
+
+  test('各来源只展示其适用的状态操作符，普通输入变量不展示来源状态组', () => {
+    const values = (refType, varSource) => getConditionOperatorOptions('STRING', { refType, varSource }).map(item => item.value)
+
+    expect(values('VARIABLE', 'DB')).toEqual(expect.arrayContaining(['source_has_data', 'source_no_data', 'source_timeout']))
+    expect(values('VARIABLE', 'LIST')).toEqual(expect.arrayContaining(['source_match_hit', 'source_match_miss']))
+    expect(values('MODEL_OUTPUT')).toEqual(expect.arrayContaining(['source_output_present', 'source_output_missing']))
+    expect(values('DATA_OBJECT')).toEqual(expect.arrayContaining(['source_field_present', 'source_field_missing', 'source_field_invalid']))
+    expect(getConditionOperatorGroups('STRING', { refType: 'VARIABLE', varSource: 'INPUT' })).toHaveLength(1)
+    expect(isSourceStatusOperator('source_cache_hit')).toBe(true)
+    expect(isSourceStatusOperator('is_null')).toBe(false)
+    expect(conditionOperatorRequiresValue('source_cache_hit', 'STRING', { refType: 'VARIABLE', varSource: 'API' })).toBe(false)
   })
 
   test('无右值操作符不要求输入值', () => {

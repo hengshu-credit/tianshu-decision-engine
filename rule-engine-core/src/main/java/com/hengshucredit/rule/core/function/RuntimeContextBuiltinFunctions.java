@@ -30,6 +30,10 @@ public class RuntimeContextBuiltinFunctions {
         return RuntimeContextBridge.currentMatchedConditions();
     }
 
+    public boolean sourceStatus(String refType, String refId, String dimension, String expected) {
+        return RuntimeContextBridge.sourceStatusMatches(refType, refId, dimension, expected);
+    }
+
     public Object recordRuleSetItem(String ruleCode, String ruleName, Object hit) {
         Map<String, Object> event = new LinkedHashMap<>();
         event.put("type", "RULE_SET_ITEM");

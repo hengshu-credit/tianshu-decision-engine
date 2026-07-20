@@ -77,6 +77,8 @@ export function createReferenceOperand(option) {
     valueType: option.varType || option.valueType || '',
     refId,
     refType,
+    sourceType: option.sourceType || (option._ref && option._ref.sourceType) || '',
+    varSource: option.varSource || (option._ref && option._ref.varSource) || (option.varObj && option.varObj.varSource) || '',
     resolved: refId != null && !!refType
   }
   if (refType === 'CONSTANT') {
@@ -300,6 +302,8 @@ export function resolvePathOperand(operand, options = []) {
       valueType: match.valueType,
       refId: match.refId,
       refType: match.refType,
+      sourceType: match.sourceType,
+      varSource: match.varSource,
       anchorPath,
       relativePath: value.substring(anchorPath.length),
       resolved: match.resolved
@@ -370,6 +374,8 @@ export function collectOperandReferences(operand, out = []) {
         valueType: current.valueType || '',
         refId: current.refId == null ? null : current.refId,
         refType: current.refType || '',
+        sourceType: current.sourceType || '',
+        varSource: current.varSource || '',
         resolved: current.refId != null && !!current.refType
       }
       const key = referenceKey(dependency)
@@ -414,6 +420,8 @@ export function syncOperandReference(operand, options = []) {
       valueType: current.valueType,
       refId: current.refId,
       refType: current.refType,
+      sourceType: current.sourceType,
+      varSource: current.varSource,
       resolved: current.resolved
     }
     : current
