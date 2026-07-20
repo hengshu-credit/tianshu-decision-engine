@@ -196,8 +196,10 @@ public class RuleReferenceIntegrityService {
                     validRefs, issues, seen);
             checkNamedField(object, path, definitionId, "rightVar", "rightVarId", "rightRefType",
                     validRefs, issues, seen);
-            checkNamedField(object, path, definitionId, "target", "_targetVarId", "_targetRefType",
-                    validRefs, issues, seen);
+            if (!isGraphEdge(object)) {
+                checkNamedField(object, path, definitionId, "target", "_targetVarId", "_targetRefType",
+                        validRefs, issues, seen);
+            }
             checkNamedField(object, path, definitionId, "condVar", "_condVarId", "_condVarRefType",
                     validRefs, issues, seen);
             checkNamedField(object, path, definitionId, "matchVar", "_matchVarId", "_matchVarRefType",
@@ -222,6 +224,10 @@ public class RuleReferenceIntegrityService {
         String code = object.getString(codeField);
         if (blank(code)) return;
         checkPair(object, path, definitionId, idField, typeField, code, validRefs, issues, seen);
+    }
+
+    private boolean isGraphEdge(JSONObject object) {
+        return object.containsKey("source") && object.containsKey("target");
     }
 
     private void checkPair(JSONObject object, String path, Long definitionId,

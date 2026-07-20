@@ -34,11 +34,37 @@ public class RuleReferenceIntegrityServiceTest {
     @Test
     public void parentAnchoredManualPathIsValidWithoutRegisteredLeaf() {
         RuleReferenceIntegrityService service = service();
-        String json = "{\"kind\":\"PATH\",\"value\":\"request.items[0].name\","
-                + "\"code\":\"request.items[0].name\",\"refId\":41,\"refType\":\"DATA_OBJECT\","
+        String json = "{\"kind\":\"PATH\",\"value\":\"request.items[0].name\"," 
+                + "\"code\":\"request.items[0].name\",\"refId\":41,\"refType\":\"DATA_OBJECT\"," 
                 + "\"anchorPath\":\"request.items\",\"relativePath\":\"[0].name\",\"resolved\":true}";
 
         assertTrue(service.audit(7L, 1L, json).isValid());
+    }
+
+    @Test
+    public void auditIgnoresGraphEdgeTargetNodeReference() {
+        RuleReferenceIntegrityService service = service();
+        String json = "{\"nodes\":[{\"id\":\"n1\",\"actionData\":["
+                + "{\"type\":\"assign\",\"target\":\"currentAge\","
+                + "\"_targetVarId\":9,\"_targetRefType\":\"VARIABLE\"}]}],"
+                + "\"edges\":[{\"id\":\"e1\",\"source\":\"n1\",\"target\":\"n2\"}]}";
+
+        assertTrue(service.audit(7L, 1L, json).isValid());
+    }
+
+    @Test
+    public void auditStillRequiresVariableContractForActionTarget() {
+        RuleReferenceIntegrityService service = service();
+        String json = "{\"nodes\":[{\"id\":\"n1\",\"actionData\":["
+                + "{\"type\":\"assign\",\"target\":\"currentAge\"}]}],"
+                + "\"edges\":[{\"id\":\"e1\",\"source\":\"n1\",\"target\":\"n2\"}]}";
+
+        RuleReferenceIntegrityService.AuditReport report = service.audit(7L, 1L, json);
+
+        assertFalse(report.isValid());
+        assertEquals(1, report.getIssueCount());
+        assertEquals("$.nodes[0].actionData[0]", report.getIssues().get(0).getPath());
+        assertEquals("MISSING_CONTRACT", report.getIssues().get(0).getReason());
     }
 
     private RuleReferenceIntegrityService service() {
