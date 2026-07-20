@@ -64,7 +64,7 @@
               <div class="dt-act-panel-head">
                 <span class="dt-act-panel-title">动作 (THEN)</span>
                 <span class="dt-act-panel-hint">本条规则独立配置，可与其它行不同</span>
-                <el-button type="primary" size="mini" plain icon="el-icon-plus" @click="addRuleAction(ri)">添加动作</el-button>
+                <el-button style="color: #fff;" type="primary" size="mini" plain icon="el-icon-plus" @click="addRuleAction(ri)">添加动作</el-button>
               </div>
               <div class="dt-act-rows">
                 <div
