@@ -436,28 +436,32 @@ public class SchemaSyncService {
     }
 
     private void ensureApiDocScenarioSchema() {
-        if (tableExists("rule_api_doc_scenario")) return;
-        jdbcTemplate.execute("CREATE TABLE `rule_api_doc_scenario` ("
-                + "`id` BIGINT NOT NULL AUTO_INCREMENT,"
-                + "`definition_id` BIGINT NOT NULL,"
-                + "`scenario_name` VARCHAR(128) NOT NULL,"
-                + "`description` VARCHAR(512) DEFAULT NULL,"
-                + "`request_json` JSON NOT NULL,"
-                + "`response_json` JSON NOT NULL,"
-                + "`response_source` VARCHAR(16) NOT NULL DEFAULT 'MANUAL',"
-                + "`outer_code` INT DEFAULT NULL,"
-                + "`business_code_path` VARCHAR(256) DEFAULT NULL,"
-                + "`business_code` VARCHAR(256) DEFAULT NULL,"
-                + "`rule_version` INT NOT NULL,"
-                + "`include_in_doc` TINYINT NOT NULL DEFAULT 0,"
-                + "`sort_order` INT NOT NULL DEFAULT 0,"
-                + "`status` TINYINT NOT NULL DEFAULT 1,"
-                + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
-                + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
-                + "PRIMARY KEY (`id`),"
-                + "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),"
-                + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"
-                + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule API documentation scenarios'");
+        if (!tableExists("rule_api_doc_scenario")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_api_doc_scenario` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT,"
+                    + "`definition_id` BIGINT NOT NULL,"
+                    + "`scenario_name` VARCHAR(128) NOT NULL,"
+                    + "`description` VARCHAR(512) DEFAULT NULL,"
+                    + "`request_json` LONGTEXT NOT NULL,"
+                    + "`response_json` LONGTEXT NOT NULL,"
+                    + "`response_source` VARCHAR(16) NOT NULL DEFAULT 'MANUAL',"
+                    + "`outer_code` INT DEFAULT NULL,"
+                    + "`business_code_path` VARCHAR(256) DEFAULT NULL,"
+                    + "`business_code` VARCHAR(256) DEFAULT NULL,"
+                    + "`rule_version` INT NOT NULL,"
+                    + "`include_in_doc` TINYINT NOT NULL DEFAULT 0,"
+                    + "`sort_order` INT NOT NULL DEFAULT 0,"
+                    + "`status` TINYINT NOT NULL DEFAULT 1,"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),"
+                    + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule API documentation scenarios'");
+            return;
+        }
+        ensureLongTextColumn("rule_api_doc_scenario", "request_json", "完整请求报文");
+        ensureLongTextColumn("rule_api_doc_scenario", "response_json", "完整响应报文");
     }
 
     private void addAuthAttributionColumns(String table, String timeColumn, boolean includeToken) {
@@ -603,6 +607,23 @@ public class SchemaSyncService {
                 new Object[]{tableName, columnName},
                 Integer.class);
         return count != null && count > 0;
+    }
+
+    private boolean columnHasDataType(String tableName, String columnName, String dataType) {
+        Integer count = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
+                        + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? AND DATA_TYPE = ?",
+                new Object[]{tableName, columnName, dataType},
+                Integer.class);
+        return count != null && count > 0;
+    }
+
+    private void ensureLongTextColumn(String tableName, String columnName, String comment) {
+        if (columnExists(tableName, columnName)
+                && !columnHasDataType(tableName, columnName, "longtext")) {
+            jdbcTemplate.execute("ALTER TABLE `" + tableName + "` MODIFY COLUMN `" + columnName
+                    + "` LONGTEXT NOT NULL COMMENT '" + comment + "'");
+        }
     }
 
     private void addColumnIfMissing(String tableName, String columnName, String definition) {

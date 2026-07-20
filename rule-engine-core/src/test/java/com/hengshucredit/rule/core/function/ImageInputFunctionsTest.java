@@ -25,6 +25,11 @@ public class ImageInputFunctionsTest {
     public void setUp() throws Exception {
         server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         server.createContext("/image", exchange -> respond(exchange, 200, IMAGE_BYTES));
+        server.createContext("/requires-user-agent", exchange -> {
+            String userAgent = exchange.getRequestHeaders().getFirst("User-Agent");
+            int status = userAgent != null && !userAgent.startsWith("Java/") ? 200 : 403;
+            respond(exchange, status, status == 200 ? IMAGE_BYTES : new byte[0]);
+        });
         server.createContext("/missing", exchange -> respond(exchange, 404, new byte[0]));
         server.createContext("/large", exchange -> {
             exchange.sendResponseHeaders(200, ImageInputFunctions.MAX_IMAGE_BYTES + 1L);
@@ -59,6 +64,13 @@ public class ImageInputFunctionsTest {
     @Test
     public void downloadsHttpImageAsBase64() {
         String result = new ImageInputFunctions().imageToBase64(baseUrl + "/image", 1000D);
+
+        assertEquals(Base64.getEncoder().encodeToString(IMAGE_BYTES), result);
+    }
+
+    @Test
+    public void sendsApplicationUserAgentWhenDownloadingHttpImage() {
+        String result = new ImageInputFunctions().imageToBase64(baseUrl + "/requires-user-agent", 1000D);
 
         assertEquals(Base64.getEncoder().encodeToString(IMAGE_BYTES), result);
     }

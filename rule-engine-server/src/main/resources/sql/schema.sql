@@ -197,8 +197,8 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   `definition_id`      BIGINT       NOT NULL                COMMENT '规则定义ID',
   `scenario_name`      VARCHAR(128) NOT NULL                COMMENT '场景名称',
   `description`        VARCHAR(512) DEFAULT NULL            COMMENT '场景说明',
-  `request_json`       JSON         NOT NULL                COMMENT '完整请求报文',
-  `response_json`      JSON         NOT NULL                COMMENT '完整响应报文',
+  `request_json`       LONGTEXT     NOT NULL                COMMENT '完整请求报文',
+  `response_json`      LONGTEXT     NOT NULL                COMMENT '完整响应报文',
   `response_source`    VARCHAR(16)  NOT NULL DEFAULT 'MANUAL' COMMENT '响应来源：MANUAL/EXECUTED',
   `outer_code`         INT          DEFAULT NULL            COMMENT '平台外层响应码',
   `business_code_path` VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码路径',
@@ -1177,3 +1177,30 @@ END$$
 DELIMITER ;
 CALL `rule_engine`.`ensure_execution_log_payload_columns`();
 DROP PROCEDURE `rule_engine`.`ensure_execution_log_payload_columns`;
+
+-- API 文档场景需原样保存可能超过 MySQL JSON 最大深度的请求和响应追踪树。
+DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_api_doc_scenario_payload_columns`;
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_api_doc_scenario_payload_columns`()
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_api_doc_scenario'
+      AND COLUMN_NAME = 'request_json' AND DATA_TYPE <> 'longtext'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_api_doc_scenario`
+      MODIFY COLUMN `request_json` LONGTEXT NOT NULL COMMENT '完整请求报文';
+  END IF;
+
+  IF EXISTS (
+    SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_api_doc_scenario'
+      AND COLUMN_NAME = 'response_json' AND DATA_TYPE <> 'longtext'
+  ) THEN
+    ALTER TABLE `rule_engine`.`rule_api_doc_scenario`
+      MODIFY COLUMN `response_json` LONGTEXT NOT NULL COMMENT '完整响应报文';
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_api_doc_scenario_payload_columns`();
+DROP PROCEDURE `rule_engine`.`ensure_api_doc_scenario_payload_columns`;

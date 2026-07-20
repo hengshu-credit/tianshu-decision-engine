@@ -12,6 +12,7 @@ import java.util.Base64;
 public class ImageInputFunctions {
 
     public static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+    private static final String USER_AGENT = "Tianshu-Decision-Engine/1.0";
 
     public String imageToBase64(String image, double timeoutMs) {
         if (image == null || image.trim().isEmpty()) {
@@ -45,6 +46,7 @@ public class ImageInputFunctions {
             }
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("GET");
+            connection.setRequestProperty("User-Agent", USER_AGENT);
             connection.setInstanceFollowRedirects(true);
             connection.setConnectTimeout(timeoutMs);
             connection.setReadTimeout(timeoutMs);

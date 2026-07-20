@@ -629,7 +629,7 @@ function advancedScoreGroupNode(item, index) {
     const dim = dimensionNode(dimension, dimensionIndex, 'score')
     dim.kind = 'score-dimension'
     dim.children = (dimension.rules || []).map((rule, ruleIndex) => {
-      const conditions = (rule.conditions || []).map((condition, conditionIndex) => conditionNode(condition, conditionIndex, 'score.' + index + '.' + dimensionIndex + '.' + ruleIndex))
+      const conditions = (rule.conditions || []).map((condition, conditionIndex) => conditionNode(condition, conditionIndex, 'score.' + index + '.' + dimensionIndex + '.' + ruleIndex + '.' + conditionIndex))
       return semanticNode('score-rule', '评分规则 ' + (ruleIndex + 1), {
         identity: rule.id != null ? 'score-rule:' + rule.id : '',
         matchKey: 'score-rule:' + ruleIndex,

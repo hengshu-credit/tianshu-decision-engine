@@ -158,12 +158,24 @@ public class DatabaseInitializationSqlTest {
     @Test
     public void schemaCreatesApiDocumentationScenarioTable() throws Exception {
         String schema = read(sqlDirectory().resolve("schema.sql"));
+        Matcher matcher = TABLE_BLOCK.matcher(schema);
+        String tableBody = null;
+        while (matcher.find()) {
+            if ("rule_api_doc_scenario".equals(matcher.group(1))) {
+                tableBody = matcher.group(2);
+                break;
+            }
+        }
 
-        Assert.assertTrue(schema.contains("CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario`"));
+        Assert.assertNotNull("rule_api_doc_scenario table missing", tableBody);
+        Assert.assertTrue(tableBody.matches("(?is).*`request_json`\\s+LONGTEXT\\s+NOT NULL.*"));
+        Assert.assertTrue(tableBody.matches("(?is).*`response_json`\\s+LONGTEXT\\s+NOT NULL.*"));
         Assert.assertTrue(schema.contains(
                 "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`)"));
         Assert.assertTrue(schema.contains(
                 "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
+        Assert.assertTrue(schema.contains("MODIFY COLUMN `request_json` LONGTEXT NOT NULL"));
+        Assert.assertTrue(schema.contains("MODIFY COLUMN `response_json` LONGTEXT NOT NULL"));
     }
 
     private static void assertFreshInitMounts(String compose, String schemaMount, String exportMount) {

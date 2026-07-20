@@ -128,6 +128,31 @@ describe('ruleVersionDiff', () => {
     ]))
   })
 
+  test('复杂评分卡同一评分规则的匿名条件生成唯一渲染 key', () => {
+    const model = {
+      dimensionGroups: [{
+        dimensions: [{
+          rules: [{
+            conditions: [
+              { operator: '==', rightOperand: { kind: 'LITERAL', value: 'A' } },
+              { operator: '!=', rightOperand: { kind: 'LITERAL', value: 'B' } }
+            ]
+          }]
+        }]
+      }],
+      thresholds: []
+    }
+
+    const result = buildRuleVersionDiff({ modelType: 'SCORE_ADV', leftModelJson: model, rightModelJson: model })
+    const conditionLanes = result.sections.find(section => section.key === 'dimensionGroups')
+      .lanes[0].children[0].children[0].children
+
+    expect(conditionLanes.map(item => item.key)).toEqual([
+      'condition:score.0.0.0.0',
+      'condition:score.0.0.0.1'
+    ])
+  })
+
   test('复合动作块内的分支动作变化也能精确展示', () => {
     const createModel = value => ({
       rules: [{

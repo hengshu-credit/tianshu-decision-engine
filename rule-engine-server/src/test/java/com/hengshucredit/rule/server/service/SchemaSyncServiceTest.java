@@ -107,8 +107,28 @@ public class SchemaSyncServiceTest {
         method.invoke(service);
 
         assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_api_doc_scenario`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "`request_json` LONGTEXT NOT NULL"));
+        assertTrue(containsSql(jdbcTemplate.sqlList, "`response_json` LONGTEXT NOT NULL"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
+    }
+
+    @Test
+    public void apiDocScenarioSchemaUpgradesJsonPayloadColumns() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();
+        jdbcTemplate.nonLongTextColumns.add("request_json");
+        jdbcTemplate.nonLongTextColumns.add("response_json");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureApiDocScenarioSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "MODIFY COLUMN `request_json` LONGTEXT NOT NULL"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "MODIFY COLUMN `response_json` LONGTEXT NOT NULL"));
     }
 
     @Test
@@ -207,6 +227,7 @@ public class SchemaSyncServiceTest {
         private final Set<String> missingColumns;
         private final Set<String> missingTables = new HashSet<>();
         private final Set<String> missingIndexes = new HashSet<>();
+        private final Set<String> nonLongTextColumns = new HashSet<>();
 
         private FakeJdbcTemplate(String... missingColumns) {
             this.missingColumns = new HashSet<>(Arrays.asList(missingColumns));
@@ -221,6 +242,11 @@ public class SchemaSyncServiceTest {
         public <T> T queryForObject(String sql, Object[] args, Class<T> requiredType) {
             if (sql.contains("INFORMATION_SCHEMA.TABLES") && args != null && args.length > 0
                     && missingTables.contains(String.valueOf(args[0]))) {
+                return requiredType.cast(Integer.valueOf(0));
+            }
+            if (sql.contains("INFORMATION_SCHEMA.COLUMNS") && sql.contains("DATA_TYPE = ?")
+                    && args != null && args.length > 2
+                    && nonLongTextColumns.contains(String.valueOf(args[1]))) {
                 return requiredType.cast(Integer.valueOf(0));
             }
             if (sql.contains("INFORMATION_SCHEMA.COLUMNS") && args != null && args.length > 1
