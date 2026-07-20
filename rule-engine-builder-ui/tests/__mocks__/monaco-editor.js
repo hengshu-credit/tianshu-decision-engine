@@ -31,6 +31,13 @@ module.exports = {
       getOriginalEditor: jest.fn(),
       getModifiedEditor: jest.fn(),
       getDiffModel: jest.fn(),
+      setModel: jest.fn(),
+      layout: jest.fn(),
+      dispose: jest.fn()
+    })),
+    createModel: jest.fn(() => ({
+      getValue: jest.fn(() => ''),
+      setValue: jest.fn(),
       dispose: jest.fn()
     })),
     setModelLanguage: jest.fn(),

@@ -290,8 +290,15 @@
       </div>
     </el-dialog>
 
-    <el-dialog title="版本历史" :visible.sync="versionVisible" width="960px" :close-on-click-modal="false">
-      <el-table :data="versions" border size="small" v-loading="versionLoading" max-height="360">
+    <el-dialog
+      title="版本历史"
+      :visible.sync="versionVisible"
+      width="96%"
+      top="4vh"
+      custom-class="version-history-dialog"
+      :close-on-click-modal="false"
+    >
+      <el-table :data="versions" border size="small" v-loading="versionLoading" max-height="240">
         <el-table-column prop="version" label="版本" width="80" align="center">
           <template slot-scope="{ row }">v{{ row.version }}</template>
         </el-table-column>
@@ -311,31 +318,48 @@
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCompare" style="margin-top:12px;">
-        <el-alert
-          :title="'v' + versionCompare.left.version + ' 与 v' + versionCompare.right.version + ' 对比'"
-          :type="versionCompare.modelJsonChanged || versionCompare.compiledScriptChanged ? 'warning' : 'success'"
-          :closable="false"
-          show-icon
+      <div v-if="versions.length >= 2" class="version-compare-toolbar">
+        <span class="version-compare-toolbar-label">基准版本</span>
+        <el-select v-model="leftVersionNumber" size="small" @change="loadSelectedVersionCompare">
+          <el-option
+            v-for="item in versions"
+            :key="'left-' + item.version"
+            :label="'v' + item.version"
+            :value="item.version"
+            :disabled="item.version === rightVersionNumber"
+          />
+        </el-select>
+        <el-button size="small" icon="el-icon-sort" :disabled="versionCompareLoading" @click="swapVersionCompare">交换版本</el-button>
+        <span class="version-compare-toolbar-label">对比版本</span>
+        <el-select v-model="rightVersionNumber" size="small" @change="loadSelectedVersionCompare">
+          <el-option
+            v-for="item in versions"
+            :key="'right-' + item.version"
+            :label="'v' + item.version"
+            :value="item.version"
+            :disabled="item.version === leftVersionNumber"
+          />
+        </el-select>
+        <span class="version-compare-toolbar-tip">默认按旧版在左、新版在右展示</span>
+      </div>
+      <el-alert
+        v-else-if="!versionLoading"
+        title="至少需要两个已发布版本才能进行对比"
+        type="info"
+        :closable="false"
+        show-icon
+        class="version-compare-empty"
+      />
+      <div v-loading="versionCompareLoading" class="version-compare-content">
+        <rule-version-diff
+          v-if="versionCompare && versionCompare.left && versionCompare.right"
+          :model-type="rule.modelType"
+          :left-version="versionCompare.left"
+          :right-version="versionCompare.right"
         />
-        <div class="version-diff-panel">
-          <div class="version-diff-head">
-            <span>业务配置差异</span>
-            <span class="version-diff-count">{{ versionDiffRows.length }} 项变化</span>
-          </div>
-          <el-table :data="versionDiffRows" border size="mini" max-height="360" empty-text="两个版本的业务配置一致">
-            <el-table-column prop="path" label="配置项" min-width="220" show-overflow-tooltip />
-            <el-table-column label="左侧版本" min-width="240" show-overflow-tooltip>
-              <template slot-scope="{ row }"><span :class="diffValueClass(row, 'left')">{{ row.leftText }}</span></template>
-            </el-table-column>
-            <el-table-column label="右侧版本" min-width="240" show-overflow-tooltip>
-              <template slot-scope="{ row }"><span :class="diffValueClass(row, 'right')">{{ row.rightText }}</span></template>
-            </el-table-column>
-            <el-table-column label="变化" width="90" align="center">
-              <template slot-scope="{ row }"><el-tag size="mini" :type="diffTagType(row.type)">{{ diffTypeLabel(row.type) }}</el-tag></template>
-            </el-table-column>
-          </el-table>
-        </div>
+        <div v-else-if="versions.length >= 2 && !versionCompareLoading" class="version-compare-placeholder">请选择两个版本查看业务配置差异</div>
+      </div>
+      <div v-if="versionCompare && versionCompare.left && versionCompare.right">
         <el-collapse class="version-tech-collapse">
           <el-collapse-item title="技术内容（原始 JSON / 编译脚本）" name="raw">
             <div class="version-compare-grid">
@@ -381,6 +405,7 @@ import {
 import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
 import { normalizeTestSchema, schemaFieldsToTestFields, flattenSchemaSample } from '@/utils/testSchema'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
+import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -396,7 +421,7 @@ const MODEL_TYPE_LABELS = {
 
 export default {
   name: 'RuleDetail',
-  components: { ApiScenarioPanel },
+  components: { ApiScenarioPanel, RuleVersionDiff },
   data() {
     return {
       loading: false,
@@ -436,7 +461,11 @@ export default {
       versionVisible: false,
       versionLoading: false,
       versions: [],
-      versionCompare: null
+      versionCompare: null,
+      leftVersionNumber: null,
+      rightVersionNumber: null,
+      versionCompareLoading: false,
+      versionCompareRequestId: 0
     }
   },
   computed: {
@@ -467,22 +496,6 @@ export default {
       const fields = (this.rule && this.rule.outputFieldsJson) || []
       if (!this.outputFieldNeedsPaging) return fields
       return fields.slice(this.outputFieldOffset, this.outputFieldOffset + this.fieldPageSize)
-    },
-    versionDiffRows() {
-      if (!this.versionCompare || !this.versionCompare.left || !this.versionCompare.right) return []
-      const leftMap = this.flattenVersionObject(this.parseVersionObject(this.versionCompare.left.modelJson))
-      const rightMap = this.flattenVersionObject(this.parseVersionObject(this.versionCompare.right.modelJson))
-      const keys = Array.from(new Set(Object.keys(leftMap).concat(Object.keys(rightMap)))).sort()
-      return keys.filter(key => !this.sameVersionValue(leftMap[key], rightMap[key])).map(key => {
-        const hasLeft = Object.prototype.hasOwnProperty.call(leftMap, key)
-        const hasRight = Object.prototype.hasOwnProperty.call(rightMap, key)
-        return {
-          path: this.businessPathLabel(key),
-          leftText: hasLeft ? this.displayVersionValue(leftMap[key]) : '未配置',
-          rightText: hasRight ? this.displayVersionValue(rightMap[key]) : '未配置',
-          type: !hasLeft ? 'rightOnly' : (!hasRight ? 'leftOnly' : 'changed')
-        }
-      })
     }
   },
   created() {
@@ -899,10 +912,13 @@ export default {
       return row._editing ? 'editing-row' : ''
     },
 
-    // ========== 规则测试 ==========
+    // ========== 发布版本对比 ==========
     async openVersionDialog() {
       this.versionVisible = true
       this.versionCompare = null
+      this.leftVersionNumber = null
+      this.rightVersionNumber = null
+      this.versionCompareRequestId++
       await this.loadVersions()
     },
     async loadVersions() {
@@ -910,21 +926,55 @@ export default {
       this.versionLoading = true
       try {
         const res = await api.listVersions(this.rule.id)
-        this.versions = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])
+        const rows = res && Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])
+        this.versions = rows.slice().sort((left, right) => Number(right.version) - Number(left.version))
+        this.leftVersionNumber = null
+        this.rightVersionNumber = null
+        this.versionCompare = null
+        if (this.versions.length >= 2) {
+          this.leftVersionNumber = this.versions[1].version
+          this.rightVersionNumber = this.versions[0].version
+          await this.loadSelectedVersionCompare()
+        }
       } catch (e) {
+        this.versions = []
         this.$message.error(e.message || '加载版本历史失败')
       } finally {
         this.versionLoading = false
       }
     },
+    async selectVersionPair(leftVersion, rightVersion) {
+      this.leftVersionNumber = leftVersion
+      this.rightVersionNumber = rightVersion
+      return this.loadSelectedVersionCompare()
+    },
+    async loadSelectedVersionCompare() {
+      if (this.leftVersionNumber == null || this.rightVersionNumber == null) return
+      if (this.leftVersionNumber === this.rightVersionNumber) {
+        this.$message.warning('请选择两个不同的发布版本')
+        return
+      }
+      const requestId = ++this.versionCompareRequestId
+      this.versionCompareLoading = true
+      this.versionCompare = null
+      try {
+        const res = await api.compareVersions(this.rule.id, this.leftVersionNumber, this.rightVersionNumber)
+        if (requestId === this.versionCompareRequestId) this.versionCompare = res && res.data ? res.data : res
+      } catch (e) {
+        if (requestId === this.versionCompareRequestId) this.$message.error(e.message || '版本对比失败')
+      } finally {
+        if (requestId === this.versionCompareRequestId) this.versionCompareLoading = false
+      }
+    },
     async compareVersion(left, right) {
       if (!left || !right) return
-      try {
-        const res = await api.compareVersions(this.rule.id, left.version, right.version)
-        this.versionCompare = res.data || res
-      } catch (e) {
-        this.$message.error(e.message || '版本对比失败')
-      }
+      return this.selectVersionPair(right.version, left.version)
+    },
+    async swapVersionCompare() {
+      const left = this.leftVersionNumber
+      this.leftVersionNumber = this.rightVersionNumber
+      this.rightVersionNumber = left
+      return this.loadSelectedVersionCompare()
     },
     async rollbackVersion(row) {
       if (!row || !row.version) return
@@ -950,77 +1000,6 @@ export default {
       } catch (e) {
         return value
       }
-    },
-    parseVersionObject(value) {
-      if (!value) return {}
-      if (typeof value === 'object') return value
-      try {
-        return JSON.parse(value)
-      } catch (e) {
-        return { raw: value }
-      }
-    },
-    flattenVersionObject(value, prefix = '') {
-      const result = {}
-      if (value == null || typeof value !== 'object') {
-        result[prefix || '规则内容'] = value
-        return result
-      }
-      if (Array.isArray(value)) {
-        if (value.length === 0) {
-          result[prefix || '列表'] = []
-          return result
-        }
-        value.forEach((item, index) => {
-          Object.assign(result, this.flattenVersionObject(item, prefix ? prefix + '[' + (index + 1) + ']' : '[' + (index + 1) + ']'))
-        })
-        return result
-      }
-      const keys = Object.keys(value)
-      if (keys.length === 0) {
-        result[prefix || '对象'] = {}
-        return result
-      }
-      keys.forEach(key => {
-        const label = prefix ? prefix + '.' + key : key
-        Object.assign(result, this.flattenVersionObject(value[key], label))
-      })
-      return result
-    },
-    businessPathLabel(path) {
-      return String(path || '')
-        .replace(/\brules\b/g, '规则行')
-        .replace(/\bconditions\b/g, '条件')
-        .replace(/\bactions\b/g, '执行动作')
-        .replace(/\bdefaultActions\b/g, '默认动作')
-        .replace(/\bnodes\b/g, '节点')
-        .replace(/\bedges\b/g, '连线')
-        .replace(/\bvarCode\b/g, '字段编码')
-        .replace(/\bvarLabel\b/g, '字段名称')
-        .replace(/\boperator\b/g, '判断关系')
-        .replace(/\bvalue\b/g, '取值')
-        .replace(/\bresultVar\b/g, '结果字段')
-    },
-    displayVersionValue(value) {
-      if (value == null) return '空值'
-      if (typeof value === 'object') return JSON.stringify(value)
-      return String(value)
-    },
-    sameVersionValue(left, right) {
-      return this.displayVersionValue(left) === this.displayVersionValue(right)
-    },
-    diffTypeLabel(type) {
-      return { leftOnly: '左侧独有', rightOnly: '右侧独有', changed: '变更' }[type] || '变更'
-    },
-    diffTagType(type) {
-      return { leftOnly: 'success', rightOnly: 'info', changed: 'warning' }[type] || 'warning'
-    },
-    diffValueClass(row, side) {
-      if (!row) return ''
-      if (row.type === 'leftOnly' && side === 'left') return 'diff-value-added'
-      if (row.type === 'rightOnly' && side === 'right') return 'diff-value-added'
-      if (row.type === 'changed') return 'diff-value-changed'
-      return ''
     },
     async openTestDialog() {
       this.testVisible = true
@@ -1246,40 +1225,57 @@ export default {
   color: #c0c4cc;
   font-style: italic;
 }
-.version-diff-panel {
-  margin-top: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  overflow: hidden;
+::v-deep .version-history-dialog {
+  min-width: 1040px;
 }
-.version-diff-head {
+::v-deep .version-history-dialog .el-dialog__body {
+  max-height: 82vh;
+  overflow: auto;
+  padding-top: 16px;
+}
+.version-compare-toolbar {
+  position: sticky;
+  top: -16px;
+  z-index: 4;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  background: #f8fafc;
-  color: #334155;
-  font-weight: 700;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  background: #f8f9fb;
 }
-.version-diff-count {
-  color: #64748b;
+.version-compare-toolbar-label {
+  color: #606266;
+  font-size: 13px;
+  font-weight: 600;
+}
+.version-compare-toolbar-tip {
+  margin-left: auto;
+  color: #909399;
   font-size: 12px;
-  font-weight: 500;
+}
+.version-compare-toolbar ::v-deep .el-select {
+  width: 140px;
+}
+.version-compare-content {
+  min-height: 72px;
+  overflow-x: auto;
+}
+.version-compare-placeholder {
+  margin-top: 12px;
+  padding: 24px;
+  border: 1px dashed #dcdfe6;
+  color: #909399;
+  text-align: center;
+  font-size: 13px;
+}
+.version-compare-empty {
+  margin-top: 12px;
 }
 .version-tech-collapse {
   margin-top: 12px;
-}
-.diff-value-added {
-  color: #047857;
-  font-weight: 600;
-}
-.diff-value-removed {
-  color: #b91c1c;
-  text-decoration: line-through;
-}
-.diff-value-changed {
-  color: #92400e;
-  font-weight: 600;
 }
 ::v-deep .editing-row { background-color: #f0f9eb; }
 ::v-deep .el-table .editing-row td { background-color: #f0f9eb; }

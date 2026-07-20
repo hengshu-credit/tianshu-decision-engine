@@ -341,29 +341,48 @@ describe('RuleDetail execute test request', () => {
 describe('RuleDetail version history', () => {
   let wrapper
 
+  function deferred() {
+    let resolve
+    let reject
+    const promise = new Promise((res, rej) => { resolve = res; reject = rej })
+    return { promise, resolve, reject }
+  }
+
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.destroy() })
 
-  test('openVersionDialog loads versions', async () => {
+  test('打开版本历史后默认比较上一发布版与最新发布版', async () => {
     definitionApi.listVersions.mockResolvedValueOnce({
       data: [
+        { version: 3, modelJson: '{"a":3}', compiledScript: 'a = 3' },
         { version: 2, modelJson: '{"a":2}', compiledScript: 'a = 2' },
         { version: 1, modelJson: '{"a":1}', compiledScript: 'a = 1' }
       ]
+    })
+    definitionApi.compareVersions.mockResolvedValueOnce({
+      data: {
+        left: { version: 2, modelJson: '{"a":2}' },
+        right: { version: 3, modelJson: '{"a":3}' },
+        modelJsonChanged: true,
+        compiledScriptChanged: true
+      }
     })
 
     await wrapper.vm.openVersionDialog()
 
     expect(wrapper.vm.versionVisible).toBe(true)
     expect(definitionApi.listVersions).toHaveBeenCalledWith(1)
-    expect(wrapper.vm.versions.length).toBe(2)
+    expect(wrapper.vm.versions.length).toBe(3)
+    expect(wrapper.vm.leftVersionNumber).toBe(2)
+    expect(wrapper.vm.rightVersionNumber).toBe(3)
+    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 2, 3)
   })
 
-  test('compareVersion stores compare result', async () => {
+  test('对比上一版快捷入口保持旧版在左新版在右', async () => {
     definitionApi.compareVersions.mockResolvedValueOnce({
       data: {
-        left: { version: 2, modelJson: '{"a":2}', compiledScript: 'a = 2' },
-        right: { version: 1, modelJson: '{"a":1}', compiledScript: 'a = 1' },
+        left: { version: 1, modelJson: '{"a":1}', compiledScript: 'a = 1' },
+        right: { version: 2, modelJson: '{"a":2}', compiledScript: 'a = 2' },
         modelJsonChanged: true,
         compiledScriptChanged: true
       }
@@ -371,24 +390,68 @@ describe('RuleDetail version history', () => {
 
     await wrapper.vm.compareVersion({ version: 2 }, { version: 1 })
 
-    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 2, 1)
+    expect(wrapper.vm.leftVersionNumber).toBe(1)
+    expect(wrapper.vm.rightVersionNumber).toBe(2)
+    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 1, 2)
     expect(wrapper.vm.versionCompare.modelJsonChanged).toBe(true)
   })
 
-  test('versionDiffRows builds business diff rows', async () => {
-    wrapper.vm.versionCompare = {
-      left: { version: 2, modelJson: '{"rules":[{"conditions":[{"varLabel":"年龄","operator":">","value":20}]}]}' },
-      right: { version: 1, modelJson: '{"rules":[{"conditions":[{"varLabel":"年龄","operator":">","value":18}]}]}' }
-    }
+  test('可以选择任意两个已发布版本进行对比', async () => {
+    definitionApi.compareVersions.mockResolvedValueOnce({
+      data: { left: { version: 1 }, right: { version: 3 }, modelJsonChanged: true }
+    })
 
-    expect(wrapper.vm.versionDiffRows).toEqual([
-      {
-        path: '规则行[1].条件[1].取值',
-        leftText: '20',
-        rightText: '18',
-        type: 'changed'
-      }
-    ])
+    await wrapper.vm.selectVersionPair(1, 3)
+
+    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 1, 3)
+    expect(wrapper.vm.versionCompare.right.version).toBe(3)
+  })
+
+  test('相同版本不发起对比请求', async () => {
+    await wrapper.vm.selectVersionPair(2, 2)
+
+    expect(definitionApi.compareVersions).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('请选择两个不同的发布版本')
+  })
+
+  test('交换版本后按新方向重新对比', async () => {
+    wrapper.vm.leftVersionNumber = 1
+    wrapper.vm.rightVersionNumber = 3
+    definitionApi.compareVersions.mockResolvedValueOnce({
+      data: { left: { version: 3 }, right: { version: 1 }, modelJsonChanged: true }
+    })
+
+    await wrapper.vm.swapVersionCompare()
+
+    expect(wrapper.vm.leftVersionNumber).toBe(3)
+    expect(wrapper.vm.rightVersionNumber).toBe(1)
+    expect(definitionApi.compareVersions).toHaveBeenCalledWith(1, 3, 1)
+  })
+
+  test('快速切换时只保留最后一次版本对比响应', async () => {
+    const first = deferred()
+    const second = deferred()
+    definitionApi.compareVersions.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise)
+
+    const firstRequest = wrapper.vm.selectVersionPair(1, 2)
+    const secondRequest = wrapper.vm.selectVersionPair(2, 3)
+    second.resolve({ data: { left: { version: 2 }, right: { version: 3 } } })
+    await secondRequest
+    first.resolve({ data: { left: { version: 1 }, right: { version: 2 } } })
+    await firstRequest
+
+    expect(wrapper.vm.versionCompare.left.version).toBe(2)
+    expect(wrapper.vm.versionCompare.right.version).toBe(3)
+  })
+
+  test('发布版本不足两个时不自动对比', async () => {
+    definitionApi.listVersions.mockResolvedValueOnce({ data: [{ version: 1 }] })
+
+    await wrapper.vm.openVersionDialog()
+
+    expect(wrapper.vm.leftVersionNumber).toBeNull()
+    expect(wrapper.vm.rightVersionNumber).toBeNull()
+    expect(definitionApi.compareVersions).not.toHaveBeenCalled()
   })
 
   test('rollbackVersion calls rollback and refreshes data', async () => {

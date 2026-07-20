@@ -75,12 +75,13 @@ describe('LayoutSidebar', () => {
     wrapper.destroy()
   })
 
-  test('折叠按钮发送 toggle-collapse', async() => {
-    const wrapper = mountSidebar()
-    await wrapper.find('.sidebar-collapse').trigger('click')
-    expect(wrapper.emitted('toggle-collapse')).toHaveLength(1)
-    wrapper.destroy()
-  })
+  // 侧边栏折叠按钮当前不启用，对应交互用例随组件模板一并停用。
+  // test('折叠按钮发送 toggle-collapse', async() => {
+  //   const wrapper = mountSidebar()
+  //   await wrapper.find('.sidebar-collapse').trigger('click')
+  //   expect(wrapper.emitted('toggle-collapse')).toHaveLength(1)
+  //   wrapper.destroy()
+  // })
 
   test('拖拽时按鼠标位移发送宽度并在结束时发送最终宽度', async() => {
     const wrapper = mountSidebar({ width: 220 })
