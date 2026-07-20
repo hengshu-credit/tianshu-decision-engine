@@ -6,13 +6,13 @@ export const SIDEBAR_STORAGE_KEY = 'tianshu:layout:sidebar'
 
 export const SIDEBAR_MENUS = [
   { index: '/project', label: '项目管理', icon: 'el-icon-folder-opened' },
-  { index: '/rule', label: '规则管理', icon: 'el-icon-s-check' },
+  { index: '/rule', label: '规则管理', icon: 'el-icon-s-operation' },
   { index: '/variable', label: '变量管理', icon: 'el-icon-collection' },
   { index: '/list', label: '名单管理', icon: 'el-icon-notebook-2' },
   { index: '/datasource', label: '外数管理', icon: 'el-icon-connection' },
-  { index: '/database', label: '数据库管理', icon: 'el-icon-s-platform' },
+  { index: '/database', label: '数据库管理', icon: 'el-icon-coin' },
   { index: '/model', label: '模型管理', icon: 'el-icon-cpu' },
-  { index: '/function', label: '函数管理', icon: 'el-icon-s-operation' },
+  { index: '/function', label: '函数管理', icon: 'el-icon-c-scale-to-original' },
   { index: '/test', label: '规则测试', icon: 'el-icon-video-play' },
   { index: '/lineage', label: '血缘分析', icon: 'el-icon-share' },
   { index: '/experiment', label: '分流实验', icon: 'el-icon-s-flag' },

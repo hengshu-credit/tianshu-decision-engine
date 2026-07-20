@@ -289,7 +289,7 @@ export default {
         tree.push({
           key: '__function__',
           label: '自定义函数',
-          icon: 'el-icon-s-operation',
+          icon: 'el-icon-c-scale-to-original',
           hasSubGroups: false,
           children: this.projectFunctions.map(f => ({
             varCode: f.funcCode + '()',

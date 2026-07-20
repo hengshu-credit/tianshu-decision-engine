@@ -23,15 +23,39 @@
         empty-text="暂无 API 外数调用数据"
         @retry="loadStats"
       >
-        <div class="stats-grid">
-          <div class="stat-card"><span>供应商查询次数</span><strong>{{ statsOverview.queryCount || 0 }}</strong></div>
-          <div class="stat-card"><span>缓存命中率</span><strong>{{ formatRate(statsOverview.cacheHitRate) }}</strong></div>
-          <div class="stat-card"><span>请求成功率</span><strong>{{ formatRate(statsOverview.requestSuccessRate) }}</strong></div>
-          <div class="stat-card"><span>失败率</span><strong>{{ formatRate(statsOverview.failureRate) }}</strong></div>
-          <div class="stat-card"><span>查得率</span><strong>{{ formatRate(statsOverview.foundRate) }}</strong></div>
-          <div class="stat-card"><span>平均耗时</span><strong>{{ formatMs(statsOverview.avgCostTimeMs) }}</strong></div>
-          <div class="stat-card"><span>P95 耗时</span><strong>{{ formatMs(statsOverview.p95CostTimeMs) }}</strong></div>
-          <div class="stat-card"><span>P99 耗时</span><strong>{{ formatMs(statsOverview.p99CostTimeMs) }}</strong></div>
+        <!--
+          不使用 Element UI el-row/el-col，也不依赖 scoped 样式是否被正确注入。
+          关键布局直接写入内联样式，避免项目中的全局样式覆盖列宽。
+        -->
+        <div
+          class="datasource-stats-layout"
+          data-layout="two-rows-four-columns"
+          style="display:flex !important; flex-flow:row wrap !important; align-items:stretch !important; width:100% !important; margin:0 -6px 4px !important;"
+        >
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>供应商查询次数</span><strong>{{ statsOverview.queryCount || 0 }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>缓存命中率</span><strong>{{ formatRate(statsOverview.cacheHitRate) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>请求成功率</span><strong>{{ formatRate(statsOverview.requestSuccessRate) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>失败率</span><strong>{{ formatRate(statsOverview.failureRate) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>查得率</span><strong>{{ formatRate(statsOverview.foundRate) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>平均耗时</span><strong>{{ formatMs(statsOverview.avgCostTimeMs) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>P95 耗时</span><strong>{{ formatMs(statsOverview.p95CostTimeMs) }}</strong></div>
+          </div>
+          <div class="datasource-stat-cell" style="box-sizing:border-box !important; flex:0 0 25% !important; width:25% !important; max-width:25% !important; padding:0 6px 12px !important;">
+            <div class="stat-card" style="width:100% !important; height:100% !important;"><span>P99 耗时</span><strong>{{ formatMs(statsOverview.p99CostTimeMs) }}</strong></div>
+          </div>
         </div>
         <el-table :data="externalStats.providers" border size="small" class="provider-table">
           <el-table-column prop="targetCode" label="接口编码" min-width="140" show-overflow-tooltip />
@@ -491,27 +515,40 @@ export default {
   gap: 12px;
   margin-bottom: 12px;
 }
-.stats-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(140px, 1fr));
-  gap: 10px;
-  margin-bottom: 12px;
+.datasource-stats-layout {
+  display: flex !important;
+  flex-flow: row wrap !important;
+  align-items: stretch !important;
+  width: 100% !important;
+  margin: 0 -6px 4px !important;
+}
+.datasource-stat-cell {
+  box-sizing: border-box !important;
+  flex: 0 0 25% !important;
+  width: 25% !important;
+  max-width: 25% !important;
+  padding: 0 6px 12px !important;
 }
 .stat-card {
-  border: 1px solid #e2e8f0;
+  min-width: 0;
+  min-height: 86px;
+  padding: 16px;
+  border: 1px solid #ebeef5;
   border-radius: 4px;
   background: #fff;
-  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
 }
 .stat-card span {
-  display: block;
-  color: #64748b;
-  font-size: 12px;
-  margin-bottom: 6px;
+  color: #909399;
+  font-size: 13px;
 }
 .stat-card strong {
-  color: #0f172a;
-  font-size: 20px;
+  color: #303133;
+  font-size: 24px;
+  line-height: 1.2;
 }
 .provider-table {
   background: #fff;
@@ -576,10 +613,5 @@ export default {
   font-size: 12px;
   line-height: 1.5;
   font-family: Menlo, Monaco, Consolas, monospace;
-}
-@media (max-width: 1000px) {
-  .stats-grid {
-    grid-template-columns: repeat(2, minmax(140px, 1fr));
-  }
 }
 </style>
