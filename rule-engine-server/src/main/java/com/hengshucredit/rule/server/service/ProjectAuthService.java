@@ -18,9 +18,11 @@ import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.auth.HmacRequestSigner;
 import com.hengshucredit.rule.server.auth.ProjectAuthReplayGuard;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.auth.ProjectAccessPolicy;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import com.hengshucredit.rule.server.auth.ProjectTokenRateLimiter;
+import com.hengshucredit.rule.server.auth.TrustedClientAddressResolver;
 import com.hengshucredit.rule.server.mapper.RuleAuthAccessLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthTokenMapper;
@@ -78,6 +80,15 @@ public class ProjectAuthService {
 
     @Resource
     private ProjectTokenRateLimiter tokenRateLimiter;
+
+    @Resource
+    private TrustedClientAddressResolver clientAddressResolver;
+
+    @Resource
+    private AuthAccessLogAsyncWriter authAccessLogAsyncWriter;
+
+    @Resource
+    private ProjectTokenLastUsedCoalescer tokenLastUsedCoalescer;
 
     public ProjectAuthService(CredentialCipher credentialCipher) {
         this.credentialCipher = credentialCipher;
@@ -327,6 +338,7 @@ public class ProjectAuthService {
             auth.setAuthType(ProjectAuthType.LEGACY_TOKEN);
             auth.setTokenTtlSeconds(DEFAULT_TOKEN_TTL_SECONDS);
             auth.setTokenGraceSeconds(DEFAULT_TOKEN_GRACE_SECONDS);
+            auth.setAsyncAccessLogEnabled(1);
             auth.setStatus(1);
             setSecret(auth, token, token);
             insertAuth(auth);
@@ -361,10 +373,15 @@ public class ProjectAuthService {
         accessLog.setClientIp(truncate(resolveClientIp(request), 64));
         accessLog.setSuccess(success ? 1 : 0);
         accessLog.setFailureReason(success ? null : truncate(failureReason, 512));
-        try {
-            insertAccessLog(accessLog);
-        } catch (RuntimeException e) {
-            log.error("Unable to persist project authentication access log", e);
+        if (authAccessLogAsyncWriter != null
+                && (context == null || context.isAsyncAccessLogEnabled())) {
+            authAccessLogAsyncWriter.offer(accessLog);
+        } else {
+            try {
+                insertAccessLog(accessLog);
+            } catch (RuntimeException e) {
+                log.error("Unable to persist project authentication access log", e);
+            }
         }
     }
 
@@ -373,13 +390,16 @@ public class ProjectAuthService {
         RuleProject project = requireProject(projectId);
         RuleProjectAuth auth = requireAuth(projectId, authId);
         ProjectAuthContext context;
+        boolean asyncLog = !Integer.valueOf(0).equals(auth.getAsyncAccessLogEnabled());
+        ProjectAccessPolicy policy = ProjectAccessPolicy.parse(auth.getAccessPolicyJson());
         if (tokenId == null) {
             context = ProjectAuthContext.direct(project.getId(), project.getProjectCode(), auth.getId(),
-                    auth.getAuthCode(), auth.getAuthType());
+                    auth.getAuthCode(), auth.getAuthType(), policy, asyncLog);
         } else {
             RuleProjectAuthToken token = requireToken(projectId, authId, tokenId);
             context = ProjectAuthContext.temporary(project.getId(), project.getProjectCode(), auth.getId(),
-                    auth.getAuthCode(), auth.getAuthType(), token.getId(), token.getTokenCode(), "MANAGEMENT");
+                    auth.getAuthCode(), auth.getAuthType(), token.getId(), token.getTokenCode(),
+                    "MANAGEMENT", policy, asyncLog);
         }
         recordAccess(request, context, true, null);
     }
@@ -552,15 +572,19 @@ public class ProjectAuthService {
         String phase = now.isAfter(token.getExpireTime()) ? "GRACE" : "VALID";
         ProjectAuthContext context = directContext(auth);
         if (context == null) return null;
-        token.setLastUsedTime(now);
-        try {
-            updateToken(token);
-        } catch (RuntimeException e) {
-            log.warn("Unable to update project token last-used time: {}", token.getTokenCode(), e);
+        if (tokenLastUsedCoalescer != null) {
+            tokenLastUsedCoalescer.touch(token.getId(), now);
+        } else {
+            token.setLastUsedTime(now);
+            try {
+                updateToken(token);
+            } catch (RuntimeException e) {
+                log.warn("Unable to update project token last-used time: {}", token.getTokenCode(), e);
+            }
         }
         return ProjectAuthContext.temporary(context.getProjectId(), context.getProjectCode(),
                 context.getAuthId(), context.getAuthCode(), context.getAuthType(), token.getId(),
-                token.getTokenCode(), phase);
+                token.getTokenCode(), phase, context.getAccessPolicy(), context.isAsyncAccessLogEnabled());
     }
 
     private ProjectAuthContext authenticateTokenBody(HttpServletRequest request) {
@@ -636,7 +660,8 @@ public class ProjectAuthService {
         RuleProject project = findProjectById(auth.getProjectId());
         if (project == null || !Integer.valueOf(1).equals(project.getStatus())) return null;
         return ProjectAuthContext.direct(project.getId(), project.getProjectCode(), auth.getId(),
-                auth.getAuthCode(), auth.getAuthType());
+                auth.getAuthCode(), auth.getAuthType(), ProjectAccessPolicy.parse(auth.getAccessPolicyJson()),
+                !Integer.valueOf(0).equals(auth.getAsyncAccessLogEnabled()));
     }
 
     private boolean isUsable(RuleProjectAuth auth, String expectedType) {
@@ -730,7 +755,7 @@ public class ProjectAuthService {
     }
 
     protected String resolveClientIp(HttpServletRequest request) {
-        return request.getRemoteAddr();
+        return clientAddressResolver == null ? request.getRemoteAddr() : clientAddressResolver.resolve(request);
     }
 
     private String truncate(String value, int maxLength) {
@@ -834,6 +859,19 @@ public class ProjectAuthService {
         } else if (creating) {
             auth.setStatus(1);
         }
+        if (request.getAccessPolicyJson() != null) {
+            auth.setAccessPolicyJson(ProjectAccessPolicy.parse(request.getAccessPolicyJson()).toJson());
+        } else if (creating) {
+            auth.setAccessPolicyJson(null);
+        }
+        if (request.getAsyncAccessLogEnabled() != null) {
+            if (request.getAsyncAccessLogEnabled() != 0 && request.getAsyncAccessLogEnabled() != 1) {
+                throw new IllegalArgumentException("asyncAccessLogEnabled 必须为 0 或 1");
+            }
+            auth.setAsyncAccessLogEnabled(request.getAsyncAccessLogEnabled());
+        } else if (creating) {
+            auth.setAsyncAccessLogEnabled(1);
+        }
 
         String identifier = currentIdentifier(auth, request.getIdentifier());
         String secret = currentSecret(auth, request.getSecret());
@@ -925,8 +963,10 @@ public class ProjectAuthService {
         if (StringUtils.hasText(auth.getConfigJson())) {
             JSONObject config = JSON.parseObject(auth.getConfigJson());
             dto.setPlacement(config.getString("placement"));
-            dto.setParameterName(config.getString("parameterName"));
+        dto.setParameterName(config.getString("parameterName"));
         }
+        dto.setAccessPolicyJson(auth.getAccessPolicyJson());
+        dto.setAsyncAccessLogEnabled(auth.getAsyncAccessLogEnabled());
         dto.setTokenTtlSeconds(auth.getTokenTtlSeconds());
         dto.setTokenGraceSeconds(auth.getTokenGraceSeconds());
         dto.setStatus(auth.getStatus());

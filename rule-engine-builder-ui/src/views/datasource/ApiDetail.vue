@@ -110,6 +110,15 @@
                   <el-input-number v-model="form.tokenCacheSeconds" :min="0" :step="60" style="width:100%" />
                 </el-form-item>
               </el-col>
+              <el-col :lg="8" :md="24">
+                <el-form-item label="提前刷新秒">
+                  <el-input-number v-model="form.tokenRefreshAheadSeconds" :min="0" :max="3600" :step="10" style="width:100%" />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :lg="8" :md="12"><el-form-item label="鉴权失败刷新"><el-switch v-model="form.tokenRefreshOnUnauthorized" :active-value="1" :inactive-value="0" active-text="401/403 刷新一次" /></el-form-item></el-col>
+              <el-col :lg="8" :md="12"><el-form-item label="Token日志"><el-switch v-model="form.tokenLogEnabled" :active-value="1" :inactive-value="0" active-text="记录获取/刷新" /></el-form-item></el-col>
             </el-row>
 
             <div v-if="form.authMode === 'INHERIT' || form.authMode === 'NONE'" class="empty-state">
@@ -201,6 +210,36 @@
               <monaco-editor v-model="form.authApiConfig" language="json" height="180px" />
             </el-form-item>
 
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="连接&流控" name="connection">
+          <div class="tab-section">
+            <div class="config-card">
+              <div class="section-title">独立连接池</div>
+              <div class="field-help">每个 API 配置使用独立连接池；获取连接、建连、读取和连接生命周期分别受控，避免慢供应商拖垮其他接口。</div>
+              <el-row :gutter="12">
+                <el-col :lg="6" :md="12"><el-form-item label="最大连接"><el-input-number v-model="form.maxConnections" :min="1" :max="10000" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="单路由连接"><el-input-number v-model="form.maxConnectionsPerRoute" :min="1" :max="form.maxConnections || 1" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="取连接超时"><el-input-number v-model="form.connectionRequestTimeoutMs" :min="1" :max="600000" :step="100" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="建连超时"><el-input-number v-model="form.connectTimeoutMs" :min="1" :max="600000" :step="100" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+              <el-row :gutter="12">
+                <el-col :lg="6" :md="12"><el-form-item label="读取超时"><el-input-number v-model="form.readTimeoutMs" :min="1" :max="600000" :step="100" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="空闲清理秒"><el-input-number v-model="form.idleConnectionTimeoutSeconds" :min="1" :max="3600" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="连接TTL秒"><el-input-number v-model="form.connectionTtlSeconds" :min="1" :max="86400" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+            </div>
+            <div class="config-card">
+              <div class="section-title">限流与隔离</div>
+              <div class="field-help">QPS 为空表示不限流；并发等待为 0 时超出并发立即失败。所有等待都会受当前规则请求总截止时间约束。</div>
+              <el-row :gutter="12">
+                <el-col :lg="6" :md="12"><el-form-item label="QPS"><el-input-number v-model="form.qpsLimit" :min="0" :max="100000" :precision="2" :step="1" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="突发容量"><el-input-number v-model="form.burstCapacity" :disabled="!form.qpsLimit" :min="1" :max="1000000" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="最大并发"><el-input-number v-model="form.maxConcurrent" :min="1" :max="10000" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="6" :md="12"><el-form-item label="并发等待ms"><el-input-number v-model="form.concurrentWaitTimeoutMs" :min="0" :max="60000" :step="100" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+            </div>
           </div>
         </el-tab-pane>
 
@@ -661,6 +700,30 @@
                 </el-form-item>
               </el-col>
             </el-row>
+            <div class="config-card">
+              <div class="section-title">重试判定与退避</div>
+              <div class="field-help">默认只重试 502/503/504 和连接错误；读取超时默认不重试，避免供应商已受理时重复扣费或重复提交。</div>
+              <el-row :gutter="12">
+                <el-col :lg="8" :md="24"><el-form-item label="HTTP状态码"><el-input v-model="form.retryStatusCodes" placeholder="502,503,504" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="连接错误"><el-switch v-model="form.retryOnConnectionError" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="读取超时"><el-switch v-model="form.retryOnTimeout" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="退避倍数"><el-input-number v-model="form.retryBackoffMultiplier" :min="1" :max="10" :precision="2" :step="0.5" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="最大间隔ms"><el-input-number v-model="form.retryMaxIntervalMs" :min="0" :max="60000" :step="100" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+            </div>
+            <div class="config-card">
+              <div class="section-toolbar compact">
+                <div><div class="section-title">熔断保护</div><div class="field-help">按 API 独立统计滑动窗口；打开后经过等待时间进入半开探测。</div></div>
+                <el-switch v-model="form.circuitBreakerEnabled" :active-value="1" :inactive-value="0" active-text="启用" />
+              </div>
+              <el-row v-if="form.circuitBreakerEnabled === 1" :gutter="12">
+                <el-col :lg="4" :md="8"><el-form-item label="失败率%"><el-input-number v-model="form.circuitFailureRate" :min="1" :max="100" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="最小调用数"><el-input-number v-model="form.circuitMinCalls" :min="1" :max="10000" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="窗口大小"><el-input-number v-model="form.circuitWindowSize" :min="form.circuitMinCalls || 1" :max="10000" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="打开秒数"><el-input-number v-model="form.circuitOpenSeconds" :min="1" :max="3600" style="width:100%" /></el-form-item></el-col>
+                <el-col :lg="4" :md="8"><el-form-item label="半开探测数"><el-input-number v-model="form.circuitHalfOpenCalls" :min="1" :max="1000" style="width:100%" /></el-form-item></el-col>
+              </el-row>
+            </div>
             <el-form-item v-if="form.exceptionStrategy === 'RETURN_DEFAULT'" label="兜底返回">
               <monaco-editor v-model="form.fallbackValue" language="json" height="180px" />
               <div class="field-help">接口异常时作为返回结果，响应映射后的接口变量仍可按 <code>body.xxx</code> 读取。</div>
@@ -687,6 +750,12 @@
                   <el-input-number v-model="form.unitPrice" :min="0" :precision="6" :step="0.01" style="width:100%" />
                 </el-form-item>
               </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :lg="6" :md="12"><el-form-item label="本地最大条数"><el-input-number v-model="form.responseCacheMaxSize" :min="1" :max="1000000" style="width:100%" /></el-form-item></el-col>
+              <el-col :lg="6" :md="12"><el-form-item label="单条最大字节"><el-input-number v-model="form.responseCacheMaxBytes" :min="1024" :max="10485760" :step="1024" style="width:100%" /></el-form-item></el-col>
+              <el-col :lg="6" :md="12"><el-form-item label="Redis二级缓存"><el-switch v-model="form.responseCacheRedisEnabled" :active-value="1" :inactive-value="0" /></el-form-item></el-col>
+              <el-col :lg="6" :md="12"><el-form-item label="过期兜底秒"><el-input-number v-model="form.staleCacheSeconds" :min="0" :max="86400" :step="60" style="width:100%" /></el-form-item></el-col>
             </el-row>
 
             <div class="config-card">
@@ -994,7 +1063,17 @@ export default {
         headerConfig: '', queryConfig: '', requestMapping: '', responseMapping: '', bodyTemplate: '',
         requestScript: '', responseScript: '',
         authMode: 'INHERIT', authApiConfig: '', tokenCacheSeconds: 0, timeoutMs: 3000, retryCount: 0,
-        retryIntervalMs: 200, responseCacheSeconds: 0, cacheKeyConfig: '', successCondition: '',
+        maxConnections: 100, maxConnectionsPerRoute: 100, connectionRequestTimeoutMs: 100,
+        connectTimeoutMs: 500, readTimeoutMs: 3000, idleConnectionTimeoutSeconds: 30,
+        connectionTtlSeconds: 300, qpsLimit: null, burstCapacity: null, maxConcurrent: 50,
+        concurrentWaitTimeoutMs: 0, tokenRefreshAheadSeconds: 60, tokenRefreshOnUnauthorized: 1,
+        tokenLogEnabled: 1, retryIntervalMs: 200, retryStatusCodes: '502,503,504',
+        retryOnConnectionError: 1, retryOnTimeout: 0, retryBackoffMultiplier: 2,
+        retryMaxIntervalMs: 1000, circuitBreakerEnabled: 1, circuitFailureRate: 50,
+        circuitMinCalls: 20, circuitWindowSize: 50, circuitOpenSeconds: 10,
+        circuitHalfOpenCalls: 5, responseCacheSeconds: 0, responseCacheMaxSize: 10000,
+        responseCacheMaxBytes: 1048576, responseCacheRedisEnabled: 0, staleCacheSeconds: 0,
+        cacheKeyConfig: '', successCondition: '',
         exceptionStrategy: 'FAIL_FAST', fallbackValue: '',
         asyncResultMode: 'POLL', asyncPollConfig: '', asyncCallbackConfig: '', asyncCallbackUrl: '',
         asyncResultPath: '', billingItemCode: '', billingCondition: '', unitPrice: 0, description: '',

@@ -185,7 +185,14 @@ public class RuleDefinitionController {
     public R<Void> saveContent(@RequestBody Map<String, Object> body) {
         Long definitionId = Long.valueOf(body.get("definitionId").toString());
         String modelJson = normalizeModelJson(body.get("modelJson").toString());
-        definitionService.saveContent(definitionId, modelJson);
+        if (body.containsKey("openApiConfigJson")) {
+            Object config = body.get("openApiConfigJson");
+            String configJson = config == null ? null
+                    : (config instanceof String ? (String) config : com.alibaba.fastjson.JSON.toJSONString(config));
+            definitionService.saveContent(definitionId, modelJson, configJson);
+        } else {
+            definitionService.saveContent(definitionId, modelJson);
+        }
         return R.ok();
     }
 

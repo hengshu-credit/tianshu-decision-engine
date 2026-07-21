@@ -10,6 +10,9 @@ import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
+import com.hengshucredit.rule.server.openapi.OpenApiContract;
+import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
+import com.hengshucredit.rule.server.openapi.OpenRequestMapper;
 import com.hengshucredit.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
@@ -17,7 +20,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import javax.annotation.Resource;
 import java.time.LocalDateTime;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -83,6 +88,13 @@ public class RulePublishService {
             return "规则内容不存在";
         }
 
+        String openApiConfigJson;
+        try {
+            openApiConfigJson = validateOpenApiContract(definitionId, content.getOpenApiConfigJson());
+        } catch (IllegalArgumentException e) {
+            return "开放接口配置无效: " + e.getMessage();
+        }
+
         if (referenceIntegrityService != null) {
             try {
                 referenceIntegrityService.assertValid(definitionId, definition.getProjectId(), content.getModelJson());
@@ -102,6 +114,11 @@ public class RulePublishService {
                 return "编译失败: " + compileResult.getErrorMessage();
             }
             content = definitionService.getContent(definitionId);
+            try {
+                openApiConfigJson = validateOpenApiContract(definitionId, content.getOpenApiConfigJson());
+            } catch (IllegalArgumentException e) {
+                return "开放接口配置无效: " + e.getMessage();
+            }
         }
 
         int newVersion = (definition.getPublishedVersion() != null ? definition.getPublishedVersion() : 0) + 1;
@@ -122,6 +139,7 @@ public class RulePublishService {
         version.setModelJson(content.getModelJson());
         version.setCompiledScript(content.getCompiledScript());
         version.setCompiledType(content.getCompiledType());
+        version.setOpenApiConfigJson(openApiConfigJson);
         version.setChangeLog(changeLog);
         versionMapper.insert(version);
 
@@ -151,6 +169,7 @@ public class RulePublishService {
             published.setStatus(1);
             publishedMapper.insert(published);
         }
+        publishedMapper.updateOpenApiConfigByDefinitionId(definitionId, openApiConfigJson);
 
         definition.setPublishedVersion(newVersion);
         definition.setStatus(1);
@@ -177,6 +196,27 @@ public class RulePublishService {
         pushService.push(pushMessage);
 
         return null;
+    }
+
+    private String validateOpenApiContract(Long definitionId, String configJson) {
+        String normalized = OpenApiContractCodec.validateAndNormalize(configJson);
+        if (normalized == null) return null;
+        OpenApiContract contract = OpenApiContractCodec.parse(normalized);
+        if (!contract.isEnabled() || contract.getRequestMappings().isEmpty()) return normalized;
+        Set<String> availableReferences = new HashSet<>();
+        List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
+        if (fields != null) {
+            for (RuleDefinitionInputField field : fields) {
+                if (Integer.valueOf(0).equals(field.getStatus())
+                        || field.getScriptName() == null || field.getScriptName().trim().isEmpty()) {
+                    continue;
+                }
+                String reference = OpenRequestMapper.referenceKey(field.getRefType(), field.getVarId());
+                if (reference != null) availableReferences.add(reference);
+            }
+        }
+        OpenApiContractCodec.validateRequestReferences(contract, availableReferences);
+        return normalized;
     }
 
     @Transactional

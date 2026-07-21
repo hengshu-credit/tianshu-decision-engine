@@ -13,9 +13,12 @@ public class ProjectAuthContext {
     private final Long tokenId;
     private final String tokenCode;
     private final String authPhase;
+    private final ProjectAccessPolicy accessPolicy;
+    private final boolean asyncAccessLogEnabled;
 
     private ProjectAuthContext(Long projectId, String projectCode, Long authId, String authCode,
-                               String authType, Long tokenId, String tokenCode, String authPhase) {
+                               String authType, Long tokenId, String tokenCode, String authPhase,
+                               ProjectAccessPolicy accessPolicy, boolean asyncAccessLogEnabled) {
         this.projectId = projectId;
         this.projectCode = projectCode;
         this.authId = authId;
@@ -24,19 +27,53 @@ public class ProjectAuthContext {
         this.tokenId = tokenId;
         this.tokenCode = tokenCode;
         this.authPhase = authPhase;
+        this.accessPolicy = accessPolicy == null ? new ProjectAccessPolicy() : accessPolicy;
+        this.asyncAccessLogEnabled = asyncAccessLogEnabled;
     }
 
     public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
                                             String authCode, String authType) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                null, null, "DIRECT");
+                null, null, "DIRECT", new ProjectAccessPolicy(), true);
+    }
+
+    public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
+                                            String authCode, String authType,
+                                            ProjectAccessPolicy accessPolicy) {
+        return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
+                null, null, "DIRECT", accessPolicy, true);
+    }
+
+    public static ProjectAuthContext direct(Long projectId, String projectCode, Long authId,
+                                            String authCode, String authType,
+                                            ProjectAccessPolicy accessPolicy,
+                                            boolean asyncAccessLogEnabled) {
+        return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
+                null, null, "DIRECT", accessPolicy, asyncAccessLogEnabled);
     }
 
     public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
                                                String authCode, String authType, Long tokenId,
                                                String tokenCode, String authPhase) {
         return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
-                tokenId, tokenCode, authPhase);
+                tokenId, tokenCode, authPhase, new ProjectAccessPolicy(), true);
+    }
+
+    public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
+                                               String authCode, String authType, Long tokenId,
+                                               String tokenCode, String authPhase,
+                                               ProjectAccessPolicy accessPolicy) {
+        return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
+                tokenId, tokenCode, authPhase, accessPolicy, true);
+    }
+
+    public static ProjectAuthContext temporary(Long projectId, String projectCode, Long authId,
+                                               String authCode, String authType, Long tokenId,
+                                               String tokenCode, String authPhase,
+                                               ProjectAccessPolicy accessPolicy,
+                                               boolean asyncAccessLogEnabled) {
+        return new ProjectAuthContext(projectId, projectCode, authId, authCode, authType,
+                tokenId, tokenCode, authPhase, accessPolicy, asyncAccessLogEnabled);
     }
 
     public void attach(HttpServletRequest request) {
@@ -62,4 +99,6 @@ public class ProjectAuthContext {
     public Long getTokenId() { return tokenId; }
     public String getTokenCode() { return tokenCode; }
     public String getAuthPhase() { return authPhase; }
+    public ProjectAccessPolicy getAccessPolicy() { return accessPolicy; }
+    public boolean isAsyncAccessLogEnabled() { return asyncAccessLogEnabled; }
 }

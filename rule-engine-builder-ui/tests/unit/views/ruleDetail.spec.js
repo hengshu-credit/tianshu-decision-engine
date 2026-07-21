@@ -61,10 +61,11 @@ function makeSlotStub(tag) {
   }
 }
 
-async function mountAndWait() {
+async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null }) {
   // load() 先调用 refreshFields 重新解析字段，再调用 getDefinitionDetail 获取详情
   definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
   definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
+  definitionApi.getContent.mockResolvedValueOnce({ data: content })
   variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
   variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
 
@@ -98,6 +99,9 @@ async function mountAndWait() {
       'el-table': makeStub('table'),
       'el-table-column': makeStub('td'),
       'el-input-number': makeStub('input'),
+      'el-switch': makeStub('input'),
+      'el-row': makeSlotStub('div'),
+      'el-col': makeSlotStub('div'),
       'el-date-picker': makeStub('div'),
       'el-divider': makeStub('hr'),
       'el-tooltip': makeStub('span'),
@@ -210,6 +214,71 @@ describe('RuleDetail — 辅助方法', () => {
 
     expect(wrapper.vm.fieldDisplayLabel(row)).toBe('银行卡号')
     expect(wrapper.vm.getFieldVarMap(row)).toBeNull()
+  })
+})
+
+describe('RuleDetail — 开放接口契约', () => {
+  test('统一响应编辑项位于 Element UI 表单内', async () => {
+    const wrapper = await mountAndWait()
+
+    expect(wrapper.find('.open-api-response-form').exists()).toBe(true)
+    wrapper.destroy()
+  })
+
+  test('加载并按稳定引用 ID 保存请求映射和可配置外层响应', async () => {
+    const contract = {
+      enabled: true,
+      recordTrace: true,
+      returnTrace: false,
+      requestMappings: [{
+        targetVarId: 1,
+        targetRefType: 'VARIABLE',
+        sourceType: 'BODY',
+        sourcePath: '$.customer.age',
+        required: true,
+        targetType: 'INTEGER'
+      }],
+      envelopeTemplate: { retCode: '${status.code}', payload: '${data}' },
+      dataPath: '$.payload',
+      successDataTemplate: { result: '${output.VARIABLE.3}' },
+      errorDataTemplate: { errorCode: '${status.code}' },
+      responseHeaders: { 'X-Business-Code': '${status.code}' }
+    }
+    const wrapper = await mountAndWait({ modelJson: '{"type":"table"}', openApiConfigJson: JSON.stringify(contract) })
+    definitionApi.saveContent.mockResolvedValueOnce({})
+
+    expect(wrapper.vm.openApiForm.requestMappings[0].targetKey).toBe('VARIABLE:1')
+    expect(wrapper.vm.openEnvelopeText).toContain('payload')
+    await wrapper.vm.saveOpenApiConfig()
+
+    const payload = definitionApi.saveContent.mock.calls[0][0]
+    const saved = JSON.parse(payload.openApiConfigJson)
+    expect(payload.modelJson).toBe('{"type":"table"}')
+    expect(saved.requestMappings[0]).toEqual(expect.objectContaining({
+      targetVarId: 1,
+      targetRefType: 'VARIABLE',
+      sourcePath: '$.customer.age'
+    }))
+    expect(saved.envelopeTemplate.payload).toBe('${data}')
+    expect(saved.responseHeaders['X-Business-Code']).toBe('${status.code}')
+    wrapper.destroy()
+  })
+
+  test('校验预览使用同一外层结构并分别渲染成功和异常 data', async () => {
+    const wrapper = await mountAndWait()
+    wrapper.vm.openApiForm.enabled = true
+    wrapper.vm.openEnvelopeText = JSON.stringify({ code: '${status.code}', payload: '${data}' })
+    wrapper.vm.openApiForm.dataPath = '$.payload'
+    wrapper.vm.openSuccessDataText = JSON.stringify({ decision: '${output.VARIABLE.3}' })
+    wrapper.vm.openErrorDataText = JSON.stringify({ errorCode: '${status.code}' })
+
+    wrapper.vm.previewOpenApiConfig()
+
+    expect(wrapper.vm.openApiPreviewVisible).toBe(true)
+    expect(Object.keys(wrapper.vm.openApiSuccessPreview)).toEqual(Object.keys(wrapper.vm.openApiErrorPreview))
+    expect(wrapper.vm.openApiSuccessPreview.payload.decision).toBe('<VARIABLE:3>')
+    expect(wrapper.vm.openApiErrorPreview.payload.errorCode).toBe('REQUEST_INVALID')
+    wrapper.destroy()
   })
 })
 

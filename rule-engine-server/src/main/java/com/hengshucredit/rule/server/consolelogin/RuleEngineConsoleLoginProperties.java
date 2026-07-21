@@ -35,6 +35,7 @@ public class RuleEngineConsoleLoginProperties {
             "/api/auth/**",
             "/api/rule/auth/token",
             "/api/rule/sync/**",
+            "/api/rule/open/**",
             "/api/rule/log/report"
     ));
 

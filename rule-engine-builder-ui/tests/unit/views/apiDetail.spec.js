@@ -448,3 +448,26 @@ describe('ApiDetail helpers', () => {
     expect(ctx.requestPreviewText).toContain('"networkCalled": false')
   })
 })
+describe('ApiDetail resilience settings', () => {
+  test('new API contains bounded connection, flow, retry, circuit and cache defaults', () => {
+    const form = ApiDetail.methods.emptyForm()
+
+    expect(form).toEqual(expect.objectContaining({
+      maxConnections: 100,
+      maxConnectionsPerRoute: 100,
+      connectionRequestTimeoutMs: 100,
+      connectTimeoutMs: 500,
+      readTimeoutMs: 3000,
+      qpsLimit: null,
+      maxConcurrent: 50,
+      tokenRefreshAheadSeconds: 60,
+      retryStatusCodes: '502,503,504',
+      retryOnConnectionError: 1,
+      retryOnTimeout: 0,
+      circuitBreakerEnabled: 1,
+      responseCacheMaxSize: 10000,
+      responseCacheRedisEnabled: 0,
+      staleCacheSeconds: 0
+    }))
+  })
+})

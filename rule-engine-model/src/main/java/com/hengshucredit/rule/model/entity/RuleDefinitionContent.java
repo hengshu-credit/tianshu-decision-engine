@@ -18,6 +18,8 @@ public class RuleDefinitionContent {
     private LocalDateTime compileTime;
     /** 编辑模式：visual-可视化，script-脚本模式 */
     private String scriptMode;
+    /** 对外规则接口草稿配置（请求映射与统一响应模板） */
+    private String openApiConfigJson;
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updateTime;
 }

@@ -52,6 +52,7 @@ public class SchemaSyncService {
             ensureTraceSchema();
             ensureProjectAuthSchema();
             ensureApiDocScenarioSchema();
+            ensureOpenApiContractColumns();
             ensureExternalApiCacheColumns();
             ensureDbDatasourceConnectionColumns();
             ensureModelRuntimeColumns();
@@ -259,6 +260,8 @@ public class SchemaSyncService {
                     + "`action_type` VARCHAR(64) NOT NULL COMMENT '动作类型：API_INVOKE/AUTH_TEST/QUERY/EXECUTE等',"
                     + "`project_id` BIGINT DEFAULT NULL COMMENT '项目ID',"
                     + "`project_code` VARCHAR(128) DEFAULT NULL COMMENT '项目编码',"
+                    + "`datasource_id` BIGINT DEFAULT NULL COMMENT '外数数据源ID',"
+                    + "`request_id` VARCHAR(128) DEFAULT NULL COMMENT '调用方请求ID',"
                     + "`target_ref_id` BIGINT DEFAULT NULL COMMENT '目标配置ID',"
                     + "`target_code` VARCHAR(128) DEFAULT NULL COMMENT '目标编码',"
                     + "`target_name` VARCHAR(128) DEFAULT NULL COMMENT '目标名称',"
@@ -270,6 +273,7 @@ public class SchemaSyncService {
                     + "`request_body` LONGTEXT DEFAULT NULL COMMENT '请求体JSON或文本',"
                     + "`response_status` INT DEFAULT NULL COMMENT '响应状态码',"
                     + "`response_body` LONGTEXT DEFAULT NULL COMMENT '响应内容JSON或文本',"
+                    + "`error_type` VARCHAR(128) DEFAULT NULL COMMENT '异常类型',"
                     + "`error_message` VARCHAR(2048) DEFAULT NULL COMMENT '错误信息',"
                     + "`cost_time_ms` BIGINT DEFAULT NULL COMMENT '耗时毫秒',"
                     + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',"
@@ -289,6 +293,18 @@ public class SchemaSyncService {
                 "`cache_status` VARCHAR(32) DEFAULT NULL COMMENT '缓存状态' AFTER `provider_request`");
         addColumnIfMissing("rule_runtime_call_log", "cache_key",
                 "`cache_key` VARCHAR(160) DEFAULT NULL COMMENT '脱敏后的缓存键摘要' AFTER `cache_status`");
+        addColumnIfMissing("rule_runtime_call_log", "datasource_id",
+                "`datasource_id` BIGINT DEFAULT NULL COMMENT '外数数据源ID' AFTER `project_code`");
+        addColumnIfMissing("rule_runtime_call_log", "request_id",
+                "`request_id` VARCHAR(128) DEFAULT NULL COMMENT '调用方请求ID' AFTER `datasource_id`");
+        addColumnIfMissing("rule_runtime_call_log", "attempt_no",
+                "`attempt_no` INT DEFAULT NULL COMMENT '本次实际上游请求序号' AFTER `cache_key`");
+        addColumnIfMissing("rule_runtime_call_log", "circuit_state",
+                "`circuit_state` VARCHAR(32) DEFAULT NULL COMMENT '熔断状态' AFTER `attempt_no`");
+        addColumnIfMissing("rule_runtime_call_log", "token_cache_status",
+                "`token_cache_status` VARCHAR(32) DEFAULT NULL COMMENT 'Token缓存状态' AFTER `circuit_state`");
+        addColumnIfMissing("rule_runtime_call_log", "error_type",
+                "`error_type` VARCHAR(128) DEFAULT NULL COMMENT '异常类型' AFTER `response_body`");
         ensureUtf8mb4Table("rule_runtime_call_log");
     }
 
@@ -368,6 +384,8 @@ public class SchemaSyncService {
                     + "`identifier_ciphertext` TEXT DEFAULT NULL COMMENT '凭据标识密文',"
                     + "`secret_ciphertext` TEXT NOT NULL COMMENT '凭据密文',"
                     + "`config_json` JSON DEFAULT NULL COMMENT '非敏感鉴权配置',"
+                    + "`access_policy_json` JSON DEFAULT NULL COMMENT 'IP/Host、QPS、并发和总超时策略',"
+                    + "`async_access_log_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否异步记录访问日志',"
                     + "`token_ttl_seconds` INT NOT NULL DEFAULT 7200 COMMENT '临时Token有效秒数',"
                     + "`token_grace_seconds` INT NOT NULL DEFAULT 600 COMMENT '临时Token宽限秒数',"
                     + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
@@ -429,10 +447,30 @@ public class SchemaSyncService {
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='项目鉴权访问日志表'");
         }
 
+        addColumnIfMissing("rule_project_auth", "access_policy_json",
+                "`access_policy_json` JSON DEFAULT NULL COMMENT 'IP/Host、QPS、并发和总超时策略' AFTER `config_json`");
+        addColumnIfMissing("rule_project_auth", "async_access_log_enabled",
+                "`async_access_log_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否异步记录访问日志' AFTER `access_policy_json`");
+
         addAuthAttributionColumns("rule_execution_log", "create_time", true);
         addAuthAttributionColumns("rule_billing_record", "occur_time", true);
         addAuthAttributionColumns("rule_billing_summary", "summary_date", false);
         ensureBillingSummaryAuthUniqueKey();
+    }
+
+    private void ensureOpenApiContractColumns() {
+        if (tableExists("rule_definition_content")) {
+            addColumnIfMissing("rule_definition_content", "open_api_config_json",
+                    "`open_api_config_json` LONGTEXT DEFAULT NULL COMMENT '对外规则接口草稿配置JSON' AFTER `script_mode`");
+        }
+        if (tableExists("rule_definition_version")) {
+            addColumnIfMissing("rule_definition_version", "open_api_config_json",
+                    "`open_api_config_json` LONGTEXT DEFAULT NULL COMMENT '对外规则接口版本快照JSON' AFTER `compiled_type`");
+        }
+        if (tableExists("rule_published")) {
+            addColumnIfMissing("rule_published", "open_api_config_json",
+                    "`open_api_config_json` LONGTEXT DEFAULT NULL COMMENT '当前已发布对外规则接口配置JSON' AFTER `model_json`");
+        }
     }
 
     private void ensureApiDocScenarioSchema() {
@@ -532,6 +570,66 @@ public class SchemaSyncService {
     private void ensureExternalApiCacheColumns() {
         String table = "rule_external_api_config";
         if (!tableExists(table)) return;
+        addColumnIfMissing(table, "response_cache_seconds",
+                "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
+        addColumnIfMissing(table, "response_cache_max_size",
+                "`response_cache_max_size` INT NOT NULL DEFAULT 10000 COMMENT '响应缓存最大条数' AFTER `response_cache_seconds`");
+        addColumnIfMissing(table, "response_cache_max_bytes",
+                "`response_cache_max_bytes` INT NOT NULL DEFAULT 1048576 COMMENT '单条响应缓存最大字节数' AFTER `response_cache_max_size`");
+        addColumnIfMissing(table, "response_cache_redis_enabled",
+                "`response_cache_redis_enabled` TINYINT NOT NULL DEFAULT 0 COMMENT '是否启用Redis二级响应缓存' AFTER `response_cache_max_bytes`");
+        addColumnIfMissing(table, "stale_cache_seconds",
+                "`stale_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '允许使用过期缓存的秒数' AFTER `response_cache_redis_enabled`");
+        addColumnIfMissing(table, "max_connections",
+                "`max_connections` INT NOT NULL DEFAULT 100 COMMENT '该API最大连接数' AFTER `timeout_ms`");
+        addColumnIfMissing(table, "max_connections_per_route",
+                "`max_connections_per_route` INT NOT NULL DEFAULT 100 COMMENT '单路由最大连接数' AFTER `max_connections`");
+        addColumnIfMissing(table, "connection_request_timeout_ms",
+                "`connection_request_timeout_ms` INT NOT NULL DEFAULT 100 COMMENT '连接池取连接超时' AFTER `max_connections_per_route`");
+        addColumnIfMissing(table, "connect_timeout_ms",
+                "`connect_timeout_ms` INT NOT NULL DEFAULT 500 COMMENT '建立连接超时' AFTER `connection_request_timeout_ms`");
+        addColumnIfMissing(table, "read_timeout_ms",
+                "`read_timeout_ms` INT NOT NULL DEFAULT 3000 COMMENT '读取响应超时' AFTER `connect_timeout_ms`");
+        addColumnIfMissing(table, "idle_connection_timeout_seconds",
+                "`idle_connection_timeout_seconds` INT NOT NULL DEFAULT 30 COMMENT '空闲连接清理秒数' AFTER `read_timeout_ms`");
+        addColumnIfMissing(table, "connection_ttl_seconds",
+                "`connection_ttl_seconds` INT NOT NULL DEFAULT 300 COMMENT '连接最大存活秒数' AFTER `idle_connection_timeout_seconds`");
+        addColumnIfMissing(table, "qps_limit",
+                "`qps_limit` DECIMAL(18,6) DEFAULT NULL COMMENT 'API每秒请求数限制' AFTER `connection_ttl_seconds`");
+        addColumnIfMissing(table, "burst_capacity",
+                "`burst_capacity` INT DEFAULT NULL COMMENT 'API突发容量' AFTER `qps_limit`");
+        addColumnIfMissing(table, "max_concurrent",
+                "`max_concurrent` INT NOT NULL DEFAULT 50 COMMENT 'API最大并发数' AFTER `burst_capacity`");
+        addColumnIfMissing(table, "concurrent_wait_timeout_ms",
+                "`concurrent_wait_timeout_ms` INT NOT NULL DEFAULT 0 COMMENT '等待并发许可毫秒数' AFTER `max_concurrent`");
+        addColumnIfMissing(table, "token_refresh_ahead_seconds",
+                "`token_refresh_ahead_seconds` INT NOT NULL DEFAULT 60 COMMENT 'Token提前刷新秒数' AFTER `concurrent_wait_timeout_ms`");
+        addColumnIfMissing(table, "token_refresh_on_unauthorized",
+                "`token_refresh_on_unauthorized` TINYINT NOT NULL DEFAULT 1 COMMENT '401或403是否刷新Token' AFTER `token_refresh_ahead_seconds`");
+        addColumnIfMissing(table, "token_log_enabled",
+                "`token_log_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否记录Token动作日志' AFTER `token_refresh_on_unauthorized`");
+        addColumnIfMissing(table, "retry_status_codes",
+                "`retry_status_codes` VARCHAR(256) DEFAULT '502,503,504' COMMENT '允许重试HTTP状态码' AFTER `retry_interval_ms`");
+        addColumnIfMissing(table, "retry_on_connection_error",
+                "`retry_on_connection_error` TINYINT NOT NULL DEFAULT 1 COMMENT '连接异常是否重试' AFTER `retry_status_codes`");
+        addColumnIfMissing(table, "retry_on_timeout",
+                "`retry_on_timeout` TINYINT NOT NULL DEFAULT 0 COMMENT '超时是否重试' AFTER `retry_on_connection_error`");
+        addColumnIfMissing(table, "retry_backoff_multiplier",
+                "`retry_backoff_multiplier` DECIMAL(10,4) NOT NULL DEFAULT 2 COMMENT '重试退避倍数' AFTER `retry_on_timeout`");
+        addColumnIfMissing(table, "retry_max_interval_ms",
+                "`retry_max_interval_ms` INT NOT NULL DEFAULT 1000 COMMENT '最大重试间隔' AFTER `retry_backoff_multiplier`");
+        addColumnIfMissing(table, "circuit_breaker_enabled",
+                "`circuit_breaker_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否启用熔断' AFTER `retry_max_interval_ms`");
+        addColumnIfMissing(table, "circuit_failure_rate",
+                "`circuit_failure_rate` INT NOT NULL DEFAULT 50 COMMENT '熔断失败率' AFTER `circuit_breaker_enabled`");
+        addColumnIfMissing(table, "circuit_min_calls",
+                "`circuit_min_calls` INT NOT NULL DEFAULT 20 COMMENT '熔断最小调用数' AFTER `circuit_failure_rate`");
+        addColumnIfMissing(table, "circuit_window_size",
+                "`circuit_window_size` INT NOT NULL DEFAULT 50 COMMENT '熔断窗口大小' AFTER `circuit_min_calls`");
+        addColumnIfMissing(table, "circuit_open_seconds",
+                "`circuit_open_seconds` INT NOT NULL DEFAULT 10 COMMENT '熔断打开秒数' AFTER `circuit_window_size`");
+        addColumnIfMissing(table, "circuit_half_open_calls",
+                "`circuit_half_open_calls` INT NOT NULL DEFAULT 5 COMMENT '半开探测调用数' AFTER `circuit_open_seconds`");
         if (columnExists(table, "content_type")) {
             jdbcTemplate.execute("ALTER TABLE `" + table + "` MODIFY COLUMN `content_type` VARCHAR(128) DEFAULT NULL COMMENT '请求Content-Type，空表示不主动设置'");
         }

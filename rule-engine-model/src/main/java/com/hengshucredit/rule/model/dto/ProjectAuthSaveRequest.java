@@ -12,6 +12,8 @@ public class ProjectAuthSaveRequest {
     private String secret;
     private String placement;
     private String parameterName;
+    private String accessPolicyJson;
+    private Integer asyncAccessLogEnabled;
     private Integer tokenTtlSeconds;
     private Integer tokenGraceSeconds;
     private Integer status;

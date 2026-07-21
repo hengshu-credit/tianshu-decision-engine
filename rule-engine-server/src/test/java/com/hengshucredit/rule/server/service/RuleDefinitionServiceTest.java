@@ -132,6 +132,8 @@ public class RuleDefinitionServiceTest {
         RuleDefinitionService service = new RuleDefinitionService();
         RuleDefinitionVersion left = version(1, "{\"a\":1}", "return 1;");
         RuleDefinitionVersion right = version(2, "{\"a\":2}", "return 1;");
+        left.setOpenApiConfigJson("{\"enabled\":false}");
+        right.setOpenApiConfigJson("{\"enabled\":true}");
         final int[] calls = {0};
         ReflectionTestUtils.setField(service, "versionMapper", mapper(RuleDefinitionVersionMapper.class, (proxy, method, args) -> {
             if ("selectOne".equals(method.getName())) {
@@ -146,6 +148,7 @@ public class RuleDefinitionServiceTest {
         assertSame(right, result.get("right"));
         assertTrue((Boolean) result.get("modelJsonChanged"));
         assertFalse((Boolean) result.get("compiledScriptChanged"));
+        assertTrue((Boolean) result.get("openApiConfigChanged"));
     }
 
     @Test
@@ -161,6 +164,7 @@ public class RuleDefinitionServiceTest {
         content.setDefinitionId(10L);
         RuleDefinitionVersion snapshot = version(2, "{\"rules\":[]}", "return 2;");
         snapshot.setCompiledType("QL");
+        snapshot.setOpenApiConfigJson("{\"enabled\":true}");
         RecordingRuleFieldAnalyzer analyzer = new RecordingRuleFieldAnalyzer();
         final RuleDefinitionContent[] updatedContent = {null};
         final RuleDefinition[] updatedDefinition = {null};
@@ -193,6 +197,7 @@ public class RuleDefinitionServiceTest {
         assertEquals("{\"rules\":[]}", updatedContent[0].getModelJson());
         assertEquals("return 2;", updatedContent[0].getCompiledScript());
         assertEquals("QL", updatedContent[0].getCompiledType());
+        assertEquals("{\"enabled\":true}", updatedContent[0].getOpenApiConfigJson());
         assertEquals(Integer.valueOf(1), updatedContent[0].getCompileStatus());
         assertEquals("rollback to v2", updatedContent[0].getCompileMessage());
         assertSame(definition, updatedDefinition[0]);

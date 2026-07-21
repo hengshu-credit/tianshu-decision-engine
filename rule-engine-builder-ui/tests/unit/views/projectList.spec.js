@@ -352,7 +352,8 @@ describe('ProjectList — 边界情况', () => {
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
         'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true
+        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true,
+        'project-auth-dialog': true
       }
     })
     await Vue.nextTick()
@@ -376,7 +377,8 @@ describe('ProjectList — 边界情况', () => {
         'el-table': true, 'el-table-column': true,
         'el-dialog': true, 'el-pagination': true, 'el-loading': true, 'el-textarea': true,
         'el-date-picker': true, 'el-switch': true, 'el-tabs': true, 'el-tab-pane': true,
-        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true
+        'el-card': true, 'el-divider': true, 'el-alert': true, 'el-tooltip': true,
+        'project-auth-dialog': true
       }
     })
     await Vue.nextTick()

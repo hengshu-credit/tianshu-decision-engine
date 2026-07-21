@@ -5,6 +5,7 @@ import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
+import java.lang.reflect.InvocationTargetException;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNull;
@@ -62,6 +63,27 @@ public class ExternalConfigDefaultsTest {
         assertNull(config.getAsyncCallbackConfig());
         assertNull(config.getAsyncCallbackUrl());
         assertEquals("body.data", config.getAsyncResultPath());
+    }
+
+    @Test
+    public void apiResilienceSettingsRejectUnboundedRetriesAndInvalidStatusCodes() throws Exception {
+        RuleExternalApiConfig excessiveRetries = new RuleExternalApiConfig();
+        excessiveRetries.setRetryCount(11);
+        assertInvalidApiConfig(excessiveRetries, "重试次数");
+
+        RuleExternalApiConfig invalidStatuses = new RuleExternalApiConfig();
+        invalidStatuses.setRetryStatusCodes("502,not-a-status");
+        assertInvalidApiConfig(invalidStatuses, "重试状态码");
+    }
+
+    private void assertInvalidApiConfig(RuleExternalApiConfig config, String expectedMessage) throws Exception {
+        try {
+            invokeFillDefaults(new RuleExternalApiConfigService(), config);
+            org.junit.Assert.fail("Expected invalid external API configuration");
+        } catch (InvocationTargetException exception) {
+            org.junit.Assert.assertTrue(exception.getCause().getMessage(),
+                    exception.getCause().getMessage().contains(expectedMessage));
+        }
     }
 
     private void invokeFillDefaults(Object service, Object target) throws Exception {

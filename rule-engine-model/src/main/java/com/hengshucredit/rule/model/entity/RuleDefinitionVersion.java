@@ -14,6 +14,8 @@ public class RuleDefinitionVersion {
     private String modelJson;
     private String compiledScript;
     private String compiledType;
+    /** 发布时的对外规则接口不可变快照 */
+    private String openApiConfigJson;
     private String changeLog;
     private String publishBy;
     private LocalDateTime publishTime;

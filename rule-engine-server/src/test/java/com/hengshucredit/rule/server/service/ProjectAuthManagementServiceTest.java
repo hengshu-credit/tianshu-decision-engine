@@ -23,6 +23,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertTrue;
 
 public class ProjectAuthManagementServiceTest {
 
@@ -115,6 +116,20 @@ public class ProjectAuthManagementServiceTest {
         assertNotNull(regenerated.getSecret());
         assertNotEquals(oldSecret, regenerated.getSecret());
         assertEquals(regenerated.getSecret(), cipher.decrypt(service.auths.get(0).getSecretCiphertext()));
+    }
+
+    @Test
+    public void persistsValidatedAccessPolicyAndAsyncLogFlag() {
+        ProjectAuthSaveRequest request = basicRequest();
+        request.setAccessPolicyJson("{\"ipWhitelist\":[\"10.0.0.0/8\"],\"hostWhitelist\":[\"api.example.com\"],"
+                + "\"qps\":20,\"burst\":40,\"maxConcurrent\":10,\"requestTimeoutMs\":3000}");
+        request.setAsyncAccessLogEnabled(1);
+
+        ProjectAuthDTO created = service.createAuth(7L, request);
+
+        assertTrue(created.getAccessPolicyJson().contains("\"qps\":20"));
+        assertEquals(Integer.valueOf(1), created.getAsyncAccessLogEnabled());
+        assertEquals(created.getAccessPolicyJson(), service.auths.get(0).getAccessPolicyJson());
     }
 
     @Test(expected = IllegalArgumentException.class)

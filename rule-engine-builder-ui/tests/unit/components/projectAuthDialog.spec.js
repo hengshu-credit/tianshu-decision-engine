@@ -38,7 +38,8 @@ async function mountDialog() {
       'el-button': true, 'el-form': true, 'el-form-item': true,
       'el-input': true, 'el-select': true, 'el-option': true,
       'el-switch': true, 'el-input-number': true, 'el-pagination': true,
-      'el-alert': true, 'el-empty': true, 'el-date-picker': true
+      'el-alert': true, 'el-empty': true, 'el-date-picker': true,
+      'el-row': true, 'el-col': true
     }
   })
   await Vue.nextTick()
@@ -80,8 +81,52 @@ describe('ProjectAuthDialog', () => {
     expect(projectApi.createProjectAuth).toHaveBeenCalledWith(7, expect.objectContaining({
       authCode: 'PARTNER_API',
       authType: 'API_KEY',
-      secret: ''
+      secret: '',
+      asyncAccessLogEnabled: 1,
+      accessPolicyJson: expect.any(String)
     }))
+    expect(JSON.parse(projectApi.createProjectAuth.mock.calls[0][1].accessPolicyJson)).toEqual({
+      ipWhitelist: [], hostWhitelist: [], qps: 0, burst: 0, maxConcurrent: 0, requestTimeoutMs: 0
+    })
+    wrapper.destroy()
+  })
+
+  test('鉴权访问策略按 authId 保存白名单和执行保护参数', async () => {
+    const wrapper = await mountDialog()
+    wrapper.vm.authForm = { ...wrapper.vm.emptyAuthForm(), authCode: 'PARTNER', authName: '合作方' }
+    wrapper.vm.authPolicy = {
+      ipWhitelistText: '10.0.0.0/8\n192.168.1.8',
+      hostWhitelistText: 'api.example.com, *.partner.example.com',
+      qps: 20,
+      burst: 40,
+      maxConcurrent: 12,
+      requestTimeoutMs: 5000
+    }
+
+    const payload = wrapper.vm.buildAuthPayload()
+    const policy = JSON.parse(payload.accessPolicyJson)
+
+    expect(policy.ipWhitelist).toEqual(['10.0.0.0/8', '192.168.1.8'])
+    expect(policy.hostWhitelist).toEqual(['api.example.com', '*.partner.example.com'])
+    expect(policy.qps).toBe(20)
+    expect(policy.maxConcurrent).toBe(12)
+    expect(payload.asyncAccessLogEnabled).toBe(1)
+    wrapper.destroy()
+  })
+
+  test('保存前拒绝非法 IP、Host 和突发容量配置', async () => {
+    const wrapper = await mountDialog()
+    wrapper.vm.authPolicy.ipWhitelistText = '999.1.1.1'
+    expect(() => wrapper.vm.buildAuthPayload()).toThrow('IP')
+
+    wrapper.vm.authPolicy.ipWhitelistText = '10.0.0.0/8'
+    wrapper.vm.authPolicy.hostWhitelistText = 'https://api.example.com/path'
+    expect(() => wrapper.vm.buildAuthPayload()).toThrow('Host')
+
+    wrapper.vm.authPolicy.hostWhitelistText = 'api.example.com'
+    wrapper.vm.authPolicy.qps = 20
+    wrapper.vm.authPolicy.burst = 10
+    expect(() => wrapper.vm.buildAuthPayload()).toThrow('突发容量')
     wrapper.destroy()
   })
 

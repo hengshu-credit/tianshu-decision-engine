@@ -6,6 +6,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import javax.annotation.PostConstruct;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 
 @Data
 @ConfigurationProperties(prefix = "rule-engine.project-auth")
@@ -16,6 +18,8 @@ public class ProjectAuthProperties {
     private int tokenFailureLimit = 10;
     private long tokenFailureWindowSeconds = 300L;
     private long tokenLockSeconds = 900L;
+    private List<String> trustedProxyCidrs = new ArrayList<>();
+    private int guardRegistryMaxEntries = 2048;
 
     @PostConstruct
     public void validateMasterKeys() {

@@ -36,6 +36,128 @@ import static org.junit.Assert.assertTrue;
 public class ExternalApiInvokeServiceTest {
 
     @Test
+    public void apiTimeoutIsATotalDeadlineAcrossRetries() throws Exception {
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/slow-unavailable", exchange -> {
+            calls.incrementAndGet();
+            try {
+                Thread.sleep(80L);
+                byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(503, response.length);
+                exchange.getResponseBody().write(response);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(4L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(4L, 4L, "/slow-unavailable");
+            config.setTimeoutMs(100);
+            config.setRetryCount(2);
+            config.setRetryStatusCodes("503");
+            ExternalApiInvokeService service = configuredService(config, datasource);
+
+            long start = System.currentTimeMillis();
+            try {
+                service.invoke(4L, Collections.emptyMap());
+            } catch (ExternalApiInvokeService.ApiInvokeException ignored) {
+                // expected
+            }
+
+            assertTrue(System.currentTimeMillis() - start < 1000L);
+            assertTrue(calls.get() < 3);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void externalRequestUsesRemainingProjectDeadlineAsItsTimeout() throws Exception {
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/slow", exchange -> {
+            try {
+                Thread.sleep(500L);
+                byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(200, response.length);
+                exchange.getResponseBody().write(response);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                exchange.close();
+            }
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(6L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(6L, 6L, "/slow");
+            config.setTimeoutMs(3000);
+            ExternalApiInvokeService service = configuredService(config, datasource);
+
+            long start = System.currentTimeMillis();
+            boolean timeout = false;
+            RequestDeadlineContext.start(50);
+            try {
+                service.invoke(6L, Collections.emptyMap());
+            } catch (ExternalApiInvokeService.ApiInvokeException e) {
+                timeout = true;
+            } finally {
+                RequestDeadlineContext.clear();
+            }
+
+            assertTrue(timeout);
+            assertTrue(System.currentTimeMillis() - start < 1000L);
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void clientErrorIsNotRetriedByGenericRetryPolicy() throws Exception {
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/bad-request", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] response = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(400, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(5L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(5L, 5L, "/bad-request");
+            config.setRetryCount(2);
+            ExternalApiInvokeService service = configuredService(config, datasource);
+
+            try {
+                service.invoke(5L, Collections.emptyMap());
+            } catch (ExternalApiInvokeService.ApiInvokeException ignored) {
+                // expected
+            }
+
+            assertEquals(1, providerCalls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void previewInvocationUsesCurrentDraftConfigInsteadOfPersistedConfig() throws Exception {
         AtomicReference<String> requestedPath = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
@@ -477,8 +599,12 @@ public class ExternalApiInvokeServiceTest {
             service.invoke(101L, params);
 
             assertEquals(2, callCount.get());
-            assertEquals(2, logs.logs.size());
-            RuleRuntimeCallLog log = logs.logs.get(0);
+            java.util.List<RuleRuntimeCallLog> summaries = new ArrayList<>();
+            for (RuleRuntimeCallLog item : logs.logs) {
+                if ("API_INVOKE".equals(item.getActionType())) summaries.add(item);
+            }
+            assertEquals(2, summaries.size());
+            RuleRuntimeCallLog log = summaries.get(0);
             assertEquals("CACHE_KEY_INCOMPLETE", log.getCacheStatus());
             assertNull(log.getCacheKey());
             assertEquals(Integer.valueOf(1), log.getProviderRequest());
@@ -831,6 +957,84 @@ public class ExternalApiInvokeServiceTest {
             service.invoke(100L, new LinkedHashMap<>());
 
             assertEquals("Bearer header-token-123456", authHeader.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void unauthorizedProviderResponseRefreshesTokenOnlyOncePerInvocation() throws Exception {
+        AtomicInteger tokenCalls = new AtomicInteger();
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            int sequence = tokenCalls.incrementAndGet();
+            byte[] response = ("{\"token\":\"token-" + sequence + "\",\"expires_in\":120}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/score", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] response = "{\"message\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(401, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(81L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\"," +
+                    "\"expiresInPath\":\"body.expires_in\"}");
+            RuleExternalApiConfig config = basicApiConfig(810L, 81L, "/score");
+            config.setAuthMode("INHERIT");
+            config.setRetryCount(2);
+            config.setTokenLogEnabled(1);
+            ExternalApiInvokeService service = configuredService(config, datasource);
+            RecordingRuntimeCallLogService runtimeLogs = new RecordingRuntimeCallLogService();
+            ExternalCallProperties properties = new ExternalCallProperties();
+            ApiHttpClientRegistry clientRegistry = new ApiHttpClientRegistry(properties);
+            ReflectionTestUtils.setField(service, "runtimeCallLogService", runtimeLogs);
+            ReflectionTestUtils.setField(service, "apiHttpClientRegistry", clientRegistry);
+
+            boolean failed = false;
+            try {
+                service.invoke(810L, new LinkedHashMap<>());
+            } catch (ExternalApiInvokeService.ApiInvokeException e) {
+                failed = true;
+            }
+
+            assertTrue(failed);
+            assertEquals(2, tokenCalls.get());
+            assertEquals(2, providerCalls.get());
+            assertEquals(1, clientRegistry.size());
+            java.util.List<RuleRuntimeCallLog> tokenLogs = new ArrayList<>();
+            java.util.List<RuleRuntimeCallLog> attemptLogs = new ArrayList<>();
+            boolean invalidated = false;
+            for (RuleRuntimeCallLog log : runtimeLogs.logs) {
+                if ("TOKEN_FETCH".equals(log.getActionType()) || "TOKEN_REFRESH".equals(log.getActionType())) {
+                    tokenLogs.add(log);
+                }
+                if ("TOKEN_INVALIDATE".equals(log.getActionType())) invalidated = true;
+                if ("API_ATTEMPT".equals(log.getActionType())) attemptLogs.add(log);
+            }
+            assertEquals(2, tokenLogs.size());
+            assertEquals("TOKEN_FETCH", tokenLogs.get(0).getActionType());
+            assertEquals("TOKEN_REFRESH", tokenLogs.get(1).getActionType());
+            assertFalse(tokenLogs.get(0).getResponseBody().contains("token-1"));
+            assertFalse(tokenLogs.get(1).getResponseBody().contains("token-2"));
+            assertTrue(invalidated);
+            assertEquals(2, attemptLogs.size());
+            assertEquals(Integer.valueOf(1), attemptLogs.get(0).getAttemptNo());
+            assertEquals(Integer.valueOf(2), attemptLogs.get(1).getAttemptNo());
+            assertEquals("FETCH", attemptLogs.get(0).getTokenCacheStatus());
+            assertEquals("REFRESH", attemptLogs.get(1).getTokenCacheStatus());
+            clientRegistry.close();
         } finally {
             server.stop(0);
         }

@@ -3,6 +3,9 @@ package com.hengshucredit.rule.server.config;
 import com.hengshucredit.rule.server.auth.CredentialCipher;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
+import com.hengshucredit.rule.server.auth.ProjectAccessPolicy;
+import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
+import com.hengshucredit.rule.server.auth.TrustedClientAddressResolver;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
 import org.junit.Test;
@@ -27,6 +30,7 @@ public class TokenAuthInterceptorTest {
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/sync/functions/1"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/log/report"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/auth/token"));
+        assertTrue(TokenAuthInterceptor.isProtectedPath("/api/rule/open/execute/RISK"));
     }
 
     @Test
@@ -129,9 +133,49 @@ public class TokenAuthInterceptorTest {
         assertEquals(1, successService.clearCount);
     }
 
+    @Test
+    public void rejectsIpOrHostOutsideAuthPolicy() throws Exception {
+        ProjectAccessPolicy policy = new ProjectAccessPolicy();
+        policy.setIpWhitelist(Collections.singletonList("10.0.0.0/8"));
+        policy.setHostWhitelist(Collections.singletonList("api.example.com"));
+        ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
+                "BASIC_MAIN", ProjectAuthType.BASIC, policy);
+        TokenAuthInterceptor interceptor = interceptor(service(context));
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
+        request.setRemoteAddr("203.0.113.9");
+        request.addHeader("Host", "api.example.com");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertFalse(interceptor.preHandle(request, response, new Object()));
+        assertEquals(403, response.getStatus());
+    }
+
+    @Test
+    public void executionConcurrencyPermitIsReleasedAfterCompletion() throws Exception {
+        ProjectAccessPolicy policy = new ProjectAccessPolicy();
+        policy.setMaxConcurrent(1);
+        policy.setRequestTimeoutMs(1000);
+        ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
+                "BASIC_MAIN", ProjectAuthType.BASIC, policy);
+        TokenAuthInterceptor interceptor = interceptor(service(context));
+        MockHttpServletRequest first = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
+        MockHttpServletRequest second = new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK");
+
+        assertTrue(interceptor.preHandle(first, new MockHttpServletResponse(), new Object()));
+        MockHttpServletResponse limited = new MockHttpServletResponse();
+        assertFalse(interceptor.preHandle(second, limited, new Object()));
+        assertEquals(429, limited.getStatus());
+        interceptor.afterCompletion(first, new MockHttpServletResponse(), new Object(), null);
+        assertTrue(interceptor.preHandle(second, new MockHttpServletResponse(), new Object()));
+        interceptor.afterCompletion(second, new MockHttpServletResponse(), new Object(), null);
+    }
+
     private TokenAuthInterceptor interceptor(ProjectAuthService service) {
         TokenAuthInterceptor interceptor = new TokenAuthInterceptor();
         ReflectionTestUtils.setField(interceptor, "projectAuthService", service);
+        ProjectAuthProperties properties = new ProjectAuthProperties();
+        ReflectionTestUtils.setField(interceptor, "clientAddressResolver", new TrustedClientAddressResolver(properties));
+        ReflectionTestUtils.setField(interceptor, "executionGuard", new ProjectExecutionGuard(64, System::nanoTime));
         return interceptor;
     }
 

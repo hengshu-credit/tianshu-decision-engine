@@ -40,6 +40,9 @@
               <div class="table-secondary">冗余 {{ formatDuration(row.tokenGraceSeconds) }}</div>
             </template>
           </el-table-column>
+          <el-table-column label="访问策略" min-width="190" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ policySummary(row.accessPolicyJson) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="74" align="center">
             <template slot-scope="{ row }">
               <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
@@ -132,7 +135,7 @@
 
     <span slot="footer"><el-button size="small" type="primary" @click="$emit('update:visible', false)">关闭</el-button></span>
 
-    <el-dialog :title="authForm.id ? '编辑鉴权' : '新增鉴权'" :visible.sync="authFormVisible" width="600px" append-to-body>
+    <el-dialog :title="authForm.id ? '编辑鉴权' : '新增鉴权'" :visible.sync="authFormVisible" width="900px" append-to-body>
       <el-form ref="authForm" :model="authForm" :rules="authRules" label-width="120px" size="small">
         <el-form-item label="鉴权编码" prop="authCode"><el-input v-model="authForm.authCode" :disabled="!!authForm.id" placeholder="稳定编码，创建后不可修改" /></el-form-item>
         <el-form-item label="显示名称" prop="authName"><el-input v-model="authForm.authName" placeholder="如 合作方主账号" /></el-form-item>
@@ -160,6 +163,35 @@
           <div class="form-section-title">临时 Token 生命周期</div>
           <el-form-item label="有效时长（秒）"><el-input-number v-model="authForm.tokenTtlSeconds" :min="1" :max="604800" controls-position="right" /></el-form-item>
           <el-form-item label="冗余时长（秒）"><el-input-number v-model="authForm.tokenGraceSeconds" :min="0" :max="86400" controls-position="right" /></el-form-item>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">入口白名单</div>
+          <div class="form-section-help">白名单保护该鉴权下的所有受保护接口。IP 支持单个地址和 CIDR；反向代理场景只信任服务端配置的可信代理。</div>
+          <el-row :gutter="12">
+            <el-col :span="12">
+              <el-form-item label="IP / CIDR">
+                <el-input v-model="authPolicy.ipWhitelistText" type="textarea" :rows="4" placeholder="每行一个，如 10.0.0.0/8" />
+              </el-form-item>
+            </el-col>
+            <el-col :span="12">
+              <el-form-item label="Host">
+                <el-input v-model="authPolicy.hostWhitelistText" type="textarea" :rows="4" placeholder="每行一个，如 api.example.com 或 *.example.com" />
+              </el-form-item>
+            </el-col>
+          </el-row>
+        </div>
+        <div class="form-section">
+          <div class="form-section-title">业务执行保护</div>
+          <div class="form-section-help">QPS、并发和总超时只作用于开放规则执行与同步执行；令牌签发、规则同步和日志上报不受这些执行阈值影响。0 表示不限制。</div>
+          <el-row :gutter="12">
+            <el-col :span="8"><el-form-item label="QPS"><el-input-number v-model="authPolicy.qps" :min="0" :max="100000" controls-position="right" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"><el-form-item label="突发容量"><el-input-number v-model="authPolicy.burst" :min="0" :max="1000000" controls-position="right" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"><el-form-item label="最大并发"><el-input-number v-model="authPolicy.maxConcurrent" :min="0" :max="10000" controls-position="right" style="width:100%" /></el-form-item></el-col>
+          </el-row>
+          <el-row :gutter="12">
+            <el-col :span="12"><el-form-item label="总超时(ms)"><el-input-number v-model="authPolicy.requestTimeoutMs" :min="0" :max="600000" :step="100" controls-position="right" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="12"><el-form-item label="异步访问日志"><el-switch v-model="authForm.asyncAccessLogEnabled" :active-value="1" :inactive-value="0" active-text="开启" inactive-text="同步写入" /></el-form-item></el-col>
+          </el-row>
         </div>
         <el-form-item label="状态"><el-switch v-model="authForm.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" /></el-form-item>
       </el-form>
@@ -215,6 +247,7 @@ export default {
       authFormVisible: false,
       savingAuth: false,
       authForm: this.emptyAuthForm(),
+      authPolicy: this.emptyAccessPolicy(),
       authRules: {
         authCode: [{ required: true, message: '请输入鉴权编码', trigger: 'blur' }],
         authName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
@@ -256,7 +289,13 @@ export default {
       return {
         id: null, authCode: '', authName: '', authType: 'BASIC', identifier: '', secret: '',
         placement: 'HEADER', parameterName: 'X-Rule-Api-Key', tokenTtlSeconds: 7200,
-        tokenGraceSeconds: 600, status: 1
+        tokenGraceSeconds: 600, asyncAccessLogEnabled: 1, status: 1
+      }
+    },
+    emptyAccessPolicy() {
+      return {
+        ipWhitelistText: '', hostWhitelistText: '', qps: 0, burst: 0,
+        maxConcurrent: 0, requestTimeoutMs: 0
       }
     },
     async loadAuths() {
@@ -274,22 +313,31 @@ export default {
     },
     openCreateAuth() {
       this.authForm = this.emptyAuthForm()
+      this.authPolicy = this.emptyAccessPolicy()
       this.authFormVisible = true
     },
     async openEditAuth(row) {
       const res = await getProjectAuthFull(this.project.id, row.id)
       this.authForm = { ...this.emptyAuthForm(), ...res.data }
+      this.authPolicy = this.parseAccessPolicy(this.authForm.accessPolicyJson)
       this.authFormVisible = true
     },
     submitAuth() {
       this.$refs.authForm.validate(async valid => {
         if (!valid) return
+        let payload
+        try {
+          payload = this.buildAuthPayload()
+        } catch (e) {
+          this.$message.error(e.message)
+          return
+        }
         this.savingAuth = true
         try {
           if (this.authForm.id) {
-            await updateProjectAuth(this.project.id, this.authForm.id, this.authForm)
+            await updateProjectAuth(this.project.id, this.authForm.id, payload)
           } else {
-            await createProjectAuth(this.project.id, this.authForm)
+            await createProjectAuth(this.project.id, payload)
           }
           this.$message.success('鉴权配置已保存')
           this.authFormVisible = false
@@ -298,6 +346,97 @@ export default {
           this.savingAuth = false
         }
       })
+    },
+    parseAccessPolicy(value) {
+      let policy = {}
+      try {
+        policy = typeof value === 'string' && value.trim() ? JSON.parse(value) : (value || {})
+      } catch (e) {
+        policy = {}
+      }
+      return {
+        ...this.emptyAccessPolicy(),
+        qps: Number(policy.qps || 0),
+        burst: Number(policy.burst || 0),
+        maxConcurrent: Number(policy.maxConcurrent || 0),
+        requestTimeoutMs: Number(policy.requestTimeoutMs || 0),
+        ipWhitelistText: (policy.ipWhitelist || []).join('\n'),
+        hostWhitelistText: (policy.hostWhitelist || []).join('\n')
+      }
+    },
+    policyItems(value) {
+      const seen = {}
+      return String(value || '').split(/[\n,]/).map(item => item.trim()).filter(item => {
+        if (!item || seen[item]) return false
+        seen[item] = true
+        return true
+      })
+    },
+    buildAuthPayload() {
+      const policy = {
+        ipWhitelist: this.policyItems(this.authPolicy.ipWhitelistText),
+        hostWhitelist: this.policyItems(this.authPolicy.hostWhitelistText),
+        qps: Number(this.authPolicy.qps || 0),
+        burst: Number(this.authPolicy.burst || 0),
+        maxConcurrent: Number(this.authPolicy.maxConcurrent || 0),
+        requestTimeoutMs: Number(this.authPolicy.requestTimeoutMs || 0)
+      }
+      this.validateAccessPolicy(policy)
+      return { ...this.authForm, accessPolicyJson: JSON.stringify(policy) }
+    },
+    validateAccessPolicy(policy) {
+      if (policy.ipWhitelist.length > 256) throw new Error('IP 白名单最多 256 项')
+      if (policy.hostWhitelist.length > 256) throw new Error('Host 白名单最多 256 项')
+      policy.ipWhitelist.forEach(value => {
+        if (!this.isValidIpOrCidr(value)) throw new Error('IP 白名单格式不合法：' + value)
+      })
+      policy.hostWhitelist.forEach(value => {
+        if (!this.isValidHostPattern(value)) throw new Error('Host 白名单格式不合法：' + value)
+      })
+      if (policy.qps > 0 && policy.burst > 0 && policy.burst < policy.qps) {
+        throw new Error('突发容量不能小于 QPS')
+      }
+      if (policy.requestTimeoutMs > 0 && policy.requestTimeoutMs < 100) {
+        throw new Error('总超时必须为 0 或不少于 100ms')
+      }
+    },
+    isValidIpOrCidr(value) {
+      const parts = String(value || '').split('/')
+      if (parts.length > 2 || !parts[0]) return false
+      const address = parts[0]
+      const ipv4 = address.split('.')
+      let maxPrefix = 128
+      let valid = false
+      if (ipv4.length === 4) {
+        valid = ipv4.every(item => /^\d{1,3}$/.test(item) && Number(item) >= 0 && Number(item) <= 255)
+        maxPrefix = 32
+      } else if (address.includes(':') && /^[0-9A-Fa-f:.]+$/.test(address)) {
+        try {
+          const parsed = new URL('http://[' + address + ']/')
+          valid = parsed.hostname.startsWith('[') && parsed.hostname.endsWith(']')
+        } catch (e) {
+          valid = false
+        }
+      }
+      if (!valid || parts.length === 1) return valid
+      return /^\d+$/.test(parts[1]) && Number(parts[1]) >= 0 && Number(parts[1]) <= maxPrefix
+    },
+    isValidHostPattern(value) {
+      let host = String(value || '').trim()
+      if (host.startsWith('*.')) host = host.slice(2)
+      if (!host || host.length > 253 || host.includes('://') || host.includes('/') || host.includes(':')) return false
+      return host.split('.').every(label => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label))
+    },
+    policySummary(value) {
+      const policy = this.parseAccessPolicy(value)
+      const parts = []
+      const ipCount = this.policyItems(policy.ipWhitelistText).length
+      const hostCount = this.policyItems(policy.hostWhitelistText).length
+      if (ipCount || hostCount) parts.push('白名单 ' + (ipCount + hostCount) + ' 项')
+      if (policy.qps) parts.push('QPS ' + policy.qps)
+      if (policy.maxConcurrent) parts.push('并发 ' + policy.maxConcurrent)
+      if (policy.requestTimeoutMs) parts.push('超时 ' + policy.requestTimeoutMs + 'ms')
+      return parts.length ? parts.join(' / ') : '未限制'
     },
     async toggleAuth(row) {
       const status = row.status === 1 ? 0 : 1
@@ -516,6 +655,13 @@ code {
 
 .form-section-title {
   margin-bottom: 12px;
+}
+
+.form-section-help {
+  margin: -4px 0 12px;
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .secret-row {

@@ -13,6 +13,7 @@ import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -198,6 +199,15 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     }
 
     public void saveContent(Long definitionId, String modelJson) {
+        saveContent(definitionId, modelJson, null, false);
+    }
+
+    public void saveContent(Long definitionId, String modelJson, String openApiConfigJson) {
+        saveContent(definitionId, modelJson, openApiConfigJson, true);
+    }
+
+    private void saveContent(Long definitionId, String modelJson, String openApiConfigJson,
+                             boolean updateOpenApiConfig) {
         RuleDefinition definition = getById(definitionId);
         if (definition != null) {
             if (referenceIntegrityService != null) {
@@ -211,6 +221,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         RuleDefinitionContent content = getContent(definitionId);
         if (content != null) {
             content.setModelJson(modelJson);
+            if (updateOpenApiConfig) {
+                content.setOpenApiConfigJson(OpenApiContractCodec.validateAndNormalize(openApiConfigJson));
+            }
             content.setCompileStatus(0);
             contentMapper.updateById(content);
         }
@@ -246,6 +259,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         result.put("right", right);
         result.put("modelJsonChanged", !equalsText(left.getModelJson(), right.getModelJson()));
         result.put("compiledScriptChanged", !equalsText(left.getCompiledScript(), right.getCompiledScript()));
+        result.put("openApiConfigChanged", !equalsText(left.getOpenApiConfigJson(), right.getOpenApiConfigJson()));
         return result;
     }
 
@@ -269,6 +283,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         content.setModelJson(snapshot.getModelJson());
         content.setCompiledScript(snapshot.getCompiledScript());
         content.setCompiledType(snapshot.getCompiledType());
+        content.setOpenApiConfigJson(snapshot.getOpenApiConfigJson());
         content.setCompileStatus(1);
         content.setCompileMessage("rollback to v" + version);
         content.setCompileTime(LocalDateTime.now());

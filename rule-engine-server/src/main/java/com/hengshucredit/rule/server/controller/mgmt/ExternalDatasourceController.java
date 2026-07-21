@@ -100,7 +100,7 @@ public class ExternalDatasourceController {
 
     @DeleteMapping("/api-config/{id:\\d+}")
     public R<Void> deleteApiConfig(@PathVariable Long id) {
-        apiConfigService.removeById(id);
+        apiConfigService.removeApiConfig(id);
         return R.ok();
     }
 

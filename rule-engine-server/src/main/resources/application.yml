@@ -61,6 +61,7 @@ rule-engine:
       - /api/auth/**
       - /api/rule/auth/token
       - /api/rule/sync/**
+      - /api/rule/open/**
       - /api/rule/log/report
     session-username-attribute: RULE_CONSOLE_USERNAME
     # 未自定义 ConsoleLoginAuthenticator Bean 时使用以下账号登录；生产环境请改为环境变量或 BCrypt

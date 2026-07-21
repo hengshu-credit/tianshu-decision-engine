@@ -9,6 +9,8 @@ import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.mapper.RuleRuntimeCallLogMapper;
 import org.springframework.stereotype.Service;
 
+import javax.annotation.Resource;
+
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -19,6 +21,9 @@ import java.util.Map;
 
 @Service
 public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMapper, RuleRuntimeCallLog> {
+
+    @Resource
+    private RuntimeCallLogAsyncWriter asyncWriter;
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, Integer success,
@@ -52,6 +57,10 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
 
     public void safeSave(RuleRuntimeCallLog log) {
         if (log == null) {
+            return;
+        }
+        if (asyncWriter != null) {
+            asyncWriter.offer(log);
             return;
         }
         try {

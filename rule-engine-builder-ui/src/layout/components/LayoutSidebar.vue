@@ -315,7 +315,6 @@ export default {
   font-size: 14px;
   font-weight: 600;
   background: linear-gradient(145deg, #5264F2, #2639E9);
-  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: 50%;
 }
 

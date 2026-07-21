@@ -22,6 +22,8 @@ public class RuleProjectAuth {
     private String identifierCiphertext;
     private String secretCiphertext;
     private String configJson;
+    private String accessPolicyJson;
+    private Integer asyncAccessLogEnabled;
     private Integer tokenTtlSeconds;
     private Integer tokenGraceSeconds;
     private Integer status;

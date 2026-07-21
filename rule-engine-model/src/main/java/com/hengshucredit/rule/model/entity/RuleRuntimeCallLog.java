@@ -20,6 +20,8 @@ public class RuleRuntimeCallLog {
     private String actionType;
     private Long projectId;
     private String projectCode;
+    private Long datasourceId;
+    private String requestId;
     private Long targetRefId;
     private String targetCode;
     private String targetName;
@@ -29,6 +31,9 @@ public class RuleRuntimeCallLog {
     private Integer providerRequest;
     private String cacheStatus;
     private String cacheKey;
+    private Integer attemptNo;
+    private String circuitState;
+    private String tokenCacheStatus;
     private String requestMethod;
     private String requestUrl;
     private String requestHeaders;
@@ -36,6 +41,7 @@ public class RuleRuntimeCallLog {
     private String requestBody;
     private Integer responseStatus;
     private String responseBody;
+    private String errorType;
     private String errorMessage;
     private Long costTimeMs;
     @TableField(fill = FieldFill.INSERT)

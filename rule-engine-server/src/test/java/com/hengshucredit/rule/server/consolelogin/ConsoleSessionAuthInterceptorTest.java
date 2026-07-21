@@ -20,4 +20,17 @@ public class ConsoleSessionAuthInterceptorTest {
 
         assertTrue(allowed);
     }
+
+    @Test
+    public void delegatesOpenRuleEndpointToProjectAuthentication() throws Exception {
+        RuleEngineConsoleLoginProperties properties = new RuleEngineConsoleLoginProperties();
+        properties.setEnabled(true);
+        ConsoleSessionAuthInterceptor interceptor = new ConsoleSessionAuthInterceptor(properties);
+
+        boolean allowed = interceptor.preHandle(
+                new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK_SCORE"),
+                new MockHttpServletResponse(), new Object());
+
+        assertTrue(allowed);
+    }
 }

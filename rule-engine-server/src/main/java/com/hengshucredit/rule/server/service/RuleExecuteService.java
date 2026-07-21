@@ -187,8 +187,16 @@ public class RuleExecuteService {
     public RuleResult executePublished(RulePublished published, Map<String, Object> params,
                                        Long projectId, String clientAppName,
                                        ProjectAuthContext authContext) {
+        return executePublished(published, params, projectId, clientAppName, authContext, true, true);
+    }
+
+    public RuleResult executePublished(RulePublished published, Map<String, Object> params,
+                                       Long projectId, String clientAppName,
+                                       ProjectAuthContext authContext, boolean collectTrace,
+                                       boolean recordTrace) {
         return executePublishedWithOptions(published, params, projectId, clientAppName,
-                VariableResolveOptions.defaults(), "CLIENT_SERVER", authContext).getResult();
+                VariableResolveOptions.defaults(), "CLIENT_SERVER", authContext,
+                collectTrace, recordTrace).getResult();
     }
 
     public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
@@ -203,6 +211,15 @@ public class RuleExecuteService {
                                                         Long projectId, String clientAppName,
                                                         VariableResolveOptions resolveOptions, String source,
                                                         ProjectAuthContext authContext) {
+        return executePublishedWithOptions(published, params, projectId, clientAppName,
+                resolveOptions, source, authContext, true, true);
+    }
+
+    public ExecutionOutcome executePublishedWithOptions(RulePublished published, Map<String, Object> params,
+                                                        Long projectId, String clientAppName,
+                                                        VariableResolveOptions resolveOptions, String source,
+                                                        ProjectAuthContext authContext,
+                                                        boolean collectTrace, boolean recordTrace) {
         if (published == null) {
             RuleResult r = new RuleResult();
             r.setSuccess(false);
@@ -235,7 +252,7 @@ public class RuleExecuteService {
         try {
             variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
             RuntimeContextBridge.replaceSourceStates(effectiveOptions.getSourceStates());
-            result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, true);
+            result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, collectTrace);
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -263,7 +280,7 @@ public class RuleExecuteService {
         log.setSuccess(result.isSuccess() ? 1 : 0);
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
-        if (result.getTraces() != null) {
+        if (recordTrace && result.getTraces() != null) {
             log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
         if (!isExperimentSource(source)) {
