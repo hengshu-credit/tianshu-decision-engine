@@ -144,6 +144,11 @@ jest.mock('@/api/variable', () => ({
   batchValidateVariables: jest.fn(),
   importJavaConstants: jest.fn(),
   importJsonConstants: jest.fn(),
+  listFieldValidations: jest.fn(),
+  listAvailableFieldValidations: jest.fn(),
+  createFieldValidation: jest.fn(),
+  updateFieldValidation: jest.fn(),
+  deleteFieldValidation: jest.fn(),
   __esModule: true
 }))
 jest.mock('@/api/dataObject', () => ({

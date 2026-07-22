@@ -225,7 +225,15 @@ public class VariableSourceResolver {
         if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource) && !"CONSTANT".equals(varSource)) {
             return false;
         }
-        return requiredScriptNames == null || requiredScriptNames.contains(scriptName);
+        if (requiredScriptNames == null) {
+            return true;
+        }
+        for (String required : requiredScriptNames) {
+            if (scriptName.equals(required) || (required != null && required.startsWith(scriptName + "."))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private boolean shouldRefreshVariable(RuleVariable variable, String scriptName, Map<String, Object> resolvedParams,

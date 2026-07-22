@@ -21,6 +21,10 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 2. `mvn spring-boot:run` 正常启动 rule-engine-server 后端服务
 3. `mvn test` 运行后端测试用例，确保所有测试通过
 
+**Codex 本地验证服务超时**：
+- 启动前端、后端、MOCK 等长期本地验证服务时，工具调用超时统一设置为 `1800000ms`（30 分钟），不得继续使用 `600000ms`（10 分钟）。
+- 服务验证完成后必须主动停止相关进程，避免依赖超时自动清理。
+
 **测试用例编写与修改规范**：
 - 新增或修改测试用例时，必须仔细校对测试逻辑是否正确覆盖目标功能点
 - 测试用例的断言条件、输入数据、预期结果必须与实际需求完全匹配

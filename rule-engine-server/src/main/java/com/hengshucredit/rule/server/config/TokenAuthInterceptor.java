@@ -6,6 +6,7 @@ import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
 import com.hengshucredit.rule.server.auth.TrustedClientAddressResolver;
 import com.hengshucredit.rule.server.openapi.OpenApiErrorResponder;
 import com.hengshucredit.rule.server.openapi.OpenApiStatus;
+import com.hengshucredit.rule.server.openapi.OpenApiStatuses;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
 import com.hengshucredit.rule.server.service.RequestDeadlineContext;
 import lombok.extern.slf4j.Slf4j;
@@ -66,8 +67,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         boolean tokenRequest = "/api/rule/auth/token".equals(uri);
         if (tokenRequest && !projectAuthService.isTokenRequestAllowed(request)) {
             projectAuthService.recordAccess(request, null, false, "RATE_LIMITED");
-            writeError(request, response, new OpenApiStatus(false, "RATE_LIMITED",
-                    "Too many token attempts", 429));
+            writeError(request, response, OpenApiStatuses.requestTooFrequent());
             return false;
         }
         
@@ -78,8 +78,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             }
             projectAuthService.recordAccess(request, null, false, "INVALID_CREDENTIAL");
             log.warn("Invalid project credential for request: {}", uri);
-            writeError(request, response, new OpenApiStatus(false, "INVALID_CREDENTIAL",
-                    "Invalid project credential", HttpServletResponse.SC_UNAUTHORIZED));
+            writeError(request, response, projectAuthService.authenticationFailureStatus(request));
             return false;
         }
         context.attach(request);
@@ -88,14 +87,12 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         if (!policy.getIpWhitelist().isEmpty()
                 && !clientAddressResolver.matchesIp(clientIp, policy.getIpWhitelist())) {
             projectAuthService.recordAccess(request, context, false, "IP_NOT_ALLOWED");
-            writeError(request, response, new OpenApiStatus(false, "IP_NOT_ALLOWED",
-                    "Client IP is not allowed", 403));
+            writeError(request, response, OpenApiStatuses.ipRestricted());
             return false;
         }
         if (!clientAddressResolver.matchesHost(request.getHeader("Host"), policy.getHostWhitelist())) {
             projectAuthService.recordAccess(request, context, false, "HOST_NOT_ALLOWED");
-            writeError(request, response, new OpenApiStatus(false, "HOST_NOT_ALLOWED",
-                    "Request Host is not allowed", 403));
+            writeError(request, response, OpenApiStatuses.domainRestricted());
             return false;
         }
         if (isExecutionPath(uri)) {
@@ -105,8 +102,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
                 RequestDeadlineContext.startAt(requestStartedAt, policy.getRequestTimeoutMs());
             } catch (ProjectExecutionGuard.Rejected e) {
                 projectAuthService.recordAccess(request, context, false, e.getReason().name());
-                writeError(request, response, new OpenApiStatus(false, "EXECUTION_LIMITED",
-                        "Execution rate or concurrency limit exceeded", 429));
+                writeError(request, response, OpenApiStatuses.qpsConcurrencyExceeded());
                 return false;
             }
         }
@@ -140,7 +136,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
         }
         response.setStatus(status.getHttpStatus());
         response.setContentType("application/json;charset=UTF-8");
-        response.getWriter().write("{\"code\":" + status.getHttpStatus() + ",\"message\":\""
+        response.getWriter().write("{\"code\":\"" + status.getCode() + "\",\"message\":\""
                 + escape(status.getMessage()) + "\"}");
     }
 

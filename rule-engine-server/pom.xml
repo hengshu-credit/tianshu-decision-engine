@@ -88,7 +88,7 @@
         </dependency>
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
-            <artifactId>onnxruntime_gpu</artifactId>
+            <artifactId>${onnxruntime.artifactId}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.openpnp</groupId>

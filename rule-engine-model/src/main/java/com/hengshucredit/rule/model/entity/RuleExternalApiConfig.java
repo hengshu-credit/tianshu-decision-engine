@@ -57,6 +57,7 @@ public class RuleExternalApiConfig {
     private String retryStatusCodes;
     private Integer retryOnConnectionError;
     private Integer retryOnTimeout;
+    private String retryCondition;
     private BigDecimal retryBackoffMultiplier;
     private Integer retryMaxIntervalMs;
     private Integer circuitBreakerEnabled;

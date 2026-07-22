@@ -39,6 +39,7 @@ public class QLExpressEngine {
         RuleResult ruleResult = new RuleResult();
         long start = System.currentTimeMillis();
         boolean protectConstants = RuntimeContextBridge.containsRegisteredConstants(context);
+        int runtimeWriteMarker = RuntimeContextBridge.beginRuntimeWriteScope();
         try {
             RuntimeContextBridge.assertScriptDoesNotAssignConstants(script);
             QLOptions options = QLOptions.builder()
@@ -47,6 +48,7 @@ public class QLExpressEngine {
                     .build();
             QLResult result = runner.execute(script, context != null ? context : Collections.emptyMap(), options);
             RuntimeContextBridge.syncTraceAssignments(result.getExpressionTraces(), context);
+            RuntimeContextBridge.replayRuntimeWrites(runtimeWriteMarker, context);
             if (protectConstants) {
                 RuntimeContextBridge.assertConstantsUnchanged(context);
             }
@@ -71,6 +73,7 @@ public class QLExpressEngine {
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());
         } finally {
+            RuntimeContextBridge.endRuntimeWriteScope();
             ruleResult.setExecuteTimeMs(System.currentTimeMillis() - start);
         }
         return ruleResult;
@@ -80,6 +83,7 @@ public class QLExpressEngine {
         RuleResult ruleResult = new RuleResult();
         long start = System.currentTimeMillis();
         boolean protectConstants = RuntimeContextBridge.containsRegisteredConstants(context);
+        int runtimeWriteMarker = RuntimeContextBridge.beginRuntimeWriteScope();
         try {
             RuntimeContextBridge.assertScriptDoesNotAssignConstants(script);
             QLOptions options = QLOptions.builder()
@@ -88,6 +92,7 @@ public class QLExpressEngine {
                     .build();
             QLResult result = runner.execute(script, context != null ? context : Collections.emptyMap(), options);
             RuntimeContextBridge.syncTraceAssignments(result.getExpressionTraces(), context);
+            RuntimeContextBridge.replayRuntimeWrites(runtimeWriteMarker, context);
             if (protectConstants) {
                 RuntimeContextBridge.assertConstantsUnchanged(context);
             }
@@ -112,6 +117,7 @@ public class QLExpressEngine {
             ruleResult.setSuccess(false);
             ruleResult.setErrorMessage(e.getMessage());
         } finally {
+            RuntimeContextBridge.endRuntimeWriteScope();
             ruleResult.setExecuteTimeMs(System.currentTimeMillis() - start);
         }
         return ruleResult;

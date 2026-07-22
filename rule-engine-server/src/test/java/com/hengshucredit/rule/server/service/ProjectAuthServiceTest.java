@@ -160,6 +160,20 @@ public class ProjectAuthServiceTest {
         request.removeHeader("Authorization");
         request.addHeader("Authorization", "Basic " + credentials);
         assertNull(service.authenticate(request));
+        assertEquals("300005", service.authenticationFailureStatus(request).getCode());
+    }
+
+    @Test
+    public void invalidPasswordHasAStablePublicFailureCode() {
+        RuleProject project = project(16L, "enabled", null);
+        service.projects.add(project);
+        service.auths.add(auth(16L, project.getId(), "BASIC_ENABLED", ProjectAuthType.BASIC,
+                "partner", "secret", null));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(
+                "partner:wrong".getBytes(StandardCharsets.UTF_8)));
+
+        assertEquals("300002", service.authenticationFailureStatus(request).getCode());
     }
 
     @Test
@@ -247,6 +261,14 @@ public class ProjectAuthServiceTest {
                 if (lookupKey.equals(auth.getLookupKey()) && Integer.valueOf(1).equals(auth.getStatus())) {
                     return auth;
                 }
+            }
+            return null;
+        }
+
+        @Override
+        protected RuleProjectAuth findAuthByLookupKey(String lookupKey) {
+            for (RuleProjectAuth auth : auths) {
+                if (lookupKey.equals(auth.getLookupKey())) return auth;
             }
             return null;
         }

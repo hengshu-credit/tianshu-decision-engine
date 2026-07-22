@@ -190,6 +190,11 @@ public class RulePublishServiceTest {
         }
 
         @Override
+        public void refreshFields(Long definitionId, String modelJson, String modelType) {
+            // 字段列表由当前测试夹具直接提供，无需调用真实字段分析依赖。
+        }
+
+        @Override
         public boolean updateById(RuleDefinition entity) {
             return true;
         }

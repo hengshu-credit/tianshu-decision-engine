@@ -16,7 +16,12 @@ jest.mock('@/api/variable', () => ({
   deleteVariable: jest.fn(),
   testVariable: jest.fn(),
   importJavaConstants: jest.fn(),
-  importJsonConstants: jest.fn()
+  importJsonConstants: jest.fn(),
+  listFieldValidations: jest.fn(),
+  listAvailableFieldValidations: jest.fn(),
+  createFieldValidation: jest.fn(),
+  updateFieldValidation: jest.fn(),
+  deleteFieldValidation: jest.fn()
 }))
 
 jest.mock('@/api/project', () => ({
@@ -93,6 +98,11 @@ async function mountAndWait() {
   variableApi.listVariables.mockResolvedValue({ data: { records: mockVars(), total: 3 } })
   ruleListApi.listLibraries.mockResolvedValue({ data: { records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }], total: 1 } })
   variableApi.listVariablesByProject.mockResolvedValue({ data: mockVars() })
+  variableApi.listFieldValidations.mockResolvedValue({ data: { records: [{
+    id: 11, scope: 'GLOBAL', projectId: 0, validationCode: 'mobile_required',
+    validationName: '手机号必填', validationType: 'REQUIRED', validationValue: '',
+    errorMessage: '手机号不能为空', status: 1
+  }], total: 1 } })
   dataObjectApi.getVariableTree.mockResolvedValue({ data: { tree: [] } })
   functionApi.listAllFunctionsByProject.mockResolvedValue({ data: [] })
   modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
@@ -719,6 +729,37 @@ describe('VariableList — 边界情况', () => {
     await Vue.nextTick()
     // onTabClick 只处理 objects 和 constants；切换到 constants 时调用 loadConstants
     expect(loadConstantsSpy).toHaveBeenCalled()
+    wrapper.destroy()
+  })
+})
+
+describe('VariableList — 字段校验规则库', () => {
+  test('渲染字段校验 Tab，并在切换时加载规则库', async () => {
+    const wrapper = await mountAndWait()
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/variable/VariableList.vue'), 'utf8')
+
+    expect(source).toContain('<el-tab-pane label="字段校验" name="validations">')
+    await wrapper.vm.onTabClick({ name: 'validations' })
+    expect(variableApi.listFieldValidations).toHaveBeenCalled()
+    wrapper.destroy()
+  })
+
+  test('新建字段校验保存稳定配置，不改写用户输入的编码', async () => {
+    const wrapper = await mountAndWait()
+    variableApi.createFieldValidation.mockResolvedValueOnce({})
+    wrapper.vm.activeTab = 'validations'
+    wrapper.vm.handlePrimaryCreate()
+    wrapper.vm.validationForm = {
+      id: null, scope: 'GLOBAL', projectId: '', validationCode: 'Mobile_Check',
+      validationName: '手机号校验', validationType: 'REGEX', validationValue: '^1\\d{10}$',
+      errorMessage: '手机号格式错误', description: '', status: 1
+    }
+
+    await wrapper.vm.saveFieldValidation()
+
+    expect(variableApi.createFieldValidation).toHaveBeenCalledWith(expect.objectContaining({
+      validationCode: 'Mobile_Check', validationType: 'REGEX', projectId: 0
+    }))
     wrapper.destroy()
   })
 })

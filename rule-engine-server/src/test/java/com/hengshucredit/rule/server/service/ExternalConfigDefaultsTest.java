@@ -33,6 +33,7 @@ public class ExternalConfigDefaultsTest {
         config.setRequestMapping("{\"customerId\":\"$.customerId\"}");
         config.setResponseMapping("");
         config.setAuthApiConfig("");
+        config.setRetryCondition("  ");
 
         invokeFillDefaults(new RuleExternalApiConfigService(), config);
 
@@ -41,6 +42,7 @@ public class ExternalConfigDefaultsTest {
         assertEquals("{\"customerId\":\"$.customerId\"}", config.getRequestMapping());
         assertNull(config.getResponseMapping());
         assertNull(config.getAuthApiConfig());
+        assertNull(config.getRetryCondition());
         assertNull(config.getContentType());
         assertEquals(Integer.valueOf(0), config.getResponseCacheSeconds());
     }

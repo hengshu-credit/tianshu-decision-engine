@@ -2,20 +2,73 @@ package com.hengshucredit.rule.server.service.onnx;
 
 import com.alibaba.fastjson.JSON;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
 public class OnnxRuntimeSessionManagerTest {
+
+    @Test
+    public void jvmShutdownDoesNotRaceEnvironmentAndSessionCleanup() throws Exception {
+        String javaExecutable = new File(System.getProperty("java.home"), "bin/java").getAbsolutePath();
+        String classPath = System.getProperty("surefire.test.class.path",
+                System.getProperty("java.class.path"));
+        Process process = new ProcessBuilder(
+                javaExecutable,
+                "-XX:ErrorFile=target/onnx-shutdown-hs-err-pid%p.log",
+                "-cp",
+                classPath,
+                OnnxJvmShutdownProbe.class.getName())
+                .redirectErrorStream(true)
+                .start();
+        StringBuilder output = new StringBuilder();
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                output.append(line).append(System.lineSeparator());
+            }
+        }
+        boolean finished = process.waitFor(30, TimeUnit.SECONDS);
+        if (!finished) process.destroyForcibly();
+
+        assertTrue("ONNX shutdown probe timed out\n" + output, finished);
+        assertEquals("ONNX shutdown probe crashed\n" + output, 0, process.exitValue());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void jvmShutdownSkipsNativeSessionCloseAndClearsCache() {
+        AtomicInteger closeCount = new AtomicInteger();
+        OnnxRuntimeSessionManager.CachedSession cached =
+                new OnnxRuntimeSessionManager.CachedSession(closeCount::incrementAndGet);
+        OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
+        Map<String, OnnxRuntimeSessionManager.CachedSession> sessions =
+                (Map<String, OnnxRuntimeSessionManager.CachedSession>)
+                        ReflectionTestUtils.getField(manager, "sessions");
+        assertNotNull(sessions);
+        sessions.put("cuda-session", cached);
+
+        manager.close(true);
+
+        assertEquals(0, closeCount.get());
+        assertFalse(cached.isClosed());
+        assertEquals(0, manager.getCachedSessionCount());
+    }
 
     @Test
     public void cudaFailureFallsBackToCpuAndCachesSuccessfulFallback() {
@@ -145,6 +198,12 @@ public class OnnxRuntimeSessionManagerTest {
                     .iterator().hasNext());
             assertTrue(String.valueOf(capabilities.get("availableProviders")).contains("CPU"));
             assertNotNull(capabilities.get("cudaAvailable"));
+            if (Boolean.TRUE.equals(capabilities.get("cudaAvailable"))) {
+                assertTrue(String.valueOf(capabilities.get("availableProviders")).contains("CUDA"));
+                assertNull(capabilities.get("cudaError"));
+            } else {
+                assertFalse(String.valueOf(capabilities.get("cudaError")).trim().isEmpty());
+            }
         } finally {
             manager.close();
         }

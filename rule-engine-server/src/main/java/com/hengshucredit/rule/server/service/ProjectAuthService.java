@@ -27,6 +27,8 @@ import com.hengshucredit.rule.server.mapper.RuleAuthAccessLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthTokenMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
+import com.hengshucredit.rule.server.openapi.OpenApiStatus;
+import com.hengshucredit.rule.server.openapi.OpenApiStatuses;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -124,6 +126,27 @@ public class ProjectAuthService {
         if (apiKeyContext != null) return apiKeyContext;
 
         return authenticateTokenBody(request);
+    }
+
+    public OpenApiStatus authenticationFailureStatus(HttpServletRequest request) {
+        String authorization = request == null ? null : request.getHeader("Authorization");
+        boolean bearer = startsWithIgnoreCase(authorization, "Bearer ");
+        try {
+            if (bearer) {
+                String value = authorization.substring(7).trim();
+                RuleProjectAuthToken token = findTokenByLookupKey(
+                        credentialCipher.lookupKey(ProjectAuthType.BEARER_TOKEN, value));
+                if (token != null && isAccountDisabled(findAuthById(token.getAuthId()))) {
+                    return OpenApiStatuses.accountDisabled();
+                }
+                return OpenApiStatuses.tokenExpired();
+            }
+            RuleProjectAuth presented = presentedAuth(request, authorization);
+            if (isAccountDisabled(presented)) return OpenApiStatuses.accountDisabled();
+        } catch (RuntimeException e) {
+            log.warn("Unable to classify project authentication failure", e);
+        }
+        return OpenApiStatuses.accountPasswordError();
     }
 
     public ProjectAuthContext authenticateLegacyToken(String token) {
@@ -481,6 +504,11 @@ public class ProjectAuthService {
                 .eq(RuleProjectAuthToken::getStatus, 1));
     }
 
+    protected RuleProjectAuthToken findTokenByLookupKey(String lookupKey) {
+        return tokenMapper.selectOne(new LambdaQueryWrapper<RuleProjectAuthToken>()
+                .eq(RuleProjectAuthToken::getLookupKey, lookupKey));
+    }
+
     protected RuleProjectAuthToken findTokenById(Long tokenId) {
         return tokenMapper.selectById(tokenId);
     }
@@ -544,6 +572,43 @@ public class ProjectAuthService {
         } catch (IllegalArgumentException e) {
             return null;
         }
+    }
+
+    private RuleProjectAuth presentedAuth(HttpServletRequest request, String authorization) {
+        if (startsWithIgnoreCase(authorization, "Basic ")) {
+            String username = basicUsername(authorization.substring(6).trim());
+            return StringUtils.hasText(username) ? findAuthByLookupKey(
+                    credentialCipher.lookupKey(ProjectAuthType.BASIC, username)) : null;
+        }
+        if (request == null) return null;
+        String accessKey = request.getHeader("X-Rule-Access-Key");
+        if (StringUtils.hasText(accessKey)) {
+            return findAuthByLookupKey(credentialCipher.lookupKey(ProjectAuthType.HMAC_SHA256, accessKey));
+        }
+        for (PresentedCredential credential : collectPresentedCredentials(request)) {
+            RuleProjectAuth auth = findAuthByLookupKey(
+                    credentialCipher.lookupKey(ProjectAuthType.API_KEY, credential.value));
+            if (auth != null) return auth;
+        }
+        if (isTokenEndpoint(request) && request instanceof CachedBodyHttpServletRequest) {
+            try {
+                JSONObject json = JSON.parseObject(new String(
+                        ((CachedBodyHttpServletRequest) request).getCachedBody(), StandardCharsets.UTF_8));
+                String username = json.getString("username");
+                if (StringUtils.hasText(username)) {
+                    return findAuthByLookupKey(credentialCipher.lookupKey(ProjectAuthType.BASIC, username));
+                }
+            } catch (RuntimeException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private boolean isAccountDisabled(RuleProjectAuth auth) {
+        if (auth == null) return false;
+        if (!Integer.valueOf(1).equals(auth.getStatus())) return true;
+        RuleProject project = findProjectById(auth.getProjectId());
+        return project == null || !Integer.valueOf(1).equals(project.getStatus());
     }
 
     private ProjectAuthContext authenticateBasicCredentials(String username, String password) {

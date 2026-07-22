@@ -173,14 +173,16 @@ public class OnnxRuntimeSessionManager {
         boolean cudaAvailable = providers.contains(OrtProvider.CUDA);
         String cudaError = null;
         if (cudaAvailable) {
-            try (OrtCUDAProviderOptions ignored = new OrtCUDAProviderOptions(0)) {
-                // 构造 provider options 会验证 CUDA provider 原生入口是否可加载。
+            try (OrtSession.SessionOptions options = new OrtSession.SessionOptions();
+                 OrtCUDAProviderOptions cudaOptions = new OrtCUDAProviderOptions(0)) {
+                // 追加 provider 时才会加载 CUDA 共享库及其依赖；仅构造 provider options 无法验证环境。
+                options.addCUDA(cudaOptions);
             } catch (RuntimeException | LinkageError | OrtException e) {
                 cudaAvailable = false;
-                cudaError = e.getMessage();
+                cudaError = failureMessage(e);
             }
         } else {
-            cudaError = "当前 ONNX Runtime 未包含 CUDA Execution Provider";
+            cudaError = "当前服务使用 CPU 版 ONNX Runtime；如需 CUDA，请使用 -Ponnx-gpu 构建后端";
         }
         result.put("cudaAvailable", cudaAvailable);
         result.put("cudaError", cudaError);
@@ -244,12 +246,34 @@ public class OnnxRuntimeSessionManager {
 
     @PreDestroy
     public void close() {
+        close(isJvmShutdownInProgress());
+    }
+
+    void close(boolean jvmShutdownInProgress) {
         synchronized (sessions) {
+            if (jvmShutdownInProgress) {
+                // OrtEnvironment 会注册独立的 JVM shutdown hook。Java 不保证多个 hook 的执行顺序，
+                // 此时主动关闭 CUDA session 可能与环境释放并发并触发原生访问冲突；进程退出时交由 OS 回收。
+                sessions.clear();
+                cpuFallbacks.clear();
+                return;
+            }
             for (CachedSession session : sessions.values()) {
                 session.retire();
             }
             sessions.clear();
             cpuFallbacks.clear();
+        }
+    }
+
+    private boolean isJvmShutdownInProgress() {
+        Thread probe = new Thread(() -> { }, "onnx-shutdown-state-probe");
+        try {
+            Runtime.getRuntime().addShutdownHook(probe);
+            Runtime.getRuntime().removeShutdownHook(probe);
+            return false;
+        } catch (IllegalStateException | SecurityException e) {
+            return true;
         }
     }
 

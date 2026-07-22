@@ -22,8 +22,11 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 @Service
 public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, RuleDefinition> {
@@ -51,6 +54,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     @Resource
     private RuleFieldAnalyzer fieldAnalyzer;
+
+    @Resource
+    private RuleFieldValidationService fieldValidationService;
 
     @Resource
     private RuleReferenceIntegrityService referenceIntegrityService;
@@ -233,6 +239,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
             // 从模型内容中解析输入/输出字段并持久化到独立字段表
             // 从变量管理表补充真实元信息（varLabel / varType / scriptName）
             fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, definition.getModelType(), definition.getProjectId());
+            refreshParentFields(definitionId);
         }
     }
 
@@ -296,6 +303,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         definition.setCurrentVersion((definition.getCurrentVersion() == null ? 0 : definition.getCurrentVersion()) + 1);
         updateById(definition);
         fieldAnalyzer.analyzeAndPersist(definitionId, snapshot.getModelJson(), definition.getModelType(), definition.getProjectId());
+        refreshParentFields(definitionId);
     }
 
     private boolean equalsText(String left, String right) {
@@ -313,6 +321,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         RuleDefinition definition = getById(definitionId);
         Long projectId = (definition != null) ? definition.getProjectId() : null;
         fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, modelType, projectId);
+        refreshParentFields(definitionId);
     }
 
     /**
@@ -593,6 +602,7 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     /**
      * 更新规则输入字段（关联变量映射）
      */
+    @Transactional
     public void updateInputField(Long fieldId, RuleDefinitionInputField field) {
         RuleDefinitionInputField existing = inputFieldMapper.selectById(fieldId);
         if (existing == null) {
@@ -608,7 +618,50 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         existing.setTransformType(field.getTransformType());
         existing.setTransformParams(field.getTransformParams());
         existing.setValidValues(field.getValidValues());
+        if (field.getValidationOverride() != null) {
+            int override = Integer.valueOf(1).equals(field.getValidationOverride()) ? 1 : 0;
+            existing.setValidationOverride(override);
+            if (override == 1) {
+                RuleDefinition definition = getById(existing.getDefinitionId());
+                Long projectId = definition == null ? null : definition.getProjectId();
+                existing.setValidationRuleIds(fieldValidationService.validateRuleIds(
+                        projectId, field.getValidationRuleIds()));
+            } else {
+                existing.setValidationRuleIds(null);
+            }
+        }
         inputFieldMapper.updateById(existing);
+        refreshParentFields(existing.getDefinitionId());
+    }
+
+    private void refreshParentFields(Long childDefinitionId) {
+        refreshParentFields(childDefinitionId, new LinkedHashSet<Long>());
+    }
+
+    private void refreshParentFields(Long childDefinitionId, Set<Long> visited) {
+        if (childDefinitionId == null || contentMapper == null || !visited.add(childDefinitionId)) return;
+        List<RuleDefinitionContent> contents = contentMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionContent>());
+        if (contents == null || contents.isEmpty()) return;
+        for (RuleDefinitionContent content : contents) {
+            if (content == null || content.getDefinitionId() == null
+                    || Objects.equals(content.getDefinitionId(), childDefinitionId)
+                    || !callsRule(content.getModelJson(), childDefinitionId)) {
+                continue;
+            }
+            RuleDefinition parent = getById(content.getDefinitionId());
+            if (parent == null) continue;
+            fieldAnalyzer.analyzeAndPersist(parent.getId(), content.getModelJson(),
+                    parent.getModelType(), parent.getProjectId());
+            refreshParentFields(parent.getId(), visited);
+        }
+    }
+
+    private boolean callsRule(String modelJson, Long definitionId) {
+        for (RuleCallCycleService.RuleCallRef ref : RuleCallCycleService.collectRuleCallRefs(modelJson)) {
+            if (Objects.equals(ref.getRuleId(), definitionId)) return true;
+        }
+        return false;
     }
 
     /**

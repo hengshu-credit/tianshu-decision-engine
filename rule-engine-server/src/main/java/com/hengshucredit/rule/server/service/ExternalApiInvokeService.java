@@ -380,6 +380,10 @@ public class ExternalApiInvokeService {
     }
 
     private boolean shouldRetry(RuleExternalApiConfig apiConfig, Throwable error) {
+        BusinessResponseException businessError = findCause(error, BusinessResponseException.class);
+        if (businessError != null) {
+            return businessError.isRetryable();
+        }
         HttpStatusCodeException statusError = findCause(error, HttpStatusCodeException.class);
         if (statusError != null) {
             return retryStatusCodes(apiConfig.getRetryStatusCodes()).contains(statusError.getRawStatusCode());
@@ -511,7 +515,33 @@ public class ExternalApiInvokeService {
         result.put("success", response.getStatusCode().is2xxSuccessful());
         result.put("httpStatus", response.getStatusCodeValue());
         result.put("body", responseBody);
+        if (!matchesResponseCondition(apiConfig.getSuccessCondition(), result)) {
+            result.put("success", false);
+            boolean retryable = hasText(apiConfig.getRetryCondition())
+                    && matchesResponseCondition(apiConfig.getRetryCondition(), result);
+            throw new BusinessResponseException(businessResponseMessage(result), retryable);
+        }
         return applyResponseMapping(apiConfig, result);
+    }
+
+    private String businessResponseMessage(Map<String, Object> response) {
+        Object body = response == null ? null : response.get("body");
+        if (!(body instanceof Map)) {
+            return "供应商业务响应未满足成功条件";
+        }
+        Map<?, ?> bodyMap = (Map<?, ?>) body;
+        Object code = bodyMap.containsKey("response_code")
+                ? bodyMap.get("response_code") : bodyMap.get("code");
+        Object message = bodyMap.containsKey("message")
+                ? bodyMap.get("message") : bodyMap.get("response_msg");
+        StringBuilder result = new StringBuilder("供应商业务响应未满足成功条件");
+        if (code != null && hasText(String.valueOf(code))) {
+            result.append("，code=").append(code);
+        }
+        if (message != null && hasText(String.valueOf(message))) {
+            result.append("，message=").append(message);
+        }
+        return result.toString();
     }
 
     private ResponseEntity<String> exchangeHttp(RuleExternalApiConfig apiConfig,
@@ -2093,6 +2123,19 @@ public class ExternalApiInvokeService {
 
         String getCacheStatus() {
             return cacheStatus;
+        }
+    }
+
+    private static class BusinessResponseException extends IllegalStateException {
+        private final boolean retryable;
+
+        private BusinessResponseException(String message, boolean retryable) {
+            super(message);
+            this.retryable = retryable;
+        }
+
+        private boolean isRetryable() {
+            return retryable;
         }
     }
 

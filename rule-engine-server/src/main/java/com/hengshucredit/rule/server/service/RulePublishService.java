@@ -88,6 +88,8 @@ public class RulePublishService {
             return "规则内容不存在";
         }
 
+        definitionService.refreshFields(definitionId, content.getModelJson(), definition.getModelType());
+
         String openApiConfigJson;
         try {
             openApiConfigJson = validateOpenApiContract(definitionId, content.getOpenApiConfigJson());
@@ -202,8 +204,8 @@ public class RulePublishService {
         String normalized = OpenApiContractCodec.validateAndNormalize(configJson);
         if (normalized == null) return null;
         OpenApiContract contract = OpenApiContractCodec.parse(normalized);
-        if (!contract.isEnabled() || contract.getRequestMappings().isEmpty()) return normalized;
-        Set<String> availableReferences = new HashSet<>();
+        if (!contract.isEnabled()) return normalized;
+        Set<String> availableInputReferences = new HashSet<>();
         List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
         if (fields != null) {
             for (RuleDefinitionInputField field : fields) {
@@ -212,10 +214,20 @@ public class RulePublishService {
                     continue;
                 }
                 String reference = OpenRequestMapper.referenceKey(field.getRefType(), field.getVarId());
-                if (reference != null) availableReferences.add(reference);
+                if (reference != null) availableInputReferences.add(reference);
             }
         }
-        OpenApiContractCodec.validateRequestReferences(contract, availableReferences);
+        OpenApiContractCodec.validateRequestReferences(contract, availableInputReferences);
+        Set<String> availableOutputReferences = new HashSet<>();
+        List<RuleDefinitionOutputField> outputFields = definitionService.listOutputFields(definitionId);
+        if (outputFields != null) {
+            for (RuleDefinitionOutputField field : outputFields) {
+                if (field.getScriptName() == null || field.getScriptName().trim().isEmpty()) continue;
+                String reference = OpenRequestMapper.referenceKey(field.getRefType(), field.getVarId());
+                if (reference != null) availableOutputReferences.add(reference);
+            }
+        }
+        OpenApiContractCodec.validateResponseReferences(contract, availableOutputReferences);
         return normalized;
     }
 

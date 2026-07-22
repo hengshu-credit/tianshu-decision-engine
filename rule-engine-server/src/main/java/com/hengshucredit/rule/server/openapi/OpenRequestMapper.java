@@ -34,7 +34,8 @@ public class OpenRequestMapper {
             Object value = sourceValue(mapping, body, normalizedHeaders);
             if (missing(value) && mapping.getDefaultValue() != null) value = mapping.getDefaultValue();
             if (missing(value) && mapping.isRequired()) {
-                throw new IllegalArgumentException("请求必填字段缺失: " + mapping.getSourcePath());
+                throw new OpenApiException(OpenApiStatuses.requiredField(
+                        "请求必填字段缺失: " + mapping.getSourcePath()));
             }
             result.put(targetName, convert(value, mapping.getTargetType(), mapping.getSourcePath()));
         }

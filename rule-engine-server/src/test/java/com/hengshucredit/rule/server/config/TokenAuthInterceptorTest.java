@@ -86,6 +86,7 @@ public class TokenAuthInterceptorTest {
         assertFalse(interceptor.preHandle(request, response, new Object()));
 
         assertEquals(401, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"code\":\"300002\""));
         assertEquals(Boolean.FALSE, service.lastSuccess);
         assertEquals("INVALID_CREDENTIAL", service.lastFailureReason);
     }
@@ -111,6 +112,7 @@ public class TokenAuthInterceptorTest {
         assertFalse(interceptor.preHandle(request, response, new Object()));
 
         assertEquals(429, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"code\":\"400002\""));
         assertEquals("RATE_LIMITED", service.lastFailureReason);
     }
 
@@ -148,6 +150,7 @@ public class TokenAuthInterceptorTest {
 
         assertFalse(interceptor.preHandle(request, response, new Object()));
         assertEquals(403, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"code\":\"300003\""));
     }
 
     @Test
@@ -165,6 +168,7 @@ public class TokenAuthInterceptorTest {
         MockHttpServletResponse limited = new MockHttpServletResponse();
         assertFalse(interceptor.preHandle(second, limited, new Object()));
         assertEquals(429, limited.getStatus());
+        assertTrue(limited.getContentAsString().contains("\"code\":\"400001\""));
         interceptor.afterCompletion(first, new MockHttpServletResponse(), new Object(), null);
         assertTrue(interceptor.preHandle(second, new MockHttpServletResponse(), new Object()));
         interceptor.afterCompletion(second, new MockHttpServletResponse(), new Object(), null);

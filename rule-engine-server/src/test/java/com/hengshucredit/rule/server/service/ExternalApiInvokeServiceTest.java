@@ -158,6 +158,86 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void businessRateLimitResponseRetriesByConditionTreeAndThenSucceeds() throws Exception {
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/business-retry", exchange -> {
+            int attempt = providerCalls.incrementAndGet();
+            String json = attempt < 3
+                    ? "{\"response_code\":\"10000429\",\"message\":\"too frequent\"}"
+                    : "{\"response_code\":\"00\",\"message\":\"success\",\"result\":{\"score\":720}}";
+            byte[] response = json.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(51L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(51L, 51L, "/business-retry");
+            config.setRetryCount(3);
+            config.setSuccessCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"00\"}");
+            config.setRetryCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"10000429\"}");
+            ExternalApiInvokeService service = configuredService(config, datasource);
+
+            Map<String, Object> result = service.invoke(51L, Collections.emptyMap());
+
+            assertEquals(3, providerCalls.get());
+            assertEquals(Boolean.TRUE, result.get("success"));
+            assertEquals("00", ((Map<?, ?>) result.get("body")).get("response_code"));
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void nonRetryableBusinessErrorFailsWithoutAnotherProviderCall() throws Exception {
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/business-error", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] response = ("{\"response_code\":\"20100103\","
+                    + "\"message\":\"invalid parameter\",\"trace_id\":\"trace-error\"}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = new RuleExternalDatasource();
+            datasource.setId(52L);
+            datasource.setProtocol("HTTP");
+            datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+            datasource.setAuthType("NONE");
+            RuleExternalApiConfig config = basicApiConfig(52L, 52L, "/business-error");
+            config.setRetryCount(3);
+            config.setSuccessCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"00\"}");
+            config.setRetryCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"10000429\"}");
+            ExternalApiInvokeService service = configuredService(config, datasource);
+
+            boolean failed = false;
+            try {
+                service.invoke(52L, Collections.emptyMap());
+            } catch (ExternalApiInvokeService.ApiInvokeException e) {
+                failed = true;
+                assertTrue(e.getMessage().contains("20100103"));
+            }
+
+            assertTrue(failed);
+            assertEquals(1, providerCalls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void previewInvocationUsesCurrentDraftConfigInsteadOfPersistedConfig() throws Exception {
         AtomicReference<String> requestedPath = new AtomicReference<>();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);

@@ -212,6 +212,24 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void objectPropertyRequirementResolvesItsSourceVariable() throws Exception {
+        RuleVariable variable = variable("api_features", "API",
+                "{\"apiConfigId\":7,\"resultPath\":\"body.features\"}");
+        FakeApiService apiService = new FakeApiService(
+                responseBody("features", singletonMap("credit_score_v1", 712)));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService,
+                new FakeDbPools(Collections.emptyList()));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(
+                Collections.singletonList("api_features.credit_score_v1")));
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap(), options);
+
+        assertEquals(712, ((Map<?, ?>) resolved.get("api_features")).get("credit_score_v1"));
+        assertEquals(1, apiService.callCount);
+    }
+
+    @Test
     public void explicitEmptyRequiredNamesSkipAllSourceVariables() throws Exception {
         RuleVariable variable = variable("legacyListHit", "LIST", "{\"listId\":9,\"queryField\":\"mobile\"}");
         FakeRuleListService listService = new FakeRuleListService(true);

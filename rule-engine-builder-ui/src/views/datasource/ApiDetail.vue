@@ -205,6 +205,26 @@
                   </el-form-item>
                 </el-col>
               </el-row>
+              <el-row :gutter="12">
+                <el-col :lg="8" :md="24">
+                  <el-form-item label="Token放置方式">
+                    <el-select v-model="apiAuthConfig.tokenPlacement" style="width:100%">
+                      <el-option label="写入请求Header" value="HEADER" />
+                      <el-option label="仅供请求脚本使用" value="SCRIPT_ONLY" />
+                    </el-select>
+                  </el-form-item>
+                </el-col>
+                <el-col :lg="8" :md="24">
+                  <el-form-item label="Token Header名称">
+                    <el-input v-model="apiAuthConfig.tokenHeaderName" placeholder="默认 Authorization；冰鉴填写 token_id" />
+                  </el-form-item>
+                </el-col>
+                <el-col :lg="8" :md="24">
+                  <el-form-item label="Token前缀">
+                    <el-input v-model="apiAuthConfig.tokenPrefix" placeholder="默认 Bearer；冰鉴留空" />
+                  </el-form-item>
+                </el-col>
+              </el-row>
             </div>
             <el-form-item v-else label="自定义配置">
               <monaco-editor v-model="form.authApiConfig" language="json" height="180px" />
@@ -701,6 +721,14 @@
               </el-col>
             </el-row>
             <div class="config-card">
+              <div class="section-title">业务成功条件</div>
+              <div class="field-help">HTTP 请求完成后按响应字段判断业务是否成功；条件不满足时按业务错误处理，并进入下面的重试判定。</div>
+              <response-condition-tree-editor
+                :group="successConditionRoot"
+                :path-options="responsePathOptions"
+              />
+            </div>
+            <div class="config-card">
               <div class="section-title">重试判定与退避</div>
               <div class="field-help">默认只重试 502/503/504 和连接错误；读取超时默认不重试，避免供应商已受理时重复扣费或重复提交。</div>
               <el-row :gutter="12">
@@ -710,6 +738,12 @@
                 <el-col :lg="4" :md="8"><el-form-item label="退避倍数"><el-input-number v-model="form.retryBackoffMultiplier" :min="1" :max="10" :precision="2" :step="0.5" style="width:100%" /></el-form-item></el-col>
                 <el-col :lg="4" :md="8"><el-form-item label="最大间隔ms"><el-input-number v-model="form.retryMaxIntervalMs" :min="0" :max="60000" :step="100" style="width:100%" /></el-form-item></el-col>
               </el-row>
+              <div class="section-title">业务响应重试条件</div>
+              <div class="field-help">仅当业务成功条件不满足、且本条件树命中时才重试。支持且/或嵌套；不配置则所有业务错误都不重试。</div>
+              <response-condition-tree-editor
+                :group="retryConditionRoot"
+                :path-options="responsePathOptions"
+              />
             </div>
             <div class="config-card">
               <div class="section-toolbar compact">
@@ -775,15 +809,6 @@
                 <el-button type="text" size="mini" :disabled="index === cacheKeyRows.length - 1" @click="moveCacheKeyRow(index, 1)">下移</el-button>
                 <el-button type="text" size="mini" class="btn-delete" @click="removeCacheKeyRow(index)">删除</el-button>
               </div>
-            </div>
-
-            <div class="config-card">
-              <div class="section-title">请求成功条件</div>
-              <div class="field-help">按响应 code 判断请求是否成功，支持且/或嵌套、条件多选、前缀、列表、字符串和正则匹配。</div>
-              <response-condition-tree-editor
-                :group="successConditionRoot"
-                :path-options="responsePathOptions"
-              />
             </div>
 
             <el-form-item label="计费模式">
@@ -894,6 +919,7 @@ export default {
       scriptVariableRows: [this.emptyScriptVariableRow()],
       cacheKeyRows: [this.emptyCacheKeyRow()],
       successConditionRoot: this.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
+      retryConditionRoot: this.emptyApiConditionRoot(),
       billingConfig: this.emptyBillingConfig(),
       asyncShared: this.emptyAsyncShared(),
       asyncPollConfig: this.emptyAsyncPollConfig(),
@@ -943,6 +969,9 @@ export default {
     responseConditionVarOptions() {
       const common = [
         { varCode: 'success', varLabel: '调用是否成功', varType: 'BOOLEAN' },
+        { varCode: 'body.response_code', varLabel: '供应商响应编码', varType: 'STRING' },
+        { varCode: 'body.response_msg', varLabel: '供应商响应消息', varType: 'STRING' },
+        { varCode: 'body.trace_id', varLabel: '供应商追踪号', varType: 'STRING' },
         { varCode: 'body.code', varLabel: '响应编码', varType: 'STRING' },
         { varCode: 'body.status', varLabel: '响应状态', varType: 'STRING' },
         { varCode: 'body.message', varLabel: '响应消息', varType: 'STRING' }
@@ -979,6 +1008,9 @@ export default {
     responsePathOptions() {
       const common = [
         { label: 'HTTP 状态码', value: 'httpStatus' },
+        { label: '供应商响应编码 response_code', value: 'body.response_code' },
+        { label: '供应商响应消息 response_msg', value: 'body.response_msg' },
+        { label: '供应商追踪号 trace_id', value: 'body.trace_id' },
         { label: '响应编码', value: 'body.code' },
         { label: '响应状态', value: 'body.status' },
         { label: '响应消息', value: 'body.message' }
@@ -1073,7 +1105,7 @@ export default {
         circuitMinCalls: 20, circuitWindowSize: 50, circuitOpenSeconds: 10,
         circuitHalfOpenCalls: 5, responseCacheSeconds: 0, responseCacheMaxSize: 10000,
         responseCacheMaxBytes: 1048576, responseCacheRedisEnabled: 0, staleCacheSeconds: 0,
-        cacheKeyConfig: '', successCondition: '',
+        cacheKeyConfig: '', successCondition: '', retryCondition: '',
         exceptionStrategy: 'FAIL_FAST', fallbackValue: '',
         asyncResultMode: 'POLL', asyncPollConfig: '', asyncCallbackConfig: '', asyncCallbackUrl: '',
         asyncResultPath: '', billingItemCode: '', billingCondition: '', unitPrice: 0, description: '',
@@ -1133,6 +1165,7 @@ export default {
         username: '', password: '', token: '', name: 'X-API-Key', value: '', location: 'HEADER',
         tokenUrl: '/oauth/token', method: 'POST', contentType: 'application/json',
         tokenPath: 'body.access_token', expiresInPath: 'body.expires_in',
+        tokenPlacement: 'HEADER', tokenHeaderName: 'Authorization', tokenPrefix: 'Bearer ',
         headers: '{}', body: '{"grant_type":"client_credentials"}'
       }
       if (type === 'API_KEY') common.name = 'X-API-Key'
@@ -1225,6 +1258,7 @@ export default {
       this.syncAsyncConfigFromForm()
       this.syncCacheKeyConfigFromForm()
       this.syncSuccessConditionFromForm()
+      this.syncRetryConditionFromForm()
       this.syncBillingConfigFromForm()
     },
     syncAuthConfigFromForm() {
@@ -1294,6 +1328,10 @@ export default {
     syncSuccessConditionFromForm() {
       const parsed = this.parseConfigForTemplate(this.form.successCondition)
       this.successConditionRoot = this.normalizeApiConditionRoot(parsed, 'httpStatus', 'starts_with', '2')
+    },
+    syncRetryConditionFromForm() {
+      const parsed = this.parseConfigForTemplate(this.form.retryCondition)
+      this.retryConditionRoot = this.normalizeApiConditionRoot(parsed, '', '==', '')
     },
     normalizeApiConditionRoot(condition, defaultPath, defaultOperator, defaultValue) {
       const source = condition && condition.condition ? condition.condition : condition
@@ -1446,6 +1484,7 @@ export default {
       this.form.responseMapping = this.jsonTextOrBlank(this.buildResponseMappingConfig())
       this.form.cacheKeyConfig = this.jsonTextOrBlank(this.buildCacheKeyConfig())
       this.form.successCondition = this.jsonTextOrBlank(this.buildSuccessConditionConfig())
+      this.form.retryCondition = this.jsonTextOrBlank(this.buildRetryConditionConfig())
       this.form.billingCondition = this.jsonTextOrBlank(this.buildBillingConditionConfig())
       if (this.form.requestMode === 'ASYNC') {
         this.form.asyncPollConfig = this.form.asyncResultMode === 'POLL'
@@ -1494,7 +1533,10 @@ export default {
           headers,
           body,
           tokenPath: this.apiAuthConfig.tokenPath,
-          expiresInPath: this.apiAuthConfig.expiresInPath
+          expiresInPath: this.apiAuthConfig.expiresInPath,
+          tokenPlacement: this.apiAuthConfig.tokenPlacement,
+          tokenHeaderName: this.apiAuthConfig.tokenHeaderName,
+          tokenPrefix: this.apiAuthConfig.tokenPrefix
         }
       }
       if (type === 'CUSTOM' && this.form.authApiConfig) {
@@ -1596,6 +1638,17 @@ export default {
     },
     buildSuccessConditionConfig() {
       return this.sanitizeApiConditionTree(this.successConditionRoot)
+    },
+    buildRetryConditionConfig() {
+      const condition = this.sanitizeApiConditionTree(this.retryConditionRoot)
+      return this.apiConditionTreeHasPath(condition) ? condition : {}
+    },
+    apiConditionTreeHasPath(node) {
+      if (!node || typeof node !== 'object') return false
+      if (node.type === 'group') {
+        return Array.isArray(node.children) && node.children.some(child => this.apiConditionTreeHasPath(child))
+      }
+      return Boolean(node.path)
     },
     sanitizeApiConditionTree(node) {
       if (!node || typeof node !== 'object') return this.emptyApiConditionRoot()
@@ -1777,6 +1830,10 @@ export default {
       }
       const successCondition = this.buildSuccessConditionConfig()
       this.validateApiConditionTree(successCondition, '请求成功条件')
+      const retryCondition = this.buildRetryConditionConfig()
+      if (Object.keys(retryCondition).length) {
+        this.validateApiConditionTree(retryCondition, '业务响应重试条件')
+      }
       if (this.billingConfig && this.billingConfig.mode === 'HIT') {
         this.validateApiConditionTree(this.buildBillingConditionConfig().condition, '查得条件')
       }
@@ -1793,6 +1850,7 @@ export default {
         asyncCallbackConfig: '异步回调配置',
         cacheKeyConfig: '缓存键配置',
         successCondition: '请求成功条件',
+        retryCondition: '业务响应重试条件',
         billingCondition: '计费条件',
         fallbackValue: '兜底返回',
         testSampleParams: '测试样例'

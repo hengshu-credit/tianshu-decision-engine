@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
@@ -15,6 +16,7 @@ import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
@@ -70,6 +72,9 @@ public class RuleFieldAnalyzer {
 
     @Resource
     private VariableSourceResolver variableSourceResolver;
+
+    @Resource
+    private RuleExternalApiConfigMapper externalApiConfigMapper;
 
     /**
      * 解析模型内容，提取输入/输出变量，持久化到字段表。
@@ -136,6 +141,8 @@ public class RuleFieldAnalyzer {
                 ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, true);
         Map<String, String> existingOutputRefTypeMap = definitionId == null
                 ? Collections.emptyMap() : getExistingRefTypeMap(definitionId, false);
+        Map<String, RuleDefinitionInputField> existingInputFieldMap = definitionId == null
+                ? Collections.emptyMap() : getExistingInputFieldMap(definitionId);
         Map<String, FieldRef> explicitRefMap = collectExplicitRefs(modelJson);
         Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
 
@@ -157,6 +164,15 @@ public class RuleFieldAnalyzer {
         preparedOutputFields = deduplicateOutputFields(preparedOutputFields);
         preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
         preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
+        for (RuleDefinitionInputField field : preparedInputFields) {
+            RuleDefinitionInputField existing = existingInputFieldMap.get(inputFieldKey(field));
+            if (existing != null && Integer.valueOf(1).equals(existing.getValidationOverride())) {
+                field.setValidationRuleIds(normalizeValidationRuleIds(existing.getValidationRuleIds()));
+                field.setValidationOverride(1);
+            } else if (field.getValidationOverride() == null) {
+                field.setValidationOverride(0);
+            }
+        }
         return new ResolvedFields(preparedInputFields, preparedOutputFields);
     }
 
@@ -531,6 +547,8 @@ public class RuleFieldAnalyzer {
         field.setValidValues(source.getValidValues());
         field.setTransformType(source.getTransformType());
         field.setTransformParams(source.getTransformParams());
+        field.setValidationRuleIds(normalizeValidationRuleIds(source.getValidationRuleIds()));
+        field.setValidationOverride(0);
         field.setStatus(source.getStatus());
         return field;
     }
@@ -755,6 +773,21 @@ public class RuleFieldAnalyzer {
             if (expr != null) {
                 depNames.addAll(extractIdentifiersFromScript(expr));
             }
+        } else if ("API".equals(varSource)) {
+            List<RuleDefinitionInputField> requestFields = loadApiRequestObjectFields(sourceConfig);
+            if (!requestFields.isEmpty()) {
+                for (RuleDefinitionInputField requestField : requestFields) {
+                    expandFieldRecursive(requestField, varMetaMap, seen, visited, result);
+                }
+                return;
+            }
+            if (variableSourceResolver != null) {
+                RuleVariable variable = new RuleVariable();
+                variable.setScriptName(trimToNull(field.getScriptName()));
+                variable.setVarSource(varSource);
+                variable.setSourceConfig(sourceConfig);
+                depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
+            }
         } else if (variableSourceResolver != null) {
             RuleVariable variable = new RuleVariable();
             variable.setScriptName(trimToNull(field.getScriptName()));
@@ -925,14 +958,107 @@ public class RuleFieldAnalyzer {
     }
 
     private void addInputFieldIfAbsent(List<RuleDefinitionInputField> fields, Set<String> seen, RuleDefinitionInputField field) {
-        String key = normalizeRefType(field.getRefType()) + ":" + firstNonBlank(field.getScriptName(), field.getFieldName());
-        if (key == null || key.endsWith(":null")) {
-            key = firstNonBlank(field.getScriptName(), field.getFieldName());
-        }
-        if (key == null) return;
-        String normalized = key.toLowerCase();
+        String normalized = inputFieldKey(field);
+        if ("NAME:".equals(normalized)) return;
         if (seen.add(normalized)) {
             fields.add(field);
+            return;
+        }
+        for (RuleDefinitionInputField existing : fields) {
+            if (normalized.equals(inputFieldKey(existing))) {
+                mergeInputValidation(existing, field);
+                break;
+            }
+        }
+    }
+
+    private List<RuleDefinitionInputField> loadApiRequestObjectFields(String sourceConfig) {
+        if (externalApiConfigMapper == null || dataObjectMapper == null || dataObjectFieldMapper == null) {
+            return Collections.emptyList();
+        }
+        Long apiConfigId = parseObject(sourceConfig).getLong("apiConfigId");
+        if (apiConfigId == null) {
+            return Collections.emptyList();
+        }
+        RuleExternalApiConfig apiConfig = externalApiConfigMapper.selectById(apiConfigId);
+        if (apiConfig == null || apiConfig.getRequestObjectId() == null) {
+            return Collections.emptyList();
+        }
+        RuleDataObject object = dataObjectMapper.selectById(apiConfig.getRequestObjectId());
+        if (object == null) {
+            return Collections.emptyList();
+        }
+        List<RuleDataObjectField> fields = dataObjectFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDataObjectField>()
+                        .eq(RuleDataObjectField::getObjectId, object.getId())
+                        .eq(RuleDataObjectField::getStatus, 1)
+                        .orderByAsc(RuleDataObjectField::getSortOrder)
+                        .orderByAsc(RuleDataObjectField::getId));
+        if (fields == null || fields.isEmpty()) {
+            return Collections.emptyList();
+        }
+        Map<Long, RuleDataObject> objectMap = Collections.singletonMap(object.getId(), object);
+        List<RuleDefinitionInputField> result = new ArrayList<>();
+        for (RuleDataObjectField source : fields) {
+            String scriptName = buildObjectFieldScriptName(source, objectMap);
+            if (scriptName == null) {
+                continue;
+            }
+            RuleDefinitionInputField target = new RuleDefinitionInputField();
+            target.setVarId(source.getId());
+            target.setRefType("DATA_OBJECT");
+            target.setFieldName(firstNonBlank(source.getVarCode(), source.getScriptName(), scriptName));
+            target.setFieldLabel(firstNonBlank(source.getVarLabel(), target.getFieldName()));
+            target.setScriptName(scriptName);
+            target.setFieldType(firstNonBlank(source.getVarType(), "STRING"));
+            target.setStatus(1);
+            target.setCreateTime(LocalDateTime.now());
+            result.add(target);
+        }
+        return result;
+    }
+
+    private void mergeInputValidation(RuleDefinitionInputField outer, RuleDefinitionInputField inherited) {
+        if (outer == null || inherited == null || Integer.valueOf(1).equals(outer.getValidationOverride())) {
+            return;
+        }
+        String inheritedRules = normalizeValidationRuleIds(inherited.getValidationRuleIds());
+        if (!"[]".equals(inheritedRules)) {
+            outer.setValidationRuleIds(inheritedRules);
+        } else if (outer.getValidationRuleIds() == null) {
+            outer.setValidationRuleIds("[]");
+        }
+        outer.setValidationOverride(0);
+    }
+
+    private Map<String, RuleDefinitionInputField> getExistingInputFieldMap(Long definitionId) {
+        Map<String, RuleDefinitionInputField> result = new HashMap<>();
+        List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionInputField>()
+                        .eq(RuleDefinitionInputField::getDefinitionId, definitionId));
+        for (RuleDefinitionInputField field : fields == null
+                ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
+            result.put(inputFieldKey(field), field);
+        }
+        return result;
+    }
+
+    private String inputFieldKey(RuleDefinitionInputField field) {
+        String refType = normalizeRefType(field.getRefType());
+        if (refType != null && field.getVarId() != null) {
+            return refType + ":" + field.getVarId();
+        }
+        String name = firstNonBlank(field.getScriptName(), field.getFieldName());
+        return "NAME:" + (name == null ? "" : name.toLowerCase());
+    }
+
+    private String normalizeValidationRuleIds(String json) {
+        if (json == null || json.trim().isEmpty()) return "[]";
+        try {
+            List<Long> ids = JSON.parseArray(json, Long.class);
+            return JSON.toJSONString(ids == null ? Collections.emptyList() : new ArrayList<>(new LinkedHashSet<>(ids)));
+        } catch (RuntimeException ignored) {
+            return "[]";
         }
     }
 
@@ -1061,10 +1187,36 @@ public class RuleFieldAnalyzer {
 
     private void applyExplicitRef(RuleDefinitionInputField field, Map<String, FieldRef> explicitRefMap) {
         FieldRef ref = findExplicitRef(field, explicitRefMap);
+        if (ref == null) {
+            ref = findRootVariableExplicitRef(field, explicitRefMap);
+        }
         if (ref != null) {
             field.setVarId(ref.refId);
             field.setRefType(ref.refType);
         }
+    }
+
+    private FieldRef findRootVariableExplicitRef(RuleDefinitionInputField field,
+                                                  Map<String, FieldRef> explicitRefMap) {
+        String path = trimToNull(field.getScriptName());
+        if (path == null) {
+            path = trimToNull(field.getFieldName());
+        }
+        while (path != null) {
+            int separator = path.lastIndexOf('.');
+            if (separator <= 0) {
+                return null;
+            }
+            path = path.substring(0, separator);
+            FieldRef ref = explicitRefMap.get(path);
+            if (ref == null) {
+                ref = explicitRefMap.get(path.toLowerCase());
+            }
+            if (ref != null && "VARIABLE".equals(normalizeRefType(ref.refType))) {
+                return ref;
+            }
+        }
+        return null;
     }
 
     private void applyExplicitRef(RuleDefinitionOutputField field, Map<String, FieldRef> explicitRefMap) {
@@ -1157,8 +1309,8 @@ public class RuleFieldAnalyzer {
     }
 
     /**
-     * 提取规则模型中直接引用的模型或模型输出字段，供执行阶段触发对应模型推理。
-     * 普通脚本标识符不属于模型引用，不能加入变量来源解析范围。
+     * 提取规则模型中带稳定引用的变量、模型或模型输出字段，供执行阶段触发来源解析。
+     * 普通脚本标识符没有显式引用身份，不能加入变量来源解析范围。
      */
     public List<RuleDefinitionInputField> extractDirectModelInputFields(String modelJson, String modelType) {
         List<RuleDefinitionInputField> result = new ArrayList<>();
@@ -1166,7 +1318,7 @@ public class RuleFieldAnalyzer {
         for (RuleDefinitionInputField field : extractInputFields(modelJson, modelType)) {
             applyExplicitRef(field, explicitRefMap);
             String refType = normalizeRefType(field.getRefType());
-            if ("MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
+            if ("VARIABLE".equals(refType) || "MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
                 result.add(field);
             }
         }

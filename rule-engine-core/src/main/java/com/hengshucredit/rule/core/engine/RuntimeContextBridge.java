@@ -26,6 +26,8 @@ public final class RuntimeContextBridge {
     private static final ThreadLocal<Map<String, Object>> CONSTANT_VALUES = new ThreadLocal<>();
     private static final ThreadLocal<Consumer<Map<String, Object>>> TRACE_EVENT_LISTENER = new ThreadLocal<>();
     private static final ThreadLocal<Map<String, Map<String, Object>>> SOURCE_STATES = new ThreadLocal<>();
+    private static final ThreadLocal<List<RuntimeWrite>> RUNTIME_WRITES = new ThreadLocal<>();
+    private static final ThreadLocal<Integer> RUNTIME_WRITE_DEPTH = new ThreadLocal<>();
 
     private RuntimeContextBridge() {
     }
@@ -45,6 +47,8 @@ public final class RuntimeContextBridge {
         CONSTANT_VALUES.remove();
         TRACE_EVENT_LISTENER.remove();
         SOURCE_STATES.remove();
+        RUNTIME_WRITES.remove();
+        RUNTIME_WRITE_DEPTH.remove();
     }
 
     public static void setRuleContext(Map<String, Object> rule, List<String> matchedConditions) {
@@ -226,6 +230,10 @@ public final class RuntimeContextBridge {
     }
 
     public static Object setValue(String path, Object value) {
+        return setValue(path, value, true);
+    }
+
+    private static Object setValue(String path, Object value, boolean recordRuntimeWrite) {
         String rootPath = rootPath(path);
         Map<String, Object> constants = CONSTANT_VALUES.get();
         if (rootPath != null && constants != null && constants.containsKey(rootPath)) {
@@ -234,8 +242,49 @@ public final class RuntimeContextBridge {
         BiConsumer<String, Object> listener = LISTENER.get();
         if (listener != null) {
             listener.accept(path, value);
+            if (recordRuntimeWrite && RUNTIME_WRITE_DEPTH.get() != null) {
+                RUNTIME_WRITES.get().add(new RuntimeWrite(path, value));
+            }
         }
         return value;
+    }
+
+    static int beginRuntimeWriteScope() {
+        List<RuntimeWrite> writes = RUNTIME_WRITES.get();
+        if (writes == null) {
+            writes = new ArrayList<>();
+            RUNTIME_WRITES.set(writes);
+        }
+        Integer depth = RUNTIME_WRITE_DEPTH.get();
+        RUNTIME_WRITE_DEPTH.set(depth == null ? 1 : depth + 1);
+        return writes.size();
+    }
+
+    static void replayRuntimeWrites(int marker, Object context) {
+        if (!(context instanceof Map)) {
+            return;
+        }
+        List<RuntimeWrite> writes = RUNTIME_WRITES.get();
+        if (writes == null || marker >= writes.size()) {
+            return;
+        }
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = (Map<String, Object>) context;
+        for (int i = Math.max(0, marker); i < writes.size(); i++) {
+            RuntimeWrite write = writes.get(i);
+            setValue(write.path, write.value, false);
+            writePath(values, write.path, write.value);
+        }
+    }
+
+    static void endRuntimeWriteScope() {
+        Integer depth = RUNTIME_WRITE_DEPTH.get();
+        if (depth == null || depth <= 1) {
+            RUNTIME_WRITE_DEPTH.remove();
+            RUNTIME_WRITES.remove();
+        } else {
+            RUNTIME_WRITE_DEPTH.set(depth - 1);
+        }
     }
 
     /**
@@ -272,7 +321,7 @@ public final class RuntimeContextBridge {
             return;
         }
         Object value = trace.getValue();
-        setValue(path, value);
+        setValue(path, value, false);
         writePath(values, path, value);
     }
 
@@ -319,6 +368,16 @@ public final class RuntimeContextBridge {
         String normalized = path.trim();
         int dot = normalized.indexOf('.');
         return dot < 0 ? normalized : normalized.substring(0, dot);
+    }
+
+    private static final class RuntimeWrite {
+        private final String path;
+        private final Object value;
+
+        private RuntimeWrite(String path, Object value) {
+            this.path = path;
+            this.value = value;
+        }
     }
 
     private static Object snapshotValue(Object value) {

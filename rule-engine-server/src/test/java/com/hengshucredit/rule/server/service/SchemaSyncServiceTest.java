@@ -68,6 +68,20 @@ public class SchemaSyncServiceTest {
     }
 
     @Test
+    public void externalApiBusinessRetryConditionColumnIsAddedWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("retry_condition");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureExternalApiCacheColumns");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ADD COLUMN `retry_condition` JSON DEFAULT NULL COMMENT '业务响应重试条件树JSON' AFTER `retry_on_timeout`"));
+    }
+
+    @Test
     public void projectAuthSchemaCreatesTablesAndAttributionColumnsWhenMissing() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
         FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate(
@@ -111,6 +125,25 @@ public class SchemaSyncServiceTest {
         assertTrue(containsSql(jdbcTemplate.sqlList, "`response_json` LONGTEXT NOT NULL"));
         assertTrue(containsSql(jdbcTemplate.sqlList,
                 "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"));
+    }
+
+    @Test
+    public void fieldValidationSchemaCreatesRuleLibraryAndInputAssignments() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate(
+                "validation_rule_ids", "validation_override");
+        jdbcTemplate.missingTables.add("rule_field_validation");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureFieldValidationSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList, "CREATE TABLE `rule_field_validation`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ADD COLUMN `validation_rule_ids` JSON DEFAULT NULL"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ADD COLUMN `validation_override` TINYINT NOT NULL DEFAULT 0"));
     }
 
     @Test

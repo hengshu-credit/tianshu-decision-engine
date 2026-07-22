@@ -7,9 +7,13 @@ import com.hengshucredit.rule.server.openapi.OpenApiContract;
 import com.hengshucredit.rule.server.openapi.OpenApiContractService;
 import com.hengshucredit.rule.server.openapi.OpenApiException;
 import com.hengshucredit.rule.server.openapi.OpenApiStatus;
+import com.hengshucredit.rule.server.openapi.OpenApiStatuses;
 import com.hengshucredit.rule.server.openapi.OpenRequestMapper;
 import com.hengshucredit.rule.server.openapi.OpenResponseRenderer;
 import com.hengshucredit.rule.server.service.OpenRuleExecutionExecutor;
+import com.hengshucredit.rule.server.service.FieldValidationException;
+import com.hengshucredit.rule.server.service.FieldValidationViolation;
+import com.hengshucredit.rule.server.service.RuleFieldValidationService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -46,6 +50,9 @@ public class OpenRuleController {
     @Resource
     private OpenRuleExecutionExecutor executionExecutor;
 
+    @Resource
+    private RuleFieldValidationService fieldValidationService;
+
     @PostMapping("/execute/{ruleCode}")
     public ResponseEntity<Object> execute(@PathVariable String ruleCode,
                                           @RequestBody(required = false) Object body,
@@ -56,13 +63,14 @@ public class OpenRuleController {
         try {
             ProjectAuthContext authContext = ProjectAuthContext.from(request);
             if (authContext == null) {
-                throw new OpenApiException(new OpenApiStatus(false, "AUTH_CONTEXT_MISMATCH",
-                        "项目鉴权与开放接口标识不匹配", 401));
+                throw new OpenApiException(OpenApiStatuses.productUnauthorized());
             }
             resolved = contractService.resolve(authContext.getAuthId(), headers.getFirst("X-Auth-Code"), ruleCode);
             traceId = traceId(resolved);
             Map<String, Object> params = requestMapper.map(resolved.getContract(), body,
                     firstHeaders(headers), resolved.getInputReferences());
+            fieldValidationService.validateDefinitionInput(
+                    resolved.getPublished().getDefinitionId(), params);
             OpenApiContractService.ResolvedContract executionContract = resolved;
             RuleResult result = executionExecutor.execute(() -> executeService.executePublished(
                     executionContract.getPublished(), params, executionContract.getProject().getId(),
@@ -73,26 +81,29 @@ public class OpenRuleController {
             if (hasText(result.getTraceId())) traceId = result.getTraceId();
             if (!result.isSuccess()) {
                 Map<String, Object> values = errorValues(result.getErrorMessage());
-                return render(resolved.getContract(), new OpenApiStatus(false,
-                        "RULE_EXECUTION_FAILED", safeMessage(result.getErrorMessage(), "规则执行失败"), 500),
+                return render(resolved.getContract(), OpenApiStatuses.resultError(
+                        safeMessage(result.getErrorMessage(), "结果处理异常")),
                         traceId, values);
             }
-            return render(resolved.getContract(), new OpenApiStatus(true, "OK", "执行成功", 200),
+            return render(resolved.getContract(), OpenApiStatuses.success(),
                     traceId, outputValues(resolved, result));
         } catch (OpenRuleExecutionExecutor.TimedOut e) {
-            return renderSafely(resolved, new OpenApiStatus(false, "REQUEST_TIMEOUT",
-                    "请求执行超时", 504), traceId, errorValues("请求执行超时"));
+            return renderSafely(resolved, OpenApiStatuses.requestTimeout(),
+                    traceId, errorValues("请求处理超时"));
         } catch (OpenRuleExecutionExecutor.Busy e) {
-            return renderSafely(resolved, new OpenApiStatus(false, "SERVICE_BUSY",
-                    "服务繁忙，请稍后重试", 503), traceId, errorValues("服务繁忙，请稍后重试"));
+            return renderSafely(resolved, OpenApiStatuses.qpsConcurrencyExceeded(),
+                    traceId, errorValues("QPS 或并发超过限制"));
         } catch (OpenApiException e) {
             return renderSafely(resolved, e.getStatus(), traceId, errorValues(e.getMessage()));
+        } catch (FieldValidationException e) {
+            return renderSafely(resolved, OpenApiStatuses.parameterValidation(e.getMessage()),
+                    traceId, validationErrorValues(e));
         } catch (IllegalArgumentException e) {
-            return renderSafely(resolved, new OpenApiStatus(false, "REQUEST_INVALID",
-                    safeMessage(e.getMessage(), "请求参数不合法"), 400), traceId, errorValues(e.getMessage()));
+            return renderSafely(resolved, OpenApiStatuses.parameterValidation(
+                    safeMessage(e.getMessage(), "入参校验失败")), traceId, errorValues(e.getMessage()));
         } catch (RuntimeException e) {
-            return renderSafely(resolved, new OpenApiStatus(false, "INTERNAL_ERROR",
-                    "系统执行异常", 500), traceId, errorValues("系统执行异常"));
+            return renderSafely(resolved, OpenApiStatuses.systemError(),
+                    traceId, errorValues("系统执行异常"));
         }
     }
 
@@ -122,6 +133,14 @@ public class OpenRuleController {
         for (Map.Entry<String, String> entry : resolved.getOutputReferences().entrySet()) {
             values.put("output." + entry.getKey().replace(':', '.'), readPath(result.getResult(), entry.getValue()));
         }
+        Map<String, Object> response = new LinkedHashMap<>();
+        for (OpenApiContract.ResponseMapping mapping : resolved.getContract().getResponseMappings()) {
+            String reference = OpenRequestMapper.referenceKey(
+                    mapping.getSourceRefType(), mapping.getSourceVarId());
+            String sourcePath = resolved.getOutputReferences().get(reference);
+            response.put(mapping.getTargetField(), readPath(result.getResult(), sourcePath));
+        }
+        values.put("response", response);
         if (resolved.getContract().isReturnTrace()) values.put("trace", result.getTraces());
         return values;
     }
@@ -141,6 +160,19 @@ public class OpenRuleController {
     private Map<String, Object> errorValues(String message) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("error.message", message);
+        return values;
+    }
+
+    private Map<String, Object> validationErrorValues(FieldValidationException exception) {
+        Map<String, Object> values = errorValues(exception.getMessage());
+        FieldValidationViolation first = exception.getFirstViolation();
+        if (first != null) {
+            values.put("error.field", first.getField());
+            values.put("error.validationId", first.getValidationId());
+            values.put("error.validationCode", first.getValidationCode());
+            values.put("error.validationName", first.getValidationName());
+        }
+        values.put("error.violations", exception.getViolations());
         return values;
     }
 

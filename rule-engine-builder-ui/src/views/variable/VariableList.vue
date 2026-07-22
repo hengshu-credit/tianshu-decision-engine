@@ -6,7 +6,7 @@
 
     <div class="uiue-btn-bar">
       <div class="btn-right">
-        <el-dropdown trigger="click" @command="handleImportCmd">
+        <el-dropdown v-if="activeTab !== 'validations'" trigger="click" @command="handleImportCmd">
           <el-button size="small" type="primary" icon="el-icon-upload2">批量导入 <i class="el-icon-arrow-down el-icon--right" /></el-button>
           <el-dropdown-menu slot="dropdown">
             <el-dropdown-item command="java-entity" icon="el-icon-document">导入 Java 实体类</el-dropdown-item>
@@ -17,7 +17,7 @@
           </el-dropdown-menu>
         </el-dropdown>
         <el-button size="small" icon="el-icon-plus" @click="handlePrimaryCreate">{{ primaryCreateLabel }}</el-button>
-        <el-button size="small" icon="el-icon-video-play" type="warning" style="margin-left: 0;" @click="handleBatchValidate" :loading="validating">验证规则</el-button>
+        <el-button v-if="activeTab !== 'validations'" size="small" icon="el-icon-video-play" type="warning" style="margin-left: 0;" @click="handleBatchValidate" :loading="validating">验证规则</el-button>
       </div>
     </div>
 
@@ -257,7 +257,91 @@
           layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
           @current-change="p=>{constQp.pageNum=p;loadConstants()}" @size-change="s=>{constQp.pageSize=s;constQp.pageNum=1;loadConstants()}" />
       </el-tab-pane>
+
+      <el-tab-pane label="字段校验" name="validations">
+        <el-alert title="字段校验规则可在规则详情的输入字段中复用；同一字段可选择多个规则，调用开放接口时会逐项校验。" type="info" :closable="false" show-icon style="margin-bottom:12px;" />
+        <div class="tab-filter-row" @keyup.enter="handleFieldValidationQuery">
+          <el-select v-model="validationQp.scope" clearable placeholder="作用范围" size="mini" style="width:100px;" @change="handleFieldValidationQuery">
+            <el-option label="全局" value="GLOBAL" />
+            <el-option label="项目级" value="PROJECT" />
+          </el-select>
+          <el-select v-model="validationQp.projectId" clearable filterable placeholder="所属项目" size="mini" style="width:150px;" @change="handleFieldValidationQuery">
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+          <el-select v-model="validationQp.validationType" clearable placeholder="校验类型" size="mini" style="width:130px;" @change="handleFieldValidationQuery">
+            <el-option v-for="item in fieldValidationTypes" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+          <el-input v-model="validationQp.keyword" clearable placeholder="编码或名称" size="mini" style="width:180px;" />
+          <el-button type="primary" @click="handleFieldValidationQuery">查询</el-button>
+          <el-button @click="resetFieldValidationQuery">重置</el-button>
+        </div>
+        <el-table v-loading="validationLoading" :data="validationRows" border size="small" style="width:100%;" empty-text="暂无字段校验规则">
+          <el-table-column label="作用范围" width="90" align="center">
+            <template slot-scope="{ row }"><el-tag :type="row.scope === 'GLOBAL' ? 'scope-global' : 'scope-project'" size="mini">{{ scopeTagLabel(row.scope) }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="项目名称" min-width="120" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ row.projectName || getProjectName(row.projectId) || '—' }}</template>
+          </el-table-column>
+          <el-table-column prop="validationCode" label="校验编码" min-width="130" show-overflow-tooltip />
+          <el-table-column prop="validationName" label="校验名称" min-width="130" show-overflow-tooltip />
+          <el-table-column label="校验类型" width="110" align="center">
+            <template slot-scope="{ row }"><el-tag size="mini" type="info">{{ fieldValidationTypeLabel(row.validationType) }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="校验值" min-width="150" show-overflow-tooltip>
+            <template slot-scope="{ row }">{{ row.validationType === 'REQUIRED' ? '—' : row.validationValue }}</template>
+          </el-table-column>
+          <el-table-column prop="errorMessage" label="失败提示" min-width="180" show-overflow-tooltip />
+          <el-table-column label="状态" width="70" align="center">
+            <template slot-scope="{ row }"><el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag></template>
+          </el-table-column>
+          <el-table-column label="更新时间" min-width="165" align="center">
+            <template slot-scope="{ row }">{{ formatUpdateTime(row.updateTime) }}</template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" align="center" fixed="right">
+            <template slot-scope="{ row }">
+              <el-button type="text" size="small" @click="editFieldValidation(row)">编辑</el-button>
+              <el-button type="text" size="small" class="btn-delete" @click="removeFieldValidation(row)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-pagination style="margin-top:12px;text-align:right;" :current-page="validationQp.pageNum" :page-size="validationQp.pageSize" :total="validationTotal"
+          layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100]"
+          @current-change="p=>{validationQp.pageNum=p;loadFieldValidations()}" @size-change="s=>{validationQp.pageSize=s;validationQp.pageNum=1;loadFieldValidations()}" />
+      </el-tab-pane>
     </el-tabs>
+
+    <el-dialog :title="validationForm.id ? '编辑字段校验' : '新建字段校验'" :visible.sync="validationDialogVisible" width="600px" :close-on-click-modal="false">
+      <el-form :model="validationForm" label-width="110px" size="small">
+        <el-form-item label="作用范围" required>
+          <el-select v-model="validationForm.scope" style="width:100%;" @change="onFieldValidationScopeChange">
+            <el-option label="全局（所有项目可用）" value="GLOBAL" />
+            <el-option label="项目级" value="PROJECT" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="validationForm.scope === 'PROJECT'" label="所属项目" required>
+          <el-select v-model="validationForm.projectId" filterable placeholder="请选择项目" style="width:100%;">
+            <el-option v-for="p in projects" :key="p.id" :label="p.projectName" :value="p.id" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="校验编码" required><el-input v-model="validationForm.validationCode" placeholder="稳定标识，保存时原样保留" :disabled="!!validationForm.id" /></el-form-item>
+        <el-form-item label="校验名称" required><el-input v-model="validationForm.validationName" placeholder="如：手机号格式" /></el-form-item>
+        <el-form-item label="校验类型" required>
+          <el-select v-model="validationForm.validationType" style="width:100%;">
+            <el-option v-for="item in fieldValidationTypes" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="validationForm.validationType !== 'REQUIRED'" label="校验值" required>
+          <el-input v-model="validationForm.validationValue" :placeholder="fieldValidationValueHint" />
+        </el-form-item>
+        <el-form-item label="失败提示" required><el-input v-model="validationForm.errorMessage" placeholder="校验不通过时返回给调用方的提示" /></el-form-item>
+        <el-form-item label="说明"><el-input v-model="validationForm.description" type="textarea" :rows="2" /></el-form-item>
+        <el-form-item label="状态"><el-switch v-model="validationForm.status" :active-value="1" :inactive-value="0" active-text="启用" /></el-form-item>
+      </el-form>
+      <div slot="footer">
+        <el-button size="small" @click="validationDialogVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="validationSaving" @click="saveFieldValidation">保存</el-button>
+      </div>
+    </el-dialog>
 
     <!-- Create/Edit Variable Dialog -->
     <el-dialog :title="variableDialogTitle" :visible.sync="dialogVisible" :width="form.varSource === 'LIST' ? '760px' : '600px'" :close-on-click-modal="false">
@@ -757,7 +841,7 @@
 </template>
 
 <script>
-import { listVariables, listVariablesByProject, createVariable, updateVariable, toGlobalVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants } from '@/api/variable'
+import { listVariables, listVariablesByProject, createVariable, updateVariable, toGlobalVariable, deleteVariable, testVariable, getVariableOptions, saveVariableOptions, importJavaConstants, importJsonConstants, listFieldValidations, createFieldValidation, updateFieldValidation, deleteFieldValidation } from '@/api/variable'
 import { listProjects } from '@/api/project'
 import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
@@ -897,6 +981,25 @@ export default {
       validateDialogVisible: false,
       validateProjectId: '',
 
+      // 字段校验规则库
+      validationLoading: false,
+      validationRows: [],
+      validationTotal: 0,
+      validationQp: { pageNum: 1, pageSize: 10, scope: '', projectId: '', validationType: '', keyword: '' },
+      validationDialogVisible: false,
+      validationSaving: false,
+      validationForm: this.initFieldValidationForm(),
+      fieldValidationTypes: [
+        { value: 'REQUIRED', label: '必填' },
+        { value: 'REGEX', label: '正则表达式' },
+        { value: 'MIN_VALUE', label: '最小值' },
+        { value: 'MAX_VALUE', label: '最大值' },
+        { value: 'MIN_LENGTH', label: '最小长度' },
+        { value: 'MAX_LENGTH', label: '最大长度' },
+        { value: 'IN', label: '允许值集合' },
+        { value: 'NOT_IN', label: '禁用值集合' }
+      ],
+
       varTypeFilterOptions: VAR_TYPE_FILTER_OPTIONS,
       varTypeFormOptions: VAR_TYPE_FORM_OPTIONS,
 
@@ -920,6 +1023,7 @@ export default {
     this.loadData()
     this.loadObjectTree()
     this.loadConstants()
+    if (this.activeTab === 'validations') this.loadFieldValidations()
   },
   computed: {
     standaloneVars() {
@@ -949,6 +1053,7 @@ export default {
       })
     },
     primaryCreateLabel() {
+      if (this.activeTab === 'validations') return '新建校验规则'
       if (this.activeTab === 'constants') return '新建常量'
       if (this.activeTab === 'objects') return '新建对象'
       return '新建变量'
@@ -978,6 +1083,17 @@ export default {
     },
     listCombinationDescription() {
       return listCombinationMode(this.form.listCombinationMode).description
+    },
+    fieldValidationValueHint() {
+      return {
+        REGEX: '如：^1\\d{10}$',
+        MIN_VALUE: '请输入最小数值',
+        MAX_VALUE: '请输入最大数值',
+        MIN_LENGTH: '请输入最小长度（整数）',
+        MAX_LENGTH: '请输入最大长度（整数）',
+        IN: '多个值用英文逗号分隔',
+        NOT_IN: '多个值用英文逗号分隔'
+      }[this.validationForm.validationType] || '请输入校验值'
     }
   },
   methods: {
@@ -985,6 +1101,7 @@ export default {
       this.saveCachedState()
       if (tab.name === 'objects') this.loadObjectTree()
       if (tab.name === 'constants') this.loadConstants()
+      if (tab.name === 'validations') return this.loadFieldValidations()
     },
     restoreCachedState() {
       const state = restorePageState('VariableList')
@@ -1046,6 +1163,20 @@ export default {
         sortOrder: 0,
         status: 1,
         description: ''
+        }
+      },
+      initFieldValidationForm() {
+        return {
+          id: null,
+          scope: 'GLOBAL',
+          projectId: '',
+          validationCode: '',
+          validationName: '',
+          validationType: 'REQUIRED',
+          validationValue: '',
+          errorMessage: '',
+          description: '',
+          status: 1
         }
       },
       async onVarSourceChange(source) {
@@ -1708,6 +1839,11 @@ export default {
      * 顶部「新建」：变量列表新建变量；常量列表新建常量；数据对象列表新建对象。
      */
     handlePrimaryCreate() {
+      if (this.activeTab === 'validations') {
+        this.validationForm = this.initFieldValidationForm()
+        this.validationDialogVisible = true
+        return
+      }
       if (this.activeTab === 'constants') {
         this.isConstantCreate = true
         this.isObjectField = false
@@ -1730,6 +1866,78 @@ export default {
         return
       }
       this.handleCreate()
+    },
+    async loadFieldValidations() {
+      this.validationLoading = true
+      try {
+        const res = await listFieldValidations(this.validationQp)
+        const data = res && res.data !== undefined ? res.data : res
+        this.validationRows = (data && data.records) || []
+        this.validationTotal = (data && data.total) || 0
+      } catch (e) {
+        this.$message.error('加载字段校验失败: ' + (e.message || e))
+      } finally {
+        this.validationLoading = false
+      }
+    },
+    handleFieldValidationQuery() {
+      this.validationQp.pageNum = 1
+      return this.loadFieldValidations()
+    },
+    resetFieldValidationQuery() {
+      this.validationQp = { pageNum: 1, pageSize: this.validationQp.pageSize, scope: '', projectId: '', validationType: '', keyword: '' }
+      return this.loadFieldValidations()
+    },
+    editFieldValidation(row) {
+      this.validationForm = { ...this.initFieldValidationForm(), ...row }
+      this.validationDialogVisible = true
+    },
+    onFieldValidationScopeChange(scope) {
+      if (scope === 'GLOBAL') this.validationForm.projectId = 0
+    },
+    async saveFieldValidation() {
+      const form = this.validationForm
+      if (!form.validationCode || !form.validationName || !form.validationType || !form.errorMessage) {
+        this.$message.warning('请完整填写校验编码、名称、类型和失败提示')
+        return
+      }
+      if (form.scope === 'PROJECT' && !form.projectId) {
+        this.$message.warning('请选择所属项目')
+        return
+      }
+      if (form.validationType !== 'REQUIRED' && (form.validationValue === null || form.validationValue === undefined || String(form.validationValue).trim() === '')) {
+        this.$message.warning('请输入校验值')
+        return
+      }
+      const payload = {
+        ...form,
+        projectId: form.scope === 'GLOBAL' ? 0 : form.projectId,
+        validationValue: form.validationType === 'REQUIRED' ? null : form.validationValue
+      }
+      this.validationSaving = true
+      try {
+        if (payload.id) await updateFieldValidation(payload)
+        else await createFieldValidation(payload)
+        this.$message.success('保存成功')
+        this.validationDialogVisible = false
+        await this.loadFieldValidations()
+      } catch (e) {
+        this.$message.error('保存失败: ' + (e.message || e))
+      } finally {
+        this.validationSaving = false
+      }
+    },
+    removeFieldValidation(row) {
+      this.$confirm(`确定删除字段校验「${row.validationName}」？`, '确认删除', { type: 'warning' })
+        .then(async () => {
+          await deleteFieldValidation(row.id)
+          this.$message.success('删除成功')
+          await this.loadFieldValidations()
+        }).catch(() => {})
+    },
+    fieldValidationTypeLabel(type) {
+      const item = this.fieldValidationTypes.find(option => option.value === type)
+      return item ? item.label : type
     },
     handleCreate() {
       this.isConstantCreate = false

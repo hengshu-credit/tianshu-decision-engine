@@ -128,6 +128,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         config.setResponseMapping(nullIfBlank(config.getResponseMapping()));
         config.setCacheKeyConfig(nullIfBlank(config.getCacheKeyConfig()));
         config.setSuccessCondition(nullIfBlank(config.getSuccessCondition()));
+        config.setRetryCondition(nullIfBlank(config.getRetryCondition()));
         config.setBillingCondition(nullIfBlank(config.getBillingCondition()));
         config.setAuthApiConfig(nullIfBlank(config.getAuthApiConfig()));
         config.setTestSampleParams(nullIfBlank(config.getTestSampleParams()));

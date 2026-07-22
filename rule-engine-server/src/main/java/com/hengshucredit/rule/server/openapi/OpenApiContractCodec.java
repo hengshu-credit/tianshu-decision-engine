@@ -14,6 +14,7 @@ public final class OpenApiContractCodec {
 
     private static final Pattern REFERENCE_TYPE = Pattern.compile("^[A-Z][A-Z0-9_]{0,31}$");
     private static final Pattern HEADER_NAME = Pattern.compile("^[!#$%&'*+.^_`|~0-9A-Za-z-]+$");
+    private static final Pattern RESPONSE_FIELD = Pattern.compile("^[A-Za-z_][A-Za-z0-9_-]{0,127}$");
     private static final Set<String> TARGET_TYPES = new HashSet<>(Arrays.asList(
             "", "OBJECT", "STRING", "DATE", "DATETIME", "NUMBER", "DECIMAL",
             "INTEGER", "INT", "LONG", "DOUBLE", "BOOLEAN", "BOOL", "LIST", "ARRAY", "MAP"));
@@ -44,6 +45,7 @@ public final class OpenApiContractCodec {
         OpenApiContract contract = parse(json);
         if (contract.isEnabled()) {
             validateRequestMappings(contract.getRequestMappings());
+            validateResponseMappings(contract.getResponseMappings());
             new OpenResponseRenderer().validate(contract);
         }
         return JSON.toJSONString(contract);
@@ -58,6 +60,19 @@ public final class OpenApiContractCodec {
                     mapping.getTargetRefType(), mapping.getTargetVarId());
             if (!available.contains(reference)) {
                 throw new IllegalArgumentException("请求映射引用的字段 ID 不存在或已停用: " + reference);
+            }
+        }
+    }
+
+    public static void validateResponseReferences(OpenApiContract contract, Set<String> availableReferences) {
+        if (contract == null || !contract.isEnabled()) return;
+        Set<String> available = availableReferences == null
+                ? java.util.Collections.<String>emptySet() : availableReferences;
+        for (OpenApiContract.ResponseMapping mapping : contract.getResponseMappings()) {
+            String reference = OpenRequestMapper.referenceKey(
+                    mapping.getSourceRefType(), mapping.getSourceVarId());
+            if (!available.contains(reference)) {
+                throw new IllegalArgumentException("响应映射引用的字段 ID 不存在或已停用: " + reference);
             }
         }
     }
@@ -94,6 +109,28 @@ public final class OpenApiContractCodec {
             }
             if (mapping.getDefaultValue() != null && mapping.getDefaultValue().length() > 8192) {
                 throw new IllegalArgumentException("请求映射默认值不能超过8192字符");
+            }
+        }
+    }
+
+    private static void validateResponseMappings(List<OpenApiContract.ResponseMapping> mappings) {
+        if (mappings == null) return;
+        if (mappings.size() > 512) throw new IllegalArgumentException("响应映射最多配置512项");
+        Set<String> targets = new HashSet<>();
+        for (OpenApiContract.ResponseMapping mapping : mappings) {
+            if (mapping == null || mapping.getSourceVarId() == null || mapping.getSourceVarId() <= 0) {
+                throw new IllegalArgumentException("响应映射来源字段ID不能为空");
+            }
+            String refType = trim(mapping.getSourceRefType()).toUpperCase(Locale.ROOT);
+            if (!REFERENCE_TYPE.matcher(refType).matches()) {
+                throw new IllegalArgumentException("响应映射来源引用类型不合法: " + mapping.getSourceRefType());
+            }
+            String targetField = trim(mapping.getTargetField());
+            if (!RESPONSE_FIELD.matcher(targetField).matches()) {
+                throw new IllegalArgumentException("响应映射对外字段名不合法: " + mapping.getTargetField());
+            }
+            if (!targets.add(targetField)) {
+                throw new IllegalArgumentException("响应映射对外字段重复: " + targetField);
             }
         }
     }

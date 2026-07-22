@@ -25,7 +25,7 @@ function mockRuleDetail(id = 1) {
     description: '根据年龄判断是否通过',
     projectName: '项目A',
     inputFieldsJson: [
-      { id: 1, varId: 1, fieldLabel: '年龄', fieldType: 'INTEGER', scriptName: 'age' },
+      { id: 1, varId: 1, fieldLabel: '年龄', fieldType: 'INTEGER', scriptName: 'age', validationRuleIds: '[11]', validationOverride: 0 },
       { id: 2, varId: 2, fieldLabel: '收入', fieldType: 'DOUBLE', scriptName: 'income' }
     ],
     outputFieldsJson: [
@@ -68,6 +68,11 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
   definitionApi.getContent.mockResolvedValueOnce({ data: content })
   variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
   variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
+  variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
+    id: 11, validationCode: 'age_required', validationName: '年龄必填', validationType: 'REQUIRED'
+  }, {
+    id: 12, validationCode: 'age_min', validationName: '最小年龄', validationType: 'MIN_VALUE'
+  }] })
 
   const wrapper = shallowMount(RuleDetail, {
     localVue: createTestVue(),
@@ -238,6 +243,11 @@ describe('RuleDetail — 开放接口契约', () => {
         required: true,
         targetType: 'INTEGER'
       }],
+      responseMappings: [{
+        sourceVarId: 3,
+        sourceRefType: 'VARIABLE',
+        targetField: 'decision_result'
+      }],
       envelopeTemplate: { retCode: '${status.code}', payload: '${data}' },
       dataPath: '$.payload',
       successDataTemplate: { result: '${output.VARIABLE.3}' },
@@ -248,6 +258,7 @@ describe('RuleDetail — 开放接口契约', () => {
     definitionApi.saveContent.mockResolvedValueOnce({})
 
     expect(wrapper.vm.openApiForm.requestMappings[0].targetKey).toBe('VARIABLE:1')
+    expect(wrapper.vm.openApiForm.responseMappings[0].sourceKey).toBe('VARIABLE:3')
     expect(wrapper.vm.openEnvelopeText).toContain('payload')
     await wrapper.vm.saveOpenApiConfig()
 
@@ -261,6 +272,48 @@ describe('RuleDetail — 开放接口契约', () => {
     }))
     expect(saved.envelopeTemplate.payload).toBe('${data}')
     expect(saved.responseHeaders['X-Business-Code']).toBe('${status.code}')
+    expect(saved.responseMappings[0]).toEqual({
+      sourceVarId: 3,
+      sourceRefType: 'VARIABLE',
+      targetField: 'decision_result'
+    })
+    wrapper.destroy()
+  })
+
+  test('新契约默认按内部字段名生成请求和响应映射', async () => {
+    const wrapper = await mountAndWait()
+
+    expect(wrapper.vm.openApiForm.requestMappings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ targetKey: 'VARIABLE:1', sourcePath: '$.age' }),
+      expect.objectContaining({ targetKey: 'VARIABLE:2', sourcePath: '$.income' })
+    ]))
+    expect(wrapper.vm.openApiForm.responseMappings).toEqual([
+      expect.objectContaining({ sourceKey: 'VARIABLE:3', targetField: 'result' })
+    ])
+    expect(JSON.parse(wrapper.vm.openSuccessDataText)).toBe('${response}')
+    expect(wrapper.vm.openApiStatusCodes.map(item => item.code)).toEqual(expect.arrayContaining([
+      '000000', '100001', '100002', '200001', '300001', '300002', '300003',
+      '300004', '300005', '400001', '400002', '400003', '500001', '500002',
+      '500003', '500004'
+    ]))
+    wrapper.destroy()
+  })
+
+  test('data object input defaults to the same external leaf field', async () => {
+    const wrapper = await mountAndWait()
+    wrapper.vm.rule.inputFieldsJson = [{
+      varId: 125,
+      refType: 'DATA_OBJECT',
+      fieldName: 'mobile',
+      fieldLabel: 'mobile',
+      fieldType: 'STRING',
+      scriptName: 'ICEKREDIT_REQUEST.mobile'
+    }]
+    wrapper.vm.loadOpenApiConfig(null)
+
+    expect(wrapper.vm.openApiForm.requestMappings).toEqual([
+      expect.objectContaining({ targetKey: 'DATA_OBJECT:125', sourcePath: '$.mobile' })
+    ])
     wrapper.destroy()
   })
 
@@ -277,7 +330,7 @@ describe('RuleDetail — 开放接口契约', () => {
     expect(wrapper.vm.openApiPreviewVisible).toBe(true)
     expect(Object.keys(wrapper.vm.openApiSuccessPreview)).toEqual(Object.keys(wrapper.vm.openApiErrorPreview))
     expect(wrapper.vm.openApiSuccessPreview.payload.decision).toBe('<VARIABLE:3>')
-    expect(wrapper.vm.openApiErrorPreview.payload.errorCode).toBe('REQUEST_INVALID')
+    expect(wrapper.vm.openApiErrorPreview.payload.errorCode).toBe('100001')
     wrapper.destroy()
   })
 })
@@ -537,5 +590,24 @@ describe('RuleDetail version history', () => {
     expect(definitionApi.rollbackVersion).toHaveBeenCalledWith(1, 1)
     expect(definitionApi.getDefinitionDetail).toHaveBeenCalled()
     expect(definitionApi.listVersions).toHaveBeenCalled()
+  })
+})
+
+describe('RuleDetail — 输入字段校验配置', () => {
+  test('加载继承的规则，并保存为当前规则显式覆盖', async () => {
+    const wrapper = await mountAndWait()
+    definitionApi.updateInputField.mockResolvedValueOnce({})
+    const row = wrapper.vm.rule.inputFieldsJson[0]
+
+    expect(row.validationRuleIdList).toEqual([11])
+    expect(wrapper.vm.fieldValidationOptions).toHaveLength(2)
+    wrapper.vm.editInputField(row)
+    wrapper.vm.$set(row, 'validationRuleIdList', [12])
+    await wrapper.vm.saveInputField(row)
+
+    expect(definitionApi.updateInputField).toHaveBeenCalledWith(1, expect.objectContaining({
+      validationRuleIds: '[12]', validationOverride: 1
+    }))
+    wrapper.destroy()
   })
 })

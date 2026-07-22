@@ -55,6 +55,9 @@ public class OpenRequestMapperTest {
             new OpenRequestMapper().map(contract, JSON.parse("{}"),
                     new LinkedHashMap<String, String>(), targetNames);
             Assert.fail("Expected mapping to fail");
+        } catch (OpenApiException expected) {
+            Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));
+            Assert.assertEquals("100002", expected.getStatus().getCode());
         } catch (IllegalArgumentException expected) {
             Assert.assertTrue(expected.getMessage(), expected.getMessage().contains(message));
         }

@@ -157,6 +157,26 @@ public class RuleRuntimeInvokerTest {
     }
 
     @Test
+    public void childWithoutDeclaredInputsDoesNotResolveEveryProjectSource() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        RequiredNamesRecordingResolver variableResolver = new RequiredNamesRecordingResolver();
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", variableResolver);
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+
+        invoker.enter("PARENT", 0L, null, new LinkedHashMap<String, Object>(), true);
+        try {
+            assertEquals("子规则", invoker.executeRuleById("2"));
+            assertNotNull(variableResolver.requiredScriptNames);
+            assertTrue(variableResolver.requiredScriptNames.isEmpty());
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
     public void childRuleContinuesOnExactSameSessionAndValuesMap() {
         RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
         ReflectionTestUtils.setField(invoker, "definitionService", new SharedSessionDefinitionService());
@@ -196,6 +216,37 @@ public class RuleRuntimeInvokerTest {
             assertNotEquals(root.getTraceId(), child.getTraceId());
             assertEquals(child.getTraceId(), variableResolver.ruleTraceIdDuringResolve);
             assertFalse(child.getExpressionTrace().isEmpty());
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
+    public void childRuntimeOutputsOverrideEarlierParentAssignments() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        ReflectionTestUtils.setField(invoker, "definitionService", new NestedSharedOutputDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        invoker.register(engine.getRunner());
+
+        Map<String, Object> values = new LinkedHashMap<>();
+        invoker.enter("PARENT", 0L, null, values, true);
+        try {
+            RuleResult result = engine.execute(
+                    "face_verification_pass = true; "
+                            + "setRuntimeValue(\"face_verification_pass\", face_verification_pass); "
+                            + "face_verification_reason = \"PASS\"; "
+                            + "setRuntimeValue(\"face_verification_reason\", face_verification_reason); "
+                            + "executeRuleById(\"6\")",
+                    values, true);
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(Boolean.FALSE, values.get("face_verification_pass"));
+            assertEquals("FACENOX_LIVENESS_FAILED", values.get("face_verification_reason"));
+            assertEquals(101, ((Number) values.get("result")).intValue());
         } finally {
             invoker.exit();
         }
@@ -315,6 +366,39 @@ public class RuleRuntimeInvokerTest {
         }
     }
 
+    private static class NestedSharedOutputDefinitionService extends RuleDefinitionService {
+        @Override
+        public RuleDefinition getById(Serializable id) {
+            RuleDefinition definition = new RuleDefinition();
+            definition.setId(6L);
+            definition.setProjectId(0L);
+            definition.setRuleCode("FACE_RESULT_CHILD");
+            definition.setRuleName("人脸核验结论子规则");
+            definition.setModelType("RULE_SET");
+            definition.setScope("GLOBAL");
+            definition.setStatus(1);
+            return definition;
+        }
+
+        @Override
+        public RuleDefinitionContent getContent(Long definitionId) {
+            RuleDefinitionContent content = new RuleDefinitionContent();
+            content.setDefinitionId(definitionId);
+            content.setCompileStatus(1);
+            content.setCompiledScript("face_verification_pass = false; "
+                    + "setRuntimeValue(\"face_verification_pass\", face_verification_pass); "
+                    + "face_verification_reason = \"FACENOX_LIVENESS_FAILED\"; "
+                    + "setRuntimeValue(\"face_verification_reason\", face_verification_reason); "
+                    + "result = 101; setRuntimeValue(\"result\", result); result");
+            return content;
+        }
+
+        @Override
+        public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
+            return Collections.emptyList();
+        }
+    }
+
     private static class NestedTerminationDefinitionService extends RuleDefinitionService {
         @Override
         public RuleDefinition getById(Serializable id) {
@@ -396,6 +480,17 @@ public class RuleRuntimeInvokerTest {
             ruleTraceIdDuringResolve = traceId == null ? null : String.valueOf(traceId);
             Map<String, Object> resolvedCopy = new LinkedHashMap<>(target);
             target.putAll(resolvedCopy);
+            return target;
+        }
+    }
+
+    private static class RequiredNamesRecordingResolver extends VariableSourceResolver {
+        private java.util.Set<String> requiredScriptNames;
+
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
+            requiredScriptNames = options.getRequiredScriptNames();
             return target;
         }
     }

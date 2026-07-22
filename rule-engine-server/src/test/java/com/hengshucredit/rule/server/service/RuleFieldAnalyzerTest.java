@@ -4,6 +4,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
+import com.hengshucredit.rule.model.entity.RuleDataObjectField;
+import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
@@ -12,6 +15,7 @@ import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
@@ -538,6 +542,80 @@ public class RuleFieldAnalyzerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void apiObjectPropertyAccessExpandsByStableRootReference() throws Exception {
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
+
+        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
+        apiConfig.setId(7L);
+        apiConfig.setRequestObjectId(301L);
+        RuleDataObject requestObject = new RuleDataObject();
+        requestObject.setId(301L);
+        requestObject.setScriptName("request");
+        RuleDataObjectField requestId = new RuleDataObjectField();
+        requestId.setId(201L);
+        requestId.setObjectId(301L);
+        requestId.setScriptName("id");
+        requestId.setVarCode("id");
+        requestId.setVarLabel("请求ID");
+        requestId.setVarType("STRING");
+        requestId.setStatus(1);
+        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
+        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
+        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.singletonList(requestId) : null));
+
+        String json = "{\"scriptVarRefs\":[{\"refCode\":\"api_features\",\"varId\":101,\"refType\":\"VARIABLE\"}]}";
+        Method collectRefs = RuleFieldAnalyzer.class.getDeclaredMethod("collectExplicitRefs", String.class);
+        collectRefs.setAccessible(true);
+        Map<String, Object> refs = (Map<String, Object>) collectRefs.invoke(analyzer, json);
+        Method applyInputRef = RuleFieldAnalyzer.class.getDeclaredMethod("applyExplicitRef",
+                RuleDefinitionInputField.class, Map.class);
+        applyInputRef.setAccessible(true);
+
+        RuleDefinitionInputField property = inputField(
+                "api_features.credit_score_v1", null, null, null);
+        applyInputRef.invoke(analyzer, property, refs);
+
+        Map<String, Object> apiMeta = new HashMap<>();
+        apiMeta.put("id", 101L);
+        apiMeta.put("refType", "VARIABLE");
+        apiMeta.put("scriptName", "api_features");
+        apiMeta.put("varSource", "API");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.request.id\"}}");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("api_features", apiMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod("expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Collections.singletonList(property), varMetaMap);
+
+        assertEquals(Long.valueOf(101L), property.getVarId());
+        assertEquals("VARIABLE", property.getRefType());
+        assertEquals(Collections.singletonList("request.id"), names(result));
+        assertEquals(Long.valueOf(201L), result.get(0).getVarId());
+        assertEquals("DATA_OBJECT", result.get(0).getRefType());
+    }
+
+    @Test
+    public void directApiObjectPropertyKeepsItsStableVariableReferenceForRuntimeResolution() {
+        String json = "{\"script\":\"credit_score_v1 = api_features.credit_score_v1;\","
+                + "\"scriptVarRefs\":[{\"refCode\":\"api_features\",\"varId\":101,"
+                + "\"refType\":\"VARIABLE\"}]}";
+
+        List<RuleDefinitionInputField> fields = analyzer.extractDirectModelInputFields(json, "SCRIPT");
+
+        assertEquals(1, fields.size());
+        assertEquals("api_features.credit_score_v1", fields.get(0).getScriptName());
+        assertEquals("VARIABLE", fields.get(0).getRefType());
+        assertEquals(Long.valueOf(101L), fields.get(0).getVarId());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void sourceVariableWithoutDependenciesDoesNotBecomeExternalInput() throws Exception {
         setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
 
@@ -622,6 +700,8 @@ public class RuleFieldAnalyzerTest {
     @SuppressWarnings("unchecked")
     public void ruleCallInputsAreMergedAndCurrentOutputsAreExcluded() throws Exception {
         RuleDefinitionInputField age = inputField("age", "VARIABLE", "INPUT", 37L);
+        age.setValidationRuleIds("[1,2]");
+        age.setValidationOverride(1);
         RuleDefinitionInputField scoreField = inputField("HYBASE_X115", "DATA_OBJECT", "DATA_OBJECT", 25L);
         setField(analyzer, "inputFieldMapper", inputFieldMapper(Arrays.asList(age, scoreField)));
 
@@ -631,6 +711,11 @@ public class RuleFieldAnalyzerTest {
         List<RuleDefinitionInputField> calledInputs = (List<RuleDefinitionInputField>) loadRuleCallInputs.invoke(analyzer, json);
         assertTrue(names(calledInputs).contains("age"));
         assertTrue(names(calledInputs).contains("HYBASE_X115"));
+        RuleDefinitionInputField inheritedAge = calledInputs.stream()
+                .filter(field -> "age".equals(field.getScriptName())).findFirst().get();
+        assertEquals("[1,2]", inheritedAge.getValidationRuleIds());
+        assertEquals("子规则配置复制到父规则后不能被误判为父规则覆盖",
+                Integer.valueOf(0), inheritedAge.getValidationOverride());
 
         RuleDefinitionOutputField output = new RuleDefinitionOutputField();
         output.setScriptName("age");
@@ -641,6 +726,34 @@ public class RuleFieldAnalyzerTest {
 
         assertFalse("当前规则已计算的中间变量不应作为测试入参", names(filtered).contains("age"));
         assertTrue(names(filtered).contains("HYBASE_X115"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void outerValidationOverrideWinsWhileNonOverrideInheritsChildRules() throws Exception {
+        Method merge = RuleFieldAnalyzer.class.getDeclaredMethod("mergeInputValidation",
+                RuleDefinitionInputField.class, RuleDefinitionInputField.class);
+        merge.setAccessible(true);
+
+        RuleDefinitionInputField inherited = inputField("age", "VARIABLE", "INPUT", 37L);
+        inherited.setValidationOverride(0);
+        RuleDefinitionInputField child = inputField("age", "VARIABLE", "INPUT", 37L);
+        child.setValidationRuleIds("[1]");
+        child.setValidationOverride(0);
+        merge.invoke(analyzer, inherited, child);
+        assertEquals("[1]", inherited.getValidationRuleIds());
+
+        RuleDefinitionInputField outer = inputField("age", "VARIABLE", "INPUT", 37L);
+        outer.setValidationRuleIds("[9]");
+        outer.setValidationOverride(1);
+        merge.invoke(analyzer, outer, child);
+        assertEquals("[9]", outer.getValidationRuleIds());
+
+        RuleDefinitionInputField explicitlyCleared = inputField("age", "VARIABLE", "INPUT", 37L);
+        explicitlyCleared.setValidationRuleIds("[]");
+        explicitlyCleared.setValidationOverride(1);
+        merge.invoke(analyzer, explicitlyCleared, child);
+        assertEquals("[]", explicitlyCleared.getValidationRuleIds());
     }
 
     @Test

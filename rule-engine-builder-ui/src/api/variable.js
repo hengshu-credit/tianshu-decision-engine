@@ -45,6 +45,30 @@ export function saveVariableOptions(variableId, options) {
   return request({ url: `/rule/variable/${variableId}/options`, method: 'post', data: options })
 }
 
+export function listFieldValidations(params) {
+  return request({ url: '/rule/field-validation/list', method: 'get', params })
+}
+
+export function listAvailableFieldValidations(projectId) {
+  return request({
+    url: '/rule/field-validation/available',
+    method: 'get',
+    params: projectId ? { projectId } : {}
+  })
+}
+
+export function createFieldValidation(data) {
+  return request({ url: '/rule/field-validation', method: 'post', data })
+}
+
+export function updateFieldValidation(data) {
+  return request({ url: '/rule/field-validation', method: 'put', data })
+}
+
+export function deleteFieldValidation(id) {
+  return request({ url: `/rule/field-validation/${id}`, method: 'delete' })
+}
+
 /** 从 Java 常量类批量导入（写入变量表，来源为 CONSTANT） */
 export function importJavaConstants(javaSource, scope, projectId) {
   return request({ url: '/rule/variable/import/constants/java', method: 'post', data: { javaSource, scope, projectId } })

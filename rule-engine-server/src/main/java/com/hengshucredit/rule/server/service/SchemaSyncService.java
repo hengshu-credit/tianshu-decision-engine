@@ -44,6 +44,7 @@ public class SchemaSyncService {
         if (jdbcTemplate == null) return;
         try {
             ensureRefTypeColumns();
+            ensureFieldValidationSchema();
             ensureVariableSourceConfigColumn();
             ensureListTables();
             ensureExperimentTables();
@@ -98,6 +99,34 @@ public class SchemaSyncService {
                 jdbcTemplate.execute("ALTER TABLE `" + table + "` ADD INDEX `idx_ref_type_var_id` (`ref_type`, `var_id`)");
             }
         }
+    }
+
+    private void ensureFieldValidationSchema() {
+        if (!tableExists("rule_field_validation")) {
+            jdbcTemplate.execute("CREATE TABLE `rule_field_validation` ("
+                    + "`id` BIGINT NOT NULL AUTO_INCREMENT COMMENT '主键ID',"
+                    + "`project_id` BIGINT NOT NULL DEFAULT 0 COMMENT '所属项目ID，0表示全局',"
+                    + "`scope` VARCHAR(16) NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL/PROJECT',"
+                    + "`validation_code` VARCHAR(128) NOT NULL COMMENT '校验编码',"
+                    + "`validation_name` VARCHAR(128) NOT NULL COMMENT '校验名称',"
+                    + "`validation_type` VARCHAR(32) NOT NULL COMMENT '校验类型',"
+                    + "`validation_value` TEXT DEFAULT NULL COMMENT '校验值',"
+                    + "`error_message` VARCHAR(512) NOT NULL COMMENT '校验失败提示',"
+                    + "`description` VARCHAR(512) DEFAULT NULL COMMENT '说明',"
+                    + "`status` TINYINT NOT NULL DEFAULT 1 COMMENT '状态：0-停用，1-启用',"
+                    + "`create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',"
+                    + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',"
+                    + "PRIMARY KEY (`id`),"
+                    + "UNIQUE KEY `uk_field_validation_scope_code` (`scope`, `project_id`, `validation_code`),"
+                    + "KEY `idx_field_validation_project` (`project_id`),"
+                    + "KEY `idx_field_validation_type_status` (`validation_type`, `status`)"
+                    + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='字段校验规则库'");
+        }
+        if (!tableExists("rule_definition_input_field")) return;
+        addColumnIfMissing("rule_definition_input_field", "validation_rule_ids",
+                "`validation_rule_ids` JSON DEFAULT NULL COMMENT '字段校验规则ID列表JSON' AFTER `transform_params`");
+        addColumnIfMissing("rule_definition_input_field", "validation_override",
+                "`validation_override` TINYINT NOT NULL DEFAULT 0 COMMENT '是否由当前规则覆盖子规则校验' AFTER `validation_rule_ids`");
     }
 
     private void ensureVariableSourceConfigColumn() {
@@ -614,8 +643,10 @@ public class SchemaSyncService {
                 "`retry_on_connection_error` TINYINT NOT NULL DEFAULT 1 COMMENT '连接异常是否重试' AFTER `retry_status_codes`");
         addColumnIfMissing(table, "retry_on_timeout",
                 "`retry_on_timeout` TINYINT NOT NULL DEFAULT 0 COMMENT '超时是否重试' AFTER `retry_on_connection_error`");
+        addColumnIfMissing(table, "retry_condition",
+                "`retry_condition` JSON DEFAULT NULL COMMENT '业务响应重试条件树JSON' AFTER `retry_on_timeout`");
         addColumnIfMissing(table, "retry_backoff_multiplier",
-                "`retry_backoff_multiplier` DECIMAL(10,4) NOT NULL DEFAULT 2 COMMENT '重试退避倍数' AFTER `retry_on_timeout`");
+                "`retry_backoff_multiplier` DECIMAL(10,4) NOT NULL DEFAULT 2 COMMENT '重试退避倍数' AFTER `retry_condition`");
         addColumnIfMissing(table, "retry_max_interval_ms",
                 "`retry_max_interval_ms` INT NOT NULL DEFAULT 1000 COMMENT '最大重试间隔' AFTER `retry_backoff_multiplier`");
         addColumnIfMissing(table, "circuit_breaker_enabled",

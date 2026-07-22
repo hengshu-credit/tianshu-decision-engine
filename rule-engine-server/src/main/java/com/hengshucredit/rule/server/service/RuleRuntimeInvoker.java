@@ -294,9 +294,7 @@ public class RuleRuntimeInvoker {
             VariableResolveOptions options = VariableResolveOptions.defaults();
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
             Set<String> requiredNames = requiredInputNames(targetDefinitionId);
-            if (!requiredNames.isEmpty()) {
-                options.setRequiredScriptNames(requiredNames);
-            }
+            options.setRequiredScriptNames(requiredNames);
             List<RuleDefinitionInputField> childFields = definitionService.listInputFields(targetDefinitionId);
             Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(
                     childFields, session.getValues(), options);

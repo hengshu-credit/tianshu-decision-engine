@@ -24,6 +24,7 @@ function createContext(overrides = {}) {
     scriptVariableRows: [ApiDetail.methods.emptyScriptVariableRow()],
     cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()],
     successConditionRoot: ApiDetail.methods.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
+    retryConditionRoot: ApiDetail.methods.emptyApiConditionRoot('body.response_code', '==', '10000429'),
     billingConfig: ApiDetail.methods.emptyBillingConfig(),
     asyncShared: ApiDetail.methods.emptyAsyncShared(),
     asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
@@ -232,6 +233,49 @@ describe('ApiDetail helpers', () => {
     expect(hitCtx.buildBillingConditionConfig()).toEqual({
       mode: 'HIT',
       condition: conditionRoot
+    })
+  })
+
+  test('business retry condition serializes a nested response condition tree', () => {
+    const retryConditionRoot = {
+      type: 'group',
+      operator: 'AND',
+      children: [
+        { type: 'condition', path: 'httpStatus', operator: '==', value: '200' },
+        {
+          type: 'group',
+          operator: 'OR',
+          children: [
+            { type: 'condition', path: 'body.response_code', operator: '==', value: '10000429' },
+            { type: 'condition', path: 'body.retryable', operator: 'is_true', value: '' }
+          ]
+        }
+      ]
+    }
+    const ctx = createContext({ retryConditionRoot })
+
+    expect(ctx.buildRetryConditionConfig()).toEqual(retryConditionRoot)
+    ctx.syncStructuredConfigToForm()
+    expect(JSON.parse(ctx.form.retryCondition)).toEqual(retryConditionRoot)
+  })
+
+  test('token api can write provider token to a custom header without prefix', () => {
+    const ctx = createContext()
+    ctx.form.authMode = 'TOKEN_API'
+    ctx.apiAuthConfig = {
+      ...ApiDetail.methods.emptyAuthConfig('TOKEN_API'),
+      tokenUrl: '/api/login.do',
+      tokenPath: 'body.token_id',
+      tokenHeaderName: 'token_id',
+      tokenPrefix: ''
+    }
+
+    expect(JSON.parse(ctx.buildApiAuthConfig())).toMatchObject({
+      tokenUrl: '/api/login.do',
+      tokenPath: 'body.token_id',
+      tokenPlacement: 'HEADER',
+      tokenHeaderName: 'token_id',
+      tokenPrefix: ''
     })
   })
 
@@ -462,6 +506,7 @@ describe('ApiDetail resilience settings', () => {
       maxConcurrent: 50,
       tokenRefreshAheadSeconds: 60,
       retryStatusCodes: '502,503,504',
+      retryCondition: '',
       retryOnConnectionError: 1,
       retryOnTimeout: 0,
       circuitBreakerEnabled: 1,

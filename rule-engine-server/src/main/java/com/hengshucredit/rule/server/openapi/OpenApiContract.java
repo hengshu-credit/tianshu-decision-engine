@@ -12,6 +12,7 @@ public class OpenApiContract {
     private boolean recordTrace;
     private boolean returnTrace;
     private List<RequestMapping> requestMappings = new ArrayList<>();
+    private List<ResponseMapping> responseMappings = new ArrayList<>();
     private Object envelopeTemplate;
     private String dataPath;
     private Object successDataTemplate;
@@ -48,6 +49,14 @@ public class OpenApiContract {
 
     public void setRequestMappings(List<RequestMapping> requestMappings) {
         this.requestMappings = requestMappings == null ? new ArrayList<RequestMapping>() : requestMappings;
+    }
+
+    public List<ResponseMapping> getResponseMappings() {
+        return responseMappings;
+    }
+
+    public void setResponseMappings(List<ResponseMapping> responseMappings) {
+        this.responseMappings = responseMappings == null ? new ArrayList<ResponseMapping>() : responseMappings;
     }
 
     public Object getEnvelopeTemplate() {
@@ -153,6 +162,36 @@ public class OpenApiContract {
 
         public void setTargetType(String targetType) {
             this.targetType = targetType;
+        }
+    }
+
+    public static class ResponseMapping {
+        private Long sourceVarId;
+        private String sourceRefType;
+        private String targetField;
+
+        public Long getSourceVarId() {
+            return sourceVarId;
+        }
+
+        public void setSourceVarId(Long sourceVarId) {
+            this.sourceVarId = sourceVarId;
+        }
+
+        public String getSourceRefType() {
+            return sourceRefType;
+        }
+
+        public void setSourceRefType(String sourceRefType) {
+            this.sourceRefType = sourceRefType;
+        }
+
+        public String getTargetField() {
+            return targetField;
+        }
+
+        public void setTargetField(String targetField) {
+            this.targetField = targetField;
         }
     }
 }

@@ -22,6 +22,24 @@ public class OpenApiContractCodecTest {
                 + "\"sourcePath\":\"X-Name\",\"targetType\":\"STRING\"}]}", "重复");
     }
 
+    @Test
+    public void validatesResponseMappingsByStableReferenceAndExternalField() {
+        String json = "{\"enabled\":true," + RESPONSE + ",\"responseMappings\":[{"
+                + "\"sourceVarId\":9,\"sourceRefType\":\"VARIABLE\","
+                + "\"targetField\":\"credit_score_v1\"}]}";
+        OpenApiContract contract = OpenApiContractCodec.parse(
+                OpenApiContractCodec.validateAndNormalize(json));
+
+        Assert.assertEquals("credit_score_v1", contract.getResponseMappings().get(0).getTargetField());
+        OpenApiContractCodec.validateResponseReferences(contract,
+                java.util.Collections.singleton("VARIABLE:9"));
+
+        assertInvalid("{\"enabled\":true," + RESPONSE + ",\"responseMappings\":[{"
+                + "\"sourceVarId\":9,\"sourceRefType\":\"VARIABLE\","
+                + "\"targetField\":\"score\"},{\"sourceVarId\":10,"
+                + "\"sourceRefType\":\"VARIABLE\",\"targetField\":\"score\"}]}", "重复");
+    }
+
     private void assertInvalid(String json, String expectedMessage) {
         try {
             OpenApiContractCodec.validateAndNormalize(json);

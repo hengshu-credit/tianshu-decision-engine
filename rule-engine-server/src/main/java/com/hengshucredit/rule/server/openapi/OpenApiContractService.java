@@ -35,35 +35,35 @@ public class OpenApiContractService {
 
     public ResolvedContract resolve(Long authenticatedAuthId, String authCode, String ruleCode) {
         if (authenticatedAuthId == null) {
-            throw error(false, "AUTH_CONTEXT_REQUIRED", "缺少已认证的项目鉴权上下文", 401);
+            throw new OpenApiException(OpenApiStatuses.productUnauthorized());
         }
         if (!hasText(authCode)) {
-            throw error(false, "AUTH_CODE_REQUIRED", "请求头 X-Auth-Code 不能为空", 401);
+            throw new OpenApiException(OpenApiStatuses.requiredField("请求头 X-Auth-Code 不能为空"));
         }
         LambdaQueryWrapper<RuleProjectAuth> authQuery = new LambdaQueryWrapper<RuleProjectAuth>()
                 .eq(RuleProjectAuth::getAuthCode, authCode.trim())
                 .eq(RuleProjectAuth::getStatus, 1);
         authQuery.eq(RuleProjectAuth::getId, authenticatedAuthId);
         RuleProjectAuth auth = authMapper.selectOne(authQuery);
-        if (auth == null) throw error(false, "AUTH_CODE_INVALID", "项目鉴权标识不存在或已停用", 401);
+        if (auth == null) throw new OpenApiException(OpenApiStatuses.productUnauthorized());
         RuleProject project = projectService.getById(auth.getProjectId());
         if (project == null || !Integer.valueOf(1).equals(project.getStatus())) {
-            throw error(false, "PROJECT_UNAVAILABLE", "项目不存在或已停用", 403);
+            throw new OpenApiException(OpenApiStatuses.accountDisabled());
         }
         PublishedOpenApiContract projection = publishedMapper.selectOpenApiContract(
                 project.getId(), project.getProjectCode(), ruleCode);
         if (projection == null || !hasText(projection.getOpenApiConfigJson())) {
-            throw error(false, "OPEN_RULE_NOT_FOUND", "开放规则不存在或未发布", 404);
+            throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
         }
         OpenApiContract contract = OpenApiContractCodec.parse(projection.getOpenApiConfigJson());
         if (!contract.isEnabled()) {
-            throw error(false, "OPEN_RULE_DISABLED", "规则开放接口未启用", 404);
+            throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
         }
         new OpenResponseRenderer().validate(contract);
         RulePublished published = publishedMapper.selectOne(new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getDefinitionId, projection.getDefinitionId())
                 .eq(RulePublished::getStatus, 1));
-        if (published == null) throw error(false, "OPEN_RULE_NOT_FOUND", "开放规则不存在或未发布", 404);
+        if (published == null) throw new OpenApiException(OpenApiStatuses.requestProductUnauthorized());
         return new ResolvedContract(auth, project, published, contract,
                 inputReferences(projection.getDefinitionId()), outputReferences(projection.getDefinitionId()));
     }
@@ -73,7 +73,7 @@ public class OpenApiContractService {
         contract.setEnvelopeTemplate(JSON.parse("{\"success\":\"${status.success}\",\"code\":\"${status.code}\","
                 + "\"message\":\"${status.message}\",\"traceId\":\"${traceId}\",\"data\":\"${data}\"}"));
         contract.setDataPath("$.data");
-        contract.setSuccessDataTemplate("${result}");
+        contract.setSuccessDataTemplate("${response}");
         contract.setErrorDataTemplate(JSON.parse("{\"errorCode\":\"${status.code}\",\"errorMessage\":\"${status.message}\"}"));
         return contract;
     }
@@ -99,10 +99,6 @@ public class OpenApiContractService {
             if (key != null && hasText(field.getScriptName())) result.put(key, field.getScriptName().trim());
         }
         return result;
-    }
-
-    private OpenApiException error(boolean success, String code, String message, int httpStatus) {
-        return new OpenApiException(new OpenApiStatus(success, code, message, httpStatus));
     }
 
     private boolean hasText(String value) {

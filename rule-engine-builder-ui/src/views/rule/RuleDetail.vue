@@ -100,6 +100,23 @@
               <span v-else style="color:#c0c4cc;">—</span>
             </template>
           </el-table-column>
+          <el-table-column label="字段校验" min-width="240">
+            <template slot-scope="{row}">
+              <template v-if="row._editing">
+                <el-select v-model="row.validationRuleIdList" multiple collapse-tags clearable placeholder="选择一个或多个校验规则" style="width:100%;">
+                  <el-option v-for="item in fieldValidationOptions" :key="item.id" :label="item.validationName + '（' + fieldValidationTypeLabel(item.validationType) + '）'" :value="item.id" />
+                </el-select>
+                <el-button v-if="row.validationOverride === 1" type="text" size="mini" @click="restoreInheritedValidation(row)">恢复子规则配置</el-button>
+              </template>
+              <template v-else>
+                <span v-if="!(row.validationRuleIdList || []).length" style="color:#c0c4cc;">未配置</span>
+                <template v-else>
+                  <el-tag v-for="item in selectedFieldValidations(row)" :key="item.id" size="mini" type="info" style="margin-right:4px;">{{ item.validationName }}</el-tag>
+                </template>
+                <el-tag v-if="row.validationOverride !== 1 && (row.validationRuleIdList || []).length" size="mini" type="success">继承子规则</el-tag>
+              </template>
+            </template>
+          </el-table-column>
           <el-table-column label="修改时间" width="140" align="center">
             <template slot-scope="{row}">
               <span v-if="row.updateTime">{{ row.updateTime.replace('T',' ') }}</span>
@@ -253,6 +270,29 @@
           </div>
 
           <div class="open-api-section">
+            <div class="open-api-section-head">
+              <div><div class="open-api-title">响应字段映射</div><div class="open-api-help">通过稳定字段 ID 关联引擎输出；对外字段名默认与内部脚本字段名一致，可按下游契约修改。</div></div>
+              <div>
+                <el-button size="mini" @click="resetOpenResponseMappings">恢复默认映射</el-button>
+                <el-button size="mini" icon="el-icon-plus" @click="addOpenResponseMapping">添加映射</el-button>
+              </div>
+            </div>
+            <el-table :data="openApiForm.responseMappings" border size="mini" empty-text="尚未配置响应映射">
+              <el-table-column label="引擎内部输出字段" min-width="260">
+                <template slot-scope="{ row }">
+                  <el-select v-model="row.sourceKey" filterable placeholder="选择稳定引用" style="width:100%" @change="onOpenResponseSourceChange(row)">
+                    <el-option v-for="item in openOutputOptions" :key="item.value" :label="item.label" :value="item.value" />
+                  </el-select>
+                </template>
+              </el-table-column>
+              <el-table-column label="对外 API 字段" min-width="220">
+                <template slot-scope="{ row }"><el-input v-model="row.targetField" placeholder="如 credit_score_v1" /></template>
+              </el-table-column>
+              <el-table-column label="操作" width="70" align="center"><template slot-scope="{ $index }"><el-button type="text" size="mini" class="btn-delete" @click="removeOpenResponseMapping($index)">删除</el-button></template></el-table-column>
+            </el-table>
+          </div>
+
+          <div class="open-api-section">
             <div class="open-api-title">统一响应契约</div>
             <div class="open-api-help">外层模板必须且只能包含一个 <code>${data}</code>；可用占位符：<code>${status.success}</code>、<code>${status.code}</code>、<code>${status.message}</code>、<code>${status.httpStatus}</code>、<code>${traceId}</code>。</div>
             <el-form :model="openApiForm" label-position="top" class="open-api-response-form">
@@ -265,7 +305,8 @@
                   <el-form-item label="响应 Header JSON"><monaco-editor v-model="openResponseHeadersText" language="json" height="168px" /></el-form-item>
                 </el-col>
               </el-row>
-              <div class="open-api-help open-output-help">输出字段占位符：<code v-for="item in openOutputPlaceholders" :key="item">{{ item }}</code><span v-if="!openOutputPlaceholders.length">暂无输出字段</span></div>
+              <div class="open-api-help open-output-help">映射结果占位符：<code>${response}</code>；内部输出占位符：<code v-for="item in openOutputPlaceholders" :key="item">{{ item }}</code><span v-if="!openOutputPlaceholders.length">暂无输出字段</span></div>
+              <div class="open-api-help">字段校验异常可用占位符：<code>${error.message}</code>、<code>${error.field}</code>、<code>${error.validationCode}</code>、<code>${error.validationName}</code>。原有异常模板无需修改。</div>
               <el-row :gutter="12" class="open-api-editors">
                 <el-col :lg="12" :md="24"><el-form-item label="成功 data JSON"><monaco-editor v-model="openSuccessDataText" language="json" height="220px" /></el-form-item></el-col>
                 <el-col :lg="12" :md="24"><el-form-item label="异常 data JSON"><monaco-editor v-model="openErrorDataText" language="json" height="220px" /></el-form-item></el-col>
@@ -277,6 +318,17 @@
             <el-switch v-model="openApiForm.recordTrace" active-text="记录调用链" />
             <el-switch v-model="openApiForm.returnTrace" active-text="允许响应模板引用 trace" />
             <span class="open-api-help">关闭记录可减少日志体积；只有需要下游查看明细时才开启返回。</span>
+          </div>
+
+          <div class="open-api-section">
+            <div class="open-api-title">开放接口状态码</div>
+            <div class="open-api-help">下游以六位业务 code 判断结果；HTTP 状态码保留标准传输语义。日/月限额编码为预留编码，可供后续额度策略直接复用。</div>
+            <el-table :data="openApiStatusCodes" border size="mini" class="open-api-status-table">
+              <el-table-column prop="code" label="业务 code" width="110" />
+              <el-table-column prop="scene" label="场景" min-width="180" />
+              <el-table-column prop="message" label="默认说明" min-width="240" />
+              <el-table-column prop="httpStatus" label="HTTP" width="80" align="center" />
+            </el-table>
           </div>
         </div>
       </el-tab-pane>
@@ -480,7 +532,7 @@
 
 <script>
 import * as api from '@/api/definition'
-import { listVariablesByProject, listVariables } from '@/api/variable'
+import { listVariablesByProject, listVariables, listAvailableFieldValidations } from '@/api/variable'
 import { getVariableTree } from '@/api/dataObject'
 import { getModel, listAllModelsByProject } from '@/api/model'
 import { sampleValueForVarType, setPathValue } from '@/utils/testParamTemplate'
@@ -507,15 +559,36 @@ const MODEL_TYPE_LABELS = {
   SCRIPT: 'QL 脚本'
 }
 
+const OPEN_API_STATUS_CODES = [
+  { code: '000000', scene: '成功', message: '成功', httpStatus: 200 },
+  { code: '100001', scene: '入参校验', message: '入参校验失败', httpStatus: 400 },
+  { code: '100002', scene: '必填字段', message: '必填字段缺失', httpStatus: 400 },
+  { code: '200001', scene: '结果异常', message: '结果处理异常', httpStatus: 500 },
+  { code: '300001', scene: 'Token 过期', message: 'Token 已过期或失效', httpStatus: 401 },
+  { code: '300002', scene: '账户密码错误', message: '账户或密码错误', httpStatus: 401 },
+  { code: '300003', scene: 'IP 限制', message: 'IP 不在访问白名单', httpStatus: 403 },
+  { code: '300004', scene: '域名限制', message: '域名不在访问白名单', httpStatus: 403 },
+  { code: '300005', scene: '账户停用', message: '账户已停用', httpStatus: 403 },
+  { code: '400001', scene: 'QPS/并发超限', message: 'QPS 或并发超过限制', httpStatus: 429 },
+  { code: '400002', scene: '请求过于频繁', message: '请求过于频繁', httpStatus: 429 },
+  { code: '400003', scene: '请求超时', message: '请求处理超时', httpStatus: 504 },
+  { code: '500001', scene: '产品无权限', message: '产品无访问权限', httpStatus: 403 },
+  { code: '500002', scene: '日限额', message: '已超过日调用限额', httpStatus: 429 },
+  { code: '500003', scene: '月限额', message: '已超过月调用限额', httpStatus: 429 },
+  { code: '500004', scene: '请求产品无权限', message: '请求产品不存在或未授权', httpStatus: 403 },
+  { code: '900001', scene: '系统异常', message: '系统执行异常', httpStatus: 500 }
+]
+
 function createDefaultOpenApiContract() {
   return {
     enabled: false,
     recordTrace: false,
     returnTrace: false,
     requestMappings: [],
+    responseMappings: [],
     envelopeTemplate: { success: '${status.success}', code: '${status.code}', message: '${status.message}', traceId: '${traceId}', data: '${data}' },
     dataPath: '$.data',
-    successDataTemplate: '${result}',
+    successDataTemplate: '${response}',
     errorDataTemplate: { errorCode: '${status.code}', errorMessage: '${status.message}' },
     responseHeaders: {}
   }
@@ -538,7 +611,9 @@ export default {
       openSuccessDataText: '',
       openErrorDataText: '',
       openResponseHeadersText: '',
-      openTargetTypes: ['STRING', 'NUMBER', 'INTEGER', 'DOUBLE', 'BOOLEAN', 'OBJECT', 'LIST'],
+      openTargetTypes: ['STRING', 'NUMBER', 'DECIMAL', 'INTEGER', 'INT', 'LONG', 'DOUBLE', 'BOOLEAN', 'BOOL', 'DATE', 'DATETIME', 'OBJECT', 'LIST', 'ARRAY', 'MAP'],
+      openApiStatusCodes: OPEN_API_STATUS_CODES,
+      fieldValidationOptions: [],
       /** varId -> 变量对象映射 */
       varMap: {},
       /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段） */
@@ -616,7 +691,21 @@ export default {
         const varId = field.varId
         return {
           value: varId ? refType + ':' + varId : '',
-          label: (field.fieldLabel || field.scriptName || '未命名字段') + ' / ' + (field.scriptName || '-') + ' [' + refType + ':' + (varId || '-') + ']'
+          label: (field.fieldLabel || field.scriptName || '未命名字段') + ' / ' + (field.scriptName || '-') + ' [' + refType + ':' + (varId || '-') + ']',
+          scriptName: field.scriptName || '',
+          externalName: field.fieldName || String(field.scriptName || '').split('.').pop(),
+          targetType: this.openMappingTargetType(field.fieldType)
+        }
+      }).filter(item => item.value)
+    },
+    openOutputOptions() {
+      return ((this.rule && this.rule.outputFieldsJson) || []).map(field => {
+        const refType = field.refType || 'VARIABLE'
+        const varId = field.varId
+        return {
+          value: varId ? refType + ':' + varId : '',
+          label: (field.fieldLabel || field.scriptName || '未命名字段') + ' / ' + (field.scriptName || '-') + ' [' + refType + ':' + (varId || '-') + ']',
+          scriptName: field.scriptName || ''
         }
       }).filter(item => item.value)
     },
@@ -651,18 +740,22 @@ export default {
         // 再加载最新详情（含刷新后的字段列表）
         // 注意：request 拦截器已展开 R.data，生产环境 res 是对象本身；测试环境 mock 返回 {data: {...}} 需要 .data
         const res = await api.getDefinitionDetail(id)
-        this.rule = (res.data !== undefined ? res.data : res) || {}
+        const nextRule = (res.data !== undefined ? res.data : res) || {}
+        if (nextRule.inputFieldsJson) {
+          nextRule.inputFieldsJson.forEach(f => {
+            f._editing = false
+            f.validationRuleIdList = this.parseValidationRuleIds(f.validationRuleIds)
+          })
+        }
+        if (nextRule.outputFieldsJson) {
+          nextRule.outputFieldsJson.forEach(f => { f._editing = false })
+        }
+        this.rule = nextRule
         const contentRes = await api.getContent(id)
         this.ruleContent = (contentRes && contentRes.data !== undefined ? contentRes.data : contentRes) || {}
         this.loadOpenApiConfig(this.ruleContent.openApiConfigJson)
-        if (this.rule.inputFieldsJson) {
-          this.rule.inputFieldsJson.forEach(f => this.$set(f, '_editing', false))
-        }
-        if (this.rule.outputFieldsJson) {
-          this.rule.outputFieldsJson.forEach(f => this.$set(f, '_editing', false))
-        }
         this.normalizeFieldPages()
-        await this.loadVars()
+        await Promise.all([this.loadVars(), this.loadFieldValidationOptions()])
       } catch (e) {
         this.$message.error(e.message || '加载规则详情失败')
       } finally {
@@ -674,8 +767,12 @@ export default {
       try {
         const stored = typeof value === 'string' && value.trim() ? JSON.parse(value) : (value || {})
         parsed = { ...parsed, ...stored }
+        if (!Array.isArray(stored.requestMappings)) parsed.requestMappings = this.defaultOpenRequestMappings()
+        if (!Array.isArray(stored.responseMappings)) parsed.responseMappings = this.defaultOpenResponseMappings()
       } catch (e) {
         this.$message.error('开放接口配置不是合法 JSON：' + e.message)
+        parsed.requestMappings = this.defaultOpenRequestMappings()
+        parsed.responseMappings = this.defaultOpenResponseMappings()
       }
       parsed.requestMappings = (parsed.requestMappings || []).map(item => ({
         ...item,
@@ -683,6 +780,11 @@ export default {
         sourceType: item.sourceType || 'BODY',
         targetType: item.targetType || 'STRING',
         required: item.required === true
+      }))
+      parsed.responseMappings = (parsed.responseMappings || []).map(item => ({
+        ...item,
+        sourceKey: item.sourceRefType && item.sourceVarId ? item.sourceRefType + ':' + item.sourceVarId : '',
+        targetField: item.targetField || ''
       }))
       this.openApiForm = parsed
       this.openEnvelopeText = this.formatOpenJson(parsed.envelopeTemplate)
@@ -709,6 +811,53 @@ export default {
     removeOpenRequestMapping(index) {
       this.openApiForm.requestMappings.splice(index, 1)
     },
+    defaultOpenRequestMappings() {
+      return this.openInputOptions.map(item => {
+        const separator = item.value.indexOf(':')
+        return {
+          targetRefType: item.value.substring(0, separator),
+          targetVarId: Number(item.value.substring(separator + 1)),
+          sourceType: 'BODY',
+          sourcePath: item.externalName ? '$.' + item.externalName : '$.',
+          required: false,
+          defaultValue: '',
+          targetType: item.targetType
+        }
+      })
+    },
+    defaultOpenResponseMappings() {
+      return this.openOutputOptions.map(item => {
+        const separator = item.value.indexOf(':')
+        return {
+          sourceRefType: item.value.substring(0, separator),
+          sourceVarId: Number(item.value.substring(separator + 1)),
+          targetField: item.scriptName
+        }
+      })
+    },
+    openMappingTargetType(fieldType) {
+      const type = String(fieldType || 'STRING').toUpperCase()
+      return this.openTargetTypes.includes(type) ? type : 'OBJECT'
+    },
+    resetOpenResponseMappings() {
+      this.$set(this.openApiForm, 'responseMappings', this.defaultOpenResponseMappings())
+    },
+    addOpenResponseMapping() {
+      const used = new Set((this.openApiForm.responseMappings || []).map(item => item.sourceKey))
+      const option = this.openOutputOptions.find(item => !used.has(item.value))
+      this.openApiForm.responseMappings.push({
+        sourceKey: option ? option.value : '',
+        targetField: option ? option.scriptName : ''
+      })
+    },
+    removeOpenResponseMapping(index) {
+      this.openApiForm.responseMappings.splice(index, 1)
+    },
+    onOpenResponseSourceChange(row) {
+      if (String(row.targetField || '').trim()) return
+      const option = this.openOutputOptions.find(item => item.value === row.sourceKey)
+      if (option) this.$set(row, 'targetField', option.scriptName)
+    },
     buildOpenApiContract() {
       const mappings = (this.openApiForm.requestMappings || []).map((item, index) => {
         const targetKey = String(item.targetKey || '')
@@ -725,11 +874,24 @@ export default {
           targetType: item.targetType || 'STRING'
         }
       })
+      const responseMappings = (this.openApiForm.responseMappings || []).map((item, index) => {
+        const sourceKey = String(item.sourceKey || '')
+        const separator = sourceKey.indexOf(':')
+        if (separator <= 0) throw new Error('响应映射第 ' + (index + 1) + ' 行未选择引擎输出字段')
+        const targetField = String(item.targetField || '').trim()
+        if (!targetField) throw new Error('响应映射第 ' + (index + 1) + ' 行未填写对外字段')
+        return {
+          sourceRefType: sourceKey.substring(0, separator),
+          sourceVarId: Number(sourceKey.substring(separator + 1)),
+          targetField
+        }
+      })
       return {
         enabled: this.openApiForm.enabled === true,
         recordTrace: this.openApiForm.recordTrace === true,
         returnTrace: this.openApiForm.returnTrace === true,
         requestMappings: mappings,
+        responseMappings,
         envelopeTemplate: this.parseOpenJson(this.openEnvelopeText, '外层响应'),
         dataPath: String(this.openApiForm.dataPath || '').trim(),
         successDataTemplate: this.parseOpenJson(this.openSuccessDataText, '成功 data'),
@@ -751,6 +913,20 @@ export default {
         if (item.sourceType === 'HEADER' && !headerName.test(item.sourcePath)) {
           throw new Error('请求映射第 ' + (index + 1) + ' 行 Header 名称不合法')
         }
+      })
+      const responseTargets = {}
+      const responseField = /^[A-Za-z_][A-Za-z0-9_-]{0,127}$/
+      ;(contract.responseMappings || []).forEach((item, index) => {
+        if (!item.sourceRefType || !item.sourceVarId) {
+          throw new Error('响应映射第 ' + (index + 1) + ' 行未选择引擎输出字段')
+        }
+        if (!responseField.test(item.targetField)) {
+          throw new Error('响应映射第 ' + (index + 1) + ' 行对外字段名不合法')
+        }
+        if (responseTargets[item.targetField]) {
+          throw new Error('响应映射第 ' + (index + 1) + ' 行对外字段重复')
+        }
+        responseTargets[item.targetField] = true
       })
       if (!contract.responseHeaders || Array.isArray(contract.responseHeaders) || typeof contract.responseHeaders !== 'object') {
         throw new Error('响应 Header 必须是 JSON 对象')
@@ -794,17 +970,26 @@ export default {
     openPreviewContext(success) {
       const context = {
         'status.success': success,
-        'status.code': success ? 'OK' : 'REQUEST_INVALID',
-        'status.message': success ? '执行成功' : '请求参数不合法',
+        'status.code': success ? '000000' : '100001',
+        'status.message': success ? '成功' : '入参校验失败',
         'status.httpStatus': success ? 200 : 400,
         traceId: 'AP-P-PREVIEW',
         result: { sample: true },
-        trace: [{ node: 'preview' }]
+        trace: [{ node: 'preview' }],
+        'error.message': success ? '' : '字段值不满足校验逻辑',
+        'error.field': success ? '' : 'request.mobile',
+        'error.validationCode': success ? '' : 'mobile_check',
+        'error.validationName': success ? '' : '手机号格式'
       }
       this.openOutputPlaceholders.forEach(placeholder => {
         const key = placeholder.slice(2, -1)
         context[key] = '<' + key.substring('output.'.length).replace('.', ':') + '>'
       })
+      context.response = (this.openApiForm.responseMappings || []).reduce((result, mapping) => {
+        const key = String(mapping.sourceKey || '').replace(':', '.')
+        result[mapping.targetField] = context['output.' + key]
+        return result
+      }, {})
       return context
     },
     previewOpenApiConfig() {
@@ -1144,23 +1329,37 @@ export default {
       }
       this.$set(row, '_editing', true)
       this.$set(row, '_varId', row.varId)
-      this.$set(row, '_origin', { varId: row.varId, _varId: row.varId, missingValue: row.missingValue })
+      this.$set(row, '_origin', {
+        varId: row.varId,
+        _varId: row.varId,
+        missingValue: row.missingValue,
+        validationRuleIdList: [...(row.validationRuleIdList || [])],
+        validationOverride: row.validationOverride
+      })
+    },
+    inputFieldPayload(row, validationOverride, validationRuleIds) {
+      return {
+        varId: row.varId,
+        refType: row.refType,
+        scriptName: row.scriptName,
+        fieldLabel: row.fieldLabel,
+        fieldType: row.fieldType,
+        missingValue: row.missingValue,
+        defaultValue: row.defaultValue,
+        transformType: row.transformType,
+        transformParams: row.transformParams,
+        validValues: row.validValues,
+        validationRuleIds: JSON.stringify(validationRuleIds || []),
+        validationOverride
+      }
     },
     async saveInputField(row) {
       this.$set(row, '_saving', true)
       try {
-        await api.updateInputField(row.id, {
-          varId: row.varId,
-          refType: row.refType,
-          scriptName: row.scriptName,
-          fieldLabel: row.fieldLabel,
-          fieldType: row.fieldType,
-          missingValue: row.missingValue,
-          defaultValue: row.defaultValue,
-          transformType: row.transformType,
-          transformParams: row.transformParams,
-          validValues: row.validValues
-        })
+        const validationRuleIds = row.validationRuleIdList || []
+        await api.updateInputField(row.id, this.inputFieldPayload(row, 1, validationRuleIds))
+        this.$set(row, 'validationRuleIds', JSON.stringify(validationRuleIds))
+        this.$set(row, 'validationOverride', 1)
         this.$set(row, '_editing', false)
         this.$set(row, '_saving', false)
         this.$message.success('保存成功')
@@ -1174,8 +1373,22 @@ export default {
         this.$set(row, 'varId', row._origin.varId)
         this.$set(row, '_varId', row._origin._varId)
         this.$set(row, 'missingValue', row._origin.missingValue)
+        this.$set(row, 'validationRuleIdList', [...row._origin.validationRuleIdList])
+        this.$set(row, 'validationOverride', row._origin.validationOverride)
       }
       this.$set(row, '_editing', false)
+    },
+    async restoreInheritedValidation(row) {
+      this.$set(row, '_saving', true)
+      try {
+        await api.updateInputField(row.id, this.inputFieldPayload(row, 0, []))
+        this.$message.success('已恢复子规则的字段校验配置')
+        await this.load()
+      } catch (e) {
+        this.$message.error('恢复失败: ' + (e.message || e))
+      } finally {
+        this.$set(row, '_saving', false)
+      }
     },
     inputRowClassName({ row }) {
       return row._editing ? 'editing-row' : ''
@@ -1254,6 +1467,37 @@ export default {
       } finally {
         this.versionLoading = false
       }
+    },
+    async loadFieldValidationOptions() {
+      try {
+        const res = await listAvailableFieldValidations(this.rule.projectId)
+        const data = res && res.data !== undefined ? res.data : res
+        this.fieldValidationOptions = Array.isArray(data) ? data : []
+      } catch (e) {
+        this.fieldValidationOptions = []
+        this.$message.error('加载字段校验规则失败: ' + (e.message || e))
+      }
+    },
+    parseValidationRuleIds(value) {
+      if (Array.isArray(value)) return value.map(Number).filter(Number.isFinite)
+      if (typeof value !== 'string' || !value.trim()) return []
+      try {
+        const parsed = JSON.parse(value)
+        return Array.isArray(parsed) ? parsed.map(Number).filter(Number.isFinite) : []
+      } catch (e) {
+        return []
+      }
+    },
+    selectedFieldValidations(row) {
+      const ids = (row && row.validationRuleIdList) || []
+      return ids.map(id => this.fieldValidationOptions.find(item => Number(item.id) === Number(id)))
+        .filter(Boolean)
+    },
+    fieldValidationTypeLabel(type) {
+      return {
+        REQUIRED: '必填', REGEX: '正则', MIN_VALUE: '最小值', MAX_VALUE: '最大值',
+        MIN_LENGTH: '最小长度', MAX_LENGTH: '最大长度', IN: '允许值', NOT_IN: '禁用值'
+      }[type] || type
     },
     async selectVersionPair(leftVersion, rightVersion) {
       this.leftVersionNumber = leftVersion

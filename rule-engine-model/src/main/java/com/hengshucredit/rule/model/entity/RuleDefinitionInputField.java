@@ -47,6 +47,12 @@ public class RuleDefinitionInputField {
 
     private String transformParams;
 
+    /** 关联的字段校验规则 ID 列表（JSON 数组）。 */
+    private String validationRuleIds;
+
+    /** 是否由当前规则显式覆盖子规则校验：0-继承，1-当前规则覆盖（含显式清空）。 */
+    private Integer validationOverride;
+
     private Integer sortOrder;
     private Integer status;
 
