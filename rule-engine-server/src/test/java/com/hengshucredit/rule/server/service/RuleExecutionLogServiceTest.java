@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.model.entity.RulePublished;
 import org.junit.Test;
 
 import java.util.Arrays;
@@ -10,6 +11,31 @@ import java.util.Map;
 import static org.junit.Assert.assertEquals;
 
 public class RuleExecutionLogServiceTest {
+
+    @Test
+    public void keepsClientArtifactAttributionWhenAsyncReportArrivesAfterNewPublish() {
+        RuleExecutionLogService service = new RuleExecutionLogService() {
+            @Override
+            protected RulePublished findPublished(String ruleCode, String projectCode) {
+                RulePublished current = new RulePublished();
+                current.setVersion(8);
+                current.setRevisionId(88L);
+                current.setArtifactDigest("current-digest");
+                return current;
+            }
+        };
+        RuleExecutionLog log = new RuleExecutionLog();
+        log.setRuleCode("risk_rule");
+        log.setRuleVersion(7);
+        log.setRevisionId(77L);
+        log.setArtifactDigest("executed-digest");
+
+        service.applyPublishedAttribution(log, "project-a");
+
+        assertEquals(Integer.valueOf(7), log.getRuleVersion());
+        assertEquals(Long.valueOf(77L), log.getRevisionId());
+        assertEquals("executed-digest", log.getArtifactDigest());
+    }
 
     @Test
     @SuppressWarnings("unchecked")

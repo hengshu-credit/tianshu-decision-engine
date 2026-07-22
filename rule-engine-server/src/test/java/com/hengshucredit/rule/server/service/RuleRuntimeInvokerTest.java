@@ -10,10 +10,17 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
+import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.Serializable;
+import java.lang.reflect.Proxy;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -270,6 +277,92 @@ public class RuleRuntimeInvokerTest {
         }
     }
 
+    @Test
+    public void publishedChildExecutesFrozenArtifactDependencies() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        FrozenChildResolver resolver = new FrozenChildResolver();
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot =
+                new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        RuleDefinitionInputField frozenInput = new RuleDefinitionInputField();
+        frozenInput.setScriptName("frozenScore");
+        frozenInput.setFieldType("INTEGER");
+        snapshot.getInputFields().add(frozenInput);
+        RuleVariable frozenVariable = new RuleVariable();
+        frozenVariable.setId(88L);
+        frozenVariable.setScriptName("frozenScore");
+        snapshot.getVariables().add(frozenVariable);
+
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(2L);
+        published.setArtifactId(701L);
+        published.setRuleCode("CHILD");
+        published.setProjectCode("target_project");
+        published.setModelType("SCRIPT");
+        published.setModelJson("{\"script\":\"frozenScore\"}");
+        published.setCompiledScript("frozenScore");
+        RulePublishedMapper mapper = (RulePublishedMapper) Proxy.newProxyInstance(
+                RulePublishedMapper.class.getClassLoader(),
+                new Class<?>[]{RulePublishedMapper.class},
+                (proxy, method, args) -> "selectOne".equals(method.getName()) ? published : null);
+
+        ReflectionTestUtils.setField(invoker, "publishedMapper", mapper);
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(invoker, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(invoker, "artifactRuntimeSnapshotService",
+                new ArtifactRuntimeSnapshotService() {
+                    @Override
+                    public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
+                        assertEquals(Long.valueOf(701L), artifactId);
+                        assertEquals(Long.valueOf(2L), definitionId);
+                        return snapshot;
+                    }
+                });
+
+        invoker.enter("PARENT", 9L, "target_project", new LinkedHashMap<String, Object>(), false);
+        try {
+            assertEquals(Integer.valueOf(73), invoker.executeRuleById("2"));
+            assertTrue(resolver.snapshotCalled);
+            assertFalse(resolver.currentCalled);
+            assertSame(snapshot.getVariables(), resolver.variables);
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
+    public void artifactRootCollectsOnlyFrozenOutputContract() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        ReflectionTestUtils.setField(invoker, "definitionService", new TerminationOutputDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(20L);
+        definition.setProjectId(9L);
+        definition.setRuleCode("FROZEN_OUTPUT");
+        definition.setRuleName("冻结输出规则");
+        definition.setModelType("SCRIPT");
+        definition.setScope("PROJECT");
+        RuleDefinitionOutputField frozen = new RuleDefinitionOutputField();
+        frozen.setScriptName("frozenOutput");
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("frozenOutput", "FROZEN");
+        values.put("currentOutput", "CURRENT");
+
+        invoker.enterArtifact(definition, 9L, "target_project", values,
+                Collections.<String, Object>emptyMap(), false, "{}",
+                Collections.singletonList(frozen));
+        try {
+            Map<String, Object> output = invoker.collectTerminationResult();
+            assertEquals(Collections.<String, Object>singletonMap("frozenOutput", "FROZEN"), output);
+        } finally {
+            invoker.exit();
+        }
+    }
+
     private static class TestDefinitionService extends RuleDefinitionService {
         @Override
         public RuleDefinition getById(Serializable id) {
@@ -306,6 +399,31 @@ public class RuleRuntimeInvokerTest {
         }
     }
 
+    private static class FrozenChildResolver extends VariableSourceResolver {
+        private boolean currentCalled;
+        private boolean snapshotCalled;
+        private List<RuleVariable> variables;
+
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
+            currentCalled = true;
+            throw new AssertionError("已发布子规则不得读取当前项目变量");
+        }
+
+        @Override
+        public Map<String, Object> resolveIntoSnapshot(List<RuleVariable> variables,
+                                                       List<RuleModel> models,
+                                                       List<RuleFunction> functions,
+                                                       Map<String, Object> target,
+                                                       VariableResolveOptions options) {
+            snapshotCalled = true;
+            this.variables = variables;
+            target.put("frozenScore", 73);
+            return target;
+        }
+    }
+
     private static class ContextDefinitionService extends RuleDefinitionService {
         @Override
         public RuleDefinition getById(Serializable id) {
@@ -330,6 +448,15 @@ public class RuleRuntimeInvokerTest {
         @Override
         public List<RuleDefinitionInputField> listInputFields(Long definitionId) {
             return Collections.emptyList();
+        }
+    }
+
+    private static class TerminationOutputDefinitionService extends RuleDefinitionService {
+        @Override
+        public List<RuleDefinitionOutputField> listOutputFields(Long definitionId) {
+            RuleDefinitionOutputField current = new RuleDefinitionOutputField();
+            current.setScriptName("currentOutput");
+            return Collections.singletonList(current);
         }
     }
 

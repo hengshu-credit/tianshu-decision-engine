@@ -1,6 +1,6 @@
 import { shallowMount } from '@test-utils'
 
-const GroupActionForm = require('@/views/experiment/GroupActionForm.vue').default
+const GroupActionForm = (await vi.importActual('@/views/experiment/GroupActionForm.vue')).default
 
 describe('GroupActionForm', () => {
   test('选择规则时同时写入稳定 ID 和编码快照', () => {

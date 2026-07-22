@@ -8,6 +8,7 @@ import com.hengshucredit.rule.model.entity.RuleModelVersion;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.server.model.ModelArtifactValidator;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
@@ -269,6 +270,17 @@ public class RuleModelServiceTest {
                 return metadata;
             }
         });
+        ReflectionTestUtils.setField(service, "modelArtifactValidator", new ModelArtifactValidator() {
+            @Override
+            protected Map<String, Object> inspectOnnx(byte[] modelBytes) {
+                Map<String, Object> metadata = new LinkedHashMap<>();
+                metadata.put("inputs", Collections.singletonMap("input",
+                        Collections.singletonMap("shape", Arrays.asList(1, 3, 128, 128))));
+                metadata.put("outputs", Collections.singletonMap("output1",
+                        Collections.singletonMap("shape", Arrays.asList(1, 2))));
+                return metadata;
+            }
+        });
         ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
             if ("insert".equals(method.getName())) {
                 RuleModel model = (RuleModel) args[0];
@@ -292,7 +304,7 @@ public class RuleModelServiceTest {
 
         RuleModel model = service.uploadAndParse(
                 new MockMultipartFile("file", "anti-spoof-mn3.onnx", "application/octet-stream", new byte[]{1, 2, 3}),
-                null, "GLOBAL", "mn3", "MN3", "NEURAL_NET", null, "initial", "{\"face_image\":\"base64\"}",
+                null, "GLOBAL", "mn3", "MN3", "NEURAL_NET", null, "initial", null,
                 "MN3_ANTISPOOF", "{}", 1, 90000);
 
         assertEquals(Long.valueOf(42L), model.getId());
@@ -303,7 +315,9 @@ public class RuleModelServiceTest {
         assertEquals("AQID", persistedContent.get());
         assertTrue(insertedModel.get().getModelConfig().contains("MN3_ANTISPOOF"));
         assertTrue(insertedModel.get().getModelConfig().contains("output1"));
-        assertTrue(insertedModel.get().getModelConfig().contains("testParams"));
+        assertFalse(insertedModel.get().getModelConfig().contains("testParams"));
+        assertNotNull(insertedModel.get().getModelDigest());
+        assertTrue(insertedModel.get().getValidationReportJson().contains("NOT_PROVIDED"));
         assertEquals(Integer.valueOf(1), insertedModel.get().getPreloadOnStartup());
         assertEquals(Integer.valueOf(90000), insertedModel.get().getExecutionTimeoutMs());
     }
@@ -313,11 +327,14 @@ public class RuleModelServiceTest {
     public void pageListDoesNotReadOrReturnLargeModelContent() {
         TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleModel.class);
         AtomicReference<String> selectedColumns = new AtomicReference<>();
+        AtomicReference<Boolean> excludesDeleted = new AtomicReference<>(false);
         RuleModelService service = new RuleModelService();
         ReflectionTestUtils.setField(service, "modelMapper", mapper(RuleModelMapper.class, (proxy, method, args) -> {
             if ("selectPage".equals(method.getName())) {
                 LambdaQueryWrapper<RuleModel> wrapper = (LambdaQueryWrapper<RuleModel>) args[1];
                 selectedColumns.set(wrapper.getSqlSelect());
+                excludesDeleted.set(wrapper.getSqlSegment().contains("status")
+                        && wrapper.getParamNameValuePairs().containsValue(-1));
                 RuleModel model = model();
                 model.setProjectId(null);
                 model.setModelContent("large-base64-content");
@@ -335,6 +352,7 @@ public class RuleModelServiceTest {
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
         String normalized = selectedColumns.get().toLowerCase();
         assertFalse(normalized.contains("model_content") || normalized.contains("modelcontent"));
+        assertTrue(excludesDeleted.get());
         assertEquals(null, result.getRecords().get(0).getModelContent());
     }
 
@@ -351,6 +369,7 @@ public class RuleModelServiceTest {
                 selectedColumns.set(wrapper.getSqlSelect());
                 RuleModel existing = model();
                 existing.setModelContent(null);
+                existing.setStatus(1);
                 return existing;
             }
             if ("updateById".equals(method.getName())) {
@@ -365,6 +384,7 @@ public class RuleModelServiceTest {
         changes.setModelName("updated");
         changes.setPreloadOnStartup(1);
         changes.setExecutionTimeoutMs(90000);
+        changes.setStatus(0);
         service.update(changes);
 
         assertTrue(selectedColumns.get() != null && !selectedColumns.get().isEmpty());
@@ -373,6 +393,8 @@ public class RuleModelServiceTest {
         assertEquals(null, updatedModel.get().getModelContent());
         assertEquals(Integer.valueOf(1), updatedModel.get().getPreloadOnStartup());
         assertEquals(Integer.valueOf(90000), updatedModel.get().getExecutionTimeoutMs());
+        assertEquals("普通元信息更新不得绕过影响分析改变治理状态",
+                Integer.valueOf(1), updatedModel.get().getStatus());
     }
 
     @Test

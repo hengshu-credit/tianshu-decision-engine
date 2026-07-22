@@ -14,6 +14,16 @@ public class RuleModelVersion {
     private Integer version;
     private String modelContent;
     private String modelConfig;
+    private String modelFormat;
+    private String modelFileName;
+    private Long modelFileSize;
+    private String modelDigest;
+    private String inputSchemaJson;
+    private String outputSchemaJson;
+    private String validationReportJson;
+    private String runtimeConstraintsJson;
+    private String sampleStatus;
+    private Integer status;
     private String changeLog;
     private String publishBy;
 

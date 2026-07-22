@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
+import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
@@ -457,6 +458,43 @@ public class VariableSourceResolverTest {
         Map<String, Object> modelOutput = (Map<String, Object>) resolved.get("score_f1");
         assertEquals(660, modelOutput.get("score"));
         assertEquals(660, ((Map<?, ?>) resolved.get("decision")).get("score"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void publishedResolutionExecutesFrozenModelSnapshotInsteadOfCurrentModelRow() {
+        RuleModel frozen = modelDetail(100L, "score_f1");
+        frozen.setModelContent("AQID");
+        RuleModelOutputField output = new RuleModelOutputField();
+        output.setId(201L);
+        output.setFieldName("score");
+        frozen.setOutputFields(Collections.singletonList(output));
+        final boolean[] frozenCalled = {false};
+        RuleModelService modelService = new RuleModelService() {
+            @Override
+            public Map<String, Object> executeSnapshot(RuleModel model, Map<String, Object> params,
+                                                       Map<Long, RuleFunction> functions) {
+                frozenCalled[0] = true;
+                return Map.of("success", true, "outputs", Map.of("score", 701));
+            }
+
+            @Override
+            public Map<String, Object> execute(Long modelId, Map<String, Object> params) {
+                fail("发布执行不得读取当前模型主表");
+                return Collections.emptyMap();
+            }
+        };
+        VariableSourceResolver resolver = new VariableSourceResolver();
+        ReflectionTestUtils.setField(resolver, "ruleModelService", modelService);
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("score_f1")));
+
+        Map<String, Object> values = resolver.resolveIntoSnapshot(Collections.emptyList(),
+                Collections.singletonList(frozen), Collections.emptyList(),
+                new LinkedHashMap<>(), options);
+
+        assertTrue(frozenCalled[0]);
+        assertEquals(701, ((Map<String, Object>) values.get("score_f1")).get("score"));
     }
 
     @Test

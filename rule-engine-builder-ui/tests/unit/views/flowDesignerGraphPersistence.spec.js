@@ -29,7 +29,7 @@ function createHorizontalGraph() {
 describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
   test('锚点轻微拖动且未创建连线时仍打开快捷新增菜单', () => {
     const payload = { data: { id: 'task_1' }, nodeModel: { id: 'task' }, e: { clientX: 106, clientY: 100 } }
-    const context = { anchorGesture: null, openAnchorMenu: jest.fn() }
+    const context = { anchorGesture: null, openAnchorMenu: vi.fn() }
 
     designer.methods.onAnchorMouseDown.call(context, {
       ...payload,
@@ -44,7 +44,7 @@ describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
 
   test('锚点明显拖动时不打开快捷新增菜单', () => {
     const payload = { data: { id: 'task_1' }, nodeModel: { id: 'task' }, e: { clientX: 120, clientY: 100 } }
-    const context = { anchorGesture: null, openAnchorMenu: jest.fn() }
+    const context = { anchorGesture: null, openAnchorMenu: vi.fn() }
 
     designer.methods.onAnchorMouseDown.call(context, {
       ...payload,
@@ -58,7 +58,7 @@ describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
   })
 
   test('图首次渲染完成后再创建默认开启的小地图', () => {
-    const miniMap = { isShow: false, show: jest.fn(), hide: jest.fn() }
+    const miniMap = { isShow: false, show: vi.fn(), hide: vi.fn() }
     const context = { miniMapVisible: true, lf: { extension: { miniMap } } }
 
     designer.methods.onGraphRendered.call(context)
@@ -103,16 +103,16 @@ describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
     const snapshot = JSON.parse(JSON.stringify(graph))
     const context = {
       lf: {
-        getGraphData: jest.fn(() => graph),
+        getGraphData: vi.fn(() => graph),
         graphModel: { edges: graph.edges.map(edge => ({ id: edge.id, virtual: false })) },
-        render: jest.fn(),
-        fitView: jest.fn()
+        render: vi.fn(),
+        fitView: vi.fn()
       },
-      handleSave: jest.fn(),
-      handleCompile: jest.fn(),
-      updateZoom: jest.fn(),
+      handleSave: vi.fn(),
+      handleCompile: vi.fn(),
+      updateZoom: vi.fn(),
       $nextTick: callback => callback(),
-      $message: { info: jest.fn(), success: jest.fn(), error: jest.fn() }
+      $message: { info: vi.fn(), success: vi.fn(), error: vi.fn() }
     }
 
     designer.methods.beautifyGraph.call(context)
@@ -132,8 +132,8 @@ describe('决策流锚点连线提示', () => {
   test('轻微拖动命中原节点时不提示不允许添加连线', () => {
     const context = {
       anchorGesture: null,
-      openAnchorMenu: jest.fn(),
-      $message: { warning: jest.fn() }
+      openAnchorMenu: vi.fn(),
+      $message: { warning: vi.fn() }
     }
     const payload = { data: { id: 'task_1' }, nodeModel: { id: 'task' }, e: { clientX: 106, clientY: 100 } }
 
@@ -150,8 +150,8 @@ describe('决策流锚点连线提示', () => {
   test('明显拖动产生非法连线时保留提示', () => {
     const context = {
       anchorGesture: null,
-      openAnchorMenu: jest.fn(),
-      $message: { warning: jest.fn() }
+      openAnchorMenu: vi.fn(),
+      $message: { warning: vi.fn() }
     }
     const payload = { data: { id: 'task_1' }, nodeModel: { id: 'task' }, e: { clientX: 120, clientY: 100 } }
 

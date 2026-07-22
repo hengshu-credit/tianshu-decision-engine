@@ -19,7 +19,7 @@
 
 天枢决策引擎是一套基于 Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus 的可视化风控决策平台。系统面向业务人员提供规则项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力；面向业务系统提供 `rule-engine-client` SDK，用于拉取、缓存并执行已发布规则。
 
-当前功能、系统设计、代码实现、UI、模块关联和验证结论见[《天枢决策引擎当前实现研究报告》](docs/research/2026-07-17-tianshu-decision-engine-current-state.md)。
+当前功能、系统设计、代码实现、UI、模块关联和验证结论见[《天枢决策引擎当前实现研究报告》](docs/research/2026-07-17-tianshu-decision-engine-current-state.md)。最新的依赖升级、缺陷修复、生产门禁和后续路线图见[《天枢决策引擎生产就绪复盘与后续规划》](docs/research/2026-07-22-production-readiness-review.md)。
 
 
 ## 交流
@@ -121,7 +121,7 @@ flowchart LR
 - Maven 3.6+
 - MySQL 8
 - Redis
-- Node.js 14+，建议 22.14.x
+- Node.js 20.19+，不设置最高版本；建议使用当前维护中的 Node.js LTS，已验证 Node.js 26.4.0
 - 可选 NVIDIA GPU：默认构建使用可移植的 ONNX Runtime CPU 包，不要求 NVIDIA 驱动、CUDA 或 cuDNN；只有使用 `-Ponnx-gpu` 构建 CUDA 版后端时，才需安装与项目 ONNX Runtime GPU 版本兼容的 NVIDIA 驱动、CUDA 和 cuDNN，并确保其动态库在服务进程的 `PATH`/`LD_LIBRARY_PATH` 中。
 
 ## 5. 本地启动
@@ -129,10 +129,14 @@ flowchart LR
 ### 5.1 数据库与基础设施
 
 ```bash
-docker compose up -d
+cp .env.example .env
+# 编辑 .env，替换全部 replace-with-* 占位值
+docker compose --env-file .env up -d
 ```
 
-`schema.sql` 只包含数据库、表和索引等结构 DDL；`export_202607161151.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-export.sql`。根编排中的 `mysql-init` 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
+PowerShell 可使用 `Copy-Item .env.example .env`。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 `MYSQL_USERNAME`、`MYSQL_PASSWORD` 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。
+
+`schema.sql` 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；`export_202607161151.sql` 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 `01-schema.sql` 和 `02-export.sql`。根编排中的 `mysql-init` 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。
 
 需要手工完整恢复时，固定顺序为：删除 `rule_engine` 数据库，执行 `schema.sql`，再执行 `export_202607161151.sql`。export 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。
 
@@ -152,27 +156,36 @@ cd rule-engine-server
 mvn spring-boot:run -Ponnx-gpu
 ```
 
-默认配置读取：
+GPU 构建完成后，可在仓库根目录执行真实 CUDA 诊断。诊断直接使用启动进程的 `PATH`，不需要额外传入 CUDA/cuDNN 目录：
 
-- MySQL: `jdbc:mysql://localhost:3306/rule_engine`
-- 用户名: `root`
-- 密码: `1qaz@WSX`
-- Redis: `localhost:6379`
+```powershell
+mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnosticTest" "-Dsurefire.failIfNoSpecifiedTests=false" -pl rule-engine-server -am test
+```
 
-控制台登录默认启用，账号密码：
+诊断通过后使用同一 `onnx-gpu` Profile 启动服务，并在模型管理页面将目标 ONNX 模型的执行设备显式设置为“GPU（CUDA）”。仅启用 GPU Profile 不会自动修改已有模型的 CPU/CUDA 配置。
 
-- 用户名: `admin`
-- 密码: `1qaz@WSX`
+后端启动时会将当前目录的 `.env` 和上级目录的 `.env` 作为可选配置源读取：在仓库根目录运行 JAR 时读取 `./.env`，在 `rule-engine-server` 目录运行 `mvn spring-boot:run` 时读取 `../.env`。操作系统环境变量和命令行参数的优先级高于 `.env`，因此生产环境仍应通过 Secret/KMS 注入真实凭据；缺少必填密钥时，现有安全校验仍会拒绝启动。关键配置如下：
 
-可通过环境变量 `CONSOLE_USERNAME`、`CONSOLE_PASSWORD` 覆盖。
+| 配置 | 要求 |
+|------|------|
+| `MYSQL_USERNAME` / `MYSQL_PASSWORD` | 必填；生产使用仅具备 `rule_engine` 所需权限的独立账号 |
+| `REDIS_PASSWORD` | 必填；与 server 和 SDK 实际连接的 Redis 实例一致 |
+| `RULE_AUTH_MASTER_KEY` | 必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入 |
+| `CONSOLE_USERNAME` / `CONSOLE_PASSWORD` | 必填；密码默认按 BCrypt 校验 |
+| `CORS_ALLOWED_ORIGIN_PATTERNS` | 生产控制台的精确 HTTPS 来源，不使用任意来源 |
+| `SESSION_COOKIE_SECURE` | HTTPS 生产环境设为 `true` |
+
+本地临时开发如需使用明文控制台密码，可显式设置 `CONSOLE_PASSWORD_ENCODING=PLAIN`；生产必须使用 BCrypt 或外部身份系统，不应提交密码或密钥到仓库。
 
 ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。CPU 版后端即使读取到历史 CUDA 配置也会自动回退 CPU，不影响服务启动；CUDA 版后端会实际检查 CUDA 共享库及其依赖是否可加载。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。
+
+模型运行时当前使用 JPMML Evaluator Metro 1.7.7 和 ONNX Runtime 1.26.0。PMML 输入字段按模型声明精确匹配，不自动转换大小写、驼峰或下划线；PMML/ONNX 缓存键均包含模型内容或运行配置，替换文件后不会继续复用旧模型。本项目已选择以 AGPL-3.0 开源方式交付 JPMML：凡对外提供包含 JPMML 的制品或网络服务，都必须同步提供与运行版本一致的完整 Corresponding Source、许可证和重建材料，详见 [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)。
 
 ### 5.3 前端
 
 ```bash
 cd rule-engine-builder-ui
-npm install
+npm ci
 npm run dev
 ```
 
@@ -396,10 +409,17 @@ SDK 行为：
 
 ## 10. 版本、日志和计费
 
-- 规则、函数、分流实验均有版本记录，可查看版本内容、对比差异并回滚。
-- 执行日志记录规则执行结果、耗时、输入输出和表达式追踪。
+- 规则采用 `DRAFT → REVIEW → APPROVED → PUBLISHED → OFFLINE` 生命周期。已发布规则再次编辑时会创建新草稿，线上仍执行原发布制品；审核人与发布人允许是同一账号，但每次状态变更都会记录操作人、时间、理由和校验结果。
+- 提交审核和发布前均执行 Schema 校验、结构化依赖闭包与影响分析。破坏性 Schema 变更可以发布，但必须填写明确理由并进入审计时间线。
+- 发布会把规则、变量、函数、模型和依赖快照打包为不可变决策制品，使用规范 JSON 计算 SHA-256 摘要。执行日志和 SDK 缓存同时记录发布修订 ID 与制品摘要，后续源对象变化不会改写旧制品。
+- 规则详情页可以下载制品；`/api/rule/artifact/import` 校验摘要和运行时兼容性，`/api/rule/artifact/deploy` 只接受“制品组件 ID → 目标环境资源 ID”的显式绑定，不按名称或编码猜测，也不打包凭证等秘密信息。
+- PMML/ONNX 上传、替换时校验文件摘要、格式、精确输入输出字段和运行时兼容性，不做隐式大小写或命名风格转换。样例不是必填项；提供样例时必须实际执行通过。模型删除、替换和下线前必须先生成引用影响分析并携带未失效的确认令牌。
+- 规则、模型、函数和分流实验均有版本记录，可查看版本内容、对比差异并回滚。
+- 执行日志记录规则执行结果、耗时、输入输出、表达式追踪、修订 ID 和制品摘要。
 - 外数 API、数据库查询、名单匹配和模型执行会写入各自模块调用日志，日志页面按模块展示 HTTP 请求、SQL 查询、名单匹配或模型输入输出等不同结构。
 - 账单模块可对引擎执行、API 调用和数据库调用配置计费项，查看明细与汇总。
+
+已有数据库升级后，由管理员执行一次 `POST /api/rule/definition/migrate-artifacts`。迁移对每条规则幂等执行：可冻结的已发布版本会生成发布修订与制品；无法解析完整依赖的规则会保留原线上发布记录，并生成带问题说明的草稿，等待人工处理。
 
 ## 11. 开发校验命令
 
@@ -409,6 +429,7 @@ SDK 行为：
 mvn clean install -DskipTests
 cd rule-engine-server
 mvn spring-boot:run
+cd ..
 mvn test
 ```
 
@@ -417,19 +438,45 @@ mvn test
 ```bash
 cd rule-engine-builder-ui
 npm run dev
+npm run lint
 npm test
+npm run test:coverage
+npm run build
+npm run test:e2e:dist
+# 设置 E2E_BASE_URL 后运行真实前后端联调
+npm run test:e2e:full
 ```
 
-## 12. 文档索引
+Playwright 首次使用需执行 `npx playwright install chromium`；也可设置 `PLAYWRIGHT_CHANNEL=chrome` 使用本机 Chrome。`test:e2e:dist` 直接加载真实 `dist/` 并模拟 API，不依赖本地监听端口；`test:e2e:full` 只有在设置 `E2E_BASE_URL` 后才执行真实后端联调。
 
+2026-07-22 在 JDK 17.0.19 下验证后端共运行 740 个测试，739 个通过、1 个仅在 CUDA 环境执行的测试跳过，Tomcat NIO2 启动后 8080 端口与 HTTP 200 响应验证通过；在 Node.js 26.4.0 下验证前端 120 个测试文件、1276 个测试、ESLint 10 flat config、Vite 8 生产构建和 Playwright `dist` 烟测全部通过。测试数量会随代码演进，以命令实际输出为准。
+
+## 12. 生产交付状态与边界
+
+当前版本定位为预发布的生产候选版本。代码和自动化测试基础已经较完整，但正式交付前至少需要关闭以下门禁：
+
+- 在允许监听端口的标准部署环境完成真实后端、MySQL、Redis、HTTPS 与浏览器全链路验收；当前 Playwright `dist` 生产包烟测已通过，但不能替代部署联调。
+- JPMML 已确定采用 AGPL-3.0 开源交付；每个发布版本仍必须落实 Corresponding Source 下载入口、许可证保留和合规复核，不能满足时不得交付。
+- 完成密钥托管与轮换、HTTPS、备份恢复、容量压测、灾备和发布回滚演练。
+- 前端已迁移到 Vite 8、Vitest 4 和 ESLint 10；LogicFlow 间接依赖已通过 `uuid@11.1.1` override 修复，生产依赖审计为 0 漏洞。发布时仍需持续运行审计、SBOM 和许可证扫描。
+- 血缘分析对结构化引用较可靠，但脚本中的复杂动态引用仍只能静态尽力识别。
+- 外数、数据库和名单变量的在线测试依赖目标数据源；生产数据库数据源必须使用只读账号并限制为查询类 SQL。
+
+完整的风险分级、验收清单、发布状态机和阶段性规划见[生产就绪复盘报告](docs/research/2026-07-22-production-readiness-review.md)。
+
+## 13. 文档索引
+
+- 生产就绪复盘与路线图：[《天枢决策引擎生产就绪复盘与后续规划》](docs/research/2026-07-22-production-readiness-review.md)
 - 当前实现研究：[《天枢决策引擎当前实现研究报告》](docs/research/2026-07-17-tianshu-decision-engine-current-state.md)
 - 数据库结构：`rule-engine-server/src/main/resources/sql/schema.sql`
 - 当前初始化数据：`rule-engine-server/src/main/resources/sql/export_202607161151.sql`
 - 前端单元测试：`rule-engine-builder-ui/tests/unit/`
+- 前端浏览器测试：`rule-engine-builder-ui/tests/e2e/`
 - 后端测试：`rule-engine-core`、`rule-engine-client`、`rule-engine-server` 各模块的 `src/test/`
+- 第三方许可证与开源交付：[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md)
 
 
-## 13. 参考引用
+## 14. 参考引用
 
 > `QLExpress` 脚本表达式: https://github.com/alibaba/QLExpress
 >

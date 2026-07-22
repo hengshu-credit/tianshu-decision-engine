@@ -1,8 +1,8 @@
-const major = Number(process.versions.node.split('.')[0])
+const [major, minor] = process.versions.node.split('.').map(Number)
 
-if (major < 14 || major >= 23) {
+if (major < 20 || (major === 20 && minor < 19)) {
   console.error(
-    `Unsupported Node.js ${process.version}. Use Node.js 18-22 for this Vue 3 project; newer releases are not part of the verified toolchain.`
+    `Unsupported Node.js ${process.version}. Vite 8 requires Node.js 20.19 or newer.`
   )
   process.exit(1)
 }

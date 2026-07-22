@@ -439,7 +439,7 @@ export default {
       this.authDialogVisible = true
     },
     async loadApiDocLogo() {
-      const baseUrl = process.env.BASE_URL || '/'
+      const baseUrl = import.meta.env.BASE_URL || './'
       const response = await fetch(
         `${baseUrl}images/hengshucredit_animated.svg`
       )

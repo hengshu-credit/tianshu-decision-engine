@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.controller.mgmt;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RuleQueryDTO;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest;
+import com.hengshucredit.rule.model.dto.RulePreflightReport;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleCompileService;
@@ -10,6 +12,8 @@ import com.hengshucredit.rule.server.service.RuleCallCycleService;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RulePublishService;
+import com.hengshucredit.rule.server.service.RuleLifecycleService;
+import com.hengshucredit.rule.server.service.RuleArtifactMigrationService;
 import com.hengshucredit.rule.server.service.RuleReferenceIntegrityService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
@@ -43,6 +47,12 @@ public class RuleDefinitionController {
 
     @Resource
     private RuleReferenceIntegrityService referenceIntegrityService;
+
+    @Resource
+    private RuleLifecycleService lifecycleService;
+
+    @Resource
+    private RuleArtifactMigrationService artifactMigrationService;
 
     @GetMapping("/list")
     public R<IPage<RuleDefinition>> list(
@@ -248,6 +258,123 @@ public class RuleDefinitionController {
     public R<Void> unpublish(@PathVariable Long definitionId) {
         String error = publishService.unpublish(definitionId);
         return error == null ? R.ok() : R.fail(error);
+    }
+
+    @PostMapping("/{definitionId}/revisions/draft")
+    public R<RuleRevision> ensureDraft(@PathVariable Long definitionId) {
+        try {
+            return R.ok(lifecycleService.ensureDraft(definitionId));
+        } catch (IllegalArgumentException e) {
+            return R.fail(400, e.getMessage());
+        } catch (IllegalStateException e) {
+            return R.fail(409, e.getMessage());
+        }
+    }
+
+    @PostMapping("/migrate-artifacts")
+    public R<RuleArtifactMigrationService.MigrationReport> migrateLegacyArtifacts() {
+        return R.ok(artifactMigrationService.migrateAll());
+    }
+
+    @GetMapping("/{definitionId}/revisions")
+    public R<List<RuleRevision>> listRevisions(@PathVariable Long definitionId) {
+        return R.ok(lifecycleService.listRevisions(definitionId));
+    }
+
+    @GetMapping("/{definitionId}/revisions/current-draft")
+    public R<RuleRevision> currentDraft(@PathVariable Long definitionId) {
+        return R.ok(lifecycleService.currentDraft(definitionId));
+    }
+
+    @GetMapping("/{definitionId}/revisions/{revisionId}")
+    public R<RuleRevision> getRevision(@PathVariable Long definitionId,
+                                       @PathVariable Long revisionId) {
+        try {
+            return R.ok(lifecycleService.getRevision(definitionId, revisionId));
+        } catch (IllegalArgumentException e) {
+            return R.fail(400, e.getMessage());
+        }
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/preflight")
+    public R<RulePreflightReport> preflight(@PathVariable Long definitionId,
+                                            @PathVariable Long revisionId) {
+        try {
+            RulePreflightReport report = lifecycleService.preflightReport(definitionId, revisionId);
+            return report.isValid() ? R.ok(report) : validationFailure(report);
+        } catch (IllegalArgumentException e) {
+            return R.fail(400, e.getMessage());
+        }
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/submit")
+    public R<RuleRevision> submitRevision(@PathVariable Long definitionId,
+                                          @PathVariable Long revisionId,
+                                          @RequestBody(required = false)
+                                          RuleLifecycleActionRequest request) {
+        return lifecycleAction(definitionId, revisionId,
+                () -> lifecycleService.submit(revisionId, request));
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/return")
+    public R<RuleRevision> returnRevision(@PathVariable Long definitionId,
+                                          @PathVariable Long revisionId,
+                                          @RequestBody(required = false)
+                                          RuleLifecycleActionRequest request) {
+        return lifecycleAction(definitionId, revisionId,
+                () -> lifecycleService.returnToDraft(revisionId, request));
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/approve")
+    public R<RuleRevision> approveRevision(@PathVariable Long definitionId,
+                                           @PathVariable Long revisionId,
+                                           @RequestBody(required = false)
+                                           RuleLifecycleActionRequest request) {
+        return lifecycleAction(definitionId, revisionId,
+                () -> lifecycleService.approve(revisionId, request));
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/publish")
+    public R<RuleRevision> publishRevision(@PathVariable Long definitionId,
+                                           @PathVariable Long revisionId,
+                                           @RequestBody(required = false)
+                                           RuleLifecycleActionRequest request) {
+        return lifecycleAction(definitionId, revisionId,
+                () -> lifecycleService.publish(revisionId, request));
+    }
+
+    @PostMapping("/{definitionId}/revisions/{revisionId}/offline")
+    public R<RuleRevision> offlineRevision(@PathVariable Long definitionId,
+                                           @PathVariable Long revisionId,
+                                           @RequestBody(required = false)
+                                           RuleLifecycleActionRequest request) {
+        return lifecycleAction(definitionId, revisionId,
+                () -> lifecycleService.offline(revisionId, request));
+    }
+
+    @GetMapping("/{definitionId}/revisions/timeline")
+    public R<List<RuleLifecycleEvent>> lifecycleTimeline(@PathVariable Long definitionId) {
+        return R.ok(lifecycleService.timeline(definitionId));
+    }
+
+    private R<RuleRevision> lifecycleAction(Long definitionId, Long revisionId,
+                                            java.util.function.Supplier<RuleRevision> action) {
+        try {
+            lifecycleService.getRevision(definitionId, revisionId);
+            return R.ok(action.get());
+        } catch (IllegalArgumentException e) {
+            return R.fail(400, e.getMessage());
+        } catch (IllegalStateException e) {
+            int code = e.getMessage() != null && e.getMessage().startsWith("发布前验证未通过")
+                    ? 422 : 409;
+            return R.fail(code, e.getMessage());
+        }
+    }
+
+    private R<RulePreflightReport> validationFailure(RulePreflightReport report) {
+        R<RulePreflightReport> response = R.fail(422, "发布前验证未通过");
+        response.setData(report);
+        return response;
     }
 
     @GetMapping("/versions/{definitionId}")

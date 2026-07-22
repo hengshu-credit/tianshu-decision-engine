@@ -4,7 +4,7 @@ import * as definitionApi from '@/api/definition'
 
 describe('DesignerTestDialog unified schema', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('未保存的决策流使用后端统一样例参数', async () => {

@@ -32,6 +32,11 @@ public class RuleModel {
     private String modelContent;
     private String modelFileName;
     private Long modelFileSize;
+    private String modelDigest;
+    private String inputSchemaJson;
+    private String outputSchemaJson;
+    private String validationReportJson;
+    private String runtimeConstraintsJson;
 
     /** 格式特有配置（JSON） */
     private String modelConfig;

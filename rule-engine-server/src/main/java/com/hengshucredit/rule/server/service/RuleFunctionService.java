@@ -278,6 +278,13 @@ public class RuleFunctionService {
         if (!Integer.valueOf(1).equals(function.getStatus())) {
             throw new IllegalArgumentException("转换函数已停用: " + function.getFuncCode());
         }
+        return invokeSnapshot(function, args);
+    }
+
+    public Object invokeSnapshot(RuleFunction function, List<Object> args) {
+        if (function == null) {
+            throw new IllegalArgumentException("冻结转换函数不存在");
+        }
         List<String> paramNames = parseParamNames(function.getParamsJson());
         List<Object> values = args == null ? Collections.emptyList() : args;
         if (paramNames.size() != values.size()) {

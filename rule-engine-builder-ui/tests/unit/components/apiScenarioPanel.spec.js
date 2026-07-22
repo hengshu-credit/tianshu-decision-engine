@@ -12,9 +12,9 @@ function mountPanel() {
       rule: { id: 7, currentVersion: 4, publishedVersion: 3, outputFieldsJson: [] }
     },
     mocks: {
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue('confirm'),
-      $prompt: jest.fn().mockResolvedValue({ value: '复制场景' })
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue('confirm'),
+      $prompt: vi.fn().mockResolvedValue({ value: '复制场景' })
     },
     stubs: {
       MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' },
@@ -40,7 +40,7 @@ describe('ApiScenarioPanel', () => {
   let wrapper
 
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     wrapper = mountPanel()
   })
 

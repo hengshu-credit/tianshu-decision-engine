@@ -1,7 +1,7 @@
 import { shallowMount } from '@test-utils'
 import { nextTick } from 'vue'
 
-const VarPicker = jest.requireActual('../../../src/components/common/VarPicker.vue').default
+const VarPicker = (await vi.importActual('../../../src/components/common/VarPicker.vue')).default
 
 const PopoverStub = {
   name: 'ElPopover',
@@ -115,7 +115,7 @@ describe('VarPicker', () => {
   })
 
   test('同编码但不同 ID 的字段使用独立行 key', async () => {
-    const errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const vars = standaloneOptions(2).map((item, index) => ({
       ...item,
       varCode: 'amount',
@@ -290,7 +290,7 @@ describe('VarPicker', () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     const outside = document.createElement('div')
     document.body.appendChild(outside)
-    const closeSpy = jest.spyOn(wrapper.vm.$refs.popover, 'doClose')
+    const closeSpy = vi.spyOn(wrapper.vm.$refs.popover, 'doClose')
 
     wrapper.vm.openPopover()
     await nextTick()

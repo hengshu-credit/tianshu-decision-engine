@@ -6,6 +6,7 @@
 /log/
 .github/
 .DS_Store
+/.env
 *.log
 *.tmp
 .vscode/

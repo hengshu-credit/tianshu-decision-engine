@@ -11,7 +11,7 @@
         <header class="login-brand">
           <div class="login-brand__icon" aria-hidden="true">
             <img
-              src="/images/hengshucredit_animated.svg"
+              :src="brandLogoUrl"
               alt="logo"
               class="login-logo-img"
             />
@@ -72,6 +72,7 @@ export default {
   name: 'Login',
   data() {
     return {
+      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
       loading: false,
       form: { username: '', password: '' },
       rules: {
@@ -299,7 +300,7 @@ $login-primary-soft: rgba(38, 57, 233, 0.1);
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 15px;
-  color: #ffffff;
+  color: $login-text;
   background: rgba(255, 255, 255, 0.06);
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }

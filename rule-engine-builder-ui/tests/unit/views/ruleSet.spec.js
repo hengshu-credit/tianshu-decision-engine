@@ -1,15 +1,15 @@
-jest.unmock('@/views/designer/RuleSet.vue')
+vi.unmock('@/views/designer/RuleSet.vue')
 
-const RuleSet = require('@/views/designer/RuleSet.vue').default
+const RuleSet = (await vi.importActual('@/views/designer/RuleSet.vue')).default
 
 function createRuleSetContext(model = { executionMode: 'SERIAL', rules: [] }) {
   const ctx = {
     model,
     varPickerOptions: [],
-    $message: { warning: jest.fn(), error: jest.fn(), success: jest.fn() },
+    $message: { warning: vi.fn(), error: vi.fn(), success: vi.fn() },
     $set(target, key, value) { target[key] = value },
     $delete(target, key) { delete target[key] },
-    $forceUpdate: jest.fn()
+    $forceUpdate: vi.fn()
   }
   Object.keys(RuleSet.methods).forEach(name => {
     ctx[name] = RuleSet.methods[name].bind(ctx)

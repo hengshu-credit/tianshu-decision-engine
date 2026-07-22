@@ -1,8 +1,12 @@
-jest.unmock('@/api/definition')
+vi.unmock('@/api/definition')
 
 import request from '@/api/request'
 import {
   executeRule,
+  approveRuleRevision,
+  ensureDraftRevision,
+  preflightRuleRevision,
+  publishRuleRevision,
   migrateReferences,
   refreshFields,
   scanAllReferenceIntegrity,
@@ -11,7 +15,29 @@ import {
 
 describe('definition API', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
+  })
+
+  test('生命周期接口使用规则和修订 ID，不使用名称匹配', async () => {
+    await ensureDraftRevision(16)
+    await preflightRuleRevision(16, 3)
+    await approveRuleRevision(16, 3, { forcePublishReason: '兼容窗口已通知' })
+    await publishRuleRevision(16, 3, { comment: '发布' })
+
+    expect(request).toHaveBeenNthCalledWith(1, {
+      url: '/rule/definition/16/revisions/draft', method: 'post'
+    })
+    expect(request).toHaveBeenNthCalledWith(2, {
+      url: '/rule/definition/16/revisions/3/preflight', method: 'post'
+    })
+    expect(request).toHaveBeenNthCalledWith(3, {
+      url: '/rule/definition/16/revisions/3/approve', method: 'post',
+      data: { forcePublishReason: '兼容窗口已通知' }
+    })
+    expect(request).toHaveBeenNthCalledWith(4, {
+      url: '/rule/definition/16/revisions/3/publish', method: 'post',
+      data: { comment: '发布' }
+    })
   })
 
   test('规则执行允许 ONNX 长链路完成推理', async () => {

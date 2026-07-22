@@ -2,10 +2,10 @@
  * varPickerMixin 单元测试
  *
  * 关键点：
- * - 测试文件直接 import setup.js 预置的 jest.fn()，通过 .mockResolvedValueOnce() 配置返回值
- * - 不在测试文件中写 jest.mock()（避免覆盖 setup.js 的基础 mock）
+ * - 测试文件直接 import setup.js 预置的 vi.fn()，通过 .mockResolvedValueOnce() 配置返回值
+ * - 不在测试文件中写 vi.mock()（避免覆盖 setup.js 的基础 mock）
  * - API 返回值应传原始数据（数组），axios 拦截器会包成 { data: ... }，mixin 解包后得到正确数组
- * - 使用 jest.resetAllMocks() 而非 jest.clearAllMocks()，确保返回值的重置
+ * - 使用 vi.resetAllMocks() 而非 vi.clearAllMocks()，确保返回值的重置
  */
 
 import { mount } from '@test-utils'
@@ -61,7 +61,7 @@ describe('varPickerMixin', () => {
   beforeEach(() => {
     // clearAllMocks：清除调用记录，保留 mockResolvedValueOnce 的配置
     // resetAllMocks 会清除所有实现，导致测试体内设置的 mock 无效
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     // 默认 mock（大多数测试需要）
     definitionApi.getDefinition.mockResolvedValue(mockDefs)
     variableApi.listVariablesByProject.mockResolvedValue(mockVars)

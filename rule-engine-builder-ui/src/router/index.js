@@ -77,15 +77,13 @@ const routes = [
       {
         path: 'designer/tree/:id',
         name: 'DecisionTree',
-        component: () =>
-          import(/* webpackChunkName: "designer-decision-tree" */ '@/views/designer/DecisionTree.vue'),
+        component: () => import('@/views/designer/DecisionTree.vue'),
         meta: { title: '决策树设计器', keepAlive: true }
       },
       {
         path: 'designer/flow/:id',
         name: 'DecisionFlow',
-        component: () =>
-          import(/* webpackChunkName: "designer-decision-flow" */ '@/views/designer/DecisionFlow.vue'),
+        component: () => import('@/views/designer/DecisionFlow.vue'),
         meta: { title: '决策流设计器', keepAlive: true }
       },
       {

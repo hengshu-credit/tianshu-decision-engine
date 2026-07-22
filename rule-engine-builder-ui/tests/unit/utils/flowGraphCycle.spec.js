@@ -110,7 +110,7 @@ describe('wouldCreateCycleFromNewEdge', () => {
   test('调用 getNodeOutgoingEdge 并透传到 edgeWouldCompleteCycle', () => {
     const edges = [{ id: 'e1', targetNodeId: 'b' }, { id: 'e2', targetNodeId: 'c' }]
     const graphModel = {
-      getNodeOutgoingEdge: jest.fn((nodeId) => {
+      getNodeOutgoingEdge: vi.fn((nodeId) => {
         const map = { a: edges, b: [], c: [] }
         return map[nodeId] || []
       })
@@ -123,7 +123,7 @@ describe('wouldCreateCycleFromNewEdge', () => {
 
   test('重连边时排除旧边', () => {
     const graphModel = {
-      getNodeOutgoingEdge: jest.fn((nodeId) => {
+      getNodeOutgoingEdge: vi.fn((nodeId) => {
         const map = { a: [{ id: 'ab', targetNodeId: 'b' }], b: [], c: [] }
         return map[nodeId] || []
       })

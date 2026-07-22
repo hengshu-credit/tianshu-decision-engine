@@ -58,7 +58,7 @@ function installConsoleGate(testUtilsConfig) {
     expectedPatterns = []
     originalConsoleError = console.error
     originalWarnHandler = testUtilsConfig.global.config.warnHandler
-    console.error = jest.fn((...args) => {
+    console.error = vi.fn((...args) => {
       messages.push({
         source: 'console.error',
         message: args.map(formatConsoleArg).join(' ')

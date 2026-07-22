@@ -4,12 +4,12 @@ import { h, nextTick } from 'vue'
 
 import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
-import * as requestApi from '@/api/request'
+import requestApi from '@/api/request'
 import * as runtimeLogApi from '@/api/runtimeLog'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExecutionLog from '@/views/log/ExecutionLog.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockLogs(overrides) {
@@ -52,7 +52,7 @@ const defaultStubs = {
 
 const defaultMocks = {
   $route: { params: {} },
-  $router: { push: jest.fn(), replace: jest.fn() }
+  $router: { push: vi.fn(), replace: vi.fn() }
 }
 
 /**
@@ -99,7 +99,7 @@ async function mountEmpty() {
 
 /**
  * 边界情况 mount：自定义 mock，模拟 API 失败。
- * requestApi 是 axios 实例，无法 mockRejectedValue，改用 jest.spyOn 拦截 load() 模拟失败。
+ * requestApi 是 axios 实例，无法 mockRejectedValue，改用 vi.spyOn 拦截 load() 模拟失败。
  */
 async function mountFailing() {
   requestApi.mockResolvedValue({ data: { records: [], total: 0 } })
@@ -111,7 +111,7 @@ async function mountFailing() {
     stubs: defaultStubs
   })
 
-  jest.spyOn(wrapper.vm, 'load').mockRejectedValue(new Error('网络异常'))
+  vi.spyOn(wrapper.vm, 'load').mockRejectedValue(new Error('网络异常'))
 
   await nextTick()
   await new Promise(r => setTimeout(r, 100))

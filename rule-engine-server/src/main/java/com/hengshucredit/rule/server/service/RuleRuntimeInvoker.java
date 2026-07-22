@@ -7,6 +7,7 @@ import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
@@ -16,6 +17,8 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleFunction;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -59,6 +62,12 @@ public class RuleRuntimeInvoker {
 
     @Resource
     private RuleTraceRegistryService traceRegistryService;
+
+    @Resource
+    private ArtifactRuntimeSnapshotService artifactRuntimeSnapshotService;
+
+    @Resource
+    private FunctionRegistrar functionRegistrar;
 
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final ThreadLocal<RuleExecutionSession> currentSession = new ThreadLocal<>();
@@ -118,13 +127,32 @@ public class RuleRuntimeInvoker {
     public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
                       Map<String, Object> values, Map<String, Object> originalInput,
                       boolean testMode, String modelJson) {
+        enterInternal(definition, executionProjectId, projectCode, values, originalInput,
+                testMode, modelJson, resolveOutputScriptNames(definition == null ? null : definition.getId()),
+                null);
+    }
+
+    public void enterArtifact(RuleDefinition definition, Long executionProjectId, String projectCode,
+                              Map<String, Object> values, Map<String, Object> originalInput,
+                              boolean testMode, String modelJson,
+                              ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
+        enterInternal(definition, executionProjectId, projectCode, values, originalInput,
+                testMode, modelJson, resolveOutputScriptNames(runtimeSnapshot == null
+                        ? Collections.emptyList() : runtimeSnapshot.getOutputFields()), runtimeSnapshot);
+    }
+
+    private void enterInternal(RuleDefinition definition, Long executionProjectId, String projectCode,
+                               Map<String, Object> values, Map<String, Object> originalInput,
+                               boolean testMode, String modelJson,
+                               List<String> rootOutputScriptNames,
+                               ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
         if (definition == null) {
             throw new IllegalArgumentException("规则定义不能为空");
         }
         RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson);
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
-                definition.getRuleCode(), rootTrace, resolveOutputScriptNames(definition.getId()));
+                definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot);
         currentSession.set(session);
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
@@ -270,7 +298,21 @@ public class RuleRuntimeInvoker {
         Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
         String projectCode = hasText(publishedProjectCode)
                 ? publishedProjectCode : resolveProjectCode(projectId);
-        String childModelJson = useCurrentContent
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published == null
+                || published.getArtifactId() == null ? null
+                : artifactRuntimeSnapshotService.load(
+                        published.getArtifactId(), targetDefinitionId, projectId);
+        if (runtimeSnapshot != null) {
+            registerFrozenFunctions(runtimeSnapshot.getFunctions());
+            if (hasText(runtimeSnapshot.getCompiledScript())) {
+                compiledScript = runtimeSnapshot.getCompiledScript();
+            }
+            if (definition != null && hasText(runtimeSnapshot.getModelType())) {
+                definition.setModelType(runtimeSnapshot.getModelType());
+            }
+        }
+        String childModelJson = runtimeSnapshot != null && runtimeSnapshot.getModelJson() != null
+                ? runtimeSnapshot.getModelJson() : useCurrentContent
                 ? currentContent.getModelJson() : (published == null ? null : published.getModelJson());
         RuleTraceFrame childTrace = createTraceFrame(definition, projectCode,
                 session.currentTrace().getTraceId(), childModelJson);
@@ -293,13 +335,21 @@ public class RuleRuntimeInvoker {
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
-            Set<String> requiredNames = requiredInputNames(targetDefinitionId);
+            List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
+                    ? definitionService.listInputFields(targetDefinitionId)
+                    : runtimeSnapshot.getInputFields();
+            Set<String> requiredNames = requiredInputNames(childFields);
             options.setRequiredScriptNames(requiredNames);
-            List<RuleDefinitionInputField> childFields = definitionService.listInputFields(targetDefinitionId);
             Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(
                     childFields, session.getValues(), options);
             session.getValues().putAll(boundParams);
-            variableSourceResolver.resolveInto(projectId, session.getValues(), options);
+            if (runtimeSnapshot == null) {
+                variableSourceResolver.resolveInto(projectId, session.getValues(), options);
+            } else {
+                variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
+                        runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(),
+                        session.getValues(), options);
+            }
             RuntimeContextBridge.replaceSourceStates(options.getSourceStates());
             RuleResult result = qlExpressEngine.execute(compiledScript, session.getValues(), true);
             childTrace.setExpressionTrace(result.getTraces() == null
@@ -374,20 +424,29 @@ public class RuleRuntimeInvoker {
     }
 
     private Set<String> requiredInputNames(Long definitionId) {
+        return requiredInputNames(definitionId == null
+                ? Collections.emptyList() : definitionService.listInputFields(definitionId));
+    }
+
+    private Set<String> requiredInputNames(List<RuleDefinitionInputField> fields) {
         Set<String> names = new LinkedHashSet<>();
-        if (definitionId == null) {
-            return names;
-        }
-        List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
-        if (fields == null) {
-            return names;
-        }
+        if (fields == null) return names;
         for (RuleDefinitionInputField field : fields) {
             if (field != null && hasText(field.getScriptName())) {
                 names.add(field.getScriptName().trim());
             }
         }
         return names;
+    }
+
+    private void registerFrozenFunctions(List<RuleFunction> functions) {
+        if (functionRegistrar == null) return;
+        List<RuleFunction> safeFunctions = functions == null ? Collections.emptyList() : functions;
+        functionRegistrar.registerJavaFunctions(safeFunctions, qlExpressEngine.getRunner());
+        functionRegistrar.registerBeanFunctions(safeFunctions, qlExpressEngine.getRunner());
+        functionRegistrar.registerServerFunctions(qlExpressEngine.getRunner());
+        AggregateBuiltinFunctionRegistry.register(qlExpressEngine.getRunner());
+        register(qlExpressEngine.getRunner());
     }
 
     private List<String> resolveOutputScriptNames(Long definitionId) {
@@ -398,6 +457,17 @@ public class RuleRuntimeInvoker {
         if (fields == null || fields.isEmpty()) {
             return Collections.emptyList();
         }
+        List<String> names = new java.util.ArrayList<>();
+        for (RuleDefinitionOutputField field : fields) {
+            if (field != null && hasText(field.getScriptName())) {
+                names.add(field.getScriptName().trim());
+            }
+        }
+        return names;
+    }
+
+    private List<String> resolveOutputScriptNames(List<RuleDefinitionOutputField> fields) {
+        if (fields == null || fields.isEmpty()) return Collections.emptyList();
         List<String> names = new java.util.ArrayList<>();
         for (RuleDefinitionOutputField field : fields) {
             if (field != null && hasText(field.getScriptName())) {

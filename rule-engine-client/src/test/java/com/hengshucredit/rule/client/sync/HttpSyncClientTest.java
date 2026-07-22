@@ -19,10 +19,14 @@ public class HttpSyncClientTest {
         method.setAccessible(true);
 
         CachedRule rule = (CachedRule) method.invoke(client, JSON.parseObject("{"
-                + "\"ruleCode\":\"ROOT\","
+                + "\"ruleCode\":\"ROOT\"," 
+                + "\"revisionId\":22,"
+                + "\"artifactDigest\":\"artifact-digest\","
                 + "\"outputScriptNames\":[\"decision\",\"notAssigned\"]"
                 + "}"));
 
         assertEquals(Arrays.asList("decision", "notAssigned"), rule.getOutputScriptNames());
+        assertEquals(Long.valueOf(22L), rule.getRevisionId());
+        assertEquals("artifact-digest", rule.getArtifactDigest());
     }
 }

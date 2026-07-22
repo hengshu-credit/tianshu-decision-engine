@@ -245,6 +245,13 @@
                 row.publishedVersion ? '重新发布' : '发布'
               }}</el-button>
               <el-button
+                v-if="row.publishedVersion"
+                link
+                size="small"
+                @click="openImpact(row, 'OFFLINE')"
+                >下线</el-button
+              >
+              <el-button
                 v-if="row.scope === 'PROJECT'"
                 link
                 size="small"
@@ -763,6 +770,13 @@
         </div>
       </template>
     </el-dialog>
+    <model-impact-dialog
+      v-if="pendingModel.id"
+      v-model="impactVisible"
+      :model-id="pendingModel.id"
+      :action="pendingImpactAction"
+      @confirmed="handleImpactConfirmed"
+    />
   </div>
 </template>
 
@@ -783,6 +797,7 @@ import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
 import {
   ONNX_TASKS,
   createOnnxConfig,
@@ -839,6 +854,9 @@ export default {
   data() {
     return {
       loading: false,
+      pendingModel: {},
+      pendingImpactAction: 'DELETE',
+      impactVisible: false,
       activeTab: 'list',
       models: [],
       total: 0,
@@ -983,6 +1001,7 @@ export default {
     MonacoEditor,
     RemoteFilterSelect,
     ProjectFilterSelect,
+    ModelImpactDialog,
     ElIconInfo,
   },
   name: 'ModelList',
@@ -1306,18 +1325,23 @@ export default {
         if (e !== 'cancel') this.$message.error(e.message || '发布失败')
       }
     },
-    async handleDelete(row) {
+    handleDelete(row) {
+      this.openImpact(row, 'DELETE')
+    },
+    openImpact(row, action) {
+      this.pendingModel = row
+      this.pendingImpactAction = action
+      this.impactVisible = true
+    },
+    async handleImpactConfirmed({ action, impactToken }) {
       try {
-        await this.$confirm(
-          '确定删除模型「' + row.modelName + '」？',
-          '确认删除',
-          { type: 'warning' }
-        )
-        await api.deleteModel(row.id)
-        this.$message.success('删除成功')
-        this.load()
-      } catch (e) {
-        if (e !== 'cancel') this.$message.error(e.message || '删除失败')
+        if (action === 'DELETE') await api.deleteModel(this.pendingModel.id, impactToken)
+        else if (action === 'OFFLINE') await api.unpublishModel(this.pendingModel.id, impactToken)
+        this.impactVisible = false
+        this.$message.success(action === 'DELETE' ? '模型已逻辑删除' : '模型已下线')
+        await this.load()
+      } catch (error) {
+        this.$message.error(error.message || '模型操作失败')
       }
     },
     handleEdit(row) {

@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.model.dto.RulePushMessage;
+import com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
@@ -17,6 +18,7 @@ import com.hengshucredit.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.annotation.Lazy;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
@@ -61,6 +63,10 @@ public class RulePublishService {
     @Resource
     private RuleReferenceIntegrityService referenceIntegrityService;
 
+    @Resource
+    @Lazy
+    private RuleLifecycleService lifecycleService;
+
     /**
      * 将 SCRIPT 函数定义拼接到编译脚本前面，使客户端同步后可直接执行
      */
@@ -78,6 +84,16 @@ public class RulePublishService {
 
     @Transactional
     public String publish(Long definitionId, String changeLog) {
+        if (lifecycleService != null) {
+            RuleLifecycleActionRequest request = new RuleLifecycleActionRequest();
+            request.setComment(changeLog);
+            try {
+                lifecycleService.publishApproved(definitionId, request);
+                return null;
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                return e.getMessage();
+            }
+        }
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
             return "规则定义不存在";
@@ -233,6 +249,14 @@ public class RulePublishService {
 
     @Transactional
     public String unpublish(Long definitionId) {
+        if (lifecycleService != null) {
+            try {
+                lifecycleService.offlinePublished(definitionId, new RuleLifecycleActionRequest());
+                return null;
+            } catch (IllegalArgumentException | IllegalStateException e) {
+                return e.getMessage();
+            }
+        }
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) return "规则定义不存在";
 

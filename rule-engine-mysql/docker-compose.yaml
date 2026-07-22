@@ -1,4 +1,3 @@
-version: "3"
 services:
   mysql: # 服务名称
     image: mysql:8.4.6 # 或其它mysql版本
@@ -6,7 +5,11 @@ services:
     container_name: mysql
     privileged: true
     environment:
-      - MYSQL_ROOT_PASSWORD=1qaz@WSX # root用户密码
+      - "MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}"
+      - MYSQL_ROOT_HOST=%
+      - MYSQL_DATABASE=rule_engine
+      - "MYSQL_USER=${MYSQL_USERNAME:?Set MYSQL_USERNAME in .env}"
+      - "MYSQL_PASSWORD=${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}"
     volumes:
       - ./logs:/var/log/mysql # 映射日志目录，宿主机:容器
       - ./data:/var/lib/mysql # 映射数据目录，宿主机:容器

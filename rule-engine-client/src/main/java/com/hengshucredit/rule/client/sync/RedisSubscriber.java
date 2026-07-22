@@ -258,6 +258,8 @@ public class RedisSubscriber {
         cached.setRuleCode(push.getRuleCode());
         cached.setProjectCode(push.getProjectCode());
         cached.setVersion(push.getVersion() != null ? push.getVersion() : 0);
+        cached.setRevisionId(push.getRevisionId());
+        cached.setArtifactDigest(push.getArtifactDigest());
         cached.setModelType(push.getModelType());
         cached.setCompiledScript(push.getCompiledScript());
         cached.setCompiledType(push.getCompiledType());

@@ -1,13 +1,11 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.*;
-import com.hengshucredit.rule.model.dto.RulePushMessage;
 import com.hengshucredit.rule.model.dto.RuleQueryDTO;
 import com.hengshucredit.rule.core.compiler.CompileResult;
 import com.hengshucredit.rule.core.compiler.ScriptPassthroughCompiler;
 import com.hengshucredit.rule.core.engine.QLExpressEngineFactory;
 import com.hengshucredit.rule.server.mapper.*;
-import com.hengshucredit.rule.server.publish.RulePushService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
@@ -16,6 +14,7 @@ import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.context.annotation.Lazy;
 
 import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
@@ -35,10 +34,8 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     private RuleDefinitionContentMapper contentMapper;
 
     @Resource
-    private RulePublishedMapper publishedMapper;
-
-    @Resource
-    private RulePushService pushService;
+    @Lazy
+    private RuleLifecycleService lifecycleService;
 
     @Resource
     private RuleProjectService projectService;
@@ -153,6 +150,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
         // 创建时触发一次字段解析，确保规则详情页能正确展示出入参
         fieldAnalyzer.analyzeAndPersist(definition.getId(), "{}", definition.getModelType(), definition.getProjectId());
+        if (lifecycleService != null) {
+            lifecycleService.ensureDraft(definition.getId());
+        }
 
         return definition;
     }
@@ -163,6 +163,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
      */
     @Transactional
     public void updateWithProjectInfo(RuleDefinition definition) {
+        if (lifecycleService != null && definition.getId() != null) {
+            lifecycleService.requireEditableDraft(definition.getId());
+        }
         populateProjectInfo(definition);
         updateById(definition);
     }
@@ -216,6 +219,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
                              boolean updateOpenApiConfig) {
         RuleDefinition definition = getById(definitionId);
         if (definition != null) {
+            if (lifecycleService != null) {
+                lifecycleService.ensureDraft(definitionId);
+            }
             if (referenceIntegrityService != null) {
                 referenceIntegrityService.assertValid(definitionId, definition.getProjectId(), modelJson);
             }
@@ -276,6 +282,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         if (definition == null) {
             throw new IllegalArgumentException("Rule not found");
         }
+        if (lifecycleService != null) {
+            lifecycleService.ensureDraft(definitionId);
+        }
         RuleDefinitionVersion snapshot = getVersion(definitionId, version);
         if (snapshot == null) {
             throw new IllegalArgumentException("Version not found");
@@ -318,6 +327,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
      * 用于刷新规则详情页的字段列表。
      */
     public void refreshFields(Long definitionId, String modelJson, String modelType) {
+        if (lifecycleService != null) {
+            lifecycleService.requireEditableDraft(definitionId);
+        }
         RuleDefinition definition = getById(definitionId);
         Long projectId = (definition != null) ? definition.getProjectId() : null;
         fieldAnalyzer.analyzeAndPersist(definitionId, modelJson, modelType, projectId);
@@ -331,6 +343,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
      */
     @Transactional
     public void saveScript(Long definitionId, String script) {
+        if (lifecycleService != null) {
+            lifecycleService.ensureDraft(definitionId);
+        }
         RuleDefinitionContent content = getContent(definitionId);
         if (content == null) {
             throw new IllegalArgumentException("规则内容不存在，definitionId=" + definitionId);
@@ -345,10 +360,6 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         content.setScriptMode("script");
         contentMapper.updateById(content);
 
-        RuleDefinition definition = getById(definitionId);
-        if (definition != null && definition.getStatus() == 1) {
-            syncPublishedScript(definition, compiledScript);
-        }
     }
 
     private CompileResult compileManualScript(String script) {
@@ -377,32 +388,6 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         return lower.contains("parse") || lower.contains("syntax")
                 || lower.contains("unexpected") || lower.contains("token")
                 || lower.contains("瑙ｆ瀽") || lower.contains("璇硶");
-    }
-
-    /**
-     * 将手动编辑的脚本同步到已发布表，并推送给客户端
-     */
-    private void syncPublishedScript(RuleDefinition definition, String script) {
-        RulePublished published = publishedMapper.selectOne(
-                new LambdaQueryWrapper<RulePublished>()
-                        .eq(RulePublished::getRuleCode, definition.getRuleCode()));
-        if (published == null) {
-            return;
-        }
-        published.setCompiledScript(script);
-        published.setPublishTime(LocalDateTime.now());
-        publishedMapper.updateById(published);
-
-        RulePushMessage msg = new RulePushMessage();
-        msg.setRuleCode(definition.getRuleCode());
-        msg.setVersion(published.getVersion());
-        msg.setModelType(definition.getModelType());
-        msg.setCompiledScript(script);
-        msg.setCompiledType("QLEXPRESS");
-        msg.setProjectCode(published.getProjectCode());
-        msg.setPublishTime(System.currentTimeMillis());
-        msg.setAction("PUBLISH");
-        pushService.push(msg);
     }
 
     /**
@@ -550,6 +535,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
     }
 
     public void updateScriptMode(Long definitionId, String scriptMode) {
+        if (lifecycleService != null) {
+            lifecycleService.requireEditableDraft(definitionId);
+        }
         RuleDefinitionContent content = getContent(definitionId);
         if (content != null) {
             content.setScriptMode(scriptMode);
@@ -607,6 +595,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         RuleDefinitionInputField existing = inputFieldMapper.selectById(fieldId);
         if (existing == null) {
             throw new IllegalArgumentException("输入字段不存在");
+        }
+        if (lifecycleService != null) {
+            lifecycleService.requireEditableDraft(existing.getDefinitionId());
         }
         existing.setVarId(field.getVarId());
         existing.setRefType(field.getRefType());
@@ -671,6 +662,9 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         RuleDefinitionOutputField existing = outputFieldMapper.selectById(fieldId);
         if (existing == null) {
             throw new IllegalArgumentException("输出字段不存在");
+        }
+        if (lifecycleService != null) {
+            lifecycleService.requireEditableDraft(existing.getDefinitionId());
         }
         existing.setVarId(field.getVarId());
         existing.setRefType(field.getRefType());

@@ -5,3 +5,7 @@ This product is licensed under the Apache License, Version 2.0.
 You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
 See the LICENSE file for the full license text.
+
+This product includes third-party components under additional licenses.
+In particular, JPMML Evaluator Metro 1.7.7 is used under AGPL-3.0.
+See THIRD_PARTY_LICENSES.md and licenses/JPMML-EVALUATOR-AGPL-3.0.txt.

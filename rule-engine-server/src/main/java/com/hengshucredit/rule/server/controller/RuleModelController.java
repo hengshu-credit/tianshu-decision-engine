@@ -4,9 +4,11 @@ import com.hengshucredit.rule.model.entity.RuleModel;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleModelVersion;
+import com.hengshucredit.rule.model.entity.ResourceImpactAnalysis;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.RuleModelService;
+import com.hengshucredit.rule.server.service.ResourceImpactAnalysisService;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import org.springframework.web.bind.annotation.*;
@@ -25,6 +27,9 @@ public class RuleModelController {
 
     @Resource
     private RuleRuntimeCallLogService runtimeCallLogService;
+
+    @Resource
+    private ResourceImpactAnalysisService impactAnalysisService;
 
     /**
      * 健康检查
@@ -134,9 +139,13 @@ public class RuleModelController {
      * 删除模型
      */
     @DeleteMapping("/{id}")
-    public R<Void> delete(@PathVariable Long id) {
-        modelService.delete(id);
-        return R.ok();
+    public R<Void> delete(@PathVariable Long id, @RequestParam String impactToken) {
+        try {
+            modelService.delete(id, impactToken);
+            return R.ok();
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return R.fail(e.getMessage());
+        }
     }
 
     /**
@@ -157,11 +166,37 @@ public class RuleModelController {
      * 下线模型
      */
     @PostMapping("/unpublish/{id}")
-    public R<Void> unpublish(@PathVariable Long id) {
+    public R<Void> unpublish(@PathVariable Long id, @RequestParam String impactToken) {
         try {
-            modelService.unpublish(id);
+            modelService.unpublish(id, impactToken);
             return R.ok();
-        } catch (IllegalArgumentException e) {
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/impact/{id}")
+    public R<ResourceImpactAnalysis> analyzeImpact(@PathVariable Long id,
+                                                   @RequestParam String action) {
+        try {
+            return R.ok(impactAnalysisService.analyze("MODEL", id, action, null));
+        } catch (IllegalArgumentException | IllegalStateException e) {
+            return R.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/replace/{id}")
+    public R<RuleModel> replace(@PathVariable Long id,
+                                @RequestParam("file") MultipartFile file,
+                                @RequestParam String impactToken,
+                                @RequestParam(required = false) String changeLog,
+                                @RequestParam(required = false) String testParams,
+                                @RequestParam(required = false) String onnxTaskType,
+                                @RequestParam(required = false) String onnxConfig) {
+        try {
+            return R.ok(modelService.replaceFile(id, file, changeLog, testParams,
+                    onnxTaskType, onnxConfig, impactToken));
+        } catch (IllegalArgumentException | IllegalStateException e) {
             return R.fail(e.getMessage());
         }
     }

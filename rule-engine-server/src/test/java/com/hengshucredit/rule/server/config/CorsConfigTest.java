@@ -15,6 +15,7 @@ import org.springframework.web.servlet.config.annotation.EnableWebMvc;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 public class CorsConfigTest {
@@ -30,7 +31,24 @@ public class CorsConfigTest {
             mvc.perform(get("/api/ping")
                             .header(HttpHeaders.ORIGIN, "http://localhost:9090"))
                     .andExpect(status().isOk())
+                    .andExpect(header().string(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN,
+                            "http://localhost:9090"))
                     .andExpect(content().string("pong"));
+        }
+    }
+
+    @Test
+    public void rejectsCredentialedRequestFromUntrustedOrigin() throws Exception {
+        try (AnnotationConfigWebApplicationContext context = new AnnotationConfigWebApplicationContext()) {
+            context.setServletContext(new MockServletContext());
+            context.register(TestWebConfig.class);
+            context.refresh();
+            MockMvc mvc = MockMvcBuilders.webAppContextSetup(context).build();
+
+            mvc.perform(get("/api/ping")
+                            .header(HttpHeaders.ORIGIN, "https://attacker.example"))
+                    .andExpect(status().isForbidden())
+                    .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN));
         }
     }
 

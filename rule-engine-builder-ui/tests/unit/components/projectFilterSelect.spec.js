@@ -3,8 +3,8 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { listProjects } from '@/api/project'
 
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn()
+vi.mock('@/api/project', () => ({
+  listProjects: vi.fn()
 }))
 
 function mountFilter(field) {
@@ -15,7 +15,7 @@ function mountFilter(field) {
 
 describe('ProjectFilterSelect', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
   })
 

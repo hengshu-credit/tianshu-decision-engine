@@ -13,7 +13,7 @@ function createContext() {
 }
 
 describe('ruleCallMixin', () => {
-  beforeEach(() => jest.clearAllMocks())
+  beforeEach(() => vi.clearAllMocks())
 
   test('加载项目规则和已关联全局规则且保留原始编码', async () => {
     definitionApi.getDefinition.mockResolvedValue({ id: 7, projectId: 2, ruleCode: 'Main_Flow' })

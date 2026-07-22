@@ -10,7 +10,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import fs from 'fs'
 import path from 'path'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockFunctions() {
@@ -42,9 +42,9 @@ async function mountAndWait() {
   const wrapper = shallowMount(FunctionList, {
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(), // 必须 resolve，handleDelete 是 async 并 await
-      $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
+      $router: { push: vi.fn(), replace: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(), // 必须 resolve，handleDelete 是 async 并 await
+      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
     },
     stubs: {
       'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -324,7 +324,7 @@ describe('FunctionList — 函数操作', () => {
     functionApi.deleteFunction.mockResolvedValueOnce({ data: true })
     const row = { id: 99, funcName: '测试函数' }
     // $confirm 必须 resolve，handleDelete 是 async 并 await 它
-    wrapper.vm.$confirm = jest.fn().mockResolvedValue()
+    wrapper.vm.$confirm = vi.fn().mockResolvedValue()
     wrapper.vm.handleDelete(row)
     await nextTick()
     await new Promise(r => setTimeout(r, 50)) // 等待 async handleDelete 完成
@@ -352,9 +352,9 @@ describe('FunctionList — 边界情况', () => {
     const wrapper = shallowMount(FunctionList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() },
-        $confirm: jest.fn().mockResolvedValue(),
-        $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() },
+        $confirm: vi.fn().mockResolvedValue(),
+        $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -384,9 +384,9 @@ describe('FunctionList — 边界情况', () => {
     const wrapper = shallowMount(FunctionList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() },
-        $confirm: jest.fn().mockResolvedValue(),
-        $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() },
+        $confirm: vi.fn().mockResolvedValue(),
+        $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),

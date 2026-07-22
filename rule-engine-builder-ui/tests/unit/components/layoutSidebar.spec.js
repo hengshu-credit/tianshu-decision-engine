@@ -109,7 +109,7 @@ describe('LayoutSidebar', () => {
   })
 
   test('组件销毁时清理拖拽监听', async() => {
-    const removeSpy = jest.spyOn(window, 'removeEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
     const wrapper = mountSidebar()
     await wrapper.find('.sidebar-resizer').trigger('mousedown', { clientX: 220 })
 

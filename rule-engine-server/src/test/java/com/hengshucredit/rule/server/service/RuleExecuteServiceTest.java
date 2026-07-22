@@ -11,8 +11,12 @@ import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -67,6 +71,8 @@ public class RuleExecuteServiceTest {
         published.setRuleCode("RISK_RULE");
         published.setProjectCode("project_a");
         published.setVersion(3);
+        published.setRevisionId(33L);
+        published.setArtifactDigest("artifact-digest");
         published.setModelType("DECISION_FLOW");
         published.setCompiledScript("decision = \"STOP\"; "
                 + "setRuntimeValue(\"decision\", decision); "
@@ -82,6 +88,8 @@ public class RuleExecuteServiceTest {
         assertTrue(((Map<?, ?>) result.getResult()).containsKey("notAssigned"));
         assertEquals(null, ((Map<?, ?>) result.getResult()).get("notAssigned"));
         assertFalse(logService.saved.getOutputResult().contains("afterEnd"));
+        assertEquals(Long.valueOf(33L), logService.saved.getRevisionId());
+        assertEquals("artifact-digest", logService.saved.getArtifactDigest());
 
         published.setCompiledScript("decision = \"PASS\"; setRuntimeValue(\"decision\", decision);");
         RuleResult normalResult = service.executePublished(
@@ -310,6 +318,63 @@ public class RuleExecuteServiceTest {
         assertNotNull("实验组内部规则仍需生成 trace", experimentOutcome.getResult().getTraceId());
     }
 
+    @Test
+    public void publishedArtifactExecutesOnlyFrozenInputsAndDependencies() {
+        RuleExecuteService service = new RuleExecuteService();
+        FrozenSnapshotResolver resolver = new FrozenSnapshotResolver();
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot =
+                new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        RuleDefinitionInputField frozenInput = new RuleDefinitionInputField();
+        frozenInput.setScriptName("frozenScore");
+        frozenInput.setFieldType("INTEGER");
+        snapshot.getInputFields().add(frozenInput);
+        RuleVariable frozenVariable = new RuleVariable();
+        frozenVariable.setId(88L);
+        frozenVariable.setScriptName("frozenScore");
+        snapshot.getVariables().add(frozenVariable);
+
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer());
+        ReflectionTestUtils.setField(service, "artifactRuntimeSnapshotService",
+                new ArtifactRuntimeSnapshotService() {
+                    @Override
+                    public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
+                        assertEquals(Long.valueOf(501L), artifactId);
+                        assertEquals(Long.valueOf(10L), definitionId);
+                        assertEquals(Long.valueOf(1L), executionProjectId);
+                        return snapshot;
+                    }
+                });
+
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L);
+        published.setArtifactId(501L);
+        published.setRuleCode("FROZEN_RULE");
+        published.setProjectCode("project_a");
+        published.setVersion(1);
+        published.setModelType("SCRIPT");
+        published.setModelJson("{\"script\":\"frozenScore\"}");
+        published.setCompiledScript("frozenScore");
+
+        RuleResult result = service.executePublished(
+                published, Collections.<String, Object>emptyMap(), 1L, "biz-app");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(Integer.valueOf(91), result.getResult());
+        assertTrue(resolver.snapshotCalled);
+        assertFalse(resolver.currentCalled);
+        assertSame(snapshot.getVariables(), resolver.variables);
+    }
+
     private static class FakeDefinitionService extends RuleDefinitionService {
         @Override
         public RuleDefinition getById(Serializable id) {
@@ -414,6 +479,31 @@ public class RuleExecuteServiceTest {
         }
     }
 
+    private static class FrozenSnapshotResolver extends VariableSourceResolver {
+        private boolean currentCalled;
+        private boolean snapshotCalled;
+        private List<RuleVariable> variables;
+
+        @Override
+        public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                               VariableResolveOptions options) {
+            currentCalled = true;
+            throw new AssertionError("已发布制品不得读取当前项目变量");
+        }
+
+        @Override
+        public Map<String, Object> resolveIntoSnapshot(List<RuleVariable> variables,
+                                                       List<RuleModel> models,
+                                                       List<RuleFunction> functions,
+                                                       Map<String, Object> target,
+                                                       VariableResolveOptions options) {
+            snapshotCalled = true;
+            this.variables = variables;
+            target.put("frozenScore", 91);
+            return target;
+        }
+    }
+
     private static class SourceStatusResolver extends VariableSourceResolver {
         private Set<String> statusReferenceKeys;
 
@@ -497,6 +587,16 @@ public class RuleExecuteServiceTest {
         public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
                           Map<String, Object> values, Map<String, Object> originalInput,
                           boolean testMode, String modelJson) {
+            this.values = values;
+            this.originalInput = new LinkedHashMap<>(originalInput);
+            this.modelJson = modelJson;
+        }
+
+        @Override
+        public void enterArtifact(RuleDefinition definition, Long executionProjectId, String projectCode,
+                                  Map<String, Object> values, Map<String, Object> originalInput,
+                                  boolean testMode, String modelJson,
+                                  ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
             this.values = values;
             this.originalInput = new LinkedHashMap<>(originalInput);
             this.modelJson = modelJson;

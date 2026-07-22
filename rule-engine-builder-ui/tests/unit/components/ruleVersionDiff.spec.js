@@ -54,9 +54,9 @@ describe('RuleVersionDiff', () => {
   })
 
   test('QL 脚本使用 Monaco Diff 并展示变量引用变化', async() => {
-    const originalModel = { getValue: jest.fn(() => 'result = age;'), setValue: jest.fn(), dispose: jest.fn() }
-    const modifiedModel = { getValue: jest.fn(() => 'result = age + 1;'), setValue: jest.fn(), dispose: jest.fn() }
-    const diffEditor = { setModel: jest.fn(), layout: jest.fn(), dispose: jest.fn() }
+    const originalModel = { getValue: vi.fn(() => 'result = age;'), setValue: vi.fn(), dispose: vi.fn() }
+    const modifiedModel = { getValue: vi.fn(() => 'result = age + 1;'), setValue: vi.fn(), dispose: vi.fn() }
+    const diffEditor = { setModel: vi.fn(), layout: vi.fn(), dispose: vi.fn() }
     monaco.editor.createModel.mockReset().mockReturnValueOnce(originalModel).mockReturnValueOnce(modifiedModel)
     monaco.editor.createDiffEditor.mockReset().mockReturnValue(diffEditor)
     window.monaco = monaco

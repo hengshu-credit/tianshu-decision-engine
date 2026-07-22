@@ -124,14 +124,14 @@ describe('workspaceTabs store', () => {
   test.each([null, '', '{bad', '{"tabs":"bad"}'])(
     '读取损坏缓存 %s 时返回空状态',
     value => {
-      const storage = { getItem: jest.fn(() => value) }
+      const storage = { getItem: vi.fn(() => value) }
       expect(readWorkspaceTabs(storage)).toEqual({ tabs: [], activePath: '' })
     }
   )
 
   test('存储不可用时页签行为仍正常', async() => {
     const original = window.sessionStorage.setItem
-    window.sessionStorage.setItem = jest.fn(() => { throw new Error('blocked') })
+    window.sessionStorage.setItem = vi.fn(() => { throw new Error('blocked') })
     const store = createTestStore()
 
     await expect(store.dispatch('workspaceTabs/open', tab('/rule'))).resolves.toBeUndefined()

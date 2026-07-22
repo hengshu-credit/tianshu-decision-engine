@@ -134,8 +134,8 @@ describe('WorkspaceTabs', () => {
   })
 
   test('组件销毁时清理全局监听', () => {
-    const removeDocumentSpy = jest.spyOn(document, 'removeEventListener')
-    const removeWindowSpy = jest.spyOn(window, 'removeEventListener')
+    const removeDocumentSpy = vi.spyOn(document, 'removeEventListener')
+    const removeWindowSpy = vi.spyOn(window, 'removeEventListener')
     const wrapper = mountTabs()
 
     wrapper.unmount()

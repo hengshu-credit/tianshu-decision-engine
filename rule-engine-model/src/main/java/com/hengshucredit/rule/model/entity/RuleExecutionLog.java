@@ -13,6 +13,8 @@ public class RuleExecutionLog {
     private String ruleCode;
     private String projectCode;
     private Integer ruleVersion;
+    private Long revisionId;
+    private String artifactDigest;
     private String modelType;
     private String source;
     private String clientAppName;

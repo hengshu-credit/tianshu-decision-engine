@@ -8,6 +8,7 @@ import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleModel;
+import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
@@ -88,14 +89,45 @@ public class VariableSourceResolver {
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(),
                 variables, models, effectiveOptions.isRequiredNamesUpstreamOnly(), effectiveOptions);
         Map<String, Map<String, Object>> apiResponseCache = new LinkedHashMap<>();
-        resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams, effectiveOptions, apiResponseCache);
+        resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams,
+                effectiveOptions, apiResponseCache, Collections.emptyMap());
+        return resolvedParams;
+    }
+
+    public Map<String, Object> resolveIntoSnapshot(List<RuleVariable> variables,
+                                                   List<RuleModel> models,
+                                                   List<RuleFunction> functions,
+                                                   Map<String, Object> target,
+                                                   VariableResolveOptions options) {
+        VariableResolveOptions effectiveOptions = options == null
+                ? VariableResolveOptions.defaults() : options;
+        List<RuleVariable> frozenVariables = variables == null ? Collections.emptyList() : variables;
+        List<RuleModel> frozenModels = models == null ? Collections.emptyList() : models;
+        Map<String, Object> resolvedParams = target == null
+                ? new LinkedHashMap<>() : target;
+        removeCallerConstantValues(frozenVariables, resolvedParams);
+        applyConstantValues(frozenVariables, resolvedParams);
+        Set<String> requiredScriptNames = expandRequiredScriptNames(
+                effectiveOptions.getRequiredScriptNames(), frozenVariables, frozenModels,
+                effectiveOptions.isRequiredNamesUpstreamOnly(), effectiveOptions);
+        Map<Long, RuleFunction> functionMap = new LinkedHashMap<>();
+        if (functions != null) {
+            for (RuleFunction function : functions) {
+                if (function != null && function.getId() != null) {
+                    functionMap.put(function.getId(), function);
+                }
+            }
+        }
+        resolveVariablesAndModels(frozenVariables, frozenModels, requiredScriptNames,
+                resolvedParams, effectiveOptions, new LinkedHashMap<>(), functionMap);
         return resolvedParams;
     }
 
     private void resolveVariablesAndModels(List<RuleVariable> variables, List<RuleModel> models,
                                            Set<String> requiredScriptNames, Map<String, Object> resolvedParams,
                                            VariableResolveOptions effectiveOptions,
-                                           Map<String, Map<String, Object>> apiResponseCache) {
+                                           Map<String, Map<String, Object>> apiResponseCache,
+                                           Map<Long, RuleFunction> functions) {
         Map<String, RuleVariable> variableMap = buildVariableMap(variables);
         Map<String, RuleModel> modelMap = buildModelMap(models);
         List<RuleVariable> pendingVariables = collectPendingVariables(variables, requiredScriptNames, resolvedParams, effectiveOptions);
@@ -123,7 +155,7 @@ public class VariableSourceResolver {
                     delayedModels.add(model);
                     continue;
                 }
-                resolveOneModel(model, modelCode, resolvedParams, effectiveOptions);
+                resolveOneModel(model, modelCode, resolvedParams, effectiveOptions, functions);
                 progressed = true;
             }
             pendingModels = delayedModels;
@@ -513,7 +545,7 @@ public class VariableSourceResolver {
     }
 
     private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams,
-                                 VariableResolveOptions options) {
+                                 VariableResolveOptions options, Map<Long, RuleFunction> functions) {
         RuleModel detail = loadModelDetail(model);
         Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
@@ -521,7 +553,9 @@ public class VariableSourceResolver {
         long start = System.currentTimeMillis();
         Map<String, Object> modelResult;
         try {
-            modelResult = ruleModelService.execute(model.getId(), modelParams);
+            modelResult = model.getModelContent() == null
+                    ? ruleModelService.execute(model.getId(), modelParams)
+                    : ruleModelService.executeSnapshot(model, modelParams, functions);
             if (!modelSucceeded(modelResult)) {
                 throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
             }
@@ -754,6 +788,9 @@ public class VariableSourceResolver {
 
     private RuleModel loadModelDetail(RuleModel model) {
         if (ruleModelService == null || model == null || model.getId() == null) {
+            return model;
+        }
+        if (model.getInputFields() != null || model.getOutputFields() != null) {
             return model;
         }
         RuleModel detail = ruleModelService.getDetail(model.getId());

@@ -11,7 +11,7 @@ describe('ModuleCallLog', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('pretty 格式化对象和数组而不是渲染为 object Object', async () => {

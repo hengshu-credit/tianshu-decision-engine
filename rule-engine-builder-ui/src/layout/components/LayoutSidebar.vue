@@ -6,7 +6,7 @@
   >
     <div class="sidebar-brand">
       <img
-        src="/images/hengshucredit_animated.svg"
+        :src="brandLogoUrl"
         alt="天枢决策引擎"
         class="sidebar-brand__logo"
       />
@@ -97,6 +97,7 @@ export default {
   },
   data() {
     return {
+      brandLogoUrl: `${import.meta.env.BASE_URL || './'}images/hengshucredit_animated.svg`,
       resizing: false,
       resizeStartX: 0,
       resizeStartWidth: 0,

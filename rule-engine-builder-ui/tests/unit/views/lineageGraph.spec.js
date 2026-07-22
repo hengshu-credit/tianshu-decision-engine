@@ -33,7 +33,7 @@ function mountPage() {
   })
   return shallowMount(LineageGraph, {
     mocks: {
-      $message: { warning: jest.fn(), error: jest.fn() }
+      $message: { warning: vi.fn(), error: vi.fn() }
     },
     stubs: {
       'el-form': true,
@@ -47,7 +47,7 @@ function mountPage() {
   })
 }
 
-afterEach(() => jest.clearAllMocks())
+afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
   test('created 后按默认变量类型加载起点选项', async () => {

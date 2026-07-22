@@ -11,7 +11,7 @@ describe.each(DESIGNERS)('%s结束节点', (name, designer) => {
   test('点击添加结束节点时先打开范围确认弹窗', () => {
     const context = {
       endNodeScopeVisible: false,
-      addNodeToCanvas: jest.fn()
+      addNodeToCanvas: vi.fn()
     }
 
     designer.methods.addNode.call(context, 'end-event')
@@ -21,7 +21,7 @@ describe.each(DESIGNERS)('%s结束节点', (name, designer) => {
   })
 
   test('确认后按所选范围创建结束节点', () => {
-    const addNodeToCanvas = jest.fn()
+    const addNodeToCanvas = vi.fn()
     const context = {
       endNodeScopeVisible: true,
       addNodeToCanvas
@@ -34,12 +34,12 @@ describe.each(DESIGNERS)('%s结束节点', (name, designer) => {
   })
 
   test('锚点快捷新增结束节点时确认后自动连线', () => {
-    const commitConnectedNode = jest.fn()
+    const commitConnectedNode = vi.fn()
     const context = {
       endNodeScopeVisible: true,
       pendingConnectedNode: { type: 'end-event' },
       commitConnectedNode,
-      addNodeToCanvas: jest.fn()
+      addNodeToCanvas: vi.fn()
     }
 
     designer.methods.confirmEndNode.call(context, END_SCOPE_CURRENT_RULE)
@@ -53,7 +53,7 @@ describe.each(DESIGNERS)('%s结束节点', (name, designer) => {
     [END_SCOPE_CURRENT_RULE, '跳出当前规则'],
     [END_SCOPE_ALL_RULES, '跳出整体规则']
   ])('创建时持久化%s并设置对应节点名称', (scope, expectedName) => {
-    const addNode = jest.fn()
+    const addNode = vi.fn()
     const context = { lf: { addNode } }
 
     designer.methods.addNodeToCanvas.call(context, 'end-event', scope)

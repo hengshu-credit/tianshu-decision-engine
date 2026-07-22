@@ -1,4 +1,4 @@
-jest.unmock('@/router')
+vi.unmock('@/router')
 
 import router from '@/router'
 

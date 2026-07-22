@@ -23,10 +23,59 @@ describe('Vue 3 migration contract', () => {
     expect(pkg.dependencies['element-plus']).toBeDefined()
     expect(pkg.dependencies['element-ui']).toBeUndefined()
     expect(pkg.devDependencies['@vue/test-utils']).toMatch(/^\^?2\./)
-    expect(pkg.devDependencies['@vue/vue3-jest']).toBeDefined()
     expect(pkg.devDependencies['vue-jest']).toBeUndefined()
     expect(pkg.devDependencies['vue-template-compiler']).toBeUndefined()
     expect({ ...pkg.dependencies, ...pkg.devDependencies }).not.toHaveProperty('@vue/compat')
+  })
+
+  test('uses Vite 8 and Vitest 4 without the legacy Vue CLI and Jest stack', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+
+    expect(pkg.engines && pkg.engines.node).toBe('>=20.19.0')
+    expect(pkg.scripts.dev).toBe('vite')
+    expect(pkg.scripts.build).toBe('vite build')
+    expect(pkg.scripts.test).toBe('vitest run')
+    expect(pkg.devDependencies.vite).toMatch(/^\^?8\./)
+    expect(pkg.devDependencies.vitest).toMatch(/^\^?4\./)
+    expect(pkg.devDependencies['@vitejs/plugin-vue']).toBeDefined()
+    expect(pkg.devDependencies['@vue/cli-service']).toBeUndefined()
+    expect(pkg.devDependencies['@vue/vue3-jest']).toBeUndefined()
+    expect(pkg.devDependencies.jest).toBeUndefined()
+    expect(fs.existsSync(path.join(projectRoot, 'index.html'))).toBe(true)
+    expect(fs.existsSync(path.join(projectRoot, 'vite.config.mjs'))).toBe(true)
+    expect(fs.existsSync(path.join(projectRoot, 'vitest.config.mjs'))).toBe(true)
+  })
+
+  test('accepts Node.js 20.19 and every newer version without an upper bound', () => {
+    const guard = fs.readFileSync(
+      path.join(projectRoot, 'scripts/check-node-version.cjs'),
+      'utf8'
+    )
+
+    expect(guard).toMatch(/major\s*<\s*20/)
+    expect(guard).toMatch(/major\s*===\s*20/)
+    expect(guard).toMatch(/minor\s*<\s*19/)
+    expect(guard).not.toMatch(/major\s*>=/)
+    expect(guard).not.toContain('最高')
+  })
+
+  test('uses the ESLint 10 flat configuration only', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+
+    expect(pkg.scripts.lint).toBe('eslint .')
+    expect(pkg.devDependencies.eslint).toMatch(/^\^?10\./)
+    expect(fs.existsSync(path.join(projectRoot, 'eslint.config.mjs'))).toBe(true)
+    expect(fs.existsSync(path.join(projectRoot, '.eslintrc.js'))).toBe(false)
+  })
+
+  test('overrides the vulnerable LogicFlow uuid transitive dependency', () => {
+    const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf8'))
+    const lock = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package-lock.json'), 'utf8'))
+    const gitignore = fs.readFileSync(path.join(projectRoot, '.gitignore'), 'utf8')
+
+    expect(pkg.overrides && pkg.overrides.uuid).toBe('11.1.1')
+    expect(lock.packages['node_modules/uuid'].version).toBe('11.1.1')
+    expect(gitignore).not.toMatch(/^package-lock\.json$/m)
   })
 
   test('contains no Vue 2-only runtime or template APIs', () => {

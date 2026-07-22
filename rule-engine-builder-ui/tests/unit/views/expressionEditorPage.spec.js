@@ -33,8 +33,8 @@ function session(overrides = {}) {
 }
 
 function mountPage(current = session(), options = {}) {
-  const dispatch = jest.fn().mockResolvedValue()
-  const back = jest.fn()
+  const dispatch = vi.fn().mockResolvedValue()
+  const back = vi.fn()
   const route = options.route || { params: { ruleId: '9', sessionId: 'session-1' } }
   const sessionGetter = options.sessionGetter || (() => current)
   const wrapper = shallowMount(ExpressionEditorPage, {
@@ -45,8 +45,8 @@ function mountPage(current = session(), options = {}) {
         getters: { 'expressionSessions/sessionById': sessionGetter },
         dispatch
       },
-      $message: { success: jest.fn(), error: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue('confirm')
+      $message: { success: vi.fn(), error: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue('confirm')
     },
     stubs: {
       ExpressionEditorDialog: EditorStub,
@@ -68,7 +68,7 @@ function mountPage(current = session(), options = {}) {
   return { wrapper, dispatch, back }
 }
 
-afterEach(() => jest.clearAllMocks())
+afterEach(() => vi.clearAllMocks())
 
 describe('ExpressionEditorPage', () => {
   test('嵌入 layout-main 并可临时保存当前草稿', async() => {

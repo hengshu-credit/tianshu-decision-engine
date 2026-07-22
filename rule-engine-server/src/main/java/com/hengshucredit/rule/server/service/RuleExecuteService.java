@@ -15,6 +15,7 @@ import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -66,6 +67,9 @@ public class RuleExecuteService {
 
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
+
+    @Resource
+    private ArtifactRuntimeSnapshotService artifactRuntimeSnapshotService;
 
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         RuleDefinition definition = definitionService.getById(definitionId);
@@ -229,11 +233,26 @@ public class RuleExecuteService {
 
         RuleDefinition definition = definitionService.getById(published.getDefinitionId());
         Long executionProjectId = projectId != null ? projectId : (definition == null ? null : definition.getProjectId());
-        prepareProjectFunctions(executionProjectId, false);
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published.getArtifactId() == null
+                ? null : artifactRuntimeSnapshotService.load(
+                        published.getArtifactId(), published.getDefinitionId(), executionProjectId);
+        if (runtimeSnapshot == null) {
+            prepareProjectFunctions(executionProjectId, false);
+        } else {
+            prepareFunctions(runtimeSnapshot.getFunctions(), false);
+        }
 
-        List<RuleDefinitionInputField> inputFields = definitionService.listInputFields(published.getDefinitionId());
+        List<RuleDefinitionInputField> inputFields = runtimeSnapshot == null
+                ? definitionService.listInputFields(published.getDefinitionId())
+                : runtimeSnapshot.getInputFields();
+        String runtimeModelJson = runtimeSnapshot == null || runtimeSnapshot.getModelJson() == null
+                ? published.getModelJson() : runtimeSnapshot.getModelJson();
+        String runtimeModelType = runtimeSnapshot == null || runtimeSnapshot.getModelType() == null
+                ? published.getModelType() : runtimeSnapshot.getModelType();
+        String runtimeScript = runtimeSnapshot == null || runtimeSnapshot.getCompiledScript() == null
+                ? published.getCompiledScript() : runtimeSnapshot.getCompiledScript();
         VariableResolveOptions effectiveOptions = withInputFields(resolveOptions, inputFields,
-                published.getModelJson(), published.getModelType());
+                runtimeModelJson, runtimeModelType);
         Map<String, Object> executeParams = bindInputs(inputFields, params, effectiveOptions);
         Map<String, Object> originalInput = snapshotMap(executeParams);
         String projectCode = published.getProjectCode();
@@ -243,16 +262,31 @@ public class RuleExecuteService {
                 projectCode = project.getProjectCode();
             }
         }
-        RuleDefinition executionDefinition = definition == null
-                ? publishedDefinition(published, executionProjectId) : definition;
-        runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
-                executeParams, originalInput, false, published.getModelJson());
+        RuleDefinition executionDefinition = runtimeSnapshot == null && definition != null
+                ? definition : publishedDefinition(published, executionProjectId);
+        if (runtimeSnapshot != null) {
+            executionDefinition.setModelType(runtimeModelType);
+        }
+        if (runtimeSnapshot == null) {
+            runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
+                    executeParams, originalInput, false, runtimeModelJson);
+        } else {
+            runtimeRuleInvoker.enterArtifact(executionDefinition, executionProjectId, projectCode,
+                    executeParams, originalInput, false, runtimeModelJson,
+                    runtimeSnapshot);
+        }
         long executionStart = System.currentTimeMillis();
         RuleResult result = new RuleResult();
         try {
-            variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
+            if (runtimeSnapshot == null) {
+                variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
+            } else {
+                variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
+                        runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(),
+                        executeParams, effectiveOptions);
+            }
             RuntimeContextBridge.replaceSourceStates(effectiveOptions.getSourceStates());
-            result = qlExpressEngine.execute(published.getCompiledScript(), executeParams, collectTrace);
+            result = qlExpressEngine.execute(runtimeScript, executeParams, collectTrace);
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -261,7 +295,7 @@ public class RuleExecuteService {
             result.setErrorMessage(e.getMessage());
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
-            collectDeclaredOutputsIfNeeded(result, published.getModelType());
+            collectDeclaredOutputsIfNeeded(result, runtimeModelType);
             runtimeRuleInvoker.completeRoot(result);
             runtimeRuleInvoker.exit();
         }
@@ -271,6 +305,8 @@ public class RuleExecuteService {
         log.setRuleCode(published.getRuleCode());
         log.setProjectCode(projectCode);
         log.setRuleVersion(published.getVersion());
+        log.setRevisionId(published.getRevisionId());
+        log.setArtifactDigest(published.getArtifactDigest());
         log.setModelType(published.getModelType());
         log.setSource(source == null ? "CLIENT_SERVER" : source);
         log.setClientAppName(clientAppName);
@@ -356,7 +392,11 @@ public class RuleExecuteService {
     }
 
     private String prepareProjectFunctions(Long projectId, boolean includeScriptPrefix) {
-        List<RuleFunction> allFuncs = functionService.listByProject(projectId);
+        return prepareFunctions(functionService.listByProject(projectId), includeScriptPrefix);
+    }
+
+    private String prepareFunctions(List<RuleFunction> functions, boolean includeScriptPrefix) {
+        List<RuleFunction> allFuncs = functions == null ? Collections.emptyList() : functions;
         List<RuleFunction> javaFuncs = allFuncs.stream()
                 .filter(f -> "JAVA".equals(f.getImplType())).collect(Collectors.toList());
         List<RuleFunction> beanFuncs = allFuncs.stream()

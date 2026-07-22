@@ -22,7 +22,7 @@ const ElSelectStub = {
 function mountSelect(propsData = {}) {
   return mount(RemoteFilterSelect, {
     props: {
-      fetchOptions: jest.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
+      fetchOptions: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
       ...propsData
     },
     stubs: {
@@ -134,7 +134,7 @@ describe('RemoteFilterSelect', () => {
 
   test('关闭后忽略尚未返回的远程选项', async () => {
     let resolveFetch
-    const fetchOptions = jest.fn(() => new Promise(resolve => { resolveFetch = resolve }))
+    const fetchOptions = vi.fn(() => new Promise(resolve => { resolveFetch = resolve }))
     const wrapper = mountSelect({ fetchOptions })
 
     wrapper.vm.handleVisibleChange(true)

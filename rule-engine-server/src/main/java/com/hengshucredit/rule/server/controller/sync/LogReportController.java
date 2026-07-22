@@ -57,6 +57,7 @@ public class LogReportController {
                 }
                 log.setProjectCode(projectCode);
                 applyAuthAttribution(log, authContext);
+                logService.applyPublishedAttribution(log, projectCode);
                 if (log.getSource() == null || log.getSource().trim().isEmpty()) {
                     log.setSource("CLIENT");
                 }

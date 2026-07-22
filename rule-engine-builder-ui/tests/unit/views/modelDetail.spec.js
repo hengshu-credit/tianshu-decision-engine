@@ -3,33 +3,37 @@ import { mount } from '@test-utils'
 import { nextTick } from 'vue'
 
 // 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
-// Mock API 模块（覆盖 setup.js 的基础 jest.fn()，测试文件负责配置返回值）
-jest.mock('@/api/model', () => ({
-  getModel: jest.fn(),
-  updateModelInputField: jest.fn(),
-  updateModelOutputField: jest.fn(),
-  executeModel: jest.fn(),
-  getTestParams: jest.fn(),
-  saveTestParams: jest.fn(),
-  listAllModelsByProject: jest.fn(),
-  listVersions: jest.fn(),
-  compareVersions: jest.fn(),
-  rollbackVersion: jest.fn()
+// Mock API 模块（覆盖 setup.js 的基础 vi.fn()，测试文件负责配置返回值）
+vi.mock('@/api/model', () => ({
+  getModel: vi.fn(),
+  updateModelInputField: vi.fn(),
+  updateModelOutputField: vi.fn(),
+  executeModel: vi.fn(),
+  getTestParams: vi.fn(),
+  saveTestParams: vi.fn(),
+  listAllModelsByProject: vi.fn(),
+  listVersions: vi.fn(),
+  compareVersions: vi.fn(),
+  rollbackVersion: vi.fn(),
+  analyzeModelImpact: vi.fn(),
+  unpublishModel: vi.fn(),
+  deleteModel: vi.fn(),
+  replaceModel: vi.fn()
 }))
 
-jest.mock('@/api/variable', () => ({
-  listVariablesByProject: jest.fn(),
-  listVariables: jest.fn(),
-  getVariableOptions: jest.fn()
+vi.mock('@/api/variable', () => ({
+  listVariablesByProject: vi.fn(),
+  listVariables: vi.fn(),
+  getVariableOptions: vi.fn()
 }))
 
-jest.mock('@/api/dataObject', () => ({
-  getVariableTree: jest.fn(),
-  getDataObjectFieldOptions: jest.fn()
+vi.mock('@/api/dataObject', () => ({
+  getVariableTree: vi.fn(),
+  getDataObjectFieldOptions: vi.fn()
 }))
 
-jest.mock('@/api/function', () => ({
-  listAllFunctionsByProject: jest.fn()
+vi.mock('@/api/function', () => ({
+  listAllFunctionsByProject: vi.fn()
 }))
 
 import * as modelApi from '@/api/model'
@@ -39,7 +43,7 @@ import * as functionApi from '@/api/function'
 import * as definitionApi from '@/api/definition'
 import ModelDetail from '@/views/model/ModelDetail.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockModel(id = 1) {
@@ -110,9 +114,9 @@ async function mountAndWait(modelData = mockModel()) {
     props: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
-      $router: { push: jest.fn(), replace: jest.fn() },
-      $message: { success: jest.fn(), error: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(true)
+      $router: { push: vi.fn(), replace: vi.fn() },
+      $message: { success: vi.fn(), error: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(true)
     },
     stubs: {
       'el-descriptions': true, 'el-descriptions-item': true,
@@ -604,21 +608,21 @@ describe('ModelDetail — 模型测试弹窗', () => {
 
   test('switchToJsonMode 切换到 JSON 模式', () => {
     wrapper.vm.testMode = 'manual'
-    wrapper.vm.syncParamsToJson = jest.fn()
+    wrapper.vm.syncParamsToJson = vi.fn()
     wrapper.vm.switchToJsonMode()
     expect(wrapper.vm.testMode).toBe('json')
   })
 
   test('switchToManualMode 切换到表单模式', () => {
     wrapper.vm.testMode = 'json'
-    wrapper.vm.syncJsonToParams = jest.fn()
+    wrapper.vm.syncJsonToParams = vi.fn()
     wrapper.vm.switchToManualMode()
     expect(wrapper.vm.testMode).toBe('manual')
   })
 
   test('switchToJsonMode 相同模式不重复切换', () => {
     wrapper.vm.testMode = 'json'
-    const syncFn = jest.fn()
+    const syncFn = vi.fn()
     wrapper.vm.syncParamsToJson = syncFn
     wrapper.vm.switchToJsonMode()
     expect(syncFn).not.toHaveBeenCalled()
@@ -626,7 +630,7 @@ describe('ModelDetail — 模型测试弹窗', () => {
 
   test('switchToManualMode 相同模式不重复切换', () => {
     wrapper.vm.testMode = 'manual'
-    const syncFn = jest.fn()
+    const syncFn = vi.fn()
     wrapper.vm.syncJsonToParams = syncFn
     wrapper.vm.switchToManualMode()
     expect(syncFn).not.toHaveBeenCalled()
@@ -756,7 +760,7 @@ describe('ModelDetail — 模型测试执行', () => {
   test('doTest JSON 格式错误时显示错误', async () => {
     wrapper.vm.testMode = 'json'
     wrapper.vm.testJsonStr = 'invalid json'
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     await wrapper.vm.doTest()
     expect(wrapper.vm.testExecuting).toBe(false)
     consoleSpy.mockRestore()
@@ -818,7 +822,7 @@ describe('ModelDetail — 边界情况', () => {
   test('全局模型即使残留 projectId 也只加载全局资源', async () => {
     const modelData = { ...mockModel(), scope: 'GLOBAL', projectId: 1, projectName: '项目A' }
     const wrapper = await mountAndWait(modelData)
-    jest.clearAllMocks()
+    vi.clearAllMocks()
     variableApi.listVariables.mockResolvedValue({ data: { records: [] } })
     dataObjectApi.getVariableTree.mockResolvedValue({ data: [] })
     modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
@@ -836,7 +840,7 @@ describe('ModelDetail — 边界情况', () => {
     const localWrapper = mount(ModelDetail, {
       mocks: {
         $route: { params: { id: 1 } },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-descriptions': true, 'el-descriptions-item': true, 'el-button': true,

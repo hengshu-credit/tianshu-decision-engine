@@ -22,6 +22,9 @@ service.interceptors.request.use(config => {
 
 service.interceptors.response.use(
   response => {
+    if (response.config && response.config.responseType === 'blob') {
+      return response
+    }
     const res = response.data
     const reqUrl = (response.config && response.config.url) || ''
     if (res.code === 401) {

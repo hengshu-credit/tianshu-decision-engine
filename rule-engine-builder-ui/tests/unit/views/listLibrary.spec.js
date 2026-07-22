@@ -9,7 +9,7 @@ import ListLibrary from '@/views/ruleList/ListLibrary.vue'
 
 const FormStub = {
   template: '<form><slot /></form>',
-  methods: { validate: jest.fn(cb => cb(true)) }
+  methods: { validate: vi.fn(cb => cb(true)) }
 }
 
 async function mountPage() {
@@ -19,9 +19,9 @@ async function mountPage() {
   })
   const wrapper = mount(ListLibrary, {
     mocks: {
-      $router: { push: jest.fn() },
-      $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(true)
+      $router: { push: vi.fn() },
+      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(true)
     },
     stubs: {
       'el-form': FormStub,
@@ -49,7 +49,7 @@ describe('ListLibrary — 名单库管理', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); vi.clearAllMocks() })
 
   test('uses unified fuzzy filters for project code and name', () => {
     expect(ListLibrary.components.ProjectFilterSelect).toBe(ProjectFilterSelect)

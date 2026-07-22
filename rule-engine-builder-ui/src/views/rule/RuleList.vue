@@ -200,16 +200,7 @@
           <el-button link size="small" @click="handleDesign(row)"
             >设计</el-button
           >
-          <el-button link size="small" @click="handlePublish(row)">{{
-            isPublished(row) ? '重新发布' : '发布'
-          }}</el-button>
-          <el-button
-            link
-            size="small"
-            v-if="isPublished(row)"
-            @click="handleUnpublish(row)"
-            >下线</el-button
-          >
+          <el-button link size="small" @click="handleGovernance(row)">生命周期</el-button>
           <el-button
             link
             size="small"
@@ -339,8 +330,6 @@ import {
   listDefinitions,
   createDefinition,
   deleteDefinition,
-  publishRule,
-  unpublishRule,
 } from '@/api/definition'
 import { listProjects } from '@/api/project'
 import {
@@ -599,29 +588,8 @@ export default {
     handleDetail(row) {
       this.$router.push(`/rule/${row.id}`)
     },
-    async handlePublish(row) {
-      try {
-        await this.$confirm('确定发布规则「' + row.ruleName + '」？', '确认', {
-          type: 'info',
-        })
-        await publishRule(row.id)
-        this.$message.success('发布成功')
-        this.loadData()
-      } catch (e) {
-        if (e !== 'cancel') this.$message.error('发布失败')
-      }
-    },
-    async handleUnpublish(row) {
-      try {
-        await this.$confirm('确定下线规则「' + row.ruleName + '」？', '确认', {
-          type: 'warning',
-        })
-        await unpublishRule(row.id)
-        this.$message.success('下线成功')
-        this.loadData()
-      } catch (e) {
-        if (e !== 'cancel') this.$message.error('下线失败')
-      }
+    handleGovernance(row) {
+      this.$router.push(`/rule/${row.id}`)
     },
     handleDelete(row) {
       this.$confirm('确定删除规则「' + row.ruleName + '」？', '确认', {

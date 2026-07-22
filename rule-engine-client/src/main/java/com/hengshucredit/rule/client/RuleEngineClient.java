@@ -200,6 +200,8 @@ public class RuleEngineClient {
             entry.setRuleCode(ruleCode);
             entry.setProjectCode(cached.getProjectCode());
             entry.setRuleVersion(cached.getVersion());
+            entry.setRevisionId(cached.getRevisionId());
+            entry.setArtifactDigest(cached.getArtifactDigest());
             entry.setModelType(cached.getModelType());
             entry.setSource("CLIENT");
             entry.setClientAppName(config.getAppName());

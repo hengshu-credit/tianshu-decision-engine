@@ -1,7 +1,7 @@
 // tests/unit/views/decisionTable.spec.js
 import { shallowMount } from '@test-utils'
 import { h, nextTick } from 'vue'
-// 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
+// 直接 import API 模块（不写 vi.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import * as modelApi from '@/api/model'
@@ -9,7 +9,7 @@ import * as dataObjectApi from '@/api/dataObject'
 import * as functionApi from '@/api/function'
 import DecisionTable from '@/views/designer/DecisionTable.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 const mockDefs = { id: 1, projectId: 1, scope: 'PROJECT' }
@@ -113,7 +113,7 @@ async function mountAndWaitForRefs(propsData = { id: '1' }) {
     props: propsData,
     mocks: {
       $route: { params: { id: 1 }, query: {}, name: 'DecisionTable' },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: vi.fn(), replace: vi.fn() }
     },
     stubs: {
       'el-dialog': makeStub('div'),
@@ -349,7 +349,7 @@ describe('DecisionTable — 操作方法', () => {
   })
 
   test('removeRuleAction 删除指定规则的动作（至少保留一条）', async () => {
-    wrapper.vm.$confirm = jest.fn().mockResolvedValue()
+    wrapper.vm.$confirm = vi.fn().mockResolvedValue()
     wrapper.vm.addRuleAction(0)
     wrapper.vm.addRuleAction(0)
     wrapper.vm.addRuleAction(0)
@@ -359,7 +359,7 @@ describe('DecisionTable — 操作方法', () => {
   })
 
   test('removeRuleAction 动作只剩一条时提示至少保留一条', () => {
-    wrapper.vm.$message = { warning: jest.fn() }
+    wrapper.vm.$message = { warning: vi.fn() }
     wrapper.vm.removeRuleAction(0, 0)
     expect(wrapper.vm.$message.warning).toHaveBeenCalled()
   })
@@ -406,7 +406,7 @@ describe('DecisionTable — 保存功能', () => {
     definitionApi.saveContent.mockResolvedValueOnce({ success: true })
     definitionApi.refreshFields.mockResolvedValueOnce({})
     definitionApi.compileRule.mockResolvedValueOnce({ success: true })
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
     await wrapper.vm.handleSave()
     expect(definitionApi.saveContent).toHaveBeenCalled()
     expect(definitionApi.refreshFields).toHaveBeenCalled()
@@ -416,8 +416,8 @@ describe('DecisionTable — 保存功能', () => {
   test('handleSave 失败时显示错误提示并抛出异常', async () => {
     definitionApi.saveContent.mockRejectedValueOnce(new Error('保存失败'))
     definitionApi.refreshFields.mockRejectedValueOnce(new Error('refresh失败'))
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
     await expect(wrapper.vm.handleSave()).rejects.toThrow('保存失败')
     expect(definitionApi.saveContent).toHaveBeenCalled()
     expect(wrapper.vm.$message.error).toHaveBeenCalled()

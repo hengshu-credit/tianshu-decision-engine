@@ -36,6 +36,8 @@ public class RuleEngineClientTest {
         CachedRule root = rule("ROOT", "RULE_SET", "executeRule(\"CHILD\"); "
                 + "setRuntimeValue(\"parentAfterChild\", true)");
         root.setOutputScriptNames(Arrays.asList("decision", "notAssigned"));
+        root.setRevisionId(22L);
+        root.setArtifactDigest("artifact-digest");
         CachedRule child = rule("CHILD", "FLOW", "setRuntimeValue(\"decision\", \"STOP\"); "
                 + "terminateAllRules(); setRuntimeValue(\"childAfterEnd\", true)");
         L1MemoryCache cache = (L1MemoryCache) getField(client, "l1Cache");
@@ -52,6 +54,8 @@ public class RuleEngineClientTest {
         assertFalse(values.containsKey("childAfterEnd"));
         assertEquals(1, reporter.logs.size());
         assertEquals(Integer.valueOf(1), reporter.logs.get(0).getSuccess());
+        assertEquals(Long.valueOf(22L), reporter.logs.get(0).getRevisionId());
+        assertEquals("artifact-digest", reporter.logs.get(0).getArtifactDigest());
     }
 
     private CachedRule rule(String code, String modelType, String script) {

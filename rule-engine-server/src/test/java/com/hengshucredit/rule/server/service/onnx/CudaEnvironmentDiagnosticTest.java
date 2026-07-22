@@ -4,13 +4,10 @@ import com.alibaba.fastjson.JSON;
 import org.junit.Assume;
 import org.junit.Test;
 
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class CudaEnvironmentDiagnosticTest {
@@ -20,29 +17,13 @@ public class CudaEnvironmentDiagnosticTest {
         Assume.assumeTrue(Boolean.getBoolean("tianshu.cuda.diagnostic"));
         System.out.println("PATH=" + System.getenv("PATH"));
         System.out.println("java.library.path=" + System.getProperty("java.library.path"));
-        System.loadLibrary("cublasLt64_12");
-        System.loadLibrary("cublas64_12");
-        System.loadLibrary("cufft64_11");
-        System.loadLibrary("cudart64_12");
-        String cudnnBinProperty = System.getProperty("tianshu.cudnn.bin");
-        assertNotNull("tianshu.cudnn.bin is required when CUDA diagnostics are enabled", cudnnBinProperty);
-        Path cudnnBin = Paths.get(cudnnBinProperty);
-        for (String library : new String[]{
-                "cudnn_graph64_9.dll",
-                "cudnn_ops64_9.dll",
-                "cudnn_adv64_9.dll",
-                "cudnn_cnn64_9.dll",
-                "cudnn_heuristic64_9.dll",
-                "cudnn_engines_precompiled64_9.dll",
-                "cudnn_engines_runtime_compiled64_9.dll",
-                "cudnn64_9.dll"
-        }) {
-            System.load(cudnnBin.resolve(library).toString());
-        }
         OnnxRuntimeConfig cuda = OnnxRuntimeConfig.from(JSON.parseObject(
                 "{\"executionProvider\":\"CUDA\",\"cudaDeviceId\":0}"));
         OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager();
         try {
+            Map<String, Object> capabilities = manager.runtimeCapabilities();
+            assertEquals(Boolean.TRUE, capabilities.get("cudaAvailable"));
+            assertTrue(String.valueOf(capabilities.get("availableProviders")).contains("CUDA"));
             String image = OnnxTestAssets.imageBase64();
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> faces = (List<Map<String, Object>>) (List<?>)

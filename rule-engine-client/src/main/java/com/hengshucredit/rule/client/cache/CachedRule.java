@@ -10,6 +10,8 @@ public class CachedRule {
     /** 规则所属项目编码 */
     private String projectCode;
     private int version;
+    private Long revisionId;
+    private String artifactDigest;
     private String modelType;
     private String compiledScript;
     private String compiledType;

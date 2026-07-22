@@ -1,12 +1,12 @@
 // tests/unit/views/ruleDetail.spec.js
 import { shallowMount } from '@test-utils'
 import { h, nextTick } from 'vue'
-// 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
+// 直接 import API 模块（不写 vi.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
 import RuleDetail from '@/views/rule/RuleDetail.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockRuleDetail(id = 1) {
@@ -31,6 +31,15 @@ function mockRuleDetail(id = 1) {
     ]
   }
 }
+
+describe('RuleDetail 生命周期治理', () => {
+  test('详情页加载修订和审计时间线', async () => {
+    const wrapper = await mountAndWait()
+    expect(definitionApi.listRuleRevisions).toHaveBeenCalledWith(1)
+    expect(definitionApi.getRuleLifecycleTimeline).toHaveBeenCalledWith(1)
+    expect(wrapper.vm.activeRevision.state).toBe('DRAFT')
+  })
+})
 
 function mockVariables() {
   return [
@@ -62,6 +71,10 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
   definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
   definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })
   definitionApi.getContent.mockResolvedValueOnce({ data: content })
+  definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [{
+    id: 5, definitionId: 1, revisionNo: 1, state: 'DRAFT'
+  }] })
+  definitionApi.getRuleLifecycleTimeline.mockResolvedValueOnce({ data: [] })
   variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
   variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
   variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
@@ -74,12 +87,12 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
     props: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
-      $router: { push: jest.fn(), replace: jest.fn() },
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue('confirm')
+      $router: { push: vi.fn(), replace: vi.fn() },
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue('confirm')
     },
     directives: {
-      loading: jest.fn()
+      loading: vi.fn()
     },
     stubs: {
       'el-dialog': makeStub('div'),
@@ -572,7 +585,7 @@ describe('RuleDetail version history', () => {
   })
 
   test('rollbackVersion calls rollback and refreshes data', async () => {
-    wrapper.vm.$confirm = jest.fn().mockResolvedValue('confirm')
+    wrapper.vm.$confirm = vi.fn().mockResolvedValue('confirm')
     definitionApi.rollbackVersion.mockResolvedValueOnce({})
     definitionApi.refreshFields.mockResolvedValueOnce({ data: {} })
     definitionApi.getDefinitionDetail.mockResolvedValueOnce({ data: mockRuleDetail(1) })

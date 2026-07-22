@@ -5,15 +5,12 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
-import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionRefMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
-import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
-import com.hengshucredit.rule.server.publish.RulePushService;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -209,7 +206,7 @@ public class RuleDefinitionServiceTest {
     }
 
     @Test
-    public void saveScriptStoresWrappedCompiledScriptAndSyncsPublishedRule() {
+    public void saveScriptStoresDraftWithoutMutatingPublishedArtifact() {
         RuleDefinitionService service = new RuleDefinitionService();
         RuleDefinition definition = new RuleDefinition();
         definition.setId(10L);
@@ -219,13 +216,7 @@ public class RuleDefinitionServiceTest {
         RuleDefinitionContent content = new RuleDefinitionContent();
         content.setId(20L);
         content.setDefinitionId(10L);
-        RulePublished published = new RulePublished();
-        published.setRuleCode("risk_rule");
-        published.setVersion(3);
-        published.setProjectCode("credit");
-        RecordingRulePushService pushService = new RecordingRulePushService();
         final RuleDefinitionContent[] updatedContent = {null};
-        final RulePublished[] updatedPublished = {null};
 
         ReflectionTestUtils.setField(service, "baseMapper", mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
             if ("selectById".equals(method.getName())) return definition;
@@ -239,25 +230,11 @@ public class RuleDefinitionServiceTest {
             }
             return defaultValue(method.getReturnType());
         }));
-        ReflectionTestUtils.setField(service, "publishedMapper", mapper(RulePublishedMapper.class, (proxy, method, args) -> {
-            if ("selectOne".equals(method.getName())) return published;
-            if ("updateById".equals(method.getName())) {
-                updatedPublished[0] = (RulePublished) args[0];
-                return 1;
-            }
-            return defaultValue(method.getReturnType());
-        }));
-        ReflectionTestUtils.setField(service, "pushService", pushService);
-
         service.saveScript(10L, "score = amount * 2");
 
         assertTrue(updatedContent[0].getCompiledScript().contains("\"score\": score"));
         assertEquals(Integer.valueOf(1), updatedContent[0].getCompileStatus());
         assertEquals("script", updatedContent[0].getScriptMode());
-        assertSame(published, updatedPublished[0]);
-        assertTrue(updatedPublished[0].getCompiledScript().contains("\"score\": score"));
-        assertEquals("risk_rule", pushService.message.getRuleCode());
-        assertTrue(pushService.message.getCompiledScript().contains("\"score\": score"));
     }
 
     @Test
@@ -315,15 +292,6 @@ public class RuleDefinitionServiceTest {
             this.modelJson = modelJson;
             this.modelType = modelType;
             this.projectId = projectId;
-        }
-    }
-
-    private static class RecordingRulePushService extends RulePushService {
-        private com.hengshucredit.rule.model.dto.RulePushMessage message;
-
-        @Override
-        public void push(com.hengshucredit.rule.model.dto.RulePushMessage message) {
-            this.message = message;
         }
     }
 

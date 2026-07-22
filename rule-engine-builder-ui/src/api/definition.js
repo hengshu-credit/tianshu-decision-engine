@@ -81,6 +81,58 @@ export function unpublishRule(id) {
   return request({ url: `/rule/definition/unpublish/${id}`, method: 'post' })
 }
 
+export function ensureDraftRevision(definitionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/draft`, method: 'post' })
+}
+
+export function listRuleRevisions(definitionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions`, method: 'get' })
+}
+
+export function getRuleRevision(definitionId, revisionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/${revisionId}`, method: 'get' })
+}
+
+export function getCurrentDraftRevision(definitionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/current-draft`, method: 'get' })
+}
+
+export function preflightRuleRevision(definitionId, revisionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/${revisionId}/preflight`, method: 'post' })
+}
+
+export function submitRuleRevision(definitionId, revisionId, data) {
+  return lifecycleAction(definitionId, revisionId, 'submit', data)
+}
+
+export function returnRuleRevision(definitionId, revisionId, data) {
+  return lifecycleAction(definitionId, revisionId, 'return', data)
+}
+
+export function approveRuleRevision(definitionId, revisionId, data) {
+  return lifecycleAction(definitionId, revisionId, 'approve', data)
+}
+
+export function publishRuleRevision(definitionId, revisionId, data) {
+  return lifecycleAction(definitionId, revisionId, 'publish', data)
+}
+
+export function offlineRuleRevision(definitionId, revisionId, data) {
+  return lifecycleAction(definitionId, revisionId, 'offline', data)
+}
+
+export function getRuleLifecycleTimeline(definitionId) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/timeline`, method: 'get' })
+}
+
+function lifecycleAction(definitionId, revisionId, action, data) {
+  return request({
+    url: `/rule/definition/${definitionId}/revisions/${revisionId}/${action}`,
+    method: 'post',
+    data
+  })
+}
+
 export function listVersions(definitionId) {
   return request({ url: `/rule/definition/versions/${definitionId}`, method: 'get' })
 }

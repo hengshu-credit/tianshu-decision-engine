@@ -1,6 +1,6 @@
-jest.unmock('@/components/flow/ActionBlockEditor.vue')
+vi.unmock('@/components/flow/ActionBlockEditor.vue')
 
-const ActionBlockEditor = require('@/components/flow/ActionBlockEditor.vue').default
+const ActionBlockEditor = (await vi.importActual('@/components/flow/ActionBlockEditor.vue')).default
 
 function createEditorContext(blocks, extra = {}) {
   const ctx = {
@@ -13,7 +13,7 @@ function createEditorContext(blocks, extra = {}) {
     currentRuleCode: extra.currentRuleCode || '',
     validateRuleCallCycle: extra.validateRuleCallCycle || null,
     emitted: [],
-    $message: { warning: jest.fn() },
+    $message: { warning: vi.fn() },
     $set(target, key, value) {
       target[key] = value
     },
@@ -102,7 +102,7 @@ describe('ActionBlockEditor', () => {
   })
 
   test('onRuleSelect restores previous rule when cycle validation fails', async () => {
-    const validateRuleCallCycle = jest.fn().mockResolvedValue('规则调用存在环路: A -> B -> A')
+    const validateRuleCallCycle = vi.fn().mockResolvedValue('规则调用存在环路: A -> B -> A')
     const ctx = createEditorContext([{ type: 'rule-call', ruleId: 1, ruleCode: 'old_rule', ruleName: '旧规则', modelType: 'TABLE', outputField: 'result' }], {
       validateRuleCallCycle,
       rules: [

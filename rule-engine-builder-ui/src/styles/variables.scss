@@ -7,14 +7,3 @@ $menuActiveText: #FFFFFF;
 $menuBg: #1C2038;
 $menuHover: #262D4F;
 $sideBarWidth: 210px;
-
-:export {
-  // JS 端导入时使用（通过 CSS Modules）
-  menuText: $menuText;
-  menuActiveText: $menuActiveText;
-  menuBg: $menuBg;
-  menuHover: $menuHover;
-  sideBarWidth: $sideBarWidth;
-  colorPrimary: $--color-primary;
-  colorDanger: $--color-danger;
-}

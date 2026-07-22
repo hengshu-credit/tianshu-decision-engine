@@ -80,7 +80,7 @@
         </dependency>
         <dependency>
             <groupId>org.jpmml</groupId>
-            <artifactId>pmml-evaluator</artifactId>
+            <artifactId>pmml-evaluator-metro</artifactId>
         </dependency>
         <dependency>
             <groupId>com.jcraft</groupId>

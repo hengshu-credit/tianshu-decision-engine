@@ -48,7 +48,7 @@ async function mountDialog() {
 }
 
 describe('ProjectAuthDialog', () => {
-  afterEach(() => jest.clearAllMocks())
+  afterEach(() => vi.clearAllMocks())
 
   test('打开时按项目加载脱敏鉴权配置', async () => {
     const wrapper = await mountDialog()

@@ -13,11 +13,11 @@ function mountPage(route) {
   return shallowMount(DatabaseDetail, {
     mocks: {
       $route: route || { params: { id: '1' }, query: {} },
-      $router: { push: jest.fn() },
-      $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() }
+      $router: { push: vi.fn() },
+      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() }
     },
     stubs: {
-      'el-form': { template: '<form><slot /></form>', methods: { validate: jest.fn(cb => cb(true)) } },
+      'el-form': { template: '<form><slot /></form>', methods: { validate: vi.fn(cb => cb(true)) } },
       'el-form-item': true,
       'el-select': true,
       'el-option': true,
@@ -37,7 +37,7 @@ function mountPage(route) {
 
 describe('DatabaseDetail — 项目选择', () => {
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('编辑项目级数据源时 projectId 为 0 不自动选中项目', async () => {

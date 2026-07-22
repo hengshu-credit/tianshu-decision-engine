@@ -1,7 +1,7 @@
 import { shallowMount } from '@test-utils'
 import { nextTick } from 'vue'
 
-const OperandPicker = jest.requireActual('../../../src/components/common/VarPicker.vue').default
+const OperandPicker = (await vi.importActual('../../../src/components/common/VarPicker.vue')).default
 
 function mountPicker(propsData = {}) {
   return shallowMount(OperandPicker, {

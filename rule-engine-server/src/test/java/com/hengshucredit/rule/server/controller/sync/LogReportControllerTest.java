@@ -76,6 +76,8 @@ public class LogReportControllerTest {
         log.setExecuteTimeMs(12L);
         log.setAuthCode("FAKE_AUTH");
         log.setTokenCode("FAKE_TOKEN");
+        log.setRevisionId(999L);
+        log.setArtifactDigest("client-supplied-digest");
 
         MockHttpServletRequest request = requestWithProject("RISK_DEMO");
         ProjectAuthContext.temporary(1L, "RISK_DEMO", 11L, "BASIC_MAIN", ProjectAuthType.BASIC,
@@ -92,6 +94,8 @@ public class LogReportControllerTest {
         assertEquals(Long.valueOf(21L), logService.saved.get(0).getTokenId());
         assertEquals("TOKEN_A", logService.saved.get(0).getTokenCode());
         assertEquals("VALID", logService.saved.get(0).getAuthPhase());
+        assertEquals(Long.valueOf(12L), logService.saved.get(0).getRevisionId());
+        assertEquals("server-artifact-digest", logService.saved.get(0).getArtifactDigest());
         assertEquals(1, billingService.billed.size());
         assertEquals("RC_TEST", billingService.billed.get(0).getRuleCode());
         assertEquals("BASIC_MAIN", billingService.authContext.getAuthCode());
@@ -187,6 +191,13 @@ public class LogReportControllerTest {
 
     private static class CapturingLogService extends RuleExecutionLogService {
         private final List<RuleExecutionLog> saved = new ArrayList<>();
+
+        @Override
+        public void applyPublishedAttribution(RuleExecutionLog log, String authenticatedProjectCode) {
+            log.setRuleVersion(4);
+            log.setRevisionId(12L);
+            log.setArtifactDigest("server-artifact-digest");
+        }
 
         @Override
         public boolean saveBatch(Collection<RuleExecutionLog> entityList) {

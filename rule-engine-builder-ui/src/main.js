@@ -12,12 +12,8 @@ import './styles/index.scss'
 import './styles/element-override.scss'
 import './styles/compact-workbench.scss'
 
-// Monaco Editor 通过 AMD loader 方式加载
-// - 生产：vs/ 目录由 copy-webpack-plugin 复制到 dist/，base 为相对路径 './'
-// - 开发：copy-webpack-plugin 不生成实际文件，worker URL 改为绝对路径指向 node_modules，
-//   这需要 vue.config.js 中配置 devServer.before 中间件提供静态服务
-const isProd = process.env.NODE_ENV === 'production'
-const base = isProd ? './' : '/'
+// Monaco Editor 通过 AMD loader 方式加载，Vite 在开发和生产阶段统一提供 vs/ 资源。
+const base = import.meta.env.BASE_URL || './'
 window.MonacoEnvironment = {
   getWorkerUrl: function () {
     // AMD 版本的 monaco-editor 使用统一 workerMain 入口，不能指向 ESM worker 文件。

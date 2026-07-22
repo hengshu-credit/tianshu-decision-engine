@@ -8,9 +8,9 @@ describe('MonacoDiffEditor', () => {
   let diffEditor
 
   beforeEach(() => {
-    originalModel = { getValue: jest.fn(() => 'a = 1;'), setValue: jest.fn(), dispose: jest.fn() }
-    modifiedModel = { getValue: jest.fn(() => 'a = 2;'), setValue: jest.fn(), dispose: jest.fn() }
-    diffEditor = { setModel: jest.fn(), layout: jest.fn(), dispose: jest.fn() }
+    originalModel = { getValue: vi.fn(() => 'a = 1;'), setValue: vi.fn(), dispose: vi.fn() }
+    modifiedModel = { getValue: vi.fn(() => 'a = 2;'), setValue: vi.fn(), dispose: vi.fn() }
+    diffEditor = { setModel: vi.fn(), layout: vi.fn(), dispose: vi.fn() }
     monaco.editor.createModel
       .mockReset()
       .mockReturnValueOnce(originalModel)
@@ -21,7 +21,7 @@ describe('MonacoDiffEditor', () => {
 
   afterEach(() => {
     delete window.monaco
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('创建只读 QL diff 并绑定左右模型', async() => {

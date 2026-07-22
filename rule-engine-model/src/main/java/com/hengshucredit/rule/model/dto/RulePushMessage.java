@@ -8,6 +8,8 @@ import java.util.List;
 public class RulePushMessage {
     private String ruleCode;
     private Integer version;
+    private Long revisionId;
+    private String artifactDigest;
     private String modelType;
     private String compiledScript;
     private String compiledType;

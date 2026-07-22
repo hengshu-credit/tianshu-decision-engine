@@ -13,7 +13,7 @@ import * as projectApi from '@/api/project'
 import * as modelApi from '@/api/model'
 import RuleTest from '@/views/test/RuleTest.vue'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockProjects() {
@@ -91,7 +91,7 @@ describe('RuleTest — 初始化与数据加载', () => {
     wrapper = shallowMount(RuleTest, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'),
@@ -159,7 +159,7 @@ describe('RuleTest — 辅助方法', () => {
     wrapper = shallowMount(RuleTest, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -294,7 +294,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     wrapper = shallowMount(RuleTest, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -402,7 +402,7 @@ describe('RuleTest — 执行与结果展示', () => {
     wrapper = shallowMount(RuleTest, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -454,7 +454,7 @@ describe('RuleTest — 执行与结果展示', () => {
       { key: 'taxpayerType', value: '小规模纳税人', type: 'STRING' },
       { key: 'goodsCategory', value: '服务', type: 'STRING' }
     ]
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
 
     await wrapper.vm.handleExecute()
     await nextTick()
@@ -479,7 +479,7 @@ describe('RuleTest — 执行与结果展示', () => {
     definitionApi.executeRule.mockRejectedValueOnce(new Error('规则编译失败'))
     wrapper.vm.selectedRuleId = 4
     wrapper.vm.params = [{ key: 'taxpayerType', value: '小规模纳税人', type: 'STRING' }]
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
 
     await wrapper.vm.handleExecute()
     await nextTick()
@@ -557,7 +557,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     wrapper = shallowMount(RuleTest, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -622,7 +622,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
 
     // 4. 模拟执行结果
     definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
 
     await wrapper.vm.handleExecute()
     await nextTick()
@@ -649,7 +649,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
 
     // 4. 执行
     definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
-    wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
+    wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
     await wrapper.vm.handleExecute()
     await nextTick()
 

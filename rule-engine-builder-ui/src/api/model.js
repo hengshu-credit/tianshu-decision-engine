@@ -47,8 +47,8 @@ export function updateModel(data) {
 }
 
 /** 删除模型 */
-export function deleteModel(id) {
-  return request({ url: `/rule/model/${id}`, method: 'delete' })
+export function deleteModel(id, impactToken) {
+  return request({ url: `/rule/model/${id}`, method: 'delete', params: { impactToken } })
 }
 
 /** 发布模型 */
@@ -57,8 +57,24 @@ export function publishModel(id, changeLog) {
 }
 
 /** 下线模型 */
-export function unpublishModel(id) {
-  return request({ url: `/rule/model/unpublish/${id}`, method: 'post' })
+export function unpublishModel(id, impactToken) {
+  return request({ url: `/rule/model/unpublish/${id}`, method: 'post', params: { impactToken } })
+}
+
+export function analyzeModelImpact(id, action) {
+  return request({ url: `/rule/model/impact/${id}`, method: 'post', params: { action } })
+}
+
+export function replaceModel(id, formData, impactToken, onUploadProgress) {
+  formData.set('impactToken', impactToken)
+  return request({
+    url: `/rule/model/replace/${id}`,
+    method: 'post',
+    data: formData,
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 30 * 60 * 1000,
+    onUploadProgress
+  })
 }
 
 /** 查询项目下所有模型（非分页） */

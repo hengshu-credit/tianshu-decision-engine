@@ -1,7 +1,7 @@
-jest.unmock('@/components/common/ScriptPanel.vue')
+vi.unmock('@/components/common/ScriptPanel.vue')
 
-const definitionApi = require('@/api/definition')
-const ScriptPanel = require('@/components/common/ScriptPanel.vue').default
+const definitionApi = await vi.importMock('@/api/definition')
+const ScriptPanel = (await vi.importActual('@/components/common/ScriptPanel.vue')).default
 
 function createPanelContext(onBeforeCompile) {
   const ctx = {
@@ -12,9 +12,9 @@ function createPanelContext(onBeforeCompile) {
     editScript: '',
     content: {},
     $message: {
-      success: jest.fn(),
-      error: jest.fn(),
-      warning: jest.fn()
+      success: vi.fn(),
+      error: vi.fn(),
+      warning: vi.fn()
     },
     async loadContent() {}
   }
@@ -27,11 +27,11 @@ function createPanelContext(onBeforeCompile) {
 
 describe('ScriptPanel', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('前置保存返回 false 时停止编译', async () => {
-    const onBeforeCompile = jest.fn().mockResolvedValue(false)
+    const onBeforeCompile = vi.fn().mockResolvedValue(false)
     const ctx = createPanelContext(onBeforeCompile)
 
     await ctx.handleCompile()
@@ -42,7 +42,7 @@ describe('ScriptPanel', () => {
   })
 
   test('前置保存失败时停止编译', async () => {
-    const onBeforeCompile = jest.fn().mockRejectedValue(new Error('save failed'))
+    const onBeforeCompile = vi.fn().mockRejectedValue(new Error('save failed'))
     const ctx = createPanelContext(onBeforeCompile)
 
     await ctx.handleCompile()

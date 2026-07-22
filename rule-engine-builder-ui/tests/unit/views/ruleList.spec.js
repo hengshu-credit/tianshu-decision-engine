@@ -2,16 +2,14 @@
 import { mount } from '@test-utils'
 import { h, nextTick } from 'vue'
 // Mock API 模块
-jest.mock('@/api/definition', () => ({
-  listDefinitions: jest.fn(),
-  createDefinition: jest.fn(),
-  deleteDefinition: jest.fn(),
-  publishRule: jest.fn(),
-  unpublishRule: jest.fn()
+vi.mock('@/api/definition', () => ({
+  listDefinitions: vi.fn(),
+  createDefinition: vi.fn(),
+  deleteDefinition: vi.fn()
 }))
 
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn()
+vi.mock('@/api/project', () => ({
+  listProjects: vi.fn()
 }))
 
 import * as definitionApi from '@/api/definition'
@@ -22,7 +20,7 @@ import fs from 'fs'
 import path from 'path'
 
 afterEach(() => {
-  jest.clearAllMocks()
+  vi.clearAllMocks()
 })
 
 describe('RuleList 项目筛选交互', () => {
@@ -56,16 +54,16 @@ const FormStub = {
   name: 'ElForm',
   render: () => h('form'),
   methods: {
-    clearValidate: jest.fn(),
-    validate: jest.fn(cb => cb && cb(true)),
-    validateField: jest.fn(),
-    resetFields: jest.fn()
+    clearValidate: vi.fn(),
+    validate: vi.fn(cb => cb && cb(true)),
+    validateField: vi.fn(),
+    resetFields: vi.fn()
   }
 }
 const InputStub = {
   name: 'ElInput',
   render: () => h('input', { attrs: { type: 'text' } }),
-  methods: { focus: jest.fn(), blur: jest.fn() }
+  methods: { focus: vi.fn(), blur: vi.fn() }
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
@@ -75,10 +73,10 @@ function createMountOptions() {
   return {
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() },
-      $message: Object.assign(jest.fn(), { success: jest.fn(), error: jest.fn(), warning: jest.fn() }),
+      $router: { push: vi.fn(), replace: vi.fn() },
+      $message: Object.assign(vi.fn(), { success: vi.fn(), error: vi.fn(), warning: vi.fn() }),
       // $confirm 每次都是新 mock，测试中通过 mockResolvedValueOnce 配置返回值
-      $confirm: jest.fn()
+      $confirm: vi.fn()
     },
     stubs: {
       'el-form': FormStub, 'el-form-item': true,
@@ -267,22 +265,9 @@ describe('RuleList — 规则操作', () => {
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/designer/ruleset/4')
   })
 
-  test('handlePublish 调用发布 API', async () => {
-    definitionApi.publishRule.mockResolvedValue({ data: true })
-    wrapper.vm.$confirm.mockResolvedValueOnce()
-    const row = { id: 1, ruleName: '测试规则' }
-    await wrapper.vm.handlePublish(row)
-    await nextTick()
-    expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
-  })
-
-  test('handleUnpublish 调用下线 API', async () => {
-    definitionApi.unpublishRule.mockResolvedValue({ data: true })
-    wrapper.vm.$confirm.mockResolvedValueOnce()
-    const row = { id: 1, ruleName: '测试规则' }
-    await wrapper.vm.handleUnpublish(row)
-    await nextTick()
-    expect(definitionApi.unpublishRule).toHaveBeenCalledWith(1)
+  test('生命周期操作进入治理详情，不从列表直接发布或下线', () => {
+    wrapper.vm.handleGovernance({ id: 1 })
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/rule/1')
   })
 
   test('handleDelete 调用删除 API', async () => {
@@ -294,14 +279,6 @@ describe('RuleList — 规则操作', () => {
     expect(definitionApi.deleteDefinition).toHaveBeenCalledWith(1)
   })
 
-  test('handlePublish 显示重新发布按钮', async () => {
-    definitionApi.publishRule.mockResolvedValue({ data: true })
-    wrapper.vm.$confirm.mockResolvedValueOnce()
-    const row = { id: 1, publishedVersion: 1 }
-    await wrapper.vm.handlePublish(row)
-    await nextTick()
-    expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
-  })
 })
 
 describe('RuleList — 边界情况', () => {
@@ -318,7 +295,7 @@ describe('RuleList — 边界情况', () => {
   test('listDefinitions 失败时显示错误消息', async () => {
     definitionApi.listDefinitions.mockRejectedValue(new Error('加载失败'))
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
-    const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     const wrapper = mount(RuleList, createMountOptions())
     await nextTick()
     await new Promise(r => setTimeout(r, 100))

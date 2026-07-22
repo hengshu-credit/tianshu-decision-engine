@@ -6,9 +6,11 @@ services:
     container_name: rule-engine-mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: 1qaz@WSX
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}"
       MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: rule_engine
+      MYSQL_USER: "${MYSQL_USERNAME:?Set MYSQL_USERNAME in .env}"
+      MYSQL_PASSWORD: "${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}"
       TZ: Asia/Shanghai
     ports:
       - "3306:3306"
@@ -34,8 +36,8 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      MYSQL_ROOT_PASSWORD: 1qaz@WSX
-      MYSQL_PWD: 1qaz@WSX
+      MYSQL_ROOT_PASSWORD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}"
+      MYSQL_PWD: "${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}"
       TZ: Asia/Shanghai
     volumes:
       - ./rule-engine-server/src/main/resources/sql/schema.sql:/init.sql:ro
@@ -55,7 +57,7 @@ services:
     container_name: rule-engine-redis
     restart: always
     environment:
-      REDIS_PASSWORD: 1qaz@WSX
+      REDIS_PASSWORD: "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"
       TZ: Asia/Shanghai
     ports:
       - "6379:6379"
@@ -63,7 +65,7 @@ services:
       - ./rule-engine-redis/data:/data
       - ./rule-engine-redis/redis.conf:/usr/local/etc/redis/redis.conf
       - ./rule-engine-redis/logs:/logs
-    command: redis-server /usr/local/etc/redis/redis.conf
+    command: sh -c 'exec redis-server /usr/local/etc/redis/redis.conf --requirepass "$${REDIS_PASSWORD}"'
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep PONG || exit 1"]
       interval: 60s

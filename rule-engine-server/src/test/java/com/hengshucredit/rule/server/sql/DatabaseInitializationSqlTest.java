@@ -89,6 +89,14 @@ public class DatabaseInitializationSqlTest {
     }
 
     @Test
+    public void schemaDoesNotCreateOrAlterDatabaseAccounts() throws Exception {
+        String schema = read(sqlDirectory().resolve("schema.sql")).toUpperCase();
+        Assert.assertFalse(schema.contains("CREATE USER"));
+        Assert.assertFalse(schema.contains("ALTER USER"));
+        Assert.assertFalse(schema.contains("GRANT ALL PRIVILEGES"));
+    }
+
+    @Test
     public void latestExportDoesNotPersistEnvironmentBoundProjectAuthenticationData() throws Exception {
         String export = read(latestExport());
         Set<String> insertTables = collectTables(INSERT, export);

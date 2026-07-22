@@ -192,6 +192,8 @@ public class HttpSyncClient {
         rule.setRuleCode(obj.getString("ruleCode"));
         rule.setProjectCode(obj.getString("projectCode"));
         rule.setVersion(obj.getIntValue("version"));
+        rule.setRevisionId(obj.getLong("revisionId"));
+        rule.setArtifactDigest(obj.getString("artifactDigest"));
         rule.setModelType(obj.getString("modelType"));
         rule.setCompiledScript(obj.getString("compiledScript"));
         rule.setCompiledType(obj.getString("compiledType"));

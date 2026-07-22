@@ -1,9 +1,9 @@
-jest.unmock('@/layout/index.vue')
+vi.unmock('@/layout/index.vue')
 
-jest.mock('@/api/auth', () => ({
-  getConsoleAuthConfig: jest.fn(),
-  getConsoleMe: jest.fn(),
-  consoleLogout: jest.fn()
+vi.mock('@/api/auth', () => ({
+  getConsoleAuthConfig: vi.fn(),
+  getConsoleMe: vi.fn(),
+  consoleLogout: vi.fn()
 }))
 
 import { nextTick } from 'vue'
@@ -93,8 +93,8 @@ describe('Layout — 侧栏状态', () => {
   test('正常读写本次会话中的宽度与上次展开宽度', () => {
     const storage = {
       value: null,
-      getItem: jest.fn(function() { return this.value }),
-      setItem: jest.fn(function(key, value) { this.value = value })
+      getItem: vi.fn(function() { return this.value }),
+      setItem: vi.fn(function(key, value) { this.value = value })
     }
 
     writeSidebarState(storage, { width: 64, lastExpandedWidth: 248 })
@@ -105,7 +105,7 @@ describe('Layout — 侧栏状态', () => {
   test.each([null, '{bad', '{"width":999,"lastExpandedWidth":"bad"}'])(
     '缓存为 %s 时回退或约束到安全值',
     value => {
-      const storage = { getItem: jest.fn(() => value) }
+      const storage = { getItem: vi.fn(() => value) }
       const state = readSidebarState(storage)
       expect(state.width).toBeGreaterThanOrEqual(64)
       expect(state.width).toBeLessThanOrEqual(320)
@@ -116,8 +116,8 @@ describe('Layout — 侧栏状态', () => {
 
   test('存储不可用时保持默认状态且不抛错', () => {
     const storage = {
-      getItem: jest.fn(() => { throw new Error('blocked') }),
-      setItem: jest.fn(() => { throw new Error('blocked') })
+      getItem: vi.fn(() => { throw new Error('blocked') }),
+      setItem: vi.fn(() => { throw new Error('blocked') })
     }
     expect(readSidebarState(storage)).toEqual({ width: 220, lastExpandedWidth: 220 })
     expect(() => writeSidebarState(storage, { width: 180, lastExpandedWidth: 180 })).not.toThrow()
@@ -259,9 +259,9 @@ function createRoute(fullPath, title = '规则管理') {
 function mountLayout(route = createRoute('/rule')) {
   const store = createStore({ modules: { expressionSessions, workspaceTabs } })
   const router = {
-    push: jest.fn().mockResolvedValue(undefined),
-    replace: jest.fn().mockResolvedValue(undefined),
-    resolve: jest.fn(fullPath => {
+    push: vi.fn().mockResolvedValue(undefined),
+    replace: vi.fn().mockResolvedValue(undefined),
+    resolve: vi.fn(fullPath => {
       const title = fullPath === '/project' ? '项目管理' : '规则管理'
       return createRoute(fullPath, title)
     })
@@ -286,7 +286,7 @@ describe('Layout — 全局布局集成', () => {
   })
 
   afterEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('首次进入布局路由时创建并激活工作区页签', async() => {
@@ -351,7 +351,7 @@ describe('Layout — 全局布局集成', () => {
   test('全局快捷键阻止默认行为并刷新当前业务页签', async() => {
     const { wrapper } = mountLayout()
     await nextTick()
-    const event = { ctrlKey: true, key: 'r', preventDefault: jest.fn() }
+    const event = { ctrlKey: true, key: 'r', preventDefault: vi.fn() }
 
     await wrapper.vm.handleWorkspaceShortcut(event)
 
@@ -361,7 +361,7 @@ describe('Layout — 全局布局集成', () => {
   })
 
   test('布局销毁时清理全局快捷键监听', () => {
-    const removeSpy = jest.spyOn(window, 'removeEventListener')
+    const removeSpy = vi.spyOn(window, 'removeEventListener')
     const { wrapper } = mountLayout()
 
     wrapper.unmount()

@@ -1,7 +1,7 @@
 import { h } from 'vue'
 import { shallowMount } from '@test-utils'
 
-const TraceTree = jest.requireActual('../../../src/components/common/TraceTree.vue').default
+const TraceTree = (await vi.importActual('../../../src/components/common/TraceTree.vue')).default
 
 function mountTraceTree(propsData) {
   return shallowMount(TraceTree, {

@@ -69,6 +69,30 @@
       </el-descriptions-item>
     </el-descriptions>
 
+    <rule-lifecycle-panel
+      v-if="activeRevision.id"
+      class="governance-section"
+      :revision="activeRevision"
+      :validation-report="preflightReport"
+      :online-artifact-digest="publishedRevision.artifactDigest || ''"
+      @action="handleLifecycleAction"
+    />
+    <el-card v-if="preflightReport" shadow="never" class="governance-section">
+      <template #header><div style="font-weight: 600">发布前校验</div></template>
+      <rule-validation-report :report="preflightReport" />
+    </el-card>
+    <el-card shadow="never" class="governance-section">
+      <template #header>
+        <div class="governance-card-header">
+          <span>审计时间线</span>
+          <el-upload :auto-upload="false" :show-file-list="false" :on-change="handleArtifactFile">
+            <el-button size="small">导入跨环境制品</el-button>
+          </el-upload>
+        </div>
+      </template>
+      <rule-lifecycle-timeline :events="lifecycleEvents" />
+    </el-card>
+
     <!-- 描述 -->
     <el-card v-if="rule.description" shadow="never" style="margin-bottom: 16px">
       <template v-slot:header>
@@ -1170,6 +1194,13 @@
         </div>
       </template>
     </el-dialog>
+    <artifact-deployment-dialog
+      v-if="importedArtifact.artifactId"
+      v-model="deploymentVisible"
+      :artifact-id="importedArtifact.artifactId"
+      :binding-component-ids="importedArtifact.requiredBindingComponentIds || []"
+      @deploy="handleArtifactDeploy"
+    />
   </div>
 </template>
 
@@ -1213,6 +1244,11 @@ import {
 } from '@/utils/testSchema'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
+import RuleLifecyclePanel from '@/components/rule/RuleLifecyclePanel.vue'
+import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
+import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
+import ArtifactDeploymentDialog from '@/components/artifact/ArtifactDeploymentDialog.vue'
+import * as artifactApi from '@/api/artifact'
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -1351,6 +1387,12 @@ export default {
       loading: false,
       rule: {},
       ruleContent: {},
+      activeRevision: {},
+      publishedRevision: {},
+      preflightReport: null,
+      lifecycleEvents: [],
+      importedArtifact: {},
+      deploymentVisible: false,
       openApiSaving: false,
       openApiPreviewVisible: false,
       openApiSuccessPreview: {},
@@ -1433,6 +1475,10 @@ export default {
   components: {
     ApiScenarioPanel,
     RuleVersionDiff,
+    RuleLifecyclePanel,
+    RuleValidationReport,
+    RuleLifecycleTimeline,
+    ArtifactDeploymentDialog,
     ElIconArrowDown,
     ElIconEdit,
     ElIconArrowUp,
@@ -1589,10 +1635,97 @@ export default {
         this.loadOpenApiConfig(this.ruleContent.openApiConfigJson)
         this.normalizeFieldPages()
         await Promise.all([this.loadVars(), this.loadFieldValidationOptions()])
+        await this.loadLifecycle(id)
       } catch (e) {
         this.$message.error(e.message || '加载规则详情失败')
       } finally {
         this.loading = false
+      }
+    },
+    async loadLifecycle(definitionId) {
+      const [revisionsResponse, timelineResponse] = await Promise.all([
+        api.listRuleRevisions(definitionId),
+        api.getRuleLifecycleTimeline(definitionId),
+      ])
+      let revisions = (this.unwrapData(revisionsResponse) || []).filter(Boolean)
+      if (!revisions.length) {
+        const draftResponse = await api.ensureDraftRevision(definitionId)
+        const draft = this.unwrapData(draftResponse)
+        revisions = draft ? [draft] : []
+      }
+      this.activeRevision =
+        revisions.find((item) => ['DRAFT', 'REVIEW', 'APPROVED'].includes(item.state)) ||
+        revisions[0] || {}
+      this.publishedRevision =
+        revisions.find((item) => item.state === 'PUBLISHED') || {}
+      this.lifecycleEvents = this.unwrapData(timelineResponse) || []
+      if (this.activeRevision.state === 'REVIEW') await this.runPreflight()
+    },
+    unwrapData(response) {
+      return response && response.data !== undefined ? response.data : response
+    },
+    async runPreflight() {
+      if (!this.activeRevision.id) return
+      try {
+        const response = await api.preflightRuleRevision(this.rule.id, this.activeRevision.id)
+        this.preflightReport = this.unwrapData(response)
+      } catch (error) {
+        if (error && error.response && error.response.data && error.response.data.data) {
+          this.preflightReport = error.response.data.data
+        } else {
+          throw error
+        }
+      }
+    },
+    async handleLifecycleAction(payload) {
+      const revisionId = this.activeRevision.id
+      try {
+        if (payload.action === 'preflight') await this.runPreflight()
+        else if (payload.action === 'submit') await api.submitRuleRevision(this.rule.id, revisionId, payload)
+        else if (payload.action === 'return') await api.returnRuleRevision(this.rule.id, revisionId, payload)
+        else if (payload.action === 'approve') await api.approveRuleRevision(this.rule.id, revisionId, payload)
+        else if (payload.action === 'publish') await api.publishRuleRevision(this.rule.id, revisionId, payload)
+        else if (payload.action === 'offline') await api.offlineRuleRevision(this.rule.id, revisionId, payload)
+        else if (payload.action === 'download') {
+          await this.downloadDecisionArtifact(this.activeRevision.artifactId)
+          return
+        }
+        if (payload.action !== 'preflight') {
+          this.$message.success('生命周期操作已完成')
+          await this.loadLifecycle(this.rule.id)
+        }
+      } catch (error) {
+        this.$message.error(error.message || '生命周期操作失败')
+      }
+    },
+    async downloadDecisionArtifact(artifactId) {
+      const response = await artifactApi.downloadArtifact(artifactId)
+      const url = window.URL.createObjectURL(response.data)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `decision-artifact-${artifactId}.zip`
+      anchor.click()
+      window.URL.revokeObjectURL(url)
+      const digest = response.headers && response.headers['x-artifact-digest']
+      this.$message.success(digest ? `制品已下载：${digest}` : '制品已下载')
+    },
+    async handleArtifactFile(uploadFile) {
+      try {
+        const response = await artifactApi.importArtifact(uploadFile.raw)
+        this.importedArtifact = this.unwrapData(response) || {}
+        this.deploymentVisible = true
+      } catch (error) {
+        this.$message.error(error.message || '制品导入失败')
+      }
+    },
+    async handleArtifactDeploy(request) {
+      try {
+        await artifactApi.deployArtifact(request)
+        this.deploymentVisible = false
+        this.$message.success('制品部署成功')
+        await this.loadLifecycle(this.rule.id)
+      } catch (error) {
+        this.$message.error(error.message || '制品部署失败')
       }
     },
     loadOpenApiConfig(value) {
@@ -3088,5 +3221,15 @@ export default {
   border-radius: 4px;
   font-size: 12px;
   line-height: 1.5;
+}
+.governance-section {
+  margin-bottom: 16px;
+}
+.governance-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  font-weight: 600;
 }
 </style>

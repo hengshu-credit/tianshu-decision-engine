@@ -7,6 +7,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.core.pmml.PMMLModelExecutor;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
 import com.hengshucredit.rule.model.entity.*;
+import com.hengshucredit.rule.server.model.ModelArtifactValidator;
+import com.hengshucredit.rule.server.model.ModelValidationReport;
 import com.hengshucredit.rule.server.mapper.*;
 import com.hengshucredit.rule.server.service.onnx.OnnxRuntimeSessionManager;
 import com.hengshucredit.rule.server.service.onnx.OnnxModelExecutionService;
@@ -70,6 +72,10 @@ public class RuleModelService {
     private OnnxModelExecutionService onnxModelExecutionService;
     @Resource
     private ModelExecutionTimeoutExecutor modelExecutionTimeoutExecutor;
+    @Resource
+    private ModelArtifactValidator modelArtifactValidator;
+    @Resource
+    private ResourceImpactAnalysisService impactAnalysisService;
 
     /**
      * 检查模型编码是否与现有模型冲突
@@ -201,40 +207,14 @@ public class RuleModelService {
         try {
             byte[] fileBytes = file.getBytes();
             String modelContent = Base64.getEncoder().encodeToString(fileBytes);
-
-            String modelFormat = detectFormat(file.getOriginalFilename());
-
-            Map<String, Object> modelConfig = new LinkedHashMap<>();
-            List<RuleModelInputField> inputFields = null;
-            List<RuleModelOutputField> outputFields = null;
-
-            if ("PMML".equals(modelFormat)) {
-                String rawContent = new String(fileBytes, StandardCharsets.UTF_8);
-                PmmlParseResult result = parsePmml(rawContent);
-                if (result.getModelConfig() != null) modelConfig.putAll(result.getModelConfig());
-                inputFields = result.getInputFields();
-                outputFields = result.getOutputFields();
-                if (modelType == null || modelType.isEmpty()) {
-                    modelType = result.getModelType();
-                }
-            } else if ("ONNX".equals(modelFormat)) {
-                com.alibaba.fastjson.JSONObject rawConfig;
-                try {
-                    rawConfig = onnxConfig == null || onnxConfig.trim().isEmpty()
-                            ? new com.alibaba.fastjson.JSONObject()
-                            : com.alibaba.fastjson.JSON.parseObject(onnxConfig);
-                } catch (RuntimeException e) {
-                    throw new IllegalArgumentException("ONNX 配置不是有效 JSON", e);
-                }
-                rawConfig.put("onnxTaskType", onnxTaskType);
-                OnnxTaskConfig taskConfig = OnnxTaskConfig.parse(rawConfig.toJSONString());
-                modelConfig.putAll(taskConfig.toJsonObject());
-                modelConfig.put("nodeMetadata", onnxSessionManager.inspect(fileBytes));
-                inputFields = buildOnnxInputFields(taskConfig.getTaskType());
-                outputFields = buildOnnxOutputFields(taskConfig.getTaskType());
-            }
-
-            if (testParams != null && !testParams.isEmpty()) modelConfig.put("testParams", testParams);
+            ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
+                    modelType, testParams, onnxTaskType, onnxConfig);
+            String modelFormat = parsed.modelFormat;
+            Map<String, Object> modelConfig = parsed.modelConfig;
+            List<RuleModelInputField> inputFields = parsed.inputFields;
+            List<RuleModelOutputField> outputFields = parsed.outputFields;
+            ModelValidationReport validationReport = parsed.validationReport;
+            modelType = parsed.modelType;
 
             String projectCode = null;
             String projectName = null;
@@ -259,6 +239,12 @@ public class RuleModelService {
             model.setModelContent(modelContent);
             model.setModelFileName(file.getOriginalFilename());
             model.setModelFileSize(file.getSize());
+            model.setModelDigest(validationReport.getModelDigest());
+            model.setInputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(validationReport.getInputSchema()));
+            model.setOutputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(validationReport.getOutputSchema()));
+            model.setValidationReportJson(com.alibaba.fastjson.JSON.toJSONString(validationReport));
+            model.setRuntimeConstraintsJson(com.alibaba.fastjson.JSON.toJSONString(
+                    validationReport.getRuntimeConstraints()));
             if (!modelConfig.isEmpty()) {
                 model.setModelConfig(com.alibaba.fastjson.JSON.toJSONString(modelConfig));
             }
@@ -270,28 +256,10 @@ public class RuleModelService {
             model.setStatus(1);
             modelMapper.insert(model);
 
-            if (inputFields != null) {
-                for (int i = 0; i < inputFields.size(); i++) {
-                    RuleModelInputField inputField = inputFields.get(i);
-                    inputField.setModelId(model.getId());
-                    inputField.setSortOrder(i);
-                    inputField.setStatus(1);
-                    inputField.setCreateTime(LocalDateTime.now());
-                    inputFieldMapper.insert(inputField);
-                }
-            }
+            persistModelFields(model.getId(), inputFields, outputFields);
 
-            if (outputFields != null) {
-                for (int i = 0; i < outputFields.size(); i++) {
-                    RuleModelOutputField outputField = outputFields.get(i);
-                    outputField.setModelId(model.getId());
-                    outputField.setSortOrder(i);
-                    outputField.setCreateTime(LocalDateTime.now());
-                    outputFieldMapper.insert(outputField);
-                }
-            }
-
-            saveVersionSnapshot(model.getId(), 1, modelContent, model.getModelConfig(), changeLog, null);
+            saveVersionSnapshot(model, 1, changeLog, null,
+                    validationReport.getSampleStatus());
 
             model.setModelContent(null);
             return model;
@@ -325,6 +293,204 @@ public class RuleModelService {
             fields.add(field);
         }
         return fields;
+    }
+
+    private ValidatedModelFile validateModelFile(byte[] fileBytes, String fileName,
+                                                  String requestedModelType, String testParams,
+                                                  String onnxTaskType, String onnxConfig) {
+        String modelFormat = detectFormat(fileName);
+        String modelType = requestedModelType;
+        Map<String, Object> modelConfig = new LinkedHashMap<>();
+        List<RuleModelInputField> inputFields;
+        List<RuleModelOutputField> outputFields;
+
+        if ("PMML".equals(modelFormat)) {
+            PmmlParseResult result = parsePmml(new String(fileBytes, StandardCharsets.UTF_8));
+            if (result.getModelConfig() != null) modelConfig.putAll(result.getModelConfig());
+            inputFields = result.getInputFields();
+            outputFields = result.getOutputFields();
+            if (modelType == null || modelType.isEmpty()) modelType = result.getModelType();
+        } else {
+            com.alibaba.fastjson.JSONObject rawConfig;
+            try {
+                rawConfig = onnxConfig == null || onnxConfig.trim().isEmpty()
+                        ? new com.alibaba.fastjson.JSONObject()
+                        : com.alibaba.fastjson.JSON.parseObject(onnxConfig);
+            } catch (RuntimeException e) {
+                throw new IllegalArgumentException("ONNX 配置不是有效 JSON", e);
+            }
+            rawConfig.put("onnxTaskType", onnxTaskType);
+            OnnxTaskConfig taskConfig = OnnxTaskConfig.parse(rawConfig.toJSONString());
+            modelConfig.putAll(taskConfig.toJsonObject());
+            modelConfig.put("nodeMetadata", onnxSessionManager.inspect(fileBytes));
+            inputFields = buildOnnxInputFields(taskConfig.getTaskType());
+            outputFields = buildOnnxOutputFields(taskConfig.getTaskType());
+        }
+        if (testParams != null && !testParams.isEmpty()) modelConfig.put("testParams", testParams);
+
+        Map<String, Object> sample = parseOptionalSample(testParams);
+        List<String> declaredInputs = fieldNames(inputFields);
+        List<String> declaredOutputs = fieldNames(outputFields);
+        ModelValidationReport validationReport;
+        if ("PMML".equals(modelFormat)) {
+            validationReport = requiredArtifactValidator().validate(modelFormat, fileBytes,
+                    declaredInputs, declaredOutputs, sample);
+        } else {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> nodeMetadata = (Map<String, Object>) modelConfig.get("nodeMetadata");
+            List<String> nodeInputs = nodeNames(nodeMetadata, "inputs");
+            List<String> nodeOutputs = nodeNames(nodeMetadata, "outputs");
+            String runtimeConfigJson = com.alibaba.fastjson.JSON.toJSONString(modelConfig);
+            validationReport = requiredArtifactValidator().validate(modelFormat, fileBytes,
+                    nodeInputs, nodeOutputs, null, runtimeConfigJson);
+            validationReport.setInputSchema(exactObjectSchema(declaredInputs));
+            validationReport.setOutputSchema(exactObjectSchema(declaredOutputs));
+            if (sample != null && !sample.isEmpty()) {
+                assertExactFieldNames("ONNX sample input", sample.keySet(), declaredInputs);
+                Map<String, Object> sampleResult = onnxModelExecutionService.execute(
+                        fileBytes, runtimeConfigJson, sample);
+                assertRequiredOutputs("ONNX sample output", sampleResult, declaredOutputs);
+                validationReport.setSampleStatus("PASSED");
+                validationReport.getWarnings().removeIf(
+                        warning -> warning.startsWith("No model sample"));
+            }
+        }
+        return new ValidatedModelFile(modelFormat, modelType, modelConfig,
+                inputFields, outputFields, validationReport);
+    }
+
+    private void persistModelFields(Long modelId, List<RuleModelInputField> inputFields,
+                                    List<RuleModelOutputField> outputFields) {
+        if (inputFields != null) {
+            for (int i = 0; i < inputFields.size(); i++) {
+                RuleModelInputField inputField = inputFields.get(i);
+                inputField.setId(null);
+                inputField.setModelId(modelId);
+                inputField.setSortOrder(i);
+                inputField.setStatus(1);
+                inputField.setCreateTime(LocalDateTime.now());
+                inputFieldMapper.insert(inputField);
+            }
+        }
+        if (outputFields != null) {
+            for (int i = 0; i < outputFields.size(); i++) {
+                RuleModelOutputField outputField = outputFields.get(i);
+                outputField.setId(null);
+                outputField.setModelId(modelId);
+                outputField.setSortOrder(i);
+                outputField.setCreateTime(LocalDateTime.now());
+                outputFieldMapper.insert(outputField);
+            }
+        }
+    }
+
+    private ModelArtifactValidator requiredArtifactValidator() {
+        if (modelArtifactValidator == null) {
+            throw new IllegalStateException("Model artifact validator is not configured");
+        }
+        return modelArtifactValidator;
+    }
+
+    private Map<String, Object> parseOptionalSample(String testParams) {
+        if (testParams == null || testParams.isBlank()) {
+            return null;
+        }
+        try {
+            return new LinkedHashMap<>(com.alibaba.fastjson.JSON.parseObject(testParams));
+        } catch (RuntimeException e) {
+            throw new IllegalArgumentException("Model sample must be a valid JSON object", e);
+        }
+    }
+
+    private List<String> fieldNames(List<?> fields) {
+        if (fields == null) return List.of();
+        List<String> names = new ArrayList<>();
+        for (Object value : fields) {
+            String name = value instanceof RuleModelInputField
+                    ? ((RuleModelInputField) value).getFieldName()
+                    : ((RuleModelOutputField) value).getFieldName();
+            if (name == null || name.isBlank()) {
+                throw new IllegalArgumentException("Model field name must not be blank");
+            }
+            names.add(name);
+        }
+        if (new LinkedHashSet<>(names).size() != names.size()) {
+            throw new IllegalArgumentException("Model field names contain duplicates: " + names);
+        }
+        return names;
+    }
+
+    private List<String> nodeNames(Map<String, Object> metadata, String section) {
+        if (metadata == null || !(metadata.get(section) instanceof Map<?, ?> nodes)) {
+            throw new IllegalArgumentException("ONNX metadata is missing " + section);
+        }
+        List<String> names = new ArrayList<>();
+        for (Object key : nodes.keySet()) {
+            if (!(key instanceof String name) || name.isBlank()) {
+                throw new IllegalArgumentException("ONNX node name is invalid");
+            }
+            names.add(name);
+        }
+        return names;
+    }
+
+    private Map<String, Object> exactObjectSchema(List<String> names) {
+        Map<String, Object> properties = new LinkedHashMap<>();
+        for (String name : names) properties.put(name, Map.of());
+        Map<String, Object> schema = new LinkedHashMap<>();
+        schema.put("type", "object");
+        schema.put("properties", properties);
+        schema.put("required", names);
+        schema.put("additionalProperties", false);
+        return schema;
+    }
+
+    private void assertExactFieldNames(String label, Collection<String> supplied,
+                                       List<String> expected) {
+        Set<String> actual = new LinkedHashSet<>(supplied);
+        Set<String> exact = new LinkedHashSet<>(expected);
+        if (!actual.equals(exact)) {
+            Set<String> missing = new LinkedHashSet<>(exact);
+            missing.removeAll(actual);
+            Set<String> unexpected = new LinkedHashSet<>(actual);
+            unexpected.removeAll(exact);
+            throw new IllegalArgumentException(label + " names must match exactly; missing "
+                    + missing + ", unexpected " + unexpected);
+        }
+    }
+
+    private void assertRequiredOutputs(String label, Map<String, Object> result,
+                                       List<String> expected) {
+        if (result == null) {
+            throw new IllegalArgumentException(label + " returned no result");
+        }
+        Set<String> missing = new LinkedHashSet<>(expected);
+        missing.removeAll(result.keySet());
+        if (!missing.isEmpty()) {
+            throw new IllegalArgumentException(label + " is missing exact fields: " + missing);
+        }
+    }
+
+    private static final class ValidatedModelFile {
+        private final String modelFormat;
+        private final String modelType;
+        private final Map<String, Object> modelConfig;
+        private final List<RuleModelInputField> inputFields;
+        private final List<RuleModelOutputField> outputFields;
+        private final ModelValidationReport validationReport;
+
+        private ValidatedModelFile(String modelFormat, String modelType,
+                                   Map<String, Object> modelConfig,
+                                   List<RuleModelInputField> inputFields,
+                                   List<RuleModelOutputField> outputFields,
+                                   ModelValidationReport validationReport) {
+            this.modelFormat = modelFormat;
+            this.modelType = modelType;
+            this.modelConfig = modelConfig;
+            this.inputFields = inputFields;
+            this.outputFields = outputFields;
+            this.validationReport = validationReport;
+        }
     }
 
     /**
@@ -371,9 +537,6 @@ public class RuleModelService {
                 && model.getModelConfig() != null && !model.getModelConfig().trim().isEmpty()) {
             existing.setModelConfig(mergeOnnxRuntimeConfig(existing.getModelConfig(), model.getModelConfig()));
         }
-        if (model.getStatus() != null) {
-            existing.setStatus(model.getStatus());
-        }
         modelMapper.updateById(existing);
     }
 
@@ -400,15 +563,66 @@ public class RuleModelService {
      * 删除模型
      */
     public void delete(Long modelId) {
-        modelMapper.deleteById(modelId);
-        inputFieldMapper.delete(new LambdaQueryWrapper<RuleModelInputField>()
-                .eq(RuleModelInputField::getModelId, modelId));
-        outputFieldMapper.delete(new LambdaQueryWrapper<RuleModelOutputField>()
-                .eq(RuleModelOutputField::getModelId, modelId));
-        versionMapper.delete(new LambdaQueryWrapper<RuleModelVersion>()
-                .eq(RuleModelVersion::getModelId, modelId));
-        refMapper.delete(new LambdaQueryWrapper<RuleModelRef>()
-                .eq(RuleModelRef::getModelId, modelId));
+        throw new IllegalArgumentException("Impact analysis token is required before model deletion");
+    }
+
+    @Transactional
+    public void delete(Long modelId, String impactToken) {
+        impactAnalysisService.assertCurrent(impactToken, "MODEL", modelId, "DELETE");
+        RuleModel model = modelMapper.selectById(modelId);
+        if (model == null) throw new IllegalArgumentException("模型不存在");
+        model.setStatus(-1);
+        model.setPublishedVersion(null);
+        model.setUpdateTime(LocalDateTime.now());
+        modelMapper.updateById(model);
+    }
+
+    @Transactional
+    public RuleModel replaceFile(Long modelId, MultipartFile file, String changeLog,
+                                 String testParams, String onnxTaskType, String onnxConfig,
+                                 String impactToken) {
+        impactAnalysisService.assertCurrent(impactToken, "MODEL", modelId, "REPLACE");
+        RuleModel model = modelMapper.selectById(modelId);
+        if (model == null) throw new IllegalArgumentException("模型不存在");
+        try {
+            byte[] fileBytes = file.getBytes();
+            ValidatedModelFile parsed = validateModelFile(fileBytes, file.getOriginalFilename(),
+                    model.getModelType(), testParams, onnxTaskType, onnxConfig);
+            ModelValidationReport report = parsed.validationReport;
+            int newVersion = (model.getCurrentVersion() == null ? 0 : model.getCurrentVersion()) + 1;
+
+            model.setModelType(parsed.modelType == null ? model.getModelType() : parsed.modelType);
+            model.setModelFormat(parsed.modelFormat);
+            model.setModelContent(Base64.getEncoder().encodeToString(fileBytes));
+            model.setModelFileName(file.getOriginalFilename());
+            model.setModelFileSize(file.getSize());
+            model.setModelDigest(report.getModelDigest());
+            model.setInputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(report.getInputSchema()));
+            model.setOutputSchemaJson(com.alibaba.fastjson.JSON.toJSONString(report.getOutputSchema()));
+            model.setValidationReportJson(com.alibaba.fastjson.JSON.toJSONString(report));
+            model.setRuntimeConstraintsJson(com.alibaba.fastjson.JSON.toJSONString(
+                    report.getRuntimeConstraints()));
+            model.setModelConfig(com.alibaba.fastjson.JSON.toJSONString(parsed.modelConfig));
+            model.setInputFieldCount(parsed.inputFields.size());
+            model.setOutputFieldCount(parsed.outputFields.size());
+            model.setCurrentVersion(newVersion);
+            model.setStatus(1);
+            model.setUpdateTime(LocalDateTime.now());
+            modelMapper.updateById(model);
+
+            inputFieldMapper.delete(new LambdaQueryWrapper<RuleModelInputField>()
+                    .eq(RuleModelInputField::getModelId, modelId));
+            outputFieldMapper.delete(new LambdaQueryWrapper<RuleModelOutputField>()
+                    .eq(RuleModelOutputField::getModelId, modelId));
+            persistModelFields(modelId, parsed.inputFields, parsed.outputFields);
+            saveVersionSnapshot(model, newVersion, changeLog, null, report.getSampleStatus());
+            model.setModelContent(null);
+            model.setInputFields(parsed.inputFields);
+            model.setOutputFields(parsed.outputFields);
+            return model;
+        } catch (IOException e) {
+            throw new RuntimeException("读取模型文件失败: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -423,20 +637,28 @@ public class RuleModelService {
         int newVersion = (model.getCurrentVersion() != null ? model.getCurrentVersion() : 0) + 1;
         model.setPublishedVersion(newVersion);
         model.setCurrentVersion(newVersion);
+        model.setStatus(1);
         modelMapper.updateById(model);
 
-        saveVersionSnapshot(modelId, newVersion, model.getModelContent(),
-                model.getModelConfig(), changeLog, publishBy);
+        saveVersionSnapshot(model, newVersion, changeLog, publishBy,
+                sampleStatus(model.getValidationReportJson()));
     }
 
     /**
      * 下线模型（清除发布版本）
      */
     public void unpublish(Long modelId) {
+        throw new IllegalArgumentException("Impact analysis token is required before model offline");
+    }
+
+    @Transactional
+    public void unpublish(Long modelId, String impactToken) {
+        impactAnalysisService.assertCurrent(impactToken, "MODEL", modelId, "OFFLINE");
         RuleModel model = modelMapper.selectById(modelId);
         if (model == null) throw new IllegalArgumentException("模型不存在");
 
         model.setPublishedVersion(null);
+        model.setStatus(0);
         modelMapper.updateById(model);
     }
 
@@ -488,6 +710,14 @@ public class RuleModelService {
 
         model.setModelContent(snapshot.getModelContent());
         model.setModelConfig(snapshot.getModelConfig());
+        model.setModelFormat(snapshot.getModelFormat());
+        model.setModelFileName(snapshot.getModelFileName());
+        model.setModelFileSize(snapshot.getModelFileSize());
+        model.setModelDigest(snapshot.getModelDigest());
+        model.setInputSchemaJson(snapshot.getInputSchemaJson());
+        model.setOutputSchemaJson(snapshot.getOutputSchemaJson());
+        model.setValidationReportJson(snapshot.getValidationReportJson());
+        model.setRuntimeConstraintsJson(snapshot.getRuntimeConstraintsJson());
         model.setCurrentVersion((model.getCurrentVersion() == null ? 0 : model.getCurrentVersion()) + 1);
         modelMapper.updateById(model);
     }
@@ -514,6 +744,7 @@ public class RuleModelService {
             }
         }
         LambdaQueryWrapper<RuleModel> wrapper = withoutModelContent();
+        wrapper.ne(RuleModel::getStatus, -1);
 
         if (scope != null && !scope.isEmpty()) {
             wrapper.eq(RuleModel::getScope, scope);
@@ -656,17 +887,36 @@ public class RuleModelService {
     /**
      * 保存版本快照
      */
-    private void saveVersionSnapshot(Long modelId, int version, String modelContent,
-            String modelConfig, String changeLog, String publishBy) {
+    private void saveVersionSnapshot(RuleModel model, int version,
+            String changeLog, String publishBy, String sampleStatus) {
         RuleModelVersion modelVersion = new RuleModelVersion();
-        modelVersion.setModelId(modelId);
+        modelVersion.setModelId(model.getId());
         modelVersion.setVersion(version);
-        modelVersion.setModelContent(modelContent);
-        modelVersion.setModelConfig(modelConfig);
+        modelVersion.setModelContent(model.getModelContent());
+        modelVersion.setModelConfig(model.getModelConfig());
+        modelVersion.setModelFormat(model.getModelFormat());
+        modelVersion.setModelFileName(model.getModelFileName());
+        modelVersion.setModelFileSize(model.getModelFileSize());
+        modelVersion.setModelDigest(model.getModelDigest());
+        modelVersion.setInputSchemaJson(model.getInputSchemaJson());
+        modelVersion.setOutputSchemaJson(model.getOutputSchemaJson());
+        modelVersion.setValidationReportJson(model.getValidationReportJson());
+        modelVersion.setRuntimeConstraintsJson(model.getRuntimeConstraintsJson());
+        modelVersion.setSampleStatus(sampleStatus);
+        modelVersion.setStatus(1);
         modelVersion.setChangeLog(changeLog);
         modelVersion.setPublishBy(publishBy);
         modelVersion.setPublishTime(LocalDateTime.now());
         versionMapper.insert(modelVersion);
+    }
+
+    private String sampleStatus(String validationReportJson) {
+        if (validationReportJson == null || validationReportJson.isBlank()) return null;
+        try {
+            return com.alibaba.fastjson.JSON.parseObject(validationReportJson).getString("sampleStatus");
+        } catch (RuntimeException ignored) {
+            return null;
+        }
     }
 
     /**
@@ -744,7 +994,7 @@ public class RuleModelService {
             if (mf.getUsageType() == org.dmg.pmml.MiningField.UsageType.GROUP) continue;
 
             RuleModelInputField field = new RuleModelInputField();
-            String name = mf.getName().getValue();
+            String name = mf.getName();
             field.setFieldName(name);
             field.setScriptName(name);
             field.setFieldLabel(name);
@@ -789,7 +1039,7 @@ public class RuleModelService {
                 for (org.dmg.pmml.MiningField mf : miningSchema.getMiningFields()) {
                     if (mf.getUsageType() == org.dmg.pmml.MiningField.UsageType.TARGET) {
                         RuleModelOutputField field = new RuleModelOutputField();
-                        String name = mf.getName().getValue();
+                        String name = mf.getName();
                         field.setFieldName(name);
                         field.setFieldLabel(name);
                         field.setFieldType("DOUBLE");
@@ -809,7 +1059,7 @@ public class RuleModelService {
             if (isFinal != null && !isFinal) continue;
 
             RuleModelOutputField field = new RuleModelOutputField();
-            String name = of.getName().getValue();
+            String name = of.getName();
             field.setFieldName(name);
             field.setFieldLabel(name);
             field.setFieldType("DOUBLE");
@@ -934,21 +1184,42 @@ public class RuleModelService {
         }
 
         int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
-        return modelExecutionTimeoutExecutor.execute(() -> executeConfiguredModel(model, params), timeoutMs);
+        return modelExecutionTimeoutExecutor.execute(
+                () -> executeConfiguredModel(model, params, Collections.emptyMap()), timeoutMs);
     }
 
-    private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params) {
+    public Map<String, Object> executeSnapshot(RuleModel model, Map<String, Object> params,
+                                               Map<Long, RuleFunction> functions) {
+        if (model == null) throw new IllegalArgumentException("冻结模型不能为空");
+        validateSupportedFormat(model);
+        if (model.getModelContent() == null || model.getModelContent().isEmpty()) {
+            throw new IllegalArgumentException("冻结模型文件内容为空");
+        }
+        int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
+        Map<Long, RuleFunction> frozenFunctions = functions == null
+                ? Collections.emptyMap() : functions;
+        return modelExecutionTimeoutExecutor.execute(
+                () -> executeConfiguredModel(model, params, frozenFunctions), timeoutMs);
+    }
+
+    private Map<String, Object> executeConfiguredModel(RuleModel model, Map<String, Object> params,
+                                                       Map<Long, RuleFunction> functions) {
         Long modelId = model.getId();
-        List<RuleModelInputField> inputFields = listInputFields(modelId);
-        Map<String, Object> referenceValues = referenceValues(referenceProjectId(model), params);
+        List<RuleModelInputField> inputFields = model.getInputFields() == null
+                ? listInputFields(modelId) : model.getInputFields();
+        Map<String, Object> referenceValues = model.getInputFields() == null
+                ? referenceValues(referenceProjectId(model), params)
+                : snapshotReferenceValues(inputFields, params);
         Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
-                inputFields, params, referenceValues, this::invokeOperandFunction);
+                inputFields, params, referenceValues,
+                (functionId, functionCode, args) -> invokeOperandFunction(
+                        functionId, functionCode, args, functions));
         Map<String, Object> boundParams = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
         if ("PMML".equals(model.getModelFormat())) {
-            return executePmml(model, boundParams);
+            return executePmml(model, boundParams, functions);
         }
         if ("ONNX".equals(model.getModelFormat())) {
-            return executeOnnx(model, boundParams);
+            return executeOnnx(model, boundParams, functions);
         }
 
         Map<String, Object> result = new HashMap<>();
@@ -987,6 +1258,11 @@ public class RuleModelService {
     }
 
     private Map<String, Object> executeOnnx(RuleModel model, Map<String, Object> params) {
+        return executeOnnx(model, params, Collections.emptyMap());
+    }
+
+    private Map<String, Object> executeOnnx(RuleModel model, Map<String, Object> params,
+                                            Map<Long, RuleFunction> functions) {
         long startTime = System.currentTimeMillis();
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("modelCode", model.getModelCode());
@@ -996,7 +1272,7 @@ public class RuleModelService {
             Map<String, Object> rawOutputs = onnxModelExecutionService.execute(
                     modelBytes, model.getModelConfig(), params);
             result.put("success", true);
-            result.put("outputs", applyOutputTransforms(model, params, rawOutputs));
+            result.put("outputs", applyOutputTransforms(model, params, rawOutputs, functions));
         } catch (RuntimeException e) {
             String message = e.getMessage();
             result.put("success", false);
@@ -1120,6 +1396,11 @@ public class RuleModelService {
      * 执行 PMML 模型预测，通过 PMMLModelExecutor 实现
      */
     private Map<String, Object> executePmml(RuleModel model, Map<String, Object> params) {
+        return executePmml(model, params, Collections.emptyMap());
+    }
+
+    private Map<String, Object> executePmml(RuleModel model, Map<String, Object> params,
+                                            Map<Long, RuleFunction> functions) {
         long startTime = System.currentTimeMillis();
         Map<String, Object> result = new HashMap<>();
         result.put("modelCode", model.getModelCode());
@@ -1127,7 +1408,7 @@ public class RuleModelService {
 
         try {
             Map<String, Object> rawOutputs = pmmlExecutor.evaluate(model.getModelContent(), params);
-            Map<String, Object> outputs = applyOutputTransforms(model, params, rawOutputs);
+            Map<String, Object> outputs = applyOutputTransforms(model, params, rawOutputs, functions);
             result.put("success", true);
             result.put("outputs", outputs);
             result.put("inputParams", params);
@@ -1146,6 +1427,12 @@ public class RuleModelService {
 
     private Map<String, Object> applyOutputTransforms(RuleModel model, Map<String, Object> params,
                                                        Map<String, Object> rawOutputs) {
+        return applyOutputTransforms(model, params, rawOutputs, Collections.emptyMap());
+    }
+
+    private Map<String, Object> applyOutputTransforms(RuleModel model, Map<String, Object> params,
+                                                       Map<String, Object> rawOutputs,
+                                                       Map<Long, RuleFunction> functions) {
         Map<String, Object> original = rawOutputs == null ? Collections.emptyMap() : new LinkedHashMap<>(rawOutputs);
         Map<String, Object> transformed = new LinkedHashMap<>(original);
         if (model == null || model.getId() == null) return transformed;
@@ -1153,8 +1440,11 @@ public class RuleModelService {
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
-        Map<String, Object> referenceValues = new LinkedHashMap<>(referenceValues(referenceProjectId(model), context));
-        List<RuleModelOutputField> outputFields = listOutputFields(model.getId());
+        Map<String, Object> referenceValues = model.getOutputFields() == null
+                ? new LinkedHashMap<>(referenceValues(referenceProjectId(model), context))
+                : new LinkedHashMap<>();
+        List<RuleModelOutputField> outputFields = model.getOutputFields() == null
+                ? listOutputFields(model.getId()) : model.getOutputFields();
         for (RuleModelOutputField field : outputFields) {
             Object rawValue = original.get(outputKey(field, original));
             OperandValueResolver.write(field.getTargetOperand(), context, rawValue);
@@ -1179,11 +1469,15 @@ public class RuleModelService {
                         throw new IllegalArgumentException("模型输出字段 " + field.getFieldName() + " 的转换参数 " + (i + 1) + " 未配置");
                     }
                     args.add(OperandValueResolver.resolve(
-                            operand, context, referenceValues, this::invokeOperandFunction));
+                            operand, context, referenceValues,
+                            (id, code, values) -> invokeOperandFunction(id, code, values, functions)));
                 }
             }
             String outputKey = outputKey(field, original);
-            transformed.put(outputKey, ruleFunctionService.invoke(functionId, args));
+            RuleFunction frozen = functions == null ? null : functions.get(functionId);
+            transformed.put(outputKey, frozen == null
+                    ? ruleFunctionService.invoke(functionId, args)
+                    : ruleFunctionService.invokeSnapshot(frozen, args));
         }
         return transformed;
     }
@@ -1200,9 +1494,52 @@ public class RuleModelService {
     }
 
     private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args) {
+        return invokeOperandFunction(functionId, functionCode, args, Collections.emptyMap());
+    }
+
+    private Object invokeOperandFunction(Long functionId, String functionCode, List<Object> args,
+                                         Map<Long, RuleFunction> functions) {
+        RuleFunction frozen = functions == null ? null : functions.get(functionId);
+        if (frozen != null) {
+            return ruleFunctionService.invokeSnapshot(frozen, args);
+        }
         return ruleFunctionService == null
                 ? BuiltinFunctionInvoker.invoke(functionCode, args)
                 : ruleFunctionService.invoke(functionId, args);
+    }
+
+    private Map<String, Object> snapshotReferenceValues(List<RuleModelInputField> inputFields,
+                                                        Map<String, Object> values) {
+        Map<String, String> references = new LinkedHashMap<>();
+        for (RuleModelInputField field : inputFields == null
+                ? Collections.<RuleModelInputField>emptyList() : inputFields) {
+            if (field.getVarId() == null || field.getRefType() == null) continue;
+            String sourceName = null;
+            if (field.getSourceOperand() != null && !field.getSourceOperand().isBlank()) {
+                try {
+                    com.alibaba.fastjson.JSONObject operand = com.alibaba.fastjson.JSON
+                            .parseObject(field.getSourceOperand());
+                    sourceName = firstText(operand.getString("code"),
+                            operand.getString("value"), operand.getString("path"));
+                } catch (RuntimeException ignored) {
+                    // 发布前校验会报告非法 Operand；运行时不猜测名称。
+                }
+            }
+            if (sourceName == null) sourceName = firstText(field.getScriptName(), field.getFieldName());
+            if (sourceName != null) {
+                references.put(field.getRefType().trim().toUpperCase() + ":" + field.getVarId(), sourceName);
+            }
+        }
+        return OperandValueResolver.buildReferenceValues(references,
+                values == null ? Collections.emptyMap() : values, Collections.emptyMap());
+    }
+
+    private String firstText(String... values) {
+        if (values == null) return null;
+        for (String value : values) {
+            if (value != null && !value.isBlank()) return value;
+        }
+        return null;
     }
 
     private String outputKey(RuleModelOutputField field, Map<String, Object> outputs) {

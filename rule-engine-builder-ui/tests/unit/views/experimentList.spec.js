@@ -23,7 +23,7 @@ function createContext(overrides = {}) {
     testExperiment: { experimentCode: 'EXP_A' },
     testResult: null,
     testing: false,
-    $message: { success: jest.fn(), error: jest.fn() },
+    $message: { success: vi.fn(), error: vi.fn() },
     $refs: { form: { validate: cb => cb(true) } },
     $set(target, key, value) { target[key] = value },
     ...overrides
@@ -49,7 +49,7 @@ function createContext(overrides = {}) {
 
 describe('ExperimentList', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('uses project code and name fuzzy filters for list queries', () => {

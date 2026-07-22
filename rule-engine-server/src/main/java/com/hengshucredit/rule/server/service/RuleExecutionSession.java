@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
 
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -19,11 +20,13 @@ public class RuleExecutionSession {
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Deque<RuleTraceFrame> traceStack = new ArrayDeque<>();
     private final RuleTraceFrame rootTrace;
+    private final ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot;
 
     RuleExecutionSession(Long projectId, String projectCode, Map<String, Object> values,
                          Map<String, Object> originalInput, boolean testMode,
                          String rootRuleCode, RuleTraceFrame rootTrace,
-                         List<String> rootOutputScriptNames) {
+                         List<String> rootOutputScriptNames,
+                         ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot) {
         this.currentProjectId = projectId;
         this.currentProjectCode = projectCode;
         this.values = values == null ? new LinkedHashMap<String, Object>() : values;
@@ -32,6 +35,7 @@ public class RuleExecutionSession {
         this.testMode = testMode;
         this.rootOutputScriptNames = rootOutputScriptNames;
         this.rootTrace = rootTrace;
+        this.artifactRuntimeSnapshot = artifactRuntimeSnapshot;
         if (rootRuleCode != null && !rootRuleCode.trim().isEmpty()) {
             this.ruleStack.addLast(rootRuleCode);
         }
@@ -80,6 +84,10 @@ public class RuleExecutionSession {
 
     public RuleTraceFrame getRootTrace() {
         return rootTrace;
+    }
+
+    public ArtifactRuntimeSnapshotService.RuntimeSnapshot getArtifactRuntimeSnapshot() {
+        return artifactRuntimeSnapshot;
     }
 
     RuleTraceFrame currentTrace() {

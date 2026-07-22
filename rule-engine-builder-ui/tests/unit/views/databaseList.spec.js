@@ -13,11 +13,11 @@ async function mountPage() {
 
   const wrapper = mount(DatabaseList, {
     mocks: {
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(true)
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(true)
     },
     stubs: {
-      'el-form': { template: '<form><slot /></form>', methods: { validate: jest.fn(cb => cb(true)) } },
+      'el-form': { template: '<form><slot /></form>', methods: { validate: vi.fn(cb => cb(true)) } },
       'el-form-item': true,
       'el-select': true,
       'el-option': true,
@@ -51,7 +51,7 @@ describe('DatabaseList — JDBC URL 生成', () => {
 
   afterEach(() => {
     if (wrapper) wrapper.unmount()
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('uses unified fuzzy filters for project code and name', () => {

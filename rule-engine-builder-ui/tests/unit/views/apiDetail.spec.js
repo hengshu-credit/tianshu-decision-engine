@@ -2,7 +2,7 @@ import ApiDetail from '@/views/datasource/ApiDetail.vue'
 import * as dataObjectApi from '@/api/dataObject'
 import * as datasourceApi from '@/api/datasource'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 function createContext(overrides = {}) {
   const ctx = {
@@ -102,7 +102,7 @@ describe('ApiDetail helpers', () => {
         apiCode: 'old_api'
       }
     })
-    ctx.loadDetail = jest.fn().mockResolvedValue()
+    ctx.loadDetail = vi.fn().mockResolvedValue()
 
     await ctx.initializeRoute()
 
@@ -454,10 +454,10 @@ describe('ApiDetail helpers', () => {
       invokeParamsText: '{"customer":{"idNo":"A001"}}',
       invokeLoading: false,
       invokeResultText: '',
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
     })
     const draft = { id: 8, datasourceId: 2, endpointUrl: '/draft-score' }
-    ctx.normalizeForm = jest.fn().mockReturnValue(draft)
+    ctx.normalizeForm = vi.fn().mockReturnValue(draft)
     datasourceApi.invokeApiConfigPreview.mockResolvedValue({ data: { success: true } })
 
     await ctx.runInvokeApi()
@@ -476,10 +476,10 @@ describe('ApiDetail helpers', () => {
       previewLoading: false,
       requestPreviewText: '',
       previewToken: 'token-placeholder',
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
     })
     const draft = { id: 8, datasourceId: 2, endpointUrl: '/draft-score' }
-    ctx.normalizeForm = jest.fn().mockReturnValue(draft)
+    ctx.normalizeForm = vi.fn().mockReturnValue(draft)
     datasourceApi.previewApiConfigRequest.mockResolvedValue({ data: { networkCalled: false } })
 
     await ctx.runRequestPreview()

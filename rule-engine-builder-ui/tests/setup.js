@@ -1,42 +1,42 @@
 // tests/setup.js
 // 在模块加载前注入依赖 mock（setupFiles 在测试文件之前执行）
-// 注意：jest.mock() 在 Jest 中会被提升（hoisting）且按模块路径去重，
-//       setup.js 的 mock 会覆盖测试文件中的同名 jest.mock()。
-//       因此 setup.js 只提供基础 mock（jest.fn()），测试文件通过
+// 注意：vi.mock() 在 Jest 中会被提升（hoisting）且按模块路径去重，
+//       setup.js 的 mock 会覆盖测试文件中的同名 vi.mock()。
+//       因此 setup.js 只提供基础 mock（vi.fn()），测试文件通过
 //       .mockResolvedValueOnce() / .mockResolvedValue() 配置返回值。
 
 // 1. mock Vue Router
-jest.mock('@/router', () => ({
+vi.mock('@/router', () => ({
   default: {
-    push: jest.fn(),
-    replace: jest.fn(),
-    go: jest.fn(),
-    back: jest.fn(),
+    push: vi.fn(),
+    replace: vi.fn(),
+    go: vi.fn(),
+    back: vi.fn(),
     currentRoute: { path: '/', fullPath: '/' }
   }
 }))
 
 // 2. mock Element Plus 的全局服务；组件在测试中使用 VTU stub。
-jest.mock('element-plus', () => ({
-  ElMessage: Object.assign(jest.fn(), {
-    success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn()
+vi.mock('element-plus', () => ({
+  ElMessage: Object.assign(vi.fn(), {
+    success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn()
   }),
-  ElNotification: Object.assign(jest.fn(), {
-    success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn()
+  ElNotification: Object.assign(vi.fn(), {
+    success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn()
   }),
   ElMessageBox: {
-    confirm: jest.fn().mockResolvedValue('confirm'),
-    alert: jest.fn().mockResolvedValue('alert')
+    confirm: vi.fn().mockResolvedValue('confirm'),
+    alert: vi.fn().mockResolvedValue('alert')
   },
   ElLoading: {
-    service: jest.fn(() => ({ close: jest.fn() }))
+    service: vi.fn(() => ({ close: vi.fn() }))
   },
-  default: { install: jest.fn() }
+  default: { install: vi.fn() }
 }))
 
 // 3. mock axios（支持 axios.create() 实例）
-jest.mock('axios', () => {
-  const mockRequest = jest.fn(() => {
+vi.mock('axios', () => {
+  const mockRequest = vi.fn(() => {
     return Promise.resolve({ data: { code: 200, data: [] } })
   })
   const mockInstance = {
@@ -46,25 +46,26 @@ jest.mock('axios', () => {
     delete: mockRequest,
     request: mockRequest
   }
-  return {
-    create: jest.fn(() => mockInstance),
+  const mockAxios = {
+    create: vi.fn(() => mockInstance),
     get: mockRequest,
     post: mockRequest,
     put: mockRequest,
     delete: mockRequest,
     interceptors: {
-      request: { use: jest.fn(), handlers: [] },
-      response: { use: jest.fn(), handlers: [] }
+      request: { use: vi.fn(), handlers: [] },
+      response: { use: vi.fn(), handlers: [] }
     },
     __mockInstance: mockInstance,
     __mockRequest: mockRequest
   }
+  return { ...mockAxios, default: mockAxios }
 })
 
 // 4. mock @/api/request
 // request.js 实际导出的是一个 axios 实例（可调用函数 + get/post/put/delete 方法）。
 // mock 需要模拟两种用法：request(config) 和 request.get(url, config) 等。
-const mockRequestFn = jest.fn(() => {
+const mockRequestFn = vi.fn(() => {
   return Promise.resolve({ data: { code: 200, data: [] } })
 })
 mockRequestFn.get = mockRequestFn
@@ -72,241 +73,269 @@ mockRequestFn.post = mockRequestFn
 mockRequestFn.put = mockRequestFn
 mockRequestFn.delete = mockRequestFn
 mockRequestFn.interceptors = {
-  request: { use: jest.fn(), handlers: [] },
-  response: { use: jest.fn(), handlers: [] }
+  request: { use: vi.fn(), handlers: [] },
+  response: { use: vi.fn(), handlers: [] }
 }
-jest.mock('@/api/request', () => mockRequestFn)
+vi.mock('@/api/request', () => ({ default: mockRequestFn }))
 
 // 5. mock 各 API 模块
-jest.mock('@/api/definition', () => ({
-  getDefinition: jest.fn(),
-  getContent: jest.fn(),
-  listDefinitions: jest.fn(),
-  listProjectDefinitions: jest.fn(),
-  createDefinition: jest.fn(),
-  updateDefinition: jest.fn(),
-  deleteDefinition: jest.fn(),
-  saveContent: jest.fn(),
-  refreshFields: jest.fn(),
-  getDetail: jest.fn(),
-  inputFields: jest.fn(),
-  outputFields: jest.fn(),
-  publish: jest.fn(),
-  unpublish: jest.fn(),
-  copyRule: jest.fn(),
-  compileRule: jest.fn(),
-  validateCallCycle: jest.fn(),
-  publishRule: jest.fn(),
-  unpublishRule: jest.fn(),
-  listVersions: jest.fn(),
-  getVersion: jest.fn(),
-  compareVersions: jest.fn(),
-  rollbackVersion: jest.fn(),
-  executeRule: jest.fn(),
-  getRuleTestSchema: jest.fn(),
-  saveScript: jest.fn(),
-  updateScriptMode: jest.fn(),
-  validateScript: jest.fn(),
-  getDefinitionDetail: jest.fn(),
-  listInputFields: jest.fn(),
-  listOutputFields: jest.fn(),
-  updateInputField: jest.fn(),
-  updateOutputField: jest.fn(),
-  listApiScenarios: jest.fn(),
-  createApiScenario: jest.fn(),
-  updateApiScenario: jest.fn(),
-  deleteApiScenario: jest.fn(),
-  copyApiScenario: jest.fn(),
-  sortApiScenarios: jest.fn(),
-  executeApiScenario: jest.fn(),
+vi.mock('@/api/definition', () => ({
+  getDefinition: vi.fn(),
+  getContent: vi.fn(),
+  listDefinitions: vi.fn(),
+  listProjectDefinitions: vi.fn(),
+  createDefinition: vi.fn(),
+  updateDefinition: vi.fn(),
+  deleteDefinition: vi.fn(),
+  saveContent: vi.fn(),
+  refreshFields: vi.fn(),
+  getDetail: vi.fn(),
+  inputFields: vi.fn(),
+  outputFields: vi.fn(),
+  publish: vi.fn(),
+  unpublish: vi.fn(),
+  copyRule: vi.fn(),
+  compileRule: vi.fn(),
+  validateCallCycle: vi.fn(),
+  publishRule: vi.fn(),
+  unpublishRule: vi.fn(),
+  listVersions: vi.fn(),
+  getVersion: vi.fn(),
+  compareVersions: vi.fn(),
+  rollbackVersion: vi.fn(),
+  executeRule: vi.fn(),
+  getRuleTestSchema: vi.fn(),
+  saveScript: vi.fn(),
+  updateScriptMode: vi.fn(),
+  validateScript: vi.fn(),
+  getDefinitionDetail: vi.fn(),
+  listInputFields: vi.fn(),
+  listOutputFields: vi.fn(),
+  updateInputField: vi.fn(),
+  updateOutputField: vi.fn(),
+  listApiScenarios: vi.fn(),
+  createApiScenario: vi.fn(),
+  updateApiScenario: vi.fn(),
+  deleteApiScenario: vi.fn(),
+  copyApiScenario: vi.fn(),
+  sortApiScenarios: vi.fn(),
+  executeApiScenario: vi.fn(),
   DEFAULT_RULE_REQUEST_TIMEOUT_MS: 180000,
-  migrateFields: jest.fn(),
+  migrateFields: vi.fn(),
+  ensureDraftRevision: vi.fn(),
+  listRuleRevisions: vi.fn(),
+  getRuleRevision: vi.fn(),
+  getCurrentDraftRevision: vi.fn(),
+  preflightRuleRevision: vi.fn(),
+  submitRuleRevision: vi.fn(),
+  returnRuleRevision: vi.fn(),
+  approveRuleRevision: vi.fn(),
+  publishRuleRevision: vi.fn(),
+  offlineRuleRevision: vi.fn(),
+  getRuleLifecycleTimeline: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/expression', () => ({
-  compileExpression: jest.fn(),
-  getExpressionTestSchema: jest.fn(),
-  executeExpression: jest.fn(),
+vi.mock('@/api/expression', () => ({
+  compileExpression: vi.fn(),
+  getExpressionTestSchema: vi.fn(),
+  executeExpression: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/variable', () => ({
-  listVariablesByProject: jest.fn(),
-  getVariableOptions: jest.fn(),
-  listVariables: jest.fn(),
-  createVariable: jest.fn(),
-  updateVariable: jest.fn(),
-  deleteVariable: jest.fn(),
-  testVariable: jest.fn(),
-  batchValidateVariables: jest.fn(),
-  importJavaConstants: jest.fn(),
-  importJsonConstants: jest.fn(),
-  listFieldValidations: jest.fn(),
-  listAvailableFieldValidations: jest.fn(),
-  createFieldValidation: jest.fn(),
-  updateFieldValidation: jest.fn(),
-  deleteFieldValidation: jest.fn(),
+vi.mock('@/api/variable', () => ({
+  listVariablesByProject: vi.fn(),
+  getVariableOptions: vi.fn(),
+  listVariables: vi.fn(),
+  createVariable: vi.fn(),
+  updateVariable: vi.fn(),
+  deleteVariable: vi.fn(),
+  testVariable: vi.fn(),
+  batchValidateVariables: vi.fn(),
+  importJavaConstants: vi.fn(),
+  importJsonConstants: vi.fn(),
+  listFieldValidations: vi.fn(),
+  listAvailableFieldValidations: vi.fn(),
+  createFieldValidation: vi.fn(),
+  updateFieldValidation: vi.fn(),
+  deleteFieldValidation: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/dataObject', () => ({
-  listDataObjects: jest.fn(),
-  getVariableTree: jest.fn(),
-  getDataObjectFieldOptions: jest.fn(),
+vi.mock('@/api/dataObject', () => ({
+  listDataObjects: vi.fn(),
+  getVariableTree: vi.fn(),
+  getDataObjectFieldOptions: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/function', () => ({
-  listAllFunctionsByProject: jest.fn(),
-  listFunctionsByProject: jest.fn(),
-  listFunctions: jest.fn(),
-  getFunctionById: jest.fn(),
-  createFunction: jest.fn(),
-  updateFunction: jest.fn(),
-  deleteFunction: jest.fn(),
-  testFunction: jest.fn(),
-  listVersions: jest.fn(),
-  getVersion: jest.fn(),
-  compareVersions: jest.fn(),
-  rollbackVersion: jest.fn(),
+vi.mock('@/api/function', () => ({
+  listAllFunctionsByProject: vi.fn(),
+  listFunctionsByProject: vi.fn(),
+  listFunctions: vi.fn(),
+  getFunctionById: vi.fn(),
+  createFunction: vi.fn(),
+  updateFunction: vi.fn(),
+  deleteFunction: vi.fn(),
+  testFunction: vi.fn(),
+  listVersions: vi.fn(),
+  getVersion: vi.fn(),
+  compareVersions: vi.fn(),
+  rollbackVersion: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/model', () => ({
-  listAllModelsByProject: jest.fn(),
-  listModelInputs: jest.fn(),
-  listModelOutputs: jest.fn(),
-  listModels: jest.fn(),
-  getModel: jest.fn(),
-  createModel: jest.fn(),
-  updateModel: jest.fn(),
-  deleteModel: jest.fn(),
-  getTestParams: jest.fn(),
-  saveTestParams: jest.fn(),
-  executeModel: jest.fn(),
-  updateModelInputField: jest.fn(),
-  updateModelOutputField: jest.fn(),
+vi.mock('@/api/model', () => ({
+  listAllModelsByProject: vi.fn(),
+  listModelInputs: vi.fn(),
+  listModelOutputs: vi.fn(),
+  listModels: vi.fn(),
+  getModel: vi.fn(),
+  createModel: vi.fn(),
+  updateModel: vi.fn(),
+  deleteModel: vi.fn(),
+  getTestParams: vi.fn(),
+  saveTestParams: vi.fn(),
+  executeModel: vi.fn(),
+  updateModelInputField: vi.fn(),
+  updateModelOutputField: vi.fn(),
+  analyzeModelImpact: vi.fn(),
+  replaceModel: vi.fn(),
+  unpublishModel: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn(),
-  getProject: jest.fn(),
-  createProject: jest.fn(),
-  updateProject: jest.fn(),
-  deleteProject: jest.fn(),
-  getMaskedToken: jest.fn(),
-  getFullToken: jest.fn(),
-  regenerateToken: jest.fn(),
-  exportApiDoc: jest.fn(),
-  listProjectAuths: jest.fn(),
-  createProjectAuth: jest.fn(),
-  updateProjectAuth: jest.fn(),
-  updateProjectAuthStatus: jest.fn(),
-  getProjectAuthFull: jest.fn(),
-  regenerateProjectAuthSecret: jest.fn(),
-  listProjectAuthTokens: jest.fn(),
-  getProjectAuthTokenFull: jest.fn(),
-  revokeProjectAuthToken: jest.fn(),
-  listProjectAuthAccessLogs: jest.fn(),
+vi.mock('@/api/artifact', () => ({
+  downloadArtifact: vi.fn(),
+  importArtifact: vi.fn(),
+  deployArtifact: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/datasource', () => ({
-  listDatasources: jest.fn(),
-  getDatasource: jest.fn(),
-  createDatasource: jest.fn(),
-  updateDatasource: jest.fn(),
-  deleteDatasource: jest.fn(),
-  listApiConfigs: jest.fn(),
-  createApiConfig: jest.fn(),
-  updateApiConfig: jest.fn(),
-  deleteApiConfig: jest.fn(),
-  invokeApiConfig: jest.fn(),
-  invokeApiConfigPreview: jest.fn(),
-  previewApiConfigRequest: jest.fn(),
-  testDatasourceAuth: jest.fn(),
+vi.mock('@/api/project', () => ({
+  listProjects: vi.fn(),
+  getProject: vi.fn(),
+  createProject: vi.fn(),
+  updateProject: vi.fn(),
+  deleteProject: vi.fn(),
+  getMaskedToken: vi.fn(),
+  getFullToken: vi.fn(),
+  regenerateToken: vi.fn(),
+  exportApiDoc: vi.fn(),
+  listProjectAuths: vi.fn(),
+  createProjectAuth: vi.fn(),
+  updateProjectAuth: vi.fn(),
+  updateProjectAuthStatus: vi.fn(),
+  getProjectAuthFull: vi.fn(),
+  regenerateProjectAuthSecret: vi.fn(),
+  listProjectAuthTokens: vi.fn(),
+  getProjectAuthTokenFull: vi.fn(),
+  revokeProjectAuthToken: vi.fn(),
+  listProjectAuthAccessLogs: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/runtimeLog', () => ({
-  listRuntimeLogs: jest.fn(),
-  getExternalApiStats: jest.fn(),
-  getRuleSetStats: jest.fn(),
+vi.mock('@/api/datasource', () => ({
+  listDatasources: vi.fn(),
+  getDatasource: vi.fn(),
+  createDatasource: vi.fn(),
+  updateDatasource: vi.fn(),
+  deleteDatasource: vi.fn(),
+  listApiConfigs: vi.fn(),
+  createApiConfig: vi.fn(),
+  updateApiConfig: vi.fn(),
+  deleteApiConfig: vi.fn(),
+  invokeApiConfig: vi.fn(),
+  invokeApiConfigPreview: vi.fn(),
+  previewApiConfigRequest: vi.fn(),
+  testDatasourceAuth: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/lineage', () => ({
-  listLineageOptions: jest.fn(),
-  getLineageGraph: jest.fn(),
+vi.mock('@/api/runtimeLog', () => ({
+  listRuntimeLogs: vi.fn(),
+  getExternalApiStats: vi.fn(),
+  getRuleSetStats: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/database', () => ({
-  listDbDatasources: jest.fn(),
-  getDbDatasource: jest.fn(),
-  createDbDatasource: jest.fn(),
-  updateDbDatasource: jest.fn(),
-  deleteDbDatasource: jest.fn(),
-  testDbDatasource: jest.fn(),
-  testDbDatasourceDraft: jest.fn(),
-  queryDbDatasource: jest.fn(),
+vi.mock('@/api/lineage', () => ({
+  listLineageOptions: vi.fn(),
+  getLineageGraph: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/billing', () => ({
-  listBillingConfigs: jest.fn(),
-  createBillingConfig: jest.fn(),
-  updateBillingConfig: jest.fn(),
-  deleteBillingConfig: jest.fn(),
-  listBillingRecords: jest.fn(),
-  listBillingSummaries: jest.fn(),
-  refreshBillingSummary: jest.fn(),
+vi.mock('@/api/database', () => ({
+  listDbDatasources: vi.fn(),
+  getDbDatasource: vi.fn(),
+  createDbDatasource: vi.fn(),
+  updateDbDatasource: vi.fn(),
+  deleteDbDatasource: vi.fn(),
+  testDbDatasource: vi.fn(),
+  testDbDatasourceDraft: vi.fn(),
+  queryDbDatasource: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/experiment', () => ({
-  listExperiments: jest.fn(),
-  getExperiment: jest.fn(),
-  listExperimentLogs: jest.fn(),
-  saveExperiment: jest.fn(),
-  deleteExperiment: jest.fn(),
-  executeExperiment: jest.fn(),
-  listVersions: jest.fn(),
-  getVersion: jest.fn(),
-  compareVersions: jest.fn(),
-  rollbackVersion: jest.fn(),
+vi.mock('@/api/billing', () => ({
+  listBillingConfigs: vi.fn(),
+  createBillingConfig: vi.fn(),
+  updateBillingConfig: vi.fn(),
+  deleteBillingConfig: vi.fn(),
+  listBillingRecords: vi.fn(),
+  listBillingSummaries: vi.fn(),
+  refreshBillingSummary: vi.fn(),
   __esModule: true
 }))
-jest.mock('@/api/ruleList', () => ({
-  listLibraries: jest.fn(),
-  getLibrary: jest.fn(),
-  createLibrary: jest.fn(),
-  updateLibrary: jest.fn(),
-  deleteLibrary: jest.fn(),
-  listRecords: jest.fn(),
-  createRecord: jest.fn(),
-  updateRecord: jest.fn(),
-  deleteRecord: jest.fn(),
-  listRecordLogs: jest.fn(),
-  importRecords: jest.fn(),
+vi.mock('@/api/experiment', () => ({
+  listExperiments: vi.fn(),
+  getExperiment: vi.fn(),
+  listExperimentLogs: vi.fn(),
+  saveExperiment: vi.fn(),
+  deleteExperiment: vi.fn(),
+  executeExperiment: vi.fn(),
+  listVersions: vi.fn(),
+  getVersion: vi.fn(),
+  compareVersions: vi.fn(),
+  rollbackVersion: vi.fn(),
+  __esModule: true
+}))
+vi.mock('@/api/ruleList', () => ({
+  listLibraries: vi.fn(),
+  getLibrary: vi.fn(),
+  createLibrary: vi.fn(),
+  updateLibrary: vi.fn(),
+  deleteLibrary: vi.fn(),
+  listRecords: vi.fn(),
+  createRecord: vi.fn(),
+  updateRecord: vi.fn(),
+  deleteRecord: vi.fn(),
+  listRecordLogs: vi.fn(),
+  importRecords: vi.fn(),
   listTemplateUrl: '/api/rule/list/template',
-  listExportUrl: jest.fn(id => `/api/rule/list/${id}/export`),
+  listExportUrl: vi.fn(id => `/api/rule/list/${id}/export`),
   __esModule: true
 }))
 
 // 6. mock @/layout/index.vue
-jest.mock('@/layout/index.vue', () => ({
+vi.mock('@/layout/index.vue', () => ({
   default: { name: 'Layout', template: '<div><slot /></div>' }
 }))
 
 // 7. mock SCSS 导入
-jest.mock('@/styles/variables.scss', () => ({}))
-jest.mock('@/styles/element-override.scss', () => ({}))
+vi.mock('@/styles/variables.scss', () => ({}))
+vi.mock('@/styles/element-override.scss', () => ({}))
 
 // 8. mock trace-tree 等组件
-jest.mock('@/components/common/TraceTree.vue', () => ({ name: 'TraceTree', template: '<div />' }))
-jest.mock('@/components/flow/ActionBlockEditor.vue', () => ({ name: 'ActionBlockEditor', template: '<div />' }))
-jest.mock('@/components/common/VarPicker.vue', () => ({ name: 'VarPicker', template: '<div />', props: ['vars', 'value'] }))
-jest.mock('@/components/common/ScriptPanel.vue', () => ({ name: 'ScriptPanel', template: '<div />' }))
+vi.mock('@/components/common/TraceTree.vue', () => ({
+  default: { name: 'TraceTree', template: '<div />' }
+}))
+vi.mock('@/components/flow/ActionBlockEditor.vue', () => ({
+  default: { name: 'ActionBlockEditor', template: '<div />' }
+}))
+vi.mock('@/components/common/VarPicker.vue', () => ({
+  default: { name: 'VarPicker', template: '<div />', props: ['vars', 'value'] }
+}))
+vi.mock('@/components/common/ScriptPanel.vue', () => ({
+  default: { name: 'ScriptPanel', template: '<div />' }
+}))
 
 // 注册 Vue Test Utils 2 的全局指令与实例属性。
 const { config } = require('@vue/test-utils')
 const loadingDirectiveStub = {
-  beforeMount: jest.fn(),
-  mounted: jest.fn(),
-  updated: jest.fn(),
-  beforeUnmount: jest.fn(),
-  unmounted: jest.fn()
+  beforeMount: vi.fn(),
+  mounted: vi.fn(),
+  updated: vi.fn(),
+  beforeUnmount: vi.fn(),
+  unmounted: vi.fn()
 }
 config.global.directives.loading = loadingDirectiveStub
 config.global.components.AppIcon = {
@@ -337,20 +366,20 @@ config.global.stubs['el-table-column'] = {
   template: '<div><slot name="header" :column="{}" /><slot :row="{}" :$index="0" /></div>'
 }
 config.global.mocks = {
-  $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
-  $confirm: jest.fn().mockResolvedValue(true),
-  $notify: jest.fn(),
-  $loading: jest.fn(() => ({ close: jest.fn() })),
+  $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+  $confirm: vi.fn().mockResolvedValue(true),
+  $notify: vi.fn(),
+  $loading: vi.fn(() => ({ close: vi.fn() })),
   $t: key => key
 }
 
 // 抑制日常 log，error/warn 保留以便调试
 global.console = {
   ...console,
-  log: jest.fn(),
-  info: jest.fn(),
-  debug: jest.fn(),
-  warn: jest.fn()
+  log: vi.fn(),
+  info: vi.fn(),
+  debug: vi.fn(),
+  warn: vi.fn()
 }
 
 // 全局 Vue mock 工厂（供测试文件使用）
@@ -362,18 +391,18 @@ function createVueMock(mixins = []) {
     methods: {},
     created() {},
     mounted: {},
-    $watch: jest.fn(),
-    $set: jest.fn((obj, key, val) => { obj[key] = val }),
-    $delete: jest.fn(),
+    $watch: vi.fn(),
+    $set: vi.fn((obj, key, val) => { obj[key] = val }),
+    $delete: vi.fn(),
     $refs: {},
     $options: { name: 'TestComponent' },
     $route: { path: '/', params: { id: 1 }, query: {}, name: 'test' },
-    $router: { push: jest.fn(), replace: jest.fn(), go: jest.fn(), back: jest.fn() },
-    $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
-    $confirm: jest.fn().mockResolvedValue(true),
-    $notify: jest.fn(),
-    $loading: jest.fn(() => ({ close: jest.fn() })),
-    $axios: jest.fn(),
+    $router: { push: vi.fn(), replace: vi.fn(), go: vi.fn(), back: vi.fn() },
+    $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn(), info: vi.fn() },
+    $confirm: vi.fn().mockResolvedValue(true),
+    $notify: vi.fn(),
+    $loading: vi.fn(() => ({ close: vi.fn() })),
+    $axios: vi.fn(),
     $t: (key) => key,
     mixins
   }

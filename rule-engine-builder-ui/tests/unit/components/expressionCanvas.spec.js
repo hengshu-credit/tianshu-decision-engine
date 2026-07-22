@@ -2,7 +2,7 @@ import { shallowMount } from '@test-utils'
 import ExpressionCanvas from '@/components/expression/ExpressionCanvas.vue'
 import { createOperationOperand } from '@/utils/operand'
 
-const focusManualInput = jest.fn()
+const focusManualInput = vi.fn()
 
 const ElInputStub = {
   name: 'ElInput',
@@ -103,8 +103,8 @@ describe('ExpressionCanvas', () => {
       },
       stubs: { 'el-input': true }
     })
-    const preventDefault = jest.fn()
-    const stopPropagation = jest.fn()
+    const preventDefault = vi.fn()
+    const stopPropagation = vi.fn()
 
     wrapper.vm.handleTab({ shiftKey: false, preventDefault, stopPropagation })
     wrapper.vm.handleTab({ shiftKey: true, preventDefault, stopPropagation })
@@ -121,8 +121,8 @@ describe('ExpressionCanvas', () => {
     })
     const event = {
       dataTransfer: {
-        getData: jest.fn(() => '["args",0]'),
-        setData: jest.fn()
+        getData: vi.fn(() => '["args",0]'),
+        setData: vi.fn()
       }
     }
 

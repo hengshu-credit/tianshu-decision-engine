@@ -27,7 +27,7 @@ function createContext(overrides = {}) {
 
 describe('BillingList target selector', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('uses project code and name fuzzy filters in all list queries', () => {
@@ -72,7 +72,7 @@ describe('BillingList target selector', () => {
 
   test('target change clears selected reference before reloading options', () => {
     const ctx = createContext()
-    ctx.loadTargetOptions = jest.fn()
+    ctx.loadTargetOptions = vi.fn()
 
     ctx.onBillingTargetChange()
 

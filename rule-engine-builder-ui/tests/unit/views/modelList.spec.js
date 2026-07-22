@@ -4,19 +4,22 @@ import { h, nextTick } from 'vue'
 
 // 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块
-jest.mock('@/api/model', () => ({
-  listModels: jest.fn(),
-  uploadModel: jest.fn(),
-  publishModel: jest.fn(),
-  deleteModel: jest.fn(),
-  updateModel: jest.fn(),
-  toGlobalModel: jest.fn(),
-  checkModelCode: jest.fn(),
-  getRuntimeCapabilities: jest.fn()
+vi.mock('@/api/model', () => ({
+  listModels: vi.fn(),
+  uploadModel: vi.fn(),
+  publishModel: vi.fn(),
+  deleteModel: vi.fn(),
+  updateModel: vi.fn(),
+  toGlobalModel: vi.fn(),
+  checkModelCode: vi.fn(),
+  getRuntimeCapabilities: vi.fn(),
+  analyzeModelImpact: vi.fn(),
+  unpublishModel: vi.fn(),
+  replaceModel: vi.fn()
 }))
 
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn()
+vi.mock('@/api/project', () => ({
+  listProjects: vi.fn()
 }))
 
 import * as modelApi from '@/api/model'
@@ -26,7 +29,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import fs from 'fs'
 import path from 'path'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockModels() {
@@ -48,7 +51,7 @@ function mockProjects() {
 const makeFormStub = (name) => ({
   name,
   render: () => h('form'),
-  methods: { clearValidate: jest.fn(), validate: jest.fn(cb => cb && cb(true)), validateField: jest.fn(), resetFields: jest.fn() }
+  methods: { clearValidate: vi.fn(), validate: vi.fn(cb => cb && cb(true)), validateField: vi.fn(), resetFields: vi.fn() }
 })
 
 describe('ModelList 项目筛选交互', () => {
@@ -74,7 +77,7 @@ async function mountAndWait() {
   const wrapper = mount(ModelList, {
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: vi.fn(), replace: vi.fn() }
     },
     stubs: {
       'el-form': makeFormStub('ElForm'), 'el-form-item': true,
@@ -312,7 +315,7 @@ describe('ModelList — 上传模型', () => {
 
   test('handleFileChange 拒绝所有非 ONNX 和 PMML 文件', () => {
     const file = { name: 'model.pkl', raw: { name: 'model.pkl' } }
-    const errorMessage = jest.spyOn(wrapper.vm.$message, 'error').mockImplementation(() => {})
+    const errorMessage = vi.spyOn(wrapper.vm.$message, 'error').mockImplementation(() => {})
 
     wrapper.vm.handleFileChange(file, [file])
 
@@ -479,7 +482,7 @@ describe('ModelList — 边界情况', () => {
     const wrapper = mount(ModelList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
@@ -502,7 +505,7 @@ describe('ModelList — 边界情况', () => {
     const wrapper = mount(ModelList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,

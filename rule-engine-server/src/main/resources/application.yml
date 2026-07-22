@@ -3,10 +3,20 @@ server:
   servlet:
     session:
       timeout: 60m
+      cookie:
+        http-only: true
+        secure: ${SESSION_COOKIE_SECURE:false}
+        same-site: lax
 
 spring:
   application:
     name: rule-engine-server
+  config:
+    # 仓库根目录启动时读取 ./.env；从 rule-engine-server 目录启动时读取 ../.env。
+    # 操作系统环境变量和命令行参数的优先级仍高于这些本地配置。
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
   servlet:
     multipart:
       max-file-size: 512MB
@@ -16,14 +26,14 @@ spring:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 含数据库名，${MYSQL_DATABASE} 可通过环境变量或配置文件注入
     url: jdbc:mysql://localhost:3306/${MYSQL_DATABASE:rule_engine}?useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
-    username: ${MYSQL_USERNAME:root}
-    password: ${MYSQL_PASSWORD:1qaz@WSX}
+    username: ${MYSQL_USERNAME:}
+    password: ${MYSQL_PASSWORD:}
   sql:
     init:
       schema-locations: classpath:sql/schema.sql
       encoding: UTF-8
       mode: ${SPRING_SQL_INIT_MODE:${SPRING_DATASOURCE_INITIALIZATION_MODE:never}}
-      continue-on-error: true
+      continue-on-error: ${SPRING_SQL_INIT_CONTINUE_ON_ERROR:false}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -41,11 +51,14 @@ spring:
         shutdown-timeout: 200ms
 
 rule-engine:
+  cors:
+    # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:9090,http://127.0.0.1:9090}
   project-auth:
     active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:
       v1: ${RULE_AUTH_LEGACY_MASTER_KEY:}
-      v2: ${RULE_AUTH_MASTER_KEY:L?g48_wA5HJhqAFzehpmsfm~)Ja#me@#}
+      v2: ${RULE_AUTH_MASTER_KEY:}
     hmac-time-window-seconds: 300
     token-failure-limit: 10
     token-failure-window-seconds: 300
@@ -69,9 +82,9 @@ rule-engine:
     session-username-attribute: RULE_CONSOLE_USERNAME
     # 未自定义 ConsoleLoginAuthenticator Bean 时使用以下账号登录；生产环境请改为环境变量或 BCrypt
     builtin:
-      username: ${CONSOLE_USERNAME:admin}
-      password: ${CONSOLE_PASSWORD:1qaz@WSX}
-      password-encoding: PLAIN
+      username: ${CONSOLE_USERNAME:}
+      password: ${CONSOLE_PASSWORD:}
+      password-encoding: ${CONSOLE_PASSWORD_ENCODING:BCRYPT}
 
 mybatis-plus:
   mapper-locations: classpath*:/mapper/**/*.xml

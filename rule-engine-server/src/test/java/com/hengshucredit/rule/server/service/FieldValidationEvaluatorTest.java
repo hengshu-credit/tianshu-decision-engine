@@ -55,6 +55,45 @@ public class FieldValidationEvaluatorTest {
                 Collections.<String, Object>singletonMap("mobile", "13800000000"))));
     }
 
+    @Test
+    public void supportsAllRegexPresetsForStringFields() {
+        Object[][] cases = {
+                {"digits", "^[0-9]*$", "012345", "12a"},
+                {"digits_min_16", "^\\d{16,}$", "1234567890123456", "123456789012345"},
+                {"digits_15_to_18", "^\\d{15,18}$", "123456789012345", "12345678901234"},
+                {"chinese", "^[\\u4e00-\\u9fa5]{0,}$", "中文", "中文A"},
+                {"alphanumeric", "^[a-zA-Z0-9]+$", "abc123", "abc-123"},
+                {"email", "^\\w+([-+.]\\w+)*@\\w+([-.]\\w+)*\\.\\w+([-.]\\w+)*$",
+                        "user.name+tag@example-domain.com", "user@"},
+                {"domain", "^[a-zA-Z0-9][-a-zA-Z0-9]{0,62}"
+                        + "(\\.[a-zA-Z0-9][-a-zA-Z0-9]{0,62})+\\.?$", "sub.example.com.", "example"},
+                {"mobile", "^1[0-9]{10}$", "13800138000", "23800138000"},
+                {"id_card", "^[1-9]\\d{5}(18|19|20)\\d{2}((0[1-9])|(1[0-2]))"
+                        + "(([0-2][1-9])|10|20|30|31)\\d{3}[0-9Xx]$",
+                        "11010519900101123X", "11010519901301123X"},
+                {"ip_address", "^((?:(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d)\\.){3}"
+                        + "(?:25[0-5]|2[0-4]\\d|[01]?\\d?\\d))$", "192.168.1.1", "256.168.1.1"}
+        };
+        long id = 100L;
+        for (Object[] item : cases) {
+            RuleDefinitionInputField field = field("value", "[" + id + "]");
+            field.setFieldType("STRING");
+            RuleFieldValidation regex = rule(id, String.valueOf(item[0]), "REGEX",
+                    String.valueOf(item[1]), "格式错误");
+
+            assertTrue(String.valueOf(item[0]), evaluator.validate(Collections.singletonList(field),
+                    Collections.singletonList(regex),
+                    Collections.<String, Object>singletonMap("value", item[2])).isEmpty());
+            assertEquals(String.valueOf(item[0]), Collections.singletonList("格式错误"),
+                    messages(evaluator.validate(Collections.singletonList(field), Collections.singletonList(regex),
+                            Collections.<String, Object>singletonMap("value", item[3]))));
+            assertTrue(String.valueOf(item[0]), evaluator.validate(Collections.singletonList(field),
+                    Collections.singletonList(regex),
+                    Collections.<String, Object>singletonMap("value", "   ")).isEmpty());
+            id++;
+        }
+    }
+
     private RuleDefinitionInputField field(String scriptName, String validationRuleIds) {
         RuleDefinitionInputField field = new RuleDefinitionInputField();
         field.setScriptName(scriptName);

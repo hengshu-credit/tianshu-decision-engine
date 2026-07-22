@@ -7,13 +7,13 @@ describe('MonacoEditor', () => {
 
   beforeEach(() => {
     editor = {
-      getValue: jest.fn(() => ''),
-      getModel: jest.fn(() => ({ setValue: jest.fn() })),
-      layout: jest.fn(),
-      dispose: jest.fn(),
-      onDidChangeModelContent: jest.fn(),
-      addCommand: jest.fn(),
-      updateOptions: jest.fn(),
+      getValue: vi.fn(() => ''),
+      getModel: vi.fn(() => ({ setValue: vi.fn() })),
+      layout: vi.fn(),
+      dispose: vi.fn(),
+      onDidChangeModelContent: vi.fn(),
+      addCommand: vi.fn(),
+      updateOptions: vi.fn(),
     }
     monaco.editor.create.mockReset().mockReturnValue(editor)
     window.monaco = monaco
@@ -21,7 +21,7 @@ describe('MonacoEditor', () => {
 
   afterEach(() => {
     delete window.monaco
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('依赖 automaticLayout，不在挂载后重复执行无尺寸 layout', async () => {

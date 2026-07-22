@@ -1,8 +1,8 @@
 import { shallowMount } from '@test-utils'
 
-jest.unmock('@/components/common/RuleExecutionSelector.vue')
+vi.unmock('@/components/common/RuleExecutionSelector.vue')
 
-const RuleExecutionSelector = require('@/components/common/RuleExecutionSelector.vue').default
+const RuleExecutionSelector = (await vi.importActual('@/components/common/RuleExecutionSelector.vue')).default
 
 const stubs = {
   'el-select': { template: '<div class="select-stub"><slot /></div>' },

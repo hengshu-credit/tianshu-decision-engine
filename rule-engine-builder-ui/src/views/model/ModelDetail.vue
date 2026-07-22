@@ -11,6 +11,9 @@
     >
       <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
       <div>
+        <el-button size="small" @click="openImpact('REPLACE')">替换模型文件</el-button>
+        <el-button v-if="model.publishedVersion" size="small" @click="openImpact('OFFLINE')">下线</el-button>
+        <el-button size="small" @click="openImpact('DELETE')">删除</el-button>
         <el-button size="small" :icon="ElIconTime" @click="openVersionDialog"
           >版本历史</el-button
         >
@@ -28,6 +31,7 @@
           >返回</el-button
         >
       </div>
+      <input ref="replaceFile" type="file" :accept="model.modelFormat === 'PMML' ? '.pmml' : '.onnx'" hidden @change="handleReplaceFile" />
     </div>
 
     <!-- 基本信息 -->
@@ -62,6 +66,10 @@
       <el-descriptions-item label="文件大小">{{
         formatFileSize(model.modelFileSize)
       }}</el-descriptions-item>
+      <el-descriptions-item label="文件摘要">
+        <code class="model-digest">{{ model.modelDigest || '—' }}</code>
+      </el-descriptions-item>
+      <el-descriptions-item label="样例校验">{{ modelSampleStatus }}</el-descriptions-item>
       <el-descriptions-item label="设计版本">{{
         model.currentVersion
       }}</el-descriptions-item>
@@ -780,6 +788,13 @@
         </div>
       </template>
     </el-dialog>
+    <model-impact-dialog
+      v-if="model.id"
+      v-model="impactVisible"
+      :model-id="model.id"
+      :action="impactAction"
+      @confirmed="handleImpactConfirmed"
+    />
   </div>
 </template>
 
@@ -805,6 +820,7 @@ import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
+import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
 import {
   compileOperand,
   createFunctionOperand,
@@ -848,6 +864,9 @@ export default {
     return {
       loading: false,
       model: {},
+      impactVisible: false,
+      impactAction: 'REPLACE',
+      replaceImpactToken: '',
       /** refType:id -> 字段对象映射（从变量管理/模型管理加载） */
       varMap: {},
       /** VarPicker 分层下拉选项（普通变量 / 常量 / 数据对象字段 / 模型） */
@@ -892,6 +911,7 @@ export default {
   components: {
     OperandPicker,
     OperandValueDisplay,
+    ModelImpactDialog,
     ElIconArrowDown,
     ElIconInfo,
     ElIconEdit,
@@ -899,6 +919,14 @@ export default {
   },
   name: 'ModelDetail',
   computed: {
+    modelSampleStatus() {
+      try {
+        const report = JSON.parse(this.model.validationReportJson || '{}')
+        return report.sampleStatus === 'PASSED' ? '已执行并通过' : '未提供样例（允许）'
+      } catch {
+        return '—'
+      }
+    },
     parsedModelConfig() {
       const config = this.model && this.model.modelConfig
       if (!config) return {}
@@ -1039,6 +1067,52 @@ export default {
     this.load()
   },
   methods: {
+    openImpact(action) {
+      this.impactAction = action
+      this.impactVisible = true
+    },
+    async handleImpactConfirmed({ action, impactToken }) {
+      if (action === 'REPLACE') {
+        this.replaceImpactToken = impactToken
+        this.impactVisible = false
+        this.$refs.replaceFile.click()
+        return
+      }
+      try {
+        if (action === 'OFFLINE') await api.unpublishModel(this.model.id, impactToken)
+        else if (action === 'DELETE') await api.deleteModel(this.model.id, impactToken)
+        this.impactVisible = false
+        this.$message.success(action === 'DELETE' ? '模型已逻辑删除' : '模型已下线')
+        if (action === 'DELETE') this.$router.push('/model')
+        else await this.load()
+      } catch (error) {
+        this.$message.error(error.message || '模型操作失败')
+      }
+    },
+    async handleReplaceFile(event) {
+      const file = event.target.files && event.target.files[0]
+      if (!file || !this.replaceImpactToken) return
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('changeLog', '影响分析确认后的模型替换')
+      if (this.model.modelFormat === 'ONNX') {
+        const config = this.parseModelConfig(this.model.modelConfig)
+        if (config.onnxTaskType) formData.append('onnxTaskType', config.onnxTaskType)
+        formData.append('onnxConfig', JSON.stringify(config))
+      }
+      try {
+        await api.replaceModel(this.model.id, formData, this.replaceImpactToken)
+        this.$message.success('模型已替换并生成新版本')
+        this.replaceImpactToken = ''
+        event.target.value = ''
+        await this.load()
+      } catch (error) {
+        this.$message.error(error.message || '模型替换失败')
+      }
+    },
+    parseModelConfig(value) {
+      try { return typeof value === 'string' ? JSON.parse(value || '{}') : value || {} } catch { return {} }
+    },
     operandDisplay,
     parseOperand(value) {
       if (!value) return null
@@ -2140,5 +2214,10 @@ export default {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.model-digest {
+  color: #475569;
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 </style>

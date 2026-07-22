@@ -73,7 +73,7 @@ describe('flowDesignerGraph', () => {
       id: 'source',
       x: 100,
       y: 100,
-      isAllowConnectedAsSource: jest.fn(() => ({ isAllPass: true, msg: '' }))
+      isAllowConnectedAsSource: vi.fn(() => ({ isAllPass: true, msg: '' }))
     }
     const targetNode = {
       id: 'target',
@@ -83,14 +83,14 @@ describe('flowDesignerGraph', () => {
         { id: 'target_bottom', x: 280, y: 120 },
         { id: 'target_left', x: 200, y: 100 }
       ],
-      isAllowConnectedAsTarget: jest.fn(() => ({ isAllPass: true, msg: '' }))
+      isAllowConnectedAsTarget: vi.fn(() => ({ isAllPass: true, msg: '' }))
     }
     const lf = {
-      getGraphData: jest.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }], edges: [] })),
-      addNode: jest.fn(() => targetNode),
-      addEdge: jest.fn(() => ({ id: 'edge-1' })),
-      deleteNode: jest.fn(),
-      selectElementById: jest.fn()
+      getGraphData: vi.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }], edges: [] })),
+      addNode: vi.fn(() => targetNode),
+      addEdge: vi.fn(() => ({ id: 'edge-1' })),
+      deleteNode: vi.fn(),
+      selectElementById: vi.fn()
     }
 
     const result = addConnectedNode(lf, {
@@ -116,18 +116,18 @@ describe('flowDesignerGraph', () => {
       id: 'source',
       x: 100,
       y: 100,
-      isAllowConnectedAsSource: jest.fn(() => ({ isAllPass: false, msg: '禁止连接' }))
+      isAllowConnectedAsSource: vi.fn(() => ({ isAllPass: false, msg: '禁止连接' }))
     }
     const targetNode = {
       id: 'target',
       anchors: [{ id: 'target_left', x: 200, y: 100 }],
-      isAllowConnectedAsTarget: jest.fn(() => ({ isAllPass: true, msg: '' }))
+      isAllowConnectedAsTarget: vi.fn(() => ({ isAllPass: true, msg: '' }))
     }
     const lf = {
-      getGraphData: jest.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }] })),
-      addNode: jest.fn(() => targetNode),
-      addEdge: jest.fn(),
-      deleteNode: jest.fn()
+      getGraphData: vi.fn(() => ({ nodes: [{ id: 'source', x: 100, y: 100 }] })),
+      addNode: vi.fn(() => targetNode),
+      addEdge: vi.fn(),
+      deleteNode: vi.fn()
     }
 
     expect(() => addConnectedNode(lf, {
@@ -157,11 +157,11 @@ describe('flowDesignerGraph', () => {
     const group = { id: 'group-1' }
     const lf = {
       extension: { dynamicGroup: { nodeGroupMap: new Map() } },
-      getSelectElements: jest.fn(() => ({ nodes: [{ id: 'a' }, { id: 'b' }] })),
-      getNodeModelById: jest.fn(id => models[id]),
-      addNode: jest.fn(() => group),
-      clearSelectElements: jest.fn(),
-      selectElementById: jest.fn()
+      getSelectElements: vi.fn(() => ({ nodes: [{ id: 'a' }, { id: 'b' }] })),
+      getNodeModelById: vi.fn(id => models[id]),
+      addNode: vi.fn(() => group),
+      clearSelectElements: vi.fn(),
+      selectElementById: vi.fn()
     }
 
     expect(createDynamicGroup(lf)).toBe(group)

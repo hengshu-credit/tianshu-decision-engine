@@ -45,7 +45,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - Maven 3.6+
 - MySQL 8
 - Redis（与 server 使用同一实例，含密码和 database）
-- Node.js 14+（前端开发，建议 22.14.x）
+- Node.js 20.19+（Vite 8 最低要求；不设置最高版本；建议使用当前维护中的 LTS，已验证 Node.js 26.4.0）
 
 ## 模块架构
 
@@ -105,20 +105,24 @@ mvn clean package -DskipTests
 ```bash
 cd rule-engine-builder-ui
 
-npm install
+npm ci
 npm run dev      # 开发模式（9090，/api 代理到后端 8080）
 npm run build    # 生产构建
 npm run lint     # 代码检查
 npm test         # 运行所有单元测试（tests/unit/）
 npm run test:watch   # 监听模式
 npm run test:coverage # 覆盖率报告
+npm run test:e2e:dist # 真实 dist + 模拟 API 的 Playwright 烟测
+npm run test:e2e:full # 设置 E2E_BASE_URL 后执行真实前后端联调
 ```
 
 ### 基础设施
 
 ```bash
 # 根目录 docker-compose 已包含 mysql + redis + 初始化（空数据卷依次执行 schema 与 export）
-docker-compose up -d
+cp .env.example .env  # PowerShell 使用 Copy-Item .env.example .env
+# 替换 .env 中全部占位值
+docker compose --env-file .env up -d
 # 单独启动：
 cd rule-engine-mysql && docker-compose up -d   # MySQL（仅 compose 文件，无 dockerfile）
 cd rule-engine-redis && docker-compose up -d    # Redis
@@ -131,6 +135,8 @@ cd rule-engine-redis && docker-compose up -d    # Redis
 - 手工完整恢复顺序：删除 `rule_engine` 数据库、执行 `schema.sql`、执行 `export_202607161151.sql`；export 会清空其覆盖的全部数据表
 - `data-example.sql` / `data-tianshu-example.sql` 仅作为可选示例数据脚本手动导入，不属于系统初始数据来源
 - 仅在 README 的 12 节「实现边界」中保留的已知限制（如血缘仅静态识别脚本引用）才是真实待修缮项
+- Compose 不提供共享默认密码；全新数据卷根据 `MYSQL_USERNAME` / `MYSQL_PASSWORD` 创建应用账号，已有数据卷需由数据库管理员预先创建或更新最小权限账号
+- Maven/JAR 启动时会自动读取当前目录或上级目录的 `.env`；系统环境变量和命令行参数优先覆盖文件值，生产仍应通过 Secret/KMS 注入 MySQL、Redis、控制台和 `RULE_AUTH_MASTER_KEY` 等真实凭据
 
 ## 核心编译器（rule-engine-core）
 
@@ -162,9 +168,9 @@ cd rule-engine-redis && docker-compose up -d    # Redis
 - API 层: `src/api/`（auth、billing、database、datasource、dataObject、definition、experiment、function、lineage、model、project、request、ruleList、runtimeLog、variable）
 - 全局样式覆盖: `src/styles/element-override.scss`
 - **变量选择 Mixin**: `src/mixins/varPickerMixin.js`
-- 侧边栏菜单: `src/layout/index.vue`（el-menu 组件，新建页面需在此添加菜单项）
+- 侧边栏菜单: `src/layout/layoutState.js` 的 `SIDEBAR_MENUS`，渲染组件为 `src/layout/components/LayoutSidebar.vue`
 
-## 前端测试框架 (Jest + Vue Test Utils)
+## 前端测试框架 (Vitest + Vue Test Utils + Playwright)
 
 测试文件位于 `tests/unit/`：
 - `varPickerMixin.spec.js` — 变量选择器 Mixin 单元测试
@@ -172,12 +178,13 @@ cd rule-engine-redis && docker-compose up -d    # Redis
 - `utils/*.spec.js` — 工具函数测试（varDisplay、varTypes、decisionConditionTree、flowGraphCycle、actionDataCodegen）
 - `constants/*.spec.js` — 常量测试
 
-Jest 配置（`jest.config.js`）关键点：
+Vitest 配置（`vitest.config.mjs`）关键点：
 - 使用 `jsdom` 测试环境，`@` 别名映射到 `src/`
 - `monaco-editor` / `@logicflow/core` 已 mock，SCSS 文件 mock 为空模块
 - `setup.js` 预置所有 API mock 和 Element Plus mock
+- Playwright 配置在 `playwright.config.mjs`；`tests/e2e/dist-smoke.spec.js` 是稳定 CI 烟测，`full-stack.spec.js` 是显式部署联调门禁
 
-**当前测试状态**：前端约 615 个用例（36 个 spec 文件）全部通过 ✅，后端约 186 个用例（core / client / server 三模块均有）全部通过 ✅（具体数字随用例增长变化，以 `npm test` / `mvn test` 实际输出为准）。
+**当前测试状态（2026-07-22）**：前端 120 个测试文件、1276 个测试在 Node.js 26.4.0 下全部通过，Vite 8 构建、ESLint 10 flat config 和 Playwright `dist` 烟测通过 ✅；后端在 JDK 17.0.19 下共运行 740 个测试，739 个通过、1 个仅在 CUDA 环境执行的测试跳过，Tomcat NIO2 启动及 HTTP 200 验证通过 ✅（具体数字随用例增长变化，以 `npm test` / `mvn test` 实际输出为准）。
 
 ## 后端测试框架 (JUnit 4)
 
@@ -263,10 +270,14 @@ Jest 配置（`jest.config.js`）关键点：
 | 执行日志 | `views/log` | `ExecutionLogController` | 服务端+客户端追踪 |
 | 账单管理 | `views/billing` | `BillingController` | 计费项/明细/汇总 |
 | 版本回滚与对比 | `RuleDetail/ModelDetail/FunctionList/ExperimentDetail` | `RuleDefinitionController` 等 `/versions`、`/versionCompare`、`/rollback` | **已实现**：规则、模型、函数、实验均支持查看版本、对比差异、回滚 |
+| 规则生命周期与决策制品 | `RuleDetail` | `RuleDefinitionController`、`DecisionArtifactController` | `DRAFT → REVIEW → APPROVED → PUBLISHED → OFFLINE`；发布前 Schema/依赖影响校验；不可变制品下载、显式 ID 绑定导入部署；执行日志带修订与摘要归因 |
+| 模型制品治理 | `ModelList/ModelDetail` | `RuleModelController` | PMML/ONNX 字段精确匹配、摘要/格式/I/O/运行时校验；样例可选但提供时必须通过；删除、替换、下线前强制引用影响确认 |
 
 **仍为待修缮项（以 README 第 12 节「实现边界」为准）**：
 - 血缘分析仅能静态识别结构化字段与变量来源配置，脚本中复杂的动态引用无法保证完全识别。
-- 控制台默认 admin/`1qaz@WSX`，生产需替换；数据库管理只应配只读账号、查询类 SQL。
+- 控制台、MySQL、Redis 和项目鉴权均不提供共享默认凭证；部署必须通过 Secret/KMS 等方式注入并建立轮换流程。
+- 数据库管理只应配置只读账号和查询类 SQL；正式交付还需在真实部署环境完成浏览器 E2E、容量、备份恢复和灾备演练。
+- JPMML Evaluator 1.7.7 已选择按 AGPL-3.0 开源交付；包含 JPMML 的制品或网络服务必须同步提供完整 Corresponding Source、许可证和重建材料，详见 `THIRD_PARTY_LICENSES.md`。
 - 外数/数据库/名单变量在线测试依赖对应数据源可用，失败会写入各自模块日志。
 
 > ⚠️ 旧版本文档曾把「外数/数据库/账单/实验/血缘/名单/版本回滚」列为待实现，现已全部落地。若任务需要新增能力，先确认是否已在表中，避免重复造轮子。
@@ -275,8 +286,11 @@ Jest 配置（`jest.config.js`）关键点：
 
 - Spring Boot 3.5.16
 - QLExpress 4.1.0
-- MyBatis Plus 3.4.3.4
-- Vue 3.5.40 + Element Plus 2.14.3
+- MyBatis Plus 3.5.16
+- JPMML Evaluator Metro 1.7.7
+- ONNX Runtime 1.26.0
+- Vue 3.5.40 + Element Plus 2.14.3 + Vite 8.1.5
+- Vitest 4.1.10 + Playwright 1.61.1 + ESLint 10.7.0
 - Redis (Pub/Sub 规则推送)
 - Kafka (可选执行日志上报)
 

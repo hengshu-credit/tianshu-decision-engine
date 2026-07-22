@@ -6,9 +6,9 @@ import * as apiDoc from '@/utils/apiDoc'
 import ProjectList from '@/views/project/ProjectList.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
-jest.mock('@/utils/apiDoc', () => ({ generateApiDocHtml: jest.fn(() => '<!DOCTYPE html><html></html>') }))
+vi.mock('@/utils/apiDoc', () => ({ generateApiDocHtml: vi.fn(() => '<!DOCTYPE html><html></html>') }))
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockProjects() {
@@ -22,7 +22,7 @@ function mockProjects() {
 // ─── 测试辅助：带 validate 方法的 form ref mock ─────────────────────────
 function withFormRef(wrapper, validateResult = true) {
   wrapper.vm.$refs.form = {
-    validate: jest.fn(cb => cb(validateResult))
+    validate: vi.fn(cb => cb(validateResult))
   }
   return wrapper
 }
@@ -36,7 +36,7 @@ async function mountAndWait() {
   const wrapper = mount(ProjectList, {
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() }
+      $router: { push: vi.fn(), replace: vi.fn() }
     },
     stubs: {
       'el-form': {
@@ -256,14 +256,14 @@ describe('ProjectList — 项目操作', () => {
 
   test('handleExportDoc 使用模块化生成器并内嵌 hengshucredit SVG', async () => {
     const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
-    const anchorClick = jest.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
     projectApi.exportApiDoc.mockResolvedValue({ code: 200, data: doc })
-    global.fetch = jest.fn().mockResolvedValue({
+    global.fetch = vi.fn().mockResolvedValue({
       ok: true,
-      text: jest.fn().mockResolvedValue('<svg id="hengshucredit"></svg>')
+      text: vi.fn().mockResolvedValue('<svg id="hengshucredit"></svg>')
     })
-    global.URL.createObjectURL = jest.fn(() => 'blob:api-doc')
-    global.URL.revokeObjectURL = jest.fn()
+    global.URL.createObjectURL = vi.fn(() => 'blob:api-doc')
+    global.URL.revokeObjectURL = vi.fn()
 
     await wrapper.vm.handleExportDoc({ id: 1 })
 
@@ -341,7 +341,7 @@ describe('ProjectList — 边界情况', () => {
     const wrapper = mount(ProjectList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,
@@ -365,7 +365,7 @@ describe('ProjectList — 边界情况', () => {
     const wrapper = mount(ProjectList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() }
       },
       stubs: {
         'el-form': true, 'el-form-item': true, 'el-select': true, 'el-option': true,

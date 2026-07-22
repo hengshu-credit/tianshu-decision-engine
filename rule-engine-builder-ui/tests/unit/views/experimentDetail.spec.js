@@ -12,10 +12,10 @@ const leaf = (code, value, label = code) => ({
 function createContext(overrides = {}) {
   const ctx = {
     $set(target, key, value) { target[key] = value },
-    $forceUpdate: jest.fn(),
-    $message: { success: jest.fn(), error: jest.fn() },
-    $confirm: jest.fn().mockResolvedValue(),
-    $router: { replace: jest.fn(), push: jest.fn() },
+    $forceUpdate: vi.fn(),
+    $message: { success: vi.fn(), error: vi.fn() },
+    $confirm: vi.fn().mockResolvedValue(),
+    $router: { replace: vi.fn(), push: vi.fn() },
     $route: { params: {} },
     $refs: { form: { validate: cb => cb(true) } },
     projectRefs: [],
@@ -66,7 +66,7 @@ function createContext(overrides = {}) {
 
 describe('ExperimentDetail', () => {
   beforeEach(() => {
-    jest.clearAllMocks()
+    vi.clearAllMocks()
   })
 
   test('允许调整冠军组类型，但保存前必须只有一个冠军组', () => {
@@ -234,8 +234,8 @@ describe('ExperimentDetail', () => {
     const ctx = createContext({ projects: [{ id: 2, projectCode: 'P2' }] })
     ctx.form.groups[0].ruleId = 8
     ctx.form.groups[0].ruleCode = 'score_card'
-    ctx.loadRules = jest.fn()
-    ctx.loadExperimentRefs = jest.fn()
+    ctx.loadRules = vi.fn()
+    ctx.loadExperimentRefs = vi.fn()
 
     ctx.onProjectChange(2)
 

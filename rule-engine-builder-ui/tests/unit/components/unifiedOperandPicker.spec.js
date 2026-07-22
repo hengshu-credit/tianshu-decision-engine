@@ -1,7 +1,7 @@
 import { shallowMount } from '@test-utils'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 
-const focusManualInput = jest.fn()
+const focusManualInput = vi.fn()
 
 function mountPicker(propsData = {}, options = {}) {
   return shallowMount(OperandPicker, {
@@ -60,8 +60,8 @@ describe('统一 OperandPicker', () => {
   })
 
   test('设计器内点击公式按钮创建会话并进入 layout-main 独立路由', async() => {
-    const dispatch = jest.fn().mockResolvedValue()
-    const push = jest.fn()
+    const dispatch = vi.fn().mockResolvedValue()
+    const push = vi.fn()
     const source = { kind: 'LITERAL', value: '100', valueType: 'NUMBER' }
     const wrapper = mountPicker({ value: source }, {
       mocks: {
@@ -89,7 +89,7 @@ describe('统一 OperandPicker', () => {
   })
 
   test('缓存设计器恢复后只回填一次最新编译修订', async() => {
-    const dispatch = jest.fn().mockResolvedValue()
+    const dispatch = vi.fn().mockResolvedValue()
     const pending = {
       operand: { kind: 'PATH', value: 'request.score' },
       compiledScript: 'request.score',
@@ -98,11 +98,11 @@ describe('统一 OperandPicker', () => {
     const wrapper = mountPicker({}, {
       mocks: {
         $route: { path: '/designer/table/7', params: { id: '7' } },
-        $router: { push: jest.fn() },
+        $router: { push: vi.fn() },
         $store: {
           dispatch,
           getters: {
-            'expressionSessions/pendingCompiledResult': jest.fn(() => pending)
+            'expressionSessions/pendingCompiledResult': vi.fn(() => pending)
           }
         }
       }
@@ -124,8 +124,8 @@ describe('统一 OperandPicker', () => {
     const wrapper = mountPicker({}, {
       mocks: {
         $route: { path: '/variable', params: {} },
-        $router: { push: jest.fn() },
-        $store: { dispatch: jest.fn(), getters: {} }
+        $router: { push: vi.fn() },
+        $store: { dispatch: vi.fn(), getters: {} }
       }
     })
 

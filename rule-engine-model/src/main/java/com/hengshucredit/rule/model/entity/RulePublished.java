@@ -12,6 +12,9 @@ public class RulePublished {
     private Long id;
     private String ruleCode;
     private Long definitionId;
+    private Long revisionId;
+    private Long artifactId;
+    private String artifactDigest;
     /** 规则所属项目编码 */
     private String projectCode;
     private Integer version;

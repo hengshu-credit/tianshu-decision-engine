@@ -7,7 +7,7 @@ import ListDetail from '@/views/ruleList/ListDetail.vue'
 
 const FormStub = {
   template: '<form><slot /></form>',
-  methods: { validate: jest.fn(cb => cb(true)) }
+  methods: { validate: vi.fn(cb => cb(true)) }
 }
 
 async function mountPage() {
@@ -31,9 +31,9 @@ async function mountPage() {
   const wrapper = mount(ListDetail, {
     mocks: {
       $route: { params: { id: 9 } },
-      $router: { push: jest.fn() },
-      $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(true)
+      $router: { push: vi.fn() },
+      $message: { success: vi.fn(), warning: vi.fn(), error: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(true)
     },
     stubs: {
       'el-form': FormStub,
@@ -63,7 +63,7 @@ describe('ListDetail — 名单内容管理', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); vi.clearAllMocks() })
 
   test('初始化加载名单详情、记录和日志', () => {
     expect(ruleListApi.getLibrary).toHaveBeenCalledWith(9)
@@ -187,7 +187,7 @@ describe('ListDetail route id change', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); vi.clearAllMocks() })
 
   test('uses the latest listId when saving after a reused-route change', async () => {
     ruleListApi.createRecord.mockResolvedValue({ data: { id: 3 } })

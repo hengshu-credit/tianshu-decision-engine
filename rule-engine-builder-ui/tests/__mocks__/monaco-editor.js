@@ -3,85 +3,85 @@
 module.exports = {
   // 编辑器
   editor: {
-    create: jest.fn(() => ({
-      getValue: jest.fn(() => ''),
-      setValue: jest.fn(),
-      dispose: jest.fn(),
-      layout: jest.fn(),
-      onDidChangeModelContent: jest.fn(() => ({ dispose: jest.fn() })),
-      onDidFocusEditorText: jest.fn(() => ({ dispose: jest.fn() })),
-      onDidBlurEditorText: jest.fn(() => ({ dispose: jest.fn() })),
-      addCommand: jest.fn(),
-      addAction: jest.fn(),
-      getModel: jest.fn(() => ({ getLanguageId: jest.fn(() => 'ql') })),
-      setModel: jest.fn(),
-      setPosition: jest.fn(),
-      getPosition: jest.fn(() => ({ lineNumber: 1, column: 1 })),
-      revealLine: jest.fn(),
-      revealLineInCenter: jest.fn(),
-      getScrollTop: jest.fn(() => 0),
-      setScrollTop: jest.fn(),
-      getScrollLeft: jest.fn(() => 0),
-      setScrollLeft: jest.fn(),
-      hasTextFocus: jest.fn(() => false),
-      updateOptions: jest.fn(),
-      focus: jest.fn()
+    create: vi.fn(() => ({
+      getValue: vi.fn(() => ''),
+      setValue: vi.fn(),
+      dispose: vi.fn(),
+      layout: vi.fn(),
+      onDidChangeModelContent: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidFocusEditorText: vi.fn(() => ({ dispose: vi.fn() })),
+      onDidBlurEditorText: vi.fn(() => ({ dispose: vi.fn() })),
+      addCommand: vi.fn(),
+      addAction: vi.fn(),
+      getModel: vi.fn(() => ({ getLanguageId: vi.fn(() => 'ql') })),
+      setModel: vi.fn(),
+      setPosition: vi.fn(),
+      getPosition: vi.fn(() => ({ lineNumber: 1, column: 1 })),
+      revealLine: vi.fn(),
+      revealLineInCenter: vi.fn(),
+      getScrollTop: vi.fn(() => 0),
+      setScrollTop: vi.fn(),
+      getScrollLeft: vi.fn(() => 0),
+      setScrollLeft: vi.fn(),
+      hasTextFocus: vi.fn(() => false),
+      updateOptions: vi.fn(),
+      focus: vi.fn()
     })),
-    createDiffEditor: jest.fn(() => ({
-      getOriginalEditor: jest.fn(),
-      getModifiedEditor: jest.fn(),
-      getDiffModel: jest.fn(),
-      setModel: jest.fn(),
-      layout: jest.fn(),
-      dispose: jest.fn()
+    createDiffEditor: vi.fn(() => ({
+      getOriginalEditor: vi.fn(),
+      getModifiedEditor: vi.fn(),
+      getDiffModel: vi.fn(),
+      setModel: vi.fn(),
+      layout: vi.fn(),
+      dispose: vi.fn()
     })),
-    createModel: jest.fn(() => ({
-      getValue: jest.fn(() => ''),
-      setValue: jest.fn(),
-      dispose: jest.fn()
+    createModel: vi.fn(() => ({
+      getValue: vi.fn(() => ''),
+      setValue: vi.fn(),
+      dispose: vi.fn()
     })),
-    setModelLanguage: jest.fn(),
-    setTheme: jest.fn(),
-    defineTheme: jest.fn(),
-    setLanguages: jest.fn(),
-    getModel: jest.fn(),
-    getModelMarkers: jest.fn(() => []),
-    setModelMarkers: jest.fn()
+    setModelLanguage: vi.fn(),
+    setTheme: vi.fn(),
+    defineTheme: vi.fn(),
+    setLanguages: vi.fn(),
+    getModel: vi.fn(),
+    getModelMarkers: vi.fn(() => []),
+    setModelMarkers: vi.fn()
   },
   // 语言服务
   languages: {
-    getLanguages: jest.fn(() => []),
-    register: jest.fn(),
-    registerCompletionItemProvider: jest.fn(),
-    setLanguageConfiguration: jest.fn(),
+    getLanguages: vi.fn(() => []),
+    register: vi.fn(),
+    registerCompletionItemProvider: vi.fn(),
+    setLanguageConfiguration: vi.fn(),
     HoverProvider: {}
   },
   // Token 类型
   languageserver: {},
   // 主题
   theme: {
-    createSerializableData: jest.fn()
+    createSerializableData: vi.fn()
   },
   // 快捷键注册
   KeyMod: {},
   KeyCode: {},
   // Range/Position/Selection
-  Range: jest.fn(),
-  Position: jest.fn(),
-  Selection: jest.fn(),
+  Range: vi.fn(),
+  Position: vi.fn(),
+  Selection: vi.fn(),
   // 常见命令
   Commands: {},
   // 标记范围
   MarkerSeverity: {},
   // IDisposable
-  Disposable: jest.fn(() => ({ dispose: jest.fn() })),
+  Disposable: vi.fn(() => ({ dispose: vi.fn() })),
   // 初始化完成回调
-  onDidCreateEditor: jest.fn(),
+  onDidCreateEditor: vi.fn(),
   // Worker
-  getWorker: jest.fn(),
+  getWorker: vi.fn(),
   // 内部
   _allEditors: [],
   // 导出的静态方法（兼容不同版本 API）
-  create: jest.fn(),
-  define: jest.fn()
+  create: vi.fn(),
+  define: vi.fn()
 }

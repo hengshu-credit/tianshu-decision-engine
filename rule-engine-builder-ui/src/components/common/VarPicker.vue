@@ -1956,7 +1956,7 @@ export default {
   background: #13c2c2;
 }
 /* 默认 ? - 浅灰 */
-.vp-type-badge--? {
+.vp-type-badge--\? {
   background: #c0c4cc;
 }
 </style>

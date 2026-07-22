@@ -1040,6 +1040,26 @@
           </el-select>
         </el-form-item>
         <el-form-item
+          v-if="validationForm.validationType === 'REGEX'"
+          label="正则预置"
+        >
+          <el-select
+            :model-value="selectedFieldValidationRegexPreset"
+            clearable
+            filterable
+            placeholder="选择常用格式，或直接填写自定义正则"
+            style="width: 100%"
+            @change="applyFieldValidationRegexPreset"
+          >
+            <el-option
+              v-for="item in fieldValidationRegexPresets"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item
           v-if="validationForm.validationType !== 'REQUIRED'"
           label="校验值"
           required
@@ -2298,6 +2318,10 @@ import {
   varTypeTagColor,
 } from '@/constants/varTypes'
 import {
+  FIELD_VALIDATION_REGEX_PRESETS,
+  findFieldValidationRegexPreset,
+} from '@/constants/fieldValidationRegexPresets'
+import {
   LIST_COMBINATION_MODES,
   LIST_ITEM_TYPES,
   LIST_MATCH_MODES,
@@ -2501,6 +2525,7 @@ export default {
       validationDialogVisible: false,
       validationSaving: false,
       validationForm: this.initFieldValidationForm(),
+      fieldValidationRegexPresets: FIELD_VALIDATION_REGEX_PRESETS,
       fieldValidationTypes: [
         { value: 'REQUIRED', label: '必填' },
         { value: 'REGEX', label: '正则表达式' },
@@ -2636,6 +2661,12 @@ export default {
     },
     listCombinationDescription() {
       return listCombinationMode(this.form.listCombinationMode).description
+    },
+    selectedFieldValidationRegexPreset() {
+      const preset = findFieldValidationRegexPreset(
+        this.validationForm.validationValue
+      )
+      return preset ? preset.value : ''
     },
     fieldValidationValueHint() {
       return (
@@ -3704,6 +3735,16 @@ export default {
     },
     onFieldValidationScopeChange(scope) {
       if (scope === 'GLOBAL') this.validationForm.projectId = 0
+    },
+    applyFieldValidationRegexPreset(presetValue) {
+      if (!presetValue) {
+        this.validationForm.validationValue = ''
+        return
+      }
+      const preset = this.fieldValidationRegexPresets.find(
+        (item) => item.value === presetValue
+      )
+      if (preset) this.validationForm.validationValue = preset.pattern
     },
     async saveFieldValidation() {
       const form = this.validationForm

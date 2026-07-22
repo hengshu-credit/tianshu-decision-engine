@@ -7,7 +7,9 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
+import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
@@ -29,6 +31,35 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
 
     @Resource
     private ProjectFilterService projectFilterService;
+    @Resource
+    private RulePublishedMapper publishedMapper;
+
+    public void applyPublishedAttribution(RuleExecutionLog log, String authenticatedProjectCode) {
+        if (log == null || !hasText(log.getRuleCode())) return;
+        if (log.getRevisionId() != null && hasText(log.getArtifactDigest())) return;
+        RulePublished published = findPublished(log.getRuleCode(), authenticatedProjectCode);
+        if (published == null) return;
+        log.setRuleVersion(published.getVersion());
+        log.setRevisionId(published.getRevisionId());
+        log.setArtifactDigest(published.getArtifactDigest());
+    }
+
+    protected RulePublished findPublished(String ruleCode, String projectCode) {
+        if (publishedMapper == null) return null;
+        LambdaQueryWrapper<RulePublished> exact = new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getRuleCode, ruleCode)
+                .eq(RulePublished::getStatus, 1);
+        if (hasText(projectCode)) exact.eq(RulePublished::getProjectCode, projectCode);
+        RulePublished published = publishedMapper.selectOne(exact.last("LIMIT 1"));
+        if (published != null || !hasText(projectCode)) return published;
+
+        List<RulePublished> candidates = publishedMapper.selectList(
+                new LambdaQueryWrapper<RulePublished>()
+                        .eq(RulePublished::getRuleCode, ruleCode)
+                        .eq(RulePublished::getStatus, 1)
+                        .orderByDesc(RulePublished::getPublishTime));
+        return candidates.size() == 1 ? candidates.get(0) : null;
+    }
 
     public IPage<RuleExecutionLog> pageList(int pageNum, int pageSize, String modelType, String source,
                                             String projectCode, String projectName, String ruleCode,

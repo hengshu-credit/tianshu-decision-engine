@@ -10,9 +10,9 @@ function createRoute(path) {
 
 describe('router console auth guard', () => {
   test('登录关闭时直接放行受保护路由', async () => {
-    const fetchConfig = jest.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
-    const fetchMe = jest.fn()
-    const next = jest.fn()
+    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
+    const fetchMe = vi.fn()
+    const next = vi.fn()
 
     const guard = createConsoleAuthGuard(fetchConfig, fetchMe)
     await guard(createRoute('/project'), createRoute('/login'), next)
@@ -22,9 +22,9 @@ describe('router console auth guard', () => {
   })
 
   test('登录开启且未登录时每次访问受保护路由都跳转登录页', async () => {
-    const fetchConfig = jest.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
-    const fetchMe = jest.fn().mockResolvedValue({ code: 401, message: '未登录' })
-    const next = jest.fn()
+    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchMe = vi.fn().mockResolvedValue({ code: 401, message: '未登录' })
+    const next = vi.fn()
 
     const guard = createConsoleAuthGuard(fetchConfig, fetchMe)
     await guard(createRoute('/project'), createRoute('/login'), next)
@@ -44,9 +44,9 @@ describe('router console auth guard', () => {
   })
 
   test('登录开启且会话有效时放行', async () => {
-    const fetchConfig = jest.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
-    const fetchMe = jest.fn().mockResolvedValue({ code: 200, data: { username: 'admin' } })
-    const next = jest.fn()
+    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: true } })
+    const fetchMe = vi.fn().mockResolvedValue({ code: 200, data: { username: 'admin' } })
+    const next = vi.fn()
 
     const guard = createConsoleAuthGuard(fetchConfig, fetchMe)
     await guard(createRoute('/project'), createRoute('/login'), next)
@@ -55,9 +55,9 @@ describe('router console auth guard', () => {
   })
 
   test('登录关闭时访问登录页跳回 redirect 或项目首页', async () => {
-    const fetchConfig = jest.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
-    const fetchMe = jest.fn()
-    const next = jest.fn()
+    const fetchConfig = vi.fn().mockResolvedValue({ code: 200, data: { loginEnabled: false } })
+    const fetchMe = vi.fn()
+    const next = vi.fn()
     const loginRoute = createRoute('/login')
     loginRoute.query = { redirect: '/rule' }
 

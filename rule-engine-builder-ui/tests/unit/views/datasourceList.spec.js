@@ -152,7 +152,7 @@ describe('DatasourceList helpers', () => {
       datasourceOptions: [{ id: 3, projectId: 12 }],
       apiForm: { requestObjectId: 1, responseObjectId: 2 }
     })
-    ctx.loadDataObjectOptions = jest.fn()
+    ctx.loadDataObjectOptions = vi.fn()
 
     ctx.onApiDatasourceChange(3)
 

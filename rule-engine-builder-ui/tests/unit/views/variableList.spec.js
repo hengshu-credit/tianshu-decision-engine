@@ -4,47 +4,47 @@ import { nextTick } from 'vue'
 
 // 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块
-jest.mock('@/api/variable', () => ({
-  listVariables: jest.fn(),
-  listVariablesByProject: jest.fn(),
-  createVariable: jest.fn(),
-  updateVariable: jest.fn(),
-  toGlobalVariable: jest.fn(),
-  deleteVariable: jest.fn(),
-  testVariable: jest.fn(),
-  importJavaConstants: jest.fn(),
-  importJsonConstants: jest.fn(),
-  listFieldValidations: jest.fn(),
-  listAvailableFieldValidations: jest.fn(),
-  createFieldValidation: jest.fn(),
-  updateFieldValidation: jest.fn(),
-  deleteFieldValidation: jest.fn()
+vi.mock('@/api/variable', () => ({
+  listVariables: vi.fn(),
+  listVariablesByProject: vi.fn(),
+  createVariable: vi.fn(),
+  updateVariable: vi.fn(),
+  toGlobalVariable: vi.fn(),
+  deleteVariable: vi.fn(),
+  testVariable: vi.fn(),
+  importJavaConstants: vi.fn(),
+  importJsonConstants: vi.fn(),
+  listFieldValidations: vi.fn(),
+  listAvailableFieldValidations: vi.fn(),
+  createFieldValidation: vi.fn(),
+  updateFieldValidation: vi.fn(),
+  deleteFieldValidation: vi.fn()
 }))
 
-jest.mock('@/api/project', () => ({
-  listProjects: jest.fn()
+vi.mock('@/api/project', () => ({
+  listProjects: vi.fn()
 }))
 
-jest.mock('@/api/dataObject', () => ({
-  batchValidateRules: jest.fn(),
-  batchValidateAll: jest.fn(),
-  getVariableTree: jest.fn(),
-  toGlobalDataObject: jest.fn()
+vi.mock('@/api/dataObject', () => ({
+  batchValidateRules: vi.fn(),
+  batchValidateAll: vi.fn(),
+  getVariableTree: vi.fn(),
+  toGlobalDataObject: vi.fn()
 }))
 
-jest.mock('@/api/function', () => ({ listAllFunctionsByProject: jest.fn() }))
-jest.mock('@/api/model', () => ({ listAllModelsByProject: jest.fn() }))
+vi.mock('@/api/function', () => ({ listAllFunctionsByProject: vi.fn() }))
+vi.mock('@/api/model', () => ({ listAllModelsByProject: vi.fn() }))
 
-jest.mock('@/api/datasource', () => ({
-  listApiConfigs: jest.fn()
+vi.mock('@/api/datasource', () => ({
+  listApiConfigs: vi.fn()
 }))
 
-jest.mock('@/api/database', () => ({
-  listDbDatasources: jest.fn()
+vi.mock('@/api/database', () => ({
+  listDbDatasources: vi.fn()
 }))
 
-jest.mock('@/api/ruleList', () => ({
-  listLibraries: jest.fn()
+vi.mock('@/api/ruleList', () => ({
+  listLibraries: vi.fn()
 }))
 
 import * as variableApi from '@/api/variable'
@@ -59,7 +59,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import fs from 'fs'
 import path from 'path'
 
-afterEach(() => { jest.clearAllMocks() })
+afterEach(() => { vi.clearAllMocks() })
 
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockVars() {
@@ -81,7 +81,7 @@ function mockProjects() {
 // 带有 clearValidate 方法的 el-form stub
 const FormStub = {
   template: '<form ref="form"><slot /></form>',
-  methods: { clearValidate: jest.fn() }
+  methods: { clearValidate: vi.fn() }
 }
 
 
@@ -103,9 +103,9 @@ async function mountAndWait() {
   const wrapper = mount(VariableList, {
     mocks: {
       $route: { params: {} },
-      $router: { push: jest.fn(), replace: jest.fn() },
-      $confirm: jest.fn().mockResolvedValue(true),
-      $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+      $router: { push: vi.fn(), replace: vi.fn() },
+      $confirm: vi.fn().mockResolvedValue(true),
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
     },
     stubs: {
       'el-form': FormStub,
@@ -362,7 +362,7 @@ describe('VariableList — 变量操作', () => {
 
   test('项目级变量确认后转为全局并刷新变量列表', async () => {
     variableApi.toGlobalVariable.mockResolvedValue({ data: true })
-    const loadData = jest.spyOn(wrapper.vm, 'loadData').mockResolvedValue()
+    const loadData = vi.spyOn(wrapper.vm, 'loadData').mockResolvedValue()
     const row = { id: 1, varLabel: '年龄', varSource: 'INPUT', scope: 'PROJECT' }
 
     await wrapper.vm.handleToGlobal(row)
@@ -379,7 +379,7 @@ describe('VariableList — 变量操作', () => {
 
   test('项目级常量确认后转为全局并刷新常量列表', async () => {
     variableApi.toGlobalVariable.mockResolvedValue({ data: true })
-    const loadConstants = jest.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue()
+    const loadConstants = vi.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue()
     const row = { id: 3, varLabel: '最大年龄', varSource: 'CONSTANT', scope: 'PROJECT' }
 
     await wrapper.vm.handleToGlobal(row)
@@ -390,7 +390,7 @@ describe('VariableList — 变量操作', () => {
 
   test('项目级数据对象确认后连同字段转为全局并刷新对象列表', async () => {
     dataObjectApi.toGlobalDataObject.mockResolvedValue({ data: true })
-    const loadObjectTree = jest.spyOn(wrapper.vm, 'loadObjectTree').mockResolvedValue()
+    const loadObjectTree = vi.spyOn(wrapper.vm, 'loadObjectTree').mockResolvedValue()
     const object = { id: 5, objectLabel: '请求对象', objectCode: 'TSRequestBody', scope: 'PROJECT' }
 
     await wrapper.vm.handleObjectToGlobal(object)
@@ -691,9 +691,9 @@ describe('VariableList — 边界情况', () => {
     const wrapper = mount(VariableList, {
       mocks: {
         $route: { params: {} },
-        $router: { push: jest.fn(), replace: jest.fn() },
-        $confirm: jest.fn().mockResolvedValue(true),
-        $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
+        $router: { push: vi.fn(), replace: vi.fn() },
+        $confirm: vi.fn().mockResolvedValue(true),
+        $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
       },
       stubs: {
         'el-form': FormStub,
@@ -715,7 +715,7 @@ describe('VariableList — 边界情况', () => {
 
   test('onTabClick 切换 Tab 触发加载', async () => {
     const wrapper = await mountAndWait()
-    const loadConstantsSpy = jest.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue({ data: { records: [], total: 0 } })
+    const loadConstantsSpy = vi.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.onTabClick({ name: 'constants' })
     await nextTick()
     // onTabClick 只处理 objects 和 constants；切换到 constants 时调用 loadConstants
@@ -751,6 +751,28 @@ describe('VariableList — 字段校验规则库', () => {
     expect(variableApi.createFieldValidation).toHaveBeenCalledWith(expect.objectContaining({
       validationCode: 'Mobile_Check', validationType: 'REGEX', projectId: 0
     }))
+    wrapper.unmount()
+  })
+
+  test('正则预置只填充校验值，精确匹配时回显，改为自定义正则后清空回显', async () => {
+    const wrapper = await mountAndWait()
+    wrapper.vm.validationForm = {
+      ...wrapper.vm.initFieldValidationForm(),
+      validationCode: 'Mobile_Check',
+      validationName: '手机号校验',
+      validationType: 'REGEX',
+      errorMessage: '手机号格式错误'
+    }
+
+    wrapper.vm.applyFieldValidationRegexPreset('MOBILE')
+
+    expect(wrapper.vm.validationForm.validationValue).toBe('^1[0-9]{10}$')
+    expect(wrapper.vm.validationForm.validationCode).toBe('Mobile_Check')
+    expect(wrapper.vm.selectedFieldValidationRegexPreset).toBe('MOBILE')
+
+    wrapper.vm.validationForm.validationValue = '^custom$'
+    await nextTick()
+    expect(wrapper.vm.selectedFieldValidationRegexPreset).toBe('')
     wrapper.unmount()
   })
 })

@@ -37,11 +37,15 @@ public class RuleSyncControllerTest {
         });
         RulePublished published = new RulePublished();
         published.setDefinitionId(10L);
+        published.setRevisionId(22L);
+        published.setArtifactDigest("artifact-digest");
 
         RulePublished enriched = ReflectionTestUtils.invokeMethod(
                 controller, "withOutputScriptNames", published);
 
         assertEquals(Arrays.asList("decision", "notAssigned"), enriched.getOutputScriptNames());
+        assertEquals(Long.valueOf(22L), enriched.getRevisionId());
+        assertEquals("artifact-digest", enriched.getArtifactDigest());
     }
 
     @Test

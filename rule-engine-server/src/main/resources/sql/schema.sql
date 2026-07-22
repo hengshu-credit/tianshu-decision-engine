@@ -1,9 +1,3 @@
--- 开启root远程登录
-CREATE USER IF NOT EXISTS 'root'@'%' IDENTIFIED BY '1qaz@WSX';
-ALTER USER 'root'@'%' IDENTIFIED BY '1qaz@WSX';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'%' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-
 CREATE DATABASE IF NOT EXISTS `rule_engine` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci;
 USE `rule_engine`;
 
@@ -273,6 +267,9 @@ PARTITION BY HASH(`definition_id`) PARTITIONS 8;
 -- 5. rule_published - 已发布规则表（Client SDK同步数据源）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_published` (
+  `revision_id`     BIGINT       DEFAULT NULL             COMMENT 'Published rule revision ID',
+  `artifact_id`     BIGINT       DEFAULT NULL             COMMENT 'Published decision artifact ID',
+  `artifact_digest` CHAR(64)     DEFAULT NULL             COMMENT 'Published artifact SHA-256',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `rule_code`       VARCHAR(128) NOT NULL                COMMENT '规则编码',
   `definition_id`   BIGINT       NOT NULL                COMMENT '规则定义ID',
@@ -296,6 +293,173 @@ CREATE TABLE IF NOT EXISTS `rule_published` (
 -- ============================================================
 -- 6. rule_data_object - 数据对象定义表
 -- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_revision` (
+  `id`                       BIGINT        NOT NULL AUTO_INCREMENT,
+  `definition_id`            BIGINT        NOT NULL,
+  `revision_no`              INT           NOT NULL,
+  `state`                    VARCHAR(16)   NOT NULL,
+  `base_revision_id`         BIGINT        DEFAULT NULL,
+  `base_artifact_id`         BIGINT        DEFAULT NULL,
+  `model_json`               LONGTEXT      NOT NULL,
+  `compiled_script`          LONGTEXT      DEFAULT NULL,
+  `compiled_type`            VARCHAR(16)   DEFAULT NULL,
+  `open_api_config_json`     LONGTEXT      DEFAULT NULL,
+  `input_schema_json`        LONGTEXT      DEFAULT NULL,
+  `output_schema_json`       LONGTEXT      DEFAULT NULL,
+  `content_digest`           CHAR(64)      DEFAULT NULL,
+  `validation_report_digest` CHAR(64)      DEFAULT NULL,
+  `artifact_id`              BIGINT        DEFAULT NULL,
+  `force_publish_reason`     VARCHAR(1024) DEFAULT NULL,
+  `lock_version`             INT           NOT NULL DEFAULT 0,
+  `create_by`                VARCHAR(64)   NOT NULL,
+  `create_time`              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_by`                VARCHAR(64)   NOT NULL,
+  `update_time`              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `submit_by`                VARCHAR(64)   DEFAULT NULL,
+  `submit_time`              DATETIME      DEFAULT NULL,
+  `approve_by`               VARCHAR(64)   DEFAULT NULL,
+  `approve_time`             DATETIME      DEFAULT NULL,
+  `publish_by`               VARCHAR(64)   DEFAULT NULL,
+  `publish_time`             DATETIME      DEFAULT NULL,
+  `offline_by`               VARCHAR(64)   DEFAULT NULL,
+  `offline_time`             DATETIME      DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_rule_revision` (`definition_id`, `revision_no`),
+  KEY `idx_revision_lifecycle` (`definition_id`, `state`, `revision_no`),
+  KEY `idx_revision_artifact` (`artifact_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule revision lifecycle';
+
+CREATE TABLE IF NOT EXISTS `rule_lifecycle_event` (
+  `id`                       BIGINT        NOT NULL AUTO_INCREMENT,
+  `definition_id`            BIGINT        NOT NULL,
+  `revision_id`              BIGINT        NOT NULL,
+  `action`                   VARCHAR(32)   NOT NULL,
+  `from_state`               VARCHAR(16)   DEFAULT NULL,
+  `to_state`                 VARCHAR(16)   NOT NULL,
+  `actor`                    VARCHAR(64)   NOT NULL,
+  `comment`                  VARCHAR(1024) DEFAULT NULL,
+  `content_digest`           CHAR(64)      DEFAULT NULL,
+  `validation_report_digest` CHAR(64)      DEFAULT NULL,
+  `artifact_digest`          CHAR(64)      DEFAULT NULL,
+  `request_source`           VARCHAR(32)   DEFAULT NULL,
+  `deployment_id`            BIGINT        DEFAULT NULL,
+  `details_json`             LONGTEXT      DEFAULT NULL,
+  `create_time`              DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_lifecycle_revision` (`revision_id`, `create_time`),
+  KEY `idx_lifecycle_definition` (`definition_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Append-only rule lifecycle event';
+
+CREATE TABLE IF NOT EXISTS `decision_artifact` (
+  `id`                       BIGINT       NOT NULL AUTO_INCREMENT,
+  `definition_id`            BIGINT       NOT NULL,
+  `revision_id`              BIGINT       NOT NULL,
+  `artifact_digest`          CHAR(64)     NOT NULL,
+  `package_digest`           CHAR(64)     NOT NULL,
+  `format_version`           VARCHAR(16)  NOT NULL,
+  `manifest_json`            LONGTEXT     NOT NULL,
+  `validation_report_json`   LONGTEXT     NOT NULL,
+  `runtime_constraints_json` LONGTEXT     NOT NULL,
+  `package_content`          LONGBLOB     NOT NULL,
+  `package_size`             BIGINT       NOT NULL,
+  `create_by`                VARCHAR(64)  NOT NULL,
+  `create_time`              DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_artifact_digest` (`artifact_digest`),
+  KEY `idx_artifact_revision` (`revision_id`),
+  KEY `idx_artifact_definition` (`definition_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Immutable decision artifact';
+
+CREATE TABLE IF NOT EXISTS `decision_artifact_component` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT,
+  `artifact_id`     BIGINT       NOT NULL,
+  `component_id`    VARCHAR(64)  NOT NULL,
+  `component_type`  VARCHAR(32)  NOT NULL,
+  `source_type`     VARCHAR(32)  DEFAULT NULL,
+  `source_id`       BIGINT       DEFAULT NULL,
+  `source_version`  INT          DEFAULT NULL,
+  `package_path`    VARCHAR(512) NOT NULL,
+  `media_type`      VARCHAR(128) NOT NULL,
+  `content_digest`  CHAR(64)     NOT NULL,
+  `content_size`    BIGINT       NOT NULL,
+  `metadata_json`   LONGTEXT     DEFAULT NULL,
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_artifact_component` (`artifact_id`, `component_id`),
+  UNIQUE KEY `uk_artifact_component_path` (`artifact_id`, `package_path`),
+  KEY `idx_component_source` (`source_type`, `source_id`, `source_version`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Decision artifact component';
+
+CREATE TABLE IF NOT EXISTS `artifact_deployment` (
+  `id`                        BIGINT        NOT NULL AUTO_INCREMENT,
+  `artifact_id`               BIGINT        NOT NULL,
+  `environment_code`          VARCHAR(128)  NOT NULL,
+  `target_definition_id`      BIGINT        DEFAULT NULL,
+  `create_rule`               TINYINT       NOT NULL DEFAULT 0,
+  `status`                    VARCHAR(32)   NOT NULL,
+  `compatibility_report_json` LONGTEXT      DEFAULT NULL,
+  `binding_report_json`       LONGTEXT      DEFAULT NULL,
+  `error_message`             VARCHAR(2048) DEFAULT NULL,
+  `deploy_by`                 VARCHAR(64)   DEFAULT NULL,
+  `deploy_time`               DATETIME      DEFAULT NULL,
+  `create_time`               DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_deployment_artifact` (`artifact_id`, `create_time`),
+  KEY `idx_deployment_target` (`target_definition_id`, `create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Artifact deployment history';
+
+CREATE TABLE IF NOT EXISTS `artifact_resource_binding` (
+  `id`                 BIGINT       NOT NULL AUTO_INCREMENT,
+  `deployment_id`      BIGINT       NOT NULL,
+  `component_id`       VARCHAR(64)  NOT NULL,
+  `resource_type`      VARCHAR(32)  NOT NULL,
+  `target_resource_id` BIGINT       NOT NULL,
+  `binding_digest`     CHAR(64)     NOT NULL,
+  `create_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_deployment_binding` (`deployment_id`, `component_id`),
+  KEY `idx_binding_target` (`resource_type`, `target_resource_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Explicit artifact resource binding';
+
+CREATE TABLE IF NOT EXISTS `resource_impact_analysis` (
+  `id`             BIGINT        NOT NULL AUTO_INCREMENT,
+  `analysis_token` CHAR(36)      NOT NULL,
+  `resource_type`  VARCHAR(32)   NOT NULL,
+  `resource_id`    BIGINT        NOT NULL,
+  `action`         VARCHAR(32)   NOT NULL,
+  `impact_digest`  CHAR(64)      NOT NULL,
+  `report_json`    LONGTEXT      NOT NULL,
+  `status`         VARCHAR(16)   NOT NULL,
+  `expires_at`     DATETIME      NOT NULL,
+  `create_by`      VARCHAR(64)   NOT NULL,
+  `create_time`    DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `confirm_by`     VARCHAR(64)   DEFAULT NULL,
+  `confirm_time`   DATETIME      DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_impact_token` (`analysis_token`),
+  KEY `idx_impact_resource` (`resource_type`, `resource_id`, `action`, `expires_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Resource impact analysis';
+
+CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
+  `id`              BIGINT        NOT NULL AUTO_INCREMENT,
+  `operation_id`    CHAR(36)      NOT NULL,
+  `definition_id`   BIGINT        NOT NULL,
+  `revision_id`     BIGINT        NOT NULL,
+  `artifact_id`     BIGINT        NOT NULL,
+  `message_json`    LONGTEXT      NOT NULL,
+  `delivery_status` VARCHAR(16)   NOT NULL DEFAULT 'PENDING',
+  `retry_count`     INT           NOT NULL DEFAULT 0,
+  `next_retry_time` DATETIME      DEFAULT NULL,
+  `last_error`      VARCHAR(2048) DEFAULT NULL,
+  `create_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `delivered_time`  DATETIME      DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_publish_operation` (`operation_id`),
+  KEY `idx_outbox_poll` (`delivery_status`, `next_retry_time`),
+  KEY `idx_outbox_revision` (`revision_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Reliable Redis publication outbox';
+
 CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
@@ -525,6 +689,8 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 -- 先删除原有分区（如果是修改现有表）
 -- ALTER TABLE rule_execution_log REMOVE PARTITIONING;
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
+   `revision_id`     BIGINT        DEFAULT NULL             COMMENT 'Rule revision ID',
+   `artifact_digest` CHAR(64)      DEFAULT NULL             COMMENT 'Decision artifact SHA-256',
    `id`              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
    `trace_id`        CHAR(36)      DEFAULT NULL             COMMENT '全局唯一Trace ID',
    `rule_code`       VARCHAR(128)  NOT NULL                COMMENT '规则编码',
@@ -643,6 +809,11 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
 -- 支持多种模型格式（PMML/ONNX/TENSORFLOW/LIGHTGBM/PICKLE等），格式特有配置存入 model_config（JSON）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model` (
+  `model_digest`            CHAR(64)     DEFAULT NULL       COMMENT 'Raw model SHA-256',
+  `input_schema_json`       LONGTEXT     DEFAULT NULL       COMMENT 'Exact model input schema',
+  `output_schema_json`      LONGTEXT     DEFAULT NULL       COMMENT 'Exact model output schema',
+  `validation_report_json`  LONGTEXT     DEFAULT NULL       COMMENT 'Model validation report',
+  `runtime_constraints_json` LONGTEXT    DEFAULT NULL       COMMENT 'Model runtime constraints',
   `id`                 BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`         BIGINT       DEFAULT NULL             COMMENT '所属项目ID（全局模型可为空）',
   `project_code`       VARCHAR(64)  DEFAULT NULL             COMMENT '所属项目编码',
@@ -739,6 +910,16 @@ CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
 -- 16. rule_model_version - 模型版本历史表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_version` (
+  `model_format`             VARCHAR(32)  DEFAULT NULL,
+  `model_file_name`          VARCHAR(256) DEFAULT NULL,
+  `model_file_size`          BIGINT       DEFAULT NULL,
+  `model_digest`             CHAR(64)     DEFAULT NULL,
+  `input_schema_json`        LONGTEXT     DEFAULT NULL,
+  `output_schema_json`       LONGTEXT     DEFAULT NULL,
+  `validation_report_json`   LONGTEXT     DEFAULT NULL,
+  `runtime_constraints_json` LONGTEXT     DEFAULT NULL,
+  `sample_status`            VARCHAR(32)  DEFAULT NULL,
+  `status`                   TINYINT      NOT NULL DEFAULT 1,
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`        BIGINT       NOT NULL                COMMENT '模型ID',
   `version`         INT          NOT NULL                COMMENT '版本号',
@@ -1269,3 +1450,93 @@ END$$
 DELIMITER ;
 CALL `rule_engine`.`ensure_api_doc_scenario_payload_columns`();
 DROP PROCEDURE `rule_engine`.`ensure_api_doc_scenario_payload_columns`;
+
+-- Lifecycle and immutable artifact columns for existing data volumes.
+DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_decision_artifact_columns`;
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_decision_artifact_columns`()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'revision_id') THEN
+    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'artifact_id') THEN
+    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `artifact_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_published' AND COLUMN_NAME = 'artifact_digest') THEN
+    ALTER TABLE `rule_engine`.`rule_published` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log' AND COLUMN_NAME = 'revision_id') THEN
+    ALTER TABLE `rule_engine`.`rule_execution_log` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_execution_log' AND COLUMN_NAME = 'artifact_digest') THEN
+    ALTER TABLE `rule_engine`.`rule_execution_log` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'model_digest') THEN
+    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `model_digest` CHAR(64) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'input_schema_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `input_schema_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'output_schema_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `output_schema_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'validation_report_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `validation_report_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model' AND COLUMN_NAME = 'runtime_constraints_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model` ADD COLUMN `runtime_constraints_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_format') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_format` VARCHAR(32) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_file_name') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_file_name` VARCHAR(256) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_file_size') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_file_size` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'model_digest') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `model_digest` CHAR(64) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'input_schema_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `input_schema_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'output_schema_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `output_schema_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'validation_report_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `validation_report_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'runtime_constraints_json') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `runtime_constraints_json` LONGTEXT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'sample_status') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `sample_status` VARCHAR(32) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_model_version' AND COLUMN_NAME = 'status') THEN
+    ALTER TABLE `rule_engine`.`rule_model_version` ADD COLUMN `status` TINYINT NOT NULL DEFAULT 1;
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_decision_artifact_columns`();
+DROP PROCEDURE `rule_engine`.`ensure_decision_artifact_columns`;

@@ -19,27 +19,38 @@ public class RulePushService {
     private StringRedisTemplate stringRedisTemplate;
 
     public void push(RulePushMessage message) {
+        pushReliable(message);
+    }
+
+    public boolean pushReliable(RulePushMessage message) {
         String projectCode = trimToNull(message.getProjectCode());
         if (projectCode != null) {
-            pushToApp(projectCode, message);
-            return;
+            return pushToAppReliable(projectCode, message);
         }
         String json = JSON.toJSONString(message);
         try {
             stringRedisTemplate.convertAndSend(BROADCAST_CHANNEL, json);
             log.info("Rule pushed to Redis: {} action={}", message.getRuleCode(), message.getAction());
+            return true;
         } catch (Exception e) {
             log.error("Failed to push rule to Redis: {}", e.getMessage(), e);
+            return false;
         }
     }
 
     public void pushToApp(String appName, RulePushMessage message) {
+        pushToAppReliable(appName, message);
+    }
+
+    public boolean pushToAppReliable(String appName, RulePushMessage message) {
         String channel = "rule:push:" + appName;
         String json = JSON.toJSONString(message);
         try {
             stringRedisTemplate.convertAndSend(channel, json);
+            return true;
         } catch (Exception e) {
             log.error("Failed to push rule to app {}: {}", appName, e.getMessage(), e);
+            return false;
         }
     }
 
