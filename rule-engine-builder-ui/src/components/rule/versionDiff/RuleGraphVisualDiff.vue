@@ -7,15 +7,31 @@
       :data-section="section.key"
     >
       <div class="rule-graph-section-head">
-        <span class="rule-graph-section-icon">{{ section.key === 'nodes' ? (modelType === 'TREE' ? '树' : '流') : section.key === 'edges' ? '线' : '配' }}</span>
+        <span class="rule-graph-section-icon">{{
+          section.key === 'nodes'
+            ? modelType === 'TREE'
+              ? '树'
+              : '流'
+            : section.key === 'edges'
+            ? '线'
+            : '配'
+        }}</span>
         <div>
           <strong>{{ section.title }}</strong>
           <span>{{ section.lanes.length }} 项</span>
         </div>
       </div>
       <div v-if="section.lanes.length" class="rule-graph-steps">
-        <div v-for="(lane, index) in section.lanes" :key="lane.key" class="rule-graph-step">
-          <div v-if="index > 0" class="rule-graph-connector" aria-hidden="true" />
+        <div
+          v-for="(lane, index) in section.lanes"
+          :key="lane.key"
+          class="rule-graph-step"
+        >
+          <div
+            v-if="index > 0"
+            class="rule-graph-connector"
+            aria-hidden="true"
+          />
           <div class="rule-graph-step-index">{{ index + 1 }}</div>
           <rule-condition-diff :lane="lane" />
         </div>
@@ -34,13 +50,13 @@ export default {
   props: {
     modelType: {
       type: String,
-      required: true
+      required: true,
     },
     sections: {
       type: Array,
-      default: () => []
-    }
-  }
+      default: () => [],
+    },
+  },
 }
 </script>
 

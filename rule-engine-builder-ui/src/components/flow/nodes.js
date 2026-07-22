@@ -393,21 +393,21 @@ export const NODE_PANEL_LIST = [
   {
     group: '事件节点',
     items: [
-      { type: 'start-event', label: '开始事件', icon: 'el-icon-video-play', color: '#52c41a' },
-      { type: 'end-event', label: '结束事件', icon: 'el-icon-remove', color: '#FF4D4F' }
+      { type: 'start-event', label: '开始事件', icon: 'VideoPlay', color: '#52c41a' },
+      { type: 'end-event', label: '结束事件', icon: 'Remove', color: '#FF4D4F' }
     ]
   },
   {
     group: '任务节点',
     items: [
-      { type: 'script-task', label: '脚本任务', icon: 'el-icon-document', color: '#2F54EB' }
+      { type: 'script-task', label: '脚本任务', icon: 'Document', color: '#2F54EB' }
     ]
   },
   {
     group: '网关节点',
     items: [
-      { type: 'exclusive-gateway', label: '排他网关', icon: 'el-icon-sort', color: '#fa8c16' },
-      { type: 'join-gateway', label: '聚合节点', icon: 'el-icon-copy-document', color: '#8c8c8c' }
+      { type: 'exclusive-gateway', label: '排他网关', icon: 'Sort', color: '#fa8c16' },
+      { type: 'join-gateway', label: '聚合节点', icon: 'CopyDocument', color: '#8c8c8c' }
     ]
   }
 ]

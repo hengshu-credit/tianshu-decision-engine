@@ -5,7 +5,7 @@ import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.KafkaLogReporter;
 import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.boot.autoconfigure.AutoConfigureAfter;
+import org.springframework.boot.autoconfigure.AutoConfiguration;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
@@ -19,9 +19,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 
-@Configuration
+@AutoConfiguration(after = {RedisAutoConfiguration.class, KafkaAutoConfiguration.class})
 @ConditionalOnProperty(prefix = "rule-engine.client", name = "server-url")
-@AutoConfigureAfter({RedisAutoConfiguration.class, KafkaAutoConfiguration.class})
 public class RuleEngineAutoConfiguration {
 
     @Bean

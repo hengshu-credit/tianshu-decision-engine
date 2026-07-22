@@ -8,7 +8,7 @@
  * - 使用 jest.resetAllMocks() 而非 jest.clearAllMocks()，确保返回值的重置
  */
 
-import Vue from 'vue'
+import { mount } from '@test-utils'
 import varPickerMixin from '@/mixins/varPickerMixin'
 
 // 直接 import setup.js 预置的 mock
@@ -56,6 +56,8 @@ const mockModels = [
 // getVariableTree 返回数组（axios 拦截器会包成 { data: [...] }）
 
 describe('varPickerMixin', () => {
+  const mountedWrappers = []
+
   beforeEach(() => {
     // clearAllMocks：清除调用记录，保留 mockResolvedValueOnce 的配置
     // resetAllMocks 会清除所有实现，导致测试体内设置的 mock 无效
@@ -69,6 +71,16 @@ describe('varPickerMixin', () => {
     ruleListApi.listLibraries.mockResolvedValue({ records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单' }] })
     dataObjectApi.getDataObjectFieldOptions.mockResolvedValue([])
   })
+
+  afterEach(() => {
+    mountedWrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+  })
+
+  function mountMixinVM(component) {
+    const wrapper = mount({ ...component, template: '<div />' })
+    mountedWrappers.push(wrapper)
+    return wrapper.vm
+  }
 
   /** 创建混入了 varPickerMixin 的 Vue 实例 */
   function createMixinVM() {
@@ -89,7 +101,7 @@ describe('varPickerMixin', () => {
         }
       }
     }
-    return new (Vue.extend(ComponentDef))()
+    return mountMixinVM(ComponentDef)
   }
 
   // ─── API Mock 验证测试 ────────────────────────────────────
@@ -298,7 +310,7 @@ describe('varPickerMixin', () => {
         }
       }
     }
-    const vm = new (Vue.extend(ComponentDef))()
+    const vm = mountMixinVM(ComponentDef)
     await vm.loadProjectVars(1)
 
     expect(vm.selectedVarPickerOptions.map(o => o.varCode)).toEqual(['age', 'creditModel.score'])

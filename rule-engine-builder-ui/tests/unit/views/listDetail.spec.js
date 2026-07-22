@@ -1,17 +1,9 @@
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import * as ruleListApi from '@/api/ruleList'
 import ListDetail from '@/views/ruleList/ListDetail.vue'
 
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 const FormStub = {
   template: '<form><slot /></form>',
@@ -37,7 +29,6 @@ async function mountPage() {
     }
   })
   const wrapper = mount(ListDetail, {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: { id: 9 } },
       $router: { push: jest.fn() },
@@ -63,7 +54,7 @@ async function mountPage() {
       'el-switch': true
     }
   })
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(resolve => setTimeout(resolve, 0))
   return wrapper
 }
@@ -72,7 +63,7 @@ describe('ListDetail — 名单内容管理', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.destroy(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
 
   test('初始化加载名单详情、记录和日志', () => {
     expect(ruleListApi.getLibrary).toHaveBeenCalledWith(9)
@@ -93,7 +84,7 @@ describe('ListDetail — 名单内容管理', () => {
     wrapper.vm.form.itemType = 'ID_CARD'
     wrapper.vm.validRange = ['2026-01-01 00:00:00', '2026-12-31 23:59:59']
     wrapper.vm.submit()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.createRecord).toHaveBeenCalledWith(9, expect.objectContaining({
@@ -116,7 +107,7 @@ describe('ListDetail — 名单内容管理', () => {
       status: 1
     })
     wrapper.vm.submit()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.updateRecord).toHaveBeenCalledWith(9, expect.objectContaining({
@@ -130,7 +121,7 @@ describe('ListDetail — 名单内容管理', () => {
   test('追踪记录时按 itemType 和 itemContent 加载全部匹配日志', async () => {
     ruleListApi.listRecordLogs.mockClear()
     wrapper.vm.handleTrace({ id: 1, itemType: 'MOBILE', itemContent: '13800138000' })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.activeTab).toBe('logs')
@@ -144,7 +135,7 @@ describe('ListDetail — 名单内容管理', () => {
 
     ruleListApi.listRecordLogs.mockClear()
     wrapper.vm.clearTrace()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.traceRecord).toBe(null)
@@ -153,12 +144,12 @@ describe('ListDetail — 名单内容管理', () => {
 
   test('名单日志使用服务端分页且翻页保留追踪条件', async () => {
     wrapper.vm.handleTrace({ id: 1, itemType: 'MOBILE', itemContent: '13800138000' })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
     ruleListApi.listRecordLogs.mockClear()
 
     wrapper.vm.onLogPageChange(2)
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
@@ -171,7 +162,7 @@ describe('ListDetail — 名单内容管理', () => {
 
     ruleListApi.listRecordLogs.mockClear()
     wrapper.vm.onLogSizeChange(30)
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.listRecordLogs).toHaveBeenCalledWith(9, {
@@ -185,7 +176,7 @@ describe('ListDetail — 名单内容管理', () => {
   test('删除记录调用删除接口并刷新数据', async () => {
     ruleListApi.deleteRecord.mockResolvedValue({ data: true })
     wrapper.vm.handleDelete({ id: 1, itemContent: '13800138000' })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.deleteRecord).toHaveBeenCalledWith(9, 1)
@@ -196,20 +187,20 @@ describe('ListDetail route id change', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.destroy(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
 
   test('uses the latest listId when saving after a reused-route change', async () => {
     ruleListApi.createRecord.mockResolvedValue({ data: { id: 3 } })
     wrapper.vm.logQuery = { pageNum: 3, pageSize: 30 }
     wrapper.vm.$options.watch['$route.params.id'].call(wrapper.vm, 12, 9)
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     wrapper.vm.handleCreate()
     wrapper.vm.form.itemContent = '110101199001010011'
     wrapper.vm.form.itemType = 'ID_CARD'
     wrapper.vm.submit()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.listId).toBe(12)

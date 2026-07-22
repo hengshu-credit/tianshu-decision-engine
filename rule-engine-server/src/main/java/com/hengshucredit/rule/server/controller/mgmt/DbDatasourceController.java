@@ -9,7 +9,7 @@ import com.hengshucredit.rule.server.service.RuleDbDatasourceService;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
 import org.springframework.web.bind.annotation.*;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.LinkedHashMap;

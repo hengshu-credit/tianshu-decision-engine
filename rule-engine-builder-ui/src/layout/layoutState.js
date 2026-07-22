@@ -5,19 +5,19 @@ export const SIDEBAR_COMPACT_THRESHOLD = 168
 export const SIDEBAR_STORAGE_KEY = 'tianshu:layout:sidebar'
 
 export const SIDEBAR_MENUS = [
-  { index: '/project', label: '项目管理', icon: 'el-icon-folder-opened' },
-  { index: '/rule', label: '规则管理', icon: 'el-icon-s-operation' },
-  { index: '/variable', label: '变量管理', icon: 'el-icon-collection' },
-  { index: '/list', label: '名单管理', icon: 'el-icon-notebook-2' },
-  { index: '/datasource', label: '外数管理', icon: 'el-icon-connection' },
-  { index: '/database', label: '数据库管理', icon: 'el-icon-coin' },
-  { index: '/model', label: '模型管理', icon: 'el-icon-cpu' },
-  { index: '/function', label: '函数管理', icon: 'el-icon-c-scale-to-original' },
-  { index: '/test', label: '规则测试', icon: 'el-icon-video-play' },
-  { index: '/lineage', label: '血缘分析', icon: 'el-icon-share' },
-  { index: '/experiment', label: '分流实验', icon: 'el-icon-s-flag' },
-  { index: '/log', label: '执行日志', icon: 'el-icon-document-checked' },
-  { index: '/billing', label: '账单管理', icon: 'el-icon-wallet' }
+  { index: '/project', label: '项目管理', icon: 'FolderOpened' },
+  { index: '/rule', label: '规则管理', icon: 'Operation' },
+  { index: '/variable', label: '变量管理', icon: 'Collection' },
+  { index: '/list', label: '名单管理', icon: 'Notebook' },
+  { index: '/datasource', label: '外数管理', icon: 'Connection' },
+  { index: '/database', label: '数据库管理', icon: 'Coin' },
+  { index: '/model', label: '模型管理', icon: 'Cpu' },
+  { index: '/function', label: '函数管理', icon: 'ScaleToOriginal' },
+  { index: '/test', label: '规则测试', icon: 'VideoPlay' },
+  { index: '/lineage', label: '血缘分析', icon: 'Share' },
+  { index: '/experiment', label: '分流实验', icon: 'Flag' },
+  { index: '/log', label: '执行日志', icon: 'DocumentChecked' },
+  { index: '/billing', label: '账单管理', icon: 'Wallet' }
 ]
 
 const MENU_PREFIXES = [

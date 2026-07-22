@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import * as monaco from 'monaco-editor'
 import RuleVersionDiff from '@/components/rule/versionDiff/RuleVersionDiff.vue'
 
@@ -16,7 +16,7 @@ function version(version, modelJson, overrides = {}) {
 
 function factory(modelType, leftModel, rightModel) {
   return mount(RuleVersionDiff, {
-    propsData: {
+    props: {
       modelType,
       leftVersion: version(1, leftModel),
       rightVersion: version(2, rightModel)
@@ -72,13 +72,13 @@ describe('RuleVersionDiff', () => {
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('变量 ID')
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('1')
     expect(wrapper.find('.rule-script-ref-diff').text()).toContain('2')
-    wrapper.destroy()
+    wrapper.unmount()
     delete window.monaco
   })
 
   test('无法解析的版本在对应侧显示错误', () => {
     const wrapper = mount(RuleVersionDiff, {
-      propsData: {
+      props: {
         modelType: 'TABLE',
         leftVersion: version(1, {}, { modelJson: '{bad json' }),
         rightVersion: version(2, {})

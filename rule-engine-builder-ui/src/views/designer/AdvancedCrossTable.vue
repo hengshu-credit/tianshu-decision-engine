@@ -3,17 +3,36 @@
     <!-- 顶部工具栏 -->
     <div class="act-header">
       <div class="act-title-area">
-        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
-        <i class="el-icon-data-analysis act-title-icon" />
+        <el-button
+          link
+          :icon="ElIconBack"
+          @click="$router.back()"
+          style="color: #606266"
+        />
+        <el-icon class="act-title-icon"><el-icon-data-analysis /></el-icon>
         <span class="act-title">复杂交叉表设计器</span>
-        <el-tag size="mini" type="info" style="margin-left:8px;">
+        <el-tag size="small" type="info" style="margin-left: 8px">
           {{ totalRowCount }} 行 × {{ totalColCount }} 列
         </el-tag>
       </div>
       <div class="act-toolbar">
-        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
+        <el-button size="small" :icon="ElIconDocument" @click="handleSave"
+          >临时保存配置</el-button
+        >
+        <el-button
+          size="small"
+          type="warning"
+          :icon="ElIconCpu"
+          @click="handleCompile"
+          >保存并编译</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="handleTest"
+          >编译后测试</el-button
+        >
       </div>
     </div>
 
@@ -22,10 +41,16 @@
       <!-- 行维度 -->
       <div class="act-dim-panel">
         <div class="dim-panel-header">
-          <i class="el-icon-s-unfold" style="color:#1890ff;" /> 行维度
-          <el-button size="mini" icon="el-icon-plus" @click="addDimension('row')">添加行维度</el-button>
+          <el-icon style="color: #1890ff"><el-icon-s-unfold /></el-icon> 行维度
+          <el-button size="small" :icon="ElIconPlus" @click="addDimension('row')"
+            >添加行维度</el-button
+          >
         </div>
-        <div v-for="(dim, di) in model.rowDimensions" :key="'rd-' + di" class="dim-config-card">
+        <div
+          v-for="(dim, di) in model.rowDimensions"
+          :key="'rd-' + di"
+          class="dim-config-card"
+        >
           <div class="dim-config-header">
             <operand-picker
               :vars="varPickerOptions"
@@ -36,34 +61,138 @@
               placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @input="value => setDimensionOperand(dim, value)"
+              @input="(value) => setDimensionOperand(dim, value)"
             />
-            <el-input v-model="dim.varLabel" size="mini" placeholder="维度名称" class="dim-field-label" />
-            <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
-              <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            <el-input
+              v-model="dim.varLabel"
+              size="small"
+              placeholder="维度名称"
+              class="dim-field-label"
+            />
+            <el-select
+              v-model="dim.varType"
+              size="small"
+              class="dim-field-type"
+            >
+              <el-option
+                v-for="opt in varTypeFormOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
             </el-select>
-            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C;" @click="removeDimension('row', di)" />
+            <el-button
+              link
+              size="small"
+              :icon="ElIconDelete"
+              style="color: #f76e6c"
+              @click="removeDimension('row', di)"
+            />
           </div>
           <div class="segments-area">
-            <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
-              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg, dim)">
-                <el-option-group v-for="operatorGroup in segmentOperatorGroups(dim, seg)" :key="operatorGroup.label" :label="operatorGroup.label">
-                  <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+            <div
+              v-for="(seg, si) in dim.segments"
+              :key="si"
+              class="segment-row"
+            >
+              <el-select
+                v-model="seg.operator"
+                size="small"
+                class="seg-op"
+                @change="onSegmentOperatorChange(seg, dim)"
+              >
+                <el-option-group
+                  v-for="operatorGroup in segmentOperatorGroups(dim, seg)"
+                  :key="operatorGroup.label"
+                  :label="operatorGroup.label"
+                >
+                  <el-option
+                    v-for="option in operatorGroup.options"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
                 </el-option-group>
               </el-select>
               <template v-if="seg.operator === 'range'">
-                <el-select v-model="seg.rangeBoundary" size="mini" class="seg-boundary" aria-label="区间边界">
-                  <el-option v-for="boundary in rangeBoundaryOptions" :key="boundary" :label="boundary" :value="boundary" />
+                <el-select
+                  v-model="seg.rangeBoundary"
+                  size="small"
+                  class="seg-boundary"
+                  aria-label="区间边界"
+                >
+                  <el-option
+                    v-for="boundary in rangeBoundaryOptions"
+                    :key="boundary"
+                    :label="boundary"
+                    :value="boundary"
+                  />
                 </el-select>
-                <operand-picker :value="seg.minOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最小值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'minOperand', value)" />
+                <operand-picker
+                  :value="seg.minOperand"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  placeholder="最小值"
+                  width="100%"
+                  class="seg-val"
+                  @input="
+                    (value) => setSegmentOperand(seg, 'minOperand', value)
+                  "
+                />
                 <span class="seg-sep">~</span>
-                <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
+                <operand-picker
+                  :value="seg.maxOperand"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  placeholder="最大值"
+                  width="100%"
+                  class="seg-val"
+                  @input="
+                    (value) => setSegmentOperand(seg, 'maxOperand', value)
+                  "
+                />
               </template>
-              <operand-picker v-else-if="segmentRequiresValue(seg, dim)" :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="segmentRightAllowedKinds(seg, dim)" :context="segmentRightContext(seg, dim)" :expected-type="segmentRightExpectedType(seg, dim)" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
-              <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
-              <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
+              <operand-picker
+                v-else-if="segmentRequiresValue(seg, dim)"
+                :value="seg.valueOperand"
+                :vars="varPickerOptions"
+                :functions="projectFunctions"
+                :selected-vars="selectedVarPickerOptions"
+                :allowed-kinds="segmentRightAllowedKinds(seg, dim)"
+                :context="segmentRightContext(seg, dim)"
+                :expected-type="segmentRightExpectedType(seg, dim)"
+                placeholder="选择值或字段"
+                width="100%"
+                class="seg-val"
+                @input="
+                  (value) => setSegmentOperand(seg, 'valueOperand', value)
+                "
+              />
+              <el-input
+                v-model="seg.label"
+                size="small"
+                placeholder="标签"
+                class="seg-label"
+              />
+              <el-button
+                link
+                size="small"
+                :icon="ElIconClose"
+                style="color: #ccc"
+                @click="dim.segments.splice(si, 1)"
+              />
             </div>
-            <el-button type="text" size="mini" icon="el-icon-plus" @click="addSegment(dim)">添加分段</el-button>
+            <el-button
+              link
+              size="small"
+              :icon="ElIconPlus"
+              @click="addSegment(dim)"
+              >添加分段</el-button
+            >
           </div>
         </div>
       </div>
@@ -71,10 +200,16 @@
       <!-- 列维度 -->
       <div class="act-dim-panel">
         <div class="dim-panel-header">
-          <i class="el-icon-s-fold" style="color:#52c41a;" /> 列维度
-          <el-button size="mini" icon="el-icon-plus" @click="addDimension('col')">添加列维度</el-button>
+          <el-icon style="color: #52c41a"><el-icon-s-fold /></el-icon> 列维度
+          <el-button size="small" :icon="ElIconPlus" @click="addDimension('col')"
+            >添加列维度</el-button
+          >
         </div>
-        <div v-for="(dim, di) in model.colDimensions" :key="'cd-' + di" class="dim-config-card">
+        <div
+          v-for="(dim, di) in model.colDimensions"
+          :key="'cd-' + di"
+          class="dim-config-card"
+        >
           <div class="dim-config-header">
             <operand-picker
               :vars="varPickerOptions"
@@ -85,34 +220,138 @@
               placeholder="选择维度字段或路径"
               width="100%"
               class="dim-field-var"
-              @input="value => setDimensionOperand(dim, value)"
+              @input="(value) => setDimensionOperand(dim, value)"
             />
-            <el-input v-model="dim.varLabel" size="mini" placeholder="维度名称" class="dim-field-label" />
-            <el-select v-model="dim.varType" size="mini" class="dim-field-type" popper-append-to-body>
-              <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+            <el-input
+              v-model="dim.varLabel"
+              size="small"
+              placeholder="维度名称"
+              class="dim-field-label"
+            />
+            <el-select
+              v-model="dim.varType"
+              size="small"
+              class="dim-field-type"
+            >
+              <el-option
+                v-for="opt in varTypeFormOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
             </el-select>
-            <el-button type="text" size="mini" icon="el-icon-delete" style="color:#F76E6C;" @click="removeDimension('col', di)" />
+            <el-button
+              link
+              size="small"
+              :icon="ElIconDelete"
+              style="color: #f76e6c"
+              @click="removeDimension('col', di)"
+            />
           </div>
           <div class="segments-area">
-            <div v-for="(seg, si) in dim.segments" :key="si" class="segment-row">
-              <el-select v-model="seg.operator" size="mini" class="seg-op" @change="onSegmentOperatorChange(seg, dim)">
-                <el-option-group v-for="operatorGroup in segmentOperatorGroups(dim, seg)" :key="operatorGroup.label" :label="operatorGroup.label">
-                  <el-option v-for="option in operatorGroup.options" :key="option.value" :label="option.label" :value="option.value" />
+            <div
+              v-for="(seg, si) in dim.segments"
+              :key="si"
+              class="segment-row"
+            >
+              <el-select
+                v-model="seg.operator"
+                size="small"
+                class="seg-op"
+                @change="onSegmentOperatorChange(seg, dim)"
+              >
+                <el-option-group
+                  v-for="operatorGroup in segmentOperatorGroups(dim, seg)"
+                  :key="operatorGroup.label"
+                  :label="operatorGroup.label"
+                >
+                  <el-option
+                    v-for="option in operatorGroup.options"
+                    :key="option.value"
+                    :label="option.label"
+                    :value="option.value"
+                  />
                 </el-option-group>
               </el-select>
               <template v-if="seg.operator === 'range'">
-                <el-select v-model="seg.rangeBoundary" size="mini" class="seg-boundary" aria-label="区间边界">
-                  <el-option v-for="boundary in rangeBoundaryOptions" :key="boundary" :label="boundary" :value="boundary" />
+                <el-select
+                  v-model="seg.rangeBoundary"
+                  size="small"
+                  class="seg-boundary"
+                  aria-label="区间边界"
+                >
+                  <el-option
+                    v-for="boundary in rangeBoundaryOptions"
+                    :key="boundary"
+                    :label="boundary"
+                    :value="boundary"
+                  />
                 </el-select>
-                <operand-picker :value="seg.minOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最小值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'minOperand', value)" />
+                <operand-picker
+                  :value="seg.minOperand"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  placeholder="最小值"
+                  width="100%"
+                  class="seg-val"
+                  @input="
+                    (value) => setSegmentOperand(seg, 'minOperand', value)
+                  "
+                />
                 <span class="seg-sep">~</span>
-                <operand-picker :value="seg.maxOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="valueOperandKinds" placeholder="最大值" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'maxOperand', value)" />
+                <operand-picker
+                  :value="seg.maxOperand"
+                  :vars="varPickerOptions"
+                  :functions="projectFunctions"
+                  :selected-vars="selectedVarPickerOptions"
+                  :allowed-kinds="valueOperandKinds"
+                  placeholder="最大值"
+                  width="100%"
+                  class="seg-val"
+                  @input="
+                    (value) => setSegmentOperand(seg, 'maxOperand', value)
+                  "
+                />
               </template>
-              <operand-picker v-else-if="segmentRequiresValue(seg, dim)" :value="seg.valueOperand" :vars="varPickerOptions" :functions="projectFunctions" :selected-vars="selectedVarPickerOptions" :allowed-kinds="segmentRightAllowedKinds(seg, dim)" :context="segmentRightContext(seg, dim)" :expected-type="segmentRightExpectedType(seg, dim)" placeholder="选择值或字段" width="100%" class="seg-val" @input="value => setSegmentOperand(seg, 'valueOperand', value)" />
-              <el-input v-model="seg.label" size="mini" placeholder="标签" class="seg-label" />
-              <el-button type="text" size="mini" icon="el-icon-close" style="color:#ccc;" @click="dim.segments.splice(si, 1)" />
+              <operand-picker
+                v-else-if="segmentRequiresValue(seg, dim)"
+                :value="seg.valueOperand"
+                :vars="varPickerOptions"
+                :functions="projectFunctions"
+                :selected-vars="selectedVarPickerOptions"
+                :allowed-kinds="segmentRightAllowedKinds(seg, dim)"
+                :context="segmentRightContext(seg, dim)"
+                :expected-type="segmentRightExpectedType(seg, dim)"
+                placeholder="选择值或字段"
+                width="100%"
+                class="seg-val"
+                @input="
+                  (value) => setSegmentOperand(seg, 'valueOperand', value)
+                "
+              />
+              <el-input
+                v-model="seg.label"
+                size="small"
+                placeholder="标签"
+                class="seg-label"
+              />
+              <el-button
+                link
+                size="small"
+                :icon="ElIconClose"
+                style="color: #ccc"
+                @click="dim.segments.splice(si, 1)"
+              />
             </div>
-            <el-button type="text" size="mini" icon="el-icon-plus" @click="addSegment(dim)">添加分段</el-button>
+            <el-button
+              link
+              size="small"
+              :icon="ElIconPlus"
+              @click="addSegment(dim)"
+              >添加分段</el-button
+            >
           </div>
         </div>
       </div>
@@ -121,7 +360,7 @@
     <!-- 结果变量：独立一行 -->
     <div class="act-result-row">
       <div class="dim-panel-header">
-        <i class="el-icon-finished" style="color:#fa8c16;" /> 结果变量
+        <el-icon style="color: #fa8c16"><el-icon-finished /></el-icon> 结果变量
       </div>
       <div class="result-config">
         <operand-picker
@@ -134,23 +373,43 @@
           placeholder="选择结果字段或手输路径"
           width="100%"
           class="result-field-var"
-          @input="value => setDimensionOperand(model.resultVar, value)"
+          @input="(value) => setDimensionOperand(model.resultVar, value)"
         />
-        <el-input v-model="model.resultVar.varLabel" size="mini" placeholder="结果名称" class="result-field-label" />
-        <el-select v-model="model.resultVar.varType" size="mini" class="result-field-type" popper-append-to-body>
-          <el-option v-for="opt in varTypeFormOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+        <el-input
+          v-model="model.resultVar.varLabel"
+          size="small"
+          placeholder="结果名称"
+          class="result-field-label"
+        />
+        <el-select
+          v-model="model.resultVar.varType"
+          size="small"
+          class="result-field-type"
+        >
+          <el-option
+            v-for="opt in varTypeFormOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
         </el-select>
       </div>
     </div>
 
     <!-- 交叉矩阵 -->
     <div class="act-card" v-if="totalRowCount > 0 && totalColCount > 0">
-      <div class="act-card-title"><i class="el-icon-s-grid" /> 交叉矩阵（{{ totalRowCount }} × {{ totalColCount }}）</div>
+      <div class="act-card-title">
+        <el-icon><el-icon-s-grid /></el-icon> 交叉矩阵（{{ totalRowCount }} ×
+        {{ totalColCount }}）
+      </div>
       <div class="act-matrix-wrap">
         <table class="act-matrix">
           <thead>
             <!-- 多级列表头：每个列维度一行 -->
-            <tr v-for="(headerRow, level) in colHeaderRows" :key="'ch-level-' + level">
+            <tr
+              v-for="(headerRow, level) in colHeaderRows"
+              :key="'ch-level-' + level"
+            >
               <!-- 左上角单元格仅在第一行显示 -->
               <th
                 v-if="level === 0"
@@ -169,7 +428,10 @@
                 :key="'ch-' + level + '-' + ci"
                 :colspan="cell.colspan"
                 class="col-header-cell"
-                :class="{ 'col-header-top': level === 0, 'col-header-bottom': level === colDimLevels - 1 }"
+                :class="{
+                  'col-header-top': level === 0,
+                  'col-header-bottom': level === colDimLevels - 1,
+                }"
               >
                 {{ cell.label }}
               </th>
@@ -201,7 +463,7 @@
                   placeholder="选择结果或手输阈值"
                   width="100%"
                   class="cell-input"
-                  @input="value => setCellOperand(ri, ci, value)"
+                  @input="(value) => setCellOperand(ri, ci, value)"
                 />
               </td>
             </tr>
@@ -216,12 +478,12 @@
       ref="scriptPanel"
       :definitionId="definitionId"
       :onBeforeCompile="handleSave"
-      @mode-change="mode => scriptMode = mode"
+      @mode-change="(mode) => (scriptMode = mode)"
     />
 
     <!-- 测试弹窗 -->
-        <designer-test-dialog
-      :visible.sync="testVisible"
+    <designer-test-dialog
+      v-model:visible="testVisible"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="CROSS_ADV"
@@ -232,15 +494,50 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
+import { markRaw } from 'vue'
+import {
+  DataAnalysis as ElIconDataAnalysis,
+  Expand as ElIconSUnfold,
+  Fold as ElIconSFold,
+  Finished as ElIconFinished,
+  Grid as ElIconSGrid,
+  Back as ElIconBack,
+  Document as ElIconDocument,
+  Cpu as ElIconCpu,
+  VideoPlay as ElIconVideoPlay,
+  Plus as ElIconPlus,
+  Delete as ElIconDelete,
+  Close as ElIconClose,
+} from '@element-plus/icons-vue'
+import {
+  saveContent,
+  compileRule,
+  executeRule,
+  getContent,
+  refreshFields,
+} from '@/api/definition'
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
-import { addCode, buildSampleParamsFromCodes, coerceSampleValue, isLeafRef, setParamPath } from '@/utils/testSampleParams'
+import {
+  addCode,
+  buildSampleParamsFromCodes,
+  coerceSampleValue,
+  isLeafRef,
+  setParamPath,
+} from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
-import { collectOperandReferences, compileOperand, createLiteralOperand, inferOperandType, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import {
+  collectOperandReferences,
+  compileOperand,
+  createLiteralOperand,
+  inferOperandType,
+  operandDisplay,
+  operandFromReferenceFields,
+  syncOperandReference,
+} from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   conditionOperatorAllowsVarValue,
@@ -248,19 +545,18 @@ import {
   findConditionOperator,
   getConditionOperatorGroups,
   normalizeConditionOperator,
-  normalizeVarType
+  normalizeVarType,
 } from '@/constants/conditionOperators'
 
 const RANGE_BOUNDARIES = ['[)', '()', '[]', '(]']
 
 function dimensionType(dim) {
-  return inferOperandType(dim && dim.operand) || (dim && dim.varType) || 'STRING'
+  return (
+    inferOperandType(dim && dim.operand) || (dim && dim.varType) || 'STRING'
+  )
 }
 
 export default {
-  name: 'AdvancedCrossTable',
-  components: { DesignerTestDialog, OperandPicker, ScriptPanel },
-  mixins: [varPickerMixin],
   data() {
     return {
       definitionId: null,
@@ -268,8 +564,13 @@ export default {
       model: {
         rowDimensions: [],
         colDimensions: [],
-        resultVar: { varCode: '', varLabel: '', varType: 'NUMBER', _varId: null },
-        cells: []
+        resultVar: {
+          varCode: '',
+          varLabel: '',
+          varType: 'NUMBER',
+          _varId: null,
+        },
+        cells: [],
       },
       cellData: [],
       scriptMode: 'visual',
@@ -281,25 +582,64 @@ export default {
       rangeBoundaryOptions: RANGE_BOUNDARIES,
       readOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
       writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
-      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      ElIconBack: markRaw(ElIconBack),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconCpu: markRaw(ElIconCpu),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
+      ElIconPlus: markRaw(ElIconPlus),
+      ElIconDelete: markRaw(ElIconDelete),
+      ElIconClose: markRaw(ElIconClose),
     }
   },
+  components: {
+    DesignerTestDialog,
+    OperandPicker,
+    ScriptPanel,
+    ElIconDataAnalysis,
+    ElIconSUnfold,
+    ElIconSFold,
+    ElIconFinished,
+    ElIconSGrid,
+  },
+  name: 'AdvancedCrossTable',
+  mixins: [varPickerMixin],
   computed: {
-    rowCombinations() { return this.cartesianProduct(this.model.rowDimensions) },
-    colCombinations() { return this.cartesianProduct(this.model.colDimensions) },
-    totalRowCount() { return this.rowCombinations.length },
-    totalColCount() { return this.colCombinations.length },
+    rowCombinations() {
+      return this.cartesianProduct(this.model.rowDimensions)
+    },
+    colCombinations() {
+      return this.cartesianProduct(this.model.colDimensions)
+    },
+    totalRowCount() {
+      return this.rowCombinations.length
+    },
+    totalColCount() {
+      return this.colCombinations.length
+    },
     /** 列维度层级数 */
-    colDimLevels() { return Math.max(1, (this.model.colDimensions || []).length) },
+    colDimLevels() {
+      return Math.max(1, (this.model.colDimensions || []).length)
+    },
     /** 行维度层级数 */
-    rowDimLevels() { return Math.max(1, (this.model.rowDimensions || []).length) },
+    rowDimLevels() {
+      return Math.max(1, (this.model.rowDimensions || []).length)
+    },
     /** 行维度名称（拼接所有维度标签） */
     rowDimLabel() {
-      return (this.model.rowDimensions || []).map(d => d.varLabel || d.varCode || '').join(' / ') || '行'
+      return (
+        (this.model.rowDimensions || [])
+          .map((d) => d.varLabel || d.varCode || '')
+          .join(' / ') || '行'
+      )
     },
     /** 列维度名称 */
     colDimLabel() {
-      return (this.model.colDimensions || []).map(d => d.varLabel || d.varCode || '').join(' / ') || '列'
+      return (
+        (this.model.colDimensions || [])
+          .map((d) => d.varLabel || d.varCode || '')
+          .join(' / ') || '列'
+      )
     },
     /**
      * 多级列表头行数组，每一级是一个 [{label, colspan}] 数组。
@@ -324,7 +664,10 @@ export default {
         const segs = dims[level].segments || []
         for (let r = 0; r < repeat; r++) {
           for (const seg of segs) {
-            cells.push({ label: seg.label || operandDisplay(seg.valueOperand) || '-', colspan })
+            cells.push({
+              label: seg.label || operandDisplay(seg.valueOperand) || '-',
+              colspan,
+            })
           }
         }
         rows.push(cells)
@@ -350,20 +693,29 @@ export default {
           if (ri % rowspan === 0) {
             const combo = this.rowCombinations[ri]
             cells.push({
-              label: combo && combo[level] ? (combo[level].label || operandDisplay(combo[level].valueOperand) || '-') : '-',
+              label:
+                combo && combo[level]
+                  ? combo[level].label ||
+                    operandDisplay(combo[level].valueOperand) ||
+                    '-'
+                  : '-',
               rowspan,
-              level
+              level,
             })
           }
         }
         result.push(cells)
       }
       return result
-    }
+    },
   },
   watch: {
-    totalRowCount() { this.syncCellData() },
-    totalColCount() { this.syncCellData() }
+    totalRowCount() {
+      this.syncCellData()
+    },
+    totalColCount() {
+      this.syncCellData()
+    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -372,13 +724,28 @@ export default {
   methods: {
     collectSelectedVarItems() {
       const items = []
-      const add = operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType }))
+      const add = (operand) =>
+        collectOperandReferences(operand).forEach((reference) =>
+          items.push({
+            varCode: reference.code,
+            varType: reference.valueType,
+            _varId: reference.refId,
+            _refType: reference.refType,
+          })
+        )
       add(this.model.resultVar && this.model.resultVar.operand)
-      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
+      ;[
+        ...(this.model.rowDimensions || []),
+        ...(this.model.colDimensions || []),
+      ].forEach((dim) => {
         add(dim.operand)
-        ;(dim.segments || []).forEach(segment => { add(segment.valueOperand); add(segment.minOperand); add(segment.maxOperand) })
+        ;(dim.segments || []).forEach((segment) => {
+          add(segment.valueOperand)
+          add(segment.minOperand)
+          add(segment.maxOperand)
+        })
       })
-      this.cellData.forEach(row => row.forEach(add))
+      this.cellData.forEach((row) => row.forEach(add))
       return items
     },
     cartesianProduct(dimensions) {
@@ -400,12 +767,22 @@ export default {
     syncCellData() {
       const rows = this.totalRowCount
       const cols = this.totalColCount
-      if (rows === 0 || cols === 0) { this.cellData = []; return }
+      if (rows === 0 || cols === 0) {
+        this.cellData = []
+        return
+      }
       const newData = []
       for (let r = 0; r < rows; r++) {
         const row = []
         for (let c = 0; c < cols; c++) {
-          row.push(this.cellData[r] && this.cellData[r][c] != null ? this.cellData[r][c] : createLiteralOperand('', this.model.resultVar.varType || 'STRING'))
+          row.push(
+            this.cellData[r] && this.cellData[r][c] != null
+              ? this.cellData[r][c]
+              : createLiteralOperand(
+                  '',
+                  this.model.resultVar.varType || 'STRING'
+                )
+          )
         }
         newData.push(row)
       }
@@ -433,27 +810,58 @@ export default {
     },
     flattenCells(cells) {
       if (!Array.isArray(cells)) return []
-      return cells.map(row => {
+      return cells.map((row) => {
         if (!Array.isArray(row)) return []
-        return row.map(cell => {
+        return row.map((cell) => {
           if (Array.isArray(cell)) cell = cell[0]
           if (cell && cell.kind) return cell
-          return createLiteralOperand(cell != null ? cell : '', this.model.resultVar && this.model.resultVar.varType || 'STRING')
+          return createLiteralOperand(
+            cell != null ? cell : '',
+            (this.model.resultVar && this.model.resultVar.varType) || 'STRING'
+          )
         })
       })
     },
     normalizeModel() {
-      if (!this.model.rowDimensions) this.$set(this.model, 'rowDimensions', [])
-      if (!this.model.colDimensions) this.$set(this.model, 'colDimensions', [])
-      if (!this.model.resultVar) this.$set(this.model, 'resultVar', { varCode: '', varLabel: '', varType: 'NUMBER', _varId: null })
-      if (!this.model.resultVar.operand) this.$set(this.model.resultVar, 'operand', operandFromReferenceFields(this.model.resultVar))
-      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
-        if (!dim.operand) this.$set(dim, 'operand', operandFromReferenceFields(dim))
-        ;(dim.segments || []).forEach(segment => {
-          if (segment.operator === 'range' && !RANGE_BOUNDARIES.includes(segment.rangeBoundary)) this.$set(segment, 'rangeBoundary', '[)')
-          if (!segment.valueOperand) this.$set(segment, 'valueOperand', createLiteralOperand(segment.value, dim.varType || 'STRING'))
-          if (!segment.minOperand) this.$set(segment, 'minOperand', createLiteralOperand(segment.min, dim.varType || 'STRING'))
-          if (!segment.maxOperand) this.$set(segment, 'maxOperand', createLiteralOperand(segment.max, dim.varType || 'STRING'))
+      if (!this.model.rowDimensions) this.model['rowDimensions'] = []
+      if (!this.model.colDimensions) this.model['colDimensions'] = []
+      if (!this.model.resultVar)
+        this.model['resultVar'] = {
+          varCode: '',
+          varLabel: '',
+          varType: 'NUMBER',
+          _varId: null,
+        }
+      if (!this.model.resultVar.operand)
+        this.model.resultVar['operand'] = operandFromReferenceFields(
+          this.model.resultVar
+        )
+      ;[
+        ...(this.model.rowDimensions || []),
+        ...(this.model.colDimensions || []),
+      ].forEach((dim) => {
+        if (!dim.operand) dim['operand'] = operandFromReferenceFields(dim)
+        ;(dim.segments || []).forEach((segment) => {
+          if (
+            segment.operator === 'range' &&
+            !RANGE_BOUNDARIES.includes(segment.rangeBoundary)
+          )
+            segment['rangeBoundary'] = '[)'
+          if (!segment.valueOperand)
+            segment['valueOperand'] = createLiteralOperand(
+              segment.value,
+              dim.varType || 'STRING'
+            )
+          if (!segment.minOperand)
+            segment['minOperand'] = createLiteralOperand(
+              segment.min,
+              dim.varType || 'STRING'
+            )
+          if (!segment.maxOperand)
+            segment['maxOperand'] = createLiteralOperand(
+              segment.max,
+              dim.varType || 'STRING'
+            )
         })
       })
     },
@@ -462,7 +870,14 @@ export default {
       const refs = this.projectRefs || []
       const findRef = (varId, refType) => {
         if (varId == null) return null
-        return refs.find(r => r.varObj && String(r.varObj.id) === String(varId) && (!refType || r.refType === refType)) || null
+        return (
+          refs.find(
+            (r) =>
+              r.varObj &&
+              String(r.varObj.id) === String(varId) &&
+              (!refType || r.refType === refType)
+          ) || null
+        )
       }
       const fillRef = (v) => {
         if (!v) return
@@ -475,99 +890,183 @@ export default {
         }
       }
       if (this.model.resultVar) fillRef(this.model.resultVar)
-      ;(this.model.rowDimensions || []).forEach(d => fillRef(d))
-      ;(this.model.colDimensions || []).forEach(d => fillRef(d))
+      ;(this.model.rowDimensions || []).forEach((d) => fillRef(d))
+      ;(this.model.colDimensions || []).forEach((d) => fillRef(d))
       this.syncAllOperands()
     },
     setDimensionOperand(dim, value) {
-      this.$set(dim, 'operand', value)
+      dim['operand'] = value
       dim.varCode = compileOperand(value)
-      dim.varLabel = value && (value.label || value.code || value.value) || ''
-      dim.varType = value && value.valueType || dim.varType || 'STRING'
+      dim.varLabel = (value && (value.label || value.code || value.value)) || ''
+      dim.varType = (value && value.valueType) || dim.varType || 'STRING'
       dim._varId = value && value.refId != null ? value.refId : null
-      dim._refType = value && value.refType || null
+      dim._refType = (value && value.refType) || null
       if (dim.varType === 'ENUM') {
         const options = this.getVarOptions(dim.varCode)
         if (options.length > 0) {
-          dim.segments = options.map(o => ({ label: o.label || o.value, operator: '==', rangeBoundary: '[)', value: o.value, valueOperand: createLiteralOperand(o.value, 'STRING') }))
+          dim.segments = options.map((o) => ({
+            label: o.label || o.value,
+            operator: '==',
+            rangeBoundary: '[)',
+            value: o.value,
+            valueOperand: createLiteralOperand(o.value, 'STRING'),
+          }))
         }
       }
     },
     setSegmentOperand(segment, field, value) {
-      this.$set(segment, field, value)
-      const scalar = field === 'valueOperand' ? 'value' : field === 'minOperand' ? 'min' : 'max'
+      segment[field] = value
+      const scalar =
+        field === 'valueOperand'
+          ? 'value'
+          : field === 'minOperand'
+          ? 'min'
+          : 'max'
       segment[scalar] = compileOperand(value)
     },
     segmentOperatorGroups(dim, segment) {
-      const groups = getConditionOperatorGroups(dimensionType(dim), dim && dim.operand)
-        .map(group => ({ ...group, options: [...group.options] }))
-      if (['NUMBER', 'DATE'].includes(normalizeVarType(dimensionType(dim))) || (segment && segment.operator === 'range')) {
+      const groups = getConditionOperatorGroups(
+        dimensionType(dim),
+        dim && dim.operand
+      ).map((group) => ({ ...group, options: [...group.options] }))
+      if (
+        ['NUMBER', 'DATE'].includes(normalizeVarType(dimensionType(dim))) ||
+        (segment && segment.operator === 'range')
+      ) {
         groups[0].options.push({ label: '区间', value: 'range' })
       }
       return groups
     },
     segmentRequiresValue(segment, dim) {
       if (segment && segment.operator === 'range') return true
-      return conditionOperatorRequiresValue(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      return conditionOperatorRequiresValue(
+        segment && segment.operator,
+        dimensionType(dim),
+        dim && dim.operand
+      )
     },
     segmentRightContext(segment, dim) {
-      const option = findConditionOperator(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      const option = findConditionOperator(
+        segment && segment.operator,
+        dimensionType(dim),
+        dim && dim.operand
+      )
       return (option && option.rightContext) || 'READ_EXPRESSION'
     },
     segmentRightExpectedType(segment, dim) {
-      const option = findConditionOperator(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      const option = findConditionOperator(
+        segment && segment.operator,
+        dimensionType(dim),
+        dim && dim.operand
+      )
       return (option && option.rightValueType) || dimensionType(dim)
     },
     segmentRightAllowedKinds(segment, dim) {
       const context = this.segmentRightContext(segment, dim)
-      if (context === 'LIST_QUERY_CONFIG') return getExpressionContext(context).allowedKinds
-      return conditionOperatorAllowsVarValue(segment && segment.operator, dimensionType(dim), dim && dim.operand)
+      if (context === 'LIST_QUERY_CONFIG')
+        return getExpressionContext(context).allowedKinds
+      return conditionOperatorAllowsVarValue(
+        segment && segment.operator,
+        dimensionType(dim),
+        dim && dim.operand
+      )
         ? getExpressionContext(context).allowedKinds
         : ['LITERAL']
     },
     onSegmentOperatorChange(segment, dim) {
       if (segment.operator === 'range') {
         if (!RANGE_BOUNDARIES.includes(segment.rangeBoundary)) {
-          if (this.$set) this.$set(segment, 'rangeBoundary', '[)')
+          if (this.$set) segment['rangeBoundary'] = '[)'
           else segment.rangeBoundary = '[)'
         }
         return
       }
-      const operator = normalizeConditionOperator(segment.operator || '==', dimensionType(dim), dim && dim.operand)
-      if (this.$set) this.$set(segment, 'operator', operator)
+      const operator = normalizeConditionOperator(
+        segment.operator || '==',
+        dimensionType(dim),
+        dim && dim.operand
+      )
+      if (this.$set) segment['operator'] = operator
       else segment.operator = operator
-      if (!conditionOperatorRequiresValue(operator, dimensionType(dim), dim && dim.operand)) {
-        if (this.$set) this.$set(segment, 'valueOperand', null)
+      if (
+        !conditionOperatorRequiresValue(
+          operator,
+          dimensionType(dim),
+          dim && dim.operand
+        )
+      ) {
+        if (this.$set) segment['valueOperand'] = null
         else segment.valueOperand = null
         segment.value = ''
       }
     },
     setCellOperand(row, col, value) {
-      this.$set(this.cellData[row], col, value)
+      this.cellData[row][col] = value
     },
     syncAllOperands() {
       const sync = (holder, field, setter) => {
         if (!holder || !holder[field]) return
-        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        const result = syncOperandReference(
+          holder[field],
+          this.varPickerOptions
+        )
         if (result.changed) setter(result.operand)
       }
-      sync(this.model.resultVar, 'operand', value => this.setDimensionOperand(this.model.resultVar, value))
-      ;[...(this.model.rowDimensions || []), ...(this.model.colDimensions || [])].forEach(dim => {
-        sync(dim, 'operand', value => this.setDimensionOperand(dim, value))
-        ;(dim.segments || []).forEach(segment => ['valueOperand', 'minOperand', 'maxOperand'].forEach(field => sync(segment, field, value => this.setSegmentOperand(segment, field, value))))
+      sync(this.model.resultVar, 'operand', (value) =>
+        this.setDimensionOperand(this.model.resultVar, value)
+      )
+      ;[
+        ...(this.model.rowDimensions || []),
+        ...(this.model.colDimensions || []),
+      ].forEach((dim) => {
+        sync(dim, 'operand', (value) => this.setDimensionOperand(dim, value))
+        ;(dim.segments || []).forEach((segment) =>
+          ['valueOperand', 'minOperand', 'maxOperand'].forEach((field) =>
+            sync(segment, field, (value) =>
+              this.setSegmentOperand(segment, field, value)
+            )
+          )
+        )
       })
-      this.cellData.forEach((row, ri) => row.forEach((operand, ci) => sync(row, ci, value => this.setCellOperand(ri, ci, value))))
+      this.cellData.forEach((row, ri) =>
+        row.forEach((operand, ci) =>
+          sync(row, ci, (value) => this.setCellOperand(ri, ci, value))
+        )
+      )
     },
     addDimension(type) {
-      const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions
-      dims.push({ varCode: '', varLabel: '', varType: 'STRING', _varId: null, operand: null, segments: [{ label: '', operator: '==', rangeBoundary: '[)', value: '', valueOperand: createLiteralOperand('', 'STRING') }] })
+      const dims =
+        type === 'row' ? this.model.rowDimensions : this.model.colDimensions
+      dims.push({
+        varCode: '',
+        varLabel: '',
+        varType: 'STRING',
+        _varId: null,
+        operand: null,
+        segments: [
+          {
+            label: '',
+            operator: '==',
+            rangeBoundary: '[)',
+            value: '',
+            valueOperand: createLiteralOperand('', 'STRING'),
+          },
+        ],
+      })
     },
     removeDimension(type, index) {
-      const dims = type === 'row' ? this.model.rowDimensions : this.model.colDimensions
+      const dims =
+        type === 'row' ? this.model.rowDimensions : this.model.colDimensions
       dims.splice(index, 1)
     },
     addSegment(dim) {
-      dim.segments.push({ label: '', operator: '==', rangeBoundary: '[)', value: '', valueOperand: createLiteralOperand('', dim.varType || 'STRING') })
+      dim.segments.push({
+        label: '',
+        operator: '==',
+        rangeBoundary: '[)',
+        value: '',
+        valueOperand: createLiteralOperand('', dim.varType || 'STRING'),
+      })
     },
     buildSaveModel() {
       const saveModel = JSON.parse(JSON.stringify(this.model))
@@ -576,7 +1075,10 @@ export default {
     },
     async handleSave() {
       const saveModel = this.buildSaveModel()
-      await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(saveModel) })
+      await saveContent({
+        definitionId: this.definitionId,
+        modelJson: JSON.stringify(saveModel),
+      })
       await refreshFields(this.definitionId, JSON.stringify(saveModel))
       this.refreshProjectRefs()
 
@@ -594,7 +1096,11 @@ export default {
     },
     handleTest() {
       this.testParamsTemplate = this.buildTestParamsTemplate()
-      this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
+      this.testParamsJson = JSON.stringify(
+        this.buildTestParamsTemplate(),
+        null,
+        2
+      )
       this.testResult = null
       this.testVisible = true
     },
@@ -602,39 +1108,56 @@ export default {
       const codes = new Set()
       const rowDimensions = this.model.rowDimensions || []
       const colDimensions = this.model.colDimensions || []
-      ;[...rowDimensions, ...colDimensions].forEach(dim => {
+      ;[...rowDimensions, ...colDimensions].forEach((dim) => {
         addCode(codes, dim.varCode)
-        collectOperandReferences(dim.operand).forEach(reference => addCode(codes, reference.code || reference.path))
-        ;(dim.segments || []).forEach(segment => {
-          ['valueOperand', 'minOperand', 'maxOperand'].forEach(field => {
-            collectOperandReferences(segment[field]).forEach(reference => addCode(codes, reference.code || reference.path))
+        collectOperandReferences(dim.operand).forEach((reference) =>
+          addCode(codes, reference.code || reference.path)
+        )
+        ;(dim.segments || []).forEach((segment) => {
+          ['valueOperand', 'minOperand', 'maxOperand'].forEach((field) => {
+            collectOperandReferences(segment[field]).forEach((reference) =>
+              addCode(codes, reference.code || reference.path)
+            )
           })
         })
       })
-      const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
-      ;[...rowDimensions, ...colDimensions].forEach(dim => {
-        const segment = (dim.segments || []).find(item => item && (
-          item.valueOperand && item.valueOperand.kind === 'LITERAL' && item.valueOperand.value !== '' ||
-          !item.valueOperand && item.value !== undefined && item.value !== ''
-        ))
+      const params = buildSampleParamsFromCodes(
+        Array.from(codes),
+        this.projectRefs
+      )
+      ;[...rowDimensions, ...colDimensions].forEach((dim) => {
+        const segment = (dim.segments || []).find(
+          (item) =>
+            item &&
+            ((item.valueOperand &&
+              item.valueOperand.kind === 'LITERAL' &&
+              item.valueOperand.value !== '') ||
+              (!item.valueOperand &&
+                item.value !== undefined &&
+                item.value !== ''))
+        )
         if (!dim.varCode || !segment) return
-        const ref = this.projectRefs.find(r => r.refCode === dim.varCode)
+        const ref = this.projectRefs.find((r) => r.refCode === dim.varCode)
         if (ref && !isLeafRef(ref)) return
-        const sampleValue = segment.valueOperand ? segment.valueOperand.value : segment.value
+        const sampleValue = segment.valueOperand
+          ? segment.valueOperand.value
+          : segment.value
         setParamPath(params, dim.varCode, coerceSampleValue(sampleValue, ref))
       })
       return params
     },
     async doTest() {
       let params = {}
-      try { params = JSON.parse(this.testParamsJson || '{}') } catch (e) {
+      try {
+        params = JSON.parse(this.testParamsJson || '{}')
+      } catch (e) {
         this.$message.error('参数 JSON 格式错误')
         return
       }
       const res = await executeRule({ definitionId: this.definitionId, params })
       this.testResult = res && res.data ? res.data : res
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -645,109 +1168,248 @@ export default {
   min-height: 100%;
 }
 .act-header {
-  display: flex; align-items: center; justify-content: space-between;
-  background: #fff; border-radius: 4px; padding: 14px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px;
-  flex-wrap: wrap; gap: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fff;
+  border-radius: 4px;
+  padding: 14px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
-.act-title-area { display: flex; align-items: center; }
-.act-title-icon { font-size: 18px; color: #722ed1; margin-right: 8px; }
-.act-title { font-size: 16px; font-weight: bold; color: #282828; }
-.act-toolbar { display: flex; align-items: center; gap: 6px; }
-
-/* 维度配置：行+列并排 */
+.act-title-area {
+  display: flex;
+  align-items: center;
+}
+.act-title-icon {
+  font-size: 18px;
+  color: #722ed1;
+  margin-right: 8px;
+}
+.act-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #282828;
+}
+.act-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .act-dim-row {
-  display: flex; gap: 16px; margin-bottom: 16px;
+  display: flex;
+  gap: 16px;
+  margin-bottom: 16px;
 }
 .act-dim-panel {
-  flex: 1; min-width: 0; background: #fff; border-radius: 6px;
-  padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  flex: 1;
+  min-width: 0;
+  background: #fff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-
-/* 结果变量：独立一行 */
 .act-result-row {
-  background: #fff; border-radius: 6px;
-  padding: 12px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  background: #fff;
+  border-radius: 6px;
+  padding: 12px 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   margin-bottom: 16px;
 }
 .result-config {
-  display: flex; align-items: center; gap: 8px; padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
 }
-.result-field-var { flex: 3; min-width: 0; }
-.result-field-label { flex: 2; min-width: 0; }
-.result-field-type { flex: 1; min-width: 100px; }
-
+.result-field-var {
+  flex: 3;
+  min-width: 0;
+}
+.result-field-label {
+  flex: 2;
+  min-width: 0;
+}
+.result-field-type {
+  flex: 1;
+  min-width: 100px;
+}
 .dim-panel-header {
-  display: flex; align-items: center; justify-content: space-between;
-  font-size: 13px; font-weight: 600; color: #555; margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: #555;
+  margin-bottom: 10px;
   gap: 8px;
 }
-
-/* 维度卡片内：表头自适应 */
 .dim-config-card {
-  border: 1px solid #e8e8e8; border-radius: 4px; margin-bottom: 10px; padding: 8px;
+  border: 1px solid #e8e8e8;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  padding: 8px;
 }
 .dim-config-header {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
 }
-.dim-field-var { flex: 3; min-width: 0; }
-.dim-field-label { flex: 2; min-width: 0; }
-.dim-field-type { flex: 1; min-width: 100px; }
-
-/* 分段条件行自适应 */
-.segments-area { padding-left: 4px; }
+.dim-field-var {
+  flex: 3;
+  min-width: 0;
+}
+.dim-field-label {
+  flex: 2;
+  min-width: 0;
+}
+.dim-field-type {
+  flex: 1;
+  min-width: 100px;
+}
+.segments-area {
+  padding-left: 4px;
+}
 .segment-row {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
 }
-.seg-op { flex: 0 0 96px; width: 96px; }
-.seg-boundary { flex: 0 0 64px; }
-.seg-val { flex: 2; min-width: 0; }
-.seg-label { flex: 3; min-width: 0; }
-.seg-sep { color: #999; flex-shrink: 0; }
-
-/* 矩阵 */
+.seg-op {
+  flex: 0 0 96px;
+  width: 96px;
+}
+.seg-boundary {
+  flex: 0 0 64px;
+}
+.seg-val {
+  flex: 2;
+  min-width: 0;
+}
+.seg-label {
+  flex: 3;
+  min-width: 0;
+}
+.seg-sep {
+  color: #999;
+  flex-shrink: 0;
+}
 .act-card {
-  background: #fff; border-radius: 4px; padding: 16px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 16px;
+  background: #fff;
+  border-radius: 4px;
+  padding: 16px 20px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  margin-bottom: 16px;
 }
 .act-card-title {
-  font-size: 14px; font-weight: bold; color: #333; margin-bottom: 14px;
-  display: flex; align-items: center; gap: 6px;
-  i { color: #722ed1; }
+  font-size: 14px;
+  font-weight: bold;
+  color: #333;
+  margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  i {
+    color: #722ed1;
+  }
 }
-.act-matrix-wrap { overflow-x: auto; border-radius: 6px; border: 1px solid #e8e8e8; }
+.act-matrix-wrap {
+  overflow-x: auto;
+  border-radius: 6px;
+  border: 1px solid #e8e8e8;
+}
 .act-matrix {
-  border-collapse: collapse; width: 100%;
-  th, td { border: 1px solid #e8e8e8; padding: 6px; vertical-align: middle; text-align: center; }
+  border-collapse: collapse;
+  width: 100%;
+  th,
+  td {
+    border: 1px solid #e8e8e8;
+    padding: 6px;
+    vertical-align: middle;
+    text-align: center;
+  }
 }
 .corner-cell {
-  background: #f5f5f5; min-width: 100px; position: relative; padding: 0; min-height: 56px;
+  background: #f5f5f5;
+  min-width: 100px;
+  position: relative;
+  padding: 0;
+  min-height: 56px;
 }
-.corner-inner { position: relative; width: 100%; height: 56px; }
+.corner-inner {
+  position: relative;
+  width: 100%;
+  height: 56px;
+}
 .corner-row-label {
-  position: absolute; bottom: 6px; left: 8px; font-size: 11px; color: #888;
+  position: absolute;
+  bottom: 6px;
+  left: 8px;
+  font-size: 11px;
+  color: #888;
 }
 .corner-col-label {
-  position: absolute; top: 6px; right: 8px; font-size: 11px; color: #888;
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  font-size: 11px;
+  color: #888;
 }
 .corner-divider {
-  position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(to bottom right, transparent calc(50% - 0.5px), #d0d0d0, transparent calc(50% + 0.5px));
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 0.5px),
+    #d0d0d0,
+    transparent calc(50% + 0.5px)
+  );
   pointer-events: none;
 }
 .col-header-cell {
-  background: #e8f3ff; min-width: 90px; font-size: 12px; font-weight: 600; color: #333;
+  background: #e8f3ff;
+  min-width: 90px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #333;
   white-space: nowrap;
 }
-.col-header-top { background: #daeeff; }
+.col-header-top {
+  background: #daeeff;
+}
 .row-header-cell {
-  background: #f0fff4; min-width: 80px; font-size: 12px; font-weight: 500; color: #333;
+  background: #f0fff4;
+  min-width: 80px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #333;
   white-space: nowrap;
 }
-.row-header-first { background: #e0f5e9; font-weight: 600; }
-.data-cell { background: #fff; min-width: 90px; }
-.cell-input ::v-deep input { text-align: center; font-weight: 500; }
-
-.test-hint { font-size: 12px; color: #909399; margin-bottom: 8px; }
-.test-result { margin-top: 16px; }
+.row-header-first {
+  background: #e0f5e9;
+  font-weight: 600;
+}
+.data-cell {
+  background: #fff;
+  min-width: 90px;
+}
+.cell-input :deep(input) {
+  text-align: center;
+  font-weight: 500;
+}
+.test-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.test-result {
+  margin-top: 16px;
+}
 </style>

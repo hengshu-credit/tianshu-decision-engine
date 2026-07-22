@@ -3,52 +3,96 @@
     <!-- 顶部工具栏 -->
     <div class="flow-toolbar">
       <div class="toolbar-left">
-        <el-button type="text" icon="el-icon-back" class="toolbar-back" @click="$router.back()" />
-        <i class="el-icon-share toolbar-icon" />
+        <el-button
+          link
+          :icon="ElIconBack"
+          class="toolbar-back"
+          @click="$router.back()"
+        />
+        <el-icon class="toolbar-icon"><el-icon-share /></el-icon>
         <span class="toolbar-title">决策流设计器</span>
-        <el-tag size="small" type="info" style="margin-left:8px;">可视化流程规则</el-tag>
-        <span class="toolbar-id" v-if="definitionId">ID: {{ definitionId }}</span>
+        <el-tag size="small" type="info" style="margin-left: 8px"
+          >可视化流程规则</el-tag
+        >
+        <span class="toolbar-id" v-if="definitionId"
+          >ID: {{ definitionId }}</span
+        >
       </div>
       <div class="toolbar-center">
         <span class="toolbar-label">添加节点：</span>
-        <el-button size="mini" @click="addNode('start-event')">
-          <span class="node-dot" style="background:#52c41a" />开始
+        <el-button size="small" @click="addNode('start-event')">
+          <span class="node-dot" style="background: #52c41a" />开始
         </el-button>
-        <el-button size="mini" @click="addNode('exclusive-gateway')">
-          <span class="node-dot" style="background:#fa8c16" />条件判断
+        <el-button size="small" @click="addNode('exclusive-gateway')">
+          <span class="node-dot" style="background: #fa8c16" />条件判断
         </el-button>
-        <el-button size="mini" class="btn-script-task" @click="addNode('script-task')">
+        <el-button
+          size="small"
+          class="btn-script-task"
+          @click="addNode('script-task')"
+        >
           <span class="node-dot" />执行动作
         </el-button>
-        <el-button size="mini" @click="addNode('join-gateway')">
-          <span class="node-dot" style="background:#8c8c8c" />聚合
+        <el-button size="small" @click="addNode('join-gateway')">
+          <span class="node-dot" style="background: #8c8c8c" />聚合
         </el-button>
-        <el-button size="mini" @click="addNode('end-event')">
-          <span class="node-dot" style="background:#ff4d4f" />结束
+        <el-button size="small" @click="addNode('end-event')">
+          <span class="node-dot" style="background: #ff4d4f" />结束
         </el-button>
         <el-divider direction="vertical" />
         <el-button-group>
-          <el-button size="mini" icon="el-icon-delete" class="btn-delete" :disabled="!hasSelection" @click="deleteSelected">删除</el-button>
-          <el-button size="mini" icon="el-icon-refresh-left" @click="undo">撤销</el-button>
-          <el-button size="mini" icon="el-icon-refresh-right" @click="redo">重做</el-button>
+          <el-button
+            size="small"
+            :icon="ElIconDelete"
+            class="btn-delete"
+            :disabled="!hasSelection"
+            @click="deleteSelected"
+            >删除</el-button
+          >
+          <el-button size="small" :icon="ElIconRefreshLeft" @click="undo"
+            >撤销</el-button
+          >
+          <el-button size="small" :icon="ElIconRefreshRight" @click="redo"
+            >重做</el-button
+          >
         </el-button-group>
         <el-divider direction="vertical" />
         <el-button-group>
-          <el-button size="mini" icon="el-icon-crop" :class="{ 'is-tool-active': selectionMode }" @click="toggleSelectionMode">选区</el-button>
-          <el-button size="mini" icon="el-icon-folder-add" :disabled="selectedBusinessNodeCount < 2" @click="groupSelectedNodes">分组</el-button>
-          <el-button size="mini" icon="el-icon-magic-stick" @click="beautifyGraph">一键美化</el-button>
-          <el-button size="mini" icon="el-icon-map-location" :class="{ 'is-tool-active': miniMapVisible }" @click="toggleMiniMap">小地图</el-button>
+          <el-button
+            size="small"
+            :icon="ElIconCrop"
+            :class="{ 'is-tool-active': selectionMode }"
+            @click="toggleSelectionMode"
+            >选区</el-button
+          >
+          <el-button
+            size="small"
+            :icon="ElIconFolderAdd"
+            :disabled="selectedBusinessNodeCount < 2"
+            @click="groupSelectedNodes"
+            >分组</el-button
+          >
+          <el-button size="small" :icon="ElIconMagicStick" @click="beautifyGraph"
+            >一键美化</el-button
+          >
+          <el-button
+            size="small"
+            :icon="ElIconMapLocation"
+            :class="{ 'is-tool-active': miniMapVisible }"
+            @click="toggleMiniMap"
+            >小地图</el-button
+          >
         </el-button-group>
         <el-divider direction="vertical" />
         <el-button-group>
-          <el-button size="mini" icon="el-icon-zoom-in" @click="zoomIn" />
-          <el-button size="mini" icon="el-icon-zoom-out" @click="zoomOut" />
-          <el-button size="mini" icon="el-icon-rank" @click="resetZoom" />
+          <el-button size="small" :icon="ElIconZoomIn" @click="zoomIn" />
+          <el-button size="small" :icon="ElIconZoomOut" @click="zoomOut" />
+          <el-button size="small" :icon="ElIconRank" @click="resetZoom" />
         </el-button-group>
         <span class="zoom-text">{{ zoomPercent }}%</span>
         <el-divider direction="vertical" />
         <graph-designer-navigator
-          :target.sync="graphNavigationTarget"
+          v-model:target="graphNavigationTarget"
           :options="graphNavigationOptions"
           :issues="graphConfigurationIssues"
           :show-mini-map="false"
@@ -61,8 +105,8 @@
         <span class="toolbar-label">连线：</span>
         <el-select
           v-model="globalEdgeLineType"
-          size="mini"
-          style="width:110px"
+          size="small"
+          style="width: 110px"
           @change="onGlobalEdgeLineTypeChange"
         >
           <el-option label="折线" value="polyline" />
@@ -71,10 +115,26 @@
         </el-select>
       </div>
       <div class="toolbar-right">
-        <el-button size="mini" icon="el-icon-circle-check" @click="handleValidate">验证</el-button>
-        <el-button size="mini" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
-        <el-button size="mini" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
-        <el-button size="mini" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
+        <el-button size="small" :icon="ElIconCircleCheck" @click="handleValidate"
+          >验证</el-button
+        >
+        <el-button size="small" :icon="ElIconDocument" @click="handleSave"
+          >临时保存配置</el-button
+        >
+        <el-button
+          size="small"
+          type="warning"
+          :icon="ElIconCpu"
+          @click="handleCompile"
+          >保存并编译</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="handleTest"
+          >编译后测试</el-button
+        >
       </div>
     </div>
 
@@ -84,7 +144,9 @@
       <div
         ref="canvasContainer"
         class="flow-canvas"
-        :class="{ 'is-node-active': activeElement && activeElement.baseType === 'node' }"
+        :class="{
+          'is-node-active': activeElement && activeElement.baseType === 'node',
+        }"
       />
 
       <flow-node-add-menu
@@ -98,14 +160,21 @@
 
       <!-- 右侧属性面板 -->
       <transition name="panel-slide">
-        <div v-if="activeElement" class="flow-property" :style="{ width: propertyPanelWidth + 'px' }">
-          <div class="property-resize-handle" @mousedown.prevent="startPropertyResize" />
+        <div
+          v-if="activeElement"
+          class="flow-property"
+          :style="{ width: propertyPanelWidth + 'px' }"
+        >
+          <div
+            class="property-resize-handle"
+            @mousedown.prevent="startPropertyResize"
+          />
           <div class="prop-header">
             <span class="prop-title">
-              <i :class="propIcon" />
+              <app-icon :name="propIcon" />
               {{ isEdge ? '连线属性' : '节点属性配置' }}
             </span>
-            <i class="el-icon-close prop-close" @click="activeElement = null" />
+            <el-icon class="prop-close"><el-icon-close /></el-icon>
           </div>
 
           <!-- ========== 连线属性（可视化+脚本双模式） ========== -->
@@ -113,7 +182,12 @@
             <div class="prop-section">
               <el-form size="small" label-width="80px" class="prop-form">
                 <el-form-item label="连接线类型">
-                  <el-select v-model="edgeProps.edgeLineType" size="mini" style="width:95%" @change="onEdgeLineShapeChange">
+                  <el-select
+                    v-model="edgeProps.edgeLineType"
+                    size="small"
+                    style="width: 95%"
+                    @change="onEdgeLineShapeChange"
+                  >
                     <el-option label="跟随全局" value="" />
                     <el-option label="折线" value="polyline" />
                     <el-option label="直线" value="line" />
@@ -121,7 +195,11 @@
                   </el-select>
                 </el-form-item>
                 <el-form-item label="分支标签">
-                  <el-input v-model="edgeProps.conditionName" placeholder="如：是、否、金额>500" @input="onEdgeChange" />
+                  <el-input
+                    v-model="edgeProps.conditionName"
+                    placeholder="如：是、否、金额>500"
+                    @update:model-value="onEdgeChange"
+                  />
                 </el-form-item>
               </el-form>
             </div>
@@ -129,9 +207,9 @@
             <div class="prop-section">
               <div class="section-title">
                 <span>条件表达式</span>
-                <el-radio-group v-model="edgeCondMode" size="mini">
-                  <el-radio-button label="visual">可视化</el-radio-button>
-                  <el-radio-button label="script">脚本</el-radio-button>
+                <el-radio-group v-model="edgeCondMode" size="small">
+                  <el-radio-button value="visual">可视化</el-radio-button>
+                  <el-radio-button value="script">脚本</el-radio-button>
                 </el-radio-group>
               </div>
 
@@ -146,7 +224,13 @@
                   :get-var-options-fn="getVarOptions"
                   :selected-vars="selectedVarPickerOptions"
                 />
-                <el-button type="primary" size="mini" icon="el-icon-check" style="width:100%;margin-top:8px;" @click="applyEdgeCondVisual">
+                <el-button
+                  type="primary"
+                  size="small"
+                  :icon="ElIconCheck"
+                  style="width: 100%; margin-top: 8px"
+                  @click="applyEdgeCondVisual"
+                >
                   生成表达式
                 </el-button>
                 <div v-if="edgeProps.conditionExpr" class="generated-expr">
@@ -162,12 +246,12 @@
                   :rows="3"
                   placeholder="QLExpress 表达式，如：amount > 100000"
                   class="mono-input"
-                  @input="onEdgeChange"
+                  @update:model-value="onEdgeChange"
                 />
               </div>
 
-              <div class="hint-box" style="margin-top:6px;">
-                <i class="el-icon-info" /> 条件为空表示默认分支（else）
+              <div class="hint-box" style="margin-top: 6px">
+                <el-icon><el-icon-info /></el-icon> 条件为空表示默认分支（else）
               </div>
             </div>
           </template>
@@ -177,19 +261,35 @@
             <div class="prop-section">
               <el-form size="small" label-width="70px" class="prop-form">
                 <el-form-item label="节点名称">
-                  <el-input v-model="nodeProps.nodeName" placeholder="节点名称" @input="onNodeChange" />
+                  <el-input
+                    v-model="nodeProps.nodeName"
+                    placeholder="节点名称"
+                    @update:model-value="onNodeChange"
+                  />
                 </el-form-item>
                 <el-form-item label="节点类型">
-                  <el-tag :type="nodeTypeTag(activeElement.type)" size="small">{{ nodeTypeLabel(activeElement.type) }}</el-tag>
+                  <el-tag
+                    :type="nodeTypeTag(activeElement.type)"
+                    size="small"
+                    >{{ nodeTypeLabel(activeElement.type) }}</el-tag
+                  >
                 </el-form-item>
               </el-form>
             </div>
 
             <div v-if="activeElement.type === 'end-event'" class="prop-section">
               <el-alert
-                :title="endNodeAppearance(activeElement.properties.terminationScope).name"
-                :description="endNodeDescription(activeElement.properties.terminationScope)"
-                :type="endNodeAppearance(activeElement.properties.terminationScope).tagType"
+                :title="
+                  endNodeAppearance(activeElement.properties.terminationScope)
+                    .name
+                "
+                :description="
+                  endNodeDescription(activeElement.properties.terminationScope)
+                "
+                :type="
+                  endNodeAppearance(activeElement.properties.terminationScope)
+                    .tagType
+                "
                 :closable="false"
                 show-icon
               />
@@ -207,16 +307,22 @@
                     @click="selectEdgeById(edge.id)"
                   >
                     <span class="edge-idx">{{ ei + 1 }}</span>
-                    <i class="el-icon-right edge-arrow" />
-                    <span class="edge-name">{{ edgeLabel(edge) || '（点击配置条件）' }}</span>
-                    <el-tag v-if="!edgeLabel(edge)" size="mini" type="warning">未设置</el-tag>
+                    <el-icon class="edge-arrow"><el-icon-right /></el-icon>
+                    <span class="edge-name">{{
+                      edgeLabel(edge) || '（点击配置条件）'
+                    }}</span>
+                    <el-tag v-if="!edgeLabel(edge)" size="small" type="warning"
+                      >未设置</el-tag
+                    >
                   </div>
                   <div v-if="outEdges.length === 0" class="hint-box">
-                    <i class="el-icon-info" /> 从节点锚点拖拽到目标节点创建分支
+                    <el-icon><el-icon-info /></el-icon>
+                    从节点锚点拖拽到目标节点创建分支
                   </div>
                 </div>
-                <div class="hint-box" style="margin-top:6px;">
-                  <i class="el-icon-info" /> 点击分支连线可配置条件表达式（可视化或脚本）
+                <div class="hint-box" style="margin-top: 6px">
+                  <el-icon><el-icon-info /></el-icon>
+                  点击分支连线可配置条件表达式（可视化或脚本）
                 </div>
               </div>
             </template>
@@ -226,7 +332,8 @@
               <div class="prop-section">
                 <div class="section-title"><span>聚合配置</span></div>
                 <div class="hint-box">
-                  <i class="el-icon-info" /> 聚合节点用于多条分支汇合，所有入边的分支都到达后，继续向下执行
+                  <el-icon><el-icon-info /></el-icon>
+                  聚合节点用于多条分支汇合，所有入边的分支都到达后，继续向下执行
                 </div>
               </div>
             </template>
@@ -236,9 +343,9 @@
               <div class="prop-section">
                 <div class="section-title">
                   <span>动作配置</span>
-                  <el-radio-group v-model="actionMode" size="mini">
-                    <el-radio-button label="visual">可视化</el-radio-button>
-                    <el-radio-button label="script">脚本预览</el-radio-button>
+                  <el-radio-group v-model="actionMode" size="small">
+                    <el-radio-button value="visual">可视化</el-radio-button>
+                    <el-radio-button value="script">脚本预览</el-radio-button>
                   </el-radio-group>
                 </div>
 
@@ -258,18 +365,27 @@
                 </div>
 
                 <div v-else class="cond-script">
-                  <pre class="script-readonly">{{ scriptPreview || '（请在可视化模式配置动作）' }}</pre>
+                  <pre class="script-readonly">{{
+                    scriptPreview || '（请在可视化模式配置动作）'
+                  }}</pre>
                 </div>
 
-                <div class="hint-box" style="margin-top:6px;">
-                  <i class="el-icon-info" /> 支持赋值、条件分支、Switch、函数调用、执行规则、循环、三元、IN判断、动态字符串
+                <div class="hint-box" style="margin-top: 6px">
+                  <el-icon><el-icon-info /></el-icon>
+                  支持赋值、条件分支、Switch、函数调用、执行规则、循环、三元、IN判断、动态字符串
                 </div>
               </div>
             </template>
 
             <!-- 操作按钮 -->
-            <div class="prop-section" style="padding-top:4px;">
-              <el-button type="danger" size="small" icon="el-icon-delete" class="delete-current-node" @click="deleteCurrentNode">
+            <div class="prop-section" style="padding-top: 4px">
+              <el-button
+                type="danger"
+                size="small"
+                :icon="ElIconDelete"
+                class="delete-current-node"
+                @click="deleteCurrentNode"
+              >
                 删除此节点
               </el-button>
             </div>
@@ -279,7 +395,7 @@
 
       <!-- 无选中提示 -->
       <div v-if="!activeElement" class="flow-hint">
-        <i class="el-icon-set-up hint-icon" />
+        <el-icon class="hint-icon"><el-icon-set-up /></el-icon>
         <p>从工具栏添加节点，拖拽锚点连线</p>
         <p>单击节点/连线可编辑属性</p>
       </div>
@@ -302,8 +418,8 @@
     />
 
     <!-- 测试执行弹窗 -->
-        <designer-test-dialog
-      :visible.sync="testVisible"
+    <designer-test-dialog
+      v-model:visible="testVisible"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="FLOW"
@@ -314,13 +430,46 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  Share as ElIconShare,
+  Close as ElIconClose,
+  InfoFilled as ElIconInfo,
+  Right as ElIconRight,
+  SetUp as ElIconSetUp,
+  Back as ElIconBack,
+  Delete as ElIconDelete,
+  RefreshLeft as ElIconRefreshLeft,
+  RefreshRight as ElIconRefreshRight,
+  Crop as ElIconCrop,
+  FolderAdd as ElIconFolderAdd,
+  MagicStick as ElIconMagicStick,
+  MapLocation as ElIconMapLocation,
+  ZoomIn as ElIconZoomIn,
+  ZoomOut as ElIconZoomOut,
+  Rank as ElIconRank,
+  CircleCheck as ElIconCircleCheck,
+  Document as ElIconDocument,
+  Cpu as ElIconCpu,
+  VideoPlay as ElIconVideoPlay,
+  Check as ElIconCheck,
+} from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
-import { SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap } from '@logicflow/extension'
+import {
+  SelectionSelect,
+  Menu,
+  Snapshot,
+  DynamicGroup,
+  MiniMap,
+} from '@logicflow/extension'
 import { Dagre } from '@logicflow/layout'
 import '@logicflow/core/es/index.css'
 import '../../styles/logicflow-extension.css'
 
-import { registerCustomNodes, getDefaultFlowData } from '@/components/flow/nodes'
+import {
+  registerCustomNodes,
+  getDefaultFlowData,
+} from '@/components/flow/nodes'
 import FlowNodeAddMenu from '@/components/flow/FlowNodeAddMenu.vue'
 import {
   FLOW_MENU_OPTIONS,
@@ -334,17 +483,26 @@ import {
   isAnchorClickGesture,
   layoutGraphByAnchors,
   resolveAnchorDirection,
-  updateAnchorGesture
+  updateAnchorGesture,
 } from '@/components/flow/flowDesignerGraph'
 import {
   normalizeDefaultEdgeLineType,
   migrateModelJsonForEdgeLineTypes,
   prepareLogicFlowDataForRender,
   applyGlobalEdgeTypeToInheritedEdges,
-  mergeEdgePropertiesFromForm
+  mergeEdgePropertiesFromForm,
 } from '@/components/flow/edgeLineType'
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
-import { generateScript, normalizeGraphActionData } from '@/utils/actionDataCodegen'
+import {
+  saveContent,
+  compileRule,
+  executeRule,
+  getContent,
+  refreshFields,
+} from '@/api/definition'
+import {
+  generateScript,
+  normalizeGraphActionData,
+} from '@/utils/actionDataCodegen'
 import { graphContainsDirectedCycle } from '@/utils/flowGraphCycle'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleCallMixin from '@/mixins/ruleCallMixin'
@@ -359,9 +517,14 @@ import {
   collectVarCodesFromConditionTree,
   walkConditionLeaves,
   compileConditionTreeExpression,
-  normalizeConditionTreeOperands
+  normalizeConditionTreeOperands,
 } from '@/utils/decisionConditionTree'
-import { collectOperandReferences, createLiteralOperand, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import {
+  collectOperandReferences,
+  createLiteralOperand,
+  operandFromReferenceFields,
+  syncOperandReference,
+} from '@/utils/operand'
 import {
   addCode,
   applyActionDataSampleValues,
@@ -369,18 +532,19 @@ import {
   buildSampleParamsFromCodes,
   collectActionDataInputCodes,
   collectScriptInputCodes,
-  refCodeById
+  refCodeById,
 } from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { clampDesignerPanelWidth } from '@/utils/designerPanelWidth'
-import { END_SCOPE_ALL_RULES, normalizeEndScope, getEndNodeAppearance } from '@/utils/endNodeScope'
+import {
+  END_SCOPE_ALL_RULES,
+  normalizeEndScope,
+  getEndNodeAppearance,
+} from '@/utils/endNodeScope'
 import graphDesignerToolsMixin from '@/mixins/graphDesignerToolsMixin'
 import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
 
 export default {
-  name: 'DecisionFlow',
-  components: { DesignerTestDialog, EndNodeScopeDialog, FlowNodeAddMenu, ScriptPanel, ActionBlockEditor, ConditionGroupEditor, GraphDesignerNavigator },
-  mixins: [varPickerMixin, ruleCallMixin, graphDesignerToolsMixin],
   data() {
     return {
       definitionId: null,
@@ -399,9 +563,31 @@ export default {
       nodeProps: {},
       edgeProps: {},
       nodeCondMode: 'visual',
-      nodeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '>', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
+      nodeCondVisual: {
+        leftVar: '',
+        leftLabel: '',
+        leftVarId: null,
+        leftRefType: null,
+        operator: '>',
+        rightValue: '',
+        rightType: 'value',
+        rightVar: '',
+        rightVarId: null,
+        rightRefType: null,
+      },
       edgeCondMode: 'visual',
-      edgeCondVisual: { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null },
+      edgeCondVisual: {
+        leftVar: '',
+        leftLabel: '',
+        leftVarId: null,
+        leftRefType: null,
+        operator: '==',
+        rightValue: '',
+        rightType: 'value',
+        rightVar: '',
+        rightVarId: null,
+        rightRefType: null,
+      },
       edgeConditionRoot: null,
       actionMode: 'visual',
       currentActionData: [],
@@ -415,37 +601,71 @@ export default {
       propertyPanelWidth: 640,
       resizingPropertyPanel: false,
       /** contentLoaded 标志：当 model 内容与 projectRefs 均加载完成后解锁变量引用同步 */
-      contentLoaded: false
+      contentLoaded: false,
+      ElIconBack: markRaw(ElIconBack),
+      ElIconDelete: markRaw(ElIconDelete),
+      ElIconRefreshLeft: markRaw(ElIconRefreshLeft),
+      ElIconRefreshRight: markRaw(ElIconRefreshRight),
+      ElIconCrop: markRaw(ElIconCrop),
+      ElIconFolderAdd: markRaw(ElIconFolderAdd),
+      ElIconMagicStick: markRaw(ElIconMagicStick),
+      ElIconMapLocation: markRaw(ElIconMapLocation),
+      ElIconZoomIn: markRaw(ElIconZoomIn),
+      ElIconZoomOut: markRaw(ElIconZoomOut),
+      ElIconRank: markRaw(ElIconRank),
+      ElIconCircleCheck: markRaw(ElIconCircleCheck),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconCpu: markRaw(ElIconCpu),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
+      ElIconCheck: markRaw(ElIconCheck),
     }
   },
+  components: {
+    DesignerTestDialog,
+    EndNodeScopeDialog,
+    FlowNodeAddMenu,
+    ScriptPanel,
+    ActionBlockEditor,
+    ConditionGroupEditor,
+    GraphDesignerNavigator,
+    ElIconShare,
+    ElIconClose,
+    ElIconInfo,
+    ElIconRight,
+    ElIconSetUp,
+  },
+  name: 'DecisionFlow',
+  mixins: [varPickerMixin, ruleCallMixin, graphDesignerToolsMixin],
   computed: {
     isEdge() {
       return this.activeElement && this.activeElement.baseType === 'edge'
     },
     propIcon() {
-      if (this.isEdge) return 'el-icon-connection'
-      if (!this.activeElement) return 'el-icon-s-help'
+      if (this.isEdge) return 'Connection'
+      if (!this.activeElement) return 'HelpFilled'
       const map = {
-        'start-event': 'el-icon-video-play',
-        'end-event': 'el-icon-remove',
-        'exclusive-gateway': 'el-icon-sort',
-        'script-task': 'el-icon-document',
-        'join-gateway': 'el-icon-copy-document'
+        'start-event': 'VideoPlay',
+        'end-event': 'Remove',
+        'exclusive-gateway': 'Sort',
+        'script-task': 'Document',
+        'join-gateway': 'CopyDocument',
       }
-      return map[this.activeElement.type] || 'el-icon-s-help'
+      return map[this.activeElement.type] || 'HelpFilled'
     },
     outEdges() {
       if (!this.lf || !this.activeElement || this.isEdge) return []
       try {
         const edges = this.lf.getNodeEdges(this.activeElement.id)
-        return (edges || []).filter(e => e.sourceNodeId === this.activeElement.id)
+        return (edges || []).filter(
+          (e) => e.sourceNodeId === this.activeElement.id
+        )
       } catch (e) {
         return []
       }
     },
     scriptPreview() {
       return generateScript(this.currentActionData)
-    }
+    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -455,7 +675,7 @@ export default {
     this.loadRuleCallOptions(this.definitionId)
     this.loadContent()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.stopPropertyResize()
     if (this.lf) this.lf.destroy()
     this.lf = null
@@ -472,7 +692,10 @@ export default {
     onPropertyResize(event) {
       if (!this.resizingPropertyPanel || !event) return
       const width = window.innerWidth - event.clientX
-      this.propertyPanelWidth = clampDesignerPanelWidth(width, window.innerWidth)
+      this.propertyPanelWidth = clampDesignerPanelWidth(
+        width,
+        window.innerWidth
+      )
     },
     stopPropertyResize() {
       window.removeEventListener('mousemove', this.onPropertyResize)
@@ -484,12 +707,20 @@ export default {
     },
     collectSelectedVarItems() {
       const items = []
-      const pushVisual = visual => {
+      const pushVisual = (visual) => {
         if (!visual) return
-        items.push({ varCode: visual.leftVar, _varId: visual.leftVarId, _refType: visual.leftRefType })
-        items.push({ varCode: visual.rightVar, _varId: visual.rightVarId, _refType: visual.rightRefType })
+        items.push({
+          varCode: visual.leftVar,
+          _varId: visual.leftVarId,
+          _refType: visual.leftRefType,
+        })
+        items.push({
+          varCode: visual.rightVar,
+          _varId: visual.rightVarId,
+          _refType: visual.rightRefType,
+        })
       }
-      const pushProps = props => {
+      const pushProps = (props) => {
         if (!props) return
         items.push({ _varId: props.leftVarId, _refType: props.leftRefType })
         items.push({ _varId: props.rightVarId, _refType: props.rightRefType })
@@ -499,11 +730,17 @@ export default {
       pushVisual(this.nodeCondVisual)
       pushVisual(this.edgeCondVisual)
       items.push(...this.collectConditionVarItems(this.edgeConditionRoot))
-      items.push(...this.collectActionDataVarItems(this.currentActionData || []))
+      items.push(
+        ...this.collectActionDataVarItems(this.currentActionData || [])
+      )
       if (this.lf && typeof this.lf.getGraphData === 'function') {
         const graph = this.lf.getGraphData() || {}
-        ;(graph.nodes || []).forEach(node => pushProps(node.properties || node))
-        ;(graph.edges || []).forEach(edge => pushProps(edge.properties || edge))
+        ;(graph.nodes || []).forEach((node) =>
+          pushProps(node.properties || node)
+        )
+        ;(graph.edges || []).forEach((edge) =>
+          pushProps(edge.properties || edge)
+        )
       }
       return items
     },
@@ -511,37 +748,71 @@ export default {
       const root = createEmptyGroup('AND')
       const leaf = createEmptyLeaf()
       if (visual && visual.leftVar) {
-        leaf.leftOperand = operandFromReferenceFields({ varCode: visual.leftVar, varLabel: visual.leftLabel, _varId: visual.leftVarId, _refType: visual.leftRefType })
+        leaf.leftOperand = operandFromReferenceFields({
+          varCode: visual.leftVar,
+          varLabel: visual.leftLabel,
+          _varId: visual.leftVarId,
+          _refType: visual.leftRefType,
+        })
         leaf.operator = visual.operator || '=='
-        leaf.rightOperand = visual.rightType === 'var'
-          ? operandFromReferenceFields({ varCode: visual.rightVar, _varId: visual.rightVarId, _refType: visual.rightRefType })
-          : createLiteralOperand(visual.rightValue, '')
+        leaf.rightOperand =
+          visual.rightType === 'var'
+            ? operandFromReferenceFields({
+                varCode: visual.rightVar,
+                _varId: visual.rightVarId,
+                _refType: visual.rightRefType,
+              })
+            : createLiteralOperand(visual.rightValue, '')
       }
       root.children.push(leaf)
       return root
     },
     parseConditionConfig(config, expr) {
       if (config) {
-        if (typeof config === 'object') return normalizeConditionTreeOperands(JSON.parse(JSON.stringify(config)))
-        try { return normalizeConditionTreeOperands(JSON.parse(config)) } catch (e) { /* ignore */ }
+        if (typeof config === 'object')
+          return normalizeConditionTreeOperands(
+            JSON.parse(JSON.stringify(config))
+          )
+        try {
+          return normalizeConditionTreeOperands(JSON.parse(config))
+        } catch (e) {
+          /* ignore */
+        }
       }
-      return this.createConditionRootFromVisual(this.syncCondVisualFromExpr(expr))
+      return this.createConditionRootFromVisual(
+        this.syncCondVisualFromExpr(expr)
+      )
     },
     collectConditionVarItems(config) {
       const items = []
       const root = this.parseConditionConfig(config, '')
-      walkConditionLeaves(root, leaf => {
-        [leaf.leftOperand, leaf.rightOperand].forEach(operand => collectOperandReferences(operand).forEach(reference => items.push({ varCode: reference.code, varType: reference.valueType, _varId: reference.refId, _refType: reference.refType })))
+      walkConditionLeaves(root, (leaf) => {
+        [leaf.leftOperand, leaf.rightOperand].forEach((operand) =>
+          collectOperandReferences(operand).forEach((reference) =>
+            items.push({
+              varCode: reference.code,
+              varType: reference.valueType,
+              _varId: reference.refId,
+              _refType: reference.refType,
+            })
+          )
+        )
       })
       return items
     },
     syncConditionConfigVarRefs(config) {
       if (!config || typeof config !== 'object') return false
       let changed = false
-      walkConditionLeaves(config, leaf => {
-        ['leftOperand', 'rightOperand'].forEach(field => {
-          const result = syncOperandReference(leaf[field], this.varPickerOptions)
-          if (result.changed) { leaf[field] = result.operand; changed = true }
+      walkConditionLeaves(config, (leaf) => {
+        ['leftOperand', 'rightOperand'].forEach((field) => {
+          const result = syncOperandReference(
+            leaf[field],
+            this.varPickerOptions
+          )
+          if (result.changed) {
+            leaf[field] = result.operand
+            changed = true
+          }
         })
       })
       return changed
@@ -549,12 +820,19 @@ export default {
     initLogicFlow() {
       this.lf = new LogicFlow({
         container: this.$refs.canvasContainer,
-        plugins: [SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap, Dagre],
+        plugins: [
+          SelectionSelect,
+          Menu,
+          Snapshot,
+          DynamicGroup,
+          MiniMap,
+          Dagre,
+        ],
         pluginsOptions: {
           dynamicGroup: {
             cascadeDeleteChildren: false,
             disallowEdgeConnectToGroup: true,
-            sensorOutline: { stroke: FLOW_THEME_COLOR, strokeWidth: 2 }
+            sensorOutline: { stroke: FLOW_THEME_COLOR, strokeWidth: 2 },
           },
           miniMap: {
             width: 180,
@@ -563,8 +841,8 @@ export default {
             isShowHeader: false,
             isShowCloseIcon: false,
             rightPosition: 16,
-            bottomPosition: 16
-          }
+            bottomPosition: 16,
+          },
         },
         grid: { size: 20, visible: true },
         keyboard: {
@@ -572,8 +850,11 @@ export default {
           shortcuts: [
             { keys: ['ctrl+z', 'cmd+z'], callback: () => this.undo() },
             { keys: ['ctrl+y', 'cmd+y'], callback: () => this.redo() },
-            { keys: ['backspace', 'delete'], callback: () => this.deleteSelected() }
-          ]
+            {
+              keys: ['backspace', 'delete'],
+              callback: () => this.deleteSelected(),
+            },
+          ],
         },
         edgeType: this.globalEdgeLineType,
         snapline: true,
@@ -581,15 +862,34 @@ export default {
         style: {
           nodeText: { overflowMode: 'ellipsis', fontSize: 12 },
           edgeText: { fontSize: 12, background: { fill: '#fff' } },
-          polyline: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
-          line: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
-          bezier: { stroke: FLOW_THEME_COLOR, hoverStroke: FLOW_THEME_COLOR, selectedStroke: FLOW_THEME_COLOR, strokeWidth: 1.5 },
+          polyline: {
+            stroke: FLOW_THEME_COLOR,
+            hoverStroke: FLOW_THEME_COLOR,
+            selectedStroke: FLOW_THEME_COLOR,
+            strokeWidth: 1.5,
+          },
+          line: {
+            stroke: FLOW_THEME_COLOR,
+            hoverStroke: FLOW_THEME_COLOR,
+            selectedStroke: FLOW_THEME_COLOR,
+            strokeWidth: 1.5,
+          },
+          bezier: {
+            stroke: FLOW_THEME_COLOR,
+            hoverStroke: FLOW_THEME_COLOR,
+            selectedStroke: FLOW_THEME_COLOR,
+            strokeWidth: 1.5,
+          },
           arrow: { stroke: FLOW_THEME_COLOR, fill: FLOW_THEME_COLOR },
           anchor: { stroke: FLOW_THEME_COLOR, fill: '#fff', r: 4 },
-          anchorHover: { stroke: FLOW_THEME_COLOR, fill: FLOW_THEME_COLOR, r: 5 },
-          anchorLine: { stroke: FLOW_THEME_COLOR }
+          anchorHover: {
+            stroke: FLOW_THEME_COLOR,
+            fill: FLOW_THEME_COLOR,
+            r: 5,
+          },
+          anchorLine: { stroke: FLOW_THEME_COLOR },
         },
-        guards: { beforeClone: () => true, beforeDelete: () => true }
+        guards: { beforeClone: () => true, beforeDelete: () => true },
       })
 
       registerCustomNodes(this.lf)
@@ -600,22 +900,31 @@ export default {
     setupContextMenu() {
       this.lf.addMenuConfig({
         nodeMenu: [
-          { text: '编辑属性', callback: node => this.selectNodeData(node) },
-          { text: '删除节点', callback: node => {
-            this.lf.deleteNode(node.id)
-            if (this.activeElement && this.activeElement.id === node.id) this.activeElement = null
-          }}
+          { text: '编辑属性', callback: (node) => this.selectNodeData(node) },
+          {
+            text: '删除节点',
+            callback: (node) => {
+              this.lf.deleteNode(node.id)
+              if (this.activeElement && this.activeElement.id === node.id)
+                this.activeElement = null
+            },
+          },
         ],
         edgeMenu: [
-          { text: '编辑条件', callback: edge => this.selectEdgeById(edge.id) },
-          { text: '删除连线', callback: edge => {
-            this.lf.deleteEdge(edge.id)
-            if (this.activeElement && this.activeElement.id === edge.id) this.activeElement = null
-          }}
+          {
+            text: '编辑条件',
+            callback: (edge) => this.selectEdgeById(edge.id),
+          },
+          {
+            text: '删除连线',
+            callback: (edge) => {
+              this.lf.deleteEdge(edge.id)
+              if (this.activeElement && this.activeElement.id === edge.id)
+                this.activeElement = null
+            },
+          },
         ],
-        graphMenu: [
-          { text: '适应画布', callback: () => this.resetZoom() }
-        ]
+        graphMenu: [{ text: '适应画布', callback: () => this.resetZoom() }],
       })
     },
 
@@ -647,8 +956,11 @@ export default {
       this.lf.on('anchor:drag', this.onAnchorDrag)
       this.lf.on('anchor:dragend', this.onAnchorDragEnd)
       this.lf.on('anchor:click', this.onAnchorClick)
-      this.lf.on('selection:selected', () => this.updateSelectedBusinessNodeCount())
-      this._connectionNotAllowedHandler = (payload) => this.handleConnectionNotAllowed(payload)
+      this.lf.on('selection:selected', () =>
+        this.updateSelectedBusinessNodeCount()
+      )
+      this._connectionNotAllowedHandler = (payload) =>
+        this.handleConnectionNotAllowed(payload)
       this.lf.on('connection:not-allowed', this._connectionNotAllowedHandler)
     },
 
@@ -666,7 +978,9 @@ export default {
       if (isAnchorClickGesture(this.anchorGesture)) return
       const msg =
         (payload && (payload.msg || payload.message)) ||
-        (payload && payload.data && (payload.data.msg || payload.data.message)) ||
+        (payload &&
+          payload.data &&
+          (payload.data.msg || payload.data.message)) ||
         '该连线不被允许'
       this.$message.warning(msg)
     },
@@ -682,7 +996,8 @@ export default {
     onAnchorDragEnd(payload) {
       const gesture = updateAnchorGesture(this.anchorGesture, payload)
       this.anchorGesture = null
-      if (!payload.edgeModel && isAnchorClickGesture(gesture)) this.openAnchorMenu(payload)
+      if (!payload.edgeModel && isAnchorClickGesture(gesture))
+        this.openAnchorMenu(payload)
     },
 
     onAnchorClick(payload) {
@@ -691,8 +1006,13 @@ export default {
     },
 
     openAnchorMenu({ data, e, nodeModel }) {
-      const sourceNode = nodeModel || (data && this.lf.getNodeModelById(data.id))
-      if (!sourceNode || sourceNode.type === 'end-event' || sourceNode.isGroup) {
+      const sourceNode =
+        nodeModel || (data && this.lf.getNodeModelById(data.id))
+      if (
+        !sourceNode ||
+        sourceNode.type === 'end-event' ||
+        sourceNode.isGroup
+      ) {
         this.closeAnchorMenu()
         return
       }
@@ -700,13 +1020,19 @@ export default {
       const rect = this.$refs.canvasContainer.getBoundingClientRect()
       const menuWidth = 188
       const menuHeight = 190
-      const rawX = e && typeof e.clientX === 'number' ? e.clientX - rect.left + 10 : rect.width / 2
-      const rawY = e && typeof e.clientY === 'number' ? e.clientY - rect.top + 10 : rect.height / 2
+      const rawX =
+        e && typeof e.clientX === 'number'
+          ? e.clientX - rect.left + 10
+          : rect.width / 2
+      const rawY =
+        e && typeof e.clientY === 'number'
+          ? e.clientY - rect.top + 10
+          : rect.height / 2
       this.pendingConnectedNode = { sourceNode, sourceAnchor: data, direction }
       this.anchorMenu = {
         visible: true,
         x: Math.max(6, Math.min(rawX, rect.width - menuWidth)),
-        y: Math.max(6, Math.min(rawY, rect.height - menuHeight))
+        y: Math.max(6, Math.min(rawY, rect.height - menuHeight)),
       }
     },
 
@@ -733,7 +1059,7 @@ export default {
           ...pending,
           type,
           terminationScope,
-          edgeType: this.globalEdgeLineType
+          edgeType: this.globalEdgeLineType,
         })
         this.selectNodeData({ id: result.node.id })
         this.updateSelectedBusinessNodeCount()
@@ -749,25 +1075,33 @@ export default {
         id: data.id,
         type: model.type,
         baseType: 'node',
-        properties: model.properties ? JSON.parse(JSON.stringify(model.properties)) : {}
+        properties: model.properties
+          ? JSON.parse(JSON.stringify(model.properties))
+          : {},
       }
       this.nodeProps = {
-        nodeName: (this.activeElement.properties.nodeName) || '',
-        nodeDesc: (this.activeElement.properties.nodeDesc) || '',
-        gatewayDirection: (this.activeElement.properties.gatewayDirection) || 'Diverging'
+        nodeName: this.activeElement.properties.nodeName || '',
+        nodeDesc: this.activeElement.properties.nodeDesc || '',
+        gatewayDirection:
+          this.activeElement.properties.gatewayDirection || 'Diverging',
       }
       this.hasSelection = true
       if (model.type === 'exclusive-gateway') {
-        const scriptContent = (this.activeElement.properties.scriptContent) || ''
+        const scriptContent = this.activeElement.properties.scriptContent || ''
         this.nodeCondVisual = this.syncCondVisualFromExpr(scriptContent)
-        this.nodeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
-        this.nodeCondVisual.leftRefType = this.activeElement.properties.leftRefType || null
-        this.nodeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
-        this.nodeCondVisual.rightRefType = this.activeElement.properties.rightRefType || null
-        this.nodeCondMode = scriptContent && !this.nodeCondVisual.leftVar ? 'script' : 'visual'
+        this.nodeCondVisual.leftVarId =
+          this.activeElement.properties.leftVarId || null
+        this.nodeCondVisual.leftRefType =
+          this.activeElement.properties.leftRefType || null
+        this.nodeCondVisual.rightVarId =
+          this.activeElement.properties.rightVarId || null
+        this.nodeCondVisual.rightRefType =
+          this.activeElement.properties.rightRefType || null
+        this.nodeCondMode =
+          scriptContent && !this.nodeCondVisual.leftVar ? 'script' : 'visual'
       }
       if (model.type === 'script-task') {
-        this.currentActionData = (this.activeElement.properties.actionData) || []
+        this.currentActionData = this.activeElement.properties.actionData || []
         this.actionMode = 'visual'
       }
     },
@@ -779,21 +1113,37 @@ export default {
         baseType: 'edge',
         sourceNodeId: data.sourceNodeId,
         targetNodeId: data.targetNodeId,
-        properties: data.properties ? JSON.parse(JSON.stringify(data.properties)) : {}
+        properties: data.properties
+          ? JSON.parse(JSON.stringify(data.properties))
+          : {},
       }
       this.edgeProps = {
-        conditionName: (this.activeElement.properties.conditionName) || '',
-        conditionExpr: (this.activeElement.properties.conditionExpr) || '',
-        conditionConfig: (this.activeElement.properties.conditionConfig) || null,
-        edgeLineType: (this.activeElement.properties.edgeLineType) || ''
+        conditionName: this.activeElement.properties.conditionName || '',
+        conditionExpr: this.activeElement.properties.conditionExpr || '',
+        conditionConfig: this.activeElement.properties.conditionConfig || null,
+        edgeLineType: this.activeElement.properties.edgeLineType || '',
       }
-      this.edgeCondVisual = this.syncCondVisualFromExpr(this.edgeProps.conditionExpr)
-      this.edgeCondVisual.leftVarId = this.activeElement.properties.leftVarId || null
-      this.edgeCondVisual.leftRefType = this.activeElement.properties.leftRefType || null
-      this.edgeCondVisual.rightVarId = this.activeElement.properties.rightVarId || null
-      this.edgeCondVisual.rightRefType = this.activeElement.properties.rightRefType || null
-      this.edgeConditionRoot = this.parseConditionConfig(this.edgeProps.conditionConfig, this.edgeProps.conditionExpr)
-      this.edgeCondMode = this.edgeProps.conditionExpr && !this.edgeCondVisual.leftVar && !this.edgeProps.conditionConfig ? 'script' : 'visual'
+      this.edgeCondVisual = this.syncCondVisualFromExpr(
+        this.edgeProps.conditionExpr
+      )
+      this.edgeCondVisual.leftVarId =
+        this.activeElement.properties.leftVarId || null
+      this.edgeCondVisual.leftRefType =
+        this.activeElement.properties.leftRefType || null
+      this.edgeCondVisual.rightVarId =
+        this.activeElement.properties.rightVarId || null
+      this.edgeCondVisual.rightRefType =
+        this.activeElement.properties.rightRefType || null
+      this.edgeConditionRoot = this.parseConditionConfig(
+        this.edgeProps.conditionConfig,
+        this.edgeProps.conditionExpr
+      )
+      this.edgeCondMode =
+        this.edgeProps.conditionExpr &&
+        !this.edgeCondVisual.leftVar &&
+        !this.edgeProps.conditionConfig
+          ? 'script'
+          : 'visual'
       this.hasSelection = true
     },
 
@@ -806,16 +1156,21 @@ export default {
             type: model.type,
             sourceNodeId: model.sourceNodeId,
             targetNodeId: model.targetNodeId,
-            properties: model.properties || {}
+            properties: model.properties || {},
           })
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        /* ignore */
+      }
     },
 
     onNodeChange() {
       if (!this.lf || !this.activeElement) return
       const curProps = this.lf.getProperties(this.activeElement.id) || {}
-      this.lf.setProperties(this.activeElement.id, { ...curProps, ...this.nodeProps })
+      this.lf.setProperties(this.activeElement.id, {
+        ...curProps,
+        ...this.nodeProps,
+      })
     },
     onActionDataUpdate(data) {
       this.currentActionData = data
@@ -828,7 +1183,12 @@ export default {
      * 同步连线分支文案与条件等到模型，并保持与连接线类型相关的 properties 一致
      */
     onEdgeChange() {
-      if (!this.lf || !this.activeElement || this.activeElement.baseType !== 'edge') return
+      if (
+        !this.lf ||
+        !this.activeElement ||
+        this.activeElement.baseType !== 'edge'
+      )
+        return
       const curProps = this.lf.getProperties(this.activeElement.id) || {}
       const props = mergeEdgePropertiesFromForm(curProps, this.edgeProps)
       this.lf.setProperties(this.activeElement.id, props)
@@ -837,10 +1197,17 @@ export default {
         : this.globalEdgeLineType
       try {
         this.lf.changeEdgeType(this.activeElement.id, effectiveType)
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        /* ignore */
+      }
       try {
-        this.lf.updateText(this.activeElement.id, this.edgeProps.conditionName || '')
-      } catch (e) { /* ignore */ }
+        this.lf.updateText(
+          this.activeElement.id,
+          this.edgeProps.conditionName || ''
+        )
+      } catch (e) {
+        /* ignore */
+      }
     },
 
     /**
@@ -855,7 +1222,8 @@ export default {
      */
     onGlobalEdgeLineTypeChange(val) {
       this.globalEdgeLineType = normalizeDefaultEdgeLineType(val)
-      if (this.lf) applyGlobalEdgeTypeToInheritedEdges(this.lf, this.globalEdgeLineType)
+      if (this.lf)
+        applyGlobalEdgeTypeToInheritedEdges(this.lf, this.globalEdgeLineType)
     },
 
     addNode(type) {
@@ -885,7 +1253,9 @@ export default {
     addNodeToCanvas(type, terminationScope) {
       const xPos = 300 + Math.random() * 200
       const yPos = 200 + Math.random() * 150
-      this.lf.addNode(createFlowNodeData(type, { x: xPos, y: yPos, terminationScope }))
+      this.lf.addNode(
+        createFlowNodeData(type, { x: xPos, y: yPos, terminationScope })
+      )
     },
 
     deleteSelected() {
@@ -902,12 +1272,14 @@ export default {
 
     deleteCurrentNode() {
       if (!this.activeElement || this.activeElement.baseType !== 'node') return
-      this.$confirm('确认删除该节点及其关联连线？', '提示', { type: 'warning' }).then(() => {
-        this.lf.deleteNode(this.activeElement.id)
-        this.activeElement = null
-        this.hasSelection = false
-        this.updateSelectedBusinessNodeCount()
-      }).catch(() => {})
+      this.$confirm('确认删除该节点及其关联连线？', '提示', { type: 'warning' })
+        .then(() => {
+          this.lf.deleteNode(this.activeElement.id)
+          this.activeElement = null
+          this.hasSelection = false
+          this.updateSelectedBusinessNodeCount()
+        })
+        .catch(() => {})
     },
 
     nodeTypeLabel(type) {
@@ -916,7 +1288,7 @@ export default {
         'end-event': '结束节点',
         'exclusive-gateway': '条件判断（网关）',
         'script-task': '执行动作（脚本任务）',
-        'join-gateway': '聚合节点'
+        'join-gateway': '聚合节点',
       }
       return map[type] || type
     },
@@ -937,25 +1309,30 @@ export default {
         'end-event': 'danger',
         'exclusive-gateway': 'warning',
         'script-task': '',
-        'join-gateway': 'info'
+        'join-gateway': 'info',
       }
       return map[type] || 'info'
     },
 
     edgeLabel(edge) {
-      if (edge.properties && edge.properties.conditionName) return edge.properties.conditionName
-      if (edge.properties && edge.properties.conditionExpr) return edge.properties.conditionExpr
+      if (edge.properties && edge.properties.conditionName)
+        return edge.properties.conditionName
+      if (edge.properties && edge.properties.conditionExpr)
+        return edge.properties.conditionExpr
       return ''
     },
 
     updateSelectedBusinessNodeCount() {
       if (!this.lf) return
       const selected = this.lf.getSelectElements(true) || {}
-      this.selectedBusinessNodeCount = (selected.nodes || []).filter(node => {
+      this.selectedBusinessNodeCount = (selected.nodes || []).filter((node) => {
         const model = this.lf.getNodeModelById(node.id)
         return model && !model.isGroup
       }).length
-      this.hasSelection = Boolean(this.activeElement) || this.selectedBusinessNodeCount > 0 || (selected.edges || []).length > 0
+      this.hasSelection =
+        Boolean(this.activeElement) ||
+        this.selectedBusinessNodeCount > 0 ||
+        (selected.edges || []).length > 0
     },
 
     toggleSelectionMode() {
@@ -1000,7 +1377,11 @@ export default {
         })
         this.$message.success('画布已根据连线锚点自动排布，请点击保存后生效')
       } catch (error) {
-        try { this.lf.render(JSON.parse(JSON.stringify(canvasGraph))) } catch (e) { /* ignore */ }
+        try {
+          this.lf.render(JSON.parse(JSON.stringify(canvasGraph)))
+        } catch (e) {
+          /* ignore */
+        }
         this.$message.error('一键美化失败: ' + (error.message || '未知错误'))
       }
     },
@@ -1011,19 +1392,35 @@ export default {
       else this.lf.extension.miniMap.hide()
     },
 
-    zoomIn() { this.lf.zoom(true); this.updateZoom() },
-    zoomOut() { this.lf.zoom(false); this.updateZoom() },
-    resetZoom() { this.lf.resetZoom(); this.lf.resetTranslate(); this.updateZoom() },
+    zoomIn() {
+      this.lf.zoom(true)
+      this.updateZoom()
+    },
+    zoomOut() {
+      this.lf.zoom(false)
+      this.updateZoom()
+    },
+    resetZoom() {
+      this.lf.resetZoom()
+      this.lf.resetTranslate()
+      this.updateZoom()
+    },
     updateZoom() {
       this.$nextTick(() => {
         try {
           const t = this.lf.getTransform()
           this.zoomPercent = Math.round((t.SCALE_X || 1) * 100)
-        } catch (e) { this.zoomPercent = 100 }
+        } catch (e) {
+          this.zoomPercent = 100
+        }
       })
     },
-    undo() { this.lf.undo() },
-    redo() { this.lf.redo() },
+    undo() {
+      this.lf.undo()
+    },
+    redo() {
+      this.lf.redo()
+    },
 
     handleValidate() {
       const errors = []
@@ -1032,26 +1429,40 @@ export default {
       const nodes = graphData.nodes || []
       const edges = graphData.edges || []
 
-      const starts = nodes.filter(n => n.type === 'start-event')
+      const starts = nodes.filter((n) => n.type === 'start-event')
       if (starts.length === 0) errors.push('缺少开始节点')
       if (starts.length > 1) errors.push('开始节点只能有一个')
-      nodes.filter(n => n.type === 'exclusive-gateway').forEach(gw => {
-        const outEdges = edges.filter(e => e.sourceNodeId === gw.id)
-        if (outEdges.length < 2) {
-          errors.push('条件判断节点「' + ((gw.properties && gw.properties.nodeName) || gw.id) + '」至少需要两个出口')
-        }
-      })
+      nodes
+        .filter((n) => n.type === 'exclusive-gateway')
+        .forEach((gw) => {
+          const outEdges = edges.filter((e) => e.sourceNodeId === gw.id)
+          if (outEdges.length < 2) {
+            errors.push(
+              '条件判断节点「' +
+                ((gw.properties && gw.properties.nodeName) || gw.id) +
+                '」至少需要两个出口'
+            )
+          }
+        })
 
-      nodes.filter(n => n.type === 'join-gateway').forEach(jn => {
-        const inEdges = edges.filter(e => e.targetNodeId === jn.id)
-        if (inEdges.length < 2) {
-          errors.push('聚合节点「' + ((jn.properties && jn.properties.nodeName) || jn.id) + '」至少需要两个入边')
-        }
-      })
+      nodes
+        .filter((n) => n.type === 'join-gateway')
+        .forEach((jn) => {
+          const inEdges = edges.filter((e) => e.targetNodeId === jn.id)
+          if (inEdges.length < 2) {
+            errors.push(
+              '聚合节点「' +
+                ((jn.properties && jn.properties.nodeName) || jn.id) +
+                '」至少需要两个入边'
+            )
+          }
+        })
 
-      const nodeIds = nodes.map(n => n.id)
+      const nodeIds = nodes.map((n) => n.id)
       if (graphContainsDirectedCycle(edges, nodeIds)) {
-        errors.push('存在有向环路：决策流仅支持 DAG，请删除或调整形成回路的连线')
+        errors.push(
+          '存在有向环路：决策流仅支持 DAG，请删除或调整形成回路的连线'
+        )
       }
 
       errors.push(...this.validateRuleCallsInModel(this.buildBackendModel()))
@@ -1059,7 +1470,11 @@ export default {
       if (errors.length === 0) {
         this.$message.success('验证通过！')
       } else {
-        this.$alert(errors.map((e, i) => (i + 1) + '. ' + e).join('\n'), '验证失败', { type: 'warning' })
+        this.$alert(
+          errors.map((e, i) => i + 1 + '. ' + e).join('\n'),
+          '验证失败',
+          { type: 'warning' }
+        )
       }
     },
 
@@ -1068,16 +1483,24 @@ export default {
         const res = await getContent(this.definitionId)
         const content = res && res.data ? res.data : res
         if (content && content.modelJson && content.modelJson !== '{}') {
-          const modelData = normalizeGraphActionData(JSON.parse(content.modelJson))
+          const modelData = normalizeGraphActionData(
+            JSON.parse(content.modelJson)
+          )
           migrateModelJsonForEdgeLineTypes(modelData)
           this.globalEdgeLineType = modelData.defaultEdgeLineType
           this.lf.setDefaultEdgeType(this.globalEdgeLineType)
           if (modelData.logicflow) {
-            const prepared = prepareLogicFlowDataForRender(modelData.logicflow, this.globalEdgeLineType)
+            const prepared = prepareLogicFlowDataForRender(
+              modelData.logicflow,
+              this.globalEdgeLineType
+            )
             this.lf.render(prepared)
           } else if (modelData.nodes && modelData.nodes.length > 0) {
             const converted = this.convertLegacyModel(modelData)
-            const prepared = prepareLogicFlowDataForRender(converted, this.globalEdgeLineType)
+            const prepared = prepareLogicFlowDataForRender(
+              converted,
+              this.globalEdgeLineType
+            )
             this.lf.render(prepared)
           } else {
             this.lf.render(getDefaultFlowData())
@@ -1109,18 +1532,21 @@ export default {
           nodeName: n.name || '',
           nodeCode: n.id,
           nodeDesc: '',
-          actionData: n.actionData || []
+          actionData: n.actionData || [],
         }
         if (type === 'end-event') {
           properties.terminationScope = normalizeEndScope(n.terminationScope)
-          if (!properties.nodeName) properties.nodeName = getEndNodeAppearance(properties.terminationScope).name
+          if (!properties.nodeName)
+            properties.nodeName = getEndNodeAppearance(
+              properties.terminationScope
+            ).name
         }
         return {
           id: n.id,
           type,
           x: n.x || 160 + i * 200,
           y: n.y || 300,
-          properties
+          properties,
         }
       })
       const lfEdges = (old.edges || []).map((e, i) => ({
@@ -1130,8 +1556,8 @@ export default {
         targetNodeId: e.target,
         properties: {
           conditionName: e.conditionExpression || '',
-          conditionExpr: e.conditionExpression || ''
-        }
+          conditionExpr: e.conditionExpression || '',
+        },
       }))
       return { nodes: lfNodes, edges: lfEdges }
     },
@@ -1146,7 +1572,10 @@ export default {
         if (!id) return null
         for (const item of this.projectRefs) {
           const vid = item.varObj && item.varObj.id
-          const typeMatches = !refType || !item.refType || String(item.refType) === String(refType)
+          const typeMatches =
+            !refType ||
+            !item.refType ||
+            String(item.refType) === String(refType)
           if (String(vid) === String(id) && typeMatches) return item
         }
         return null
@@ -1163,11 +1592,19 @@ export default {
         let changed = false
         if (leftId) {
           const info = findById(leftId, leftRefType)
-          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.leftRefType = info.refType; changed = true }
+          if (info) {
+            props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code
+            props.leftRefType = info.refType
+            changed = true
+          }
         }
         if (rightId) {
           const info = findById(rightId, rightRefType)
-          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
+          if (info) {
+            props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code
+            props.rightRefType = info.refType
+            changed = true
+          }
         }
         if (this.syncActionDataVarRefs(props.actionData || [])) changed = true
         if (changed) this.lf.setProperties(node.id, props)
@@ -1182,13 +1619,22 @@ export default {
         let changed = false
         if (leftId) {
           const info = findById(leftId, leftRefType)
-          if (info) { props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.leftRefType = info.refType; changed = true }
+          if (info) {
+            props.leftVarLabel = info.refLabel.label + ' ' + info.refLabel.code
+            props.leftRefType = info.refType
+            changed = true
+          }
         }
         if (rightId) {
           const info = findById(rightId, rightRefType)
-          if (info) { props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code; props.rightRefType = info.refType; changed = true }
+          if (info) {
+            props.rightVarLabel = info.refLabel.label + ' ' + info.refLabel.code
+            props.rightRefType = info.refType
+            changed = true
+          }
         }
-        if (this.syncConditionConfigVarRefs(props.conditionConfig)) changed = true
+        if (this.syncConditionConfigVarRefs(props.conditionConfig))
+          changed = true
         if (changed) this.lf.setEdgeData(edge.id, { properties: props })
       }
     },
@@ -1199,28 +1645,42 @@ export default {
         'end-event': 'end',
         'script-task': 'task',
         'exclusive-gateway': 'decision',
-        'join-gateway': 'join'
+        'join-gateway': 'join',
       }
       return map[lfType] || lfType
     },
 
     buildBackendModel() {
       // 保存前将当前编辑中的 actionData 同步到 LogicFlow 模型，确保配置不丢失
-      if (this.activeElement && this.activeElement.baseType === 'node' && this.activeElement.type === 'script-task') {
+      if (
+        this.activeElement &&
+        this.activeElement.baseType === 'node' &&
+        this.activeElement.type === 'script-task'
+      ) {
         const model = this.lf.getNodeModelById(this.activeElement.id)
-        const currentProps = model ? (model.properties || {}) : {}
-        this.lf.setProperties(this.activeElement.id, { ...currentProps, actionData: this.currentActionData || [] })
+        const currentProps = model ? model.properties || {} : {}
+        this.lf.setProperties(this.activeElement.id, {
+          ...currentProps,
+          actionData: this.currentActionData || [],
+        })
       }
-      if (this.activeElement && this.activeElement.baseType === 'edge' && this.edgeCondMode === 'visual' && this.edgeConditionRoot) {
+      if (
+        this.activeElement &&
+        this.activeElement.baseType === 'edge' &&
+        this.edgeCondMode === 'visual' &&
+        this.edgeConditionRoot
+      ) {
         const expr = compileConditionTreeExpression(this.edgeConditionRoot)
         this.edgeProps.conditionExpr = expr
-        this.edgeProps.conditionConfig = JSON.parse(JSON.stringify(this.edgeConditionRoot))
+        this.edgeProps.conditionConfig = JSON.parse(
+          JSON.stringify(this.edgeConditionRoot)
+        )
         this.onEdgeChange()
       }
       const canvasGraph = getPersistableGraphData(this.lf)
       const graphData = getBusinessGraphData(canvasGraph)
 
-      const nodes = (graphData.nodes || []).map(n => {
+      const nodes = (graphData.nodes || []).map((n) => {
         const props = n.properties || {}
         const actionData = props.actionData || []
         const backendNode = {
@@ -1235,15 +1695,17 @@ export default {
           leftVarId: props.leftVarId || null,
           leftRefType: props.leftRefType || null,
           rightVarId: props.rightVarId || null,
-          rightRefType: props.rightRefType || null
+          rightRefType: props.rightRefType || null,
         }
         if (n.type === 'end-event') {
-          backendNode.terminationScope = normalizeEndScope(props.terminationScope)
+          backendNode.terminationScope = normalizeEndScope(
+            props.terminationScope
+          )
         }
         return backendNode
       })
 
-      const edges = (graphData.edges || []).map(e => {
+      const edges = (graphData.edges || []).map((e) => {
         const props = e.properties || {}
         return {
           id: e.id,
@@ -1256,22 +1718,25 @@ export default {
           leftVarId: props.leftVarId || null,
           leftRefType: props.leftRefType || null,
           rightVarId: props.rightVarId || null,
-          rightRefType: props.rightRefType || null
+          rightRefType: props.rightRefType || null,
         }
       })
 
       // 确保 logicflow 中的节点包含完整的 actionData（与 nodes 一致）
-      const logicflowNodes = (canvasGraph.nodes || []).map(n => {
+      const logicflowNodes = (canvasGraph.nodes || []).map((n) => {
         const base = { ...n }
         const actionData = (n.properties && n.properties.actionData) || []
-        base.properties = { ...(n.properties || {}), actionData: Array.isArray(actionData) ? actionData : [] }
+        base.properties = {
+          ...(n.properties || {}),
+          actionData: Array.isArray(actionData) ? actionData : [],
+        }
         return base
       })
       return {
         nodes,
         edges,
         defaultEdgeLineType: this.globalEdgeLineType,
-        logicflow: { nodes: logicflowNodes, edges: canvasGraph.edges || [] }
+        logicflow: { nodes: logicflowNodes, edges: canvasGraph.edges || [] },
       }
     },
 
@@ -1297,7 +1762,7 @@ export default {
     },
 
     async handleCompile() {
-      if (await this.handleSave() === false) return
+      if ((await this.handleSave()) === false) return
       const res = await compileRule(this.definitionId)
       if (isSuccessResult(res)) {
         this.$message.success('编译成功')
@@ -1313,7 +1778,11 @@ export default {
 
     handleTest() {
       this.testParamsTemplate = this.buildTestParamsTemplate()
-      this.testParamsJson = JSON.stringify(this.buildTestParamsTemplate(), null, 2)
+      this.testParamsJson = JSON.stringify(
+        this.buildTestParamsTemplate(),
+        null,
+        2
+      )
       this.testResult = null
       this.testVisible = true
     },
@@ -1321,26 +1790,55 @@ export default {
       const codes = new Set()
       const model = this.buildBackendModel()
       const nodes = model.nodes || []
-      nodes.forEach(node => {
-        addCode(codes, refCodeById(this.projectRefs, node.leftVarId, node.leftRefType))
-        addCode(codes, refCodeById(this.projectRefs, node.rightVarId, node.rightRefType))
+      nodes.forEach((node) => {
+        addCode(
+          codes,
+          refCodeById(this.projectRefs, node.leftVarId, node.leftRefType)
+        )
+        addCode(
+          codes,
+          refCodeById(this.projectRefs, node.rightVarId, node.rightRefType)
+        )
         collectActionDataInputCodes(node.actionData, this.projectRefs, codes)
       })
       const edges = model.edges || []
-      edges.forEach(edge => {
+      edges.forEach((edge) => {
         collectVarCodesFromConditionTree(edge.conditionConfig, codes)
-        collectScriptInputCodes(edge.conditionExpression, this.projectRefs, codes)
-        addCode(codes, refCodeById(this.projectRefs, edge.leftVarId, edge.leftRefType))
-        addCode(codes, refCodeById(this.projectRefs, edge.rightVarId, edge.rightRefType))
+        collectScriptInputCodes(
+          edge.conditionExpression,
+          this.projectRefs,
+          codes
+        )
+        addCode(
+          codes,
+          refCodeById(this.projectRefs, edge.leftVarId, edge.leftRefType)
+        )
+        addCode(
+          codes,
+          refCodeById(this.projectRefs, edge.rightVarId, edge.rightRefType)
+        )
       })
-      const params = buildSampleParamsFromCodes(Array.from(codes), this.projectRefs)
-      nodes.forEach(node => applyActionDataSampleValues(params, node.actionData, this.projectRefs))
-      edges.forEach(edge => applyConditionExpressionSamples(params, edge.conditionExpression, this.projectRefs))
+      const params = buildSampleParamsFromCodes(
+        Array.from(codes),
+        this.projectRefs
+      )
+      nodes.forEach((node) =>
+        applyActionDataSampleValues(params, node.actionData, this.projectRefs)
+      )
+      edges.forEach((edge) =>
+        applyConditionExpressionSamples(
+          params,
+          edge.conditionExpression,
+          this.projectRefs
+        )
+      )
       return params
     },
     async doTest() {
       let params = {}
-      try { params = JSON.parse(this.testParamsJson || '{}') } catch (e) {
+      try {
+        params = JSON.parse(this.testParamsJson || '{}')
+      } catch (e) {
         this.$message.error('参数 JSON 格式错误')
         return
       }
@@ -1384,10 +1882,17 @@ export default {
     },
     buildCondExpr(visual) {
       const left = visual.leftVar
-      if (!left) { this.$message.warning('请选择左侧变量'); return null }
+      if (!left) {
+        this.$message.warning('请选择左侧变量')
+        return null
+      }
       const op = visual.operator
-      let right = visual.rightType === 'var' ? visual.rightVar : visual.rightValue
-      if (!right && right !== 0) { this.$message.warning('请填写比较值'); return null }
+      let right =
+        visual.rightType === 'var' ? visual.rightVar : visual.rightValue
+      if (!right && right !== 0) {
+        this.$message.warning('请填写比较值')
+        return null
+      }
       if (visual.rightType === 'value' && isNaN(right)) {
         right = "'" + right.replace(/'/g, "\\'") + "'"
       }
@@ -1407,11 +1912,15 @@ export default {
     },
     applyEdgeCondVisual() {
       if (!this.edgeConditionRoot) {
-        this.edgeConditionRoot = this.createConditionRootFromVisual(this.edgeCondVisual)
+        this.edgeConditionRoot = this.createConditionRootFromVisual(
+          this.edgeCondVisual
+        )
       }
       const expr = compileConditionTreeExpression(this.edgeConditionRoot)
       this.edgeProps.conditionExpr = expr
-      this.edgeProps.conditionConfig = JSON.parse(JSON.stringify(this.edgeConditionRoot))
+      this.edgeProps.conditionConfig = JSON.parse(
+        JSON.stringify(this.edgeConditionRoot)
+      )
       this.edgeProps.leftVarId = null
       this.edgeProps.leftRefType = null
       this.edgeProps.rightVarId = null
@@ -1427,23 +1936,57 @@ export default {
     syncCondVisualFromExpr(expr) {
       const m = (expr || '').match(/^(\S+)\s*(==|!=|>=|<=|>|<|in)\s*(.+)$/)
       if (m) {
-        return { leftVar: m[1], leftLabel: '', leftVarId: null, leftRefType: null, operator: m[2], rightValue: m[3].replace(/^'|'$/g, ''), rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null }
+        return {
+          leftVar: m[1],
+          leftLabel: '',
+          leftVarId: null,
+          leftRefType: null,
+          operator: m[2],
+          rightValue: m[3].replace(/^'|'$/g, ''),
+          rightType: 'value',
+          rightVar: '',
+          rightVarId: null,
+          rightRefType: null,
+        }
       }
-      return { leftVar: '', leftLabel: '', leftVarId: null, leftRefType: null, operator: '==', rightValue: '', rightType: 'value', rightVar: '', rightVarId: null, rightRefType: null }
+      return {
+        leftVar: '',
+        leftLabel: '',
+        leftVarId: null,
+        leftRefType: null,
+        operator: '==',
+        rightValue: '',
+        rightType: 'value',
+        rightVar: '',
+        rightVarId: null,
+        rightRefType: null,
+      }
     },
 
     insertVarCode(code) {
       if (navigator.clipboard) {
         navigator.clipboard.writeText(code).then(() => {
-          this.$message({ message: '已复制：' + code, type: 'success', duration: 1200 })
+          this.$message({
+            message: '已复制：' + code,
+            type: 'success',
+            duration: 1200,
+          })
         })
       }
     },
     formatJson(obj) {
       if (obj === null || obj === undefined) return '(空)'
-      try { return JSON.stringify(typeof obj === 'string' ? JSON.parse(obj) : obj, null, 2) } catch (e) { return String(obj) }
-    }
-  }
+      try {
+        return JSON.stringify(
+          typeof obj === 'string' ? JSON.parse(obj) : obj,
+          null,
+          2
+        )
+      } catch (e) {
+        return String(obj)
+      }
+    },
+  },
 }
 </script>
 
@@ -1455,9 +1998,8 @@ export default {
   background: #fff;
   border-radius: 4px;
   overflow: hidden;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-/* 脚本面板区域 */
 .flow-script-area {
   flex-shrink: 0;
   max-height: 60%;
@@ -1465,14 +2007,12 @@ export default {
   border-top: 1px solid #e8e8e8;
   background: #fff;
 }
-
-/* 工具栏 */
 .flow-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 7px 14px;
-  background: #2639E9;
+  background: #2639e9;
   color: #fff;
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -1494,7 +2034,9 @@ export default {
   opacity: 0.7;
   margin-left: 4px;
 }
-.toolbar-left, .toolbar-center, .toolbar-right {
+.toolbar-left,
+.toolbar-center,
+.toolbar-right {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1507,63 +2049,71 @@ export default {
 .toolbar-right .el-button,
 .toolbar-center .el-button {
   color: #fff;
-  border-color: rgba(255,255,255,0.4);
-  background: rgba(255,255,255,0.1);
+  border-color: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.1);
   min-height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   white-space: nowrap;
-  &:hover { background: rgba(255,255,255,0.2); border-color: rgba(255,255,255,0.7); }
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.7);
+  }
   &.is-tool-active {
-    background: #FFFFFF;
-    border-color: #FFFFFF;
-    color: #1D39C4;
+    background: #ffffff;
+    border-color: #ffffff;
+    color: #1d39c4;
   }
   &.el-button--primary {
-    background: #FFFFFF;
-    background-color: #FFFFFF !important;
-    color: #1D39C4;
-    color: #1D39C4 !important;
-    border-color: #FFFFFF !important;
+    background: #ffffff;
+    background-color: #ffffff !important;
+    color: #1d39c4;
+    color: #1d39c4 !important;
+    border-color: #ffffff !important;
     font-weight: 600;
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.16);
   }
   &.el-button--primary:hover,
   &.el-button--primary:focus {
-    background-color: #EEF2FF !important;
-    border-color: #D6DEFF !important;
-    color: #1428A0 !important;
+    background-color: #eef2ff !important;
+    border-color: #d6deff !important;
+    color: #1428a0 !important;
     box-shadow: 0 2px 5px rgba(15, 23, 42, 0.2);
   }
   &.el-button--primary:active {
-    background-color: #DDE5FF !important;
-    border-color: #C3CEFF !important;
-    color: #1428A0 !important;
+    background-color: #dde5ff !important;
+    border-color: #c3ceff !important;
+    color: #1428a0 !important;
     box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.16);
   }
-  &.el-button--warning { background: #F76E6C; color: #fff; border-color: #F76E6C; }
+  &.el-button--warning {
+    background: #f76e6c;
+    color: #fff;
+    border-color: #f76e6c;
+  }
   &.is-disabled,
   &.is-disabled:hover {
-    color: rgba(255,255,255,0.55);
-    border-color: rgba(255,255,255,0.24);
-    background: rgba(255,255,255,0.08);
+    color: rgba(255, 255, 255, 0.55);
+    border-color: rgba(255, 255, 255, 0.24);
+    background: rgba(255, 255, 255, 0.08);
   }
 }
 .toolbar-right .el-button {
   min-width: 88px;
 }
 .toolbar-center .btn-script-task {
-  // background: #EAF2FF;
-  // border-color: #ADC6FF;
-  color: #FFFFFF;
+  /*// background: #EAF2FF;*/ /*// border-color: #ADC6FF;*/
+  color: #ffffff;
   font-weight: 600;
   &:hover {
     // background: #D6E4FF;
-    border-color: #85A5FF;
+    border-color: #85a5ff;
     // color: #1D39C4;
   }
-  .node-dot { background: #2639E9; }
+  .node-dot {
+    background: #2639e9;
+  }
 }
 .delete-current-node {
   width: 100%;
@@ -1582,8 +2132,6 @@ export default {
   min-width: 40px;
   text-align: center;
 }
-
-/* 主体 */
 .flow-body {
   flex: 1;
   display: flex;
@@ -1591,18 +2139,14 @@ export default {
   position: relative;
   background: #f7f8fa;
 }
-
-/* 画布 */
 .flow-canvas {
   flex: 1;
   min-height: 0;
   min-width: 0;
 }
-.flow-canvas.is-node-active ::v-deep .lf-mini-map {
+.flow-canvas.is-node-active :deep(.lf-mini-map) {
   pointer-events: none;
 }
-
-/* 提示 */
 .flow-hint {
   position: absolute;
   bottom: 24px;
@@ -1611,11 +2155,17 @@ export default {
   text-align: center;
   color: #bbb;
   pointer-events: none;
-  .hint-icon { font-size: 32px; display: block; margin-bottom: 6px; }
-  p { margin: 2px 0; font-size: 13px; line-height: 1.6; }
+  .hint-icon {
+    font-size: 32px;
+    display: block;
+    margin-bottom: 6px;
+  }
+  p {
+    margin: 2px 0;
+    font-size: 13px;
+    line-height: 1.6;
+  }
 }
-
-/* 属性面板 - 右侧 */
 .flow-property {
   height: 100%;
   background: #fff;
@@ -1659,14 +2209,16 @@ export default {
 .prop-close {
   cursor: pointer;
   color: #999;
-  &:hover { color: #333; }
+  &:hover {
+    color: #333;
+  }
 }
-
-/* 面板分区 */
 .prop-section {
   padding: 10px 14px;
   border-bottom: 1px solid #f0f0f0;
-  &:last-child { border-bottom: none; }
+  &:last-child {
+    border-bottom: none;
+  }
 }
 .section-title {
   display: flex;
@@ -1677,26 +2229,25 @@ export default {
   font-weight: 600;
   color: #333;
 }
-.section-title ::v-deep .el-radio-button__inner {
+.section-title :deep(.el-radio-button__inner) {
   min-width: 72px;
   padding: 6px 12px;
   color: #334155;
-  border-color: #CBD5E1;
-  background: #FFFFFF;
+  border-color: #cbd5e1;
+  background: #ffffff;
   box-shadow: none;
 }
-.section-title ::v-deep .el-radio-button__orig-radio:checked + .el-radio-button__inner {
-  background: #2639E9;
-  border-color: #2639E9;
-  color: #FFFFFF;
+.section-title :deep(.el-radio-button__orig-radio:checked + .el-radio-button__inner) {
+  background: #2639e9;
+  border-color: #2639e9;
+  color: #ffffff;
   box-shadow: none;
 }
 .prop-form {
   padding: 0;
 }
-
-/* 条件构建器 */
-.cond-builder, .cond-script {
+.cond-builder,
+.cond-script {
   padding: 0;
 }
 .cond-row {
@@ -1725,8 +2276,6 @@ export default {
     word-break: break-all;
   }
 }
-
-/* 动作构建器 */
 .action-builder {
   padding: 0;
 }
@@ -1755,9 +2304,15 @@ export default {
   padding: 1px 8px;
   border-radius: 3px;
   color: #fff;
-  &.tag-if { background: #1890ff; }
-  &.tag-elseif { background: #fa8c16; }
-  &.tag-else { background: #8c8c8c; }
+  &.tag-if {
+    background: #1890ff;
+  }
+  &.tag-elseif {
+    background: #fa8c16;
+  }
+  &.tag-else {
+    background: #8c8c8c;
+  }
 }
 .branch-cond {
   padding: 6px 8px;
@@ -1792,8 +2347,6 @@ export default {
   flex: 1;
   min-width: 0;
 }
-
-/* 分支出口 */
 .out-edges {
   padding: 0;
 }
@@ -1807,7 +2360,10 @@ export default {
   margin-bottom: 6px;
   cursor: pointer;
   transition: all 0.15s;
-  &:hover { background: #f0f7ff; border-color: #1890ff; }
+  &:hover {
+    background: #f0f7ff;
+    border-color: #1890ff;
+  }
 }
 .edge-idx {
   font-size: 11px;
@@ -1830,8 +2386,6 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-/* 通用 */
 .hint-box {
   font-size: 12px;
   color: #999;
@@ -1840,7 +2394,7 @@ export default {
   border-radius: 4px;
   line-height: 1.6;
 }
-.mono-input ::v-deep textarea {
+.mono-input :deep(textarea) {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
@@ -1863,25 +2417,28 @@ export default {
 .el-divider {
   margin: 10px 0 4px;
 }
-
-/* 面板动画 */
-.panel-slide-enter-active, .panel-slide-leave-active {
+.panel-slide-enter-active,
+.panel-slide-leave-active {
   transition: width 0.2s ease, opacity 0.2s;
 }
-.panel-slide-enter, .panel-slide-leave-to {
+.panel-slide-enter-from,
+.panel-slide-leave-to {
   width: 0;
   opacity: 0;
 }
-
 @media (max-width: 1200px) {
   .flow-property {
     max-width: 60%;
   }
 }
-
-/* 测试相关 */
-.test-hint { font-size: 12px; color: #909399; margin-bottom: 8px; }
-.test-result { margin-top: 12px; }
+.test-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.test-result {
+  margin-top: 12px;
+}
 .result-pre {
   background: #f5f7fa;
   padding: 6px 8px;
@@ -1901,7 +2458,7 @@ export default {
 .lf-menu {
   background: #fff;
   border-radius: 4px;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
   border: 1px solid #e8e8e8;
   padding: 4px 0;
   min-width: 110px;

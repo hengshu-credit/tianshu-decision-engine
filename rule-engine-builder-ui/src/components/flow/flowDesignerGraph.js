@@ -4,13 +4,13 @@ export const FLOW_THEME_COLOR = '#2639E9'
 export const ANCHOR_CLICK_TOLERANCE = 10
 
 const COMMON_MENU_OPTIONS = [
-  { type: 'exclusive-gateway', label: '条件判断', icon: 'el-icon-sort', color: '#FA8C16' },
-  { type: 'script-task', label: '执行动作', icon: 'el-icon-document', color: '#2F54EB' },
-  { type: 'end-event', label: '结束', icon: 'el-icon-remove', color: '#FF4D4F' }
+  { type: 'exclusive-gateway', label: '条件判断', icon: 'Sort', color: '#FA8C16' },
+  { type: 'script-task', label: '执行动作', icon: 'Document', color: '#2F54EB' },
+  { type: 'end-event', label: '结束', icon: 'Remove', color: '#FF4D4F' }
 ]
 
 export const FLOW_MENU_OPTIONS = {
-  flow: [COMMON_MENU_OPTIONS[0], COMMON_MENU_OPTIONS[1], { type: 'join-gateway', label: '聚合', icon: 'el-icon-copy-document', color: '#8C8C8C' }, COMMON_MENU_OPTIONS[2]],
+  flow: [COMMON_MENU_OPTIONS[0], COMMON_MENU_OPTIONS[1], { type: 'join-gateway', label: '聚合', icon: 'CopyDocument', color: '#8C8C8C' }, COMMON_MENU_OPTIONS[2]],
   tree: COMMON_MENU_OPTIONS
 }
 

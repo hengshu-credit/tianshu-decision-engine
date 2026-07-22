@@ -1,5 +1,5 @@
-import { shallowMount } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { nextTick } from 'vue'
 
 import { getExternalApiStats, listRuntimeLogs } from '@/api/runtimeLog'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
@@ -16,7 +16,7 @@ describe('ModuleCallLog', () => {
 
   test('pretty 格式化对象和数组而不是渲染为 object Object', async () => {
     const wrapper = shallowMount(ModuleCallLog, {
-      propsData: { moduleType: 'DATABASE' },
+      props: { moduleType: 'DATABASE' },
       stubs: [
         'el-button',
         'el-form',
@@ -33,7 +33,7 @@ describe('ModuleCallLog', () => {
         'el-descriptions-item'
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     const rows = [{ user_count: 1 }]
     expect(wrapper.vm.pretty(rows)).toBe(JSON.stringify(rows, null, 2))
@@ -51,7 +51,7 @@ describe('ModuleCallLog', () => {
       }
     })
     const wrapper = shallowMount(ModuleCallLog, {
-      propsData: { moduleType: 'DATASOURCE' },
+      props: { moduleType: 'DATASOURCE' },
       stubs: [
         'el-button', 'el-form', 'el-form-item', 'el-select', 'el-option', 'el-input',
         'el-table', 'el-table-column', 'el-tag', 'el-pagination', 'el-drawer',

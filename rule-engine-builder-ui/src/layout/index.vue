@@ -22,10 +22,20 @@
         @operate="handleTabOperation"
       />
       <main class="layout-main">
-        <keep-alive :max="12">
-          <router-view v-if="$route.meta.keepAlive" :key="currentViewKey" />
-        </keep-alive>
-        <router-view v-if="!$route.meta.keepAlive" :key="currentViewKey" />
+        <router-view v-slot="{ Component }">
+          <keep-alive :max="12">
+            <component
+              :is="Component"
+              v-if="$route.meta.keepAlive"
+              :key="currentViewKey"
+            />
+          </keep-alive>
+          <component
+            :is="Component"
+            v-if="!$route.meta.keepAlive"
+            :key="currentViewKey"
+          />
+        </router-view>
       </main>
     </section>
   </div>
@@ -46,7 +56,7 @@ import {
   readSidebarState,
   resolveWorkspaceShortcut,
   routeToTab,
-  writeSidebarState
+  writeSidebarState,
 } from '@/layout/layoutState'
 import { readWorkspaceTabs } from '@/store/modules/workspaceTabs'
 import { getConsoleAuthConfig, consoleLogout, getConsoleMe } from '@/api/auth'
@@ -69,7 +79,7 @@ export default {
       lastExpandedWidth: sidebarState.lastExpandedWidth,
       sidebarMenus: SIDEBAR_MENUS,
       loginEnabled: false,
-      username: ''
+      username: '',
     }
   },
   computed: {
@@ -91,12 +101,12 @@ export default {
     },
     avatarInitial() {
       return getAvatarInitial(this.username)
-    }
+    },
   },
   watch: {
     '$route.fullPath'() {
       this.openCurrentRoute()
-    }
+    },
   },
   created() {
     this.restoreWorkspaceTabs()
@@ -105,7 +115,7 @@ export default {
     window.addEventListener('keydown', this.handleWorkspaceShortcut, true)
     await this.refreshAuthBar()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     window.removeEventListener('keydown', this.handleWorkspaceShortcut, true)
   },
   methods: {
@@ -113,23 +123,29 @@ export default {
       const tab = routeToTab(route)
       if (!route || route.name !== 'ExpressionEditor') return tab
       const getter = this.$store.getters['expressionSessions/sessionById']
-      const session = typeof getter === 'function' ? getter(route.params.sessionId) : null
-      return { ...tab, title: session && session.title ? session.title : tab.title }
+      const session =
+        typeof getter === 'function' ? getter(route.params.sessionId) : null
+      return {
+        ...tab,
+        title: session && session.title ? session.title : tab.title,
+      }
     },
     restoreWorkspaceTabs() {
       if (!isWorkspaceRoute(this.$route)) return
       const cached = readWorkspaceTabs(browserSessionStorage())
-      const cachedTabs = cached.tabs.map(tab => {
-        try {
-          const resolved = this.$router.resolve(tab.fullPath).route
-          return isWorkspaceRoute(resolved) ? this.routeTab(resolved) : null
-        } catch (e) {
-          return null
-        }
-      }).filter(Boolean)
+      const cachedTabs = cached.tabs
+        .map((tab) => {
+          try {
+            const resolved = this.$router.resolve(tab.fullPath)
+            return isWorkspaceRoute(resolved) ? this.routeTab(resolved) : null
+          } catch (e) {
+            return null
+          }
+        })
+        .filter(Boolean)
       this.$store.dispatch('workspaceTabs/restore', {
         cachedTabs,
-        currentTab: this.routeTab(this.$route)
+        currentTab: this.routeTab(this.$route),
       })
     },
     openCurrentRoute() {
@@ -138,7 +154,7 @@ export default {
     },
     navigateTo(fullPath) {
       if (!fullPath || fullPath === this.$route.fullPath) return
-      return this.$router.push(fullPath).catch(error => {
+      return this.$router.push(fullPath).catch((error) => {
         if (isNavigationFailure(error)) return
         throw error
       })
@@ -149,10 +165,16 @@ export default {
       return this.navigateTo(fullPath)
     },
     handleWorkspaceShortcut(event) {
-      const command = resolveWorkspaceShortcut(event, this.workspaceTabs, this.activeTabPath)
+      const command = resolveWorkspaceShortcut(
+        event,
+        this.workspaceTabs,
+        this.activeTabPath
+      )
       if (!command) return
-      if (event && typeof event.preventDefault === 'function') event.preventDefault()
-      if (command.type === 'activate') return this.activateTab(command.targetPath)
+      if (event && typeof event.preventDefault === 'function')
+        event.preventDefault()
+      if (command.type === 'activate')
+        return this.activateTab(command.targetPath)
       return this.handleTabOperation(command)
     },
     async handleTabOperation({ operation, targetPath }) {
@@ -167,7 +189,7 @@ export default {
 
       const result = await this.$store.dispatch('workspaceTabs/close', {
         operation,
-        targetPath
+        targetPath,
       })
       if (result.nextPath !== this.$route.fullPath) {
         await this.navigateTo(result.nextPath)
@@ -186,7 +208,10 @@ export default {
     },
     toggleSidebar() {
       if (this.isSidebarCompact) {
-        this.sidebarWidth = Math.max(SIDEBAR_COMPACT_THRESHOLD, this.lastExpandedWidth)
+        this.sidebarWidth = Math.max(
+          SIDEBAR_COMPACT_THRESHOLD,
+          this.lastExpandedWidth
+        )
       } else {
         this.lastExpandedWidth = this.sidebarWidth
         this.sidebarWidth = SIDEBAR_MIN_WIDTH
@@ -196,7 +221,7 @@ export default {
     persistSidebarState() {
       writeSidebarState(browserSessionStorage(), {
         width: this.sidebarWidth,
-        lastExpandedWidth: this.lastExpandedWidth
+        lastExpandedWidth: this.lastExpandedWidth,
       })
     },
     async refreshAuthBar() {
@@ -220,8 +245,8 @@ export default {
       } finally {
         this.$router.replace({ path: '/login' })
       }
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -232,9 +257,8 @@ export default {
   height: 100vh;
   min-width: 0;
   overflow: hidden;
-  background: #F3F4F6;
+  background: #f3f4f6;
 }
-
 .layout-workspace {
   display: flex;
   min-width: 0;
@@ -243,7 +267,6 @@ export default {
   flex: 1;
   flex-direction: column;
 }
-
 .layout-main {
   min-width: 0;
   min-height: 0;
@@ -252,6 +275,6 @@ export default {
   overflow-y: auto;
   flex: 1;
   box-sizing: border-box;
-  background: #F3F4F6;
+  background: #f3f4f6;
 }
 </style>

@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import GraphDesignerNavigator from '@/components/flow/GraphDesignerNavigator.vue'
 
 const fs = require('fs')
@@ -28,7 +28,7 @@ describe('GraphDesignerNavigator', () => {
     expect(source).toContain('.toolbar-action:hover,')
     expect(source).toContain('.toolbar-action:focus {')
     expect(source).toContain('.toolbar-action:active {')
-    expect(source).toContain('background: #FFFFFF;')
-    expect(source).toContain('color: #1D39C4;')
+    expect(source).toContain('background: #ffffff;')
+    expect(source).toContain('color: #1d39c4;')
   })
 })

@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
 import * as definitionApi from '@/api/definition'
 
@@ -29,7 +29,7 @@ describe('DesignerTestDialog unified schema', () => {
       }]
     }
     const wrapper = shallowMount(DesignerTestDialog, {
-      propsData: {
+      props: {
         definitionId: 7,
         projectId: 1,
         modelType: 'FLOW',

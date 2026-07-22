@@ -1,8 +1,6 @@
 // tests/unit/views/ruleList.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-import ElementUI from 'element-ui'
-
+import { mount } from '@test-utils'
+import { h, nextTick } from 'vue'
 // Mock API 模块
 jest.mock('@/api/definition', () => ({
   listDefinitions: jest.fn(),
@@ -56,7 +54,7 @@ function mockProjects() {
 // ─── 带方法的 el-form/el-input stub（jsdom 中 el-form 的 ref 方法不可用）────────
 const FormStub = {
   name: 'ElForm',
-  render: h => h('form'),
+  render: () => h('form'),
   methods: {
     clearValidate: jest.fn(),
     validate: jest.fn(cb => cb && cb(true)),
@@ -66,20 +64,15 @@ const FormStub = {
 }
 const InputStub = {
   name: 'ElInput',
-  render: h => h('input', { attrs: { type: 'text' } }),
+  render: () => h('input', { attrs: { type: 'text' } }),
   methods: { focus: jest.fn(), blur: jest.fn() }
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 function createMountOptions() {
   return {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -108,7 +101,7 @@ async function mountAndWait() {
 
   const wrapper = mount(RuleList, createMountOptions())
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -117,7 +110,7 @@ describe('RuleList — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 listProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -145,7 +138,7 @@ describe('RuleList — 标签与格式化方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('modelTypeLabel 返回正确的中文标签', () => {
     expect(wrapper.vm.modelTypeLabel('TABLE')).toBe('决策表')
@@ -194,7 +187,7 @@ describe('RuleList — 筛选与搜索', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('queryProjectCode 模糊匹配', () => {
     wrapper.vm.projectList = mockProjects()
@@ -216,7 +209,7 @@ describe('RuleList — 筛选与搜索', () => {
     wrapper.vm.queryParams.pageNum = 5
     definitionApi.listDefinitions.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.queryParams.pageNum).toBe(1)
   })
 
@@ -247,7 +240,7 @@ describe('RuleList — 规则操作', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleCreate 打开创建弹窗', () => {
     wrapper.vm.form.status = 1
@@ -279,7 +272,7 @@ describe('RuleList — 规则操作', () => {
     wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
     await wrapper.vm.handlePublish(row)
-    await Vue.nextTick()
+    await nextTick()
     expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
   })
 
@@ -288,7 +281,7 @@ describe('RuleList — 规则操作', () => {
     wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
     await wrapper.vm.handleUnpublish(row)
-    await Vue.nextTick()
+    await nextTick()
     expect(definitionApi.unpublishRule).toHaveBeenCalledWith(1)
   })
 
@@ -297,7 +290,7 @@ describe('RuleList — 规则操作', () => {
     wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, ruleName: '测试规则' }
     await wrapper.vm.handleDelete(row)
-    await Vue.nextTick()
+    await nextTick()
     expect(definitionApi.deleteDefinition).toHaveBeenCalledWith(1)
   })
 
@@ -306,7 +299,7 @@ describe('RuleList — 规则操作', () => {
     wrapper.vm.$confirm.mockResolvedValueOnce()
     const row = { id: 1, publishedVersion: 1 }
     await wrapper.vm.handlePublish(row)
-    await Vue.nextTick()
+    await nextTick()
     expect(definitionApi.publishRule).toHaveBeenCalledWith(1)
   })
 })
@@ -316,10 +309,10 @@ describe('RuleList — 边界情况', () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     definitionApi.listDefinitions.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(RuleList, createMountOptions())
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.tableData).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('listDefinitions 失败时显示错误消息', async () => {
@@ -327,10 +320,10 @@ describe('RuleList — 边界情况', () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     const consoleSpy = jest.spyOn(console, 'error').mockImplementation(() => {})
     const wrapper = mount(RuleList, createMountOptions())
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.loading).toBe(false)
     consoleSpy.mockRestore()
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

@@ -2,9 +2,8 @@
 // 规则测试页面 RuleTest.vue 单元测试
 // 覆盖：初始化、辅助方法、加载变量（决策表/交叉表）、执行与结果展示
 
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-import ElementUI from 'element-ui'
+import { shallowMount } from '@test-utils'
+import { h, nextTick } from 'vue'
 import fs from 'fs'
 import path from 'path'
 
@@ -75,16 +74,9 @@ function mockExecutionResult() {
 
 // ─── 测试辅助 ─────────────────────────────────────────────
 function makeStub(tag) {
-  return { render: h => h(tag) }
+  return { render: () => h(tag) }
 }
 
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  localVue.component('el-checkbox', makeStub('label'))
-  localVue.component('el-checkbox-group', makeStub('div'))
-  return localVue
-}
 
 // ─── 测试用例 ─────────────────────────────────────────────
 
@@ -97,7 +89,6 @@ describe('RuleTest — 初始化与数据加载', () => {
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: mockVariables() } })
 
     wrapper = shallowMount(RuleTest, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -133,11 +124,11 @@ describe('RuleTest — 初始化与数据加载', () => {
       }
     })
 
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 listProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -166,7 +157,6 @@ describe('RuleTest — 辅助方法', () => {
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: mockVariables() } })
 
     wrapper = shallowMount(RuleTest, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -190,11 +180,11 @@ describe('RuleTest — 辅助方法', () => {
       }
     })
 
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mtl 返回正确的模型类型标签（注意：方法名是 mtl 不是 modelTypeLabel）', () => {
     expect(wrapper.vm.mtl('TABLE')).toBe('决策表')
@@ -302,7 +292,6 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: mockVariables() } })
 
     wrapper = shallowMount(RuleTest, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -326,11 +315,11 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
       }
     })
 
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('旧交叉表只有 varCode 时拒绝回退匹配变量', async () => {
     // 选中"风险定价交叉表"（id=4，模型类型 CROSS）
@@ -342,7 +331,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     definitionApi.listInputFields.mockResolvedValueOnce({ data: [] })
 
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.params).toEqual([])
     expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
@@ -356,7 +345,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
 
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     // 服务端结构已经通过 ID + ref_type 完成解析。
     expect(wrapper.vm.params.length).toBe(2)
@@ -374,7 +363,7 @@ describe('RuleTest — 加载变量（loadVariables）', () => {
     } })
 
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     const varCodes = wrapper.vm.params.map(p => p.key).sort()
     expect(varCodes).toEqual(['taxpayerType'])
@@ -411,7 +400,6 @@ describe('RuleTest — 执行与结果展示', () => {
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: mockVariables() } })
 
     wrapper = shallowMount(RuleTest, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -435,15 +423,15 @@ describe('RuleTest — 执行与结果展示', () => {
       }
     })
 
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('执行结果包含独立滚动布局所需的高度链节点', async () => {
     wrapper.vm.result = mockExecutionResult()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.find('.rule-test-page').exists()).toBe(true)
     expect(wrapper.find('.test-result-card').exists()).toBe(true)
@@ -456,7 +444,7 @@ describe('RuleTest — 执行与结果展示', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/test/RuleTest.vue'), 'utf8')
     const narrowStyles = source.slice(source.indexOf('@media screen and (max-width: 1000px)'))
 
-    expect(narrowStyles).toMatch(/\.trace-tabs ::v-deep #pane-json,\s*\.trace-tabs ::v-deep #pane-tree\s*\{[^}]*height: auto;[^}]*overflow: visible;/)
+    expect(narrowStyles).toMatch(/\.trace-tabs :deep\(#pane-json\),\s*\.trace-tabs :deep\(#pane-tree\)\s*\{[^}]*height: auto;[^}]*overflow: visible;/)
   })
 
   test('handleExecute 成功时设置 result', async () => {
@@ -469,7 +457,7 @@ describe('RuleTest — 执行与结果展示', () => {
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
 
     await wrapper.vm.handleExecute()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.result).not.toBeNull()
     expect(wrapper.vm.result.success).toBe(true)
@@ -494,7 +482,7 @@ describe('RuleTest — 执行与结果展示', () => {
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
 
     await wrapper.vm.handleExecute()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.result).not.toBeNull()
     expect(wrapper.vm.result.success).toBe(false)
@@ -567,7 +555,6 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     variableApi.listVariables.mockResolvedValueOnce({ data: { records: mockVariables() } })
 
     wrapper = shallowMount(RuleTest, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -591,11 +578,11 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
       }
     })
 
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('步骤1：选中"风险定价交叉表"规则，加载变量后自动填入参数', async () => {
     // 1. 选择规则
@@ -608,7 +595,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
 
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     // 3. 验证只加载 2 个输入参数（taxpayerType, goodsCategory）
     expect(wrapper.vm.params.length).toBe(2)
@@ -625,7 +612,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     // 2. 加载变量
     definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     // 3. 填入测试数据：小规模纳税人 + 服务 → taxRate = 0.03
     const taxpayerTypeParam = wrapper.vm.params.find(p => p.key === 'taxpayerType')
@@ -638,7 +625,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
 
     await wrapper.vm.handleExecute()
-    await Vue.nextTick()
+    await nextTick()
 
     // 5. 验证执行成功
     expect(wrapper.vm.result.success).toBe(true)
@@ -654,7 +641,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     // 2. 加载变量
     definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     // 3. 填入测试数据
     wrapper.vm.params.find(p => p.key === 'taxpayerType').value = '小规模纳税人'
@@ -664,7 +651,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
     wrapper.vm.$message = { success: jest.fn(), error: jest.fn() }
     await wrapper.vm.handleExecute()
-    await Vue.nextTick()
+    await nextTick()
 
     // 5. 验证 traces 结构（用于 TraceTree 组件渲染表达式追踪树）
     expect(wrapper.vm.result.traces).toBeInstanceOf(Array)
@@ -685,7 +672,7 @@ describe('RuleTest — 完整集成流程：风险定价交叉表', () => {
     // 2. 加载变量
     definitionApi.getRuleTestSchema.mockResolvedValueOnce(mockCrossTableSchema())
     await wrapper.vm.loadVariables()
-    await Vue.nextTick()
+    await nextTick()
 
     // 3. 填入测试数据
     wrapper.vm.params.find(p => p.key === 'taxpayerType').value = '小规模纳税人'

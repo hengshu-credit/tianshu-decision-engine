@@ -12,26 +12,26 @@ function countOccurrences(source, fragment) {
 }
 
 const expectedBindings = [
-  ['views/project/ProjectList.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/project/ProjectDetail.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/rule/RuleList.vue', '@keyup.enter.native="handleQuery"', 1],
+  ['views/project/ProjectList.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/project/ProjectDetail.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/rule/RuleList.vue', '@keyup.enter="handleQuery"', 1],
   ['views/variable/VariableList.vue', '@keyup.enter="handleQuery"', 1],
   ['views/variable/VariableList.vue', '@keyup.enter="onObjFilterChange"', 1],
   ['views/variable/VariableList.vue', '@keyup.enter="handleConstQuery"', 1],
   ['views/variable/VariableList.vue', '@keyup.enter="handleFieldValidationQuery"', 1],
-  ['views/model/ModelList.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/function/FunctionList.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/database/DatabaseList.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/datasource/DatasourceList.vue', '@keyup.enter.native="handleDatasourceQuery"', 1],
-  ['views/datasource/DatasourceList.vue', '@keyup.enter.native="handleApiQuery"', 1],
-  ['views/billing/BillingList.vue', '@keyup.enter.native="handleConfigQuery"', 1],
-  ['views/billing/BillingList.vue', '@keyup.enter.native="handleRecordQuery"', 1],
-  ['views/billing/BillingList.vue', '@keyup.enter.native="handleSummaryQuery"', 1],
-  ['views/experiment/ExperimentList.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/ruleList/ListLibrary.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/ruleList/ListDetail.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['views/log/ExecutionLog.vue', '@keyup.enter.native="handleQuery"', 1],
-  ['components/common/ModuleCallLog.vue', '@keyup.enter.native="handleQuery"', 1]
+  ['views/model/ModelList.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/function/FunctionList.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/database/DatabaseList.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/datasource/DatasourceList.vue', '@keyup.enter="handleDatasourceQuery"', 1],
+  ['views/datasource/DatasourceList.vue', '@keyup.enter="handleApiQuery"', 1],
+  ['views/billing/BillingList.vue', '@keyup.enter="handleConfigQuery"', 1],
+  ['views/billing/BillingList.vue', '@keyup.enter="handleRecordQuery"', 1],
+  ['views/billing/BillingList.vue', '@keyup.enter="handleSummaryQuery"', 1],
+  ['views/experiment/ExperimentList.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/ruleList/ListLibrary.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/ruleList/ListDetail.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/log/ExecutionLog.vue', '@keyup.enter="handleQuery"', 1],
+  ['components/common/ModuleCallLog.vue', '@keyup.enter="handleQuery"', 1]
 ]
 
 const expectedBindingTotals = {

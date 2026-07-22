@@ -1,14 +1,12 @@
 package com.hengshucredit.rule.core.function;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
-import org.junit.After;
-import org.junit.Before;
 import org.junit.Test;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
+import java.io.ByteArrayInputStream;
+import java.io.InputStream;
+import java.net.HttpURLConnection;
+import java.net.SocketTimeoutException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
@@ -18,39 +16,6 @@ import static org.junit.Assert.assertTrue;
 public class ImageInputFunctionsTest {
 
     private static final byte[] IMAGE_BYTES = "test-image-content".getBytes(StandardCharsets.UTF_8);
-    private HttpServer server;
-    private String baseUrl;
-
-    @Before
-    public void setUp() throws Exception {
-        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        server.createContext("/image", exchange -> respond(exchange, 200, IMAGE_BYTES));
-        server.createContext("/requires-user-agent", exchange -> {
-            String userAgent = exchange.getRequestHeaders().getFirst("User-Agent");
-            int status = userAgent != null && !userAgent.startsWith("Java/") ? 200 : 403;
-            respond(exchange, status, status == 200 ? IMAGE_BYTES : new byte[0]);
-        });
-        server.createContext("/missing", exchange -> respond(exchange, 404, new byte[0]));
-        server.createContext("/large", exchange -> {
-            exchange.sendResponseHeaders(200, ImageInputFunctions.MAX_IMAGE_BYTES + 1L);
-            exchange.close();
-        });
-        server.createContext("/slow", exchange -> {
-            try {
-                Thread.sleep(300L);
-                respond(exchange, 200, IMAGE_BYTES);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-            }
-        });
-        server.start();
-        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort();
-    }
-
-    @After
-    public void tearDown() {
-        if (server != null) server.stop(0);
-    }
 
     @Test
     public void acceptsPlainBase64AndDataUri() {
@@ -63,33 +28,38 @@ public class ImageInputFunctionsTest {
 
     @Test
     public void downloadsHttpImageAsBase64() {
-        String result = new ImageInputFunctions().imageToBase64(baseUrl + "/image", 1000D);
+        String result = functions().imageToBase64("http://test/image", 1000D);
 
         assertEquals(Base64.getEncoder().encodeToString(IMAGE_BYTES), result);
     }
 
     @Test
     public void sendsApplicationUserAgentWhenDownloadingHttpImage() {
-        String result = new ImageInputFunctions().imageToBase64(baseUrl + "/requires-user-agent", 1000D);
+        StubHttpConnection connection = connection("/requires-user-agent");
+        String result = new ImageInputFunctions(url -> connection)
+                .imageToBase64("http://test/requires-user-agent", 1000D);
 
         assertEquals(Base64.getEncoder().encodeToString(IMAGE_BYTES), result);
+        String userAgent = connection.userAgent;
+        assertTrue(userAgent != null && !userAgent.startsWith("Java/"));
     }
 
     @Test
     public void rejectsUnsupportedProtocolAndNonSuccessStatus() {
-        assertFailure("file://C:/temp/face.jpg", 1000D, "HTTP(S)");
-        assertFailure(baseUrl + "/missing", 1000D, "404");
+        assertFailure(new ImageInputFunctions(), "file://C:/temp/face.jpg", 1000D, "HTTP(S)");
+        assertFailure(functions(), "http://test/missing", 1000D, "404");
     }
 
     @Test
     public void enforcesDownloadTimeoutAndSizeLimit() {
-        assertFailure(baseUrl + "/slow", 100D, "图片下载超时（100 ms）");
-        assertFailure(baseUrl + "/large", 1000D, "10 MB");
+        assertFailure(functions(), "http://test/slow", 100D, "100 ms");
+        assertFailure(functions(), "http://test/large", 1000D, "10 MB");
     }
 
-    private static void assertFailure(String value, double timeoutMs, String message) {
+    private static void assertFailure(ImageInputFunctions functions, String value,
+                                      double timeoutMs, String message) {
         try {
-            new ImageInputFunctions().imageToBase64(value, timeoutMs);
+            functions.imageToBase64(value, timeoutMs);
         } catch (IllegalArgumentException e) {
             assertTrue(e.getMessage(), e.getMessage().contains(message));
             return;
@@ -97,10 +67,80 @@ public class ImageInputFunctionsTest {
         throw new AssertionError("Expected image conversion failure");
     }
 
-    private static void respond(HttpExchange exchange, int status, byte[] body) throws IOException {
-        exchange.sendResponseHeaders(status, body.length);
-        try (OutputStream output = exchange.getResponseBody()) {
-            output.write(body);
+    private static ImageInputFunctions functions() {
+        return new ImageInputFunctions(ImageInputFunctionsTest::connection);
+    }
+
+    private static StubHttpConnection connection(URL url) {
+        return connection(url.getPath());
+    }
+
+    private static StubHttpConnection connection(String path) {
+        try {
+            URL url = new URL("http://test" + path);
+            if ("/missing".equals(path)) return new StubHttpConnection(url, 404, new byte[0], 0L, false);
+            if ("/large".equals(path)) {
+                return new StubHttpConnection(url, 200, new byte[0],
+                        ImageInputFunctions.MAX_IMAGE_BYTES + 1L, false);
+            }
+            if ("/slow".equals(path)) {
+                return new StubHttpConnection(url, 200, IMAGE_BYTES, IMAGE_BYTES.length, true);
+            }
+            return new StubHttpConnection(url, 200, IMAGE_BYTES, IMAGE_BYTES.length, false);
+        } catch (Exception e) {
+            throw new AssertionError(e);
+        }
+    }
+
+    private static final class StubHttpConnection extends HttpURLConnection {
+        private final int status;
+        private final byte[] body;
+        private final long contentLength;
+        private final boolean timeout;
+        private String userAgent;
+
+        private StubHttpConnection(URL url, int status, byte[] body, long contentLength, boolean timeout) {
+            super(url);
+            this.status = status;
+            this.body = body;
+            this.contentLength = contentLength;
+            this.timeout = timeout;
+        }
+
+        @Override
+        public void disconnect() {
+        }
+
+        @Override
+        public boolean usingProxy() {
+            return false;
+        }
+
+        @Override
+        public void connect() {
+            connected = true;
+        }
+
+        @Override
+        public void setRequestProperty(String key, String value) {
+            super.setRequestProperty(key, value);
+            if ("User-Agent".equalsIgnoreCase(key)) userAgent = value;
+        }
+
+        @Override
+        public int getResponseCode() {
+            return status;
+        }
+
+        @Override
+        public long getContentLengthLong() {
+            return contentLength;
+        }
+
+        @Override
+        public InputStream getInputStream() throws SocketTimeoutException {
+            if (timeout) throw new SocketTimeoutException("timed out");
+            return new ByteArrayInputStream(body);
         }
     }
 }

@@ -22,12 +22,12 @@ export default {
   props: {
     lane: {
       type: Object,
-      required: true
+      required: true,
     },
     depth: {
       type: Number,
-      default: 0
-    }
-  }
+      default: 0,
+    },
+  },
 }
 </script>

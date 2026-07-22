@@ -8,7 +8,13 @@
         :data-section="section.key"
       >
         <div class="rule-score-section-head">
-          <span>{{ section.key === 'thresholds' ? '档' : section.key === 'settings' ? '配' : '分' }}</span>
+          <span>{{
+            section.key === 'thresholds'
+              ? '档'
+              : section.key === 'settings'
+              ? '配'
+              : '分'
+          }}</span>
           <div>
             <strong>{{ section.title }}</strong>
             <small>{{ section.lanes.length }} 项</small>
@@ -36,13 +42,13 @@ export default {
   props: {
     modelType: {
       type: String,
-      required: true
+      required: true,
     },
     sections: {
       type: Array,
-      default: () => []
-    }
-  }
+      default: () => [],
+    },
+  },
 }
 </script>
 

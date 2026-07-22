@@ -1,6 +1,6 @@
 package com.hengshucredit.rule.server.auth;
 
-import javax.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletRequest;
 
 public class ProjectAuthContext {
     public static final String REQUEST_ATTRIBUTE = ProjectAuthContext.class.getName();

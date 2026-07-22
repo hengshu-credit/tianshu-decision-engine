@@ -21,13 +21,14 @@ describe('flow designer style regressions', () => {
     const flow = readSource('src/views/designer/DecisionFlow.vue')
 
     ;[tree, flow].forEach(source => {
+      const normalized = source.toLowerCase()
       expect(source).toContain('&.el-button--primary {')
-      expect(source).toContain('background: #FFFFFF;')
-      expect(source).toContain('color: #1D39C4;')
+      expect(normalized).toContain('background: #ffffff;')
+      expect(normalized).toContain('color: #1d39c4;')
       expect(source).toContain('min-width: 88px;')
       expect(source).toContain('&.el-button--primary:hover,')
       expect(source).toContain('&.el-button--primary:focus {')
-      expect(source).toContain('background-color: #EEF2FF !important;')
+      expect(normalized).toContain('background-color: #eef2ff !important;')
       expect(source).toContain('&.el-button--primary:active {')
     })
   })
@@ -38,18 +39,19 @@ describe('flow designer style regressions', () => {
     const scriptPanel = readSource('src/components/common/ScriptPanel.vue')
 
     ;[tree, flow, scriptPanel].forEach(source => {
+      const normalized = source.toLowerCase()
       expect(source).toContain('.el-radio-button__orig-radio:checked + .el-radio-button__inner')
-      expect(source).toContain('background: #2639E9;')
-      expect(source).toContain('color: #FFFFFF;')
+      expect(normalized).toContain('background: #2639e9;')
+      expect(normalized).toContain('color: #ffffff;')
     })
   })
 
   test('脚本面板深色状态栏按钮使用亮底深字', () => {
     const source = readSource('src/components/common/ScriptPanel.vue')
 
-    expect(source).toContain('.sp-statusbar ::v-deep .el-button')
-    expect(source).toContain('background: #F8FAFF;')
-    expect(source).toContain('color: #1D39C4 !important;')
+    expect(source).toContain('.sp-statusbar :deep(.el-button)')
+    expect(source.toLowerCase()).toContain('background: #f8faff;')
+    expect(source.toLowerCase()).toContain('color: #1d39c4 !important;')
   })
 
   test('决策树和决策流属性面板最多占页面百分之八十', () => {
@@ -57,7 +59,7 @@ describe('flow designer style regressions', () => {
     const flow = readSource('src/views/designer/DecisionFlow.vue')
 
     ;[tree, flow].forEach(source => {
-      expect(source).toContain('clampDesignerPanelWidth(width, window.innerWidth)')
+      expect(source).toMatch(/clampDesignerPanelWidth\(\s*width,\s*window\.innerWidth\s*\)/)
       expect(source).toContain('max-width: 80vw;')
       expect(source).toContain('@media (max-width: 1200px)')
       expect(source).toContain('max-width: 60%;')
@@ -98,7 +100,7 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('<end-node-scope-dialog')
       expect(source).toContain('@confirm="confirmEndNode"')
       expect(source).toContain("if (type === 'end-event')")
-      expect(source).toContain('backendNode.terminationScope = normalizeEndScope(props.terminationScope)')
+      expect(source).toMatch(/backendNode\.terminationScope\s*=\s*normalizeEndScope\(\s*props\.terminationScope\s*\)/)
     })
 
     const flow = readSource('src/views/designer/DecisionFlow.vue')
@@ -125,7 +127,7 @@ describe('flow designer style regressions', () => {
     expect(packageJson.dependencies['@logicflow/extension']).toBe('2.3.0')
     expect(packageJson.dependencies['@logicflow/layout']).toBe('2.1.4')
     ;[tree, flow].forEach(source => {
-      expect(source).toContain('plugins: [SelectionSelect, Menu, Snapshot, DynamicGroup, MiniMap, Dagre]')
+      expect(source).toMatch(/plugins:\s*\[\s*SelectionSelect,\s*Menu,\s*Snapshot,\s*DynamicGroup,\s*MiniMap,\s*Dagre,?\s*\]/)
       expect(source).toContain("this.lf.on('anchor:click'")
       expect(source).toContain('cascadeDeleteChildren: false')
       expect(source).toContain('disallowEdgeConnectToGroup: true')
@@ -136,7 +138,7 @@ describe('flow designer style regressions', () => {
       expect(source).toContain('一键美化')
       expect(source).toContain('小地图')
       expect(source).toContain("'is-node-active': activeElement && activeElement.baseType === 'node'")
-      expect(source).toContain('.is-node-active ::v-deep .lf-mini-map')
+      expect(source).toContain('.is-node-active :deep(.lf-mini-map)')
       expect(source).toContain('getPersistableGraphData(this.lf)')
       expect(source).toContain('getBusinessGraphData(canvasGraph)')
     })

@@ -1,8 +1,6 @@
 // tests/unit/views/decisionTable.spec.js
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-import ElementUI from 'element-ui'
-
+import { shallowMount } from '@test-utils'
+import { h, nextTick } from 'vue'
 // 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
@@ -93,14 +91,10 @@ function mockModels() {
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 function makeStub(tag) {
-  return { render: h => h(tag) }
+  return { render: () => h(tag) }
 }
 
 // 挂载 DecisionTable 并等待 loadProjectVars 完成
@@ -116,8 +110,7 @@ async function mountAndWaitForRefs(propsData = { id: '1' }) {
   definitionApi.refreshFields.mockResolvedValue({})
 
   const wrapper = shallowMount(DecisionTable, {
-    localVue: createTestVue(),
-    propsData,
+    props: propsData,
     mocks: {
       $route: { params: { id: 1 }, query: {}, name: 'DecisionTable' },
       $router: { push: jest.fn(), replace: jest.fn() }
@@ -154,10 +147,10 @@ async function mountAndWaitForRefs(propsData = { id: '1' }) {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   // 手动触发 loadProjectVars（绕过 created 中的路由判断）
   await wrapper.vm.loadProjectVars(1)
-  await Vue.nextTick()
+  await nextTick()
   return wrapper
 }
 
@@ -173,7 +166,7 @@ describe('DecisionTable — 变量选择器加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('loadProjectVars 完成后 projectRefs 非空', () => {
     expect(wrapper.vm.projectRefs).toBeInstanceOf(Array)
@@ -255,7 +248,7 @@ describe('DecisionTable — 模型加载与同步', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('model.rules 正确解析', () => {
     expect(wrapper.vm.model).toBeDefined()
@@ -291,7 +284,7 @@ describe('DecisionTable — 变量选择器使用流程', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('getVarByIdentity 通过 ID + ref_type 查找变量', () => {
     const varItem = wrapper.vm.getVarByIdentity(1, 'VARIABLE')
@@ -325,7 +318,7 @@ describe('DecisionTable — 操作方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('addRule 增加一条规则', () => {
     const initialCount = wrapper.vm.model.rules.length
@@ -379,7 +372,7 @@ describe('DecisionTable — 测试弹窗与参数构建', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('testVarCodeList 从条件树收集变量编码（去重）', () => {
     const varCodes = wrapper.vm.testVarCodeList
@@ -407,7 +400,7 @@ describe('DecisionTable — 保存功能', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleSave 保存内容后显示成功提示', async () => {
     definitionApi.saveContent.mockResolvedValueOnce({ success: true })
@@ -439,7 +432,7 @@ describe('DecisionTable — 规则复制', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('复制规则后源规则和复制规则的 _varId 一致', () => {
     const originalRule = wrapper.vm.model.rules[0]

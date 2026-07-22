@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
 
 const TABS = [
@@ -9,7 +9,7 @@ const TABS = [
 
 function mountTabs(overrides = {}) {
   return mount(WorkspaceTabs, {
-    propsData: {
+    props: {
       tabs: TABS,
       activePath: '/rule',
       ...overrides
@@ -32,7 +32,7 @@ describe('WorkspaceTabs', () => {
     expect(wrapper.findAll('.workspace-tab')).toHaveLength(3)
     expect(wrapper.find('[data-tab="/rule"]').classes()).toContain('is-active')
     expect(wrapper.find('[data-tab="/project"]').classes()).not.toContain('is-active')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('点击页签和关闭按钮发送不同意图', async() => {
@@ -46,7 +46,7 @@ describe('WorkspaceTabs', () => {
       operation: 'current',
       targetPath: '/project'
     }])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('右键页签打开定位菜单并可关闭其他页签', async() => {
@@ -65,27 +65,27 @@ describe('WorkspaceTabs', () => {
       targetPath: '/rule'
     }])
     expect(wrapper.find('.workspace-tabs__context-menu').exists()).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('首个页签禁用关闭左侧，末尾页签禁用关闭右侧', async() => {
     const wrapper = mountTabs()
     await wrapper.find('[data-tab="/project"]').trigger('contextmenu')
 
-    expect(wrapper.find('[data-operation="left"]').attributes('disabled')).toBe('disabled')
+    expect(wrapper.find('[data-operation="left"]').attributes('disabled')).toBe('')
     expect(wrapper.find('[data-operation="right"]').attributes('disabled')).toBeUndefined()
 
     await wrapper.find('[data-tab="/variable"]').trigger('contextmenu')
-    expect(wrapper.find('[data-operation="right"]').attributes('disabled')).toBe('disabled')
-    wrapper.destroy()
+    expect(wrapper.find('[data-operation="right"]').attributes('disabled')).toBe('')
+    wrapper.unmount()
   })
 
   test('只有一个页签时禁用关闭其他', async() => {
     const wrapper = mountTabs({ tabs: [TABS[0]], activePath: '/project' })
     await wrapper.find('[data-tab="/project"]').trigger('contextmenu')
 
-    expect(wrapper.find('[data-operation="others"]').attributes('disabled')).toBe('disabled')
-    wrapper.destroy()
+    expect(wrapper.find('[data-operation="others"]').attributes('disabled')).toBe('')
+    wrapper.unmount()
   })
 
   test('右键菜单可刷新目标页签', async() => {
@@ -97,7 +97,7 @@ describe('WorkspaceTabs', () => {
       operation: 'refresh',
       targetPath: '/variable'
     }])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('关闭和刷新操作展示对应快捷键', async() => {
@@ -107,7 +107,7 @@ describe('WorkspaceTabs', () => {
     expect(wrapper.find('[data-operation="refresh"] .workspace-tab-operation__shortcut').text()).toBe('Ctrl+R')
     expect(wrapper.find('[data-operation="current"] .workspace-tab-operation__shortcut').text()).toBe('Ctrl+W')
     expect(wrapper.find('[data-operation="others"] .workspace-tab-operation__shortcut').exists()).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('统一操作入口作用于当前活动页签', () => {
@@ -118,7 +118,7 @@ describe('WorkspaceTabs', () => {
       operation: 'all',
       targetPath: '/rule'
     }])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('点击页签区域外关闭右键菜单', async() => {
@@ -130,7 +130,7 @@ describe('WorkspaceTabs', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.vm.contextMenu.visible).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('组件销毁时清理全局监听', () => {
@@ -138,7 +138,7 @@ describe('WorkspaceTabs', () => {
     const removeWindowSpy = jest.spyOn(window, 'removeEventListener')
     const wrapper = mountTabs()
 
-    wrapper.destroy()
+    wrapper.unmount()
 
     expect(removeDocumentSpy).toHaveBeenCalledWith('click', wrapper.vm.closeContextMenu)
     expect(removeWindowSpy).toHaveBeenCalledWith('blur', wrapper.vm.closeContextMenu)

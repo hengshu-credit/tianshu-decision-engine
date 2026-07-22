@@ -1,5 +1,5 @@
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { nextTick } from 'vue'
 
 import * as databaseApi from '@/api/database'
 import * as projectApi from '@/api/project'
@@ -10,9 +10,7 @@ function flushPromises() {
 }
 
 function mountPage(route) {
-  const localVue = createLocalVue()
   return shallowMount(DatabaseDetail, {
-    localVue,
     mocks: {
       $route: route || { params: { id: '1' }, query: {} },
       $router: { push: jest.fn() },
@@ -57,7 +55,7 @@ describe('DatabaseDetail — 项目选择', () => {
 
     const wrapper = mountPage()
     await flushPromises()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.form.scope).toBe('PROJECT')
     expect(wrapper.vm.form.projectId).toBeNull()
@@ -78,7 +76,7 @@ describe('DatabaseDetail — 项目选择', () => {
 
     const wrapper = mountPage()
     await flushPromises()
-    await Vue.nextTick()
+    await nextTick()
 
     wrapper.vm.onScopeChange('PROJECT')
 

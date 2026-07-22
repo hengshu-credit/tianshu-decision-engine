@@ -8,7 +8,9 @@
       :data-section="section.key"
     >
       <div class="rule-visual-section-head">
-        <span class="rule-visual-section-icon">{{ section.key === 'rules' ? '规' : '配' }}</span>
+        <span class="rule-visual-section-icon">{{
+          section.key === 'rules' ? '规' : '配'
+        }}</span>
         <div>
           <strong>{{ section.title }}</strong>
           <span>{{ section.lanes.length }} 项</span>
@@ -21,7 +23,9 @@
           :lane="lane"
         />
       </div>
-      <div v-else class="rule-visual-empty">此版本区间没有{{ section.title }}</div>
+      <div v-else class="rule-visual-empty">
+        此版本区间没有{{ section.title }}
+      </div>
     </section>
   </div>
 </template>
@@ -35,13 +39,13 @@ export default {
   props: {
     modelType: {
       type: String,
-      required: true
+      required: true,
     },
     sections: {
       type: Array,
-      default: () => []
-    }
-  }
+      default: () => [],
+    },
+  },
 }
 </script>
 

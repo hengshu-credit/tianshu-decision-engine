@@ -32,11 +32,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 项目概述
 
-衡枢规则引擎（hscredit/qlexpress-rule）是一套基于 **Spring Boot 2.3** 与 **QLExpress 4** 的可视化风控决策系统：支持 **决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本** 等 8 种模型的可视化编排，涵盖变量管理、模型管理、函数管理、规则测试、执行日志等功能。
+衡枢规则引擎（hscredit/qlexpress-rule）是一套基于 **Spring Boot 3.5** 与 **QLExpress 4** 的可视化风控决策系统：支持 **决策表、决策树、决策流、交叉表、评分卡、复杂交叉表、复杂评分卡、QL 脚本** 等 8 种模型的可视化编排，涵盖变量管理、模型管理、函数管理、规则测试、执行日志等功能。
 
 ## 环境要求
 
-- JDK 8
+- JDK 17
 - Maven 3.6+
 - MySQL 8
 - Redis（与 server 使用同一实例，含密码和 database）
@@ -51,7 +51,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | `rule-engine-server` | 管理端 REST API | 8080 |
 | `rule-engine-client` | 客户端 SDK | - |
 | `rule-engine-example` | 集成示例服务 | 7070 |
-| `rule-engine-builder-ui` | Vue 2 前端控制台（独立部署） | 9090（dev）|
+| `rule-engine-builder-ui` | Vue 3 前端控制台（独立部署） | 9090（dev）|
 | `rule-engine-mysql` | MySQL docker-compose 配置 | - |
 | `rule-engine-redis` | Redis docker-compose 配置 | - |
 
@@ -95,7 +95,7 @@ cd rule-engine-example && mvn spring-boot:run
 mvn clean package -DskipTests
 ```
 
-### 前端 (Vue 2)
+### 前端 (Vue 3)
 
 ```bash
 cd rule-engine-builder-ui
@@ -172,7 +172,7 @@ node scripts/capture-designer-screenshots.cjs
 Jest 配置（`jest.config.js`）关键点：
 - 使用 `jsdom` 测试环境，`@` 别名映射到 `src/`
 - `monaco-editor` / `@logicflow/core` 已 mock，SCSS 文件 mock 为空模块
-- `setup.js` 预置所有 API mock 和 Element UI mock
+- `setup.js` 预置所有 API mock 和 Element Plus mock
 
 **当前测试状态**：前端 470 个测试全部通过 ✅，后端 35 个测试全部通过 ✅
 
@@ -259,10 +259,10 @@ Jest 配置（`jest.config.js`）关键点：
 
 ## 技术栈
 
-- Spring Boot 2.3.0
+- Spring Boot 3.5.16
 - QLExpress 4.1.0
 - MyBatis Plus 3.4.3.4
-- Vue 2.6.14 + Element UI 2.15.14
+- Vue 3.5.40 + Element Plus 2.14.3
 - Redis (Pub/Sub 规则推送)
 - Kafka (可选执行日志上报)
 

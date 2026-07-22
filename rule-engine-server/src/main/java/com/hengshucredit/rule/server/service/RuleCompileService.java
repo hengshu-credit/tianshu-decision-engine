@@ -10,7 +10,7 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.HashMap;

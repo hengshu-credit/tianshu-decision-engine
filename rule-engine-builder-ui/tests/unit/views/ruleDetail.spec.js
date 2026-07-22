@@ -1,8 +1,6 @@
 // tests/unit/views/ruleDetail.spec.js
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-import ElementUI from 'element-ui'
-
+import { shallowMount } from '@test-utils'
+import { h, nextTick } from 'vue'
 // 直接 import API 模块（不写 jest.mock，依赖 setup.js 的预置 mock）
 import * as definitionApi from '@/api/definition'
 import * as variableApi from '@/api/variable'
@@ -43,20 +41,18 @@ function mockVariables() {
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 function makeStub(tag) {
-  return { render: h => h(tag) }
+  return { render: () => h(tag) }
 }
 
 function makeSlotStub(tag) {
   return {
-    render(h) {
-      return h(tag, [this.$slots.label, this.$slots.default])
+    render() {
+      const label = this.$slots.label ? this.$slots.label() : []
+      const content = this.$slots.default ? this.$slots.default() : []
+      return h(tag, [...label, ...content])
     }
   }
 }
@@ -75,8 +71,7 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
   }] })
 
   const wrapper = shallowMount(RuleDetail, {
-    localVue: createTestVue(),
-    propsData: { id: '1' },
+    props: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -117,7 +112,7 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -126,7 +121,7 @@ describe('RuleDetail — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 getDefinitionDetail', () => {
     expect(definitionApi.getDefinitionDetail).toHaveBeenCalledWith(1)
@@ -163,7 +158,7 @@ describe('RuleDetail — 初始化与数据加载', () => {
   })
 
   test('renders API test scenario tab with current rule', () => {
-    const panel = wrapper.find('api-scenario-panel-stub')
+    const panel = wrapper.findComponent({ name: 'ApiScenarioPanel' })
     expect(panel.exists()).toBe(true)
     expect(panel.props('rule').id).toBe(1)
     expect(wrapper.text()).toContain('API 测试用例')
@@ -174,7 +169,7 @@ describe('RuleDetail — 辅助方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('modelTypeLabel 返回正确的中文标签', () => {
     expect(wrapper.vm.modelTypeLabel('TABLE')).toBe('决策表')
@@ -223,11 +218,11 @@ describe('RuleDetail — 辅助方法', () => {
 })
 
 describe('RuleDetail — 开放接口契约', () => {
-  test('统一响应编辑项位于 Element UI 表单内', async () => {
+  test('统一响应编辑项位于 Element Plus 表单内', async () => {
     const wrapper = await mountAndWait()
 
     expect(wrapper.find('.open-api-response-form').exists()).toBe(true)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('加载并按稳定引用 ID 保存请求映射和可配置外层响应', async () => {
@@ -277,7 +272,7 @@ describe('RuleDetail — 开放接口契约', () => {
       sourceRefType: 'VARIABLE',
       targetField: 'decision_result'
     })
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('新契约默认按内部字段名生成请求和响应映射', async () => {
@@ -296,7 +291,7 @@ describe('RuleDetail — 开放接口契约', () => {
       '300004', '300005', '400001', '400002', '400003', '500001', '500002',
       '500003', '500004'
     ]))
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('data object input defaults to the same external leaf field', async () => {
@@ -314,7 +309,7 @@ describe('RuleDetail — 开放接口契约', () => {
     expect(wrapper.vm.openApiForm.requestMappings).toEqual([
       expect.objectContaining({ targetKey: 'DATA_OBJECT:125', sourcePath: '$.mobile' })
     ])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('校验预览使用同一外层结构并分别渲染成功和异常 data', async () => {
@@ -331,7 +326,7 @@ describe('RuleDetail — 开放接口契约', () => {
     expect(Object.keys(wrapper.vm.openApiSuccessPreview)).toEqual(Object.keys(wrapper.vm.openApiErrorPreview))
     expect(wrapper.vm.openApiSuccessPreview.payload.decision).toBe('<VARIABLE:3>')
     expect(wrapper.vm.openApiErrorPreview.payload.errorCode).toBe('100001')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })
 
@@ -346,7 +341,7 @@ describe('RuleDetail — 出入参字段管理', () => {
     definitionApi.updateOutputField.mockResolvedValueOnce({ data: { success: true } })
     wrapper = await mountAndWait()
   })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('inputFieldsJson 每项包含 varId 和 fieldType', () => {
     const field = wrapper.vm.rule.inputFieldsJson[0]
@@ -387,7 +382,7 @@ describe('RuleDetail — 测试弹窗', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('openTestDialog 打开测试弹窗', async () => {
     definitionApi.getRuleTestSchema.mockResolvedValue({ data: {
@@ -432,7 +427,7 @@ describe('RuleDetail execute test request', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('doTest 按执行接口契约传递 definitionId', async () => {
     definitionApi.executeRule.mockResolvedValueOnce({ data: { success: true, result: false } })
@@ -471,7 +466,7 @@ describe('RuleDetail version history', () => {
   }
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('打开版本历史后默认比较上一发布版与最新发布版', async () => {
     definitionApi.listVersions.mockResolvedValueOnce({
@@ -602,12 +597,12 @@ describe('RuleDetail — 输入字段校验配置', () => {
     expect(row.validationRuleIdList).toEqual([11])
     expect(wrapper.vm.fieldValidationOptions).toHaveLength(2)
     wrapper.vm.editInputField(row)
-    wrapper.vm.$set(row, 'validationRuleIdList', [12])
+    row.validationRuleIdList = [12]
     await wrapper.vm.saveInputField(row)
 
     expect(definitionApi.updateInputField).toHaveBeenCalledWith(1, expect.objectContaining({
       validationRuleIds: '[12]', validationOverride: 1
     }))
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

@@ -1,5 +1,4 @@
-const VueModule = require('vue')
-const VueConstructor = VueModule.default || VueModule
+const { config } = require('@vue/test-utils')
 const { installConsoleGate } = require('./consoleGate')
 
-installConsoleGate(VueConstructor)
+installConsoleGate(config)

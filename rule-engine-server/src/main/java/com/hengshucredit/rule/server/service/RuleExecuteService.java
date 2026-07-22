@@ -17,7 +17,7 @@ import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.lang.reflect.Array;
 import java.util.ArrayList;
 import java.util.Collections;

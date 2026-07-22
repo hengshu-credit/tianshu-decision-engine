@@ -1,10 +1,10 @@
-import { mount, createLocalVue } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 const ElSelectStub = {
   name: 'ElSelect',
   props: {
-    popperAppendToBody: { type: Boolean, default: true }
+    teleported: { type: Boolean, default: true }
   },
   mounted() {
     this.popperElm = this.$refs.popper
@@ -21,7 +21,7 @@ const ElSelectStub = {
 
 function mountSelect(propsData = {}) {
   return mount(RemoteFilterSelect, {
-    propsData: {
+    props: {
       fetchOptions: jest.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
       ...propsData
     },
@@ -35,7 +35,6 @@ function mountSelect(propsData = {}) {
 
 describe('RemoteFilterSelect', () => {
   test('自由输入按 Enter 时先同步当前值再让父级查询', async () => {
-    const localVue = createLocalVue()
     const Parent = {
       components: { RemoteFilterSelect },
       data() {
@@ -55,7 +54,7 @@ describe('RemoteFilterSelect', () => {
       template: `
         <form @keyup.enter="handleQuery">
           <remote-filter-select
-            v-model="filterValue"
+            v-model:value="filterValue"
             :fetch-options="fetchOptions"
             allow-free-input
           />
@@ -63,7 +62,6 @@ describe('RemoteFilterSelect', () => {
       `
     }
     const wrapper = mount(Parent, {
-      localVue,
       stubs: {
         'el-select': ElSelectStub,
         'el-option': true
@@ -76,7 +74,7 @@ describe('RemoteFilterSelect', () => {
 
     expect(wrapper.vm.filterValue).toBe('NO_MATCH_ENTER_RULE')
     expect(wrapper.vm.queriedValue).toBe('NO_MATCH_ENTER_RULE')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('挂载后保持原生筛选输入框可直接输入', async () => {
@@ -92,7 +90,7 @@ describe('RemoteFilterSelect', () => {
     input.setAttribute('readonly', 'readonly')
     await new Promise(resolve => setTimeout(resolve, 0))
     expect(input.hasAttribute('readonly')).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('关闭下拉时隔离隐藏选项并仅保留已选项', async () => {
@@ -119,7 +117,7 @@ describe('RemoteFilterSelect', () => {
     expect(popper.hasAttribute('inert')).toBe(true)
     expect(popper.getAttribute('aria-hidden')).toBe('true')
     expect(wrapper.vm.options).toEqual([{ label: '已选', value: 'selected' }])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('无已选值关闭下拉时清空远程选项且下拉不挂到 body', async () => {
@@ -130,8 +128,8 @@ describe('RemoteFilterSelect', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.vm.options).toEqual([])
-    expect(wrapper.findComponent(ElSelectStub).props('popperAppendToBody')).toBe(false)
-    wrapper.destroy()
+    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(false)
+    wrapper.unmount()
   })
 
   test('关闭后忽略尚未返回的远程选项', async () => {
@@ -145,6 +143,6 @@ describe('RemoteFilterSelect', () => {
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(wrapper.vm.options).toHaveLength(0)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

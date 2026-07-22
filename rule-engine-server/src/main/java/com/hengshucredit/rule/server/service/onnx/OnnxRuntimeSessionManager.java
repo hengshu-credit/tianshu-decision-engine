@@ -11,7 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
@@ -25,9 +25,24 @@ import java.util.concurrent.ConcurrentHashMap;
 public class OnnxRuntimeSessionManager {
 
     private static final Logger log = LoggerFactory.getLogger(OnnxRuntimeSessionManager.class);
-    private final OrtEnvironment environment = OrtEnvironment.getEnvironment();
+    private final EnvironmentLoader environmentLoader;
+    private volatile OrtEnvironment environment;
+    private volatile Throwable environmentFailure;
     private final Map<String, CachedSession> sessions = new ConcurrentHashMap<>();
     private final Map<String, String> cpuFallbacks = new ConcurrentHashMap<>();
+
+    public OnnxRuntimeSessionManager() {
+        this(() -> OrtEnvironment.getEnvironment());
+    }
+
+    OnnxRuntimeSessionManager(EnvironmentLoader environmentLoader) {
+        this.environmentLoader = environmentLoader;
+    }
+
+    @FunctionalInterface
+    interface EnvironmentLoader {
+        OrtEnvironment load();
+    }
 
     @FunctionalInterface
     interface RuntimeOperation<T> {
@@ -35,7 +50,7 @@ public class OnnxRuntimeSessionManager {
     }
 
     public OrtEnvironment getEnvironment() {
-        return environment;
+        return environment();
     }
 
     public OrtSession session(byte[] modelBytes) {
@@ -117,7 +132,7 @@ public class OnnxRuntimeSessionManager {
             SessionResources resources = null;
             try {
                 resources = createOptions(effectiveConfig);
-                OrtSession created = environment.createSession(modelBytes, resources.options);
+                OrtSession created = environment().createSession(modelBytes, resources.options);
                 sessions.put(key, new CachedSession(created, resources.options, resources.cudaOptions));
                 return created;
             } catch (OrtException | LinkageError e) {
@@ -158,6 +173,7 @@ public class OnnxRuntimeSessionManager {
     }
 
     private void ensureCudaProviderCompiled() {
+        environment();
         if (!OrtEnvironment.getAvailableProviders().contains(OrtProvider.CUDA)) {
             throw new IllegalArgumentException("当前 ONNX Runtime 未包含 CUDA Execution Provider");
         }
@@ -165,8 +181,19 @@ public class OnnxRuntimeSessionManager {
 
     public Map<String, Object> runtimeCapabilities() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("onnxRuntimeVersion", environment.getVersion());
-        EnumSet<OrtProvider> providers = OrtEnvironment.getAvailableProviders();
+        EnumSet<OrtProvider> providers;
+        try {
+            result.put("onnxRuntimeVersion", environment().getVersion());
+            providers = OrtEnvironment.getAvailableProviders();
+        } catch (RuntimeException | LinkageError e) {
+            result.put("onnxRuntimeVersion", null);
+            result.put("availableProviders", new ArrayList<>());
+            result.put("cudaAvailable", false);
+            result.put("cudaError", failureMessage(e));
+            result.put("cpuFallbackEnabled", true);
+            result.put("activeCpuFallbackCount", cpuFallbacks.size());
+            return result;
+        }
         List<String> providerNames = new ArrayList<>();
         for (OrtProvider provider : providers) providerNames.add(provider.name());
         result.put("availableProviders", providerNames);
@@ -189,6 +216,29 @@ public class OnnxRuntimeSessionManager {
         result.put("cpuFallbackEnabled", true);
         result.put("activeCpuFallbackCount", cpuFallbacks.size());
         return result;
+    }
+
+    private OrtEnvironment environment() {
+        OrtEnvironment current = environment;
+        if (current != null) return current;
+        Throwable failure = environmentFailure;
+        if (failure != null) {
+            throw new IllegalStateException("ONNX Runtime 加载失败: " + failureMessage(failure), failure);
+        }
+        synchronized (this) {
+            if (environment != null) return environment;
+            if (environmentFailure != null) {
+                throw new IllegalStateException(
+                        "ONNX Runtime 加载失败: " + failureMessage(environmentFailure), environmentFailure);
+            }
+            try {
+                environment = environmentLoader.load();
+                return environment;
+            } catch (RuntimeException | LinkageError e) {
+                environmentFailure = e;
+                throw new IllegalStateException("ONNX Runtime 加载失败: " + failureMessage(e), e);
+            }
+        }
     }
 
     public Map<String, Object> inspect(byte[] modelBytes) {

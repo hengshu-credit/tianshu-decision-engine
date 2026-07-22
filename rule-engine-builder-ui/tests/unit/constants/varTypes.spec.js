@@ -122,20 +122,20 @@ describe('varTypeTagColor', () => {
     expect(varTypeTagColor('MAP')).toBe('info')
   })
 
-  test('STRING → 空字符串（无颜色）', () => {
-    expect(varTypeTagColor('STRING')).toBe('')
+  test('STRING → undefined（使用默认颜色）', () => {
+    expect(varTypeTagColor('STRING')).toBeUndefined()
   })
 
-  test('OBJECT → 空字符串（无颜色）', () => {
-    expect(varTypeTagColor('OBJECT')).toBe('')
+  test('OBJECT → undefined（使用默认颜色）', () => {
+    expect(varTypeTagColor('OBJECT')).toBeUndefined()
   })
 
-  test('未知类型返回空字符串', () => {
-    expect(varTypeTagColor('UNKNOWN')).toBe('')
+  test('未知类型返回 undefined', () => {
+    expect(varTypeTagColor('UNKNOWN')).toBeUndefined()
   })
 
-  test('null/undefined 返回空字符串', () => {
-    expect(varTypeTagColor(null)).toBe('')
-    expect(varTypeTagColor(undefined)).toBe('')
+  test('null/undefined 返回 undefined', () => {
+    expect(varTypeTagColor(null)).toBeUndefined()
+    expect(varTypeTagColor(undefined)).toBeUndefined()
   })
 })

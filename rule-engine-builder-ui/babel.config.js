@@ -1,7 +1,6 @@
 module.exports = {
   presets: [
     ['@vue/babel-preset-app', {
-      targets: { ie: '11' },
       bugfixes: true,
       polyfills: []
     }]

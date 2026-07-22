@@ -1,12 +1,12 @@
 <template>
   <remote-filter-select
+    v-bind="$attrs"
     :value="value"
     :fetch-options="fetchOptions"
     :option-label-key="field"
     :option-value-key="field"
     allow-free-input
-    v-bind="$attrs"
-    @input="$emit('input', $event)"
+    @update:value="updateValue"
     @change="$emit('change', $event)"
   />
 </template>
@@ -26,17 +26,22 @@ export default {
       required: true,
       validator(value) {
         return value === 'projectCode' || value === 'projectName'
-      }
-    }
+      },
+    },
   },
   methods: {
+    updateValue(value) {
+      this.$emit('update:value', value)
+      this.$emit('input', value)
+    },
     fetchOptions({ query, pageNum, pageSize }) {
       return listProjects({
         pageNum,
         pageSize,
-        [this.field]: query || ''
+        [this.field]: query || '',
       })
-    }
-  }
+    },
+  },
+  emits: ['input', 'update:value', 'change'],
 }
 </script>

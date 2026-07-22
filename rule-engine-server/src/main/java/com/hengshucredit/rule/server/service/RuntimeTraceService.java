@@ -5,7 +5,7 @@ import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.LinkedHashMap;
 import java.util.Map;
 

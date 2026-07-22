@@ -1,10 +1,7 @@
-import Vue from 'vue'
-import VueRouter from 'vue-router'
+import { createRouter, createWebHashHistory } from 'vue-router'
 import axios from 'axios'
 import Layout from '@/layout/index.vue'
 import { createConsoleAuthGuard } from './authGuard'
-
-Vue.use(VueRouter)
 
 /**
  * 与后端会话 Cookie 配合的裸 axios，避免与 response 封装循环依赖。
@@ -263,7 +260,8 @@ const routes = [
   }
 ]
 
-const router = new VueRouter({
+const router = createRouter({
+  history: createWebHashHistory(),
   routes
 })
 

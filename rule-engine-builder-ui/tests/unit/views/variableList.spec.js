@@ -1,11 +1,8 @@
 // tests/unit/views/variableList.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 
-// 使用真实 Element UI（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+// 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块
 jest.mock('@/api/variable', () => ({
   listVariables: jest.fn(),
@@ -87,11 +84,7 @@ const FormStub = {
   methods: { clearValidate: jest.fn() }
 }
 
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
@@ -108,7 +101,6 @@ async function mountAndWait() {
   modelApi.listAllModelsByProject.mockResolvedValue({ data: [] })
 
   const wrapper = mount(VariableList, {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -134,7 +126,7 @@ async function mountAndWait() {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -143,7 +135,7 @@ describe('VariableList — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 listProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -176,7 +168,7 @@ describe('VariableList 项目筛选交互', () => {
     expect(filters).toHaveLength(6)
     expect(filters.filter(item => item.props('field') === 'projectCode')).toHaveLength(3)
     expect(filters.filter(item => item.props('field') === 'projectName')).toHaveLength(3)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })
 
@@ -184,7 +176,7 @@ describe('VariableList — 标签方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('typeLabel 返回正确的中文标签', () => {
     expect(wrapper.vm.typeLabel('STRING')).toBe('字符串')
@@ -209,24 +201,24 @@ describe('VariableList — 标签方法', () => {
   })
 
   test('typeTagColor 返回正确的颜色', () => {
-    expect(wrapper.vm.typeTagColor('STRING')).toBe('')
+    expect(wrapper.vm.typeTagColor('STRING')).toBeUndefined()
     expect(wrapper.vm.typeTagColor('NUMBER')).toBe('warning')
     expect(wrapper.vm.typeTagColor('BOOLEAN')).toBe('success')
     expect(wrapper.vm.typeTagColor('DATE')).toBe('info')
     expect(wrapper.vm.typeTagColor('ENUM')).toBe('danger')
     expect(wrapper.vm.typeTagColor('LIST')).toBe('warning')
     expect(wrapper.vm.typeTagColor('MAP')).toBe('info')
-    expect(wrapper.vm.typeTagColor('UNKNOWN')).toBe('')
+    expect(wrapper.vm.typeTagColor('UNKNOWN')).toBeUndefined()
   })
 
   test('sourceTagColor 返回正确的颜色', () => {
-    expect(wrapper.vm.sourceTagColor('INPUT')).toBe('')
+    expect(wrapper.vm.sourceTagColor('INPUT')).toBeUndefined()
     expect(wrapper.vm.sourceTagColor('CONSTANT')).toBe('success')
     expect(wrapper.vm.sourceTagColor('COMPUTED')).toBe('warning')
     expect(wrapper.vm.sourceTagColor('DB')).toBe('info')
     expect(wrapper.vm.sourceTagColor('API')).toBe('info')
     expect(wrapper.vm.sourceTagColor('LIST')).toBe('danger')
-    expect(wrapper.vm.sourceTagColor('UNKNOWN')).toBe('')
+    expect(wrapper.vm.sourceTagColor('UNKNOWN')).toBeUndefined()
   })
 
   test('formatUpdateTime 格式化更新时间并兼容空值', () => {
@@ -262,7 +254,7 @@ describe('VariableList — 筛选与搜索', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('queryProjectCode 模糊匹配', () => {
     wrapper.vm.projectList = mockProjects()
@@ -283,7 +275,7 @@ describe('VariableList — 筛选与搜索', () => {
   test('queryVarCode 模糊匹配', async () => {
     wrapper.vm.allVarCodes = ['age', 'income', 'MAX_AGE']
     wrapper.vm.queryVarCode('age')
-    await Vue.nextTick()
+    await nextTick()
     // 匹配 'age' 和 'MAX_AGE'（indexOf 不区分大小写）
     expect(wrapper.vm.filteredVarCodes.length).toBe(2)
   })
@@ -291,7 +283,7 @@ describe('VariableList — 筛选与搜索', () => {
   test('queryVarLabel 模糊匹配', async () => {
     wrapper.vm.allVarLabels = ['年龄', '收入', '最大年龄']
     wrapper.vm.queryVarLabel('年龄')
-    await Vue.nextTick()
+    await nextTick()
     // 匹配 '年龄' 和 '最大年龄'
     expect(wrapper.vm.filteredVarLabels.length).toBe(2)
   })
@@ -300,7 +292,7 @@ describe('VariableList — 筛选与搜索', () => {
     wrapper.vm.qp.pageNum = 5
     variableApi.listVariables.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
@@ -327,7 +319,7 @@ describe('VariableList — 变量操作', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleEdit 填充编辑表单', () => {
     const row = { id: 1, varCode: 'age', varLabel: '年龄', varType: 'STRING', varSource: 'INPUT', scriptName: 'age' }
@@ -364,7 +356,7 @@ describe('VariableList — 变量操作', () => {
     variableApi.deleteVariable.mockResolvedValue({ data: true })
     const row = { id: 1, varLabel: '年龄' }
     wrapper.vm.handleDelete(row)
-    await Vue.nextTick()
+    await nextTick()
     expect(variableApi.deleteVariable).toHaveBeenCalledWith(1)
   })
 
@@ -432,7 +424,7 @@ describe('VariableList — 变量操作', () => {
     expect(objectPanel).toContain("node.object.scope === 'PROJECT'")
     expect(objectPanel).toContain('handleObjectToGlobal(node.object)')
     expect(objectPanel).toContain('转为全局')
-    expect(objectDialog).toContain('<el-select v-model="objectForm.scope" :disabled="!!objectForm.id"')
+    expect(objectDialog).toMatch(/<el-select\s+v-model="objectForm\.scope"\s+:disabled="!!objectForm\.id"/)
   })
 
   test('handleImportCmd 打开对应导入弹窗', () => {
@@ -697,7 +689,6 @@ describe('VariableList — 边界情况', () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     variableApi.listVariables.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(VariableList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() },
@@ -716,20 +707,20 @@ describe('VariableList — 边界情况', () => {
         'el-link': true, 'el-badge': true, 'el-input-number': true, 'router-link': true
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.standaloneVars).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('onTabClick 切换 Tab 触发加载', async () => {
     const wrapper = await mountAndWait()
     const loadConstantsSpy = jest.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.onTabClick({ name: 'constants' })
-    await Vue.nextTick()
+    await nextTick()
     // onTabClick 只处理 objects 和 constants；切换到 constants 时调用 loadConstants
     expect(loadConstantsSpy).toHaveBeenCalled()
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })
 
@@ -741,7 +732,7 @@ describe('VariableList — 字段校验规则库', () => {
     expect(source).toContain('<el-tab-pane label="字段校验" name="validations">')
     await wrapper.vm.onTabClick({ name: 'validations' })
     expect(variableApi.listFieldValidations).toHaveBeenCalled()
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('新建字段校验保存稳定配置，不改写用户输入的编码', async () => {
@@ -760,6 +751,6 @@ describe('VariableList — 字段校验规则库', () => {
     expect(variableApi.createFieldValidation).toHaveBeenCalledWith(expect.objectContaining({
       validationCode: 'Mobile_Check', validationType: 'REGEX', projectId: 0
     }))
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

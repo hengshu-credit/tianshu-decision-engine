@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { listProjects } from '@/api/project'
@@ -9,7 +9,7 @@ jest.mock('@/api/project', () => ({
 
 function mountFilter(field) {
   return shallowMount(ProjectFilterSelect, {
-    propsData: { value: '', field }
+    props: { value: '', field }
   })
 }
 
@@ -41,7 +41,7 @@ describe('ProjectFilterSelect', () => {
     const remote = wrapper.findComponent(RemoteFilterSelect)
 
     await wrapper.vm.fetchOptions({ query: '风控', pageNum: 1, pageSize: 10 })
-    remote.vm.$emit('input', '风控项目')
+    remote.vm.$emit('update:value', '风控项目')
     remote.vm.$emit('change', '风控项目')
 
     expect(listProjects).toHaveBeenCalledWith({
@@ -50,6 +50,7 @@ describe('ProjectFilterSelect', () => {
       projectName: '风控'
     })
     expect(wrapper.emitted('input')[0]).toEqual(['风控项目'])
+    expect(wrapper.emitted('update:value')[0]).toEqual(['风控项目'])
     expect(wrapper.emitted('change')[0]).toEqual(['风控项目'])
   })
 

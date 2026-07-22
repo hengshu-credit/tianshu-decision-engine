@@ -22,4 +22,19 @@ describe('global font resources', () => {
       /body\s*\{[\s\S]*?font-family:\s*"AlimamaFangYuanTiVF"/
     )
   })
+
+  test('console warning filter accepts non-string warning payloads', () => {
+    const script = indexHtml.match(/<script>([\s\S]*?)<\/script>/)[1]
+    const forwarded = []
+    const mockConsole = {
+      warn: (...args) => forwarded.push(args),
+    }
+
+    Function('console', script)(mockConsole)
+
+    expect(() => mockConsole.warn({ type: 'deprecation' }, 'detail')).not.toThrow()
+    expect(forwarded).toEqual([[{ type: 'deprecation' }, 'detail']])
+    mockConsole.warn('Added non-passive event listener to touchmove')
+    expect(forwarded).toHaveLength(1)
+  })
 })

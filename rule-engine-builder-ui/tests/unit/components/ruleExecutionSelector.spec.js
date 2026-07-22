@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 
 jest.unmock('@/components/common/RuleExecutionSelector.vue')
 
@@ -22,7 +22,7 @@ describe('RuleExecutionSelector', () => {
 
   test('按项目和全局作用域分组展示', () => {
     const wrapper = shallowMount(RuleExecutionSelector, {
-      propsData: { rules, ruleId: 8, ruleCode: 'score_card' },
+      props: { rules, ruleId: 8, ruleCode: 'score_card' },
       stubs
     })
 
@@ -32,7 +32,7 @@ describe('RuleExecutionSelector', () => {
   })
 
   test('选择时按稳定 ID 返回完整规则对象', () => {
-    const wrapper = shallowMount(RuleExecutionSelector, { propsData: { rules }, stubs })
+    const wrapper = shallowMount(RuleExecutionSelector, { props: { rules }, stubs })
 
     wrapper.vm.onChange(8)
 
@@ -42,7 +42,7 @@ describe('RuleExecutionSelector', () => {
 
   test('当前规则选项不可用', () => {
     const wrapper = shallowMount(RuleExecutionSelector, {
-      propsData: { rules, currentRuleId: 7 },
+      props: { rules, currentRuleId: 7 },
       stubs
     })
 

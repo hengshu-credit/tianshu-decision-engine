@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ExpressionPalette from '@/components/expression/ExpressionPalette.vue'
 
 function variable(id, code, category = 'standalone', refType = 'VARIABLE') {
@@ -28,7 +28,7 @@ function objectField(id, objectCode, objectLabel, fieldCode, fieldLabel) {
 
 function mountPalette(propsData = {}) {
   return shallowMount(ExpressionPalette, {
-    propsData: {
+    props: {
       allowedKinds: ['LITERAL', 'PATH', 'REFERENCE', 'FUNCTION', 'OPERATION', 'ACCESS', 'CAST', 'ARRAY', 'LIST_QUERY'],
       vars: [],
       functions: [],
@@ -45,7 +45,7 @@ function mountPalette(propsData = {}) {
 describe('ExpressionPalette', () => {
   test('名单上下文仅展示名单查询并插入完整默认配置', async () => {
     const wrapper = shallowMount(ExpressionPalette, {
-      propsData: { allowedKinds: ['LIST_QUERY'] },
+      props: { allowedKinds: ['LIST_QUERY'] },
       stubs: { 'el-input': true }
     })
 

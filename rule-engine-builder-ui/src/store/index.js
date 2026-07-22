@@ -1,11 +1,8 @@
-import Vue from 'vue'
-import Vuex from 'vuex'
+import { createStore } from 'vuex'
 import expressionSessions from './modules/expressionSessions'
 import workspaceTabs from './modules/workspaceTabs'
 
-Vue.use(Vuex)
-
-export default new Vuex.Store({
+export default createStore({
   state: {
     currentProject: null
   },

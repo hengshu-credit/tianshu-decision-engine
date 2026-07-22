@@ -1,22 +1,25 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
-import org.apache.http.client.config.RequestConfig;
-import org.apache.http.impl.client.CloseableHttpClient;
-import org.apache.http.impl.client.HttpClients;
-import org.apache.http.impl.conn.PoolingHttpClientConnectionManager;
-import org.apache.http.pool.PoolStats;
+import org.apache.hc.client5.http.config.ConnectionConfig;
+import org.apache.hc.client5.http.config.RequestConfig;
+import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
+import org.apache.hc.client5.http.impl.classic.HttpClients;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
+import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.core5.pool.PoolStats;
+import org.apache.hc.core5.util.TimeValue;
+import org.apache.hc.core5.util.Timeout;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.client.HttpComponentsClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PreDestroy;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
-import java.util.concurrent.TimeUnit;
 
 @Component
 public class ApiHttpClientRegistry {
@@ -98,21 +101,28 @@ public class ApiHttpClientRegistry {
     }
 
     private ClientEntry createEntry(String key, ClientSettings settings) {
+        ConnectionConfig connectionConfig = ConnectionConfig.custom()
+                .setConnectTimeout(Timeout.ofMilliseconds(settings.connectTimeoutMs))
+                .setSocketTimeout(Timeout.ofMilliseconds(settings.readTimeoutMs))
+                .setTimeToLive(TimeValue.ofSeconds(settings.connectionTtlSeconds))
+                .build();
         PoolingHttpClientConnectionManager connectionManager =
-                new PoolingHttpClientConnectionManager(settings.connectionTtlSeconds, TimeUnit.SECONDS);
-        connectionManager.setMaxTotal(settings.maxConnections);
-        connectionManager.setDefaultMaxPerRoute(settings.maxConnectionsPerRoute);
+                PoolingHttpClientConnectionManagerBuilder.create()
+                        .setMaxConnTotal(settings.maxConnections)
+                        .setMaxConnPerRoute(settings.maxConnectionsPerRoute)
+                        .setDefaultConnectionConfig(connectionConfig)
+                        .build();
         RequestConfig requestConfig = RequestConfig.custom()
-                .setConnectionRequestTimeout(settings.connectionRequestTimeoutMs)
-                .setConnectTimeout(settings.connectTimeoutMs)
-                .setSocketTimeout(settings.readTimeoutMs)
+                .setConnectionRequestTimeout(Timeout.ofMilliseconds(settings.connectionRequestTimeoutMs))
+                .setConnectTimeout(Timeout.ofMilliseconds(settings.connectTimeoutMs))
+                .setResponseTimeout(Timeout.ofMilliseconds(settings.readTimeoutMs))
                 .build();
         CloseableHttpClient client = HttpClients.custom()
                 .setConnectionManager(connectionManager)
                 .setDefaultRequestConfig(requestConfig)
                 .disableAutomaticRetries()
                 .evictExpiredConnections()
-                .evictIdleConnections(settings.idleConnectionTimeoutSeconds, TimeUnit.SECONDS)
+                .evictIdleConnections(TimeValue.ofSeconds(settings.idleConnectionTimeoutSeconds))
                 .build();
         RestTemplate restTemplate = new RestTemplate(new HttpComponentsClientHttpRequestFactory(client));
         return new ClientEntry(key, settings, connectionManager, client, restTemplate);

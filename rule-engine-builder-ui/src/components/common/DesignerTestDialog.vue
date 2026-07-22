@@ -1,16 +1,29 @@
 <template>
   <el-dialog
     title="测试执行"
-    :visible.sync="innerVisible"
+    v-model="innerVisible"
     width="760px"
     append-to-body
     :close-on-click-modal="false"
   >
     <div class="designer-test-dialog">
-      <div style="margin-bottom:10px;display:flex;align-items:center;gap:8px;">
+      <div
+        style="
+          margin-bottom: 10px;
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        "
+      >
         <span>页面请求超时</span>
-        <el-input-number v-model="requestTimeoutMs" :min="1000" :max="1800000" :step="1000" size="small" />
-        <span style="color:#909399;">毫秒</span>
+        <el-input-number
+          v-model="requestTimeoutMs"
+          :min="1000"
+          :max="1800000"
+          :step="1000"
+          size="small"
+        />
+        <span style="color: #909399">毫秒</span>
       </div>
       <div class="editor-label">输入参数 JSON</div>
       <el-alert
@@ -19,10 +32,10 @@
         type="warning"
         :closable="false"
         show-icon
-        style="margin-bottom:8px;"
+        style="margin-bottom: 8px"
       />
       <monaco-editor
-        v-model="paramsJson"
+        v-model:value="paramsJson"
         language="json"
         height="260px"
         :key="editorKey"
@@ -51,13 +64,13 @@
         <div class="result-meta">耗时 {{ result.executeTimeMs || 0 }} ms</div>
       </div>
     </div>
-    <template slot="footer">
+    <template v-slot:footer>
       <el-button size="small" @click="close">关闭</el-button>
       <el-button size="small" @click="resetParams">重置样例</el-button>
       <el-button
         size="small"
         type="primary"
-        icon="el-icon-video-play"
+        :icon="ElIconVideoPlay"
         :loading="executing"
         @click="execute"
       >
@@ -68,47 +81,14 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import { VideoPlay as ElIconVideoPlay } from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 import { executeRule, getRuleTestSchema } from '@/api/definition'
 import MonacoEditor from '@/components/MonacoEditor'
 import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
 
 export default {
-  name: 'DesignerTestDialog',
-  components: { MonacoEditor },
-  props: {
-    visible: {
-      type: Boolean,
-      default: false
-    },
-    definitionId: {
-      type: [String, Number],
-      default: null
-    },
-    targetType: {
-      type: String,
-      default: 'RULE'
-    },
-    projectId: {
-      type: [String, Number],
-      default: null
-    },
-    modelType: {
-      type: String,
-      default: ''
-    },
-    modelJson: {
-      type: [Object, String],
-      default: null
-    },
-    modelJsonProvider: {
-      type: Function,
-      default: null
-    },
-    paramsTemplate: {
-      type: [Object, String],
-      default: () => ({})
-    }
-  },
   data() {
     return {
       paramsJson: '{}',
@@ -120,8 +100,45 @@ export default {
       activeTab: 'output',
       resolvedTemplate: null,
       schemaDiagnostics: [],
-      requestTimeoutMs: 180000
+      requestTimeoutMs: 180000,
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
+  },
+  name: 'DesignerTestDialog',
+  components: { MonacoEditor },
+  props: {
+    visible: {
+      type: Boolean,
+      default: false,
+    },
+    definitionId: {
+      type: [String, Number],
+      default: null,
+    },
+    targetType: {
+      type: String,
+      default: 'RULE',
+    },
+    projectId: {
+      type: [String, Number],
+      default: null,
+    },
+    modelType: {
+      type: String,
+      default: '',
+    },
+    modelJson: {
+      type: [Object, String],
+      default: null,
+    },
+    modelJsonProvider: {
+      type: Function,
+      default: null,
+    },
+    paramsTemplate: {
+      type: [Object, String],
+      default: () => ({}),
+    },
   },
   computed: {
     innerVisible: {
@@ -129,9 +146,9 @@ export default {
         return this.visible
       },
       set(value) {
-        this.$emit('update:visible', value)
-      }
-    }
+        $emit(this, 'update:visible', value)
+      },
+    },
   },
   watch: {
     visible(value) {
@@ -141,8 +158,8 @@ export default {
       deep: true,
       handler() {
         if (this.visible) this.resetParams()
-      }
-    }
+      },
+    },
   },
   methods: {
     async open() {
@@ -162,11 +179,14 @@ export default {
           targetId: this.definitionId,
           projectId: this.projectId,
           modelType: this.modelType || undefined,
-          modelJson
+          modelJson,
         })
-        const schema = response && response.data !== undefined ? response.data : response
-        if (schema && schema.sampleParams) this.resolvedTemplate = schema.sampleParams
-        this.schemaDiagnostics = schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
+        const schema =
+          response && response.data !== undefined ? response.data : response
+        if (schema && schema.sampleParams)
+          this.resolvedTemplate = schema.sampleParams
+        this.schemaDiagnostics =
+          schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
       } catch (e) {
         this.schemaDiagnostics = [e.message || '测试字段解析失败']
       }
@@ -212,17 +232,26 @@ export default {
       this.result = null
       this.lastInput = params
       try {
-        const res = await executeRule({
-          definitionId: this.definitionId,
-          projectId: this.projectId,
-          modelType: this.modelType || undefined,
-          modelJson: this.currentModelJson(),
-          params
-        }, this.requestTimeoutMs)
+        const res = await executeRule(
+          {
+            definitionId: this.definitionId,
+            projectId: this.projectId,
+            modelType: this.modelType || undefined,
+            modelJson: this.currentModelJson(),
+            params,
+          },
+          this.requestTimeoutMs
+        )
         this.result = normalizeTestResult(res)
-        this.activeTab = this.result && this.result.errorMessage ? 'error' : 'output'
+        this.activeTab =
+          this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {
-        this.result = normalizeTestResult({ success: false, errorMessage: e.message || '执行异常', executeTimeMs: 0, result: null })
+        this.result = normalizeTestResult({
+          success: false,
+          errorMessage: e.message || '执行异常',
+          executeTimeMs: 0,
+          result: null,
+        })
         this.activeTab = 'error'
       } finally {
         this.executing = false
@@ -232,23 +261,32 @@ export default {
       this.innerVisible = false
     },
     currentModelJson() {
-      const currentModel = this.modelJsonProvider ? this.modelJsonProvider() : this.modelJson
+      const currentModel = this.modelJsonProvider
+        ? this.modelJsonProvider()
+        : this.modelJson
       return typeof currentModel === 'string'
         ? currentModel
-        : (currentModel ? JSON.stringify(currentModel) : null)
+        : currentModel
+        ? JSON.stringify(currentModel)
+        : null
     },
     formatJson(value) {
       if (value === null || value === undefined) return '{}'
       try {
-        return JSON.stringify(typeof value === 'string' ? JSON.parse(value) : value, null, 2)
+        return JSON.stringify(
+          typeof value === 'string' ? JSON.parse(value) : value,
+          null,
+          2
+        )
       } catch (e) {
         return String(value)
       }
     },
     formatOutput(value) {
       return formatTestOutput(value)
-    }
-  }
+    },
+  },
+  emits: ['update:visible'],
 }
 </script>
 

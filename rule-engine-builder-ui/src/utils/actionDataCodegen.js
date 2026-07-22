@@ -307,13 +307,13 @@ export function newBlock(type) {
 }
 
 export const BLOCK_TYPES = [
-  { type: 'assign', label: '赋值', icon: 'el-icon-edit', color: '#1890ff' },
-  { type: 'if-block', label: '条件分支', icon: 'el-icon-s-operation', color: '#fa8c16' },
-  { type: 'switch-block', label: 'Switch 匹配', icon: 'el-icon-menu', color: '#722ed1' },
-  { type: 'func-call', label: '函数调用', icon: 'el-icon-phone-outline', color: '#13c2c2' },
-  { type: 'foreach', label: 'ForEach 循环', icon: 'el-icon-refresh', color: '#52c41a' },
-  { type: 'ternary', label: '三元表达式', icon: 'el-icon-question', color: '#eb2f96' },
-  { type: 'in-check', label: 'IN 判断', icon: 'el-icon-finished', color: '#2f54eb' },
-  { type: 'template-str', label: '动态字符串', icon: 'el-icon-document', color: '#8c8c8c' },
-  { type: 'rule-call', label: '执行规则', icon: 'el-icon-position', color: '#096dd9' }
+  { type: 'assign', label: '赋值', icon: 'Edit', color: '#1890ff' },
+  { type: 'if-block', label: '条件分支', icon: 'Operation', color: '#fa8c16' },
+  { type: 'switch-block', label: 'Switch 匹配', icon: 'Menu', color: '#722ed1' },
+  { type: 'func-call', label: '函数调用', icon: 'Phone', color: '#13c2c2' },
+  { type: 'foreach', label: 'ForEach 循环', icon: 'Refresh', color: '#52c41a' },
+  { type: 'ternary', label: '三元表达式', icon: 'QuestionFilled', color: '#eb2f96' },
+  { type: 'in-check', label: 'IN 判断', icon: 'Finished', color: '#2f54eb' },
+  { type: 'template-str', label: '动态字符串', icon: 'Document', color: '#8c8c8c' },
+  { type: 'rule-call', label: '执行规则', icon: 'Position', color: '#096dd9' }
 ]

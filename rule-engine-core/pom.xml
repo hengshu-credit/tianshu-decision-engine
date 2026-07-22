@@ -38,7 +38,11 @@
             <groupId>org.jpmml</groupId>
             <artifactId>pmml-evaluator</artifactId>
         </dependency>
-        <!-- JAXB API：JDK 8 精简发行版可能缺失此包，编译时需要 -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <!-- JAXB API：JDK 9+ 不再内置，JPMML 编译与运行时需要 -->
         <dependency>
             <groupId>javax.xml.bind</groupId>
             <artifactId>jaxb-api</artifactId>

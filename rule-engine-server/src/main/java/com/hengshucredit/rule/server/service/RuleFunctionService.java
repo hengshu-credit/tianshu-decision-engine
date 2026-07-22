@@ -16,7 +16,7 @@ import com.hengshucredit.rule.server.mapper.RuleFunctionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;

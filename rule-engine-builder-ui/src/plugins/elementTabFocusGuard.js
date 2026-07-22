@@ -27,8 +27,8 @@ function syncPaneAccessibility(vm, active) {
 }
 
 export default {
-  install(Vue) {
-    Vue.mixin({
+  install(app) {
+    app.mixin({
       mounted() {
         if (!isTabPane(this)) return
         syncPaneAccessibility(this, this.active)
@@ -38,7 +38,7 @@ export default {
           { sync: true }
         )
       },
-      beforeDestroy() {
+      beforeUnmount() {
         if (this._tabFocusGuardUnwatch) this._tabFocusGuardUnwatch()
       }
     })

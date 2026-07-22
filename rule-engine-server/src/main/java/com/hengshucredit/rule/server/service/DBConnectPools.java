@@ -9,7 +9,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.PreparedStatement;

@@ -16,10 +16,16 @@
         <!-- 分支头：状态圆点 + 标签 + 条件文本 + 状态标记 -->
         <div class="dtt-branch-head" @click="toggle(idx)">
           <span class="dtt-dot" :class="'dtt-dot--' + child.status"></span>
-          <span class="dtt-branch-label">{{ child.branchLabel || '其他' }}</span>
-          <span class="dtt-cond" v-if="child.conditionText">({{ child.conditionText }})</span>
-          <span class="dtt-status-tag" :class="'dtt-tag--' + child.status">{{ statusLabel(child.status) }}</span>
-          <i v-if="child.children && child.children.length" class="dtt-toggle el-icon-arrow-right" :class="{ 'is-open': isOpen(idx) }" />
+          <span class="dtt-branch-label">{{
+            child.branchLabel || '其他'
+          }}</span>
+          <span class="dtt-cond" v-if="child.conditionText"
+            >({{ child.conditionText }})</span
+          >
+          <span class="dtt-status-tag" :class="'dtt-tag--' + child.status">{{
+            statusLabel(child.status)
+          }}</span>
+          <el-icon class="dtt-toggle"><el-icon-arrow-right /></el-icon>
         </div>
         <!-- 分支体：叶子 或 子决策树 -->
         <div class="dtt-branch-body" v-show="isOpen(idx)">
@@ -31,19 +37,59 @@
             :var-map="varMap"
           />
           <!-- 叶子节点 -->
-          <div v-else class="dtt-leaf" :class="{ 'dtt-leaf--hit': child.status === 'hit' }">
-            <span class="dtt-leaf-icon">{{ child.status === 'hit' ? '\u2705' : '\u25CB' }}</span>
-            <span class="dtt-leaf-task" v-if="child.taskName">{{ child.taskName }}：</span>
-            <span class="dtt-leaf-var" v-if="child.resultVar">{{ child.resultVarLabel || varMap[child.resultVar] || child.resultVar }} = </span>
+          <div
+            v-else
+            class="dtt-leaf"
+            :class="{ 'dtt-leaf--hit': child.status === 'hit' }"
+          >
+            <span class="dtt-leaf-icon">{{
+              child.status === 'hit' ? '\u2705' : '\u25CB'
+            }}</span>
+            <span class="dtt-leaf-task" v-if="child.taskName"
+              >{{ child.taskName }}：</span
+            >
+            <span class="dtt-leaf-var" v-if="child.resultVar"
+              >{{
+                child.resultVarLabel ||
+                varMap[child.resultVar] ||
+                child.resultVar
+              }}
+              =
+            </span>
             <span class="dtt-leaf-val">{{ child.label }}</span>
           </div>
           <!-- 叶子节点关联的函数调用 -->
-          <div v-if="!child.children && child.funcCalls && child.funcCalls.length" class="dtt-func-calls">
-            <div v-for="(fc, fci) in child.funcCalls" :key="fci" class="dtt-func-item" :class="{ 'dtt-func-item--hit': child.status === 'hit' }">
+          <div
+            v-if="!child.children && child.funcCalls && child.funcCalls.length"
+            class="dtt-func-calls"
+          >
+            <div
+              v-for="(fc, fci) in child.funcCalls"
+              :key="fci"
+              class="dtt-func-item"
+              :class="{ 'dtt-func-item--hit': child.status === 'hit' }"
+            >
               <span class="dtt-func-icon">ƒ</span>
               <code class="dtt-func-name">{{ funcDisplayName(fc.name) }}</code>
-              <span class="dtt-func-expr">({{ fc.args.map(function(a){ return a.label + '=' + a.value }).join(', ') }})</span>
-              <span class="dtt-func-result" v-if="fc.value !== undefined && fc.value !== null">→ {{ typeof fc.value === 'object' ? JSON.stringify(fc.value) : String(fc.value) }}</span>
+              <span class="dtt-func-expr"
+                >({{
+                  fc.args
+                    .map(function (a) {
+                      return a.label + '=' + a.value
+                    })
+                    .join(', ')
+                }})</span
+              >
+              <span
+                class="dtt-func-result"
+                v-if="fc.value !== undefined && fc.value !== null"
+                >→
+                {{
+                  typeof fc.value === 'object'
+                    ? JSON.stringify(fc.value)
+                    : String(fc.value)
+                }}</span
+              >
             </div>
           </div>
         </div>
@@ -53,11 +99,11 @@
 </template>
 
 <script>
-/**
- * 决策树追踪递归节点组件（垂直缩进层级树）
- * 支持三态图标(命中/阻断/跳过)、条件文本展示、折叠能力
- */
+import { ArrowRight as ElIconArrowRight } from '@element-plus/icons-vue'
 export default {
+  components: {
+    ElIconArrowRight,
+  },
   name: 'DecisionTreeTraceNode',
   props: {
     /** 树节点：{ label, children: [{ branchLabel, hit, status, conditionText, resultVar, resultVarLabel, label, children }] } */
@@ -65,13 +111,23 @@ export default {
     /** 是否为根节点 */
     isRoot: { type: Boolean, default: false },
     /** 变量码→中文标签映射 */
-    varMap: { type: Object, default: function () { return {} } },
+    varMap: {
+      type: Object,
+      default: function () {
+        return {}
+      },
+    },
     /** 函数名→中文展示（含内置映射与项目配置，由 TraceTree 传入） */
-    functionNameMap: { type: Object, default: function () { return {} } }
+    functionNameMap: {
+      type: Object,
+      default: function () {
+        return {}
+      },
+    },
   },
   data: function () {
     return {
-      collapsed: {}
+      collapsed: {},
     }
   },
   created: function () {
@@ -79,7 +135,7 @@ export default {
     for (var i = 0; i < this.node.children.length; i++) {
       var ch = this.node.children[i]
       if (ch.status !== 'hit' && ch.status !== 'blocked') {
-        this.$set(this.collapsed, i, true)
+        this.collapsed[i] = true
       }
     }
   },
@@ -102,9 +158,9 @@ export default {
       return !this.collapsed[idx]
     },
     toggle: function (idx) {
-      this.$set(this.collapsed, idx, !this.collapsed[idx])
-    }
-  }
+      this.collapsed[idx] = !this.collapsed[idx]
+    },
+  },
 }
 </script>
 
@@ -113,8 +169,6 @@ export default {
   font-size: 13px;
   color: #303133;
 }
-
-/* 决策节点标题 */
 .dtt-decision {
   display: inline-flex;
   align-items: center;
@@ -150,15 +204,11 @@ export default {
 .dtt-decision--root .dtt-decision-label {
   font-size: 14px;
 }
-
-/* 分支列表 */
 .dtt-branches {
   padding-left: 16px;
   border-left: 2px solid #e4e7ed;
   margin-left: 10px;
 }
-
-/* 分支项 */
 .dtt-branch {
   position: relative;
   padding: 4px 0;
@@ -179,13 +229,9 @@ export default {
 .dtt-branch--hit {
   border-left: none;
 }
-
-/* 命中分支的父级连线变绿 */
 .dtt-branches:has(> .dtt-branch--hit) {
   border-left-color: #52c41a;
 }
-
-/* 分支头 */
 .dtt-branch-head {
   display: inline-flex;
   align-items: center;
@@ -199,8 +245,6 @@ export default {
 .dtt-branch-head:hover {
   background: #f5f7fa;
 }
-
-/* 状态圆点 */
 .dtt-dot {
   display: inline-block;
   width: 10px;
@@ -221,8 +265,6 @@ export default {
   background: #d9d9d9;
   border-color: #d9d9d9;
 }
-
-/* 分支标签 */
 .dtt-branch-label {
   font-weight: 600;
   font-size: 13px;
@@ -231,15 +273,11 @@ export default {
 .dtt-branch--hit > .dtt-branch-head > .dtt-branch-label {
   color: #389e0d;
 }
-
-/* 条件文本 */
 .dtt-cond {
   font-size: 12px;
   color: #8c8c8c;
   font-family: 'Consolas', 'Monaco', monospace;
 }
-
-/* 状态标签 */
 .dtt-status-tag {
   font-size: 10px;
   padding: 1px 6px;
@@ -262,8 +300,6 @@ export default {
   color: #bfbfbf;
   border: 1px solid #e8e8e8;
 }
-
-/* 折叠箭头 */
 .dtt-toggle {
   font-size: 12px;
   color: #bfbfbf;
@@ -273,14 +309,10 @@ export default {
 .dtt-toggle.is-open {
   transform: rotate(90deg);
 }
-
-/* 分支体 */
 .dtt-branch-body {
   padding-left: 16px;
   margin-left: 4px;
 }
-
-/* 叶子节点 */
 .dtt-leaf {
   display: inline-flex;
   align-items: center;
@@ -320,8 +352,6 @@ export default {
 .dtt-leaf--hit .dtt-leaf-val {
   color: #237804;
 }
-
-/* 函数调用展示 */
 .dtt-func-calls {
   margin-top: 4px;
   margin-left: 4px;

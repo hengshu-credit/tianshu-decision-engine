@@ -1,15 +1,25 @@
 <template>
   <div class="node-panel" :class="{ collapsed: collapsed }">
     <div class="panel-toggle" @click="collapsed = !collapsed">
-      <i :class="collapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-left'" />
+      <app-icon :name="collapsed ? 'ArrowRight' : 'ArrowLeft'" />
     </div>
     <template v-if="!collapsed">
       <div class="panel-header">节点面板</div>
       <div class="panel-search">
-        <el-input v-model="searchKey" size="mini" placeholder="搜索节点" prefix-icon="el-icon-search" clearable />
+        <el-input
+          v-model="searchKey"
+          size="small"
+          placeholder="搜索节点"
+          :prefix-icon="ElIconSearch"
+          clearable
+        />
       </div>
       <div class="node-groups">
-        <div v-for="group in filteredGroups" :key="group.group" class="node-group">
+        <div
+          v-for="group in filteredGroups"
+          :key="group.group"
+          class="node-group"
+        >
           <div class="group-title">{{ group.group }}</div>
           <div class="group-items">
             <div
@@ -30,31 +40,34 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import { Search as ElIconSearch } from '@element-plus/icons-vue'
 import { NODE_PANEL_LIST } from './nodes'
 
 export default {
-  name: 'NodePanel',
-  props: {
-    lf: { type: Object, default: null }
-  },
   data() {
     return {
       collapsed: false,
       searchKey: '',
-      groups: NODE_PANEL_LIST
+      groups: NODE_PANEL_LIST,
+      ElIconSearch: markRaw(ElIconSearch),
     }
+  },
+  name: 'NodePanel',
+  props: {
+    lf: { type: Object, default: null },
   },
   computed: {
     filteredGroups() {
       if (!this.searchKey) return this.groups
       const key = this.searchKey.toLowerCase()
       return this.groups
-        .map(g => ({
+        .map((g) => ({
           ...g,
-          items: g.items.filter(i => i.label.toLowerCase().includes(key))
+          items: g.items.filter((i) => i.label.toLowerCase().includes(key)),
         }))
-        .filter(g => g.items.length > 0)
-    }
+        .filter((g) => g.items.length > 0)
+    },
   },
   methods: {
     onDragStart(item) {
@@ -63,12 +76,17 @@ export default {
         type: item.type,
         properties: {
           nodeName: item.label,
-          nodeCode: item.type.toUpperCase().replace(/-/g, '_') + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4).toUpperCase(),
-          nodeDesc: ''
-        }
+          nodeCode:
+            item.type.toUpperCase().replace(/-/g, '_') +
+            '_' +
+            Date.now() +
+            '_' +
+            Math.random().toString(36).substr(2, 4).toUpperCase(),
+          nodeDesc: '',
+        },
       })
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -105,7 +123,10 @@ export default {
   z-index: 10;
   font-size: 12px;
   color: #999;
-  &:hover { color: #333; background: #f5f5f5; }
+  &:hover {
+    color: #333;
+    background: #f5f5f5;
+  }
 }
 .panel-header {
   padding: 12px 16px;

@@ -1,14 +1,11 @@
-import Vue from 'vue'
-import Vuex from 'vuex'
+import { createStore } from 'vuex'
 import workspaceTabs, {
   WORKSPACE_TABS_STORAGE_KEY,
   readWorkspaceTabs
 } from '@/store/modules/workspaceTabs'
 
-Vue.use(Vuex)
-
-function createStore() {
-  return new Vuex.Store({ modules: { workspaceTabs } })
+function createTestStore() {
+  return createStore({ modules: { workspaceTabs } })
 }
 
 function tab(fullPath, title) {
@@ -26,7 +23,7 @@ beforeEach(() => {
 
 describe('workspaceTabs store', () => {
   test('打开相同 fullPath 只激活而不重复', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/rule', '规则管理'))
     await store.dispatch('workspaceTabs/open', tab('/rule', '规则管理'))
 
@@ -35,7 +32,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('同一路径的不同查询参数保留为不同页签', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/rule?page=1'))
     await store.dispatch('workspaceTabs/open', tab('/rule?page=2'))
 
@@ -46,7 +43,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('打开和关闭后把页签与活动路径写入 sessionStorage', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/project', '项目管理'))
     await store.dispatch('workspaceTabs/open', tab('/rule', '规则管理'))
     await store.dispatch('workspaceTabs/close', {
@@ -61,7 +58,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('恢复有效缓存并始终加入当前浏览器路由', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/restore', {
       cachedTabs: [tab('/project', '项目管理'), tab('/rule', '规则管理')],
       currentTab: tab('/variable', '变量管理')
@@ -76,7 +73,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('恢复时去除重复和缺少 fullPath 的缓存项', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/restore', {
       cachedTabs: [tab('/rule'), tab('/rule'), { title: '无效' }],
       currentTab: tab('/rule')
@@ -92,7 +89,7 @@ describe('workspaceTabs store', () => {
     ['others', '/b', ['/b'], '/b'],
     ['all', '/b', [], '/project']
   ])('%s 操作更新页签并返回下一路径', async(operation, targetPath, expectedTabs, nextPath) => {
-    const store = createStore()
+    const store = createTestStore()
     for (const path of ['/a', '/b', '/c']) {
       await store.dispatch('workspaceTabs/open', tab(path))
     }
@@ -106,7 +103,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('刷新只增加目标页签的视图版本', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/rule'))
     await store.dispatch('workspaceTabs/open', tab('/project'))
     await store.dispatch('workspaceTabs/refresh', '/rule')
@@ -116,7 +113,7 @@ describe('workspaceTabs store', () => {
   })
 
   test('刷新版本不写入会话缓存', async() => {
-    const store = createStore()
+    const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/rule'))
     await store.dispatch('workspaceTabs/refresh', '/rule')
 
@@ -135,7 +132,7 @@ describe('workspaceTabs store', () => {
   test('存储不可用时页签行为仍正常', async() => {
     const original = window.sessionStorage.setItem
     window.sessionStorage.setItem = jest.fn(() => { throw new Error('blocked') })
-    const store = createStore()
+    const store = createTestStore()
 
     await expect(store.dispatch('workspaceTabs/open', tab('/rule'))).resolves.toBeUndefined()
     expect(store.getters['workspaceTabs/activePath']).toBe('/rule')

@@ -1,15 +1,9 @@
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
+import { shallowMount } from '@test-utils'
+import { nextTick } from 'vue'
 import LineageGraph from '@/views/lineage/LineageGraph.vue'
 import * as lineageApi from '@/api/lineage'
 
-function createLocal() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 function graphResponse() {
   return {
@@ -38,7 +32,6 @@ function mountPage() {
     data: [{ type: 'VARIABLE', id: 1, displayName: '风险分 (riskScore)' }]
   })
   return shallowMount(LineageGraph, {
-    localVue: createLocal(),
     mocks: {
       $message: { warning: jest.fn(), error: jest.fn() }
     },
@@ -59,12 +52,12 @@ afterEach(() => jest.clearAllMocks())
 describe('LineageGraph', () => {
   test('created 后按默认变量类型加载起点选项', async () => {
     const wrapper = mountPage()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(lineageApi.listLineageOptions).toHaveBeenCalledWith({ nodeType: 'VARIABLE', keyword: '' })
     expect(wrapper.vm.options[0].displayName).toBe('风险分 (riskScore)')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('首次生成在中间节点两侧展示上下游各两跳', async () => {
@@ -90,7 +83,7 @@ describe('LineageGraph', () => {
     expect(downstream.left).toBeGreaterThan(current.left)
     expect(wrapper.vm.edgeLines[0].toId).toBe('CURRENT')
     expect(wrapper.vm.edgeLines[2].fromId).toBe('CURRENT')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('首次生成后将滚动区域对准当前节点', async () => {
@@ -102,10 +95,10 @@ describe('LineageGraph', () => {
     lineageApi.getLineageGraph.mockResolvedValueOnce({ data: graphResponse() })
 
     await wrapper.vm.loadGraph()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(graphWrap.scrollLeft).toBe(276)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('第二跳节点按需展开并在收起后复用缓存', async () => {
@@ -138,7 +131,7 @@ describe('LineageGraph', () => {
     await wrapper.vm.toggleBranch(branch)
     expect(branch.expanded).toBe(true)
     expect(lineageApi.getLineageGraph).toHaveBeenCalledTimes(2)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('收起父节点会隐藏整条后代分支', async () => {
@@ -152,7 +145,7 @@ describe('LineageGraph', () => {
     expect(wrapper.vm.visibleBranches.map(item => item.branch.node.id)).toEqual([
       'API:7', 'RULE:9', 'VARIABLE:2'
     ])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('共享业务节点在不同路径生成独立展示实例', () => {
@@ -170,7 +163,7 @@ describe('LineageGraph', () => {
     expect(roots[0].children[0].node.id).toBe('DATASOURCE:8')
     expect(roots[1].children[0].node.id).toBe('DATASOURCE:8')
     expect(roots[0].children[0].instanceId).not.toBe(roots[1].children[0].instanceId)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('当前路径出现循环引用时生成不可继续展开的终止节点', async () => {
@@ -192,7 +185,7 @@ describe('LineageGraph', () => {
     expect(branch.children[0].node.id).toBe('RULE:9')
     expect(branch.children[0].cycle).toBe(true)
     expect(wrapper.vm.canToggle(branch.children[0])).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('提供两跳展开和静态分析边界说明', () => {
@@ -205,6 +198,6 @@ describe('LineageGraph', () => {
     ])
     expect(wrapper.vm.lineageGuideCards[1].text).toContain('两层')
     expect(wrapper.vm.lineageGuideCards[2].text).toContain('静态分析')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

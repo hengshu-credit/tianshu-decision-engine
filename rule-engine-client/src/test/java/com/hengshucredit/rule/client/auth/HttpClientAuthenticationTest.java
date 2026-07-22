@@ -3,8 +3,6 @@ package com.hengshucredit.rule.client.auth;
 import com.hengshucredit.rule.client.log.HttpLogReporter;
 import com.hengshucredit.rule.client.sync.HttpSyncClient;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import okhttp3.Request;
 import org.junit.After;
 import org.junit.Before;

@@ -43,13 +43,11 @@ const LABELS = {
 
 /** 与 VariableList 表格中 el-tag 配色一致 */
 const TAG_COLORS = {
-  STRING: '',
   NUMBER: 'warning',
   DOUBLE: 'warning',
   BOOLEAN: 'success',
   DATE: 'info',
   ENUM: 'danger',
-  OBJECT: '',
   LIST: 'warning',
   MAP: 'info',
   MODEL: 'success'
@@ -63,8 +61,8 @@ export function varTypeLabel(t) {
 }
 
 /**
- * 将 varType 转为 Element UI el-tag 的 type 属性值。
+ * 将 varType 转为 Element Plus el-tag 的 type 属性值。
  */
 export function varTypeTagColor(t) {
-  return TAG_COLORS[t] || ''
+  return TAG_COLORS[t]
 }

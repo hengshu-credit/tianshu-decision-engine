@@ -1,5 +1,5 @@
-import Vue from 'vue'
-import { shallowMount } from '@vue/test-utils'
+import { reactive } from 'vue'
+import { shallowMount } from '@test-utils'
 import * as expressionApi from '@/api/expression'
 import ExpressionEditorPage from '@/views/expression/ExpressionEditorPage.vue'
 
@@ -86,7 +86,7 @@ describe('ExpressionEditorPage', () => {
   test('页签失活时静默暂存当前草稿', async() => {
     const { wrapper, dispatch } = mountPage()
 
-    wrapper.vm.$options.deactivated[0].call(wrapper.vm)
+    wrapper.vm.$options.deactivated.call(wrapper.vm)
     await wrapper.vm.$nextTick()
 
     expect(dispatch).toHaveBeenCalledWith('expressionSessions/saveDraft', {
@@ -97,7 +97,7 @@ describe('ExpressionEditorPage', () => {
   })
 
   test('缓存实例切换路由后仍保存到创建时对应的会话', async() => {
-    const route = Vue.observable({ params: { ruleId: '9', sessionId: 'session-1' } })
+    const route = reactive({ params: { ruleId: '9', sessionId: 'session-1' } })
     const sessions = {
       'session-1': session(),
       'session-2': session({ sessionId: 'session-2', draft: { kind: 'LITERAL', value: '99', valueType: 'NUMBER' } })

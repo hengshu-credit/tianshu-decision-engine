@@ -158,7 +158,7 @@ public class ProjectAuthControllerTest {
         }
 
         @Override
-        public void recordManagementAccess(javax.servlet.http.HttpServletRequest request,
+        public void recordManagementAccess(jakarta.servlet.http.HttpServletRequest request,
                                            Long projectId, Long authId, Long tokenId) {
             this.auditRequest = (MockHttpServletRequest) request;
             this.auditAuthId = authId;

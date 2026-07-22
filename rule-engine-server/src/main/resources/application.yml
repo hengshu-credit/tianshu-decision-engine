@@ -18,24 +18,27 @@ spring:
     url: jdbc:mysql://localhost:3306/${MYSQL_DATABASE:rule_engine}?useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USERNAME:root}
     password: ${MYSQL_PASSWORD:1qaz@WSX}
-    schema: classpath:sql/schema.sql
-    sql-script-encoding: UTF-8
-    initialization-mode: ${SPRING_DATASOURCE_INITIALIZATION_MODE:never}
-    continue-on-error: true
-  redis:
-    host: ${REDIS_HOST:localhost}
-    port: ${REDIS_PORT:6379}
-    # 无密码时留空或删除本行
-    password: ${REDIS_PASSWORD:}
-    connect-timeout: 2000
-    timeout: 3000
-    lettuce:
-      pool:
-        max-active: 8
-        max-idle: 8
-        min-idle: 0
-        max-wait: 1000ms
-      shutdown-timeout: 200ms
+  sql:
+    init:
+      schema-locations: classpath:sql/schema.sql
+      encoding: UTF-8
+      mode: ${SPRING_SQL_INIT_MODE:${SPRING_DATASOURCE_INITIALIZATION_MODE:never}}
+      continue-on-error: true
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      # 无密码时留空或删除本行
+      password: ${REDIS_PASSWORD:}
+      connect-timeout: 2000ms
+      timeout: 3000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 8
+          min-idle: 0
+          max-wait: 1000ms
+        shutdown-timeout: 200ms
 
 rule-engine:
   project-auth:

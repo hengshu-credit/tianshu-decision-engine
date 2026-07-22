@@ -27,27 +27,62 @@
           :title="'关闭' + tab.title"
           @click.stop="performOperation('current', tab.fullPath)"
         >
-          <i class="el-icon-close" />
+          <el-icon><el-icon-close /></el-icon>
         </button>
       </div>
     </div>
 
-    <el-dropdown trigger="click" placement="bottom-end" @command="handleOverflowCommand">
-      <button type="button" class="workspace-tabs__more" aria-label="页签操作" title="页签操作">
-        <i class="el-icon-more" />
+    <el-dropdown
+      trigger="click"
+      placement="bottom-end"
+      @command="handleOverflowCommand"
+    >
+      <button
+        type="button"
+        class="workspace-tabs__more"
+        aria-label="页签操作"
+        title="页签操作"
+      >
+        <el-icon><el-icon-more /></el-icon>
       </button>
-      <el-dropdown-menu slot="dropdown">
-        <el-dropdown-item command="refresh" :disabled="!activePath">
-          <span class="workspace-tab-operation"><span>刷新当前</span><span class="workspace-tab-operation__shortcut">Ctrl+R</span></span>
-        </el-dropdown-item>
-        <el-dropdown-item command="current" :disabled="!activePath">
-          <span class="workspace-tab-operation"><span>关闭当前</span><span class="workspace-tab-operation__shortcut">Ctrl+W</span></span>
-        </el-dropdown-item>
-        <el-dropdown-item command="left" :disabled="isOperationDisabled('left', activePath)">关闭左侧</el-dropdown-item>
-        <el-dropdown-item command="right" :disabled="isOperationDisabled('right', activePath)">关闭右侧</el-dropdown-item>
-        <el-dropdown-item command="others" :disabled="isOperationDisabled('others', activePath)">关闭其他</el-dropdown-item>
-        <el-dropdown-item command="all" divided :disabled="tabs.length === 0">关闭全部</el-dropdown-item>
-      </el-dropdown-menu>
+      <template v-slot:dropdown>
+        <el-dropdown-menu>
+          <el-dropdown-item command="refresh" :disabled="!activePath">
+            <span class="workspace-tab-operation"
+              ><span>刷新当前</span
+              ><span class="workspace-tab-operation__shortcut"
+                >Ctrl+R</span
+              ></span
+            >
+          </el-dropdown-item>
+          <el-dropdown-item command="current" :disabled="!activePath">
+            <span class="workspace-tab-operation"
+              ><span>关闭当前</span
+              ><span class="workspace-tab-operation__shortcut"
+                >Ctrl+W</span
+              ></span
+            >
+          </el-dropdown-item>
+          <el-dropdown-item
+            command="left"
+            :disabled="isOperationDisabled('left', activePath)"
+            >关闭左侧</el-dropdown-item
+          >
+          <el-dropdown-item
+            command="right"
+            :disabled="isOperationDisabled('right', activePath)"
+            >关闭右侧</el-dropdown-item
+          >
+          <el-dropdown-item
+            command="others"
+            :disabled="isOperationDisabled('others', activePath)"
+            >关闭其他</el-dropdown-item
+          >
+          <el-dropdown-item command="all" divided :disabled="tabs.length === 0"
+            >关闭全部</el-dropdown-item
+          >
+        </el-dropdown-menu>
+      </template>
     </el-dropdown>
 
     <div
@@ -66,20 +101,30 @@
         :class="{ 'is-divided': operation.key === 'all' }"
         @click="performOperation(operation.key, contextMenu.targetPath)"
       >
-        <i :class="operation.icon" />
+        <app-icon :name="operation.icon" />
         <span>{{ operation.label }}</span>
-        <span v-if="operation.shortcut" class="workspace-tab-operation__shortcut">{{ operation.shortcut }}</span>
+        <span
+          v-if="operation.shortcut"
+          class="workspace-tab-operation__shortcut"
+          >{{ operation.shortcut }}</span
+        >
       </button>
     </div>
   </header>
 </template>
 
 <script>
+import { Close as ElIconClose, More as ElIconMore } from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 export default {
+  components: {
+    ElIconClose,
+    ElIconMore,
+  },
   name: 'WorkspaceTabs',
   props: {
     tabs: { type: Array, default: () => [] },
-    activePath: { type: String, default: '' }
+    activePath: { type: String, default: '' },
   },
   data() {
     return {
@@ -87,23 +132,33 @@ export default {
         visible: false,
         left: 0,
         top: 0,
-        targetPath: ''
+        targetPath: '',
       },
       operations: [
-        { key: 'refresh', label: '刷新', icon: 'el-icon-refresh-right', shortcut: 'Ctrl+R' },
-        { key: 'current', label: '关闭当前', icon: 'el-icon-close', shortcut: 'Ctrl+W' },
-        { key: 'left', label: '关闭左侧', icon: 'el-icon-back' },
-        { key: 'right', label: '关闭右侧', icon: 'el-icon-right' },
-        { key: 'others', label: '关闭其他', icon: 'el-icon-files' },
-        { key: 'all', label: '关闭全部', icon: 'el-icon-circle-close' }
-      ]
+        {
+          key: 'refresh',
+          label: '刷新',
+          icon: 'RefreshRight',
+          shortcut: 'Ctrl+R',
+        },
+        {
+          key: 'current',
+          label: '关闭当前',
+          icon: 'Close',
+          shortcut: 'Ctrl+W',
+        },
+        { key: 'left', label: '关闭左侧', icon: 'Back' },
+        { key: 'right', label: '关闭右侧', icon: 'Right' },
+        { key: 'others', label: '关闭其他', icon: 'Files' },
+        { key: 'all', label: '关闭全部', icon: 'CircleClose' },
+      ],
     }
   },
   watch: {
     activePath() {
       this.closeContextMenu()
       this.$nextTick(this.scrollActiveIntoView)
-    }
+    },
   },
   mounted() {
     document.addEventListener('click', this.closeContextMenu)
@@ -111,7 +166,7 @@ export default {
     window.addEventListener('scroll', this.closeContextMenu, true)
     this.scrollActiveIntoView()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     document.removeEventListener('click', this.closeContextMenu)
     window.removeEventListener('blur', this.closeContextMenu)
     window.removeEventListener('scroll', this.closeContextMenu, true)
@@ -120,13 +175,21 @@ export default {
     openContextMenu(event, targetPath) {
       const menuWidth = 176
       const menuHeight = 224
-      const viewportWidth = window.innerWidth || document.documentElement.clientWidth
-      const viewportHeight = window.innerHeight || document.documentElement.clientHeight
+      const viewportWidth =
+        window.innerWidth || document.documentElement.clientWidth
+      const viewportHeight =
+        window.innerHeight || document.documentElement.clientHeight
       this.contextMenu = {
         visible: true,
-        left: Math.max(8, Math.min(event.clientX || 0, viewportWidth - menuWidth - 8)),
-        top: Math.max(8, Math.min(event.clientY || 0, viewportHeight - menuHeight - 8)),
-        targetPath
+        left: Math.max(
+          8,
+          Math.min(event.clientX || 0, viewportWidth - menuWidth - 8)
+        ),
+        top: Math.max(
+          8,
+          Math.min(event.clientY || 0, viewportHeight - menuHeight - 8)
+        ),
+        targetPath,
       }
     },
     closeContextMenu() {
@@ -134,7 +197,7 @@ export default {
       this.contextMenu = { ...this.contextMenu, visible: false }
     },
     isOperationDisabled(operation, targetPath) {
-      const index = this.tabs.findIndex(tab => tab.fullPath === targetPath)
+      const index = this.tabs.findIndex((tab) => tab.fullPath === targetPath)
       if (!targetPath || index < 0) return true
       if (operation === 'left') return index === 0
       if (operation === 'right') return index === this.tabs.length - 1
@@ -144,21 +207,26 @@ export default {
     },
     performOperation(operation, targetPath) {
       if (this.isOperationDisabled(operation, targetPath)) return
-      this.$emit('operate', { operation, targetPath })
+      $emit(this, 'operate', { operation, targetPath })
       this.closeContextMenu()
     },
     handleOverflowCommand(operation) {
       if (!this.activePath && operation !== 'all') return
-      this.$emit('operate', { operation, targetPath: this.activePath })
+      $emit(this, 'operate', { operation, targetPath: this.activePath })
     },
     scrollActiveIntoView() {
-      const elements = this.$el ? this.$el.querySelectorAll('.workspace-tab') : []
-      const active = Array.from(elements).find(element => element.dataset.tab === this.activePath)
+      const elements = this.$el
+        ? this.$el.querySelectorAll('.workspace-tab')
+        : []
+      const active = Array.from(elements).find(
+        (element) => element.dataset.tab === this.activePath
+      )
       if (active && typeof active.scrollIntoView === 'function') {
         active.scrollIntoView({ block: 'nearest', inline: 'nearest' })
       }
-    }
-  }
+    },
+  },
+  emits: ['activate', 'operate'],
 }
 </script>
 
@@ -171,11 +239,10 @@ export default {
   height: 44px;
   min-width: 0;
   align-items: stretch;
-  background: #FFFFFF;
-  border-bottom: 1px solid #DDE3EE;
+  background: #ffffff;
+  border-bottom: 1px solid #dde3ee;
   box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
 }
-
 .workspace-tabs__scroll {
   display: flex;
   min-width: 0;
@@ -187,7 +254,6 @@ export default {
   gap: 4px;
   scrollbar-width: thin;
 }
-
 .workspace-tab {
   position: relative;
   display: flex;
@@ -195,13 +261,13 @@ export default {
   height: 36px;
   max-width: 200px;
   align-items: center;
-  color: #64748B;
-  background: #F5F7FA;
-  border: 1px solid #E2E8F0;
+  color: #64748b;
+  background: #f5f7fa;
+  border: 1px solid #e2e8f0;
   border-bottom: 0;
   border-radius: 6px 6px 0 0;
-  transition: color 160ms ease, background-color 160ms ease, border-color 160ms ease;
-
+  transition: color 160ms ease, background-color 160ms ease,
+    border-color 160ms ease;
   &::after {
     position: absolute;
     right: 0;
@@ -214,14 +280,14 @@ export default {
 
   &:hover {
     color: #334155;
-    background: #FFFFFF;
+    background: #ffffff;
   }
 
   &.is-active {
-    color: #1E293B;
+    color: #1e293b;
     font-weight: 600;
-    background: #FFFFFF;
-    border-color: #CBD5E1;
+    background: #ffffff;
+    border-color: #cbd5e1;
 
     &::after {
       background: $--color-primary;
@@ -232,7 +298,6 @@ export default {
     }
   }
 }
-
 .workspace-tab__main {
   display: flex;
   min-width: 0;
@@ -244,23 +309,20 @@ export default {
   background: transparent;
   border: 0;
   cursor: pointer;
-
   &:focus-visible {
     border-radius: 5px;
     outline: 2px solid rgba($--color-primary, 0.35);
     outline-offset: -2px;
   }
 }
-
 .workspace-tab__dot {
   flex: none;
   width: 6px;
   height: 6px;
   margin-right: 8px;
-  background: #CBD5E1;
+  background: #cbd5e1;
   border-radius: 50%;
 }
-
 .workspace-tab__title {
   overflow: hidden;
   font-size: 13px;
@@ -268,7 +330,6 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
 .workspace-tab__close {
   display: flex;
   flex: none;
@@ -278,20 +339,18 @@ export default {
   margin-right: 2px;
   align-items: center;
   justify-content: center;
-  color: #94A3B8;
+  color: #94a3b8;
   background: transparent;
   border: 0;
   border-radius: 50%;
   cursor: pointer;
-
   &:hover,
   &:focus-visible {
     color: #334155;
-    background: #E9EEF5;
+    background: #e9eef5;
     outline: none;
   }
 }
-
 .workspace-tabs__more {
   display: flex;
   width: 44px;
@@ -299,21 +358,19 @@ export default {
   padding: 0;
   align-items: center;
   justify-content: center;
-  color: #64748B;
+  color: #64748b;
   font-size: 18px;
-  background: #FFFFFF;
+  background: #ffffff;
   border: 0;
-  border-left: 1px solid #E2E8F0;
+  border-left: 1px solid #e2e8f0;
   cursor: pointer;
-
   &:hover,
   &:focus-visible {
     color: $--color-primary;
-    background: #F8FAFC;
+    background: #f8fafc;
     outline: none;
   }
 }
-
 .workspace-tabs__context-menu {
   position: fixed;
   z-index: 3000;
@@ -321,11 +378,11 @@ export default {
   width: 176px;
   padding: 6px;
   flex-direction: column;
-  background: #FFFFFF;
-  border: 1px solid #DCE3ED;
+  background: #ffffff;
+  border: 1px solid #dce3ed;
   border-radius: 8px;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14), 0 3px 8px rgba(15, 23, 42, 0.1);
-
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14),
+    0 3px 8px rgba(15, 23, 42, 0.1);
   button {
     display: flex;
     height: 34px;
@@ -343,19 +400,19 @@ export default {
     i {
       width: 20px;
       margin-right: 6px;
-      color: #64748B;
+      color: #64748b;
       text-align: center;
     }
 
     &:hover:not(:disabled),
     &:focus-visible:not(:disabled) {
       color: $--color-primary;
-      background: #EEF1FF;
+      background: #eef1ff;
       outline: none;
     }
 
     &:disabled {
-      color: #CBD5E1;
+      color: #cbd5e1;
       cursor: not-allowed;
 
       i {
@@ -365,12 +422,11 @@ export default {
 
     &.is-divided {
       margin-top: 5px;
-      border-top: 1px solid #EEF2F6;
+      border-top: 1px solid #eef2f6;
       border-radius: 0 0 5px 5px;
     }
   }
 }
-
 .workspace-tab-operation {
   display: flex;
   min-width: 144px;
@@ -378,10 +434,9 @@ export default {
   justify-content: space-between;
   gap: 20px;
 }
-
 .workspace-tab-operation__shortcut {
   margin-left: auto;
-  color: #94A3B8;
+  color: #94a3b8;
   font-size: 12px;
   font-weight: 400;
 }

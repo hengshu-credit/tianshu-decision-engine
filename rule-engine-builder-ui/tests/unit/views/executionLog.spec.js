@@ -1,6 +1,6 @@
 // tests/unit/views/executionLog.spec.js
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { h, nextTick } from 'vue'
 
 import * as projectApi from '@/api/project'
 import * as definitionApi from '@/api/definition'
@@ -29,12 +29,10 @@ function mockProjects() {
 
 // ─── 辅助函数 ─────────────────────────────────────────────
 function makeStub(tag) {
-  return { render: h => h(tag) }
+  return { render: () => h(tag) }
 }
 
-function createTestVue() {
-  return createLocalVue()
-}
+
 
 const defaultStubs = {
   'el-form': makeStub('form'), 'el-form-item': makeStub('div'),
@@ -70,12 +68,11 @@ async function mountAndWait() {
   requestApi.mockResolvedValueOnce({ data: { records: mockLogs(), total: 3 } })
 
   const wrapper = shallowMount(ExecutionLog, {
-    localVue: createTestVue(),
     mocks: defaultMocks,
     stubs: defaultStubs
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -91,12 +88,11 @@ async function mountEmpty() {
   definitionApi.listDefinitions.mockResolvedValue({ data: { records: [] } })
 
   const wrapper = shallowMount(ExecutionLog, {
-    localVue: createTestVue(),
     mocks: defaultMocks,
     stubs: defaultStubs
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -111,14 +107,13 @@ async function mountFailing() {
   definitionApi.listDefinitions.mockResolvedValue({ data: { records: [] } })
 
   const wrapper = shallowMount(ExecutionLog, {
-    localVue: createTestVue(),
     mocks: defaultMocks,
     stubs: defaultStubs
   })
 
   jest.spyOn(wrapper.vm, 'load').mockRejectedValue(new Error('网络异常'))
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -129,7 +124,7 @@ test('uses project code and name fuzzy filters', async () => {
   expect(ExecutionLog.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
   expect(wrapper.vm.qp).toEqual(expect.objectContaining({ projectCode: '', projectName: '' }))
 
-  wrapper.destroy()
+  wrapper.unmount()
 })
 
 // ─── 测试用例 ─────────────────────────────────────────────
@@ -138,7 +133,7 @@ describe('ExecutionLog — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 时不再预拉取 1000 条项目和规则元数据', () => {
     expect(projectApi.listProjects).not.toHaveBeenCalled()
@@ -178,7 +173,7 @@ describe('ExecutionLog — 工具方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('fj 解析有效 JSON 字符串', () => {
     const result = wrapper.vm.fj('{"age": 30}')
@@ -209,13 +204,13 @@ describe('ExecutionLog — 筛选与分页', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleQuery 重置页码并重新加载', async () => {
     wrapper.vm.qp.pageNum = 5
     requestApi.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
@@ -291,7 +286,7 @@ describe('ExecutionLog — computed 属性', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('filteredRules 返回全部规则（未选项目）', () => {
     wrapper.vm.qp.projectCode = ''
@@ -321,20 +316,20 @@ describe('ExecutionLog — 边界情况', () => {
   test('日志列表为空不报错', async () => {
     const wrapper = await mountEmpty()
     expect(wrapper.vm.list).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('详情弹窗初始关闭', async () => {
     const wrapper = await mountEmpty()
     expect(wrapper.vm.detailVis).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('加载失败时 loading 恢复为 false', async () => {
     const wrapper = await mountFailing()
     // finally 块保证 loading 恢复为 false
     expect(wrapper.vm.loading).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })
 
@@ -365,7 +360,7 @@ describe('ExecutionLog — 规则集命中统计', () => {
     wrapper = await mountAndWait()
   })
 
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('切换到规则集统计时按项目、规则集和时间范围加载数据', async () => {
     wrapper.vm.qp.projectCode = 'project_a'

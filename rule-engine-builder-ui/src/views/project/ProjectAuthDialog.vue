@@ -2,7 +2,7 @@
   <el-dialog
     class="project-auth-dialog"
     title="项目调用鉴权"
-    :visible="visible"
+    :model-value="visible"
     width="1180px"
     top="5vh"
     append-to-body
@@ -10,52 +10,125 @@
   >
     <div class="project-context">
       <div>
-        <div class="project-name">{{ project.projectName || '未命名项目' }}</div>
+        <div class="project-name">
+          {{ project.projectName || '未命名项目' }}
+        </div>
         <div class="project-code">{{ project.projectCode }}</div>
       </div>
-      <div class="project-help">每种鉴权独立统计；临时 Token 到期前可续期，过期后仍保留配置的冗余有效时间。</div>
+      <div class="project-help">
+        每种鉴权独立统计；临时 Token
+        到期前可续期，过期后仍保留配置的冗余有效时间。
+      </div>
     </div>
 
     <el-tabs v-model="activeTab" @tab-click="onTabClick">
       <el-tab-pane label="鉴权配置" name="auth">
         <div class="section-toolbar">
-          <div class="section-copy">列表仅显示脱敏值，完整账号、密码和密钥可随时再次查看。</div>
-          <el-button type="primary" size="small" icon="el-icon-plus" @click="openCreateAuth">新增鉴权</el-button>
+          <div class="section-copy">
+            列表仅显示脱敏值，完整账号、密码和密钥可随时再次查看。
+          </div>
+          <el-button
+            type="primary"
+            size="small"
+            :icon="ElIconPlus"
+            @click="openCreateAuth"
+            >新增鉴权</el-button
+          >
         </div>
-        <el-table v-loading="authLoading" :data="authList" border size="small" empty-text="暂无鉴权配置">
-          <el-table-column prop="authCode" label="鉴权编码" min-width="135" show-overflow-tooltip />
-          <el-table-column prop="authName" label="名称" min-width="120" show-overflow-tooltip />
+        <el-table
+          v-loading="authLoading"
+          :data="authList"
+          border
+          size="small"
+          empty-text="暂无鉴权配置"
+        >
+          <el-table-column
+            prop="authCode"
+            label="鉴权编码"
+            min-width="135"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="authName"
+            label="名称"
+            min-width="120"
+            show-overflow-tooltip
+          />
           <el-table-column label="鉴权方式" min-width="110">
-            <template slot-scope="{ row }">{{ authTypeLabel(row.authType) }}</template>
+            <template v-slot="{ row }">{{
+              authTypeLabel(row.authType)
+            }}</template>
           </el-table-column>
           <el-table-column label="账号 / Access Key" min-width="145">
-            <template slot-scope="{ row }"><code>{{ row.identifierMasked || '—' }}</code></template>
+            <template v-slot="{ row }"
+              ><code>{{ row.identifierMasked || '—' }}</code></template
+            >
           </el-table-column>
           <el-table-column label="密码 / 密钥" min-width="145">
-            <template slot-scope="{ row }"><code>{{ row.secretMasked || '—' }}</code></template>
+            <template v-slot="{ row }"
+              ><code>{{ row.secretMasked || '—' }}</code></template
+            >
           </el-table-column>
           <el-table-column label="Token 时效" min-width="130">
-            <template slot-scope="{ row }">
+            <template v-slot="{ row }">
               <div>{{ formatDuration(row.tokenTtlSeconds) }}</div>
-              <div class="table-secondary">冗余 {{ formatDuration(row.tokenGraceSeconds) }}</div>
+              <div class="table-secondary">
+                冗余 {{ formatDuration(row.tokenGraceSeconds) }}
+              </div>
             </template>
           </el-table-column>
-          <el-table-column label="访问策略" min-width="190" show-overflow-tooltip>
-            <template slot-scope="{ row }">{{ policySummary(row.accessPolicyJson) }}</template>
+          <el-table-column
+            label="访问策略"
+            min-width="190"
+            show-overflow-tooltip
+          >
+            <template v-slot="{ row }">{{
+              policySummary(row.accessPolicyJson)
+            }}</template>
           </el-table-column>
           <el-table-column label="状态" width="74" align="center">
-            <template slot-scope="{ row }">
-              <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+            <template v-slot="{ row }">
+              <el-tag
+                :type="row.status === 1 ? 'success' : 'info'"
+                size="small"
+                >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column label="操作" min-width="300" align="center">
-            <template slot-scope="{ row }">
-              <el-button type="text" size="small" @click="viewFullAuth(row)">完整值</el-button>
-              <el-button v-if="row.authType !== 'LEGACY_TOKEN'" type="text" size="small" @click="openEditAuth(row)">编辑</el-button>
-              <el-button v-if="row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'" type="text" size="small" @click="regenerateAuth(row)">重置密钥</el-button>
-              <el-button v-if="row.authType === 'LEGACY_TOKEN'" type="text" size="small" @click="regenerateLegacyToken(row)">重置令牌</el-button>
-              <el-button type="text" size="small" @click="openTokens(row)">Token</el-button>
-              <el-button type="text" size="small" @click="toggleAuth(row)">{{ row.status === 1 ? '停用' : '启用' }}</el-button>
+            <template v-slot="{ row }">
+              <el-button link size="small" @click="viewFullAuth(row)"
+                >完整值</el-button
+              >
+              <el-button
+                v-if="row.authType !== 'LEGACY_TOKEN'"
+                link
+                size="small"
+                @click="openEditAuth(row)"
+                >编辑</el-button
+              >
+              <el-button
+                v-if="
+                  row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'
+                "
+                link
+                size="small"
+                @click="regenerateAuth(row)"
+                >重置密钥</el-button
+              >
+              <el-button
+                v-if="row.authType === 'LEGACY_TOKEN'"
+                link
+                size="small"
+                @click="regenerateLegacyToken(row)"
+                >重置令牌</el-button
+              >
+              <el-button link size="small" @click="openTokens(row)"
+                >Token</el-button
+              >
+              <el-button link size="small" @click="toggleAuth(row)">{{
+                row.status === 1 ? '停用' : '启用'
+              }}</el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -69,20 +142,59 @@
           </div>
           <el-button size="small" @click="loadTokens">刷新</el-button>
         </div>
-        <el-alert v-else title="请先在“鉴权配置”中选择一项并点击 Token。" type="info" :closable="false" show-icon />
-        <el-table v-if="selectedAuth" v-loading="tokenLoading" :data="tokenList" border size="small" empty-text="该鉴权尚未签发临时 Token">
-          <el-table-column prop="tokenCode" label="Token 编码" min-width="210" show-overflow-tooltip />
-          <el-table-column label="Token" min-width="155"><template slot-scope="{ row }"><code>{{ row.tokenMasked }}</code></template></el-table-column>
+        <el-alert
+          v-else
+          title="请先在“鉴权配置”中选择一项并点击 Token。"
+          type="info"
+          :closable="false"
+          show-icon
+        />
+        <el-table
+          v-if="selectedAuth"
+          v-loading="tokenLoading"
+          :data="tokenList"
+          border
+          size="small"
+          empty-text="该鉴权尚未签发临时 Token"
+        >
+          <el-table-column
+            prop="tokenCode"
+            label="Token 编码"
+            min-width="210"
+            show-overflow-tooltip
+          />
+          <el-table-column label="Token" min-width="155"
+            ><template v-slot="{ row }"
+              ><code>{{ row.tokenMasked }}</code></template
+            ></el-table-column
+          >
           <el-table-column prop="issuedTime" label="签发时间" min-width="155" />
           <el-table-column prop="expireTime" label="正常截止" min-width="155" />
-          <el-table-column prop="graceExpireTime" label="冗余截止" min-width="155" />
+          <el-table-column
+            prop="graceExpireTime"
+            label="冗余截止"
+            min-width="155"
+          />
           <el-table-column label="状态" width="82" align="center">
-            <template slot-scope="{ row }"><el-tag :type="tokenStatus(row).type" size="mini">{{ tokenStatus(row).label }}</el-tag></template>
+            <template v-slot="{ row }"
+              ><el-tag :type="tokenStatus(row).type" size="small">{{
+                tokenStatus(row).label
+              }}</el-tag></template
+            >
           </el-table-column>
           <el-table-column label="操作" width="125" align="center">
-            <template slot-scope="{ row }">
-              <el-button type="text" size="small" @click="viewFullToken(row)">完整值</el-button>
-              <el-button v-if="row.status === 1" class="btn-delete" type="text" size="small" @click="revokeToken(row)">撤销</el-button>
+            <template v-slot="{ row }">
+              <el-button link size="small" @click="viewFullToken(row)"
+                >完整值</el-button
+              >
+              <el-button
+                v-if="row.status === 1"
+                class="btn-delete"
+                link
+                size="small"
+                @click="revokeToken(row)"
+                >撤销</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -98,137 +210,434 @@
       </el-tab-pane>
 
       <el-tab-pane label="访问审计" name="logs">
-        <el-form :inline="true" size="small" class="log-filter" @keyup.enter.native="queryAccessLogs">
+        <el-form
+          :inline="true"
+          size="small"
+          class="log-filter"
+          @keyup.enter="queryAccessLogs"
+        >
           <el-form-item label="鉴权方式">
-            <el-select v-model="logQuery.authType" clearable placeholder="全部" style="width:130px">
+            <el-select
+              v-model="logQuery.authType"
+              clearable
+              placeholder="全部"
+              style="width: 130px"
+            >
               <el-option label="兼容令牌" value="LEGACY_TOKEN" />
               <el-option label="账号密码" value="BASIC" />
               <el-option label="API Key" value="API_KEY" />
               <el-option label="HMAC-SHA256" value="HMAC_SHA256" />
             </el-select>
           </el-form-item>
-          <el-form-item label="鉴权编码"><el-input v-model="logQuery.authCode" clearable placeholder="如 BASIC_MAIN" /></el-form-item>
-          <el-form-item label="Token 编码"><el-input v-model="logQuery.tokenCode" clearable placeholder="如 TOKEN_..." /></el-form-item>
+          <el-form-item label="鉴权编码"
+            ><el-input
+              v-model="logQuery.authCode"
+              clearable
+              placeholder="如 BASIC_MAIN"
+          /></el-form-item>
+          <el-form-item label="Token 编码"
+            ><el-input
+              v-model="logQuery.tokenCode"
+              clearable
+              placeholder="如 TOKEN_..."
+          /></el-form-item>
           <el-form-item label="结果">
-            <el-select v-model="logQuery.success" clearable placeholder="全部" style="width:100px">
-              <el-option label="成功" :value="1" /><el-option label="失败" :value="0" />
+            <el-select
+              v-model="logQuery.success"
+              clearable
+              placeholder="全部"
+              style="width: 100px"
+            >
+              <el-option label="成功" :value="1" /><el-option
+                label="失败"
+                :value="0"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="访问日期">
-            <el-date-picker v-model="logDateRange" type="daterange" value-format="yyyy-MM-dd" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期" />
+            <el-date-picker
+              v-model="logDateRange"
+              type="daterange"
+              value-format="yyyy-MM-dd"
+              range-separator="至"
+              start-placeholder="开始日期"
+              end-placeholder="结束日期"
+            />
           </el-form-item>
-          <el-form-item><el-button type="primary" @click="queryAccessLogs">查询</el-button><el-button @click="resetAccessLogs">重置</el-button></el-form-item>
+          <el-form-item
+            ><el-button type="primary" @click="queryAccessLogs">查询</el-button
+            ><el-button @click="resetAccessLogs">重置</el-button></el-form-item
+          >
         </el-form>
-        <el-table v-loading="logLoading" :data="accessLogs" border size="small" empty-text="暂无访问记录">
+        <el-table
+          v-loading="logLoading"
+          :data="accessLogs"
+          border
+          size="small"
+          empty-text="暂无访问记录"
+        >
           <el-table-column prop="createTime" label="访问时间" min-width="155" />
-          <el-table-column prop="authCode" label="鉴权编码" min-width="125" show-overflow-tooltip />
-          <el-table-column prop="authType" label="方式" min-width="105"><template slot-scope="{ row }">{{ authTypeLabel(row.authType) }}</template></el-table-column>
-          <el-table-column prop="tokenCode" label="Token 编码" min-width="160" show-overflow-tooltip />
-          <el-table-column prop="requestMethod" label="方法" width="70" align="center" />
-          <el-table-column prop="requestUri" label="请求路径" min-width="220" show-overflow-tooltip />
-          <el-table-column label="结果" width="72" align="center"><template slot-scope="{ row }"><el-tag :type="row.success === 1 ? 'success' : 'danger'" size="mini">{{ row.success === 1 ? '成功' : '失败' }}</el-tag></template></el-table-column>
-          <el-table-column prop="failureReason" label="失败原因" min-width="150" show-overflow-tooltip />
+          <el-table-column
+            prop="authCode"
+            label="鉴权编码"
+            min-width="125"
+            show-overflow-tooltip
+          />
+          <el-table-column prop="authType" label="方式" min-width="105"
+            ><template v-slot="{ row }">{{
+              authTypeLabel(row.authType)
+            }}</template></el-table-column
+          >
+          <el-table-column
+            prop="tokenCode"
+            label="Token 编码"
+            min-width="160"
+            show-overflow-tooltip
+          />
+          <el-table-column
+            prop="requestMethod"
+            label="方法"
+            width="70"
+            align="center"
+          />
+          <el-table-column
+            prop="requestUri"
+            label="请求路径"
+            min-width="220"
+            show-overflow-tooltip
+          />
+          <el-table-column label="结果" width="72" align="center"
+            ><template v-slot="{ row }"
+              ><el-tag
+                :type="row.success === 1 ? 'success' : 'danger'"
+                size="small"
+                >{{ row.success === 1 ? '成功' : '失败' }}</el-tag
+              ></template
+            ></el-table-column
+          >
+          <el-table-column
+            prop="failureReason"
+            label="失败原因"
+            min-width="150"
+            show-overflow-tooltip
+          />
         </el-table>
-        <el-pagination class="dialog-pagination" :current-page="logQuery.pageNum" :page-size="logQuery.pageSize" :total="logTotal" layout="total,prev,pager,next" @current-change="onLogPageChange" />
+        <el-pagination
+          class="dialog-pagination"
+          :current-page="logQuery.pageNum"
+          :page-size="logQuery.pageSize"
+          :total="logTotal"
+          layout="total,prev,pager,next"
+          @current-change="onLogPageChange"
+        />
       </el-tab-pane>
     </el-tabs>
 
-    <span slot="footer"><el-button size="small" type="primary" @click="$emit('update:visible', false)">关闭</el-button></span>
+    <template v-slot:footer>
+      <span
+        ><el-button
+          size="small"
+          type="primary"
+          @click="$emit('update:visible', false)"
+          >关闭</el-button
+        ></span
+      >
+    </template>
 
-    <el-dialog :title="authForm.id ? '编辑鉴权' : '新增鉴权'" :visible.sync="authFormVisible" width="900px" append-to-body>
-      <el-form ref="authForm" :model="authForm" :rules="authRules" label-width="120px" size="small">
-        <el-form-item label="鉴权编码" prop="authCode"><el-input v-model="authForm.authCode" :disabled="!!authForm.id" placeholder="稳定编码，创建后不可修改" /></el-form-item>
-        <el-form-item label="显示名称" prop="authName"><el-input v-model="authForm.authName" placeholder="如 合作方主账号" /></el-form-item>
+    <el-dialog
+      :title="authForm.id ? '编辑鉴权' : '新增鉴权'"
+      v-model="authFormVisible"
+      width="900px"
+      append-to-body
+    >
+      <el-form
+        ref="authForm"
+        :model="authForm"
+        :rules="authRules"
+        label-width="120px"
+        size="small"
+      >
+        <el-form-item label="鉴权编码" prop="authCode"
+          ><el-input
+            v-model="authForm.authCode"
+            :disabled="!!authForm.id"
+            placeholder="稳定编码，创建后不可修改"
+        /></el-form-item>
+        <el-form-item label="显示名称" prop="authName"
+          ><el-input v-model="authForm.authName" placeholder="如 合作方主账号"
+        /></el-form-item>
         <el-form-item label="鉴权方式" prop="authType">
-          <el-select v-model="authForm.authType" :disabled="!!authForm.id" style="width:100%">
+          <el-select
+            v-model="authForm.authType"
+            :disabled="!!authForm.id"
+            style="width: 100%"
+          >
             <el-option label="账号密码（Basic）" value="BASIC" />
             <el-option label="API Key" value="API_KEY" />
             <el-option label="HMAC-SHA256" value="HMAC_SHA256" />
           </el-select>
         </el-form-item>
         <template v-if="authForm.authType === 'BASIC'">
-          <el-form-item label="账号" prop="identifier"><el-input v-model="authForm.identifier" autocomplete="off" /></el-form-item>
-          <el-form-item label="密码" prop="secret"><el-input v-model="authForm.secret" show-password autocomplete="new-password" /></el-form-item>
+          <el-form-item label="账号" prop="identifier"
+            ><el-input v-model="authForm.identifier" autocomplete="off"
+          /></el-form-item>
+          <el-form-item label="密码" prop="secret"
+            ><el-input
+              v-model="authForm.secret"
+              show-password
+              autocomplete="new-password"
+          /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'API_KEY'">
-          <el-form-item label="传递位置" prop="placement"><el-select v-model="authForm.placement" style="width:100%"><el-option label="请求头 Header" value="HEADER" /><el-option label="查询参数 Query" value="QUERY" /></el-select></el-form-item>
-          <el-form-item label="参数名" prop="parameterName"><el-input v-model="authForm.parameterName" placeholder="X-Rule-Api-Key" /></el-form-item>
-          <el-form-item label="API Key"><el-input v-model="authForm.secret" show-password placeholder="新建时留空则自动生成" /></el-form-item>
+          <el-form-item label="传递位置" prop="placement"
+            ><el-select v-model="authForm.placement" style="width: 100%"
+              ><el-option label="请求头 Header" value="HEADER" /><el-option
+                label="查询参数 Query"
+                value="QUERY" /></el-select
+          ></el-form-item>
+          <el-form-item label="参数名" prop="parameterName"
+            ><el-input
+              v-model="authForm.parameterName"
+              placeholder="X-Rule-Api-Key"
+          /></el-form-item>
+          <el-form-item label="API Key"
+            ><el-input
+              v-model="authForm.secret"
+              show-password
+              placeholder="新建时留空则自动生成"
+          /></el-form-item>
         </template>
         <template v-else-if="authForm.authType === 'HMAC_SHA256'">
-          <el-form-item label="Access Key"><el-input v-model="authForm.identifier" placeholder="新建时留空则自动生成" /></el-form-item>
-          <el-form-item label="Secret"><el-input v-model="authForm.secret" show-password placeholder="新建时留空则自动生成" /></el-form-item>
+          <el-form-item label="Access Key"
+            ><el-input
+              v-model="authForm.identifier"
+              placeholder="新建时留空则自动生成"
+          /></el-form-item>
+          <el-form-item label="Secret"
+            ><el-input
+              v-model="authForm.secret"
+              show-password
+              placeholder="新建时留空则自动生成"
+          /></el-form-item>
         </template>
         <div class="form-section">
           <div class="form-section-title">临时 Token 生命周期</div>
-          <el-form-item label="有效时长（秒）"><el-input-number v-model="authForm.tokenTtlSeconds" :min="1" :max="604800" controls-position="right" /></el-form-item>
-          <el-form-item label="冗余时长（秒）"><el-input-number v-model="authForm.tokenGraceSeconds" :min="0" :max="86400" controls-position="right" /></el-form-item>
+          <el-form-item label="有效时长（秒）"
+            ><el-input-number
+              v-model="authForm.tokenTtlSeconds"
+              :min="1"
+              :max="604800"
+              controls-position="right"
+          /></el-form-item>
+          <el-form-item label="冗余时长（秒）"
+            ><el-input-number
+              v-model="authForm.tokenGraceSeconds"
+              :min="0"
+              :max="86400"
+              controls-position="right"
+          /></el-form-item>
         </div>
         <div class="form-section">
           <div class="form-section-title">入口白名单</div>
-          <div class="form-section-help">白名单保护该鉴权下的所有受保护接口。IP 支持单个地址和 CIDR；反向代理场景只信任服务端配置的可信代理。</div>
+          <div class="form-section-help">
+            白名单保护该鉴权下的所有受保护接口。IP 支持单个地址和
+            CIDR；反向代理场景只信任服务端配置的可信代理。
+          </div>
           <el-row :gutter="12">
             <el-col :span="12">
               <el-form-item label="IP / CIDR">
-                <el-input v-model="authPolicy.ipWhitelistText" type="textarea" :rows="4" placeholder="每行一个，如 10.0.0.0/8" />
+                <el-input
+                  v-model="authPolicy.ipWhitelistText"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="每行一个，如 10.0.0.0/8"
+                />
               </el-form-item>
             </el-col>
             <el-col :span="12">
               <el-form-item label="Host">
-                <el-input v-model="authPolicy.hostWhitelistText" type="textarea" :rows="4" placeholder="每行一个，如 api.example.com 或 *.example.com" />
+                <el-input
+                  v-model="authPolicy.hostWhitelistText"
+                  type="textarea"
+                  :rows="4"
+                  placeholder="每行一个，如 api.example.com 或 *.example.com"
+                />
               </el-form-item>
             </el-col>
           </el-row>
         </div>
         <div class="form-section">
           <div class="form-section-title">业务执行保护</div>
-          <div class="form-section-help">QPS、并发和总超时只作用于开放规则执行与同步执行；令牌签发、规则同步和日志上报不受这些执行阈值影响。0 表示不限制。</div>
+          <div class="form-section-help">
+            QPS、并发和总超时只作用于开放规则执行与同步执行；令牌签发、规则同步和日志上报不受这些执行阈值影响。0
+            表示不限制。
+          </div>
           <el-row :gutter="12">
-            <el-col :span="8"><el-form-item label="QPS"><el-input-number v-model="authPolicy.qps" :min="0" :max="100000" controls-position="right" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="8"><el-form-item label="突发容量"><el-input-number v-model="authPolicy.burst" :min="0" :max="1000000" controls-position="right" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="8"><el-form-item label="最大并发"><el-input-number v-model="authPolicy.maxConcurrent" :min="0" :max="10000" controls-position="right" style="width:100%" /></el-form-item></el-col>
+            <el-col :span="8"
+              ><el-form-item label="QPS"
+                ><el-input-number
+                  v-model="authPolicy.qps"
+                  :min="0"
+                  :max="100000"
+                  controls-position="right"
+                  style="width: 100%" /></el-form-item
+            ></el-col>
+            <el-col :span="8"
+              ><el-form-item label="突发容量"
+                ><el-input-number
+                  v-model="authPolicy.burst"
+                  :min="0"
+                  :max="1000000"
+                  controls-position="right"
+                  style="width: 100%" /></el-form-item
+            ></el-col>
+            <el-col :span="8"
+              ><el-form-item label="最大并发"
+                ><el-input-number
+                  v-model="authPolicy.maxConcurrent"
+                  :min="0"
+                  :max="10000"
+                  controls-position="right"
+                  style="width: 100%" /></el-form-item
+            ></el-col>
           </el-row>
           <el-row :gutter="12">
-            <el-col :span="12"><el-form-item label="总超时(ms)"><el-input-number v-model="authPolicy.requestTimeoutMs" :min="0" :max="600000" :step="100" controls-position="right" style="width:100%" /></el-form-item></el-col>
-            <el-col :span="12"><el-form-item label="异步访问日志"><el-switch v-model="authForm.asyncAccessLogEnabled" :active-value="1" :inactive-value="0" active-text="开启" inactive-text="同步写入" /></el-form-item></el-col>
+            <el-col :span="12"
+              ><el-form-item label="总超时(ms)"
+                ><el-input-number
+                  v-model="authPolicy.requestTimeoutMs"
+                  :min="0"
+                  :max="600000"
+                  :step="100"
+                  controls-position="right"
+                  style="width: 100%" /></el-form-item
+            ></el-col>
+            <el-col :span="12"
+              ><el-form-item label="异步访问日志"
+                ><el-switch
+                  v-model="authForm.asyncAccessLogEnabled"
+                  :active-value="1"
+                  :inactive-value="0"
+                  active-text="开启"
+                  inactive-text="同步写入" /></el-form-item
+            ></el-col>
           </el-row>
         </div>
-        <el-form-item label="状态"><el-switch v-model="authForm.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" /></el-form-item>
+        <el-form-item label="状态"
+          ><el-switch
+            v-model="authForm.status"
+            :active-value="1"
+            :inactive-value="0"
+            active-text="启用"
+            inactive-text="停用"
+        /></el-form-item>
       </el-form>
-      <span slot="footer"><el-button size="small" @click="authFormVisible = false">取消</el-button><el-button size="small" type="primary" :loading="savingAuth" @click="submitAuth">保存</el-button></span>
+      <template v-slot:footer>
+        <span
+          ><el-button size="small" @click="authFormVisible = false"
+            >取消</el-button
+          ><el-button
+            size="small"
+            type="primary"
+            :loading="savingAuth"
+            @click="submitAuth"
+            >保存</el-button
+          ></span
+        >
+      </template>
     </el-dialog>
 
-    <el-dialog title="完整鉴权值" :visible.sync="fullDialogVisible" width="560px" append-to-body>
-      <el-alert title="完整值来自加密存储，请仅在受控环境查看和复制。" type="warning" :closable="false" show-icon />
-      <div v-if="fullCredential.identifier" class="secret-row"><span class="secret-label">账号 / Access Key</span><code>{{ fullCredential.identifier }}</code><el-button type="text" @click="copyValue(fullCredential.identifier)">复制</el-button></div>
-      <div class="secret-row"><span class="secret-label">令牌 / 密钥</span><code>{{ fullCredential.secret || '—' }}</code><el-button v-if="fullCredential.secret" type="text" @click="copyValue(fullCredential.secret)">复制</el-button></div>
-      <span slot="footer"><el-button size="small" type="primary" @click="fullDialogVisible = false">关闭</el-button></span>
+    <el-dialog
+      title="完整鉴权值"
+      v-model="fullDialogVisible"
+      width="560px"
+      append-to-body
+    >
+      <el-alert
+        title="完整值来自加密存储，请仅在受控环境查看和复制。"
+        type="warning"
+        :closable="false"
+        show-icon
+      />
+      <div v-if="fullCredential.identifier" class="secret-row">
+        <span class="secret-label">账号 / Access Key</span
+        ><code>{{ fullCredential.identifier }}</code
+        ><el-button link @click="copyValue(fullCredential.identifier)"
+          >复制</el-button
+        >
+      </div>
+      <div class="secret-row">
+        <span class="secret-label">令牌 / 密钥</span
+        ><code>{{ fullCredential.secret || '—' }}</code
+        ><el-button
+          v-if="fullCredential.secret"
+          link
+          @click="copyValue(fullCredential.secret)"
+          >复制</el-button
+        >
+      </div>
+      <template v-slot:footer>
+        <span
+          ><el-button
+            size="small"
+            type="primary"
+            @click="fullDialogVisible = false"
+            >关闭</el-button
+          ></span
+        >
+      </template>
     </el-dialog>
 
-    <el-dialog title="完整临时 Token" :visible.sync="fullTokenDialogVisible" width="620px" append-to-body>
-      <div class="token-code-block"><code>{{ fullTokenValue }}</code></div>
-      <span slot="footer"><el-button size="small" @click="copyValue(fullTokenValue)">复制</el-button><el-button size="small" type="primary" @click="fullTokenDialogVisible = false">关闭</el-button></span>
+    <el-dialog
+      title="完整临时 Token"
+      v-model="fullTokenDialogVisible"
+      width="620px"
+      append-to-body
+    >
+      <div class="token-code-block">
+        <code>{{ fullTokenValue }}</code>
+      </div>
+      <template v-slot:footer>
+        <span
+          ><el-button size="small" @click="copyValue(fullTokenValue)"
+            >复制</el-button
+          ><el-button
+            size="small"
+            type="primary"
+            @click="fullTokenDialogVisible = false"
+            >关闭</el-button
+          ></span
+        >
+      </template>
     </el-dialog>
   </el-dialog>
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
-  listProjectAuths, createProjectAuth, updateProjectAuth, updateProjectAuthStatus,
-  getProjectAuthFull, regenerateProjectAuthSecret, listProjectAuthTokens, getProjectAuthTokenFull,
-  revokeProjectAuthToken, listProjectAuthAccessLogs, getFullToken, regenerateToken
+  listProjectAuths,
+  createProjectAuth,
+  updateProjectAuth,
+  updateProjectAuthStatus,
+  getProjectAuthFull,
+  regenerateProjectAuthSecret,
+  listProjectAuthTokens,
+  getProjectAuthTokenFull,
+  revokeProjectAuthToken,
+  listProjectAuthAccessLogs,
+  getFullToken,
+  regenerateToken,
 } from '@/api/project'
 
 export default {
-  name: 'ProjectAuthDialog',
-  props: {
-    visible: { type: Boolean, default: false },
-    project: { type: Object, default: () => ({}) }
-  },
   data() {
     const validateBasicField = (rule, value, callback) => {
       if (this.authForm.authType === 'BASIC' && !String(value || '').trim()) {
-        callback(new Error(rule.field === 'identifier' ? '请输入账号' : '请输入密码'))
+        callback(
+          new Error(rule.field === 'identifier' ? '请输入账号' : '请输入密码')
+        )
         return
       }
       callback()
@@ -249,13 +658,25 @@ export default {
       authForm: this.emptyAuthForm(),
       authPolicy: this.emptyAccessPolicy(),
       authRules: {
-        authCode: [{ required: true, message: '请输入鉴权编码', trigger: 'blur' }],
-        authName: [{ required: true, message: '请输入显示名称', trigger: 'blur' }],
-        authType: [{ required: true, message: '请选择鉴权方式', trigger: 'change' }],
+        authCode: [
+          { required: true, message: '请输入鉴权编码', trigger: 'blur' },
+        ],
+        authName: [
+          { required: true, message: '请输入显示名称', trigger: 'blur' },
+        ],
+        authType: [
+          { required: true, message: '请选择鉴权方式', trigger: 'change' },
+        ],
         identifier: [{ validator: validateBasicField, trigger: 'blur' }],
         secret: [{ validator: validateBasicField, trigger: 'blur' }],
-        placement: [{ required: true, message: '请选择 API Key 传递位置', trigger: 'change' }],
-        parameterName: [{ validator: validateApiParameter, trigger: 'blur' }]
+        placement: [
+          {
+            required: true,
+            message: '请选择 API Key 传递位置',
+            trigger: 'change',
+          },
+        ],
+        parameterName: [{ validator: validateApiParameter, trigger: 'blur' }],
       },
       fullDialogVisible: false,
       fullCredential: {},
@@ -270,32 +691,60 @@ export default {
       accessLogs: [],
       logTotal: 0,
       logDateRange: [],
-      logQuery: { pageNum: 1, pageSize: 10, authType: '', authCode: '', tokenCode: '', success: '' }
+      logQuery: {
+        pageNum: 1,
+        pageSize: 10,
+        authType: '',
+        authCode: '',
+        tokenCode: '',
+        success: '',
+      },
+      ElIconPlus: markRaw(ElIconPlus),
     }
+  },
+  name: 'ProjectAuthDialog',
+  props: {
+    visible: { type: Boolean, default: false },
+    project: { type: Object, default: () => ({}) },
   },
   watch: {
     visible: {
+      deep: true,
       immediate: true,
+
       handler(value) {
         if (value && this.project.id) {
           this.activeTab = 'auth'
           this.loadAuths()
         }
-      }
-    }
+      },
+    },
   },
   methods: {
     emptyAuthForm() {
       return {
-        id: null, authCode: '', authName: '', authType: 'BASIC', identifier: '', secret: '',
-        placement: 'HEADER', parameterName: 'X-Rule-Api-Key', tokenTtlSeconds: 7200,
-        tokenGraceSeconds: 600, asyncAccessLogEnabled: 1, status: 1
+        id: null,
+        authCode: '',
+        authName: '',
+        authType: 'BASIC',
+        identifier: '',
+        secret: '',
+        placement: 'HEADER',
+        parameterName: 'X-Rule-Api-Key',
+        tokenTtlSeconds: 7200,
+        tokenGraceSeconds: 600,
+        asyncAccessLogEnabled: 1,
+        status: 1,
       }
     },
     emptyAccessPolicy() {
       return {
-        ipWhitelistText: '', hostWhitelistText: '', qps: 0, burst: 0,
-        maxConcurrent: 0, requestTimeoutMs: 0
+        ipWhitelistText: '',
+        hostWhitelistText: '',
+        qps: 0,
+        burst: 0,
+        maxConcurrent: 0,
+        requestTimeoutMs: 0,
       }
     },
     async loadAuths() {
@@ -323,7 +772,7 @@ export default {
       this.authFormVisible = true
     },
     submitAuth() {
-      this.$refs.authForm.validate(async valid => {
+      this.$refs.authForm.validate(async (valid) => {
         if (!valid) return
         let payload
         try {
@@ -350,7 +799,10 @@ export default {
     parseAccessPolicy(value) {
       let policy = {}
       try {
-        policy = typeof value === 'string' && value.trim() ? JSON.parse(value) : (value || {})
+        policy =
+          typeof value === 'string' && value.trim()
+            ? JSON.parse(value)
+            : value || {}
       } catch (e) {
         policy = {}
       }
@@ -361,16 +813,19 @@ export default {
         maxConcurrent: Number(policy.maxConcurrent || 0),
         requestTimeoutMs: Number(policy.requestTimeoutMs || 0),
         ipWhitelistText: (policy.ipWhitelist || []).join('\n'),
-        hostWhitelistText: (policy.hostWhitelist || []).join('\n')
+        hostWhitelistText: (policy.hostWhitelist || []).join('\n'),
       }
     },
     policyItems(value) {
       const seen = {}
-      return String(value || '').split(/[\n,]/).map(item => item.trim()).filter(item => {
-        if (!item || seen[item]) return false
-        seen[item] = true
-        return true
-      })
+      return String(value || '')
+        .split(/[\n,]/)
+        .map((item) => item.trim())
+        .filter((item) => {
+          if (!item || seen[item]) return false
+          seen[item] = true
+          return true
+        })
     },
     buildAuthPayload() {
       const policy = {
@@ -379,19 +834,23 @@ export default {
         qps: Number(this.authPolicy.qps || 0),
         burst: Number(this.authPolicy.burst || 0),
         maxConcurrent: Number(this.authPolicy.maxConcurrent || 0),
-        requestTimeoutMs: Number(this.authPolicy.requestTimeoutMs || 0)
+        requestTimeoutMs: Number(this.authPolicy.requestTimeoutMs || 0),
       }
       this.validateAccessPolicy(policy)
       return { ...this.authForm, accessPolicyJson: JSON.stringify(policy) }
     },
     validateAccessPolicy(policy) {
-      if (policy.ipWhitelist.length > 256) throw new Error('IP 白名单最多 256 项')
-      if (policy.hostWhitelist.length > 256) throw new Error('Host 白名单最多 256 项')
-      policy.ipWhitelist.forEach(value => {
-        if (!this.isValidIpOrCidr(value)) throw new Error('IP 白名单格式不合法：' + value)
+      if (policy.ipWhitelist.length > 256)
+        throw new Error('IP 白名单最多 256 项')
+      if (policy.hostWhitelist.length > 256)
+        throw new Error('Host 白名单最多 256 项')
+      policy.ipWhitelist.forEach((value) => {
+        if (!this.isValidIpOrCidr(value))
+          throw new Error('IP 白名单格式不合法：' + value)
       })
-      policy.hostWhitelist.forEach(value => {
-        if (!this.isValidHostPattern(value)) throw new Error('Host 白名单格式不合法：' + value)
+      policy.hostWhitelist.forEach((value) => {
+        if (!this.isValidHostPattern(value))
+          throw new Error('Host 白名单格式不合法：' + value)
       })
       if (policy.qps > 0 && policy.burst > 0 && policy.burst < policy.qps) {
         throw new Error('突发容量不能小于 QPS')
@@ -408,34 +867,55 @@ export default {
       let maxPrefix = 128
       let valid = false
       if (ipv4.length === 4) {
-        valid = ipv4.every(item => /^\d{1,3}$/.test(item) && Number(item) >= 0 && Number(item) <= 255)
+        valid = ipv4.every(
+          (item) =>
+            /^\d{1,3}$/.test(item) && Number(item) >= 0 && Number(item) <= 255
+        )
         maxPrefix = 32
       } else if (address.includes(':') && /^[0-9A-Fa-f:.]+$/.test(address)) {
         try {
           const parsed = new URL('http://[' + address + ']/')
-          valid = parsed.hostname.startsWith('[') && parsed.hostname.endsWith(']')
+          valid =
+            parsed.hostname.startsWith('[') && parsed.hostname.endsWith(']')
         } catch (e) {
           valid = false
         }
       }
       if (!valid || parts.length === 1) return valid
-      return /^\d+$/.test(parts[1]) && Number(parts[1]) >= 0 && Number(parts[1]) <= maxPrefix
+      return (
+        /^\d+$/.test(parts[1]) &&
+        Number(parts[1]) >= 0 &&
+        Number(parts[1]) <= maxPrefix
+      )
     },
     isValidHostPattern(value) {
       let host = String(value || '').trim()
       if (host.startsWith('*.')) host = host.slice(2)
-      if (!host || host.length > 253 || host.includes('://') || host.includes('/') || host.includes(':')) return false
-      return host.split('.').every(label => /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label))
+      if (
+        !host ||
+        host.length > 253 ||
+        host.includes('://') ||
+        host.includes('/') ||
+        host.includes(':')
+      )
+        return false
+      return host
+        .split('.')
+        .every((label) =>
+          /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/.test(label)
+        )
     },
     policySummary(value) {
       const policy = this.parseAccessPolicy(value)
       const parts = []
       const ipCount = this.policyItems(policy.ipWhitelistText).length
       const hostCount = this.policyItems(policy.hostWhitelistText).length
-      if (ipCount || hostCount) parts.push('白名单 ' + (ipCount + hostCount) + ' 项')
+      if (ipCount || hostCount)
+        parts.push('白名单 ' + (ipCount + hostCount) + ' 项')
       if (policy.qps) parts.push('QPS ' + policy.qps)
       if (policy.maxConcurrent) parts.push('并发 ' + policy.maxConcurrent)
-      if (policy.requestTimeoutMs) parts.push('超时 ' + policy.requestTimeoutMs + 'ms')
+      if (policy.requestTimeoutMs)
+        parts.push('超时 ' + policy.requestTimeoutMs + 'ms')
       return parts.length ? parts.join(' / ') : '未限制'
     },
     async toggleAuth(row) {
@@ -457,7 +937,11 @@ export default {
     },
     async regenerateLegacyToken() {
       try {
-        await this.$confirm('重置后原兼容令牌立即失效，确认继续吗？', '重置兼容令牌', { type: 'warning' })
+        await this.$confirm(
+          '重置后原兼容令牌立即失效，确认继续吗？',
+          '重置兼容令牌',
+          { type: 'warning' }
+        )
         const res = await regenerateToken(this.project.id)
         this.fullCredential = { identifier: '', secret: res.data || '' }
         this.fullDialogVisible = true
@@ -469,7 +953,11 @@ export default {
     },
     async regenerateAuth(row) {
       try {
-        await this.$confirm('重置后原 API Key 或 HMAC Secret 立即失效，已签发的临时 Token 不受影响。确认继续吗？', '重置鉴权密钥', { type: 'warning' })
+        await this.$confirm(
+          '重置后原 API Key 或 HMAC Secret 立即失效，已签发的临时 Token 不受影响。确认继续吗？',
+          '重置鉴权密钥',
+          { type: 'warning' }
+        )
         const res = await regenerateProjectAuthSecret(this.project.id, row.id)
         this.fullCredential = res.data || {}
         this.fullDialogVisible = true
@@ -489,7 +977,11 @@ export default {
       if (!this.selectedAuth) return
       this.tokenLoading = true
       try {
-        const res = await listProjectAuthTokens(this.project.id, this.selectedAuth.id, this.tokenQuery)
+        const res = await listProjectAuthTokens(
+          this.project.id,
+          this.selectedAuth.id,
+          this.tokenQuery
+        )
         const data = res.data || {}
         this.tokenList = data.records || []
         this.tokenTotal = data.total || 0
@@ -502,14 +994,26 @@ export default {
       this.loadTokens()
     },
     async viewFullToken(row) {
-      const res = await getProjectAuthTokenFull(this.project.id, this.selectedAuth.id, row.id)
+      const res = await getProjectAuthTokenFull(
+        this.project.id,
+        this.selectedAuth.id,
+        row.id
+      )
       this.fullTokenValue = (res.data && res.data.accessToken) || ''
       this.fullTokenDialogVisible = true
     },
     async revokeToken(row) {
       try {
-        await this.$confirm('撤销后该 Token 立即失效，确认继续吗？', '撤销临时 Token', { type: 'warning' })
-        await revokeProjectAuthToken(this.project.id, this.selectedAuth.id, row.id)
+        await this.$confirm(
+          '撤销后该 Token 立即失效，确认继续吗？',
+          '撤销临时 Token',
+          { type: 'warning' }
+        )
+        await revokeProjectAuthToken(
+          this.project.id,
+          this.selectedAuth.id,
+          row.id
+        )
         this.$message.success('Token 已撤销')
         await this.loadTokens()
       } catch (e) {
@@ -522,7 +1026,14 @@ export default {
     },
     resetAccessLogs() {
       this.logDateRange = []
-      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize, authType: '', authCode: '', tokenCode: '', success: '' }
+      this.logQuery = {
+        pageNum: 1,
+        pageSize: this.logQuery.pageSize,
+        authType: '',
+        authCode: '',
+        tokenCode: '',
+        success: '',
+      }
       this.loadAccessLogs()
     },
     async loadAccessLogs() {
@@ -533,8 +1044,13 @@ export default {
           params.beginTime = this.logDateRange[0]
           params.endTime = this.logDateRange[1]
         }
-        Object.keys(params).forEach(key => {
-          if (params[key] === '' || params[key] === null || params[key] === undefined) delete params[key]
+        Object.keys(params).forEach((key) => {
+          if (
+            params[key] === '' ||
+            params[key] === null ||
+            params[key] === undefined
+          )
+            delete params[key]
         })
         const res = await listProjectAuthAccessLogs(this.project.id, params)
         const data = res.data || {}
@@ -549,20 +1065,31 @@ export default {
       this.loadAccessLogs()
     },
     authTypeLabel(type) {
-      return { LEGACY_TOKEN: '兼容令牌', BASIC: '账号密码', API_KEY: 'API Key', HMAC_SHA256: 'HMAC-SHA256' }[type] || type || '—'
+      return (
+        {
+          LEGACY_TOKEN: '兼容令牌',
+          BASIC: '账号密码',
+          API_KEY: 'API Key',
+          HMAC_SHA256: 'HMAC-SHA256',
+        }[type] ||
+        type ||
+        '—'
+      )
     },
     formatDuration(seconds) {
       const value = Number(seconds || 0)
       if (value === 0) return '0 秒'
-      if (value % 3600 === 0) return (value / 3600) + ' 小时'
-      if (value % 60 === 0) return (value / 60) + ' 分钟'
+      if (value % 3600 === 0) return value / 3600 + ' 小时'
+      if (value % 60 === 0) return value / 60 + ' 分钟'
       return value + ' 秒'
     },
     tokenStatus(row) {
       if (row.status !== 1) return { label: '已撤销', type: 'info' }
       const now = Date.now()
-      if (row.graceExpireTime && now > new Date(row.graceExpireTime).getTime()) return { label: '已失效', type: 'info' }
-      if (row.expireTime && now > new Date(row.expireTime).getTime()) return { label: '冗余期', type: 'warning' }
+      if (row.graceExpireTime && now > new Date(row.graceExpireTime).getTime())
+        return { label: '已失效', type: 'info' }
+      if (row.expireTime && now > new Date(row.expireTime).getTime())
+        return { label: '冗余期', type: 'warning' }
       return { label: '有效', type: 'success' }
     },
     copyValue(value) {
@@ -573,8 +1100,9 @@ export default {
       document.execCommand('copy')
       document.body.removeChild(input)
       this.$message.success('已复制到剪贴板')
-    }
-  }
+    },
+  },
+  emits: ['update:visible'],
 }
 </script>
 
@@ -591,14 +1119,12 @@ export default {
   border-radius: 4px;
   background: #eff6ff;
 }
-
 .project-name,
 .section-title,
 .form-section-title {
   color: #0f172a;
   font-weight: 700;
 }
-
 .project-code,
 .project-help,
 .section-copy,
@@ -607,16 +1133,13 @@ export default {
   font-size: 12px;
   line-height: 1.5;
 }
-
 .project-code,
 code {
   font-family: Menlo, Monaco, Consolas, monospace;
 }
-
 .project-help {
   max-width: 560px;
 }
-
 .section-toolbar {
   display: flex;
   justify-content: space-between;
@@ -624,7 +1147,6 @@ code {
   gap: 16px;
   margin-bottom: 12px;
 }
-
 .inline-code {
   margin-left: 8px;
   padding: 2px 6px;
@@ -632,12 +1154,10 @@ code {
   color: #1e40af;
   background: #eff6ff;
 }
-
 .dialog-pagination {
   margin-top: 16px;
   text-align: right;
 }
-
 .log-filter {
   padding: 12px 12px 0;
   margin-bottom: 12px;
@@ -645,25 +1165,21 @@ code {
   border-radius: 4px;
   background: #f8fafc;
 }
-
 .form-section {
   padding: 12px 12px 0;
   margin-bottom: 16px;
   border: 1px solid #e2e8f0;
   border-radius: 4px;
 }
-
 .form-section-title {
   margin-bottom: 12px;
 }
-
 .form-section-help {
   margin: -4px 0 12px;
   color: #64748b;
   font-size: 12px;
   line-height: 1.6;
 }
-
 .secret-row {
   display: grid;
   grid-template-columns: 130px minmax(0, 1fr) 48px;
@@ -672,25 +1188,21 @@ code {
   padding: 12px 0;
   border-bottom: 1px solid #e5e7eb;
 }
-
 .secret-label {
   color: #64748b;
 }
-
 .secret-row code,
 .token-code-block code {
   color: #0f172a;
   word-break: break-all;
   line-height: 1.6;
 }
-
 .token-code-block {
   padding: 16px;
   border: 1px solid #e2e8f0;
   border-radius: 4px;
   background: #f8fafc;
 }
-
 @media (max-width: 1200px) {
   .project-context {
     align-items: flex-start;

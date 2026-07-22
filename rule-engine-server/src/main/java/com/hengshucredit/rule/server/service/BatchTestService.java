@@ -9,7 +9,7 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.*;
 
 @Service

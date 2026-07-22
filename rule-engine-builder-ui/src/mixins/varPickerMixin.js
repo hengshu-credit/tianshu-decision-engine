@@ -237,9 +237,9 @@ export default {
         const res = await api(varObj.id)
         // request 拦截器已返回 res.data，直接使用
         const opts = res || []
-        this.$set(this.varOptionsByCode, refCode, opts)
+        this.varOptionsByCode[refCode] = opts
       } catch (e) {
-        this.$set(this.varOptionsByCode, refCode, [])
+        this.varOptionsByCode[refCode] = []
       }
     },
 

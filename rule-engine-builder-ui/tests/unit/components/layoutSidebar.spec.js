@@ -1,10 +1,10 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import { SIDEBAR_MENUS } from '@/layout/layoutState'
 
 function mountSidebar(overrides = {}) {
   return mount(LayoutSidebar, {
-    propsData: {
+    props: {
       width: 220,
       compact: false,
       activeMenu: '/project',
@@ -35,7 +35,7 @@ describe('LayoutSidebar', () => {
     expect(wrapper.findAll('.menu-label')).toHaveLength(13)
     expect(wrapper.find('.account-name').text()).toBe('admin')
     expect(wrapper.find('.account-logout').exists()).toBe(true)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('窄栏只保留 Logo、菜单图标和头像', () => {
@@ -53,7 +53,7 @@ describe('LayoutSidebar', () => {
     expect(wrapper.find('.account-name').exists()).toBe(false)
     expect(wrapper.find('.account-logout').exists()).toBe(false)
     expect(wrapper.find('.account-avatar').text()).toBe('A')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('窄栏菜单使用原名称作为 Hover 提示', () => {
@@ -62,7 +62,7 @@ describe('LayoutSidebar', () => {
 
     expect(items.at(0).attributes('title')).toBe('项目管理')
     expect(items.at(12).attributes('title')).toBe('账单管理')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('活动菜单拥有可见状态并点击发送导航路径', async() => {
@@ -72,7 +72,7 @@ describe('LayoutSidebar', () => {
     expect(ruleItem.classes()).toContain('is-active')
     await ruleItem.trigger('click')
     expect(wrapper.emitted('navigate')[0]).toEqual(['/rule'])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   // 侧边栏折叠按钮当前不启用，对应交互用例随组件模板一并停用。
@@ -80,7 +80,7 @@ describe('LayoutSidebar', () => {
   //   const wrapper = mountSidebar()
   //   await wrapper.find('.sidebar-collapse').trigger('click')
   //   expect(wrapper.emitted('toggle-collapse')).toHaveLength(1)
-  //   wrapper.destroy()
+  //   wrapper.unmount()
   // })
 
   test('拖拽时按鼠标位移发送宽度并在结束时发送最终宽度', async() => {
@@ -93,7 +93,7 @@ describe('LayoutSidebar', () => {
     expect(wrapper.emitted('resize')[0]).toEqual([280])
     expect(wrapper.emitted('resize-end')[0]).toEqual([280])
     expect(wrapper.vm.resizing).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('拖拽结果由生产宽度规则约束', async() => {
@@ -105,7 +105,7 @@ describe('LayoutSidebar', () => {
 
     expect(wrapper.emitted('resize')[0]).toEqual([64])
     expect(wrapper.emitted('resize-end')[0]).toEqual([320])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('组件销毁时清理拖拽监听', async() => {
@@ -113,7 +113,7 @@ describe('LayoutSidebar', () => {
     const wrapper = mountSidebar()
     await wrapper.find('.sidebar-resizer').trigger('mousedown', { clientX: 220 })
 
-    wrapper.destroy()
+    wrapper.unmount()
 
     expect(removeSpy).toHaveBeenCalledWith('mousemove', wrapper.vm.handleResize)
     expect(removeSpy).toHaveBeenCalledWith('mouseup', wrapper.vm.finishResize)
@@ -124,7 +124,7 @@ describe('LayoutSidebar', () => {
     const expanded = mountSidebar({ loginEnabled: true, username: 'admin', avatarInitial: 'A' })
     await expanded.find('.account-logout').trigger('click')
     expect(expanded.emitted('logout')).toHaveLength(1)
-    expanded.destroy()
+    expanded.unmount()
 
     const compact = mountSidebar({
       compact: true,
@@ -135,12 +135,12 @@ describe('LayoutSidebar', () => {
     })
     compact.vm.handleAccountCommand('logout')
     expect(compact.emitted('logout')).toHaveLength(1)
-    compact.destroy()
+    compact.unmount()
   })
 
   test('未启用登录时不显示账号区', () => {
     const wrapper = mountSidebar({ loginEnabled: false })
     expect(wrapper.find('.sidebar-account').exists()).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

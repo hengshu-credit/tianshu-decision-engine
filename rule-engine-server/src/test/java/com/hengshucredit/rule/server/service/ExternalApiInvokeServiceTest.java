@@ -8,7 +8,6 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;

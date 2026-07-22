@@ -5,8 +5,8 @@ import com.github.benmanes.caffeine.cache.Caffeine;
 import com.hengshucredit.rule.server.mapper.RuleProjectAuthTokenMapper;
 import org.springframework.stereotype.Component;
 
-import javax.annotation.PostConstruct;
-import javax.annotation.PreDestroy;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashMap;

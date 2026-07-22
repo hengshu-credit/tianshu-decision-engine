@@ -24,6 +24,23 @@ import static org.junit.Assert.assertTrue;
 public class OnnxRuntimeSessionManagerTest {
 
     @Test
+    public void constructionDoesNotRequireNativeRuntime() {
+        AtomicInteger loads = new AtomicInteger();
+        OnnxRuntimeSessionManager manager = new OnnxRuntimeSessionManager(() -> {
+            loads.incrementAndGet();
+            throw new UnsatisfiedLinkError("native runtime unavailable");
+        });
+
+        assertEquals(0, loads.get());
+        Map<String, Object> capabilities = manager.runtimeCapabilities();
+
+        assertEquals(1, loads.get());
+        assertNull(capabilities.get("onnxRuntimeVersion"));
+        assertEquals(Boolean.FALSE, capabilities.get("cudaAvailable"));
+        assertTrue(String.valueOf(capabilities.get("cudaError")).contains("native runtime unavailable"));
+    }
+
+    @Test
     public void jvmShutdownDoesNotRaceEnvironmentAndSessionCleanup() throws Exception {
         String javaExecutable = new File(System.getProperty("java.home"), "bin/java").getAbsolutePath();
         String classPath = System.getProperty("surefire.test.class.path",

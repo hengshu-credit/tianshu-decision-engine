@@ -1,17 +1,18 @@
-import { shallowMount } from '@vue/test-utils'
+import { h } from 'vue'
+import { shallowMount } from '@test-utils'
 
 const TraceTree = jest.requireActual('../../../src/components/common/TraceTree.vue').default
 
 function mountTraceTree(propsData) {
   return shallowMount(TraceTree, {
-    propsData,
+    props: propsData,
     stubs: {
       'trace-node': true,
       'decision-tree-trace-node': true,
       'rule-set-condition-trace-node': {
         name: 'RuleSetConditionTraceNode',
         props: ['node'],
-        render: h => h('div', { class: 'rule-set-condition-trace-node-stub' })
+        render: () => h('div', { class: 'rule-set-condition-trace-node-stub' })
       },
       'el-button': true,
       'el-badge': true
@@ -183,7 +184,7 @@ describe('TraceTree', () => {
     })
 
     expect(wrapper.vm.ruleTraceFrame.expressionTrace[1].value).toEqual(faces)
-    expect(wrapper.find('trace-tree-stub').props('traceInfo')).not.toContain('$ref')
+    expect(wrapper.findComponent('trace-tree-stub').props('traceInfo')).not.toContain('$ref')
   })
 
   test.each(['TABLE', 'TREE', 'FLOW', 'RULE_SET', 'CROSS', 'SCORE', 'CROSS_ADV', 'SCORE_ADV', 'SCRIPT'])(
@@ -199,7 +200,7 @@ describe('TraceTree', () => {
 
       expect(JSON.stringify(wrapper.vm.rawTraceData)).not.toContain('$ref')
       expect(wrapper.text()).not.toContain('$ref')
-      wrapper.destroy()
+      wrapper.unmount()
     }
   )
 
@@ -462,12 +463,12 @@ describe('TraceTree', () => {
 
     const childWrapper = mountTraceTree({ traceInfo: JSON.stringify(childTrace), nested: true })
     expect(childWrapper.vm.ruleExpressionModelType).toBe('RULE_SET')
-    expect(childWrapper.find('trace-tree-stub').props('modelType')).toBe('RULE_SET')
-    expect(childWrapper.find('trace-tree-stub').props('definitionModel')).toEqual({
+    expect(childWrapper.findComponent('trace-tree-stub').props('modelType')).toBe('RULE_SET')
+    expect(childWrapper.findComponent('trace-tree-stub').props('definitionModel')).toEqual({
       executionMode: 'SERIAL',
       rules: [{ ruleCode: 'CREDIT_CHILD', ruleName: '授信额度子规则' }]
     })
-    childWrapper.destroy()
+    childWrapper.unmount()
   })
 
   test('分流实验条件和随机分流复用现有条件树样式', () => {
@@ -502,7 +503,7 @@ describe('TraceTree', () => {
 
     expect(wrapper.vm.experimentTraceFrame.stage).toBe('TEST')
     expect(wrapper.find('.experiment-trace-frame').exists()).toBe(false)
-    const routingTree = wrapper.find('decision-tree-trace-node-stub')
+    const routingTree = wrapper.findComponent('decision-tree-trace-node-stub')
     expect(routingTree.exists()).toBe(true)
     expect(routingTree.props('node').label).toContain('随机值 37')
     expect(routingTree.props('node').children[0]).toMatchObject({ branchLabel: 'TEST_A', status: 'hit' })
@@ -522,7 +523,7 @@ describe('TraceTree', () => {
       }
     })
     expect(simple.vm.traceCrossSimpleCellDisplay(0, 0)).toBe('101')
-    simple.destroy()
+    simple.unmount()
 
     const advanced = mountTraceTree({
       modelType: 'CROSS_ADV',
@@ -533,7 +534,7 @@ describe('TraceTree', () => {
       }
     })
     expect(advanced.vm.traceAdvCellDisplay(0, 0)).toBe('1.147')
-    advanced.destroy()
+    advanced.unmount()
   })
 
   test('规则集追踪保留三层 AND OR 条件组结构并传给递归节点', () => {

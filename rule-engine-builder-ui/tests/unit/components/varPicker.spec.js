@@ -1,18 +1,27 @@
-import { shallowMount } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { nextTick } from 'vue'
 
 const VarPicker = jest.requireActual('../../../src/components/common/VarPicker.vue').default
 
-function mountPicker(propsData = {}) {
+const PopoverStub = {
+  name: 'ElPopover',
+  data() {
+    return { popperElm: null }
+  },
+  methods: {
+    doClose() {},
+  },
+  template: '<div><slot /><slot name="reference" /></div>',
+}
+
+function mountPicker(propsData = {}, options = {}) {
   return shallowMount(VarPicker, {
-    propsData: {
+    props: {
       vars: [],
       ...propsData
     },
     stubs: {
-      'el-popover': {
-        template: '<div><slot /><slot name="reference" /></div>'
-      },
+      'el-popover': PopoverStub,
       'el-input': {
         template: '<input />',
         props: ['value']
@@ -26,7 +35,8 @@ function mountPicker(propsData = {}) {
       'el-pagination': {
         template: '<div />'
       }
-    }
+    },
+    ...options,
   })
 }
 
@@ -113,7 +123,7 @@ describe('VarPicker', () => {
     }))
 
     const wrapper = mountPicker({ vars })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.findAll('.vp-row')).toHaveLength(2)
     expect(errorSpy.mock.calls.some(args => args.join(' ').includes("Duplicate keys detected: 'amount'"))).toBe(false)
@@ -138,7 +148,7 @@ describe('VarPicker', () => {
 
   test('只有对象字段时自动切换到对象分类', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['object'])
     expect(wrapper.vm.activeCategory).toBe('object')
@@ -148,7 +158,7 @@ describe('VarPicker', () => {
 
   test('点击对象分组只展开，点击子字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
-    await Vue.nextTick()
+    await nextTick()
 
     const group = wrapper.vm.rightItems[0]
     wrapper.vm.onItemClick(group)
@@ -187,7 +197,7 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     const child = wrapper.vm.rightItems[0].children[0]
     expect(wrapper.vm.objectFieldPath(child)).toBe('request.params.taxpayerType')
@@ -211,7 +221,7 @@ describe('VarPicker', () => {
 
   test('点击模型分组只展开，点击输出字段才选择字段', async () => {
     const wrapper = mountPicker({ vars: modelFieldOptions() })
-    await Vue.nextTick()
+    await nextTick()
 
     wrapper.vm.onCategoryClick('model')
     const group = wrapper.vm.rightItems.find(item => item._modelGroupKey === 'creditModel')
@@ -237,7 +247,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[1], 'v2', vars[2]]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', label: '已选字段', count: 2 })
 
@@ -251,7 +261,7 @@ describe('VarPicker', () => {
       vars,
       selectedVars: [vars[0], { varCode: 'projectOnlyVar', varLabel: '项目变量' }]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.selectedItems.map(v => v.varCode)).toEqual(['v1'])
     expect(wrapper.vm.categoryList[0]).toMatchObject({ key: 'selected', count: 1 })
@@ -263,34 +273,34 @@ describe('VarPicker', () => {
     const inside = document.createElement('button')
     popper.appendChild(inside)
     document.body.appendChild(popper)
-    wrapper.vm.$refs.popover = { popperElm: popper, doClose: jest.fn() }
+    wrapper.vm.$refs.popover.popperElm = popper
 
     wrapper.vm.openPopover()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.popoverVisible).toBe(true)
 
     wrapper.vm.onDocumentMouseDown({ target: inside })
     expect(wrapper.vm.popoverVisible).toBe(true)
 
     document.body.removeChild(popper)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('字段选择器打开后点击组件外部才关闭', async () => {
     const wrapper = mountPicker({ vars: objectFieldOptions() })
     const outside = document.createElement('div')
     document.body.appendChild(outside)
-    wrapper.vm.$refs.popover = { doClose: jest.fn() }
+    const closeSpy = jest.spyOn(wrapper.vm.$refs.popover, 'doClose')
 
     wrapper.vm.openPopover()
-    await Vue.nextTick()
+    await nextTick()
     wrapper.vm.onDocumentMouseDown({ target: outside })
 
     expect(wrapper.vm.popoverVisible).toBe(false)
-    expect(wrapper.vm.$refs.popover.doClose).toHaveBeenCalled()
+    expect(closeSpy).toHaveBeenCalled()
 
     document.body.removeChild(outside)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('打开已有字段时自动定位到字段所在分页', async () => {
@@ -300,11 +310,11 @@ describe('VarPicker', () => {
       allowedKinds: ['REFERENCE'],
       value: { kind: 'REFERENCE', refId: 99, refType: 'VARIABLE', code: 'v99', value: 'v99' }
     })
-    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+    wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await Vue.nextTick()
-    await Vue.nextTick()
+    await nextTick()
+    await nextTick()
 
     expect(wrapper.vm.popoverVisible).toBe(true)
     expect(wrapper.vm.activeCategory).toBe('standalone')
@@ -319,7 +329,7 @@ describe('VarPicker', () => {
         { varCode: 'scoreLevel', varLabel: '评分等级', varType: 'STRING', _ref: { category: 'standalone' } }
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     wrapper.vm.onReferenceInput('score')
 
@@ -334,13 +344,13 @@ describe('VarPicker', () => {
         ...modelFieldOptions().slice(0, 1)
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
 
     wrapper.vm.onReferenceInput('credit')
-    await Vue.nextTick()
-    await Vue.nextTick()
+    await nextTick()
+    await nextTick()
 
     expect(wrapper.vm.categoryList.map(c => c.key)).toEqual(['standalone', 'model'])
     expect(wrapper.vm.categoryList.map(c => c.count)).toEqual([1, 1])
@@ -364,11 +374,12 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     wrapper.vm.onCategoryClick('object')
     wrapper.vm.onReferenceInput('am')
-    await Vue.nextTick()
+    await nextTick()
+    await nextTick()
 
     expect(wrapper.vm.filteredRightItems).toHaveLength(1)
     expect(wrapper.vm.expandedObject).toBe('LoanApply')
@@ -386,12 +397,12 @@ describe('VarPicker', () => {
 
   test('200 个字段搜索前后左侧计数和面板宽度不变化', async () => {
     const wrapper = mountPicker({ vars: standaloneOptions(200) })
-    await Vue.nextTick()
+    await nextTick()
     const width = wrapper.vm.panelStyle.width
 
     expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
     wrapper.vm.onReferenceInput('v199')
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.categoryList.find(item => item.key === 'standalone').count).toBe(200)
     expect(wrapper.vm.panelStyle.width).toBe(width)
@@ -399,10 +410,8 @@ describe('VarPicker', () => {
 
   test('popover resize supports larger panel bounds', () => {
     const wrapper = mountPicker({ vars: standaloneOptions(1) })
-    wrapper.vm.$refs.popover = {
-      popperElm: {
-        getBoundingClientRect: () => ({ left: 0, top: 0 })
-      }
+    wrapper.vm.$refs.popover.popperElm = {
+      getBoundingClientRect: () => ({ left: 0, top: 0 })
     }
 
     wrapper.vm.updatePanelSize(2000, 1200)
@@ -419,12 +428,12 @@ describe('VarPicker', () => {
       vars,
       value: { kind: 'REFERENCE', code: 'oldCode', refId: 99, refType: 'VARIABLE' }
     })
-    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+    wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await Vue.nextTick()
-    await Vue.nextTick()
-    await Vue.nextTick()
+    await nextTick()
+    await nextTick()
+    await nextTick()
 
     expect(wrapper.vm.activeCategory).toBe('standalone')
     expect(wrapper.vm.currentValue).toBe('v99')
@@ -433,11 +442,11 @@ describe('VarPicker', () => {
 
   test('空操作数打开后默认定位手输分类但不在弹层输入', async () => {
     const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL', 'REFERENCE'], vars: standaloneOptions(1) })
-    wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
+    wrapper.vm.$refs.popover.popperElm = document.createElement('div')
 
     wrapper.vm.openPopover()
-    await Vue.nextTick()
-    await Vue.nextTick()
+    await nextTick()
+    await nextTick()
 
     expect(wrapper.vm.activeCategory).toBe('manual')
     expect(wrapper.find('.vp-manual-editor').exists()).toBe(false)
@@ -461,20 +470,21 @@ describe('VarPicker', () => {
     expect(reference.attributes('role')).toBe('button')
 
     wrapper.vm.onInputFocus()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.popoverVisible).toBe(true)
   })
 
   test('关闭面板前移走弹层内焦点并仅处理当前弹层', () => {
-    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['LITERAL'], vars: standaloneOptions(1) })
+    const wrapper = mountPicker(
+      { operandMode: true, allowedKinds: ['LITERAL'], vars: standaloneOptions(1) },
+      { attachTo: document.body }
+    )
     const popper = document.createElement('div')
     const input = document.createElement('input')
-    const reference = document.createElement('button')
     popper.appendChild(input)
     document.body.appendChild(popper)
-    document.body.appendChild(reference)
-    wrapper.vm.$refs.popover = { popperElm: popper, doClose: jest.fn() }
-    wrapper.vm.$refs.reference = reference
+    const reference = wrapper.vm.$refs.reference
+    wrapper.vm.$refs.popover.popperElm = popper
     input.focus()
 
     wrapper.vm.closePopover()
@@ -482,7 +492,7 @@ describe('VarPicker', () => {
     expect(document.activeElement).toBe(reference)
     expect(popper.hasAttribute('inert')).toBe(true)
     document.body.removeChild(popper)
-    document.body.removeChild(reference)
+    wrapper.unmount()
   })
 
   test('object field short code does not reverse-link to a full object option', async () => {
@@ -504,7 +514,7 @@ describe('VarPicker', () => {
         }
       ]
     })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.customMode).toBe(false)
     expect(wrapper.vm.currentValue).toBe('taxpayerType')
@@ -517,7 +527,7 @@ describe('VarPicker', () => {
       autoSwitchCustom: false,
       vars: standaloneOptions(1)
     })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.customMode).toBe(false)
     wrapper.vm.openPopover()

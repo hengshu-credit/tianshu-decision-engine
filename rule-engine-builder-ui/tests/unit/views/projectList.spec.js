@@ -1,6 +1,6 @@
 // tests/unit/views/projectList.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import * as projectApi from '@/api/project'
 import * as apiDoc from '@/utils/apiDoc'
 import ProjectList from '@/views/project/ProjectList.vue'
@@ -28,25 +28,23 @@ function withFormRef(wrapper, validateResult = true) {
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.prototype.$confirm = jest.fn().mockResolvedValue(true)
-  localVue.prototype.$message = { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() }
-  localVue.prototype.$notify = jest.fn()
-  return localVue
-}
+
 
 async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects(), total: 3 } })
 
   const wrapper = mount(ProjectList, {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
       $router: { push: jest.fn(), replace: jest.fn() }
     },
     stubs: {
-      'el-form': true, 'el-form-item': true,
+      'el-form': {
+        name: 'ElForm',
+        methods: { validate: callback => callback(true) },
+        template: '<form><slot /></form>'
+      },
+      'el-form-item': true,
       'el-select': true, 'el-option': true,
       'el-input': true, 'el-button': true, 'el-tag': true,
       'el-table': true, 'el-table-column': true,
@@ -59,7 +57,7 @@ async function mountAndWait() {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -68,7 +66,7 @@ describe('ProjectList — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 listProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -108,8 +106,8 @@ describe('ProjectList 项目筛选交互', () => {
     const filters = wrapper.findAllComponents(ProjectFilterSelect)
 
     expect(filters).toHaveLength(2)
-    filters.at(0).vm.$emit('input', 'RISK')
-    filters.at(1).vm.$emit('input', '风控')
+    filters.at(0).vm.$emit('update:value', 'RISK')
+    filters.at(1).vm.$emit('update:value', '风控')
     await wrapper.vm.$nextTick()
     await wrapper.vm.handleQuery()
 
@@ -117,7 +115,7 @@ describe('ProjectList 项目筛选交互', () => {
       projectCode: 'RISK',
       projectName: '风控'
     }))
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })
 
@@ -125,7 +123,7 @@ describe('ProjectList — 筛选与搜索', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('queryProjectCode 模糊匹配', () => {
     wrapper.vm.allProjectCodes = ['project_a', 'project_b', 'project_c']
@@ -161,18 +159,18 @@ describe('ProjectList — 筛选与搜索', () => {
     wrapper.vm.qp.pageNum = 5
     projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
   test('顶部筛选栏按 Enter 重置页码并重新查询', async () => {
-    const queryForm = wrapper.find('.uiue-search-container').find('el-form-stub')
+    const queryForm = wrapper.find('.uiue-search-container').find('form')
     const callCount = projectApi.listProjects.mock.calls.length
     wrapper.vm.qp.pageNum = 5
     projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
 
     await queryForm.trigger('keyup', { key: 'Enter', keyCode: 13 })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.qp.pageNum).toBe(1)
     expect(projectApi.listProjects).toHaveBeenCalledTimes(callCount + 1)
@@ -210,7 +208,7 @@ describe('ProjectList — 项目操作', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleCreate 打开创建弹窗并重置表单', () => {
     wrapper.vm.handleCreate()
@@ -252,7 +250,7 @@ describe('ProjectList — 项目操作', () => {
     wrapper.vm.handleDelete(row)
     // $confirm 是异步的，等待用户确认后 deleteProject 被调用
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
     expect(projectApi.deleteProject).toHaveBeenCalledWith(1)
   })
 
@@ -289,7 +287,7 @@ describe('ProjectList — 项目操作', () => {
     wrapper.vm.handleSubmit()
     // validate 回调是异步的
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
     expect(projectApi.createProject).toHaveBeenCalled()
   })
 
@@ -299,7 +297,7 @@ describe('ProjectList — 项目操作', () => {
     withFormRef(wrapper)
     wrapper.vm.handleSubmit()
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
     expect(projectApi.updateProject).toHaveBeenCalled()
   })
 
@@ -312,7 +310,7 @@ describe('ProjectList — 项目操作', () => {
     withFormRef(wrapper)
     wrapper.vm.handleSubmit()
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.dialogVisible).toBe(false)
   })
 
@@ -329,7 +327,7 @@ describe('ProjectList — 项目操作', () => {
 
     wrapper.vm.handleSubmit()
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.authDialogVisible).toBe(true)
     expect(wrapper.vm.currentAuthProject.id).toBe(9)
@@ -341,7 +339,6 @@ describe('ProjectList — 边界情况', () => {
   test('projects 为空数组不报错', async () => {
     projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(ProjectList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -356,17 +353,16 @@ describe('ProjectList — 边界情况', () => {
         'project-auth-dialog': true
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.tableData).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('handleDelete 无项目名称时不报错', async () => {
     // 独立的 wrapper，避免与外层 describe 的 beforeEach 冲突
     projectApi.listProjects.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(ProjectList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -381,14 +377,14 @@ describe('ProjectList — 边界情况', () => {
         'project-auth-dialog': true
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     projectApi.deleteProject.mockResolvedValue({ data: true })
     const row = { id: 99 }
     wrapper.vm.handleDelete(row)
     await new Promise(r => setTimeout(r, 50))
-    await Vue.nextTick()
+    await nextTick()
     expect(projectApi.deleteProject).toHaveBeenCalledWith(99)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('分页切换保持 pageSize', async () => {
@@ -397,7 +393,7 @@ describe('ProjectList — 边界情况', () => {
     w.vm.qp.pageNum = 1
     expect(w.vm.qp.pageSize).toBe(30)
     expect(w.vm.qp.pageNum).toBe(1)
-    w.destroy()
+    w.unmount()
   })
 
   test('allProjectCodes 和 allProjectNames 从响应中提取', async () => {
@@ -407,7 +403,7 @@ describe('ProjectList — 边界情况', () => {
     expect(w.vm.allProjectNames.length).toBe(3)
     expect(w.vm.allProjectCodes).toContain('project_a')
     expect(w.vm.allProjectNames).toContain('项目A')
-    w.destroy()
+    w.unmount()
   })
 
   test('workflowSteps 覆盖从项目到发布的完整路径', async () => {
@@ -423,6 +419,6 @@ describe('ProjectList — 边界情况', () => {
       '查看日志/账单'
     ])
     expect(w.vm.workflowSteps[6].text).toContain('X-Rule-Token')
-    w.destroy()
+    w.unmount()
   })
 })

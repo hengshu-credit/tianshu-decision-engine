@@ -1,40 +1,80 @@
 <template>
-  <div class="rule-diff-lane" :class="['is-' + lane.status, 'is-depth-' + depth]" :data-diff-key="lane.key">
+  <div
+    class="rule-diff-lane"
+    :class="['is-' + lane.status, 'is-depth-' + depth]"
+    :data-diff-key="lane.key"
+  >
     <div class="rule-diff-head-lane">
-      <div class="rule-diff-side rule-diff-side--left" :class="sideClass('left')">
+      <div
+        class="rule-diff-side rule-diff-side--left"
+        :class="sideClass('left')"
+      >
         <template v-if="lane.left">
           <div class="rule-diff-title-row">
             <strong class="rule-diff-title">{{ lane.left.title }}</strong>
-            <span v-if="markerText('left')" class="rule-diff-marker">{{ markerText('left') }}</span>
+            <span v-if="markerText('left')" class="rule-diff-marker">{{
+              markerText('left')
+            }}</span>
           </div>
-          <div v-if="lane.left.subtitle" class="rule-diff-subtitle">{{ lane.left.subtitle }}</div>
+          <div v-if="lane.left.subtitle" class="rule-diff-subtitle">
+            {{ lane.left.subtitle }}
+          </div>
         </template>
         <div v-else class="rule-diff-placeholder">此版本无对应内容</div>
       </div>
-      <div class="rule-diff-side rule-diff-side--right" :class="sideClass('right')">
+      <div
+        class="rule-diff-side rule-diff-side--right"
+        :class="sideClass('right')"
+      >
         <template v-if="lane.right">
           <div class="rule-diff-title-row">
             <strong class="rule-diff-title">{{ lane.right.title }}</strong>
-            <span v-if="markerText('right')" class="rule-diff-marker">{{ markerText('right') }}</span>
+            <span v-if="markerText('right')" class="rule-diff-marker">{{
+              markerText('right')
+            }}</span>
           </div>
-          <div v-if="lane.right.subtitle" class="rule-diff-subtitle">{{ lane.right.subtitle }}</div>
+          <div v-if="lane.right.subtitle" class="rule-diff-subtitle">
+            {{ lane.right.subtitle }}
+          </div>
         </template>
         <div v-else class="rule-diff-placeholder">此版本无对应内容</div>
       </div>
     </div>
 
-    <div v-for="item in visibleFields" :key="item.key" class="rule-diff-field-lane">
-      <div class="rule-diff-field rule-diff-field--left" :class="fieldClass(item, 'left')">
+    <div
+      v-for="item in visibleFields"
+      :key="item.key"
+      class="rule-diff-field-lane"
+    >
+      <div
+        class="rule-diff-field rule-diff-field--left"
+        :class="fieldClass(item, 'left')"
+      >
         <span class="rule-diff-field-label">{{ item.label }}</span>
         <span class="rule-diff-field-value">{{ fieldText(item, 'left') }}</span>
-        <span v-if="item.status === 'modified'" class="rule-diff-field-change">~ 修改</span>
-        <span v-else-if="item.status === 'removed'" class="rule-diff-field-change">- 删除</span>
+        <span v-if="item.status === 'modified'" class="rule-diff-field-change"
+          >~ 修改</span
+        >
+        <span
+          v-else-if="item.status === 'removed'"
+          class="rule-diff-field-change"
+          >- 删除</span
+        >
       </div>
-      <div class="rule-diff-field rule-diff-field--right" :class="fieldClass(item, 'right')">
+      <div
+        class="rule-diff-field rule-diff-field--right"
+        :class="fieldClass(item, 'right')"
+      >
         <span class="rule-diff-field-label">{{ item.label }}</span>
-        <span class="rule-diff-field-value">{{ fieldText(item, 'right') }}</span>
-        <span v-if="item.status === 'modified'" class="rule-diff-field-change">~ 修改</span>
-        <span v-else-if="item.status === 'added'" class="rule-diff-field-change">+ 新增</span>
+        <span class="rule-diff-field-value">{{
+          fieldText(item, 'right')
+        }}</span>
+        <span v-if="item.status === 'modified'" class="rule-diff-field-change"
+          >~ 修改</span
+        >
+        <span v-else-if="item.status === 'added'" class="rule-diff-field-change"
+          >+ 新增</span
+        >
       </div>
     </div>
 
@@ -45,7 +85,7 @@
       :aria-expanded="String(expanded)"
       @click="expanded = !expanded"
     >
-      <i :class="expanded ? 'el-icon-arrow-down' : 'el-icon-arrow-right'" />
+      <app-icon :name="expanded ? 'ArrowDown' : 'ArrowRight'" />
       {{ expanded ? '收起明细' : '展开明细' }}（{{ lane.children.length }}）
     </button>
     <div v-if="hasChildren && expanded" class="rule-diff-children">
@@ -60,20 +100,20 @@ export default {
   props: {
     lane: {
       type: Object,
-      required: true
+      required: true,
     },
     depth: {
       type: Number,
-      default: 0
+      default: 0,
     },
     showUnchangedFields: {
       type: Boolean,
-      default: true
-    }
+      default: true,
+    },
   },
   data() {
     return {
-      expanded: true
+      expanded: true,
     }
   },
   computed: {
@@ -82,8 +122,10 @@ export default {
     },
     visibleFields() {
       const fields = Array.isArray(this.lane.fields) ? this.lane.fields : []
-      return this.showUnchangedFields ? fields : fields.filter(item => item.status !== 'unchanged')
-    }
+      return this.showUnchangedFields
+        ? fields
+        : fields.filter((item) => item.status !== 'unchanged')
+    },
   },
   methods: {
     markerText(side) {
@@ -93,21 +135,25 @@ export default {
       return ''
     },
     sideClass(side) {
-      if (this.lane.status === 'added') return side === 'right' ? 'is-added' : 'is-empty'
-      if (this.lane.status === 'removed') return side === 'left' ? 'is-removed' : 'is-empty'
+      if (this.lane.status === 'added')
+        return side === 'right' ? 'is-added' : 'is-empty'
+      if (this.lane.status === 'removed')
+        return side === 'left' ? 'is-removed' : 'is-empty'
       return this.lane.status === 'modified' ? 'is-modified' : 'is-unchanged'
     },
     fieldClass(item, side) {
-      if (item.status === 'added') return side === 'right' ? 'is-added' : 'is-empty'
-      if (item.status === 'removed') return side === 'left' ? 'is-removed' : 'is-empty'
+      if (item.status === 'added')
+        return side === 'right' ? 'is-added' : 'is-empty'
+      if (item.status === 'removed')
+        return side === 'left' ? 'is-removed' : 'is-empty'
       return item.status === 'modified' ? 'is-modified' : 'is-unchanged'
     },
     fieldText(item, side) {
       if (item.status === 'added' && side === 'left') return '—'
       if (item.status === 'removed' && side === 'right') return '—'
       return side === 'left' ? item.leftText : item.rightText
-    }
-  }
+    },
+  },
 }
 </script>
 

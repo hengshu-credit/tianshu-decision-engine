@@ -8,11 +8,17 @@
           :size="size"
           :placeholder="placeholder || '输入变量编码'"
           clearable
-          @input="onCustomInput"
+          @update:model-value="onCustomInput"
           @clear="onCustomClear"
         />
-        <el-tooltip v-if="allowCustom && hasVarOptions" content="切换为从变量管理选择" placement="top">
-          <span class="mode-switch" @click="customMode = false"><i class="el-icon-collection" /></span>
+        <el-tooltip
+          v-if="allowCustom && hasVarOptions"
+          content="切换为从变量管理选择"
+          placement="top"
+        >
+          <span class="mode-switch" @click="customMode = false"
+            ><el-icon><el-icon-collection /></el-icon
+          ></span>
         </el-tooltip>
       </div>
     </template>
@@ -52,7 +58,7 @@
                   class="vp-manual-type"
                   @click="requestManualEdit('LITERAL')"
                 >
-                  <i class="el-icon-edit-outline" />
+                  <el-icon><el-icon-edit-outline /></el-icon>
                   <span>手输阈值</span>
                   <small>直接输入数值、文本、布尔值或日期</small>
                 </button>
@@ -62,7 +68,7 @@
                   class="vp-manual-type"
                   @click="requestManualEdit('PATH')"
                 >
-                  <i class="el-icon-link" />
+                  <el-icon><el-icon-link /></el-icon>
                   <span>手输路径</span>
                   <small>输入运行时字段路径并自动识别引用</small>
                 </button>
@@ -73,10 +79,10 @@
               <div class="vp-search" v-if="showSearch">
                 <el-input
                   v-model="searchText"
-                  size="mini"
+                  size="small"
                   placeholder="搜索变量编码或名称..."
                   clearable
-                  prefix-icon="el-icon-search"
+                  :prefix-icon="ElIconSearch"
                 />
               </div>
               <div class="vp-table-wrap">
@@ -89,52 +95,90 @@
                     </tr>
                   </thead>
                   <tbody>
-                    <template v-for="v in pagedRightItems">
+                    <template
+                      v-for="v in pagedRightItems"
+                      :key="fieldGroupKey(v) || optionIdentityKey(v)"
+                    >
                       <tr
-                        :key="fieldGroupKey(v) || optionIdentityKey(v)"
                         class="vp-row"
-                        :class="{ 'vp-row--selected': !isFieldGroup(v) && v.varCode === currentValue }"
+                        :class="{
+                          'vp-row--selected':
+                            !isFieldGroup(v) && v.varCode === currentValue,
+                        }"
                         @click="onItemClick(v)"
                       >
                         <td class="vp-td vp-td--type">
-                          <span class="vp-type-badge" :class="'vp-type-badge--' + typeChar(v.varType)" :title="typeLabel(v.varType)">{{ typeChar(v.varType) }}</span>
+                          <span
+                            class="vp-type-badge"
+                            :class="'vp-type-badge--' + typeChar(v.varType)"
+                            :title="typeLabel(v.varType)"
+                            >{{ typeChar(v.varType) }}</span
+                          >
                         </td>
-                        <td class="vp-td vp-td--code">{{ isFieldGroup(v) ? fieldGroupCode(v) : v.varCode }}</td>
-                        <td class="vp-td vp-td--name">{{ isFieldGroup(v) ? fieldGroupLabel(v) : (v.varLabel || v.varCode) }}</td>
+                        <td class="vp-td vp-td--code">
+                          {{ isFieldGroup(v) ? fieldGroupCode(v) : v.varCode }}
+                        </td>
+                        <td class="vp-td vp-td--name">
+                          {{
+                            isFieldGroup(v)
+                              ? fieldGroupLabel(v)
+                              : v.varLabel || v.varCode
+                          }}
+                        </td>
                       </tr>
                       <!-- 数据对象/模型嵌套行：点击分组展开，点击子字段才选择 -->
                       <tr
                         v-if="v.children && expandedObject === fieldGroupKey(v)"
-                        :key="(fieldGroupKey(v) || optionIdentityKey(v)) + '-children'"
                         class="vp-children-row"
                       >
                         <td colspan="3" class="vp-children-td">
                           <div class="vp-children-wrap">
                             <div class="vp-children-title">
-                              <i class="el-icon-document" /> {{ fieldGroupLabel(v) }} 字段列表
+                              <el-icon><el-icon-document /></el-icon>
+                              {{ fieldGroupLabel(v) }} 字段列表
                             </div>
                             <div class="vp-children-list">
                               <div
                                 v-for="child in pagedObjectChildren(v)"
-                                :key="(fieldGroupKey(v) || optionIdentityKey(v)) + '.' + optionIdentityKey(child)"
+                                :key="
+                                  (fieldGroupKey(v) || optionIdentityKey(v)) +
+                                  '.' +
+                                  optionIdentityKey(child)
+                                "
                                 class="vp-child-item"
-                                :class="{ 'vp-child-item--selected': child.varCode === currentValue }"
+                                :class="{
+                                  'vp-child-item--selected':
+                                    child.varCode === currentValue,
+                                }"
                                 @click.stop="onItemClick(child)"
                               >
-                                <span class="vp-child-path">{{ fieldChildRelativePath(child) }}</span>
-                                <span class="vp-type-badge vp-type-badge--sm" :class="'vp-type-badge--' + typeChar(child.varType)" :title="typeLabel(child.varType)">{{ typeChar(child.varType) }}</span>
-                                <span class="vp-child-name">{{ fieldChildDisplayName(child) }}</span>
+                                <span class="vp-child-path">{{
+                                  fieldChildRelativePath(child)
+                                }}</span>
+                                <span
+                                  class="vp-type-badge vp-type-badge--sm"
+                                  :class="
+                                    'vp-type-badge--' + typeChar(child.varType)
+                                  "
+                                  :title="typeLabel(child.varType)"
+                                  >{{ typeChar(child.varType) }}</span
+                                >
+                                <span class="vp-child-name">{{
+                                  fieldChildDisplayName(child)
+                                }}</span>
                               </div>
                             </div>
                             <el-pagination
                               v-if="objectChildNeedsPaging(v)"
                               class="vp-mini-pager"
-                              small
+                              size="small"
                               layout="prev,pager,next"
                               :current-page="objectChildPage(v)"
                               :page-size="fieldPageSize"
                               :total="v.children.length"
-                              @current-change="p => onObjectChildPageChange(v, p)"
+                              @current-change="
+                                (p) => onObjectChildPageChange(v, p)
+                              "
                             />
                           </div>
                         </td>
@@ -142,7 +186,8 @@
                     </template>
                     <tr v-if="filteredRightItems.length === 0">
                       <td colspan="3" class="vp-empty">
-                        <i class="el-icon-warning-outline" /> {{ loading ? '加载中...' : '暂无数据' }}
+                        <el-icon><el-icon-warning-outline /></el-icon>
+                        {{ loading ? '加载中...' : '暂无数据' }}
                       </td>
                     </tr>
                   </tbody>
@@ -151,7 +196,7 @@
               <el-pagination
                 v-if="rightNeedsPaging"
                 class="vp-pager"
-                small
+                size="small"
                 layout="total,prev,pager,next"
                 :current-page="rightPage"
                 :page-size="fieldPageSize"
@@ -166,45 +211,53 @@
               @touchstart.prevent.stop="startPanelTouchResize"
             />
           </div>
-          <div
-            slot="reference"
-            ref="reference"
-            class="vp-reference"
-            :style="referenceStyle"
-            tabindex="0"
-            role="button"
-            aria-label="打开字段与表达式选择器"
-            @click.stop="openPopover"
-            @keydown.enter.prevent.stop="openPopover"
-            @keydown.space.prevent.stop="openPopover"
-          >
-            <el-input
-              :size="size"
-              :placeholder="placeholder || '选择变量/常量/对象字段'"
-              :value="referenceInputValue"
-              :readonly="operandMode"
-              style="width:100%"
-              @focus="onInputFocus"
-              @input="onReferenceInput"
-              @click.native="onInputClick"
+          <template v-slot:reference>
+            <div
+              ref="reference"
+              class="vp-reference"
+              :style="referenceStyle"
+              tabindex="0"
+              role="button"
+              aria-label="打开字段与表达式选择器"
+              @click.stop="openPopover"
+              @keydown.enter.prevent.stop="openPopover"
+              @keydown.space.prevent.stop="openPopover"
             >
-              <span
-                v-if="operandMode && operandKindMetaValue.label"
-                slot="prefix"
-                class="vp-operand-kind"
-                :class="'vp-operand-kind--' + operandKindMetaValue.tone"
-                :title="operandKindMetaValue.label"
-              >{{ operandKindMetaValue.label }}</span>
-              <i slot="suffix" class="el-input__icon el-icon-arrow-down" />
-              <i
-                v-if="value && allowCustom"
-                slot="suffix"
-                class="el-input__icon el-icon-close vp-clear-btn"
-                @mousedown.stop
-                @click.stop="onClearValue"
-              />
-            </el-input>
-          </div>
+              <el-input
+                :size="size"
+                :placeholder="placeholder || '选择变量/常量/对象字段'"
+                :model-value="referenceInputValue"
+                :readonly="operandMode"
+                style="width: 100%"
+                @focus="onInputFocus"
+                @update:model-value="onReferenceInput"
+                @click="onInputClick"
+              >
+                <template v-slot:prefix>
+                  <span
+                    v-if="operandMode && operandKindMetaValue.label"
+                    class="vp-operand-kind"
+                    :class="'vp-operand-kind--' + operandKindMetaValue.tone"
+                    :title="operandKindMetaValue.label"
+                    >{{ operandKindMetaValue.label }}</span
+                  >
+                </template>
+                <template v-slot:suffix>
+                  <el-icon class="el-input__icon">
+                    <el-icon-arrow-down />
+                  </el-icon>
+                  <el-icon
+                    v-if="value && allowCustom"
+                    class="el-input__icon vp-clear-btn"
+                    @mousedown.stop
+                    @click.stop="onClearValue"
+                  >
+                    <el-icon-close />
+                  </el-icon>
+                </template>
+              </el-input>
+            </div>
+          </template>
         </el-popover>
 
         <!-- 无变量时回退到输入框 -->
@@ -215,12 +268,18 @@
           :placeholder="placeholder || '输入变量编码'"
           clearable
           @focus="onInputFocus"
-          @input="onCustomInput"
+          @update:model-value="onCustomInput"
           @clear="onCustomClear"
         />
 
-        <el-tooltip v-if="!operandMode && allowCustom && hasVarOptions" content="切换为手动输入变量" placement="top">
-          <span class="mode-switch" @click="customMode = true"><i class="el-icon-edit" /></span>
+        <el-tooltip
+          v-if="!operandMode && allowCustom && hasVarOptions"
+          content="切换为手动输入变量"
+          placement="top"
+        >
+          <span class="mode-switch" @click="customMode = true"
+            ><el-icon><el-icon-edit /></el-icon
+          ></span>
         </el-tooltip>
       </div>
     </template>
@@ -228,18 +287,75 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  Collection as ElIconCollection,
+  EditPen as ElIconEditOutline,
+  Link as ElIconLink,
+  Document as ElIconDocument,
+  Warning as ElIconWarningOutline,
+  ArrowDown as ElIconArrowDown,
+  Close as ElIconClose,
+  Edit as ElIconEdit,
+  Search as ElIconSearch,
+} from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 import { formatVarDisplay } from '@/utils/varDisplay'
 import { REFERENCE_PICKER_CATEGORIES } from '@/utils/pickerCategories'
-import { groupReferenceOptions, referenceChildRelativePath } from '@/utils/referenceGroups'
+import {
+  groupReferenceOptions,
+  referenceChildRelativePath,
+} from '@/utils/referenceGroups'
 import {
   createFunctionOperand,
   createReferenceOperand,
   operandDisplay,
-  operandKindMeta
+  operandKindMeta,
 } from '@/utils/operand'
 
 export default {
+  data() {
+    return {
+      /** 当前是否处于手动输入模式 */
+      customMode: false,
+      /** 手动输入模式下的本地值，避免依赖 prop 异步更新导致失焦清空 */
+      localCustomValue: this.value || '',
+      /** popover 显示状态 */
+      popoverVisible: false,
+      /** 当前选中的分类 */
+      activeCategory: this.operandMode ? 'manual' : 'standalone',
+      /** 搜索文本 */
+      searchText: '',
+      /** 输入框内临时检索文本，不直接改写外部绑定值 */
+      referenceKeyword: '',
+      /** 展开的数据对象 varCode */
+      expandedObject: null,
+      /** 大字段集合分页 */
+      fieldPageSize: 100,
+      rightPage: 1,
+      objectChildPages: {},
+      /** 弹窗尺寸，可通过右下角拖拽调整 */
+      panelWidth: 560,
+      panelHeight: 360,
+      maxPanelWidth: 1440,
+      maxPanelHeight: 960,
+      resizingPanel: false,
+      panelBodyCursor: '',
+      panelBodyUserSelect: '',
+      ElIconSearch: markRaw(ElIconSearch),
+    }
+  },
+  components: {
+    ElIconCollection,
+    ElIconEditOutline,
+    ElIconLink,
+    ElIconDocument,
+    ElIconWarningOutline,
+    ElIconArrowDown,
+    ElIconClose,
+    ElIconEdit,
+  },
   name: 'VarPicker',
   props: {
     /** 绑定值：varCode（默认）或 id（数字） */
@@ -275,40 +391,13 @@ export default {
     autoSwitchCustom: { type: Boolean, default: true },
     /** 统一操作数模式；迁移期间字符串模式仍服务尚未接入的旧页面 */
     operandMode: { type: Boolean, default: false },
-    allowedKinds: { type: Array, default: () => ['LITERAL', 'PATH', 'REFERENCE'] },
+    allowedKinds: {
+      type: Array,
+      default: () => ['LITERAL', 'PATH', 'REFERENCE'],
+    },
     expectedType: { type: String, default: 'STRING' },
     writableOnly: { type: Boolean, default: false },
-    functions: { type: Array, default: () => [] }
-  },
-  data() {
-    return {
-      /** 当前是否处于手动输入模式 */
-      customMode: false,
-      /** 手动输入模式下的本地值，避免依赖 prop 异步更新导致失焦清空 */
-      localCustomValue: this.value || '',
-      /** popover 显示状态 */
-      popoverVisible: false,
-      /** 当前选中的分类 */
-      activeCategory: this.operandMode ? 'manual' : 'standalone',
-      /** 搜索文本 */
-      searchText: '',
-      /** 输入框内临时检索文本，不直接改写外部绑定值 */
-      referenceKeyword: '',
-      /** 展开的数据对象 varCode */
-      expandedObject: null,
-      /** 大字段集合分页 */
-      fieldPageSize: 100,
-      rightPage: 1,
-      objectChildPages: {},
-      /** 弹窗尺寸，可通过右下角拖拽调整 */
-      panelWidth: 560,
-      panelHeight: 360,
-      maxPanelWidth: 1440,
-      maxPanelHeight: 960,
-      resizingPanel: false,
-      panelBodyCursor: '',
-      panelBodyUserSelect: ''
-    }
+    functions: { type: Array, default: () => [] },
   },
   watch: {
     vars() {
@@ -319,14 +408,20 @@ export default {
       }
     },
     categoryList: {
+      deep: true,
       immediate: true,
+
       handler(list) {
         if (!list || list.length === 0) return
-        var exists = list.some(function (cat) { return cat.key === this.activeCategory }.bind(this))
+        var exists = list.some(
+          function (cat) {
+            return cat.key === this.activeCategory
+          }.bind(this)
+        )
         if (!exists) {
           this.activeCategory = list[0].key
         }
-      }
+      },
     },
     value(newVal) {
       this.localCustomValue = newVal || ''
@@ -352,12 +447,12 @@ export default {
         this.expandedObject = null
         this.stopPanelResize()
       }
-    }
+    },
   },
   mounted() {
     this._autoSwitchIfUnmatched()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.updateDocumentListener(false)
     this.stopPanelResize()
   },
@@ -373,7 +468,7 @@ export default {
     panelStyle() {
       return {
         width: this.panelWidth + 'px',
-        height: this.panelHeight + 'px'
+        height: this.panelHeight + 'px',
       }
     },
     /** 是否显示搜索框（项数超过 10 时） */
@@ -390,18 +485,29 @@ export default {
     referenceStyle() {
       const label = this.operandMode ? this.operandKindMetaValue.label : ''
       return {
-        '--vp-prefix-offset': label ? Math.min(84, label.length * 12 + 24) + 'px' : '12px'
+        '--vp-prefix-offset': label
+          ? Math.min(84, label.length * 12 + 24) + 'px'
+          : '12px',
       }
     },
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
       if (!this.value) return null
       if (this.operandMode && typeof this.value === 'object') {
-        var operandOption = this.findOptionByIdentity(this.value.refId, this.value.refType)
-        return operandOption ? operandOption.varCode : (this.value.code || this.value.value || null)
+        var operandOption = this.findOptionByIdentity(
+          this.value.refId,
+          this.value.refType
+        )
+        return operandOption
+          ? operandOption.varCode
+          : this.value.code || this.value.value || null
       }
       if (this.valueKey === 'id') {
-        var found = this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
+        var found = this.vars.find(
+          function (v) {
+            return String(v.id) === String(this.value)
+          }.bind(this)
+        )
         return found ? found.varCode : null
       }
       return this.value
@@ -409,9 +515,14 @@ export default {
     /** 显示文本 */
     displayValue() {
       if (!this.value) return ''
-      var v = this.valueKey === 'id'
-        ? this.vars.find(function (item) { return String(item.id) === String(this.value) }.bind(this))
-        : null
+      var v =
+        this.valueKey === 'id'
+          ? this.vars.find(
+              function (item) {
+                return String(item.id) === String(this.value)
+              }.bind(this)
+            )
+          : null
       if (!v) return this.value
       var ref = v._ref || {}
       var label = this.optionLabel(v)
@@ -426,36 +537,49 @@ export default {
       var list = [
         { key: 'manual', label: '手动输入', count: 0 },
         { key: 'selected', label: '已选字段', count: 0 },
-        ...REFERENCE_PICKER_CATEGORIES.map(function (item) { return { key: item.key, label: item.label, count: 0 } }),
-        { key: 'function', label: '函数/方法', count: 0 }
+        ...REFERENCE_PICKER_CATEGORIES.map(function (item) {
+          return { key: item.key, label: item.label, count: 0 }
+        }),
+        { key: 'function', label: '函数/方法', count: 0 },
       ]
-      list.forEach(function (item) {
-        if (item.key === 'manual') {
-          item.count = (this.allowsOperandKind('LITERAL') ? 1 : 0) + (this.allowsOperandKind('PATH') ? 1 : 0)
-        } else if (item.key === 'function') {
-          item.count = this.allowsOperandKind('FUNCTION') ? this.functions.length : 0
-        } else {
-          item.count = this.categoryItems(item.key).length
-        }
-      }.bind(this))
-      return list.filter(function (item) {
-        if (item.key === 'manual') return this.operandMode && item.count > 0
-        if (item.key === 'function') return this.operandMode && item.count > 0
-        if (this.operandMode && !this.allowsOperandKind('REFERENCE')) return false
-        return item.count > 0
-      }.bind(this))
+      list.forEach(
+        function (item) {
+          if (item.key === 'manual') {
+            item.count =
+              (this.allowsOperandKind('LITERAL') ? 1 : 0) +
+              (this.allowsOperandKind('PATH') ? 1 : 0)
+          } else if (item.key === 'function') {
+            item.count = this.allowsOperandKind('FUNCTION')
+              ? this.functions.length
+              : 0
+          } else {
+            item.count = this.categoryItems(item.key).length
+          }
+        }.bind(this)
+      )
+      return list.filter(
+        function (item) {
+          if (item.key === 'manual') return this.operandMode && item.count > 0
+          if (item.key === 'function') return this.operandMode && item.count > 0
+          if (this.operandMode && !this.allowsOperandKind('REFERENCE'))
+            return false
+          return item.count > 0
+        }.bind(this)
+      )
     },
     selectedItems() {
       var result = []
       var seen = {}
-      ;(this.selectedVars || []).forEach(function (item) {
-        var option = this.resolveSelectedOption(item)
-        if (!option || !option.varCode) return
-        var key = this.optionIdentityKey(option)
-        if (seen[key]) return
-        seen[key] = true
-        result.push(Object.assign({}, option, { _selected: true }))
-      }.bind(this))
+      ;(this.selectedVars || []).forEach(
+        function (item) {
+          var option = this.resolveSelectedOption(item)
+          if (!option || !option.varCode) return
+          var key = this.optionIdentityKey(option)
+          if (seen[key]) return
+          seen[key] = true
+          result.push(Object.assign({}, option, { _selected: true }))
+        }.bind(this)
+      )
       return result
     },
     /** 右侧项列表（按当前分类过滤 + 排序）。对象/模型字段自动附加同分组下的所有字段 children） */
@@ -465,10 +589,21 @@ export default {
         return this.functions.map(function (fn) {
           return {
             _function: true,
-            varCode: fn.functionCode || fn.funcCode || fn.functionName || fn.funcName || fn.name || '',
-            varLabel: fn.functionLabel || fn.funcName || fn.functionName || fn.label || '',
+            varCode:
+              fn.functionCode ||
+              fn.funcCode ||
+              fn.functionName ||
+              fn.funcName ||
+              fn.name ||
+              '',
+            varLabel:
+              fn.functionLabel ||
+              fn.funcName ||
+              fn.functionName ||
+              fn.label ||
+              '',
             varType: fn.returnType || 'FUNCTION',
-            function: fn
+            function: fn,
           }
         })
       }
@@ -487,7 +622,9 @@ export default {
         return this.groupFieldItems(list, this.activeCategory)
       }
 
-      return list.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
+      return list.sort(function (a, b) {
+        return (a.varCode || '').localeCompare(b.varCode || '')
+      })
     },
     /** 过滤后的右侧项（支持搜索） */
     filteredRightItems() {
@@ -500,7 +637,7 @@ export default {
       if (!this.rightNeedsPaging) return this.filteredRightItems
       var start = (this.rightPage - 1) * this.fieldPageSize
       return this.filteredRightItems.slice(start, start + this.fieldPageSize)
-    }
+    },
   },
   methods: {
     categoryItems(category) {
@@ -522,7 +659,9 @@ export default {
         return this.groupFieldItems(list, category)
       }
 
-      return list.sort(function (a, b) { return (a.varCode || '').localeCompare(b.varCode || '') })
+      return list.sort(function (a, b) {
+        return (a.varCode || '').localeCompare(b.varCode || '')
+      })
     },
     isWritableOption(item) {
       if (!this.writableOnly) return true
@@ -533,26 +672,34 @@ export default {
       return category === 'object' || category === 'model'
     },
     groupFieldItems(list, category) {
-      return groupReferenceOptions(list, category).map(function (group) {
-        var first = Object.assign({}, group, {
-          _fieldGroup: true,
-          _fieldGroupKey: this.fieldGroupKeyByCategory(group.groupCode, category),
-          _fieldGroupCategory: category
-        })
-        if (category === 'object') {
-          first._objectGroup = true
-          first._objectGroupKey = group.groupCode
-          first.varType = 'OBJECT'
-        } else if (category === 'model') {
-          first._modelGroup = true
-          first._modelGroupKey = group.groupCode
-          first.varType = 'MODEL'
-        }
-        return first
-      }.bind(this))
+      return groupReferenceOptions(list, category).map(
+        function (group) {
+          var first = Object.assign({}, group, {
+            _fieldGroup: true,
+            _fieldGroupKey: this.fieldGroupKeyByCategory(
+              group.groupCode,
+              category
+            ),
+            _fieldGroupCategory: category,
+          })
+          if (category === 'object') {
+            first._objectGroup = true
+            first._objectGroupKey = group.groupCode
+            first.varType = 'OBJECT'
+          } else if (category === 'model') {
+            first._modelGroup = true
+            first._modelGroupKey = group.groupCode
+            first.varType = 'MODEL'
+          }
+          return first
+        }.bind(this)
+      )
     },
     isFieldGroup(item) {
-      return !!(item && (item._fieldGroup || item._objectGroup || item._modelGroup))
+      return !!(
+        item &&
+        (item._fieldGroup || item._objectGroup || item._modelGroup)
+      )
     },
     fieldGroupKey(item) {
       if (!item) return ''
@@ -587,22 +734,31 @@ export default {
       var s = this.normalizeSearchText(this.searchText)
       var starts = []
       var contains = []
-      items.forEach(function (v) {
-        var rank = this.searchRank(v, s)
-        if (rank === 1) starts.push(v)
-        else if (rank === 2) contains.push(v)
-      }.bind(this))
+      items.forEach(
+        function (v) {
+          var rank = this.searchRank(v, s)
+          if (rank === 1) starts.push(v)
+          else if (rank === 2) contains.push(v)
+        }.bind(this)
+      )
       return starts.concat(contains)
     },
     objectGroupCode(item) {
       var ref = (item && item._ref) || {}
       if (ref.objectCode) return ref.objectCode
       var code = item && item.varCode ? item.varCode : ''
-      return code.indexOf('.') !== -1 ? code.split('.')[0] : (item && item.objectCode) || 'unknown'
+      return code.indexOf('.') !== -1
+        ? code.split('.')[0]
+        : (item && item.objectCode) || 'unknown'
     },
     objectGroupLabel(item) {
       var ref = (item && item._ref) || {}
-      return ref.objectLabel || ref.objectCode || (item && item.objectLabel) || this.objectGroupCode(item)
+      return (
+        ref.objectLabel ||
+        ref.objectCode ||
+        (item && item.objectLabel) ||
+        this.objectGroupCode(item)
+      )
     },
     modelGroupCode(item) {
       var ref = (item && item._ref) || {}
@@ -613,14 +769,20 @@ export default {
     },
     modelGroupLabel(item) {
       var ref = (item && item._ref) || {}
-      return ref.modelLabel || ref.modelName || (item && item.modelLabel) || this.modelGroupCode(item)
+      return (
+        ref.modelLabel ||
+        ref.modelName ||
+        (item && item.modelLabel) ||
+        this.modelGroupCode(item)
+      )
     },
     objectFieldPath(item) {
       if (!item) return ''
       var code = item.varCode || ''
       if (code.indexOf('.') !== -1) return code
       var ref = item._ref || {}
-      var objectCode = ref.objectScriptName || ref.objectCode || item.objectCode || ''
+      var objectCode =
+        ref.objectScriptName || ref.objectCode || item.objectCode || ''
       return objectCode ? objectCode + '.' + code : code
     },
     objectFieldRelativePath(item) {
@@ -647,7 +809,11 @@ export default {
       if (relativeCode && label.indexOf(relativeCode + ' ') === 0) {
         label = label.substring(relativeCode.length + 1)
       }
-      if (relativeCode && label.lastIndexOf(' ' + relativeCode) === label.length - relativeCode.length - 1) {
+      if (
+        relativeCode &&
+        label.lastIndexOf(' ' + relativeCode) ===
+          label.length - relativeCode.length - 1
+      ) {
         label = label.substring(0, label.length - relativeCode.length - 1)
       }
       return label || relativeCode
@@ -664,7 +830,11 @@ export default {
       if (relativeCode && label.indexOf(relativeCode + ' ') === 0) {
         label = label.substring(relativeCode.length + 1)
       }
-      if (relativeCode && label.lastIndexOf(' ' + relativeCode) === label.length - relativeCode.length - 1) {
+      if (
+        relativeCode &&
+        label.lastIndexOf(' ' + relativeCode) ===
+          label.length - relativeCode.length - 1
+      ) {
         label = label.substring(0, label.length - relativeCode.length - 1)
       }
       return label || relativeCode
@@ -681,31 +851,71 @@ export default {
     },
     findOptionByCode(code) {
       if (!code) return null
-      var exact = this.vars.find(function (v) { return v.varCode === code })
+      var exact = this.vars.find(function (v) {
+        return v.varCode === code
+      })
       if (exact) return exact
-      var matches = this.vars.filter(function (v) {
-        return v && v._ref && v._ref.category === 'object' && this.fieldCodeWithoutObject(v) === code
-      }.bind(this))
+      var matches = this.vars.filter(
+        function (v) {
+          return (
+            v &&
+            v._ref &&
+            v._ref.category === 'object' &&
+            this.fieldCodeWithoutObject(v) === code
+          )
+        }.bind(this)
+      )
       return matches.length === 1 ? matches[0] : null
     },
     findOptionByIdentity(id, refType) {
       if (id == null || id === '' || !refType) return null
-      return this.vars.find(function (v) {
-        var optionId = v.id != null ? v.id : (v._varId != null ? v._varId : (v.varObj && v.varObj.id))
-        var optionType = v._refType || v.refType || (v.varObj && v.varObj.refType) || (v._ref && v._ref.refType)
-        return String(optionId) === String(id) && optionType === refType
-      }) || null
+      return (
+        this.vars.find(function (v) {
+          var optionId =
+            v.id != null
+              ? v.id
+              : v._varId != null
+              ? v._varId
+              : v.varObj && v.varObj.id
+          var optionType =
+            v._refType ||
+            v.refType ||
+            (v.varObj && v.varObj.refType) ||
+            (v._ref && v._ref.refType)
+          return String(optionId) === String(id) && optionType === refType
+        }) || null
+      )
     },
     resolveSelectedOption(item) {
       if (item == null || item === '') return null
       if (typeof item === 'string' || typeof item === 'number') return null
-      var id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
-      var refType = item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType)
+      var id =
+        item._varId != null
+          ? item._varId
+          : item.id != null
+          ? item.id
+          : item.varObj && item.varObj.id
+      var refType =
+        item._refType ||
+        item.refType ||
+        (item.varObj && item.varObj.refType) ||
+        (item._ref && item._ref.refType)
       return this.findOptionByIdentity(id, refType)
     },
     optionIdentityKey(item) {
-      var id = item && (item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id)))
-      var refType = item && (item._refType || item.refType || (item.varObj && item.varObj.refType) || (item._ref && item._ref.refType))
+      var id =
+        item &&
+        (item._varId != null
+          ? item._varId
+          : item.id != null
+          ? item.id
+          : item.varObj && item.varObj.id)
+      var refType =
+        item &&
+        (item._refType ||
+          item.refType ||
+          (item.varObj && item.varObj.refType) ||
+          (item._ref && item._ref.refType))
       if (id != null && id !== '') return (refType || 'REF') + ':' + id
       var cat = (item && item._ref && item._ref.category) || ''
       return cat + ':' + (item && item.varCode ? item.varCode : '')
@@ -715,10 +925,18 @@ export default {
     },
     optionLabel(item) {
       if (!item) return ''
-      return item.varLabelText || item.labelText || item.varName || item.varLabel || ''
+      return (
+        item.varLabelText ||
+        item.labelText ||
+        item.varName ||
+        item.varLabel ||
+        ''
+      )
     },
     normalizeSearchText(text) {
-      return String(text || '').trim().toLowerCase()
+      return String(text || '')
+        .trim()
+        .toLowerCase()
     },
     searchTexts(item) {
       if (!item) return []
@@ -735,24 +953,48 @@ export default {
         ref.modelLabel,
         ref.modelName,
         this.fieldChildRelativePath(item),
-        this.fieldChildDisplayName(item)
-      ].filter(Boolean).map(function (text) { return String(text).toLowerCase() })
+        this.fieldChildDisplayName(item),
+      ]
+        .filter(Boolean)
+        .map(function (text) {
+          return String(text).toLowerCase()
+        })
     },
     searchRank(item, keyword) {
       var texts = this.searchTexts(item)
       var childRanks = []
-      ;(item.children || []).forEach(function (child) {
-        childRanks.push(this.searchRank(child, keyword))
-      }.bind(this))
-      if (texts.some(function (text) { return text.indexOf(keyword) === 0 }) || childRanks.indexOf(1) !== -1) return 1
-      if (texts.some(function (text) { return text.indexOf(keyword) !== -1 }) || childRanks.indexOf(2) !== -1) return 2
+      ;(item.children || []).forEach(
+        function (child) {
+          childRanks.push(this.searchRank(child, keyword))
+        }.bind(this)
+      )
+      if (
+        texts.some(function (text) {
+          return text.indexOf(keyword) === 0
+        }) ||
+        childRanks.indexOf(1) !== -1
+      )
+        return 1
+      if (
+        texts.some(function (text) {
+          return text.indexOf(keyword) !== -1
+        }) ||
+        childRanks.indexOf(2) !== -1
+      )
+        return 2
       return 0
     },
     /** 类型短标签（一字符） */
     typeShortLabel(t) {
       var map = {
-        STRING: '字', NUMBER: '数', BOOLEAN: '布',
-        DATE: '日', ENUM: '枚', OBJECT: '对', LIST: '列', MAP: '映'
+        STRING: '字',
+        NUMBER: '数',
+        BOOLEAN: '布',
+        DATE: '日',
+        ENUM: '枚',
+        OBJECT: '对',
+        LIST: '列',
+        MAP: '映',
       }
       return map[t] || t
     },
@@ -770,7 +1012,9 @@ export default {
       this.rightPage = page
     },
     objectChildPageKey(item) {
-      return this.fieldGroupKey(item) || (item && item.varCode ? item.varCode : '')
+      return (
+        this.fieldGroupKey(item) || (item && item.varCode ? item.varCode : '')
+      )
     },
     objectChildPage(item) {
       var key = this.objectChildPageKey(item)
@@ -793,16 +1037,18 @@ export default {
       var keyword = this.normalizeSearchText(this.searchText)
       var starts = []
       var contains = []
-      item.children.forEach(function (child) {
-        var rank = this.searchRank(child, keyword)
-        if (rank === 1) starts.push(child)
-        else if (rank === 2) contains.push(child)
-      }.bind(this))
+      item.children.forEach(
+        function (child) {
+          var rank = this.searchRank(child, keyword)
+          if (rank === 1) starts.push(child)
+          else if (rank === 2) contains.push(child)
+        }.bind(this)
+      )
       return starts.concat(contains)
     },
     onObjectChildPageChange(item, page) {
       var key = this.objectChildPageKey(item)
-      if (key) this.$set(this.objectChildPages, key, page)
+      if (key) this.objectChildPages[key] = page
     },
     /** 行点击：字段分组展开嵌套，其他直接选中 */
     onItemClick(item) {
@@ -812,20 +1058,23 @@ export default {
           this.expandedObject = null
         } else {
           this.expandedObject = groupKey
-          if (!this.objectChildPages[groupKey]) this.$set(this.objectChildPages, groupKey, 1)
+          if (!this.objectChildPages[groupKey])
+            this.objectChildPages[groupKey] = 1
         }
         return
       }
       if (this.operandMode) {
-        var operand = item._function ? createFunctionOperand(item.function) : createReferenceOperand(item)
-        this.$emit('input', operand)
-        this.$emit('select', operand)
+        var operand = item._function
+          ? createFunctionOperand(item.function)
+          : createReferenceOperand(item)
+        $emit(this, 'update:value', operand)
+        $emit(this, 'select', operand)
         this.closePopover()
         return
       }
       var val = this.valueKey === 'id' ? item.id : item.varCode
-      this.$emit('input', val)
-      this.$emit('select', item)
+      $emit(this, 'update:value', val)
+      $emit(this, 'select', item)
       this.closePopover()
     },
     closePopover() {
@@ -854,18 +1103,23 @@ export default {
     },
     /** 获取选项的实际值（varCode 或 id） */
     getOptionValue(v) {
-      return this.valueKey === 'id' ? v.id : (v.varCode || v.varLabel)
+      return this.valueKey === 'id' ? v.id : v.varCode || v.varLabel
     },
     /** 统一变量展示文本 */
     getVarLabel(v) {
       var ref = v._ref || {}
-      var objLabel = ref.category === 'object' ? (ref.objectLabel || '') : ''
+      var objLabel = ref.category === 'object' ? ref.objectLabel || '' : ''
       return formatVarDisplay({
         varLabel: v.varLabel,
         varCode: v.varCode,
         varType: v.varType,
-        sourceType: ref.category === 'object' ? 'dataObject' : (ref.category === 'constant' ? 'constant' : 'variable'),
-        objectLabel: objLabel
+        sourceType:
+          ref.category === 'object'
+            ? 'dataObject'
+            : ref.category === 'constant'
+            ? 'constant'
+            : 'variable',
+        objectLabel: objLabel,
       })
     },
     /** 输入框获得焦点时自动弹出选择器面板 */
@@ -894,7 +1148,11 @@ export default {
         if (!this.referenceKeyword) this.searchText = ''
         if (!wasVisible) {
           this.$nextTick(function () {
-            if (this.operandMode && !this.value && this.allowsOperandKind('LITERAL')) {
+            if (
+              this.operandMode &&
+              !this.value &&
+              this.allowsOperandKind('LITERAL')
+            ) {
               this.activeCategory = 'manual'
             } else {
               this.focusCurrentValueInPicker()
@@ -908,9 +1166,14 @@ export default {
       if (this.operandMode && this.value && typeof this.value === 'object') {
         option = this.findOptionByIdentity(this.value.refId, this.value.refType)
       } else {
-        option = this.valueKey === 'id'
-          ? this.vars.find(function (v) { return String(v.id) === String(this.value) }.bind(this))
-          : null
+        option =
+          this.valueKey === 'id'
+            ? this.vars.find(
+                function (v) {
+                  return String(v.id) === String(this.value)
+                }.bind(this)
+              )
+            : null
       }
       if (!option) return
 
@@ -919,20 +1182,27 @@ export default {
       this.expandedObject = null
       this.rightPage = 1
 
-      this.$nextTick(function () {
-        if (this.isGroupedFieldCategory(category)) {
-          this.focusGroupedOption(option)
-        } else {
-          this.focusFlatOption(option)
-        }
-        this.scrollCurrentValueIntoView()
-      }.bind(this))
+      this.$nextTick(
+        function () {
+          if (this.isGroupedFieldCategory(category)) {
+            this.focusGroupedOption(option)
+          } else {
+            this.focusFlatOption(option)
+          }
+          this.scrollCurrentValueIntoView()
+        }.bind(this)
+      )
     },
     focusFlatOption(option) {
       var list = this.filteredRightItems
-      var index = list.findIndex(function (item) {
-        return this.optionIdentityKey(item) === this.optionIdentityKey(option) || item.varCode === option.varCode
-      }.bind(this))
+      var index = list.findIndex(
+        function (item) {
+          return (
+            this.optionIdentityKey(item) === this.optionIdentityKey(option) ||
+            item.varCode === option.varCode
+          )
+        }.bind(this)
+      )
       if (index >= 0) {
         this.rightPage = Math.floor(index / this.fieldPageSize) + 1
       }
@@ -945,20 +1215,32 @@ export default {
       var groupCode = this.fieldGroupCodeByCategory(option, category)
       var groupKey = this.fieldGroupKeyByCategory(groupCode, category)
       var groups = this.filteredRightItems
-      var groupIndex = groups.findIndex(function (item) {
-        return this.fieldGroupKey(item) === groupKey || this.fieldGroupCode(item) === groupCode
-      }.bind(this))
+      var groupIndex = groups.findIndex(
+        function (item) {
+          return (
+            this.fieldGroupKey(item) === groupKey ||
+            this.fieldGroupCode(item) === groupCode
+          )
+        }.bind(this)
+      )
       if (groupIndex >= 0) {
         this.rightPage = Math.floor(groupIndex / this.fieldPageSize) + 1
       }
       this.expandedObject = groupKey
       var group = groups[groupIndex]
       if (group && group.children && group.children.length) {
-        var childIndex = group.children.findIndex(function (child) {
-          return this.optionIdentityKey(child) === this.optionIdentityKey(option) || child.varCode === option.varCode
-        }.bind(this))
+        var childIndex = group.children.findIndex(
+          function (child) {
+            return (
+              this.optionIdentityKey(child) ===
+                this.optionIdentityKey(option) ||
+              child.varCode === option.varCode
+            )
+          }.bind(this)
+        )
         if (childIndex >= 0) {
-          this.$set(this.objectChildPages, groupKey, Math.floor(childIndex / this.fieldPageSize) + 1)
+          this.objectChildPages[groupKey] =
+            Math.floor(childIndex / this.fieldPageSize) + 1
         }
       }
     },
@@ -967,7 +1249,9 @@ export default {
         var popover = this.$refs.popover
         var popper = popover && popover.popperElm
         if (!popper) return
-        var target = popper.querySelector('.vp-row--selected, .vp-child-item--selected')
+        var target = popper.querySelector(
+          '.vp-row--selected, .vp-child-item--selected'
+        )
         if (target && target.scrollIntoView) {
           target.scrollIntoView({ block: 'nearest' })
         }
@@ -975,14 +1259,25 @@ export default {
     },
     switchToSearchMatchCategory() {
       if (!this.searchText || this.filteredRightItems.length) return
-      var category = this.categoryList.find(function (item) {
-        return item.key !== 'manual' && this.filterItemsByKeyword(this.categoryItems(item.key)).length > 0
-      }.bind(this))
+      var category = this.categoryList.find(
+        function (item) {
+          return (
+            item.key !== 'manual' &&
+            this.filterItemsByKeyword(this.categoryItems(item.key)).length > 0
+          )
+        }.bind(this)
+      )
       if (category) this.activeCategory = category.key
     },
     expandSingleSearchGroup() {
-      if (this.isGroupedFieldCategory(this.activeCategory) && this.searchText && this.filteredRightItems.length === 1) {
-        this.expandedObject = this.fieldGroupKey(this.filteredRightItems[0]) || this.filteredRightItems[0].varCode
+      if (
+        this.isGroupedFieldCategory(this.activeCategory) &&
+        this.searchText &&
+        this.filteredRightItems.length === 1
+      ) {
+        this.expandedObject =
+          this.fieldGroupKey(this.filteredRightItems[0]) ||
+          this.filteredRightItems[0].varCode
       }
     },
     updateDocumentListener(visible) {
@@ -996,13 +1291,20 @@ export default {
       var root = this.$el
       var popover = this.$refs.popover
       var popper = popover && popover.popperElm
-      if ((root && root.contains(target)) || (popper && popper.contains(target))) {
+      if (
+        (root && root.contains(target)) ||
+        (popper && popper.contains(target))
+      ) {
         return
       }
       this.closePopover()
     },
     startPanelResize(event) {
-      this.beginPanelResize(event && event.clientX, event && event.clientY, event)
+      this.beginPanelResize(
+        event && event.clientX,
+        event && event.clientY,
+        event
+      )
     },
     startPanelTouchResize(event) {
       var touch = event && event.touches && event.touches[0]
@@ -1020,7 +1322,9 @@ export default {
       this.updatePanelSize(clientX, clientY)
       window.addEventListener('mousemove', this.onPanelResize)
       window.addEventListener('mouseup', this.stopPanelResize)
-      window.addEventListener('touchmove', this.onPanelTouchResize, { passive: false })
+      window.addEventListener('touchmove', this.onPanelTouchResize, {
+        passive: false,
+      })
       window.addEventListener('touchend', this.stopPanelResize)
       window.addEventListener('touchcancel', this.stopPanelResize)
     },
@@ -1056,41 +1360,54 @@ export default {
     },
     /** 清除选中的值 */
     onClearValue() {
-      this.$emit('input', this.operandMode ? null : '')
-      this.$emit('select', null)
-      this.$emit('clear')
+      $emit(this, 'update:value', this.operandMode ? null : '')
+      $emit(this, 'select', null)
+      $emit(this, 'clear')
       this.closePopover()
     },
     onChange(val) {
-      this.$emit('input', val)
+      $emit(this, 'update:value', val)
       if (!val) {
-        this.$emit('select', null)
+        $emit(this, 'select', null)
         return
       }
-      var varObj = this.valueKey === 'id'
-        ? (this.vars.find(function (v) { return String(v.id) === String(val) }) || null)
-        : null
-      this.$emit('select', varObj)
+      var varObj =
+        this.valueKey === 'id'
+          ? this.vars.find(function (v) {
+              return String(v.id) === String(val)
+            }) || null
+          : null
+      $emit(this, 'select', varObj)
     },
     /** 手动输入模式下的输入事件 */
     onCustomInput(val) {
-      this.$emit('input', val)
-      this.$emit('select', { varCode: val, varLabel: val, _custom: true })
+      $emit(this, 'update:value', val)
+      $emit(this, 'select', { varCode: val, varLabel: val, _custom: true })
     },
     /** 手动输入模式下的清空事件 */
     onCustomClear() {
       this.localCustomValue = ''
-      this.$emit('input', '')
-      this.$emit('select', null)
+      $emit(this, 'update:value', '')
+      $emit(this, 'select', null)
     },
     /** 回显时自动识别：当前值非空但在变量列表中找不到时，自动切换到手动输入模式 */
     _autoSwitchIfUnmatched() {
       if (this.operandMode) return
-      if (!this.autoSwitchCustom || !this.allowCustom || !this.value || this.customMode) return
+      if (
+        !this.autoSwitchCustom ||
+        !this.allowCustom ||
+        !this.value ||
+        this.customMode
+      )
+        return
       if (!this.hasVarOptions) return
       var found
       if (this.valueKey === 'id') {
-        found = this.vars.some(function (v) { return String(v.id) === String(this.value) }.bind(this))
+        found = this.vars.some(
+          function (v) {
+            return String(v.id) === String(this.value)
+          }.bind(this)
+        )
       } else {
         found = !!this.findOptionByCode(this.value)
       }
@@ -1104,12 +1421,12 @@ export default {
     },
     requestManualEdit(kind) {
       if (!this.allowsOperandKind(kind)) return
-      this.$emit('manual-edit', kind)
+      $emit(this, 'manual-edit', kind)
       this.closePopover()
     },
     emitOperand(operand) {
-      this.$emit('input', operand)
-      this.$emit('select', operand)
+      $emit(this, 'update:value', operand)
+      $emit(this, 'select', operand)
       this.closePopover()
     },
     typeLabel(t) {
@@ -1117,25 +1434,35 @@ export default {
     },
     /** 根据配置获取编码列标签 */
     codeColumnLabel() {
-      if (typeof this.columnLabels === 'object') return this.columnLabels.codeLabel || '字段编码'
-      if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段编码'
+      if (typeof this.columnLabels === 'object')
+        return this.columnLabels.codeLabel || '字段编码'
+      if (
+        this.activeCategory === 'object' ||
+        this.activeCategory === 'selected'
+      )
+        return '字段编码'
       if (this.activeCategory === 'model') return '模型输出字段'
       const labels = {
         variable: '变量编码',
         dataObject: '属性字段路径',
-        model: '模型输出字段'
+        model: '模型输出字段',
       }
       return labels[this.columnLabels] || '字段编码'
     },
     /** 根据配置获取名称列标签 */
     nameColumnLabel() {
-      if (typeof this.columnLabels === 'object') return this.columnLabels.nameLabel || '字段名称'
-      if (this.activeCategory === 'object' || this.activeCategory === 'selected') return '字段名称'
+      if (typeof this.columnLabels === 'object')
+        return this.columnLabels.nameLabel || '字段名称'
+      if (
+        this.activeCategory === 'object' ||
+        this.activeCategory === 'selected'
+      )
+        return '字段名称'
       if (this.activeCategory === 'model') return '输出字段名称'
       const labels = {
         variable: '变量名称',
         dataObject: '属性名称',
-        model: '输出字段名称'
+        model: '输出字段名称',
       }
       return labels[this.columnLabels] || '字段名称'
     },
@@ -1153,11 +1480,12 @@ export default {
         OBJECT: 'o',
         LIST: 'l',
         MAP: 'm',
-        MODEL: 'M'
+        MODEL: 'M',
       }
       return map[varType] || '?'
-    }
-  }
+    },
+  },
+  emits: ['input', 'update:value', 'select', 'manual-edit', 'clear'],
 }
 </script>
 
@@ -1177,7 +1505,7 @@ export default {
   vertical-align: middle;
   max-width: 100%;
 }
-.var-picker-wrap ::v-deep .el-popover__reference-wrapper {
+.var-picker-wrap :deep(.el-popover__reference-wrapper) {
   display: block;
   flex: 1;
   min-width: 0;
@@ -1198,7 +1526,7 @@ export default {
 }
 .custom-input-row .el-input,
 .select-input-row .el-popover,
-.select-input-row ::v-deep .el-popover__reference-wrapper,
+.select-input-row :deep(.el-popover__reference-wrapper),
 .select-input-row .el-select,
 .select-input-row .el-input {
   flex: 1;
@@ -1210,12 +1538,12 @@ export default {
   min-width: 0;
   width: 100%;
 }
-.vp-reference ::v-deep .el-input__prefix {
+.vp-reference :deep(.el-input__prefix) {
   display: flex;
   align-items: center;
   left: 6px;
 }
-.vp-reference ::v-deep .el-input--prefix .el-input__inner {
+.vp-reference :deep(.el-input--prefix .el-input__inner) {
   padding-left: var(--vp-prefix-offset, 12px);
 }
 .vp-operand-kind {
@@ -1231,14 +1559,30 @@ export default {
   color: #fff;
   background: #909399;
 }
-.vp-operand-kind--literal { background: #e6a23c; }
-.vp-operand-kind--path { background: #607d8b; }
-.vp-operand-kind--path-resolved { background: #546e7a; }
-.vp-operand-kind--variable { background: #409eff; }
-.vp-operand-kind--constant { background: #9c6ade; }
-.vp-operand-kind--object { background: #00a870; }
-.vp-operand-kind--model { background: #f56c6c; }
-.vp-operand-kind--function { background: #13c2c2; }
+.vp-operand-kind--literal {
+  background: #e6a23c;
+}
+.vp-operand-kind--path {
+  background: #607d8b;
+}
+.vp-operand-kind--path-resolved {
+  background: #546e7a;
+}
+.vp-operand-kind--variable {
+  background: #409eff;
+}
+.vp-operand-kind--constant {
+  background: #9c6ade;
+}
+.vp-operand-kind--object {
+  background: #00a870;
+}
+.vp-operand-kind--model {
+  background: #f56c6c;
+}
+.vp-operand-kind--function {
+  background: #13c2c2;
+}
 .mode-switch {
   flex-shrink: 0;
   cursor: pointer;
@@ -1261,7 +1605,7 @@ export default {
   margin-right: 4px;
 }
 .vp-clear-btn:hover {
-  color: #409EFF;
+  color: #409eff;
 }
 .var-empty {
   padding: 8px 12px;
@@ -1300,7 +1644,12 @@ export default {
   border-bottom: 1px solid #f5f5f5;
   white-space: nowrap;
 }
-.vp-cat-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vp-cat-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .vp-cat-item:hover {
   background: #f5f7fa;
 }
@@ -1359,8 +1708,13 @@ export default {
   font-size: 20px;
   align-self: center;
 }
-.vp-manual-type span { font-weight: 600; }
-.vp-manual-type small { color: #909399; line-height: 1.4; }
+.vp-manual-type span {
+  font-weight: 600;
+}
+.vp-manual-type small {
+  color: #909399;
+  line-height: 1.4;
+}
 .vp-manual-type:hover {
   border-color: #409eff;
   background: #ecf5ff;
@@ -1401,16 +1755,30 @@ export default {
   top: 0;
   z-index: 1;
 }
-.vp-th--type { width: 72px; text-align: center; padding: 8px 4px; }
-.vp-th--code { width: 130px; }
-.vp-th--name { min-width: 80px; }
+.vp-th--type {
+  width: 72px;
+  text-align: center;
+  padding: 8px 4px;
+}
+.vp-th--code {
+  width: 130px;
+}
+.vp-th--name {
+  min-width: 80px;
+}
 .vp-row {
   cursor: pointer;
   transition: background 0.1s;
 }
-.vp-row:hover { background: #f5f7fa; }
-.vp-row--selected { background: #e6f7ff; }
-.vp-row--selected:hover { background: #d0e8ff; }
+.vp-row:hover {
+  background: #f5f7fa;
+}
+.vp-row--selected {
+  background: #e6f7ff;
+}
+.vp-row--selected:hover {
+  background: #d0e8ff;
+}
 .vp-td {
   padding: 7px 10px;
   border-bottom: 1px solid #f5f5f5;
@@ -1440,8 +1808,12 @@ export default {
   padding: 30px 0;
   color: #c0c4cc;
 }
-.vp-children-row { background: #f9fafc; }
-.vp-children-td { padding: 6px 12px; }
+.vp-children-row {
+  background: #f9fafc;
+}
+.vp-children-td {
+  padding: 6px 12px;
+}
 .vp-children-wrap {
   border: 1px solid #e8e8e8;
   border-radius: 4px;
@@ -1454,7 +1826,10 @@ export default {
   color: #909399;
   border-bottom: 1px solid #ebeef5;
 }
-.vp-children-list { max-height: 160px; overflow-y: auto; }
+.vp-children-list {
+  max-height: 160px;
+  overflow-y: auto;
+}
 .vp-child-item {
   display: flex;
   align-items: center;
@@ -1464,8 +1839,12 @@ export default {
   cursor: pointer;
   transition: background 0.1s;
 }
-.vp-child-item:hover { background: #e6f7ff; }
-.vp-child-item--selected { background: #d0e8ff; }
+.vp-child-item:hover {
+  background: #e6f7ff;
+}
+.vp-child-item--selected {
+  background: #d0e8ff;
+}
 .vp-child-path {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
@@ -1517,7 +1896,7 @@ export default {
   border-bottom: 2px solid #c0c4cc;
 }
 .vp-resize-handle:hover::after {
-  border-color: #409EFF;
+  border-color: #409eff;
 }
 
 /* ── 类型单字符标识 ── */
@@ -1541,23 +1920,43 @@ export default {
   border-radius: 3px;
 }
 /* 字符串 s - 蓝色 */
-.vp-type-badge--s { background: #409EFF; }
+.vp-type-badge--s {
+  background: #409eff;
+}
 /* 整数 i - 橙色 */
-.vp-type-badge--i { background: #E6A23C; }
+.vp-type-badge--i {
+  background: #e6a23c;
+}
 /* 布尔 b - 绿色 */
-.vp-type-badge--b { background: #67C23A; }
+.vp-type-badge--b {
+  background: #67c23a;
+}
 /* 日期 d - 紫色 */
-.vp-type-badge--d { background: #9C27B0; }
+.vp-type-badge--d {
+  background: #9c27b0;
+}
 /* 枚举 e - 红色 */
-.vp-type-badge--e { background: #F56C6C; }
+.vp-type-badge--e {
+  background: #f56c6c;
+}
 /* 对象 o - 青色 */
-.vp-type-badge--o { background: #00BCD4; }
+.vp-type-badge--o {
+  background: #00bcd4;
+}
 /* 列表 l - 黄色 */
-.vp-type-badge--l { background: #FF9800; }
+.vp-type-badge--l {
+  background: #ff9800;
+}
 /* 映射 m - 灰色 */
-.vp-type-badge--m { background: #909399; }
+.vp-type-badge--m {
+  background: #909399;
+}
 /* 模型 M - 绿色 */
-.vp-type-badge--M { background: #13C2C2; }
+.vp-type-badge--M {
+  background: #13c2c2;
+}
 /* 默认 ? - 浅灰 */
-.vp-type-badge--? { background: #C0C4CC; }
+.vp-type-badge--? {
+  background: #c0c4cc;
+}
 </style>

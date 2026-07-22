@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 
 function makeStub(tag) {
@@ -16,7 +16,7 @@ const OperandPickerStub = {
 
 function mountEditor(leafOverrides = {}) {
   return shallowMount(ConditionGroupEditor, {
-    propsData: {
+    props: {
       group: {
         type: 'group',
         op: 'AND',

@@ -1,11 +1,11 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 
 const focusManualInput = jest.fn()
 
 function mountPicker(propsData = {}, options = {}) {
   return shallowMount(OperandPicker, {
-    propsData: { value: null, vars: [], functions: [], allowedKinds: ['LITERAL', 'REFERENCE', 'FUNCTION', 'OPERATION'], ...propsData },
+    props: { value: null, vars: [], functions: [], allowedKinds: ['LITERAL', 'REFERENCE', 'FUNCTION', 'OPERATION'], ...propsData },
     mocks: options.mocks,
     stubs: {
       VarPicker: { name: 'VarPicker', template: '<div />' },

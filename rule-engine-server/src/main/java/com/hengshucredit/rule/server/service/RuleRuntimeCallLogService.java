@@ -9,7 +9,7 @@ import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.mapper.RuleRuntimeCallLogMapper;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;

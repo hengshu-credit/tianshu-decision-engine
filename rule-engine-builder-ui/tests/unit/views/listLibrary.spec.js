@@ -1,19 +1,11 @@
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import * as projectApi from '@/api/project'
 import * as ruleListApi from '@/api/ruleList'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ListLibrary from '@/views/ruleList/ListLibrary.vue'
 
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 const FormStub = {
   template: '<form><slot /></form>',
@@ -26,7 +18,6 @@ async function mountPage() {
     data: { records: [{ id: 9, listCode: 'mobile_black', listName: '手机号黑名单', listType: 'BLACK', status: 1, recordCount: 2 }], total: 1 }
   })
   const wrapper = mount(ListLibrary, {
-    localVue: createTestVue(),
     mocks: {
       $router: { push: jest.fn() },
       $message: { success: jest.fn(), warning: jest.fn(), error: jest.fn() },
@@ -49,7 +40,7 @@ async function mountPage() {
       'el-switch': true
     }
   })
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(resolve => setTimeout(resolve, 0))
   return wrapper
 }
@@ -58,7 +49,7 @@ describe('ListLibrary — 名单库管理', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountPage() })
-  afterEach(() => { if (wrapper) wrapper.destroy(); jest.clearAllMocks() })
+  afterEach(() => { if (wrapper) wrapper.unmount(); jest.clearAllMocks() })
 
   test('uses unified fuzzy filters for project code and name', () => {
     expect(ListLibrary.components.ProjectFilterSelect).toBe(ProjectFilterSelect)
@@ -79,7 +70,7 @@ describe('ListLibrary — 名单库管理', () => {
     wrapper.vm.form.listCode = 'id_black'
     wrapper.vm.form.listName = '身份证黑名单'
     wrapper.vm.submit()
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(ruleListApi.createLibrary).toHaveBeenCalledWith(expect.objectContaining({

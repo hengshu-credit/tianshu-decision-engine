@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ExpressionCanvas from '@/components/expression/ExpressionCanvas.vue'
 import { createOperationOperand } from '@/utils/operand'
 
@@ -22,7 +22,7 @@ describe('ExpressionCanvas', () => {
 
   test('折叠节点隐藏子树并显示隐藏节点数量', () => {
     const wrapper = shallowMount(ExpressionCanvas, {
-      propsData: { node, path: [], selectedPath: [], collapsedPathKeys: ['$'] }
+      props: { node, path: [], selectedPath: [], collapsedPathKeys: ['$'] }
     })
 
     expect(wrapper.find('.canvas-children').exists()).toBe(false)
@@ -31,7 +31,7 @@ describe('ExpressionCanvas', () => {
 
   test('折叠按钮只发出当前路径且不改变表达式数据', async() => {
     const wrapper = shallowMount(ExpressionCanvas, {
-      propsData: { node, path: [], selectedPath: [], collapsedPathKeys: [] }
+      props: { node, path: [], selectedPath: [], collapsedPathKeys: [] }
     })
     await wrapper.find('.canvas-collapse').trigger('click')
 
@@ -41,7 +41,7 @@ describe('ExpressionCanvas', () => {
 
   test('折叠按钮位于节点卡片之前', () => {
     const wrapper = shallowMount(ExpressionCanvas, {
-      propsData: { node, path: [], selectedPath: [] }
+      props: { node, path: [], selectedPath: [] }
     })
     const children = wrapper.find('.canvas-node-row').element.children
 
@@ -52,7 +52,7 @@ describe('ExpressionCanvas', () => {
   test('选中阈值和路径时输入控件出现在画布节点内', async() => {
     focusManualInput.mockClear()
     const literal = shallowMount(ExpressionCanvas, {
-      propsData: { node: { kind: 'LITERAL', value: '', valueType: 'NUMBER' }, selectedPath: [], path: [] },
+      props: { node: { kind: 'LITERAL', value: '', valueType: 'NUMBER' }, selectedPath: [], path: [] },
       stubs: { 'el-input': ElInputStub, 'el-select': true, 'el-option': true }
     })
     await literal.vm.$nextTick()
@@ -63,7 +63,7 @@ describe('ExpressionCanvas', () => {
 
     focusManualInput.mockClear()
     const path = shallowMount(ExpressionCanvas, {
-      propsData: { node: { kind: 'PATH', value: '', resolved: false }, selectedPath: [], path: [] },
+      props: { node: { kind: 'PATH', value: '', resolved: false }, selectedPath: [], path: [] },
       stubs: { 'el-input': ElInputStub, 'el-select': true, 'el-option': true }
     })
     await path.vm.$nextTick()
@@ -77,10 +77,10 @@ describe('ExpressionCanvas', () => {
       { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } },
       { operator: '*', operand: { kind: 'LITERAL', value: '3', valueType: 'NUMBER' } }
     ])
-    const wrapper = shallowMount(ExpressionCanvas, { propsData: { node: operation } })
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node: operation } })
 
     expect(wrapper.findAll('.canvas-child')).toHaveLength(3)
-    expect(wrapper.findAll('.canvas-edge-operator').wrappers.map(item => item.text())).toEqual(['+', '*'])
+    expect(wrapper.findAll('.canvas-edge-operator').map(item => item.text())).toEqual(['+', '*'])
   })
 
   test('根运算只展示子项，不再生成与公式预览重复的根卡片', () => {
@@ -88,7 +88,7 @@ describe('ExpressionCanvas', () => {
       { operand: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } },
       { operator: '+', operand: { kind: 'LITERAL', value: '2', valueType: 'NUMBER' } }
     ])
-    const wrapper = shallowMount(ExpressionCanvas, { propsData: { node: operation, path: [] } })
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node: operation, path: [] } })
 
     expect(wrapper.find('.canvas-node-row').exists()).toBe(false)
     expect(wrapper.findAll('.canvas-child')).toHaveLength(2)
@@ -96,7 +96,7 @@ describe('ExpressionCanvas', () => {
 
   test('Tab、Shift+Tab 与结构按钮发出当前路径', () => {
     const wrapper = shallowMount(ExpressionCanvas, {
-      propsData: {
+      props: {
         node: { kind: 'PATH', value: 'score', code: 'score' },
         path: ['terms', 1, 'operand'],
         selectedPath: ['terms', 1, 'operand']
@@ -117,7 +117,7 @@ describe('ExpressionCanvas', () => {
 
   test('原生拖拽通过路径载荷请求移动节点', () => {
     const wrapper = shallowMount(ExpressionCanvas, {
-      propsData: { node: null, path: ['args', 1], selectedPath: [] }
+      props: { node: null, path: ['args', 1], selectedPath: [] }
     })
     const event = {
       dataTransfer: {

@@ -3,7 +3,7 @@ package com.hengshucredit.rule.server.service;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
-import javax.annotation.PostConstruct;
+import jakarta.annotation.PostConstruct;
 
 @Data
 @ConfigurationProperties(prefix = "rule-engine.external-call")

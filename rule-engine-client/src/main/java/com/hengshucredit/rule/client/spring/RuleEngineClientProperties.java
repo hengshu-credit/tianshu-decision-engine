@@ -5,7 +5,7 @@ import lombok.Data;
 
 /**
  * 规则引擎客户端Spring配置属性
- * Redis配置完全由客户端服务的spring.redis.*提供，无需额外配置
+ * Redis配置完全由客户端服务的spring.data.redis.*提供，无需额外配置
  */
 @Data
 public class RuleEngineClientProperties {

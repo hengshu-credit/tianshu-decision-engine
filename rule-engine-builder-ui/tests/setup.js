@@ -16,26 +16,22 @@ jest.mock('@/router', () => ({
   }
 }))
 
-// 2. mock element-ui（Message / Notification / Loading / MessageBox / v-loading directive）
-jest.mock('element-ui', () => ({
-  Message: {
+// 2. mock Element Plus 的全局服务；组件在测试中使用 VTU stub。
+jest.mock('element-plus', () => ({
+  ElMessage: Object.assign(jest.fn(), {
     success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn()
-  },
-  Notification: {
+  }),
+  ElNotification: Object.assign(jest.fn(), {
     success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn()
-  },
-  MessageBox: {
+  }),
+  ElMessageBox: {
     confirm: jest.fn().mockResolvedValue('confirm'),
     alert: jest.fn().mockResolvedValue('alert')
   },
-  Loading: {
+  ElLoading: {
     service: jest.fn(() => ({ close: jest.fn() }))
   },
-  directive: (name) => {
-    if (name === 'loading') {
-      return { bind: jest.fn(), update: jest.fn(), unbind: jest.fn() }
-    }
-  }
+  default: { install: jest.fn() }
 }))
 
 // 3. mock axios（支持 axios.create() 实例）
@@ -303,18 +299,50 @@ jest.mock('@/components/flow/ActionBlockEditor.vue', () => ({ name: 'ActionBlock
 jest.mock('@/components/common/VarPicker.vue', () => ({ name: 'VarPicker', template: '<div />', props: ['vars', 'value'] }))
 jest.mock('@/components/common/ScriptPanel.vue', () => ({ name: 'ScriptPanel', template: '<div />' }))
 
-// 注册测试环境实际使用的指令，createLocalVue() 会继承这些全局指令。
-// stub 覆盖完整生命周期，避免组件更新或销毁时产生额外 warning。
-const VueModule = require('vue')
-const VueConstructor = VueModule.default || VueModule
+// 注册 Vue Test Utils 2 的全局指令与实例属性。
+const { config } = require('@vue/test-utils')
 const loadingDirectiveStub = {
-  bind: jest.fn(),
-  inserted: jest.fn(),
-  update: jest.fn(),
-  componentUpdated: jest.fn(),
-  unbind: jest.fn()
+  beforeMount: jest.fn(),
+  mounted: jest.fn(),
+  updated: jest.fn(),
+  beforeUnmount: jest.fn(),
+  unmounted: jest.fn()
 }
-VueConstructor.directive('loading', loadingDirectiveStub)
+config.global.directives.loading = loadingDirectiveStub
+config.global.components.AppIcon = {
+  name: 'AppIcon',
+  props: ['name'],
+  template: '<i class="app-icon-stub" />'
+}
+config.global.renderStubDefaultSlot = true
+const globalStubNames = [
+  'el-alert', 'el-badge', 'el-button', 'el-button-group', 'el-card',
+  'el-checkbox', 'el-checkbox-group', 'el-col', 'el-collapse',
+  'el-collapse-item', 'el-date-picker', 'el-descriptions',
+  'el-descriptions-item', 'el-dialog', 'el-divider', 'el-drawer',
+  'el-dropdown', 'el-dropdown-item', 'el-dropdown-menu', 'el-empty',
+  'el-form', 'el-form-item', 'el-icon', 'el-input', 'el-input-number',
+  'el-link', 'el-option', 'el-option-group', 'el-pagination', 'el-popover',
+  'el-progress', 'el-radio', 'el-radio-button', 'el-radio-group', 'el-row',
+  'el-select', 'el-slider', 'el-switch', 'el-table', 'el-table-column',
+  'el-tab-pane', 'el-tabs', 'el-tag', 'el-tooltip', 'el-upload'
+]
+config.global.stubs = globalStubNames.reduce((stubs, name) => {
+  stubs[name] = true
+  return stubs
+}, {})
+config.global.stubs['el-table-column'] = {
+  name: 'ElTableColumn',
+  props: ['prop', 'label'],
+  template: '<div><slot name="header" :column="{}" /><slot :row="{}" :$index="0" /></div>'
+}
+config.global.mocks = {
+  $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn(), info: jest.fn() },
+  $confirm: jest.fn().mockResolvedValue(true),
+  $notify: jest.fn(),
+  $loading: jest.fn(() => ({ close: jest.fn() })),
+  $t: key => key
+}
 
 // 抑制日常 log，error/warn 保留以便调试
 global.console = {

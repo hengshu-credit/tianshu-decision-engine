@@ -1,71 +1,173 @@
 <template>
   <div class="uiue-list-page uiue-compact-workbench">
     <!-- 页面头部 -->
-    <div style="margin-bottom:16px;display:flex;align-items:center;justify-content:space-between;">
-      <h2 style="margin:0;">{{ model.modelName || '模型详情' }}</h2>
+    <div
+      style="
+        margin-bottom: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      "
+    >
+      <h2 style="margin: 0">{{ model.modelName || '模型详情' }}</h2>
       <div>
-        <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="openTestDialog">模型测试</el-button>
-        <el-button size="small" icon="el-icon-back" @click="$router.push('/model')">返回</el-button>
+        <el-button size="small" :icon="ElIconTime" @click="openVersionDialog"
+          >版本历史</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="openTestDialog"
+          >模型测试</el-button
+        >
+        <el-button
+          size="small"
+          :icon="ElIconBack"
+          @click="$router.push('/model')"
+          >返回</el-button
+        >
       </div>
     </div>
 
     <!-- 基本信息 -->
-    <el-descriptions :column="2" border size="small" style="margin-bottom:16px;" v-loading="loading">
-      <el-descriptions-item label="模型编码">{{ model.modelCode }}</el-descriptions-item>
-      <el-descriptions-item label="模型名称">{{ model.modelName }}</el-descriptions-item>
-      <el-descriptions-item label="模型大类">{{ modelTypeLabel(model.modelType) }}</el-descriptions-item>
-      <el-descriptions-item label="模型格式">{{ model.modelFormat }}</el-descriptions-item>
-      <el-descriptions-item label="作用范围">{{ model.scope === 'GLOBAL' ? '全局' : '项目级' }}</el-descriptions-item>
-      <el-descriptions-item label="所属项目">{{ model.projectName || '—' }}</el-descriptions-item>
-      <el-descriptions-item label="文件名">{{ model.modelFileName }}</el-descriptions-item>
-      <el-descriptions-item label="文件大小">{{ formatFileSize(model.modelFileSize) }}</el-descriptions-item>
-      <el-descriptions-item label="设计版本">{{ model.currentVersion }}</el-descriptions-item>
-      <el-descriptions-item label="发布版本">{{ model.publishedVersion || '-' }}</el-descriptions-item>
-      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 推理任务">{{ onnxTaskLabel }}</el-descriptions-item>
-      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="ONNX 原始节点">{{ onnxNodeSummary }}</el-descriptions-item>
-      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="执行设备">
-        <el-tag :type="onnxExecutionProvider === 'CUDA' ? 'success' : 'info'" size="mini">{{ onnxExecutionProvider }}</el-tag>
+    <el-descriptions
+      :column="2"
+      border
+      size="small"
+      style="margin-bottom: 16px"
+      v-loading="loading"
+    >
+      <el-descriptions-item label="模型编码">{{
+        model.modelCode
+      }}</el-descriptions-item>
+      <el-descriptions-item label="模型名称">{{
+        model.modelName
+      }}</el-descriptions-item>
+      <el-descriptions-item label="模型大类">{{
+        modelTypeLabel(model.modelType)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="模型格式">{{
+        model.modelFormat
+      }}</el-descriptions-item>
+      <el-descriptions-item label="作用范围">{{
+        model.scope === 'GLOBAL' ? '全局' : '项目级'
+      }}</el-descriptions-item>
+      <el-descriptions-item label="所属项目">{{
+        model.projectName || '—'
+      }}</el-descriptions-item>
+      <el-descriptions-item label="文件名">{{
+        model.modelFileName
+      }}</el-descriptions-item>
+      <el-descriptions-item label="文件大小">{{
+        formatFileSize(model.modelFileSize)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="设计版本">{{
+        model.currentVersion
+      }}</el-descriptions-item>
+      <el-descriptions-item label="发布版本">{{
+        model.publishedVersion || '-'
+      }}</el-descriptions-item>
+      <el-descriptions-item
+        v-if="model.modelFormat === 'ONNX'"
+        label="ONNX 推理任务"
+        >{{ onnxTaskLabel }}</el-descriptions-item
+      >
+      <el-descriptions-item
+        v-if="model.modelFormat === 'ONNX'"
+        label="ONNX 原始节点"
+        >{{ onnxNodeSummary }}</el-descriptions-item
+      >
+      <el-descriptions-item
+        v-if="model.modelFormat === 'ONNX'"
+        label="执行设备"
+      >
+        <el-tag
+          :type="onnxExecutionProvider === 'CUDA' ? 'success' : 'info'"
+          size="small"
+          >{{ onnxExecutionProvider }}</el-tag
+        >
       </el-descriptions-item>
-      <el-descriptions-item v-if="model.modelFormat === 'ONNX' && onnxExecutionProvider === 'CUDA'" label="GPU 参数">
+      <el-descriptions-item
+        v-if="model.modelFormat === 'ONNX' && onnxExecutionProvider === 'CUDA'"
+        label="GPU 参数"
+      >
         {{ onnxGpuSummary }}
       </el-descriptions-item>
-      <el-descriptions-item v-if="model.modelFormat === 'ONNX'" label="启动预加载">{{ model.preloadOnStartup === 1 ? '是' : '否' }}</el-descriptions-item>
-      <el-descriptions-item label="执行超时">{{ model.executionTimeoutMs || 120000 }} ms</el-descriptions-item>
+      <el-descriptions-item
+        v-if="model.modelFormat === 'ONNX'"
+        label="启动预加载"
+        >{{ model.preloadOnStartup === 1 ? '是' : '否' }}</el-descriptions-item
+      >
+      <el-descriptions-item label="执行超时"
+        >{{ model.executionTimeoutMs || 120000 }} ms</el-descriptions-item
+      >
     </el-descriptions>
 
     <!-- 描述 -->
-    <el-card v-if="model.description" shadow="never" style="margin-bottom:16px;">
-      <div slot="header" style="font-weight:600;">描述</div>
-      <div style="color:#606266;font-size:14px;line-height:1.6;">{{ model.description }}</div>
+    <el-card
+      v-if="model.description"
+      shadow="never"
+      style="margin-bottom: 16px"
+    >
+      <template v-slot:header>
+        <div style="font-weight: 600">描述</div>
+      </template>
+      <div style="color: #606266; font-size: 14px; line-height: 1.6">
+        {{ model.description }}
+      </div>
     </el-card>
 
     <!-- 输入输出字段 -->
     <el-tabs type="border-card">
       <!-- 输入字段 tab -->
       <el-tab-pane>
-        <span slot="label"><i class="el-icon-arrow-down" /> 输入字段</span>
-        <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
-          <span style="color:#909399;font-size:12px;">
-            共 {{ model.inputFields ? model.inputFields.length : 0 }} 个字段，请关联引擎变量
+        <template v-slot:label>
+          <span
+            ><el-icon><el-icon-arrow-down /></el-icon> 输入字段</span
+          >
+        </template>
+        <div
+          style="
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          "
+        >
+          <span style="color: #909399; font-size: 12px">
+            共
+            {{ model.inputFields ? model.inputFields.length : 0 }}
+            个字段，请关联引擎变量
           </span>
-          <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
+          <el-button size="small" :icon="ElIconRefresh" @click="load"
+            >刷新</el-button
+          >
         </div>
 
-        <el-table :data="pagedInputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="inputRowClassName">
+        <el-table
+          :data="pagedInputFields"
+          border
+          size="small"
+          max-height="500"
+          v-loading="loading"
+          :row-class-name="inputRowClassName"
+        >
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ inputFieldOffset + $index + 1 }}</template>
+            <template v-slot="{ $index }">{{
+              inputFieldOffset + $index + 1
+            }}</template>
           </el-table-column>
           <!-- 字段名称 -->
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
-            <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldName }}</span>
+            <template v-slot="{ row }">
+              <span style="font-weight: 500">{{ row.fieldName }}</span>
             </template>
           </el-table-column>
           <!-- 对应变量 -->
           <el-table-column label="对应变量" min-width="280">
-            <template slot-scope="{row}">
+            <template v-slot="{ row }">
               <div v-if="row._editing" class="var-picker-cell">
                 <operand-picker
                   :vars="varPickerOptions"
@@ -75,22 +177,31 @@
                   :expected-type="row.fieldType"
                   placeholder="选择阈值、路径、字段或方法"
                   width="100%"
-                  @input="operand => onFieldOperandSelect(row, 'sourceOperand', operand)"
+                  @input="
+                    (operand) =>
+                      onFieldOperandSelect(row, 'sourceOperand', operand)
+                  "
                 />
               </div>
               <div v-else>
-                <operand-value-display :operand="row.sourceOperand" empty-text="未关联" />
+                <operand-value-display
+                  :operand="row.sourceOperand"
+                  empty-text="未关联"
+                />
               </div>
             </template>
           </el-table-column>
           <el-table-column label="默认值" min-width="230">
-            <template slot="header">
+            <template v-slot:header>
               <span>默认值</span>
-              <el-tooltip content="来源为空或未取到值时使用默认值；未配置则按空值传入模型。" placement="top">
-                <i class="el-icon-info default-value-info" />
+              <el-tooltip
+                content="来源为空或未取到值时使用默认值；未配置则按空值传入模型。"
+                placement="top"
+              >
+                <el-icon class="default-value-info"><el-icon-info /></el-icon>
               </el-tooltip>
             </template>
-            <template slot-scope="{row}">
+            <template v-slot="{ row }">
               <operand-picker
                 v-if="row._editing"
                 :value="row.defaultOperand"
@@ -100,66 +211,128 @@
                 :expected-type="row.fieldType"
                 placeholder="选择默认阈值、路径或字段"
                 width="100%"
-                @input="operand => onFieldOperandSelect(row, 'defaultOperand', operand)"
+                @input="
+                  (operand) =>
+                    onFieldOperandSelect(row, 'defaultOperand', operand)
+                "
               />
               <operand-value-display v-else :operand="row.defaultOperand" />
             </template>
           </el-table-column>
           <!-- 字段类型 -->
-          <el-table-column prop="fieldType" label="字段类型" width="100" align="center">
-            <template slot-scope="{row}">
-              <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
+          <el-table-column
+            prop="fieldType"
+            label="字段类型"
+            width="100"
+            align="center"
+          >
+            <template v-slot="{ row }">
+              <el-tag size="small" type="info">{{
+                row.fieldType || '-'
+              }}</el-tag>
             </template>
           </el-table-column>
           <!-- 操作 -->
-          <el-table-column label="操作" width="140" align="center" fixed="right">
-            <template slot-scope="{row, $index}">
+          <el-table-column
+            label="操作"
+            width="140"
+            align="center"
+            fixed="right"
+          >
+            <template v-slot="{ row, $index }">
               <template v-if="row._editing">
-                <el-button type="text" size="mini" style="color:#67c23a;" :loading="row._saving" @click="saveInputField(row, $index)">保存</el-button>
-                <el-button type="text" size="mini" style="color:#909399;" @click="cancelEditInput(row)">取消</el-button>
+                <el-button
+                  link
+                  size="small"
+                  style="color: #67c23a"
+                  :loading="row._saving"
+                  @click="saveInputField(row, $index)"
+                  >保存</el-button
+                >
+                <el-button
+                  link
+                  size="small"
+                  style="color: #909399"
+                  @click="cancelEditInput(row)"
+                  >取消</el-button
+                >
               </template>
-              <el-button v-else type="text" size="mini" @click="editInputField(row)">
-                <i class="el-icon-edit" /> 编辑
+              <el-button
+                v-else
+                link
+                size="small"
+                @click="editInputField(row)"
+              >
+                <el-icon><el-icon-edit /></el-icon> 编辑
               </el-button>
             </template>
           </el-table-column>
         </el-table>
         <el-pagination
           v-if="inputFieldNeedsPaging"
-          style="margin-top:12px;text-align:right;"
+          style="margin-top: 12px; text-align: right"
           :current-page="inputFieldPage"
           :page-size="fieldPageSize"
           :total="inputFieldsTotal"
           layout="total,prev,pager,next"
           @current-change="inputFieldPage = $event"
         />
-        <div v-if="!model.inputFields || model.inputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输入字段</div>
+        <div
+          v-if="!model.inputFields || model.inputFields.length === 0"
+          style="text-align: center; padding: 40px 0; color: #909399"
+        >
+          暂无输入字段
+        </div>
       </el-tab-pane>
 
       <!-- 输出字段 tab -->
       <el-tab-pane>
-        <span slot="label"><i class="el-icon-arrow-up" /> 输出字段</span>
-        <div style="margin-bottom:10px;display:flex;align-items:center;justify-content:space-between;">
-          <span style="color:#909399;font-size:12px;">
-            共 {{ model.outputFields ? model.outputFields.length : 0 }} 个字段，请关联引擎变量
+        <template v-slot:label>
+          <span
+            ><el-icon><el-icon-arrow-up /></el-icon> 输出字段</span
+          >
+        </template>
+        <div
+          style="
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+          "
+        >
+          <span style="color: #909399; font-size: 12px">
+            共
+            {{ model.outputFields ? model.outputFields.length : 0 }}
+            个字段，请关联引擎变量
           </span>
-          <el-button size="mini" icon="el-icon-refresh" @click="load">刷新</el-button>
+          <el-button size="small" :icon="ElIconRefresh" @click="load"
+            >刷新</el-button
+          >
         </div>
 
-        <el-table :data="pagedOutputFields" border size="small" max-height="500" v-loading="loading" :row-class-name="outputRowClassName">
+        <el-table
+          :data="pagedOutputFields"
+          border
+          size="small"
+          max-height="500"
+          v-loading="loading"
+          :row-class-name="outputRowClassName"
+        >
           <!-- 序号 -->
           <el-table-column label="序号" width="60" align="center">
-            <template slot-scope="{ $index }">{{ outputFieldOffset + $index + 1 }}</template>
+            <template v-slot="{ $index }">{{
+              outputFieldOffset + $index + 1
+            }}</template>
           </el-table-column>
           <!-- 字段名称 -->
           <el-table-column prop="fieldName" label="字段名称" min-width="130">
-            <template slot-scope="{row}">
-              <span style="font-weight:500;">{{ row.fieldName }}</span>
+            <template v-slot="{ row }">
+              <span style="font-weight: 500">{{ row.fieldName }}</span>
             </template>
           </el-table-column>
           <!-- 对应变量 -->
           <el-table-column label="对应变量" min-width="280">
-            <template slot-scope="{row}">
+            <template v-slot="{ row }">
               <div v-if="row._editing" class="var-picker-cell">
                 <operand-picker
                   :vars="varPickerOptions"
@@ -168,33 +341,47 @@
                   writable-only
                   placeholder="选择目标路径或字段"
                   width="100%"
-                  @input="operand => onFieldOperandSelect(row, 'targetOperand', operand)"
+                  @input="
+                    (operand) =>
+                      onFieldOperandSelect(row, 'targetOperand', operand)
+                  "
                 />
               </div>
               <div v-else>
-                <operand-value-display :operand="row.targetOperand" empty-text="未关联" />
+                <operand-value-display
+                  :operand="row.targetOperand"
+                  empty-text="未关联"
+                />
               </div>
             </template>
           </el-table-column>
           <!-- 字段类型 -->
-          <el-table-column prop="fieldType" label="字段类型" width="100" align="center">
-            <template slot-scope="{row}">
-              <el-tag size="mini" type="info">{{ row.fieldType || '-' }}</el-tag>
+          <el-table-column
+            prop="fieldType"
+            label="字段类型"
+            width="100"
+            align="center"
+          >
+            <template v-slot="{ row }">
+              <el-tag size="small" type="info">{{
+                row.fieldType || '-'
+              }}</el-tag>
             </template>
           </el-table-column>
           <!-- 转换方法（可编辑） -->
           <el-table-column label="转换方法" min-width="420">
-            <template slot-scope="{row}">
+            <template v-slot="{ row }">
               <div v-if="row._editing" class="transform-editor">
                 <el-select
-                  :value="transformFunctionId(row)"
-                  size="mini"
-                  style="width:100%;"
-                  popper-append-to-body
+                  :model-value="transformFunctionId(row)"
+                  size="small"
+                  style="width: 100%"
                   filterable
                   clearable
                   placeholder="选择转换函数"
-                  @change="functionId => onTransformFunctionSelect(row, functionId)"
+                  @change="
+                    (functionId) => onTransformFunctionSelect(row, functionId)
+                  "
                 >
                   <el-option
                     v-for="fn in projectFunctions"
@@ -208,70 +395,148 @@
                   :key="param.name || paramIndex"
                   class="transform-param-row"
                 >
-                  <span class="transform-param-label">{{ param.name || ('参数 ' + (paramIndex + 1)) }}</span>
+                  <span class="transform-param-label">{{
+                    param.name || '参数 ' + (paramIndex + 1)
+                  }}</span>
                   <operand-picker
-                    :value="row.transformOperand && row.transformOperand.args ? row.transformOperand.args[paramIndex] : null"
+                    :value="
+                      row.transformOperand && row.transformOperand.args
+                        ? row.transformOperand.args[paramIndex]
+                        : null
+                    "
                     :vars="varPickerOptions"
                     :functions="projectFunctions"
                     :allowed-kinds="transformArgKinds"
                     :expected-type="param.type || ''"
                     placeholder="选择参数"
                     width="100%"
-                    @input="operand => onTransformArgSelect(row, paramIndex, operand)"
+                    @input="
+                      (operand) =>
+                        onTransformArgSelect(row, paramIndex, operand)
+                    "
                   />
                 </div>
-                <code v-if="row.transformOperand" class="transform-formula">{{ transformFormula(row) }}</code>
+                <code v-if="row.transformOperand" class="transform-formula">{{
+                  transformFormula(row)
+                }}</code>
               </div>
-              <code v-else class="transform-formula">{{ transformFormula(row) }}</code>
+              <code v-else class="transform-formula">{{
+                transformFormula(row)
+              }}</code>
             </template>
           </el-table-column>
           <!-- 操作 -->
-          <el-table-column label="操作" width="140" align="center" fixed="right">
-            <template slot-scope="{row, $index}">
+          <el-table-column
+            label="操作"
+            width="140"
+            align="center"
+            fixed="right"
+          >
+            <template v-slot="{ row, $index }">
               <template v-if="row._editing">
-                <el-button type="text" size="mini" style="color:#67c23a;" :loading="row._saving" @click="saveOutputField(row, $index)">保存</el-button>
-                <el-button type="text" size="mini" style="color:#909399;" @click="cancelEditOutput(row)">取消</el-button>
+                <el-button
+                  link
+                  size="small"
+                  style="color: #67c23a"
+                  :loading="row._saving"
+                  @click="saveOutputField(row, $index)"
+                  >保存</el-button
+                >
+                <el-button
+                  link
+                  size="small"
+                  style="color: #909399"
+                  @click="cancelEditOutput(row)"
+                  >取消</el-button
+                >
               </template>
-              <el-button v-else type="text" size="mini" @click="editOutputField(row)">
-                <i class="el-icon-edit" /> 编辑
+              <el-button
+                v-else
+                link
+                size="small"
+                @click="editOutputField(row)"
+              >
+                <el-icon><el-icon-edit /></el-icon> 编辑
               </el-button>
             </template>
           </el-table-column>
         </el-table>
         <el-pagination
           v-if="outputFieldNeedsPaging"
-          style="margin-top:12px;text-align:right;"
+          style="margin-top: 12px; text-align: right"
           :current-page="outputFieldPage"
           :page-size="fieldPageSize"
           :total="outputFieldsTotal"
           layout="total,prev,pager,next"
           @current-change="outputFieldPage = $event"
         />
-        <div v-if="!model.outputFields || model.outputFields.length === 0" style="text-align:center;padding:40px 0;color:#909399;">暂无输出字段</div>
+        <div
+          v-if="!model.outputFields || model.outputFields.length === 0"
+          style="text-align: center; padding: 40px 0; color: #909399"
+        >
+          暂无输出字段
+        </div>
       </el-tab-pane>
     </el-tabs>
 
-    <el-dialog title="版本历史" :visible.sync="versionVisible" width="960px" :close-on-click-modal="false">
-      <el-table :data="versionList" border size="small" v-loading="versionLoading" style="width:100%;">
+    <el-dialog
+      title="版本历史"
+      v-model="versionVisible"
+      width="960px"
+      :close-on-click-modal="false"
+    >
+      <el-table
+        :data="versionList"
+        border
+        size="small"
+        v-loading="versionLoading"
+        style="width: 100%"
+      >
         <el-table-column prop="version" label="版本" width="80" align="center">
-          <template slot-scope="{ row }">v{{ row.version }}</template>
+          <template v-slot="{ row }">v{{ row.version }}</template>
         </el-table-column>
-        <el-table-column prop="changeLog" label="变更说明" min-width="180" show-overflow-tooltip />
+        <el-table-column
+          prop="changeLog"
+          label="变更说明"
+          min-width="180"
+          show-overflow-tooltip
+        />
         <el-table-column prop="publishBy" label="发布人" width="110" />
         <el-table-column prop="publishTime" label="发布时间" width="170">
-          <template slot-scope="{ row }">{{ row.publishTime ? String(row.publishTime).replace('T', ' ') : '-' }}</template>
+          <template v-slot="{ row }">{{
+            row.publishTime ? String(row.publishTime).replace('T', ' ') : '-'
+          }}</template>
         </el-table-column>
         <el-table-column label="操作" width="170" align="center">
-          <template slot-scope="{ row, $index }">
-            <el-button type="text" size="mini" :disabled="$index >= versionList.length - 1" @click="compareWithNext(row, $index)">对比上一版</el-button>
-            <el-button type="text" size="mini" @click="rollbackVersion(row)">回滚</el-button>
+          <template v-slot="{ row, $index }">
+            <el-button
+              link
+              size="small"
+              :disabled="$index >= versionList.length - 1"
+              @click="compareWithNext(row, $index)"
+              >对比上一版</el-button
+            >
+            <el-button link size="small" @click="rollbackVersion(row)"
+              >回滚</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
-      <div v-if="versionCompare" style="margin-top:12px;">
+      <div v-if="versionCompare" style="margin-top: 12px">
         <el-alert
-          :title="'v' + versionCompare.left.version + ' 与 v' + versionCompare.right.version + ' 对比'"
-          :type="versionCompare.modelContentChanged || versionCompare.modelConfigChanged ? 'warning' : 'success'"
+          :title="
+            'v' +
+            versionCompare.left.version +
+            ' 与 v' +
+            versionCompare.right.version +
+            ' 对比'
+          "
+          :type="
+            versionCompare.modelContentChanged ||
+            versionCompare.modelConfigChanged
+              ? 'warning'
+              : 'success'
+          "
           :closable="false"
           show-icon
         />
@@ -289,49 +554,133 @@
     </el-dialog>
 
     <!-- 模型测试对话框 -->
-    <el-dialog title="模型测试" :visible.sync="testVisible" width="900px" :close-on-click-modal="false">
+    <el-dialog
+      title="模型测试"
+      v-model="testVisible"
+      width="900px"
+      :close-on-click-modal="false"
+    >
       <!-- 数据未就绪时显示加载中，防止旧数据闪烁 -->
-      <div v-if="!testReady" style="padding:40px;text-align:center;color:#909399;">正在加载...</div>
+      <div
+        v-if="!testReady"
+        style="padding: 40px; text-align: center; color: #909399"
+      >
+        正在加载...
+      </div>
       <template v-else>
-        <div style="margin-bottom:12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-          <el-button size="mini" type="primary" icon="el-icon-video-play" :loading="testExecuting" @click="doTest">执行测试</el-button>
-          <el-button size="mini" icon="el-icon-document" @click="handleSaveParams">保存测试参数</el-button>
-          <el-button size="mini" icon="el-icon-delete" @click="handleClearParams">清空参数</el-button>
+        <div
+          style="
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+          "
+        >
+          <el-button
+            size="small"
+            type="primary"
+            :icon="ElIconVideoPlay"
+            :loading="testExecuting"
+            @click="doTest"
+            >执行测试</el-button
+          >
+          <el-button
+            size="small"
+            :icon="ElIconDocument"
+            @click="handleSaveParams"
+            >保存测试参数</el-button
+          >
+          <el-button size="small" :icon="ElIconDelete" @click="handleClearParams"
+            >清空参数</el-button
+          >
           <el-tooltip content="从输入字段自动生成表单填写" placement="top">
-            <el-button size="mini" :type="testMode === 'manual' ? 'primary' : ''" @click="switchToManualMode">表单填写</el-button>
+            <el-button
+              size="small"
+              :type="testMode === 'manual' ? 'primary' : ''"
+              @click="switchToManualMode"
+              >表单填写</el-button
+            >
           </el-tooltip>
           <el-tooltip content="直接编辑 JSON 参数" placement="top">
-            <el-button size="mini" :type="testMode === 'json' ? 'primary' : ''" @click="switchToJsonMode">JSON 编辑</el-button>
+            <el-button
+              size="small"
+              :type="testMode === 'json' ? 'primary' : ''"
+              @click="switchToJsonMode"
+              >JSON 编辑</el-button
+            >
           </el-tooltip>
         </div>
 
-        <el-alert v-if="model.modelFormat && !supportsOnlineExecution" :title="model.modelFormat + ' 格式暂不支持在线执行'" type="warning" :closable="false" style="margin-bottom:12px;" />
-        <el-alert v-else :title="'模型执行超时 ' + (model.executionTimeoutMs || 120000) + ' ms；页面请求超时 ' + modelRequestTimeoutMs + ' ms'" type="info" :closable="false" style="margin-bottom:12px;" />
+        <el-alert
+          v-if="model.modelFormat && !supportsOnlineExecution"
+          :title="model.modelFormat + ' 格式暂不支持在线执行'"
+          type="warning"
+          :closable="false"
+          style="margin-bottom: 12px"
+        />
+        <el-alert
+          v-else
+          :title="
+            '模型执行超时 ' +
+            (model.executionTimeoutMs || 120000) +
+            ' ms；页面请求超时 ' +
+            modelRequestTimeoutMs +
+            ' ms'
+          "
+          type="info"
+          :closable="false"
+          style="margin-bottom: 12px"
+        />
 
         <div v-if="testMode === 'manual'" class="test-form-wrapper">
           <div v-if="testFields.length > 0" class="test-form-grid">
-            <div v-for="field in testFields" :key="field.fieldName" class="test-field-cell">
-              <div class="test-field-label">{{ field.fieldLabel || field.fieldName }}</div>
+            <div
+              v-for="field in testFields"
+              :key="field.fieldName"
+              class="test-field-cell"
+            >
+              <div class="test-field-label">
+                {{ field.fieldLabel || field.fieldName }}
+              </div>
               <el-input-number
-                v-if="field.fieldType === 'NUMBER' || field.fieldType === 'DOUBLE' || field.fieldType === 'INTEGER'"
+                v-if="
+                  field.fieldType === 'NUMBER' ||
+                  field.fieldType === 'DOUBLE' ||
+                  field.fieldType === 'INTEGER'
+                "
                 v-model="testParams[field.fieldName]"
                 placeholder="输入值"
                 controls-position="right"
                 :precision="field.fieldType === 'INTEGER' ? 0 : undefined"
                 :step="field.fieldType === 'INTEGER' ? 1 : 0.01"
                 clearable
-                style="width:100%;"
+                style="width: 100%"
               />
               <el-select
-                v-else-if="field.fieldType === 'ENUM' && field.validValues && field.validValues.length"
+                v-else-if="
+                  field.fieldType === 'ENUM' &&
+                  field.validValues &&
+                  field.validValues.length
+                "
                 v-model="testParams[field.fieldName]"
-                style="width:100%;"
-                clearable filterable
+                style="width: 100%"
+                clearable
+                filterable
                 placeholder="选择值"
               >
-                <el-option v-for="v in field.validValues" :key="v" :label="v" :value="v" />
+                <el-option
+                  v-for="v in field.validValues"
+                  :key="v"
+                  :label="v"
+                  :value="v"
+                />
               </el-select>
-              <el-select v-else-if="field.fieldType === 'BOOLEAN'" v-model="testParams[field.fieldName]" style="width:100%;">
+              <el-select
+                v-else-if="field.fieldType === 'BOOLEAN'"
+                v-model="testParams[field.fieldName]"
+                style="width: 100%"
+              >
                 <el-option label="true" :value="true" />
                 <el-option label="false" :value="false" />
               </el-select>
@@ -340,43 +689,114 @@
                 v-model="testParams[field.fieldName]"
                 type="date"
                 placeholder="选择日期"
-                style="width:100%;"
+                style="width: 100%"
                 format="yyyy-MM-dd"
                 value-format="yyyy-MM-dd"
               />
-              <el-input v-else v-model="testParams[field.fieldName]" placeholder="输入值" />
+              <el-input
+                v-else
+                v-model="testParams[field.fieldName]"
+                placeholder="输入值"
+              />
               <div class="test-field-hint">{{ field.fieldName }}</div>
             </div>
           </div>
-          <div v-else style="text-align:center;padding:30px 0;color:#909399;">暂无输入字段，请切换到 JSON 模式手动编辑参数</div>
+          <div
+            v-else
+            style="text-align: center; padding: 30px 0; color: #909399"
+          >
+            暂无输入字段，请切换到 JSON 模式手动编辑参数
+          </div>
         </div>
 
         <div v-else class="test-form-wrapper">
-          <monaco-editor v-model="testJsonStr" language="json" height="300px" :key="testDialogKey" @change="onJsonInput" />
-          <div v-if="jsonError" style="color:#f56c6c;font-size:12px;margin-top:4px;">{{ jsonError }}</div>
+          <monaco-editor
+            v-model:value="testJsonStr"
+            language="json"
+            height="300px"
+            :key="testDialogKey"
+            @change="onJsonInput"
+          />
+          <div
+            v-if="jsonError"
+            style="color: #f56c6c; font-size: 12px; margin-top: 4px"
+          >
+            {{ jsonError }}
+          </div>
         </div>
 
-        <div v-if="testResult" style="margin-top:16px;">
+        <div v-if="testResult" style="margin-top: 16px">
           <el-divider content-position="left">执行结果</el-divider>
-          <el-alert :title="testResult.success ? '执行成功' : '执行失败'" :type="testResult.success ? 'success' : 'error'" :closable="false" show-icon style="margin-bottom:8px;">
-            <span v-if="testResult.executeTimeMs">耗时 {{ testResult.executeTimeMs }} ms</span>
-            <span v-if="testResult.modelType">，模型类型：{{ testResult.modelType }}</span>
+          <el-alert
+            :title="testResult.success ? '执行成功' : '执行失败'"
+            :type="testResult.success ? 'success' : 'error'"
+            :closable="false"
+            show-icon
+            style="margin-bottom: 8px"
+          >
+            <span v-if="testResult.executeTimeMs"
+              >耗时 {{ testResult.executeTimeMs }} ms</span
+            >
+            <span v-if="testResult.modelType"
+              >，模型类型：{{ testResult.modelType }}</span
+            >
           </el-alert>
-          <div v-if="testResult.errorMessage || testResult.error" style="color:#f56c6c;margin-bottom:8px;">{{ testResult.errorMessage || testResult.error }}</div>
-          <div v-if="testResult.message" style="color:#e6a23c;margin-bottom:8px;">{{ testResult.message }}</div>
-          <div v-if="testResult.note" style="color:#909399;font-size:12px;margin-bottom:8px;">{{ testResult.note }}</div>
-          <pre v-if="testResult.hasOutput" style="background:#f5f7fa;padding:12px;border-radius:4px;font-size:13px;max-height:200px;overflow:auto;">{{ formatResult(testResult.output) }}</pre>
+          <div
+            v-if="testResult.errorMessage || testResult.error"
+            style="color: #f56c6c; margin-bottom: 8px"
+          >
+            {{ testResult.errorMessage || testResult.error }}
+          </div>
+          <div
+            v-if="testResult.message"
+            style="color: #e6a23c; margin-bottom: 8px"
+          >
+            {{ testResult.message }}
+          </div>
+          <div
+            v-if="testResult.note"
+            style="color: #909399; font-size: 12px; margin-bottom: 8px"
+          >
+            {{ testResult.note }}
+          </div>
+          <pre
+            v-if="testResult.hasOutput"
+            style="
+              background: #f5f7fa;
+              padding: 12px;
+              border-radius: 4px;
+              font-size: 13px;
+              max-height: 200px;
+              overflow: auto;
+            "
+            >{{ formatResult(testResult.output) }}</pre
+          >
         </div>
       </template>
 
-      <div slot="footer">
-        <el-button size="small" @click="testVisible = false">关闭</el-button>
-      </div>
+      <template v-slot:footer>
+        <div>
+          <el-button size="small" @click="testVisible = false">关闭</el-button>
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  ArrowDown as ElIconArrowDown,
+  InfoFilled as ElIconInfo,
+  Edit as ElIconEdit,
+  ArrowUp as ElIconArrowUp,
+  Clock as ElIconTime,
+  VideoPlay as ElIconVideoPlay,
+  Back as ElIconBack,
+  Refresh as ElIconRefresh,
+  Document as ElIconDocument,
+  Delete as ElIconDelete,
+} from '@element-plus/icons-vue'
 import * as api from '@/api/model'
 import { getOnnxTaskLabel } from '@/constants/onnxTasks'
 import { getRuleTestSchema } from '@/api/definition'
@@ -385,13 +805,20 @@ import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
-import { compileOperand, createFunctionOperand, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
+import {
+  compileOperand,
+  createFunctionOperand,
+  createLiteralOperand,
+  operandDisplay,
+  operandFromReferenceFields,
+  syncOperandReference,
+} from '@/utils/operand'
 import { getExpressionContext } from '@/constants/expressionContexts'
 import {
   buildDetailReferenceMap,
   buildDetailReferenceState,
   buildReferenceCatalog,
-  resolveDetailReference
+  resolveDetailReference,
 } from '@/utils/referenceCatalog'
 import { formatTestOutput, normalizeTestResult } from '@/utils/testResult'
 import {
@@ -399,7 +826,7 @@ import {
   schemaFieldsToTestFields,
   flattenSchemaSample,
   buildNestedSchemaParams,
-  readParamPath
+  readParamPath,
 } from '@/utils/testSchema'
 
 const MODEL_TYPE_LABELS = {
@@ -413,12 +840,10 @@ const MODEL_TYPE_LABELS = {
   CLASSIFICATION: '分类',
   REGRESSION: '回归',
   CLUSTERING: '聚类',
-  ML: '机器学习'
+  ML: '机器学习',
 }
 
 export default {
-  name: 'ModelDetail',
-  components: { OperandPicker, OperandValueDisplay },
   data() {
     return {
       loading: false,
@@ -430,7 +855,7 @@ export default {
         { label: '普通变量', options: [] },
         { label: '常量', options: [] },
         { label: '数据对象字段', options: [] },
-        { label: '模型', options: [] }
+        { label: '模型', options: [] },
       ],
       projectFunctions: [],
       valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
@@ -455,18 +880,40 @@ export default {
       versionVisible: false,
       versionLoading: false,
       versionList: [],
-      versionCompare: null
+      versionCompare: null,
+      ElIconTime: markRaw(ElIconTime),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
+      ElIconBack: markRaw(ElIconBack),
+      ElIconRefresh: markRaw(ElIconRefresh),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconDelete: markRaw(ElIconDelete),
     }
   },
+  components: {
+    OperandPicker,
+    OperandValueDisplay,
+    ElIconArrowDown,
+    ElIconInfo,
+    ElIconEdit,
+    ElIconArrowUp,
+  },
+  name: 'ModelDetail',
   computed: {
     parsedModelConfig() {
       const config = this.model && this.model.modelConfig
       if (!config) return {}
       if (typeof config === 'object') return config
-      try { return JSON.parse(config) } catch (e) { return {} }
+      try {
+        return JSON.parse(config)
+      } catch (e) {
+        return {}
+      }
     },
     supportsOnlineExecution() {
-      return this.model && (this.model.modelFormat === 'PMML' || this.model.modelFormat === 'ONNX')
+      return (
+        this.model &&
+        (this.model.modelFormat === 'PMML' || this.model.modelFormat === 'ONNX')
+      )
     },
     onnxTaskLabel() {
       return getOnnxTaskLabel(this.parsedModelConfig.onnxTaskType)
@@ -474,30 +921,55 @@ export default {
     onnxNodeSummary() {
       const metadata = this.parsedModelConfig.nodeMetadata || {}
       const inputs = metadata.inputs ? Object.keys(metadata.inputs).length : 0
-      const outputs = metadata.outputs ? Object.keys(metadata.outputs).length : 0
+      const outputs = metadata.outputs
+        ? Object.keys(metadata.outputs).length
+        : 0
       return inputs + ' 入 / ' + outputs + ' 出'
     },
     onnxExecutionProvider() {
-      return String(this.parsedModelConfig.executionProvider || 'CPU').toUpperCase() === 'CUDA' ? 'CUDA' : 'CPU'
+      return String(
+        this.parsedModelConfig.executionProvider || 'CPU'
+      ).toUpperCase() === 'CUDA'
+        ? 'CUDA'
+        : 'CPU'
     },
     onnxGpuSummary() {
       const config = this.parsedModelConfig
-      const deviceId = Number.isInteger(Number(config.cudaDeviceId)) ? Number(config.cudaDeviceId) : 0
-      const memory = Number.isFinite(Number(config.cudaGpuMemLimitMb)) ? Number(config.cudaGpuMemLimitMb) : 0
+      const deviceId = Number.isInteger(Number(config.cudaDeviceId))
+        ? Number(config.cudaDeviceId)
+        : 0
+      const memory = Number.isFinite(Number(config.cudaGpuMemLimitMb))
+        ? Number(config.cudaGpuMemLimitMb)
+        : 0
       const arena = config.cudaArenaExtendStrategy || 'kNextPowerOfTwo'
       const algorithm = config.cudaCudnnConvAlgoSearch || 'EXHAUSTIVE'
-      const defaultStream = config.cudaDoCopyInDefaultStream !== false ? '默认流' : '独立流'
-      return 'GPU ' + deviceId + '，显存 ' + (memory > 0 ? memory + ' MB' : '不显式限制')
-        + '，' + arena + '，' + algorithm + '，' + defaultStream
+      const defaultStream =
+        config.cudaDoCopyInDefaultStream !== false ? '默认流' : '独立流'
+      return (
+        'GPU ' +
+        deviceId +
+        '，显存 ' +
+        (memory > 0 ? memory + ' MB' : '不显式限制') +
+        '，' +
+        arena +
+        '，' +
+        algorithm +
+        '，' +
+        defaultStream
+      )
     },
     modelRequestTimeoutMs() {
       return (this.model.executionTimeoutMs || 120000) + 5000
     },
     inputFieldsTotal() {
-      return this.model && this.model.inputFields ? this.model.inputFields.length : 0
+      return this.model && this.model.inputFields
+        ? this.model.inputFields.length
+        : 0
     },
     outputFieldsTotal() {
-      return this.model && this.model.outputFields ? this.model.outputFields.length : 0
+      return this.model && this.model.outputFields
+        ? this.model.outputFields.length
+        : 0
     },
     inputFieldNeedsPaging() {
       return this.inputFieldsTotal > this.fieldPageSize
@@ -506,26 +978,36 @@ export default {
       return this.outputFieldsTotal > this.fieldPageSize
     },
     inputFieldOffset() {
-      return this.inputFieldNeedsPaging ? (this.inputFieldPage - 1) * this.fieldPageSize : 0
+      return this.inputFieldNeedsPaging
+        ? (this.inputFieldPage - 1) * this.fieldPageSize
+        : 0
     },
     outputFieldOffset() {
-      return this.outputFieldNeedsPaging ? (this.outputFieldPage - 1) * this.fieldPageSize : 0
+      return this.outputFieldNeedsPaging
+        ? (this.outputFieldPage - 1) * this.fieldPageSize
+        : 0
     },
     pagedInputFields() {
       const fields = (this.model && this.model.inputFields) || []
       if (!this.inputFieldNeedsPaging) return fields
-      return fields.slice(this.inputFieldOffset, this.inputFieldOffset + this.fieldPageSize)
+      return fields.slice(
+        this.inputFieldOffset,
+        this.inputFieldOffset + this.fieldPageSize
+      )
     },
     pagedOutputFields() {
       const fields = (this.model && this.model.outputFields) || []
       if (!this.outputFieldNeedsPaging) return fields
-      return fields.slice(this.outputFieldOffset, this.outputFieldOffset + this.fieldPageSize)
+      return fields.slice(
+        this.outputFieldOffset,
+        this.outputFieldOffset + this.fieldPageSize
+      )
     },
     /** 构建 VarPicker 需要的 vars 数组格式 */
     varPickerOptions() {
       const options = []
-      this.varPickerGroups.forEach(group => {
-        group.options.forEach(v => {
+      this.varPickerGroups.forEach((group) => {
+        group.options.forEach((v) => {
           options.push({
             varCode: v.varCode,
             varLabel: v.varLabelText || v.varCode,
@@ -535,16 +1017,23 @@ export default {
             _refType: v.refType,
             refType: v.refType,
             _ref: {
-              category: v.sourceType === 'dataObject' ? 'object' : (v.sourceType === 'constant' ? 'constant' : (v.sourceType === 'model' ? 'model' : 'standalone')),
+              category:
+                v.sourceType === 'dataObject'
+                  ? 'object'
+                  : v.sourceType === 'constant'
+                  ? 'constant'
+                  : v.sourceType === 'model'
+                  ? 'model'
+                  : 'standalone',
               objectCode: v.sourceCode || '',
               objectScriptName: v.sourceCode || '',
-              objectLabel: v.sourceLabel || ''
-            }
+              objectLabel: v.sourceLabel || '',
+            },
           })
         })
       })
       return options
-    }
+    },
   },
   created() {
     this.load()
@@ -554,24 +1043,33 @@ export default {
     parseOperand(value) {
       if (!value) return null
       if (typeof value === 'object') return JSON.parse(JSON.stringify(value))
-      try { return JSON.parse(value) } catch (e) { return null }
+      try {
+        return JSON.parse(value)
+      } catch (e) {
+        return null
+      }
     },
     onFieldOperandSelect(row, field, operand) {
-      this.$set(row, field, operand || null)
+      row[field] = operand || null
       if (field === 'defaultOperand') {
-        this.$set(row, 'defaultValue', operand && operand.kind === 'LITERAL' ? operand.value : '')
+        row['defaultValue'] =
+          operand && operand.kind === 'LITERAL' ? operand.value : ''
         return
       }
-      this.$set(row, 'varId', operand && operand.refId != null ? operand.refId : null)
-      this.$set(row, 'refType', (operand && operand.refType) || '')
-      const scriptName = operand && (operand.kind === 'PATH' || operand.kind === 'REFERENCE')
-        ? (operand.code || operand.value)
-        : row.fieldName
-      this.$set(row, 'scriptName', scriptName || '')
-      this.$set(row, 'fieldLabel', (operand && operand.label) || row.fieldLabel || row.fieldName || '')
+      row['varId'] = operand && operand.refId != null ? operand.refId : null
+      row['refType'] = (operand && operand.refType) || ''
+      const scriptName =
+        operand && (operand.kind === 'PATH' || operand.kind === 'REFERENCE')
+          ? operand.code || operand.value
+          : row.fieldName
+      row['scriptName'] = scriptName || ''
+      row['fieldLabel'] =
+        (operand && operand.label) || row.fieldLabel || row.fieldName || ''
     },
     transformFunctionId(row) {
-      return row && row.transformOperand ? row.transformOperand.functionId : null
+      return row && row.transformOperand
+        ? row.transformOperand.functionId
+        : null
     },
     functionLabel(fn) {
       if (!fn) return ''
@@ -590,29 +1088,40 @@ export default {
     },
     transformFunctionParams(row) {
       if (!row || !row.transformOperand) return []
-      const fn = this.projectFunctions.find(item => String(item.id) === String(row.transformOperand.functionId))
+      const fn = this.projectFunctions.find(
+        (item) => String(item.id) === String(row.transformOperand.functionId)
+      )
       return this.parseFunctionParams(fn)
     },
     onTransformFunctionSelect(row, functionId) {
-      if (functionId === undefined || functionId === null || functionId === '') {
-        this.$set(row, 'transformOperand', null)
+      if (
+        functionId === undefined ||
+        functionId === null ||
+        functionId === ''
+      ) {
+        row['transformOperand'] = null
         return
       }
-      const fn = this.projectFunctions.find(item => String(item.id) === String(functionId))
+      const fn = this.projectFunctions.find(
+        (item) => String(item.id) === String(functionId)
+      )
       if (!fn) {
-        this.$set(row, 'transformOperand', null)
+        row['transformOperand'] = null
         return
       }
       const args = this.parseFunctionParams(fn).map(() => null)
-      this.$set(row, 'transformOperand', createFunctionOperand(fn, args))
+      row['transformOperand'] = createFunctionOperand(fn, args)
     },
     onTransformArgSelect(row, index, operand) {
       if (!row || !row.transformOperand) return
-      if (!Array.isArray(row.transformOperand.args)) this.$set(row.transformOperand, 'args', [])
-      this.$set(row.transformOperand.args, index, operand || null)
+      if (!Array.isArray(row.transformOperand.args))
+        row.transformOperand['args'] = []
+      row.transformOperand.args[index] = operand || null
     },
     transformFormula(row) {
-      return row && row.transformOperand ? (compileOperand(row.transformOperand) || '-') : '-'
+      return row && row.transformOperand
+        ? compileOperand(row.transformOperand) || '-'
+        : '-'
     },
     async load() {
       const id = this.$route.params.id
@@ -623,21 +1132,41 @@ export default {
         this.model = res.data || {}
         // 初始化 _editing 标志
         if (this.model.inputFields) {
-          this.model.inputFields.forEach(f => {
-            this.$set(f, '_editing', false)
-            const sourceOperand = this.parseOperand(f.sourceOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
-            if (sourceOperand && !sourceOperand.valueType) sourceOperand.valueType = f.fieldType || ''
-            this.$set(f, 'sourceOperand', sourceOperand)
-            this.$set(f, 'defaultOperand', this.parseOperand(f.defaultOperand) || (f.defaultValue ? createLiteralOperand(f.defaultValue, f.fieldType) : null))
+          this.model.inputFields.forEach((f) => {
+            f['_editing'] = false
+            const sourceOperand =
+              this.parseOperand(f.sourceOperand) ||
+              operandFromReferenceFields(
+                { ...f, valueType: f.fieldType },
+                'scriptName',
+                'varId',
+                'refType'
+              )
+            if (sourceOperand && !sourceOperand.valueType)
+              sourceOperand.valueType = f.fieldType || ''
+            f['sourceOperand'] = sourceOperand
+            f['defaultOperand'] =
+              this.parseOperand(f.defaultOperand) ||
+              (f.defaultValue
+                ? createLiteralOperand(f.defaultValue, f.fieldType)
+                : null)
           })
         }
         if (this.model.outputFields) {
-          this.model.outputFields.forEach(f => {
-            this.$set(f, '_editing', false)
-            const targetOperand = this.parseOperand(f.targetOperand) || operandFromReferenceFields({ ...f, valueType: f.fieldType }, 'scriptName', 'varId', 'refType')
-            if (targetOperand && !targetOperand.valueType) targetOperand.valueType = f.fieldType || ''
-            this.$set(f, 'targetOperand', targetOperand)
-            this.$set(f, 'transformOperand', this.parseOperand(f.transformOperand))
+          this.model.outputFields.forEach((f) => {
+            f['_editing'] = false
+            const targetOperand =
+              this.parseOperand(f.targetOperand) ||
+              operandFromReferenceFields(
+                { ...f, valueType: f.fieldType },
+                'scriptName',
+                'varId',
+                'refType'
+              )
+            if (targetOperand && !targetOperand.valueType)
+              targetOperand.valueType = f.fieldType || ''
+            f['targetOperand'] = targetOperand
+            f['transformOperand'] = this.parseOperand(f.transformOperand)
           })
         }
         this.normalizeFieldPages()
@@ -650,8 +1179,14 @@ export default {
       }
     },
     normalizeFieldPages() {
-      const inputMax = Math.max(1, Math.ceil(this.inputFieldsTotal / this.fieldPageSize))
-      const outputMax = Math.max(1, Math.ceil(this.outputFieldsTotal / this.fieldPageSize))
+      const inputMax = Math.max(
+        1,
+        Math.ceil(this.inputFieldsTotal / this.fieldPageSize)
+      )
+      const outputMax = Math.max(
+        1,
+        Math.ceil(this.outputFieldsTotal / this.fieldPageSize)
+      )
       if (this.inputFieldPage > inputMax) this.inputFieldPage = inputMax
       if (this.outputFieldPage > outputMax) this.outputFieldPage = outputMax
     },
@@ -671,58 +1206,87 @@ export default {
     },
     async loadVarsByProject(projectId) {
       try {
-        const [varsRes, constRes, treeRes, modelRes, functionRes] = await Promise.all([
-          listVariablesByProject(projectId),
-          listVariables({ projectId, varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(projectId),
-          api.listAllModelsByProject(projectId),
-          listAllFunctionsByProject(projectId)
-        ])
+        const [varsRes, constRes, treeRes, modelRes, functionRes] =
+          await Promise.all([
+            listVariablesByProject(projectId),
+            listVariables({
+              projectId,
+              varSource: 'CONSTANT',
+              pageNum: 1,
+              pageSize: 5000,
+            }),
+            getVariableTree(projectId),
+            api.listAllModelsByProject(projectId),
+            listAllFunctionsByProject(projectId),
+          ])
         const vars = Array.isArray(varsRes.data) ? varsRes.data : []
-        const consts = (constRes.data && Array.isArray(constRes.data.records))
-          ? constRes.data.records
-          : (Array.isArray(constRes.data) ? constRes.data : [])
+        const consts =
+          constRes.data && Array.isArray(constRes.data.records)
+            ? constRes.data.records
+            : Array.isArray(constRes.data)
+            ? constRes.data
+            : []
         const tree = this.normalizeVariableTree(treeRes.data)
         const models = this.normalizeListResponse(modelRes)
         this.projectFunctions = this.normalizeListResponse(functionRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
-        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
-          { label: '普通变量', options: [] },
-          { label: '常量', options: [] },
-          { label: '数据对象字段', options: [] },
-          { label: '模型', options: [] }
-        ])
+        this.varPickerGroups.splice(
+          0,
+          this.varPickerGroups.length,
+          ...[
+            { label: '普通变量', options: [] },
+            { label: '常量', options: [] },
+            { label: '数据对象字段', options: [] },
+            { label: '模型', options: [] },
+          ]
+        )
       }
     },
     async loadGlobalVars() {
       try {
-        const [varsRes, constRes, treeRes, modelRes, functionRes] = await Promise.all([
-          listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
-          listVariables({ scope: 'GLOBAL', varSource: 'CONSTANT', pageNum: 1, pageSize: 5000 }),
-          getVariableTree(0),
-          api.listAllModelsByProject(0),
-          listAllFunctionsByProject(0)
-        ])
-        const vars = (varsRes.data && Array.isArray(varsRes.data.records))
-          ? varsRes.data.records
-          : (Array.isArray(varsRes.data) ? varsRes.data : [])
-        const consts = (constRes.data && Array.isArray(constRes.data.records))
-          ? constRes.data.records
-          : (Array.isArray(constRes.data) ? constRes.data : [])
+        const [varsRes, constRes, treeRes, modelRes, functionRes] =
+          await Promise.all([
+            listVariables({ scope: 'GLOBAL', pageNum: 1, pageSize: 5000 }),
+            listVariables({
+              scope: 'GLOBAL',
+              varSource: 'CONSTANT',
+              pageNum: 1,
+              pageSize: 5000,
+            }),
+            getVariableTree(0),
+            api.listAllModelsByProject(0),
+            listAllFunctionsByProject(0),
+          ])
+        const vars =
+          varsRes.data && Array.isArray(varsRes.data.records)
+            ? varsRes.data.records
+            : Array.isArray(varsRes.data)
+            ? varsRes.data
+            : []
+        const consts =
+          constRes.data && Array.isArray(constRes.data.records)
+            ? constRes.data.records
+            : Array.isArray(constRes.data)
+            ? constRes.data
+            : []
         const tree = this.normalizeVariableTree(treeRes.data)
         const models = this.normalizeListResponse(modelRes)
         this.projectFunctions = this.normalizeListResponse(functionRes)
         this.buildVarOptions([...vars, ...consts], tree, models)
       } catch (e) {
         this.varMap = {}
-        this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
-          { label: '普通变量', options: [] },
-          { label: '常量', options: [] },
-          { label: '数据对象字段', options: [] },
-          { label: '模型', options: [] }
-        ])
+        this.varPickerGroups.splice(
+          0,
+          this.varPickerGroups.length,
+          ...[
+            { label: '普通变量', options: [] },
+            { label: '常量', options: [] },
+            { label: '数据对象字段', options: [] },
+            { label: '模型', options: [] },
+          ]
+        )
       }
     },
     normalizeVariableTree(data) {
@@ -738,9 +1302,9 @@ export default {
     },
     flattenObjectVariables(vars) {
       const result = []
-      const visit = rows => {
+      const visit = (rows) => {
         const list = rows || []
-        list.forEach(row => {
+        list.forEach((row) => {
           result.push(row)
           if (row.children && row.children.length) visit(row.children)
         })
@@ -763,65 +1327,86 @@ export default {
     bindingDisplay(row) {
       const item = this.getRowVarMap(row)
       if (!item) {
-        return { label: row.fieldLabel || row.scriptName || '未关联', code: row.scriptName || '-', type: row.fieldType || '-', source: this.refTypeLabel(row.refType) }
+        return {
+          label: row.fieldLabel || row.scriptName || '未关联',
+          code: row.scriptName || '-',
+          type: row.fieldType || '-',
+          source: this.refTypeLabel(row.refType),
+        }
       }
       return {
         label: item.varLabelText || item.varLabel || item.varCode,
         code: item.varCodeText || item.varCode || row.scriptName || '-',
         type: this.varTypeLabel(item.varType || row.fieldType),
-        source: this.refTypeLabel(item.refType || row.refType)
+        source: this.refTypeLabel(item.refType || row.refType),
       }
     },
     varTypeLabel(type) {
-      return {
-        STRING: '字符串',
-        NUMBER: '数值',
-        INTEGER: '整数',
-        DOUBLE: '小数',
-        BOOLEAN: '布尔',
-        DATE: '日期',
-        ENUM: '枚举',
-        OBJECT: '对象',
-        LIST: '列表',
-        MAP: '映射',
-        MODEL: '模型'
-      }[type] || type || '-'
+      return (
+        {
+          STRING: '字符串',
+          NUMBER: '数值',
+          INTEGER: '整数',
+          DOUBLE: '小数',
+          BOOLEAN: '布尔',
+          DATE: '日期',
+          ENUM: '枚举',
+          OBJECT: '对象',
+          LIST: '列表',
+          MAP: '映射',
+          MODEL: '模型',
+        }[type] ||
+        type ||
+        '-'
+      )
     },
     refTypeLabel(type) {
-      return {
-        VARIABLE: '变量',
-        CONSTANT: '常量',
-        DATA_OBJECT: '对象字段',
-        MODEL: '模型'
-      }[type] || type || '变量'
+      return (
+        {
+          VARIABLE: '变量',
+          CONSTANT: '常量',
+          DATA_OBJECT: '对象字段',
+          MODEL: '模型',
+        }[type] ||
+        type ||
+        '变量'
+      )
     },
     putVarMap(item) {
       const key = this.refKey(item.id, item.refType)
-      if (key) this.$set(this.varMap, key, item)
+      if (key) this.varMap[key] = item
     },
     syncModelOperandReferences() {
       const options = this.varPickerOptions
       const syncField = (row, field) => {
         if (!row || !row[field]) return
         const result = syncOperandReference(row[field], options)
-        if (result.changed) this.$set(row, field, result.operand)
+        if (result.changed) row[field] = result.operand
       }
-      ;(this.model.inputFields || []).forEach(row => {
+      ;(this.model.inputFields || []).forEach((row) => {
         syncField(row, 'sourceOperand')
         syncField(row, 'defaultOperand')
       })
-      ;(this.model.outputFields || []).forEach(row => {
+      ;(this.model.outputFields || []).forEach((row) => {
         syncField(row, 'targetOperand')
         syncField(row, 'transformOperand')
       })
     },
     buildVarOptions(vars, doTree, models = []) {
       const referenceModels = this.withCurrentModel(models)
-      const state = buildDetailReferenceState(buildReferenceCatalog(vars, doTree, referenceModels))
+      const state = buildDetailReferenceState(
+        buildReferenceCatalog(vars, doTree, referenceModels)
+      )
       if (state && state.items) {
         this.varMap = buildDetailReferenceMap(state)
-        this.varPickerGroups.splice(0, this.varPickerGroups.length,
-          ...state.groups.map(group => ({ label: group.label, options: group.options })))
+        this.varPickerGroups.splice(
+          0,
+          this.varPickerGroups.length,
+          ...state.groups.map((group) => ({
+            label: group.label,
+            options: group.options,
+          }))
+        )
         this.syncModelOperandReferences()
         return
       }
@@ -831,7 +1416,7 @@ export default {
       const constOptions = []
       const objOptions = []
       const modelOptions = []
-      vars.forEach(v => {
+      vars.forEach((v) => {
         const refType = v.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE'
         const seenKey = this.refKey(v.id, refType)
         if (!v.id || seenIds.has(seenKey)) return
@@ -849,7 +1434,7 @@ export default {
           varType: v.varType,
           varSource: v.varSource,
           sourceType: isConst ? 'constant' : 'variable',
-          varObj: { ...v, refType }
+          varObj: { ...v, refType },
         }
         this.putVarMap(item)
         if (isConst) {
@@ -858,10 +1443,11 @@ export default {
           varOptions.push(item)
         }
       })
-      doTree.forEach(group => {
+      doTree.forEach((group) => {
         const obj = group.object || {}
-        const fields = group.flatVariables || this.flattenObjectVariables(group.variables)
-        fields.forEach(f => {
+        const fields =
+          group.flatVariables || this.flattenObjectVariables(group.variables)
+        fields.forEach((f) => {
           const refType = 'DATA_OBJECT'
           const seenKey = this.refKey(f.id, refType)
           if (!f.id || seenIds.has(seenKey)) return
@@ -883,13 +1469,13 @@ export default {
             sourceType: 'dataObject',
             sourceLabel: objLabel,
             sourceCode: objCode,
-            varObj: { ...f, refType }
+            varObj: { ...f, refType },
           }
           this.putVarMap(item)
           objOptions.push(item)
         })
       })
-      models.forEach(m => {
+      models.forEach((m) => {
         const refType = 'MODEL'
         const seenKey = this.refKey(m.id, refType)
         if (!m.id || seenIds.has(seenKey)) return
@@ -907,30 +1493,52 @@ export default {
           varType: 'MODEL',
           varSource: 'MODEL',
           sourceType: 'model',
-          varObj: { ...m, id: m.id, varCode: codeText, varLabel: labelText, scriptName: codeText, varType: 'MODEL', refType }
+          varObj: {
+            ...m,
+            id: m.id,
+            varCode: codeText,
+            varLabel: labelText,
+            scriptName: codeText,
+            varType: 'MODEL',
+            refType,
+          },
         }
         this.putVarMap(item)
         modelOptions.push(item)
       })
-      this.varPickerGroups.splice(0, this.varPickerGroups.length, ...[
-        { label: '普通变量', options: varOptions },
-        { label: '常量', options: constOptions },
-        { label: '数据对象字段', options: objOptions },
-        { label: '模型', options: modelOptions }
-      ])
+      this.varPickerGroups.splice(
+        0,
+        this.varPickerGroups.length,
+        ...[
+          { label: '普通变量', options: varOptions },
+          { label: '常量', options: constOptions },
+          { label: '数据对象字段', options: objOptions },
+          { label: '模型', options: modelOptions },
+        ]
+      )
       this.syncModelOperandReferences()
     },
     withCurrentModel(models) {
       const list = Array.isArray(models) ? models.slice() : []
       if (!this.model || !this.model.modelCode) return list
-      const index = list.findIndex(item => (
-        (item.id != null && this.model.id != null && String(item.id) === String(this.model.id)) ||
-        item.modelCode === this.model.modelCode
-      ))
+      const index = list.findIndex(
+        (item) =>
+          (item.id != null &&
+            this.model.id != null &&
+            String(item.id) === String(this.model.id)) ||
+          item.modelCode === this.model.modelCode
+      )
       if (index < 0) {
         list.push(this.model)
-      } else if (!Array.isArray(list[index].outputFields) || !list[index].outputFields.length) {
-        list.splice(index, 1, { ...list[index], outputFields: this.model.outputFields || [], inputFields: this.model.inputFields || [] })
+      } else if (
+        !Array.isArray(list[index].outputFields) ||
+        !list[index].outputFields.length
+      ) {
+        list.splice(index, 1, {
+          ...list[index],
+          outputFields: this.model.outputFields || [],
+          inputFields: this.model.inputFields || [],
+        })
       }
       return list
     },
@@ -947,15 +1555,23 @@ export default {
     // ========== 输入字段编辑 ==========
     editInputField(row) {
       if (this.model.inputFields) {
-        this.model.inputFields.forEach(f => {
-          if (f !== row) this.$set(f, '_editing', false)
+        this.model.inputFields.forEach((f) => {
+          if (f !== row) f['_editing'] = false
         })
       }
-      this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, sourceOperand: row.sourceOperand, defaultOperand: row.defaultOperand, defaultValue: row.defaultValue })
+      row['_editing'] = true
+      row['_origin'] = {
+        varId: row.varId,
+        refType: row.refType,
+        fieldLabel: row.fieldLabel,
+        scriptName: row.scriptName,
+        sourceOperand: row.sourceOperand,
+        defaultOperand: row.defaultOperand,
+        defaultValue: row.defaultValue,
+      }
     },
     async saveInputField(row) {
-      this.$set(row, '_saving', true)
+      row['_saving'] = true
       try {
         await api.updateModelInputField(row.id, {
           varId: row.varId,
@@ -964,31 +1580,35 @@ export default {
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
           defaultValue: row.defaultValue,
-          sourceOperand: row.sourceOperand ? JSON.stringify(row.sourceOperand) : null,
-          defaultOperand: row.defaultOperand ? JSON.stringify(row.defaultOperand) : null,
+          sourceOperand: row.sourceOperand
+            ? JSON.stringify(row.sourceOperand)
+            : null,
+          defaultOperand: row.defaultOperand
+            ? JSON.stringify(row.defaultOperand)
+            : null,
           transformType: row.transformType,
           transformParams: row.transformParams,
-          validValues: row.validValues
+          validValues: row.validValues,
         })
-        this.$set(row, '_editing', false)
-        this.$set(row, '_saving', false)
+        row['_editing'] = false
+        row['_saving'] = false
         this.$message.success('保存成功')
       } catch (e) {
-        this.$set(row, '_saving', false)
+        row['_saving'] = false
         this.$message.error('保存失败: ' + (e.message || e))
       }
     },
     cancelEditInput(row) {
       if (row._origin) {
-        this.$set(row, 'varId', row._origin.varId)
-        this.$set(row, 'refType', row._origin.refType)
-        this.$set(row, 'fieldLabel', row._origin.fieldLabel)
-        this.$set(row, 'scriptName', row._origin.scriptName)
-        this.$set(row, 'sourceOperand', row._origin.sourceOperand)
-        this.$set(row, 'defaultOperand', row._origin.defaultOperand)
-        this.$set(row, 'defaultValue', row._origin.defaultValue)
+        row['varId'] = row._origin.varId
+        row['refType'] = row._origin.refType
+        row['fieldLabel'] = row._origin.fieldLabel
+        row['scriptName'] = row._origin.scriptName
+        row['sourceOperand'] = row._origin.sourceOperand
+        row['defaultOperand'] = row._origin.defaultOperand
+        row['defaultValue'] = row._origin.defaultValue
       }
-      this.$set(row, '_editing', false)
+      row['_editing'] = false
     },
     inputRowClassName({ row }) {
       return row._editing ? 'editing-row' : ''
@@ -997,15 +1617,22 @@ export default {
     // ========== 输出字段编辑 ==========
     editOutputField(row) {
       if (this.model.outputFields) {
-        this.model.outputFields.forEach(f => {
-          if (f !== row) this.$set(f, '_editing', false)
+        this.model.outputFields.forEach((f) => {
+          if (f !== row) f['_editing'] = false
         })
       }
-      this.$set(row, '_editing', true)
-      this.$set(row, '_origin', { varId: row.varId, refType: row.refType, fieldLabel: row.fieldLabel, scriptName: row.scriptName, transformOperand: this.parseOperand(row.transformOperand), targetOperand: row.targetOperand })
+      row['_editing'] = true
+      row['_origin'] = {
+        varId: row.varId,
+        refType: row.refType,
+        fieldLabel: row.fieldLabel,
+        scriptName: row.scriptName,
+        transformOperand: this.parseOperand(row.transformOperand),
+        targetOperand: row.targetOperand,
+      }
     },
     async saveOutputField(row) {
-      this.$set(row, '_saving', true)
+      row['_saving'] = true
       try {
         await api.updateModelOutputField(row.id, {
           varId: row.varId,
@@ -1014,27 +1641,33 @@ export default {
           fieldLabel: row.fieldLabel,
           fieldType: row.fieldType,
           targetField: row.targetField,
-          targetOperand: row.targetOperand ? JSON.stringify(row.targetOperand) : null,
-          transformOperand: row.transformOperand ? JSON.stringify(row.transformOperand) : null
+          targetOperand: row.targetOperand
+            ? JSON.stringify(row.targetOperand)
+            : null,
+          transformOperand: row.transformOperand
+            ? JSON.stringify(row.transformOperand)
+            : null,
         })
-        this.$set(row, '_editing', false)
-        this.$set(row, '_saving', false)
+        row['_editing'] = false
+        row['_saving'] = false
         this.$message.success('保存成功')
       } catch (e) {
-        this.$set(row, '_saving', false)
+        row['_saving'] = false
         this.$message.error('保存失败: ' + (e.message || e))
       }
     },
     cancelEditOutput(row) {
       if (row._origin) {
-        this.$set(row, 'varId', row._origin.varId)
-        this.$set(row, 'refType', row._origin.refType)
-        this.$set(row, 'fieldLabel', row._origin.fieldLabel)
-        this.$set(row, 'scriptName', row._origin.scriptName)
-        this.$set(row, 'transformOperand', this.parseOperand(row._origin.transformOperand))
-        this.$set(row, 'targetOperand', row._origin.targetOperand)
+        row['varId'] = row._origin.varId
+        row['refType'] = row._origin.refType
+        row['fieldLabel'] = row._origin.fieldLabel
+        row['scriptName'] = row._origin.scriptName
+        row['transformOperand'] = this.parseOperand(
+          row._origin.transformOperand
+        )
+        row['targetOperand'] = row._origin.targetOperand
       }
-      this.$set(row, '_editing', false)
+      row['_editing'] = false
     },
     outputRowClassName({ row }) {
       return row._editing ? 'editing-row' : ''
@@ -1062,7 +1695,11 @@ export default {
       const right = this.versionList[index + 1]
       if (!row || !right) return
       try {
-        const res = await api.compareVersions(this.model.id, row.version, right.version)
+        const res = await api.compareVersions(
+          this.model.id,
+          row.version,
+          right.version
+        )
         this.versionCompare = res.data || res
       } catch (e) {
         this.$message.error(e.message || '版本对比失败')
@@ -1071,7 +1708,13 @@ export default {
     async rollbackVersion(row) {
       if (!row) return
       try {
-        await this.$confirm('确定回滚模型到 v' + row.version + ' 吗？当前模型内容会被该版本快照覆盖。', '确认回滚', { type: 'warning' })
+        await this.$confirm(
+          '确定回滚模型到 v' +
+            row.version +
+            ' 吗？当前模型内容会被该版本快照覆盖。',
+          '确认回滚',
+          { type: 'warning' }
+        )
         await api.rollbackVersion(this.model.id, row.version)
         this.$message.success('回滚成功')
         this.versionVisible = false
@@ -1105,48 +1748,77 @@ export default {
       try {
         const res = await api.getModel(this.model.id)
         if (res.data) freshModel = res.data
-      } catch (e) { /* fallback to cached */ }
+      } catch (e) {
+        /* fallback to cached */
+      }
 
       let schema = null
       try {
-        schema = normalizeTestSchema(await getRuleTestSchema({ targetType: 'MODEL', targetId: this.model.id }))
-      } catch (e) { /* compatibility fallback for older servers */ }
-      const hasSchema = schema && (schema.inputs.length || Object.keys(schema.sampleParams).length)
+        schema = normalizeTestSchema(
+          await getRuleTestSchema({
+            targetType: 'MODEL',
+            targetId: this.model.id,
+          })
+        )
+      } catch (e) {
+        /* compatibility fallback for older servers */
+      }
+      const hasSchema =
+        schema &&
+        (schema.inputs.length || Object.keys(schema.sampleParams).length)
 
       // 3. 初始化字段列表（解析 validValues）
-      const testFields = hasSchema ? schemaFieldsToTestFields(schema.inputs) : (freshModel.inputFields || []).filter(f => f.status !== 0).map(f => {
-        if (f.validValues && typeof f.validValues === 'string') {
-          try { f.validValues = JSON.parse(f.validValues) } catch { f.validValues = [] }
-        }
-        if (!f.validValues) f.validValues = []
-        return f
-      })
+      const testFields = hasSchema
+        ? schemaFieldsToTestFields(schema.inputs)
+        : (freshModel.inputFields || [])
+            .filter((f) => f.status !== 0)
+            .map((f) => {
+              if (f.validValues && typeof f.validValues === 'string') {
+                try {
+                  f.validValues = JSON.parse(f.validValues)
+                } catch {
+                  f.validValues = []
+                }
+              }
+              if (!f.validValues) f.validValues = []
+              return f
+            })
 
       // 4. 从服务端获取已保存的测试参数（最高优先级）
       let savedParams = null
       try {
         const res = await api.getTestParams(this.model.id)
         if (res.data) {
-          savedParams = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
+          savedParams =
+            typeof res.data === 'string' ? JSON.parse(res.data) : res.data
         }
-      } catch (e) { /* ignore */ }
+      } catch (e) {
+        /* ignore */
+      }
 
       // 5. 从上传时设置的样例初始化（modelConfig.testParams，次优先级）
       let configParams = null
       if (!savedParams) {
         try {
           const rawConfig = freshModel.modelConfig
-          const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig) : (rawConfig || {})
+          const config =
+            typeof rawConfig === 'string'
+              ? JSON.parse(rawConfig)
+              : rawConfig || {}
           if (config && config.testParams) {
-            configParams = typeof config.testParams === 'string'
-              ? JSON.parse(config.testParams)
-              : config.testParams
+            configParams =
+              typeof config.testParams === 'string'
+                ? JSON.parse(config.testParams)
+                : config.testParams
           }
-        } catch (e) { /* ignore */ }
+        } catch (e) {
+          /* ignore */
+        }
       }
 
       // 6. 优先级：已保存参数 > 上传样例 > 空对象
-      const initObj = savedParams || configParams || (hasSchema ? schema.sampleParams : {})
+      const initObj =
+        savedParams || configParams || (hasSchema ? schema.sampleParams : {})
 
       // 7. 构建 testParams 和 testJsonStr
       //    数字字段默认 0（而非 null），避免 el-input-number 显示 0.000000
@@ -1184,7 +1856,7 @@ export default {
     },
     syncParamsToJson() {
       const flat = {}
-      this.testFields.forEach(f => {
+      this.testFields.forEach((f) => {
         const val = this.testParams[f.fieldName]
         if (val !== '' && val !== null) {
           flat[f.fieldName] = val
@@ -1199,7 +1871,7 @@ export default {
     },
     buildJsonStr() {
       const flat = {}
-      Object.keys(this.testParams).forEach(k => {
+      Object.keys(this.testParams).forEach((k) => {
         const val = this.testParams[k]
         if (val !== '' && val !== null) flat[k] = val
         else flat[k] = null
@@ -1223,9 +1895,9 @@ export default {
     syncJsonToParams() {
       try {
         const obj = JSON.parse(this.testJsonStr)
-        this.testFields.forEach(field => {
+        this.testFields.forEach((field) => {
           const value = readParamPath(obj, field.fieldName)
-          if (value !== undefined) this.$set(this.testParams, field.fieldName, value)
+          if (value !== undefined) this.testParams[field.fieldName] = value
         })
         this.jsonError = ''
       } catch (e) {
@@ -1248,7 +1920,11 @@ export default {
         params = buildNestedSchemaParams(this.testFields, this.testParams)
       }
       try {
-        const res = await api.executeModel(this.model.id, params, this.modelRequestTimeoutMs)
+        const res = await api.executeModel(
+          this.model.id,
+          params,
+          this.modelRequestTimeoutMs
+        )
         this.testResult = normalizeTestResult(res)
         if (this.testResult.success) {
           this.testJsonStr = JSON.stringify(params, null, 2)
@@ -1284,9 +1960,14 @@ export default {
      */
     handleClearParams() {
       this.testParams = {}
-      this.testFields.forEach(f => {
+      this.testFields.forEach((f) => {
         if (f.fieldType === 'BOOLEAN') this.testParams[f.fieldName] = false
-        else if (f.fieldType === 'NUMBER' || f.fieldType === 'DOUBLE' || f.fieldType === 'INTEGER') this.testParams[f.fieldName] = 0
+        else if (
+          f.fieldType === 'NUMBER' ||
+          f.fieldType === 'DOUBLE' ||
+          f.fieldType === 'INTEGER'
+        )
+          this.testParams[f.fieldName] = 0
         else this.testParams[f.fieldName] = ''
       })
       const jsonObj = buildNestedSchemaParams(this.testFields, this.testParams)
@@ -1297,8 +1978,8 @@ export default {
     },
     formatResult(outputs) {
       return formatTestOutput(outputs)
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -1364,14 +2045,13 @@ export default {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* 变量选择单元格 */
 .var-picker-cell {
   display: flex;
   align-items: center;
   gap: 4px;
   width: 100%;
 }
-.var-picker-cell ::v-deep .var-picker-wrap {
+.var-picker-cell :deep(.var-picker-wrap) {
   flex: 1;
   min-width: 0;
 }
@@ -1412,18 +2092,15 @@ export default {
   line-height: 1.5;
   font-family: Menlo, Monaco, Consolas, monospace;
 }
-/* 编辑行高亮 */
-::v-deep .editing-row {
+:deep(.editing-row) {
   background-color: #f0f9eb;
 }
-::v-deep .el-loading-mask.el-loading-fade-leave-active {
+:deep(.el-loading-mask.el-loading-fade-leave-active) {
   pointer-events: none;
 }
-::v-deep .el-table .editing-row td {
+:deep(.el-table .editing-row td) {
   background-color: #f0f9eb;
 }
-
-/* 模型测试表单 - 多列网格布局 */
 .test-form-wrapper {
   max-height: 420px;
   overflow-y: auto;

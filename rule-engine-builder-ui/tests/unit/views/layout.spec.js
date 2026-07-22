@@ -6,9 +6,9 @@ jest.mock('@/api/auth', () => ({
   consoleLogout: jest.fn()
 }))
 
-import Vue from 'vue'
-import Vuex from 'vuex'
-import { shallowMount, createLocalVue } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { createStore } from 'vuex'
+import { shallowMount } from '@test-utils'
 import * as authApi from '@/api/auth'
 import Layout from '@/layout/index.vue'
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
@@ -33,10 +33,6 @@ import {
   routeToTab,
   writeSidebarState
 } from '@/layout/layoutState'
-
-const localVue = createLocalVue()
-localVue.use(Vuex)
-
 describe('Layout — 菜单与路由归属', () => {
   test('包含 13 个路由唯一、图标唯一的菜单项', () => {
     expect(SIDEBAR_MENUS).toHaveLength(13)
@@ -46,19 +42,19 @@ describe('Layout — 菜单与路由归属', () => {
 
   test('菜单使用确认后的语义图标映射', () => {
     expect(SIDEBAR_MENUS).toEqual([
-      { index: '/project', label: '项目管理', icon: 'el-icon-folder-opened' },
-      { index: '/rule', label: '规则管理', icon: 'el-icon-s-operation' },
-      { index: '/variable', label: '变量管理', icon: 'el-icon-collection' },
-      { index: '/list', label: '名单管理', icon: 'el-icon-notebook-2' },
-      { index: '/datasource', label: '外数管理', icon: 'el-icon-connection' },
-      { index: '/database', label: '数据库管理', icon: 'el-icon-coin' },
-      { index: '/model', label: '模型管理', icon: 'el-icon-cpu' },
-      { index: '/function', label: '函数管理', icon: 'el-icon-c-scale-to-original' },
-      { index: '/test', label: '规则测试', icon: 'el-icon-video-play' },
-      { index: '/lineage', label: '血缘分析', icon: 'el-icon-share' },
-      { index: '/experiment', label: '分流实验', icon: 'el-icon-s-flag' },
-      { index: '/log', label: '执行日志', icon: 'el-icon-document-checked' },
-      { index: '/billing', label: '账单管理', icon: 'el-icon-wallet' }
+      { index: '/project', label: '项目管理', icon: 'FolderOpened' },
+      { index: '/rule', label: '规则管理', icon: 'Operation' },
+      { index: '/variable', label: '变量管理', icon: 'Collection' },
+      { index: '/list', label: '名单管理', icon: 'Notebook' },
+      { index: '/datasource', label: '外数管理', icon: 'Connection' },
+      { index: '/database', label: '数据库管理', icon: 'Coin' },
+      { index: '/model', label: '模型管理', icon: 'Cpu' },
+      { index: '/function', label: '函数管理', icon: 'ScaleToOriginal' },
+      { index: '/test', label: '规则测试', icon: 'VideoPlay' },
+      { index: '/lineage', label: '血缘分析', icon: 'Share' },
+      { index: '/experiment', label: '分流实验', icon: 'Flag' },
+      { index: '/log', label: '执行日志', icon: 'DocumentChecked' },
+      { index: '/billing', label: '账单管理', icon: 'Wallet' }
     ])
   })
 
@@ -261,18 +257,17 @@ function createRoute(fullPath, title = '规则管理') {
 }
 
 function mountLayout(route = createRoute('/rule')) {
-  const store = new Vuex.Store({ modules: { expressionSessions, workspaceTabs } })
+  const store = createStore({ modules: { expressionSessions, workspaceTabs } })
   const router = {
     push: jest.fn().mockResolvedValue(undefined),
     replace: jest.fn().mockResolvedValue(undefined),
     resolve: jest.fn(fullPath => {
       const title = fullPath === '/project' ? '项目管理' : '规则管理'
-      return { route: createRoute(fullPath, title) }
+      return createRoute(fullPath, title)
     })
   }
   const wrapper = shallowMount(Layout, {
-    localVue,
-    store,
+    plugins: [store],
     mocks: { $route: route, $router: router },
     stubs: {
       'router-view': true,
@@ -296,7 +291,7 @@ describe('Layout — 全局布局集成', () => {
 
   test('首次进入布局路由时创建并激活工作区页签', async() => {
     const { wrapper, store } = mountLayout(createRoute('/rule', '规则管理'))
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.findComponent(LayoutSidebar).exists()).toBe(true)
     expect(wrapper.findComponent(WorkspaceTabs).exists()).toBe(true)
@@ -304,7 +299,7 @@ describe('Layout — 全局布局集成', () => {
       { fullPath: '/rule', path: '/rule', name: 'RuleList', title: '规则管理' }
     ])
     expect(store.getters['workspaceTabs/activePath']).toBe('/rule')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('设计器页面继续高亮规则管理', () => {
@@ -312,7 +307,7 @@ describe('Layout — 全局布局集成', () => {
     const { wrapper } = mountLayout(route)
 
     expect(wrapper.vm.activeMenuIndex).toBe('/rule')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('表达式路由使用会话来源标题且会话缺失时回退静态标题', async() => {
@@ -329,47 +324,47 @@ describe('Layout — 全局布局集成', () => {
     })
 
     expect(wrapper.vm.routeTab(route).title).toBe('决策表 · 右操作数')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('关闭全部页签后回到项目管理', async() => {
     const { wrapper, router } = mountLayout()
-    await Vue.nextTick()
+    await nextTick()
 
     await wrapper.vm.handleTabOperation({ operation: 'all', targetPath: '/rule' })
 
     expect(router.push).toHaveBeenCalledWith('/project')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('刷新页签只改变当前路由视图 key', async() => {
     const { wrapper } = mountLayout()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.currentViewKey).toBe('/rule::0')
 
     await wrapper.vm.handleTabOperation({ operation: 'refresh', targetPath: '/rule' })
 
     expect(wrapper.vm.currentViewKey).toBe('/rule::1')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('全局快捷键阻止默认行为并刷新当前业务页签', async() => {
     const { wrapper } = mountLayout()
-    await Vue.nextTick()
+    await nextTick()
     const event = { ctrlKey: true, key: 'r', preventDefault: jest.fn() }
 
     await wrapper.vm.handleWorkspaceShortcut(event)
 
     expect(event.preventDefault).toHaveBeenCalled()
     expect(wrapper.vm.currentViewKey).toBe('/rule::1')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('布局销毁时清理全局快捷键监听', () => {
     const removeSpy = jest.spyOn(window, 'removeEventListener')
     const { wrapper } = mountLayout()
 
-    wrapper.destroy()
+    wrapper.unmount()
 
     expect(removeSpy).toHaveBeenCalledWith('keydown', wrapper.vm.handleWorkspaceShortcut, true)
     removeSpy.mockRestore()
@@ -390,7 +385,7 @@ describe('Layout — 全局布局集成', () => {
       width: 248,
       lastExpandedWidth: 248
     })
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('拖拽越过阈值自动切换为窄栏并保留上次展开宽度', () => {
@@ -401,7 +396,7 @@ describe('Layout — 全局布局集成', () => {
     expect(wrapper.vm.sidebarWidth).toBe(120)
     expect(wrapper.vm.isSidebarCompact).toBe(true)
     expect(wrapper.vm.lastExpandedWidth).toBe(240)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('登录启用后展示用户名并生成头像首字母', async() => {
@@ -414,7 +409,7 @@ describe('Layout — 全局布局集成', () => {
     expect(wrapper.vm.loginEnabled).toBe(true)
     expect(wrapper.vm.username).toBe('张三')
     expect(wrapper.vm.avatarInitial).toBe('Z')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('退出接口失败仍跳转登录页', async() => {
@@ -423,7 +418,7 @@ describe('Layout — 全局布局集成', () => {
 
     await expect(wrapper.vm.doLogout()).rejects.toThrow('logout failed')
     expect(router.replace).toHaveBeenCalledWith({ path: '/login' })
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('快速连续导航产生的 Vue Router 取消不会成为未处理异常', async() => {
@@ -432,10 +427,10 @@ describe('Layout — 全局布局集成', () => {
       _isRouter: true,
       type: 8
     })
-    router.push.mockRejectedValue(cancelled)
+    router.push.mockResolvedValue(cancelled)
 
-    await expect(wrapper.vm.navigateTo('/rule')).resolves.toBeUndefined()
-    wrapper.destroy()
+    await expect(wrapper.vm.navigateTo('/rule')).resolves.toBe(cancelled)
+    wrapper.unmount()
   })
 
   test('非路由导航异常继续向调用方暴露', async() => {
@@ -443,6 +438,6 @@ describe('Layout — 全局布局集成', () => {
     router.push.mockRejectedValue(new Error('unexpected'))
 
     await expect(wrapper.vm.navigateTo('/rule')).rejects.toThrow('unexpected')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

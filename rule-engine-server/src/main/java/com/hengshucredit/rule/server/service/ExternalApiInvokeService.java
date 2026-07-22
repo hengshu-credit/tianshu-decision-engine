@@ -22,9 +22,10 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.client.HttpStatusCodeException;
 import org.springframework.web.client.ResourceAccessException;
+import org.springframework.web.util.UriComponents;
 import org.springframework.web.util.UriComponentsBuilder;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.lang.reflect.Array;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -669,7 +670,7 @@ public class ExternalApiInvokeService {
             headers.setContentType(MediaType.parseMediaType(apiConfig.getContentType()));
         }
         applyJsonHeaders(headers, apiConfig.getHeaderConfig(), params);
-        UriComponentsBuilder initialBuilder = UriComponentsBuilder.fromHttpUrl(url);
+        UriComponentsBuilder initialBuilder = httpUrlBuilder(url);
         applyQueryParams(initialBuilder, apiConfig.getQueryConfig(), params);
         AppliedAuth appliedAuth = applyAuth(initialBuilder, headers, datasource, apiConfig, params,
                 preview, previewToken, forceTokenRefresh);
@@ -681,7 +682,7 @@ public class ExternalApiInvokeService {
         Object scriptBody = executeRequestScript(apiConfig, params, buildBody(apiConfig, params),
                 scriptHeaders, scriptQuery, state, token, url, firstText(apiConfig.getRequestMethod(), "POST"));
         replaceHeaders(headers, scriptHeaders);
-        UriComponentsBuilder finalBuilder = UriComponentsBuilder.fromHttpUrl(url);
+        UriComponentsBuilder finalBuilder = httpUrlBuilder(url);
         applyPreparedQuery(finalBuilder, scriptQuery);
 
         PreparedHttpRequest prepared = new PreparedHttpRequest();
@@ -694,9 +695,32 @@ public class ExternalApiInvokeService {
         prepared.requestBody = buildHttpRequestBody(scriptBody, headers.getContentType());
         prepared.tokenCacheKey = appliedAuth.tokenCacheKey;
         prepared.tokenCacheStatus = appliedAuth.tokenCacheStatus;
-        prepared.method = HttpMethod.resolve(apiConfig.getRequestMethod());
+        prepared.method = resolveHttpMethod(apiConfig.getRequestMethod());
         if (prepared.method == null) prepared.method = HttpMethod.POST;
         return prepared;
+    }
+
+    private HttpMethod resolveHttpMethod(String methodText) {
+        if (methodText == null) {
+            return null;
+        }
+        for (HttpMethod method : HttpMethod.values()) {
+            if (method.matches(methodText)) {
+                return method;
+            }
+        }
+        return null;
+    }
+
+    private UriComponentsBuilder httpUrlBuilder(String url) {
+        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url);
+        UriComponents components = builder.build();
+        String scheme = components.getScheme();
+        if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                || !hasText(components.getHost())) {
+            throw new IllegalArgumentException("Invalid HTTP URL: " + url);
+        }
+        return builder;
     }
 
     private Object executeRequestScript(RuleExternalApiConfig apiConfig, Map<String, Object> input,
@@ -788,7 +812,7 @@ public class ExternalApiInvokeService {
     }
 
     private String requestUrlForLog(PreparedHttpRequest prepared) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(prepared.baseUrl);
+        UriComponentsBuilder builder = httpUrlBuilder(prepared.baseUrl);
         Map<String, Object> query = prepared.query == null ? new LinkedHashMap<>() : prepared.query;
         for (Map.Entry<String, Object> entry : query.entrySet()) {
             Object value = isSensitiveKey(entry.getKey()) ? "******" : entry.getValue();
@@ -957,7 +981,7 @@ public class ExternalApiInvokeService {
         }
         Object body = buildTokenRequestBody(config.get("body"), params, contentType);
         String methodText = stringValue(config.get("method"));
-        HttpMethod method = methodText.isEmpty() ? HttpMethod.POST : HttpMethod.resolve(methodText);
+        HttpMethod method = methodText.isEmpty() ? HttpMethod.POST : resolveHttpMethod(methodText);
         if (method == null) {
             method = HttpMethod.POST;
         }
@@ -1014,7 +1038,7 @@ public class ExternalApiInvokeService {
         }
         Object body = buildTokenRequestBody(config.get("body"), params, contentType);
         String methodText = stringValue(config.get("method"));
-        HttpMethod method = methodText.isEmpty() ? HttpMethod.POST : HttpMethod.resolve(methodText);
+        HttpMethod method = methodText.isEmpty() ? HttpMethod.POST : resolveHttpMethod(methodText);
         if (method == null) {
             method = HttpMethod.POST;
         }

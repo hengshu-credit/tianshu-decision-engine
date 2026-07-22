@@ -9,7 +9,13 @@
         :data-section="section.key"
       >
         <div class="rule-matrix-section-head">
-          <span>{{ section.variant === 'matrix' ? '矩' : section.variant === 'dimensions' || section.variant === 'axis' ? '维' : '配' }}</span>
+          <span>{{
+            section.variant === 'matrix'
+              ? '矩'
+              : section.variant === 'dimensions' || section.variant === 'axis'
+              ? '维'
+              : '配'
+          }}</span>
           <strong>{{ section.title }}</strong>
           <em>{{ section.lanes.length }} 项</em>
         </div>
@@ -35,13 +41,13 @@ export default {
   props: {
     modelType: {
       type: String,
-      required: true
+      required: true,
     },
     sections: {
       type: Array,
-      default: () => []
-    }
-  }
+      default: () => [],
+    },
+  },
 }
 </script>
 

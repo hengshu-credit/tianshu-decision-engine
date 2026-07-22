@@ -1,11 +1,6 @@
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import ElementUI from 'element-ui'
+import { shallowMount } from '@test-utils'
 import * as definitionApi from '@/api/definition'
 import ApiScenarioPanel from '@/components/rule/ApiScenarioPanel.vue'
-
-const localVue = createLocalVue()
-localVue.use(ElementUI)
-
 function mountPanel() {
   definitionApi.listApiScenarios.mockResolvedValue({ code: 200, data: [] })
   definitionApi.getRuleTestSchema.mockResolvedValue({ code: 200, data: {
@@ -13,8 +8,7 @@ function mountPanel() {
     sampleParams: { age: 17 }
   } })
   const wrapper = shallowMount(ApiScenarioPanel, {
-    localVue,
-    propsData: {
+    props: {
       rule: { id: 7, currentVersion: 4, publishedVersion: 3, outputFieldsJson: [] }
     },
     mocks: {
@@ -51,7 +45,7 @@ describe('ApiScenarioPanel', () => {
   })
 
   afterEach(() => {
-    if (wrapper) wrapper.destroy()
+    if (wrapper) wrapper.unmount()
   })
 
   test('loads scenarios for current rule', async () => {

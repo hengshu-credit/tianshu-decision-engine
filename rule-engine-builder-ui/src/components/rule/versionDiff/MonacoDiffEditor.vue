@@ -1,8 +1,12 @@
 <template>
   <div class="monaco-diff-editor" :style="{ height }">
-    <div v-show="!loadFailed" ref="container" class="monaco-diff-editor-container" />
+    <div
+      v-show="!loadFailed"
+      ref="container"
+      class="monaco-diff-editor-container"
+    />
     <div v-if="loading" class="monaco-diff-state">
-      <i class="el-icon-loading" /> 正在加载代码差异编辑器…
+      <el-icon><el-icon-loading /></el-icon> 正在加载代码差异编辑器…
     </div>
     <div v-else-if="loadFailed" class="monaco-diff-fallback">
       <div>
@@ -18,25 +22,30 @@
 </template>
 
 <script>
+import { Loading as ElIconLoading } from '@element-plus/icons-vue'
+import { $emit } from '../../../utils/gogocodeTransfer'
 export default {
+  components: {
+    ElIconLoading,
+  },
   name: 'MonacoDiffEditor',
   props: {
     original: {
       type: String,
-      default: ''
+      default: '',
     },
     modified: {
       type: String,
-      default: ''
+      default: '',
     },
     language: {
       type: String,
-      default: 'ql'
+      default: 'ql',
     },
     height: {
       type: String,
-      default: '480px'
-    }
+      default: '480px',
+    },
   },
   data() {
     return {
@@ -45,7 +54,7 @@ export default {
       modifiedModel: null,
       loading: true,
       loadFailed: false,
-      destroyed: false
+      destroyed: false,
     }
   },
   watch: {
@@ -57,14 +66,16 @@ export default {
     },
     language(value) {
       if (!window.monaco) return
-      if (this.originalModel) window.monaco.editor.setModelLanguage(this.originalModel, value)
-      if (this.modifiedModel) window.monaco.editor.setModelLanguage(this.modifiedModel, value)
-    }
+      if (this.originalModel)
+        window.monaco.editor.setModelLanguage(this.originalModel, value)
+      if (this.modifiedModel)
+        window.monaco.editor.setModelLanguage(this.modifiedModel, value)
+    },
   },
   async mounted() {
     let attempts = 0
     while (!window.monaco && attempts < 100 && !this.destroyed) {
-      await new Promise(resolve => setTimeout(resolve, 100))
+      await new Promise((resolve) => setTimeout(resolve, 100))
       attempts++
     }
     if (this.destroyed) return
@@ -74,36 +85,45 @@ export default {
       return
     }
     this.ensureQlLanguage(window.monaco)
-    this.originalModel = window.monaco.editor.createModel(this.original || '', this.language)
-    this.modifiedModel = window.monaco.editor.createModel(this.modified || '', this.language)
-    this.diffEditor = window.monaco.editor.createDiffEditor(this.$refs.container, {
-      readOnly: true,
-      originalEditable: false,
-      automaticLayout: true,
-      renderSideBySide: true,
-      enableSplitViewResizing: true,
-      renderIndicators: true,
-      renderOverviewRuler: true,
-      diffWordWrap: 'on',
-      fontSize: 13,
-      fontFamily: "Consolas, Monaco, 'Courier New', monospace",
-      lineNumbers: 'on',
-      minimap: { enabled: false },
-      scrollBeyondLastLine: false,
-      folding: true,
-      padding: { top: 8, bottom: 8 }
-    })
+    this.originalModel = window.monaco.editor.createModel(
+      this.original || '',
+      this.language
+    )
+    this.modifiedModel = window.monaco.editor.createModel(
+      this.modified || '',
+      this.language
+    )
+    this.diffEditor = window.monaco.editor.createDiffEditor(
+      this.$refs.container,
+      {
+        readOnly: true,
+        originalEditable: false,
+        automaticLayout: true,
+        renderSideBySide: true,
+        enableSplitViewResizing: true,
+        renderIndicators: true,
+        renderOverviewRuler: true,
+        diffWordWrap: 'on',
+        fontSize: 13,
+        fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+        lineNumbers: 'on',
+        minimap: { enabled: false },
+        scrollBeyondLastLine: false,
+        folding: true,
+        padding: { top: 8, bottom: 8 },
+      }
+    )
     this.diffEditor.setModel({
       original: this.originalModel,
-      modified: this.modifiedModel
+      modified: this.modifiedModel,
     })
     this.loading = false
-    this.$emit('ready', this.diffEditor)
+    $emit(this, 'ready', this.diffEditor)
     this.$nextTick(() => {
       if (this.diffEditor) this.diffEditor.layout()
     })
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.destroyed = true
     if (this.diffEditor) this.diffEditor.dispose()
     if (this.originalModel) this.originalModel.dispose()
@@ -116,32 +136,73 @@ export default {
     updateModel(model, value) {
       if (!model) return
       const nextValue = value || ''
-      if (!model.getValue || model.getValue() !== nextValue) model.setValue(nextValue)
+      if (!model.getValue || model.getValue() !== nextValue)
+        model.setValue(nextValue)
     },
     ensureQlLanguage(monaco) {
       if (this.language !== 'ql' || !monaco.languages) return
-      const languages = monaco.languages.getLanguages ? monaco.languages.getLanguages() : []
-      if (!languages.some(item => item.id === 'ql') && monaco.languages.register) {
+      const languages = monaco.languages.getLanguages
+        ? monaco.languages.getLanguages()
+        : []
+      if (
+        !languages.some((item) => item.id === 'ql') &&
+        monaco.languages.register
+      ) {
         monaco.languages.register({ id: 'ql', aliases: ['QLExpress', 'QL'] })
       }
-      if (!monaco.__ruleVersionDiffQlTokens && monaco.languages.setMonarchTokensProvider) {
+      if (
+        !monaco.__ruleVersionDiffQlTokens &&
+        monaco.languages.setMonarchTokensProvider
+      ) {
         monaco.languages.setMonarchTokensProvider('ql', {
-          keywords: ['if', 'then', 'else', 'return', 'for', 'while', 'true', 'false', 'null', 'new', 'in'],
-          operators: ['=', '>', '<', '!', '==', '<=', '>=', '!=', '&&', '||', '+', '-', '*', '/', '%'],
+          keywords: [
+            'if',
+            'then',
+            'else',
+            'return',
+            'for',
+            'while',
+            'true',
+            'false',
+            'null',
+            'new',
+            'in',
+          ],
+          operators: [
+            '=',
+            '>',
+            '<',
+            '!',
+            '==',
+            '<=',
+            '>=',
+            '!=',
+            '&&',
+            '||',
+            '+',
+            '-',
+            '*',
+            '/',
+            '%',
+          ],
           tokenizer: {
             root: [
-              [/[a-zA-Z_$][\w$]*/, { cases: { '@keywords': 'keyword', '@default': 'identifier' } }],
+              [
+                /[a-zA-Z_$][\w$]*/,
+                { cases: { '@keywords': 'keyword', '@default': 'identifier' } },
+              ],
               [/\d+(\.\d+)?/, 'number'],
               [/"([^"\\]|\\.)*"/, 'string'],
               [/'([^'\\]|\\.)*'/, 'string'],
-              [/\/\/.*$/, 'comment']
-            ]
-          }
+              [/\/\/.*$/, 'comment'],
+            ],
+          },
         })
         monaco.__ruleVersionDiffQlTokens = true
       }
-    }
-  }
+    },
+  },
+  emits: ['ready'],
 }
 </script>
 

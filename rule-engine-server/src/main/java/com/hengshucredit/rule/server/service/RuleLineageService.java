@@ -31,7 +31,7 @@ import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;

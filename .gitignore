@@ -24,3 +24,4 @@ docs/superpowers/*
 .upstream-layoutflow-temp
 .codex-run-logs
 assets/
+.codex-jdk17-probe

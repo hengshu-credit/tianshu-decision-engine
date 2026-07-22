@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ExpressionEditorDialog from '@/components/expression/ExpressionEditorDialog.vue'
 import { createOperationOperand } from '@/utils/operand'
 
@@ -16,7 +16,7 @@ function variable(id, code, category = 'standalone', refType = 'VARIABLE') {
 
 function mountEditor(propsData = {}) {
   return shallowMount(ExpressionEditorDialog, {
-    propsData: { visible: true, value: null, vars: [], functions: [], ...propsData },
+    props: { visible: true, value: null, vars: [], functions: [], ...propsData },
     stubs: {
       ExpressionPalette: true,
       ExpressionCanvas: true,

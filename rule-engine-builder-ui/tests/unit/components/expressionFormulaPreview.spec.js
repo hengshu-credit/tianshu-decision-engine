@@ -1,11 +1,11 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ExpressionFormulaPreview from '@/components/expression/ExpressionFormulaPreview.vue'
 
 const vars = [{ _varId: 10, _refType: 'VARIABLE', varCode: 'age', varLabel: '年龄', varType: 'NUMBER' }]
 
 function mountPreview(operand = { kind: 'PATH', value: 'request.age', code: 'request.age' }) {
   return shallowMount(ExpressionFormulaPreview, {
-    propsData: { operand, vars, functions: [] },
+    props: { operand, vars, functions: [] },
     stubs: {
       MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' },
       'el-button': { template: '<button @click="$emit(\'click\')"><slot /></button>' }

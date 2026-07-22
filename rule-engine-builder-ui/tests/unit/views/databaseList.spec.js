@@ -1,26 +1,17 @@
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
-
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import * as databaseApi from '@/api/database'
 import * as projectApi from '@/api/project'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import DatabaseList from '@/views/database/DatabaseList.vue'
 
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 async function mountPage() {
   projectApi.listProjects.mockResolvedValue({ data: { records: [{ id: 1, projectName: '项目A' }] } })
   databaseApi.listDbDatasources.mockResolvedValue({ data: { records: [], total: 0 } })
 
   const wrapper = mount(DatabaseList, {
-    localVue: createTestVue(),
     mocks: {
       $message: { success: jest.fn(), error: jest.fn(), warning: jest.fn() },
       $confirm: jest.fn().mockResolvedValue(true)
@@ -46,7 +37,7 @@ async function mountPage() {
       'el-checkbox': true
     }
   })
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(resolve => setTimeout(resolve, 0))
   return wrapper
 }
@@ -59,7 +50,7 @@ describe('DatabaseList — JDBC URL 生成', () => {
   })
 
   afterEach(() => {
-    if (wrapper) wrapper.destroy()
+    if (wrapper) wrapper.unmount()
     jest.clearAllMocks()
   })
 

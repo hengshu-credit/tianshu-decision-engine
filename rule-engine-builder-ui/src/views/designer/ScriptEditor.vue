@@ -3,52 +3,105 @@
     <!-- 顶部工具栏 -->
     <div class="se-header">
       <div class="se-title-area">
-        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
-        <i class="el-icon-edit-outline se-title-icon" />
+        <el-button
+          link
+          :icon="ElIconBack"
+          @click="$router.back()"
+          style="color: #606266"
+        />
+        <el-icon class="se-title-icon"><el-icon-edit-outline /></el-icon>
         <span class="se-title">QL脚本编辑器</span>
-        <el-tag size="mini" type="info" style="margin-left:8px;">{{ lineCount }} 行</el-tag>
+        <el-tag size="small" type="info" style="margin-left: 8px"
+          >{{ lineCount }} 行</el-tag
+        >
       </div>
       <div class="se-toolbar">
-        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存脚本</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并验证脚本</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">验证后测试</el-button>
+        <el-button size="small" :icon="ElIconDocument" @click="handleSave"
+          >临时保存脚本</el-button
+        >
+        <el-button
+          size="small"
+          type="warning"
+          :icon="ElIconCpu"
+          @click="handleCompile"
+          >保存并验证脚本</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="handleTest"
+          >验证后测试</el-button
+        >
       </div>
     </div>
 
-    <div ref="designerBody" class="se-body" :class="{ 'is-resizing': resizingVarPanel }">
+    <div
+      ref="designerBody"
+      class="se-body"
+      :class="{ 'is-resizing': resizingVarPanel }"
+    >
       <!-- 左侧变量面板 -->
-      <div class="se-var-panel" :class="{ collapsed: varPanelCollapsed }" :style="varPanelStyle">
-        <div class="se-var-header" @click="varPanelCollapsed = !varPanelCollapsed">
-          <span v-if="!varPanelCollapsed"><i class="el-icon-s-data" /> 项目变量</span>
-          <i :class="varPanelCollapsed ? 'el-icon-arrow-right' : 'el-icon-arrow-left'" />
+      <div
+        class="se-var-panel"
+        :class="{ collapsed: varPanelCollapsed }"
+        :style="varPanelStyle"
+      >
+        <div
+          class="se-var-header"
+          @click="toggleVarPanel"
+        >
+          <span v-if="!varPanelCollapsed"
+            ><el-icon><el-icon-s-data /></el-icon> 项目变量</span
+          >
+          <app-icon :name="varPanelCollapsed ? 'ArrowRight' : 'ArrowLeft'" />
         </div>
         <div v-show="!varPanelCollapsed" class="se-var-list">
-          <div v-if="loadingVars" style="text-align:center;padding:20px;color:#999;">
-            <i class="el-icon-loading" /> 加载中...
+          <div
+            v-if="loadingVars"
+            style="text-align: center; padding: 20px; color: #999"
+          >
+            <el-icon><el-icon-loading /></el-icon> 加载中...
           </div>
-          <div v-else-if="varsLoadError" class="text-danger" style="text-align:center;padding:20px;">
-            <i class="el-icon-warning" /> 加载失败
-            <el-button type="text" size="mini" @click="loadProjectVars($route.params.id)" style="display:block;margin:6px auto 0;">重试</el-button>
+          <div
+            v-else-if="varsLoadError"
+            class="text-danger"
+            style="text-align: center; padding: 20px"
+          >
+            <el-icon><el-icon-warning /></el-icon> 加载失败
+            <el-button
+              link
+              size="small"
+              @click="loadProjectVars($route.params.id)"
+              style="display: block; margin: 6px auto 0"
+              >重试</el-button
+            >
           </div>
-          <div v-else-if="varTree.length === 0" style="text-align:center;padding:20px;color:#bbb;">
-            <i class="el-icon-folder-opened" /> 暂无项目变量
+          <div
+            v-else-if="varTree.length === 0"
+            style="text-align: center; padding: 20px; color: #bbb"
+          >
+            <el-icon><el-icon-folder-opened /></el-icon> 暂无项目变量
           </div>
           <template v-else>
             <!-- 搜索过滤 -->
             <div class="se-var-search">
               <el-input
                 v-model="varSearchKey"
-                size="mini"
+                size="small"
                 placeholder="搜索变量..."
-                prefix-icon="el-icon-search"
+                :prefix-icon="ElIconSearch"
                 clearable
               />
             </div>
             <!-- 树形分组 -->
             <div v-for="cat in filteredVarTree" :key="cat.key" class="se-cat">
               <div class="se-cat-header" @click="toggleCat(cat.key)">
-                <i :class="expandedCats[cat.key] ? 'el-icon-caret-bottom' : 'el-icon-caret-right'" class="se-toggle-icon" />
-                <i :class="cat.icon" class="se-cat-icon" />
+                <app-icon
+                  :name="expandedCats[cat.key] ? 'CaretBottom' : 'CaretRight'"
+                  class="se-toggle-icon"
+                />
+                <app-icon :name="cat.icon" class="se-cat-icon" />
                 <span class="se-cat-label">{{ cat.label }}</span>
                 <span class="se-cat-count">{{ countLeaves(cat) }}</span>
               </div>
@@ -62,50 +115,84 @@
                     :title="'双击插入: ' + v.varCode"
                     @dblclick="insertVar(v)"
                   >
-                    <el-tag :type="varTypeColor(v.varType)" size="mini" class="var-type-tag">{{ varTypeLabel(v.varType) }}</el-tag>
+                    <el-tag
+                      :type="varTypeColor(v.varType)"
+                      size="small"
+                      class="var-type-tag"
+                      >{{ varTypeLabel(v.varType) }}</el-tag
+                    >
                     <span class="var-code">{{ v.varCode }}</span>
                     <span class="var-label">{{ v.varLabel }}</span>
                   </div>
                   <el-pagination
                     v-if="scriptListNeedsPaging(cat.children)"
                     class="se-var-pager"
-                    small
+                    size="small"
                     layout="prev,pager,next"
                     :current-page="scriptListPage(cat.key)"
                     :page-size="scriptVarPageSize"
                     :total="cat.children.length"
-                    @current-change="p => onScriptListPageChange(cat.key, p)"
+                    @current-change="(p) => onScriptListPageChange(cat.key, p)"
                   />
                 </template>
                 <!-- 三级结构：一级分类 -> 二级组 -> 叶子 -->
                 <template v-else>
-                  <div v-for="group in cat.children" :key="cat.key + '.' + group.key" class="se-group">
-                    <div class="se-group-header" @click="toggleGroup(cat.key + '.' + group.key)">
-                      <i :class="expandedGroups[cat.key + '.' + group.key] ? 'el-icon-caret-bottom' : 'el-icon-caret-right'" class="se-toggle-icon" />
+                  <div
+                    v-for="group in cat.children"
+                    :key="cat.key + '.' + group.key"
+                    class="se-group"
+                  >
+                    <div
+                      class="se-group-header"
+                      @click="toggleGroup(cat.key + '.' + group.key)"
+                    >
+                      <app-icon
+                        :name="
+                          expandedGroups[cat.key + '.' + group.key]
+                            ? 'CaretBottom'
+                            : 'CaretRight'
+                        "
+                        class="se-toggle-icon"
+                      />
                       <span class="se-group-label">{{ group.label }}</span>
-                      <span class="se-cat-count">{{ group.children.length }}</span>
+                      <span class="se-cat-count">{{
+                        group.children.length
+                      }}</span>
                     </div>
                     <div v-show="expandedGroups[cat.key + '.' + group.key]">
                       <div
-                        v-for="v in pagedScriptList(cat.key + '.' + group.key, group.children)"
+                        v-for="v in pagedScriptList(
+                          cat.key + '.' + group.key,
+                          group.children
+                        )"
                         :key="v.varCode"
                         class="se-var-item se-var-indent"
                         :title="'双击插入: ' + v.varCode"
                         @dblclick="insertVar(v)"
                       >
-                        <el-tag :type="varTypeColor(v.varType)" size="mini" class="var-type-tag">{{ varTypeLabel(v.varType) }}</el-tag>
+                        <el-tag
+                          :type="varTypeColor(v.varType)"
+                          size="small"
+                          class="var-type-tag"
+                          >{{ varTypeLabel(v.varType) }}</el-tag
+                        >
                         <span class="var-code">{{ v.varCode }}</span>
                         <span class="var-label">{{ v.varLabel }}</span>
                       </div>
                       <el-pagination
                         v-if="scriptListNeedsPaging(group.children)"
                         class="se-var-pager se-var-pager--group"
-                        small
+                        size="small"
                         layout="prev,pager,next"
-                        :current-page="scriptListPage(cat.key + '.' + group.key)"
+                        :current-page="
+                          scriptListPage(cat.key + '.' + group.key)
+                        "
                         :page-size="scriptVarPageSize"
                         :total="group.children.length"
-                        @current-change="p => onScriptListPageChange(cat.key + '.' + group.key, p)"
+                        @current-change="
+                          (p) =>
+                            onScriptListPageChange(cat.key + '.' + group.key, p)
+                        "
                       />
                     </div>
                   </div>
@@ -137,22 +224,29 @@
         <!-- 状态栏 -->
         <div class="se-statusbar">
           <span v-if="compileStatus === 1" class="se-status-item status-ok">
-            <i class="el-icon-success" /> 脚本有效
+            <el-icon><el-icon-success /></el-icon> 脚本有效
           </span>
-          <span v-else-if="compileStatus === 2" class="se-status-item status-err">
-            <i class="el-icon-error" /> {{ compileMessage || '脚本错误' }}
+          <span
+            v-else-if="compileStatus === 2"
+            class="se-status-item status-err"
+          >
+            <el-icon><el-icon-error /></el-icon>
+            {{ compileMessage || '脚本错误' }}
           </span>
           <span v-else class="se-status-item">
-            <i class="el-icon-info" /> 未验证
+            <el-icon><el-icon-info /></el-icon> 未验证
           </span>
           <span class="se-statusbar-spacer" />
-          <span class="se-line-info">{{ lineCount }} 行 / {{ script.length }} 字符</span>
+          <span class="se-line-info"
+            >{{ lineCount }} 行 / {{ script.length }} 字符</span
+          >
         </div>
 
         <!-- 编辑器 -->
         <div class="se-editor-container">
           <MonacoEditor
-            v-model="script"
+            ref="monacoEditorComponent"
+            v-model:value="script"
             language="ql"
             theme="qlexpress-dark"
             height="100%"
@@ -164,15 +258,16 @@
         <!-- 底部提示 -->
         <div class="se-footer">
           <span class="se-footer-tip">
-            <i class="el-icon-edit-outline" /> 直接编写 QLExpress 脚本，保存后即可用于规则执行
+            <el-icon><el-icon-edit-outline /></el-icon> 直接编写 QLExpress
+            脚本，保存后即可用于规则执行
           </span>
         </div>
       </div>
     </div>
 
     <!-- 测试弹窗 -->
-        <designer-test-dialog
-      :visible.sync="testVisible"
+    <designer-test-dialog
+      v-model:visible="testVisible"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCRIPT"
@@ -183,19 +278,41 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
+import { markRaw } from 'vue'
+import {
+  EditPen as ElIconEditOutline,
+  DataAnalysis as ElIconSData,
+  Loading as ElIconLoading,
+  Warning as ElIconWarning,
+  FolderOpened as ElIconFolderOpened,
+  CircleCheckFilled as ElIconSuccess,
+  CircleCloseFilled as ElIconError,
+  InfoFilled as ElIconInfo,
+  Back as ElIconBack,
+  Document as ElIconDocument,
+  Cpu as ElIconCpu,
+  VideoPlay as ElIconVideoPlay,
+  Search as ElIconSearch,
+} from '@element-plus/icons-vue'
+import {
+  saveContent,
+  compileRule,
+  executeRule,
+  getContent,
+  refreshFields,
+} from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import MonacoEditor from '@/components/MonacoEditor'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
-import { buildSampleParamsFromCodes, collectScriptInputCodes } from '@/utils/testSampleParams'
+import {
+  buildSampleParamsFromCodes,
+  collectScriptInputCodes,
+} from '@/utils/testSampleParams'
 
 const VAR_PANEL_WIDTH_KEY = 'qlexpress.scriptEditor.varPanelWidth'
 const DEFAULT_VAR_PANEL_WIDTH = 300
 
 export default {
-  name: 'ScriptEditor',
-  mixins: [varPickerMixin],
-  components: { DesignerTestDialog, MonacoEditor },
   data() {
     return {
       definitionId: null,
@@ -222,16 +339,35 @@ export default {
       resizeBodyCursor: '',
       resizeBodyUserSelect: '',
       scriptVarPageSize: 100,
-      scriptVarPages: {}
+      scriptVarPages: {},
+      ElIconBack: markRaw(ElIconBack),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconCpu: markRaw(ElIconCpu),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
+      ElIconSearch: markRaw(ElIconSearch),
     }
   },
+  components: {
+    DesignerTestDialog,
+    MonacoEditor,
+    ElIconEditOutline,
+    ElIconSData,
+    ElIconLoading,
+    ElIconWarning,
+    ElIconFolderOpened,
+    ElIconSuccess,
+    ElIconError,
+    ElIconInfo,
+  },
+  name: 'ScriptEditor',
+  mixins: [varPickerMixin],
   computed: {
     varPanelStyle() {
       if (this.varPanelCollapsed) return {}
       return {
         width: this.varPanelWidth + 'px',
         minWidth: this.varPanelWidth + 'px',
-        maxWidth: this.varPanelWidth + 'px'
+        maxWidth: this.varPanelWidth + 'px',
       }
     },
     editorOptions() {
@@ -245,7 +381,7 @@ export default {
         tabSize: 2,
         insertSpaces: true,
         formatOnPaste: true,
-        automaticLayout: true
+        automaticLayout: false,
       }
     },
     lineCount() {
@@ -256,46 +392,68 @@ export default {
       const tree = []
       const refs = this.varPickerOptions
 
-      const standalone = refs.filter(v => v._ref && v._ref.category === 'standalone')
+      const standalone = refs.filter(
+        (v) => v._ref && v._ref.category === 'standalone'
+      )
       if (standalone.length) {
-        tree.push({ key: '__standalone__', label: '普通变量', icon: 'el-icon-s-data', hasSubGroups: false, children: standalone })
+        tree.push({
+          key: '__standalone__',
+          label: '普通变量',
+          icon: 'DataAnalysis',
+          hasSubGroups: false,
+          children: standalone,
+        })
       }
 
-      const constRefs = refs.filter(v => v._ref && v._ref.category === 'constant')
+      const constRefs = refs.filter(
+        (v) => v._ref && v._ref.category === 'constant'
+      )
       if (constRefs.length) {
         const byGroup = {}
-        constRefs.forEach(v => {
+        constRefs.forEach((v) => {
           const gc = v._ref.groupCode || '_ungrouped'
           const gl = v._ref.groupLabel || gc
           if (!byGroup[gc]) byGroup[gc] = { key: gc, label: gl, children: [] }
           byGroup[gc].children.push(v)
         })
-        tree.push({ key: '__constant__', label: '常量', icon: 'el-icon-collection', hasSubGroups: true, children: Object.values(byGroup) })
+        tree.push({
+          key: '__constant__',
+          label: '常量',
+          icon: 'Collection',
+          hasSubGroups: true,
+          children: Object.values(byGroup),
+        })
       }
 
-      const objRefs = refs.filter(v => v._ref && v._ref.category === 'object')
+      const objRefs = refs.filter((v) => v._ref && v._ref.category === 'object')
       if (objRefs.length) {
         const byObj = {}
-        objRefs.forEach(v => {
+        objRefs.forEach((v) => {
           const oc = v._ref.objectCode || '_ungrouped'
           const ol = v._ref.objectLabel || oc
           if (!byObj[oc]) byObj[oc] = { key: oc, label: ol, children: [] }
           byObj[oc].children.push(v)
         })
-        tree.push({ key: '__object__', label: '对象', icon: 'el-icon-files', hasSubGroups: true, children: Object.values(byObj) })
+        tree.push({
+          key: '__object__',
+          label: '对象',
+          icon: 'Files',
+          hasSubGroups: true,
+          children: Object.values(byObj),
+        })
       }
 
       if (this.projectFunctions && this.projectFunctions.length) {
         tree.push({
           key: '__function__',
           label: '自定义函数',
-          icon: 'el-icon-c-scale-to-original',
+          icon: 'ScaleToOriginal',
           hasSubGroups: false,
-          children: this.projectFunctions.map(f => ({
+          children: this.projectFunctions.map((f) => ({
             varCode: f.funcCode + '()',
             varLabel: f.funcName,
-            varType: 'FUNC'
-          }))
+            varType: 'FUNC',
+          })),
         })
       }
 
@@ -305,39 +463,49 @@ export default {
     filteredVarTree() {
       const kw = (this.varSearchKey || '').trim().toLowerCase()
       if (!kw) return this.varTree
-      return this.varTree.map(cat => {
-        if (!cat.hasSubGroups) {
-          const filtered = cat.children.filter(v =>
-            (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
-            (v.varLabel && v.varLabel.toLowerCase().includes(kw))
-          )
-          return filtered.length ? { ...cat, children: filtered } : null
-        }
-        const filteredGroups = cat.children.map(group => {
-          const filtered = group.children.filter(v =>
-            (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
-            (v.varLabel && v.varLabel.toLowerCase().includes(kw))
-          )
-          return filtered.length ? { ...group, children: filtered } : null
-        }).filter(Boolean)
-        return filteredGroups.length ? { ...cat, children: filteredGroups } : null
-      }).filter(Boolean)
-    }
+      return this.varTree
+        .map((cat) => {
+          if (!cat.hasSubGroups) {
+            const filtered = cat.children.filter(
+              (v) =>
+                (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
+                (v.varLabel && v.varLabel.toLowerCase().includes(kw))
+            )
+            return filtered.length ? { ...cat, children: filtered } : null
+          }
+          const filteredGroups = cat.children
+            .map((group) => {
+              const filtered = group.children.filter(
+                (v) =>
+                  (v.varCode && v.varCode.toLowerCase().includes(kw)) ||
+                  (v.varLabel && v.varLabel.toLowerCase().includes(kw))
+              )
+              return filtered.length ? { ...group, children: filtered } : null
+            })
+            .filter(Boolean)
+          return filteredGroups.length
+            ? { ...cat, children: filteredGroups }
+            : null
+        })
+        .filter(Boolean)
+    },
   },
   watch: {
     varSearchKey() {
       this.scriptVarPages = {}
     },
     varTree: {
+      deep: true,
       immediate: true,
+
       handler(tree) {
         if (!tree || !tree.length) return
         const cats = { ...this.expandedCats }
         const groups = { ...this.expandedGroups }
-        tree.forEach(cat => {
+        tree.forEach((cat) => {
           if (cats[cat.key] === undefined) cats[cat.key] = true
           if (cat.hasSubGroups) {
-            cat.children.forEach(g => {
+            cat.children.forEach((g) => {
               const gk = cat.key + '.' + g.key
               if (groups[gk] === undefined) groups[gk] = true
             })
@@ -345,8 +513,8 @@ export default {
         })
         this.expandedCats = cats
         this.expandedGroups = groups
-      }
-    }
+      },
+    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -355,13 +523,16 @@ export default {
   mounted() {
     this.restoreVarPanelWidth()
   },
-  beforeDestroy() {
+  beforeUnmount() {
     this.stopVarPanelResize()
   },
   methods: {
     restoreVarPanelWidth() {
       try {
-        const saved = Number(window.localStorage && window.localStorage.getItem(VAR_PANEL_WIDTH_KEY))
+        const saved = Number(
+          window.localStorage &&
+            window.localStorage.getItem(VAR_PANEL_WIDTH_KEY)
+        )
         if (Number.isFinite(saved) && saved > 0) {
           this.varPanelWidth = this.clampVarPanelWidth(saved)
         }
@@ -372,7 +543,10 @@ export default {
     persistVarPanelWidth() {
       try {
         if (window.localStorage) {
-          window.localStorage.setItem(VAR_PANEL_WIDTH_KEY, String(this.varPanelWidth))
+          window.localStorage.setItem(
+            VAR_PANEL_WIDTH_KEY,
+            String(this.varPanelWidth)
+          )
         }
       } catch (e) {
         // 忽略持久化失败，拖拽本身仍然生效
@@ -397,7 +571,9 @@ export default {
       this.updateVarPanelWidth(clientX)
       window.addEventListener('mousemove', this.onVarPanelResize)
       window.addEventListener('mouseup', this.stopVarPanelResize)
-      window.addEventListener('touchmove', this.onVarPanelTouchResize, { passive: false })
+      window.addEventListener('touchmove', this.onVarPanelTouchResize, {
+        passive: false,
+      })
       window.addEventListener('touchend', this.stopVarPanelResize)
       window.addEventListener('touchcancel', this.stopVarPanelResize)
     },
@@ -421,15 +597,16 @@ export default {
       document.body.style.cursor = this.resizeBodyCursor || ''
       document.body.style.userSelect = this.resizeBodyUserSelect || ''
       this.persistVarPanelWidth()
-      this.layoutEditor()
     },
     updateVarPanelWidth(clientX) {
       const body = this.$refs.designerBody
       if (!body || clientX == null) return
       const rect = body.getBoundingClientRect()
       const maxWidth = this.panelMaxWidthForBody(rect.width)
-      this.varPanelWidth = this.clampVarPanelWidth(clientX - rect.left, maxWidth)
-      this.layoutEditor()
+      this.varPanelWidth = this.clampVarPanelWidth(
+        clientX - rect.left,
+        maxWidth
+      )
     },
     panelMaxWidthForBody(bodyWidth) {
       if (!bodyWidth) return this.varPanelMaxWidth
@@ -439,25 +616,23 @@ export default {
       )
     },
     clampVarPanelWidth(width, maxWidth = this.varPanelMaxWidth) {
-      return Math.min(Math.max(Math.round(width), this.varPanelMinWidth), maxWidth)
+      return Math.min(
+        Math.max(Math.round(width), this.varPanelMinWidth),
+        maxWidth
+      )
     },
     resetVarPanelWidth() {
       this.varPanelWidth = this.clampVarPanelWidth(DEFAULT_VAR_PANEL_WIDTH)
       this.persistVarPanelWidth()
-      this.layoutEditor()
     },
-    layoutEditor() {
-      this.$nextTick(() => {
-        if (this.monacoEditor && this.monacoEditor.layout) {
-          this.monacoEditor.layout()
-        }
-      })
+    toggleVarPanel() {
+      this.varPanelCollapsed = !this.varPanelCollapsed
     },
     toggleCat(key) {
-      this.$set(this.expandedCats, key, !this.expandedCats[key])
+      this.expandedCats[key] = !this.expandedCats[key]
     },
     toggleGroup(key) {
-      this.$set(this.expandedGroups, key, !this.expandedGroups[key])
+      this.expandedGroups[key] = !this.expandedGroups[key]
     },
     /** 统计一级分类下叶子节点总数 */
     countLeaves(cat) {
@@ -477,7 +652,7 @@ export default {
       return list.slice(start, start + this.scriptVarPageSize)
     },
     onScriptListPageChange(key, page) {
-      this.$set(this.scriptVarPages, key, page)
+      this.scriptVarPages[key] = page
     },
     async loadContent() {
       try {
@@ -511,7 +686,7 @@ export default {
       this.syncScriptVarRefsFromScript()
       return {
         script: this.script,
-        scriptVarRefs: this.scriptVarRefs
+        scriptVarRefs: this.scriptVarRefs,
       }
     },
     async handleSave() {
@@ -532,14 +707,19 @@ export default {
         this.$message.success('脚本验证通过')
       } else {
         this.compileStatus = 2
-        this.compileMessage = result && result.errorMessage ? result.errorMessage : '未知错误'
+        this.compileMessage =
+          result && result.errorMessage ? result.errorMessage : '未知错误'
         this.$message.error('脚本验证失败: ' + this.compileMessage)
       }
     },
     handleTest() {
       this.testParamsTemplate = this.buildTestParamsTemplate()
       const codes = collectScriptInputCodes(this.script, this.projectRefs)
-      this.testParamsJson = JSON.stringify(buildSampleParamsFromCodes(Array.from(codes), this.projectRefs), null, 2)
+      this.testParamsJson = JSON.stringify(
+        buildSampleParamsFromCodes(Array.from(codes), this.projectRefs),
+        null,
+        2
+      )
       this.testResult = null
       this.testVisible = true
     },
@@ -549,7 +729,9 @@ export default {
     },
     async doTest() {
       let params = {}
-      try { params = JSON.parse(this.testParamsJson || '{}') } catch (e) {
+      try {
+        params = JSON.parse(this.testParamsJson || '{}')
+      } catch (e) {
         this.$message.error('参数 JSON 格式错误')
         return
       }
@@ -561,20 +743,26 @@ export default {
       const code = v.varCode
       const editor = this.monacoEditor
       const selection = editor.getSelection()
-      editor.executeEdits('insert-var', [{
-        range: selection,
-        text: code,
-        forceMoveMarkers: true
-      }])
+      editor.executeEdits('insert-var', [
+        {
+          range: selection,
+          text: code,
+          forceMoveMarkers: true,
+        },
+      ])
       // 同步记录引用的 varId（以最后一次插入同名变量时的 _varId 为准）
       const selectedRefType = v._refType || v.refType || null
       if (v._varId != null && selectedRefType) {
-        const existing = this.scriptVarRefs.find(r => r.refCode === code)
+        const existing = this.scriptVarRefs.find((r) => r.refCode === code)
         if (existing) {
           existing.varId = v._varId
           existing.refType = selectedRefType
         } else {
-          this.scriptVarRefs.push({ refCode: code, varId: v._varId, refType: selectedRefType })
+          this.scriptVarRefs.push({
+            refCode: code,
+            varId: v._varId,
+            refType: selectedRefType,
+          })
         }
       }
       this.$nextTick(() => editor.focus())
@@ -589,7 +777,7 @@ export default {
     syncScriptVarRefsFromScript() {
       if (!this.script) return
       const script = this.script
-      const matched = (this.scriptVarRefs || []).filter(ref => {
+      const matched = (this.scriptVarRefs || []).filter((ref) => {
         if (ref.varId == null || !ref.refType || !ref.refCode) return false
         // 使用 word boundary 匹配，防止 "amount" 匹配到 "billingAmount"
         const regex = new RegExp('\\b' + this.escapeRegex(ref.refCode) + '\\b')
@@ -608,7 +796,7 @@ export default {
     _syncModelVarRefs() {
       if (!this.scriptVarRefs || !this.scriptVarRefs.length) return
       let changed = false
-      this.scriptVarRefs.forEach(ref => {
+      this.scriptVarRefs.forEach((ref) => {
         if (!ref.varId) return
         const newRef = this.findRefByVarId(ref.varId, ref.refType)
         if (newRef && newRef.refCode !== ref.refCode) {
@@ -622,7 +810,7 @@ export default {
       })
       if (changed) this.$forceUpdate()
     },
-  }
+  },
 }
 </script>
 
@@ -641,25 +829,38 @@ $editor-border: #313244;
   flex-direction: column;
   overflow: hidden;
   border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
-
 .se-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   background: #fff;
   padding: 12px 20px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   flex-wrap: wrap;
   gap: 8px;
   flex-shrink: 0;
 }
-.se-title-area { display: flex; align-items: center; }
-.se-title-icon { font-size: 18px; color: #722ed1; margin-right: 8px; }
-.se-title { font-size: 16px; font-weight: bold; color: #282828; }
-.se-toolbar { display: flex; align-items: center; gap: 6px; }
-
+.se-title-area {
+  display: flex;
+  align-items: center;
+}
+.se-title-icon {
+  font-size: 18px;
+  color: #722ed1;
+  margin-right: 8px;
+}
+.se-title {
+  font-size: 16px;
+  font-weight: bold;
+  color: #282828;
+}
+.se-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .se-body {
   flex: 1;
   display: flex;
@@ -668,8 +869,6 @@ $editor-border: #313244;
   min-height: 0;
   overflow: hidden;
 }
-
-/* 变量面板 */
 .se-var-panel {
   width: 300px;
   min-width: 220px;
@@ -699,7 +898,9 @@ $editor-border: #313244;
   color: #555;
   cursor: pointer;
   gap: 6px;
-  i { color: #999; }
+  i {
+    color: #999;
+  }
 }
 .se-var-list {
   flex: 1;
@@ -717,8 +918,6 @@ $editor-border: #313244;
   background: #fff;
   z-index: 1;
 }
-
-/* 一级分类 */
 .se-cat-header {
   display: flex;
   align-items: center;
@@ -731,11 +930,29 @@ $editor-border: #313244;
   background: #fafafa;
   border-bottom: 1px solid #f0f0f0;
   user-select: none;
-  &:hover { background: #f0f0f0; }
+  &:hover {
+    background: #f0f0f0;
+  }
 }
-.se-toggle-icon { font-size: 12px; color: #999; width: 14px; text-align: center; flex-shrink: 0; }
-.se-cat-icon { font-size: 13px; color: #8c8c8c; flex-shrink: 0; }
-.se-cat-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-toggle-icon {
+  font-size: 12px;
+  color: #999;
+  width: 14px;
+  text-align: center;
+  flex-shrink: 0;
+}
+.se-cat-icon {
+  font-size: 13px;
+  color: #8c8c8c;
+  flex-shrink: 0;
+}
+.se-cat-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .se-cat-count {
   flex-shrink: 0;
   font-size: 10px;
@@ -746,9 +963,8 @@ $editor-border: #313244;
   line-height: 16px;
   font-weight: normal;
 }
-.se-cat-body { }
-
-/* 二级分组 */
+.se-cat-body {
+}
 .se-group-header {
   display: flex;
   align-items: center;
@@ -760,11 +976,17 @@ $editor-border: #313244;
   color: #555;
   user-select: none;
   border-bottom: 1px solid #fafafa;
-  &:hover { background: #f5f5f5; }
+  &:hover {
+    background: #f5f5f5;
+  }
 }
-.se-group-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-/* 叶子节点 */
+.se-group-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .se-var-item {
   display: flex;
   align-items: center;
@@ -773,12 +995,27 @@ $editor-border: #313244;
   cursor: pointer;
   font-size: 12px;
   transition: background 0.15s;
-  &:hover { background: #e6f7ff; }
+  &:hover {
+    background: #e6f7ff;
+  }
 }
-.se-var-indent { padding-left: 38px; }
-.var-type-tag { flex-shrink: 0; }
-.var-code { font-family: 'Consolas', monospace; color: #333; white-space: nowrap; }
-.var-label { color: #999; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.se-var-indent {
+  padding-left: 38px;
+}
+.var-type-tag {
+  flex-shrink: 0;
+}
+.var-code {
+  font-family: 'Consolas', monospace;
+  color: #333;
+  white-space: nowrap;
+}
+.var-label {
+  color: #999;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .se-var-pager {
   padding: 5px 8px;
   text-align: right;
@@ -788,7 +1025,6 @@ $editor-border: #313244;
 .se-var-pager--group {
   padding-left: 28px;
 }
-
 .se-resizer {
   flex: 0 0 8px;
   cursor: col-resize;
@@ -817,8 +1053,6 @@ $editor-border: #313244;
   background: #d9d9d9;
   transition: background 0.15s;
 }
-
-/* 编辑区 */
 .se-editor-area {
   flex: 1;
   min-width: 0;
@@ -828,7 +1062,6 @@ $editor-border: #313244;
   border: 1px solid #e8e8e8;
   overflow: hidden;
 }
-
 .se-statusbar {
   display: flex;
   align-items: center;
@@ -843,12 +1076,21 @@ $editor-border: #313244;
   display: flex;
   align-items: center;
   gap: 3px;
-  &.status-ok { color: #52c41a; }
-  &.status-err { color: #ff6b6b; }
+  &.status-ok {
+    color: #52c41a;
+  }
+  &.status-err {
+    color: #ff6b6b;
+  }
 }
-.se-statusbar-spacer { flex: 1; }
-.se-line-info { font-size: 11px; color: #585b70; font-family: 'Consolas', monospace; }
-
+.se-statusbar-spacer {
+  flex: 1;
+}
+.se-line-info {
+  font-size: 11px;
+  color: #585b70;
+  font-family: 'Consolas', monospace;
+}
 .se-editor-container {
   display: flex;
   flex: 1;
@@ -856,7 +1098,6 @@ $editor-border: #313244;
   overflow: hidden;
   background: $editor-bg;
 }
-
 .se-footer {
   display: flex;
   align-items: center;
@@ -871,7 +1112,12 @@ $editor-border: #313244;
   align-items: center;
   gap: 4px;
 }
-
-.test-hint { font-size: 12px; color: #909399; margin-bottom: 8px; }
-.test-result { margin-top: 16px; }
+.test-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-bottom: 8px;
+}
+.test-result {
+  margin-top: 16px;
+}
 </style>

@@ -1,11 +1,11 @@
 @use "sass:color";
-/* Element UI 主题色覆盖：统一按钮背景为主色 #2639E9，副色 #F76E6C */
+/* Element Plus 主题色覆盖：统一按钮背景为主色 #2639E9，副色 #F76E6C */
 @use "./variables.scss" as *;
 
 /* 全局字体：阿里妈妈方圆体 */
 $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans-serif;
 
-// Element UI 全局字体覆盖
+// Element Plus 全局字体覆盖
 .el-input__inner,
 .el-button,
 .el-input,

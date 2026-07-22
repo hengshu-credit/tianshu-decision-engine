@@ -1,14 +1,9 @@
-import { createLocalVue, mount } from '@vue/test-utils'
-import Vue from 'vue'
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import * as projectApi from '@/api/project'
 import ProjectAuthDialog from '@/views/project/ProjectAuthDialog.vue'
 
-function localVue() {
-  const vue = createLocalVue()
-  vue.prototype.$message = { success: jest.fn(), error: jest.fn(), warning: jest.fn() }
-  vue.prototype.$confirm = jest.fn().mockResolvedValue(true)
-  return vue
-}
+
 
 async function mountDialog() {
   projectApi.listProjectAuths.mockResolvedValue({
@@ -27,22 +22,27 @@ async function mountDialog() {
   })
   projectApi.listProjectAuthAccessLogs.mockResolvedValue({ data: { records: [], total: 0 } })
   const wrapper = mount(ProjectAuthDialog, {
-    localVue: localVue(),
-    propsData: {
+    props: {
       visible: true,
       project: { id: 7, projectCode: 'credit', projectName: '授信决策' }
     },
     stubs: {
       'el-dialog': true, 'el-tabs': true, 'el-tab-pane': true,
       'el-table': true, 'el-table-column': true, 'el-tag': true,
-      'el-button': true, 'el-form': true, 'el-form-item': true,
+      'el-button': true,
+      'el-form': {
+        name: 'ElForm',
+        methods: { validate: callback => callback(true) },
+        template: '<form><slot /></form>'
+      },
+      'el-form-item': true,
       'el-input': true, 'el-select': true, 'el-option': true,
       'el-switch': true, 'el-input-number': true, 'el-pagination': true,
       'el-alert': true, 'el-empty': true, 'el-date-picker': true,
       'el-row': true, 'el-col': true
     }
   })
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(resolve => setTimeout(resolve, 20))
   return wrapper
 }
@@ -57,7 +57,7 @@ describe('ProjectAuthDialog', () => {
     expect(wrapper.vm.authList).toHaveLength(1)
     expect(wrapper.vm.authList[0].secret).toBeUndefined()
     expect(wrapper.vm.authList[0].secretMasked).toBe('secr****cret')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('新建 API Key 时允许服务端自动生成密钥', async () => {
@@ -73,8 +73,6 @@ describe('ProjectAuthDialog', () => {
       parameterName: 'X-Partner-Key',
       secret: ''
     }
-    wrapper.vm.$refs.authForm = { validate: callback => callback(true) }
-
     wrapper.vm.submitAuth()
     await new Promise(resolve => setTimeout(resolve, 20))
 
@@ -88,7 +86,7 @@ describe('ProjectAuthDialog', () => {
     expect(JSON.parse(projectApi.createProjectAuth.mock.calls[0][1].accessPolicyJson)).toEqual({
       ipWhitelist: [], hostWhitelist: [], qps: 0, burst: 0, maxConcurrent: 0, requestTimeoutMs: 0
     })
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('鉴权访问策略按 authId 保存白名单和执行保护参数', async () => {
@@ -111,7 +109,7 @@ describe('ProjectAuthDialog', () => {
     expect(policy.qps).toBe(20)
     expect(policy.maxConcurrent).toBe(12)
     expect(payload.asyncAccessLogEnabled).toBe(1)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('保存前拒绝非法 IP、Host 和突发容量配置', async () => {
@@ -127,7 +125,7 @@ describe('ProjectAuthDialog', () => {
     wrapper.vm.authPolicy.qps = 20
     wrapper.vm.authPolicy.burst = 10
     expect(() => wrapper.vm.buildAuthPayload()).toThrow('突发容量')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('按鉴权方式动态校验必填凭证', async () => {
@@ -145,7 +143,7 @@ describe('ProjectAuthDialog', () => {
     wrapper.vm.authForm.authType = 'API_KEY'
     wrapper.vm.authRules.parameterName[0].validator({ field: 'parameterName' }, '', value => { error = value })
     expect(error).toBeInstanceOf(Error)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('访问审计支持鉴权方式和日期筛选', async () => {
@@ -158,7 +156,7 @@ describe('ProjectAuthDialog', () => {
     expect(projectApi.listProjectAuthAccessLogs).toHaveBeenLastCalledWith(7, expect.objectContaining({
       authType: 'BASIC', beginTime: '2026-07-01', endTime: '2026-07-15'
     }))
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('可再次获取并展示完整账号密码', async () => {
@@ -174,7 +172,7 @@ describe('ProjectAuthDialog', () => {
     expect(wrapper.vm.fullCredential.identifier).toBe('partner')
     expect(wrapper.vm.fullCredential.secret).toBe('secret')
     expect(wrapper.vm.fullDialogVisible).toBe(true)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('可重置 API Key 并立即展示新完整值', async () => {
@@ -188,7 +186,7 @@ describe('ProjectAuthDialog', () => {
     expect(projectApi.regenerateProjectAuthSecret).toHaveBeenCalledWith(7, 12)
     expect(wrapper.vm.fullCredential.secret).toBe('new-api-key')
     expect(wrapper.vm.fullDialogVisible).toBe(true)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('兼容令牌在鉴权弹窗内完成重置', async () => {
@@ -200,7 +198,7 @@ describe('ProjectAuthDialog', () => {
     expect(projectApi.regenerateToken).toHaveBeenCalledWith(7)
     expect(wrapper.vm.fullCredential.secret).toBe('new-legacy-token')
     expect(wrapper.vm.fullDialogVisible).toBe(true)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('Token 列表和撤销操作都绑定当前鉴权', async () => {
@@ -215,6 +213,6 @@ describe('ProjectAuthDialog', () => {
 
     expect(projectApi.listProjectAuthTokens).toHaveBeenCalledWith(7, 11, expect.objectContaining({ pageNum: 1 }))
     expect(projectApi.revokeProjectAuthToken).toHaveBeenCalledWith(7, 11, 21)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

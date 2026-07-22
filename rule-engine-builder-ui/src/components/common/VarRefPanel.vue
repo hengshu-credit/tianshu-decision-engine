@@ -1,13 +1,17 @@
 <template>
   <div class="var-ref-panel">
     <div class="panel-title">
-      <i class="el-icon-connection" /> 可用变量
-      <el-tooltip content="点击变量名可复制到剪贴板" placement="top" effect="light">
-        <i class="el-icon-question tip-icon" />
+      <el-icon><el-icon-connection /></el-icon> 可用变量
+      <el-tooltip
+        content="点击变量名可复制到剪贴板"
+        placement="top"
+        effect="light"
+      >
+        <el-icon class="tip-icon"><el-icon-question /></el-icon>
       </el-tooltip>
     </div>
     <div v-if="loading" class="panel-loading">
-      <i class="el-icon-loading" /> 加载中...
+      <el-icon><el-icon-loading /></el-icon> 加载中...
     </div>
     <div v-else-if="vars.length === 0" class="panel-empty">
       暂无变量，请先在变量管理中为该项目添加变量
@@ -22,21 +26,36 @@
       >
         <code class="var-code">{{ v.varCode }}</code>
         <span class="var-label">{{ v.varLabel }}</span>
-        <el-tag :type="typeColor(v.varType)" size="mini" class="var-tag">{{ typeLabel(v.varType) }}</el-tag>
-        <span v-if="v.exampleValue" class="var-example">例：{{ v.exampleValue }}</span>
+        <el-tag :type="typeColor(v.varType)" size="small" class="var-tag">{{
+          typeLabel(v.varType)
+        }}</el-tag>
+        <span v-if="v.exampleValue" class="var-example"
+          >例：{{ v.exampleValue }}</span
+        >
       </div>
     </div>
   </div>
 </template>
 
 <script>
+import {
+  Connection as ElIconConnection,
+  QuestionFilled as ElIconQuestion,
+  Loading as ElIconLoading,
+} from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 import { varTypeLabel, varTypeTagColor } from '@/constants/varTypes'
 
 export default {
+  components: {
+    ElIconConnection,
+    ElIconQuestion,
+    ElIconLoading,
+  },
   name: 'VarRefPanel',
   props: {
     vars: { type: Array, default: () => [] },
-    loading: { type: Boolean, default: false }
+    loading: { type: Boolean, default: false },
   },
   methods: {
     /** 与变量管理一致的类型中文名 */
@@ -50,13 +69,18 @@ export default {
     copyCode(code) {
       if (navigator.clipboard) {
         navigator.clipboard.writeText(code).then(() => {
-          this.$message({ message: '已复制变量编码：' + code, type: 'success', duration: 1500 })
+          this.$message({
+            message: '已复制变量编码：' + code,
+            type: 'success',
+            duration: 1500,
+          })
         })
       } else {
-        this.$emit('insert', code)
+        $emit(this, 'insert', code)
       }
-    }
-  }
+    },
+  },
+  emits: ['insert'],
 }
 </script>
 
@@ -81,9 +105,12 @@ export default {
   color: #bbb;
   cursor: pointer;
   margin-left: auto;
-  &:hover { color: #1890ff; }
+  &:hover {
+    color: #1890ff;
+  }
 }
-.panel-loading, .panel-empty {
+.panel-loading,
+.panel-empty {
   padding: 12px;
   text-align: center;
   color: #bbb;
@@ -100,8 +127,12 @@ export default {
   cursor: pointer;
   border-bottom: 1px solid #f5f5f5;
   transition: background 0.15s;
-  &:last-child { border-bottom: none; }
-  &:hover { background: #f0f7ff; }
+  &:last-child {
+    border-bottom: none;
+  }
+  &:hover {
+    background: #f0f7ff;
+  }
 }
 .var-code {
   font-family: 'Consolas', monospace;

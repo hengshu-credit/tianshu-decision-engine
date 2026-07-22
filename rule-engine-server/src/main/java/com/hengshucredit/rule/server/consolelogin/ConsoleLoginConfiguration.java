@@ -1,6 +1,5 @@
 package com.hengshucredit.rule.server.consolelogin;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
@@ -16,11 +15,13 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @ConditionalOnProperty(prefix = "rule-engine.console-login", name = "enabled", havingValue = "true")
 public class ConsoleLoginConfiguration implements WebMvcConfigurer {
 
-    @Autowired
-    private ConsoleSessionAuthInterceptor consoleSessionAuthInterceptor;
+    private final ConsoleSessionAuthInterceptor consoleSessionAuthInterceptor;
+    private final RuleEngineConsoleLoginProperties ruleEngineConsoleLoginProperties;
 
-    @Autowired
-    private RuleEngineConsoleLoginProperties ruleEngineConsoleLoginProperties;
+    public ConsoleLoginConfiguration(RuleEngineConsoleLoginProperties ruleEngineConsoleLoginProperties) {
+        this.ruleEngineConsoleLoginProperties = ruleEngineConsoleLoginProperties;
+        this.consoleSessionAuthInterceptor = new ConsoleSessionAuthInterceptor(ruleEngineConsoleLoginProperties);
+    }
 
     /**
      * 默认使用 yml 中 builtin 用户名密码；存在自定义 {@link ConsoleLoginAuthenticator} Bean 时不注册。
@@ -35,8 +36,8 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
      * 会话校验拦截器 Bean。
      */
     @Bean
-    public ConsoleSessionAuthInterceptor consoleSessionAuthInterceptor(RuleEngineConsoleLoginProperties properties) {
-        return new ConsoleSessionAuthInterceptor(properties);
+    public ConsoleSessionAuthInterceptor consoleSessionAuthInterceptor() {
+        return consoleSessionAuthInterceptor;
     }
 
     /**

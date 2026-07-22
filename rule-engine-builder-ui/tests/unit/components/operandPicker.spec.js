@@ -1,11 +1,11 @@
-import { shallowMount } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { nextTick } from 'vue'
 
 const OperandPicker = jest.requireActual('../../../src/components/common/VarPicker.vue').default
 
 function mountPicker(propsData = {}) {
   return shallowMount(OperandPicker, {
-    propsData: {
+    props: {
       vars: [],
       operandMode: true,
       allowedKinds: ['LITERAL', 'PATH', 'REFERENCE'],
@@ -55,7 +55,7 @@ const references = [
 describe('OperandPicker', () => {
   test('手动输入分类始终位于最前方', async () => {
     const wrapper = mountPicker({ vars: references })
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.categoryList.map(item => item.key)).toEqual([
       'manual', 'standalone', 'constant', 'object'

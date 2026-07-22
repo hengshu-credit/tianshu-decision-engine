@@ -3,11 +3,25 @@
     <div class="scenario-toolbar">
       <div>
         <div class="scenario-title">API 测试用例</div>
-        <div class="scenario-hint">配置真实业务场景的请求与响应；仅勾选且版本匹配的场景会进入 API 文档。</div>
+        <div class="scenario-hint">
+          配置真实业务场景的请求与响应；仅勾选且版本匹配的场景会进入 API 文档。
+        </div>
       </div>
       <div>
-        <el-button size="mini" icon="el-icon-refresh" :loading="loading" @click="loadScenarios">刷新</el-button>
-        <el-button size="mini" type="primary" icon="el-icon-plus" @click="openCreate">新增场景</el-button>
+        <el-button
+          size="small"
+          :icon="ElIconRefresh"
+          :loading="loading"
+          @click="loadScenarios"
+          >刷新</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconPlus"
+          @click="openCreate"
+          >新增场景</el-button
+        >
       </div>
     </div>
 
@@ -19,43 +33,80 @@
       class="scenario-alert"
     />
 
-    <el-table v-loading="loading" :data="scenarios" border size="small" empty-text="暂无 API 测试用例">
+    <el-table
+      v-loading="loading"
+      :data="scenarios"
+      border
+      size="small"
+      empty-text="暂无 API 测试用例"
+    >
       <el-table-column prop="scenarioName" label="场景名称" min-width="150" />
       <el-table-column label="响应码" width="90" align="center">
-        <template slot-scope="{ row }">{{ row.outerCode == null ? '—' : row.outerCode }}</template>
+        <template v-slot="{ row }">{{
+          row.outerCode == null ? '—' : row.outerCode
+        }}</template>
       </el-table-column>
       <el-table-column label="业务码" min-width="110">
-        <template slot-scope="{ row }">{{ row.businessCode == null ? '未配置' : row.businessCode }}</template>
+        <template v-slot="{ row }">{{
+          row.businessCode == null ? '未配置' : row.businessCode
+        }}</template>
       </el-table-column>
       <el-table-column label="响应来源" width="100" align="center">
-        <template slot-scope="{ row }">
-          <el-tag size="mini" :type="row.responseSource === 'EXECUTED' ? 'success' : 'info'">
+        <template v-slot="{ row }">
+          <el-tag
+            size="small"
+            :type="row.responseSource === 'EXECUTED' ? 'success' : 'info'"
+          >
             {{ row.responseSource === 'EXECUTED' ? '调用生成' : '手工录入' }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="文档状态" width="110" align="center">
-        <template slot-scope="{ row }">
-          <el-tag size="mini" :type="scenarioDocState(row).type">{{ scenarioDocState(row).label }}</el-tag>
+        <template v-slot="{ row }">
+          <el-tag size="small" :type="scenarioDocState(row).type">{{
+            scenarioDocState(row).label
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="规则版本" width="90" align="center">
-        <template slot-scope="{ row }">v{{ row.ruleVersion }}</template>
+        <template v-slot="{ row }">v{{ row.ruleVersion }}</template>
       </el-table-column>
       <el-table-column label="操作" width="245" fixed="right">
-        <template slot-scope="{ row, $index }">
-          <el-button type="text" size="mini" @click="openEdit(row)">编辑</el-button>
-          <el-button type="text" size="mini" @click="copyScenario(row)">复制</el-button>
-          <el-button type="text" size="mini" :disabled="$index === 0" @click="moveScenario($index, -1)">上移</el-button>
-          <el-button type="text" size="mini" :disabled="$index === scenarios.length - 1" @click="moveScenario($index, 1)">下移</el-button>
-          <el-button type="text" size="mini" class="danger-action" @click="removeScenario(row)">删除</el-button>
+        <template v-slot="{ row, $index }">
+          <el-button link size="small" @click="openEdit(row)"
+            >编辑</el-button
+          >
+          <el-button link size="small" @click="copyScenario(row)"
+            >复制</el-button
+          >
+          <el-button
+            link
+            size="small"
+            :disabled="$index === 0"
+            @click="moveScenario($index, -1)"
+            >上移</el-button
+          >
+          <el-button
+            link
+            size="small"
+            :disabled="$index === scenarios.length - 1"
+            @click="moveScenario($index, 1)"
+            >下移</el-button
+          >
+          <el-button
+            link
+            size="small"
+            class="danger-action"
+            @click="removeScenario(row)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
 
     <el-dialog
       :title="draft.id ? '编辑 API 测试用例' : '新增 API 测试用例'"
-      :visible.sync="draftVisible"
+      v-model="draftVisible"
       width="1100px"
       :close-on-click-modal="false"
       append-to-body
@@ -63,21 +114,40 @@
       <el-form :model="draft" label-width="100px" size="small">
         <div class="form-grid">
           <el-form-item label="场景名称" required>
-            <el-input v-model="draft.scenarioName" maxlength="128" placeholder="例如：风险拒绝" />
+            <el-input
+              v-model="draft.scenarioName"
+              maxlength="128"
+              placeholder="例如：风险拒绝"
+            />
           </el-form-item>
           <el-form-item label="场景说明">
-            <el-input v-model="draft.description" maxlength="512" placeholder="说明该输入对应的业务场景" />
+            <el-input
+              v-model="draft.description"
+              maxlength="512"
+              placeholder="说明该输入对应的业务场景"
+            />
           </el-form-item>
           <el-form-item label="加入文档">
-            <el-switch v-model="draft.includeInDoc" :active-value="1" :inactive-value="0" />
+            <el-switch
+              v-model="draft.includeInDoc"
+              :active-value="1"
+              :inactive-value="0"
+            />
             <span class="field-tip">发布版本匹配时才会导出</span>
           </el-form-item>
           <el-form-item label="启用状态">
-            <el-switch v-model="draft.status" :active-value="1" :inactive-value="0" />
+            <el-switch
+              v-model="draft.status"
+              :active-value="1"
+              :inactive-value="0"
+            />
           </el-form-item>
         </div>
         <el-form-item label="业务码路径">
-          <el-input v-model="draft.businessCodePath" placeholder="可选，例如 data.result.code；留空则不生成内层业务码" />
+          <el-input
+            v-model="draft.businessCodePath"
+            placeholder="可选，例如 data.result.code；留空则不生成内层业务码"
+          />
         </el-form-item>
       </el-form>
 
@@ -85,15 +155,21 @@
         <section class="editor-card">
           <div class="editor-heading">
             <span>请求报文</span>
-            <el-radio-group v-model="requestMode" size="mini">
-              <el-radio-button label="FORM">表单模式</el-radio-button>
-              <el-radio-button label="JSON">JSON 模式</el-radio-button>
+            <el-radio-group v-model="requestMode" size="small">
+              <el-radio-button value="FORM">表单模式</el-radio-button>
+              <el-radio-button value="JSON">JSON 模式</el-radio-button>
             </el-radio-group>
           </div>
           <div v-if="requestMode === 'FORM'" class="request-form">
-            <div v-if="testFields.length === 0" class="empty-fields">当前规则没有可配置的输入字段，可切换到 JSON 模式编辑。</div>
+            <div v-if="testFields.length === 0" class="empty-fields">
+              当前规则没有可配置的输入字段，可切换到 JSON 模式编辑。
+            </div>
             <el-form v-else label-width="150px" size="small">
-              <el-form-item v-for="field in testFields" :key="field.fieldName" :label="field.fieldLabel || field.fieldName">
+              <el-form-item
+                v-for="field in testFields"
+                :key="field.fieldName"
+                :label="field.fieldLabel || field.fieldName"
+              >
                 <el-switch
                   v-if="isBooleanType(field.fieldType)"
                   v-model="formParams[field.fieldName]"
@@ -105,7 +181,12 @@
                   filterable
                   @change="syncFormRequest"
                 >
-                  <el-option v-for="item in field.validValues" :key="String(item)" :label="String(item)" :value="item" />
+                  <el-option
+                    v-for="item in field.validValues"
+                    :key="String(item)"
+                    :label="String(item)"
+                    :value="item"
+                  />
                 </el-select>
                 <el-input-number
                   v-else-if="isNumberType(field.fieldType)"
@@ -113,7 +194,11 @@
                   controls-position="right"
                   @change="syncFormRequest"
                 />
-                <el-input v-else v-model="formParams[field.fieldName]" @input="syncFormRequest" />
+                <el-input
+                  v-else
+                  v-model="formParams[field.fieldName]"
+                  @update:model-value="syncFormRequest"
+                />
                 <div class="field-path">{{ field.fieldName }}</div>
               </el-form-item>
             </el-form>
@@ -130,8 +215,13 @@
         <section class="editor-card">
           <div class="editor-heading">
             <span>响应报文</span>
-            <el-tag size="mini" :type="draft.responseSource === 'EXECUTED' ? 'success' : 'info'">
-              {{ draft.responseSource === 'EXECUTED' ? '调用生成' : '手工录入' }}
+            <el-tag
+              size="small"
+              :type="draft.responseSource === 'EXECUTED' ? 'success' : 'info'"
+            >
+              {{
+                draft.responseSource === 'EXECUTED' ? '调用生成' : '手工录入'
+              }}
             </el-tag>
           </div>
           <monaco-editor
@@ -143,16 +233,37 @@
         </section>
       </div>
 
-      <div slot="footer">
-        <el-button size="small" @click="draftVisible = false">取消</el-button>
-        <el-button size="small" :loading="executing" icon="el-icon-video-play" @click="executeDraft">调用生成响应</el-button>
-        <el-button size="small" type="primary" :loading="saving" @click="saveDraft">保存场景</el-button>
-      </div>
+      <template v-slot:footer>
+        <div>
+          <el-button size="small" @click="draftVisible = false">取消</el-button>
+          <el-button
+            size="small"
+            :loading="executing"
+            :icon="ElIconVideoPlay"
+            @click="executeDraft"
+            >调用生成响应</el-button
+          >
+          <el-button
+            size="small"
+            type="primary"
+            :loading="saving"
+            @click="saveDraft"
+            >保存场景</el-button
+          >
+        </div>
+      </template>
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  Refresh as ElIconRefresh,
+  Plus as ElIconPlus,
+  VideoPlay as ElIconVideoPlay,
+} from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
   DEFAULT_RULE_REQUEST_TIMEOUT_MS,
@@ -163,24 +274,16 @@ import {
   copyApiScenario,
   sortApiScenarios,
   executeApiScenario,
-  getRuleTestSchema
+  getRuleTestSchema,
 } from '@/api/definition'
 import {
   normalizeTestSchema,
   schemaFieldsToTestFields,
   flattenSchemaSample,
-  buildNestedSchemaParams
+  buildNestedSchemaParams,
 } from '@/utils/testSchema'
 
 export default {
-  name: 'ApiScenarioPanel',
-  components: { MonacoEditor },
-  props: {
-    rule: {
-      type: Object,
-      required: true
-    }
-  },
   data() {
     return {
       loading: false,
@@ -191,16 +294,29 @@ export default {
       scenarios: [],
       testFields: [],
       formParams: {},
-      draft: this.emptyDraft()
+      draft: this.emptyDraft(),
+      ElIconRefresh: markRaw(ElIconRefresh),
+      ElIconPlus: markRaw(ElIconPlus),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
+  },
+  name: 'ApiScenarioPanel',
+  components: { MonacoEditor },
+  props: {
+    rule: {
+      type: Object,
+      required: true,
+    },
   },
   watch: {
     'rule.id': {
+      deep: true,
       immediate: true,
+
       handler(id) {
         if (id) this.loadScenarios()
-      }
-    }
+      },
+    },
   },
   methods: {
     emptyDraft() {
@@ -208,17 +324,27 @@ export default {
         id: null,
         scenarioName: '',
         description: '',
-        requestJson: JSON.stringify({ clientAppName: 'api-doc-example', params: {} }, null, 2),
-        responseJson: JSON.stringify({ code: 200, message: 'success', data: null }, null, 2),
+        requestJson: JSON.stringify(
+          { clientAppName: 'api-doc-example', params: {} },
+          null,
+          2
+        ),
+        responseJson: JSON.stringify(
+          { code: 200, message: 'success', data: null },
+          null,
+          2
+        ),
         responseSource: 'MANUAL',
         businessCodePath: '',
         includeInDoc: 0,
         sortOrder: this.scenarios ? this.scenarios.length : 0,
-        status: 1
+        status: 1,
       }
     },
     unwrapResponse(response) {
-      return response && Object.prototype.hasOwnProperty.call(response, 'data') ? response.data : response
+      return response && Object.prototype.hasOwnProperty.call(response, 'data')
+        ? response.data
+        : response
     },
     async loadScenarios() {
       if (!this.rule.id) return
@@ -240,14 +366,22 @@ export default {
       this.requestMode = 'FORM'
       this.draftVisible = true
       try {
-        const response = await getRuleTestSchema({ targetType: 'RULE', targetId: this.rule.id })
+        const response = await getRuleTestSchema({
+          targetType: 'RULE',
+          targetId: this.rule.id,
+        })
         const schema = normalizeTestSchema(response)
         this.testFields = schemaFieldsToTestFields(schema.inputs)
-        this.formParams = flattenSchemaSample(this.testFields, schema.sampleParams)
+        this.formParams = flattenSchemaSample(
+          this.testFields,
+          schema.sampleParams
+        )
         this.syncFormRequest()
       } catch (error) {
         this.requestMode = 'JSON'
-        this.$message.warning(error.message || '加载规则请求字段失败，请使用 JSON 模式编辑')
+        this.$message.warning(
+          error.message || '加载规则请求字段失败，请使用 JSON 模式编辑'
+        )
       }
     },
     openEdit(row) {
@@ -255,7 +389,7 @@ export default {
         ...this.emptyDraft(),
         ...row,
         responseSource: row.responseSource || 'MANUAL',
-        businessCodePath: row.businessCodePath || ''
+        businessCodePath: row.businessCodePath || '',
       }
       this.testFields = []
       this.formParams = {}
@@ -264,7 +398,11 @@ export default {
     },
     syncFormRequest() {
       const params = buildNestedSchemaParams(this.testFields, this.formParams)
-      this.draft.requestJson = JSON.stringify({ clientAppName: 'api-doc-example', params }, null, 2)
+      this.draft.requestJson = JSON.stringify(
+        { clientAppName: 'api-doc-example', params },
+        null,
+        2
+      )
     },
     onRequestEdited(value) {
       this.draft.requestJson = value
@@ -277,7 +415,8 @@ export default {
     parseJsonObject(text, label) {
       try {
         const value = JSON.parse(text)
-        if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error()
+        if (!value || typeof value !== 'object' || Array.isArray(value))
+          throw new Error()
         return value
       } catch (error) {
         throw new Error(`${label}不是合法 JSON 对象`)
@@ -333,7 +472,7 @@ export default {
         businessCodePath: this.draft.businessCodePath,
         includeInDoc: this.draft.includeInDoc,
         sortOrder: this.draft.sortOrder,
-        status: this.draft.status
+        status: this.draft.status,
       }
       this.saving = true
       try {
@@ -345,7 +484,7 @@ export default {
         this.$message.success('API 测试用例已保存')
         this.draftVisible = false
         await this.loadScenarios()
-        this.$emit('saved')
+        $emit(this, 'saved')
       } catch (error) {
         this.$message.error(error.message || '保存 API 测试用例失败')
       } finally {
@@ -354,25 +493,35 @@ export default {
     },
     async copyScenario(row) {
       try {
-        const result = await this.$prompt('请输入复制后的场景名称', '复制 API 测试用例', {
-          inputValue: `${row.scenarioName}-副本`,
-          inputValidator: value => Boolean(value && value.trim()),
-          inputErrorMessage: '场景名称不能为空'
-        })
+        const result = await this.$prompt(
+          '请输入复制后的场景名称',
+          '复制 API 测试用例',
+          {
+            inputValue: `${row.scenarioName}-副本`,
+            inputValidator: (value) => Boolean(value && value.trim()),
+            inputErrorMessage: '场景名称不能为空',
+          }
+        )
         await copyApiScenario(this.rule.id, row.id, result.value.trim())
         await this.loadScenarios()
       } catch (error) {
-        if (error !== 'cancel' && error !== 'close') this.$message.error(error.message || '复制失败')
+        if (error !== 'cancel' && error !== 'close')
+          this.$message.error(error.message || '复制失败')
       }
     },
     async removeScenario(row) {
       try {
-        await this.$confirm(`确定删除场景“${row.scenarioName}”吗？`, '删除确认', { type: 'warning' })
+        await this.$confirm(
+          `确定删除场景“${row.scenarioName}”吗？`,
+          '删除确认',
+          { type: 'warning' }
+        )
         await deleteApiScenario(this.rule.id, row.id)
         await this.loadScenarios()
-        this.$emit('deleted')
+        $emit(this, 'deleted')
       } catch (error) {
-        if (error !== 'cancel' && error !== 'close') this.$message.error(error.message || '删除失败')
+        if (error !== 'cancel' && error !== 'close')
+          this.$message.error(error.message || '删除失败')
       }
     },
     async moveScenario(index, offset) {
@@ -382,15 +531,22 @@ export default {
       const moved = reordered.splice(index, 1)[0]
       reordered.splice(target, 0, moved)
       try {
-        await sortApiScenarios(this.rule.id, reordered.map(item => item.id))
+        await sortApiScenarios(
+          this.rule.id,
+          reordered.map((item) => item.id)
+        )
         this.scenarios = reordered
       } catch (error) {
         this.$message.error(error.message || '调整场景顺序失败')
       }
     },
     scenarioDocState(row) {
-      if (row.status !== 1 || row.includeInDoc !== 1) return { label: '未加入', type: 'info' }
-      if (!this.rule.publishedVersion || row.ruleVersion !== this.rule.publishedVersion) {
+      if (row.status !== 1 || row.includeInDoc !== 1)
+        return { label: '未加入', type: 'info' }
+      if (
+        !this.rule.publishedVersion ||
+        row.ruleVersion !== this.rule.publishedVersion
+      ) {
         return { label: '版本已过期', type: 'warning' }
       }
       return { label: '已加入', type: 'success' }
@@ -399,10 +555,21 @@ export default {
       return ['BOOLEAN', 'BOOL'].indexOf(String(type || '').toUpperCase()) >= 0
     },
     isNumberType(type) {
-      return ['NUMBER', 'INTEGER', 'INT', 'LONG', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY']
-        .indexOf(String(type || '').toUpperCase()) >= 0
-    }
-  }
+      return (
+        [
+          'NUMBER',
+          'INTEGER',
+          'INT',
+          'LONG',
+          'DOUBLE',
+          'FLOAT',
+          'DECIMAL',
+          'PROBABILITY',
+        ].indexOf(String(type || '').toUpperCase()) >= 0
+      )
+    },
+  },
+  emits: ['saved', 'deleted'],
 }
 </script>
 
@@ -466,7 +633,7 @@ export default {
   padding: 12px;
   overflow: auto;
 }
-.request-form ::v-deep .el-form-item {
+.request-form :deep(.el-form-item) {
   margin-bottom: 14px;
 }
 .field-path {

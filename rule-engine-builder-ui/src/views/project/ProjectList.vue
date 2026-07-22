@@ -3,10 +3,16 @@
     <div class="workflow-guide">
       <div class="workflow-guide-head">
         <div class="workflow-guide-title">从项目到发布</div>
-        <div class="workflow-guide-text">按顺序完成配置、验证和接入，避免业务人员漏掉编译、发布、日志核对等关键步骤。</div>
+        <div class="workflow-guide-text">
+          按顺序完成配置、验证和接入，避免业务人员漏掉编译、发布、日志核对等关键步骤。
+        </div>
       </div>
       <div class="workflow-steps">
-        <div v-for="(item, index) in workflowSteps" :key="item.title" class="workflow-step">
+        <div
+          v-for="(item, index) in workflowSteps"
+          :key="item.title"
+          class="workflow-step"
+        >
           <div class="step-index">{{ index + 1 }}</div>
           <div class="step-body">
             <div class="step-title">{{ item.title }}</div>
@@ -17,22 +23,47 @@
     </div>
 
     <div class="uiue-search-container">
-      <el-form :inline="true" size="small" @keyup.enter.native="handleQuery">
+      <el-form :inline="true" size="small" @keyup.enter="handleQuery">
         <el-form-item label="项目编码">
-          <project-filter-select v-model="qp.projectCode" field="projectCode" placeholder="输入筛选" style="width:160px;" />
+          <project-filter-select
+            v-model:value="qp.projectCode"
+            field="projectCode"
+            placeholder="输入筛选"
+            style="width: 160px"
+          />
         </el-form-item>
         <el-form-item label="项目名称">
-          <project-filter-select v-model="qp.projectName" field="projectName" placeholder="输入筛选" style="width:160px;" />
+          <project-filter-select
+            v-model:value="qp.projectName"
+            field="projectName"
+            placeholder="输入筛选"
+            style="width: 160px"
+          />
         </el-form-item>
         <el-form-item label="启用状态">
-          <el-select v-model="qp.status" clearable filterable placeholder="全部" style="width:100px;" @change="handleQuery">
+          <el-select
+            v-model="qp.status"
+            clearable
+            filterable
+            placeholder="全部"
+            style="width: 100px"
+            @change="handleQuery"
+          >
             <el-option label="启用" :value="1" />
             <el-option label="停用" :value="0" />
           </el-select>
         </el-form-item>
         <el-form-item label="创建时间">
-          <el-date-picker v-model="createTimeRange" type="daterange" range-separator="至" start-placeholder="开始日期" end-placeholder="结束日期"
-            value-format="yyyy-MM-dd" style="width:240px;" @change="onCreateTimeChange" />
+          <el-date-picker
+            v-model="createTimeRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="yyyy-MM-dd"
+            style="width: 240px"
+            @change="onCreateTimeChange"
+          />
         </el-form-item>
         <el-form-item>
           <el-button type="primary" @click="handleQuery">查询</el-button>
@@ -42,70 +73,211 @@
     </div>
     <div class="uiue-btn-bar">
       <div class="btn-right">
-        <el-button type="primary" size="small" icon="el-icon-plus" @click="handleCreate">新建项目</el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :icon="ElIconPlus"
+          @click="handleCreate"
+          >新建项目</el-button
+        >
       </div>
     </div>
-    <el-table :data="tableData" border size="small" v-loading="loading" style="width: 100%;">
-      <el-table-column prop="projectCode" label="项目编码" min-width="140" show-overflow-tooltip />
-      <el-table-column prop="projectName" label="项目名称" min-width="180" show-overflow-tooltip />
-      <el-table-column prop="description" label="描述" min-width="200" show-overflow-tooltip />
+    <el-table
+      :data="tableData"
+      border
+      size="small"
+      v-loading="loading"
+      style="width: 100%"
+    >
+      <el-table-column
+        prop="projectCode"
+        label="项目编码"
+        min-width="140"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="projectName"
+        label="项目名称"
+        min-width="180"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="description"
+        label="描述"
+        min-width="200"
+        show-overflow-tooltip
+      />
       <el-table-column prop="status" label="状态" min-width="70" align="center">
-        <template slot-scope="{ row }">
-          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="mini">{{ row.status === 1 ? '启用' : '停用' }}</el-tag>
+        <template v-slot="{ row }">
+          <el-tag :type="row.status === 1 ? 'success' : 'info'" size="small">{{
+            row.status === 1 ? '启用' : '停用'
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
       <el-table-column label="操作" min-width="220" align="center">
-        <template slot-scope="{ row }">
-          <el-button type="text" size="small" @click="handleEdit(row)">编辑</el-button>
-          <el-button type="text" size="small" @click="$router.push('/project/' + row.id)">进入</el-button>
-          <el-button type="text" size="small" @click="handleAuth(row)">鉴权</el-button>
-          <el-button type="text" size="small" @click="handleExportDoc(row)">API</el-button>
-          <el-button type="text" size="small" class="btn-delete" @click="handleDelete(row)">删除</el-button>
+        <template v-slot="{ row }">
+          <el-button link size="small" @click="handleEdit(row)"
+            >编辑</el-button
+          >
+          <el-button
+            link
+            size="small"
+            @click="$router.push('/project/' + row.id)"
+            >进入</el-button
+          >
+          <el-button link size="small" @click="handleAuth(row)"
+            >鉴权</el-button
+          >
+          <el-button link size="small" @click="handleExportDoc(row)"
+            >API</el-button
+          >
+          <el-button
+            link
+            size="small"
+            class="btn-delete"
+            @click="handleDelete(row)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
-    <el-pagination style="margin-top:16px;text-align:right;" :current-page="qp.pageNum" :page-size="qp.pageSize" :total="total"
-      layout="total,sizes,prev,pager,next" :page-sizes="[10,30,50,100,200,500]"
-      @current-change="p => { qp.pageNum = p; loadData() }" @size-change="s => { qp.pageSize = s; qp.pageNum = 1; loadData() }" />
-    <el-dialog :title="form.id ? '编辑项目' : '新建项目'" :visible.sync="dialogVisible" width="500px">
-      <el-form ref="form" :model="form" :rules="rules" label-width="100px" size="small">
-        <el-form-item label="项目编码" prop="projectCode"><el-input v-model="form.projectCode" :disabled="!!form.id" /></el-form-item>
-        <el-form-item label="项目名称" prop="projectName"><el-input v-model="form.projectName" /></el-form-item>
-        <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="3" /></el-form-item>
-        <el-form-item label="状态"><el-switch v-model="form.status" :active-value="1" :inactive-value="0" active-text="启用" inactive-text="停用" /></el-form-item>
+    <el-pagination
+      style="margin-top: 16px; text-align: right"
+      :current-page="qp.pageNum"
+      :page-size="qp.pageSize"
+      :total="total"
+      layout="total,sizes,prev,pager,next"
+      :page-sizes="[10, 30, 50, 100, 200, 500]"
+      @current-change="
+        (p) => {
+          qp.pageNum = p
+          loadData()
+        }
+      "
+      @size-change="
+        (s) => {
+          qp.pageSize = s
+          qp.pageNum = 1
+          loadData()
+        }
+      "
+    />
+    <el-dialog
+      :title="form.id ? '编辑项目' : '新建项目'"
+      v-model="dialogVisible"
+      width="500px"
+    >
+      <el-form
+        ref="form"
+        :model="form"
+        :rules="rules"
+        label-width="100px"
+        size="small"
+      >
+        <el-form-item label="项目编码" prop="projectCode"
+          ><el-input v-model="form.projectCode" :disabled="!!form.id"
+        /></el-form-item>
+        <el-form-item label="项目名称" prop="projectName"
+          ><el-input v-model="form.projectName"
+        /></el-form-item>
+        <el-form-item label="描述"
+          ><el-input v-model="form.description" type="textarea" :rows="3"
+        /></el-form-item>
+        <el-form-item label="状态"
+          ><el-switch
+            v-model="form.status"
+            :active-value="1"
+            :inactive-value="0"
+            active-text="启用"
+            inactive-text="停用"
+        /></el-form-item>
       </el-form>
-      <div slot="footer">
-        <el-button size="small" @click="dialogVisible = false">取消</el-button>
-        <el-button size="small" type="primary" @click="handleSubmit">确定</el-button>
-      </div>
+      <template v-slot:footer>
+        <div>
+          <el-button size="small" @click="dialogVisible = false"
+            >取消</el-button
+          >
+          <el-button size="small" type="primary" @click="handleSubmit"
+            >确定</el-button
+          >
+        </div>
+      </template>
     </el-dialog>
-    <project-auth-dialog :visible.sync="authDialogVisible" :project="currentAuthProject" />
+    <project-auth-dialog
+      v-model:visible="authDialogVisible"
+      :project="currentAuthProject"
+    />
   </div>
 </template>
+
 <script>
-import { listProjects, createProject, updateProject, deleteProject, exportApiDoc } from '@/api/project'
-import { clearPageState, restorePageState, savePageState } from '@/utils/pageStateCache'
+import { markRaw } from 'vue'
+import { Plus as ElIconPlus } from '@element-plus/icons-vue'
+import {
+  listProjects,
+  createProject,
+  updateProject,
+  deleteProject,
+  exportApiDoc,
+} from '@/api/project'
+import {
+  clearPageState,
+  restorePageState,
+  savePageState,
+} from '@/utils/pageStateCache'
 import { generateApiDocHtml } from '@/utils/apiDoc'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
-  name: 'ProjectList',
-  components: { ProjectFilterSelect, ProjectAuthDialog },
   data() {
     return {
       workflowSteps: [
-        { title: '创建项目', text: '填写项目编码、名称和状态，保存后在统一鉴权中配置业务调用凭据。' },
-        { title: '定义变量/对象', text: '在项目内维护输入变量、输出变量和数据对象，变量编码保持业务原样。' },
-        { title: '设计规则', text: '进入规则设计器选择决策表、决策树、规则集、评分卡或 QL 脚本等模型。' },
-        { title: '编译', text: '保存规则后执行编译，检查变量引用、输出字段和生成脚本是否正确。' },
-        { title: '测试', text: '使用规则测试录入样例请求，核对执行结果、命中路径和追踪树。' },
-        { title: '发布', text: '发布已验证版本，服务端会推送规则变更给客户端缓存。' },
-        { title: 'SDK 接入', text: '业务系统可用 X-Rule-Token、账号密码、API Key 或 HMAC 接入，SDK 支持临时 Token 自动续期。' },
-        { title: '查看日志/账单', text: '上线后在执行日志、分流日志和账单汇总里核对调用量、耗时、成功率和费用。' }
+        {
+          title: '创建项目',
+          text: '填写项目编码、名称和状态，保存后在统一鉴权中配置业务调用凭据。',
+        },
+        {
+          title: '定义变量/对象',
+          text: '在项目内维护输入变量、输出变量和数据对象，变量编码保持业务原样。',
+        },
+        {
+          title: '设计规则',
+          text: '进入规则设计器选择决策表、决策树、规则集、评分卡或 QL 脚本等模型。',
+        },
+        {
+          title: '编译',
+          text: '保存规则后执行编译，检查变量引用、输出字段和生成脚本是否正确。',
+        },
+        {
+          title: '测试',
+          text: '使用规则测试录入样例请求，核对执行结果、命中路径和追踪树。',
+        },
+        {
+          title: '发布',
+          text: '发布已验证版本，服务端会推送规则变更给客户端缓存。',
+        },
+        {
+          title: 'SDK 接入',
+          text: '业务系统可用 X-Rule-Token、账号密码、API Key 或 HMAC 接入，SDK 支持临时 Token 自动续期。',
+        },
+        {
+          title: '查看日志/账单',
+          text: '上线后在执行日志、分流日志和账单汇总里核对调用量、耗时、成功率和费用。',
+        },
       ],
-      loading: false, tableData: [], total: 0,
-      qp: { pageNum: 1, pageSize: 10, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' },
+      loading: false,
+      tableData: [],
+      total: 0,
+      qp: {
+        pageNum: 1,
+        pageSize: 10,
+        projectCode: '',
+        projectName: '',
+        status: '',
+        createBeginTime: '',
+        createEndTime: '',
+      },
       createTimeRange: [],
       allProjectCodes: [],
       allProjectNames: [],
@@ -114,13 +286,26 @@ export default {
       dialogVisible: false,
       authDialogVisible: false,
       currentAuthProject: {},
-      form: { id: null, projectCode: '', projectName: '', description: '', status: 1 },
+      form: {
+        id: null,
+        projectCode: '',
+        projectName: '',
+        description: '',
+        status: 1,
+      },
       rules: {
-        projectCode: [{ required: true, message: '请输入项目编码', trigger: 'blur' }],
-        projectName: [{ required: true, message: '请输入项目名称', trigger: 'blur' }]
-      }
+        projectCode: [
+          { required: true, message: '请输入项目编码', trigger: 'blur' },
+        ],
+        projectName: [
+          { required: true, message: '请输入项目名称', trigger: 'blur' },
+        ],
+      },
+      ElIconPlus: markRaw(ElIconPlus),
     }
   },
+  name: 'ProjectList',
+  components: { ProjectFilterSelect, ProjectAuthDialog },
   created() {
     this.restoreCachedState()
     this.loadData()
@@ -134,7 +319,7 @@ export default {
     saveCachedState() {
       savePageState('ProjectList', {
         qp: this.qp,
-        createTimeRange: this.createTimeRange
+        createTimeRange: this.createTimeRange,
       })
     },
     async loadData() {
@@ -150,29 +335,50 @@ export default {
         const res = await listProjects(params)
         this.tableData = res.data.records || []
         this.total = res.data.total || 0
-        const codeSet = new Set(), nameSet = new Set()
-        this.tableData.forEach(r => { if (r.projectCode) codeSet.add(r.projectCode); if (r.projectName) nameSet.add(r.projectName) })
+        const codeSet = new Set(),
+          nameSet = new Set()
+        this.tableData.forEach((r) => {
+          if (r.projectCode) codeSet.add(r.projectCode)
+          if (r.projectName) nameSet.add(r.projectName)
+        })
         this.allProjectCodes = Array.from(codeSet)
         this.allProjectNames = Array.from(nameSet)
         this.filteredProjectCodes = this.allProjectCodes.slice(0, 20)
         this.filteredProjectNames = this.allProjectNames.slice(0, 20)
-      } finally { this.loading = false }
+      } finally {
+        this.loading = false
+      }
     },
     queryProjectCode(query) {
       const q = (query || '').toLowerCase()
       this.filteredProjectCodes = q
-        ? this.allProjectCodes.filter(v => v && v.toLowerCase().includes(q)).slice(0, 20)
+        ? this.allProjectCodes
+            .filter((v) => v && v.toLowerCase().includes(q))
+            .slice(0, 20)
         : this.allProjectCodes.slice(0, 20)
     },
     queryProjectName(query) {
       const q = (query || '').toLowerCase()
       this.filteredProjectNames = q
-        ? this.allProjectNames.filter(v => v && v.toLowerCase().includes(q)).slice(0, 20)
+        ? this.allProjectNames
+            .filter((v) => v && v.toLowerCase().includes(q))
+            .slice(0, 20)
         : this.allProjectNames.slice(0, 20)
     },
-    handleQuery() { this.qp.pageNum = 1; this.loadData() },
+    handleQuery() {
+      this.qp.pageNum = 1
+      this.loadData()
+    },
     resetQuery() {
-      this.qp = { pageNum: 1, pageSize: this.qp.pageSize, projectCode: '', projectName: '', status: '', createBeginTime: '', createEndTime: '' }
+      this.qp = {
+        pageNum: 1,
+        pageSize: this.qp.pageSize,
+        projectCode: '',
+        projectName: '',
+        status: '',
+        createBeginTime: '',
+        createEndTime: '',
+      }
       this.createTimeRange = []
       clearPageState('ProjectList')
       this.handleQuery()
@@ -182,10 +388,22 @@ export default {
       this.qp.createEndTime = val ? val[1] : ''
       this.saveCachedState()
     },
-    handleCreate() { this.form = { id: null, projectCode: '', projectName: '', description: '', status: 1 }; this.dialogVisible = true },
-    handleEdit(row) { this.form = { ...row }; this.dialogVisible = true },
+    handleCreate() {
+      this.form = {
+        id: null,
+        projectCode: '',
+        projectName: '',
+        description: '',
+        status: 1,
+      }
+      this.dialogVisible = true
+    },
+    handleEdit(row) {
+      this.form = { ...row }
+      this.dialogVisible = true
+    },
     async handleSubmit() {
-      this.$refs.form.validate(async v => {
+      this.$refs.form.validate(async (v) => {
         if (!v) return
         if (this.form.id) {
           await updateProject(this.form)
@@ -206,9 +424,15 @@ export default {
       })
     },
     handleDelete(row) {
-      this.$confirm('确定删除项目「' + row.projectName + '」?', '确认', { type: 'warning' }).then(async () => {
-        await deleteProject(row.id); this.$message.success('删除成功'); this.loadData()
-      }).catch(() => {})
+      this.$confirm('确定删除项目「' + row.projectName + '」?', '确认', {
+        type: 'warning',
+      })
+        .then(async () => {
+          await deleteProject(row.id)
+          this.$message.success('删除成功')
+          this.loadData()
+        })
+        .catch(() => {})
     },
     handleAuth(row) {
       this.currentAuthProject = row
@@ -216,7 +440,9 @@ export default {
     },
     async loadApiDocLogo() {
       const baseUrl = process.env.BASE_URL || '/'
-      const response = await fetch(`${baseUrl}images/hengshucredit_animated.svg`)
+      const response = await fetch(
+        `${baseUrl}images/hengshucredit_animated.svg`
+      )
       if (!response.ok) throw new Error('加载 hengshucredit Logo 失败')
       return response.text()
     },
@@ -225,7 +451,7 @@ export default {
       try {
         const [res, logoSvg] = await Promise.all([
           exportApiDoc(row.id),
-          this.loadApiDocLogo()
+          this.loadApiDocLogo(),
         ])
         if (res.code === 200 && res.data) {
           const doc = res.data
@@ -244,10 +470,11 @@ export default {
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl)
       }
-    }
-  }
+    },
+  },
 }
 </script>
+
 <style lang="scss" scoped>
 .workflow-guide {
   background: #fff;
@@ -256,33 +483,28 @@ export default {
   padding: 14px;
   margin-bottom: 14px;
 }
-
 .workflow-guide-head {
   display: flex;
   align-items: baseline;
   gap: 10px;
   margin-bottom: 12px;
 }
-
 .workflow-guide-title {
   color: #1f2937;
   font-size: 16px;
   font-weight: 700;
   white-space: nowrap;
 }
-
 .workflow-guide-text {
   color: #64748b;
   font-size: 12px;
   line-height: 1.6;
 }
-
 .workflow-steps {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 10px;
 }
-
 .workflow-step {
   display: flex;
   gap: 8px;
@@ -292,7 +514,6 @@ export default {
   padding: 10px;
   background: #f8fafc;
 }
-
 .step-index {
   width: 22px;
   height: 22px;
@@ -305,19 +526,16 @@ export default {
   font-weight: 700;
   flex: 0 0 auto;
 }
-
 .step-title {
   color: #0f172a;
   font-weight: 700;
   margin-bottom: 5px;
 }
-
 .step-text {
   color: #64748b;
   font-size: 12px;
   line-height: 1.5;
 }
-
 @media (max-width: 1200px) {
   .workflow-steps {
     grid-template-columns: repeat(2, minmax(0, 1fr));

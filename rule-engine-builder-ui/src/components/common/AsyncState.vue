@@ -1,21 +1,34 @@
 <template>
   <div class="async-state" :class="{ 'is-compact': compact }">
     <div v-if="loading" class="state-content state-loading">
-      <i class="el-icon-loading" />
+      <el-icon><el-icon-loading /></el-icon>
       <span>{{ loadingText }}</span>
     </div>
     <div v-else-if="error" class="state-content state-error">
-      <i class="el-icon-warning-outline" />
+      <el-icon><el-icon-warning-outline /></el-icon>
       <span>{{ error }}</span>
-      <el-button type="text" size="small" @click="retry">重新加载</el-button>
+      <el-button link size="small" @click="retry">重新加载</el-button>
     </div>
-    <el-empty v-else-if="empty" :description="emptyText" :image-size="compact ? 56 : 90" />
+    <el-empty
+      v-else-if="empty"
+      :description="emptyText"
+      :image-size="compact ? 56 : 90"
+    />
     <slot v-else />
   </div>
 </template>
 
 <script>
+import {
+  Loading as ElIconLoading,
+  Warning as ElIconWarningOutline,
+} from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 export default {
+  components: {
+    ElIconLoading,
+    ElIconWarningOutline,
+  },
   name: 'AsyncState',
   props: {
     loading: { type: Boolean, default: false },
@@ -23,13 +36,14 @@ export default {
     error: { type: String, default: '' },
     empty: { type: Boolean, default: false },
     emptyText: { type: String, default: '暂无数据' },
-    compact: { type: Boolean, default: false }
+    compact: { type: Boolean, default: false },
   },
   methods: {
     retry() {
-      this.$emit('retry')
-    }
-  }
+      $emit(this, 'retry')
+    },
+  },
+  emits: ['retry'],
 }
 </script>
 

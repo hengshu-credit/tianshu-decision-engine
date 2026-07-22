@@ -1,9 +1,37 @@
-import { createLocalVue, mount } from '@vue/test-utils'
-import Vue from 'vue'
-
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 import ElementTabFocusGuard from '@/plugins/elementTabFocusGuard'
+
+const TabsStub = {
+  name: 'ElTabs',
+  props: { modelValue: { type: String, default: '' } },
+  computed: {
+    currentName() {
+      return this.modelValue
+    },
+  },
+  template: `
+    <div>
+      <button id="tab-auth" role="tab" aria-controls="pane-auth">鉴权配置</button>
+      <button id="tab-tokens" role="tab" aria-controls="pane-tokens">临时 Token</button>
+      <slot />
+    </div>
+  `,
+}
+
+const TabPaneStub = {
+  name: 'ElTabPane',
+  props: {
+    name: { type: String, required: true },
+    label: { type: String, default: '' },
+  },
+  computed: {
+    active() {
+      return this.$parent.currentName === this.name
+    },
+  },
+  template: '<div :id="`pane-${name}`"><slot /></div>',
+}
 
 const TabsHost = {
   template: `
@@ -23,25 +51,29 @@ const TabsHost = {
 
 describe('ElementTabFocusGuard', () => {
   test('程序化切换页签前转移焦点并隔离隐藏页签', async () => {
-    const localVue = createLocalVue()
-    localVue.use(ElementUI)
-    localVue.use(ElementTabFocusGuard)
-    const wrapper = mount(TabsHost, { localVue, attachTo: document.body })
-    await Vue.nextTick()
+    const wrapper = mount(TabsHost, {
+      attachTo: document.body,
+      plugins: [ElementTabFocusGuard],
+      stubs: {
+        'el-tabs': TabsStub,
+        'el-tab-pane': TabPaneStub,
+      },
+    })
+    await nextTick()
 
     const action = wrapper.find('#open-token').element
     action.focus()
     expect(document.activeElement).toBe(action)
 
     wrapper.vm.activeTab = 'tokens'
-    await Vue.nextTick()
+    await nextTick()
 
     const authPane = wrapper.find('#pane-auth').element
     const tokenPane = wrapper.find('#pane-tokens').element
     expect(document.activeElement.id).toBe('tab-tokens')
     expect(authPane.hasAttribute('inert')).toBe(true)
     expect(tokenPane.hasAttribute('inert')).toBe(false)
-    await Vue.nextTick()
-    wrapper.destroy()
+    await nextTick()
+    wrapper.unmount()
   })
 })

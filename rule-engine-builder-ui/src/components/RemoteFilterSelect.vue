@@ -1,20 +1,20 @@
 <template>
   <el-select
+    v-bind="$attrs"
     ref="select"
-    :value="value"
+    :model-value="value"
     clearable
     filterable
     remote
     reserve-keyword
     :allow-create="allowFreeInput"
     :default-first-option="allowFreeInput"
-    :popper-append-to-body="false"
+    :teleported="false"
     :placeholder="placeholder"
     :loading="loading"
-    v-bind="$attrs"
-    @input="$emit('input', $event)"
+    @update:model-value="updateValue"
     @change="$emit('change', $event)"
-    @keyup.enter.native="handleEnter"
+    @keyup.enter="handleEnter"
     @visible-change="handleVisibleChange"
     :remote-method="handleRemote"
   >
@@ -28,6 +28,7 @@
 </template>
 
 <script>
+import { $emit } from '../utils/gogocodeTransfer'
 export default {
   name: 'RemoteFilterSelect',
   inheritAttrs: false,
@@ -38,7 +39,7 @@ export default {
     optionLabelKey: { type: String, default: 'label' },
     optionValueKey: { type: String, default: 'value' },
     pageSize: { type: Number, default: 20 },
-    allowFreeInput: { type: Boolean, default: false }
+    allowFreeInput: { type: Boolean, default: false },
   },
   data() {
     return {
@@ -50,36 +51,33 @@ export default {
       hasMore: true,
       dropdownWrap: null,
       inputObserver: null,
-      optionsRequestId: 0
+      optionsRequestId: 0,
     }
   },
-  mounted() {
-    this.$nextTick(() => {
-      this.bindEditableInput()
-      this.setDropdownAccessible(false)
-    })
-  },
-  beforeDestroy() {
+  beforeUnmount() {
     this.unbindEditableInput()
     this.unbindDropdownScroll()
   },
   methods: {
+    updateValue(value) {
+      $emit(this, 'update:value', value)
+    },
     handleEnter(event) {
       if (!this.allowFreeInput) return
       this.query = event && event.target ? event.target.value : this.query
-      this.$emit('input', this.query || '')
+      $emit(this, 'update:value', this.query || '')
     },
     handleRemote(query) {
       this.query = query || ''
       if (this.allowFreeInput) {
-        this.$emit('input', this.query)
+        $emit(this, 'update:value', this.query)
       }
       this.loadOptions(true)
     },
     handleVisibleChange(visible) {
       if (visible) {
         this.setDropdownAccessible(true)
-        this.query = this.allowFreeInput ? (this.value || '') : this.query
+        this.query = this.allowFreeInput ? this.value || '' : this.query
         this.loadOptions(true)
         this.$nextTick(this.bindDropdownScroll)
       } else {
@@ -92,14 +90,22 @@ export default {
     nativeInput() {
       const select = this.$refs.select
       const reference = select && select.$refs ? select.$refs.reference : null
-      return (reference && reference.$refs && reference.$refs.input) ||
+      return (
+        (reference && reference.$refs && reference.$refs.input) ||
         (select && select.$el ? select.$el.querySelector('input') : null)
+      )
     },
     dropdownElement() {
       const select = this.$refs.select
       if (!select) return null
-      return select.popperElm ||
-        (select.$refs && select.$refs.popper ? select.$refs.popper.$el : null)
+      return (
+        (select.popperRef && select.popperRef.contentRef) ||
+        select.popperElm ||
+        (select.$refs && select.$refs.popper ? select.$refs.popper.$el : null) ||
+        (select.$el
+          ? select.$el.querySelector('.el-select__popper, .el-select-dropdown')
+          : null)
+      )
     },
     bindEditableInput() {
       this.unbindEditableInput()
@@ -109,7 +115,10 @@ export default {
       this.inputObserver = new MutationObserver(() => {
         if (input.hasAttribute('readonly')) input.removeAttribute('readonly')
       })
-      this.inputObserver.observe(input, { attributes: true, attributeFilter: ['readonly'] })
+      this.inputObserver.observe(input, {
+        attributes: true,
+        attributeFilter: ['readonly'],
+      })
     },
     unbindEditableInput() {
       if (this.inputObserver) {
@@ -133,12 +142,18 @@ export default {
       dropdown.setAttribute('aria-hidden', 'true')
     },
     retainSelectedOption() {
-      if (this.value === undefined || this.value === null || this.value === '') {
+      if (
+        this.value === undefined ||
+        this.value === null ||
+        this.value === ''
+      ) {
         this.options = []
         return
       }
       const selectedValue = String(this.value)
-      this.options = this.options.filter(option => String(this.optionValue(option)) === selectedValue)
+      this.options = this.options.filter(
+        (option) => String(this.optionValue(option)) === selectedValue
+      )
     },
     cancelPendingLoad() {
       this.optionsRequestId += 1
@@ -162,13 +177,14 @@ export default {
         const result = await this.fetchOptions({
           query: this.query,
           pageNum: this.pageNum,
-          pageSize: this.pageSize
+          pageSize: this.pageSize,
         })
         if (requestId !== this.optionsRequestId) return
         const page = this.normalizeResult(result)
         this.appendOptions(page.records)
         this.total = page.total
-        this.hasMore = page.records.length >= this.pageSize &&
+        this.hasMore =
+          page.records.length >= this.pageSize &&
           (this.total <= 0 || this.options.length < this.total)
         this.pageNum += 1
       } finally {
@@ -186,8 +202,10 @@ export default {
       return { records: [], total: 0 }
     },
     appendOptions(records) {
-      const seen = new Set(this.options.map(item => String(this.optionValue(item))))
-      ;(records || []).forEach(item => {
+      const seen = new Set(
+        this.options.map((item) => String(this.optionValue(item)))
+      )
+      ;(records || []).forEach((item) => {
         const value = this.optionValue(item)
         if (value === undefined || value === null || value === '') return
         const key = String(value)
@@ -213,16 +231,25 @@ export default {
     bindDropdownScroll() {
       this.unbindDropdownScroll()
       const select = this.$refs.select
-      const wrap = select && select.$refs && select.$refs.scrollbar && select.$refs.scrollbar.$refs
-        ? select.$refs.scrollbar.$refs.wrap
-        : null
+      const dropdown = this.dropdownElement()
+      const wrap =
+        (dropdown && dropdown.querySelector('.el-scrollbar__wrap')) ||
+        (select &&
+        select.$refs &&
+        select.$refs.scrollbar &&
+        select.$refs.scrollbar.$refs
+          ? select.$refs.scrollbar.$refs.wrap
+          : null)
       if (!wrap) return
       this.dropdownWrap = wrap
       wrap.addEventListener('scroll', this.handleDropdownScroll)
     },
     unbindDropdownScroll() {
       if (this.dropdownWrap) {
-        this.dropdownWrap.removeEventListener('scroll', this.handleDropdownScroll)
+        this.dropdownWrap.removeEventListener(
+          'scroll',
+          this.handleDropdownScroll
+        )
         this.dropdownWrap = null
       }
     },
@@ -232,7 +259,14 @@ export default {
       if (el.scrollTop + el.clientHeight >= el.scrollHeight - 32) {
         this.loadOptions(false)
       }
-    }
-  }
+    },
+  },
+  mounted() {
+    this.$nextTick(() => {
+      this.bindEditableInput()
+      this.setDropdownAccessible(false)
+    })
+  },
+  emits: ['input', 'update:value', 'change'],
 }
 </script>

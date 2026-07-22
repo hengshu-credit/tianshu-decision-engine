@@ -45,8 +45,9 @@ public class RulePushServiceTest {
         private final List<String> channels = new ArrayList<>();
 
         @Override
-        public void convertAndSend(String channel, Object message) {
+        public Long convertAndSend(String channel, Object message) {
             channels.add(channel);
+            return 0L;
         }
     }
 }

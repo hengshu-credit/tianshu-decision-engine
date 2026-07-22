@@ -1,4 +1,4 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import ExpressionNodeInspector from '@/components/expression/ExpressionNodeInspector.vue'
 import { createLiteralOperand, createOperationOperand } from '@/utils/operand'
 
@@ -6,7 +6,7 @@ const literal = value => createLiteralOperand(value, 'NUMBER')
 
 function mountInspector(node) {
   return shallowMount(ExpressionNodeInspector, {
-    propsData: { node },
+    props: { node },
     stubs: ['el-input', 'el-select', 'el-option', 'el-button', 'el-radio-group', 'el-radio-button']
   })
 }
@@ -22,7 +22,7 @@ describe('ExpressionNodeInspector', () => {
 
   test('函数参数支持添加和删减', async () => {
     const wrapper = shallowMount(ExpressionNodeInspector, {
-      propsData: { node: { kind: 'FUNCTION', functionCode: 'max', args: [null, null] } },
+      props: { node: { kind: 'FUNCTION', functionCode: 'max', args: [null, null] } },
       stubs: ['el-input', 'el-select', 'el-option', 'el-button', 'el-radio-group', 'el-radio-button']
     })
 
@@ -35,7 +35,7 @@ describe('ExpressionNodeInspector', () => {
 
   test('访问器和类型转换配置会发出新节点', () => {
     const wrapper = shallowMount(ExpressionNodeInspector, {
-      propsData: { node: { kind: 'ACCESS', target: null, accessor: null, accessType: 'KEY' } },
+      props: { node: { kind: 'ACCESS', target: null, accessor: null, accessType: 'KEY' } },
       stubs: ['el-input', 'el-select', 'el-option', 'el-button', 'el-radio-group', 'el-radio-button']
     })
     wrapper.vm.patch({ accessType: 'INDEX' })
@@ -44,7 +44,7 @@ describe('ExpressionNodeInspector', () => {
 
   test('名单查询展示组合含义并只配置正向匹配语义', () => {
     const wrapper = shallowMount(ExpressionNodeInspector, {
-      propsData: {
+      props: {
         node: {
           kind: 'LIST_QUERY', listIds: [1], itemTypes: [],
           combinationMode: 'ALL_FIELDS_ALL_LISTS', matchMode: 'IN_LIST'

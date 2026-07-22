@@ -20,7 +20,9 @@
     <div class="rule-version-diff-summary">
       <div class="rule-version-diff-title">
         <strong>{{ modelTypeLabel }}业务配置差异</strong>
-        <span v-if="diff.summary.total === 0" class="rule-version-same">两个版本的业务配置一致</span>
+        <span v-if="diff.summary.total === 0" class="rule-version-same"
+          >两个版本的业务配置一致</span
+        >
         <span v-else>共 {{ diff.summary.total }} 处变化</span>
       </div>
       <div class="rule-version-diff-counts" aria-label="差异数量">
@@ -30,11 +32,20 @@
       </div>
     </div>
 
-    <div v-if="diff.errors.left || diff.errors.right" class="rule-version-error-grid">
-      <div class="rule-version-error rule-version-error--left" :class="{ 'is-empty': !diff.errors.left }">
+    <div
+      v-if="diff.errors.left || diff.errors.right"
+      class="rule-version-error-grid"
+    >
+      <div
+        class="rule-version-error rule-version-error--left"
+        :class="{ 'is-empty': !diff.errors.left }"
+      >
         {{ diff.errors.left || '基准版本内容可正常解析' }}
       </div>
-      <div class="rule-version-error rule-version-error--right" :class="{ 'is-empty': !diff.errors.right }">
+      <div
+        class="rule-version-error rule-version-error--right"
+        :class="{ 'is-empty': !diff.errors.right }"
+      >
         {{ diff.errors.right || '对比版本内容可正常解析' }}
       </div>
     </div>
@@ -90,7 +101,7 @@ const MODEL_TYPE_LABELS = {
   SCORE: '评分卡',
   CROSS_ADV: '复杂交叉表',
   SCORE_ADV: '复杂评分卡',
-  SCRIPT: 'QL 脚本'
+  SCRIPT: 'QL 脚本',
 }
 
 export default {
@@ -101,46 +112,49 @@ export default {
     RuleMatrixVisualDiff,
     RuleScoreVisualDiff,
     MonacoDiffEditor,
-    RuleConditionDiff
+    RuleConditionDiff,
   },
   props: {
     modelType: {
       type: String,
-      required: true
+      required: true,
     },
     leftVersion: {
       type: Object,
-      required: true
+      required: true,
     },
     rightVersion: {
       type: Object,
-      required: true
-    }
+      required: true,
+    },
   },
   computed: {
     diff() {
       return buildRuleVersionDiff({
         modelType: this.modelType,
         leftModelJson: this.leftVersion.modelJson,
-        rightModelJson: this.rightVersion.modelJson
+        rightModelJson: this.rightVersion.modelJson,
       })
     },
     visualComponent() {
-      if (['TABLE', 'RULE_SET'].includes(this.modelType)) return RuleListVisualDiff
+      if (['TABLE', 'RULE_SET'].includes(this.modelType))
+        return RuleListVisualDiff
       if (['TREE', 'FLOW'].includes(this.modelType)) return RuleGraphVisualDiff
-      if (['CROSS', 'CROSS_ADV'].includes(this.modelType)) return RuleMatrixVisualDiff
-      if (['SCORE', 'SCORE_ADV'].includes(this.modelType)) return RuleScoreVisualDiff
+      if (['CROSS', 'CROSS_ADV'].includes(this.modelType))
+        return RuleMatrixVisualDiff
+      if (['SCORE', 'SCORE_ADV'].includes(this.modelType))
+        return RuleScoreVisualDiff
       return null
     },
     modelTypeLabel() {
       return MODEL_TYPE_LABELS[this.modelType] || '规则'
-    }
+    },
   },
   methods: {
     formatVersionTime(value) {
       return value ? String(value).replace('T', ' ') : '-'
-    }
-  }
+    },
+  },
 }
 </script>
 

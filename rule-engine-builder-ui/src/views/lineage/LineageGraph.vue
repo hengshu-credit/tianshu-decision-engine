@@ -2,10 +2,16 @@
   <div class="uiue-list-page lineage-page">
     <div class="module-hint">
       <div class="hint-title">血缘分析</div>
-      <div class="hint-text">从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。</div>
+      <div class="hint-text">
+        从变量、规则、项目、API、数据库、名单或模型出发，查看上游依赖与下游引用关系。
+      </div>
     </div>
     <div class="usage-guide">
-      <div v-for="item in lineageGuideCards" :key="item.title" class="guide-item">
+      <div
+        v-for="item in lineageGuideCards"
+        :key="item.title"
+        class="guide-item"
+      >
         <div class="guide-title">{{ item.title }}</div>
         <div class="guide-text">{{ item.text }}</div>
       </div>
@@ -14,8 +20,17 @@
     <div class="query-panel">
       <el-form :inline="true" size="small">
         <el-form-item label="节点类型">
-          <el-select v-model="query.nodeType" style="width:130px" @change="onNodeTypeChange">
-            <el-option v-for="item in nodeTypeOptions" :key="item.value" :label="item.label" :value="item.value" />
+          <el-select
+            v-model="query.nodeType"
+            style="width: 130px"
+            @change="onNodeTypeChange"
+          >
+            <el-option
+              v-for="item in nodeTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="起点">
@@ -28,59 +43,104 @@
             :remote-method="loadOptions"
             :loading="optionLoading"
             placeholder="输入编码或名称搜索"
-            style="width:320px"
+            style="width: 320px"
           >
-            <el-option v-for="item in options" :key="item.type + '-' + item.id" :label="item.displayName" :value="item.id" />
+            <el-option
+              v-for="item in options"
+              :key="item.type + '-' + item.id"
+              :label="item.displayName"
+              :value="item.id"
+            />
           </el-select>
         </el-form-item>
         <el-form-item label="方向">
           <el-radio-group v-model="query.direction" @change="onDirectionChange">
-            <el-radio-button label="ALL">全部</el-radio-button>
-            <el-radio-button label="UPSTREAM">上游</el-radio-button>
-            <el-radio-button label="DOWNSTREAM">下游</el-radio-button>
+            <el-radio-button value="ALL">全部</el-radio-button>
+            <el-radio-button value="UPSTREAM">上游</el-radio-button>
+            <el-radio-button value="DOWNSTREAM">下游</el-radio-button>
           </el-radio-group>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" icon="el-icon-share" :loading="loading" @click="loadGraph">生成血缘图</el-button>
+          <el-button
+            type="primary"
+            :icon="ElIconShare"
+            :loading="loading"
+            @click="loadGraph"
+            >生成血缘图</el-button
+          >
         </el-form-item>
       </el-form>
     </div>
 
     <div class="legend-row">
-      <span v-for="item in nodeTypeOptions" :key="item.value" class="legend-item">
+      <span
+        v-for="item in nodeTypeOptions"
+        :key="item.value"
+        class="legend-item"
+      >
         <i :style="{ background: nodeColor(item.value) }" />{{ item.label }}
       </span>
     </div>
 
     <div ref="graphWrap" class="graph-wrap" v-loading="loading">
       <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
-      <div v-else class="graph-canvas" :style="{ width: canvasSize.width + 'px', height: canvasSize.height + 'px' }">
-        <div v-if="showUpstream" class="side-caption is-upstream">{{ upstreamRoots.length ? '上游' : '暂无上游' }}</div>
+      <div
+        v-else
+        class="graph-canvas"
+        :style="{
+          width: canvasSize.width + 'px',
+          height: canvasSize.height + 'px',
+        }"
+      >
+        <div v-if="showUpstream" class="side-caption is-upstream">
+          {{ upstreamRoots.length ? '上游' : '暂无上游' }}
+        </div>
         <div class="side-caption is-current">当前节点</div>
-        <div v-if="showDownstream" class="side-caption is-downstream">{{ downstreamRoots.length ? '下游' : '暂无下游' }}</div>
+        <div v-if="showDownstream" class="side-caption is-downstream">
+          {{ downstreamRoots.length ? '下游' : '暂无下游' }}
+        </div>
 
-        <svg class="edge-layer" :width="canvasSize.width" :height="canvasSize.height">
+        <svg
+          class="edge-layer"
+          :width="canvasSize.width"
+          :height="canvasSize.height"
+        >
           <g v-for="edge in edgeLines" :key="edge.key">
             <path :d="edge.path" class="edge-path" marker-end="url(#arrow)" />
-            <text :x="edge.labelX" :y="edge.labelY" class="edge-label">{{ edge.label }}</text>
+            <text :x="edge.labelX" :y="edge.labelY" class="edge-label">
+              {{ edge.label }}
+            </text>
           </g>
           <defs>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+            <marker
+              id="arrow"
+              markerWidth="8"
+              markerHeight="8"
+              refX="6"
+              refY="3"
+              orient="auto"
+              markerUnits="strokeWidth"
+            >
               <path d="M0,0 L0,6 L7,3 z" fill="#94A3B8" />
             </marker>
           </defs>
         </svg>
 
-        <div
-          class="graph-node current-node"
-          :style="currentNodeStyle"
-        >
+        <div class="graph-node current-node" :style="currentNodeStyle">
           <div class="node-head">
-            <span class="node-type" :style="{ color: nodeColor(startNode.type) }">{{ nodeTypeLabel(startNode.type) }}</span>
+            <span
+              class="node-type"
+              :style="{ color: nodeColor(startNode.type) }"
+              >{{ nodeTypeLabel(startNode.type) }}</span
+            >
             <span class="current-badge">当前</span>
           </div>
-          <div class="node-label" :title="startNode.label || startNode.code">{{ startNode.label || startNode.code }}</div>
-          <div class="node-code" :title="startNode.code">{{ startNode.code }}</div>
+          <div class="node-label" :title="startNode.label || startNode.code">
+            {{ startNode.label || startNode.code }}
+          </div>
+          <div class="node-code" :title="startNode.code">
+            {{ startNode.code }}
+          </div>
         </div>
 
         <div
@@ -89,7 +149,7 @@
           class="graph-node branch-node"
           :class="[
             item.side === 'UPSTREAM' ? 'is-upstream' : 'is-downstream',
-            { 'is-cycle': item.branch.cycle }
+            { 'is-cycle': item.branch.cycle },
           ]"
           :style="branchStyle(item)"
         >
@@ -100,16 +160,34 @@
             :aria-label="item.branch.expanded ? '收起节点' : '展开节点'"
             @click.stop="toggleBranch(item.branch)"
           >
-            <i :class="item.branch.loading ? 'el-icon-loading' : (item.branch.expanded ? 'el-icon-minus' : 'el-icon-plus')" />
+            <app-icon
+              :name="
+                item.branch.loading
+                  ? 'Loading'
+                  : item.branch.expanded
+                  ? 'Minus'
+                  : 'Plus'
+              "
+              :class="{ 'is-loading': item.branch.loading }"
+            />
           </button>
           <div class="node-head">
-            <span class="node-type" :style="{ color: nodeColor(item.branch.node.type) }">{{ nodeTypeLabel(item.branch.node.type) }}</span>
+            <span
+              class="node-type"
+              :style="{ color: nodeColor(item.branch.node.type) }"
+              >{{ nodeTypeLabel(item.branch.node.type) }}</span
+            >
             <span v-if="item.branch.cycle" class="cycle-badge">循环引用</span>
           </div>
-          <div class="node-label" :title="item.branch.node.label || item.branch.node.code">
+          <div
+            class="node-label"
+            :title="item.branch.node.label || item.branch.node.code"
+          >
             {{ item.branch.node.label || item.branch.node.code }}
           </div>
-          <div class="node-code" :title="item.branch.node.code">{{ item.branch.node.code }}</div>
+          <div class="node-code" :title="item.branch.node.code">
+            {{ item.branch.node.code }}
+          </div>
         </div>
       </div>
     </div>
@@ -117,6 +195,8 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import { Share as ElIconShare } from '@element-plus/icons-vue'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
 
 const CARD_W = 200
@@ -129,13 +209,21 @@ const MIN_CANVAS_W = 960
 const MIN_CANVAS_H = 440
 
 export default {
-  name: 'LineageGraph',
   data() {
     return {
       lineageGuideCards: [
-        { title: '选择起点', text: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、名单或模型定位影响范围。' },
-        { title: '两跳展开', text: '首次自动展示上下游各两层关系；点击第二层节点的加号继续展开，点击减号收起整条分支。' },
-        { title: '静态分析边界', text: '血缘基于结构化配置和脚本静态分析生成；复杂动态脚本引用需结合规则测试与执行日志复核。' }
+        {
+          title: '选择起点',
+          text: '先选择节点类型，再输入编码或名称搜索起点；适合从变量、规则、API、DB、名单或模型定位影响范围。',
+        },
+        {
+          title: '两跳展开',
+          text: '首次自动展示上下游各两层关系；点击第二层节点的加号继续展开，点击减号收起整条分支。',
+        },
+        {
+          title: '静态分析边界',
+          text: '血缘基于结构化配置和脚本静态分析生成；复杂动态脚本引用需结合规则测试与执行日志复核。',
+        },
       ],
       loading: false,
       optionLoading: false,
@@ -154,10 +242,12 @@ export default {
         { label: 'API', value: 'API' },
         { label: '数据库', value: 'DB' },
         { label: '名单', value: 'LIST' },
-        { label: '外数源', value: 'DATASOURCE' }
-      ]
+        { label: '外数源', value: 'DATASOURCE' },
+      ],
+      ElIconShare: markRaw(ElIconShare),
     }
   },
+  name: 'LineageGraph',
   created() {
     this.loadOptions('')
   },
@@ -172,59 +262,91 @@ export default {
       const result = []
       const collect = (branches, side, depth, parentId) => {
         const list = branches || []
-        list.forEach(branch => {
+        list.forEach((branch) => {
           result.push({ branch, side, depth, parentId })
           if (branch.expanded && branch.children.length) {
             collect(branch.children, side, depth + 1, branch.instanceId)
           }
         })
       }
-      if (this.showUpstream) collect(this.upstreamRoots, 'UPSTREAM', 1, 'CURRENT')
-      if (this.showDownstream) collect(this.downstreamRoots, 'DOWNSTREAM', 1, 'CURRENT')
+      if (this.showUpstream)
+        collect(this.upstreamRoots, 'UPSTREAM', 1, 'CURRENT')
+      if (this.showDownstream)
+        collect(this.downstreamRoots, 'DOWNSTREAM', 1, 'CURRENT')
       return result
     },
     mindMapLayout() {
-      const upstream = this.layoutSide(this.showUpstream ? this.upstreamRoots : [])
-      const downstream = this.layoutSide(this.showDownstream ? this.downstreamRoots : [])
+      const upstream = this.layoutSide(
+        this.showUpstream ? this.upstreamRoots : []
+      )
+      const downstream = this.layoutSide(
+        this.showDownstream ? this.downstreamRoots : []
+      )
       const maxDepth = Math.max(1, upstream.maxDepth, downstream.maxDepth)
-      const width = Math.max(MIN_CANVAS_W, PADDING_X * 2 + CARD_W + maxDepth * LEVEL_STEP * 2)
-      const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + Math.max(upstream.height, downstream.height))
+      const width = Math.max(
+        MIN_CANVAS_W,
+        PADDING_X * 2 + CARD_W + maxDepth * LEVEL_STEP * 2
+      )
+      const height = Math.max(
+        MIN_CANVAS_H,
+        PADDING_Y * 2 + Math.max(upstream.height, downstream.height)
+      )
       const currentLeft = (width - CARD_W) / 2
       const currentCenterY = height / 2
       const positions = {
-        CURRENT: { left: currentLeft, top: currentCenterY - CARD_H / 2 }
+        CURRENT: { left: currentLeft, top: currentCenterY - CARD_H / 2 },
       }
-      this.applySidePositions(positions, upstream, 'UPSTREAM', currentLeft, currentCenterY)
-      this.applySidePositions(positions, downstream, 'DOWNSTREAM', currentLeft, currentCenterY)
+      this.applySidePositions(
+        positions,
+        upstream,
+        'UPSTREAM',
+        currentLeft,
+        currentCenterY
+      )
+      this.applySidePositions(
+        positions,
+        downstream,
+        'DOWNSTREAM',
+        currentLeft,
+        currentCenterY
+      )
       return { width, height, positions }
     },
     canvasSize() {
       return {
         width: this.mindMapLayout.width,
-        height: this.mindMapLayout.height
+        height: this.mindMapLayout.height,
       }
     },
     edgeLines() {
-      return this.visibleBranches.map(item => {
-        const branchPos = this.mindMapLayout.positions[item.branch.instanceId]
-        const parentPos = this.mindMapLayout.positions[item.parentId]
-        if (!branchPos || !parentPos) return null
-        const upstream = item.side === 'UPSTREAM'
-        const x1 = upstream ? branchPos.left + CARD_W : parentPos.left + CARD_W
-        const y1 = upstream ? branchPos.top + CARD_H / 2 : parentPos.top + CARD_H / 2
-        const x2 = upstream ? parentPos.left : branchPos.left
-        const y2 = upstream ? parentPos.top + CARD_H / 2 : branchPos.top + CARD_H / 2
-        const midX = (x1 + x2) / 2
-        return {
-          key: item.branch.instanceId + '-' + item.parentId,
-          fromId: upstream ? item.branch.instanceId : item.parentId,
-          toId: upstream ? item.parentId : item.branch.instanceId,
-          path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`,
-          labelX: midX,
-          labelY: (y1 + y2) / 2 - 8,
-          label: item.branch.relationLabel || ''
-        }
-      }).filter(Boolean)
+      return this.visibleBranches
+        .map((item) => {
+          const branchPos = this.mindMapLayout.positions[item.branch.instanceId]
+          const parentPos = this.mindMapLayout.positions[item.parentId]
+          if (!branchPos || !parentPos) return null
+          const upstream = item.side === 'UPSTREAM'
+          const x1 = upstream
+            ? branchPos.left + CARD_W
+            : parentPos.left + CARD_W
+          const y1 = upstream
+            ? branchPos.top + CARD_H / 2
+            : parentPos.top + CARD_H / 2
+          const x2 = upstream ? parentPos.left : branchPos.left
+          const y2 = upstream
+            ? parentPos.top + CARD_H / 2
+            : branchPos.top + CARD_H / 2
+          const midX = (x1 + x2) / 2
+          return {
+            key: item.branch.instanceId + '-' + item.parentId,
+            fromId: upstream ? item.branch.instanceId : item.parentId,
+            toId: upstream ? item.parentId : item.branch.instanceId,
+            path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`,
+            labelX: midX,
+            labelY: (y1 + y2) / 2 - 8,
+            label: item.branch.relationLabel || '',
+          }
+        })
+        .filter(Boolean)
     },
     currentNodeStyle() {
       const pos = this.mindMapLayout.positions.CURRENT
@@ -232,15 +354,18 @@ export default {
         left: pos.left + 'px',
         top: pos.top + 'px',
         borderColor: this.nodeColor(this.startNode.type),
-        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(this.startNode.type)
+        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(this.startNode.type),
       }
-    }
+    },
   },
   methods: {
     async loadOptions(keyword) {
       this.optionLoading = true
       try {
-        const res = await listLineageOptions({ nodeType: this.query.nodeType, keyword })
+        const res = await listLineageOptions({
+          nodeType: this.query.nodeType,
+          keyword,
+        })
         this.options = (res && res.data) || []
       } finally {
         this.optionLoading = false
@@ -261,7 +386,10 @@ export default {
     centerGraphOnCurrent() {
       const graphWrap = this.$refs.graphWrap
       if (!graphWrap) return
-      graphWrap.scrollLeft = Math.max(0, (graphWrap.scrollWidth - graphWrap.clientWidth) / 2)
+      graphWrap.scrollLeft = Math.max(
+        0,
+        (graphWrap.scrollWidth - graphWrap.clientWidth) / 2
+      )
     },
     async loadGraph() {
       if (!this.query.nodeId) {
@@ -292,8 +420,9 @@ export default {
     },
     async onDirectionChange(direction) {
       if (!this.query.nodeId || !this.startNode) return
-      const required = direction === 'ALL' ? ['UPSTREAM', 'DOWNSTREAM'] : [direction]
-      const missing = required.filter(item => !this.loadedDirections[item])
+      const required =
+        direction === 'ALL' ? ['UPSTREAM', 'DOWNSTREAM'] : [direction]
+      const missing = required.filter((item) => !this.loadedDirections[item])
       if (!missing.length) return
       this.loading = true
       try {
@@ -302,12 +431,14 @@ export default {
             nodeType: this.query.nodeType,
             nodeId: this.query.nodeId,
             direction: item,
-            maxDepth: 2
+            maxDepth: 2,
           })
           const data = (res && res.data) || {}
           if (!this.startNode) this.startNode = data.startNode || null
-          if (item === 'UPSTREAM') this.upstreamRoots = this.buildBranches(data, item, 2)
-          if (item === 'DOWNSTREAM') this.downstreamRoots = this.buildBranches(data, item, 2)
+          if (item === 'UPSTREAM')
+            this.upstreamRoots = this.buildBranches(data, item, 2)
+          if (item === 'DOWNSTREAM')
+            this.downstreamRoots = this.buildBranches(data, item, 2)
           this.loadedDirections[item] = true
         }
       } catch (e) {
@@ -319,21 +450,29 @@ export default {
     buildBranches(data, direction, maxDepth) {
       const start = data && data.startNode
       if (!start || !start.id) return []
-      return this.createBranches(data, direction, maxDepth, start.id, [start.id])
+      return this.createBranches(data, direction, maxDepth, start.id, [
+        start.id,
+      ])
     },
     buildDirectChildren(parent, data) {
-      return this.createBranches(data, parent.direction, 1, parent.node.id, parent.path)
+      return this.createBranches(
+        data,
+        parent.direction,
+        1,
+        parent.node.id,
+        parent.path
+      )
     },
     createBranches(data, direction, maxDepth, parentNodeId, parentPath) {
       const nodeMap = {}
-      ;((data && data.nodes) || []).forEach(node => {
+      ;((data && data.nodes) || []).forEach((node) => {
         if (node && node.id) nodeMap[node.id] = node
       })
       if (data && data.startNode && data.startNode.id) {
         nodeMap[data.startNode.id] = data.startNode
       }
       const adjacency = {}
-      ;((data && data.edges) || []).forEach(edge => {
+      ;((data && data.edges) || []).forEach((edge) => {
         const parentId = direction === 'UPSTREAM' ? edge.to : edge.from
         const childId = direction === 'UPSTREAM' ? edge.from : edge.to
         if (!adjacency[parentId]) adjacency[parentId] = []
@@ -341,27 +480,36 @@ export default {
       })
       const build = (nodeId, path, depth) => {
         if (depth > maxDepth) return []
-        return (adjacency[nodeId] || []).map(item => {
-          const node = nodeMap[item.childId]
-          if (!node) return null
-          const cycle = path.includes(node.id)
-          const nextPath = path.concat(node.id)
-          const hasMore = !cycle && Boolean(direction === 'UPSTREAM' ? node.hasUpstream : node.hasDownstream)
-          const children = cycle || depth >= maxDepth ? [] : build(node.id, nextPath, depth + 1)
-          return {
-            instanceId: 'branch-' + (++this.branchSequence),
-            node,
-            direction,
-            relationLabel: item.edge.label || '',
-            path: nextPath,
-            children,
-            expanded: children.length > 0,
-            loaded: cycle || depth < maxDepth || !hasMore,
-            loading: false,
-            hasMore,
-            cycle
-          }
-        }).filter(Boolean)
+        return (adjacency[nodeId] || [])
+          .map((item) => {
+            const node = nodeMap[item.childId]
+            if (!node) return null
+            const cycle = path.includes(node.id)
+            const nextPath = path.concat(node.id)
+            const hasMore =
+              !cycle &&
+              Boolean(
+                direction === 'UPSTREAM' ? node.hasUpstream : node.hasDownstream
+              )
+            const children =
+              cycle || depth >= maxDepth
+                ? []
+                : build(node.id, nextPath, depth + 1)
+            return {
+              instanceId: 'branch-' + ++this.branchSequence,
+              node,
+              direction,
+              relationLabel: item.edge.label || '',
+              path: nextPath,
+              children,
+              expanded: children.length > 0,
+              loaded: cycle || depth < maxDepth || !hasMore,
+              loading: false,
+              hasMore,
+              cycle,
+            }
+          })
+          .filter(Boolean)
       }
       return build(parentNodeId, parentPath, 1)
     },
@@ -381,9 +529,12 @@ export default {
           nodeType: branch.node.type,
           nodeId: branch.node.refId,
           direction: branch.direction,
-          maxDepth: 1
+          maxDepth: 1,
         })
-        branch.children = this.buildDirectChildren(branch, (res && res.data) || {})
+        branch.children = this.buildDirectChildren(
+          branch,
+          (res && res.data) || {}
+        )
         branch.loaded = true
         branch.hasMore = branch.children.length > 0
         branch.expanded = branch.children.length > 0
@@ -394,7 +545,9 @@ export default {
       }
     },
     canToggle(branch) {
-      return Boolean(branch && !branch.cycle && (branch.hasMore || branch.children.length))
+      return Boolean(
+        branch && !branch.cycle && (branch.hasMore || branch.children.length)
+      )
     },
     layoutSide(roots) {
       const rawPositions = {}
@@ -405,8 +558,9 @@ export default {
         const children = branch.expanded ? branch.children : []
         let centerY
         if (children.length) {
-          const childCenters = children.map(child => place(child, depth + 1))
-          centerY = (childCenters[0] + childCenters[childCenters.length - 1]) / 2
+          const childCenters = children.map((child) => place(child, depth + 1))
+          centerY =
+            (childCenters[0] + childCenters[childCenters.length - 1]) / 2
         } else {
           centerY = leafIndex * ROW_STEP + CARD_H / 2
           leafIndex += 1
@@ -414,66 +568,72 @@ export default {
         rawPositions[branch.instanceId] = { centerY, depth }
         return centerY
       }
-      ;(roots || []).forEach(root => place(root, 1))
-      const centers = Object.values(rawPositions).map(item => item.centerY)
+      ;(roots || []).forEach((root) => place(root, 1))
+      const centers = Object.values(rawPositions).map((item) => item.centerY)
       const minCenter = centers.length ? Math.min(...centers) : CARD_H / 2
       const maxCenter = centers.length ? Math.max(...centers) : CARD_H / 2
       return {
         rawPositions,
         maxDepth,
         centerY: (minCenter + maxCenter) / 2,
-        height: centers.length ? maxCenter - minCenter + CARD_H : CARD_H
+        height: centers.length ? maxCenter - minCenter + CARD_H : CARD_H,
       }
     },
     applySidePositions(positions, layout, side, currentLeft, currentCenterY) {
       const offsetY = currentCenterY - layout.centerY
-      Object.keys(layout.rawPositions).forEach(instanceId => {
+      Object.keys(layout.rawPositions).forEach((instanceId) => {
         const raw = layout.rawPositions[instanceId]
         positions[instanceId] = {
-          left: side === 'UPSTREAM'
-            ? currentLeft - raw.depth * LEVEL_STEP
-            : currentLeft + raw.depth * LEVEL_STEP,
-          top: raw.centerY + offsetY - CARD_H / 2
+          left:
+            side === 'UPSTREAM'
+              ? currentLeft - raw.depth * LEVEL_STEP
+              : currentLeft + raw.depth * LEVEL_STEP,
+          top: raw.centerY + offsetY - CARD_H / 2,
         }
       })
     },
     branchStyle(item) {
-      const pos = this.mindMapLayout.positions[item.branch.instanceId] || { left: 0, top: 0 }
+      const pos = this.mindMapLayout.positions[item.branch.instanceId] || {
+        left: 0,
+        top: 0,
+      }
       return {
         left: pos.left + 'px',
         top: pos.top + 'px',
         borderColor: this.nodeColor(item.branch.node.type),
-        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(item.branch.node.type)
+        boxShadow: 'inset 4px 0 0 ' + this.nodeColor(item.branch.node.type),
       }
     },
     nodeColor(type) {
-      return {
-        PROJECT: '#2563EB',
-        VARIABLE: '#059669',
-        RULE: '#DC2626',
-        MODEL: '#7C3AED',
-        API: '#EA580C',
-        DB: '#0F766E',
-        LIST: '#C026D3',
-        DATASOURCE: '#64748B',
-        DATA_FIELD: '#0891B2'
-      }[type] || '#64748B'
+      return (
+        {
+          PROJECT: '#2563EB',
+          VARIABLE: '#059669',
+          RULE: '#DC2626',
+          MODEL: '#7C3AED',
+          API: '#EA580C',
+          DB: '#0F766E',
+          LIST: '#C026D3',
+          DATASOURCE: '#64748B',
+          DATA_FIELD: '#0891B2',
+        }[type] || '#64748B'
+      )
     },
     nodeTypeLabel(type) {
-      const found = this.nodeTypeOptions.find(item => item.value === type)
+      const found = this.nodeTypeOptions.find((item) => item.value === type)
       if (found) return found.label
       if (type === 'DATA_FIELD') return '数据字段'
       return type
-    }
-  }
+    },
+  },
 }
 </script>
 
 <style lang="scss" scoped>
 .lineage-page {
   .module-hint {
-    background: #F8FAFC;
-    border: 1px solid #E2E8F0;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
     border-radius: 4px;
     padding: 12px 16px;
     margin-bottom: 16px;
@@ -481,8 +641,14 @@ export default {
     align-items: center;
     gap: 12px;
   }
-  .hint-title { color:#1F2937; font-weight:700; white-space:nowrap; }
-  .hint-text { color:#64748B; }
+  .hint-title {
+    color: #1f2937;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .hint-text {
+    color: #64748b;
+  }
   .usage-guide {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -490,24 +656,24 @@ export default {
     margin-bottom: 16px;
   }
   .guide-item {
-    border: 1px solid #E2E8F0;
+    border: 1px solid #e2e8f0;
     border-radius: 4px;
     padding: 12px;
-    background: #FFFFFF;
+    background: #ffffff;
   }
   .guide-title {
-    color: #0F172A;
+    color: #0f172a;
     font-weight: 700;
     margin-bottom: 4px;
   }
   .guide-text {
-    color: #64748B;
+    color: #64748b;
     font-size: 12px;
     line-height: 1.6;
   }
   .query-panel {
-    background: #FFFFFF;
-    border: 1px solid #E5E7EB;
+    background: #ffffff;
+    border: 1px solid #e5e7eb;
     border-radius: 4px;
     padding: 12px 12px 0;
     margin-bottom: 12px;
@@ -531,36 +697,43 @@ export default {
     border-radius: 2px;
   }
   .graph-wrap {
-    background: #F8FAFC;
-    border: 1px solid #E5E7EB;
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
     border-radius: 4px;
     min-height: 440px;
     overflow: auto;
     position: relative;
   }
   .empty-graph {
-    color: #94A3B8;
+    color: #94a3b8;
     text-align: center;
     padding: 128px 0;
   }
   .graph-canvas {
     position: relative;
     min-width: 100%;
-    background-image: radial-gradient(#CBD5E1 0.8px, transparent 0.8px);
+    background-image: radial-gradient(#cbd5e1 0.8px, transparent 0.8px);
     background-size: 16px 16px;
   }
   .side-caption {
     position: absolute;
     top: 16px;
-    color: #64748B;
+    color: #64748b;
     font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.08em;
     z-index: 2;
   }
-  .side-caption.is-upstream { left: 24px; }
-  .side-caption.is-current { left: 50%; transform: translateX(-50%); }
-  .side-caption.is-downstream { right: 24px; }
+  .side-caption.is-upstream {
+    left: 24px;
+  }
+  .side-caption.is-current {
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  .side-caption.is-downstream {
+    right: 24px;
+  }
   .edge-layer {
     position: absolute;
     left: 0;
@@ -569,23 +742,23 @@ export default {
   }
   .edge-path {
     fill: none;
-    stroke: #94A3B8;
+    stroke: #94a3b8;
     stroke-width: 1.5;
   }
   .edge-label {
-    fill: #64748B;
+    fill: #64748b;
     font-size: 12px;
     text-anchor: middle;
     paint-order: stroke;
-    stroke: #F8FAFC;
+    stroke: #f8fafc;
     stroke-width: 4px;
   }
   .graph-node {
     position: absolute;
     width: 200px;
     height: 88px;
-    background: #FFFFFF;
-    border: 1px solid #CBD5E1;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
     border-radius: 6px;
     padding: 12px;
     box-sizing: border-box;
@@ -595,12 +768,12 @@ export default {
     box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
   }
   .current-node {
-    background: #FFFBEB;
+    background: #fffbeb;
     border-width: 2px;
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.10);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
   }
   .graph-node.is-cycle {
-    background: #FFF7ED;
+    background: #fff7ed;
     border-style: dashed;
   }
   .node-head {
@@ -622,12 +795,12 @@ export default {
     font-weight: 700;
   }
   .current-badge {
-    color: #92400E;
-    background: #FEF3C7;
+    color: #92400e;
+    background: #fef3c7;
   }
   .cycle-badge {
-    color: #9A3412;
-    background: #FFEDD5;
+    color: #9a3412;
+    background: #ffedd5;
   }
   .node-label {
     color: #111827;
@@ -637,7 +810,7 @@ export default {
     white-space: nowrap;
   }
   .node-code {
-    color: #64748B;
+    color: #64748b;
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     margin-top: 4px;
@@ -652,22 +825,26 @@ export default {
     height: 26px;
     margin-top: -13px;
     padding: 0;
-    border: 1px solid #CBD5E1;
+    border: 1px solid #cbd5e1;
     border-radius: 50%;
     color: #334155;
-    background: #FFFFFF;
+    background: #ffffff;
     box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12);
     cursor: pointer;
     z-index: 4;
   }
   .branch-toggle:hover,
   .branch-toggle:focus {
-    color: #2563EB;
-    border-color: #2563EB;
+    color: #2563eb;
+    border-color: #2563eb;
     outline: none;
   }
-  .branch-node.is-upstream .branch-toggle { left: -13px; }
-  .branch-node.is-downstream .branch-toggle { right: -13px; }
+  .branch-node.is-upstream .branch-toggle {
+    left: -13px;
+  }
+  .branch-node.is-downstream .branch-toggle {
+    right: -13px;
+  }
   @media (max-width: 1200px) {
     .usage-guide {
       grid-template-columns: repeat(1, minmax(0, 1fr));

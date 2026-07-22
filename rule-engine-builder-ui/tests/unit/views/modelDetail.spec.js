@@ -1,11 +1,8 @@
 // tests/unit/views/modelDetail.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { mount } from '@test-utils'
+import { nextTick } from 'vue'
 
-// 使用真实 Element UI（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+// 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块（覆盖 setup.js 的基础 jest.fn()，测试文件负责配置返回值）
 jest.mock('@/api/model', () => ({
   getModel: jest.fn(),
@@ -99,11 +96,7 @@ function mockObjectTree() {
 }
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 async function mountAndWait(modelData = mockModel()) {
   modelApi.getModel.mockResolvedValue({ data: modelData })
@@ -114,8 +107,7 @@ async function mountAndWait(modelData = mockModel()) {
   functionApi.listAllFunctionsByProject.mockResolvedValue({ data: [] })
 
   const wrapper = mount(ModelDetail, {
-    localVue: createTestVue(),
-    propsData: { id: '1' },
+    props: { id: '1' },
     mocks: {
       $route: { params: { id: 1 } },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -138,7 +130,7 @@ async function mountAndWait(modelData = mockModel()) {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -147,7 +139,7 @@ describe('ModelDetail — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 getModel', () => {
     expect(modelApi.getModel).toHaveBeenCalledWith(1)
@@ -179,7 +171,7 @@ describe('ModelDetail — 初始化与数据加载', () => {
     expect(wrapper.vm.onnxGpuSummary).toContain('GPU 1')
     expect(wrapper.vm.onnxGpuSummary).toContain('8192 MB')
     expect(wrapper.vm.onnxGpuSummary).toContain('HEURISTIC')
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('modelTypeLabel 返回正确的标签', () => {
@@ -221,7 +213,7 @@ describe('ModelDetail — 初始化与数据加载', () => {
     expect(localWrapper.vm.supportsOnlineExecution).toBe(true)
     expect(localWrapper.vm.onnxTaskLabel).toContain('ArcFace')
     expect(localWrapper.vm.onnxNodeSummary).toBe('1 入 / 1 出')
-    localWrapper.destroy()
+    localWrapper.unmount()
   })
 
   test('非 PMML 和 ONNX 格式不显示为可在线执行', () => {
@@ -234,7 +226,7 @@ describe('ModelDetail — 变量关联加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('loadVarsByProject 调用正确的 API', async () => {
     variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVars() })
@@ -242,7 +234,7 @@ describe('ModelDetail — 变量关联加载', () => {
     dataObjectApi.getVariableTree.mockResolvedValueOnce(mockObjectTree())
 
     await wrapper.vm.loadVarsByProject(1)
-    await Vue.nextTick()
+    await nextTick()
 
     expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
     expect(variableApi.listVariables).toHaveBeenCalled()
@@ -349,7 +341,7 @@ describe('ModelDetail — 变量关联加载', () => {
     dataObjectApi.getVariableTree.mockResolvedValueOnce(mockObjectTree())
 
     await wrapper.vm.loadGlobalVars()
-    await Vue.nextTick()
+    await nextTick()
 
     expect(variableApi.listVariables).toHaveBeenCalled()
     expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(0)
@@ -410,13 +402,13 @@ describe('ModelDetail — 输入字段编辑', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('输入字段只展示默认值并提供空值回退提示', () => {
-    const labels = wrapper.findAll('el-table-column-stub').wrappers.map(item => item.attributes('label'))
+    const labels = wrapper.findAllComponents({ name: 'ElTableColumn' }).map(item => item.props('label'))
     expect(labels).toContain('默认值')
     expect(labels).not.toContain('缺失值')
-    const hint = wrapper.findAll('el-tooltip-stub').wrappers.find(item => (
+    const hint = wrapper.findAll('el-tooltip-stub').find(item => (
       item.attributes('content') === '来源为空或未取到值时使用默认值；未配置则按空值传入模型。'
     ))
     expect(hint).toBeDefined()
@@ -471,7 +463,7 @@ describe('ModelDetail — 输出字段编辑', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('editOutputField 设置行的 _editing 标志', () => {
     const field = wrapper.vm.model.outputFields[0]
@@ -539,7 +531,7 @@ describe('ModelDetail — 字段保存功能', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('saveInputField 调用 updateModelInputField 并更新状态', async () => {
     const field = wrapper.vm.model.inputFields[0]
@@ -547,7 +539,7 @@ describe('ModelDetail — 字段保存功能', () => {
     modelApi.updateModelInputField.mockResolvedValue({ data: true })
 
     await wrapper.vm.saveInputField(field)
-    await Vue.nextTick()
+    await nextTick()
 
     expect(modelApi.updateModelInputField).toHaveBeenCalled()
     expect(modelApi.updateModelInputField.mock.calls[0][1]).not.toHaveProperty('missingValue')
@@ -561,7 +553,7 @@ describe('ModelDetail — 字段保存功能', () => {
     modelApi.updateModelInputField.mockRejectedValue(new Error('保存失败'))
 
     await wrapper.vm.saveInputField(field)
-    await Vue.nextTick()
+    await nextTick()
 
     expect(field._saving).toBe(false)
     expect(field._editing).toBe(true)
@@ -574,7 +566,7 @@ describe('ModelDetail — 字段保存功能', () => {
     modelApi.updateModelOutputField.mockResolvedValue({ data: true })
 
     await wrapper.vm.saveOutputField(field)
-    await Vue.nextTick()
+    await nextTick()
 
     expect(modelApi.updateModelOutputField).toHaveBeenCalled()
     expect(modelApi.updateModelOutputField.mock.calls[0][1]).toMatchObject({
@@ -589,7 +581,7 @@ describe('ModelDetail — 模型测试弹窗', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('openTestDialog 打开弹窗并重置状态', async () => {
     modelApi.getModel.mockResolvedValue({ data: mockModel() })
@@ -704,7 +696,7 @@ describe('ModelDetail — 版本管理', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('openVersionDialog 加载模型版本历史', async () => {
     modelApi.listVersions.mockResolvedValue({ data: [{ version: 2 }, { version: 1 }] })
@@ -739,7 +731,7 @@ describe('ModelDetail — 模型测试执行', () => {
     wrapper.vm.testParams = { age: 30, score: 85.5 }
     wrapper.vm.testJsonStr = '{"age": 30, "score": 85.5}'
   })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('doTest 成功执行后设置 testResult', async () => {
     modelApi.executeModel.mockResolvedValue({ data: { success: true, outputs: { result: 100 } } })
@@ -800,14 +792,14 @@ describe('ModelDetail — 边界情况', () => {
     const modelData = { ...mockModel(), inputFields: [], outputFields: [] }
     const wrapper = await mountAndWait(modelData)
     expect(wrapper.vm.model.inputFields).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('outputFields 为空时不报错', async () => {
     const modelData = { ...mockModel(), inputFields: [], outputFields: [] }
     const wrapper = await mountAndWait(modelData)
     expect(wrapper.vm.model.outputFields).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('projectId 为 null 时加载全局变量', async () => {
@@ -818,9 +810,9 @@ describe('ModelDetail — 边界情况', () => {
     const modelData = { ...mockModel(), projectId: null }
     const wrapper = await mountAndWait(modelData)
     await wrapper.vm.loadGlobalVars()
-    await Vue.nextTick()
+    await nextTick()
     expect(variableApi.listVariables).toHaveBeenCalled()
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('全局模型即使残留 projectId 也只加载全局资源', async () => {
@@ -837,12 +829,11 @@ describe('ModelDetail — 边界情况', () => {
     expect(variableApi.listVariablesByProject).not.toHaveBeenCalled()
     expect(variableApi.listVariables).toHaveBeenCalledWith(expect.objectContaining({ scope: 'GLOBAL' }))
     expect(dataObjectApi.getVariableTree).toHaveBeenCalledWith(0)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('buildVarOptions 处理空数组', () => {
     const localWrapper = mount(ModelDetail, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: { id: 1 } },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -859,6 +850,6 @@ describe('ModelDetail — 边界情况', () => {
     localWrapper.vm.buildVarOptions([], [])
     expect(localWrapper.vm.varMap).toEqual({})
     expect(localWrapper.vm.varPickerGroups.length).toBe(4)
-    localWrapper.destroy()
+    localWrapper.unmount()
   })
 })

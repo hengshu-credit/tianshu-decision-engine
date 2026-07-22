@@ -7,12 +7,22 @@ import java.net.HttpURLConnection;
 import java.net.SocketTimeoutException;
 import java.net.URL;
 import java.util.Base64;
+import java.util.Objects;
 
 /** 模型图片入参函数：统一将 Base64、Data URI 或 HTTP(S) URL 转为规范 Base64。 */
 public class ImageInputFunctions {
 
     public static final int MAX_IMAGE_BYTES = 10 * 1024 * 1024;
     private static final String USER_AGENT = "Tianshu-Decision-Engine/1.0";
+    private final HttpConnectionFactory connectionFactory;
+
+    public ImageInputFunctions() {
+        this(url -> (HttpURLConnection) url.openConnection());
+    }
+
+    ImageInputFunctions(HttpConnectionFactory connectionFactory) {
+        this.connectionFactory = Objects.requireNonNull(connectionFactory, "connectionFactory");
+    }
 
     public String imageToBase64(String image, double timeoutMs) {
         if (image == null || image.trim().isEmpty()) {
@@ -44,7 +54,7 @@ public class ImageInputFunctions {
             if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
                 throw new IllegalArgumentException("图片地址仅支持 HTTP(S) URL");
             }
-            connection = (HttpURLConnection) url.openConnection();
+            connection = connectionFactory.open(url);
             connection.setRequestMethod("GET");
             connection.setRequestProperty("User-Agent", USER_AGENT);
             connection.setInstanceFollowRedirects(true);
@@ -122,5 +132,10 @@ public class ImageInputFunctions {
     private boolean isHttpUrl(String value) {
         return value.regionMatches(true, 0, "http://", 0, 7)
                 || value.regionMatches(true, 0, "https://", 0, 8);
+    }
+
+    @FunctionalInterface
+    interface HttpConnectionFactory {
+        HttpURLConnection open(URL url) throws IOException;
     }
 }

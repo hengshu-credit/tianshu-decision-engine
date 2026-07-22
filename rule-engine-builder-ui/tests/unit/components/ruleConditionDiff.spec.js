@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import RuleConditionDiff from '@/components/rule/versionDiff/RuleConditionDiff.vue'
 
 function conditionLane() {
@@ -23,7 +23,7 @@ function conditionLane() {
 
 describe('RuleConditionDiff', () => {
   test('递归条件仍按共享行渲染', () => {
-    const wrapper = mount(RuleConditionDiff, { propsData: { lane: conditionLane() } })
+    const wrapper = mount(RuleConditionDiff, { props: { lane: conditionLane() } })
 
     expect(wrapper.findAll('.rule-diff-lane')).toHaveLength(2)
     expect(wrapper.text()).toContain('18')
@@ -31,7 +31,7 @@ describe('RuleConditionDiff', () => {
   })
 
   test('一个展开按钮同时隐藏左右两侧的子条件', async() => {
-    const wrapper = mount(RuleConditionDiff, { propsData: { lane: conditionLane() } })
+    const wrapper = mount(RuleConditionDiff, { props: { lane: conditionLane() } })
 
     expect(wrapper.findAll('.rule-diff-lane')).toHaveLength(2)
     await wrapper.find('.rule-diff-expand').trigger('click')

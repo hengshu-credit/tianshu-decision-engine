@@ -11,7 +11,7 @@ import com.hengshucredit.rule.server.mapper.RuleExecutionLogMapper;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import org.springframework.stereotype.Service;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;

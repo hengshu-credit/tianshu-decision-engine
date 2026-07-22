@@ -43,7 +43,7 @@ function assertConsoleMessages(messages, expectedPatterns) {
   throw new Error(details.join('\n'))
 }
 
-function installConsoleGate(VueConstructor) {
+function installConsoleGate(testUtilsConfig) {
   let messages = []
   let expectedPatterns = []
   let originalConsoleError
@@ -57,14 +57,14 @@ function installConsoleGate(VueConstructor) {
     messages = []
     expectedPatterns = []
     originalConsoleError = console.error
-    originalWarnHandler = VueConstructor.config.warnHandler
+    originalWarnHandler = testUtilsConfig.global.config.warnHandler
     console.error = jest.fn((...args) => {
       messages.push({
         source: 'console.error',
         message: args.map(formatConsoleArg).join(' ')
       })
     })
-    VueConstructor.config.warnHandler = (message, vm, trace) => {
+    testUtilsConfig.global.config.warnHandler = (message, vm, trace) => {
       messages.push({
         source: 'Vue warning',
         message: message + (trace || '')
@@ -74,7 +74,7 @@ function installConsoleGate(VueConstructor) {
 
   afterEach(() => {
     console.error = originalConsoleError
-    VueConstructor.config.warnHandler = originalWarnHandler
+    testUtilsConfig.global.config.warnHandler = originalWarnHandler
     assertConsoleMessages(messages, expectedPatterns)
   })
 }

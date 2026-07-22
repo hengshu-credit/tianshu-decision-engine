@@ -1,11 +1,11 @@
-import { shallowMount } from '@vue/test-utils'
+import { shallowMount } from '@test-utils'
 import EndNodeScopeDialog from '@/components/flow/EndNodeScopeDialog.vue'
 import { END_SCOPE_CURRENT_RULE, END_SCOPE_ALL_RULES } from '@/utils/endNodeScope'
 
 describe('EndNodeScopeDialog', () => {
   test('默认选择跳出当前规则，并在确认时返回用户选择', async () => {
     const wrapper = shallowMount(EndNodeScopeDialog, {
-      propsData: { visible: true },
+      props: { visible: true },
       stubs: {
         'el-dialog': true,
         'el-alert': true,
@@ -25,7 +25,7 @@ describe('EndNodeScopeDialog', () => {
 
   test('每次打开都恢复为风险较低的当前规则范围', async () => {
     const wrapper = shallowMount(EndNodeScopeDialog, {
-      propsData: { visible: false },
+      props: { visible: false },
       stubs: {
         'el-dialog': true,
         'el-alert': true,

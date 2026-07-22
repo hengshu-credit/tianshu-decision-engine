@@ -10,7 +10,7 @@ function expectDeclaration(source, selector, declaration) {
 }
 
 describe('compact workbench styles', () => {
-  test('loads scoped balanced-density controls after Element UI overrides', () => {
+  test('loads scoped balanced-density controls after Element Plus overrides', () => {
     const mainSource = fs.readFileSync(path.join(projectRoot, 'src/main.js'), 'utf8')
 
     expect(fs.existsSync(stylePath)).toBe(true)
@@ -76,9 +76,9 @@ describe('compact workbench styles', () => {
     const experimentDetail = fs.readFileSync(path.join(projectRoot, 'src/views/experiment/ExperimentDetail.vue'), 'utf8')
 
     expect(experimentDetail).toContain('@media (max-width: 1600px)')
-    expect(experimentDetail).toContain('.base-form ::v-deep .el-row')
+    expect(experimentDetail).toContain('.base-form :deep(.el-row)')
     expect(experimentDetail).toContain('grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));')
-    expect(experimentDetail).toContain(".base-form ::v-deep .el-row > [class*='el-col-']")
+    expect(experimentDetail).toContain(".base-form :deep(.el-row > [class*='el-col-'])")
   })
 
   test('field pickers flex to available space and comparison selectors stay compact', () => {

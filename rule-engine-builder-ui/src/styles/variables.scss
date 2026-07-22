@@ -1,7 +1,6 @@
 // 必须在 :export 外面定义，这样才能通过 @use 被其他 scss 文件访问
 $--color-primary: #2639E9;
 $--color-danger: #F76E6C;
-$--font-path: "~element-ui/lib/theme-chalk/fonts";
 
 $menuText: #CBD5E1;
 $menuActiveText: #FFFFFF;

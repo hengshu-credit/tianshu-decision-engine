@@ -17,7 +17,7 @@
 > **重要提示**: 当前为预发布版，功能待增加，有部分功能逻辑还在修缮中 ......
 
 
-天枢决策引擎是一套基于 Spring Boot 2.3、QLExpress 4、Vue 2 和 Element UI 的可视化风控决策平台。系统面向业务人员提供规则项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力；面向业务系统提供 `rule-engine-client` SDK，用于拉取、缓存并执行已发布规则。
+天枢决策引擎是一套基于 Spring Boot 3.5、QLExpress 4、Vue 3 和 Element Plus 的可视化风控决策平台。系统面向业务人员提供规则项目、变量、名单、外数 API、外部数据库、模型、函数、规则测试、血缘分析、分流实验、执行日志和账单管理等能力；面向业务系统提供 `rule-engine-client` SDK，用于拉取、缓存并执行已发布规则。
 
 当前功能、系统设计、代码实现、UI、模块关联和验证结论见[《天枢决策引擎当前实现研究报告》](docs/research/2026-07-17-tianshu-decision-engine-current-state.md)。
 
@@ -56,7 +56,7 @@
 | `rule-engine-server` | 管理端 REST API、同步接口、日志、外数和数据库服务 | 8080 |
 | `rule-engine-client` | 业务系统 SDK，负责规则同步、L1 缓存和本地执行 | - |
 | `rule-engine-example` | SDK 集成示例服务 | 7070 |
-| `rule-engine-builder-ui` | Vue 2 控制台，独立构建和部署 | 9090 |
+| `rule-engine-builder-ui` | Vue 3 控制台，独立构建和部署 | 9090 |
 | `rule-engine-mysql` | MySQL 配置与初始化脚本 | 3306 |
 | `rule-engine-redis` | Redis Pub/Sub 配置 | 6379 |
 
@@ -117,7 +117,7 @@ flowchart LR
 
 ## 4. 环境要求
 
-- JDK 8
+- JDK 17（Maven 构建会校验 Java 版本，低于 17 将直接失败）
 - Maven 3.6+
 - MySQL 8
 - Redis

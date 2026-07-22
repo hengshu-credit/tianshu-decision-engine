@@ -1,6 +1,6 @@
 // tests/unit/views/functionList.spec.js
-import { shallowMount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { shallowMount } from '@test-utils'
+import { h, nextTick } from 'vue'
 
 // 直接 import API 模块（依赖 setup.js 的预置 mock）
 import * as functionApi from '@/api/function'
@@ -29,14 +29,10 @@ function mockProjects() {
 }
 
 // ─── 工具函数 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(jest.genMockFromModule('element-ui'))
-  return localVue
-}
+
 
 function makeStub(tag) {
-  return { render: h => h(tag) }
+  return { render: () => h(tag) }
 }
 
 async function mountAndWait() {
@@ -44,7 +40,6 @@ async function mountAndWait() {
   functionApi.listFunctions.mockResolvedValueOnce({ data: { records: mockFunctions(), total: 3 } })
 
   const wrapper = shallowMount(FunctionList, {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
       $router: { push: jest.fn(), replace: jest.fn() },
@@ -68,7 +63,7 @@ async function mountAndWait() {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -78,7 +73,7 @@ describe('FunctionList — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 listProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -106,7 +101,7 @@ describe('FunctionList — 标签方法', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('implTypeLabel 返回正确的标签', () => {
     expect(wrapper.vm.implTypeLabel('SCRIPT')).toBe('脚本')
@@ -132,7 +127,8 @@ describe('FunctionList — 标签方法', () => {
     expect(wrapper.vm.formatUpdateTime(null)).toBe('—')
 
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/function/FunctionList.vue'), 'utf8')
-    const functionTable = source.slice(source.indexOf('<el-table :data="funcList"'), source.indexOf('</el-table>', source.indexOf('<el-table :data="funcList"')))
+    const functionTableStart = source.lastIndexOf('<el-table', source.indexOf(':data="funcList"'))
+    const functionTable = source.slice(functionTableStart, source.indexOf('</el-table>', functionTableStart))
     expect(functionTable).toContain('label="更新时间"')
     expect(functionTable).toContain('formatUpdateTime(row.updateTime)')
   })
@@ -152,7 +148,7 @@ describe('FunctionList — 筛选与搜索', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('queryProjectCode 模糊匹配', () => {
     wrapper.vm.projectList = mockProjects()
@@ -176,7 +172,7 @@ describe('FunctionList — 筛选与搜索', () => {
     wrapper.vm.qp.pageNum = 5
     functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
@@ -195,7 +191,7 @@ describe('FunctionList — 函数操作', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleCreate 打开创建弹窗并设置默认值', () => {
     wrapper.vm.handleCreate()
@@ -330,7 +326,7 @@ describe('FunctionList — 函数操作', () => {
     // $confirm 必须 resolve，handleDelete 是 async 并 await 它
     wrapper.vm.$confirm = jest.fn().mockResolvedValue()
     wrapper.vm.handleDelete(row)
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 50)) // 等待 async handleDelete 完成
     expect(functionApi.deleteFunction).toHaveBeenCalledWith(99)
   })
@@ -354,7 +350,6 @@ describe('FunctionList — 边界情况', () => {
     projectApi.listProjects.mockResolvedValueOnce({ data: { records: [] } })
     functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     const wrapper = shallowMount(FunctionList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() },
@@ -371,23 +366,22 @@ describe('FunctionList — 边界情况', () => {
         'el-textarea': makeStub('textarea')
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.funcList).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('initial loading is false', async () => {
     const wrapper = await mountAndWait()
     expect(wrapper.vm.loading).toBe(false)
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('initial funcList is empty array before load', async () => {
     projectApi.listProjects.mockResolvedValueOnce({ data: { records: [] } })
     functionApi.listFunctions.mockResolvedValueOnce({ data: { records: [], total: 0 } })
     const wrapper = shallowMount(FunctionList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() },
@@ -407,9 +401,9 @@ describe('FunctionList — 边界情况', () => {
         'el-tab-pane': makeStub('div'), 'el-card': makeStub('div')
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.funcList).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

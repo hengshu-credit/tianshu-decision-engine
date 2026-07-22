@@ -6,7 +6,7 @@ import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import javax.annotation.Resource;
+import jakarta.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;

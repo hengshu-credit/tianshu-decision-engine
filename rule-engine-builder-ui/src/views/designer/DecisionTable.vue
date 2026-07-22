@@ -3,35 +3,61 @@
     <!-- 顶部工具栏 -->
     <div class="dt-header">
       <div class="dt-title-area">
-        <el-button type="text" icon="el-icon-back" @click="$router.back()" style="color:#606266;" />
-        <i class="el-icon-s-grid dt-title-icon" />
+        <el-button
+          link
+          :icon="ElIconBack"
+          @click="$router.back()"
+          style="color: #606266"
+        />
+        <el-icon class="dt-title-icon"><el-icon-s-grid /></el-icon>
         <span class="dt-title">决策表配置</span>
-        <el-tag size="mini" type="info" style="margin-left:8px;">共 {{ model.rules.length }} 条规则</el-tag>
+        <el-tag size="small" type="info" style="margin-left: 8px"
+          >共 {{ model.rules.length }} 条规则</el-tag
+        >
       </div>
       <div class="dt-toolbar">
-        <el-button size="small" icon="el-icon-plus" @click="addRule">添加行</el-button>
+        <el-button size="small" :icon="ElIconPlus" @click="addRule"
+          >添加行</el-button
+        >
         <el-divider direction="vertical" />
-        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
+        <el-button size="small" :icon="ElIconDocument" @click="handleSave"
+          >临时保存配置</el-button
+        >
+        <el-button
+          size="small"
+          type="warning"
+          :icon="ElIconCpu"
+          @click="handleCompile"
+          >保存并编译</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="handleTest"
+          >编译后测试</el-button
+        >
         <el-divider direction="vertical" />
         <span class="toolbar-label">命中策略</span>
-        <el-select v-model="model.hitPolicy" size="small" style="width:110px;">
+        <el-select v-model="model.hitPolicy" size="small" style="width: 110px">
           <el-option label="首次命中" value="FIRST" />
           <el-option label="全部执行" value="ALL" />
           <el-option label="唯一命中" value="UNIQUE" />
         </el-select>
         <el-tooltip :content="hitPolicyDesc" placement="bottom" effect="light">
-          <i class="el-icon-question tip-icon" />
+          <el-icon class="tip-icon"><el-icon-question /></el-icon>
         </el-tooltip>
       </div>
     </div>
 
     <!-- 变量加载状态 -->
     <div v-if="loadingVars || varPickerOptions.length" class="dt-var-status">
-      <span v-if="loadingVars" style="font-size:12px;color:#999;"><i class="el-icon-loading" /> 加载变量库...</span>
-      <span v-else style="font-size:12px;color:#52c41a;">
-        <i class="el-icon-s-custom" /> 已加载 {{ varPickerOptions.length }} 个变量/常量/对象字段
+      <span v-if="loadingVars" style="font-size: 12px; color: #999"
+        ><el-icon><el-icon-loading /></el-icon> 加载变量库...</span
+      >
+      <span v-else style="font-size: 12px; color: #52c41a">
+        <el-icon><el-icon-s-custom /></el-icon> 已加载
+        {{ varPickerOptions.length }} 个变量/常量/对象字段
       </span>
     </div>
 
@@ -45,8 +71,16 @@
         >
           <div class="dt-rule-toolbar">
             <span class="dt-rule-no">#{{ ri + 1 }}</span>
-            <el-button type="text" size="mini" @click="copyRule(ri)">复制</el-button>
-            <el-button type="text" size="mini" class="btn-delete" @click="removeRule(ri)">删除</el-button>
+            <el-button link size="small" @click="copyRule(ri)"
+              >复制</el-button
+            >
+            <el-button
+              link
+              size="small"
+              class="btn-delete"
+              @click="removeRule(ri)"
+              >删除</el-button
+            >
           </div>
           <div class="dt-rule-grid">
             <div class="dt-cond-panel">
@@ -63,8 +97,18 @@
             <div class="dt-act-panel">
               <div class="dt-act-panel-head">
                 <span class="dt-act-panel-title">动作 (THEN)</span>
-                <span class="dt-act-panel-hint">本条规则独立配置，可与其它行不同</span>
-                <el-button style="color: #fff;" type="primary" size="mini" plain icon="el-icon-plus" @click="addRuleAction(ri)">添加动作</el-button>
+                <span class="dt-act-panel-hint"
+                  >本条规则独立配置，可与其它行不同</span
+                >
+                <el-button
+                  style="color: #fff"
+                  type="primary"
+                  size="small"
+                  plain
+                  :icon="ElIconPlus"
+                  @click="addRuleAction(ri)"
+                  >添加动作</el-button
+                >
               </div>
               <div class="dt-act-rows">
                 <div
@@ -74,13 +118,11 @@
                 >
                   <div class="dt-act-head">
                     <span class="col-tag act-tag">THEN</span>
-                    <span class="dt-act-title">{{ operandDisplay(act.targetOperand) || '未选目标字段' }}</span>
+                    <span class="dt-act-title">{{
+                      operandDisplay(act.targetOperand) || '未选目标字段'
+                    }}</span>
                     <span class="th-actions">
-                      <i
-                        class="el-icon-delete"
-                        title="删除此动作"
-                        @click.stop="removeRuleAction(ri, ai)"
-                      />
+                      <el-icon><el-icon-delete /></el-icon>
                     </span>
                   </div>
                   <div class="dt-act-body">
@@ -91,8 +133,11 @@
                       :allowed-kinds="writeOperandKinds"
                       writable-only
                       placeholder="选择目标字段"
-                      size="mini"
-                      @input="operand => setActionOperand(act, 'targetOperand', operand)"
+                      size="small"
+                      @input="
+                        (operand) =>
+                          setActionOperand(act, 'targetOperand', operand)
+                      "
                     />
                     <span class="dt-act-eq">=</span>
                     <operand-picker
@@ -101,10 +146,15 @@
                       :functions="projectFunctions"
                       :selected-vars="selectedVarPickerOptions"
                       :allowed-kinds="valueOperandKinds"
-                      :expected-type="act.targetOperand && act.targetOperand.valueType"
+                      :expected-type="
+                        act.targetOperand && act.targetOperand.valueType
+                      "
                       placeholder="选择阈值、路径或字段"
-                      size="mini"
-                      @input="operand => setActionOperand(act, 'valueOperand', operand)"
+                      size="small"
+                      @input="
+                        (operand) =>
+                          setActionOperand(act, 'valueOperand', operand)
+                      "
                     />
                   </div>
                 </div>
@@ -116,13 +166,18 @@
 
       <!-- 加载中 -->
       <div v-if="!contentLoaded" class="dt-loading">
-        <i class="el-icon-loading" /> 加载决策表数据...
+        <el-icon><el-icon-loading /></el-icon> 加载决策表数据...
       </div>
 
       <!-- 空状态 -->
-      <div v-else-if="contentLoaded && model.rules.length === 0" class="dt-empty">
-        <i class="el-icon-s-grid dt-empty-icon" />
-        <p>暂无规则行，请点击「添加行」；每条规则内可单独「添加动作」并选择要赋值的变量</p>
+      <div
+        v-else-if="contentLoaded && model.rules.length === 0"
+        class="dt-empty"
+      >
+        <el-icon class="dt-empty-icon"><el-icon-s-grid /></el-icon>
+        <p>
+          暂无规则行，请点击「添加行」；每条规则内可单独「添加动作」并选择要赋值的变量
+        </p>
       </div>
     </div>
 
@@ -137,13 +192,15 @@
 
     <!-- 脚本覆盖模式横幅 -->
     <div v-if="scriptMode === 'script'" class="script-override-banner">
-      <i class="el-icon-warning" />
-      <span>脚本覆盖模式已激活，可视化编辑暂停。如需恢复请在下方脚本面板切换回「可视化模式」。</span>
+      <el-icon><el-icon-warning /></el-icon>
+      <span
+        >脚本覆盖模式已激活，可视化编辑暂停。如需恢复请在下方脚本面板切换回「可视化模式」。</span
+      >
     </div>
 
     <!-- 测试执行弹窗 -->
-        <designer-test-dialog
-      :visible.sync="testVisible"
+    <designer-test-dialog
+      v-model:visible="testVisible"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="TABLE"
@@ -154,7 +211,27 @@
 </template>
 
 <script>
-import { saveContent, compileRule, executeRule, getContent, refreshFields } from '@/api/definition'
+import { markRaw } from 'vue'
+import {
+  Grid as ElIconSGrid,
+  QuestionFilled as ElIconQuestion,
+  Loading as ElIconLoading,
+  SetUp as ElIconSCustom,
+  Delete as ElIconDelete,
+  Warning as ElIconWarning,
+  Back as ElIconBack,
+  Plus as ElIconPlus,
+  Document as ElIconDocument,
+  Cpu as ElIconCpu,
+  VideoPlay as ElIconVideoPlay,
+} from '@element-plus/icons-vue'
+import {
+  saveContent,
+  compileRule,
+  executeRule,
+  getContent,
+  refreshFields,
+} from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import ScriptPanel from '@/components/common/ScriptPanel.vue'
@@ -165,17 +242,23 @@ import {
   createEmptyActionItem,
   migrateRuleConditionsToTree,
   collectVarCodesFromConditionTree,
-  walkConditionLeaves
+  walkConditionLeaves,
 } from '@/utils/decisionConditionTree'
-import { collectOperandReferences, createLiteralOperand, operandDisplay, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
-import { buildSampleParamsFromCodes, coerceSampleValue } from '@/utils/testSampleParams'
+import {
+  collectOperandReferences,
+  createLiteralOperand,
+  operandDisplay,
+  operandFromReferenceFields,
+  syncOperandReference,
+} from '@/utils/operand'
+import {
+  buildSampleParamsFromCodes,
+  coerceSampleValue,
+} from '@/utils/testSampleParams'
 import { isSuccessResult, resultErrorMessage } from '@/utils/apiResponse'
 import { getExpressionContext } from '@/constants/expressionContexts'
 
 export default {
-  name: 'DecisionTable',
-  components: { DesignerTestDialog, OperandPicker, ScriptPanel, ConditionGroupEditor },
-  mixins: [varPickerMixin],
   data() {
     return {
       definitionId: null,
@@ -183,7 +266,7 @@ export default {
         hitPolicy: 'FIRST',
         conditions: [],
         actions: [],
-        rules: []
+        rules: [],
       },
       scriptMode: 'visual',
       testVisible: false,
@@ -192,22 +275,41 @@ export default {
       testResult: null,
       contentLoaded: false,
       writeOperandKinds: getExpressionContext('WRITE_TARGET').allowedKinds,
-      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds
+      valueOperandKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
+      ElIconBack: markRaw(ElIconBack),
+      ElIconPlus: markRaw(ElIconPlus),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconCpu: markRaw(ElIconCpu),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
   },
+  components: {
+    DesignerTestDialog,
+    OperandPicker,
+    ScriptPanel,
+    ConditionGroupEditor,
+    ElIconSGrid,
+    ElIconQuestion,
+    ElIconLoading,
+    ElIconSCustom,
+    ElIconDelete,
+    ElIconWarning,
+  },
+  name: 'DecisionTable',
+  mixins: [varPickerMixin],
   computed: {
     hitPolicyDesc() {
       const map = {
         FIRST: '首次命中：从上到下匹配规则，返回第一条满足条件的规则结果',
         ALL: '全部执行：匹配所有满足条件的规则并依次执行，结果为最后一条',
-        UNIQUE: '唯一命中：期望有且仅有一条规则满足，否则报错'
+        UNIQUE: '唯一命中：期望有且仅有一条规则满足，否则报错',
       }
       return map[this.model.hitPolicy] || ''
     },
     /** 测试弹窗中需要录入的变量编码列表（条件树 DFS 去重） */
     testVarCodeList() {
       const s = new Set()
-      ;(this.model.rules || []).forEach(r => {
+      ;(this.model.rules || []).forEach((r) => {
         collectVarCodesFromConditionTree(r.conditionRoot, s)
       })
       return Array.from(s)
@@ -215,7 +317,7 @@ export default {
     selectedVarPickerOptions() {
       const result = []
       const seen = new Set()
-      const addItem = item => {
+      const addItem = (item) => {
         const option = this.findVarPickerOptionByModelItem(item)
         if (!option) return
         const key = this.varPickerOptionKey(option)
@@ -223,26 +325,28 @@ export default {
         seen.add(key)
         result.push(option)
       }
-      const addOperand = operand => {
-        collectOperandReferences(operand).forEach(reference => addItem({
-          varCode: reference.code,
-          _varId: reference.refId,
-          _refType: reference.refType
-        }))
+      const addOperand = (operand) => {
+        collectOperandReferences(operand).forEach((reference) =>
+          addItem({
+            varCode: reference.code,
+            _varId: reference.refId,
+            _refType: reference.refType,
+          })
+        )
       }
 
-      ;(this.model.rules || []).forEach(rule => {
-        walkConditionLeaves(rule.conditionRoot, leaf => {
+      ;(this.model.rules || []).forEach((rule) => {
+        walkConditionLeaves(rule.conditionRoot, (leaf) => {
           addOperand(leaf.leftOperand)
           addOperand(leaf.rightOperand)
         })
-        ;(rule.actions || []).forEach(action => {
+        ;(rule.actions || []).forEach((action) => {
           addOperand(action.targetOperand)
           addOperand(action.valueOperand)
         })
       })
       return result
-    }
+    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -271,17 +375,20 @@ export default {
     _syncModelVarRefs() {
       let changed = false
       const sync = (holder, field) => {
-        const result = syncOperandReference(holder[field], this.varPickerOptions)
+        const result = syncOperandReference(
+          holder[field],
+          this.varPickerOptions
+        )
         if (!result.changed) return
-        this.$set(holder, field, result.operand)
+        holder[field] = result.operand
         changed = true
       }
-      ;(this.model.rules || []).forEach(rule => {
-        walkConditionLeaves(rule.conditionRoot, leaf => {
+      ;(this.model.rules || []).forEach((rule) => {
+        walkConditionLeaves(rule.conditionRoot, (leaf) => {
           sync(leaf, 'leftOperand')
           sync(leaf, 'rightOperand')
         })
-        ;(rule.actions || []).forEach(action => {
+        ;(rule.actions || []).forEach((action) => {
           sync(action, 'targetOperand')
           sync(action, 'valueOperand')
         })
@@ -294,15 +401,26 @@ export default {
      */
     ensureRuleActionsShape(rule, legacyGlobalActions) {
       const actions = rule.actions || []
-      const normalized = (actions.length ? actions : [createEmptyActionItem()]).map((action, index) => {
-        if (action.targetOperand !== undefined || action.valueOperand !== undefined) return action
-        const definition = action.varCode ? action : ((legacyGlobalActions || [])[index] || {})
+      const normalized = (
+        actions.length ? actions : [createEmptyActionItem()]
+      ).map((action, index) => {
+        if (
+          action.targetOperand !== undefined ||
+          action.valueOperand !== undefined
+        )
+          return action
+        const definition = action.varCode
+          ? action
+          : (legacyGlobalActions || [])[index] || {}
         return {
           targetOperand: operandFromReferenceFields(definition),
-          valueOperand: createLiteralOperand(action.value == null ? '' : action.value, definition.varType || 'STRING')
+          valueOperand: createLiteralOperand(
+            action.value == null ? '' : action.value,
+            definition.varType || 'STRING'
+          ),
         }
       })
-      this.$set(rule, 'actions', normalized)
+      rule['actions'] = normalized
     },
 
     /**
@@ -310,32 +428,45 @@ export default {
      */
     normalizeModel() {
       this.model.rules = this.model.rules || []
-      const legacyCols = Array.isArray(this.model.conditions) ? [...this.model.conditions] : []
-      const legacyGlobalActions = Array.isArray(this.model.actions) && this.model.actions.length
-        ? JSON.parse(JSON.stringify(this.model.actions))
-        : null
+      const legacyCols = Array.isArray(this.model.conditions)
+        ? [...this.model.conditions]
+        : []
+      const legacyGlobalActions =
+        Array.isArray(this.model.actions) && this.model.actions.length
+          ? JSON.parse(JSON.stringify(this.model.actions))
+          : null
 
-      this.model.rules.forEach(r => {
+      this.model.rules.forEach((r) => {
         this.ensureRuleActionsShape(r, legacyGlobalActions)
 
-        const hasTree = r.conditionRoot && r.conditionRoot.type === 'group' && Array.isArray(r.conditionRoot.children)
+        const hasTree =
+          r.conditionRoot &&
+          r.conditionRoot.type === 'group' &&
+          Array.isArray(r.conditionRoot.children)
         if (!hasTree) {
-          const migrated = migrateRuleConditionsToTree(r.conditions || [], legacyCols)
-          this.$set(r, 'conditionRoot', migrated)
+          const migrated = migrateRuleConditionsToTree(
+            r.conditions || [],
+            legacyCols
+          )
+          r['conditionRoot'] = migrated
         }
-        walkConditionLeaves(r.conditionRoot, leaf => {
-          if (!leaf.leftOperand && leaf.varCode) this.$set(leaf, 'leftOperand', operandFromReferenceFields(leaf))
+        walkConditionLeaves(r.conditionRoot, (leaf) => {
+          if (!leaf.leftOperand && leaf.varCode)
+            leaf['leftOperand'] = operandFromReferenceFields(leaf)
           if (!leaf.rightOperand && leaf.value !== undefined) {
             if (leaf.valueKind === 'VAR') {
-              this.$set(leaf, 'rightOperand', operandFromReferenceFields({
+              leaf['rightOperand'] = operandFromReferenceFields({
                 varCode: leaf.value,
                 varLabel: leaf.rightVarLabel,
                 varType: leaf.rightVarType,
                 _varId: leaf._rightVarId,
-                _refType: leaf._rightRefType
-              }))
+                _refType: leaf._rightRefType,
+              })
             } else {
-              this.$set(leaf, 'rightOperand', createLiteralOperand(leaf.value, leaf.varType || 'STRING'))
+              leaf['rightOperand'] = createLiteralOperand(
+                leaf.value,
+                leaf.varType || 'STRING'
+              )
             }
           }
         })
@@ -351,7 +482,7 @@ export default {
      * 测试弹窗：变量中文标签。
      */
     testVarLabel(code) {
-      const ref = this.projectRefs.find(r => r.refCode === code)
+      const ref = this.projectRefs.find((r) => r.refCode === code)
       if (ref && ref.varObj && ref.varObj.varLabel) return ref.varObj.varLabel
       if (ref && ref.refLabel) return ref.refLabel
       return code
@@ -361,12 +492,15 @@ export default {
      * 测试弹窗：从变量库解析类型与枚举串（用于表单控件）。
      */
     testVarMeta(code) {
-      const ref = this.projectRefs.find(r => r.refCode === code)
+      const ref = this.projectRefs.find((r) => r.refCode === code)
       const vt = (ref && ref.varType) || 'STRING'
       let enumOptions = ''
       if (vt === 'ENUM' && ref && ref.varObj) {
         const opts = this.getVarOptions(code) || []
-        enumOptions = opts.map(o => o.value || o.optionValue).filter(Boolean).join(',')
+        enumOptions = opts
+          .map((o) => o.value || o.optionValue)
+          .filter(Boolean)
+          .join(',')
       }
       return { varType: vt, enumOptions }
     },
@@ -377,28 +511,57 @@ export default {
     testEnumOpts(code) {
       const m = this.testVarMeta(code)
       if (!m.enumOptions) return []
-      return m.enumOptions.split(',').map(s => s.trim()).filter(Boolean)
+      return m.enumOptions
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
     },
 
     setActionOperand(action, field, operand) {
-      this.$set(action, field, operand || null)
+      action[field] = operand || null
     },
 
     varPickerOptionKey(option) {
-      const id = option && (option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id)))
-      const refType = option && (option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType))
+      const id =
+        option &&
+        (option._varId != null
+          ? option._varId
+          : option.id != null
+          ? option.id
+          : option.varObj && option.varObj.id)
+      const refType =
+        option &&
+        (option._refType ||
+          option.refType ||
+          (option.varObj && option.varObj.refType) ||
+          (option._ref && option._ref.refType))
       if (id != null && id !== '') return (refType || 'REF') + ':' + id
       return ''
     },
 
     findVarPickerOptionByModelItem(item) {
       if (!item) return null
-      const id = item._varId != null ? item._varId : (item.id != null ? item.id : (item.varObj && item.varObj.id))
-      const refType = item._refType || item.refType || (item.varObj && item.varObj.refType)
+      const id =
+        item._varId != null
+          ? item._varId
+          : item.id != null
+          ? item.id
+          : item.varObj && item.varObj.id
+      const refType =
+        item._refType || item.refType || (item.varObj && item.varObj.refType)
       if (id != null && id !== '' && refType) {
-        const byId = this.varPickerOptions.find(option => {
-          const optionId = option._varId != null ? option._varId : (option.id != null ? option.id : (option.varObj && option.varObj.id))
-          const optionType = option._refType || option.refType || (option.varObj && option.varObj.refType) || (option._ref && option._ref.refType)
+        const byId = this.varPickerOptions.find((option) => {
+          const optionId =
+            option._varId != null
+              ? option._varId
+              : option.id != null
+              ? option.id
+              : option.varObj && option.varObj.id
+          const optionType =
+            option._refType ||
+            option.refType ||
+            (option.varObj && option.varObj.refType) ||
+            (option._ref && option._ref.refType)
           return String(optionId) === String(id) && optionType === refType
         })
         if (byId) return byId
@@ -412,7 +575,7 @@ export default {
     addRuleAction(ruleIndex) {
       const r = this.model.rules[ruleIndex]
       if (!r) return
-      if (!r.actions) this.$set(r, 'actions', [])
+      if (!r.actions) r['actions'] = []
       r.actions.push(createEmptyActionItem())
     },
 
@@ -426,9 +589,11 @@ export default {
         this.$message.warning('每条规则至少保留一条动作')
         return
       }
-      this.$confirm('确认删除该动作？', '提示', { type: 'warning' }).then(() => {
-        r.actions.splice(actionIndex, 1)
-      }).catch(() => {})
+      this.$confirm('确认删除该动作？', '提示', { type: 'warning' })
+        .then(() => {
+          r.actions.splice(actionIndex, 1)
+        })
+        .catch(() => {})
     },
 
     /**
@@ -436,8 +601,12 @@ export default {
      */
     addRule() {
       this.model.rules.push({
-        conditionRoot: { type: 'group', op: 'AND', children: [createEmptyLeaf()] },
-        actions: [createEmptyActionItem()]
+        conditionRoot: {
+          type: 'group',
+          op: 'AND',
+          children: [createEmptyLeaf()],
+        },
+        actions: [createEmptyActionItem()],
       })
     },
 
@@ -454,12 +623,17 @@ export default {
     async handleSave() {
       try {
         this.normalizeModel()
-        await saveContent({ definitionId: this.definitionId, modelJson: JSON.stringify(this.model) })
+        await saveContent({
+          definitionId: this.definitionId,
+          modelJson: JSON.stringify(this.model),
+        })
         await refreshFields(this.definitionId, JSON.stringify(this.model))
         this.refreshProjectRefs()
         this.$message.success('保存成功')
       } catch (e) {
-        this.$message.error('保存失败: ' + (e && e.message ? e.message : '未知错误'))
+        this.$message.error(
+          '保存失败: ' + (e && e.message ? e.message : '未知错误')
+        )
         throw e
       }
     },
@@ -482,24 +656,47 @@ export default {
      * 根据条件树涉及的变量构造测试默认值模板。
      */
     buildTestParamsTemplate() {
-      const template = buildSampleParamsFromCodes(this.testVarCodeList, this.projectRefs)
-      const firstRule = (this.model.rules || []).find(rule => rule && rule.conditions && rule.conditions.length)
+      const template = buildSampleParamsFromCodes(
+        this.testVarCodeList,
+        this.projectRefs
+      )
+      const firstRule = (this.model.rules || []).find(
+        (rule) => rule && rule.conditions && rule.conditions.length
+      )
       if (firstRule) {
         (this.model.conditions || []).forEach((condition, index) => {
           const code = condition && condition.varCode
           const ruleCondition = firstRule.conditions[index]
-          if (!code || !Object.prototype.hasOwnProperty.call(template, code) || !ruleCondition || ruleCondition.value === undefined || ruleCondition.value === '') return
-          const ref = this.projectRefs.find(r => r.refCode === code)
+          if (
+            !code ||
+            !Object.prototype.hasOwnProperty.call(template, code) ||
+            !ruleCondition ||
+            ruleCondition.value === undefined ||
+            ruleCondition.value === ''
+          )
+            return
+          const ref = this.projectRefs.find((r) => r.refCode === code)
           template[code] = coerceSampleValue(ruleCondition.value, ref)
         })
       }
-      const firstTreeRule = (this.model.rules || []).find(rule => rule && rule.conditionRoot)
+      const firstTreeRule = (this.model.rules || []).find(
+        (rule) => rule && rule.conditionRoot
+      )
       if (firstTreeRule) {
-        walkConditionLeaves(firstTreeRule.conditionRoot, leaf => {
+        walkConditionLeaves(firstTreeRule.conditionRoot, (leaf) => {
           const leftRefs = collectOperandReferences(leaf.leftOperand)
-          const code = leftRefs.length ? (leftRefs[0].code || leftRefs[0].path) : ''
-          if (!code || !Object.prototype.hasOwnProperty.call(template, code) || !leaf.rightOperand || leaf.rightOperand.kind !== 'LITERAL' || leaf.rightOperand.value === '') return
-          const ref = this.projectRefs.find(r => r.refCode === code)
+          const code = leftRefs.length
+            ? leftRefs[0].code || leftRefs[0].path
+            : ''
+          if (
+            !code ||
+            !Object.prototype.hasOwnProperty.call(template, code) ||
+            !leaf.rightOperand ||
+            leaf.rightOperand.kind !== 'LITERAL' ||
+            leaf.rightOperand.value === ''
+          )
+            return
+          const ref = this.projectRefs.find((r) => r.refCode === code)
           template[code] = coerceSampleValue(leaf.rightOperand.value, ref)
         })
       }
@@ -515,14 +712,21 @@ export default {
     },
 
     async doTest() {
-      const res = await executeRule({ definitionId: this.definitionId, params: this.testParams })
+      const res = await executeRule({
+        definitionId: this.definitionId,
+        params: this.testParams,
+      })
       this.testResult = res && res.data ? res.data : res
     },
 
     formatResult(val) {
       if (val === null || val === undefined) return '(空)'
       try {
-        return JSON.stringify(typeof val === 'string' ? JSON.parse(val) : val, null, 2)
+        return JSON.stringify(
+          typeof val === 'string' ? JSON.parse(val) : val,
+          null,
+          2
+        )
       } catch (e) {
         return String(val)
       }
@@ -530,8 +734,8 @@ export default {
 
     onScriptModeChange(mode) {
       this.scriptMode = mode
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -540,13 +744,12 @@ export default {
   background: #fff;
   border-radius: 4px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   min-height: 100%;
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
 }
-
 .dt-header {
   display: flex;
   align-items: center;
@@ -583,13 +786,13 @@ export default {
   color: #999;
   cursor: pointer;
   font-size: 14px;
-  &:hover { color: #1890ff; }
+  &:hover {
+    color: #1890ff;
+  }
 }
-
 .dt-var-status {
   margin-bottom: 8px;
 }
-
 .dt-rules-wrap {
   display: flex;
   flex-direction: column;
@@ -598,7 +801,6 @@ export default {
   max-width: 100%;
   box-sizing: border-box;
 }
-
 .dt-rule-card {
   border: 1px solid #ebeef5;
   border-radius: 6px;
@@ -699,9 +901,16 @@ export default {
   display: flex;
   align-items: center;
   gap: 6px;
-  ::v-deep .var-picker-wrap { flex: 1 1 0; width: auto !important; min-width: 0; }
+  :deep(.var-picker-wrap) {
+    flex: 1 1 0;
+    width: auto !important;
+    min-width: 0;
+  }
 }
-.dt-act-eq { color: #909399; font-weight: 600; }
+.dt-act-eq {
+  color: #909399;
+  font-weight: 600;
+}
 .dt-act-value-ctl {
   width: 100%;
   max-width: 100%;
@@ -711,7 +920,6 @@ export default {
     flex-wrap: nowrap;
     align-items: stretch;
   }
-  /* 条件区占主要横向空间，避免控件挤在左侧 */
   .dt-cond-panel {
     flex: 3 1 0;
     min-width: 0;
@@ -724,7 +932,9 @@ export default {
   }
 }
 @media (max-width: 1200px) {
-  .dt-designer { padding: 12px; }
+  .dt-designer {
+    padding: 12px;
+  }
 }
 .col-tag {
   display: inline-block;
@@ -748,22 +958,24 @@ export default {
     cursor: pointer;
     color: #c0c0c0;
     font-size: 13px;
-    transition: color .2s;
-    &:hover { color: #1890ff; }
+    transition: color 0.2s;
+    &:hover {
+      color: #1890ff;
+    }
     .action-delete {
-      color: #F76E6C;
+      color: #f76e6c;
     }
   }
 }
-
 .dt-loading {
   text-align: center;
   padding: 40px;
   color: #999;
   font-size: 13px;
-  i { margin-right: 4px; }
+  i {
+    margin-right: 4px;
+  }
 }
-
 .dt-empty {
   text-align: center;
   padding: 30px;
@@ -778,7 +990,6 @@ export default {
   display: block;
   margin-bottom: 6px;
 }
-
 .test-result {
   margin-top: 16px;
 }
@@ -794,7 +1005,6 @@ export default {
   overflow: auto;
   margin: 0;
 }
-
 .script-override-banner {
   display: flex;
   align-items: center;
@@ -806,6 +1016,9 @@ export default {
   margin-top: 12px;
   font-size: 12px;
   color: #cf1322;
-  i { color: #f5222d; font-size: 14px; }
+  i {
+    color: #f5222d;
+    font-size: 14px;
+  }
 }
 </style>

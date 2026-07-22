@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import { buildRuleVersionDiff } from '@/utils/ruleVersionDiff'
 import RuleListVisualDiff from '@/components/rule/versionDiff/RuleListVisualDiff.vue'
 import RuleGraphVisualDiff from '@/components/rule/versionDiff/RuleGraphVisualDiff.vue'
@@ -19,7 +19,7 @@ describe('rule version visual renderers', () => {
     ['RULE_SET', { executionMode: 'SERIAL', rules: [] }, '业务规则', '执行模式']
   ])('%s 使用规则卡片视图', (modelType, model, sectionTitle, fieldLabel) => {
     const wrapper = mount(RuleListVisualDiff, {
-      propsData: { modelType, sections: sections(modelType, model) }
+      props: { modelType, sections: sections(modelType, model) }
     })
 
     expect(wrapper.classes()).toContain('rule-list-visual-diff')
@@ -37,7 +37,7 @@ describe('rule version visual renderers', () => {
       edges: []
     }
     const wrapper = mount(RuleGraphVisualDiff, {
-      propsData: { modelType, sections: sections(modelType, model) }
+      props: { modelType, sections: sections(modelType, model) }
     })
 
     expect(wrapper.classes()).toContain('rule-graph-visual-diff')
@@ -51,7 +51,7 @@ describe('rule version visual renderers', () => {
     ['CROSS_ADV', { rowDimensions: [], colDimensions: [], cells: [['PASS']] }, '结果矩阵']
   ])('%s 使用业务矩阵视图', (modelType, model, title) => {
     const wrapper = mount(RuleMatrixVisualDiff, {
-      propsData: { modelType, sections: sections(modelType, model) }
+      props: { modelType, sections: sections(modelType, model) }
     })
 
     expect(wrapper.classes()).toContain('rule-matrix-visual-diff')
@@ -65,7 +65,7 @@ describe('rule version visual renderers', () => {
     ['SCORE_ADV', { initialScore: 100, dimensionGroups: [{ id: 'g1', groupLabel: '身份风险', weight: 1, dimensions: [] }], thresholds: [] }, '维度组']
   ])('%s 使用评分层级视图', (modelType, model, title) => {
     const wrapper = mount(RuleScoreVisualDiff, {
-      propsData: { modelType, sections: sections(modelType, model) }
+      props: { modelType, sections: sections(modelType, model) }
     })
 
     expect(wrapper.classes()).toContain('rule-score-visual-diff')
@@ -78,7 +78,7 @@ describe('rule version visual renderers', () => {
     const left = { hitPolicy: 'FIRST', rules: [{ id: 'r1' }, { id: 'r2' }] }
     const right = { hitPolicy: 'FIRST', rules: [{ id: 'r1' }, { id: 'new' }, { id: 'r2' }] }
     const wrapper = mount(RuleListVisualDiff, {
-      propsData: { modelType: 'TABLE', sections: sections('TABLE', left, right) }
+      props: { modelType: 'TABLE', sections: sections('TABLE', left, right) }
     })
     const ruleSection = wrapper.find('[data-section="rules"]')
 

@@ -1,7 +1,5 @@
 package com.hengshucredit.rule.client.auth;
 
-import com.sun.net.httpserver.HttpExchange;
-import com.sun.net.httpserver.HttpServer;
 import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;

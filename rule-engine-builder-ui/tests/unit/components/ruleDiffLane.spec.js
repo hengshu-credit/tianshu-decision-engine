@@ -1,10 +1,10 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import RuleDiffLane from '@/components/rule/versionDiff/RuleDiffLane.vue'
 
 describe('RuleDiffLane', () => {
   test('新增内容在左侧渲染占位并在右侧显示新增标记', () => {
     const wrapper = mount(RuleDiffLane, {
-      propsData: {
+      props: {
         lane: {
           key: 'rule-new',
           kind: 'rule',
@@ -24,7 +24,7 @@ describe('RuleDiffLane', () => {
 
   test('修改字段只生成一个共享字段行并同时展示左右值', () => {
     const wrapper = mount(RuleDiffLane, {
-      propsData: {
+      props: {
         lane: {
           key: 'condition-1',
           kind: 'condition',
@@ -47,7 +47,7 @@ describe('RuleDiffLane', () => {
 
   test('删除内容在右侧保留等位占位', () => {
     const wrapper = mount(RuleDiffLane, {
-      propsData: {
+      props: {
         lane: {
           key: 'rule-old',
           kind: 'rule',

@@ -1,11 +1,8 @@
 // tests/unit/views/modelList.spec.js
-import { mount, createLocalVue } from '@vue/test-utils'
-import Vue from 'vue'
+import { mount } from '@test-utils'
+import { h, nextTick } from 'vue'
 
-// 使用真实 Element UI（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
-jest.unmock('element-ui')
-import ElementUI from 'element-ui'
-
+// 使用真实 Element Plus（setup.js 的 element-ui mock 没有挂载到 Vue.prototype）
 // Mock API 模块
 jest.mock('@/api/model', () => ({
   listModels: jest.fn(),
@@ -50,7 +47,7 @@ function mockProjects() {
 // ─── 带方法的 el-form stub（jsdom 中 el-form 的 ref 方法不可用）─────────────
 const makeFormStub = (name) => ({
   name,
-  render: h => h('form'),
+  render: () => h('form'),
   methods: { clearValidate: jest.fn(), validate: jest.fn(cb => cb && cb(true)), validateField: jest.fn(), resetFields: jest.fn() }
 })
 
@@ -65,11 +62,7 @@ describe('ModelList 项目筛选交互', () => {
 })
 
 // ─── 测试用例 ─────────────────────────────────────────────
-function createTestVue() {
-  const localVue = createLocalVue()
-  localVue.use(ElementUI)
-  return localVue
-}
+
 
 async function mountAndWait() {
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
@@ -79,7 +72,6 @@ async function mountAndWait() {
   })
 
   const wrapper = mount(ModelList, {
-    localVue: createTestVue(),
     mocks: {
       $route: { params: {} },
       $router: { push: jest.fn(), replace: jest.fn() }
@@ -101,7 +93,7 @@ async function mountAndWait() {
     }
   })
 
-  await Vue.nextTick()
+  await nextTick()
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
@@ -110,7 +102,7 @@ describe('ModelList — 初始化与数据加载', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('mounted 后调用 loadProjects', () => {
     expect(projectApi.listProjects).toHaveBeenCalled()
@@ -136,7 +128,7 @@ describe('ModelList — 初始化与数据加载', () => {
       cudaAvailable: false,
       cudaError: '缺少 cublasLt64_12.dll'
     }
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.cudaRuntimeHint).toContain('缺少 cublasLt64_12.dll')
     expect(wrapper.vm.cudaRuntimeHint).toContain('自动回退 CPU')
@@ -148,7 +140,7 @@ describe('ModelList — 初始化与数据加载', () => {
       ...wrapper.vm.runtimeCapabilities,
       activeCpuFallbackCount: 3
     }
-    await Vue.nextTick()
+    await nextTick()
 
     expect(wrapper.vm.cudaRuntimeHint).toContain('已有 3 个')
     expect(wrapper.vm.cudaRuntimeHint).toContain('正在通过 CPU 执行')
@@ -215,7 +207,7 @@ describe('ModelList — 筛选与搜索', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('queryProjectName 模糊匹配项目名称', () => {
     wrapper.vm.projectList = mockProjects()
@@ -255,7 +247,7 @@ describe('ModelList — 筛选与搜索', () => {
     wrapper.vm.qp.scope = 'PROJECT'
     modelApi.listModels.mockResolvedValue({ data: { records: [], total: 0 } })
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(wrapper.vm.qp.pageNum).toBe(1)
   })
 
@@ -287,7 +279,7 @@ describe('ModelList — 上传模型', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleUpload 打开上传弹窗并重置表单', () => {
     wrapper.vm.handleUpload()
@@ -306,7 +298,7 @@ describe('ModelList — 上传模型', () => {
     const file = { name: 'model.pmml', raw: { name: 'model.pmml' } }
     const files = [file]
     wrapper.vm.handleFileChange(file, files)
-    expect(wrapper.vm.selectedFile).toBe(file.raw)
+    expect(wrapper.vm.selectedFile).toEqual(file.raw)
     expect(wrapper.vm.fileList.length).toBe(1)
   })
 
@@ -388,7 +380,7 @@ describe('ModelList — 模型操作', () => {
   let wrapper
 
   beforeEach(async () => { wrapper = await mountAndWait() })
-  afterEach(() => { if (wrapper) wrapper.destroy() })
+  afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleEdit 填充编辑表单', () => {
     const row = {
@@ -456,7 +448,7 @@ describe('ModelList — 模型操作', () => {
     modelApi.listModels.mockResolvedValue({ data: { records: mockModels().filter(m => m.scope === 'GLOBAL'), total: 1 } })
     wrapper.vm.qp.scope = 'GLOBAL'
     wrapper.vm.handleQuery()
-    await Vue.nextTick()
+    await nextTick()
     expect(modelApi.listModels).toHaveBeenCalledWith(expect.objectContaining({ scope: 'GLOBAL' }))
   })
 
@@ -485,7 +477,6 @@ describe('ModelList — 边界情况', () => {
     modelApi.listModels.mockResolvedValue({ data: { records: [], total: 0 } })
     projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
     const wrapper = mount(ModelList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -499,17 +490,16 @@ describe('ModelList — 边界情况', () => {
         'el-textarea': true
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.models).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 
   test('projects 加载失败时设为空数组', async () => {
     projectApi.listProjects.mockRejectedValue(new Error('加载失败'))
     modelApi.listModels.mockResolvedValue({ data: { records: [], total: 0 } })
     const wrapper = mount(ModelList, {
-      localVue: createTestVue(),
       mocks: {
         $route: { params: {} },
         $router: { push: jest.fn(), replace: jest.fn() }
@@ -523,9 +513,9 @@ describe('ModelList — 边界情况', () => {
         'el-textarea': true
       }
     })
-    await Vue.nextTick()
+    await nextTick()
     await new Promise(r => setTimeout(r, 100))
     expect(wrapper.vm.projects).toEqual([])
-    wrapper.destroy()
+    wrapper.unmount()
   })
 })

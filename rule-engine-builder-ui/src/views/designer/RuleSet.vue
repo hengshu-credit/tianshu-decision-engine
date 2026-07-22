@@ -2,39 +2,81 @@
   <div class="rs-designer uiue-compact-workbench uiue-compact-designer">
     <div class="rs-header">
       <div class="rs-title-area">
-        <el-button type="text" icon="el-icon-back" class="rs-back" @click="$router.back()" />
-        <i class="el-icon-s-claim rs-title-icon" />
+        <el-button
+          link
+          :icon="ElIconBack"
+          class="rs-back"
+          @click="$router.back()"
+        />
+        <el-icon class="rs-title-icon"><el-icon-s-claim /></el-icon>
         <span class="rs-title">规则集配置</span>
-        <el-tag size="mini" type="info">共 {{ model.rules.length }} 条规则</el-tag>
-        <el-tag size="mini" type="success">启用 {{ enabledRuleCount }} 条</el-tag>
+        <el-tag size="small" type="info"
+          >共 {{ model.rules.length }} 条规则</el-tag
+        >
+        <el-tag size="small" type="success"
+          >启用 {{ enabledRuleCount }} 条</el-tag
+        >
       </div>
       <div class="rs-toolbar">
         <span class="toolbar-label">执行模式</span>
-        <el-select v-model="model.executionMode" size="small" class="mode-select">
+        <el-select
+          v-model="model.executionMode"
+          size="small"
+          class="mode-select"
+        >
           <el-option label="串行命中退出" value="SERIAL" />
           <el-option label="并行全部运行" value="PARALLEL" />
         </el-select>
-        <el-tooltip :content="executionModeDesc" placement="bottom" effect="light">
-          <i class="el-icon-question tip-icon" />
+        <el-tooltip
+          :content="executionModeDesc"
+          placement="bottom"
+          effect="light"
+        >
+          <el-icon class="tip-icon"><el-icon-question /></el-icon>
         </el-tooltip>
         <el-divider direction="vertical" />
-        <el-button size="small" icon="el-icon-plus" @click="addRule">添加规则</el-button>
-        <el-button size="small" icon="el-icon-time" @click="openVersionDialog">版本历史</el-button>
-        <el-button size="small" icon="el-icon-document" @click="handleSave">临时保存配置</el-button>
-        <el-button size="small" type="warning" icon="el-icon-cpu" @click="handleCompile">保存并编译</el-button>
-        <el-button size="small" type="primary" icon="el-icon-video-play" @click="handleTest">编译后测试</el-button>
+        <el-button size="small" :icon="ElIconPlus" @click="addRule"
+          >添加规则</el-button
+        >
+        <el-button size="small" :icon="ElIconTime" @click="openVersionDialog"
+          >版本历史</el-button
+        >
+        <el-button size="small" :icon="ElIconDocument" @click="handleSave"
+          >临时保存配置</el-button
+        >
+        <el-button
+          size="small"
+          type="warning"
+          :icon="ElIconCpu"
+          @click="handleCompile"
+          >保存并编译</el-button
+        >
+        <el-button
+          size="small"
+          type="primary"
+          :icon="ElIconVideoPlay"
+          @click="handleTest"
+          >编译后测试</el-button
+        >
       </div>
     </div>
 
     <div v-if="loadingVars || varPickerOptions.length" class="rs-var-status">
-      <span v-if="loadingVars"><i class="el-icon-loading" /> 加载变量库...</span>
-      <span v-else><i class="el-icon-s-custom" /> 已加载 {{ varPickerOptions.length }} 个变量/常量/对象字段</span>
+      <span v-if="loadingVars"
+        ><el-icon><el-icon-loading /></el-icon> 加载变量库...</span
+      >
+      <span v-else
+        ><el-icon><el-icon-s-custom /></el-icon> 已加载
+        {{ varPickerOptions.length }} 个变量/常量/对象字段</span
+      >
     </div>
 
     <div class="rs-output-config">
       <div class="output-config-title">
-        <span><i class="el-icon-collection-tag" /> 命中结果输出字段</span>
-        <el-tag size="mini" type="info">可选</el-tag>
+        <span
+          ><el-icon><el-icon-collection-tag /></el-icon> 命中结果输出字段</span
+        >
+        <el-tag size="small" type="info">可选</el-tag>
       </div>
       <div class="output-config-body">
         <operand-picker
@@ -50,14 +92,18 @@
           @input="onResultVarInput"
           @path-resolve="onResultPathResolve"
         />
-        <span class="output-config-hint">保存完整的 list[rule] 命中列表；未配置时仅保留原有顶层返回值</span>
+        <span class="output-config-hint"
+          >保存完整的 list[rule] 命中列表；未配置时仅保留原有顶层返回值</span
+        >
       </div>
     </div>
 
     <div class="rs-summary">
       <div class="summary-item">
         <span class="summary-label">排序规则</span>
-        <span class="summary-value">优先级越大越先执行；同优先级按页面顺序</span>
+        <span class="summary-value"
+          >优先级越大越先执行；同优先级按页面顺序</span
+        >
       </div>
       <div class="summary-item">
         <span class="summary-label">返回结果</span>
@@ -78,17 +124,60 @@
           @drop="onDrop(index)"
         >
           <div class="rs-rule-head">
-            <span class="drag-handle" title="拖拽排序"><i class="el-icon-rank" /></span>
+            <span class="drag-handle" title="拖拽排序"
+              ><el-icon><el-icon-rank /></el-icon
+            ></span>
             <span class="rule-index">#{{ index + 1 }}</span>
-            <el-switch v-model="rule.enabled" active-text="启用" inactive-text="停用" />
-            <el-input v-model="rule.ruleCode" size="small" class="rule-code" placeholder="规则编码" />
-            <el-input v-model="rule.ruleName" size="small" class="rule-name" placeholder="规则名称" />
-            <el-input-number v-model="rule.priority" :min="1" :max="9999" :precision="0" size="small" class="rule-priority" />
+            <el-switch
+              v-model="rule.enabled"
+              active-text="启用"
+              inactive-text="停用"
+            />
+            <el-input
+              v-model="rule.ruleCode"
+              size="small"
+              class="rule-code"
+              placeholder="规则编码"
+            />
+            <el-input
+              v-model="rule.ruleName"
+              size="small"
+              class="rule-name"
+              placeholder="规则名称"
+            />
+            <el-input-number
+              v-model="rule.priority"
+              :min="1"
+              :max="9999"
+              :precision="0"
+              size="small"
+              class="rule-priority"
+            />
             <div class="rule-actions">
-              <el-button type="text" size="mini" icon="el-icon-top" :disabled="index === 0" @click="moveRule(index, -1)" />
-              <el-button type="text" size="mini" icon="el-icon-bottom" :disabled="index === model.rules.length - 1" @click="moveRule(index, 1)" />
-              <el-button type="text" size="mini" @click="copyRule(index)">复制</el-button>
-              <el-button type="text" size="mini" class="btn-delete" @click="removeRule(index)">删除</el-button>
+              <el-button
+                link
+                size="small"
+                :icon="ElIconTop"
+                :disabled="index === 0"
+                @click="moveRule(index, -1)"
+              />
+              <el-button
+                link
+                size="small"
+                :icon="ElIconBottom"
+                :disabled="index === model.rules.length - 1"
+                @click="moveRule(index, 1)"
+              />
+              <el-button link size="small" @click="copyRule(index)"
+                >复制</el-button
+              >
+              <el-button
+                link
+                size="small"
+                class="btn-delete"
+                @click="removeRule(index)"
+                >删除</el-button
+              >
             </div>
           </div>
 
@@ -117,7 +206,7 @@
                 :current-rule-id="definitionId"
                 :current-rule-code="currentRuleCode"
                 :validate-rule-call-cycle="validateRuleCallCycle"
-                @update="data => updateRuleActionData(index, data)"
+                @update="(data) => updateRuleActionData(index, data)"
               />
             </div>
           </div>
@@ -125,10 +214,13 @@
       </template>
 
       <div v-if="!contentLoaded" class="rs-loading">
-        <i class="el-icon-loading" /> 加载规则集数据...
+        <el-icon><el-icon-loading /></el-icon> 加载规则集数据...
       </div>
-      <div v-else-if="contentLoaded && model.rules.length === 0" class="rs-empty">
-        <i class="el-icon-s-claim rs-empty-icon" />
+      <div
+        v-else-if="contentLoaded && model.rules.length === 0"
+        class="rs-empty"
+      >
+        <el-icon class="rs-empty-icon"><el-icon-s-claim /></el-icon>
         <p>暂无规则，请点击「添加规则」开始配置。</p>
       </div>
     </div>
@@ -142,12 +234,14 @@
     />
 
     <div v-if="scriptMode === 'script'" class="script-override-banner">
-      <i class="el-icon-warning" />
-      <span>脚本覆盖模式已激活，可视化编辑暂停。如需恢复请在脚本面板切换回「可视化模式」。</span>
+      <el-icon><el-icon-warning /></el-icon>
+      <span
+        >脚本覆盖模式已激活，可视化编辑暂停。如需恢复请在脚本面板切换回「可视化模式」。</span
+      >
     </div>
 
-        <designer-test-dialog
-      :visible.sync="testVisible"
+    <designer-test-dialog
+      v-model:visible="testVisible"
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="RULE_SET"
@@ -155,30 +249,71 @@
       :params-template="testParamsTemplate"
     />
 
-    <el-dialog title="规则集版本历史" :visible.sync="versionVisible" width="920px" append-to-body>
-      <el-table :data="versions" border size="small" v-loading="versionLoading" max-height="360">
+    <el-dialog
+      title="规则集版本历史"
+      v-model="versionVisible"
+      width="920px"
+      append-to-body
+    >
+      <el-table
+        :data="versions"
+        border
+        size="small"
+        v-loading="versionLoading"
+        max-height="360"
+      >
         <el-table-column prop="version" label="版本" width="80">
-          <template slot-scope="{ row }">v{{ row.version }}</template>
+          <template v-slot="{ row }">v{{ row.version }}</template>
         </el-table-column>
-        <el-table-column prop="changeLog" label="变更说明" min-width="180" show-overflow-tooltip />
+        <el-table-column
+          prop="changeLog"
+          label="变更说明"
+          min-width="180"
+          show-overflow-tooltip
+        />
         <el-table-column prop="publishBy" label="发布人" width="120" />
         <el-table-column prop="publishTime" label="发布时间" width="170">
-          <template slot-scope="{ row }">{{ formatVersionTime(row.publishTime) }}</template>
+          <template v-slot="{ row }">{{
+            formatVersionTime(row.publishTime)
+          }}</template>
         </el-table-column>
         <el-table-column label="操作" width="300" fixed="right">
-          <template slot-scope="{ row, $index }">
-            <el-button type="text" size="mini" @click="viewVersion(row)">查看内容</el-button>
-            <el-button type="text" size="mini" :disabled="$index === versions.length - 1" @click="compareVersion(row, versions[$index + 1])">对比上一版</el-button>
-            <el-button type="text" size="mini" @click="rollbackDraft(row)">恢复草稿</el-button>
-            <el-button type="text" size="mini" @click="publishVersion(row)">发布此版</el-button>
+          <template v-slot="{ row, $index }">
+            <el-button link size="small" @click="viewVersion(row)"
+              >查看内容</el-button
+            >
+            <el-button
+              link
+              size="small"
+              :disabled="$index === versions.length - 1"
+              @click="compareVersion(row, versions[$index + 1])"
+              >对比上一版</el-button
+            >
+            <el-button link size="small" @click="rollbackDraft(row)"
+              >恢复草稿</el-button
+            >
+            <el-button link size="small" @click="publishVersion(row)"
+              >发布此版</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
 
       <div v-if="versionCompare" class="version-compare">
         <el-alert
-          :title="'v' + versionCompare.left.version + ' 与 v' + versionCompare.right.version + ' 对比'"
-          :type="versionCompare.modelJsonChanged || versionCompare.compiledScriptChanged ? 'warning' : 'success'"
+          :title="
+            'v' +
+            versionCompare.left.version +
+            ' 与 v' +
+            versionCompare.right.version +
+            ' 对比'
+          "
+          :type="
+            versionCompare.modelJsonChanged ||
+            versionCompare.compiledScriptChanged
+              ? 'warning'
+              : 'success'
+          "
           :closable="false"
         />
         <div class="version-diff-grid">
@@ -188,13 +323,36 @@
       </div>
     </el-dialog>
 
-    <el-dialog :title="versionViewTitle" :visible.sync="versionViewVisible" width="760px" append-to-body>
+    <el-dialog
+      :title="versionViewTitle"
+      v-model="versionViewVisible"
+      width="760px"
+      append-to-body
+    >
       <pre class="version-json">{{ versionViewContent }}</pre>
     </el-dialog>
   </div>
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  DocumentChecked as ElIconSClaim,
+  QuestionFilled as ElIconQuestion,
+  Loading as ElIconLoading,
+  SetUp as ElIconSCustom,
+  CollectionTag as ElIconCollectionTag,
+  Rank as ElIconRank,
+  Warning as ElIconWarning,
+  Back as ElIconBack,
+  Plus as ElIconPlus,
+  Clock as ElIconTime,
+  Document as ElIconDocument,
+  Cpu as ElIconCpu,
+  VideoPlay as ElIconVideoPlay,
+  Top as ElIconTop,
+  Bottom as ElIconBottom,
+} from '@element-plus/icons-vue'
 import {
   saveContent,
   compileRule,
@@ -205,7 +363,7 @@ import {
   getVersion,
   compareVersions,
   rollbackVersion,
-  publishRule
+  publishRule,
 } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleCallMixin from '@/mixins/ruleCallMixin'
@@ -221,22 +379,26 @@ import {
   migrateRuleConditionsToTree,
   collectVarCodesFromConditionTree,
   walkConditionLeaves,
-  normalizeConditionTreeOperands
+  normalizeConditionTreeOperands,
 } from '@/utils/decisionConditionTree'
-import { collectOperandReferences, operandFromReferenceFields, syncOperandReference } from '@/utils/operand'
-import { buildSampleParamsFromCodes, collectActionDataInputCodes } from '@/utils/testSampleParams'
+import {
+  collectOperandReferences,
+  operandFromReferenceFields,
+  syncOperandReference,
+} from '@/utils/operand'
+import {
+  buildSampleParamsFromCodes,
+  collectActionDataInputCodes,
+} from '@/utils/testSampleParams'
 
 export default {
-  name: 'RuleSet',
-  components: { DesignerTestDialog, ScriptPanel, OperandPicker, ConditionGroupEditor, ActionBlockEditor },
-  mixins: [varPickerMixin, ruleCallMixin],
   data() {
     return {
       definitionId: null,
       model: {
         executionMode: 'SERIAL',
         resultVar: {},
-        rules: []
+        rules: [],
       },
       resultOutputKinds: ['PATH', 'REFERENCE'],
       scriptMode: 'visual',
@@ -252,12 +414,37 @@ export default {
       versionCompare: null,
       versionViewVisible: false,
       versionViewTitle: '',
-      versionViewContent: ''
+      versionViewContent: '',
+      ElIconBack: markRaw(ElIconBack),
+      ElIconPlus: markRaw(ElIconPlus),
+      ElIconTime: markRaw(ElIconTime),
+      ElIconDocument: markRaw(ElIconDocument),
+      ElIconCpu: markRaw(ElIconCpu),
+      ElIconVideoPlay: markRaw(ElIconVideoPlay),
+      ElIconTop: markRaw(ElIconTop),
+      ElIconBottom: markRaw(ElIconBottom),
     }
   },
+  components: {
+    DesignerTestDialog,
+    ScriptPanel,
+    OperandPicker,
+    ConditionGroupEditor,
+    ActionBlockEditor,
+    ElIconSClaim,
+    ElIconQuestion,
+    ElIconLoading,
+    ElIconSCustom,
+    ElIconCollectionTag,
+    ElIconRank,
+    ElIconWarning,
+  },
+  name: 'RuleSet',
+  mixins: [varPickerMixin, ruleCallMixin],
   computed: {
     enabledRuleCount() {
-      return (this.model.rules || []).filter(rule => rule.enabled !== false).length
+      return (this.model.rules || []).filter((rule) => rule.enabled !== false)
+        .length
     },
     executionModeDesc() {
       if (this.model.executionMode === 'PARALLEL') {
@@ -266,18 +453,20 @@ export default {
       return '串行命中退出：按优先级和页面顺序检查规则，命中第一条后执行动作并停止'
     },
     listResultVarSelectedOptions() {
-      return (this.selectedVarPickerOptions || []).filter(item =>
-        String(item.varType || item.valueType || '').toUpperCase() === 'LIST')
+      return (this.selectedVarPickerOptions || []).filter(
+        (item) =>
+          String(item.varType || item.valueType || '').toUpperCase() === 'LIST'
+      )
     },
     testVarCodeList() {
       const s = new Set()
-      ;(this.model.rules || []).forEach(rule => {
+      ;(this.model.rules || []).forEach((rule) => {
         if (rule.enabled === false) return
         collectVarCodesFromConditionTree(rule.conditionRoot, s)
         collectActionDataInputCodes(rule.actionData, this.projectRefs, s)
       })
       return Array.from(s)
-    }
+    },
   },
   created() {
     this.definitionId = this.$route.params.id
@@ -304,53 +493,64 @@ export default {
       if (!this.model || typeof this.model !== 'object') {
         this.model = { executionMode: 'SERIAL', resultVar: {}, rules: [] }
       }
-      if (!this.model.executionMode) this.$set(this.model, 'executionMode', 'SERIAL')
-      if (!this.model.resultVar || typeof this.model.resultVar !== 'object') this.$set(this.model, 'resultVar', {})
+      if (!this.model.executionMode) this.model['executionMode'] = 'SERIAL'
+      if (!this.model.resultVar || typeof this.model.resultVar !== 'object')
+        this.model['resultVar'] = {}
       if (!this.model.resultVar.operand) {
         const operand = operandFromReferenceFields(this.model.resultVar)
-        if (operand) this.$set(this.model.resultVar, 'operand', operand)
+        if (operand) this.model.resultVar['operand'] = operand
       }
-      if (!Array.isArray(this.model.rules)) this.$set(this.model, 'rules', [])
-      const legacyCols = Array.isArray(this.model.conditions) ? this.model.conditions : []
+      if (!Array.isArray(this.model.rules)) this.model['rules'] = []
+      const legacyCols = Array.isArray(this.model.conditions)
+        ? this.model.conditions
+        : []
       this.model.rules.forEach((rule, index) => {
-        if (!rule.uid) this.$set(rule, 'uid', this.createRuleUid())
-        if (!rule.ruleCode) this.$set(rule, 'ruleCode', this.nextRuleCode(index))
-        if (!rule.ruleName) this.$set(rule, 'ruleName', '规则' + (index + 1))
-        if (rule.priority === undefined || rule.priority === null) this.$set(rule, 'priority', 1)
-        if (rule.enabled === undefined) this.$set(rule, 'enabled', rule.status !== 0)
+        if (!rule.uid) rule['uid'] = this.createRuleUid()
+        if (!rule.ruleCode) rule['ruleCode'] = this.nextRuleCode(index)
+        if (!rule.ruleName) rule['ruleName'] = '规则' + (index + 1)
+        if (rule.priority === undefined || rule.priority === null)
+          rule['priority'] = 1
+        if (rule.enabled === undefined) rule['enabled'] = rule.status !== 0
         if (!rule.conditionRoot) {
-          const migrated = Array.isArray(rule.conditions) && rule.conditions.length
-            ? migrateRuleConditionsToTree(rule.conditions, legacyCols)
-            : createEmptyGroup('AND')
-          if (!migrated.children || !migrated.children.length) migrated.children = [createEmptyLeaf()]
-          this.$set(rule, 'conditionRoot', migrated)
+          const migrated =
+            Array.isArray(rule.conditions) && rule.conditions.length
+              ? migrateRuleConditionsToTree(rule.conditions, legacyCols)
+              : createEmptyGroup('AND')
+          if (!migrated.children || !migrated.children.length)
+            migrated.children = [createEmptyLeaf()]
+          rule['conditionRoot'] = migrated
         }
         normalizeConditionTreeOperands(rule.conditionRoot)
         const actionData = actionDataToBlocks(rule.actionData)
-        this.$set(rule, 'actionData', actionData.length ? actionData : [newBlock('assign')])
-        if (rule.status !== undefined) this.$delete(rule, 'status')
-        if (rule.conditions !== undefined) this.$delete(rule, 'conditions')
+        rule['actionData'] = actionData.length
+          ? actionData
+          : [newBlock('assign')]
+        if (rule.status !== undefined) delete rule.status
+        if (rule.conditions !== undefined) delete rule.conditions
       })
-      if (this.model.conditions !== undefined) this.$delete(this.model, 'conditions')
-      if (this.model.actions !== undefined) this.$delete(this.model, 'actions')
+      if (this.model.conditions !== undefined) delete this.model.conditions
+      if (this.model.actions !== undefined) delete this.model.actions
     },
     _syncModelVarRefs() {
       let changed = false
       const sync = (leaf, field) => {
         const result = syncOperandReference(leaf[field], this.varPickerOptions)
         if (!result.changed) return
-        this.$set(leaf, field, result.operand)
+        leaf[field] = result.operand
         changed = true
       }
       if (this.model.resultVar && this.model.resultVar.operand) {
-        const result = syncOperandReference(this.model.resultVar.operand, this.varPickerOptions)
+        const result = syncOperandReference(
+          this.model.resultVar.operand,
+          this.varPickerOptions
+        )
         if (result.changed) {
           this.setResultVarOperand(result.operand)
           changed = true
         }
       }
-      (this.model.rules || []).forEach(rule => {
-        walkConditionLeaves(rule.conditionRoot, leaf => {
+      (this.model.rules || []).forEach((rule) => {
+        walkConditionLeaves(rule.conditionRoot, (leaf) => {
           sync(leaf, 'leftOperand')
           sync(leaf, 'rightOperand')
         })
@@ -360,15 +560,18 @@ export default {
     },
     collectSelectedVarItems() {
       const items = []
-      const addOperand = operand => collectOperandReferences(operand).forEach(reference => items.push({
-        varCode: reference.code,
-        varType: reference.valueType,
-        _varId: reference.refId,
-        _refType: reference.refType
-      }))
+      const addOperand = (operand) =>
+        collectOperandReferences(operand).forEach((reference) =>
+          items.push({
+            varCode: reference.code,
+            varType: reference.valueType,
+            _varId: reference.refId,
+            _refType: reference.refType,
+          })
+        )
       addOperand(this.model.resultVar && this.model.resultVar.operand)
-      ;(this.model.rules || []).forEach(rule => {
-        walkConditionLeaves(rule.conditionRoot, leaf => {
+      ;(this.model.rules || []).forEach((rule) => {
+        walkConditionLeaves(rule.conditionRoot, (leaf) => {
           addOperand(leaf.leftOperand)
           addOperand(leaf.rightOperand)
         })
@@ -378,45 +581,61 @@ export default {
     },
     resultVarError(operand) {
       if (!operand) return ''
-      if (String(operand.valueType || '').toUpperCase() !== 'LIST') return '规则集命中结果输出字段必须是 LIST 类型'
-      if (operand.resolved !== true || operand.refId == null || !operand.refType) return '规则集命中结果输出字段必须反查到稳定字段引用'
-      if (!['VARIABLE', 'DATA_OBJECT'].includes(operand.refType)) return '规则集命中结果输出字段仅支持普通变量或数据对象字段'
-      if (!['PATH', 'REFERENCE'].includes(operand.kind)) return '规则集命中结果输出字段必须是字段引用'
+      if (String(operand.valueType || '').toUpperCase() !== 'LIST')
+        return '规则集命中结果输出字段必须是 LIST 类型'
+      if (
+        operand.resolved !== true ||
+        operand.refId == null ||
+        !operand.refType
+      )
+        return '规则集命中结果输出字段必须反查到稳定字段引用'
+      if (!['VARIABLE', 'DATA_OBJECT'].includes(operand.refType))
+        return '规则集命中结果输出字段仅支持普通变量或数据对象字段'
+      if (!['PATH', 'REFERENCE'].includes(operand.kind))
+        return '规则集命中结果输出字段必须是字段引用'
       return ''
     },
     setResultVarOperand(operand) {
       const value = JSON.parse(JSON.stringify(operand))
       const code = value.code || value.value || ''
-      this.$set(this.model, 'resultVar', {
+      this.model['resultVar'] = {
         operand: value,
         varCode: code,
         varLabel: value.label || code,
         varType: value.valueType || '',
         _varId: value.refId,
-        _refType: value.refType
-      })
+        _refType: value.refType,
+      }
     },
     onResultVarInput(operand) {
       if (!operand) {
-        this.$set(this.model, 'resultVar', {})
+        this.model['resultVar'] = {}
         return
       }
       const error = this.resultVarError(operand)
       if (!error) {
         this.setResultVarOperand(operand)
-      } else if (operand.kind !== 'PATH' && operand.resolved === true && this.$message) {
+      } else if (
+        operand.kind !== 'PATH' &&
+        operand.resolved === true &&
+        this.$message
+      ) {
         this.$message.warning(error)
       }
     },
     onResultPathResolve(payload) {
       const operand = payload && payload.operand
-      const candidates = payload && payload.candidates || []
+      const candidates = (payload && payload.candidates) || []
       if (candidates.length > 1) {
-        if (this.$message) this.$message.warning('该路径匹配到多个字段，请从候选项中选择唯一字段')
+        if (this.$message)
+          this.$message.warning(
+            '该路径匹配到多个字段，请从候选项中选择唯一字段'
+          )
         return
       }
       if (!operand || operand.resolved !== true) {
-        if (this.$message) this.$message.warning('未找到该路径对应的字段，无法配置规则集输出')
+        if (this.$message)
+          this.$message.warning('未找到该路径对应的字段，无法配置规则集输出')
         return
       }
       const error = this.resultVarError(operand)
@@ -438,8 +657,12 @@ export default {
         ruleName: '规则' + (this.model.rules.length + 1),
         priority: 1,
         enabled: true,
-        conditionRoot: { type: 'group', op: 'AND', children: [createEmptyLeaf()] },
-        actionData: [newBlock('assign')]
+        conditionRoot: {
+          type: 'group',
+          op: 'AND',
+          children: [createEmptyLeaf()],
+        },
+        actionData: [newBlock('assign')],
       })
     },
     copyRule(index) {
@@ -452,9 +675,11 @@ export default {
       this.model.rules.splice(index + 1, 0, copy)
     },
     removeRule(index) {
-      this.$confirm('确认删除该规则？', '提示', { type: 'warning' }).then(() => {
-        this.model.rules.splice(index, 1)
-      }).catch(() => {})
+      this.$confirm('确认删除该规则？', '提示', { type: 'warning' })
+        .then(() => {
+          this.model.rules.splice(index, 1)
+        })
+        .catch(() => {})
     },
     moveRule(index, step) {
       const target = index + step
@@ -475,7 +700,7 @@ export default {
     updateRuleActionData(index, data) {
       const rule = this.model.rules[index]
       if (!rule) return
-      this.$set(rule, 'actionData', Array.isArray(data) ? data : [])
+      rule['actionData'] = Array.isArray(data) ? data : []
     },
     nextRuleCode(index) {
       let text = String(index + 1)
@@ -507,13 +732,15 @@ export default {
         this.$message.success('保存成功')
         return true
       } catch (e) {
-        this.$message.error('保存失败: ' + (e && e.message ? e.message : '未知错误'))
+        this.$message.error(
+          '保存失败: ' + (e && e.message ? e.message : '未知错误')
+        )
         throw e
       }
     },
     serializeModel() {
       const copy = JSON.parse(JSON.stringify(this.model))
-      ;(copy.rules || []).forEach(rule => {
+      ;(copy.rules || []).forEach((rule) => {
         delete rule.uid
         rule.status = rule.enabled === false ? 0 : 1
       })
@@ -524,7 +751,7 @@ export default {
       return this.serializeModel()
     },
     async handleCompile() {
-      if (await this.handleSave() === false) return
+      if ((await this.handleSave()) === false) return
       const res = await compileRule(this.definitionId)
       const body = res && res.data ? res.data : res
       if (body && body.success) {
@@ -532,7 +759,9 @@ export default {
         await this.loadProjectVars(this.definitionId)
         if (this.$refs.scriptPanel) this.$refs.scriptPanel.refresh()
       } else {
-        this.$message.error('编译失败: ' + (body ? body.errorMessage : '未知错误'))
+        this.$message.error(
+          '编译失败: ' + (body ? body.errorMessage : '未知错误')
+        )
       }
     },
     buildTestParamsTemplate() {
@@ -546,33 +775,48 @@ export default {
       this.testVisible = true
     },
     async doTest() {
-      const res = await executeRule({ definitionId: this.definitionId, params: this.testParams })
+      const res = await executeRule({
+        definitionId: this.definitionId,
+        params: this.testParams,
+      })
       this.testResult = res && res.data ? res.data : res
     },
     testVarLabel(code) {
-      const ref = this.projectRefs.find(r => r.refCode === code)
+      const ref = this.projectRefs.find((r) => r.refCode === code)
       if (ref && ref.varObj && ref.varObj.varLabel) return ref.varObj.varLabel
       if (ref && ref.refLabel && ref.refLabel.label) return ref.refLabel.label
       return code
     },
     testVarMeta(code) {
-      const ref = this.projectRefs.find(r => r.refCode === code)
+      const ref = this.projectRefs.find((r) => r.refCode === code)
       const vt = (ref && ref.varType) || 'STRING'
       let enumOptions = ''
       if (vt === 'ENUM' && ref && ref.varObj) {
         const opts = this.getVarOptions(code) || []
-        enumOptions = opts.map(o => o.value || o.optionValue).filter(Boolean).join(',')
+        enumOptions = opts
+          .map((o) => o.value || o.optionValue)
+          .filter(Boolean)
+          .join(',')
       }
       return { varType: vt, enumOptions }
     },
     testEnumOpts(code) {
       const m = this.testVarMeta(code)
-      return m.enumOptions ? m.enumOptions.split(',').map(s => s.trim()).filter(Boolean) : []
+      return m.enumOptions
+        ? m.enumOptions
+            .split(',')
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : []
     },
     formatResult(val) {
       if (val === null || val === undefined) return '(空)'
       try {
-        return JSON.stringify(typeof val === 'string' ? JSON.parse(val) : val, null, 2)
+        return JSON.stringify(
+          typeof val === 'string' ? JSON.parse(val) : val,
+          null,
+          2
+        )
       } catch (e) {
         return String(val)
       }
@@ -590,7 +834,11 @@ export default {
       this.versionLoading = true
       try {
         const res = await listVersions(this.definitionId)
-        this.versions = Array.isArray(res.data) ? res.data : (Array.isArray(res) ? res : [])
+        this.versions = Array.isArray(res.data)
+          ? res.data
+          : Array.isArray(res)
+          ? res
+          : []
       } catch (e) {
         this.$message.error(e.message || '加载版本历史失败')
       } finally {
@@ -612,7 +860,11 @@ export default {
     async compareVersion(left, right) {
       if (!left || !right) return
       try {
-        const res = await compareVersions(this.definitionId, left.version, right.version)
+        const res = await compareVersions(
+          this.definitionId,
+          left.version,
+          right.version
+        )
         this.versionCompare = res && res.data ? res.data : res
       } catch (e) {
         this.$message.error(e.message || '版本对比失败')
@@ -621,7 +873,13 @@ export default {
     async rollbackDraft(row) {
       if (!row || !row.version) return
       try {
-        await this.$confirm('恢复会覆盖当前草稿内容，但不会自动发布，确认恢复到 v' + row.version + '？', '确认恢复', { type: 'warning' })
+        await this.$confirm(
+          '恢复会覆盖当前草稿内容，但不会自动发布，确认恢复到 v' +
+            row.version +
+            '？',
+          '确认恢复',
+          { type: 'warning' }
+        )
         await rollbackVersion(this.definitionId, row.version)
         this.$message.success('恢复成功')
         await this.loadContent()
@@ -633,15 +891,23 @@ export default {
     async publishVersion(row) {
       if (!row || !row.version) return
       try {
-        await this.$confirm('将 v' + row.version + ' 恢复为当前草稿、重新编译并发布，确认继续？', '发布指定版本', { type: 'warning' })
+        await this.$confirm(
+          '将 v' + row.version + ' 恢复为当前草稿、重新编译并发布，确认继续？',
+          '发布指定版本',
+          { type: 'warning' }
+        )
         await rollbackVersion(this.definitionId, row.version)
         const compiled = await compileRule(this.definitionId)
         const body = compiled && compiled.data ? compiled.data : compiled
         if (!body || !body.success) {
-          this.$message.error('编译失败: ' + (body ? body.errorMessage : '未知错误'))
+          this.$message.error(
+            '编译失败: ' + (body ? body.errorMessage : '未知错误')
+          )
           return
         }
-        await publishRule(this.definitionId, { changeLog: '发布规则集 v' + row.version })
+        await publishRule(this.definitionId, {
+          changeLog: '发布规则集 v' + row.version,
+        })
         this.$message.success('发布成功')
         await this.loadContent()
         await this.loadVersions()
@@ -660,8 +926,8 @@ export default {
       } catch (e) {
         return String(value)
       }
-    }
-  }
+    },
+  },
 }
 </script>
 
@@ -670,7 +936,7 @@ export default {
   background: #fff;
   border-radius: 4px;
   padding: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   min-height: 100%;
   box-sizing: border-box;
 }
@@ -786,7 +1052,7 @@ export default {
 }
 .rs-rule-card.is-disabled {
   background: #f8fafc;
-  opacity: .78;
+  opacity: 0.78;
 }
 .rs-rule-head {
   display: grid;
@@ -821,7 +1087,7 @@ export default {
 }
 .rs-rule-body {
   display: grid;
-  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, .9fr);
+  grid-template-columns: minmax(360px, 1.1fr) minmax(340px, 0.9fr);
   gap: 12px;
 }
 .condition-panel,
@@ -900,6 +1166,8 @@ export default {
   }
 }
 @media (max-width: 1200px) {
-  .rs-designer { padding: 12px; }
+  .rs-designer {
+    padding: 12px;
+  }
 }
 </style>

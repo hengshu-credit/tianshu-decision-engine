@@ -6,6 +6,7 @@ module.exports = {
   setupFiles: ['<rootDir>/tests/setup.js'],
   setupFilesAfterEnv: ['<rootDir>/tests/setupAfterEnv.js'],
   moduleNameMapper: {
+    '^@test-utils$': path.join(rootDir, 'tests/vueTestUtils.js'),
     // @ 别名（用函数形式避免 $1 捕获组在部分 Jest 版本 Windows 上不展开）
     '^@/router$': path.join(rootDir, 'src/router/index.js'),
     '^@/layout/index\\.vue$': path.join(rootDir, 'src/layout/index.vue'),
@@ -28,11 +29,11 @@ module.exports = {
   },
   moduleFileExtensions: ['js', 'jsx', 'json', 'vue'],
   transform: {
-    '^.+\\.vue$': '<rootDir>/node_modules/vue-jest',
+    '^.+\\.vue$': '<rootDir>/node_modules/@vue/vue3-jest',
     '^.+\\.js$': '<rootDir>/node_modules/babel-jest'
   },
   transformIgnorePatterns: [
-    '/node_modules/(?!(@vue|vue-router|vuex|element-ui)/)'
+    '/node_modules/(?!(@vue|vue-router|vuex|element-plus)/)'
   ],
   collectCoverageFrom: [
     'src/utils/**/*.js',

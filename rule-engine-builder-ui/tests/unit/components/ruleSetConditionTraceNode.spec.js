@@ -1,10 +1,10 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import RuleSetConditionTraceNode from '@/components/common/RuleSetConditionTraceNode.vue'
 
 describe('RuleSetConditionTraceNode', () => {
   test('递归渲染条件组层级、组运算符和叶子结果', () => {
     const wrapper = mount(RuleSetConditionTraceNode, {
-      propsData: {
+      props: {
         node: {
           kind: 'group',
           operator: 'AND',

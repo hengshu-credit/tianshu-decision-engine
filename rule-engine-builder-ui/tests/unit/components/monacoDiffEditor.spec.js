@@ -1,4 +1,4 @@
-import { mount } from '@vue/test-utils'
+import { mount } from '@test-utils'
 import * as monaco from 'monaco-editor'
 import MonacoDiffEditor from '@/components/rule/versionDiff/MonacoDiffEditor.vue'
 
@@ -26,7 +26,7 @@ describe('MonacoDiffEditor', () => {
 
   test('创建只读 QL diff 并绑定左右模型', async() => {
     const wrapper = mount(MonacoDiffEditor, {
-      propsData: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
+      props: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
     })
     await wrapper.vm.$nextTick()
 
@@ -42,7 +42,7 @@ describe('MonacoDiffEditor', () => {
 
   test('属性变化只更新对应模型内容', async() => {
     const wrapper = mount(MonacoDiffEditor, {
-      propsData: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
+      props: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
     })
     await wrapper.vm.$nextTick()
 
@@ -55,11 +55,11 @@ describe('MonacoDiffEditor', () => {
 
   test('组件销毁时释放 diff editor 和两个模型', async() => {
     const wrapper = mount(MonacoDiffEditor, {
-      propsData: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
+      props: { original: 'a = 1;', modified: 'a = 2;', language: 'ql' }
     })
     await wrapper.vm.$nextTick()
 
-    wrapper.destroy()
+    wrapper.unmount()
 
     expect(diffEditor.dispose).toHaveBeenCalled()
     expect(originalModel.dispose).toHaveBeenCalled()

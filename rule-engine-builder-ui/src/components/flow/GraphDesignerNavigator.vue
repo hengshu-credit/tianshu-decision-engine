@@ -1,11 +1,11 @@
 <template>
   <span class="graph-tools">
     <el-select
-      :value="target"
+      :model-value="target"
       filterable
       remote
       clearable
-      size="mini"
+      size="small"
       placeholder="搜索节点或引用"
       :remote-method="onRemoteSearch"
       @visible-change="onVisibleChange"
@@ -18,52 +18,96 @@
         :value="item.key"
       >
         <span>{{ item.label }}</span>
-        <small>{{ item.kind === 'REFERENCE' ? item.refType + '#' + item.refId : item.kind === 'NODE' ? '节点' : '连线' }}</small>
+        <small>{{
+          item.kind === 'REFERENCE'
+            ? item.refType + '#' + item.refId
+            : item.kind === 'NODE'
+            ? '节点'
+            : '连线'
+        }}</small>
       </el-option>
     </el-select>
-    <el-button v-if="showMiniMap" class="toolbar-action" size="mini" icon="el-icon-picture-outline" @click="$emit('toggle-minimap')">{{ miniMapVisible ? '关闭缩略图' : '缩略图' }}</el-button>
+    <el-button
+      v-if="showMiniMap"
+      class="toolbar-action"
+      size="small"
+      :icon="ElIconPictureOutline"
+      @click="$emit('toggle-minimap')"
+      >{{ miniMapVisible ? '关闭缩略图' : '缩略图' }}</el-button
+    >
     <el-popover placement="bottom-end" width="360" trigger="click">
       <div v-if="issues.length === 0" class="issue-empty">未发现未配置项</div>
       <div v-else class="issue-list">
-        <button v-for="(issue, index) in issues" :key="index" type="button" @click="$emit('locate-issue', issue)">
-          <i class="el-icon-warning-outline" /> {{ issue.message }}
+        <button
+          v-for="(issue, index) in issues"
+          :key="index"
+          type="button"
+          @click="$emit('locate-issue', issue)"
+        >
+          <el-icon><el-icon-warning-outline /></el-icon> {{ issue.message }}
         </button>
       </div>
-      <el-button slot="reference" class="toolbar-action" size="mini" icon="el-icon-warning-outline" @click="$emit('check')">
-        未配置项<span v-if="issues.length">（{{ issues.length }}）</span>
-      </el-button>
+      <template v-slot:reference>
+        <el-button
+          class="toolbar-action"
+          size="small"
+          :icon="ElIconWarningOutline"
+          @click="$emit('check')"
+        >
+          未配置项<span v-if="issues.length">（{{ issues.length }}）</span>
+        </el-button>
+      </template>
     </el-popover>
   </span>
 </template>
 
 <script>
+import { markRaw } from 'vue'
+import {
+  Warning as ElIconWarningOutline,
+  Picture as ElIconPictureOutline,
+} from '@element-plus/icons-vue'
+import { $emit } from '../../utils/gogocodeTransfer'
 export default {
-  name: 'GraphDesignerNavigator',
   data() {
     return {
-      searchKeyword: ''
+      searchKeyword: '',
+      ElIconPictureOutline: markRaw(ElIconPictureOutline),
+      ElIconWarningOutline: markRaw(ElIconWarningOutline),
     }
   },
+  components: {
+    ElIconWarningOutline,
+  },
+  name: 'GraphDesignerNavigator',
   props: {
     target: { type: String, default: '' },
     options: { type: Array, default: () => [] },
     issues: { type: Array, default: () => [] },
     miniMapVisible: { type: Boolean, default: false },
-    showMiniMap: { type: Boolean, default: true }
+    showMiniMap: { type: Boolean, default: true },
   },
   methods: {
     onRemoteSearch(keyword) {
       this.searchKeyword = keyword || ''
-      this.$emit('search', this.searchKeyword)
+      $emit(this, 'search', this.searchKeyword)
     },
     onVisibleChange(visible) {
-      if (visible) this.$emit('search', this.searchKeyword)
+      if (visible) $emit(this, 'search', this.searchKeyword)
     },
     onChange(value) {
-      this.$emit('update:target', value)
-      this.$emit('locate', value)
-    }
-  }
+      $emit(this, 'update:target', value)
+      $emit(this, 'locate', value)
+    },
+  },
+  emits: [
+    'toggle-minimap',
+    'locate-issue',
+    'check',
+    'search',
+    'update:target',
+    'locate',
+  ],
 }
 </script>
 
@@ -79,20 +123,21 @@ export default {
 .toolbar-action {
   border-color: rgba(255, 255, 255, 0.4);
   background: rgba(255, 255, 255, 0.1);
-  color: #FFFFFF;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  color: #ffffff;
+  transition: background-color 0.15s ease, border-color 0.15s ease,
+    color 0.15s ease;
 }
 .toolbar-action:hover,
 .toolbar-action:focus {
-  border-color: #FFFFFF;
-  background: #FFFFFF;
-  color: #1D39C4;
+  border-color: #ffffff;
+  background: #ffffff;
+  color: #1d39c4;
   box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.22);
 }
 .toolbar-action:active {
-  border-color: #D6DEFF;
-  background: #EEF2FF;
-  color: #1428A0;
+  border-color: #d6deff;
+  background: #eef2ff;
+  color: #1428a0;
   box-shadow: none;
 }
 .graph-tools small {
