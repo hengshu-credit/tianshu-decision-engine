@@ -9,7 +9,7 @@
     reserve-keyword
     :allow-create="allowFreeInput"
     :default-first-option="allowFreeInput"
-    :teleported="false"
+    :teleported="true"
     :placeholder="placeholder"
     :loading="loading"
     @update:model-value="updateValue"
@@ -50,9 +50,23 @@ export default {
       total: 0,
       hasMore: true,
       dropdownWrap: null,
+      editableInput: null,
+      lastEmittedFreeInput: null,
       inputObserver: null,
       optionsRequestId: 0,
     }
+  },
+  watch: {
+    value(value) {
+      if (!this.allowFreeInput) return
+      const nextValue = value == null ? '' : String(value)
+      this.query = nextValue
+      this.lastEmittedFreeInput = nextValue
+      this.$nextTick(() => {
+        const input = this.nativeInput()
+        if (input && input.value !== nextValue) input.value = nextValue
+      })
+    },
   },
   beforeUnmount() {
     this.unbindEditableInput()
@@ -60,17 +74,31 @@ export default {
   },
   methods: {
     updateValue(value) {
+      if (this.allowFreeInput) {
+        this.lastEmittedFreeInput = value == null ? '' : String(value)
+      }
       $emit(this, 'update:value', value)
+    },
+    emitFreeInput(value) {
+      const nextValue = value == null ? '' : String(value)
+      if (this.lastEmittedFreeInput === nextValue) return
+      this.lastEmittedFreeInput = nextValue
+      $emit(this, 'update:value', nextValue)
     },
     handleEnter(event) {
       if (!this.allowFreeInput) return
       this.query = event && event.target ? event.target.value : this.query
-      $emit(this, 'update:value', this.query || '')
+      this.emitFreeInput(this.query || '')
+    },
+    handleNativeInput(event) {
+      if (!this.allowFreeInput) return
+      this.query = event && event.target ? event.target.value : ''
+      this.emitFreeInput(this.query)
     },
     handleRemote(query) {
       this.query = query || ''
       if (this.allowFreeInput) {
-        $emit(this, 'update:value', this.query)
+        this.emitFreeInput(this.query)
       }
       this.loadOptions(true)
     },
@@ -112,6 +140,8 @@ export default {
       const input = this.nativeInput()
       if (!input) return
       input.removeAttribute('readonly')
+      this.editableInput = input
+      input.addEventListener('input', this.handleNativeInput)
       this.inputObserver = new MutationObserver(() => {
         if (input.hasAttribute('readonly')) input.removeAttribute('readonly')
       })
@@ -121,6 +151,10 @@ export default {
       })
     },
     unbindEditableInput() {
+      if (this.editableInput) {
+        this.editableInput.removeEventListener('input', this.handleNativeInput)
+        this.editableInput = null
+      }
       if (this.inputObserver) {
         this.inputObserver.disconnect()
         this.inputObserver = null

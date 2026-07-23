@@ -553,7 +553,7 @@ import {
 
 const THRESHOLD_COLORS = [
   '#52c41a',
-  '#1890ff',
+  '#2639E9',
   '#fa8c16',
   '#f5222d',
   '#722ed1',
@@ -1087,7 +1087,7 @@ export default {
   align-items: center;
   gap: 6px;
   i {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .asc-card-title-row {
@@ -1118,7 +1118,7 @@ export default {
   padding: 4px 8px;
   color: #909399;
   &:hover {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .result-var-label {
@@ -1193,7 +1193,7 @@ export default {
   width: 32px;
   height: 22px;
   border-radius: 11px;
-  background: #1890ff;
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 11px;
   display: flex;
@@ -1270,7 +1270,7 @@ export default {
 }
 .cond-and {
   font-size: 11px;
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-weight: bold;
   margin: 0 2px;
   flex-shrink: 0;
@@ -1335,7 +1335,7 @@ export default {
   color: #555;
 }
 .formula-term {
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 .weight-summary {
@@ -1374,7 +1374,7 @@ export default {
   min-width: 120px;
 }
 .weight-detail-val {
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-weight: 500;
 }
 .weight-detail-dims {

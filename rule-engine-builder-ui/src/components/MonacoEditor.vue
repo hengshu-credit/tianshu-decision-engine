@@ -7,6 +7,7 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
 import { $emit } from '../utils/gogocodeTransfer'
 export default {
   name: 'MonacoEditor',
@@ -121,7 +122,9 @@ export default {
       ...this.options,
     }
 
-    this.editor = window.monaco.editor.create(this.$refs.container, options)
+    this.editor = markRaw(
+      window.monaco.editor.create(this.$refs.container, options)
+    )
     $emit(this, 'editor-ready', this.editor)
 
     // 内容变化时同步到父组件（使用 _internalChangeFlag 标记区分用户输入）

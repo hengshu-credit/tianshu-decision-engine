@@ -814,7 +814,7 @@ export default {
   content: '';
 }
 .palette-resize-handle:hover::after {
-  background: #2878ff;
+  background: var(--el-color-primary);
 }
 .palette-resize-handle--outer {
   border-right: 1px solid #e8edf3;
@@ -969,7 +969,7 @@ export default {
   font-weight: 700;
 }
 .palette-type-badge--s {
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .palette-type-badge--i {
   background: #e6a23c;
@@ -1007,7 +1007,7 @@ export default {
 }
 .palette-manual-kind i {
   flex: none;
-  color: #2878ff;
+  color: var(--el-color-primary);
   font-size: 17px;
 }
 .palette-manual-kind span,
@@ -1026,7 +1026,7 @@ export default {
   line-height: 1.4;
 }
 .palette-manual-kind--active {
-  border-color: #2878ff;
+  border-color: var(--el-color-primary);
   background: #edf5ff;
 }
 .palette-manual-editor {
@@ -1064,8 +1064,8 @@ export default {
   cursor: pointer;
 }
 .palette-grid button:hover {
-  border-color: #2878ff;
-  color: #2878ff;
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
 }
 .palette-action {
   justify-content: flex-start;

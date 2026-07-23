@@ -464,7 +464,7 @@ $warning-bg: #fffbe6;
 }
 .sp-icon {
   font-size: 16px;
-  color: #1890ff;
+  color: var(--el-color-primary);
   .is-script-mode & {
     color: #f5222d;
   }
@@ -513,7 +513,7 @@ $warning-bg: #fffbe6;
   }
   .el-button {
     margin-left: auto;
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .sp-statusbar {

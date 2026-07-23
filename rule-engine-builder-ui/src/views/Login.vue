@@ -294,22 +294,29 @@ $login-primary-soft: rgba(38, 57, 233, 0.1);
   font-size: 13px;
   color: #e2e8f0;
 }
-:deep(.login-form .el-input__inner) {
-  height: 44px;
-  line-height: 44px;
+:deep(.login-form .el-input__wrapper) {
+  min-height: 44px;
   border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: #ffffff;
+  box-shadow: 0 0 0 1px $login-border inset;
+  transition: box-shadow 0.2s ease;
+}
+:deep(.login-form .el-input__wrapper:hover) {
+  box-shadow: 0 0 0 1px rgba(38, 57, 233, 0.5) inset;
+}
+:deep(.login-form .el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px $login-primary inset,
+    0 0 0 3px $login-primary-soft;
+}
+:deep(.login-form .el-input__inner) {
+  line-height: 1.4;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   font-size: 15px;
   color: $login-text;
-  background: rgba(255, 255, 255, 0.06);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
-:deep(.login-form .el-input__inner:hover) {
-  border-color: rgba(38, 57, 233, 0.5);
-}
-:deep(.login-form .el-input__inner:focus) {
-  border-color: $login-primary;
-  box-shadow: 0 0 0 3px $login-primary-soft;
+  background: transparent;
+  caret-color: $login-primary;
 }
 :deep(.login-form .el-input__inner::placeholder) {
   color: #64748b;

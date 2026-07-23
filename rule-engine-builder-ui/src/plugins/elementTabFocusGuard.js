@@ -5,14 +5,25 @@ function isTabPane(vm) {
 function activeTabElement(vm) {
   const tabs = vm.$parent
   if (!tabs || !tabs.$el) return null
-  const paneId = `pane-${tabs.currentName}`
-  return Array.from(tabs.$el.querySelectorAll('[role="tab"]'))
-    .find(tab => tab.getAttribute('aria-controls') === paneId) || null
+  const selectedTab = tabs.$el.querySelector(
+    '[role="tab"][aria-selected="true"]'
+  )
+  if (selectedTab) return selectedTab
+  const activePane = tabs.$el.querySelector(
+    '[role="tabpanel"][aria-hidden="false"]'
+  )
+  if (!activePane || !activePane.id) return null
+  return (
+    Array.from(tabs.$el.querySelectorAll('[role="tab"]')).find(
+      tab => tab.getAttribute('aria-controls') === activePane.id
+    ) || null
+  )
 }
 
-function syncPaneAccessibility(vm, active) {
+function syncPaneAccessibility(vm) {
   const pane = vm.$el
   if (!pane || !pane.setAttribute) return
+  const active = pane.getAttribute('aria-hidden') !== 'true'
   if (active) {
     pane.removeAttribute('inert')
     return
@@ -31,15 +42,20 @@ export default {
     app.mixin({
       mounted() {
         if (!isTabPane(this)) return
-        syncPaneAccessibility(this, this.active)
-        this._tabFocusGuardUnwatch = this.$watch(
-          'active',
-          active => syncPaneAccessibility(this, active),
-          { sync: true }
-        )
+        syncPaneAccessibility(this)
+        this._tabFocusGuardObserver = new MutationObserver(() => {
+          syncPaneAccessibility(this)
+        })
+        this._tabFocusGuardObserver.observe(this.$el, {
+          attributes: true,
+          attributeFilter: ['aria-hidden']
+        })
       },
       beforeUnmount() {
-        if (this._tabFocusGuardUnwatch) this._tabFocusGuardUnwatch()
+        if (this._tabFocusGuardObserver) {
+          this._tabFocusGuardObserver.disconnect()
+          this._tabFocusGuardObserver = null
+        }
       }
     })
   }

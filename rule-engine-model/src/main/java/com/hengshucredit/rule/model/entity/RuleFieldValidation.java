@@ -27,6 +27,9 @@ public class RuleFieldValidation {
     @TableField(exist = false)
     private String projectName;
 
+    @TableField(exist = false)
+    private Boolean builtIn;
+
     @TableField(fill = FieldFill.INSERT)
     private LocalDateTime createTime;
 

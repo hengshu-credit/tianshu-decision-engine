@@ -9,7 +9,7 @@ test('生产构建可加载并完成核心管理页面导航', async ({ page }) 
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
 
-  await installDistRoutes(page)
+  const { assertClean } = await installDistRoutes(page)
   await page.goto('http://tianshu.local/index.html#/project')
 
   await expect(page.locator('.sidebar-brand')).toContainText('天枢决策引擎')
@@ -27,4 +27,23 @@ test('生产构建可加载并完成核心管理页面导航', async ({ page }) 
 
   expect(pageErrors).toEqual([])
   expect(consoleErrors).toEqual([])
+  assertClean()
+})
+
+test('未配置的模拟接口会被严格验收检出', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page)
+  await page.goto('http://tianshu.local/index.html#/project')
+  await page.evaluate(() => fetch('/api/e2e-unexpected'))
+
+  expect(() => assertClean()).toThrow('/api/e2e-unexpected')
+})
+
+test('模拟接口会校验 HTTP 方法', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page, {
+    apiData: new Map([['/api/e2e-method', { ok: true }]])
+  })
+  await page.goto('http://tianshu.local/index.html#/project')
+  await page.evaluate(() => fetch('/api/e2e-method', { method: 'POST' }))
+
+  expect(() => assertClean()).toThrow('POST /api/e2e-method (expected GET)')
 })

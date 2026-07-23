@@ -549,7 +549,8 @@
             height="130px"
           />
           <div style="color: #909399; font-size: 11px; margin-top: 2px">
-            可选。用于在模型测试时自动填充默认参数（JSON 格式）
+            可选。普通 JSON 对象作为输入；需校验预期输出时使用
+            { "$input": {...}, "$expectedOutput": {...} }
           </div>
         </el-form-item>
         <el-form-item label="描述">
@@ -1491,6 +1492,6 @@ export default {
   box-shadow: none !important;
 }
 .el-button.is-link:hover {
-  color: #1890ff !important;
+  color: var(--el-color-primary) !important;
 }
 </style>

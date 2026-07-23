@@ -86,7 +86,7 @@ export default {
   width: 28px;
   height: 20px;
   border-radius: 10px;
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   color: #1677d2;
   font-size: 11px;
   font-weight: 700;

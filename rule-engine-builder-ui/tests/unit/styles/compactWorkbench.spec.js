@@ -93,4 +93,29 @@ describe('compact workbench styles', () => {
     expect(conditionEditor).toMatch(/\.cg-field--op\s*\{\s*width:\s*108px;\s*\}/)
     expect(advancedCross).toMatch(/\.seg-op\s*\{\s*flex:\s*0 0 96px;\s*width:\s*96px;\s*\}/)
   })
+
+  test('decision table action pickers use stacked full-width rows with compact spacing', () => {
+    const source = fs.readFileSync(
+      path.join(projectRoot, 'src/views/designer/DecisionTable.vue'),
+      'utf8'
+    )
+
+    expect(source.match(/class="dt-act-operand/g)).toHaveLength(2)
+    expect(source).toContain(
+      `:title="operandDisplay(act.targetOperand) || ''"`
+    )
+    expect(source).toContain(`:title="operandDisplay(act.valueOperand) || ''"`)
+    expect(source).toMatch(
+      /\.dt-act-field\s*\{[\s\S]*?padding:\s*8px;/
+    )
+    expect(source).toMatch(
+      /\.dt-act-body\s*\{[\s\S]*?display:\s*grid;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);[\s\S]*?gap:\s*4px;/
+    )
+    expect(source).toMatch(
+      /\.dt-act-operand\s*\{[\s\S]*?width:\s*100%;[\s\S]*?min-width:\s*0;/
+    )
+    expect(source).toMatch(
+      /\.dt-act-operand\s+:deep\(\.el-input__inner\)\s*\{[\s\S]*?overflow:\s*hidden;[\s\S]*?text-overflow:\s*ellipsis;[\s\S]*?white-space:\s*nowrap;/
+    )
+  })
 })

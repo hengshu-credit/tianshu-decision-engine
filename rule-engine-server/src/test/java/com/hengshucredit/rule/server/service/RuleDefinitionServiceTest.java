@@ -1,10 +1,12 @@
 package com.hengshucredit.rule.server.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
+import com.hengshucredit.rule.model.dto.RuleQueryDTO;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
@@ -14,13 +16,18 @@ import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
+import org.apache.ibatis.session.Configuration;
 
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Proxy;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -29,6 +36,33 @@ import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 public class RuleDefinitionServiceTest {
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void pagedDefinitionQueriesUseStableCreateTimeAndIdOrder() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new Configuration(), ""), RuleDefinition.class);
+        List<String> sqlSegments = new ArrayList<>();
+        RuleDefinitionMapper mapper = mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
+            if ("selectPage".equals(method.getName())) {
+                sqlSegments.add(((LambdaQueryWrapper<RuleDefinition>) args[1]).getSqlSegment());
+                return args[0];
+            }
+            return defaultValue(method.getReturnType());
+        });
+        RuleDefinitionService service = new RuleDefinitionService();
+        ReflectionTestUtils.setField(service, "baseMapper", mapper);
+
+        service.pageList(new RuleQueryDTO());
+        service.pageListForProject(1, 10, null, null, null,
+                null, null, null, null, null, null, null, null);
+
+        assertEquals(2, sqlSegments.size());
+        for (String sqlSegment : sqlSegments) {
+            String normalized = sqlSegment.replace("`", "").replace(" ", "").toLowerCase();
+            assertTrue(sqlSegment, normalized.contains("orderbycreate_timedesc,iddesc")
+                    || normalized.contains("orderbycreatetimedesc,iddesc"));
+        }
+    }
 
     @Test
     public void createWithContentAlwaysCreatesDraftDefinition() {

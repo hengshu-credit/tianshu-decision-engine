@@ -115,7 +115,7 @@ public class RuleDependencyClosureServiceTest {
                 .filter(value -> "BINDING:DB_DATASOURCE:99".equals(value.getComponentId()))
                 .findFirst().orElseThrow();
         Assert.assertEquals("DB_DATASOURCE", binding.getMetadata().get("targetResourceType"));
-        Assert.assertEquals(Long.valueOf(99L), ((Number) binding.getMetadata()
+        Assert.assertEquals(99L, ((Number) binding.getMetadata()
                 .get("sourceResourceId")).longValue());
     }
 

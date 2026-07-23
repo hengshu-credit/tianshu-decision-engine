@@ -136,4 +136,17 @@ describe('BillingList target selector', () => {
     }))
     expect(billingApi.listBillingSummaries.mock.calls[0][0].tokenCode).toBeUndefined()
   })
+
+  test('tab click uses Element Plus paneName and loads the selected tab', async () => {
+    const ctx = createContext({ activeTab: 'config' })
+    ctx.loadConfigs = vi.fn()
+    ctx.loadRecords = vi.fn()
+    ctx.loadSummaries = vi.fn()
+
+    await ctx.onTabChange({ paneName: 'record' })
+
+    expect(ctx.activeTab).toBe('record')
+    expect(ctx.loadRecords).toHaveBeenCalledTimes(1)
+    expect(ctx.loadConfigs).not.toHaveBeenCalled()
+  })
 })

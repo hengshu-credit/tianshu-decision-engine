@@ -2188,7 +2188,7 @@ export default {
   z-index: 5;
 }
 .property-resize-handle:hover {
-  background: rgba(64, 158, 255, 0.12);
+  background: var(--tianshu-primary-shadow);
 }
 .prop-header {
   display: flex;
@@ -2272,7 +2272,7 @@ export default {
   code {
     font-family: 'Consolas', monospace;
     font-size: 12px;
-    color: #1890ff;
+    color: var(--el-color-primary);
     word-break: break-all;
   }
 }
@@ -2305,7 +2305,7 @@ export default {
   border-radius: 3px;
   color: #fff;
   &.tag-if {
-    background: #1890ff;
+    background: var(--el-color-primary);
   }
   &.tag-elseif {
     background: #fa8c16;
@@ -2362,20 +2362,20 @@ export default {
   transition: all 0.15s;
   &:hover {
     background: #f0f7ff;
-    border-color: #1890ff;
+    border-color: var(--el-color-primary);
   }
 }
 .edge-idx {
   font-size: 11px;
   font-weight: bold;
   color: #fff;
-  background: #1890ff;
+  background: var(--el-color-primary);
   padding: 1px 6px;
   border-radius: 3px;
   flex-shrink: 0;
 }
 .edge-arrow {
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-size: 13px;
 }
 .edge-name {
@@ -2471,6 +2471,6 @@ export default {
 }
 .lf-menu-item:hover {
   background: #f0f7ff;
-  color: #1890ff;
+  color: var(--el-color-primary);
 }
 </style>

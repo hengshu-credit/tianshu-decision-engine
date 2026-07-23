@@ -34,6 +34,53 @@ function mountSelect(propsData = {}) {
 }
 
 describe('RemoteFilterSelect', () => {
+  test('下拉层传送至 body，避免嵌套定位上下文导致水平偏移', () => {
+    const wrapper = mountSelect()
+
+    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('自由输入在原生 input 事件时立即同步，点击查询无需按 Enter', async () => {
+    const wrapper = mountSelect({ allowFreeInput: true })
+    const input = wrapper.find('.filter-input')
+
+    await wrapper.vm.$nextTick()
+    await input.setValue('NO_MATCH_CLICK_RULE')
+
+    expect(wrapper.emitted('update:value')?.at(-1)).toEqual([
+      'NO_MATCH_CLICK_RULE'
+    ])
+    wrapper.unmount()
+  })
+
+  test('同一次自由输入只向父级同步一次', () => {
+    const wrapper = mountSelect({ allowFreeInput: true })
+
+    wrapper.vm.handleNativeInput({ target: { value: 'age_rule' } })
+    wrapper.vm.handleRemote('age_rule')
+    wrapper.vm.handleEnter({ target: { value: 'age_rule' } })
+
+    expect(wrapper.emitted('update:value')).toEqual([['age_rule']])
+    wrapper.unmount()
+  })
+
+  test('父级重置自由输入值时同步清空原生输入框', async () => {
+    const wrapper = mountSelect({
+      allowFreeInput: true,
+      value: 'e2e_project'
+    })
+
+    await wrapper.vm.$nextTick()
+    const input = wrapper.find('.filter-input').element
+    input.value = 'e2e_project'
+    await wrapper.setProps({ value: '' })
+    await wrapper.vm.$nextTick()
+
+    expect(input.value).toBe('')
+    wrapper.unmount()
+  })
+
   test('自由输入按 Enter 时先同步当前值再让父级查询', async () => {
     const Parent = {
       components: { RemoteFilterSelect },
@@ -120,7 +167,7 @@ describe('RemoteFilterSelect', () => {
     wrapper.unmount()
   })
 
-  test('无已选值关闭下拉时清空远程选项且下拉不挂到 body', async () => {
+  test('无已选值关闭下拉时清空远程选项且下拉挂到 body', async () => {
     const wrapper = mountSelect()
     wrapper.vm.options = [{ label: '其他', value: 'other' }]
 
@@ -128,7 +175,7 @@ describe('RemoteFilterSelect', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.vm.options).toEqual([])
-    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(false)
+    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(true)
     wrapper.unmount()
   })
 

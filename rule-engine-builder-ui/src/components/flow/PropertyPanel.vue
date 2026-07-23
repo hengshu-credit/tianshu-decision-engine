@@ -495,7 +495,7 @@ export default {
   }
 }
 .edge-arrow {
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-weight: bold;
 }
 .edge-label {

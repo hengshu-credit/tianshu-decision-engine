@@ -106,7 +106,7 @@ export default {
   cursor: pointer;
   margin-left: auto;
   &:hover {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .panel-loading,

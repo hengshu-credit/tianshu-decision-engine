@@ -1,4 +1,3 @@
-@use "sass:color";
 /* Element Plus 主题色覆盖：统一按钮背景为主色 #2639E9，副色 #F76E6C */
 @use "./variables.scss" as *;
 
@@ -25,20 +24,8 @@ $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans
   font-family: $font-family-base;
 }
 
-$--color-primary: #2639E9;
+$--color-primary: $tianshu-color-primary;
 $secondary-color: #F76E6C;
-
-$--color-primary-light-1: color.mix(#FFFFFF, $--color-primary, 10%);
-$--color-primary-light-2: color.mix(#FFFFFF, $--color-primary, 20%);
-$--color-primary-light-3: color.mix(#FFFFFF, $--color-primary, 30%);
-$--color-primary-light-4: color.mix(#FFFFFF, $--color-primary, 40%);
-$--color-primary-light-5: color.mix(#FFFFFF, $--color-primary, 50%);
-$--color-primary-light-6: color.mix(#FFFFFF, $--color-primary, 60%);
-$--color-primary-light-7: color.mix(#FFFFFF, $--color-primary, 70%);
-$--color-primary-light-8: color.mix(#FFFFFF, $--color-primary, 80%);
-$--color-primary-light-9: color.mix(#FFFFFF, $--color-primary, 90%);
-$--color-primary-dark-1: color.mix(#000000, $--color-primary, 10%);
-$--color-primary-dark-2: color.mix(#000000, $--color-primary, 20%);
 
 $primary-color: $--color-primary;
 $success-color: #10B981;
@@ -46,27 +33,92 @@ $warning-color: #F76E6C;
 $danger-color: $secondary-color;
 $info-color: #6366F1;
 
+/*
+ * Element UI 2 的 small 控件是管理台原有的舒适密度；升级到 Element Plus 后，
+ * 同名 small 规格缩小到了 24px。项目中大量页面显式使用 size="small"，因此在
+ * 主题兼容层统一恢复 32px / 14px，避免逐页改写并保持所有管理页面一致。
+ */
+:root {
+  --el-color-primary-rgb: 38, 57, 233;
+  --el-color-primary: #{$tianshu-color-primary};
+  --el-color-primary-light-1: #{$tianshu-color-primary-light-1};
+  --el-color-primary-light-2: #{$tianshu-color-primary-light-2};
+  --el-color-primary-light-3: #{$tianshu-color-primary-light-3};
+  --el-color-primary-light-4: #{$tianshu-color-primary-light-4};
+  --el-color-primary-light-5: #{$tianshu-color-primary-light-5};
+  --el-color-primary-light-6: #{$tianshu-color-primary-light-6};
+  --el-color-primary-light-7: #{$tianshu-color-primary-light-7};
+  --el-color-primary-light-8: #{$tianshu-color-primary-light-8};
+  --el-color-primary-light-9: #{$tianshu-color-primary-light-9};
+  --el-color-primary-dark-1: #{$tianshu-color-primary-dark-1};
+  --el-color-primary-dark-2: #{$tianshu-color-primary-dark-2};
+  --tianshu-focus-ring: rgba(38, 57, 233, 0.15);
+  --tianshu-primary-shadow: rgba(38, 57, 233, 0.12);
+  --el-component-size-small: 32px;
+}
+
+.el-button--small {
+  --el-button-size: var(--el-component-size-small);
+  padding: 8px 15px;
+  font-size: 14px;
+}
+
+.el-input--small {
+  font-size: 14px;
+
+  .el-input__wrapper {
+    padding: 1px 11px;
+  }
+}
+
+.el-select--small .el-select__wrapper {
+  min-height: var(--el-component-size-small);
+  padding: 4px 11px;
+  font-size: 14px;
+}
+
+.el-range-editor--small {
+  .el-range-input {
+    height: calc(var(--el-component-size-small) - 2px);
+    font-size: 14px;
+    line-height: calc(var(--el-component-size-small) - 2px);
+  }
+
+  .el-range-separator {
+    font-size: 14px;
+    line-height: var(--el-component-size-small);
+  }
+}
+
+.el-form-item--small {
+  .el-form-item__label,
+  .el-form-item__content {
+    min-height: var(--el-component-size-small);
+    line-height: var(--el-component-size-small);
+  }
+}
+
 /* ── 主要按钮 ── */
 .el-button--primary {
-  background-color: $--color-primary !important;
-  border-color: $--color-primary !important;
+  background-color: var(--el-color-primary) !important;
+  border-color: var(--el-color-primary) !important;
 
   &:hover,
   &:focus {
-    background-color: #1a30d4 !important;
-    border-color: #1a30d4 !important;
+    background-color: var(--el-color-primary-light-3) !important;
+    border-color: var(--el-color-primary-light-3) !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #152aad !important;
-    border-color: #152aad !important;
+    background-color: var(--el-color-primary-dark-2) !important;
+    border-color: var(--el-color-primary-dark-2) !important;
   }
 
   &:disabled,
   &.is-disabled {
-    background-color: rgba($--color-primary, 0.5) !important;
-    border-color: rgba($--color-primary, 0.5) !important;
+    background-color: var(--el-color-primary-light-5) !important;
+    border-color: var(--el-color-primary-light-5) !important;
     cursor: not-allowed;
   }
 }
@@ -197,6 +249,62 @@ $info-color: #6366F1;
   }
 }
 
+/* ── 语义链接按钮：保留链接形态，仅用颜色区分业务动作 ── */
+.el-button.is-link {
+  background-color: transparent !important;
+  border-color: transparent !important;
+
+  &.el-button--primary {
+    color: var(--el-color-primary) !important;
+
+    &:hover,
+    &:focus {
+      color: var(--el-color-primary-dark-1) !important;
+      background-color: var(--el-color-primary-light-9) !important;
+    }
+  }
+
+  &.el-button--success {
+    color: #087A5D !important;
+
+    &:hover,
+    &:focus {
+      color: #065F46 !important;
+      background-color: rgba(#087A5D, 0.08) !important;
+    }
+  }
+
+  &.el-button--warning {
+    color: #B45309 !important;
+
+    &:hover,
+    &:focus {
+      color: #92400E !important;
+      background-color: rgba(#B45309, 0.08) !important;
+    }
+  }
+
+  &.el-button--info {
+    color: #475569 !important;
+
+    &:hover,
+    &:focus {
+      color: #334155 !important;
+      background-color: rgba(#475569, 0.08) !important;
+    }
+  }
+
+  &.el-button--danger {
+    color: #C93333 !important;
+
+    &:hover,
+    &:focus {
+      color: #B91C1C !important;
+      background-color: rgba(#C93333, 0.08) !important;
+    }
+  }
+}
+
 /* ── 危险标签 ── */
 .el-tag--danger {
   background-color: rgba($secondary-color, 0.1) !important;
@@ -294,15 +402,48 @@ $info-color: #6366F1;
 }
 
 /* ── 表单聚焦 ── */
-.el-input__inner:focus,
-.el-textarea__inner:focus {
-  border-color: $--color-primary !important;
-  box-shadow: 0 0 0 2px rgba($--color-primary, 0.15) !important;
+.el-input {
+  --el-input-hover-border-color: var(--el-color-primary-light-3);
+  --el-input-focus-border-color: var(--el-color-primary);
 }
 
-.el-input__inner:hover,
+.el-textarea {
+  --el-input-hover-border-color: var(--el-color-primary-light-3);
+  --el-input-focus-border-color: var(--el-color-primary);
+}
+
+.el-select {
+  --el-select-input-focus-border-color: var(--el-color-primary);
+}
+
+.el-input__inner {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  background: transparent;
+}
+
+.el-input__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--el-input-hover-border-color) inset;
+}
+
+.el-input__wrapper.is-focus {
+  box-shadow: 0 0 0 1px var(--el-input-focus-border-color) inset,
+    0 0 0 2px var(--tianshu-focus-ring);
+}
+
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--el-color-primary) inset,
+    0 0 0 2px var(--tianshu-focus-ring);
+}
+
+.el-textarea__inner:focus {
+  border-color: var(--el-color-primary) !important;
+  box-shadow: 0 0 0 2px var(--tianshu-focus-ring) !important;
+}
+
 .el-textarea__inner:hover {
-  border-color: rgba($--color-primary, 0.42) !important;
+  border-color: var(--el-color-primary-light-3) !important;
 }
 
 /* ── 单选 / 多选 ── */
@@ -375,25 +516,25 @@ $info-color: #6366F1;
 .el-dialog__footer,
 .el-message-box__btns {
   .el-button--primary {
-    background-color: $--color-primary !important;
-    border-color: $--color-primary !important;
+    background-color: var(--el-color-primary) !important;
+    border-color: var(--el-color-primary) !important;
     color: #fff !important;
 
     &:hover,
     &:focus {
-      background-color: #1a30d4 !important;
-      border-color: #1a30d4 !important;
+      background-color: var(--el-color-primary-light-3) !important;
+      border-color: var(--el-color-primary-light-3) !important;
     }
 
     &:active {
-      background-color: #152aad !important;
-      border-color: #152aad !important;
+      background-color: var(--el-color-primary-dark-2) !important;
+      border-color: var(--el-color-primary-dark-2) !important;
     }
 
     &:disabled,
     &.is-disabled {
-      background-color: rgba($--color-primary, 0.5) !important;
-      border-color: rgba($--color-primary, 0.5) !important;
+      background-color: var(--el-color-primary-light-5) !important;
+      border-color: var(--el-color-primary-light-5) !important;
       cursor: not-allowed;
     }
   }
@@ -420,10 +561,18 @@ $info-color: #6366F1;
 /* ── 弹窗主体内容 ── */
 .el-dialog__body {
   font-family: $font-family-base;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 /* ── 弹窗动画优化 ── */
 .el-dialog {
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 32px);
+  margin: 0;
   border-radius: 8px;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
   transition: transform 0.3s ease, opacity 0.3s ease;
@@ -433,6 +582,19 @@ $info-color: #6366F1;
       padding: 24px;
     }
   }
+}
+
+.el-overlay-dialog {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  overflow: hidden;
+}
+
+.el-dialog__header,
+.el-dialog__footer {
+  flex: none;
 }
 
 .el-overlay {

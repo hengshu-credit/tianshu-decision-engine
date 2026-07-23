@@ -2,6 +2,22 @@ import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
 
+const REQUEST_ERROR_DEDUPE_MS = 1500
+const recentRequestErrors = new Map()
+
+function showRequestError(message) {
+  const text = message || '请求失败'
+  const now = Date.now()
+  for (const [recentText, shownAt] of recentRequestErrors) {
+    if (now - shownAt >= REQUEST_ERROR_DEDUPE_MS) {
+      recentRequestErrors.delete(recentText)
+    }
+  }
+  if (recentRequestErrors.has(text)) return
+  recentRequestErrors.set(text, now)
+  ElMessage.error(text)
+}
+
 const service = axios.create({
   baseURL: '/api',
   timeout: 15000,
@@ -29,17 +45,17 @@ service.interceptors.response.use(
     const reqUrl = (response.config && response.config.url) || ''
     if (res.code === 401) {
       if (reqUrl.includes('/auth/console/login')) {
-        ElMessage.error(res.message || '登录失败')
+        showRequestError(res.message || '登录失败')
         return Promise.reject(new Error(res.message || '登录失败'))
       }
       if (router.currentRoute.value.path !== '/login') {
         router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }
-      ElMessage.error(res.message || '未登录')
+      showRequestError(res.message || '未登录')
       return Promise.reject(new Error(res.message || '未登录'))
     }
     if (res.code !== 200) {
-      ElMessage.error(res.message || '请求失败')
+      showRequestError(res.message || '请求失败')
       return Promise.reject(new Error(res.message))
     }
     return res
@@ -54,7 +70,7 @@ service.interceptors.response.use(
         router.replace({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
       }
     }
-    ElMessage.error(msg)
+    showRequestError(msg)
     return Promise.reject(error)
   }
 )

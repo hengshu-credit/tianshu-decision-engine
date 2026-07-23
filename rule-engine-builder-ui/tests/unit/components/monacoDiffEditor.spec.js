@@ -1,4 +1,5 @@
 import { mount } from '@test-utils'
+import { isProxy } from 'vue'
 import * as monaco from 'monaco-editor'
 import MonacoDiffEditor from '@/components/rule/versionDiff/MonacoDiffEditor.vue'
 
@@ -38,6 +39,9 @@ describe('MonacoDiffEditor', () => {
     )
     expect(diffEditor.setModel).toHaveBeenCalledWith({ original: originalModel, modified: modifiedModel })
     expect(wrapper.find('.monaco-diff-editor-container').exists()).toBe(true)
+    expect(isProxy(wrapper.vm.diffEditor)).toBe(false)
+    expect(isProxy(wrapper.vm.originalModel)).toBe(false)
+    expect(isProxy(wrapper.vm.modifiedModel)).toBe(false)
   })
 
   test('属性变化只更新对应模型内容', async() => {

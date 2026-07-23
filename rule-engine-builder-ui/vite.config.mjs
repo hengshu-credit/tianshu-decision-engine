@@ -10,6 +10,18 @@ const elementOverrideFile = normalizePath(path.resolve(projectRoot, 'src/styles/
 
 export default defineConfig({
   base: './',
+  // Monaco 的 AMD loader 会暴露全局 define；LogicFlow 的部分依赖仍包含 UMD
+  // 分支，懒加载设计器时不能让这些已打包依赖再次向 Monaco 注册匿名模块。
+  define: {
+    'define.amd': 'false'
+  },
+  optimizeDeps: {
+    rolldownOptions: {
+      transform: {
+        define: { 'define.amd': 'false' }
+      }
+    }
+  },
   plugins: [
     vue(),
     viteStaticCopy({

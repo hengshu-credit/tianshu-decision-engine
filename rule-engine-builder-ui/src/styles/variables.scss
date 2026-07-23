@@ -1,5 +1,19 @@
 // 必须在 :export 外面定义，这样才能通过 @use 被其他 scss 文件访问
-$--color-primary: #2639E9;
+$tianshu-color-primary: #2639E9;
+$tianshu-color-primary-light-1: #3C4DEB;
+$tianshu-color-primary-light-2: #5161ED;
+$tianshu-color-primary-light-3: #6774F0;
+$tianshu-color-primary-light-4: #7D88F2;
+$tianshu-color-primary-light-5: #939CF4;
+$tianshu-color-primary-light-6: #A8B0F6;
+$tianshu-color-primary-light-7: #BEC4F8;
+$tianshu-color-primary-light-8: #D4D7FB;
+$tianshu-color-primary-light-9: #E9EBFD;
+$tianshu-color-primary-dark-1: #2233D2;
+$tianshu-color-primary-dark-2: #1E2EBA;
+
+// 兼容仍由 Vite additionalData 注入的存量组件样式。
+$--color-primary: $tianshu-color-primary;
 $--color-danger: #F76E6C;
 
 $menuText: #CBD5E1;

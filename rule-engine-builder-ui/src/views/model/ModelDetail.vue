@@ -2061,7 +2061,7 @@ export default {
 .script-name-text {
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .binding-display {
   min-width: 0;
@@ -2139,7 +2139,7 @@ export default {
   flex-shrink: 0;
 }
 .var-switch-btn:hover {
-  color: #1890ff;
+  color: var(--el-color-primary);
 }
 .version-compare-grid {
   display: grid;

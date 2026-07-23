@@ -55,7 +55,7 @@ export default {
   background: #546e7a;
 }
 .operand-value-kind--variable {
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .operand-value-kind--constant {
   background: #9c6ade;

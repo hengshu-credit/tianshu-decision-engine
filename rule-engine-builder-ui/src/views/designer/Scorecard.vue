@@ -423,7 +423,7 @@ import {
 
 const THRESHOLD_COLORS = [
   '#52c41a',
-  '#1890ff',
+  '#2639E9',
   '#fa8c16',
   '#f5222d',
   '#722ed1',
@@ -971,7 +971,7 @@ export default {
   align-items: center;
   gap: 6px;
   i {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .sc-card-title-row {
@@ -1002,7 +1002,7 @@ export default {
   padding: 4px 8px;
   color: #909399;
   &:hover {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .result-var-label {
@@ -1029,7 +1029,7 @@ export default {
   color: #999;
   cursor: pointer;
   &:hover {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .score-items {
@@ -1059,7 +1059,7 @@ export default {
   width: 22px;
   height: 22px;
   border-radius: 50%;
-  background: #1890ff;
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 12px;
   display: flex;
@@ -1128,7 +1128,7 @@ export default {
 .weighted-value {
   font-size: 18px;
   font-weight: bold;
-  color: #1890ff;
+  color: var(--el-color-primary);
   display: block;
 }
 .sc-formula {

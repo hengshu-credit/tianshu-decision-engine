@@ -87,10 +87,11 @@ public class ModelArtifactValidator {
             return report;
         }
 
-        assertExactNames("Sample input", new ArrayList<>(sample.keySet()), actualInputs);
+        SamplePayload samplePayload = samplePayload(sample);
+        assertExactNames("Sample input", new ArrayList<>(samplePayload.input.keySet()), actualInputs);
         Map<String, Object> result = "PMML".equals(modelFormat)
-                ? pmmlExecutor.evaluate(Base64.getEncoder().encodeToString(bytes), sample)
-                : executeOnnx(bytes, runtimeConfigJson, sample);
+                ? pmmlExecutor.evaluate(Base64.getEncoder().encodeToString(bytes), samplePayload.input)
+                : executeOnnx(bytes, runtimeConfigJson, samplePayload.input);
         if (result == null) {
             throw new IllegalArgumentException("Model sample execution returned no result");
         }
@@ -100,8 +101,76 @@ public class ModelArtifactValidator {
             throw new IllegalArgumentException("Model sample execution is missing exact output fields: "
                     + missingOutputs);
         }
+        if (samplePayload.expectedOutput != null) {
+            assertExactNames("Sample expected output",
+                    new ArrayList<>(samplePayload.expectedOutput.keySet()), actualOutputs);
+            for (String output : actualOutputs) {
+                Object expected = samplePayload.expectedOutput.get(output);
+                Object actual = result.get(output);
+                if (!equivalent(expected, actual)) {
+                    throw new IllegalArgumentException("Model sample expected output mismatch for exact field '"
+                            + output + "': expected " + expected + ", actual " + actual);
+                }
+            }
+        }
         report.setSampleStatus("PASSED");
         return report;
+    }
+
+    @SuppressWarnings("unchecked")
+    private SamplePayload samplePayload(Map<String, Object> sample) {
+        if (!sample.containsKey("$input") && !sample.containsKey("$expectedOutput")) {
+            return new SamplePayload(sample, null);
+        }
+        Set<String> wrapperKeys = new LinkedHashSet<>(sample.keySet());
+        wrapperKeys.remove("$input");
+        wrapperKeys.remove("$expectedOutput");
+        if (!wrapperKeys.isEmpty() || !(sample.get("$input") instanceof Map<?, ?> input)) {
+            throw new IllegalArgumentException("Model sample envelope only supports $input and optional "
+                    + "$expectedOutput objects");
+        }
+        Object expected = sample.get("$expectedOutput");
+        if (expected != null && !(expected instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Model sample $expectedOutput must be an object");
+        }
+        return new SamplePayload((Map<String, Object>) input,
+                expected == null ? null : (Map<String, Object>) expected);
+    }
+
+    private boolean equivalent(Object expected, Object actual) {
+        if (expected instanceof Number left && actual instanceof Number right) {
+            try {
+                return new java.math.BigDecimal(left.toString())
+                        .compareTo(new java.math.BigDecimal(right.toString())) == 0;
+            } catch (NumberFormatException ignored) {
+                return Double.compare(left.doubleValue(), right.doubleValue()) == 0;
+            }
+        }
+        if (expected instanceof Map<?, ?> left && actual instanceof Map<?, ?> right) {
+            if (!left.keySet().equals(right.keySet())) return false;
+            for (Object key : left.keySet()) {
+                if (!equivalent(left.get(key), right.get(key))) return false;
+            }
+            return true;
+        }
+        if (expected instanceof List<?> left && actual instanceof List<?> right) {
+            if (left.size() != right.size()) return false;
+            for (int index = 0; index < left.size(); index++) {
+                if (!equivalent(left.get(index), right.get(index))) return false;
+            }
+            return true;
+        }
+        return java.util.Objects.equals(expected, actual);
+    }
+
+    private static final class SamplePayload {
+        private final Map<String, Object> input;
+        private final Map<String, Object> expectedOutput;
+
+        private SamplePayload(Map<String, Object> input, Map<String, Object> expectedOutput) {
+            this.input = input;
+            this.expectedOutput = expectedOutput;
+        }
     }
 
     private Evaluator loadPmml(byte[] bytes) {

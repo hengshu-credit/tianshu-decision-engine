@@ -307,7 +307,7 @@ export function newBlock(type) {
 }
 
 export const BLOCK_TYPES = [
-  { type: 'assign', label: '赋值', icon: 'Edit', color: '#1890ff' },
+  { type: 'assign', label: '赋值', icon: 'Edit', color: '#2639E9' },
   { type: 'if-block', label: '条件分支', icon: 'Operation', color: '#fa8c16' },
   { type: 'switch-block', label: 'Switch 匹配', icon: 'Menu', color: '#722ed1' },
   { type: 'func-call', label: '函数调用', icon: 'Phone', color: '#13c2c2' },
@@ -315,5 +315,5 @@ export const BLOCK_TYPES = [
   { type: 'ternary', label: '三元表达式', icon: 'QuestionFilled', color: '#eb2f96' },
   { type: 'in-check', label: 'IN 判断', icon: 'Finished', color: '#2f54eb' },
   { type: 'template-str', label: '动态字符串', icon: 'Document', color: '#8c8c8c' },
-  { type: 'rule-call', label: '执行规则', icon: 'Position', color: '#096dd9' }
+  { type: 'rule-call', label: '执行规则', icon: 'Position', color: '#1E2EBA' }
 ]

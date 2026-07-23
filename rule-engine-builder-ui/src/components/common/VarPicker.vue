@@ -29,7 +29,7 @@
         <el-popover
           v-if="groupedByCategory && (hasVarOptions || operandMode)"
           ref="popover"
-          v-model="popoverVisible"
+          v-model:visible="popoverVisible"
           placement="bottom-start"
           :width="popoverWidth"
           trigger="manual"
@@ -343,6 +343,8 @@ export default {
       resizingPanel: false,
       panelBodyCursor: '',
       panelBodyUserSelect: '',
+      suppressFocusOpen: false,
+      focusOpenTimer: null,
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
@@ -455,6 +457,7 @@ export default {
   beforeUnmount() {
     this.updateDocumentListener(false)
     this.stopPanelResize()
+    if (this.focusOpenTimer) clearTimeout(this.focusOpenTimer)
   },
   computed: {
     /** 是否有可选的变量选项 */
@@ -1078,16 +1081,49 @@ export default {
       this.closePopover()
     },
     closePopover() {
+      this.suppressFocusOpen = true
       this.moveFocusBeforeClose()
       this.popoverVisible = false
       var popover = this.$refs.popover
-      if (popover && typeof popover.doClose === 'function') popover.doClose()
+      if (popover && typeof popover.hide === 'function') popover.hide()
+      else if (popover && typeof popover.doClose === 'function')
+        popover.doClose()
       this.setPickerInert(true)
+      if (this.focusOpenTimer) clearTimeout(this.focusOpenTimer)
+      this.focusOpenTimer = setTimeout(
+        function () {
+          this.suppressFocusOpen = false
+          this.focusOpenTimer = null
+        }.bind(this),
+        0
+      )
+    },
+    getPopoverElement() {
+      if (typeof document === 'undefined') return null
+      var popover = this.$refs.popover
+      var popper = popover && popover.popperRef
+      if (popper && popper.contentRef) return popper.contentRef
+      if (popover && popover.popperElm) return popover.popperElm
+
+      var reference = this.$refs.reference
+      var trigger =
+        reference && reference.getAttribute('aria-describedby')
+          ? reference
+          : reference && reference.querySelector
+            ? reference.querySelector('[aria-describedby]')
+            : null
+      var describedBy = trigger && trigger.getAttribute('aria-describedby')
+      if (!describedBy) return null
+      var ids = describedBy.split(/\s+/)
+      for (var i = 0; i < ids.length; i += 1) {
+        var element = document.getElementById(ids[i])
+        if (element) return element
+      }
+      return null
     },
     moveFocusBeforeClose() {
       if (typeof document === 'undefined') return
-      var popover = this.$refs.popover
-      var popper = popover && popover.popperElm
+      var popper = this.getPopoverElement()
       var active = document.activeElement
       if (!popper || !active || !popper.contains(active)) return
       var reference = this.$refs.reference
@@ -1095,8 +1131,7 @@ export default {
       else if (typeof active.blur === 'function') active.blur()
     },
     setPickerInert(inert) {
-      var popover = this.$refs.popover
-      var popper = popover && popover.popperElm
+      var popper = this.getPopoverElement()
       if (!popper || !popper.setAttribute) return
       if (inert) popper.setAttribute('inert', '')
       else popper.removeAttribute('inert')
@@ -1124,6 +1159,7 @@ export default {
     },
     /** 输入框获得焦点时自动弹出选择器面板 */
     onInputFocus() {
+      if (this.suppressFocusOpen) return
       this.openPopover()
     },
     onReferenceInput(value) {
@@ -1246,8 +1282,7 @@ export default {
     },
     scrollCurrentValueIntoView() {
       this.$nextTick(function () {
-        var popover = this.$refs.popover
-        var popper = popover && popover.popperElm
+        var popper = this.getPopoverElement()
         if (!popper) return
         var target = popper.querySelector(
           '.vp-row--selected, .vp-child-item--selected'
@@ -1284,16 +1319,26 @@ export default {
       if (typeof document === 'undefined') return
       var method = visible ? 'addEventListener' : 'removeEventListener'
       document[method]('mousedown', this.onDocumentMouseDown, true)
+      document[method]('keydown', this.onDocumentKeyDown, true)
+    },
+    onDocumentKeyDown(event) {
+      if (!this.popoverVisible || !event || event.key !== 'Escape') return
+      event.preventDefault()
+      event.stopPropagation()
+      this.closePopover()
     },
     onDocumentMouseDown(event) {
       if (!this.popoverVisible) return
       var target = event.target
       var root = this.$el
-      var popover = this.$refs.popover
-      var popper = popover && popover.popperElm
+      var popper = this.getPopoverElement()
       if (
         (root && root.contains(target)) ||
-        (popper && popper.contains(target))
+        (popper && popper.contains(target)) ||
+        (!popper &&
+          target &&
+          target.closest &&
+          target.closest('.var-picker-popover'))
       ) {
         return
       }
@@ -1338,8 +1383,7 @@ export default {
       this.updatePanelSize(touch.clientX, touch.clientY)
     },
     updatePanelSize(clientX, clientY) {
-      var popover = this.$refs.popover
-      var popper = popover && popover.popperElm
+      var popper = this.getPopoverElement()
       if (!popper) return
       var rect = popper.getBoundingClientRect()
       var width = Math.round(clientX - rect.left)
@@ -1569,7 +1613,7 @@ export default {
   background: #546e7a;
 }
 .vp-operand-kind--variable {
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .vp-operand-kind--constant {
   background: #9c6ade;
@@ -1586,7 +1630,7 @@ export default {
 .mode-switch {
   flex-shrink: 0;
   cursor: pointer;
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-size: 14px;
   padding: 2px;
   border-radius: 3px;
@@ -1596,8 +1640,8 @@ export default {
   justify-content: center;
 }
 .mode-switch:hover {
-  background: #e6f7ff;
-  color: #096dd9;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary-dark-2);
 }
 .vp-clear-btn {
   cursor: pointer;
@@ -1605,7 +1649,7 @@ export default {
   margin-right: 4px;
 }
 .vp-clear-btn:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .var-empty {
   padding: 8px 12px;
@@ -1654,10 +1698,10 @@ export default {
   background: #f5f7fa;
 }
 .vp-cat-item--active {
-  background: #e6f7ff;
-  color: #1890ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
   font-weight: 600;
-  border-right: 2px solid #1890ff;
+  border-right: 2px solid var(--el-color-primary);
 }
 .vp-cat-count {
   flex: none;
@@ -1671,8 +1715,8 @@ export default {
   border-radius: 8px;
 }
 .vp-cat-item--active .vp-cat-count {
-  background: #bae7ff;
-  color: #1890ff;
+  background: var(--el-color-primary-light-7);
+  color: var(--el-color-primary);
 }
 .vp-manual {
   padding: 20px;
@@ -1704,7 +1748,7 @@ export default {
 }
 .vp-manual-type i {
   grid-row: 1 / 3;
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 20px;
   align-self: center;
 }
@@ -1716,8 +1760,8 @@ export default {
   line-height: 1.4;
 }
 .vp-manual-type:hover {
-  border-color: #409eff;
-  background: #ecf5ff;
+  border-color: var(--el-color-primary);
+  background: var(--el-color-primary-light-9);
 }
 .vp-right {
   flex: 1;
@@ -1774,10 +1818,10 @@ export default {
   background: #f5f7fa;
 }
 .vp-row--selected {
-  background: #e6f7ff;
+  background: var(--el-color-primary-light-9);
 }
 .vp-row--selected:hover {
-  background: #d0e8ff;
+  background: var(--el-color-primary-light-8);
 }
 .vp-td {
   padding: 7px 10px;
@@ -1840,10 +1884,10 @@ export default {
   transition: background 0.1s;
 }
 .vp-child-item:hover {
-  background: #e6f7ff;
+  background: var(--el-color-primary-light-9);
 }
 .vp-child-item--selected {
-  background: #d0e8ff;
+  background: var(--el-color-primary-light-8);
 }
 .vp-child-path {
   font-family: 'Consolas', 'Monaco', monospace;
@@ -1896,7 +1940,7 @@ export default {
   border-bottom: 2px solid #c0c4cc;
 }
 .vp-resize-handle:hover::after {
-  border-color: #409eff;
+  border-color: var(--el-color-primary);
 }
 
 /* ── 类型单字符标识 ── */
@@ -1921,7 +1965,7 @@ export default {
 }
 /* 字符串 s - 蓝色 */
 .vp-type-badge--s {
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 /* 整数 i - 橙色 */
 .vp-type-badge--i {

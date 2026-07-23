@@ -187,7 +187,7 @@
         >
           <template v-slot="{ row }"
             ><el-tag
-              :type="row.source === 'SERVER' ? '' : 'success'"
+              :type="sourceTagType(row.source)"
               size="small"
               >{{ row.source === 'SERVER' ? '服务端' : '客户端' }}</el-tag
             ></template
@@ -725,7 +725,8 @@ this.load()
 },
 methods: {
 async handleViewChange(tab) {
-this.activeView = tab && tab.name ? tab.name : this.activeView
+var paneName = tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name))
+this.activeView = paneName && paneName.value !== undefined ? paneName.value : (paneName || this.activeView)
 if (this.activeView === 'ruleSetStats') await this.loadRuleSetStats()
 },
 async loadRuleSetStats() {
@@ -1071,6 +1072,9 @@ try {
 formatParams: function (s) {
 return this.fj(s)
 },
+sourceTagType: function (source) {
+return source === 'SERVER' ? undefined : 'success'
+},
 onSourceChange: function () {
 this.qp.projectCode = ''
 this.qp.projectName = ''
@@ -1282,6 +1286,6 @@ emits: ['pick']
   word-break: break-all;
 }
 :deep(.trace-badge .el-badge__content) {
-  background-color: #1890ff;
+  background-color: var(--el-color-primary);
 }
 </style>

@@ -900,6 +900,14 @@
             min-width="130"
             show-overflow-tooltip
           />
+          <el-table-column label="属性" width="95" align="center">
+            <template v-slot="{ row }">
+              <el-tag v-if="row.builtIn" size="small" type="info"
+                >系统内置</el-tag
+              >
+              <span v-else class="text-muted">自定义</span>
+            </template>
+          </el-table-column>
           <el-table-column label="校验类型" width="110" align="center">
             <template v-slot="{ row }"
               ><el-tag size="small" type="info">{{
@@ -940,12 +948,14 @@
           >
             <template v-slot="{ row }">
               <el-button
+                v-if="!row.builtIn"
                 link
                 size="small"
                 @click="editFieldValidation(row)"
                 >编辑</el-button
               >
               <el-button
+                v-if="!row.builtIn"
                 link
                 size="small"
                 class="btn-delete"
@@ -2684,10 +2694,15 @@ export default {
   },
   methods: {
     onTabClick(tab) {
+      const rawName = tab && (tab.paneName ?? tab.name ?? tab.props?.name)
+      const name = rawName && typeof rawName === 'object'
+        ? rawName.value
+        : rawName
+      if (name) this.activeTab = name
       this.saveCachedState()
-      if (tab.name === 'objects') this.loadObjectTree()
-      if (tab.name === 'constants') this.loadConstants()
-      if (tab.name === 'validations') return this.loadFieldValidations()
+      if (name === 'objects') this.loadObjectTree()
+      if (name === 'constants') this.loadConstants()
+      if (name === 'validations') return this.loadFieldValidations()
     },
     restoreCachedState() {
       const state = restorePageState('VariableList')
@@ -3730,6 +3745,10 @@ export default {
       return this.loadFieldValidations()
     },
     editFieldValidation(row) {
+      if (row.builtIn) {
+        this.$message.warning('系统内置校验规则不可编辑')
+        return
+      }
       this.validationForm = { ...this.initFieldValidationForm(), ...row }
       this.validationDialogVisible = true
     },
@@ -3790,6 +3809,10 @@ export default {
       }
     },
     removeFieldValidation(row) {
+      if (row.builtIn) {
+        this.$message.warning('系统内置校验规则不可删除')
+        return
+      }
       this.$confirm(`确定删除字段校验「${row.validationName}」？`, '确认删除', {
         type: 'warning',
       })
@@ -4616,7 +4639,7 @@ export default {
   border-radius: 4px;
 }
 .linkage-hint a {
-  color: #1890ff;
+  color: var(--el-color-primary);
   text-decoration: none;
 }
 .linkage-hint a:hover {
@@ -4812,8 +4835,8 @@ export default {
   font-family: Consolas, monospace;
 }
 .badge-obj {
-  background: #e6f7ff;
-  color: #1890ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
   border: 1px solid #91d5ff;
 }
 .badge-const {
@@ -4945,6 +4968,6 @@ export default {
   box-shadow: none !important;
 }
 .el-button.is-link:hover {
-  color: #1890ff !important;
+  color: var(--el-color-primary) !important;
 }
 </style>

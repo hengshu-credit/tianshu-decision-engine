@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleFieldValidation;
 import org.junit.Test;
 
+import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 
@@ -33,6 +34,29 @@ public class RuleFieldValidationServiceTest {
         }
     }
 
+    @Test
+    public void builtinRulesCannotBeUpdatedOrDeleted() {
+        RuleFieldValidation builtin = BuiltinFieldValidationCatalog.definitions().get(0);
+        builtin.setId(99L);
+        RuleFieldValidationService service = new RuleFieldValidationService() {
+            @Override
+            public RuleFieldValidation getById(Serializable id) {
+                return builtin;
+            }
+        };
+
+        assertIllegalArgument(() -> service.updateRule(builtin));
+        assertIllegalArgument(() -> service.deleteRule(builtin.getId()));
+    }
+
+    @Test
+    public void reservedBuiltinCodesCannotBeUsedByCustomRules() {
+        RuleFieldValidationService service = new RuleFieldValidationService();
+        RuleFieldValidation custom = rule("builtin_mobile", "REGEX", "^custom$");
+
+        assertIllegalArgument(() -> service.createRule(custom));
+    }
+
     private RuleFieldValidation rule(String code, String type, String value) {
         RuleFieldValidation rule = new RuleFieldValidation();
         rule.setScope("GLOBAL");
@@ -51,5 +75,14 @@ public class RuleFieldValidationServiceTest {
                 "normalizeAndValidate", RuleFieldValidation.class);
         method.setAccessible(true);
         method.invoke(service, rule);
+    }
+
+    private void assertIllegalArgument(Runnable action) {
+        try {
+            action.run();
+            fail("操作必须被拒绝");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
     }
 }

@@ -716,9 +716,11 @@ describe('VariableList — 边界情况', () => {
   test('onTabClick 切换 Tab 触发加载', async () => {
     const wrapper = await mountAndWait()
     const loadConstantsSpy = vi.spyOn(wrapper.vm, 'loadConstants').mockResolvedValue({ data: { records: [], total: 0 } })
+    wrapper.vm.activeTab = 'list'
     wrapper.vm.onTabClick({ name: 'constants' })
     await nextTick()
     // onTabClick 只处理 objects 和 constants；切换到 constants 时调用 loadConstants
+    expect(wrapper.vm.activeTab).toBe('constants')
     expect(loadConstantsSpy).toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -730,7 +732,7 @@ describe('VariableList — 字段校验规则库', () => {
     const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/variable/VariableList.vue'), 'utf8')
 
     expect(source).toContain('<el-tab-pane label="字段校验" name="validations">')
-    await wrapper.vm.onTabClick({ name: 'validations' })
+    await wrapper.vm.onTabClick({ paneName: 'validations' })
     expect(variableApi.listFieldValidations).toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -773,6 +775,36 @@ describe('VariableList — 字段校验规则库', () => {
     wrapper.vm.validationForm.validationValue = '^custom$'
     await nextTick()
     expect(wrapper.vm.selectedFieldValidationRegexPreset).toBe('')
+    wrapper.unmount()
+  })
+
+  test('系统内置校验规则显示只读标识且不能进入编辑或删除流程', async () => {
+    const wrapper = await mountAndWait()
+    const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/variable/VariableList.vue'), 'utf8')
+    const builtin = {
+      id: 101,
+      scope: 'GLOBAL',
+      projectId: 0,
+      validationCode: 'builtin_mobile',
+      validationName: '手机号',
+      validationType: 'REGEX',
+      validationValue: '^1[0-9]{10}$',
+      errorMessage: '请输入正确的手机号',
+      status: 1,
+      builtIn: true
+    }
+
+    expect(source).toContain('系统内置')
+    expect(source).toContain('v-if="!row.builtIn"')
+
+    wrapper.vm.editFieldValidation(builtin)
+    expect(wrapper.vm.validationDialogVisible).toBe(false)
+    expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('系统内置校验规则不可编辑')
+
+    wrapper.vm.removeFieldValidation(builtin)
+    expect(wrapper.vm.$confirm).not.toHaveBeenCalled()
+    expect(variableApi.deleteFieldValidation).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.warning).toHaveBeenCalledWith('系统内置校验规则不可删除')
     wrapper.unmount()
   })
 })

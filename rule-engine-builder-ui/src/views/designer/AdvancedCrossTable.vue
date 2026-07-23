@@ -41,7 +41,7 @@
       <!-- 行维度 -->
       <div class="act-dim-panel">
         <div class="dim-panel-header">
-          <el-icon style="color: #1890ff"><el-icon-s-unfold /></el-icon> 行维度
+          <el-icon style="color: var(--el-color-primary)"><el-icon-s-unfold /></el-icon> 行维度
           <el-button size="small" :icon="ElIconPlus" @click="addDimension('row')"
             >添加行维度</el-button
           >

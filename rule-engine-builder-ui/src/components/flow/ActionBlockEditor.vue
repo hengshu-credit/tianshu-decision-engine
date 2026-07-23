@@ -1228,7 +1228,7 @@ export default {
   line-height: 1.5;
 }
 .shared-context-hint i {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .mapping-toggle-row {
   margin-top: 8px;

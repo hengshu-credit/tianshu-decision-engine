@@ -198,6 +198,11 @@ describe('ExecutionLog — 工具方法', () => {
     expect(result).toContain('name')
     expect(result).toContain('test')
   })
+
+  test('服务端来源标签不向 ElTag 传递空字符串类型', () => {
+    expect(wrapper.vm.sourceTagType('SERVER')).toBeUndefined()
+    expect(wrapper.vm.sourceTagType('CLIENT')).toBe('success')
+  })
 })
 
 describe('ExecutionLog — 筛选与分页', () => {
@@ -366,7 +371,7 @@ describe('ExecutionLog — 规则集命中统计', () => {
     wrapper.vm.qp.projectCode = 'project_a'
     wrapper.vm.qp.ruleCode = 'RS-A'
 
-    await wrapper.vm.handleViewChange({ name: 'ruleSetStats' })
+    await wrapper.vm.handleViewChange({ paneName: 'ruleSetStats' })
 
     expect(runtimeLogApi.getRuleSetStats).toHaveBeenCalledWith({
       projectCode: 'project_a',

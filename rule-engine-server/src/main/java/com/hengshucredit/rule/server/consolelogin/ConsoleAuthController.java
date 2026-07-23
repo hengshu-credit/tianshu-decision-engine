@@ -16,7 +16,7 @@ import java.util.Map;
  * 登录校验委托 {@link ConsoleLoginAuthenticator}：自定义 Bean 覆盖默认的 yml builtin 账号校验。
  */
 @RestController
-@RequestMapping("/api/auth/console")
+@RequestMapping("/api/auth")
 public class ConsoleAuthController {
 
     @Resource
@@ -28,7 +28,7 @@ public class ConsoleAuthController {
     /**
      * 返回是否启用用户名密码登录，供前端决定是否展示登录页与携带 Cookie。
      */
-    @GetMapping("/config")
+    @GetMapping("/console/config")
     public R<Map<String, Object>> config() {
         Map<String, Object> body = new HashMap<>(2);
         body.put("loginEnabled", consoleLoginProperties.isEnabled());
@@ -36,9 +36,26 @@ public class ConsoleAuthController {
     }
 
     /**
+     * 兼容旧控制台的登录状态查询，同时返回当前登录配置与会话状态。
+     */
+    @GetMapping("/status")
+    public R<Map<String, Object>> status(HttpServletRequest request) {
+        boolean loginEnabled = consoleLoginProperties.isEnabled();
+        HttpSession session = request.getSession(false);
+        Object username = session == null
+                ? null
+                : session.getAttribute(consoleLoginProperties.getSessionUsernameAttribute());
+        Map<String, Object> body = new HashMap<>(3);
+        body.put("loginEnabled", loginEnabled);
+        body.put("authenticated", !loginEnabled || username != null);
+        body.put("username", username == null ? null : username.toString());
+        return R.ok(body);
+    }
+
+    /**
      * 校验用户名密码并建立会话；启用登录时才会校验成功。
      */
-    @PostMapping("/login")
+    @PostMapping("/console/login")
     public R<Map<String, String>> login(@RequestBody LoginRequest body, HttpServletRequest request) {
         if (!consoleLoginProperties.isEnabled()) {
             return R.fail("控制台用户名密码登录未启用");
@@ -70,7 +87,7 @@ public class ConsoleAuthController {
     /**
      * 销毁当前会话。
      */
-    @PostMapping("/logout")
+    @PostMapping("/console/logout")
     public R<Void> logout(HttpServletRequest request) {
         HttpSession session = request.getSession(false);
         if (session != null) {
@@ -82,7 +99,7 @@ public class ConsoleAuthController {
     /**
      * 查询当前登录用户名；未启用登录时返回 data 为 null；启用但未登录返回 401。
      */
-    @GetMapping("/me")
+    @GetMapping("/console/me")
     public R<Map<String, String>> me(HttpServletRequest request) {
         if (!consoleLoginProperties.isEnabled()) {
             return R.ok(null);

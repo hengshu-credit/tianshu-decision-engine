@@ -495,6 +495,31 @@ describe('VarPicker', () => {
     wrapper.unmount()
   })
 
+  test('Escape 只关闭字段选择器，不继续传播给父弹框', async () => {
+    const wrapper = mountPicker(
+      { vars: standaloneOptions(1) },
+      { attachTo: document.body }
+    )
+    const parentEscapeHandler = vi.fn()
+    document.addEventListener('keydown', parentEscapeHandler)
+
+    wrapper.vm.openPopover()
+    await nextTick()
+    wrapper.element.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      })
+    )
+
+    expect(wrapper.vm.popoverVisible).toBe(false)
+    expect(parentEscapeHandler).not.toHaveBeenCalled()
+
+    document.removeEventListener('keydown', parentEscapeHandler)
+    wrapper.unmount()
+  })
+
   test('object field short code does not reverse-link to a full object option', async () => {
     const wrapper = mountPicker({
       value: 'taxpayerType',

@@ -69,7 +69,8 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
     public IPage<RuleDefinition> pageList(RuleQueryDTO query) {
         LambdaQueryWrapper<RuleDefinition> wrapper = buildWrapper(query);
-        wrapper.orderByDesc(RuleDefinition::getCreateTime);
+        wrapper.orderByDesc(RuleDefinition::getCreateTime)
+                .orderByDesc(RuleDefinition::getId);
         return page(new Page<>(query.getPageNumOrDefault(), query.getPageSizeOrDefault()), wrapper);
     }
 
@@ -495,7 +496,8 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
                               .or()
                               .like(RuleDefinition::getRuleCode, keyword));
         }
-        wrapper.orderByDesc(RuleDefinition::getCreateTime);
+        wrapper.orderByDesc(RuleDefinition::getCreateTime)
+                .orderByDesc(RuleDefinition::getId);
         IPage<RuleDefinition> result = page(new Page<>(pageNum, pageSize), wrapper);
         attachFieldMetadata(result.getRecords());
         return result;

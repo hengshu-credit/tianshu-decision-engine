@@ -22,6 +22,7 @@
 </template>
 
 <script>
+import { markRaw } from 'vue'
 import { Loading as ElIconLoading } from '@element-plus/icons-vue'
 import { $emit } from '../../../utils/gogocodeTransfer'
 export default {
@@ -85,17 +86,14 @@ export default {
       return
     }
     this.ensureQlLanguage(window.monaco)
-    this.originalModel = window.monaco.editor.createModel(
-      this.original || '',
-      this.language
+    this.originalModel = markRaw(
+      window.monaco.editor.createModel(this.original || '', this.language)
     )
-    this.modifiedModel = window.monaco.editor.createModel(
-      this.modified || '',
-      this.language
+    this.modifiedModel = markRaw(
+      window.monaco.editor.createModel(this.modified || '', this.language)
     )
-    this.diffEditor = window.monaco.editor.createDiffEditor(
-      this.$refs.container,
-      {
+    this.diffEditor = markRaw(
+      window.monaco.editor.createDiffEditor(this.$refs.container, {
         readOnly: true,
         originalEditable: false,
         automaticLayout: true,
@@ -111,7 +109,7 @@ export default {
         scrollBeyondLastLine: false,
         folding: true,
         padding: { top: 8, bottom: 8 },
-      }
+      })
     )
     this.diffEditor.setModel({
       original: this.originalModel,

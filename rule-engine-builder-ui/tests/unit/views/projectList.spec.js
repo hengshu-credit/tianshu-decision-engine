@@ -210,6 +210,25 @@ describe('ProjectList — 项目操作', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
+  test('操作链接按业务语义使用不同颜色类型', () => {
+    const actionTypes = Object.fromEntries(
+      wrapper.findAll('el-button-stub')
+        .map(button => [button.text().trim(), button.attributes('type')])
+    )
+
+    expect(actionTypes).toMatchObject({
+      编辑: 'primary',
+      进入: 'success',
+      鉴权: 'warning',
+      API: 'info',
+      删除: 'danger'
+    })
+  })
+
+  test('操作链接使用同一不换行操作组', () => {
+    expect(wrapper.find('.project-action-links').exists()).toBe(true)
+  })
+
   test('handleCreate 打开创建弹窗并重置表单', () => {
     wrapper.vm.handleCreate()
     expect(wrapper.vm.dialogVisible).toBe(true)

@@ -119,6 +119,9 @@ function inheriltClassAndStyle() {
       this.$el.style[k] = v
     })
 }
+
+let operandPickerSequence = 0
+
 export default {
   components: {
     ExpressionEditorDialog,
@@ -149,6 +152,7 @@ export default {
       manualKind: '',
       manualOperand: null,
       manualPathCandidates: [],
+      expressionSourceKey: `operand-picker-${++operandPickerSequence}`,
       expressionSessionId: '',
       lastAppliedExpressionRevision: 0,
       valueTypes: [
@@ -217,7 +221,7 @@ export default {
         return
       }
 
-      const sourceKey = `operand-picker-${this._uid}`
+      const sourceKey = this.expressionSourceKey
       const sessionId = createExpressionSessionId(ruleId, sourceKey)
       const routeTitle =
         this.$route && this.$route.meta && this.$route.meta.title
@@ -448,8 +452,8 @@ export default {
   cursor: pointer;
 }
 .manual-back-button:hover {
-  border-color: #2878ff;
-  color: #2878ff;
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
 }
 .operand-path-candidates {
   position: absolute;
@@ -490,14 +494,14 @@ export default {
   border: 1px solid #cbd6e4;
   border-radius: 5px;
   background: #fff;
-  color: #2878ff;
+  color: var(--el-color-primary);
   font-family: Georgia, serif;
   font-size: 13px;
   font-style: italic;
   cursor: pointer;
 }
 .expression-button:hover {
-  border-color: #2878ff;
+  border-color: var(--el-color-primary);
   background: #edf5ff;
 }
 </style>

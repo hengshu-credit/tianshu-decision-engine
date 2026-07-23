@@ -60,7 +60,7 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         }
         query.orderByDesc(RuleFieldValidation::getUpdateTime).orderByDesc(RuleFieldValidation::getId);
         IPage<RuleFieldValidation> page = page(new Page<>(pageNum, pageSize), query);
-        fillProjectNames(page.getRecords());
+        decorateRules(page.getRecords());
         return page;
     }
 
@@ -77,13 +77,14 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         query.orderByAsc(RuleFieldValidation::getScope)
                 .orderByAsc(RuleFieldValidation::getValidationCode);
         List<RuleFieldValidation> result = list(query);
-        fillProjectNames(result);
+        decorateRules(result);
         return result;
     }
 
     @Transactional
     public RuleFieldValidation createRule(RuleFieldValidation rule) {
         normalizeAndValidate(rule);
+        rejectReservedCode(rule.getValidationCode());
         ensureUnique(rule);
         if (rule.getStatus() == null) rule.setStatus(1);
         save(rule);
@@ -92,17 +93,27 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
 
     @Transactional
     public void updateRule(RuleFieldValidation rule) {
-        if (rule == null || rule.getId() == null || getById(rule.getId()) == null) {
+        RuleFieldValidation existing =
+                rule == null || rule.getId() == null ? null : getById(rule.getId());
+        if (existing == null) {
             throw new IllegalArgumentException("字段校验规则不存在");
         }
+        if (BuiltinFieldValidationCatalog.isBuiltin(existing)) {
+            throw new IllegalArgumentException("系统内置校验规则不可编辑");
+        }
         normalizeAndValidate(rule);
+        rejectReservedCode(rule.getValidationCode());
         ensureUnique(rule);
         updateById(rule);
     }
 
     @Transactional
     public void deleteRule(Long id) {
-        if (id == null || getById(id) == null) throw new IllegalArgumentException("字段校验规则不存在");
+        RuleFieldValidation existing = id == null ? null : getById(id);
+        if (existing == null) throw new IllegalArgumentException("字段校验规则不存在");
+        if (BuiltinFieldValidationCatalog.isBuiltin(existing)) {
+            throw new IllegalArgumentException("系统内置校验规则不可删除");
+        }
         List<RuleDefinitionInputField> fields = inputFieldMapper.selectList(
                 new LambdaQueryWrapper<RuleDefinitionInputField>()
                         .isNotNull(RuleDefinitionInputField::getValidationRuleIds));
@@ -214,14 +225,23 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         }
     }
 
-    private void fillProjectNames(List<RuleFieldValidation> rules) {
+    private void decorateRules(List<RuleFieldValidation> rules) {
         if (rules == null || rules.isEmpty()) return;
+        for (RuleFieldValidation rule : rules) {
+            rule.setBuiltIn(BuiltinFieldValidationCatalog.isBuiltin(rule));
+        }
         List<Long> projectIds = rules.stream().map(RuleFieldValidation::getProjectId)
                 .filter(id -> id != null && id > 0).distinct().collect(Collectors.toList());
         if (projectIds.isEmpty()) return;
         Map<Long, String> names = projectMapper.selectBatchIds(projectIds).stream().collect(
                 Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (left, right) -> left));
         for (RuleFieldValidation rule : rules) rule.setProjectName(names.get(rule.getProjectId()));
+    }
+
+    private void rejectReservedCode(String code) {
+        if (BuiltinFieldValidationCatalog.isReservedCode(code)) {
+            throw new IllegalArgumentException("校验编码为系统内置规则保留");
+        }
     }
 
     private String required(String value, String message) {

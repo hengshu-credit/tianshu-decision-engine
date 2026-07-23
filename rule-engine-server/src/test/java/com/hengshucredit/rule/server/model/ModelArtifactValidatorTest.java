@@ -64,6 +64,25 @@ public class ModelArtifactValidatorTest {
                 new byte[]{1, 2}, List.of("input_tensor"), List.of("Risk_Score"), null));
     }
 
+    @Test
+    public void optionalSampleEnvelopeChecksExpectedOutputsWhenProvided() {
+        ModelArtifactValidator validator = new ModelArtifactValidator();
+        byte[] bytes = pmml().getBytes(StandardCharsets.UTF_8);
+        Map<String, Object> passing = Map.of(
+                "$input", Map.of("risk_score", 3d),
+                "$expectedOutput", Map.of("prediction", 7d));
+
+        ModelValidationReport report = validator.validate("PMML", bytes,
+                List.of("risk_score"), List.of("prediction"), passing);
+
+        Assert.assertEquals("PASSED", report.getSampleStatus());
+        Map<String, Object> failing = Map.of(
+                "$input", Map.of("risk_score", 3d),
+                "$expectedOutput", Map.of("prediction", 8d));
+        Assert.assertThrows(IllegalArgumentException.class, () -> validator.validate("PMML", bytes,
+                List.of("risk_score"), List.of("prediction"), failing));
+    }
+
     private static String pmml() {
         return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<PMML xmlns=\"http://www.dmg.org/PMML-4_4\" version=\"4.4\">\n"

@@ -346,10 +346,12 @@ public class RuleModelService {
             validationReport.setInputSchema(exactObjectSchema(declaredInputs));
             validationReport.setOutputSchema(exactObjectSchema(declaredOutputs));
             if (sample != null && !sample.isEmpty()) {
-                assertExactFieldNames("ONNX sample input", sample.keySet(), declaredInputs);
+                Map<String, Object> sampleInput = sampleInput(sample);
+                assertExactFieldNames("ONNX sample input", sampleInput.keySet(), declaredInputs);
                 Map<String, Object> sampleResult = onnxModelExecutionService.execute(
-                        fileBytes, runtimeConfigJson, sample);
+                        fileBytes, runtimeConfigJson, sampleInput);
                 assertRequiredOutputs("ONNX sample output", sampleResult, declaredOutputs);
+                assertExpectedSampleOutputs(sampleExpectedOutput(sample), sampleResult, declaredOutputs);
                 validationReport.setSampleStatus("PASSED");
                 validationReport.getWarnings().removeIf(
                         warning -> warning.startsWith("No model sample"));
@@ -400,6 +402,49 @@ public class RuleModelService {
         } catch (RuntimeException e) {
             throw new IllegalArgumentException("Model sample must be a valid JSON object", e);
         }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sampleInput(Map<String, Object> sample) {
+        if (!sample.containsKey("$input") && !sample.containsKey("$expectedOutput")) return sample;
+        Object input = sample.get("$input");
+        if (!(input instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Model sample $input must be an object");
+        }
+        return (Map<String, Object>) input;
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> sampleExpectedOutput(Map<String, Object> sample) {
+        Object expected = sample.get("$expectedOutput");
+        if (expected == null) return null;
+        if (!(expected instanceof Map<?, ?>)) {
+            throw new IllegalArgumentException("Model sample $expectedOutput must be an object");
+        }
+        return (Map<String, Object>) expected;
+    }
+
+    private void assertExpectedSampleOutputs(Map<String, Object> expected,
+                                             Map<String, Object> actual,
+                                             List<String> declaredOutputs) {
+        if (expected == null) return;
+        assertExactFieldNames("ONNX sample expected output", expected.keySet(), declaredOutputs);
+        for (String name : declaredOutputs) {
+            Object expectedValue = expected.get(name);
+            Object actualValue = actual.get(name);
+            if (!sampleValueEquals(expectedValue, actualValue)) {
+                throw new IllegalArgumentException("ONNX sample expected output mismatch for exact field '"
+                        + name + "': expected " + expectedValue + ", actual " + actualValue);
+            }
+        }
+    }
+
+    private boolean sampleValueEquals(Object expected, Object actual) {
+        if (expected instanceof Number left && actual instanceof Number right) {
+            return new java.math.BigDecimal(left.toString())
+                    .compareTo(new java.math.BigDecimal(right.toString())) == 0;
+        }
+        return java.util.Objects.deepEquals(expected, actual);
     }
 
     private List<String> fieldNames(List<?> fields) {

@@ -1,4 +1,5 @@
 import { mount } from '@test-utils'
+import { isProxy } from 'vue'
 import * as monaco from 'monaco-editor'
 import MonacoEditor from '@/components/MonacoEditor.vue'
 
@@ -39,6 +40,7 @@ describe('MonacoEditor', () => {
       })
     )
     expect(editor.layout).not.toHaveBeenCalled()
+    expect(isProxy(wrapper.vm.editor)).toBe(false)
 
     wrapper.unmount()
   })

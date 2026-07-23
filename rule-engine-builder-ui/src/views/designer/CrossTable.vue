@@ -184,7 +184,7 @@
                 size="small"
                 :icon="ElIconPlus"
                 @click="addColumn"
-                style="color: #1890ff"
+                style="color: var(--el-color-primary)"
               />
             </th>
           </tr>
@@ -250,7 +250,7 @@
                 link
                 size="small"
                 :icon="ElIconPlus"
-                style="color: #1890ff"
+                style="color: var(--el-color-primary)"
                 >添加行</el-button
               >
             </td>
@@ -724,7 +724,7 @@ export default {
   font-size: 15px;
 }
 .row-icon {
-  color: #1890ff;
+  color: var(--el-color-primary);
 }
 .col-icon {
   color: #52c41a;
@@ -885,7 +885,7 @@ export default {
   height: 32px;
   padding: 4px;
   &:hover {
-    background: #e6f7ff;
+    background: var(--el-color-primary-light-9);
   }
 }
 .add-row-cell {
@@ -902,7 +902,7 @@ export default {
   gap: 8px;
 }
 .preview-icon {
-  color: #1890ff;
+  color: var(--el-color-primary);
   font-size: 14px;
   flex-shrink: 0;
 }

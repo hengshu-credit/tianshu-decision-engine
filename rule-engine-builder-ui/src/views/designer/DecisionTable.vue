@@ -118,44 +118,60 @@
                 >
                   <div class="dt-act-head">
                     <span class="col-tag act-tag">THEN</span>
-                    <span class="dt-act-title">{{
-                      operandDisplay(act.targetOperand) || '未选目标字段'
-                    }}</span>
+                    <span
+                      class="dt-act-title"
+                      :title="
+                        operandDisplay(act.targetOperand) || '未选目标字段'
+                      "
+                      >{{
+                        operandDisplay(act.targetOperand) || '未选目标字段'
+                      }}</span
+                    >
                     <span class="th-actions">
                       <el-icon><el-icon-delete /></el-icon>
                     </span>
                   </div>
                   <div class="dt-act-body">
-                    <operand-picker
-                      :value="act.targetOperand"
-                      :vars="varPickerOptions"
-                      :selected-vars="selectedVarPickerOptions"
-                      :allowed-kinds="writeOperandKinds"
-                      writable-only
-                      placeholder="选择目标字段"
-                      size="small"
-                      @input="
-                        (operand) =>
-                          setActionOperand(act, 'targetOperand', operand)
-                      "
-                    />
-                    <span class="dt-act-eq">=</span>
-                    <operand-picker
-                      :value="act.valueOperand"
-                      :vars="varPickerOptions"
-                      :functions="projectFunctions"
-                      :selected-vars="selectedVarPickerOptions"
-                      :allowed-kinds="valueOperandKinds"
-                      :expected-type="
-                        act.targetOperand && act.targetOperand.valueType
-                      "
-                      placeholder="选择阈值、路径或字段"
-                      size="small"
-                      @input="
-                        (operand) =>
-                          setActionOperand(act, 'valueOperand', operand)
-                      "
-                    />
+                    <div
+                      class="dt-act-operand"
+                      :title="operandDisplay(act.targetOperand) || ''"
+                    >
+                      <operand-picker
+                        :value="act.targetOperand"
+                        :vars="varPickerOptions"
+                        :selected-vars="selectedVarPickerOptions"
+                        :allowed-kinds="writeOperandKinds"
+                        writable-only
+                        placeholder="选择目标字段"
+                        size="small"
+                        @input="
+                          (operand) =>
+                            setActionOperand(act, 'targetOperand', operand)
+                        "
+                      />
+                    </div>
+                    <span class="dt-act-eq" aria-hidden="true">=</span>
+                    <div
+                      class="dt-act-operand"
+                      :title="operandDisplay(act.valueOperand) || ''"
+                    >
+                      <operand-picker
+                        :value="act.valueOperand"
+                        :vars="varPickerOptions"
+                        :functions="projectFunctions"
+                        :selected-vars="selectedVarPickerOptions"
+                        :allowed-kinds="valueOperandKinds"
+                        :expected-type="
+                          act.targetOperand && act.targetOperand.valueType
+                        "
+                        placeholder="选择阈值、路径或字段"
+                        size="small"
+                        @input="
+                          (operand) =>
+                            setActionOperand(act, 'valueOperand', operand)
+                        "
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
@@ -764,7 +780,7 @@ export default {
 }
 .dt-title-icon {
   font-size: 18px;
-  color: #1890ff;
+  color: var(--el-color-primary);
   margin-right: 8px;
 }
 .dt-title {
@@ -787,7 +803,7 @@ export default {
   cursor: pointer;
   font-size: 14px;
   &:hover {
-    color: #1890ff;
+    color: var(--el-color-primary);
   }
 }
 .dt-var-status {
@@ -874,7 +890,7 @@ export default {
   background: #fafffe;
   border: 1px solid #d9f7f0;
   border-radius: 6px;
-  padding: 8px 10px;
+  padding: 8px;
   width: 100%;
   box-sizing: border-box;
 }
@@ -882,7 +898,7 @@ export default {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 6px;
+  margin-bottom: 4px;
   flex-wrap: wrap;
 }
 .dt-act-title {
@@ -898,18 +914,26 @@ export default {
 .dt-act-body {
   width: 100%;
   min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  :deep(.var-picker-wrap) {
-    flex: 1 1 0;
-    width: auto !important;
-    min-width: 0;
-  }
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+}
+.dt-act-operand {
+  width: 100%;
+  min-width: 0;
+}
+.dt-act-operand :deep(.el-input__inner) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .dt-act-eq {
-  color: #909399;
-  font-weight: 600;
+  justify-self: center;
+  height: 16px;
+  color: #a0aec0;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 16px;
 }
 .dt-act-value-ctl {
   width: 100%;
@@ -960,7 +984,7 @@ export default {
     font-size: 13px;
     transition: color 0.2s;
     &:hover {
-      color: #1890ff;
+      color: var(--el-color-primary);
     }
     .action-delete {
       color: #f76e6c;

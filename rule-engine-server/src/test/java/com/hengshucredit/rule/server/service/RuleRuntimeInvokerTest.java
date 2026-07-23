@@ -348,16 +348,75 @@ public class RuleRuntimeInvokerTest {
         definition.setScope("PROJECT");
         RuleDefinitionOutputField frozen = new RuleDefinitionOutputField();
         frozen.setScriptName("frozenOutput");
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot =
+                new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        snapshot.getOutputFields().add(frozen);
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("frozenOutput", "FROZEN");
         values.put("currentOutput", "CURRENT");
 
         invoker.enterArtifact(definition, 9L, "target_project", values,
                 Collections.<String, Object>emptyMap(), false, "{}",
-                Collections.singletonList(frozen));
+                snapshot);
         try {
             Map<String, Object> output = invoker.collectTerminationResult();
             assertEquals(Collections.<String, Object>singletonMap("frozenOutput", "FROZEN"), output);
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
+    public void parentArtifactCallsItsBundledChildWithoutCurrentPublishedLookup() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        FrozenChildResolver resolver = new FrozenChildResolver();
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot =
+                new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        RuleVariable variable = new RuleVariable();
+        variable.setId(88L);
+        variable.setScriptName("frozenScore");
+        snapshot.getVariables().add(variable);
+        ArtifactRuntimeSnapshotService.NestedRuleSnapshot child =
+                new ArtifactRuntimeSnapshotService.NestedRuleSnapshot();
+        child.setDefinitionId(2L);
+        child.setRuleCode("CHILD");
+        child.setRuleName("冻结子规则");
+        child.setModelType("SCRIPT");
+        child.setCompiledScript("frozenScore");
+        child.setModelJson("{\"script\":\"frozenScore\"}");
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setScriptName("frozenScore");
+        input.setFieldType("INTEGER");
+        child.setInputFields(Collections.singletonList(input));
+        snapshot.getNestedRules().add(child);
+        RulePublishedMapper forbiddenMapper = (RulePublishedMapper) Proxy.newProxyInstance(
+                RulePublishedMapper.class.getClassLoader(),
+                new Class<?>[]{RulePublishedMapper.class},
+                (proxy, method, args) -> {
+                    throw new AssertionError("父制品不得查询当前子规则发布记录");
+                });
+        ReflectionTestUtils.setField(invoker, "publishedMapper", forbiddenMapper);
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(invoker, "functionRegistrar", new FunctionRegistrar());
+        RuleDefinition root = new RuleDefinition();
+        root.setId(10L);
+        root.setProjectId(9L);
+        root.setRuleCode("PARENT");
+        root.setRuleName("父规则");
+        root.setModelType("SCRIPT");
+        root.setScope("PROJECT");
+
+        invoker.enterArtifact(root, 9L, "target_project", new LinkedHashMap<String, Object>(),
+                Collections.<String, Object>emptyMap(), false, "{}", snapshot);
+        try {
+            assertEquals(Integer.valueOf(73), invoker.executeRuleById("2"));
+            assertTrue(resolver.snapshotCalled);
+            assertFalse(resolver.currentCalled);
         } finally {
             invoker.exit();
         }

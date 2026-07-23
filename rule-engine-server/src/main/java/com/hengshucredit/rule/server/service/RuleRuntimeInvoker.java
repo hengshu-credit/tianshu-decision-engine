@@ -254,23 +254,36 @@ public class RuleRuntimeInvoker {
         if (session == null) {
             throw new IllegalStateException("executeRule 只能在规则执行过程中调用");
         }
-        RuleDefinition definition = definitionId == null
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot rootArtifactSnapshot =
+                session.getArtifactRuntimeSnapshot();
+        ArtifactRuntimeSnapshotService.NestedRuleSnapshot frozenRule = session.isTestMode()
+                || rootArtifactSnapshot == null ? null
+                : rootArtifactSnapshot.findNestedRule(definitionId, ruleCode);
+        RuleDefinition definition = frozenRule != null ? frozenDefinition(frozenRule, session)
+                : definitionId == null
                 ? findDefinitionForTest(ruleCode, session.getCurrentProjectId())
                 : definitionService.getById(definitionId);
-        String targetRuleCode = definition != null && hasText(definition.getRuleCode())
+        String targetRuleCode = frozenRule != null ? frozenRule.getRuleCode()
+                : definition != null && hasText(definition.getRuleCode())
                 ? definition.getRuleCode() : ruleCode;
         if (session.getRuleStack().contains(targetRuleCode)) {
             throw new IllegalStateException("规则调用存在循环: "
                     + buildCyclePath(session.getRuleStack(), targetRuleCode));
         }
-        RuleDefinitionContent currentContent = session.isTestMode() && definition != null
+        RuleDefinitionContent currentContent = frozenRule == null && session.isTestMode() && definition != null
                 ? definitionService.getContent(definition.getId()) : null;
         RulePublished published = null;
         String compiledScript;
         Long targetDefinitionId;
         boolean useCurrentContent = currentContent != null
                 && Integer.valueOf(1).equals(currentContent.getCompileStatus());
-        if (useCurrentContent) {
+        if (frozenRule != null) {
+            if (!hasText(frozenRule.getCompiledScript())) {
+                throw new IllegalStateException("制品中的子规则缺少冻结编译脚本: " + targetRuleCode);
+            }
+            compiledScript = frozenRule.getCompiledScript();
+            targetDefinitionId = frozenRule.getDefinitionId();
+        } else if (useCurrentContent) {
             compiledScript = currentContent.getCompiledScript();
             targetDefinitionId = definition.getId();
         } else {
@@ -295,23 +308,26 @@ public class RuleRuntimeInvoker {
         Map<String, Object> previousRule = RuntimeContextBridge.currentRule();
         List<String> previousMatchedConditions = RuntimeContextBridge.currentMatchedConditions();
         Map<String, Map<String, Object>> previousSourceStates = RuntimeContextBridge.currentSourceStates();
-        Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
-        String projectCode = hasText(publishedProjectCode)
+        Long projectId = frozenRule != null ? previousProjectId
+                : definition != null ? definition.getProjectId() : previousProjectId;
+        String projectCode = frozenRule != null ? previousProjectCode : hasText(publishedProjectCode)
                 ? publishedProjectCode : resolveProjectCode(projectId);
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published == null
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = frozenRule != null
+                ? rootArtifactSnapshot : published == null
                 || published.getArtifactId() == null ? null
                 : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), targetDefinitionId, projectId);
         if (runtimeSnapshot != null) {
             registerFrozenFunctions(runtimeSnapshot.getFunctions());
-            if (hasText(runtimeSnapshot.getCompiledScript())) {
+            if (frozenRule == null && hasText(runtimeSnapshot.getCompiledScript())) {
                 compiledScript = runtimeSnapshot.getCompiledScript();
             }
-            if (definition != null && hasText(runtimeSnapshot.getModelType())) {
+            if (frozenRule == null && definition != null && hasText(runtimeSnapshot.getModelType())) {
                 definition.setModelType(runtimeSnapshot.getModelType());
             }
         }
-        String childModelJson = runtimeSnapshot != null && runtimeSnapshot.getModelJson() != null
+        String childModelJson = frozenRule != null ? frozenRule.getModelJson()
+                : runtimeSnapshot != null && runtimeSnapshot.getModelJson() != null
                 ? runtimeSnapshot.getModelJson() : useCurrentContent
                 ? currentContent.getModelJson() : (published == null ? null : published.getModelJson());
         RuleTraceFrame childTrace = createTraceFrame(definition, projectCode,
@@ -335,7 +351,8 @@ public class RuleRuntimeInvoker {
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
-            List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
+            List<RuleDefinitionInputField> childFields = frozenRule != null
+                    ? frozenRule.getInputFields() : runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)
                     : runtimeSnapshot.getInputFields();
             Set<String> requiredNames = requiredInputNames(childFields);
@@ -426,6 +443,22 @@ public class RuleRuntimeInvoker {
     private Set<String> requiredInputNames(Long definitionId) {
         return requiredInputNames(definitionId == null
                 ? Collections.emptyList() : definitionService.listInputFields(definitionId));
+    }
+
+    private RuleDefinition frozenDefinition(
+            ArtifactRuntimeSnapshotService.NestedRuleSnapshot frozenRule,
+            RuleExecutionSession session) {
+        RuleDefinition definition = new RuleDefinition();
+        definition.setId(frozenRule.getDefinitionId());
+        definition.setProjectId(session.getCurrentProjectId());
+        definition.setRuleCode(frozenRule.getRuleCode());
+        definition.setRuleName(frozenRule.getRuleName());
+        definition.setModelType(hasText(frozenRule.getModelType())
+                ? frozenRule.getModelType() : "SCRIPT");
+        definition.setScope(session.getCurrentProjectId() != null
+                && session.getCurrentProjectId() > 0 ? "PROJECT" : "GLOBAL");
+        definition.setStatus(1);
+        return definition;
     }
 
     private Set<String> requiredInputNames(List<RuleDefinitionInputField> fields) {

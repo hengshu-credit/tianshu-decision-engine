@@ -245,12 +245,7 @@
                   <el-option
                     v-for="item in fieldValidationOptions"
                     :key="item.id"
-                    :label="
-                      item.validationName +
-                      '（' +
-                      fieldValidationTypeLabel(item.validationType) +
-                      '）'
-                    "
+                    :label="fieldValidationOptionLabel(item)"
                     :value="item.id"
                   />
                 </el-select>
@@ -2657,6 +2652,13 @@ export default {
         }[type] || type
       )
     },
+    fieldValidationOptionLabel(item) {
+      if (!item) return ''
+      const prefix = item.builtIn ? '【系统内置】' : ''
+      return `${prefix}${item.validationName}（${this.fieldValidationTypeLabel(
+        item.validationType
+      )}）`
+    },
     async selectVersionPair(leftVersion, rightVersion) {
       this.leftVersionNumber = leftVersion
       this.rightVersionNumber = rightVersion
@@ -3023,7 +3025,7 @@ export default {
 .script-name-text {
   font-family: 'Courier New', monospace;
   font-size: 13px;
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .script-unbound {
   color: #c0c4cc;

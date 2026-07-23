@@ -996,7 +996,7 @@ $editor-border: #313244;
   font-size: 12px;
   transition: background 0.15s;
   &:hover {
-    background: #e6f7ff;
+    background: var(--el-color-primary-light-9);
   }
 }
 .se-var-indent {

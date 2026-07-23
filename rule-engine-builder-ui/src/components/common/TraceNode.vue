@@ -199,7 +199,7 @@ export default {
 }
 .nd-box:hover {
   border-color: #a8c8f0;
-  box-shadow: 0 2px 6px rgba(64, 158, 255, 0.12);
+  box-shadow: 0 2px 6px var(--tianshu-primary-shadow);
 }
 .nd-txt {
   font-weight: 600;
@@ -224,7 +224,7 @@ export default {
   color: #c45656;
 }
 .nd-res.is-val {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .nd-res.is-skip {
   color: #c0c4cc;
@@ -287,23 +287,23 @@ export default {
 .nd:not(.is-dim) > .nd-kids:not(.no-stem)::before {
   width: 2px;
   margin-left: -0.5px;
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .nd-kids > .nd:not(.is-dim)::before {
   width: 2px;
   margin-left: -0.5px;
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .nd-kids > .nd:not(.is-dim):first-child:not(:last-child)::after {
   height: 2px;
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .nd-kids > .nd:not(.is-dim):last-child:not(:first-child)::after {
   height: 2px;
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 .nd-kids > .nd:not(.is-dim):not(:first-child):not(:last-child)::after {
   height: 2px;
-  background: #409eff;
+  background: var(--el-color-primary);
 }
 </style>

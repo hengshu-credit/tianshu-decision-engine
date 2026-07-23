@@ -4272,7 +4272,7 @@ export default {
   flex-shrink: 0;
   padding: 3px 8px;
   border-radius: 4px;
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   color: #1677d2;
   font-size: 11px;
   font-weight: 700;
@@ -4415,7 +4415,7 @@ export default {
   color: #f76e6c;
 }
 .var-v.is-val {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .trace-step-list {
   display: flex;
@@ -4433,7 +4433,7 @@ export default {
   height: 32px;
   margin-top: 10px;
   border-radius: 50%;
-  background: #ecf5ff;
+  background: var(--el-color-primary-light-9);
   border: 1px solid #b3d8ff;
   color: #1677d2;
   display: flex;
@@ -4490,7 +4490,7 @@ export default {
   padding: 2px 8px;
   border-radius: 4px;
   background: #f2f6fc;
-  color: #409eff;
+  color: var(--el-color-primary);
   font-size: 12px;
   font-weight: 700;
   line-height: 20px;
@@ -4538,7 +4538,7 @@ export default {
   color: #f76e6c;
 }
 .result-val.is-val {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .t-empty {
   text-align: center;
@@ -4553,7 +4553,7 @@ export default {
   color: #909399;
 }
 .fullscreen-btn:hover {
-  color: #409eff;
+  color: var(--el-color-primary);
 }
 .fs-mask {
   position: fixed;
@@ -4643,7 +4643,7 @@ export default {
   background: #fa8c16;
 }
 .fc-icon--calculation {
-  background: #1890ff;
+  background: var(--el-color-primary);
 }
 .fc-icon--assign {
   background: #13c2c2;
@@ -4667,7 +4667,7 @@ export default {
   border-left-color: #fa8c16;
 }
 .fc-card--calculation {
-  border-left-color: #1890ff;
+  border-left-color: var(--el-color-primary);
 }
 .fc-card--assign {
   border-left-color: #13c2c2;
@@ -4699,16 +4699,16 @@ export default {
   white-space: nowrap;
 }
 .fc-badge--hit {
-  background: #e6f7ff;
-  color: #1890ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 .fc-badge--miss {
   background: #fff2e8;
   color: #fa541c;
 }
 .fc-badge--done {
-  background: #e6f7ff;
-  color: #1890ff;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
 }
 .fc-badge--end {
   background: #f6ffed;
@@ -4727,7 +4727,7 @@ export default {
 }
 .fc-cond-var {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #1890ff;
+  color: var(--el-color-primary);
   background: #f0f7ff;
   padding: 1px 6px;
   border-radius: 3px;
@@ -4829,7 +4829,7 @@ export default {
 }
 .fc-func-arg-val {
   font-family: 'Consolas', 'Monaco', monospace;
-  color: #1890ff;
+  color: var(--el-color-primary);
 }
 .fc-expr-row {
   display: flex;
@@ -4848,7 +4848,7 @@ export default {
 .fc-expr-result {
   font-size: 18px;
   font-weight: 700;
-  color: #1890ff;
+  color: var(--el-color-primary);
   flex-shrink: 0;
   padding: 2px 12px;
   background: #f0f7ff;

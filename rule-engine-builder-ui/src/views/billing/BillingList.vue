@@ -972,7 +972,13 @@ export default {
         this.summaryLoading = false
       }
     },
-    onTabChange() {
+    onTabChange(tab) {
+      const paneName =
+        tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name))
+      this.activeTab =
+        paneName && paneName.value !== undefined
+          ? paneName.value
+          : paneName || this.activeTab
       if (this.activeTab === 'config') this.loadConfigs()
       if (this.activeTab === 'record') this.loadRecords()
       if (this.activeTab === 'summary') this.loadSummaries()

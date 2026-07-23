@@ -75,7 +75,7 @@ export default {
   width: 24px;
   height: 24px;
   border-radius: 4px;
-  background: #e6f7ff;
+  background: var(--el-color-primary-light-9);
   color: #1677a6;
   font-size: 12px;
   font-weight: 700;

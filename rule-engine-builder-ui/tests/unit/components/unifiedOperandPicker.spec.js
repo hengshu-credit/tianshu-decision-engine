@@ -76,16 +76,35 @@ describe('统一 OperandPicker', () => {
 
     expect(dispatch).toHaveBeenCalledWith('expressionSessions/openSession', expect.objectContaining({
       ruleId: 7,
-      sourceKey: `operand-picker-${wrapper.vm._uid}`,
+      sourceKey: wrapper.vm.expressionSourceKey,
       title: '决策表 · 表达式',
       draft: source
     }))
+    expect(payload.sourceKey).not.toContain('undefined')
     expect(payload.draft).not.toBe(source)
     expect(push).toHaveBeenCalledWith({
       name: 'ExpressionEditor',
       params: { ruleId: '7', sessionId: payload.sessionId }
     })
     expect(wrapper.vm.editorVisible).toBe(false)
+  })
+
+  test('同一规则中的多个选择器使用独立会话', async() => {
+    const dispatch = vi.fn().mockResolvedValue()
+    const mocks = {
+      $route: { path: '/designer/table/7', params: { id: '7' }, meta: { title: '决策表设计器' } },
+      $router: { push: vi.fn() },
+      $store: { dispatch, getters: {} }
+    }
+    const first = mountPicker({}, { mocks })
+    const second = mountPicker({}, { mocks })
+
+    await first.vm.openEditor()
+    await second.vm.openEditor()
+
+    const sourceKeys = dispatch.mock.calls.map(call => call[1].sourceKey)
+    expect(new Set(sourceKeys).size).toBe(2)
+    expect(sourceKeys.every(sourceKey => !sourceKey.includes('undefined'))).toBe(true)
   })
 
   test('缓存设计器恢复后只回填一次最新编译修订', async() => {

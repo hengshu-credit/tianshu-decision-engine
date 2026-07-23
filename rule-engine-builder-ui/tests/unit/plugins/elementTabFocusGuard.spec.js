@@ -25,12 +25,15 @@ const TabPaneStub = {
     name: { type: String, required: true },
     label: { type: String, default: '' },
   },
-  computed: {
-    active() {
-      return this.$parent.currentName === this.name
-    },
-  },
-  template: '<div :id="`pane-${name}`"><slot /></div>',
+  template: `
+    <div
+      :id="'pane-' + name"
+      role="tabpanel"
+      :aria-hidden="$parent.currentName !== name"
+    >
+      <slot />
+    </div>
+  `,
 }
 
 const TabsHost = {

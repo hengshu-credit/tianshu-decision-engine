@@ -78,7 +78,8 @@ async function mountAndWait(content = { modelJson: '{}', openApiConfigJson: null
   variableApi.listVariablesByProject.mockResolvedValueOnce({ data: mockVariables() })
   variableApi.listVariables.mockResolvedValueOnce({ data: { records: [] } })
   variableApi.listAvailableFieldValidations.mockResolvedValueOnce({ data: [{
-    id: 11, validationCode: 'age_required', validationName: '年龄必填', validationType: 'REQUIRED'
+    id: 11, validationCode: 'builtin_required', validationName: '必填',
+    validationType: 'REQUIRED', builtIn: true
   }, {
     id: 12, validationCode: 'age_min', validationName: '最小年龄', validationType: 'MIN_VALUE'
   }] })
@@ -602,6 +603,16 @@ describe('RuleDetail version history', () => {
 })
 
 describe('RuleDetail — 输入字段校验配置', () => {
+  test('字段选择器明确标识系统内置规则', async () => {
+    const wrapper = await mountAndWait()
+
+    expect(wrapper.vm.fieldValidationOptionLabel(wrapper.vm.fieldValidationOptions[0]))
+      .toBe('【系统内置】必填（必填）')
+    expect(wrapper.vm.fieldValidationOptionLabel(wrapper.vm.fieldValidationOptions[1]))
+      .toBe('最小年龄（最小值）')
+    wrapper.unmount()
+  })
+
   test('加载继承的规则，并保存为当前规则显式覆盖', async () => {
     const wrapper = await mountAndWait()
     definitionApi.updateInputField.mockResolvedValueOnce({})

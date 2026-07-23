@@ -376,7 +376,7 @@ export default {
   box-shadow: 0 2px 5px rgba(38, 57, 77, 0.05);
 }
 .canvas-node--selected {
-  border-color: #2878ff;
+  border-color: var(--el-color-primary);
   box-shadow: 0 0 0 3px rgba(40, 120, 255, 0.12);
 }
 .canvas-node--empty {
@@ -388,7 +388,7 @@ export default {
   padding: 2px 5px;
   border-radius: 4px;
   background: #edf4ff;
-  color: #2878ff;
+  color: var(--el-color-primary);
   font-size: 11px;
 }
 .canvas-node strong {
@@ -430,8 +430,8 @@ export default {
   cursor: pointer;
 }
 .canvas-node-actions button:hover {
-  border-color: #2878ff;
-  color: #2878ff;
+  border-color: var(--el-color-primary);
+  color: var(--el-color-primary);
 }
 .canvas-collapse,
 .canvas-collapse-spacer {
@@ -448,7 +448,7 @@ export default {
 }
 .canvas-collapse:hover {
   background: #edf5ff;
-  color: #2878ff;
+  color: var(--el-color-primary);
 }
 .canvas-collapse__count {
   position: absolute;
@@ -457,7 +457,7 @@ export default {
   min-width: 18px;
   padding: 1px 4px;
   border-radius: 9px;
-  background: #2878ff;
+  background: var(--el-color-primary);
   color: #fff;
   font-size: 10px;
   line-height: 16px;
@@ -485,7 +485,7 @@ export default {
   padding: 2px 7px;
   border-radius: 4px;
   background: #eef4ff;
-  color: #2878ff;
+  color: var(--el-color-primary);
   font-family: Consolas, monospace;
   font-size: 12px;
   font-weight: 700;

@@ -117,28 +117,32 @@
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
       <el-table-column label="操作" min-width="220" align="center">
         <template v-slot="{ row }">
-          <el-button link size="small" @click="handleEdit(row)"
-            >编辑</el-button
-          >
-          <el-button
-            link
-            size="small"
-            @click="$router.push('/project/' + row.id)"
-            >进入</el-button
-          >
-          <el-button link size="small" @click="handleAuth(row)"
-            >鉴权</el-button
-          >
-          <el-button link size="small" @click="handleExportDoc(row)"
-            >API</el-button
-          >
-          <el-button
-            link
-            size="small"
-            class="btn-delete"
-            @click="handleDelete(row)"
-            >删除</el-button
-          >
+          <div class="project-action-links">
+            <el-button link size="small" type="primary" @click="handleEdit(row)"
+              >编辑</el-button
+            >
+            <el-button
+              link
+              size="small"
+              type="success"
+              @click="$router.push('/project/' + row.id)"
+              >进入</el-button
+            >
+            <el-button link size="small" type="warning" @click="handleAuth(row)"
+              >鉴权</el-button
+            >
+            <el-button link size="small" type="info" @click="handleExportDoc(row)"
+              >API</el-button
+            >
+            <el-button
+              link
+              size="small"
+              type="danger"
+              class="btn-delete"
+              @click="handleDelete(row)"
+              >删除</el-button
+            >
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -535,6 +539,18 @@ export default {
   color: #64748b;
   font-size: 12px;
   line-height: 1.5;
+}
+.project-action-links {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+
+  :deep(.el-button + .el-button) {
+    margin-left: 0;
+  }
 }
 @media (max-width: 1200px) {
   .workflow-steps {
