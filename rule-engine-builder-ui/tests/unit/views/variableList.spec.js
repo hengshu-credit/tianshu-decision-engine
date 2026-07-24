@@ -233,7 +233,9 @@ describe('VariableList — 标签方法', () => {
     const objectTable = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
     const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
 
-    expect(variableTable).toContain('label="更新时间"')
+    expect(variableTable).toContain('label="状态 / 更新"')
+    expect(variableTable).toContain('fixed="right"')
+    expect(variableTable).toContain('class="table-secondary-time"')
     expect(variableTable).toContain('formatUpdateTime(row.updateTime)')
     expect(objectTable).toContain('更新时间：{{ formatUpdateTime(node.object.updateTime) }}')
     expect(constantTable).toContain('label="更新时间"')

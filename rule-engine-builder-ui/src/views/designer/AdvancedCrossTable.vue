@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -1295,7 +1297,7 @@ export default {
   min-width: 0;
 }
 .seg-sep {
-  color: #999;
+  color: #64748b;
   flex-shrink: 0;
 }
 .act-card {
@@ -1406,7 +1408,7 @@ export default {
 }
 .test-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 8px;
 }
 .test-result {

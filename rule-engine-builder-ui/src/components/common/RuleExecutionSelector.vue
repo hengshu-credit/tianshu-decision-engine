@@ -199,7 +199,7 @@ export default {
 }
 .field-count {
   width: 46px;
-  color: #909399;
+  color: #64748b;
 }
 .field-chip {
   max-width: 160px;
@@ -216,7 +216,7 @@ export default {
   background: #e6f6f3;
 }
 .field-more {
-  color: #909399;
+  color: #64748b;
 }
 .rule-summary + :deep(.el-alert),
 :deep(.el-alert + .rule-summary) {

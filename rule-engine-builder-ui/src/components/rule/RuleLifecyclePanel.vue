@@ -6,7 +6,7 @@
           <span class="eyebrow">规则生命周期</span>
           <div class="state-line">
             <strong>修订 v{{ revision.revisionNo || '—' }}</strong>
-            <el-tag :type="stateType" size="small">{{ state }}</el-tag>
+            <el-tag :type="stateType" size="small">{{ stateLabel }}</el-tag>
           </div>
         </div>
         <div v-if="onlineArtifactDigest" class="online-artifact">
@@ -52,6 +52,7 @@ export default {
   data() { return { forceReason: '', comment: '' } },
   computed: {
     state() { return this.revision.state || 'DRAFT' },
+    stateLabel() { return ({ DRAFT: '草稿', REVIEW: '评审中', APPROVED: '已批准', PUBLISHED: '已发布', OFFLINE: '已下线' })[this.state] || this.state },
     stateType() { return ({ DRAFT: 'info', REVIEW: 'warning', APPROVED: 'success', PUBLISHED: 'success', OFFLINE: 'info' })[this.state] || 'info' },
     approvalReasonMissing() { return Boolean(this.validationReport && this.validationReport.breakingSchemaChange && !this.forceReason.trim()) }
   },

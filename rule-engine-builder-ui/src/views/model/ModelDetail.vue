@@ -143,7 +143,7 @@
             justify-content: space-between;
           "
         >
-          <span style="color: #909399; font-size: 12px">
+          <span style="color: #64748b; font-size: 12px">
             共
             {{ model.inputFields ? model.inputFields.length : 0 }}
             个字段，请关联引擎变量
@@ -260,7 +260,7 @@
                 <el-button
                   link
                   size="small"
-                  style="color: #909399"
+                  style="color: #64748b"
                   @click="cancelEditInput(row)"
                   >取消</el-button
                 >
@@ -287,7 +287,7 @@
         />
         <div
           v-if="!model.inputFields || model.inputFields.length === 0"
-          style="text-align: center; padding: 40px 0; color: #909399"
+          style="text-align: center; padding: 40px 0; color: #64748b"
         >
           暂无输入字段
         </div>
@@ -308,7 +308,7 @@
             justify-content: space-between;
           "
         >
-          <span style="color: #909399; font-size: 12px">
+          <span style="color: #64748b; font-size: 12px">
             共
             {{ model.outputFields ? model.outputFields.length : 0 }}
             个字段，请关联引擎变量
@@ -453,7 +453,7 @@
                 <el-button
                   link
                   size="small"
-                  style="color: #909399"
+                  style="color: #64748b"
                   @click="cancelEditOutput(row)"
                   >取消</el-button
                 >
@@ -480,7 +480,7 @@
         />
         <div
           v-if="!model.outputFields || model.outputFields.length === 0"
-          style="text-align: center; padding: 40px 0; color: #909399"
+          style="text-align: center; padding: 40px 0; color: #64748b"
         >
           暂无输出字段
         </div>
@@ -571,7 +571,7 @@
       <!-- 数据未就绪时显示加载中，防止旧数据闪烁 -->
       <div
         v-if="!testReady"
-        style="padding: 40px; text-align: center; color: #909399"
+        style="padding: 40px; text-align: center; color: #64748b"
       >
         正在加载...
       </div>
@@ -698,8 +698,8 @@
                 type="date"
                 placeholder="选择日期"
                 style="width: 100%"
-                format="yyyy-MM-dd"
-                value-format="yyyy-MM-dd"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
               />
               <el-input
                 v-else
@@ -711,7 +711,7 @@
           </div>
           <div
             v-else
-            style="text-align: center; padding: 30px 0; color: #909399"
+            style="text-align: center; padding: 30px 0; color: #64748b"
           >
             暂无输入字段，请切换到 JSON 模式手动编辑参数
           </div>
@@ -763,7 +763,7 @@
           </div>
           <div
             v-if="testResult.note"
-            style="color: #909399; font-size: 12px; margin-bottom: 8px"
+            style="color: #64748b; font-size: 12px; margin-bottom: 8px"
           >
             {{ testResult.note }}
           </div>
@@ -2085,7 +2085,7 @@ export default {
   white-space: nowrap;
 }
 .script-unbound {
-  color: #c0c4cc;
+  color: #64748b;
   font-style: italic;
 }
 .default-value-info {
@@ -2135,7 +2135,7 @@ export default {
 }
 .var-switch-btn {
   padding: 4px 6px;
-  color: #909399;
+  color: #64748b;
   flex-shrink: 0;
 }
 .var-switch-btn:hover {
@@ -2208,7 +2208,7 @@ export default {
 }
 .test-field-hint {
   font-size: 11px;
-  color: #c0c4cc;
+  color: #64748b;
   margin-top: 4px;
   font-family: 'Courier New', monospace;
   white-space: nowrap;

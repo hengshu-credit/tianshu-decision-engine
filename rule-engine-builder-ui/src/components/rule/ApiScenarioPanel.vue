@@ -592,7 +592,7 @@ export default {
 .scenario-hint,
 .field-tip,
 .field-path {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .scenario-alert {
@@ -641,7 +641,7 @@ export default {
 }
 .empty-fields {
   padding: 80px 20px;
-  color: #909399;
+  color: #64748b;
   text-align: center;
 }
 @media screen and (max-width: 1000px) {

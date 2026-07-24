@@ -21,4 +21,11 @@ describe('RuleLifecyclePanel', () => {
     await wrapper.vm.$nextTick()
     expect(wrapper.vm.approvalReasonMissing).toBe(false)
   })
+
+  test('生命周期状态对业务人员显示中文', () => {
+    const wrapper = mount(RuleLifecyclePanel, {
+      props: { revision: { state: 'APPROVED', revisionNo: 4 } }
+    })
+    expect(wrapper.vm.stateLabel).toBe('已批准')
+  })
 })

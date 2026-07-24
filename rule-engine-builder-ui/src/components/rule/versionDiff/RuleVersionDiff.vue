@@ -220,7 +220,7 @@ export default {
   display: flex;
   align-items: baseline;
   gap: 8px;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-version-diff-title strong {
@@ -282,7 +282,7 @@ export default {
 }
 .rule-script-diff-head span,
 .rule-script-ref-head span {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-script-ref-diff {

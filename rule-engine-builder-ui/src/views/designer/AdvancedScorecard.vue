@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -629,9 +631,9 @@ export default {
     },
     totalWeightColor() {
       const w = this.totalWeight
-      if (Math.abs(w - 1.0) < 0.05) return '#52c41a'
-      if (w > 1.05) return '#f5222d'
-      return '#fa8c16'
+      if (Math.abs(w - 1.0) < 0.05) return '#087a5d'
+      if (w > 1.05) return '#c93333'
+      return '#b45309'
     },
   },
   created() {
@@ -1116,14 +1118,14 @@ export default {
 }
 .result-var-switch-btn {
   padding: 4px 8px;
-  color: #909399;
+  color: #64748b;
   &:hover {
     color: var(--el-color-primary);
   }
 }
 .result-var-label {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-left: 4px;
 }
 .asc-group {
@@ -1280,7 +1282,7 @@ export default {
 .asc-empty {
   text-align: center;
   padding: 20px;
-  color: #bbb;
+  color: #64748b;
   font-size: 13px;
 }
 .asc-empty {
@@ -1420,7 +1422,7 @@ export default {
 }
 .test-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 8px;
 }
 .test-result {

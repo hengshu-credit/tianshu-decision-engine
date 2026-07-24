@@ -212,51 +212,50 @@
             />
           </div>
           <template v-slot:reference>
-            <div
+            <el-input
               ref="reference"
               class="vp-reference"
-              :style="referenceStyle"
-              tabindex="0"
-              role="button"
+              :class="{ 'vp-reference--readonly': operandMode }"
+              :size="size"
+              :placeholder="placeholder || '选择变量/常量/对象字段'"
+              :model-value="referenceInputValue"
+              :readonly="operandMode"
               aria-label="打开字段与表达式选择器"
-              @click.stop="openPopover"
-              @keydown.enter.prevent.stop="openPopover"
-              @keydown.space.prevent.stop="openPopover"
+              aria-haspopup="dialog"
+              :aria-expanded="popoverVisible ? 'true' : 'false'"
+              @focus="onInputFocus"
+              @update:model-value="onReferenceInput"
+              @click.stop="onInputClick"
+              @keydown="onReferenceKeydown"
             >
-              <el-input
-                :size="size"
-                :placeholder="placeholder || '选择变量/常量/对象字段'"
-                :model-value="referenceInputValue"
-                :readonly="operandMode"
-                style="width: 100%"
-                @focus="onInputFocus"
-                @update:model-value="onReferenceInput"
-                @click="onInputClick"
-              >
-                <template v-slot:prefix>
-                  <span
-                    v-if="operandMode && operandKindMetaValue.label"
-                    class="vp-operand-kind"
-                    :class="'vp-operand-kind--' + operandKindMetaValue.tone"
-                    :title="operandKindMetaValue.label"
-                    >{{ operandKindMetaValue.label }}</span
-                  >
-                </template>
-                <template v-slot:suffix>
-                  <el-icon class="el-input__icon">
-                    <el-icon-arrow-down />
-                  </el-icon>
-                  <el-icon
-                    v-if="value && allowCustom"
-                    class="el-input__icon vp-clear-btn"
-                    @mousedown.stop
-                    @click.stop="onClearValue"
-                  >
-                    <el-icon-close />
-                  </el-icon>
-                </template>
-              </el-input>
-            </div>
+              <template v-slot:prefix>
+                <span
+                  v-if="operandMode && operandKindMetaValue.label"
+                  class="vp-operand-kind"
+                  :class="'vp-operand-kind--' + operandKindMetaValue.tone"
+                  :title="operandKindMetaValue.label"
+                  >{{ operandKindMetaValue.label }}</span
+                >
+              </template>
+              <template v-slot:suffix>
+                <el-icon
+                  v-if="!value || !allowCustom"
+                  class="el-input__icon vp-arrow-btn"
+                  @mousedown.prevent
+                  @click.stop="openPopover"
+                >
+                  <el-icon-arrow-down />
+                </el-icon>
+                <el-icon
+                  v-if="value && allowCustom"
+                  class="el-input__icon vp-clear-btn"
+                  @mousedown.stop
+                  @click.stop="onClearValue"
+                >
+                  <el-icon-close />
+                </el-icon>
+              </template>
+            </el-input>
           </template>
         </el-popover>
 
@@ -484,14 +483,6 @@ export default {
     },
     operandKindMetaValue() {
       return operandKindMeta(this.value)
-    },
-    referenceStyle() {
-      const label = this.operandMode ? this.operandKindMetaValue.label : ''
-      return {
-        '--vp-prefix-offset': label
-          ? Math.min(84, label.length * 12 + 24) + 'px'
-          : '12px',
-      }
     },
     /** 当前选中的 varCode（用于高亮） */
     currentValue() {
@@ -1105,7 +1096,7 @@ export default {
       if (popper && popper.contentRef) return popper.contentRef
       if (popover && popover.popperElm) return popover.popperElm
 
-      var reference = this.$refs.reference
+      var reference = this.getReferenceElement()
       var trigger =
         reference && reference.getAttribute('aria-describedby')
           ? reference
@@ -1121,6 +1112,10 @@ export default {
       }
       return null
     },
+    getReferenceElement() {
+      var reference = this.$refs.reference
+      return reference && reference.$el ? reference.$el : reference || null
+    },
     moveFocusBeforeClose() {
       if (typeof document === 'undefined') return
       var popper = this.getPopoverElement()
@@ -1128,7 +1123,17 @@ export default {
       if (!popper || !active || !popper.contains(active)) return
       var reference = this.$refs.reference
       if (reference && typeof reference.focus === 'function') reference.focus()
-      else if (typeof active.blur === 'function') active.blur()
+      else {
+        var referenceElement = this.getReferenceElement()
+        var input =
+          referenceElement && referenceElement.matches('input')
+            ? referenceElement
+            : referenceElement && referenceElement.querySelector
+              ? referenceElement.querySelector('input')
+              : null
+        if (input && typeof input.focus === 'function') input.focus()
+        else if (typeof active.blur === 'function') active.blur()
+      }
     },
     setPickerInert(inert) {
       var popper = this.getPopoverElement()
@@ -1174,6 +1179,17 @@ export default {
     },
     /** 点击输入框时弹出选择器面板 */
     onInputClick() {
+      this.openPopover()
+    },
+    onReferenceKeydown(event) {
+      if (!event) return
+      var shouldOpen =
+        event.key === 'Enter' ||
+        event.key === 'ArrowDown' ||
+        (this.operandMode && event.key === ' ')
+      if (!shouldOpen) return
+      event.preventDefault()
+      event.stopPropagation()
       this.openPopover()
     },
     openPopover() {
@@ -1582,26 +1598,46 @@ export default {
   min-width: 0;
   width: 100%;
 }
-.vp-reference :deep(.el-input__prefix) {
-  display: flex;
-  align-items: center;
-  left: 6px;
+.vp-reference :deep(.el-input__wrapper) {
+  min-width: 0;
+  padding-left: 4px;
+  padding-right: 4px;
 }
-.vp-reference :deep(.el-input--prefix .el-input__inner) {
-  padding-left: var(--vp-prefix-offset, 12px);
+.vp-reference :deep(.el-input__inner) {
+  min-width: 0;
+  padding-right: 0;
+  padding-left: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.vp-reference :deep(.el-input__prefix-inner > :last-child) {
+  margin-right: 4px;
+}
+.vp-reference :deep(.el-input__suffix-inner) {
+  gap: 4px;
+}
+.vp-reference :deep(.el-input__suffix-inner > :first-child) {
+  margin-left: 4px;
+}
+.vp-reference :deep(.el-input__icon) {
+  margin-left: 0;
+}
+.vp-reference--readonly :deep(.el-input__inner),
+.vp-reference--readonly :deep(.el-input__wrapper) {
+  cursor: pointer;
 }
 .vp-operand-kind {
   display: inline-flex;
   align-items: center;
   max-width: 72px;
   height: 20px;
-  padding: 0 6px;
+  padding: 0 4px;
   border-radius: 3px;
   font-size: 10px;
   line-height: 20px;
   white-space: nowrap;
   color: #fff;
-  background: #909399;
+  background: #64748b;
 }
 .vp-operand-kind--literal {
   background: #e6a23c;
@@ -1643,13 +1679,17 @@ export default {
   background: var(--el-color-primary-light-9);
   color: var(--el-color-primary-dark-2);
 }
+.vp-arrow-btn,
 .vp-clear-btn {
   cursor: pointer;
-  color: #909399;
-  margin-right: 4px;
+  color: #64748b;
 }
+.vp-arrow-btn:hover,
 .vp-clear-btn:hover {
   color: var(--el-color-primary);
+}
+.vp-arrow-btn {
+  flex-shrink: 0;
 }
 .var-empty {
   padding: 8px 12px;
@@ -1709,7 +1749,7 @@ export default {
   box-sizing: border-box;
   text-align: center;
   font-size: 10px;
-  color: #c0c4cc;
+  color: #64748b;
   background: #f0f2f5;
   padding: 1px 5px;
   border-radius: 8px;
@@ -1756,7 +1796,7 @@ export default {
   font-weight: 600;
 }
 .vp-manual-type small {
-  color: #909399;
+  color: #64748b;
   line-height: 1.4;
 }
 .vp-manual-type:hover {
@@ -1839,7 +1879,7 @@ export default {
 .vp-td--code {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
-  color: #909399;
+  color: #64748b;
 }
 .vp-td--name {
   font-weight: 500;
@@ -1850,7 +1890,7 @@ export default {
 .vp-empty {
   text-align: center;
   padding: 30px 0;
-  color: #c0c4cc;
+  color: #64748b;
 }
 .vp-children-row {
   background: #f9fafc;
@@ -1867,7 +1907,7 @@ export default {
   background: #f5f7fa;
   padding: 4px 10px;
   font-size: 11px;
-  color: #909399;
+  color: #64748b;
   border-bottom: 1px solid #ebeef5;
 }
 .vp-children-list {
@@ -1892,7 +1932,7 @@ export default {
 .vp-child-path {
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 11px;
-  color: #909399;
+  color: #64748b;
   flex-shrink: 0;
   max-width: 180px;
   overflow: hidden;
@@ -1993,7 +2033,7 @@ export default {
 }
 /* 映射 m - 灰色 */
 .vp-type-badge--m {
-  background: #909399;
+  background: #64748b;
 }
 /* 模型 M - 绿色 */
 .vp-type-badge--M {
@@ -2001,6 +2041,6 @@ export default {
 }
 /* 默认 ? - 浅灰 */
 .vp-type-badge--\? {
-  background: #c0c4cc;
+  background: #64748b;
 }
 </style>

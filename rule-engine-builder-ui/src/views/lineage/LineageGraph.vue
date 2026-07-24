@@ -705,7 +705,7 @@ export default {
     position: relative;
   }
   .empty-graph {
-    color: #94a3b8;
+    color: #64748b;
     text-align: center;
     padding: 128px 0;
   }

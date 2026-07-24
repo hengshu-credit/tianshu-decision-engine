@@ -80,7 +80,7 @@ export default {
   font-size: 14px;
 }
 .rule-graph-section-head span:not(.rule-graph-section-icon) {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-graph-section-icon,
@@ -126,7 +126,7 @@ export default {
 .rule-graph-empty {
   padding: 16px;
   border: 1px dashed #dcdfe6;
-  color: #909399;
+  color: #64748b;
   text-align: center;
   font-size: 13px;
 }

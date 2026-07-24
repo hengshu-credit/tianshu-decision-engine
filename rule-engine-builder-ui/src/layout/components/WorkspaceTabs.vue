@@ -253,6 +253,24 @@ export default {
   align-items: flex-end;
   gap: 4px;
   scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+
+  &::-webkit-scrollbar {
+    height: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #cbd5e1;
+    border-radius: 4px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8;
+  }
 }
 .workspace-tab {
   position: relative;
@@ -261,7 +279,7 @@ export default {
   height: 36px;
   max-width: 200px;
   align-items: center;
-  color: #64748b;
+  color: #475569;
   background: #f5f7fa;
   border: 1px solid #e2e8f0;
   border-bottom: 0;

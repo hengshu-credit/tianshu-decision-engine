@@ -513,6 +513,7 @@ export default {
   overflow: hidden;
   border: 1px solid #e1e7ef;
   border-radius: 8px;
+  container-type: inline-size;
 }
 .expression-editor__header,
 .expression-editor__footer {
@@ -556,7 +557,7 @@ export default {
 }
 .expression-workspace {
   display: flex;
-  min-width: 420px;
+  min-width: 300px;
   min-height: 0;
   flex: 1;
   flex-direction: column;
@@ -584,8 +585,18 @@ export default {
 }
 .expression-editor__body > .expression-inspector {
   box-sizing: border-box;
-  width: 320px;
-  flex: 0 0 320px;
+  width: 260px;
+  flex: 0 0 260px;
+}
+@container (max-width: 900px) {
+  .expression-editor__body > .expression-inspector {
+    width: 230px;
+    flex-basis: 230px;
+  }
+  .expression-workspace {
+    min-width: 260px;
+    padding: 12px;
+  }
 }
 .expression-editor__footer {
   border-top: 1px solid #e7ecf2;

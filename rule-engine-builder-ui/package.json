@@ -14,7 +14,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "test:e2e:dist": "playwright test tests/e2e/dist-smoke.spec.js tests/e2e/field-picker.spec.js tests/e2e/global-ui-contract.spec.js tests/e2e/management-pages.spec.js tests/e2e/management-tabs.spec.js tests/e2e/designer-pages.spec.js tests/e2e/expression-editor.spec.js tests/e2e/operations-pages.spec.js tests/e2e/detail-pages.spec.js",
+    "test:e2e:dist": "playwright test tests/e2e/dist-smoke.spec.js tests/e2e/field-picker.spec.js tests/e2e/global-ui-contract.spec.js tests/e2e/ui-quality.spec.js tests/e2e/management-pages.spec.js tests/e2e/management-tabs.spec.js tests/e2e/designer-pages.spec.js tests/e2e/expression-editor.spec.js tests/e2e/operations-pages.spec.js tests/e2e/detail-pages.spec.js",
+    "docs:screenshots": "playwright test tests/e2e/docs-screenshots.spec.js",
     "test:e2e:full": "playwright test tests/e2e/full-stack.spec.js"
   },
   "dependencies": {

@@ -151,7 +151,7 @@ describe('ProjectAuthDialog', () => {
     wrapper.vm.logQuery.authType = 'BASIC'
     wrapper.vm.logDateRange = ['2026-07-01', '2026-07-15']
 
-    await wrapper.vm.loadAccessLogs()
+    await wrapper.vm.onTabClick({ paneName: 'logs' })
 
     expect(projectApi.listProjectAuthAccessLogs).toHaveBeenLastCalledWith(7, expect.objectContaining({
       authType: 'BASIC', beginTime: '2026-07-01', endTime: '2026-07-15'

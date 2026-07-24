@@ -398,10 +398,10 @@
         width="90"
         align="center"
       />
-      <el-table-column prop="createTime" label="时间" width="160">
+      <el-table-column prop="createTime" label="时间" width="160" fixed="right">
         <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="80" align="center">
+      <el-table-column label="操作" width="80" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button link size="small" @click="openDetail(row)"
             >详情</el-button
@@ -987,7 +987,7 @@ export default {
   gap: 8px;
 }
 .stat-card span {
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 .stat-card strong {

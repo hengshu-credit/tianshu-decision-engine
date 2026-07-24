@@ -230,7 +230,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column label="操作" min-width="230" align="center">
+          <el-table-column label="操作" width="250" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -390,7 +390,7 @@
                 :value="task.value"
               >
                 <span>{{ task.label }}</span>
-                <span style="float: right; color: #909399; font-size: 12px">{{
+                <span style="float: right; color: #64748b; font-size: 12px">{{
                   task.description
                 }}</span>
               </el-option>
@@ -444,7 +444,7 @@
                 :min="32"
                 :step="32"
               />
-              <span style="margin: 0 8px; color: #909399">×</span>
+              <span style="margin: 0 8px; color: #64748b">×</span>
               <el-input-number
                 v-model="uploadForm.onnxConfig.inputHeight"
                 :min="32"
@@ -521,7 +521,7 @@
             active-text="是"
             inactive-text="否"
           />
-          <div style="color: #909399; font-size: 11px; margin-top: 2px">
+          <div style="color: #64748b; font-size: 11px; margin-top: 2px">
             服务启动时加载到内存，避免第一次推理再加载模型
           </div>
         </el-form-item>
@@ -532,7 +532,7 @@
             :max="1800000"
             :step="1000"
           />
-          <span style="margin-left: 8px; color: #909399">毫秒</span>
+          <span style="margin-left: 8px; color: #64748b">毫秒</span>
         </el-form-item>
         <el-form-item label="变更说明">
           <el-input
@@ -548,7 +548,7 @@
             language="json"
             height="130px"
           />
-          <div style="color: #909399; font-size: 11px; margin-top: 2px">
+          <div style="color: #64748b; font-size: 11px; margin-top: 2px">
             可选。普通 JSON 对象作为输入；需校验预期输出时使用
             { "$input": {...}, "$expectedOutput": {...} }
           </div>
@@ -726,7 +726,7 @@
             :max="1800000"
             :step="1000"
           />
-          <span style="margin-left: 8px; color: #909399">毫秒</span>
+          <span style="margin-left: 8px; color: #64748b">毫秒</span>
         </el-form-item>
         <el-form-item label="目标类别">
           <el-input
@@ -1439,7 +1439,7 @@ export default {
 <style scoped>
 .linkage-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 12px;
   padding: 8px 12px;
   background: #f5f7fa;
@@ -1455,12 +1455,12 @@ export default {
 .tab-empty {
   text-align: center;
   padding: 48px 0;
-  color: #c0c4cc;
+  color: #64748b;
   font-size: 14px;
 }
 .runtime-hint {
   margin-top: 4px;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
   line-height: 1.5;
 }
@@ -1469,7 +1469,7 @@ export default {
 }
 .runtime-unit {
   margin-left: 8px;
-  color: #909399;
+  color: #64748b;
 }
 .tab-filter-row .el-button:not(.el-button--primary):focus,
 .tab-filter-row .el-button:not(.el-button--primary):focus-visible,

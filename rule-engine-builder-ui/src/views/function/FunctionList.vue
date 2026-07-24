@@ -155,7 +155,7 @@
               {{ p.name }}: {{ typeLabel(p.type) }}
             </el-tag>
           </span>
-          <span v-else style="color: #999">无参</span>
+          <span v-else style="color: #64748b">无参</span>
         </template>
       </el-table-column>
       <el-table-column label="更新时间" width="165" align="center">
@@ -909,7 +909,7 @@ export default {
 }
 .linkage-hint {
   font-size: 13px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 12px;
   background: #fafafa;
   padding: 8px 12px;

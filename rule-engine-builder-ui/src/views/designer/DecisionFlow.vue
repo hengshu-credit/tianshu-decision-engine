@@ -7,6 +7,8 @@
           link
           :icon="ElIconBack"
           class="toolbar-back"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
         />
         <el-icon class="toolbar-icon"><el-icon-share /></el-icon>
@@ -85,9 +87,27 @@
         </el-button-group>
         <el-divider direction="vertical" />
         <el-button-group>
-          <el-button size="small" :icon="ElIconZoomIn" @click="zoomIn" />
-          <el-button size="small" :icon="ElIconZoomOut" @click="zoomOut" />
-          <el-button size="small" :icon="ElIconRank" @click="resetZoom" />
+          <el-button
+            size="small"
+            :icon="ElIconZoomIn"
+            aria-label="放大画布"
+            title="放大画布"
+            @click="zoomIn"
+          />
+          <el-button
+            size="small"
+            :icon="ElIconZoomOut"
+            aria-label="缩小画布"
+            title="缩小画布"
+            @click="zoomOut"
+          />
+          <el-button
+            size="small"
+            :icon="ElIconRank"
+            aria-label="重置画布缩放"
+            title="重置画布缩放"
+            @click="resetZoom"
+          />
         </el-button-group>
         <span class="zoom-text">{{ zoomPercent }}%</span>
         <el-divider direction="vertical" />
@@ -2088,9 +2108,15 @@ export default {
     box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.16);
   }
   &.el-button--warning {
-    background: #f76e6c;
+    background: #b45309;
     color: #fff;
-    border-color: #f76e6c;
+    border-color: #b45309;
+
+    &:hover,
+    &:focus {
+      background: #92400e;
+      border-color: #92400e;
+    }
   }
   &.is-disabled,
   &.is-disabled:hover {
@@ -2153,7 +2179,7 @@ export default {
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
-  color: #bbb;
+  color: #475569;
   pointer-events: none;
   .hint-icon {
     font-size: 32px;
@@ -2208,7 +2234,7 @@ export default {
 }
 .prop-close {
   cursor: pointer;
-  color: #999;
+  color: #64748b;
   &:hover {
     color: #333;
   }
@@ -2339,7 +2365,7 @@ export default {
 }
 .assign-eq {
   font-weight: bold;
-  color: #999;
+  color: #64748b;
   flex-shrink: 0;
   font-size: 14px;
 }
@@ -2388,7 +2414,7 @@ export default {
 }
 .hint-box {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   padding: 6px 8px;
   background: #fafafa;
   border-radius: 4px;
@@ -2433,7 +2459,7 @@ export default {
 }
 .test-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 8px;
 }
 .test-result {

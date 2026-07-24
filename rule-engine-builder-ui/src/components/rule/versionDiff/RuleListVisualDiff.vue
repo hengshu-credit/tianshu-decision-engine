@@ -69,7 +69,7 @@ export default {
   font-size: 14px;
 }
 .rule-visual-section-head span:not(.rule-visual-section-icon) {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-visual-section-icon {
@@ -91,7 +91,7 @@ export default {
 .rule-visual-empty {
   padding: 16px;
   border: 1px dashed #dcdfe6;
-  color: #909399;
+  color: #64748b;
   text-align: center;
   font-size: 13px;
 }

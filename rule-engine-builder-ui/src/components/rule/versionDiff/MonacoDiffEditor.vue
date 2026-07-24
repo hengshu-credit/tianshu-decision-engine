@@ -224,7 +224,7 @@ export default {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 .monaco-diff-fallback {

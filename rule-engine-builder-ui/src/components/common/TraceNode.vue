@@ -227,7 +227,7 @@ export default {
   color: var(--el-color-primary);
 }
 .nd-res.is-skip {
-  color: #c0c4cc;
+  color: #64748b;
   font-weight: 400;
 }
 .nd-kids {

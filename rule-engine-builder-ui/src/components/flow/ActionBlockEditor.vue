@@ -1076,7 +1076,7 @@ export default {
     },
     typeColor(type) {
       const item = BLOCK_TYPES.find((value) => value.type === type)
-      return item ? item.color : '#999'
+      return item ? item.color : '#64748b'
     },
   },
   emits: ['update'],
@@ -1164,7 +1164,7 @@ export default {
   flex: 1;
 }
 .eq {
-  color: #909399;
+  color: #64748b;
   font-weight: 600;
 }
 .mini-label {

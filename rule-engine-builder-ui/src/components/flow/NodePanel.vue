@@ -122,7 +122,7 @@ export default {
   cursor: pointer;
   z-index: 10;
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   &:hover {
     color: #333;
     background: #f5f5f5;
@@ -149,7 +149,7 @@ export default {
 }
 .group-title {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   padding: 6px 0 4px;
   border-bottom: 1px solid #f0f0f0;
   margin-bottom: 4px;

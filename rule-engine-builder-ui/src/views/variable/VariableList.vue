@@ -236,26 +236,27 @@
               min-width="120"
               show-overflow-tooltip
             />
-            <el-table-column label="更新时间" min-width="165" align="center">
-              <template v-slot="{ row }">{{
-                formatUpdateTime(row.updateTime)
-              }}</template>
-            </el-table-column>
             <el-table-column
-              prop="status"
-              label="状态"
-              min-width="60"
+              label="状态 / 更新"
+              width="118"
               align="center"
+              fixed="right"
             >
-              <template v-slot="{ row }"
-                ><el-tag
+              <template v-slot="{ row }">
+                <el-tag
                   :type="row.status === 1 ? 'success' : 'info'"
                   size="small"
                   >{{ row.status === 1 ? '启用' : '停用' }}</el-tag
-                ></template
-              >
+                >
+                <div
+                  class="table-secondary-time"
+                  :title="formatUpdateTime(row.updateTime)"
+                >
+                  {{ formatUpdateTime(row.updateTime).slice(0, 10) }}
+                </div>
+              </template>
             </el-table-column>
-            <el-table-column label="操作" min-width="250" align="center">
+            <el-table-column label="操作" width="250" align="center" fixed="right">
               <template v-slot="{ row }">
                 <el-button link size="small" @click="handleEdit(row)"
                   >编辑</el-button
@@ -733,7 +734,7 @@
               }}</code></template
             >
           </el-table-column>
-          <el-table-column label="更新时间" min-width="165" align="center">
+          <el-table-column label="更新时间" width="165" align="center" fixed="right">
             <template v-slot="{ row }">{{
               formatUpdateTime(row.updateTime)
             }}</template>
@@ -752,7 +753,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column label="操作" min-width="180" align="center">
+          <el-table-column label="操作" width="180" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button link size="small" @click="handleEdit(row)"
                 >编辑</el-button
@@ -1600,7 +1601,7 @@
         <span style="font-weight: bold">{{
           currentVar ? currentVar.varLabel : ''
         }}</span>
-        <span style="color: #999; margin-left: 8px">{{
+        <span style="color: #64748b; margin-left: 8px">{{
           currentVar ? currentVar.varCode : ''
         }}</span>
       </div>
@@ -2205,7 +2206,7 @@
           </el-select>
         </el-form-item>
         <el-form-item>
-          <span style="color: #909399; font-size: 12px"
+          <span style="color: #64748b; font-size: 12px"
             >不选择项目则验证所有规则</span
           >
         </el-form-item>
@@ -4632,7 +4633,7 @@ export default {
 <style scoped>
 .linkage-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 12px;
   padding: 8px 12px;
   background: #f5f7fa;
@@ -4658,12 +4659,19 @@ export default {
 .tab-empty {
   text-align: center;
   padding: 48px 0;
-  color: #c0c4cc;
+  color: #64748b;
   font-size: 14px;
 }
 .text-muted {
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
+}
+.table-secondary-time {
+  margin-top: 3px;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1;
+  white-space: nowrap;
 }
 .field-help {
   color: #64748b;
@@ -4723,7 +4731,7 @@ export default {
 }
 .var-group-header .expand-icon {
   font-size: 14px;
-  color: #909399;
+  color: #64748b;
   margin-right: 4px;
   transition: transform 0.2s;
 }
@@ -4743,17 +4751,17 @@ export default {
   font-family: Consolas, monospace;
 }
 .var-group-label {
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 .var-group-count {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .var-group-update-time {
   margin-left: auto;
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .var-group-body {
   padding: 10px;
@@ -4781,12 +4789,12 @@ export default {
   font-family: Consolas, monospace;
 }
 .obj-label {
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 .obj-var-count {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .const-toolbar {
   margin-bottom: 12px;
@@ -4817,12 +4825,12 @@ export default {
   font-family: Consolas, monospace;
 }
 .const-group-label {
-  color: #909399;
+  color: #64748b;
   font-size: 13px;
 }
 .const-count {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .const-group-body {
   padding: 8px;

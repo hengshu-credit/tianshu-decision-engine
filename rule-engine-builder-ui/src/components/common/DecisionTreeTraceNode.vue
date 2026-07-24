@@ -297,12 +297,12 @@ export default {
 }
 .dtt-tag--skipped {
   background: #fafafa;
-  color: #bfbfbf;
+  color: #64748b;
   border: 1px solid #e8e8e8;
 }
 .dtt-toggle {
   font-size: 12px;
-  color: #bfbfbf;
+  color: #64748b;
   transition: transform 0.2s;
   margin-left: 2px;
 }

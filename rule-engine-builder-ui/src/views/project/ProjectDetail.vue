@@ -54,7 +54,7 @@
             range-separator="~"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
-            value-format="yyyy-MM-dd"
+            value-format="YYYY-MM-DD"
             style="width: 240px"
           />
         </el-form-item>
@@ -65,7 +65,7 @@
             range-separator="~"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
-            value-format="yyyy-MM-dd"
+            value-format="YYYY-MM-DD"
             style="width: 240px"
           />
         </el-form-item>
@@ -182,7 +182,7 @@
           row.updateTime ? formatDateTime(row.updateTime) : '-'
         }}</template>
       </el-table-column>
-      <el-table-column label="操作" min-width="180" align="center">
+      <el-table-column label="操作" width="180" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button link size="small" @click="go(row)">设计</el-button>
           <el-button link size="small" @click="pub(row)">{{

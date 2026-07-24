@@ -156,7 +156,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" align="center">
+          <el-table-column label="操作" width="120" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button link size="small" @click="handleEditConfig(row)"
                 >编辑</el-button
@@ -268,7 +268,7 @@
               <el-date-picker
                 v-model="recordDateRange"
                 type="daterange"
-                value-format="yyyy-MM-dd"
+                value-format="YYYY-MM-DD"
                 range-separator="至"
                 start-placeholder="开始日期"
                 end-placeholder="结束日期"
@@ -339,7 +339,13 @@
             min-width="130"
             show-overflow-tooltip
           />
-          <el-table-column label="结果" width="70" align="center">
+          <el-table-column
+            prop="errorMessage"
+            label="错误信息"
+            min-width="180"
+            show-overflow-tooltip
+          />
+          <el-table-column label="结果" width="70" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-tag
                 :type="row.success === 1 ? 'success' : 'danger'"
@@ -353,8 +359,9 @@
             label="数量"
             width="90"
             align="right"
+            fixed="right"
           />
-          <el-table-column prop="amount" label="金额" width="110" align="right">
+          <el-table-column prop="amount" label="金额" width="110" align="right" fixed="right">
             <template v-slot="{ row }"
               >{{ row.currency || 'CNY' }} {{ row.amount || 0 }}</template
             >
@@ -364,12 +371,7 @@
             label="耗时(ms)"
             width="100"
             align="right"
-          />
-          <el-table-column
-            prop="errorMessage"
-            label="错误信息"
-            min-width="180"
-            show-overflow-tooltip
+            fixed="right"
           />
         </el-table>
         <el-pagination
@@ -466,7 +468,7 @@
               <el-date-picker
                 v-model="summaryDateRange"
                 type="daterange"
-                value-format="yyyy-MM-dd"
+                value-format="YYYY-MM-DD"
                 range-separator="至"
                 start-placeholder="开始日期"
                 end-placeholder="结束日期"
@@ -489,7 +491,7 @@
               v-model="refreshDate"
               size="small"
               type="date"
-              value-format="yyyy-MM-dd"
+              value-format="YYYY-MM-DD"
               placeholder="选择日期"
               style="width: 150px"
             />
@@ -754,7 +756,7 @@
               <el-date-picker
                 v-model="configForm.effectiveTime"
                 type="datetime"
-                value-format="yyyy-MM-ddTHH:mm:ss"
+                value-format="YYYY-MM-DDTHH:mm:ss"
                 placeholder="不限制"
                 style="width: 100%"
               />
@@ -765,7 +767,7 @@
               <el-date-picker
                 v-model="configForm.expireTime"
                 type="datetime"
-                value-format="yyyy-MM-ddTHH:mm:ss"
+                value-format="YYYY-MM-DDTHH:mm:ss"
                 placeholder="不限制"
                 style="width: 100%"
               />

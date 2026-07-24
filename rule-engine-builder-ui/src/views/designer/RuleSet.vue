@@ -6,6 +6,8 @@
           link
           :icon="ElIconBack"
           class="rs-back"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
         />
         <el-icon class="rs-title-icon"><el-icon-s-claim /></el-icon>
@@ -975,13 +977,13 @@ export default {
   width: 148px;
 }
 .tip-icon {
-  color: #909399;
+  color: #64748b;
   cursor: pointer;
 }
 .rs-var-status {
   margin: 8px 0;
   font-size: 12px;
-  color: #52c41a;
+  color: #087a5d;
 }
 .rs-output-config {
   margin: 10px 0;
@@ -1107,14 +1109,14 @@ export default {
 .rs-loading,
 .rs-empty {
   text-align: center;
-  color: #909399;
+  color: #64748b;
   padding: 36px 0;
   border: 1px dashed #d9d9d9;
   border-radius: 6px;
 }
 .rs-empty-icon {
   font-size: 30px;
-  color: #bfbfbf;
+  color: #64748b;
 }
 .script-override-banner {
   margin-top: 10px;

@@ -295,7 +295,7 @@
             range-separator="至"
             start-placeholder="生效时间"
             end-placeholder="失效时间"
-            value-format="yyyy-MM-ddTHH:mm:ss"
+            value-format="YYYY-MM-DDTHH:mm:ss"
             style="width: 100%"
           />
         </el-form-item>
@@ -617,7 +617,7 @@ export default {
   line-height: 1.4;
 }
 .detail-meta {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
   margin-top: 2px;
 }

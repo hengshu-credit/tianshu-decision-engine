@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -501,9 +503,9 @@ export default {
     },
     totalWeightColor() {
       const w = this.totalWeight
-      if (Math.abs(w - 1.0) < 0.05) return '#52c41a'
-      if (w > 1.05) return '#f5222d'
-      return '#fa8c16'
+      if (Math.abs(w - 1.0) < 0.05) return '#087a5d'
+      if (w > 1.05) return '#c93333'
+      return '#b45309'
     },
     sortedThresholds() {
       return [...this.model.thresholds].sort(
@@ -1000,14 +1002,14 @@ export default {
 }
 .result-var-switch-btn {
   padding: 4px 8px;
-  color: #909399;
+  color: #64748b;
   &:hover {
     color: var(--el-color-primary);
   }
 }
 .result-var-label {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-left: 4px;
 }
 .weight-summary {
@@ -1026,7 +1028,7 @@ export default {
   min-width: 36px;
 }
 .tip-icon {
-  color: #999;
+  color: #64748b;
   cursor: pointer;
   &:hover {
     color: var(--el-color-primary);
@@ -1154,7 +1156,7 @@ export default {
   }
 }
 .op {
-  color: #888;
+  color: #475569;
   font-weight: bold;
   font-size: 13px;
 }
@@ -1172,7 +1174,7 @@ export default {
   font-size: 12px;
 }
 .formula-empty {
-  color: #bbb;
+  color: #64748b;
   font-style: italic;
 }
 .threshold-list {
@@ -1248,7 +1250,7 @@ export default {
 .sc-empty {
   text-align: center;
   padding: 30px;
-  color: #bbb;
+  color: #64748b;
   font-size: 13px;
 }
 .sc-empty-icon {
@@ -1259,7 +1261,7 @@ export default {
 }
 .test-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 8px;
 }
 .test-result {

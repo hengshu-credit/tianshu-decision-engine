@@ -25,13 +25,13 @@ $font-family-base: "AlimamaFangYuanTiVF", "PingFang SC", "Microsoft YaHei", sans
 }
 
 $--color-primary: $tianshu-color-primary;
-$secondary-color: #F76E6C;
+$secondary-color: #C93333;
 
 $primary-color: $--color-primary;
-$success-color: #10B981;
-$warning-color: #F76E6C;
+$success-color: #087A5D;
+$warning-color: #B45309;
 $danger-color: $secondary-color;
-$info-color: #6366F1;
+$info-color: #475569;
 
 /*
  * Element UI 2 的 small 控件是管理台原有的舒适密度；升级到 Element Plus 后，
@@ -52,6 +52,11 @@ $info-color: #6366F1;
   --el-color-primary-light-9: #{$tianshu-color-primary-light-9};
   --el-color-primary-dark-1: #{$tianshu-color-primary-dark-1};
   --el-color-primary-dark-2: #{$tianshu-color-primary-dark-2};
+  --el-color-info: #{$info-color};
+  --el-text-color-primary: #1e293b;
+  --el-text-color-regular: #475569;
+  --el-text-color-secondary: #475569;
+  --el-text-color-placeholder: #64748b;
   --tianshu-focus-ring: rgba(38, 57, 233, 0.15);
   --tianshu-primary-shadow: rgba(38, 57, 233, 0.12);
   --el-component-size-small: 32px;
@@ -105,8 +110,8 @@ $info-color: #6366F1;
 
   &:hover,
   &:focus {
-    background-color: var(--el-color-primary-light-3) !important;
-    border-color: var(--el-color-primary-light-3) !important;
+    background-color: var(--el-color-primary-dark-1) !important;
+    border-color: var(--el-color-primary-dark-1) !important;
   }
 
   &:active,
@@ -170,14 +175,14 @@ $info-color: #6366F1;
 
   &:hover,
   &:focus {
-    background-color: #e24f4f !important;
-    border-color: #e24f4f !important;
+    background-color: #B91C1C !important;
+    border-color: #B91C1C !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #c93333 !important;
-    border-color: #c93333 !important;
+    background-color: #991B1B !important;
+    border-color: #991B1B !important;
   }
 
   &:disabled,
@@ -208,51 +213,63 @@ $info-color: #6366F1;
 }
 
 .el-button--success {
+  background-color: $success-color !important;
+  border-color: $success-color !important;
+
   &:hover,
   &:focus {
-    background-color: #0a966f !important;
-    border-color: #0a966f !important;
+    background-color: #065F46 !important;
+    border-color: #065F46 !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #087a5d !important;
-    border-color: #087a5d !important;
+    background-color: #064E3B !important;
+    border-color: #064E3B !important;
   }
 }
 
 .el-button--warning {
+  background-color: $warning-color !important;
+  border-color: $warning-color !important;
+
   &:hover,
   &:focus {
-    background-color: #d16260 !important;
-    border-color: #d16260 !important;
+    background-color: #92400E !important;
+    border-color: #92400E !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #d16260 !important;
-    border-color: #d16260 !important;
+    background-color: #78350F !important;
+    border-color: #78350F !important;
   }
 }
 
 .el-button--info {
+  background-color: $info-color !important;
+  border-color: $info-color !important;
+
   &:hover,
   &:focus {
-    background-color: #5558e0 !important;
-    border-color: #5558e0 !important;
+    background-color: #334155 !important;
+    border-color: #334155 !important;
   }
 
   &:active,
   &.is-active {
-    background-color: #4748bd !important;
-    border-color: #4748bd !important;
+    background-color: #1E293B !important;
+    border-color: #1E293B !important;
   }
 }
 
 /* ── 语义链接按钮：保留链接形态，仅用颜色区分业务动作 ── */
 .el-button.is-link {
+  min-height: 28px;
+  padding: 4px 6px;
   background-color: transparent !important;
   border-color: transparent !important;
+  border-radius: 4px;
 
   &.el-button--primary {
     color: var(--el-color-primary) !important;
@@ -307,21 +324,33 @@ $info-color: #6366F1;
 
 /* ── 危险标签 ── */
 .el-tag--danger {
-  background-color: rgba($secondary-color, 0.1) !important;
-  border-color: rgba($secondary-color, 0.22) !important;
-  color: $secondary-color !important;
+  background-color: #FFF1F2 !important;
+  border-color: #FECDD3 !important;
+  color: #B42318 !important;
 }
 
 .el-tag--warning {
-  background-color: rgba(#F76E6C, 0.1) !important;
-  border-color: rgba(#F76E6C, 0.22) !important;
-  color: #F76E6C !important;
+  background-color: #FFFBEB !important;
+  border-color: #FDE68A !important;
+  color: #92400E !important;
+}
+
+.el-tag--success {
+  background-color: #ECFDF5 !important;
+  border-color: #A7F3D0 !important;
+  color: #087A5D !important;
+}
+
+.el-tag--info {
+  background-color: #F1F5F9 !important;
+  border-color: #CBD5E1 !important;
+  color: #475569 !important;
 }
 
 /* ── 主色标签 ── */
 .el-tag--primary {
-  background-color: rgba($--color-primary, 0.1) !important;
-  border-color: rgba($--color-primary, 0.22) !important;
+  background-color: #EEF1FF !important;
+  border-color: #C7CEFF !important;
   color: $--color-primary !important;
 }
 
@@ -333,9 +362,39 @@ $info-color: #6366F1;
 }
 
 .el-tag--scope-project {
-  background-color: rgba(#10B981, 0.1) !important;
-  border-color: rgba(#10B981, 0.22) !important;
-  color: #10B981 !important;
+  background-color: #ECFDF5 !important;
+  border-color: #A7F3D0 !important;
+  color: #087A5D !important;
+}
+
+/* ── 提示条：浅背景配深色文字，避免仅靠颜色区分状态 ── */
+.el-alert--success.is-light {
+  background-color: #ECFDF5;
+  border: 1px solid #A7F3D0;
+  color: #065F46;
+}
+
+.el-alert--warning.is-light {
+  background-color: #FFFBEB;
+  border: 1px solid #FDE68A;
+  color: #92400E;
+}
+
+.el-alert--error.is-light {
+  background-color: #FFF1F2;
+  border: 1px solid #FECDD3;
+  color: #B42318;
+}
+
+.el-alert--info.is-light {
+  background-color: #F1F5F9;
+  border: 1px solid #CBD5E1;
+  color: #475569;
+}
+
+.el-alert.is-light .el-alert__title,
+.el-alert.is-light .el-alert__description {
+  color: inherit;
 }
 
 /* ── 链接颜色 ── */
@@ -382,12 +441,25 @@ $info-color: #6366F1;
 }
 
 /* ── Tabs ── */
+.el-tabs__item {
+  color: #475569;
+
+  &:hover,
+  &:focus-visible {
+    color: $--color-primary;
+  }
+}
+
 .el-tabs__item.is-active {
   color: $--color-primary !important;
 }
 
 .el-tabs__active-bar {
   background-color: $--color-primary !important;
+}
+
+.el-empty__description {
+  color: #475569;
 }
 
 /* ── 下拉选中 ── */
@@ -421,6 +493,18 @@ $info-color: #6366F1;
   border-radius: 0;
   box-shadow: none;
   background: transparent;
+}
+
+.el-input__inner::placeholder,
+.el-textarea__inner::placeholder,
+.el-range-input::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+.el-select__placeholder,
+.el-date-editor .el-range-separator {
+  color: #64748b;
 }
 
 .el-input__wrapper:hover {
@@ -629,7 +713,7 @@ $info-color: #6366F1;
 /* ── 表格空状态样式 ── */
 .el-table__empty-text {
   font-family: $font-family-base;
-  color: #909399;
+  color: #475569;
   padding: 32px 0;
 }
 

@@ -19,7 +19,7 @@
     <div v-if="errors.length" class="issue-group issue-group--error">
       <div class="issue-title">阻断项</div>
       <div v-for="(issue, index) in errors" :key="`error-${index}`" class="issue-row">
-        <strong>{{ issue.code || 'VALIDATION_ERROR' }}</strong>
+        <strong>{{ issueTitle(issue, '校验错误') }}</strong>
         <span>{{ issue.message }}</span>
         <code v-if="issue.path">{{ issue.path }}</code>
       </div>
@@ -27,7 +27,7 @@
     <div v-if="warnings.length" class="issue-group">
       <div class="issue-title">提醒</div>
       <div v-for="(issue, index) in warnings" :key="`warning-${index}`" class="issue-row">
-        <strong>{{ issue.code || 'WARNING' }}</strong>
+        <strong>{{ issueTitle(issue, '校验提醒') }}</strong>
         <span>{{ issue.message }}</span>
       </div>
     </div>
@@ -47,6 +47,17 @@ export default {
   computed: {
     errors() { return this.report.errors || [] },
     warnings() { return this.report.warnings || [] }
+  },
+  methods: {
+    issueTitle(issue, fallback) {
+      const labels = {
+        MODEL_VERSION_UPDATED: '模型版本已更新',
+        BREAKING_SCHEMA_CHANGE: '存在破坏性字段变更',
+        DEPENDENCY_CHANGED: '依赖项已变化',
+        MISSING_REFERENCE: '存在失效引用'
+      }
+      return labels[issue && issue.code] || (issue && issue.title) || (issue && issue.code) || fallback
+    }
   }
 }
 </script>

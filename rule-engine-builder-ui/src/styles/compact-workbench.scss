@@ -8,17 +8,33 @@
     padding-right: 8px;
   }
 
-  .el-input--prefix .el-input__inner {
-    padding-left: 28px;
+  .el-input__prefix-inner > :last-child {
+    margin-right: 4px;
   }
 
-  .el-input--suffix .el-input__inner {
-    padding-right: 28px;
+  .el-input__suffix-inner {
+    gap: 4px;
+  }
+
+  .el-input__suffix-inner > :first-child {
+    margin-left: 4px;
+  }
+
+  .el-input .el-input__icon {
+    margin-left: 0;
+  }
+
+  .el-select__wrapper {
+    gap: 4px;
+    padding-left: 8px;
+    padding-right: 8px;
   }
 
   .el-input-number .el-input__inner {
-    padding-left: 36px;
-    padding-right: 36px;
+    padding-left: 0;
+    padding-right: 0;
+    color: #0f172a;
+    font-variant-numeric: tabular-nums;
   }
 
   .el-input-number.is-without-controls .el-input__inner {

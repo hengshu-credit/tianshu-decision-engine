@@ -100,7 +100,7 @@ function standaloneOptions(count = 3) {
 }
 
 describe('VarPicker', () => {
-  test('操作数前缀按标签内容计算紧凑偏移，不再预留固定大间距', () => {
+  test('操作数触发器直接使用 Element 输入框并交给前缀流式布局', () => {
     const wrapper = mountPicker({
       operandMode: true,
       value: {
@@ -111,7 +111,9 @@ describe('VarPicker', () => {
     })
 
     expect(wrapper.vm.operandKindMetaValue.label).toBe('变量')
-    expect(wrapper.vm.referenceStyle['--vp-prefix-offset']).toBe('48px')
+    expect(wrapper.get('.vp-reference').element.tagName).toBe('INPUT')
+    expect(wrapper.find('div.vp-reference').exists()).toBe(false)
+    expect(wrapper.vm.referenceStyle).toBeUndefined()
   })
 
   test('同编码但不同 ID 的字段使用独立行 key', async () => {
@@ -466,8 +468,8 @@ describe('VarPicker', () => {
     wrapper.vm.$refs.popover = { popperElm: document.createElement('div') }
 
     const reference = wrapper.find('.vp-reference')
-    expect(reference.attributes('tabindex')).toBe('0')
-    expect(reference.attributes('role')).toBe('button')
+    expect(reference.element.tagName).toBe('INPUT')
+    expect(reference.attributes('role')).toBeUndefined()
 
     wrapper.vm.onInputFocus()
     await nextTick()
@@ -483,7 +485,7 @@ describe('VarPicker', () => {
     const input = document.createElement('input')
     popper.appendChild(input)
     document.body.appendChild(popper)
-    const reference = wrapper.vm.$refs.reference
+    const reference = wrapper.get('.vp-reference').element
     wrapper.vm.$refs.popover.popperElm = popper
     input.focus()
 

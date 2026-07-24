@@ -43,7 +43,7 @@ export default {
   border-radius: 3px;
   color: #fff;
   font-size: 11px;
-  background: #909399;
+  background: #64748b;
 }
 .operand-value-kind--literal {
   background: #e6a23c;
@@ -75,6 +75,6 @@ export default {
   white-space: nowrap;
 }
 .operand-value-empty {
-  color: #909399;
+  color: #64748b;
 }
 </style>

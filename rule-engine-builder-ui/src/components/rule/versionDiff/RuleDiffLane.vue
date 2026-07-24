@@ -190,7 +190,7 @@ export default {
 }
 .rule-diff-subtitle {
   margin-top: 4px;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-diff-marker,
@@ -215,7 +215,7 @@ export default {
   line-height: 20px;
 }
 .rule-diff-field-label {
-  color: #909399;
+  color: #64748b;
 }
 .rule-diff-field-value {
   min-width: 0;
@@ -226,7 +226,7 @@ export default {
   display: flex;
   align-items: center;
   min-height: 20px;
-  color: #c0c4cc;
+  color: #64748b;
   font-size: 12px;
 }
 .is-modified {

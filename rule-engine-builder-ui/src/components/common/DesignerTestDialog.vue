@@ -23,7 +23,7 @@
           :step="1000"
           size="small"
         />
-        <span style="color: #909399">毫秒</span>
+        <span style="color: #64748b">毫秒</span>
       </div>
       <div class="editor-label">输入参数 JSON</div>
       <el-alert
@@ -331,7 +331,7 @@ export default {
   color: #cf1322;
 }
 .result-meta {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
   text-align: right;
 }

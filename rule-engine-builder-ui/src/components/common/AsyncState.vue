@@ -54,7 +54,7 @@ export default {
   justify-content: center;
   gap: 8px;
   min-height: 180px;
-  color: #909399;
+  color: #64748b;
 }
 .is-compact .state-content {
   min-height: 72px;

@@ -41,9 +41,10 @@ test('小尺寸输入框、下拉框和按钮使用可读的 14px 字号', () =>
 })
 
 test('语义链接按钮保持透明背景并使用可读的业务颜色', () => {
-  expect(declarationBlock('.el-button.is-link')).toContain(
-    'background-color: transparent !important'
-  )
+  const linkButton = declarationBlock('.el-button.is-link')
+  expect(linkButton).toContain('min-height: 28px')
+  expect(linkButton).toContain('padding: 4px 6px')
+  expect(linkButton).toContain('background-color: transparent !important')
   expect(declarationBlock('.el-button.is-link.el-button--primary').toLowerCase()).toContain(
     'color: var(--el-color-primary) !important'
   )
@@ -59,6 +60,32 @@ test('语义链接按钮保持透明背景并使用可读的业务颜色', () =>
   expect(declarationBlock('.el-button.is-link.el-button--danger').toLowerCase()).toContain(
     'color: #c93333 !important'
   )
+})
+
+test('语义按钮、标签和占位文字使用高对比度主题色', () => {
+  const root = declarationBlock(':root').toLowerCase()
+  expect(root).toContain('--el-text-color-placeholder: #64748b')
+
+  expect(declarationBlock('.el-button--success').toLowerCase()).toContain(
+    'background-color: #087a5d !important'
+  )
+  expect(declarationBlock('.el-button--warning').toLowerCase()).toContain(
+    'background-color: #b45309 !important'
+  )
+  expect(declarationBlock('.el-button--danger').toLowerCase()).toContain(
+    'background-color: #c93333 !important'
+  )
+  expect(declarationBlock('.el-tag--success').toLowerCase()).toContain(
+    'color: #087a5d !important'
+  )
+  expect(declarationBlock('.el-tag--warning').toLowerCase()).toContain(
+    'color: #92400e !important'
+  )
+  expect(declarationBlock('.el-tag--danger').toLowerCase()).toContain(
+    'color: #b42318 !important'
+  )
+  expect(css).toContain('.el-input__inner::placeholder')
+  expect(css).toContain('color: #64748b')
 })
 
 test('input borders are rendered only by the Element Plus wrapper', () => {

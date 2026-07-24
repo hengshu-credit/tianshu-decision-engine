@@ -201,7 +201,7 @@
           </div>
           <div
             v-if="params.length === 0"
-            style="color: #999; padding: 12px 0; text-align: center"
+            style="color: #64748b; padding: 12px 0; text-align: center"
           >
             请选择规则后加载变量，或手动添加参数
           </div>
@@ -274,7 +274,7 @@
             size="small"
             style="width: 150px; margin-right: 6px"
           />
-          <span style="margin-right: 12px; color: #909399">毫秒</span>
+          <span style="margin-right: 12px; color: #64748b">毫秒</span>
           <el-button
             type="primary"
             :loading="executing"
@@ -295,7 +295,7 @@
             <el-icon style="font-size: 48px; color: #ddd"
               ><el-icon-video-play
             /></el-icon>
-            <p style="color: #999; margin-top: 12px">
+            <p style="color: #64748b; margin-top: 12px">
               点击「执行测试」查看结果
             </p>
           </div>
@@ -306,7 +306,7 @@
             <el-icon style="font-size: 32px; color: #2639e9"
               ><el-icon-loading
             /></el-icon>
-            <p style="color: #999; margin-top: 12px">规则执行中...</p>
+            <p style="color: #64748b; margin-top: 12px">规则执行中...</p>
           </div>
           <div v-else class="test-result-content">
             <el-alert
@@ -1265,7 +1265,7 @@ export default {
 }
 .case-state {
   padding: 12px 0;
-  color: #909399;
+  color: #64748b;
   text-align: center;
 }
 .case-state-error {
@@ -1368,7 +1368,7 @@ export default {
 }
 .param-label {
   flex: 0 0 auto;
-  color: #999;
+  color: #64748b;
   font-size: 12px;
   margin-right: 8px;
   white-space: nowrap;

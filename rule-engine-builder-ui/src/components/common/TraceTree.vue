@@ -4233,7 +4233,7 @@ export default {
   display: grid;
   gap: 4px;
   margin-top: 10px;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
   word-break: break-all;
 }
@@ -4284,14 +4284,14 @@ export default {
 }
 .rule-trace-code {
   margin-top: 2px;
-  color: #909399;
+  color: #64748b;
   font-family: Consolas, Monaco, monospace;
   font-size: 11px;
 }
 .rule-trace-meta {
   flex-shrink: 0;
   gap: 10px;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rule-trace-status {
@@ -4311,7 +4311,7 @@ export default {
 }
 .rule-trace-id {
   margin-top: 8px;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
   word-break: break-all;
 }
@@ -4368,7 +4368,7 @@ export default {
 }
 .t-hd {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 12px;
   font-weight: 600;
 }
@@ -4455,7 +4455,7 @@ export default {
 .trace-step.is-skipped .trace-step-index {
   background: #f4f4f5;
   border-color: #dcdfe6;
-  color: #909399;
+  color: #64748b;
 }
 .trace-step-main {
   min-width: 0;
@@ -4481,7 +4481,7 @@ export default {
 }
 .trace-step-subtitle {
   margin-top: 2px;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
   word-break: break-all;
 }
@@ -4522,7 +4522,7 @@ export default {
 }
 .result-label {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   flex-shrink: 0;
 }
 .result-val {
@@ -4543,14 +4543,14 @@ export default {
 .t-empty {
   text-align: center;
   padding: 36px 0;
-  color: #c0c4cc;
+  color: #64748b;
   font-size: 13px;
 }
 .fullscreen-btn {
   margin-left: auto;
   padding: 0;
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .fullscreen-btn:hover {
   color: var(--el-color-primary);
@@ -4592,7 +4592,7 @@ export default {
 .fs-close {
   padding: 0;
   font-size: 18px;
-  color: #909399;
+  color: #64748b;
 }
 .fs-close:hover {
   color: #303133;
@@ -4733,7 +4733,7 @@ export default {
   border-radius: 3px;
 }
 .fc-cond-op {
-  color: #909399;
+  color: #64748b;
   font-weight: 600;
   letter-spacing: -1px;
 }
@@ -4825,7 +4825,7 @@ export default {
   font-weight: 500;
 }
 .fc-func-arg-eq {
-  color: #bfbfbf;
+  color: #64748b;
 }
 .fc-func-arg-val {
   font-family: 'Consolas', 'Monaco', monospace;
@@ -4971,7 +4971,7 @@ export default {
 }
 .sc-table tr.sc-skipped td {
   background: #fafafa;
-  color: #c0c4cc;
+  color: #64748b;
 }
 .sc-table tr.sc-miss td {
   background: #fff;
@@ -4994,7 +4994,7 @@ export default {
   color: #e6a23c;
 }
 .sc-status--skipped {
-  color: #c0c4cc;
+  color: #64748b;
 }
 .trace-cross-matrix-wrap {
   overflow-x: auto;
@@ -5145,7 +5145,7 @@ export default {
   font-weight: 700;
 }
 .rs-summary-empty {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rs-table th:nth-child(1) {
@@ -5177,7 +5177,7 @@ export default {
 }
 .rs-rule-meta {
   margin-top: 6px;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
 }
 .rs-cond-tree {
@@ -5236,7 +5236,7 @@ export default {
   font-size: 12px;
 }
 .rs-cond-part {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .rs-cond-part strong {
@@ -5253,7 +5253,7 @@ export default {
   padding: 1px 8px;
   border-radius: 10px;
   background: #f4f4f5;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
   font-weight: 700;
 }
@@ -5304,10 +5304,10 @@ export default {
 }
 .rs-status--skipped {
   background: #f4f4f5;
-  color: #909399;
+  color: #64748b;
 }
 .rs-row-skipped td {
-  color: #909399;
+  color: #64748b;
   background: #fafafa;
 }
 .mv-table {

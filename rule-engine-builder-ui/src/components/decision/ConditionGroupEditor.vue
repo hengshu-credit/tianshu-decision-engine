@@ -270,6 +270,7 @@ export default {
   width: 100%;
   max-width: 100%;
   box-sizing: border-box;
+  container-type: inline-size;
 }
 .cg--nested {
   padding-left: 8px;
@@ -310,7 +311,7 @@ export default {
   min-width: 0;
   max-width: 100%;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow-x: visible;
 }
 .cg-row {
   margin-bottom: 10px;
@@ -319,11 +320,36 @@ export default {
 }
 .cg-leaf {
   display: grid;
-  grid-template-columns: minmax(160px, 2fr) 108px minmax(160px, 2fr) auto;
+  grid-template-columns: minmax(0, 2fr) 96px minmax(0, 2fr) auto;
   align-items: center;
   gap: 8px;
   width: 100%;
   min-width: 0;
+}
+@container (max-width: 560px) {
+  .cg-leaf {
+    grid-template-columns: minmax(0, 1fr) 96px auto;
+  }
+  .cg-field--operand:nth-child(3),
+  .cg-field--any {
+    grid-column: 1 / 3;
+  }
+  .cg-field--actions {
+    grid-column: 3;
+  }
+}
+@container (max-width: 360px) {
+  .cg-leaf {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .cg-field--operand:nth-child(3),
+  .cg-field--any,
+  .cg-field--actions {
+    grid-column: 1;
+  }
+  .cg-field--op {
+    width: 100%;
+  }
 }
 .cg-field {
   min-width: 0;
@@ -331,10 +357,10 @@ export default {
   align-items: center;
 }
 .cg-field--op {
-  width: 108px;
+  width: 96px;
 }
 .cg-field--any {
-  color: #999;
+  color: #64748b;
   font-size: 12px;
 }
 .cg-field--actions {

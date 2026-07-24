@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -52,10 +54,10 @@
 
     <!-- 变量加载状态 -->
     <div v-if="loadingVars || varPickerOptions.length" class="dt-var-status">
-      <span v-if="loadingVars" style="font-size: 12px; color: #999"
+      <span v-if="loadingVars" style="font-size: 12px; color: #64748b"
         ><el-icon><el-icon-loading /></el-icon> 加载变量库...</span
       >
-      <span v-else style="font-size: 12px; color: #52c41a">
+      <span v-else style="font-size: 12px; color: #087a5d">
         <el-icon><el-icon-s-custom /></el-icon> 已加载
         {{ varPickerOptions.length }} 个变量/常量/对象字段
       </span>
@@ -799,7 +801,7 @@ export default {
   color: #666;
 }
 .tip-icon {
-  color: #999;
+  color: #64748b;
   cursor: pointer;
   font-size: 14px;
   &:hover {
@@ -876,7 +878,7 @@ export default {
 }
 .dt-act-panel-hint {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   flex: 1 1 auto;
   min-width: 160px;
 }
@@ -994,7 +996,7 @@ export default {
 .dt-loading {
   text-align: center;
   padding: 40px;
-  color: #999;
+  color: #64748b;
   font-size: 13px;
   i {
     margin-right: 4px;
@@ -1003,7 +1005,7 @@ export default {
 .dt-empty {
   text-align: center;
   padding: 30px;
-  color: #999;
+  color: #64748b;
   font-size: 13px;
   border: 1px solid #ebeef5;
   border-radius: 4px;

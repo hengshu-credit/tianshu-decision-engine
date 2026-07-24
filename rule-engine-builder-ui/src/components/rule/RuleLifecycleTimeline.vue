@@ -1,18 +1,18 @@
 <template>
   <section class="lifecycle-timeline" aria-label="规则审计时间线">
-    <div v-for="event in events" :key="event.id || `${event.action}-${event.createTime}`" class="timeline-row">
+    <div v-for="event in orderedEvents" :key="event.id || `${event.action}-${event.createTime}`" class="timeline-row">
       <span class="timeline-dot" />
       <div>
         <div class="timeline-heading">
           <strong>{{ actionLabel(event.action) }}</strong>
-          <el-tag size="small" type="info">{{ event.fromState || '—' }} → {{ event.toState }}</el-tag>
+          <el-tag size="small" type="info">{{ stateLabel(event.fromState) }} → {{ stateLabel(event.toState) }}</el-tag>
         </div>
-        <div class="timeline-meta">{{ event.actor || 'SYSTEM_CONSOLE' }} · {{ event.createTime || '—' }}</div>
+        <div class="timeline-meta">{{ actorLabel(event.actor) }} · {{ event.createTime || '—' }}</div>
         <div v-if="event.comment" class="timeline-comment">{{ event.comment }}</div>
         <code v-if="event.artifactDigest" class="timeline-digest">{{ event.artifactDigest }}</code>
       </div>
     </div>
-    <el-empty v-if="!events.length" description="暂无生命周期事件" />
+    <el-empty v-if="!orderedEvents.length" description="暂无生命周期事件" />
   </section>
 </template>
 
@@ -20,9 +20,22 @@
 export default {
   name: 'RuleLifecycleTimeline',
   props: { events: { type: Array, default: () => [] } },
+  computed: {
+    orderedEvents() {
+      return [...this.events].sort((left, right) =>
+        String(right.createTime || '').localeCompare(String(left.createTime || ''))
+      )
+    }
+  },
   methods: {
     actionLabel(action) {
       return ({ CREATE_DRAFT: '创建草稿', SUBMIT: '提交评审', RETURN_TO_DRAFT: '退回草稿', APPROVE: '批准', PUBLISH: '发布', OFFLINE: '下线', AUTO_OFFLINE: '自动下线', IMPORT_APPROVED_ARTIFACT: '导入制品' })[action] || action
+    },
+    stateLabel(state) {
+      return ({ DRAFT: '草稿', REVIEW: '评审中', APPROVED: '已批准', PUBLISHED: '已发布', OFFLINE: '已下线' })[state] || state || '—'
+    },
+    actorLabel(actor) {
+      return ({ SYSTEM_CONSOLE: '系统控制台' })[actor] || actor || '系统控制台'
     }
   }
 }

@@ -51,6 +51,6 @@ export default {
 }
 .eq {
   flex-shrink: 0;
-  color: #909399;
+  color: #64748b;
 }
 </style>

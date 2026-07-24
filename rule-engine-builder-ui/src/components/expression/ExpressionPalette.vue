@@ -292,8 +292,8 @@ export default {
       page: 1,
       pageSize: 50,
       operators: OPERATORS,
-      categoryWidth: 156,
-      contentWidth: 360,
+      categoryWidth: 128,
+      contentWidth: 300,
       resizeTarget: '',
       resizeStartX: 0,
       resizeStartWidth: 0,
@@ -719,7 +719,7 @@ export default {
         )
         return
       }
-      const available = window.innerWidth - this.categoryWidth - 12 - 420 - 320
+      const available = window.innerWidth - this.categoryWidth - 12 - 300 - 260
       const maximum = Math.max(280, Math.min(640, available))
       this.contentWidth = Math.min(
         maximum,
@@ -990,7 +990,7 @@ export default {
   background: #ff9800;
 }
 .palette-type-badge--m {
-  background: #909399;
+  background: #64748b;
 }
 .palette-type-badge--M {
   background: #13c2c2;

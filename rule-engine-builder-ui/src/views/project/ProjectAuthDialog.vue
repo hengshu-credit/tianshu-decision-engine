@@ -95,40 +95,42 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" min-width="300" align="center">
+          <el-table-column label="操作" width="220" align="center" fixed="right">
             <template v-slot="{ row }">
-              <el-button link size="small" @click="viewFullAuth(row)"
-                >完整值</el-button
-              >
-              <el-button
-                v-if="row.authType !== 'LEGACY_TOKEN'"
-                link
-                size="small"
-                @click="openEditAuth(row)"
-                >编辑</el-button
-              >
-              <el-button
-                v-if="
-                  row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'
-                "
-                link
-                size="small"
-                @click="regenerateAuth(row)"
-                >重置密钥</el-button
-              >
-              <el-button
-                v-if="row.authType === 'LEGACY_TOKEN'"
-                link
-                size="small"
-                @click="regenerateLegacyToken(row)"
-                >重置令牌</el-button
-              >
-              <el-button link size="small" @click="openTokens(row)"
-                >Token</el-button
-              >
-              <el-button link size="small" @click="toggleAuth(row)">{{
-                row.status === 1 ? '停用' : '启用'
-              }}</el-button>
+              <div class="auth-row-actions">
+                <el-button link size="small" @click="viewFullAuth(row)"
+                  >完整值</el-button
+                >
+                <el-button
+                  v-if="row.authType !== 'LEGACY_TOKEN'"
+                  link
+                  size="small"
+                  @click="openEditAuth(row)"
+                  >编辑</el-button
+                >
+                <el-button
+                  v-if="
+                    row.authType === 'API_KEY' || row.authType === 'HMAC_SHA256'
+                  "
+                  link
+                  size="small"
+                  @click="regenerateAuth(row)"
+                  >重置密钥</el-button
+                >
+                <el-button
+                  v-if="row.authType === 'LEGACY_TOKEN'"
+                  link
+                  size="small"
+                  @click="regenerateLegacyToken(row)"
+                  >重置令牌</el-button
+                >
+                <el-button link size="small" @click="openTokens(row)"
+                  >Token</el-button
+                >
+                <el-button link size="small" @click="toggleAuth(row)">{{
+                  row.status === 1 ? '停用' : '启用'
+                }}</el-button>
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -258,7 +260,7 @@
             <el-date-picker
               v-model="logDateRange"
               type="daterange"
-              value-format="yyyy-MM-dd"
+              value-format="YYYY-MM-DD"
               range-separator="至"
               start-placeholder="开始日期"
               end-placeholder="结束日期"
@@ -757,8 +759,10 @@ export default {
       }
     },
     onTabClick(tab) {
-      if (tab.name === 'logs') this.loadAccessLogs()
-      if (tab.name === 'tokens' && this.selectedAuth) this.loadTokens()
+      const name =
+        tab && (tab.paneName ?? tab.name ?? (tab.props && tab.props.name))
+      if (name === 'logs') this.loadAccessLogs()
+      if (name === 'tokens' && this.selectedAuth) this.loadTokens()
     },
     openCreateAuth() {
       this.authForm = this.emptyAuthForm()
@@ -1146,6 +1150,17 @@ code {
   align-items: center;
   gap: 16px;
   margin-bottom: 12px;
+}
+.auth-row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 2px 0;
+  line-height: 1;
+}
+.auth-row-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
 }
 .inline-code {
   margin-left: 8px;

@@ -1764,11 +1764,13 @@ export default {
     .base-form :deep(.el-row) {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      row-gap: 4px;
     }
 
     .base-form :deep(.el-row > [class*='el-col-']) {
       float: none;
       width: 100%;
+      max-width: none;
     }
   }
 
@@ -1794,7 +1796,7 @@ export default {
   }
 
   .ratio-group-code {
-    color: #94a3b8;
+    color: #64748b;
     font-size: 12px;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -1802,7 +1804,13 @@ export default {
   }
 
   .ratio-input {
-    width: 122px;
+    width: 144px;
+  }
+
+  .ratio-input :deep(.el-input__inner) {
+    color: #0f172a;
+    font-weight: 600;
+    text-align: center;
   }
 
   .ratio-list {

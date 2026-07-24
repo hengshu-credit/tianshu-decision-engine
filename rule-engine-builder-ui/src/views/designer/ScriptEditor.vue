@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -59,7 +61,7 @@
         <div v-show="!varPanelCollapsed" class="se-var-list">
           <div
             v-if="loadingVars"
-            style="text-align: center; padding: 20px; color: #999"
+            style="text-align: center; padding: 20px; color: #64748b"
           >
             <el-icon><el-icon-loading /></el-icon> 加载中...
           </div>
@@ -818,7 +820,7 @@ export default {
 $editor-bg: #1e1e2e;
 $editor-text: #cdd6f4;
 $editor-line-bg: #181825;
-$editor-line-text: #585b70;
+$editor-line-text: #9399b2;
 $editor-border: #313244;
 
 .se-designer {
@@ -899,7 +901,7 @@ $editor-border: #313244;
   cursor: pointer;
   gap: 6px;
   i {
-    color: #999;
+    color: #64748b;
   }
 }
 .se-var-list {
@@ -936,7 +938,7 @@ $editor-border: #313244;
 }
 .se-toggle-icon {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   width: 14px;
   text-align: center;
   flex-shrink: 0;
@@ -957,7 +959,7 @@ $editor-border: #313244;
   flex-shrink: 0;
   font-size: 10px;
   color: #fff;
-  background: #bfbfbf;
+  background: #64748b;
   border-radius: 8px;
   padding: 0 5px;
   line-height: 16px;
@@ -1011,7 +1013,7 @@ $editor-border: #313244;
   white-space: nowrap;
 }
 .var-label {
-  color: #999;
+  color: #64748b;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1088,7 +1090,7 @@ $editor-border: #313244;
 }
 .se-line-info {
   font-size: 11px;
-  color: #585b70;
+  color: $editor-line-text;
   font-family: 'Consolas', monospace;
 }
 .se-editor-container {
@@ -1114,7 +1116,7 @@ $editor-border: #313244;
 }
 .test-hint {
   font-size: 12px;
-  color: #909399;
+  color: #64748b;
   margin-bottom: 8px;
 }
 .test-result {

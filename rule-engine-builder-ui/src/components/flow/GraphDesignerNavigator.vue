@@ -143,11 +143,11 @@ export default {
 .graph-tools small {
   float: right;
   margin-left: 12px;
-  color: #909399;
+  color: #64748b;
 }
 .issue-empty {
   padding: 16px;
-  color: #909399;
+  color: #64748b;
   text-align: center;
 }
 .issue-list {

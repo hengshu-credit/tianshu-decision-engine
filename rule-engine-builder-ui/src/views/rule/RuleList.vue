@@ -192,7 +192,7 @@
         show-overflow-tooltip
       />
       <el-table-column prop="updateTime" label="更新时间" min-width="160" />
-      <el-table-column label="操作" width="230" align="center">
+      <el-table-column label="操作" width="250" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button link size="small" @click="handleDetail(row)"
             >详情</el-button

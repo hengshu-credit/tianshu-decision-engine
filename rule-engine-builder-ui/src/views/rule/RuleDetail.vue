@@ -158,7 +158,7 @@
             justify-content: space-between;
           "
         >
-          <span style="color: #909399; font-size: 12px">
+          <span style="color: #64748b; font-size: 12px">
             共
             {{ rule.inputFieldsJson ? rule.inputFieldsJson.length : 0 }}
             个字段，请关联引擎变量
@@ -186,7 +186,7 @@
               <span v-if="getFieldVarMap(row)" class="script-name-text">{{
                 getFieldVarMap(row).varCode
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column label="变量名称" min-width="130">
@@ -200,7 +200,7 @@
                 getFieldVarMap(row).varCodeText
               }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -220,7 +220,7 @@
               <span v-if="row.defaultValue" style="color: #606266">{{
                 row.defaultValue
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column label="取值范围" min-width="130">
@@ -228,7 +228,7 @@
               <span v-if="row.validValues" style="color: #606266">{{
                 row.validValues
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column label="字段校验" min-width="240">
@@ -260,7 +260,7 @@
               <template v-else>
                 <span
                   v-if="!(row.validationRuleIdList || []).length"
-                  style="color: #c0c4cc"
+                  style="color: #64748b"
                   >未配置</span
                 >
                 <template v-else>
@@ -293,7 +293,7 @@
               <span v-else-if="row.createTime">{{
                 row.createTime.replace('T', ' ')
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -315,7 +315,7 @@
                 <el-button
                   link
                   size="small"
-                  style="color: #909399"
+                  style="color: #64748b"
                   @click="cancelEditInput(row)"
                   >取消</el-button
                 >
@@ -342,7 +342,7 @@
         />
         <div
           v-if="!rule.inputFieldsJson || rule.inputFieldsJson.length === 0"
-          style="text-align: center; padding: 40px 0; color: #909399"
+          style="text-align: center; padding: 40px 0; color: #64748b"
         >
           暂无输入字段
         </div>
@@ -363,7 +363,7 @@
             justify-content: space-between;
           "
         >
-          <span style="color: #909399; font-size: 12px">
+          <span style="color: #64748b; font-size: 12px">
             共
             {{ rule.outputFieldsJson ? rule.outputFieldsJson.length : 0 }}
             个字段，请关联引擎变量
@@ -391,7 +391,7 @@
               <span v-if="getFieldVarMap(row)" class="script-name-text">{{
                 getFieldVarMap(row).varCode
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column label="变量名称" min-width="130">
@@ -405,7 +405,7 @@
                 getFieldVarMap(row).varCodeText
               }}</span>
               <span v-else-if="row.scriptName">{{ row.scriptName }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -421,14 +421,14 @@
             </template>
           </el-table-column>
           <el-table-column label="默认值" min-width="120">
-            <span style="color: #c0c4cc">—</span>
+            <span style="color: #64748b">—</span>
           </el-table-column>
           <el-table-column label="取值范围" min-width="130">
             <template v-slot="{ row }">
               <span v-if="row.validValues" style="color: #606266">{{
                 row.validValues
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column label="修改时间" width="140" align="center">
@@ -439,7 +439,7 @@
               <span v-else-if="row.createTime">{{
                 row.createTime.replace('T', ' ')
               }}</span>
-              <span v-else style="color: #c0c4cc">—</span>
+              <span v-else style="color: #64748b">—</span>
             </template>
           </el-table-column>
           <el-table-column
@@ -461,7 +461,7 @@
                 <el-button
                   link
                   size="small"
-                  style="color: #909399"
+                  style="color: #64748b"
                   @click="cancelEditOutput(row)"
                   >取消</el-button
                 >
@@ -488,7 +488,7 @@
         />
         <div
           v-if="!rule.outputFieldsJson || rule.outputFieldsJson.length === 0"
-          style="text-align: center; padding: 40px 0; color: #909399"
+          style="text-align: center; padding: 40px 0; color: #64748b"
         >
           暂无输出字段
         </div>
@@ -855,7 +855,7 @@
     >
       <div
         v-if="!testReady"
-        style="padding: 40px; text-align: center; color: #909399"
+        style="padding: 40px; text-align: center; color: #64748b"
       >
         正在加载...
       </div>
@@ -878,7 +878,7 @@
             size="small"
             style="width: 150px"
           />
-          <span style="color: #909399">毫秒</span>
+          <span style="color: #64748b">毫秒</span>
           <el-button
             size="small"
             type="primary"
@@ -965,8 +965,8 @@
                 type="date"
                 placeholder="选择日期"
                 style="width: 100%"
-                format="yyyy-MM-dd"
-                value-format="yyyy-MM-dd"
+                format="YYYY-MM-DD"
+                value-format="YYYY-MM-DD"
               />
               <el-input
                 v-else
@@ -978,7 +978,7 @@
           </div>
           <div
             v-else
-            style="text-align: center; padding: 30px 0; color: #909399"
+            style="text-align: center; padding: 30px 0; color: #64748b"
           >
             暂无输入字段，请切换到 JSON 模式手动编辑参数
           </div>
@@ -1686,7 +1686,14 @@ export default {
           return
         }
         if (payload.action !== 'preflight') {
-          this.$message.success('生命周期操作已完成')
+          const messages = {
+            submit: '已提交评审',
+            return: '已退回草稿',
+            approve: '审批已通过，决策制品已固化',
+            publish: '制品已发布，线上版本已更新',
+            offline: '线上制品已下线',
+          }
+          this.$message.success(messages[payload.action] || '生命周期操作已完成')
           await this.loadLifecycle(this.rule.id)
         }
       } catch (error) {
@@ -3028,7 +3035,7 @@ export default {
   color: var(--el-color-primary);
 }
 .script-unbound {
-  color: #c0c4cc;
+  color: #64748b;
   font-style: italic;
 }
 .open-api-panel {
@@ -3131,7 +3138,7 @@ export default {
 }
 .version-compare-toolbar-tip {
   margin-left: auto;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .version-compare-toolbar :deep(.el-select) {
@@ -3145,7 +3152,7 @@ export default {
   margin-top: 12px;
   padding: 24px;
   border: 1px dashed #dcdfe6;
-  color: #909399;
+  color: #64748b;
   text-align: center;
   font-size: 13px;
 }
@@ -3194,7 +3201,7 @@ export default {
 }
 .test-field-hint {
   font-size: 11px;
-  color: #c0c4cc;
+  color: #64748b;
   margin-top: 4px;
   font-family: 'Courier New', monospace;
   white-space: nowrap;

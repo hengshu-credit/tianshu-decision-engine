@@ -121,7 +121,7 @@
               range-separator="-"
               start-placeholder="开始时间"
               end-placeholder="结束时间"
-              value-format="yyyy-MM-dd HH:mm:ss"
+              value-format="YYYY-MM-DD HH:mm:ss"
               size="small"
               style="width: 360px"
             ></el-date-picker>
@@ -236,10 +236,10 @@
           min-width="110"
           show-overflow-tooltip
         />
-        <el-table-column prop="createTime" label="执行时间" min-width="150">
+        <el-table-column prop="createTime" label="执行时间" width="150" fixed="right">
           <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
         </el-table-column>
-        <el-table-column label="追踪" min-width="70" align="center">
+        <el-table-column label="追踪" width="70" align="center" fixed="right">
           <template v-slot="{ row }">
             <el-tag
               v-if="row.traceInfo"
@@ -247,10 +247,10 @@
               size="small"
               ><el-icon><el-icon-view /></el-icon> 有</el-tag
             >
-            <span v-else style="color: #bfbfbf">-</span>
+            <span v-else style="color: #64748b">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" min-width="70" align="center">
+        <el-table-column label="操作" width="70" align="center" fixed="right">
           <template v-slot="{ row }"
             ><el-button link size="small" @click="handleViewDetail(row)"
               >详情</el-button
@@ -335,7 +335,7 @@
               range-separator="-"
               start-placeholder="开始时间"
               end-placeholder="结束时间"
-              value-format="yyyy-MM-dd HH:mm:ss"
+              value-format="YYYY-MM-DD HH:mm:ss"
               size="small"
               style="width: 360px"
             ></el-date-picker>
@@ -1210,7 +1210,7 @@ emits: ['pick']
 .stats-card span {
   display: block;
   margin-bottom: 10px;
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .stats-card strong {
@@ -1249,7 +1249,7 @@ emits: ['pick']
   margin-left: 4px;
 }
 .auth-type-text {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
   line-height: 1.4;
 }
@@ -1279,7 +1279,7 @@ emits: ['pick']
   gap: 12px;
 }
 .auth-attribution-grid span {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
 }
 .auth-attribution-grid code {

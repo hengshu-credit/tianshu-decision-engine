@@ -92,7 +92,7 @@ export default {
   font-weight: 700;
 }
 .rs-trace-group-result {
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
 }
 .rs-trace-group.is-pass > .rs-trace-group-head .rs-trace-group-result {
@@ -152,7 +152,7 @@ export default {
   padding: 1px 8px;
   border-radius: 10px;
   background: #f4f4f5;
-  color: #909399;
+  color: #64748b;
   font-size: 11px;
   font-weight: 700;
 }

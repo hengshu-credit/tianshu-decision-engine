@@ -23,7 +23,7 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   await targetField.click()
 
   const targetReference = targetField.locator('xpath=ancestor::div[contains(@class, "vp-reference")]')
-  const popoverId = await targetReference.getAttribute('aria-describedby')
+  const popoverId = await targetField.getAttribute('aria-describedby')
   expect(popoverId).toBeTruthy()
   const popover = page.locator(`[id="${popoverId}"]`)
   await expect(popover).toBeVisible()
@@ -31,6 +31,60 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   await popover.locator('.vp-row').filter({ hasText: 'age' }).click()
   await expect(targetField).toHaveValue(/age/)
   await expect(popover).toBeHidden()
+  const typeToValueGap = await targetReference.evaluate(reference => {
+    const type = reference.querySelector('.vp-operand-kind')
+    const input = reference.querySelector('input')
+    const wrapper = reference.querySelector('.el-input__wrapper')
+    const typeRect = type.getBoundingClientRect()
+    const inputRect = input.getBoundingClientRect()
+    const inputStyle = getComputedStyle(input)
+    const wrapperStyle = getComputedStyle(wrapper)
+    return {
+      gap: inputRect.left + parseFloat(inputStyle.paddingLeft || '0') - typeRect.right,
+      paddingLeft: parseFloat(wrapperStyle.paddingLeft || '0'),
+      paddingRight: parseFloat(wrapperStyle.paddingRight || '0'),
+      suffixIcons: reference.querySelectorAll('.el-input__suffix .el-icon').length
+    }
+  })
+  expect(typeToValueGap.gap).toBeGreaterThanOrEqual(0)
+  expect(typeToValueGap.gap).toBeLessThanOrEqual(8)
+  expect(typeToValueGap).toMatchObject({
+    paddingLeft: 4,
+    paddingRight: 4,
+    suffixIcons: 1
+  })
+
+  const operatorWrapper = page.locator('.cg-field--op .el-select__wrapper').first()
+  await expect(operatorWrapper).toBeVisible()
+  const operatorSpacing = await operatorWrapper.evaluate(element => {
+    const style = getComputedStyle(element)
+    return {
+      gap: parseFloat(style.gap || '0'),
+      paddingLeft: parseFloat(style.paddingLeft || '0'),
+      paddingRight: parseFloat(style.paddingRight || '0')
+    }
+  })
+  expect(operatorSpacing).toEqual({
+    gap: 4,
+    paddingLeft: 8,
+    paddingRight: 8
+  })
+
+  const leftField = page.getByPlaceholder('选择左操作数...')
+  await leftField.click()
+  const leftPopoverId = await leftField.getAttribute('aria-describedby')
+  expect(leftPopoverId).toBeTruthy()
+  const leftPopover = page.locator(`[id="${leftPopoverId}"]`)
+  await leftPopover.locator('.vp-cat-item').filter({ hasText: '普通变量' }).click()
+  await leftPopover.locator('.vp-row').filter({ hasText: 'income' }).click()
+  await expect(leftField).toHaveValue(/income/)
+  const compactFieldMetrics = await leftField.evaluate(input => ({
+    clientWidth: input.clientWidth,
+    scrollWidth: input.scrollWidth
+  }))
+  expect(compactFieldMetrics.scrollWidth).toBeLessThanOrEqual(
+    compactFieldMetrics.clientWidth
+  )
 
   await targetField.click()
   await expect(popover).toBeVisible()

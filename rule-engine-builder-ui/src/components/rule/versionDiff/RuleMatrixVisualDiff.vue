@@ -85,7 +85,7 @@ export default {
   font-size: 14px;
 }
 .rule-matrix-section-head em {
-  color: #909399;
+  color: #64748b;
   font-size: 12px;
   font-style: normal;
 }
@@ -94,7 +94,7 @@ export default {
   padding: 16px;
   border: 1px dashed #dcdfe6;
   background: #fff;
-  color: #909399;
+  color: #64748b;
   text-align: center;
   font-size: 13px;
 }

@@ -60,7 +60,7 @@
             range-separator="至"
             start-placeholder="开始日期"
             end-placeholder="结束日期"
-            value-format="yyyy-MM-dd"
+            value-format="YYYY-MM-DD"
             style="width: 240px"
             @change="onCreateTimeChange"
           />
@@ -115,7 +115,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
-      <el-table-column label="操作" min-width="220" align="center">
+      <el-table-column label="操作" width="220" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="project-action-links">
             <el-button link size="small" type="primary" @click="handleEdit(row)"

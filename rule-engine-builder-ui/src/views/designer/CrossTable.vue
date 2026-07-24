@@ -6,6 +6,8 @@
         <el-button
           link
           :icon="ElIconBack"
+          aria-label="返回"
+          title="返回"
           @click="$router.back()"
           style="color: #606266"
         />
@@ -172,6 +174,8 @@
                     size="small"
                     :icon="ElIconClose"
                     class="delete-col-btn"
+                    aria-label="删除此列"
+                    title="删除此列"
                     @click="removeColumn(ci)"
                   />
                 </el-tooltip>
@@ -183,6 +187,8 @@
                 link
                 size="small"
                 :icon="ElIconPlus"
+                aria-label="添加列"
+                title="添加列"
                 @click="addColumn"
                 style="color: var(--el-color-primary)"
               />
@@ -211,6 +217,8 @@
                     size="small"
                     :icon="ElIconClose"
                     class="delete-row-btn"
+                    aria-label="删除此行"
+                    title="删除此行"
                     @click="removeRow(ri)"
                   />
                 </el-tooltip>
@@ -746,7 +754,7 @@ export default {
 }
 .cross-desc {
   font-size: 11px;
-  color: #999;
+  color: #64748b;
   margin-top: 4px;
   white-space: nowrap;
 }

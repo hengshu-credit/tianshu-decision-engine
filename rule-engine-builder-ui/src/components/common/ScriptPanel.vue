@@ -30,6 +30,8 @@
             circle
             :icon="expandIcon"
             class="sp-toggle-btn"
+            :aria-label="expanded ? '收起脚本面板' : '展开脚本面板'"
+            :title="expanded ? '收起脚本面板' : '展开脚本面板'"
             @click.stop="toggleExpand"
           />
         </el-tooltip>
@@ -417,7 +419,7 @@ export default {
 $editor-bg: #1e1e2e;
 $editor-text: #cdd6f4;
 $editor-line-bg: #181825;
-$editor-line-text: #585b70;
+$editor-line-text: #9399b2;
 $editor-border: #313244;
 $warning-bg: #fffbe6;
 
@@ -487,7 +489,7 @@ $warning-bg: #fffbe6;
   padding: 0 !important;
   border: none !important;
   background: transparent !important;
-  color: #999 !important;
+  color: #64748b !important;
   &:hover {
     color: #333 !important;
   }
@@ -637,7 +639,7 @@ $warning-bg: #fffbe6;
 }
 .sp-footer-tip {
   font-size: 11px;
-  color: #585b70;
+  color: $editor-line-text;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -650,7 +652,7 @@ $warning-bg: #fffbe6;
 }
 .sp-line-info {
   font-size: 11px;
-  color: #585b70;
+  color: $editor-line-text;
   font-family: 'Consolas', monospace;
 }
 .sp-slide-enter-active,

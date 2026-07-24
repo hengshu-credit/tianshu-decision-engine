@@ -465,7 +465,7 @@ export default {
 }
 .panel-close {
   cursor: pointer;
-  color: #999;
+  color: #64748b;
   &:hover {
     color: #333;
   }
@@ -475,7 +475,7 @@ export default {
 }
 .hint-text {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   line-height: 1.6;
 }
 .edge-list {
@@ -515,7 +515,7 @@ export default {
   margin-bottom: 6px;
 }
 .action-eq {
-  color: #999;
+  color: #64748b;
   font-weight: bold;
 }
 .script-editor {
@@ -523,7 +523,7 @@ export default {
 }
 .script-lang {
   font-size: 12px;
-  color: #999;
+  color: #64748b;
   margin-bottom: 4px;
 }
 .var-chips {
@@ -539,7 +539,7 @@ export default {
 }
 .var-chips-label {
   font-size: 11px;
-  color: #999;
+  color: #64748b;
   flex-shrink: 0;
 }
 .mono-textarea :deep(textarea) {

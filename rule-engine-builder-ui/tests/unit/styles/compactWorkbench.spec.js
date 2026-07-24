@@ -21,9 +21,14 @@ describe('compact workbench styles', () => {
     const styles = fs.readFileSync(stylePath, 'utf8')
     expect(styles).toContain('.uiue-compact-workbench')
     expect(styles).toMatch(/\.el-input__inner\s*\{[\s\S]*?padding-left:\s*8px;[\s\S]*?padding-right:\s*8px;/)
-    expect(styles).toMatch(/\.el-input--prefix\s+\.el-input__inner\s*\{[\s\S]*?padding-left:\s*28px;/)
-    expect(styles).toMatch(/\.el-input--suffix\s+\.el-input__inner\s*\{[\s\S]*?padding-right:\s*28px;/)
+    expect(styles).not.toMatch(/\.el-input__inner\s*\{\s*min-width:\s*0;/)
+    expect(styles).toMatch(/\.el-select__wrapper\s*\{[\s\S]*?gap:\s*4px;[\s\S]*?padding-left:\s*8px;[\s\S]*?padding-right:\s*8px;/)
+    expect(styles).not.toContain('.el-input--prefix .el-input__inner')
+    expect(styles).not.toContain('.el-input--suffix .el-input__inner')
     expect(styles).toContain('.el-input-number .el-input__inner')
+    expect(styles).toMatch(
+      /\.el-input-number \.el-input__inner\s*\{[\s\S]*?padding-left:\s*0;[\s\S]*?padding-right:\s*0;[\s\S]*?color:\s*#0f172a;/
+    )
     expect(styles).toContain('.uiue-list-page.uiue-compact-workbench')
   })
 
@@ -87,10 +92,14 @@ describe('compact workbench styles', () => {
     const advancedCross = fs.readFileSync(path.join(projectRoot, 'src/views/designer/AdvancedCrossTable.vue'), 'utf8')
 
     expect(picker).toMatch(/\.var-picker-wrap\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex:\s*1 1 auto;[\s\S]*?min-width:\s*0;/)
-    expect(picker).toContain(':style="referenceStyle"')
-    expect(picker).toMatch(/padding-left:\s*var\(--vp-prefix-offset,\s*12px\);/)
-    expect(picker).not.toContain('padding-left: 82px;')
-    expect(conditionEditor).toMatch(/\.cg-field--op\s*\{\s*width:\s*108px;\s*\}/)
+    expect(picker).toMatch(/<el-input\s+ref="reference"\s+class="vp-reference"/)
+    expect(picker).not.toMatch(/<div\s+ref="reference"\s+class="vp-reference"/)
+    expect(picker).not.toContain('referenceStyle')
+    expect(picker).not.toContain('--vp-prefix-offset')
+    expect(picker).toMatch(/\.vp-reference :deep\(\.el-input__wrapper\)\s*\{[\s\S]*?padding-left:\s*4px;[\s\S]*?padding-right:\s*4px;/)
+    expect(picker).toMatch(/\.el-input__prefix-inner > :last-child\)\s*\{[\s\S]*?margin-right:\s*4px;/)
+    expect(picker).toContain('v-if="!value || !allowCustom"')
+    expect(conditionEditor).toMatch(/\.cg-field--op\s*\{\s*width:\s*96px;\s*\}/)
     expect(advancedCross).toMatch(/\.seg-op\s*\{\s*flex:\s*0 0 96px;\s*width:\s*96px;\s*\}/)
   })
 

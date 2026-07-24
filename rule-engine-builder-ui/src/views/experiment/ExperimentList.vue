@@ -132,7 +132,7 @@
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="190" align="center">
+      <el-table-column label="操作" width="190" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button link size="small" @click="handleTest(row)"
             >执行</el-button
@@ -483,7 +483,7 @@
           <el-date-picker
             v-model="testRequest.requestTime"
             type="datetime"
-            value-format="yyyy-MM-ddTHH:mm:ss"
+            value-format="YYYY-MM-DDTHH:mm:ss"
             placeholder="用于测试组名单时点"
             style="width: 100%"
           />
