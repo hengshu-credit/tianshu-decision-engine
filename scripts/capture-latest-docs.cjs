@@ -1,0 +1,66 @@
+// Run after building rule-engine-builder-ui. Uses the existing documentation fixtures.
+const path = require('node:path')
+const { createRequire } = require('node:module')
+const requireUi = createRequire(path.resolve(__dirname, '../rule-engine-builder-ui/package.json'))
+const { chromium, expect } = requireUi('@playwright/test')
+const { installDistRoutes } = require('../rule-engine-builder-ui/tests/e2e/support/distRoutes.cjs')
+const { createDocsApiData } = require('../rule-engine-builder-ui/tests/e2e/support/docsFixtures.cjs')
+
+async function main() {
+  const browser = await chromium.launch()
+  try {
+    const page = await browser.newPage({ viewport: { width: 1600, height: 1100 } })
+    const routing = await installDistRoutes(page, { apiData: createDocsApiData() })
+    const shot = async name => {
+      await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
+      await expect(page.locator('.el-message:visible')).toHaveCount(0)
+      await page.waitForTimeout(800)
+      await page.screenshot({ path: path.resolve(__dirname, `../docs/project-usage/${name}.png`), animations: 'disabled' })
+    }
+    const openTheme = async () => {
+      await page.locator('.layout-account-trigger').click()
+      await page.locator('[data-account-command="theme"]').click()
+      await expect(page.getByRole('dialog', { name: '主题设置' })).toBeVisible()
+    }
+    await page.goto('http://tianshu.local/index.html#/dashboard')
+    await expect(page.getByText('进件数', { exact: true })).toBeVisible()
+    await shot('project-usage-18-dashboard')
+    await openTheme()
+    await shot('project-usage-19-theme-presets')
+    await page.locator('[data-theme-scheme="DARK"]').click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    await page.locator('[data-accent="LIQUID_PURPLE_GRADIENT"]').click()
+    await shot('project-usage-19-theme-dark')
+    await page.locator('[data-action="cancel"]').click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
+    await openTheme()
+    await page.locator('[data-accent-mode="CUSTOM_GRADIENT"]').click()
+    await page.locator('[data-gradient-count="3"]').click()
+    await page.locator('[data-gradient-type="RADIAL"]').click()
+    await shot('project-usage-19-theme-custom')
+    await page.locator('[data-navigation-layout="TOP"]').click()
+    await page.locator('[data-action="save"]').click()
+    await expect(page.getByText('主题设置已保存', { exact: true })).toBeVisible()
+    await page.reload()
+    await expect(page.locator('.top-navigation__menu')).toBeVisible()
+    await shot('project-usage-19-theme-top')
+    await openTheme()
+    await expect(page.locator('[data-accent-mode="CUSTOM_GRADIENT"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-gradient-count="3"]')).toHaveAttribute('aria-pressed', 'true')
+    await expect(page.locator('[data-gradient-type="RADIAL"]')).toHaveAttribute('aria-pressed', 'true')
+    await page.getByRole('button', { name: '恢复默认', exact: true }).click()
+    await page.locator('[data-action="save"]').click()
+    await expect(page.locator('html')).toHaveAttribute('data-navigation-layout', 'left')
+    await page.goto('http://tianshu.local/index.html#/variable')
+    await page.getByRole('tab', { name: '数据对象', exact: true }).click()
+    await page.getByRole('row').filter({ hasText: 'FaceVerifyRequest' }).locator('.el-table__expand-icon').click()
+    await expect(page.getByText('deviceId', { exact: true }).first()).toBeVisible()
+    await shot('project-usage-20-object-fields')
+    routing.assertClean()
+    console.log('PASS: six screenshots; theme preview cancellation, custom gradient save/reload, flat top navigation, default restoration and object fields; no unmatched API or browser errors.')
+  } finally {
+    await browser.close()
+  }
+}
+
+main().catch(error => { console.error(error); process.exitCode = 1 })
