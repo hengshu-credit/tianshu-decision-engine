@@ -294,6 +294,53 @@ test('管理端外层不滚动且业务内容区独立滚动', async ({ page }) 
   assertClean()
 })
 
+for (const appearance of [
+  { colorScheme: 'LIGHT', navigationLayout: 'LEFT', contentWidth: 'FLUID', background: 'rgb(255, 255, 255)' },
+  { colorScheme: 'DARK', navigationLayout: 'TOP', contentWidth: 'FIXED', background: 'rgb(21, 29, 49)' },
+]) {
+  test(`短页面底色铺满内容区且长页面仍可滚动：${appearance.colorScheme}`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1120 })
+    const { assertClean } = await installDistRoutes(page, {
+      apiData: createManagementApiData(),
+    })
+    await page.goto('http://tianshu.local/index.html#/database')
+    const dataTab = page.getByRole('tabpanel', { name: '数据源配置' })
+    await expect(dataTab.getByText('风控只读库', { exact: true })).toBeVisible()
+    await expect(page.locator('.el-loading-mask:visible')).toHaveCount(0)
+    await page.getByRole('button', { name: '本地用户的账户菜单' }).click()
+    await page.getByRole('menuitem', { name: '主题设置' }).click()
+    await page.locator(`[data-theme-scheme="${appearance.colorScheme}"]`).click()
+    await page.locator(`[data-navigation-layout="${appearance.navigationLayout}"]`).click()
+    await page.locator(`[data-content-width="${appearance.contentWidth}"]`).click()
+    await page.getByRole('button', { name: '保存设置', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '主题设置' })).not.toBeVisible()
+
+    const surface = page.locator('.layout-main > .uiue-list-page')
+    await expect(surface).toHaveCSS('background-color', appearance.background)
+    const layout = await surface.evaluate(element => {
+      const main = element.parentElement
+      const mainStyle = getComputedStyle(main)
+      const rect = element.getBoundingClientRect()
+      const availableBottom = main.getBoundingClientRect().bottom - parseFloat(mainStyle.paddingBottom)
+      return {
+        bottomGap: availableBottom - rect.bottom,
+        width: rect.width,
+        mainScrollRange: main.scrollHeight - main.clientHeight,
+      }
+    })
+    expect(Math.abs(layout.bottomGap)).toBeLessThanOrEqual(1)
+    expect(layout.mainScrollRange).toBe(0)
+    if (appearance.contentWidth === 'FIXED') expect(layout.width).toBe(1440)
+
+    await page.setViewportSize({ width: 1280, height: 420 })
+    await dataTab.locator('.el-pagination').scrollIntoViewIfNeeded()
+    await expect(dataTab.locator('.el-pagination')).toBeVisible()
+    expect(await page.locator('.layout-main').evaluate(main => main.scrollTop)).toBeGreaterThan(0)
+    expect(await page.evaluate(() => document.scrollingElement.scrollTop)).toBe(0)
+    assertClean()
+  })
+}
+
 test('数据加载只显示内容中央的透明 SVG 转圈', async ({ page }) => {
   let releaseProjects
   const projectsReady = new Promise(resolve => { releaseProjects = resolve })

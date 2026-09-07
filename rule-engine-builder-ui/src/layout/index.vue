@@ -697,7 +697,8 @@ export default {
   right: 0;
   display: flex;
   width: 198px;
-  height: 52px;
+  // 留出 header 的 1px 下边框，避免账户背景将连续分隔线遮断。
+  height: calc(52px - 1px);
   flex: none;
   padding: 0 12px;
   align-items: center;
@@ -712,7 +713,7 @@ export default {
   }
 
   .layout-account {
-    height: 60px;
+    height: calc(60px - 1px);
     color: var(--tianshu-sidebar-text-active);
     background: var(--tianshu-sidebar-bg);
     border-left-color: var(--tianshu-sidebar-border);
@@ -806,6 +807,10 @@ export default {
   flex: 1;
   box-sizing: border-box;
   background: var(--tianshu-bg-page);
+
+  > :deep(.uiue-list-page) {
+    min-height: 100%;
+  }
 }
 
 @media (max-width: 1120px) {
