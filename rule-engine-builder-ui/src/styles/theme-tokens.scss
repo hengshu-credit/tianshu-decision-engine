@@ -31,7 +31,7 @@
   --tianshu-selection-bg: rgba(var(--el-color-primary-rgb), 0.24);
   --tianshu-selection-foreground: var(--tianshu-text-primary);
   --tianshu-table-accent: var(--el-color-primary-dark-2);
-  --tianshu-table-header-bg: rgba(var(--el-color-primary-rgb), 0.1);
+  --tianshu-table-header-bg: color-mix(in srgb, var(--el-color-primary) 10%, var(--tianshu-bg-surface));
   --tianshu-table-header-border: rgba(var(--el-color-primary-rgb), 0.22);
   --tianshu-table-status-bg: rgba(var(--el-color-primary-rgb), 0.08);
   --tianshu-table-status-border: rgba(var(--el-color-primary-rgb), 0.22);
@@ -112,7 +112,7 @@
   --tianshu-selection-bg: rgba(var(--el-color-primary-rgb), 0.38);
   --tianshu-selection-foreground: var(--tianshu-text-primary);
   --tianshu-table-accent: var(--el-color-primary-light-3);
-  --tianshu-table-header-bg: rgba(var(--el-color-primary-rgb), 0.22);
+  --tianshu-table-header-bg: color-mix(in srgb, var(--el-color-primary) 22%, var(--tianshu-bg-surface));
   --tianshu-table-header-border: rgba(var(--el-color-primary-rgb), 0.38);
   --tianshu-table-status-bg: rgba(var(--el-color-primary-rgb), 0.18);
   --tianshu-table-status-border: rgba(var(--el-color-primary-rgb), 0.36);

@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
@@ -12,6 +13,7 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
@@ -175,6 +177,7 @@ public class RuleLineageServiceTest {
                         null, 1));
 
         RuleLineageService service = new RuleLineageService();
+        setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.emptyList());
         setMapper(service, "projectMapper", RuleProjectMapper.class, Collections.emptyList());
         setMapper(service, "variableMapper", RuleVariableMapper.class, Collections.emptyList());
         setMapper(service, "definitionMapper", RuleDefinitionMapper.class, Collections.emptyList());
@@ -230,6 +233,7 @@ public class RuleLineageServiceTest {
         ruleOutput.setRefType("VARIABLE");
 
         RuleLineageService service = new RuleLineageService();
+        setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.emptyList());
         setMapper(service, "projectMapper", RuleProjectMapper.class, Collections.singletonList(project));
         setMapper(service, "variableMapper", RuleVariableMapper.class, Arrays.asList(start, sibling, output));
         setMapper(service, "definitionMapper", RuleDefinitionMapper.class, Collections.singletonList(rule));
@@ -244,6 +248,36 @@ public class RuleLineageServiceTest {
         setMapper(service, "listLibraryMapper", RuleListLibraryMapper.class, Collections.emptyList());
         setMapper(service, "dataObjectFieldMapper", RuleDataObjectFieldMapper.class, Collections.emptyList());
         return service;
+    }
+
+    @Test
+    public void fieldCarriesItsObjectAtDepthBoundaryAndKeepsOriginalCode() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleDataObject object = new RuleDataObject();
+        object.setId(30L);
+        object.setObjectCode("Request_ABC");
+        object.setObjectLabel("申请数据");
+        RuleDataObjectField field = dataField(24L, "Camel_Field");
+        field.setObjectId(30L);
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setDefinitionId(10L);
+        input.setVarId(24L);
+        input.setRefType("DATA_OBJECT");
+        setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.singletonList(object));
+        setMapper(service, "dataObjectFieldMapper", RuleDataObjectFieldMapper.class, Collections.singletonList(field));
+        setMapper(service, "definitionInputFieldMapper", RuleDefinitionInputFieldMapper.class, Collections.singletonList(input));
+
+        Map<String, Object> graph = service.graph("RULE", 10L, "UPSTREAM", 1);
+        Map<String, Object> fieldNode = node(graph, "DATA_FIELD:24");
+        assertEquals("Camel_Field", fieldNode.get("code"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> parent = (Map<String, Object>) fieldNode.get("dataObject");
+        assertNotNull(parent);
+        assertEquals("DATA_OBJECT:30", parent.get("id"));
+        assertEquals("Request_ABC", parent.get("code"));
+        Map<String, Object> objectGraph = service.graph("DATA_OBJECT", 30L, "DOWNSTREAM", 1);
+        assertEquals(new LinkedHashSet<>(Arrays.asList("DATA_OBJECT:30", "DATA_FIELD:24")), nodeIds(objectGraph));
+        assertEquals("包含字段", edges(objectGraph).get(0).get("label"));
     }
 
     private static RuleVariable variable(Long id, String code) {

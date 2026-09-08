@@ -61,9 +61,18 @@ export function applyTheme(config, root = document.documentElement) {
   setProperty(
     root,
     '--tianshu-scrollbar-thumb',
-    `linear-gradient(90deg, ${preset.primary} 0%, ${preset.secondary} 100%)`
+    preset.kind === 'gradient'
+      ? `linear-gradient(90deg, ${preset.primary} 0%, ${preset.secondary} 100%)`
+      : preset.primary
   )
   setProperty(root, '--tianshu-scrollbar-thumb-solid', preset.primary)
+  setProperty(
+    root,
+    '--tianshu-scrollbar-thumb-vertical',
+    preset.kind === 'gradient'
+      ? `linear-gradient(180deg, ${preset.primary} 0%, ${preset.secondary} 100%)`
+      : preset.primary
+  )
   setProperty(
     root,
     '--tianshu-scrollbar-track',

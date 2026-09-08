@@ -88,13 +88,13 @@
     <div
       ref="graphWrap"
       class="graph-wrap"
+      :style="{ height: graphHeight + 'px' }"
       :class="{ 'is-interacting': pointerInteraction }"
       v-loading="loading"
       @pointerdown="beginCanvasPan"
       @pointermove="onPointerMove"
       @pointerup="endPointerInteraction"
       @pointercancel="endPointerInteraction"
-      @wheel="onCanvasWheel"
     >
       <div v-if="!startNode" class="empty-graph">请选择起点后生成血缘图</div>
       <div v-else class="graph-toolbar" @pointerdown.stop>
@@ -166,6 +166,14 @@
           :style="currentNodeStyle"
           @pointerdown.stop="beginNodeDrag($event, 'CURRENT')"
         >
+          <button
+            v-if="startNode.type === 'DATA_OBJECT'"
+            type="button"
+            class="branch-toggle object-toggle"
+            :aria-label="expandedObjects[startNode.id] ? '收起字段' : '展开字段'"
+            @pointerdown.stop
+            @click.stop="toggleObject(startNode.id)"
+          >{{ expandedObjects[startNode.id] ? '−' : '+' }}</button>
           <div class="node-head">
             <span
               class="node-type"
@@ -191,13 +199,14 @@
             { 'is-cycle': item.branch.cycle },
           ]"
           :style="branchStyle(item)"
+          :data-node-id="item.branch.node.id"
           @pointerdown.stop="beginNodeDrag($event, item.branch.instanceId)"
         >
           <button
             v-if="canToggle(item.branch)"
             type="button"
             class="branch-toggle"
-            :aria-label="item.branch.expanded ? '收起节点' : '展开节点'"
+            :aria-label="item.branch.objectGroup ? (item.branch.expanded ? '收起字段' : '展开字段') : (item.branch.expanded ? '收起节点' : '展开节点')"
             @pointerdown.stop
             @click.stop="toggleBranch(item.branch)"
           >
@@ -239,6 +248,7 @@
 import { markRaw } from 'vue'
 import { Share as ElIconShare } from '@element-plus/icons-vue'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
+import { lineageLayers } from '@/utils/lineageLayers'
 
 const CARD_W = 200
 const CARD_H = 88
@@ -269,7 +279,7 @@ export default {
         },
         {
           title: '两跳展开',
-          text: '首次自动展示上下游各两层关系；点击第二层节点的加号继续展开，点击减号收起整条分支。',
+          text: '首次展示上下游各两层关系；数据对象默认收起字段，点击加号展开。共享节点只显示一次，收起分支仍保留其他路径的引用。',
         },
         {
           title: '静态分析边界',
@@ -282,8 +292,11 @@ export default {
       startNode: null,
       upstreamRoots: [],
       downstreamRoots: [],
+      knownNodes: {},
+      knownEdges: [],
       loadedDirections: { UPSTREAM: false, DOWNSTREAM: false },
-      branchSequence: 0,
+      expandedObjects: {},
+      graphHeight: 440,
       viewport: { x: 0, y: 0, scale: 1 },
       positionOverrides: {},
       pointerInteraction: null,
@@ -291,6 +304,7 @@ export default {
       nodeTypeOptions: [
         { label: '项目', value: 'PROJECT' },
         { label: '变量', value: 'VARIABLE' },
+        { label: '数据对象', value: 'DATA_OBJECT' },
         { label: '规则', value: 'RULE' },
         { label: '模型', value: 'MODEL' },
         { label: 'API', value: 'API' },
@@ -302,6 +316,31 @@ export default {
     }
   },
   name: 'LineageGraph',
+  watch: {
+    startNode: {
+      flush: 'post',
+      handler(node) {
+        const graphWrap = this.$refs.graphWrap
+        if (!graphWrap) return
+        graphWrap.removeEventListener('wheel', this.onCanvasWheel)
+        // 画布缩放必须阻止页面同时滚动；空画布无需注册监听。
+        if (node) graphWrap.addEventListener('wheel', this.onCanvasWheel, { passive: false })
+      },
+    },
+  },
+  beforeUnmount() {
+    this.$refs.graphWrap.removeEventListener('wheel', this.onCanvasWheel)
+    this.resizeObserver?.disconnect()
+    window.removeEventListener('resize', this.resizeGraph)
+  },
+  mounted() {
+    this.resizeGraph()
+    window.addEventListener('resize', this.resizeGraph)
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.resizeGraph())
+      this.resizeObserver.observe(this.$el)
+    }
+  },
   created() {
     if (this.initialNodeType) this.query.nodeType = this.initialNodeType
     if (this.initialNodeId) this.query.nodeId = this.initialNodeId
@@ -319,7 +358,7 @@ export default {
     showDownstream() {
       return this.query.direction !== 'UPSTREAM'
     },
-    visibleBranches() {
+    branchPaths() {
       const result = []
       const collect = (branches, side, depth, parentId) => {
         const list = branches || []
@@ -336,41 +375,90 @@ export default {
         collect(this.downstreamRoots, 'DOWNSTREAM', 1, 'CURRENT')
       return result
     },
+    visibleGraph() {
+      const nodes = new Map()
+      const edges = new Map()
+      const currentId = this.startNode?.id
+      const canonicalId = id => id === currentId ? 'CURRENT' : id
+      const objects = new Map()
+      this.branchPaths.forEach(item => {
+        const object = item.branch.node.dataObject
+        if (object) objects.set(object.id, object)
+      })
+      if (this.startNode?.type === 'DATA_OBJECT') objects.set(currentId, this.startNode)
+      const displayId = id => {
+        const object = this.knownNodes[id]?.dataObject
+        return canonicalId(object && !this.expandedObjects[object.id] ? object.id : id)
+      }
+      const addNode = item => {
+        const id = item.branch.node.id
+        if (id === currentId) return
+        const previous = nodes.get(id)
+        if (!previous) nodes.set(id, item)
+        else if (!item.branch.cycle && previous.branch.cycle) nodes.set(id, item)
+      }
+      const addEdge = (fromId, toId, label) => {
+        if (fromId === toId) return
+        const key = `${fromId}->${toId}:${label}`
+        edges.set(key, { key, fromId, toId, label })
+      }
+      this.branchPaths.forEach(item => {
+        const { branch } = item
+        const object = branch.node.dataObject
+        if (object) {
+          const expanded = Boolean(this.expandedObjects[object.id])
+          addNode({
+            ...item,
+            branch: { node: object, instanceId: object.id, objectGroup: true, expanded, children: [] },
+          })
+          if (expanded) {
+            addNode(item)
+            addEdge(canonicalId(object.id), canonicalId(branch.node.id), '包含字段')
+          }
+        } else if (!objects.has(branch.node.id)) {
+          addNode(item)
+        }
+      })
+      // 折叠仅决定节点可见性；仍可见的共享节点之间保留全部已加载的真实依赖。
+      this.knownEdges.forEach(edge => addEdge(displayId(edge.from), displayId(edge.to), edge.label || ''))
+      const visibleIds = new Set(['CURRENT', ...nodes.keys()])
+      return {
+        nodes: [...nodes.values()],
+        edges: [...edges.values()].filter(edge => visibleIds.has(edge.fromId) && visibleIds.has(edge.toId)),
+      }
+    },
+    visibleBranches() {
+      return this.visibleGraph.nodes
+    },
     mindMapLayout() {
-      const upstream = this.layoutSide(
-        this.showUpstream ? this.upstreamRoots : []
-      )
-      const downstream = this.layoutSide(
-        this.showDownstream ? this.downstreamRoots : []
-      )
-      const maxDepth = Math.max(1, upstream.maxDepth, downstream.maxDepth)
+      const nodeIds = ['CURRENT', ...this.visibleBranches.map(item => item.branch.instanceId)]
+      const layers = lineageLayers(nodeIds, this.visibleGraph.edges, 'CURRENT')
+      const maxDepth = Math.max(1, ...[...layers.values()].map(Math.abs))
       const width = Math.max(
         MIN_CANVAS_W,
         PADDING_X * 2 + CARD_W + maxDepth * LEVEL_STEP * 2
       )
-      const height = Math.max(
-        MIN_CANVAS_H,
-        PADDING_Y * 2 + Math.max(upstream.height, downstream.height)
-      )
-      const currentLeft = (width - CARD_W) / 2
-      const currentCenterY = height / 2
-      const positions = {
-        CURRENT: { left: currentLeft, top: currentCenterY - CARD_H / 2 },
-      }
-      this.applySidePositions(
-        positions,
-        upstream,
-        'UPSTREAM',
-        currentLeft,
-        currentCenterY
-      )
-      this.applySidePositions(
-        positions,
-        downstream,
-        'DOWNSTREAM',
-        currentLeft,
-        currentCenterY
-      )
+      const columns = new Map()
+      nodeIds.forEach(id => {
+        const layer = layers.get(id)
+        if (!columns.has(layer)) columns.set(layer, [])
+        columns.get(layer).push(id)
+      })
+      const positions = {}
+      let maxOffset = 0
+      columns.forEach((ids, layer) => {
+        // 固定排序，避免收起某条路径后共享节点换用另一个路径实例而乱序。
+        ids.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
+        const currentIndex = ids.indexOf('CURRENT')
+        const center = currentIndex >= 0 ? currentIndex : (ids.length - 1) / 2
+        ids.forEach((id, index) => {
+          const offset = (index - center) * ROW_STEP
+          maxOffset = Math.max(maxOffset, Math.abs(offset))
+          positions[id] = { left: (width - CARD_W) / 2 + layer * LEVEL_STEP, top: offset }
+        })
+      })
+      const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + CARD_H + maxOffset * 2)
+      Object.values(positions).forEach(pos => { pos.top += (height - CARD_H) / 2 })
       return { width, height, positions }
     },
     canvasSize() {
@@ -388,31 +476,22 @@ export default {
       return Math.round(this.viewport.scale * 100)
     },
     edgeLines() {
-      return this.visibleBranches
-        .map((item) => {
-          const branchPos = this.nodePosition(item.branch.instanceId)
-          const parentPos = this.nodePosition(item.parentId)
-          if (!branchPos || !parentPos) return null
-          const upstream = item.side === 'UPSTREAM'
-          const x1 = upstream
-            ? branchPos.left + CARD_W
-            : parentPos.left + CARD_W
-          const y1 = upstream
-            ? branchPos.top + CARD_H / 2
-            : parentPos.top + CARD_H / 2
-          const x2 = upstream ? parentPos.left : branchPos.left
-          const y2 = upstream
-            ? parentPos.top + CARD_H / 2
-            : branchPos.top + CARD_H / 2
-          const midX = (x1 + x2) / 2
+      return this.visibleGraph.edges
+        .map((edge) => {
+          const from = this.nodePosition(edge.fromId)
+          const to = this.nodePosition(edge.toId)
+          const sameLayer = from.left === to.left
+          const forward = from.left < to.left
+          const x1 = from.left + (forward || sameLayer ? CARD_W : 0)
+          const y1 = from.top + CARD_H / 2
+          const x2 = to.left + (forward ? 0 : CARD_W)
+          const y2 = to.top + CARD_H / 2
+          const midX = sameLayer ? x1 + 48 : (x1 + x2) / 2
           return {
-            key: item.branch.instanceId + '-' + item.parentId,
-            fromId: upstream ? item.branch.instanceId : item.parentId,
-            toId: upstream ? item.parentId : item.branch.instanceId,
+            ...edge,
             path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`,
             labelX: midX,
             labelY: (y1 + y2) / 2 - 8,
-            label: item.branch.relationLabel || '',
           }
         })
         .filter(Boolean)
@@ -428,6 +507,33 @@ export default {
     },
   },
   methods: {
+    mergeGraph(data) {
+      ;[...(data.nodes || []), data.startNode].filter(Boolean).forEach(node => {
+        this.knownNodes[node.id] = node
+      })
+      const edges = new Map(this.knownEdges.map(edge => [`${edge.from}->${edge.to}:${edge.label || ''}`, edge]))
+      ;(data.edges || []).forEach(edge => edges.set(`${edge.from}->${edge.to}:${edge.label || ''}`, edge))
+      this.knownEdges = [...edges.values()]
+    },
+    resizeGraph() {
+      const wrap = this.$refs.graphWrap
+      if (!wrap) return
+      // 使用容器在滚动内容中的位置，避免滚动页面时画布不断增高。
+      const main = wrap.closest('.layout-main')
+      const top = wrap.getBoundingClientRect().top + (main?.scrollTop || 0)
+      const bottom = main ? Math.min(window.innerHeight, main.getBoundingClientRect().bottom) : window.innerHeight
+      const padding = main ? parseFloat(getComputedStyle(main).paddingBottom) || 0 : 16
+      const pagePadding = parseFloat(getComputedStyle(this.$el).paddingBottom) || 0
+      const height = Math.max(this.embedded ? 360 : 440, bottom - top - padding - pagePadding)
+      if (this.graphHeight !== height) {
+        this.graphHeight = height
+        this.$nextTick(() => this.fitGraph())
+      }
+    },
+    toggleObject(id) {
+      this.expandedObjects[id] = !this.expandedObjects[id]
+      this.$nextTick(() => this.fitGraph())
+    },
     async loadOptions(keyword) {
       this.optionLoading = true
       try {
@@ -449,8 +555,10 @@ export default {
       this.startNode = null
       this.upstreamRoots = []
       this.downstreamRoots = []
+      this.knownNodes = {}
+      this.knownEdges = []
       this.loadedDirections = { UPSTREAM: false, DOWNSTREAM: false }
-      this.branchSequence = 0
+      this.expandedObjects = {}
       this.positionOverrides = {}
       this.pointerInteraction = null
       this.viewport = { x: 0, y: 0, scale: 1 }
@@ -591,6 +699,7 @@ export default {
         const data = (res && res.data) || {}
         this.resetGraph()
         this.startNode = data.startNode || null
+        this.mergeGraph(data)
         if (this.query.direction !== 'DOWNSTREAM') {
           this.upstreamRoots = this.buildBranches(data, 'UPSTREAM', 2)
           this.loadedDirections.UPSTREAM = true
@@ -623,6 +732,7 @@ export default {
             maxDepth: 2,
           })
           const data = (res && res.data) || {}
+          this.mergeGraph(data)
           if (!this.startNode) this.startNode = data.startNode || null
           if (item === 'UPSTREAM')
             this.upstreamRoots = this.buildBranches(data, item, 2)
@@ -685,7 +795,7 @@ export default {
                 ? []
                 : build(node.id, nextPath, depth + 1)
             return {
-              instanceId: 'branch-' + ++this.branchSequence,
+              instanceId: node.id === this.startNode?.id ? 'CURRENT' : node.id,
               node,
               direction,
               relationLabel: item.edge.label || '',
@@ -703,16 +813,26 @@ export default {
       return build(parentNodeId, parentPath, 1)
     },
     async toggleBranch(branch) {
+      if (branch?.objectGroup) {
+        this.toggleObject(branch.node.id)
+        return
+      }
       if (!branch || branch.loading || branch.cycle) return
+      const matching = []
+      const collect = branches => branches.forEach(item => {
+        if (!item.cycle && item.node.id === branch.node.id && item.direction === branch.direction) matching.push(item)
+        collect(item.children)
+      })
+      collect([...this.upstreamRoots, ...this.downstreamRoots])
       if (branch.expanded) {
-        branch.expanded = false
+        matching.forEach(item => { item.expanded = false })
         return
       }
-      if (branch.loaded) {
-        branch.expanded = branch.children.length > 0
+      if (matching.every(item => item.loaded)) {
+        matching.forEach(item => { item.expanded = item.children.length > 0 })
         return
       }
-      branch.loading = true
+      matching.forEach(item => { item.loading = true })
       try {
         const res = await getLineageGraph({
           nodeType: branch.node.type,
@@ -720,66 +840,25 @@ export default {
           direction: branch.direction,
           maxDepth: 1,
         })
-        branch.children = this.buildDirectChildren(
-          branch,
-          (res && res.data) || {}
-        )
-        branch.loaded = true
-        branch.hasMore = branch.children.length > 0
-        branch.expanded = branch.children.length > 0
+        this.mergeGraph((res && res.data) || {})
+        matching.forEach(item => {
+          item.children = this.buildDirectChildren(item, (res && res.data) || {})
+          item.loaded = true
+          item.hasMore = item.children.length > 0
+          item.expanded = item.children.length > 0
+        })
       } catch (e) {
         this.$message.error('血缘分支加载失败，请重试')
       } finally {
-        branch.loading = false
+        matching.forEach(item => { item.loading = false })
       }
     },
     canToggle(branch) {
+      if (branch?.loaded && branch.node.dataObject && branch.direction === 'UPSTREAM' &&
+        branch.children.every(child => child.node.id === branch.node.dataObject.id)) return false
       return Boolean(
-        branch && !branch.cycle && (branch.hasMore || branch.children.length)
+        branch && (branch.objectGroup || (!branch.cycle && (branch.hasMore || branch.children.length)))
       )
-    },
-    layoutSide(roots) {
-      const rawPositions = {}
-      let leafIndex = 0
-      let maxDepth = 0
-      const place = (branch, depth) => {
-        maxDepth = Math.max(maxDepth, depth)
-        const children = branch.expanded ? branch.children : []
-        let centerY
-        if (children.length) {
-          const childCenters = children.map((child) => place(child, depth + 1))
-          centerY =
-            (childCenters[0] + childCenters[childCenters.length - 1]) / 2
-        } else {
-          centerY = leafIndex * ROW_STEP + CARD_H / 2
-          leafIndex += 1
-        }
-        rawPositions[branch.instanceId] = { centerY, depth }
-        return centerY
-      }
-      ;(roots || []).forEach((root) => place(root, 1))
-      const centers = Object.values(rawPositions).map((item) => item.centerY)
-      const minCenter = centers.length ? Math.min(...centers) : CARD_H / 2
-      const maxCenter = centers.length ? Math.max(...centers) : CARD_H / 2
-      return {
-        rawPositions,
-        maxDepth,
-        centerY: (minCenter + maxCenter) / 2,
-        height: centers.length ? maxCenter - minCenter + CARD_H : CARD_H,
-      }
-    },
-    applySidePositions(positions, layout, side, currentLeft, currentCenterY) {
-      const offsetY = currentCenterY - layout.centerY
-      Object.keys(layout.rawPositions).forEach((instanceId) => {
-        const raw = layout.rawPositions[instanceId]
-        positions[instanceId] = {
-          left:
-            side === 'UPSTREAM'
-              ? currentLeft - raw.depth * LEVEL_STEP
-              : currentLeft + raw.depth * LEVEL_STEP,
-          top: raw.centerY + offsetY - CARD_H / 2,
-        }
-      })
     },
     branchStyle(item) {
       const pos = this.nodePosition(item.branch.instanceId)
@@ -802,6 +881,7 @@ export default {
           LIST: '#C026D3',
           DATASOURCE: '#64748B',
           DATA_FIELD: '#0891B2',
+          DATA_OBJECT: '#0284C7',
         }[type] || '#64748B'
       )
     },
@@ -822,7 +902,6 @@ export default {
 
     .graph-wrap {
       min-height: 360px;
-      height: min(56vh, 560px);
     }
   }
 
@@ -900,7 +979,6 @@ export default {
     background-size: 16px 16px;
     border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
-    height: min(64vh, 680px);
     min-height: 440px;
     overflow: hidden;
     position: relative;
@@ -918,7 +996,6 @@ export default {
   }
   .graph-canvas {
     position: relative;
-    min-width: 100%;
     transform-origin: 0 0;
     will-change: transform;
   }
@@ -993,6 +1070,8 @@ export default {
     position: absolute;
     left: 0;
     top: 0;
+    // 节点可拖出初始布局范围；连线只由外层画布裁剪。
+    overflow: visible;
     pointer-events: none;
   }
   .edge-path {
@@ -1103,6 +1182,9 @@ export default {
     left: -13px;
   }
   .branch-node.is-downstream .branch-toggle {
+    right: -13px;
+  }
+  .object-toggle {
     right: -13px;
   }
   @media (max-width: 1200px) {

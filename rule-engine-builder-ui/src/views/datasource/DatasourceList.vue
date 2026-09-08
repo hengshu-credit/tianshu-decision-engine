@@ -122,7 +122,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="datasourceList"
           border
           size="small"
@@ -193,7 +193,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="190" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="230" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -348,7 +348,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="apiList"
           border
           size="small"
@@ -414,7 +414,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="120" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"

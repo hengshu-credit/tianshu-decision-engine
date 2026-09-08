@@ -109,7 +109,7 @@
 
         <!-- 1. 普通变量（系统新增） -->
         <div v-if="standaloneVars.length > 0" class="var-list-section">
-          <el-table
+          <el-table show-overflow-tooltip
             :data="standaloneVars"
             border
             size="small"
@@ -211,7 +211,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="250" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="330" align="center" fixed="right">
               <template v-slot="{ row }">
                 <el-button
                   v-permission="'field:edit'"
@@ -376,6 +376,7 @@
         <div v-else v-loading="objLoading">
           <el-table
             data-testid="data-object-table"
+            show-overflow-tooltip
             :data="paginatedObjectTree"
             :row-key="objectRowKey"
             :expand-row-keys="expandedObjectRowKeys"
@@ -401,7 +402,7 @@
                       >添加字段</el-button
                     >
                   </div>
-              <el-table
+              <el-table show-overflow-tooltip
                 :data="paginatedObjectFields(node)"
                 size="small"
                 border
@@ -471,7 +472,7 @@
                     <span v-else style="color: #ccc">—</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="140" align="center">
+                <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="140" align="center">
                   <template v-slot="{ row }">
                     <el-button
                       v-permission="'field:edit'"
@@ -588,7 +589,7 @@
                 }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="250" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250" align="center" fixed="right">
               <template v-slot="{ row: node }">
                 <template v-if="node && node.object">
                   <el-button
@@ -719,7 +720,7 @@
             @validate="handleBatchValidate"
           />
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           v-loading="constLoading"
           :data="constantRows"
           border
@@ -803,7 +804,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column label="操作" width="180" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'field:edit'"
@@ -930,7 +931,7 @@
             @create="handlePrimaryCreate"
           />
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           v-loading="validationLoading"
           :data="validationRows"
           border
@@ -1010,7 +1011,7 @@
               formatUpdateTime(row.updateTime)
             }}</template>
           </el-table-column>
-          <el-table-column
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
             width="120"
             align="center"
@@ -1826,7 +1827,7 @@
               placeholder="中文标签"
           /></template>
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
           <template v-slot="{ $index }"
             ><el-button
               link
@@ -1951,7 +1952,7 @@
         </div>
         <div class="source-detail-section">
           <div class="source-detail-title">依赖输入字段</div>
-          <el-table
+          <el-table show-overflow-tooltip
             :data="sourceInputFields(sourceDetailTarget)"
             border
             size="small"
@@ -2336,7 +2337,7 @@
 
     <!-- Validation Results Dialog -->
     <el-dialog title="规则验证结果" v-model="validateVisible" width="700px">
-      <el-table :data="validateResults" size="small" border>
+      <el-table show-overflow-tooltip :data="validateResults" size="small" border>
         <el-table-column
           prop="ruleName"
           label="规则名称"

@@ -1,0 +1,14 @@
+diff --git a/node_modules/zrender/lib/dom/HandlerProxy.js b/node_modules/zrender/lib/dom/HandlerProxy.js
+--- a/node_modules/zrender/lib/dom/HandlerProxy.js
++++ b/node_modules/zrender/lib/dom/HandlerProxy.js
+@@ -239,6 +239,10 @@ function mountGlobalDOMEventListeners(instance, scope) {
+     }
+ }
+ function mountSingleDOMEventListener(scope, nativeEventName, listener, opt) {
++    // Wheel handlers may cancel page scrolling when a chart supports roaming.
++    if (opt == null && (nativeEventName === 'wheel' || nativeEventName === 'mousewheel')) {
++        opt = { passive: false };
++    }
+     scope.mounted[nativeEventName] = listener;
+     scope.listenerOpts[nativeEventName] = opt;
+     addEventListener(scope.domTarget, nativeEventName, listener, opt);

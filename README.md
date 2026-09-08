@@ -4,7 +4,7 @@
   <sub>Creating Possibilities. Calibrating Decisions.</sub>
 </p>
 <p align="center">
-  <img src="docs/readme/brand-values.svg" alt="鉴真伪 · 斟信用 · 衡风险 · 枢定策" width="640">
+  <img src="docs/readme/brand-values.svg" alt="鉴真伪 · 斟信用 · 衡风险 · 枢定策" width="292">
 </p>
 
 # 天枢决策引擎
@@ -37,6 +37,10 @@
 ## 功能演示
 
 以下界面截图采集于 **2026-09-07**，来自当前前端页面。管理页面采用固定业务样例；九类规则的测试结果与表达式追踪来自本地 QLExpress 引擎执行同一份示例配置，演示数值不代表生产业务指标。
+
+### 控制台登录界面
+
+![控制台登录](docs/readme/login.png)
 
 ### 数据看板
 
@@ -300,12 +304,6 @@ SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-
 
 完整环境变量、启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见[部署与接入说明](docs/deployment.md)。
 
-<details>
-<summary>控制台登录界面</summary>
-
-![控制台登录](docs/readme/login.png)
-
-</details>
 
 ## 交流与许可证
 

@@ -69,7 +69,7 @@
       </div>
     </div>
 
-    <el-table :data="experiments" border size="small" v-loading="loading">
+    <el-table show-overflow-tooltip :data="experiments" border size="small" v-loading="loading">
       <el-table-column
         prop="experimentCode"
         label="实验编码"
@@ -137,7 +137,7 @@
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="190" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="190" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
             v-permission="'experiment:edit'"
@@ -357,7 +357,7 @@
                 :precision="2"
                 style="width: 100%" /></template
           ></el-table-column>
-          <el-table-column label="操作" width="80" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -458,7 +458,7 @@
                 :active-value="1"
                 :inactive-value="0" /></template
           ></el-table-column>
-          <el-table-column label="操作" width="80" align="center"
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center"
             ><template v-slot="{ row }"
               ><el-button
                 link

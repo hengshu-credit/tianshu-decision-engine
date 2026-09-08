@@ -137,7 +137,7 @@
           <el-tag v-else type="success" size="small">可用</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="100" align="center">
+      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="100" align="center">
         <template #default="{ row }">
           <el-button
             link

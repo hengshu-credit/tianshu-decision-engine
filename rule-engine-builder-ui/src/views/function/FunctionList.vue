@@ -95,7 +95,7 @@
       </div>
     </div>
 
-    <el-table
+    <el-table show-overflow-tooltip
       :data="funcList"
       border
       size="small"
@@ -176,7 +176,7 @@
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="操作" width="230" align="center">
+      <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="230" align="center">
         <template v-slot="{ row }">
           <el-button
             link
@@ -481,7 +481,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table :data="versionList" border size="small" style="width: 100%">
+      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="version"
           label="版本"
@@ -495,7 +495,7 @@
           show-overflow-tooltip
         />
         <el-table-column prop="publishTime" label="时间" width="170" />
-        <el-table-column label="操作" width="220" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link

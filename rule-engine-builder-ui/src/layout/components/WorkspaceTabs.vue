@@ -193,30 +193,6 @@ export default {
   align-items: center;
   box-sizing: border-box;
   gap: 6px;
-  scrollbar-width: thin;
-  scrollbar-color: var(--tianshu-scrollbar-thumb-solid)
-    var(--tianshu-scrollbar-track);
-
-  &::-webkit-scrollbar {
-    height: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    margin: 0 12px;
-    background: var(--tianshu-scrollbar-track);
-    border-radius: 999px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: var(--tianshu-scrollbar-thumb);
-    border: 1px solid transparent;
-    border-radius: 999px;
-    box-shadow: 0 0 8px var(--tianshu-scrollbar-glow);
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    box-shadow: 0 0 12px var(--tianshu-scrollbar-glow);
-  }
 }
 .workspace-tab {
   position: relative;

@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
@@ -17,6 +18,7 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionInputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
@@ -58,6 +60,7 @@ public class RuleLineageService {
     @Resource private RuleDbDatasourceMapper dbDatasourceMapper;
     @Resource private RuleListLibraryMapper listLibraryMapper;
     @Resource private RuleDataObjectFieldMapper dataObjectFieldMapper;
+    @Resource private RuleDataObjectMapper dataObjectMapper;
 
     public List<Map<String, Object>> options(String nodeType, String keyword, Long projectId) {
         String type = normalizeType(nodeType);
@@ -72,6 +75,12 @@ public class RuleLineageService {
             wrapper.orderByDesc(RuleVariable::getCreateTime);
             for (RuleVariable item : variableMapper.selectList(wrapper)) {
                 addOption(result, "VARIABLE", item.getId(), item.getVarCode(), item.getVarLabel(), keyword);
+            }
+        } else if ("DATA_OBJECT".equals(type)) {
+            LambdaQueryWrapper<RuleDataObject> wrapper = new LambdaQueryWrapper<>();
+            appendProjectScope(wrapper, projectId, RuleDataObject::getProjectId, RuleDataObject::getScope);
+            for (RuleDataObject item : dataObjectMapper.selectList(wrapper)) {
+                addOption(result, "DATA_OBJECT", item.getId(), item.getObjectCode(), item.getObjectLabel(), keyword);
             }
         } else if ("RULE".equals(type)) {
             LambdaQueryWrapper<RuleDefinition> wrapper = new LambdaQueryWrapper<>();
@@ -186,6 +195,10 @@ public class RuleLineageService {
         Map<String, Object> node = new LinkedHashMap<>(source);
         node.put("hasUpstream", hasValidNeighbor(full, key, "UPSTREAM"));
         node.put("hasDownstream", hasValidNeighbor(full, key, "DOWNSTREAM"));
+        Object objectKey = source.get("objectNodeId");
+        if (objectKey != null && full.nodes.containsKey(objectKey)) {
+            node.put("dataObject", new LinkedHashMap<>(full.nodes.get(objectKey)));
+        }
         return node;
     }
 
@@ -232,9 +245,20 @@ public class RuleLineageService {
             addProjectEdge(graph, item.getProjectId(), nodeKey("VARIABLE", item.getId()));
             addVariableSourceEdges(graph, item);
         }
+        for (RuleDataObject item : dataObjectMapper.selectList(new LambdaQueryWrapper<RuleDataObject>())) {
+            addNode(graph, "DATA_OBJECT", item.getId(), item.getObjectCode(), item.getObjectLabel());
+            addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_OBJECT", item.getId()));
+        }
         for (RuleDataObjectField item : dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>())) {
             addNode(graph, "DATA_FIELD", item.getId(), item.getScriptName() != null ? item.getScriptName() : item.getVarCode(), item.getVarLabel());
-            addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_FIELD", item.getId()));
+            String fieldKey = nodeKey("DATA_FIELD", item.getId());
+            String objectKey = nodeKey("DATA_OBJECT", item.getObjectId());
+            if (graph.nodes.containsKey(objectKey) && graph.nodes.containsKey(fieldKey)) {
+                graph.nodes.get(fieldKey).put("objectNodeId", objectKey);
+                addEdge(graph, objectKey, fieldKey, "包含字段");
+            } else {
+                addProjectEdge(graph, item.getProjectId(), fieldKey);
+            }
         }
         for (RuleDefinition item : definitionMapper.selectList(new LambdaQueryWrapper<RuleDefinition>())) {
             addNode(graph, "RULE", item.getId(), item.getRuleCode(), item.getRuleName());

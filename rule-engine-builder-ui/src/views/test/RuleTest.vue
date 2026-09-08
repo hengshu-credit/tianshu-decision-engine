@@ -312,7 +312,7 @@
               </div>
             </el-checkbox-group>
           </async-state>
-          <el-table
+          <el-table show-overflow-tooltip
             v-if="batchResults.length"
             :data="batchResults"
             border

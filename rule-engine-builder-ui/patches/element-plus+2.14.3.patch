@@ -1,7 +1,27 @@
 diff --git a/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs b/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs
 --- a/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs
 +++ b/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs
-@@ -286,8 +286,8 @@ const TabNav = /* @__PURE__ */ defineComponent({
+@@ -11,7 +11,7 @@
+ import { tabsRootContextKey } from "./constants.mjs";
+ import tab_bar_default from "./tab-bar2.mjs";
+ import { useTabNavTouch } from "./composables/use-tab-nav-touch.mjs";
+-import { useDocumentVisibility, useElementSize, useResizeObserver, useWindowFocus } from "@vueuse/core";
++import { useDocumentVisibility, useElementSize, useEventListener, useResizeObserver, useWindowFocus } from "@vueuse/core";
+ import { clamp as clamp$1 } from "lodash-unified";
+ import { ArrowLeft, ArrowRight, Close } from "@element-plus/icons-vue";
+ import { computed, createVNode, defineComponent, inject, nextTick, onMounted, onUpdated, ref, shallowRef, triggerRef, watch } from "vue";
+@@ -107,6 +107,10 @@
+ 			navContainerSize,
+ 			isHorizontal
+ 		});
++		// Scrolling tabs must cancel the native scroll on the gesture's main axis.
++		const scrollTarget = computed(() => scrollable.value ? nav$.value : void 0);
++		useEventListener(scrollTarget, "wheel", handleWheel, { passive: false });
++		useEventListener(scrollTarget, "touchmove", handleTouchMove, { passive: false });
+ 		const scrollPrev = () => {
+ 			if (!navScroll$.value) return;
+ 			const containerSize = navScroll$.value.getBoundingClientRect()[sizeName.value];
+@@ -286,11 +290,9 @@
  				"style": navStyle.value,
  				"role": "tablist",
  				"onKeydown": changeTab,
@@ -10,15 +30,27 @@ diff --git a/node_modules/element-plus/es/components/tabs/src/tab-nav.mjs b/node
 -				"onTouchmove": handleTouchMove,
 -				"onTouchend": handleTouchEnd,
 -				"onTouchcancel": handleTouchEnd
-+				"onWheel": scrollable.value ? handleWheel : void 0,
-+				"onTouchstart": scrollable.value ? handleTouchStart : void 0,
-+				"onTouchmove": scrollable.value ? handleTouchMove : void 0,
++				"onTouchstartPassive": scrollable.value ? handleTouchStart : void 0,
 +				"onTouchend": scrollable.value ? handleTouchEnd : void 0,
 +				"onTouchcancel": scrollable.value ? handleTouchEnd : void 0
+ 			}, [...[!props.type ? createVNode(tab_bar_default, {
+ 				"ref": tabBarRef,
+ 				"tabs": [...props.panes],
 diff --git a/node_modules/element-plus/lib/components/tabs/src/tab-nav.js b/node_modules/element-plus/lib/components/tabs/src/tab-nav.js
 --- a/node_modules/element-plus/lib/components/tabs/src/tab-nav.js
 +++ b/node_modules/element-plus/lib/components/tabs/src/tab-nav.js
-@@ -287,8 +287,8 @@ const TabNav = /* @__PURE__ */ vue.defineComponent({
+@@ -108,6 +108,10 @@
+ 			navContainerSize,
+ 			isHorizontal
+ 		});
++		// Scrolling tabs must cancel the native scroll on the gesture's main axis.
++		const scrollTarget = vue.computed(() => scrollable.value ? nav$.value : void 0);
++		_vueuse_core.useEventListener(scrollTarget, "wheel", handleWheel, { passive: false });
++		_vueuse_core.useEventListener(scrollTarget, "touchmove", handleTouchMove, { passive: false });
+ 		const scrollPrev = () => {
+ 			if (!navScroll$.value) return;
+ 			const containerSize = navScroll$.value.getBoundingClientRect()[sizeName.value];
+@@ -287,11 +291,9 @@
  				"style": navStyle.value,
  				"role": "tablist",
  				"onKeydown": changeTab,
@@ -27,8 +59,9 @@ diff --git a/node_modules/element-plus/lib/components/tabs/src/tab-nav.js b/node
 -				"onTouchmove": handleTouchMove,
 -				"onTouchend": handleTouchEnd,
 -				"onTouchcancel": handleTouchEnd
-+				"onWheel": scrollable.value ? handleWheel : void 0,
-+				"onTouchstart": scrollable.value ? handleTouchStart : void 0,
-+				"onTouchmove": scrollable.value ? handleTouchMove : void 0,
++				"onTouchstartPassive": scrollable.value ? handleTouchStart : void 0,
 +				"onTouchend": scrollable.value ? handleTouchEnd : void 0,
 +				"onTouchcancel": scrollable.value ? handleTouchEnd : void 0
+ 			}, [...[!props.type ? (0, vue.createVNode)(require_tab_bar.default, {
+ 				"ref": tabBarRef,
+ 				"tabs": [...props.panes],

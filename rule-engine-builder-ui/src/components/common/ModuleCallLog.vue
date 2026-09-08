@@ -192,7 +192,7 @@
             </div>
           </div>
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="externalStats.providers"
           border
           size="small"
@@ -323,7 +323,7 @@
       </el-form>
     </div>
 
-    <el-table
+    <el-table show-overflow-tooltip
       :data="rows"
       border
       size="small"
@@ -401,7 +401,7 @@
       <el-table-column prop="createTime" label="时间" width="160" fixed="right">
         <template v-slot="{ row }">{{ formatTime(row.createTime) }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="80" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center" fixed="right">
         <template v-slot="{ row }">
           <el-button
             link

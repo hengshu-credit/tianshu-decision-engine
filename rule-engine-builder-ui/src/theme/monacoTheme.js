@@ -22,6 +22,16 @@ const DARK_DEFAULTS = {
   secondaryAccent: '#F76E6C',
 }
 
+export function getMonacoScrollbarOptions(root = document.documentElement) {
+  const size = parseInt(getComputedStyle(root).getPropertyValue('--tianshu-scrollbar-size'), 10) || 4
+  return {
+    vertical: 'auto',
+    horizontal: 'auto',
+    verticalScrollbarSize: size,
+    horizontalScrollbarSize: size,
+  }
+}
+
 export function syncMonacoTheme(
   monaco,
   { root = document.documentElement, colorScheme } = {}

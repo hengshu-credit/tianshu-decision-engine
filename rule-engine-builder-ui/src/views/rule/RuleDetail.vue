@@ -364,7 +364,7 @@
               <span v-else style="color: var(--tianshu-text-tertiary)">—</span>
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
             width="140"
             align="center"
@@ -443,7 +443,7 @@
           >
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="pagedRuleOutputFields"
           border
           size="small"
@@ -498,7 +498,7 @@
               <span v-else style="color: var(--tianshu-text-tertiary)">—</span>
             </template>
           </el-table-column>
-          <el-table-column
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
             width="140"
             align="center"
@@ -693,7 +693,7 @@
                 ><template v-slot="{ row }"
                   ><el-input v-model="row.defaultValue" /></template
               ></el-table-column>
-              <el-table-column label="操作" width="70" align="center"
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
                 ><template v-slot="{ $index }"
                   ><el-button
                     link
@@ -780,7 +780,7 @@
                     placeholder="如 credit_score_v1"
                 /></template>
               </el-table-column>
-              <el-table-column label="操作" width="70" align="center"
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center"
                 ><template v-slot="{ $index }"
                   ><el-button
                     link
@@ -879,7 +879,7 @@
               下游以六位业务 code 判断结果；HTTP
               状态码保留标准传输语义。日/月限额编码为预留编码，可供后续额度策略直接复用。
             </div>
-            <el-table
+            <el-table show-overflow-tooltip
               :data="openApiStatusCodes"
               border
               size="small"
@@ -1156,7 +1156,7 @@
       custom-class="version-history-dialog"
       :close-on-click-modal="false"
     >
-      <el-table
+      <el-table show-overflow-tooltip
         :data="versions"
         border
         size="small"
@@ -1177,7 +1177,7 @@
             formatVersionTime(row.publishTime)
           }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="180" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link

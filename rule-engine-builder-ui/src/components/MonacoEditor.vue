@@ -9,7 +9,7 @@
 <script>
 import { markRaw } from 'vue'
 import { $emit } from '../utils/gogocodeTransfer'
-import { syncMonacoTheme } from '@/theme/monacoTheme'
+import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 export default {
   name: 'MonacoEditor',
   props: {
@@ -102,12 +102,7 @@ export default {
       lineDecorationsWidth: 4,
       lineNumbersMinChars: 4,
       renderLineHighlight: 'line',
-      scrollbar: {
-        vertical: 'auto',
-        horizontal: 'auto',
-        verticalScrollbarSize: 10,
-        horizontalScrollbarSize: 10,
-      },
+      scrollbar: getMonacoScrollbarOptions(),
       padding: { top: 8, bottom: 8 },
       // 修复：启用 Tab 缩进，禁用 Ctrl+Space 默认补全冲突
       acceptSuggestionOnEnter: 'on',

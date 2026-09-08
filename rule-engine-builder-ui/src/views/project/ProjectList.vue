@@ -61,7 +61,7 @@
         </div>
       </div>
     </div>
-    <el-table
+    <el-table show-overflow-tooltip
       :data="tableData"
       border
       size="small"
@@ -94,7 +94,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
-      <el-table-column label="操作" width="300" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="300" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group project-action-links">
             <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="handleEdit(row)"

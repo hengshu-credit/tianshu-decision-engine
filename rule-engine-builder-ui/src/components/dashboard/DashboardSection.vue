@@ -1,5 +1,5 @@
 <template>
-  <section class="dashboard-section" :aria-label="title">
+  <section class="dashboard-section" :aria-label="title" :aria-busy="loading">
     <div class="dashboard-section__header">
       <div>
         <h2>{{ title }}</h2>
@@ -7,12 +7,14 @@
       </div>
       <slot name="actions" />
     </div>
-    <div v-if="loading" class="dashboard-section__state" v-loading="true">正在加载</div>
+    <div v-if="loading && !loaded" class="dashboard-section__state" v-loading="true">正在加载</div>
     <div v-else-if="error" class="dashboard-section__state">
       <el-alert :title="error" type="error" :closable="false" show-icon />
       <el-button @click="$emit('retry')">重试本区域</el-button>
     </div>
-    <slot v-else />
+    <div v-else v-loading="loading">
+      <slot />
+    </div>
   </section>
 </template>
 
@@ -24,6 +26,7 @@ export default {
     title: { type: String, required: true },
     description: { type: String, default: '' },
     loading: { type: Boolean, default: false },
+    loaded: { type: Boolean, default: false },
     error: { type: String, default: '' }
   }
 }

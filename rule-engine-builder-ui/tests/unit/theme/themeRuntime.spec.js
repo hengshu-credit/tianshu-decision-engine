@@ -68,6 +68,20 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     )
   })
 
+  test.each([
+    [{ accentPreset: 'LIQUID_PURPLE' }, '#873FF2'],
+    [{ accentMode: 'CUSTOM_SOLID', customSolidColor: '#127855' }, '#127855'],
+  ])('从渐变切换到纯色 %j 时两个方向的滚动条都移除渐变', (config, color) => {
+    applyTheme({ ...DEFAULT_THEME_CONFIG, accentPreset: 'THEME_BLUE_GRADIENT' })
+    const style = document.documentElement.style
+    expect(style.getPropertyValue('--tianshu-scrollbar-thumb')).toContain('90deg')
+    expect(style.getPropertyValue('--tianshu-scrollbar-thumb-vertical')).toContain('180deg')
+    applyTheme({ ...DEFAULT_THEME_CONFIG, ...config })
+    expect(style.getPropertyValue('--tianshu-scrollbar-thumb')).toBe(color)
+    expect(style.getPropertyValue('--tianshu-scrollbar-thumb-vertical')).toBe(color)
+    expect(style.getPropertyValue('--tianshu-scrollbar-thumb-solid')).toBe(color)
+  })
+
   test('切换主题色时同步更新辅助色和四类提示层级色', () => {
     applyTheme(DEFAULT_THEME_CONFIG)
     const bluePalette = readAppliedPalette()

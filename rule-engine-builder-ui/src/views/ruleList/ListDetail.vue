@@ -127,7 +127,7 @@
             >
           </div>
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="records"
           border
           size="small"
@@ -181,7 +181,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column label="执行操作" width="160" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="执行操作" width="160" align="center">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'field:edit'"
@@ -240,7 +240,7 @@
             >查看全部日志</el-button
           >
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="logs"
           border
           size="small"

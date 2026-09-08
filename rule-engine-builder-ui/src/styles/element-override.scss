@@ -701,6 +701,22 @@ $info-color: #475569;
 .el-table {
   font-family: $font-family-base;
 
+  .cell {
+    white-space: nowrap;
+    word-break: normal;
+  }
+
+  .table-operation-column {
+    .el-button {
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    .el-button + .el-button {
+      margin-left: 4px;
+    }
+  }
+
   th {
     background-color: var(--tianshu-bg-muted) !important;
     color: var(--tianshu-text-secondary);
@@ -867,7 +883,8 @@ $info-color: #475569;
 .table-operation-group {
   display: inline-flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  white-space: nowrap;
   gap: 4px 8px;
 }
 

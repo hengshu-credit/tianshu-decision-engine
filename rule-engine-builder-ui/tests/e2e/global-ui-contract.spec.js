@@ -2,6 +2,42 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+test('看板初始加载不拉伸说明区，查询保留图表和页面布局', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1400 })
+  const { assertClean } = await installDistRoutes(page)
+  let release
+  let pending = new Promise(resolve => { release = resolve })
+  await page.route('**/api/rule/dashboard/**', async route => {
+    await pending
+    await route.fallback()
+  })
+  try {
+    await page.goto('http://tianshu.local/index.html#/dashboard')
+    await expect(page.locator('.dashboard-section__state')).toHaveCount(3)
+    expect((await page.locator('.dashboard-heading').boundingBox()).height).toBeLessThan(70)
+    release()
+    await expect(page.locator('.dashboard-section__state')).toHaveCount(0)
+    const chart = page.locator('.dashboard-chart canvas').first()
+    await expect(chart).toBeVisible()
+    const canvas = await chart.elementHandle()
+    const heading = await page.locator('.dashboard-heading').boundingBox()
+    const metrics = await page.locator('.dashboard-metrics').boundingBox()
+    pending = new Promise(resolve => { release = resolve })
+    await page.getByRole('button', { name: '查询', exact: true }).click()
+    await expect(page.locator('.dashboard-section[aria-busy="true"]')).toHaveCount(3)
+    await expect(page.locator('.dashboard-metrics')).toBeVisible()
+    expect(await canvas.evaluate(element => element.isConnected)).toBe(true)
+    expect(await page.locator('.dashboard-heading').boundingBox()).toEqual(heading)
+    expect(await page.locator('.dashboard-metrics').boundingBox()).toEqual(metrics)
+    release()
+    await expect(page.locator('.dashboard-section[aria-busy="true"]')).toHaveCount(0)
+    expect(await canvas.evaluate(element => element.isConnected)).toBe(true)
+    assertClean()
+  } finally {
+    release()
+  }
+})
+
 test('全局字体、业务文本选择和关键按钮语义可用', async ({ page }) => {
   const fontResponses = []
   page.on('response', response => {

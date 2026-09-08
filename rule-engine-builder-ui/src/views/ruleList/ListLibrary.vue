@@ -99,7 +99,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="tableData"
           border
           size="small"
@@ -165,7 +165,7 @@
               />
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="170" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="170" align="center">
             <template v-slot="{ row }">
               <el-button
               link

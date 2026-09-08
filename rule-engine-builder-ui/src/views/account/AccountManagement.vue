@@ -27,7 +27,7 @@
     <section class="content-card">
       <el-tabs v-model="activeTab">
         <el-tab-pane label="账户" name="accounts">
-          <el-table v-loading="loading" :data="accounts" row-key="id">
+          <el-table show-overflow-tooltip v-loading="loading" :data="accounts" row-key="id">
             <el-table-column label="账户" min-width="180">
               <template #default="{ row }">
                 <div class="identity-cell">
@@ -71,7 +71,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="260" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="260" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-permission="'account:manage'"
@@ -114,7 +114,7 @@
         </el-tab-pane>
 
         <el-tab-pane label="角色" name="roles">
-          <el-table v-loading="loading" :data="roles" row-key="id">
+          <el-table show-overflow-tooltip v-loading="loading" :data="roles" row-key="id">
             <el-table-column prop="roleName" label="角色名称" min-width="180" />
             <el-table-column prop="roleCode" label="角色编码" min-width="160" />
             <el-table-column label="已授权" width="110" align="right">
@@ -131,7 +131,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="150" fixed="right">
               <template #default="{ row }">
                 <el-button
                   v-permission="'role:manage'"
@@ -636,8 +636,8 @@ export default {
   border-radius: 50%;
 }
 .tag-list {
-  display: flex;
-  flex-wrap: wrap;
+  display: inline-flex;
+  flex-wrap: nowrap;
   gap: 4px;
 }
 .muted {

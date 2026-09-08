@@ -409,7 +409,7 @@
           {{ experimentInputFields.length }}
           个输入字段，包含条件分流字段和实验组执行规则入参。
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="experimentInputFields"
           border
           size="small"
@@ -455,7 +455,7 @@
           {{ experimentOutputFields.length }}
           个输出字段，来自实验组执行规则出参。
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="experimentOutputFields"
           border
           size="small"
@@ -550,7 +550,7 @@
             </el-form-item>
           </el-form>
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           :data="logs"
           border
           size="small"
@@ -623,7 +623,7 @@
               formatTime(row.createTime)
             }}</template>
           </el-table-column>
-          <el-table-column label="操作" width="80" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
             <template v-slot="{ row }"
               ><el-button
                 link
@@ -722,7 +722,7 @@
       width="900px"
       append-to-body
     >
-      <el-table :data="versionList" border size="small" style="width: 100%">
+      <el-table show-overflow-tooltip :data="versionList" border size="small" style="width: 100%">
         <el-table-column
           prop="version"
           label="版本"
@@ -736,7 +736,7 @@
           show-overflow-tooltip
         />
         <el-table-column prop="publishTime" label="时间" width="170" />
-        <el-table-column label="操作" width="220" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link

@@ -95,6 +95,33 @@ describe('DashboardHome', () => {
     wrapper.unmount()
   })
 
+  test('再次查询期间保留指标和图表实例，完成后更新原有内容', async () => {
+    const wrapper = mount(DashboardHome, {
+      global: { stubs: { DashboardChart: true } }
+    })
+    await flushPromises()
+    const chart = wrapper.findComponent({ name: 'DashboardChart' }).vm
+    let finish
+    dashboardApi.getDashboardApplications.mockReturnValueOnce(new Promise(resolve => { finish = resolve }))
+    try {
+      const pending = wrapper.vm.refreshAll()
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.dashboard-metrics').exists()).toBe(true)
+      expect(wrapper.find('.dashboard-metrics').text()).toContain('12')
+      expect(wrapper.findComponent({ name: 'DashboardChart' }).vm).toBe(chart)
+      expect(wrapper.find('.dashboard-section').attributes('aria-busy')).toBe('true')
+      finish({ data: { ...applications(), summary: { applicationCount: 24 } } })
+      await pending
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.dashboard-metrics').text()).toContain('24')
+      expect(wrapper.findComponent({ name: 'DashboardChart' }).vm).toBe(chart)
+      expect(wrapper.find('.dashboard-section').attributes('aria-busy')).toBe('false')
+    } finally {
+      finish({ data: applications() })
+      wrapper.unmount()
+    }
+  })
+
   test('规则筛选和时间快捷项统一进入筛选表单', async () => {
     const wrapper = mount(DashboardHome, {
       global: {

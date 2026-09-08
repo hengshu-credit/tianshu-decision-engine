@@ -113,7 +113,7 @@
         </div>
 
         <!-- 模型列表 -->
-        <el-table
+        <el-table show-overflow-tooltip
           :data="models"
           border
           size="small"
@@ -247,7 +247,7 @@
               ></template
             >
           </el-table-column>
-          <el-table-column label="操作" width="250" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="360" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 link

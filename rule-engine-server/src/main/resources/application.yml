@@ -1,5 +1,5 @@
 server:
-  port: 8080
+  port: ${SERVER_PORT:8080}
   servlet:
     session:
       timeout: 60m
@@ -55,7 +55,7 @@ rule-engine:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
-    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:9090,http://127.0.0.1:9090}
+    allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}
   project-auth:
     active-key-id: ${RULE_AUTH_ACTIVE_KEY_ID:v2}
     master-keys:

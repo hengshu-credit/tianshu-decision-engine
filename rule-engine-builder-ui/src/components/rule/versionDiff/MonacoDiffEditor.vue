@@ -25,7 +25,7 @@
 import { markRaw } from 'vue'
 import { Loading as ElIconLoading } from '@element-plus/icons-vue'
 import { $emit } from '../../../utils/gogocodeTransfer'
-import { syncMonacoTheme } from '@/theme/monacoTheme'
+import { getMonacoScrollbarOptions, syncMonacoTheme } from '@/theme/monacoTheme'
 export default {
   components: {
     ElIconLoading,
@@ -113,6 +113,7 @@ export default {
         lineNumbers: 'on',
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
+        scrollbar: getMonacoScrollbarOptions(),
         folding: true,
         padding: { top: 8, bottom: 8 },
       })

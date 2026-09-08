@@ -145,7 +145,7 @@
           </el-form-item>
         </el-form>
       </div>
-      <el-table
+      <el-table show-overflow-tooltip
         :data="list"
         border
         size="small"
@@ -259,7 +259,7 @@
             <span v-else style="color: var(--tianshu-text-tertiary)">-</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="70" align="center" fixed="right">
+        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="70" align="center" fixed="right">
           <template v-slot="{ row }"
             ><el-button
               link
@@ -407,7 +407,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="ruleSetStats.ruleSets"
           border
           size="small"
@@ -416,7 +416,7 @@
           <el-table-column type="expand">
             <template v-slot="{ row }">
               <div class="item-table-title">规则集内部规则命中明细</div>
-              <el-table
+              <el-table show-overflow-tooltip
                 v-if="row.items && row.items.length"
                 :data="row.items"
                 border

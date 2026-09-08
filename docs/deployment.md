@@ -79,6 +79,19 @@ npm run dev
 
 开发访问地址为 `http://localhost:9090/`，`/api` 会代理到 `http://localhost:8080`。
 
+在仓库根目录 `.env` 中设置以下配置，可统一修改后端和前端开发端口：
+
+```dotenv
+SERVER_PORT=8081
+VITE_PORT=9091
+```
+
+修改后重启后端和 `npm run dev`，访问 `http://localhost:9091/`，`/api` 会自动代理到 `http://localhost:8081`。未配置时仍使用后端 `8080`、前端 `9090`；前端端口被占用时会直接报错，不会自动切换端口。
+
+后端运行在其他地址时，可额外设置 `VITE_DEV_PROXY=http://后端地址:端口`，该配置优先于 `SERVER_PORT` 推导的地址。系统环境变量优先于 `.env`。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。
+
+未设置 `CORS_ALLOWED_ORIGIN_PATTERNS` 时，后端默认允许的本地来源会跟随 `VITE_PORT`；如果 `.env` 已显式设置该项，修改前端端口时也要同步更新其中的来源地址。本地 HTTP 开发使用 `SESSION_COOKIE_SECURE=false`，生产 HTTPS 保持 `true`。
+
 
 ## 业务系统 SDK 集成
 

@@ -47,9 +47,131 @@ function mountPage() {
   })
 }
 
+// 复现 credit_apply_count_1m：项目直连结果，多个规则共享项目和对象字段。
+function sharedOutputGraph() {
+  const startNode = { id: 'VARIABLE:311', refId: 311, type: 'VARIABLE', code: 'credit_apply_count_1m', label: '近1个月授信申请次数' }
+  const object = { id: 'DATA_OBJECT:12', refId: 12, type: 'DATA_OBJECT', code: 'request' }
+  return {
+    startNode,
+    nodes: [startNode,
+      { id: 'PROJECT:4', refId: 4, type: 'PROJECT', code: 'project' },
+      ...[32, 34, 30].map(id => ({ id: `RULE:${id}`, refId: id, type: 'RULE', code: `rule${id}`, hasUpstream: true })),
+      { id: 'DATA_FIELD:125', refId: 125, type: 'DATA_FIELD', code: 'gaid', dataObject: object }
+    ],
+    edges: [
+      { from: 'PROJECT:4', to: startNode.id, label: '项目包含' },
+      ...[32, 34, 30].flatMap(id => [
+        { from: 'PROJECT:4', to: `RULE:${id}`, label: '项目包含' },
+        { from: 'DATA_FIELD:125', to: `RULE:${id}`, label: '规则输入' },
+        { from: `RULE:${id}`, to: startNode.id, label: '规则输出' }
+      ])
+    ]
+  }
+}
+
 afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
+  test('项目直连结果时仍排在规则上游，展开对象不会改变规则依赖层级', async () => {
+    const wrapper = mountPage()
+    wrapper.vm.query.nodeId = 311
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: sharedOutputGraph() })
+    await wrapper.vm.loadGraph()
+    const assertForwardEdges = () => {
+      for (const edge of wrapper.vm.edgeLines) {
+        expect(wrapper.vm.nodePosition(edge.fromId).left, edge.key).toBeLessThan(wrapper.vm.nodePosition(edge.toId).left)
+      }
+      const rules = wrapper.vm.visibleBranches.filter(item => item.branch.node.type === 'RULE')
+      expect(new Set(rules.map(item => wrapper.vm.nodePosition(item.branch.instanceId).left)).size).toBe(1)
+    }
+    assertForwardEdges()
+    await wrapper.vm.toggleBranch(wrapper.vm.visibleBranches.find(item => item.branch.objectGroup).branch)
+    assertForwardEdges()
+    await wrapper.vm.toggleBranch(wrapper.vm.upstreamRoots.find(branch => branch.node.id === 'RULE:32'))
+    assertForwardEdges()
+    wrapper.unmount()
+  })
+
+  test('收起部分规则保留共享依赖连线，全部收起才隐藏独有对象', async () => {
+    const wrapper = mountPage()
+    wrapper.vm.query.nodeId = 311
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: sharedOutputGraph() })
+    await wrapper.vm.loadGraph()
+    const originalEdges = wrapper.vm.edgeLines.map(edge => edge.key).sort()
+    const rules = wrapper.vm.upstreamRoots.filter(branch => branch.node.type === 'RULE')
+    await wrapper.vm.toggleBranch(rules[0])
+    expect(wrapper.vm.edgeLines.map(edge => edge.key).sort()).toEqual(originalEdges)
+    await wrapper.vm.toggleBranch(rules[1])
+    expect(wrapper.vm.edgeLines.map(edge => edge.key).sort()).toEqual(originalEdges)
+    await wrapper.vm.toggleBranch(rules[2])
+    expect(wrapper.vm.visibleBranches.some(item => item.branch.node.type === 'DATA_OBJECT')).toBe(false)
+    expect(wrapper.vm.edgeLines.filter(edge => edge.label === '项目包含')).toHaveLength(4)
+    await wrapper.vm.toggleBranch(rules[0])
+    expect(wrapper.vm.edgeLines.map(edge => edge.key).sort()).toEqual(originalEdges)
+    wrapper.unmount()
+  })
+
+  test('对象在下游时先展示对象再展示字段和依赖规则，不额外跨层', async () => {
+    const wrapper = mountPage()
+    const data = sharedOutputGraph()
+    const object = data.nodes.find(node => node.type === 'DATA_FIELD').dataObject
+    data.nodes.push(object)
+    data.startNode = data.nodes.find(node => node.type === 'PROJECT')
+    data.edges.push({ from: 'PROJECT:4', to: object.id, label: '项目包含' },
+      { from: object.id, to: 'DATA_FIELD:125', label: '包含字段' })
+    wrapper.vm.query.nodeId = 4
+    wrapper.vm.query.nodeType = 'PROJECT'
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    const objectBranch = wrapper.vm.visibleBranches.find(item => item.branch.node.type === 'DATA_OBJECT').branch
+    const sourceX = wrapper.vm.nodePosition('CURRENT').left
+    const objectX = wrapper.vm.nodePosition(objectBranch.instanceId).left
+    const ruleX = wrapper.vm.nodePosition('RULE:32').left
+    expect(objectX).toBeGreaterThan(sourceX)
+    expect(objectX).toBeLessThan(ruleX)
+    await wrapper.vm.toggleBranch(objectBranch)
+    expect(wrapper.vm.nodePosition('DATA_OBJECT:12').left).toBeLessThan(wrapper.vm.nodePosition('DATA_FIELD:125').left)
+    expect(wrapper.vm.nodePosition('DATA_FIELD:125').left).toBeLessThan(wrapper.vm.nodePosition('RULE:32').left)
+    wrapper.unmount()
+  })
+  test('空画布不注册滚轮监听，生成后缩放并阻止页面滚动，重置后移除监听', async () => {
+    const addListener = vi.spyOn(Element.prototype, 'addEventListener')
+    const removeListener = vi.spyOn(Element.prototype, 'removeEventListener')
+    const wrapper = mountPage()
+    try {
+      const graphWrap = wrapper.find('.graph-wrap').element
+      const wheelCalls = () => addListener.mock.calls.filter((args, index) =>
+        addListener.mock.contexts[index] === graphWrap && args[0] === 'wheel'
+      )
+      expect(wheelCalls()).toHaveLength(0)
+
+      wrapper.vm.query.nodeId = 1
+      lineageApi.getLineageGraph.mockResolvedValueOnce({ data: graphResponse() })
+      await wrapper.vm.loadGraph()
+      await nextTick()
+      expect(wheelCalls()).toHaveLength(1)
+      expect(wheelCalls()[0][2]).toEqual({ passive: false })
+      wrapper.vm.viewport = { x: 0, y: 0, scale: 1 }
+      const wheel = new WheelEvent('wheel', { deltaY: -100, cancelable: true })
+      graphWrap.dispatchEvent(wheel)
+      expect(wheel.defaultPrevented).toBe(true)
+      expect(wrapper.vm.viewport.scale).toBeCloseTo(1.1)
+
+      wrapper.vm.resetGraph()
+      await nextTick()
+      expect(removeListener.mock.calls.some((args, index) =>
+        removeListener.mock.contexts[index] === graphWrap && args[0] === 'wheel'
+      )).toBe(true)
+      const emptyWheel = new WheelEvent('wheel', { deltaY: -100, cancelable: true })
+      graphWrap.dispatchEvent(emptyWheel)
+      expect(emptyWheel.defaultPrevented).toBe(false)
+    } finally {
+      wrapper.unmount()
+      addListener.mockRestore()
+      removeListener.mockRestore()
+    }
+  })
+
   test('created 后按默认变量类型加载起点选项', async () => {
     const wrapper = mountPage()
     await nextTick()
@@ -81,8 +203,8 @@ describe('LineageGraph', () => {
     const downstream = wrapper.vm.mindMapLayout.positions[wrapper.vm.downstreamRoots[0].instanceId]
     expect(upstream.left).toBeLessThan(current.left)
     expect(downstream.left).toBeGreaterThan(current.left)
-    expect(wrapper.vm.edgeLines[0].toId).toBe('CURRENT')
-    expect(wrapper.vm.edgeLines[2].fromId).toBe('CURRENT')
+    expect(wrapper.vm.edgeLines.find(edge => edge.fromId === 'API:7').toId).toBe('CURRENT')
+    expect(wrapper.vm.edgeLines.find(edge => edge.toId === 'RULE:9').fromId).toBe('CURRENT')
     wrapper.unmount()
   })
 
@@ -221,7 +343,7 @@ describe('LineageGraph', () => {
     wrapper.unmount()
   })
 
-  test('共享业务节点在不同路径生成独立展示实例', () => {
+  test('共享业务节点只展示一次且保留不同路径的连线', async () => {
     const wrapper = mountPage()
     const data = graphResponse()
     data.nodes.splice(2, 0,
@@ -230,12 +352,13 @@ describe('LineageGraph', () => {
       { from: 'DATASOURCE:8', to: 'API:6', label: '包含API' },
       { from: 'API:6', to: 'VARIABLE:1', label: '接口取数' })
 
-    const roots = wrapper.vm.buildBranches(data, 'UPSTREAM', 2)
-
-    expect(roots).toHaveLength(2)
-    expect(roots[0].children[0].node.id).toBe('DATASOURCE:8')
-    expect(roots[1].children[0].node.id).toBe('DATASOURCE:8')
-    expect(roots[0].children[0].instanceId).not.toBe(roots[1].children[0].instanceId)
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'DATASOURCE:8')).toHaveLength(1)
+    expect(wrapper.vm.edgeLines.filter(edge => edge.label === '包含API')).toHaveLength(2)
+    await wrapper.vm.toggleBranch(wrapper.vm.upstreamRoots[0])
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'DATASOURCE:8')).toHaveLength(1)
     wrapper.unmount()
   })
 
@@ -258,6 +381,59 @@ describe('LineageGraph', () => {
     expect(branch.children[0].node.id).toBe('RULE:9')
     expect(branch.children[0].cycle).toBe(true)
     expect(wrapper.vm.canToggle(branch.children[0])).toBe(false)
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'RULE:9')).toHaveLength(1)
+    expect(wrapper.vm.edgeLines.some(edge => edge.label === '规则输入' && edge.fromId === branch.instanceId)).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('同一数据对象默认合并字段，展开后保留对象和独立字段节点', async () => {
+    const wrapper = mountPage()
+    const data = graphResponse()
+    const object = { id: 'DATA_OBJECT:30', refId: 30, type: 'DATA_OBJECT', code: 'Request_ABC', label: '申请数据' }
+    data.nodes.push(...[31, 32].map(id => ({
+      id: `DATA_FIELD:${id}`, refId: id, type: 'DATA_FIELD', code: `field${id}`, label: `字段${id}`, dataObject: object
+    })))
+    data.edges.push(...[31, 32].map(id => ({ from: `DATA_FIELD:${id}`, to: 'VARIABLE:1', label: '输入' })))
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    const objects = () => wrapper.vm.visibleBranches.filter(item => item.branch.node.type === 'DATA_OBJECT')
+    const fields = () => wrapper.vm.visibleBranches.filter(item => item.branch.node.type === 'DATA_FIELD')
+    expect(objects()).toHaveLength(1)
+    expect(fields()).toHaveLength(0)
+    expect(objects()[0].branch.node.code).toBe('Request_ABC')
+    await wrapper.vm.toggleBranch(objects()[0].branch)
+    expect(objects()).toHaveLength(1)
+    expect(fields()).toHaveLength(2)
+    expect(wrapper.vm.edgeLines.filter(edge => edge.label === '包含字段')).toHaveLength(2)
+    const objectPosition = wrapper.vm.nodePosition(objects()[0].branch.instanceId)
+    expect(fields().every(item => wrapper.vm.nodePosition(item.branch.instanceId).left > objectPosition.left)).toBe(true)
+    await wrapper.vm.toggleBranch(objects()[0].branch)
+    expect(fields()).toHaveLength(0)
+    expect(lineageApi.getLineageGraph).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
+  test('共享节点展开后点击一次即可收起所有路径上的后代', async () => {
+    const wrapper = mountPage()
+    const data = graphResponse()
+    data.nodes.push({ id: 'API:6', refId: 6, type: 'API', code: 'backup', hasUpstream: true })
+    data.edges.push({ from: 'API:6', to: 'VARIABLE:1' }, { from: 'DATASOURCE:8', to: 'API:6' })
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: {
+      startNode: data.nodes[0],
+      nodes: [{ id: 'PROJECT:5', refId: 5, type: 'PROJECT', code: 'project' }],
+      edges: [{ from: 'PROJECT:5', to: 'DATASOURCE:8', label: '项目包含' }]
+    } })
+    const shared = () => wrapper.vm.visibleBranches.find(item => item.branch.node.id === 'DATASOURCE:8').branch
+    await wrapper.vm.toggleBranch(shared())
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'PROJECT:5')).toHaveLength(1)
+    await wrapper.vm.toggleBranch(wrapper.vm.upstreamRoots[0])
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'PROJECT:5')).toHaveLength(1)
+    await wrapper.vm.toggleBranch(shared())
+    expect(wrapper.vm.visibleBranches.filter(item => item.branch.node.id === 'PROJECT:5')).toHaveLength(0)
     wrapper.unmount()
   })
 

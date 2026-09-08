@@ -117,7 +117,7 @@
     </div>
 
     <!-- 规则列表 -->
-    <el-table
+    <el-table show-overflow-tooltip
       :data="list"
       border
       size="small"
@@ -202,7 +202,7 @@
           row.updateTime ? formatDateTime(row.updateTime) : '-'
         }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="250" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group">
             <el-button
@@ -354,7 +354,7 @@
           >
         </el-form>
       </div>
-      <el-table
+      <el-table show-overflow-tooltip
         :data="globalRuleList"
         border
         size="small"
@@ -398,7 +398,7 @@
             ></template
           >
         </el-table-column>
-        <el-table-column label="操作" width="80" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
           <template v-slot="{ row }">
             <el-button
               v-permission="'rule:edit'"

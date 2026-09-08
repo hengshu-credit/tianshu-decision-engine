@@ -190,7 +190,102 @@ test('血缘分析可生成关系图、拖动节点、缩放并恢复最佳分�
 
   await page.getByRole('button', { name: '一键回到最佳分布' }).click()
   await expect(branchNode).toHaveCSS('left', initialLeft)
+  await page.setViewportSize({ width: 1920, height: 1200 })
+  const graphWrap = page.locator('.graph-wrap')
+  await expect.poll(async () => {
+    const graphBox = await graphWrap.boundingBox()
+    return 1200 - graphBox.y - graphBox.height
+  }).toBeLessThanOrEqual(40)
+
+  // 将节点拖到 SVG 原始边界之外，但仍留在可视画布中。
+  const currentNode = page.locator('.current-node')
+  const currentBox = await currentNode.boundingBox()
+  const graphBox = await graphWrap.boundingBox()
+  const edgeLayer = page.locator('.edge-layer')
+  const edgeBox = await edgeLayer.boundingBox()
+  await page.mouse.move(currentBox.x + 6, currentBox.y + 6)
+  await page.mouse.down()
+  await page.mouse.move(currentBox.x + 6, graphBox.y + 40)
+  await page.mouse.up()
+  expect((await currentNode.boundingBox()).y + currentBox.height).toBeLessThan(edgeBox.y)
+  expect(await edgeLayer.locator('.edge-path').first().evaluate(path => path.getBBox().y)).toBeLessThan(0)
+  await expect(edgeLayer).toHaveCSS('overflow', 'visible')
+  await expect(graphWrap).toHaveCSS('overflow', 'hidden')
+  await page.getByRole('button', { name: '一键回到最佳分布' }).click()
   await expectNoRootOverflow(page)
+  expect(pageErrors).toEqual([])
+  assertClean()
+})
+
+test('血缘共享依赖在部分规则收起及对象展开后保持层级和连线', async ({ page }) => {
+  const pageErrors = []
+  page.on('pageerror', error => pageErrors.push(error.message))
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  const apiData = createOperationsApiData()
+  const startNode = { id: 'VARIABLE:311', refId: 311, type: 'VARIABLE', code: 'credit_apply_count_1m', label: '近1个月授信申请次数' }
+  const object = { id: 'DATA_OBJECT:12', refId: 12, type: 'DATA_OBJECT', code: 'request', label: '申请数据' }
+  const ruleIds = [30, 31, 32, 33, 34, 35]
+  apiData.set('/api/rule/lineage/options', [{ ...startNode, id: 311, displayName: '近1个月授信申请次数 (credit_apply_count_1m)' }])
+  apiData.set('/api/rule/lineage/graph', {
+    startNode,
+    nodes: [startNode,
+      { id: 'PROJECT:4', refId: 4, type: 'PROJECT', code: 'project', label: '共享项目' },
+      ...ruleIds.map(id => ({ id: `RULE:${id}`, refId: id, type: 'RULE', code: `rule${id}`, hasUpstream: true })),
+      { id: 'DATA_FIELD:125', refId: 125, type: 'DATA_FIELD', code: 'gaid', dataObject: object }
+    ],
+    edges: [
+      { from: 'PROJECT:4', to: startNode.id, label: '项目包含' },
+      ...ruleIds.flatMap(id => [
+        { from: 'PROJECT:4', to: `RULE:${id}`, label: '项目包含' },
+        { from: 'DATA_FIELD:125', to: `RULE:${id}`, label: '规则输入' },
+        { from: `RULE:${id}`, to: startNode.id, label: '规则输出' }
+      ])
+    ]
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/index.html#/lineage')
+  await page.getByRole('combobox', { name: '起点', exact: true }).click()
+  await page.getByRole('option', { name: '近1个月授信申请次数 (credit_apply_count_1m)', exact: true }).click()
+  await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
+  await expect(page.locator('.current-node .node-code')).toHaveText('credit_apply_count_1m')
+  const node = id => page.locator(`[data-node-id="${id}"]`)
+  const assertLayers = async expanded => {
+    const currentX = (await page.locator('.current-node').boundingBox()).x
+    const projectX = (await node('PROJECT:4').boundingBox()).x
+    const objectX = (await node('DATA_OBJECT:12').boundingBox()).x
+    const ruleXs = []
+    for (const id of ruleIds) ruleXs.push((await node(`RULE:${id}`).boundingBox()).x)
+    expect(Math.max(...ruleXs) - Math.min(...ruleXs)).toBeLessThan(1)
+    expect(projectX).toBeLessThan(ruleXs[0])
+    expect(objectX).toBeLessThan(ruleXs[0])
+    expect(ruleXs[0]).toBeLessThan(currentX)
+    if (expanded) {
+      const fieldX = (await node('DATA_FIELD:125').boundingBox()).x
+      expect(objectX).toBeLessThan(fieldX)
+      expect(fieldX).toBeLessThan(ruleXs[0])
+    }
+  }
+  await assertLayers(false)
+  await expect(page.locator('.edge-path')).toHaveCount(19)
+  for (const id of ruleIds.slice(0, -1)) {
+    await node(`RULE:${id}`).getByRole('button', { name: '收起节点' }).click()
+    await expect(page.locator('.edge-path')).toHaveCount(19)
+    await assertLayers(false)
+  }
+  await node('DATA_OBJECT:12').getByRole('button', { name: '展开字段' }).click()
+  await expect(node('DATA_FIELD:125')).toHaveCount(1)
+  await expect(page.locator('.edge-path')).toHaveCount(20)
+  await assertLayers(true)
+  await node('RULE:35').getByRole('button', { name: '收起节点' }).click()
+  await expect(node('DATA_OBJECT:12')).toHaveCount(0)
+  await expect(node('DATA_FIELD:125')).toHaveCount(0)
+  await expect(page.locator('.edge-path')).toHaveCount(13)
+  await node('RULE:30').getByRole('button', { name: '展开节点' }).click()
+  await expect(page.locator('.edge-path')).toHaveCount(20)
+  await assertLayers(true)
+  await node('DATA_OBJECT:12').getByRole('button', { name: '收起字段' }).click()
+  await expect(page.locator('.edge-path')).toHaveCount(19)
+  await assertLayers(false)
   expect(pageErrors).toEqual([])
   assertClean()
 })

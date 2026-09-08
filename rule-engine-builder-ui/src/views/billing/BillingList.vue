@@ -101,7 +101,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="configList"
           border
           size="small"
@@ -163,7 +163,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="120" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="120" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'project:edit'"
@@ -301,7 +301,7 @@
           </el-form>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="recordList"
           border
           size="small"
@@ -521,7 +521,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="summaryList"
           border
           size="small"

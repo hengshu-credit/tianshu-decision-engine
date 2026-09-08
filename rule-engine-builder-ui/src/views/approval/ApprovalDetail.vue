@@ -210,7 +210,7 @@
               :initial-node-id="lineageNodeId"
               initial-direction="ALL"
             />
-            <el-table v-else :data="detail.dependencies || []" size="small">
+            <el-table show-overflow-tooltip v-else :data="detail.dependencies || []" size="small">
               <el-table-column prop="targetResourceType" label="依赖类型" width="130" />
               <el-table-column prop="targetResourceId" label="资源 ID" width="100" />
               <el-table-column label="生效版本" width="100">
@@ -255,7 +255,7 @@
             </div>
             <span>恢复历史内容时会新增版本，已有历史不会被覆盖。</span>
           </div>
-          <el-table :data="detail.versions || []" row-key="id">
+          <el-table show-overflow-tooltip :data="detail.versions || []" row-key="id">
             <el-table-column label="版本" width="90">
               <template #default="{ row }"><strong>V{{ row.versionNo }}</strong></template>
             </el-table-column>
@@ -265,7 +265,7 @@
             <el-table-column label="生效时间" width="175">
               <template #default="{ row }">{{ formatTime(row.createTime) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="250">
+            <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250">
               <template #default="{ row }">
                 <el-button link type="info" @click="viewGovernanceVersion(row)">
                   查看

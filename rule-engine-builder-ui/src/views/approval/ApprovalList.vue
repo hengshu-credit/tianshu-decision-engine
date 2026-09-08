@@ -87,7 +87,7 @@
         <el-button @click="resetFilters">重置</el-button>
       </div>
 
-      <el-table
+      <el-table show-overflow-tooltip
         v-loading="loading"
         :data="records"
         row-key="id"
@@ -128,7 +128,7 @@
             {{ formatTime(row.submitTime || row.createTime) }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="90" fixed="right">
+        <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="90" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click.stop="openDetail(row)">
               查看

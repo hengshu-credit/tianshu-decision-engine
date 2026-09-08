@@ -115,7 +115,7 @@
           </div>
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="tableData"
           border
           size="small"
@@ -206,7 +206,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="180" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'database:edit'"
@@ -704,7 +704,7 @@
         <strong>{{ queryStatusTitle }}</strong>
         <span>{{ queryStatusDescription }}</span>
       </div>
-      <el-table
+      <el-table show-overflow-tooltip
         v-if="queryStatus === 'SUCCESS' && queryRows.length"
         :data="queryRows"
         border

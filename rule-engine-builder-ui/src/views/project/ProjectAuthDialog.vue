@@ -36,7 +36,7 @@
             >新增鉴权</el-button
           >
         </div>
-        <el-table
+        <el-table show-overflow-tooltip
           v-loading="authLoading"
           :data="authList"
           border
@@ -96,7 +96,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column label="操作" width="220" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="220" align="center" fixed="right">
             <template v-slot="{ row }">
               <div class="auth-row-actions">
                 <el-button
@@ -172,7 +172,7 @@
           :closable="false"
           show-icon
         />
-        <el-table
+        <el-table show-overflow-tooltip
           v-if="selectedAuth"
           v-loading="tokenLoading"
           :data="tokenList"
@@ -205,7 +205,7 @@
               }}</el-tag></template
             >
           </el-table-column>
-          <el-table-column label="操作" width="125" align="center">
+          <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="125" align="center">
             <template v-slot="{ row }">
               <el-button
                 link
@@ -298,7 +298,7 @@
             ><el-button @click="resetAccessLogs">重置</el-button></el-form-item
           >
         </el-form>
-        <el-table
+        <el-table show-overflow-tooltip
           v-loading="logLoading"
           :data="accessLogs"
           border

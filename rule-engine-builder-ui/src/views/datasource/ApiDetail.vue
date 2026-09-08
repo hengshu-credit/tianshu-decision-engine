@@ -665,7 +665,7 @@
                   <el-switch v-model="row.sensitive" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -753,7 +753,7 @@
                   <el-input v-model="row.remark" placeholder="业务含义，可选" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -804,7 +804,7 @@
                   <el-input v-model="row.remark" placeholder="业务含义，可选" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="80" align="center">
+              <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
                 <template v-slot="{ $index }">
                   <el-button
                     link
@@ -894,7 +894,7 @@
                       />
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="80" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
                     <template v-slot="{ $index }">
                       <el-button
                         link
@@ -916,7 +916,7 @@
                 >
                   选择请求对象后显示字段。
                 </div>
-                <el-table
+                <el-table show-overflow-tooltip
                   v-else
                   :data="requestFieldOptions"
                   size="small"
@@ -940,7 +940,7 @@
                       fieldScriptPath(row)
                     }}</template>
                   </el-table-column>
-                  <el-table-column label="操作" width="58" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="58" align="center">
                     <template v-slot="{ row }">
                       <el-button
                         link
@@ -1045,7 +1045,7 @@
                       />
                     </template>
                   </el-table-column>
-                  <el-table-column label="操作" width="80" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="80" align="center">
                     <template v-slot="{ $index }">
                       <el-button
                         link
@@ -1155,7 +1155,7 @@
                 >
                   选择响应对象后显示字段。
                 </div>
-                <el-table
+                <el-table show-overflow-tooltip
                   v-else
                   :data="responseFieldOptions"
                   size="small"
@@ -1179,7 +1179,7 @@
                       >body.{{ outputFieldName(row) }}</template
                     >
                   </el-table-column>
-                  <el-table-column label="操作" width="58" align="center">
+                  <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="58" align="center">
                     <template v-slot="{ row }">
                       <el-button
                         link

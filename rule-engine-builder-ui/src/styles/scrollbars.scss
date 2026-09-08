@@ -1,0 +1,95 @@
+// 同时覆盖页面、传送到 body 的浮层，以及组件内部的滚动区域。
+:root {
+  --tianshu-scrollbar-size: 4px;
+  --tianshu-scrollbar-thumb: #2639e9;
+  --tianshu-scrollbar-thumb-vertical: #2639e9;
+  --tianshu-scrollbar-thumb-solid: #2639e9;
+  --tianshu-scrollbar-track: rgba(38, 57, 233, 0.08);
+  --tianshu-scrollbar-hover-shadow: inset 0 0 0 100px rgba(0, 0, 0, 0.12);
+  --tianshu-scrollbar-active-shadow: inset 0 0 0 100px rgba(0, 0, 0, 0.2);
+}
+
+// 低优先级使 Element Plus 的 hidden-default 仍能隐藏原生滚动条。
+:where(*) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tianshu-scrollbar-thumb-solid) var(--tianshu-scrollbar-track);
+}
+
+@supports selector(::-webkit-scrollbar) {
+  :where(*) {
+    // 非 auto 的标准属性会覆盖 Chromium 的伪元素尺寸及渐变样式。
+    scrollbar-width: auto;
+    scrollbar-color: auto;
+  }
+
+  ::-webkit-scrollbar {
+    width: var(--tianshu-scrollbar-size);
+    height: var(--tianshu-scrollbar-size);
+  }
+
+  ::-webkit-scrollbar-track {
+    background: var(--tianshu-scrollbar-track);
+    border-radius: 0;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background: var(--tianshu-scrollbar-thumb-vertical);
+    border-radius: 0;
+  }
+
+  ::-webkit-scrollbar-thumb:horizontal {
+    background: var(--tianshu-scrollbar-thumb);
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    box-shadow: var(--tianshu-scrollbar-hover-shadow);
+  }
+
+  ::-webkit-scrollbar-thumb:active {
+    box-shadow: var(--tianshu-scrollbar-active-shadow);
+  }
+
+  ::-webkit-scrollbar-corner {
+    background: var(--tianshu-scrollbar-track);
+  }
+}
+
+.el-scrollbar__bar,
+:is(.monaco-editor, .monaco-diff-editor) .monaco-scrollable-element > .scrollbar {
+  background: var(--tianshu-scrollbar-track);
+  border-radius: 0;
+}
+
+.el-scrollbar__bar.is-vertical {
+  width: var(--tianshu-scrollbar-size);
+}
+
+.el-scrollbar__bar.is-horizontal {
+  height: var(--tianshu-scrollbar-size);
+}
+
+.el-scrollbar__bar.is-vertical,
+:is(.monaco-editor, .monaco-diff-editor) .monaco-scrollable-element > .scrollbar.vertical {
+  --tianshu-scrollbar-background: var(--tianshu-scrollbar-thumb-vertical);
+}
+
+.el-scrollbar__bar.is-horizontal,
+:is(.monaco-editor, .monaco-diff-editor) .monaco-scrollable-element > .scrollbar.horizontal {
+  --tianshu-scrollbar-background: var(--tianshu-scrollbar-thumb);
+}
+
+.el-scrollbar__bar > .el-scrollbar__thumb,
+:is(.monaco-editor, .monaco-diff-editor) .monaco-scrollable-element > .scrollbar > .slider {
+  background: var(--tianshu-scrollbar-background);
+  border-radius: 0;
+  opacity: 1;
+
+  &:hover {
+    box-shadow: var(--tianshu-scrollbar-hover-shadow);
+  }
+
+  &:active,
+  &.active {
+    box-shadow: var(--tianshu-scrollbar-active-shadow);
+  }
+}

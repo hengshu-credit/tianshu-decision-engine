@@ -153,7 +153,7 @@
           >
         </div>
 
-        <el-table
+        <el-table show-overflow-tooltip
           :data="pagedInputFields"
           border
           size="small"
@@ -251,7 +251,7 @@
             </template>
           </el-table-column>
           <!-- 操作 -->
-          <el-table-column
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
             width="140"
             align="center"
@@ -445,7 +445,7 @@
             </template>
           </el-table-column>
           <!-- 操作 -->
-          <el-table-column
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false"
             label="操作"
             width="140"
             align="center"
@@ -531,7 +531,7 @@
           >查看具体差异</el-button
         >
       </div>
-      <el-table
+      <el-table show-overflow-tooltip
         :data="versionList"
         border
         size="small"
@@ -553,7 +553,7 @@
             row.publishTime ? String(row.publishTime).replace('T', ' ') : '-'
           }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="170" align="center">
+        <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="170" align="center">
           <template v-slot="{ row, $index }">
             <el-button
               link

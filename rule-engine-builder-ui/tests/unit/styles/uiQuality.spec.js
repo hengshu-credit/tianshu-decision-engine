@@ -85,19 +85,18 @@ test('九类设计器统一提供唯一发布前检查与生命周期入口', ()
   }
 })
 
-test('工作区页签与菜单滚动条使用随主题变化的科技感样式', () => {
-  const tabs = source('src/layout/components/WorkspaceTabs.vue')
-  const sidebar = source('src/layout/components/LayoutSidebar.vue')
-  const layout = source('src/layout/index.vue')
-  expect(tabs).toMatch(
-    /\.workspace-tabs__scroll\s*\{[\s\S]*?scrollbar-color:\s*var\(--tianshu-scrollbar-thumb-solid\)[\s\S]*?var\(--tianshu-scrollbar-track\);/
+test('滚动条在全局统一使用主题令牌和直角细线样式', () => {
+  const scrollbars = source('src/styles/scrollbars.scss')
+  expect(source('src/main.js')).toContain("import './styles/scrollbars.scss'")
+  expect(scrollbars).toMatch(
+    /:where\(\*\)\s*\{[\s\S]*?scrollbar-color:\s*var\(--tianshu-scrollbar-thumb-solid\)[\s\S]*?var\(--tianshu-scrollbar-track\);/
   )
-  expect(tabs).toMatch(
-    /&::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*var\(--tianshu-scrollbar-thumb\);[\s\S]*?box-shadow:\s*0 0 8px var\(--tianshu-scrollbar-glow\);/
+  expect(scrollbars).toMatch(
+    /::-webkit-scrollbar-thumb\s*\{[\s\S]*?background:\s*var\(--tianshu-scrollbar-thumb-vertical\);[\s\S]*?border-radius:\s*0;/
   )
-  expect(sidebar).toContain('var(--tianshu-scrollbar-thumb)')
-  expect(layout).toContain('class="top-navigation__menu"')
-  expect(layout).toContain('var(--tianshu-scrollbar-thumb)')
+  expect(scrollbars).toContain('--tianshu-scrollbar-size: 4px;')
+  expect(scrollbars).toContain('.el-scrollbar__bar')
+  expect(scrollbars).toContain('.monaco-scrollable-element > .scrollbar')
 })
 
 test('业务页面与共用组件不再使用低对比度的旧文字灰色', () => {

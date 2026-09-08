@@ -14,6 +14,7 @@ import './styles/element-override.scss'
 import './styles/compact-workbench.scss'
 import './styles/theme-tokens.scss'
 import './styles/theme-components.scss'
+import './styles/scrollbars.scss'
 import { bootstrapLocalTheme } from '@/theme/themeRuntime'
 
 bootstrapLocalTheme(window.localStorage, document.documentElement)
