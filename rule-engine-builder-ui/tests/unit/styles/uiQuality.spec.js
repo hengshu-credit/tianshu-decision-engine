@@ -59,12 +59,12 @@ test('九类设计器统一提供唯一发布前检查与生命周期入口', ()
   const scriptPanel = source('src/components/common/ScriptPanel.vue')
   const actionBar = source('src/components/rule/RuleDesignerActionBar.vue')
 
-  expect(scriptPanel).toContain('由顶部“保存并检查”生成')
+  expect(scriptPanel).toContain('由顶部“编译”生成')
   expect(scriptPanel).not.toContain('保存并编译仅更新草稿')
   expect(scriptPanel).not.toMatch(/>\s*保存并编译\s*</)
-  expect(actionBar).toContain('保存并检查')
-  expect(actionBar).toContain('仅保存草稿')
-  expect(actionBar).toContain('aria-label="前往规则生命周期审核发布"')
+  expect(actionBar).toContain('编译')
+  expect(actionBar).toContain('保存')
+  expect(actionBar).toContain("key: 'publish'")
 
   const designers = [
     'ScriptEditor.vue',
@@ -80,7 +80,7 @@ test('九类设计器统一提供唯一发布前检查与生命周期入口', ()
   for (const file of designers) {
     const designer = source(`src/views/designer/${file}`)
     expect(designer).toMatch(
-      /<rule-designer-action-bar[\s\S]*?@save-check="handleCompile"[\s\S]*?@lifecycle="goRuleLifecycle"[\s\S]*?\/>/
+      /<rule-designer-action-bar[\s\S]*?@compile="handleCompile"[\s\S]*?@publish="handlePublish"[\s\S]*?\/>/
     )
   }
 })

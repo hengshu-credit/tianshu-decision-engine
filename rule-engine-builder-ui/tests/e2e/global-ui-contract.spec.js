@@ -494,6 +494,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
   await expect(page.getByText('年龄', { exact: true })).toBeVisible()
 
   const table = page.locator('.var-list-section .el-table').first()
+  await expect(table.getByRole('button', { name: '删除', exact: true }).first()).toBeVisible()
   const readAppearance = () => table.evaluate(element => {
     const header = Array.from(element.querySelectorAll('th.el-table__cell'))
       .find(cell => cell.textContent.includes('作用范围'))
@@ -501,8 +502,7 @@ test('表头、状态、作用范围和普通操作随主题色切换', async ({
     const status = element.querySelector('.el-tag--success')
     const edit = Array.from(element.querySelectorAll('button'))
       .find(button => button.textContent.trim() === '编辑')
-    const remove = Array.from(element.querySelectorAll('button'))
-      .find(button => button.textContent.trim() === '删除')
+    const remove = element.querySelector('[data-action="delete"]')
     const normalizeColor = value => {
       const probe = document.createElement('span')
       probe.style.color = value

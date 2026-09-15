@@ -28,6 +28,20 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/rule/sync")
 public class RuleSyncController {
+    @Resource private com.hengshucredit.rule.server.service.RuleVersionBindingService versionBindingService;
+    @Resource private com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService artifactSnapshotService;
+
+    @GetMapping("/by-id/{definitionId}")
+    public R<RulePublished> getById(@PathVariable Long definitionId,
+                                  @RequestParam(required = false) Long versionBindingId, HttpServletRequest request) {
+        ProjectScope scope = resolveProjectScope(request);
+        if (scope == null) return R.fail(401, "Unauthorized project token");
+        RulePublished latest = publishedMapper.selectOne(appendProjectScope(new LambdaQueryWrapper<RulePublished>()
+                .eq(RulePublished::getDefinitionId, definitionId).eq(RulePublished::getStatus, 1), scope));
+        if (latest == null) return R.fail(404, "Rule not found");
+        RulePublished selected = versionBindingService.resolvePublished(latest, versionBindingId);
+        return R.ok(withOutputScriptNames(selected));
+    }
 
     @Resource
     private RulePublishedMapper publishedMapper;
@@ -63,9 +77,7 @@ public class RuleSyncController {
         List<RulePublished> list = publishedMapper.selectList(
                 appendProjectScope(new LambdaQueryWrapper<RulePublished>()
                         .eq(RulePublished::getStatus, 1), scope));
-        for (RulePublished published : list) {
-            withOutputScriptNames(published);
-        }
+        for (int index = 0; index < list.size(); index++) list.set(index, withOutputScriptNames(list.get(index)));
         return R.ok(list);
     }
 
@@ -202,7 +214,17 @@ public class RuleSyncController {
         if (published == null || published.getDefinitionId() == null) {
             return published;
         }
-        List<RuleDefinitionOutputField> fields = definitionService.listOutputFields(published.getDefinitionId());
+        if (versionBindingService != null && published.getVersionBindingId() == null) published = versionBindingService.resolvePublished(published, null);
+        List<RuleDefinitionOutputField> fields;
+        if (published.getArtifactId() != null && artifactSnapshotService != null) {
+            var snapshot = artifactSnapshotService.load(published.getArtifactId(), published.getDefinitionId(),
+                    definitionService.getById(published.getDefinitionId()).getProjectId());
+            fields = snapshot.getOutputFields();
+            published.setImported(snapshot.isImported());
+            published.setImportBindings(new LinkedHashMap<>(snapshot.getBindings()));
+        } else {
+            fields = definitionService.listOutputFields(published.getDefinitionId());
+        }
         if (fields != null) {
             published.setOutputScriptNames(fields.stream()
                     .map(RuleDefinitionOutputField::getScriptName)

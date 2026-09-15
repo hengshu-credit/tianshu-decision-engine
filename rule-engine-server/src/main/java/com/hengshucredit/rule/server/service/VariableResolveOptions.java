@@ -19,6 +19,10 @@ public class VariableResolveOptions {
     private Set<String> statusReferenceKeys;
     /** 本次执行的来源状态 sidecar，键严格为 refType:refId。 */
     private Map<String, Map<String, Object>> sourceStates = new LinkedHashMap<>();
+    /** 本次执行使用的冻结变量路径；null 表示尚未装载，不得将空快照回退为主表。 */
+    private Map<String, String> variableReferencePaths;
+    private boolean captureDatabasePreview;
+    private java.util.List<Map<String, Object>> databasePreviewRows;
 
     public boolean requiresSourceStatus(String refType, Long refId) {
         return refId != null && refType != null && statusReferenceKeys != null

@@ -22,6 +22,10 @@
         <strong>{{ issueTitle(issue, '校验错误') }}</strong>
         <span>{{ issue.message }}</span>
         <code v-if="issue.path">{{ issue.path }}</code>
+        <div class="issue-repair">
+          <span>{{ repairHint(issue) }}</span>
+          <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">定位到规则设计</el-button>
+        </div>
       </div>
     </div>
     <div v-if="warnings.length" class="issue-group">
@@ -29,6 +33,10 @@
       <div v-for="(issue, index) in warnings" :key="`warning-${index}`" class="issue-row">
         <strong>{{ issueTitle(issue, '校验提醒') }}</strong>
         <span>{{ issue.message }}</span>
+        <div class="issue-repair">
+          <span>{{ repairHint(issue) }}</span>
+          <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">查看配置位置</el-button>
+        </div>
       </div>
     </div>
     <el-empty v-if="report.valid && !warnings.length" description="格式、Schema 与依赖校验均已通过" />
@@ -36,19 +44,23 @@
 </template>
 
 <script>
+import { validationRepairHint } from '@/utils/validationIssueLocation'
 export default {
   name: 'RuleValidationReport',
   props: {
+    locatable: { type: Boolean, default: false },
     report: {
       type: Object,
       default: () => ({ valid: true, errors: [], warnings: [] })
     }
   },
+  emits: ['locate'],
   computed: {
     errors() { return this.report.errors || [] },
     warnings() { return this.report.warnings || [] }
   },
   methods: {
+    repairHint: validationRepairHint,
     issueTitle(issue, fallback) {
       const labels = {
         MODEL_VERSION_UPDATED: '模型版本已更新',
@@ -71,4 +83,6 @@ export default {
 .issue-group--error { border-left-color: #d34a4a; background: #fff2f2; }
 .issue-row { display: grid; grid-template-columns: minmax(140px, auto) 1fr auto; gap: 12px; margin-top: 8px; font-size: 13px; line-height: 1.5; }
 .issue-row code { color: #6b7280; }
+.issue-repair { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; color: var(--tianshu-text-secondary); }
+.issue-repair > span { flex: 1; min-width: 200px; }
 </style>

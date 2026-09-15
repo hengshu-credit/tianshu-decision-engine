@@ -25,6 +25,119 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleLifecycleServiceTest {
+    @Test
+    public void deletingLastDraftClearsInitialProjectionWithoutDeletingAudit() {
+        FixtureService service = new FixtureService();
+        RuleRevision first = service.createDraft(100L, null);
+        RuleRevision second = service.createDraft(100L, null);
+        service.deleteDraft(100L, first.getId(), 0);
+        Assert.assertFalse(service.emptyProjection);
+        service.deleteDraft(100L, second.getId(), 0);
+        Assert.assertTrue(service.emptyProjection);
+        Assert.assertEquals(2, service.revisions.size());
+    }
+
+    @Test
+    public void offliningHistoricalOverwriteCannotDisableLatestProduction() {
+        FixtureService service = new FixtureService();
+        RuleRevision latest = revision(9L, 100L, "PUBLISHED", 2);
+        RuleRevision historical = revision(10L, 100L, "PUBLISHED", 3);
+        service.revisions.put(9L, latest);
+        service.revisions.put(10L, historical);
+        service.activeRevisionId = 9L;
+        Assert.assertThrows(IllegalStateException.class,
+                () -> service.offline(10L, request("offline historical", null)));
+        Assert.assertEquals("PUBLISHED", historical.getState());
+        Assert.assertEquals(Long.valueOf(9), service.activeRevisionId);
+    }
+
+    @Test
+    public void explicitCreationAlwaysCreatesIndependentDrafts() {
+        FixtureService service = new FixtureService();
+        RuleRevision first = service.createDraft(100L, null);
+        RuleRevision second = service.createDraft(100L, null);
+        Assert.assertNotEquals(first.getId(), second.getId());
+        Assert.assertEquals(2, service.insertCount);
+    }
+
+    @Test
+    public void deletionPreservesSourceAndRejectsFrozenOrStaleDraft() {
+        FixtureService service = new FixtureService();
+        RuleRevision source = service.createDraft(100L, null);
+        RuleRevision other = service.createDraft(100L, null);
+        Assert.assertThrows(RuleGovernanceException.class,
+                () -> service.deleteDraft(100L, source.getId(), 99));
+        service.deleteDraft(100L, source.getId(), 0);
+        Assert.assertEquals("DELETED", source.getState());
+        Assert.assertEquals("DRAFT", other.getState());
+        Assert.assertNotNull(service.revisions.get(source.getId()));
+        Assert.assertEquals("DELETE_DRAFT", service.events.get(service.events.size() - 1).getAction());
+        for (String state : new String[]{"REVIEW", "APPROVED", "PUBLISHED", "DELETED"}) {
+            other.setState(state);
+            Assert.assertThrows(RuleGovernanceException.class,
+                    () -> service.deleteDraft(100L, other.getId(), 0));
+        }
+    }
+
+    @Test
+    public void secondReviewIsRejectedWhileOtherDraftRemainsEditable() {
+        FixtureService service = new FixtureService();
+        RuleRevision draft = service.createDraft(30L, null);
+        service.pending = revision(77L, 30L, "REVIEW", 4);
+        Assert.assertEquals("REVIEW_ALREADY_EXISTS", Assert.assertThrows(RuleGovernanceException.class,
+                () -> service.submit(draft.getId(), request("submit", null))).getCode());
+        Assert.assertEquals("DRAFT", service.requireEditableDraft(30L, draft.getId()).getState());
+    }
+
+    @Test
+    public void draftSourceCopyPreservesContentAndSourceEvidenceAfterOriginalChanges() {
+        FixtureService service = new FixtureService();
+        RuleRevision source = revision(6L, 30L, "DRAFT", 2);
+        source.setModelJson("{\"script\":\"return 1;\"}");
+        source.setBaseRevisionId(5L);
+        source.setBaseArtifactId(105L);
+        service.revisions.put(6L, source);
+        RuleRevision copy = service.prepareDesignerDraft(30L, RuleDraftSourceType.REVISION, 6L);
+        Assert.assertEquals(0, service.insertCount);
+        Assert.assertEquals(Long.valueOf(6), copy.getSourceId());
+        Assert.assertEquals(Long.valueOf(5), copy.getBaseRevisionId());
+        source.setModelJson("{\"script\":\"return 2;\"}");
+        source.setState("DELETED");
+        Assert.assertEquals("{\"script\":\"return 1;\"}", copy.getModelJson());
+        Assert.assertEquals(Long.valueOf(105), copy.getBaseArtifactId());
+        Assert.assertThrows(RuleGovernanceException.class,
+                () -> service.prepareDesignerDraft(30L, RuleDraftSourceType.REVISION, 6L));
+    }
+
+    @Test
+    public void explicitTemporarySaveStoresEditedVersionCopyAndKeepsSourceUnchanged() {
+        FixtureService service = new FixtureService();
+        RuleRevision source = revision(6L, 30L, "PUBLISHED", 2);
+        source.setModelJson("{\"original\":true}");
+        service.revisions.put(6L, source);
+        RuleDraftSourceRequest request = sourceRequest(RuleDraftSourceType.REVISION, 6L);
+        request.setModelJson("{\"edited\":true}");
+        Assert.assertEquals(0, service.insertCount);
+        RuleDraftSaveResponse result = service.saveTemporaryDraft(30L, request);
+        Assert.assertEquals(1, service.insertCount);
+        Assert.assertEquals("{\"edited\":true}", service.savedRequest.getModelJson());
+        Assert.assertEquals("{\"edited\":true}", result.getRevision().getModelJson());
+        Assert.assertEquals("{\"original\":true}", source.getModelJson());
+    }
+
+    @Test
+    public void newRuleTemporarySaveRequiresPayloadAndDoesNotReuseAnUnrelatedDraft() {
+        FixtureService service = new FixtureService();
+        Assert.assertThrows(RuleGovernanceException.class, () -> service.saveTemporaryDraft(100L, new RuleDraftSourceRequest()));
+        Assert.assertEquals(0, service.insertCount);
+        RuleDraftSourceRequest request = new RuleDraftSourceRequest();
+        request.setModelJson("{\"rules\":[]}");
+        RuleDraftSaveResponse saved = service.saveTemporaryDraft(100L, request);
+        Assert.assertEquals("{\"rules\":[]}", saved.getRevision().getModelJson());
+        RuleDraftSaveResponse second = service.saveTemporaryDraft(100L, request);
+        Assert.assertNotEquals(saved.getRevision().getId(), second.getRevision().getId());
+        Assert.assertEquals(2, service.insertCount);
+    }
 
     @Test
     public void createsDraftAndRejectsDirectPublish() {
@@ -144,7 +257,7 @@ public class RuleLifecycleServiceTest {
     }
 
     @Test
-    public void reviewRevisionBlocksCreatingAnotherDraft() {
+    public void reviewRevisionAllowsAnotherDraftButCannotBeItsPublicationBase() {
         FixtureService service = new FixtureService();
         service.pending = revision(6L, 30L, "REVIEW", 1);
 
@@ -152,11 +265,12 @@ public class RuleLifecycleServiceTest {
                 RuleGovernanceException.class,
                 () -> service.createDraft(30L, 6L));
 
-        Assert.assertEquals(409, error.getHttpStatus());
-        Assert.assertEquals("DRAFT_CREATION_BLOCKED",
+        Assert.assertEquals(400, error.getHttpStatus());
+        Assert.assertEquals("BASE_REVISION_INVALID",
                 error.getCode());
         Assert.assertFalse(error.getIssues().isEmpty());
         Assert.assertEquals(0, service.insertCount);
+        Assert.assertEquals("DRAFT", service.createDraft(30L, null).getState());
     }
 
     @Test
@@ -167,23 +281,20 @@ public class RuleLifecycleServiceTest {
 
         Assert.assertEquals("lock-definition",
                 service.callOrder.get(0));
-        Assert.assertTrue(service.callOrder.indexOf("find-draft")
+        Assert.assertTrue(service.callOrder.indexOf("lock-definition")
                 < service.callOrder.indexOf("insert-revision"));
     }
 
     @Test
-    public void duplicateDraftInsertReturnsSameBaseDraftAfterRecheck() {
+    public void duplicateDraftInsertNeverReturnsAnUnrelatedConcurrentDraft() {
         FixtureService service = new FixtureService();
         service.revisions.put(6L,
                 revision(6L, 30L, "APPROVED", 1));
         service.duplicateInsertBase = 6L;
 
-        RuleRevision draft = service.createDraft(30L, 6L);
-
-        Assert.assertEquals(Long.valueOf(7L), draft.getId());
-        Assert.assertEquals(Long.valueOf(6L),
-                draft.getBaseRevisionId());
-        Assert.assertEquals("DRAFT", draft.getState());
+        RuleGovernanceException error = Assert.assertThrows(RuleGovernanceException.class,
+                () -> service.createDraft(30L, 6L));
+        Assert.assertEquals("DRAFT_LOCK_CONFLICT", error.getCode());
     }
 
     @Test
@@ -198,7 +309,7 @@ public class RuleLifecycleServiceTest {
                 () -> service.createDraft(30L, 6L));
 
         Assert.assertEquals(409, error.getHttpStatus());
-        Assert.assertEquals("DRAFT_BASE_MISMATCH",
+        Assert.assertEquals("DRAFT_LOCK_CONFLICT",
                 error.getCode());
     }
 
@@ -207,12 +318,10 @@ public class RuleLifecycleServiceTest {
         FixtureService service = new FixtureService();
         service.pending = revision(7L, 30L, "DRAFT", 2);
         service.pending.setBaseRevisionId(5L);
-
-        RuleGovernanceException error = Assert.assertThrows(
-                RuleGovernanceException.class,
-                () -> service.createDraft(30L, 6L));
-
-        Assert.assertEquals(409, error.getHttpStatus());
+        service.revisions.put(6L, revision(6L, 30L, "PUBLISHED", 1));
+        RuleRevision created = service.createDraft(30L, 6L);
+        Assert.assertEquals(Long.valueOf(6L), created.getBaseRevisionId());
+        Assert.assertNotEquals(service.pending.getId(), created.getId());
         Assert.assertEquals(Long.valueOf(7L), service.pending.getId());
     }
 
@@ -369,9 +478,7 @@ public class RuleLifecycleServiceTest {
                 sourceRequest(RuleDraftSourceType.REVISION, 6L));
 
         Assert.assertEquals("lock-definition", service.callOrder.get(0));
-        Assert.assertTrue(service.callOrder.indexOf("find-draft")
-                < service.callOrder.indexOf("find-pending"));
-        Assert.assertTrue(service.callOrder.indexOf("find-pending")
+        Assert.assertTrue(service.callOrder.indexOf("lock-definition")
                 < service.callOrder.indexOf("insert-revision"));
     }
 
@@ -445,41 +552,33 @@ public class RuleLifecycleServiceTest {
     }
 
     @Test
-    public void existingDraftOrReviewBlocksSourceDraftCreation() {
+    public void existingDraftOrReviewAllowsIndependentSourceDraftCreation() {
         FixtureService service = new FixtureService();
         service.pending = revision(7L, 30L, "DRAFT", 3);
 
-        RuleGovernanceException draftError = Assert.assertThrows(
-                RuleGovernanceException.class,
-                () -> service.createDraftFromSource(30L,
-                        sourceRequest(RuleDraftSourceType.REVISION, 6L)));
-
-        Assert.assertEquals(409, draftError.getHttpStatus());
-        Assert.assertEquals("DRAFT_ALREADY_EXISTS", draftError.getCode());
-        Assert.assertEquals(0, service.insertCount);
-        Assert.assertNull(service.savedRequest);
+        service.revisions.put(6L, revision(6L, 30L, "PUBLISHED", 2));
+        RuleRevision first = service.createDraftFromSource(30L,
+                sourceRequest(RuleDraftSourceType.REVISION, 6L)).getRevision();
+        Assert.assertNotEquals(service.pending.getId(), first.getId());
 
         service.pending.setState("REVIEW");
-        RuleGovernanceException reviewError = Assert.assertThrows(
-                RuleGovernanceException.class,
-                () -> service.createDraftFromSource(30L,
-                        sourceRequest(RuleDraftSourceType.REVISION, 6L)));
-
-        Assert.assertEquals(409, reviewError.getHttpStatus());
-        Assert.assertEquals("DRAFT_CREATION_BLOCKED", reviewError.getCode());
+        RuleRevision second = service.createDraftFromSource(30L,
+                sourceRequest(RuleDraftSourceType.REVISION, 6L)).getRevision();
+        Assert.assertNotEquals(first.getId(), second.getId());
+        Assert.assertEquals("REVIEW", service.pending.getState());
+        Assert.assertEquals(2, service.insertCount);
     }
 
     @Test
-    public void sourceDraftReviewAndForeignRevisionAreRejected() {
+    public void sourceDraftCanBeCopiedButReviewAndForeignRevisionAreRejected() {
         FixtureService service = new FixtureService();
         RuleRevision source = revision(6L, 30L, "DRAFT", 2);
         service.revisions.put(source.getId(), source);
 
-        RuleGovernanceException draftError = Assert.assertThrows(
-                RuleGovernanceException.class,
-                () -> service.createDraftFromSource(30L,
-                        sourceRequest(RuleDraftSourceType.REVISION, 6L)));
-        Assert.assertEquals("SOURCE_ALREADY_DRAFT", draftError.getCode());
+        RuleDraftSaveResponse saved = service.createDraftFromSource(30L,
+                sourceRequest(RuleDraftSourceType.REVISION, 6L));
+        Assert.assertNotEquals(source.getId(), saved.getRevision().getId());
+        Assert.assertEquals(source.getId(), saved.getRevision().getSourceId());
 
         source.setState("REVIEW");
         RuleGovernanceException reviewError = Assert.assertThrows(
@@ -517,7 +616,7 @@ public class RuleLifecycleServiceTest {
                         sourceRequest(RuleDraftSourceType.REVISION, 6L)));
 
         Assert.assertEquals(409, error.getHttpStatus());
-        Assert.assertEquals("DRAFT_ALREADY_EXISTS", error.getCode());
+        Assert.assertEquals("DRAFT_LOCK_CONFLICT", error.getCode());
     }
 
     private static RuleLifecycleActionRequest request(String comment, String forceReason) {
@@ -554,6 +653,12 @@ public class RuleLifecycleServiceTest {
         private final List<RuleLifecycleEvent> events = new ArrayList<>();
         private long nextId = 1L;
         private Long activeRevisionId;
+        private boolean emptyProjection;
+
+        @Override
+        protected void clearDesignerProjectionIfUnused(Long definitionId) {
+            emptyProjection = versions.isEmpty() && revisions.values().stream().allMatch(value -> "DELETED".equals(value.getState()));
+        }
         private final RulePreflightReport preflight = new RulePreflightReport();
         private RuleRevision pending;
         private RuleRevision revision;
@@ -687,6 +792,7 @@ public class RuleLifecycleServiceTest {
                 RuleDraftSaveRequest request) {
             savedRequest = request;
             RuleRevision draft = revisions.get(request.getRevisionId());
+            draft.setModelJson(request.getModelJson());
             draft.setLockVersion(request.getLockVersion() + 1);
             savedResponse = new RuleDraftSaveResponse();
             savedResponse.setRevision(draft);

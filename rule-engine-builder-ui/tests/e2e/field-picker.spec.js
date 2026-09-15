@@ -15,7 +15,7 @@ test('决策表字段选择器可加载并选择普通变量和对象字段', as
   })
   await page.goto('http://tianshu.local/index.html#/designer/table/101')
 
-  await expect(page.locator('.dt-var-status')).toContainText('已加载 5 个变量/常量/对象字段')
+  await expect(page.locator('.rule-designer-info__fields')).toContainText('已加载 5 个变量/常量/对象字段')
   await page.getByRole('button', { name: '添加行' }).click()
 
   const targetField = page.getByPlaceholder('选择目标字段')

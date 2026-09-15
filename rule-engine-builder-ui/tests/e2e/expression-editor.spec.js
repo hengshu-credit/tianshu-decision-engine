@@ -69,12 +69,15 @@ test('表达式编辑器从规则设计器打开后可配置、测试、暂存�
 test('多个规则表达式会话返回各自设计器并通过草稿安全切换', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 })
   const designerApiData = createDesignerApiData()
-  designerApiData.set('POST /api/rule/definition/save', async ({ request }) => {
+  // 此用例验证已有草稿中的表达式会话；正式版本的手动暂存另有覆盖。
+  designerApiData.set('/api/rule/definition/versions/101', [])
+  designerApiData.set('/api/rule/definition/101/published-versions', [])
+  designerApiData.set('POST /api/rule/definition/101/designer/drafts', async ({ request }) => {
     const payload = request.postDataJSON()
     return {
       revision: {
-        id: payload.revisionId,
-        definitionId: payload.definitionId,
+        id: 2101,
+        definitionId: 101,
         revisionNo: 1,
         state: 'DRAFT',
         lockVersion: Number(payload.lockVersion || 0) + 1,
@@ -104,8 +107,11 @@ test('多个规则表达式会话返回各自设计器并通过草稿安全切�
   await page.getByRole('main').getByRole('button', { name: '返回', exact: true }).click()
   await expect(page).toHaveURL(/#\/designer\/table\/101$/)
   await expect(page.getByText('共 1 条规则', { exact: true })).toBeVisible()
-  await page.getByRole('button', { name: '仅保存草稿', exact: true }).click()
-  await expect(page.getByRole('status')).toContainText('已保存，等待检查')
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  const saveDialog = page.getByRole('dialog', { name: '保存草稿', exact: true })
+  await saveDialog.getByText('覆盖当前草稿', { exact: true }).click()
+  await saveDialog.locator('[data-action="confirm-save"]').click()
+  await expect(page.getByRole('status')).toContainText('草稿已保存')
 
   await page.getByRole('button', { name: '规则集 · 左操作数', exact: true }).click()
   await page.getByRole('main').getByRole('button', { name: '返回', exact: true }).click()

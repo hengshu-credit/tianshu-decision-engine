@@ -88,6 +88,7 @@ public class VariableSourceResolver {
         Map<String, Object> resolvedParams = target == null ? new LinkedHashMap<String, Object>() : target;
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
+        effectiveOptions.setVariableReferencePaths(variableReferencePaths(variables));
         removeCallerConstantValues(variables, resolvedParams);
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
@@ -108,6 +109,7 @@ public class VariableSourceResolver {
                 ? VariableResolveOptions.defaults() : options;
         List<RuleVariable> frozenVariables = variables == null ? Collections.emptyList() : variables;
         List<RuleModel> frozenModels = models == null ? Collections.emptyList() : models;
+        effectiveOptions.setVariableReferencePaths(variableReferencePaths(frozenVariables));
         Map<String, Object> resolvedParams = target == null
                 ? new LinkedHashMap<>() : target;
         removeCallerConstantValues(frozenVariables, resolvedParams);
@@ -143,7 +145,7 @@ public class VariableSourceResolver {
             List<RuleVariable> readyVariables = new ArrayList<>();
             for (RuleVariable variable : pendingVariables) {
                 String scriptName = resolveScriptName(variable);
-                if (hasUnresolvedResolvableDependency(scriptName, collectVariableDependencies(variable),
+                if (hasUnresolvedResolvableDependency(scriptName, collectVariableDependencies(variable, effectiveOptions),
                         variableMap, modelMap, requiredScriptNames, resolvedParams, effectiveOptions)) {
                     delayedVariables.add(variable);
                     continue;
@@ -251,6 +253,7 @@ public class VariableSourceResolver {
         copy.setSkipApiSources(source.isSkipApiSources());
         copy.setForceRefreshSource(source.isForceRefreshSource());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
+        copy.setVariableReferencePaths(source.getVariableReferencePaths());
         copy.setListMatchTime(source.getListMatchTime());
         copy.setRequiredScriptNames(source.getRequiredScriptNames() == null
                 ? null : new LinkedHashSet<>(source.getRequiredScriptNames()));
@@ -480,7 +483,7 @@ public class VariableSourceResolver {
             String name = queue.get(index++);
             RuleVariable variable = variableMap.get(name);
             if (variable != null) {
-                for (String dependency : collectVariableDependencies(variable)) {
+                for (String dependency : collectVariableDependencies(variable, options)) {
                     if (expanded.add(dependency)) {
                         queue.add(dependency);
                     }
@@ -586,6 +589,10 @@ public class VariableSourceResolver {
     }
 
     Set<String> collectVariableDependencies(RuleVariable variable) {
+        return collectVariableDependencies(variable, null);
+    }
+
+    private Set<String> collectVariableDependencies(RuleVariable variable, VariableResolveOptions options) {
         Set<String> dependencies = new LinkedHashSet<>();
         if (variable == null) {
             return dependencies;
@@ -597,7 +604,16 @@ public class VariableSourceResolver {
             collectDependencyValues(mapping, dependencies);
             collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
         } else if ("DB".equals(varSource)) {
-            collectDependencyValues(config.get("params"), dependencies);
+            Object configured = config.get("params");
+            if (configured instanceof Iterable<?> values) {
+                for (Object value : values) {
+                    if (value instanceof Map<?, ?> operand && "REFERENCE".equals(operand.get("kind"))) {
+                        dependencies.add(dbReferencePath(variable, operand, options));
+                    } else if (!(value instanceof Map<?, ?> operand && "LITERAL".equals(operand.get("kind")))) {
+                        collectDependencyValues(value, dependencies);
+                    }
+                }
+            }
         } else if ("LIST".equals(varSource)) {
             Object queryOperands = config.get("queryOperands");
             if (queryOperands instanceof Iterable) {
@@ -967,6 +983,7 @@ public class VariableSourceResolver {
         }
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setForceRefreshSource(true);
+        options.setCaptureDatabasePreview(true);
         Map<String, Object> params = inputParams == null
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(inputParams);
@@ -982,6 +999,7 @@ public class VariableSourceResolver {
         result.put("inputParams", params);
         result.put("resolvedValue", resolved.get(scriptName));
         result.put("resolvedParams", resolved);
+        if ("DB".equals(varSource)) result.put("databaseRows", options.getDatabasePreviewRows());
         return result;
     }
 
@@ -1014,7 +1032,7 @@ public class VariableSourceResolver {
         if (!hasText(sql)) {
             throw new IllegalArgumentException("DB变量缺少查询SQL");
         }
-        List<Object> queryParams = alignQueryParamsWithSql(sql, buildParamList(config.get("params"), params));
+        List<Object> queryParams = alignQueryParamsWithSql(sql, buildDbParamList(variable, config.get("params"), params, options));
         int maxRows = intValue(config.get("maxRows"), 1);
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
@@ -1024,6 +1042,7 @@ public class VariableSourceResolver {
                 "DATABASE", variable.getProjectId(), datasourceId, resolveScriptName(variable));
         try {
             List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
+            if (options.isCaptureDatabasePreview()) options.setDatabasePreviewRows(rows);
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
                     rows == null || rows.isEmpty() ? "NO_DATA" : "HAS_DATA");
@@ -1438,6 +1457,55 @@ public class VariableSourceResolver {
         return result;
     }
 
+    private Map<String, String> variableReferencePaths(List<RuleVariable> variables) {
+        Map<String, String> paths = new LinkedHashMap<>();
+        for (RuleVariable variable : variables) {
+            if (variable.getId() != null && (variable.getStatus() == null || variable.getStatus() == 1)) {
+                paths.put(("CONSTANT".equals(variable.getVarSource()) ? "CONSTANT:" : "VARIABLE:")
+                        + variable.getId(), resolveScriptName(variable));
+            }
+        }
+        return Collections.unmodifiableMap(paths);
+    }
+
+    private String dbReferencePath(RuleVariable variable, Map<?, ?> operand, VariableResolveOptions options) {
+        Long id = longValue(operand.get("refId"));
+        String type = stringValue(operand.get("refType"));
+        if (id == null || !("VARIABLE".equals(type) || "CONSTANT".equals(type))) {
+            throw new IllegalArgumentException("SQL 参数字段引用必须包含有效 ID 和引用类型");
+        }
+        Map<String, String> paths = options != null && options.getVariableReferencePaths() != null
+                ? options.getVariableReferencePaths() : variableService.buildRefScriptNameMap(variable.getProjectId());
+        String path = paths.get(type + ":" + id);
+        if (!hasText(path)) throw new IllegalArgumentException("SQL 参数引用字段不存在或已停用：" + type + ":" + id);
+        return path;
+    }
+
+    private List<Object> buildDbParamList(RuleVariable variable, Object configured, Map<String, Object> values,
+                                         VariableResolveOptions options) {
+        if (!(configured instanceof Iterable<?> items)) return buildParamList(configured, values);
+        List<Object> result = new ArrayList<>();
+        for (Object value : items) {
+            if (value instanceof Map<?, ?> operand && "REFERENCE".equals(operand.get("kind"))) {
+                String path = dbReferencePath(variable, operand, options);
+                if ("CONSTANT".equals(operand.get("refType")) && options.getVariableReferencePaths() == null) {
+                    String key = "CONSTANT:" + longValue(operand.get("refId"));
+                    Map<String, Object> constants = variableService.buildRefConstantValueMap(variable.getProjectId());
+                    if (!constants.containsKey(key)) throw new IllegalArgumentException("SQL 参数常量不可用：" + key);
+                    result.add(constants.get(key));
+                } else {
+                    result.add(readPath(values, path));
+                }
+            } else if (value instanceof Map<?, ?> operand && "LITERAL".equals(operand.get("kind"))) {
+                result.add("NULL".equals(operand.get("valueType")) ? null
+                        : OperandValueResolver.resolve(JSON.toJSONString(operand), values));
+            } else {
+                result.add(parseConfiguredValue(value, values));
+            }
+        }
+        return result;
+    }
+
     private List<Object> alignQueryParamsWithSql(String sql, List<Object> queryParams) {
         int placeholderCount = countJdbcPlaceholders(sql);
         if (placeholderCount < 0 || queryParams == null || queryParams.size() <= placeholderCount) {
@@ -1447,20 +1515,7 @@ public class VariableSourceResolver {
     }
 
     private int countJdbcPlaceholders(String sql) {
-        if (!hasText(sql)) {
-            return -1;
-        }
-        int count = 0;
-        boolean inSingleQuote = false;
-        for (int i = 0; i < sql.length(); i++) {
-            char c = sql.charAt(i);
-            if (c == '\'') {
-                inSingleQuote = !inSingleQuote;
-            } else if (c == '?' && !inSingleQuote) {
-                count++;
-            }
-        }
-        return count;
+        return hasText(sql) ? SqlQuerySupport.analyze(sql).placeholderCount() : -1;
     }
 
     private List<String> buildStringList(Object configValue) {

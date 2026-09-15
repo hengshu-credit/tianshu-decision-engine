@@ -10,6 +10,18 @@ import static org.junit.Assert.assertTrue;
 public class DBConnectPoolsTest {
 
     @Test
+    public void validatesSharedFrontendBackendSqlCases() throws Exception {
+        try (var input = getClass().getResourceAsStream("/sql/read-only-cases.json")) {
+            var cases = com.alibaba.fastjson.JSON.parseArray(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));
+            for (int i = 0; i < cases.size(); i++) {
+                var item = cases.getJSONObject(i);
+                assertEquals(item.getString("sql"), item.getBooleanValue("valid"),
+                        DBConnectPools.isReadOnlySelectSql(item.getString("sql")));
+            }
+        }
+    }
+
+    @Test
     public void buildMysqlJdbcUrlFromFormFields() {
         RuleDbDatasource datasource = datasource("MYSQL", "10.0.0.8", 3307, "riskdb",
                 "useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai");

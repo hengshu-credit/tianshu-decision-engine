@@ -174,7 +174,7 @@ function getRefsByCategory(wrapper, category) {
 describe('DecisionTable — 变量选择器加载', () => {
   let wrapper
 
-  beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
+  beforeEach(async () => { wrapper = await mountAndWaitForRefs(); wrapper.vm.requestDesignerChoice = async () => ({ action: 'save', saveMode: 'OVERWRITE' }) })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('loadProjectVars 完成后 projectRefs 非空', () => {
@@ -424,11 +424,14 @@ describe('DecisionTable — 测试弹窗与参数构建', () => {
 describe('DecisionTable — 保存功能', () => {
   let wrapper
 
-  beforeEach(async () => { wrapper = await mountAndWaitForRefs() })
+  beforeEach(async () => {
+    wrapper = await mountAndWaitForRefs()
+    wrapper.vm.requestDesignerChoice = async () => ({ action: 'save', saveMode: 'OVERWRITE' })
+  })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
   test('handleSave 保存内容后显示成功提示', async () => {
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: {
           ...wrapper.vm.draftRevision,
@@ -439,19 +442,21 @@ describe('DecisionTable — 保存功能', () => {
       }
     })
     wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
+    wrapper.vm.addRule()
     await wrapper.vm.handleSave()
-    expect(definitionApi.saveContent).toHaveBeenCalled()
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalled()
     expect(definitionApi.refreshFields).not.toHaveBeenCalled()
     expect(definitionApi.compileRule).not.toHaveBeenCalled()
     expect(wrapper.vm.$message.success).toHaveBeenCalledWith('草稿已保存')
   })
 
-  test('handleSave 失败时显示错误提示并抛出异常', async () => {
-    definitionApi.saveContent.mockRejectedValueOnce(new Error('保存失败'))
+  test('handleSave 失败时显示错误提示且 Promise 不拒绝', async () => {
+    definitionApi.saveDesignerDraft.mockRejectedValueOnce(new Error('保存失败'))
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
     wrapper.vm.$message = { success: vi.fn(), error: vi.fn() }
-    await expect(wrapper.vm.handleSave()).rejects.toThrow('保存失败')
-    expect(definitionApi.saveContent).toHaveBeenCalled()
+    wrapper.vm.addRule()
+    await expect(wrapper.vm.handleSave()).resolves.toBe(false)
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalled()
     expect(wrapper.vm.$message.error).toHaveBeenCalled()
     consoleSpy.mockRestore()
   })

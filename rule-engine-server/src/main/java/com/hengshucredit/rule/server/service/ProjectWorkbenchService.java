@@ -51,6 +51,8 @@ public class ProjectWorkbenchService {
     private GovernanceApprovalRequestMapper approvalRequestMapper;
     @Resource
     private RuleExecutionLogMapper executionLogMapper;
+    @Resource
+    private RuleReferenceIntegrityService referenceIntegrityService;
 
     public ProjectWorkbenchDTO getWorkbench(Long projectId) {
         RuleProject project = projectId == null ? null : projectMapper.selectById(projectId);
@@ -160,7 +162,37 @@ public class ProjectWorkbenchService {
                 });
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
+        ProjectWorkbenchDTO.CheckItem fieldCheck = checkRuleFieldReferences(rules);
+        result.getChecks().replaceAll(item -> "FIELD".equals(item.getCode()) ? fieldCheck : item);
         return result;
+    }
+
+    ProjectWorkbenchDTO.CheckItem checkRuleFieldReferences(List<RuleDefinition> rules) {
+        if (rules == null) return unavailable("FIELD", "检查规则字段引用");
+        if (rules.isEmpty()) {
+            return check("FIELD", "检查规则字段引用", "OPTIONAL",
+                    "尚未创建规则；可按需使用项目字段、全局字段或无需字段的规则。",
+                    "CONFIGURE_RULES", "创建规则");
+        }
+        try {
+            for (RuleReferenceIntegrityService.AuditReport audit : referenceIntegrityService.scanDefinitions(rules)) {
+                if (!audit.isValid()) {
+                    var issue = audit.getIssues().get(0);
+                    String name = rules.stream().filter(rule -> rule.getId().equals(audit.getDefinitionId()))
+                            .map(RuleDefinition::getRuleName).findFirst().orElse("未命名规则");
+                    return check("FIELD", "检查规则字段引用", "BLOCKED",
+                            "规则「" + name + "」：" + issue.getMessage()
+                                    + "（" + issue.getPath() + "）。请修复规则中的引用。",
+                            "CONFIGURE_RULES", "检查规则引用");
+                }
+            }
+        } catch (RuntimeException error) {
+            log.warn("Project rule reference check failed", error);
+            return unavailable("FIELD", "检查规则字段引用");
+        }
+        return check("FIELD", "检查规则字段引用", "READY",
+                "已检查 " + rules.size() + " 条规则的稳定字段引用；可使用已启用的项目或全局字段。",
+                "CONFIGURE_RULES", "查看规则");
     }
 
     List<ProjectWorkbenchDTO.CheckItem> buildChecks(
@@ -174,16 +206,8 @@ public class ProjectWorkbenchService {
                 "项目当前处于停用状态，线上调用不会开放。",
                 "MANAGE_PROJECT", "调整项目状态"));
 
-        Long fieldCount = metrics.getFieldCount();
-        checks.add(fieldCount == null
-                ? unavailable("FIELD", "定义业务字段")
-                : fieldCount > 0
-                ? check("FIELD", "定义业务字段", "READY",
-                "已配置 " + fieldCount + " 个项目字段。",
-                "CONFIGURE_FIELDS", "查看字段")
-                : check("FIELD", "定义业务字段", "ACTION_REQUIRED",
-                "尚未配置项目字段，规则缺少可复用的业务输入。",
-                "CONFIGURE_FIELDS", "配置字段"));
+        // 资源数量仅用于概览；实际引用检查完成前不得推断规则字段已就绪。
+        checks.add(unavailable("FIELD", "检查规则字段引用"));
 
         checks.add(sourceCheck(metrics));
 
@@ -250,21 +274,45 @@ public class ProjectWorkbenchService {
                 "规则尚未发布，线上调用不会获得生效版本。",
                 "CONFIGURE_RULES", "进入生命周期"));
 
-        Long recent = metrics.getRecentExecutionCount();
-        checks.add(recent == null
-                ? unavailable("RUN", "验证线上运行")
-                : publishedRules == null || publishedRules == 0
-                ? check("RUN", "验证线上运行", "BLOCKED",
-                "发布规则后才能核对真实执行情况。",
-                "CONFIGURE_RULES", "先发布规则")
-                : recent > 0 && latest != null
-                ? check("RUN", "验证线上运行", "READY",
-                "最近 24 小时已有 " + recent + " 次执行。",
-                "VIEW_LOGS", "查看最近执行")
-                : check("RUN", "验证线上运行", "ACTION_REQUIRED",
-                "规则已发布，但最近 24 小时没有执行记录。",
-                "TEST_RULES", "执行一次验证"));
+        checks.add(runCheck(metrics, latest));
         return checks;
+    }
+
+    private ProjectWorkbenchDTO.CheckItem runCheck(
+            ProjectWorkbenchDTO.Metrics metrics, RuleExecutionLog latest) {
+        String title = "检查执行结果";
+        Long published = metrics.getPublishedRuleCount();
+        if (published == null) return unavailable("RUN", title);
+        if (published == 0) {
+            return check("RUN", title, "BLOCKED",
+                    "发布规则后才能核对生效版本的执行情况。",
+                    "CONFIGURE_RULES", "先发布规则");
+        }
+        Long recent = metrics.getRecentExecutionCount();
+        if (recent == null) return unavailable("RUN", title);
+        if (recent == 0) {
+            return check("RUN", title, "ACTION_REQUIRED",
+                    "规则已发布，但最近 24 小时没有执行记录。",
+                    "TEST_RULES", "执行一次验证");
+        }
+        if (latest != null && Integer.valueOf(0).equals(latest.getSuccess())) {
+            return check("RUN", title, "ATTENTION",
+                    "最近一次执行失败，请查看日志定位原因。",
+                    "VIEW_LOGS", "排查执行失败");
+        }
+        Long success = metrics.getRecentSuccessCount();
+        if (success == null || latest == null || latest.getSuccess() == null) {
+            return unavailable("RUN", title);
+        }
+        if (success < recent) {
+            return check("RUN", title, "ATTENTION",
+                    "最近 24 小时共有 " + recent + " 次执行，其中 "
+                            + (recent - success) + " 次失败，请查看日志。",
+                    "VIEW_LOGS", "排查执行失败");
+        }
+        return check("RUN", title, "READY",
+                "最近 24 小时已有 " + recent + " 次执行，当前未发现失败记录；调用来源与修订请查看日志。",
+                "VIEW_LOGS", "查看最近执行");
     }
 
     private ProjectWorkbenchDTO.CheckItem sourceCheck(

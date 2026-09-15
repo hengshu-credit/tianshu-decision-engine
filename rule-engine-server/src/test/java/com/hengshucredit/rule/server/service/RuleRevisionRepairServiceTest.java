@@ -204,6 +204,67 @@ public class RuleRevisionRepairServiceTest {
     }
 
     @Test
+    public void repairPreviewRejectsMultipleDraftsAfterOlderDraftWasOverwritten() {
+        multipleDraftsWithOlderProjection();
+        List<RuleRevision> before = fixture.revisions.stream()
+                .map(RuleRevisionRepairServiceTest::copy).toList();
+
+        RuleGovernanceException error = assertThrows(
+                RuleGovernanceException.class, () -> service.preview(30L));
+
+        assertEquals("DRAFT_ID_REQUIRED", error.getCode());
+        assertEquals(409, error.getHttpStatus());
+        assertEquals(before, fixture.revisions);
+        assertEquals(before.get(0), fixture.draft);
+        assertNull(fixture.savedRequest);
+        assertTrue(fixture.events.isEmpty());
+    }
+
+    @Test
+    public void repairRejectsMultipleDraftsWithoutChangingEitherContentOrLock() {
+        RuleRevisionRepairService.RepairPreview earlierPreview =
+                multipleDraftsWithOlderProjection();
+        List<RuleRevision> before = fixture.revisions.stream()
+                .map(RuleRevisionRepairServiceTest::copy).toList();
+        String beforeContent = fixture.currentModelJson;
+
+        RuleGovernanceException error = assertThrows(
+                RuleGovernanceException.class,
+                () -> service.repair(30L, request(
+                        earlierPreview.getSourceRevisionId(), earlierPreview.getPreviewDigest())));
+
+        assertEquals("DRAFT_ID_REQUIRED", error.getCode());
+        assertEquals(409, error.getHttpStatus());
+        assertEquals(before, fixture.revisions);
+        assertEquals(before.get(0), fixture.draft);
+        assertEquals(beforeContent, fixture.currentModelJson);
+        assertNull(fixture.savedRequest);
+        assertTrue(fixture.events.isEmpty());
+    }
+
+    private RuleRevisionRepairService.RepairPreview multipleDraftsWithOlderProjection() {
+        RuleRevision frozen = fixture.revisions.get(0);
+        RuleRevision older = draft(100L);
+        older.setRevisionNo(7);
+        older.setModelJson(fixture.currentModelJson);
+        older.setLockVersion(1);
+        fixture.draft = older;
+        fixture.revisions = List.of(older, frozen);
+        RuleRevisionRepairService.RepairPreview earlierPreview = service.preview(30L);
+
+        RuleRevision newer = draft(101L);
+        newer.setRevisionNo(8);
+        newer.setModelJson(modelWithoutRefs("_result = 99"));
+        newer.setLockVersion(1);
+        older.setModelJson(modelWithoutRefs(ICEKREDIT_SCRIPT + "\n// older draft edited again"));
+        older.setLockVersion(2);
+        fixture.currentModelJson = older.getModelJson();
+        fixture.revisions = List.of(newer, older, frozen);
+        fixture.draft = newer;
+        return earlierPreview;
+    }
+
+    @Test
     public void repairCreatesDraftAndLeavesFrozenRevisionUntouched() {
         RuleRevision frozen = revisionWithRefs(6L,
                 ref(302L, "VARIABLE",

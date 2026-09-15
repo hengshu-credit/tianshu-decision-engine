@@ -15,6 +15,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Map;
+import com.hengshucredit.rule.model.dto.RuleDesignerPublishRequest;
+import com.hengshucredit.rule.model.entity.RuleVersionBinding;
+import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
+import jakarta.annotation.Resource;
+import java.util.Objects;
 
 /**
  * Bridges the rule designer revision workflow into the unified approval
@@ -29,6 +34,34 @@ public class RuleGovernanceSubmissionService {
     private final GovernedResourceAdapterRegistry adapterRegistry;
     private final ConsoleOperatorResolver operatorResolver;
     private final RuleRevisionMapper revisionMapper;
+    @Resource private RuleVersionBindingService versionService;
+    @Resource private RuleFieldAnalyzer fieldAnalyzer;
+    @Resource private RuleDefinitionService definitionService;
+    @Resource private RulePublicationValidator publicationValidator;
+
+    @Transactional
+    public RuleRevision submitDesigner(Long definitionId, RuleDesignerPublishRequest request) {
+        if (request == null || request.getRevisionId() == null || request.getLockVersion() == null
+                || !("NEW".equals(request.getPublishMode()) || "OVERWRITE".equals(request.getPublishMode())))
+            throw new IllegalArgumentException("请选择有效草稿和发布方式");
+        lifecycleService.lockDefinition(definitionId);
+        RuleRevision revision = lifecycleService.requireEditableDraft(definitionId, request.getRevisionId());
+        if (!Objects.equals(revision.getLockVersion(), request.getLockVersion()))
+            throw new IllegalStateException("草稿已变化，请重新保存并提交");
+        if ("OVERWRITE".equals(request.getPublishMode())) {
+            RuleVersionBinding target = versionService.requireBinding(definitionId, request.getTargetVersionId());
+            if (!Objects.equals(target.getGeneration(), request.getTargetGeneration()))
+                throw new IllegalStateException("覆盖目标已变化，请重新选择版本");
+        } else if (request.getTargetVersionId() != null || request.getTargetGeneration() != null) {
+            throw new IllegalArgumentException("新增版本不能指定覆盖目标");
+        }
+        revision.setPublishMode(request.getPublishMode());
+        revision.setTargetVersionId(request.getTargetVersionId()); revision.setTargetGeneration(request.getTargetGeneration());
+        publicationValidator.validate(revision);
+        lifecycleService.persistRevisionSnapshot(revision);
+        RuleLifecycleActionRequest action = new RuleLifecycleActionRequest(); action.setComment(request.getComment());
+        return submit(revision.getId(), action);
+    }
 
     public RuleGovernanceSubmissionService(
             RuleLifecycleService lifecycleService,
@@ -55,6 +88,17 @@ public class RuleGovernanceSubmissionService {
                 .loadEffective(revision.getDefinitionId());
         Map<String, Object> value =
                 CanonicalJson.readMap(snapshot.snapshotJson());
+        // A different draft may own the compatibility projection; freeze the selected revision instead.
+        if (fieldAnalyzer != null && definitionService != null) {
+            var definition = definitionService.getById(revision.getDefinitionId());
+            var fields = fieldAnalyzer.resolveFields(definition.getId(), revision.getModelJson(), definition.getModelType(), definition.getProjectId());
+            RuleDefinitionContent content = new RuleDefinitionContent();
+            content.setDefinitionId(revision.getDefinitionId()); content.setModelJson(revision.getModelJson());
+            content.setCompiledScript(revision.getCompiledScript()); content.setCompiledType(revision.getCompiledType());
+            content.setOpenApiConfigJson(revision.getOpenApiConfigJson()); content.setCompileStatus(1);
+            value.put("content", content); value.put("inputFieldsJson", fields.getInputFields()); value.put("outputFieldsJson", fields.getOutputFields());
+            snapshot = new ResourceSnapshot(CanonicalJson.write(value), snapshot.effectiveStatus(), snapshot.secretPayloadCiphertext(), snapshot.secretDigest());
+        }
 
         GovernanceDraftRequest draft =
                 new GovernanceDraftRequest();

@@ -53,12 +53,13 @@ public final class OperandDependencyCollector {
                         object.getString("functionCode"), path));
             } else if ("RULE_CALL".equals(kind)) {
                 result.add(new Reference("RULE", object.getLong("ruleId"),
-                        firstText(object.getString("ruleCode"), object.getString("code")), path));
+                        firstText(object.getString("ruleCode"), object.getString("code")), path, object.getString("versionMode"), object.getLong("versionBindingId")));
             } else if (object.getLong("ruleId") != null && isRuleNode(object)) {
                 result.add(new Reference("RULE", object.getLong("ruleId"),
-                        firstText(object.getString("ruleCode"), object.getString("code")), path));
+                        firstText(object.getString("ruleCode"), object.getString("code")), path, object.getString("versionMode"), object.getLong("versionBindingId")));
             }
             collectPersistedIdReferences(object, path, result);
+            if (object.get("script") instanceof String script) collectScriptCalls(script, path + ".script", result);
             for (Map.Entry<String, Object> entry : object.entrySet()) {
                 collectReferencesFromTree(entry.getValue(), path + "." + entry.getKey(), result);
             }
@@ -96,6 +97,32 @@ public final class OperandDependencyCollector {
                 object.getString("functionCode"));
         addFixedType(object, path, result, "modelId", "MODEL",
                 firstText(object.getString("modelCode"), object.getString("code")));
+    }
+
+    private static void collectScriptCalls(String script, String path, List<Reference> result) {
+        try {
+            var tree = com.hengshucredit.rule.core.engine.QLExpressEngineFactory.getInstance().parseToSyntaxTree(script);
+            new com.alibaba.qlexpress4.aparser.QLParserBaseVisitor<Void>() {
+                @Override public Void visitVarIdExpr(com.alibaba.qlexpress4.aparser.QLParser.VarIdExprContext call) {
+                    String name = call.varId().getText();
+                    boolean fixed = "executeRuleVersionById".equals(name) || "executeRuleVersionFieldById".equals(name);
+                    if ((fixed || "executeRuleById".equals(name) || "executeRuleFieldById".equals(name)) && call.argumentList() != null) {
+                        var args = call.argumentList().expression();
+                        Long id = args.isEmpty() ? null : literalId(args.get(0).getText());
+                        Long bindingId = !fixed || args.size() < 2 ? null : literalId(args.get(1).getText());
+                        if (id != null) result.add(new Reference("RULE", id, null, path, fixed ? "FIXED" : "LATEST", bindingId));
+                    }
+                    return super.visitVarIdExpr(call);
+                }
+            }.visit(tree);
+        } catch (com.alibaba.qlexpress4.exception.QLSyntaxException ignored) {
+            // Syntax diagnostics are produced by the compile phase; do not invent references on malformed text.
+        }
+    }
+    private static Long literalId(String value) {
+        if (value == null || !value.matches("(?:[1-9][0-9]*|'[1-9][0-9]*'|\"[1-9][0-9]*\")")) return null;
+        try { return Long.valueOf(value.replace("'", "").replace("\"", "")); }
+        catch (NumberFormatException invalid) { return null; }
     }
 
     private static void addPair(JSONObject object, String path, List<Reference> result,
@@ -158,13 +185,22 @@ public final class OperandDependencyCollector {
         private final Long refId;
         private final String displayCode;
         private final String path;
+        private final String versionMode;
+        private final Long versionBindingId;
 
         private Reference(String refType, Long refId, String displayCode, String path) {
+            this(refType, refId, displayCode, path, null, null);
+        }
+        private Reference(String refType, Long refId, String displayCode, String path, String mode, Long bindingId) {
             this.refType = refType;
             this.refId = refId;
             this.displayCode = displayCode;
             this.path = path;
+            this.versionMode = mode;
+            this.versionBindingId = bindingId;
         }
+        public String getVersionMode() { return versionMode; }
+        public Long getVersionBindingId() { return versionBindingId; }
 
         public String getRefType() {
             return refType;

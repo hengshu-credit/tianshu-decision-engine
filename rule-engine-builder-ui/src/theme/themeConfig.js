@@ -1,7 +1,7 @@
 const DEFAULT_GRADIENT_COLORS = Object.freeze(['#2639E9', '#873FF2'])
 
 export const DEFAULT_THEME_CONFIG = Object.freeze({
-  schemaVersion: 2,
+  schemaVersion: 3,
   colorScheme: 'LIGHT',
   accentMode: 'PRESET',
   accentPreset: 'THEME_BLUE',
@@ -12,6 +12,7 @@ export const DEFAULT_THEME_CONFIG = Object.freeze({
   navigationLayout: 'LEFT',
   sidebarTheme: 'DARK',
   contentWidth: 'FLUID',
+  tableScrollMode: 'AUTO',
   fixedSidebar: true,
   colorWeak: false,
 })
@@ -57,6 +58,7 @@ export const ACCENT_PRESETS = Object.freeze([
 
 const PRESET_BY_ID = new Map(ACCENT_PRESETS.map(item => [item.id, item]))
 const CONFIG_KEYS = Object.keys(DEFAULT_THEME_CONFIG)
+const V2_CONFIG_KEYS = CONFIG_KEYS.filter(key => key !== 'tableScrollMode')
 const LEGACY_CONFIG_KEYS = [
   'schemaVersion',
   'colorScheme',
@@ -102,7 +104,10 @@ function defaultConfig() {
 export function normalizeThemeConfig(value) {
   if (!isObject(value)) return defaultConfig()
   if (value.schemaVersion === 1) return migrateLegacyConfig(value)
-  if (value.schemaVersion !== 2 || !hasExactKeys(value, CONFIG_KEYS)) {
+  if (value.schemaVersion === 2 && hasExactKeys(value, V2_CONFIG_KEYS)) {
+    return normalizeThemeConfig({ ...value, schemaVersion: 3, tableScrollMode: 'AUTO' })
+  }
+  if (value.schemaVersion !== 3 || !hasExactKeys(value, CONFIG_KEYS)) {
     return defaultConfig()
   }
 
@@ -118,13 +123,14 @@ export function normalizeThemeConfig(value) {
     !customGradientColors ||
     !['LINEAR', 'RADIAL'].includes(value.customGradientType) ||
     angle === null ||
-    !['LEFT', 'TOP'].includes(value.navigationLayout)
+    !['LEFT', 'TOP'].includes(value.navigationLayout) ||
+    !['AUTO', 'FIXED'].includes(value.tableScrollMode)
   ) {
     return defaultConfig()
   }
 
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     colorScheme: value.colorScheme,
     accentMode: value.accentMode,
     accentPreset: value.accentPreset,
@@ -135,6 +141,7 @@ export function normalizeThemeConfig(value) {
     navigationLayout: value.navigationLayout,
     sidebarTheme: value.sidebarTheme,
     contentWidth: value.contentWidth,
+    tableScrollMode: value.tableScrollMode,
     fixedSidebar: value.fixedSidebar,
     colorWeak: value.colorWeak,
   }

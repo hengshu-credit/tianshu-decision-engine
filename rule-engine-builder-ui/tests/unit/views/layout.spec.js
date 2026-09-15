@@ -14,6 +14,16 @@ import { flushPromises, shallowMount } from '@test-utils'
 import * as authApi from '@/api/auth'
 import * as projectApi from '@/api/project'
 import Layout from '@/layout/index.vue'
+
+test('显式项目路由不因项目元信息晚到而重建设计或表单页面', () => {
+  const context = {
+    $route: { path: '/rule', fullPath: '/rule?projectId=1', query: { projectId: '1' } },
+    $store: { getters: {}, state: { currentProject: null } },
+  }
+  const before = Layout.computed.currentViewKey.call(context)
+  context.$store.state.currentProject = { id: 1 }
+  expect(Layout.computed.currentViewKey.call(context)).toBe(before)
+})
 import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
 import expressionSessions from '@/store/modules/expressionSessions'

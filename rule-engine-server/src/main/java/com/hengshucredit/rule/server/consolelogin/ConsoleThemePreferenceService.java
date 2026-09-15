@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -26,12 +27,19 @@ public class ConsoleThemePreferenceService {
     private static final Set<String> LEGACY_FIELDS = Set.of(
             "schemaVersion", "colorScheme", "accentPreset", "sidebarTheme",
             "contentWidth", "fixedSidebar", "colorWeak");
-    private static final Set<String> FIELDS = Set.of(
+    private static final Set<String> V2_FIELDS = Set.of(
             "schemaVersion", "colorScheme", "accentMode", "accentPreset",
             "customSolidColor", "customGradientColors",
             "customGradientType", "customGradientAngle",
             "navigationLayout", "sidebarTheme", "contentWidth",
             "fixedSidebar", "colorWeak");
+    private static final Set<String> FIELDS = Set.of(
+            "schemaVersion", "colorScheme", "accentMode", "accentPreset",
+            "customSolidColor", "customGradientColors",
+            "customGradientType", "customGradientAngle",
+            "navigationLayout", "sidebarTheme", "contentWidth",
+            "tableScrollMode", "fixedSidebar", "colorWeak");
+    private static final Set<String> TABLE_SCROLL_MODES = Set.of("AUTO", "FIXED");
     private static final Set<String> COLOR_SCHEMES = Set.of("LIGHT", "DARK");
     private static final Set<String> ACCENT_MODES = Set.of(
             "PRESET", "CUSTOM_SOLID", "CUSTOM_GRADIENT");
@@ -58,9 +66,9 @@ public class ConsoleThemePreferenceService {
 
     public ConsoleThemePreference defaults() {
         return new ConsoleThemePreference(
-                2, "LIGHT", "PRESET", "THEME_BLUE", "#2639E9",
+                3, "LIGHT", "PRESET", "THEME_BLUE", "#2639E9",
                 List.of("#2639E9", "#873FF2"), "LINEAR", 135, "LEFT",
-                "DARK", "FLUID", true, false);
+                "DARK", "FLUID", "AUTO", true, false);
     }
 
     public ConsoleThemePreference load(Long userId) {
@@ -97,7 +105,13 @@ public class ConsoleThemePreferenceService {
         }
         int version = ((Number) schemaVersion).intValue();
         if (version == 1) return migrateLegacy(body);
-        if (version != 2) {
+        if (version == 2 && body.keySet().equals(V2_FIELDS)) {
+            Map<String, Object> migrated = new HashMap<>(body);
+            migrated.put("schemaVersion", 3);
+            migrated.put("tableScrollMode", "AUTO");
+            return validate(migrated);
+        }
+        if (version != 3) {
             throw new IllegalArgumentException("不支持的主题配置版本");
         }
         if (!body.keySet().equals(FIELDS)) {
@@ -123,10 +137,12 @@ public class ConsoleThemePreferenceService {
                 CONTENT_WIDTHS, "内容区宽度无效");
         Boolean fixedSidebar = requireBoolean(body, "fixedSidebar");
         Boolean colorWeak = requireBoolean(body, "colorWeak");
-        return new ConsoleThemePreference(2, colorScheme, accentMode,
+        String tableScrollMode = requireAllowed(body, "tableScrollMode",
+                TABLE_SCROLL_MODES, "表格滚动方式无效");
+        return new ConsoleThemePreference(3, colorScheme, accentMode,
                 accentPreset, customSolidColor, customGradientColors,
                 customGradientType, customGradientAngle, navigationLayout,
-                sidebarTheme, contentWidth, fixedSidebar, colorWeak);
+                sidebarTheme, contentWidth, tableScrollMode, fixedSidebar, colorWeak);
     }
 
     private ConsoleThemePreference migrateLegacy(Map<String, Object> body) {
@@ -143,9 +159,9 @@ public class ConsoleThemePreferenceService {
                 CONTENT_WIDTHS, "内容区宽度无效");
         Boolean fixedSidebar = requireBoolean(body, "fixedSidebar");
         Boolean colorWeak = requireBoolean(body, "colorWeak");
-        return new ConsoleThemePreference(2, colorScheme, "PRESET",
+        return new ConsoleThemePreference(3, colorScheme, "PRESET",
                 accentPreset, "#2639E9", List.of("#2639E9", "#873FF2"),
-                "LINEAR", 135, "LEFT", sidebarTheme, contentWidth,
+                "LINEAR", 135, "LEFT", sidebarTheme, contentWidth, "AUTO",
                 fixedSidebar, colorWeak);
     }
 

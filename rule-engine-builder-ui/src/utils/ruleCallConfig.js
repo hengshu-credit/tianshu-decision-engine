@@ -96,6 +96,8 @@ export function isRuleOutputMappingEnabled(call) {
 export function validateRuleCallBlock(call, context = {}) {
   if (!call || (call.ruleId == null && !call.ruleCode)) return '执行规则动作未选择要调用的规则'
   if (call.ruleId == null) return '执行规则动作缺少稳定规则 ID，请重新选择规则'
+  if (call.versionMode && !['LATEST', 'FIXED'].includes(call.versionMode)) return '规则版本策略无效'
+  if (call.versionMode === 'FIXED' && !/^[1-9]\d*$/.test(String(call.versionBindingId || ''))) return '请选择指定规则版本'
   const sameId = context.currentRuleId != null && String(call.ruleId) === String(context.currentRuleId)
   const sameCode = context.currentRuleCode && call.ruleCode && String(call.ruleCode) === String(context.currentRuleCode)
   if (sameId || sameCode) return '不能调用当前规则自身，会形成规则调用环'
@@ -106,7 +108,7 @@ export function validateRuleCallBlock(call, context = {}) {
     const hasOutput = !!call.outputField
     const hasTarget = !!call.targetOperand
     if (!hasTarget) return '启用结果映射后必须配置目标字段'
-    if (hasOutput && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
+    if (hasOutput && call.versionMode !== 'FIXED' && !(rule.outputFields || rule.outputFieldsJson || []).some(field =>
       String(field.scriptName || field.fieldName) === String(call.outputField))) {
       return '映射的输出字段已不存在，请重新选择'
     }

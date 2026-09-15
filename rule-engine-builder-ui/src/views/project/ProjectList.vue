@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="handleQuery">
         <el-form-item label="项目编码">
@@ -61,7 +61,7 @@
         </div>
       </div>
     </div>
-    <el-table show-overflow-tooltip
+    <el-table class="management-table" show-overflow-tooltip
       :data="tableData"
       border
       size="small"

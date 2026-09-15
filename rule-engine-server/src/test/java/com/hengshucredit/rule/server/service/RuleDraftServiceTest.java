@@ -185,20 +185,16 @@ public class RuleDraftServiceTest {
     }
 
     @Test
-    public void invalidDraftIsSavedWithDiagnosticsSoUserCanContinueEditing() {
+    public void invalidDraftIsRejectedWithoutWritingAnyProjection() {
         fixture.compileResult =
                 CompileResult.fail("QL_PARSE_ERROR: 第 1 行语法错误");
 
-        RuleDraftSaveResponse saved = service.save(
-                request(30L, 6L, 0, "{\"script\":\"_result = {\"}"));
-
-        assertEquals("{\"script\":\"_result = {\"}",
-                saved.getRevision().getModelJson());
-        assertFalse(saved.isCompileSuccess());
-        assertTrue(saved.getIssues().stream()
+        RuleGovernanceException error = assertThrows(RuleGovernanceException.class,
+                () -> service.save(request(30L, 6L, 0, "{\"script\":\"_result = {\"}")));
+        assertTrue(error.getIssues().stream()
                 .anyMatch(issue -> "QL_PARSE_ERROR".equals(issue.getCode())));
-        assertEquals(1, saved.getRevision().getLockVersion().intValue());
-        assertEquals(Integer.valueOf(2), fixture.databaseContent.getCompileStatus());
+        assertEquals(beforeRevision, fixture.databaseRevision);
+        assertTrue(fixture.writeOrder.isEmpty());
     }
 
     @Test
@@ -206,13 +202,11 @@ public class RuleDraftServiceTest {
         fixture.compileResult =
                 CompileResult.fail("DATABASE_TIMEOUT: internal detail");
 
-        RuleDraftSaveResponse saved = service.save(
-                request(30L, 6L, 0, modelJson()));
-
-        assertFalse(saved.isCompileSuccess());
-        assertTrue(saved.getIssues().stream()
+        RuleGovernanceException error = assertThrows(RuleGovernanceException.class,
+                () -> service.save(request(30L, 6L, 0, modelJson())));
+        assertTrue(error.getIssues().stream()
                 .anyMatch(issue -> "COMPILE_FAILED".equals(issue.getCode())));
-        assertFalse(saved.getIssues().stream()
+        assertFalse(error.getIssues().stream()
                 .anyMatch(issue -> "DATABASE_TIMEOUT".equals(issue.getCode())));
     }
 

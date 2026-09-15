@@ -17,6 +17,8 @@ public class RuleRevision {
     private String state;
     private Long baseRevisionId;
     private Long baseArtifactId;
+    private String sourceType;
+    private Long sourceId;
     private String modelJson;
     private String compiledScript;
     private String compiledType;
@@ -27,6 +29,9 @@ public class RuleRevision {
     private String validationReportDigest;
     private Long artifactId;
     private Long governanceRequestId;
+    private String publishMode;
+    private Long targetVersionId;
+    private Long targetGeneration;
     private String forcePublishReason;
     private Integer lockVersion;
     private String createBy;

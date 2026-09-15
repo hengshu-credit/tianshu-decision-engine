@@ -212,6 +212,16 @@ public class RuleRevisionRepairService {
                 analysisIssues(analysis);
         List<RuleRevision> revisions =
                 safeRevisions(loadRevisions(definitionId));
+        if (revisions.stream().filter(Objects::nonNull)
+                .filter(revision -> definitionId.equals(revision.getDefinitionId())
+                        && "DRAFT".equals(revision.getState()))
+                .limit(2).count() > 1) {
+            throw governance(409, "DRAFT_ID_REQUIRED",
+                    "存在多份草稿，历史修复无法自动选择目标，请打开指定草稿处理",
+                    Collections.singletonList(RuleValidationIssue.error(
+                            "DRAFT_ID_REQUIRED", "$",
+                            "多草稿规则不能通过规则级历史修复入口隐式覆盖")));
+        }
         Map<String, CandidateReference> historicalCandidates =
                 new LinkedHashMap<>();
         for (RuleRevision revision : revisions) {

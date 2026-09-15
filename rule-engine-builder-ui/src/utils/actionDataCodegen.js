@@ -123,6 +123,17 @@ function generateBlock(block, indent) {
     }
 
     case 'rule-call': {
+      if (block.ruleId != null) {
+        const mapped = isRuleOutputMappingEnabled(block)
+        const fixed = block.versionMode === 'FIXED'
+        const args = [quoteString(String(block.ruleId))]
+        if (fixed) args.push(quoteString(String(block.versionBindingId)))
+        if (mapped && block.outputField) args.push(quoteString(block.outputField))
+        const method = fixed ? (mapped && block.outputField ? 'executeRuleVersionFieldById' : 'executeRuleVersionById') : (mapped && block.outputField ? 'executeRuleFieldById' : 'executeRuleById')
+        const call = method + '(' + args.join(', ') + ')'
+        const target = mapped ? compileOperand(block.targetOperand) : ''
+        return target ? pad + target + ' = ' + call : pad + call
+      }
       if (!block.ruleCode) return ''
       const outputMappingEnabled = isRuleOutputMappingEnabled(block)
       const call = outputMappingEnabled && block.outputField

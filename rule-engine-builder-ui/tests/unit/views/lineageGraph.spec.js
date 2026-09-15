@@ -72,6 +72,46 @@ function sharedOutputGraph() {
 afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
+  test.each(['UPSTREAM', 'DOWNSTREAM'])('%s 对象字段按父子关系向外逐级展开，收起后可恢复', async direction => {
+    const wrapper = mountPage()
+    const startNode = { id: 'RULE:1', refId: 1, type: 'RULE', code: 'rule' }
+    const object = { id: 'DATA_OBJECT:2', refId: 2, type: 'DATA_OBJECT', code: 'request' }
+    const parent = { id: 'DATA_FIELD:3', refId: 3, type: 'DATA_FIELD', code: 'profile', dataObject: object, parentNodeId: object.id, hasFieldChildren: true }
+    const child = { id: 'DATA_FIELD:4', refId: 4, type: 'DATA_FIELD', code: 'credit', dataObject: object, parentNodeId: parent.id, ancestorFields: [parent], hasFieldChildren: true }
+    const leaf = { id: 'DATA_FIELD:5', refId: 5, type: 'DATA_FIELD', code: 'score', dataObject: object, parentNodeId: child.id, ancestorFields: [parent, child] }
+    wrapper.vm.query.nodeId = 1
+    wrapper.vm.query.nodeType = 'RULE'
+    wrapper.vm.query.direction = direction
+    const from = direction === 'UPSTREAM' ? child.id : startNode.id
+    const to = direction === 'UPSTREAM' ? startNode.id : child.id
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: { startNode, nodes: [startNode, child], edges: [{ from, to, label: '规则字段' }] } })
+    await wrapper.vm.loadGraph()
+    const branch = id => wrapper.vm.visibleBranches.find(item => item.branch.node.id === id)?.branch
+    const ids = () => wrapper.vm.visibleBranches.map(item => item.branch.node.id)
+    expect(ids()).toEqual([object.id])
+    await wrapper.vm.toggleBranch(branch(object.id))
+    expect(ids()).toEqual([object.id, parent.id])
+    await wrapper.vm.toggleBranch(branch(parent.id))
+    expect(ids()).toEqual([object.id, parent.id, child.id])
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data: { startNode: child, nodes: [child, leaf], edges: [{ from: child.id, to: leaf.id, label: '包含字段' }] } })
+    await wrapper.vm.toggleBranch(branch(child.id))
+    expect(lineageApi.getLineageGraph).toHaveBeenLastCalledWith({ nodeType: 'DATA_FIELD', nodeId: 4, direction: 'DOWNSTREAM', maxDepth: 1 })
+    const chain = ['CURRENT', object.id, parent.id, child.id, leaf.id]
+    if (direction === 'UPSTREAM') chain.reverse()
+    for (let i = 1; i < chain.length; i++) {
+      expect(wrapper.vm.nodePosition(chain[i - 1]).left).toBeLessThan(wrapper.vm.nodePosition(chain[i]).left)
+      expect(wrapper.vm.edgeLines.some(edge => edge.fromId === chain[i - 1] && edge.toId === chain[i])).toBe(true)
+    }
+    const before = wrapper.vm.edgeLines.map(edge => edge.key).sort()
+    await wrapper.vm.toggleBranch(branch(parent.id))
+    expect(ids()).toEqual([object.id, parent.id])
+    await wrapper.vm.toggleBranch(branch(parent.id))
+    expect(wrapper.vm.edgeLines.map(edge => edge.key).sort()).toEqual(before)
+    await wrapper.vm.toggleBranch(branch(object.id))
+    expect(ids()).toEqual([object.id])
+    wrapper.unmount()
+  })
+
   test('项目直连结果时仍排在规则上游，展开对象不会改变规则依赖层级', async () => {
     const wrapper = mountPage()
     wrapper.vm.query.nodeId = 311
@@ -405,9 +445,11 @@ describe('LineageGraph', () => {
     await wrapper.vm.toggleBranch(objects()[0].branch)
     expect(objects()).toHaveLength(1)
     expect(fields()).toHaveLength(2)
-    expect(wrapper.vm.edgeLines.filter(edge => edge.label === '包含字段')).toHaveLength(2)
+    expect(wrapper.vm.edgeLines.filter(edge => edge.label === '所属对象')).toHaveLength(2)
     const objectPosition = wrapper.vm.nodePosition(objects()[0].branch.instanceId)
-    expect(fields().every(item => wrapper.vm.nodePosition(item.branch.instanceId).left > objectPosition.left)).toBe(true)
+    expect(fields().every(item => wrapper.vm.nodePosition(item.branch.instanceId).left < objectPosition.left)).toBe(true)
+    expect(wrapper.vm.edgeLines.some(edge => edge.fromId === object.id && edge.toId === 'CURRENT')).toBe(true)
+    expect(wrapper.vm.edgeLines.some(edge => edge.fromId.startsWith('DATA_FIELD:') && edge.toId === 'CURRENT')).toBe(false)
     await wrapper.vm.toggleBranch(objects()[0].branch)
     expect(fields()).toHaveLength(0)
     expect(lineageApi.getLineageGraph).toHaveBeenCalledTimes(1)

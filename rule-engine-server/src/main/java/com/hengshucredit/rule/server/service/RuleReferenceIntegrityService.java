@@ -15,6 +15,7 @@ import jakarta.annotation.Resource;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,6 +61,27 @@ public class RuleReferenceIntegrityService {
 
     public AuditReport audit(Long definitionId, Long projectId, String modelJson) {
         Map<String, String> validRefs = variableService.buildRefScriptNameMap(projectId);
+        return auditWithCatalog(definitionId, modelJson, validRefs);
+    }
+
+    /** 一次工作台检查中批量读取内容，并按所属项目复用引用目录，避免每条规则重复读取整个目录。 */
+    public List<AuditReport> scanDefinitions(List<RuleDefinition> definitions) {
+        if (definitions == null || definitions.isEmpty()) return Collections.emptyList();
+        List<Long> ids = definitions.stream().map(RuleDefinition::getId).toList();
+        List<RuleDefinitionContent> contents = contentMapper.selectList(
+                new LambdaQueryWrapper<RuleDefinitionContent>().in(RuleDefinitionContent::getDefinitionId, ids));
+        Map<Long, String> models = new LinkedHashMap<>();
+        if (contents != null) contents.forEach(content -> models.put(content.getDefinitionId(), content.getModelJson()));
+        Map<Long, Map<String, String>> catalogs = new LinkedHashMap<>();
+        List<AuditReport> reports = new ArrayList<>();
+        for (RuleDefinition definition : definitions) {
+            Map<String, String> catalog = catalogs.computeIfAbsent(definition.getProjectId(), variableService::buildRefScriptNameMap);
+            reports.add(auditWithCatalog(definition.getId(), models.get(definition.getId()), catalog));
+        }
+        return reports;
+    }
+
+    private AuditReport auditWithCatalog(Long definitionId, String modelJson, Map<String, String> validRefs) {
         List<ReferenceIssue> issues = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         if (modelJson == null || modelJson.trim().isEmpty()) {

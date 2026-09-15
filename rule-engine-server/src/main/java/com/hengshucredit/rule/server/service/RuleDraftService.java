@@ -103,8 +103,11 @@ public class RuleDraftService {
         if (!compileResult.isSuccess()) {
             issues.add(compileIssue(compileResult.getErrorMessage(),
                     request.getRevisionId()));
+            throw new RuleGovernanceException(400, "COMPILE_FAILED",
+                    compileResult.getErrorMessage(), issues);
         }
 
+        revision.setModelJson(request.getModelJson());
         RuleDependencyClosureService.DependencyClosure dependencies =
                 resolveDependencies(definition, revision, fields);
         for (RuleValidationIssue issue : dependencies.getIssues()) {
@@ -128,9 +131,7 @@ public class RuleDraftService {
                     Collections.emptyList(), Collections.emptyList());
         }
 
-        boolean compileSuccess = compileResult.isSuccess()
-                && issues.stream().noneMatch(
-                issue -> "ERROR".equals(issue.getSeverity()));
+        boolean compileSuccess = compileResult.isSuccess();
         String compileMessage = compileResult.isSuccess()
                 ? firstErrorMessage(issues) : compileResult.getErrorMessage();
         String openApiConfigJson = revision.getOpenApiConfigJson();
@@ -221,6 +222,21 @@ public class RuleDraftService {
         persistContent(content);
         persistResolvedFields(definition.getId(), fields);
         incrementDesignVersion(definition);
+    }
+
+    /** No draft or formal source remains. Do not reopen the deleted draft through the legacy projection. */
+    @Transactional
+    public void clearDesignerProjection(Long definitionId) {
+        contentMapper.update(null, new LambdaUpdateWrapper<RuleDefinitionContent>()
+                .eq(RuleDefinitionContent::getDefinitionId, definitionId)
+                .set(RuleDefinitionContent::getModelJson, "{}")
+                .set(RuleDefinitionContent::getCompiledScript, null)
+                .set(RuleDefinitionContent::getCompiledType, null)
+                .set(RuleDefinitionContent::getCompileStatus, 0)
+                .set(RuleDefinitionContent::getCompileMessage, null)
+                .set(RuleDefinitionContent::getCompileTime, null)
+                .set(RuleDefinitionContent::getOpenApiConfigJson, null));
+        persistResolvedFields(definitionId, new RuleFieldAnalyzer.ResolvedFields(Collections.emptyList(), Collections.emptyList()));
     }
 
     private void requireSaveContract(RuleDraftSaveRequest request) {
@@ -363,7 +379,7 @@ public class RuleDraftService {
 
     protected CompileResult compile(
             RuleDefinition definition, String modelJson) {
-        return compileService.compilePreview(
+        return compileService.compileSyntaxPreview(
                 definition.getId(), modelJson, definition.getModelType());
     }
 
@@ -375,8 +391,7 @@ public class RuleDraftService {
             return RuleDependencyClosureService.DependencyClosure.of(
                     Collections.emptyList(), Collections.emptyList());
         }
-        return dependencyClosureService.resolve(
-                definition.getId(), revision.getId(), fields);
+        return dependencyClosureService.resolvePreview(revision, fields);
     }
 
     protected String normalizeOpenApiConfig(String configJson) {

@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <div class="uiue-search-container uiue-filter-toolbar">
       <el-form :inline="true" size="small" @keyup.enter="handleQuery">
         <el-form-item label="作用范围" prop="scope">
@@ -38,7 +38,7 @@
             placeholder="全部"
             style="width: 100px"
           >
-            <el-option label="草稿" :value="0" />
+            <el-option label="未发布" :value="0" />
             <el-option label="已发布" :value="1" />
             <el-option label="已下线" :value="2" />
           </el-select>
@@ -116,7 +116,7 @@
         </div>
       </div>
     </div>
-    <el-table show-overflow-tooltip
+    <el-table class="management-table" show-overflow-tooltip
       :data="tableData"
       border
       size="small"
@@ -255,10 +255,13 @@
       v-model="dialogVisible"
       width="500px"
       :close-on-click-modal="false"
+      :show-close="!creating"
+      :close-on-press-escape="!creating"
     >
       <el-form
         ref="formRef"
         :model="form"
+        :disabled="creating"
         :rules="rules"
         label-width="100px"
         size="small"
@@ -316,6 +319,7 @@
             <el-option label="复杂评分卡" value="SCORE_ADV" />
             <el-option label="QL脚本" value="SCRIPT" />
           </el-select>
+          <rule-model-type-help :model-type="form.modelType" />
         </el-form-item>
         <el-form-item label="描述"
           ><el-input
@@ -327,12 +331,13 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="dialogVisible = false"
+          <el-button size="small" :disabled="creating" @click="dialogVisible = false"
             >取消</el-button
           >
-          <el-button v-permission="'rule:edit'" size="small" type="primary" @click="handleSubmit"
-            >确定</el-button
+          <el-button v-permission="'rule:edit'" size="small" :disabled="creating" @click="handleSubmit(false)"
+            >仅创建</el-button
           >
+          <el-button v-permission="'rule:edit'" size="small" type="primary" :loading="creating" :disabled="creating" @click="handleSubmit(true)">创建并继续配置</el-button>
         </div>
       </template>
     </el-dialog>
@@ -358,6 +363,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import { routeProjectId } from '@/utils/projectContext'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
+import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
 
 export default {
   data() {
@@ -382,6 +388,7 @@ export default {
         publishedVersion: '',
       },
       dialogVisible: false,
+      creating: false,
       form: {
         scope: '',
         projectId: null,
@@ -410,7 +417,7 @@ export default {
     }
   },
   name: 'RuleList',
-  components: { RemoteFilterSelect, ProjectFilterSelect },
+  components: { RemoteFilterSelect, ProjectFilterSelect, RuleModelTypeHelp },
   created() {
     this.restoreCachedState()
     this.contextProjectId = routeProjectId(
@@ -594,8 +601,11 @@ export default {
         if (this.$refs.formRef) this.$refs.formRef.clearValidate()
       })
     },
-    async handleSubmit() {
-      this.$refs.formRef.validate(async (valid) => {
+    async handleSubmit(continueEditing = false) {
+      if (this.creating) return
+      this.creating = true
+      try {
+        const valid = await new Promise(resolve => this.$refs.formRef.validate(resolve))
         if (!valid) return
         if (!this.form.scope) {
           this.$message.warning('请选择作用范围')
@@ -605,15 +615,22 @@ export default {
           this.$message.warning('请选择项目')
           return
         }
-        try {
-          await createDefinition(this.form)
-          this.$message.success('创建成功')
-          this.dialogVisible = false
-          this.loadData()
-        } catch (e) {
-          this.$message.error('操作失败')
+        const response = await createDefinition({ ...this.form })
+        this.$message.success('创建成功')
+        this.dialogVisible = false
+        await this.loadData()
+        const created = response && response.data
+        if (continueEditing && created && created.id) {
+          await this.$router.push({ ...ruleDesignerLocation({ ...this.form, id: created.id }),
+            query: this.form.projectId ? { projectId: String(this.form.projectId) } : {} })
+        } else if (continueEditing) {
+          this.$message.warning('规则已创建，请从列表进入详情继续配置')
         }
-      })
+      } catch (e) {
+        if (!e || !e.requestErrorNotified) this.$message.error(this.dialogVisible ? ((e && e.message) || '创建失败，请重试') : '规则已创建，请从列表重新进入详情')
+      } finally {
+        this.creating = false
+      }
     },
     handleView(row) {
       const location = ruleDesignerLocation(row)
@@ -665,7 +682,7 @@ export default {
       )
     },
     statusLabel(status) {
-      return { 0: '草稿', 1: '已发布', 2: '已下线' }[status] || status
+      return { 0: '未发布', 1: '已发布', 2: '已下线' }[status] || status
     },
     statusTagType(status) {
       return { 0: 'info', 1: 'success', 2: 'warning' }[status] || 'info'

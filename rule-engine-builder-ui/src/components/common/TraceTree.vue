@@ -264,7 +264,7 @@
                       }}</span>
                     </div>
                   </template>
-                  <!-- 赋值类 / 计算类 / 结束：_result 汇总不展示左侧表达式，只展示 a:b c:d 式节点结果 -->
+                  <!-- 赋值类 / 计算类 / 结束：_result 汇总不展示左侧表达式，每个输出变量独占一行 -->
                   <template v-else>
                     <div
                       class="fc-expr-row"
@@ -4045,7 +4045,7 @@ export default {
       return !!(this.modelData && this.modelData.nodes && this.modelData.edges)
     },
     /**
-     * 将引擎返回的 Map 格式化为「中文名：值  中文名：值」，仅含最后一个 task 顶层动作对应的变量（可映射时）。
+     * 将引擎返回的 Map 按「中文名：值」逐行展示，仅含最后一个 task 顶层动作对应的变量（可映射时）。
      */
     _formatFlowResultMapDisplay: function (obj) {
       if (!obj || typeof obj !== 'object' || Array.isArray(obj))
@@ -4066,7 +4066,7 @@ export default {
           var lab = self.varMap[k] || k
           return lab + ':' + self._displayVal(obj[k])
         })
-        .join(' ')
+        .join('\n')
     },
     /**
      * 与 orderedNodeNames 相同主路径上，最后一个 task 节点 actionData「顶层」输出变量码（不递归条件分支内的赋值，便于「减免计算」类节点只展示最终一条赋值如 finalTaxAmount）。
@@ -4999,6 +4999,9 @@ export default {
   color: #ff4d4f;
 }
 .fc-action-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
   margin-top: 8px;
   padding: 8px 12px;
   border-left: 3px solid #52c41a;
@@ -5012,12 +5015,12 @@ export default {
 }
 .fc-action-prefix {
   color: #8c8c8c;
-  margin-right: 6px;
   font-size: 12px;
 }
 .fc-action-text {
   color: var(--tianshu-text-primary);
-  margin-right: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .fc-func-row {
   display: flex;
@@ -5111,7 +5114,7 @@ export default {
   flex: 1;
   max-width: 100%;
   text-align: left;
-  white-space: normal;
+  white-space: pre-wrap;
   word-break: break-word;
   font-size: 15px;
   font-weight: 600;

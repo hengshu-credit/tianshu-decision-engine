@@ -1,0 +1,33 @@
+// 仅管理列表的主表格参与布局，弹窗、展开行和详情表格保持各自的高度。
+html[data-table-scroll-mode='fixed'] .layout-main > .management-list-page {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  overflow: auto;
+
+  .management-table-region,
+  .el-tabs.management-table-region > .el-tabs__content {
+    display: flex;
+    min-height: 0;
+    margin-bottom: 0;
+    flex: 1;
+    flex-direction: column;
+    overflow: visible;
+  }
+
+  // 保持筛选、标签栏和分页的自然高度，剩余空间交给表格。
+  & > *,
+  .management-table-region > * {
+    flex-shrink: 0;
+  }
+
+  .management-table {
+    height: 160px;
+    min-height: 160px;
+    flex: 1;
+
+    > .el-table__inner-wrapper > .el-table__body-wrapper > .el-scrollbar {
+      height: 100%;
+    }
+  }
+}

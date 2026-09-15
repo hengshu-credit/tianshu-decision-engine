@@ -28,8 +28,6 @@ import java.util.regex.Pattern;
 @Service
 public class DBConnectPools implements DisposableBean {
 
-    private static final Pattern SELECT_QUERY_PATTERN = Pattern.compile("^select\\b", Pattern.CASE_INSENSITIVE);
-    private static final Pattern LOCKING_SELECT_PATTERN = Pattern.compile("\\bfor\\s+update\\b|\\block\\s+in\\s+share\\s+mode\\b", Pattern.CASE_INSENSITIVE);
     private static final int QUERY_TIMEOUT_SECONDS = 5;
 
     @Resource
@@ -89,7 +87,7 @@ public class DBConnectPools implements DisposableBean {
         int limit = maxRows <= 0 ? 100 : Math.min(maxRows, 500);
         HikariDataSource dataSource = getDataSource(datasourceId);
         try (Connection connection = dataSource.getConnection();
-             PreparedStatement statement = connection.prepareStatement(sql)) {
+             PreparedStatement statement = connection.prepareStatement(SqlQuerySupport.executableSql(sql))) {
             statement.setMaxRows(limit);
             statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
             if (params != null) {
@@ -114,13 +112,7 @@ public class DBConnectPools implements DisposableBean {
     }
 
     static boolean isReadOnlySelectSql(String sql) {
-        if (!hasText(sql)) {
-            return false;
-        }
-        String trimmed = sql.trim();
-        return SELECT_QUERY_PATTERN.matcher(trimmed).find()
-                && trimmed.indexOf(';') < 0
-                && !LOCKING_SELECT_PATTERN.matcher(trimmed).find();
+        return SqlQuerySupport.isReadOnlySelect(sql);
     }
 
     private DbPoolHolder buildPool(RuleDbDatasource datasource) throws Exception {

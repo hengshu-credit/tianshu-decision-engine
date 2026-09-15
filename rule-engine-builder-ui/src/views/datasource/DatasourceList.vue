@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page datasource-page">
+  <div class="uiue-list-page datasource-page management-list-page">
     <div class="module-hint">
       <div class="hint-title">外数管理</div>
       <div class="hint-text">
@@ -18,8 +18,8 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" @tab-click="onTabChange">
-      <el-tab-pane label="数据源" name="datasource">
+    <el-tabs class="management-table-region" v-model="activeTab" @tab-click="onTabChange">
+      <el-tab-pane class="management-table-region" label="数据源" name="datasource">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form
             :inline="true"
@@ -122,7 +122,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="datasourceList"
           border
           size="small"
@@ -255,7 +255,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="API 接口" name="api">
+      <el-tab-pane class="management-table-region" label="API 接口" name="api">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleApiQuery">
             <el-form-item label="项目编码">
@@ -348,7 +348,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="apiList"
           border
           size="small"
@@ -414,7 +414,7 @@
               >
             </template>
           </el-table-column>
-          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="120" align="center" fixed="right">
+          <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="180" align="center" fixed="right">
             <template v-slot="{ row }">
               <el-button
                 v-permission="'datasource:edit'"
@@ -467,8 +467,8 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane label="调用日志" name="logs">
-        <module-call-log module-type="DATASOURCE" title="外数调用日志" />
+      <el-tab-pane class="management-table-region" label="调用日志" name="logs">
+        <module-call-log class="management-table-region" module-type="DATASOURCE" title="外数调用日志" />
       </el-tab-pane>
     </el-tabs>
 

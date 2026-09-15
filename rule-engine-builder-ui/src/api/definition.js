@@ -1,4 +1,24 @@
 import request from './request'
+
+export function compileDesignerModel(id, data) {
+  return request({ url: `/rule/definition/${id}/designer/compile`, method: 'post', data })
+}
+
+export function saveDesignerDraft(id, data) {
+  return request({ url: `/rule/definition/${id}/designer/drafts`, method: 'post', data })
+}
+
+export function deleteDesignerDraft(id, revisionId, lockVersion) {
+  return request({ url: `/rule/definition/${id}/revisions/${revisionId}`, method: 'delete', params: { lockVersion } })
+}
+
+export function listPublishedVersions(id) {
+  return request({ url: `/rule/definition/${id}/published-versions`, method: 'get' })
+}
+
+export function publishDesignerDraft(id, data) {
+  return request({ url: `/rule/definition/${id}/designer/publish`, method: 'post', data })
+}
 import { createResourceDraft } from './governance'
 
 export function listDefinitions(params) {
@@ -54,6 +74,10 @@ export function deleteProjectBinding(bindingId, projectId) {
 
 export function saveContent(data) {
   return request({ url: '/rule/definition/save', method: 'post', data })
+}
+
+export function saveTemporaryDraft(definitionId, data) {
+  return request({ url: `/rule/definition/${definitionId}/revisions/temporary-draft`, method: 'post', data })
 }
 
 export function refreshFields(definitionId, modelJson) {

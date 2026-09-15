@@ -147,6 +147,32 @@ describe('ProjectDetail 规则生命周期入口', () => {
     wrapper.unmount()
   })
 
+  test('工作台刷新失败时清除旧结果，重试成功后恢复', async () => {
+    const { wrapper } = await mountPage()
+    projectApi.getProjectWorkbench.mockRejectedValueOnce(new Error('连接失败'))
+    await wrapper.vm.loadWorkbench()
+    expect(wrapper.vm.workbench).toBeNull()
+    expect(wrapper.vm.workbenchError).toBe('连接失败')
+    await wrapper.vm.loadWorkbench()
+    expect(wrapper.vm.workbenchError).toBe('')
+    expect(wrapper.vm.workbench.metrics.fieldCount).toBe(3)
+    wrapper.unmount()
+  })
+
+  test('较早的工作台响应不能覆盖最新刷新结果', async () => {
+    const { wrapper } = await mountPage()
+    let resolveOld
+    projectApi.getProjectWorkbench.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const oldRequest = wrapper.vm.loadWorkbench()
+    projectApi.getProjectWorkbench.mockResolvedValueOnce({ data: { metrics: { fieldCount: 8 }, checks: [] } })
+    await wrapper.vm.loadWorkbench()
+    resolveOld({ data: { metrics: { fieldCount: 1 }, checks: [] } })
+    await oldRequest
+    expect(wrapper.vm.workbench.metrics.fieldCount).toBe(8)
+    expect(wrapper.vm.workbenchLoading).toBe(false)
+    wrapper.unmount()
+  })
+
   test('数据库数据源异常会进入数据库管理而不是外数管理', async () => {
     const { wrapper, router } = await mountPage()
 

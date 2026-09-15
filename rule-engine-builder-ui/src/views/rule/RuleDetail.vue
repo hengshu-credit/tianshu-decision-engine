@@ -168,9 +168,9 @@
       shadow="never"
       class="governance-section"
     >
-      <template #header><div style="font-weight: 600">历史规则治理</div></template>
+      <template #header><div style="font-weight: 600">设计与版本</div></template>
       <el-alert
-        title="该规则还没有治理修订。页面已按只读方式打开，请先预览历史引用或显式创建治理草稿。"
+        title="尚未保存规则版本，可以直接进入设计。编辑时不自动创建草稿，点击暂存后才保存。"
         type="warning"
         :closable="false"
         show-icon
@@ -179,6 +179,7 @@
         <el-button
           size="small"
           :loading="repairPreviewLoading"
+          v-if="rule.currentVersion"
           @click="loadRepairPreview"
           >查看修复预览</el-button
         >
@@ -186,7 +187,7 @@
           size="small"
           type="primary"
           @click="createLegacyDraft"
-          >创建治理草稿</el-button
+          >进入设计</el-button
         >
       </div>
       <div v-if="repairPreview.previewDigest" class="legacy-repair-preview">
@@ -202,14 +203,14 @@
           size="small"
           type="primary"
           :loading="repairSaving"
-          @click="repairLegacyRevision"
-          >按预览创建治理草稿</el-button
+          @click="openRevisionDesigner({ id: repairPreview.sourceRevisionId })"
+          >在设计页处理引用</el-button
         >
       </div>
     </el-card>
     <el-card v-if="preflightReport" shadow="never" class="governance-section">
       <template #header><div style="font-weight: 600">发布前校验</div></template>
-      <rule-validation-report :report="preflightReport" />
+      <rule-validation-report :report="preflightReport" :locatable="!!lifecycleRevision.id" @locate="locatePreflightIssue" />
     </el-card>
     <el-card shadow="never" class="governance-section">
       <template #header>
@@ -1748,6 +1749,21 @@ export default {
     },
   },
   methods: {
+    async locatePreflightIssue(issue) {
+      const revisionId = (this.preflightReport && this.preflightReport.revisionId) || this.lifecycleRevision.id
+      if (!revisionId || (issue.revisionId && String(issue.revisionId) !== String(revisionId))) {
+        this.$message.warning('校验结果不属于当前修订，请重新校验后定位')
+        return
+      }
+      const routeName = this.designerRouteName(this.rule.modelType)
+      if (!routeName) { this.$message.warning('当前类型没有可用设计器，请根据校验说明修复配置'); return }
+      await this.$router.push({ name: routeName, params: { id: String(this.rule.id) }, query: {
+        sourceType: 'REVISION', sourceId: String(revisionId),
+        validationSourceId: String(revisionId),
+        validationLockVersion: String(this.preflightReport?.lockVersion ?? this.lifecycleRevision.lockVersion ?? ''),
+        validationPath: issue.path || '$', validationMessage: issue.message || '请核对规则配置',
+      } })
+    },
     syncDetailTabFromRoute() {
       const focus = this.$route && this.$route.query && this.$route.query.focus
       if (focus === 'lifecycle') this.activeDetailTab = 'lifecycle'
@@ -2012,49 +2028,14 @@ export default {
       })
     },
     async forkDesignerSource(sourceType, sourceId) {
+      // 进入编辑只切换到所选版本，暂存由设计页显式触发。
       if (this.forkingDesignerSource) return
-      if (sourceId === undefined || sourceId === null) {
-        this.$message.error('缺少派生草稿的来源 ID')
-        return
-      }
-      const requestId = ++this.designerForkRequestId
       this.forkingDesignerSource = true
+      const requestId = ++this.designerForkRequestId
       try {
-        const response = await api.createDraftFromSource(this.rule.id, {
-          sourceType,
-          sourceId: String(sourceId),
-        })
-        if (
-          requestId !== this.designerForkRequestId ||
-          !this.designerForkActive
-        ) return
-        const result = this.unwrapData(response) || {}
-        const draft = result.revision
-        if (
-          !draft ||
-          draft.state !== 'DRAFT' ||
-          draft.id === undefined ||
-          draft.id === null
-        ) {
-          throw new Error('服务端未返回新建草稿')
-        }
-        await this.openRevisionDesigner(draft, false)
-      } catch (error) {
-        if (
-          requestId !== this.designerForkRequestId ||
-          !this.designerForkActive
-        ) return
-        const responseData = error && error.response && error.response.data
-        this.$message.error(
-          (responseData && (responseData.message || (responseData.data && responseData.data.message))) ||
-            error.message ||
-            '基于来源创建草稿失败'
-        )
+        return await this.openDesignerSource(sourceType, sourceId, false)
       } finally {
-        if (
-          requestId === this.designerForkRequestId &&
-          this.designerForkActive
-        ) this.forkingDesignerSource = false
+        if (requestId === this.designerForkRequestId) this.forkingDesignerSource = false
       }
     },
     async loadRepairPreview() {
@@ -2069,14 +2050,8 @@ export default {
       }
     },
     async createLegacyDraft() {
-      try {
-        const response = await api.createDraftRevision(this.rule.id)
-        const draft = this.unwrapData(response)
-        this.activateDraftRevision(draft)
-        this.$message.success('治理草稿已创建')
-      } catch (error) {
-        this.$message.error(error.message || '创建治理草稿失败')
-      }
+      const name = this.designerRouteName(this.rule.modelType)
+      if (name) await this.$router.push({ name, params: { id: String(this.rule.id) } })
     },
     async repairLegacyRevision() {
       const unresolvedInputs = this.repairPreview.unresolvedInputs
@@ -2889,7 +2864,7 @@ export default {
       return MODEL_TYPE_LABELS[t] || t || '—'
     },
     statusLabel(s) {
-      return { 0: '草稿', 1: '已发布', 2: '已下线' }[s] || '—'
+      return { 0: '未发布', 1: '已发布', 2: '已下线' }[s] || '—'
     },
     statusType(s) {
       return { 0: 'info', 1: 'success', 2: 'warning' }[s] || 'info'

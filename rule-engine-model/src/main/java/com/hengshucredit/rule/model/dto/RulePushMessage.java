@@ -9,6 +9,9 @@ public class RulePushMessage {
     private String ruleCode;
     private Integer version;
     private Long revisionId;
+    private Long definitionId;
+    private Long versionBindingId;
+    private Long bindingGeneration;
     private String artifactDigest;
     private String modelType;
     private String compiledScript;

@@ -8,6 +8,7 @@ import java.util.List;
 @Data
 public class RulePreflightReport {
     private Long revisionId;
+    private Integer lockVersion;
     private boolean valid;
     private boolean breakingSchemaChange;
     private boolean breakingChangeReasonRequired;

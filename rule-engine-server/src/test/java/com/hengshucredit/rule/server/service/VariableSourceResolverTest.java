@@ -221,6 +221,28 @@ public class VariableSourceResolverTest {
         assertEquals("riskScore", result.get("scriptName"));
         assertEquals(88, result.get("resolvedValue"));
         assertEquals(Collections.singletonList("C001"), dbPools.lastParams);
+        assertEquals(Collections.singletonList(singletonMap("score", 88)), result.get("databaseRows"));
+    }
+
+    @Test
+    public void typedDbParametersPreserveValuesAndResolveFrozenReferenceById() throws Exception {
+        RuleVariable input = variable("renamedAge", "INPUT", null);
+        input.setId(71L);
+        RuleVariable db = variable("dbScore", "DB", "{\"dbDatasourceId\":3,\"sql\":\"SELECT ?, ?, ?, ?, ?\",\"params\":["
+                + "{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":71,\"value\":\"oldAge\"},"
+                + "{\"kind\":\"LITERAL\",\"valueType\":\"STRING\",\"value\":\"001\"},"
+                + "{\"kind\":\"LITERAL\",\"valueType\":\"BOOLEAN\",\"value\":false},"
+                + "{\"kind\":\"LITERAL\",\"valueType\":\"NULL\",\"value\":null},"
+                + "{\"kind\":\"LITERAL\",\"valueType\":\"NUMBER\",\"value\":\"9007199254740993\"}]}");
+        db.setId(72L);
+        FakeDbPools pools = new FakeDbPools(Collections.singletonList(singletonMap("score", 88)));
+        VariableSourceResolver resolver = resolver(Collections.emptyList(), new FakeApiService(Collections.emptyMap()), pools);
+        var options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(java.util.Set.of("dbScore"));
+        var resolved = resolver.resolveIntoSnapshot(java.util.List.of(input, db), Collections.emptyList(), Collections.emptyList(),
+                singletonMap("renamedAge", 28), options);
+        assertEquals(88, resolved.get("dbScore"));
+        assertEquals(Arrays.asList(28, "001", false, null, new java.math.BigDecimal("9007199254740993")), pools.lastParams);
     }
 
     @Test

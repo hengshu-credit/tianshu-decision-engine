@@ -226,13 +226,18 @@ public class RuleFieldAnalyzer {
     }
 
     private ResolvedFields resolveRuleCallFields(Long definitionId, String modelJson) {
-        if (definitionId != null) {
+        Map<String, OperandDependencyCollector.Reference> references = new LinkedHashMap<>();
+        for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(parseObject(modelJson))) {
+            if ("RULE".equals(reference.getRefType()) && reference.getRefId() != null)
+                references.put(reference.getRefId() + ":" + reference.getVersionBindingId(), reference);
+        }
+        boolean requiresVersionSnapshot = parseObject(modelJson).getString("script") != null
+                || references.values().stream().anyMatch(ref -> "FIXED".equals(ref.getVersionMode()));
+        if (definitionId != null && !requiresVersionSnapshot) {
             return new ResolvedFields(
                     loadRuleCallInputFields(modelJson),
                     loadRuleCallOutputFields(modelJson));
         }
-        Set<Long> ruleIds = new LinkedHashSet<>();
-        collectRuleCallIds(parseObject(modelJson), ruleIds);
         List<RuleDefinitionInputField> inputs = new ArrayList<>();
         List<RuleDefinitionOutputField> outputs = new ArrayList<>();
         List<RuleValidationIssue> diagnostics = new ArrayList<>();
@@ -240,7 +245,8 @@ public class RuleFieldAnalyzer {
                 Collections.newSetFromMap(new IdentityHashMap<>());
         Map<String, Object> inputSchemas = new LinkedHashMap<>();
         Map<String, Object> outputSchemas = new LinkedHashMap<>();
-        for (Long ruleId : ruleIds) {
+        for (OperandDependencyCollector.Reference reference : references.values()) {
+            Long ruleId = reference.getRefId();
             ResolvedFields fields;
             if (publishedFieldSnapshotResolver == null) {
                 RuleValidationIssue issue = RuleValidationIssue.error(
@@ -251,7 +257,9 @@ public class RuleFieldAnalyzer {
                         Collections.singletonList(issue), Collections.emptySet(),
                         Collections.emptyMap(), Collections.emptyMap());
             } else {
-                fields = publishedFieldSnapshotResolver.resolve(ruleId);
+                fields = "FIXED".equals(reference.getVersionMode())
+                        ? publishedFieldSnapshotResolver.resolve(ruleId, reference.getVersionBindingId())
+                        : publishedFieldSnapshotResolver.resolve(ruleId);
             }
             inputs.addAll(fields.getInputFields());
             for (RuleDefinitionOutputField output : fields.getOutputFields()) {
@@ -272,6 +280,16 @@ public class RuleFieldAnalyzer {
 
     private ResolvedFields resolveScriptFields(Long definitionId, String modelJson, Long projectId) {
         ResolvedFields scriptFields = qlScriptFieldResolver.resolve(modelJson, projectId);
+        ResolvedFields calledFields = resolveRuleCallFields(definitionId, modelJson);
+        if (!calledFields.getInputFields().isEmpty() || !calledFields.getOutputFields().isEmpty() || !calledFields.getDiagnostics().isEmpty()) {
+            List<RuleDefinitionInputField> inputs = new ArrayList<>(scriptFields.getInputFields()); inputs.addAll(calledFields.getInputFields());
+            List<RuleDefinitionOutputField> outputs = new ArrayList<>(scriptFields.getOutputFields()); outputs.addAll(calledFields.getOutputFields());
+            List<RuleValidationIssue> issues = new ArrayList<>(scriptFields.getDiagnostics()); issues.addAll(calledFields.getDiagnostics());
+            Set<String> localNames = new LinkedHashSet<>(scriptFields.getLocalOutputNames()); localNames.addAll(calledFields.getLocalOutputNames());
+            Map<String, Object> inputSchemas = new LinkedHashMap<>(scriptFields.getInputPropertySchemas()); inputSchemas.putAll(calledFields.getInputPropertySchemas());
+            Map<String, Object> outputSchemas = new LinkedHashMap<>(scriptFields.getOutputPropertySchemas()); outputSchemas.putAll(calledFields.getOutputPropertySchemas());
+            scriptFields = new ResolvedFields(inputs, outputs, issues, localNames, inputSchemas, outputSchemas);
+        }
         QLScriptAnalysis scriptAnalysis = new QLScriptAnalyzer()
                 .analyze(parseObject(modelJson).getString("script"));
         List<RuleValidationIssue> diagnostics =

@@ -1,12 +1,14 @@
-import { listRuleRevisions, saveContent } from '@/api/definition'
+import { listRuleRevisions } from '@/api/definition'
 import * as definitionApi from '@/api/definition'
+import RuleDesignerStatus from '@/components/rule/RuleDesignerStatus.vue'
+import RuleDesignerDialogs from '@/components/rule/RuleDesignerDialogs.vue'
 import {
   clearDraftRecovery,
   createDraftFingerprint,
-  readDraftRecovery,
-  saveDraftRecovery,
 } from '@/utils/ruleDesignerDraft'
 import { registerDesignerLeaveGuard } from '@/utils/designerLeaveGuard'
+import { hasPermission } from '@/security/permissionState'
+import { graphIssueTarget, validationPathLabel, validationRepairHint } from '@/utils/validationIssueLocation'
 
 function unwrap(response) {
   return response && response.data !== undefined ? response.data : response
@@ -27,13 +29,16 @@ const REVISION_STATE_LABELS = {
   APPROVED: '已批准',
   PUBLISHED: '已发布',
   OFFLINE: '已下线',
+  DELETED: '已删除',
 }
 
 export default {
+  components: { RuleDesignerStatus, RuleDesignerDialogs },
   data() {
     return {
       draftRevision: null,
       viewRevision: null,
+      viewExactRevisionId: '',
       draftGuardLoaded: false,
       draftGuardPromise: null,
       draftIssues: [],
@@ -58,9 +63,22 @@ export default {
       designerRestoringRecovery: false,
       designerLeaveUnregister: null,
       designerLeaveApproved: false,
+      designerBusy: false,
+      designerChoice: null,
+      designerChoiceResolve: null,
+      designerSaveRequest: null,
     }
   },
   computed: {
+    incomingValidationIssue() {
+      const query = this.$route && this.$route.query || {}
+      if (!query.validationPath || query.sourceType !== 'REVISION' || query.validationSourceId !== query.sourceId) return null
+      if (query.validationLockVersion !== undefined && query.validationLockVersion !== '' && this.viewRevision &&
+        String(this.viewRevision.lockVersion) !== String(query.validationLockVersion)) {
+        return { path: '$', message: '校验后配置已变化，请返回生命周期重新校验', revisionId: query.sourceId, stale: true }
+      }
+      return { path: String(query.validationPath), message: String(query.validationMessage || ''), revisionId: query.sourceId }
+    },
     requestedSource() {
       const query = this.$route?.query || {}
       const sourceType = query.sourceType
@@ -71,18 +89,16 @@ export default {
     },
     viewRevisionLabel() {
       if (!this.viewRevision) return ''
+      if (this.viewRevision.state === 'DELETED') return '草稿已删除，不可保存'
       if (this.viewRevision.sourceType === 'LEGACY_CONTENT') {
-        return '历史生效内容'
+        return '当前设计内容'
       }
-      const prefix = this.viewRevision.sourceType === 'VERSION' ? '版本' : '修订'
+      const prefix = this.viewRevision.state === 'VERSION' ? '版本' : this.viewRevision.state === 'DRAFT' ? '草稿' : '修订'
       return `${prefix} ${this.viewRevision.revisionNo || ''}`.trim()
     },
     canEditDraft() {
       return (
-        this.draftGuardLoaded &&
-        this.draftRevision?.state === 'DRAFT' &&
-        this.viewRevision?.state === 'DRAFT' &&
-        String(this.draftRevision.id) === String(this.viewRevision.id)
+        this.draftGuardLoaded && !this.draftGuardError && !!this.viewRevision && this.viewRevision.state !== 'DELETED' && hasPermission('rule:edit')
       )
     },
     canForkViewRevision() {
@@ -94,17 +110,19 @@ export default {
       return this.draftRevision?.state === 'DRAFT'
     },
     selectedDesignerSource() {
-      if (this.requestedSource) return sourceKey(this.requestedSource)
+      if (this.viewRevision?.state === 'VERSION') return `VERSION:${this.viewRevision.sourceId || this.viewRevision.id}`
       if (!this.viewRevision || !isSourceId(this.viewRevision.id)) return ''
       return `REVISION:${String(this.viewRevision.id)}`
     },
     designerSourceOptions() {
       const revisions = this.designerRevisions
-        .filter((item) => item && isSourceId(item.id))
+        .filter((item) => item && isSourceId(item.id) && item.state !== 'DELETED')
         .map((item) => ({
           value: `REVISION:${String(item.id)}`,
-          label: `${REVISION_STATE_LABELS[item.state] || '生命周期'}修订 v${item.revisionNo || '—'}`,
+          label: item.state === 'DRAFT' ? `草稿 · ${item.revisionNo || item.id}${item.updateTime ? ' / ' + item.updateTime : ''}` : `${REVISION_STATE_LABELS[item.state] || '已保存'} · ${item.revisionNo || item.id}`,
           group: 'REVISION',
+          id: String(item.id), state: item.state, lockVersion: item.lockVersion,
+          sourceLabel: item.sourceId ? `基于${item.sourceType === 'VERSION' ? '版本快照' : '修订'} ${item.sourceId}` : '',
         }))
       const versions = this.designerVersions
         .filter((item) => item && isSourceId(item.id))
@@ -114,7 +132,7 @@ export default {
           group: 'VERSION',
         }))
 
-      if (this.viewRevision && this.viewRevision.state !== 'LEGACY') {
+      if (this.viewRevision && !['LEGACY', 'DELETED'].includes(this.viewRevision.state)) {
         const selectedValue = this.selectedDesignerSource
         const group = selectedValue.startsWith('VERSION:') ? 'VERSION' : 'REVISION'
         const options = group === 'VERSION' ? versions : revisions
@@ -124,20 +142,15 @@ export default {
             label:
               group === 'VERSION'
                 ? `发布版本 v${this.viewRevision.revisionNo || '—'}`
-                : `${REVISION_STATE_LABELS[this.viewRevision.state] || '生命周期'}修订 v${this.viewRevision.revisionNo || '—'}`,
+                : `${REVISION_STATE_LABELS[this.viewRevision.state] || '生命周期'} · ${this.viewRevision.revisionNo || this.viewRevision.id}`,
             group,
           })
         }
       }
-      return [...revisions, ...versions]
+      return [...versions, ...revisions]
     },
     designerCanTest() {
-      return (
-        this.canEditDraft &&
-        this.designerActionState === 'READY_TO_TEST' &&
-        Boolean(this.designerCheckedFingerprint) &&
-        this.designerCheckedFingerprint === this.designerCurrentFingerprint
-      )
+      return this.draftGuardLoaded && !this.draftGuardError && !!this.viewRevision && this.viewRevision.state !== 'DELETED' && hasPermission('rule:edit')
     },
     designerHasUnsavedChanges() {
       return (
@@ -174,6 +187,8 @@ export default {
     this.queueDesignerDraftCapture()
   },
   beforeUnmount() {
+    this.resolveDesignerChoice({ action: 'cancel' })
+    this.viewRefreshToken++
     if (typeof window !== 'undefined') {
       window.removeEventListener('keydown', this.handleDesignerSaveShortcut)
       window.removeEventListener('beforeunload', this.handleDesignerBeforeUnload)
@@ -207,6 +222,35 @@ export default {
     this.draftGuardNeedsRefresh = !this.isOwnExpressionRoute()
   },
   methods: {
+    async locateDesignerIssue(issue) {
+      if (issue && issue.stale) { this.$message.warning('校验后配置已变化，请返回生命周期重新校验'); return }
+      if (issue && issue.revisionId && String(issue.revisionId) !== String(this.viewRevision && this.viewRevision.id)) {
+        this.$message.warning('校验结果不属于正在查看的修订，请重新校验')
+        return
+      }
+      if (this.designerHasUnsavedChanges) {
+        this.$message.warning('配置已有未保存修改，请先保存并检查，避免按旧位置定位')
+        return
+      }
+      const path = String(issue && issue.path || '$')
+      let model
+      try { model = JSON.parse(this.viewRevision && this.viewRevision.modelJson || '{}') } catch (e) { model = {} }
+      const graphTarget = graphIssueTarget(model, path)
+      if (graphTarget && typeof this.locateGraphElement === 'function') {
+        this.locateGraphElement(graphTarget)
+        return
+      }
+      await this.$nextTick()
+      const elements = this.$el && this.$el.querySelectorAll ? this.$el.querySelectorAll('[data-validation-path]') : []
+      const target = Array.from(elements).find(element => path === element.dataset.validationPath || path.startsWith(element.dataset.validationPath + '.'))
+      if (target) {
+        target.scrollIntoView({ block: 'center', behavior: 'smooth' })
+        target.setAttribute('tabindex', '-1')
+        target.focus({ preventScroll: true })
+      } else {
+        this.$message.info(`${validationPathLabel(path)}（${path}）：${validationRepairHint(issue)}`)
+      }
+    },
     registerDesignerLeaveProtection() {
       if (!this.isOwnDesignerRoute()) return
       const path = this.$route?.fullPath || this.$route?.path
@@ -250,13 +294,7 @@ export default {
       this.designerCompileResult = null
       this.designerActionState = 'CLEAN'
       this.designerDraftTrackingReady = true
-      const identity = this.designerDraftIdentity()
-      const recovery = readDraftRecovery(this.designerSessionStorage(), identity)
-      this.designerRecoveryCandidate =
-        recovery && recovery.fingerprint !== fingerprint ? recovery : null
-      if (recovery && recovery.fingerprint === fingerprint) {
-        clearDraftRecovery(this.designerSessionStorage(), identity)
-      }
+      this.designerRecoveryCandidate = null
     },
     queueDesignerDraftCapture() {
       if (
@@ -276,14 +314,13 @@ export default {
       if (
         !this.designerDraftTrackingReady ||
         !this.canEditDraft ||
-        this.designerActionState === 'SAVING' ||
         typeof this.serializeDesignerDraft !== 'function'
       ) {
         return
       }
       let modelJson
       try {
-        modelJson = this.serializeDesignerDraft()
+        modelJson = this.serializeDesignerDraft?.() || modelJson
       } catch {
         return
       }
@@ -296,10 +333,6 @@ export default {
           this.designerCheckedFingerprint === fingerprint
             ? 'READY_TO_TEST'
             : 'CLEAN'
-        clearDraftRecovery(
-          this.designerSessionStorage(),
-          this.designerDraftIdentity()
-        )
         this.designerRecoveryCandidate = null
         return
       }
@@ -309,23 +342,17 @@ export default {
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
       this.designerCompileResult = null
-      const recovery = {
-        ...this.designerDraftIdentity(),
-        modelJson,
-        fingerprint,
-        savedAt: new Date().toISOString(),
-      }
-      saveDraftRecovery(this.designerSessionStorage(), recovery)
+      // 普通编辑只更新内存状态，不自动创建服务端或浏览器草稿。
     },
     markDesignerDraftSaved(modelJson) {
       const fingerprint = createDraftFingerprint(modelJson)
       this.designerBaselineFingerprint = fingerprint
-      this.designerCurrentFingerprint = fingerprint
+      this.designerCurrentFingerprint = typeof this.serializeDesignerDraft === 'function' ? createDraftFingerprint(this.serializeDesignerDraft()) : fingerprint
       this.designerCheckedFingerprint = ''
       this.designerValidationReport = null
       this.designerCompileResult = null
       this.designerDraftTrackingReady = true
-      this.designerActionState = 'SAVED_UNCHECKED'
+      this.designerActionState = this.designerCurrentFingerprint === fingerprint ? 'SAVED_UNCHECKED' : 'DIRTY'
       clearDraftRecovery(
         this.designerSessionStorage(),
         this.designerDraftIdentity()
@@ -397,12 +424,12 @@ export default {
         return
       }
       event.preventDefault()
-      if (this.designerActionState !== 'SAVING') this.handleSave?.()
+      if (!this.designerBusy) this.runDesignerAction(() => this.handleSave?.())
     },
     ensureDesignerReadyForTest() {
       this.captureDesignerDraftState()
       if (this.designerCanTest) return true
-      this.$message.warning('请先保存并检查当前内容，通过后再进入测试')
+      this.$message.warning('当前内容未加载或没有规则执行权限')
       return false
     },
     currentDesignerRouteKey() {
@@ -428,7 +455,7 @@ export default {
       const refreshPromise = this.refreshViewedRevision()
       this.draftGuardPromise = refreshPromise
       if (reloadContent) {
-        refreshPromise.then((result) => {
+        this.runDesignerAction(() => refreshPromise.then((result) => {
           if (
             result &&
             this.isCurrentSource(result.sourceKey, result.refreshToken) &&
@@ -438,7 +465,7 @@ export default {
             return this.loadContent()
           }
           return null
-        })
+        }))
       }
       return refreshPromise
     },
@@ -450,6 +477,7 @@ export default {
     },
     isCurrentViewAction(action) {
       return (
+        this.draftGuardActive && this.isOwnDesignerRoute() &&
         this.isCurrentSource(action.sourceKey, action.refreshToken) &&
         String(this.viewRevision?.id) === action.viewId
       )
@@ -471,12 +499,13 @@ export default {
       this.draftGuardLoaded = false
       this.draftRevision = null
       this.viewRevision = null
+      this.viewExactRevisionId = source?.sourceType === 'REVISION' ? source.sourceId : ''
       this.draftIssues = []
       this.draftGuardError = null
       this.designerSourcesLoading = true
       const listPromise = Promise.resolve().then(() => listRuleRevisions(definitionId))
       const versionsPromise = Promise.resolve().then(() =>
-        definitionApi.listVersions(definitionId)
+        definitionApi.listPublishedVersions(definitionId)
       )
       this.loadDesignerVersions(
         versionsPromise,
@@ -522,7 +551,7 @@ export default {
               ? {
                   ...sourceData,
                   state: 'VERSION',
-                  revisionNo: sourceData.version,
+                  revisionNo: sourceData.businessVersion || sourceData.version,
                   sourceType: 'VERSION',
                   sourceId: source.sourceId,
                 }
@@ -541,7 +570,18 @@ export default {
         this.draftRevision =
           revisions.find((item) => item.state === 'DRAFT') || null
         this.designerRevisions = revisions
-        this.viewRevision = this.draftRevision || revisions[0] || null
+        const versionResponse = await versionsPromise
+        if (!this.isCurrentSource(requestedSourceKey, refreshToken)) return null
+        const versions = this.normalizeDesignerVersions(versionResponse)
+        if (versions.length) {
+          const versionId = String(versions[0].id)
+          const version = unwrap(await definitionApi.getVersionById(definitionId, versionId))
+          if (!this.isCurrentSource(requestedSourceKey, refreshToken)) return null
+          if (!version) throw new Error('最新版本不存在或无法读取')
+          this.viewRevision = { ...version, state: 'VERSION', revisionNo: version.businessVersion || version.version, sourceType: 'VERSION', sourceId: versionId }
+          return { refreshToken, sourceKey: requestedSourceKey }
+        }
+        this.viewRevision = revisions[0] || null
         if (!this.viewRevision) {
           const contentResponse = await definitionApi.getContent(definitionId)
           if (!this.isCurrentSource(requestedSourceKey, refreshToken)) return null
@@ -597,198 +637,233 @@ export default {
         (left, right) => Number(right.version || 0) - Number(left.version || 0)
       )
     },
+    async runDesignerAction(action) {
+      try {
+        return await action()
+      } catch (error) {
+        if (!error?.requestErrorNotified) {
+          this.$message.error(error?.message || '操作失败，请重试')
+          if (error && typeof error === 'object') error.requestErrorNotified = true
+        }
+        return false
+      }
+    },
+    requestDesignerChoice(kind) {
+      if (this.designerChoice) return Promise.resolve({ action: 'cancel' })
+      this.designerChoice = { kind, canOverwrite: this.viewRevision?.state === 'DRAFT', versions: this.designerVersions }
+      return new Promise(resolve => { this.designerChoiceResolve = resolve })
+    },
+    resolveDesignerChoice(choice = { action: 'cancel' }) {
+      const resolve = this.designerChoiceResolve
+      this.designerChoice = null
+      this.designerChoiceResolve = null
+      if (resolve) resolve(choice)
+    },
+    designerSourcePayload() {
+      const view = this.viewRevision
+      if (!view || view.state === 'LEGACY') return {}
+      if (view.state === 'VERSION') return { sourceType: 'VERSION', sourceId: String(view.sourceId || view.id) }
+      const exactId = this.viewExactRevisionId || String(view.id)
+      return { sourceType: 'REVISION', sourceId: exactId }
+    },
+    designerActionSnapshot() {
+      return { sourceKey: sourceKey(this.requestedSource), refreshToken: this.viewRefreshToken, viewId: String(this.viewRevision?.id) }
+    },
+    designerConfigurationMatches(action, modelJson) {
+      return this.isCurrentViewAction(action) && createDraftFingerprint(this.serializeDesignerDraft()) === createDraftFingerprint(modelJson)
+    },
     switchDesignerSource(value) {
-      const match = /^(REVISION|VERSION):([1-9]\d*)$/.exec(String(value || ''))
-      if (!match || value === this.selectedDesignerSource) return
-      const replaceSource = () =>
-        this.$router.replace({
-          query: {
-            ...(this.$route?.query || {}),
-            sourceType: match[1],
-            sourceId: match[2],
-          },
-        })
-      this.captureDesignerDraftState()
-      if (!this.designerHasUnsavedChanges) return replaceSource()
-      return this.confirmDesignerLeave({ discardRecovery: true }).then(
-        (confirmed) => (confirmed ? replaceSource() : null)
-      )
+      return this.runDesignerAction(async () => {
+        const match = /^(REVISION|VERSION):([1-9]\d*)$/.exec(String(value || ''))
+        if (!match || value === this.selectedDesignerSource || this.designerBusy) return false
+        this.designerBusy = true
+        try {
+          this.captureDesignerDraftState()
+          if (this.designerHasUnsavedChanges) {
+            const action = this.designerActionSnapshot()
+            const choice = await this.requestDesignerChoice('switch')
+            if (choice.action === 'cancel' || !this.isCurrentViewAction(action)) return false
+            if (choice.action === 'save') {
+              const modelJson = this.serializeDesignerDraft()
+              const result = await this.saveDraftModel(modelJson, { saveMode: choice.saveMode, stayOnSource: true })
+              if (!result || !this.isCurrentViewAction({ ...action, viewId: String(result.revision.id) })) return false
+              if (this.designerHasUnsavedChanges) throw new Error('保存期间配置又有修改，请再次选择切换方式')
+            }
+          }
+          await this.$router.replace({ query: { ...(this.$route?.query || {}), sourceType: match[1], sourceId: match[2] } })
+          return true
+        } finally {
+          this.designerBusy = false
+        }
+      })
     },
     async forkViewRevision() {
-      if (!this.canForkViewRevision) {
-        throw new Error('当前节点不允许派生草稿')
-      }
-      const definitionId = this.definitionId || this.$route.params.id
-      if (
-        this.draftRevision?.state === 'DRAFT' &&
-        String(this.draftRevision.id) !== String(this.viewRevision.id)
-      ) {
-        await this.$router.replace({
-          query: {
-            sourceType: 'REVISION',
-            sourceId: String(this.draftRevision.id),
-          },
-        })
-        if (this.$message?.info) {
-          this.$message.info('规则已有待修改修订，已为你打开该版本')
-        }
-        return { revision: this.draftRevision }
-      }
-      const action = {
-        sourceKey: sourceKey(this.requestedSource),
-        refreshToken: this.viewRefreshToken,
-        viewId: String(this.viewRevision.id),
-      }
-      try {
-        let response
-        if (this.requestedSource) {
-          response = await definitionApi.createDraftFromSource(definitionId, {
-            sourceType: this.requestedSource.sourceType,
-            sourceId: this.requestedSource.sourceId,
-          })
-        } else if (this.viewRevision.state === 'LEGACY') {
-          response = await definitionApi.createDraftRevision(definitionId)
-        } else {
-          response = await definitionApi.createDraftRevision(
-            definitionId,
-            this.viewRevision.id
-          )
-        }
-        const result = unwrap(response)
-        const revision = result?.revision || result
-        if (!revision || revision.state !== 'DRAFT') {
-          throw new Error('派生草稿响应缺少 DRAFT 修订')
-        }
-        if (!this.isCurrentViewAction(action)) return result
-        this.draftRevision = revision
-        this.viewRevision = revision
-        this.draftIssues = Array.isArray(result?.issues) ? result.issues : []
-        this.$router.replace({
-          query: { sourceType: 'REVISION', sourceId: String(revision.id) },
-        })
-        return result
-      } catch (error) {
-        if (
-          this.isCurrentViewAction(action) &&
-          !error?.requestErrorNotified &&
-          this.$message?.error
-        ) {
-          this.$message.error(error?.message || '创建草稿失败，请稍后重试')
-        }
-        throw error
-      }
+      return { revision: this.viewRevision }
     },
     async saveDraftModel(modelJson, extra = {}) {
       if (this.draftGuardPromise) await this.draftGuardPromise
-      if (!this.canEditDraft) {
-        throw new Error(
-          '当前规则没有可编辑草稿，请先进入生命周期创建或退回草稿'
-        )
+      if (!this.canEditDraft) throw new Error('当前规则没有可编辑内容、已被删除或没有编辑权限')
+      if (this.designerActionState === 'SAVING') throw new Error('正在保存，请稍候')
+      const definitionId = String(this.definitionId || this.$route.params.id)
+      const action = this.designerActionSnapshot()
+      const currentDraft = this.viewRevision.state === 'DRAFT' ? this.viewRevision : null
+      const fingerprint = createDraftFingerprint(modelJson)
+      if (currentDraft && this.designerDraftTrackingReady && fingerprint === this.designerBaselineFingerprint && !extra.updateOpenApiConfig) {
+        return { revision: currentDraft, compileSuccess: currentDraft.compileSuccess !== false, issues: this.draftIssues }
       }
-      const definitionId = this.definitionId || this.$route.params.id
-      const action = {
-        sourceKey: sourceKey(this.requestedSource),
-        refreshToken: this.viewRefreshToken,
-        viewId: String(this.viewRevision.id),
-        draftId: String(this.draftRevision.id),
+      let saveMode = currentDraft ? extra.saveMode : 'NEW'
+      if (!saveMode) {
+        const choice = await this.requestDesignerChoice('save')
+        if (choice.action !== 'save' || !this.isCurrentViewAction(action)) return false
+        saveMode = choice.saveMode
+        // 弹窗期间仍可能编辑，保存确认时的当前配置。
+        modelJson = this.serializeDesignerDraft?.() || modelJson
       }
-      const allowedExtra = {}
-      ;['openApiConfigJson', 'updateOpenApiConfig'].forEach((field) => {
-        if (Object.prototype.hasOwnProperty.call(extra, field)) {
-          allowedExtra[field] = extra[field]
-        }
+      if (!['NEW', 'OVERWRITE'].includes(saveMode)) throw new Error('请选择保存方式')
+      const body = { modelJson, saveMode, ...this.designerSourcePayload() }
+      if (saveMode === 'OVERWRITE') {
+        if (!currentDraft) throw new Error('只有当前草稿可以覆盖')
+        body.revisionId = body.sourceId
+        body.lockVersion = currentDraft.lockVersion
+      }
+      ;['openApiConfigJson', 'updateOpenApiConfig'].forEach(field => {
+        if (Object.prototype.hasOwnProperty.call(extra, field)) body[field] = extra[field]
       })
+      const signature = JSON.stringify({ definitionId, ...body })
+      if (this.designerSaveRequest?.signature !== signature) {
+        const bytes = globalThis.crypto.getRandomValues(new Uint8Array(16))
+        this.designerSaveRequest = { signature, requestId: Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('') }
+      }
+      body.requestId = this.designerSaveRequest.requestId
       this.designerActionState = 'SAVING'
-      let response
+      let result
       try {
-        response = await saveContent({
-          ...allowedExtra,
-          definitionId,
-          revisionId: this.draftRevision.id,
-          lockVersion: this.draftRevision.lockVersion,
-          modelJson,
-        })
+        result = unwrap(await definitionApi.saveDesignerDraft(definitionId, body))
+        if (!result?.revision || result.revision.state !== 'DRAFT' || result.compileSuccess === false) throw new Error(result?.compileMessage || '草稿保存响应无效，页面修改仍保留')
       } catch (error) {
-        this.designerActionState =
-          error?.response?.status === 409 ? 'SAVE_CONFLICT' : 'DIRTY'
-        this.designerCurrentFingerprint = createDraftFingerprint(modelJson)
-        const recovery = {
-          ...this.designerDraftIdentity(),
-          modelJson,
-          fingerprint: this.designerCurrentFingerprint,
-          savedAt: new Date().toISOString(),
+        if (this.isCurrentViewAction(action)) {
+          this.designerActionState = error?.response?.status === 409 ? 'SAVE_CONFLICT' : 'DIRTY'
+          this.captureDesignerDraftState()
         }
-        saveDraftRecovery(this.designerSessionStorage(), recovery)
         throw error
       }
-      const result = unwrap(response)
-      if (!result?.revision) {
-        this.designerActionState = 'DIRTY'
-        if (this.isCurrentDraftAction(action)) {
-          this.draftRevision = null
-          this.viewRevision = null
-        }
-        throw new Error('草稿保存响应缺少 revision')
-      }
-      if (!this.isCurrentDraftAction(action)) return result
+      this.designerSaveRequest = null
+      if (!this.isCurrentViewAction(action)) return false
       this.draftRevision = result.revision
       this.viewRevision = result.revision
+      this.viewExactRevisionId = String(result.revision.id)
       this.draftIssues = Array.isArray(result.issues) ? result.issues : []
-      this.markDesignerDraftSaved(modelJson)
+      this.designerRevisions = [result.revision, ...this.designerRevisions.filter(item => String(item.id) !== String(result.revision.id))]
+      this.markDesignerDraftSaved(body.modelJson)
+      if (!extra.stayOnSource) {
+        const sourceId = String(result.revision.id)
+        this.draftGuardRouteKey = `${this.draftGuardDefinitionId}:REVISION:${sourceId}`
+        await this.$router.replace({ query: { ...(this.$route?.query || {}), sourceType: 'REVISION', sourceId } })
+      }
+      if (this.draftIssues.some(issue => issue.severity !== 'WARNING')) this.$message.warning('草稿已保存，但发布前检查存在阻断项')
       return result
     },
-    async completeRuleCompile(result, options = {}) {
-      const successMessage = options.successMessage || '编译成功'
-      const errorPrefix = options.errorPrefix || '编译失败'
-      this.designerCompileResult = result || null
-      if (!result || !result.compileSuccess) {
-        this.designerActionState = 'CHECK_FAILED'
-        this.designerCheckedFingerprint = ''
-        this.designerValidationReport = {
-          valid: false,
-          errors: (result?.issues || []).filter(
-            (item) => item.severity !== 'WARNING'
-          ),
-          warnings: (result?.issues || []).filter(
-            (item) => item.severity === 'WARNING'
-          ),
-        }
-        this.$message.error(
-          `${errorPrefix}: ${(result && result.compileMessage) || '未知错误'}`
-        )
-        return result
-      }
-      if (!this.canEditDraft || !result.revision?.id) return result
-      if (typeof options.onSuccess === 'function') {
-        await options.onSuccess()
-      }
-      if (!this.canEditDraft) return result
-      const definitionId = this.definitionId || this.$route.params.id
-      try {
-        const response = await definitionApi.preflightRuleRevision(
-          definitionId,
-          this.draftRevision.id
-        )
-        this.designerValidationReport = unwrap(response)
-      } catch (error) {
-        const report = error?.response?.data?.data
-        if (!report) {
-          this.designerActionState = 'CHECK_FAILED'
-          throw error
-        }
-        this.designerValidationReport = report
-      }
-      if (!this.designerValidationReport?.valid) {
-        this.designerActionState = 'CHECK_FAILED'
-        this.designerCheckedFingerprint = ''
-        this.$message.warning('草稿已保存，但发布前检查存在阻断项')
-        return result
-      }
-      this.designerCheckedFingerprint = this.designerBaselineFingerprint
-      this.designerCurrentFingerprint = this.designerBaselineFingerprint
-      this.designerActionState = 'READY_TO_TEST'
-      this.$message.success(`${successMessage}，发布前检查已通过`)
+    async compileDesignerDraft() {
+      if (!this.canEditDraft) throw new Error('当前内容不可编译或没有编辑权限')
+      const action = this.designerActionSnapshot()
+      const modelJson = this.serializeDesignerDraft()
+      const result = unwrap(await definitionApi.compileDesignerModel(String(this.definitionId || this.$route.params.id), { modelJson, ...this.designerSourcePayload() }))
+      this.captureDesignerDraftState()
+      if (!this.designerConfigurationMatches(action, modelJson)) return false
+      this.designerCompileResult = result
+      this.designerValidationReport = result?.preflightReport || null
+      this.designerCheckedFingerprint = result?.compileSuccess ? createDraftFingerprint(modelJson) : ''
+      this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? 'READY_TO_TEST' : 'CHECK_FAILED'
+      if (!result?.compileSuccess) this.$message.error(result?.compileMessage || '编译失败')
+      else if (!result?.preflightReport?.valid) this.$message.warning('编译成功，但发布前检查存在阻断项')
+      else this.$message.success('编译与发布前检查通过')
       return result
+    },
+    executeDesignerPreview(params, modelType) {
+      return this.runDesignerAction(() => definitionApi.executeRule({
+        definitionId: String(this.definitionId || this.$route.params.id),
+        projectId: this.projectIdForRefs,
+        modelType,
+        modelJson: this.serializeDesignerDraft(),
+        params,
+      }))
+    },
+    handlePublish() {
+      return this.runDesignerAction(async () => {
+        if (!hasPermission('rule:edit') || !hasPermission('rule:submit')) throw new Error('没有提交规则发布审批的权限')
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try {
+          let compiled = await this.compileDesignerDraft()
+          if (!compiled?.compileSuccess || !compiled.preflightReport?.valid) return false
+          let saved = await this.saveDraftModel(this.serializeDesignerDraft())
+          if (!saved) return false
+          this.designerVersions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
+          const action = this.designerActionSnapshot()
+          const modelJson = this.serializeDesignerDraft()
+          const choice = await this.requestDesignerChoice('publish')
+          if (choice.action !== 'publish' || !this.isCurrentViewAction(action)) return false
+          if (!this.designerConfigurationMatches(action, modelJson)) {
+            compiled = await this.compileDesignerDraft()
+            if (!compiled?.compileSuccess || !compiled.preflightReport?.valid) return false
+            saved = await this.saveDraftModel(this.serializeDesignerDraft())
+            if (!saved) return false
+          }
+          if (this.designerHasUnsavedChanges) throw new Error('配置又有修改，请重新发布')
+          const body = { revisionId: String(saved.revision.id), lockVersion: saved.revision.lockVersion, publishMode: choice.publishMode, comment: choice.comment || '' }
+          if (choice.publishMode === 'OVERWRITE') {
+            const target = this.designerVersions.find(version => String(version.bindingId) === String(choice.targetVersionId))
+            if (!target) throw new Error('请选择要覆盖的已发布版本')
+            body.targetVersionId = String(target.bindingId)
+            body.targetGeneration = target.generation
+          }
+          const submitAction = this.designerActionSnapshot()
+          const result = unwrap(await definitionApi.publishDesignerDraft(String(this.definitionId || this.$route.params.id), body))
+          if (!this.isCurrentViewAction(submitAction)) return result
+          if (result?.revision) {
+            this.viewRevision = result.revision
+            this.designerRevisions = [result.revision, ...this.designerRevisions.filter(item => String(item.id) !== String(result.revision.id))]
+            if (String(this.draftRevision?.id) === String(result.revision.id)) this.draftRevision = null
+          }
+          this.$message.success('已提交发布审批，审批通过后生效')
+          return result
+        } finally {
+          this.designerBusy = false
+        }
+      })
+    },
+    deleteDesignerSource(item) {
+      return this.runDesignerAction(async () => {
+        if (item?.state !== 'DRAFT' || this.designerBusy) return false
+        if (!hasPermission('rule:edit')) throw new Error('没有删除草稿的权限')
+        const current = item.value === this.selectedDesignerSource
+        const action = this.designerActionSnapshot()
+        this.designerBusy = true
+        try {
+          try {
+            await this.$confirm(current ? '删除当前草稿？页面未保存的修改也会放弃。' : '删除所选草稿？其他草稿和已发布版本保持不变。', '删除草稿', { type: 'warning', confirmButtonText: '删除草稿', cancelButtonText: '取消' })
+          } catch { return false }
+          await definitionApi.deleteDesignerDraft(String(this.definitionId || this.$route.params.id), String(item.id), item.lockVersion)
+          this.designerRevisions = this.designerRevisions.filter(revision => String(revision.id) !== String(item.id))
+          if (current && this.isCurrentViewAction(action)) {
+            const versions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
+            const draft = this.designerRevisions.find(revision => revision.state === 'DRAFT')
+            const query = { ...(this.$route?.query || {}) }
+            delete query.sourceType
+            delete query.sourceId
+            if (versions.length || draft) {
+              query.sourceType = versions.length ? 'VERSION' : 'REVISION'
+              query.sourceId = String(versions.length ? versions[0].id : draft.id)
+            }
+            this.designerDraftTrackingReady = false
+            await this.$router.replace({ query })
+          }
+          this.$message.success('草稿已删除，审计记录保留')
+          return true
+        } finally {
+          this.designerBusy = false
+        }
+      })
     },
     goRuleLifecycle() {
       this.$router.push({

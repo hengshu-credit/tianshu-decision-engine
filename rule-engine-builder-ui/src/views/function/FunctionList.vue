@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <div class="linkage-hint">
       <el-icon><el-icon-info /></el-icon>
       自定义函数可在决策流/决策树的脚本任务中调用。支持 QLExpress 脚本、Java
@@ -95,7 +95,7 @@
       </div>
     </div>
 
-    <el-table show-overflow-tooltip
+    <el-table class="management-table" show-overflow-tooltip
       :data="funcList"
       border
       size="small"

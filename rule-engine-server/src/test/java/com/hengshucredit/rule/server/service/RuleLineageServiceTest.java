@@ -280,6 +280,37 @@ public class RuleLineageServiceTest {
         assertEquals("包含字段", edges(objectGraph).get(0).get("label"));
     }
 
+    @Test
+    @SuppressWarnings("unchecked")
+    public void nestedFieldsKeepParentIdsAndAncestorsAtDepthBoundary() {
+        RuleLineageService service = serviceWithProjectBranch(false);
+        RuleDataObject object = new RuleDataObject();
+        object.setId(30L);
+        object.setObjectCode("Request");
+        RuleDataObjectField parent = dataField(24L, "profile");
+        parent.setObjectId(30L);
+        RuleDataObjectField child = dataField(25L, "credit");
+        child.setObjectId(30L);
+        child.setParentFieldId(24L);
+        RuleDataObjectField leaf = dataField(26L, "score");
+        leaf.setObjectId(30L);
+        leaf.setParentFieldId(25L);
+        setMapper(service, "dataObjectMapper", RuleDataObjectMapper.class, Collections.singletonList(object));
+        setMapper(service, "dataObjectFieldMapper", RuleDataObjectFieldMapper.class, Arrays.asList(leaf, child, parent));
+        Map<String, Object> graph = service.graph("DATA_OBJECT", 30L, "DOWNSTREAM", 1);
+        assertEquals(new LinkedHashSet<>(Arrays.asList("DATA_OBJECT:30", "DATA_FIELD:24")), nodeIds(graph));
+        assertEquals(Boolean.TRUE, node(graph, "DATA_FIELD:24").get("hasFieldChildren"));
+        graph = service.graph("DATA_FIELD", 25L, "DOWNSTREAM", 1);
+        assertEquals(new LinkedHashSet<>(Arrays.asList("DATA_FIELD:25", "DATA_FIELD:26")), nodeIds(graph));
+        Map<String, Object> leafNode = node(graph, "DATA_FIELD:26");
+        assertEquals("DATA_FIELD:25", leafNode.get("parentNodeId"));
+        List<Map<String, Object>> ancestors = (List<Map<String, Object>>) leafNode.get("ancestorFields");
+        assertEquals(2, ancestors.size());
+        assertEquals("DATA_FIELD:24", ancestors.get(0).get("id"));
+        assertEquals("DATA_FIELD:25", ancestors.get(1).get("id"));
+        assertEquals("DATA_OBJECT:30", ancestors.get(0).get("parentNodeId"));
+    }
+
     private static RuleVariable variable(Long id, String code) {
         RuleVariable variable = new RuleVariable();
         variable.setId(id);

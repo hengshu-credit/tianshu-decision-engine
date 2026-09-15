@@ -35,11 +35,13 @@ public class RuleCallCycleService {
 
     @Resource
     private RuleDefinitionContentMapper contentMapper;
+    @Resource private RulePublicationValidator publicationValidator;
 
     public String validateNoCycle(Long definitionId, String pendingModelJson) {
         if (definitionId == null) {
             return null;
         }
+        if (publicationValidator != null && pendingModelJson != null) return publicationValidator.previewCycle(definitionId, pendingModelJson);
         RuleDefinition current = definitionMapper.selectById(definitionId);
         if (current == null) {
             return null;

@@ -5,6 +5,8 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.compiler.*;
 import com.hengshucredit.rule.core.engine.QLExpressEngineFactory;
+import com.hengshucredit.rule.core.script.QLScriptAnalysis;
+import com.hengshucredit.rule.core.script.QLScriptAnalyzer;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
@@ -89,6 +91,23 @@ public class RuleCompileService {
 
     /** 编译设计器当前草稿，不覆盖已保存内容或编译状态。 */
     public CompileResult compilePreview(Long definitionId, String modelJson, String modelType) {
+        return compilePreview(definitionId, modelJson, modelType, true);
+    }
+
+    /** 仅模型转换及 QL 语法解析；调用环等发布策略由预检报告负责，不执行脚本。 */
+    public CompileResult compileSyntaxPreview(Long definitionId, String modelJson, String modelType) {
+        CompileResult result = compilePreview(definitionId, modelJson, modelType, false);
+        if (!result.isSuccess()) return result;
+        QLScriptAnalysis analysis = new QLScriptAnalyzer().analyze(result.getCompiledScript());
+        return analysis.getDiagnostics().stream()
+                .filter(diagnostic -> "ERROR".equals(diagnostic.getSeverity()))
+                .findFirst()
+                .map(diagnostic -> CompileResult.fail("QL_PARSE_ERROR: " + diagnostic.getMessage()))
+                .orElse(result);
+    }
+
+    private CompileResult compilePreview(Long definitionId, String modelJson, String modelType,
+                                          boolean validateCycle) {
         RuleDefinition definition = definitionService.getById(definitionId);
         if (definition == null) {
             return CompileResult.fail("规则定义不存在");
@@ -102,7 +121,7 @@ public class RuleCompileService {
         if (compiler == null) {
             return CompileResult.fail("暂不支持的模型类型: " + effectiveType);
         }
-        String cycleError = ruleCallCycleService.validateNoCycle(definitionId, modelJson);
+        String cycleError = validateCycle ? ruleCallCycleService.validateNoCycle(definitionId, modelJson) : null;
         if (cycleError != null) {
             return CompileResult.fail(cycleError);
         }

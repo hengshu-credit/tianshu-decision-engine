@@ -73,7 +73,7 @@ public class RuleDefinitionServiceTest {
     }
 
     @Test
-    public void createWithContentAlwaysCreatesDraftDefinition() {
+    public void createWithContentInitializesUnpublishedRuleWithoutDraftRevision() {
         RuleDefinitionService service = new RuleDefinitionService();
         RuleDefinition definition = new RuleDefinition();
         definition.setId(15L);
@@ -93,6 +93,12 @@ public class RuleDefinitionServiceTest {
         ReflectionTestUtils.setField(service, "contentMapper", mapper(RuleDefinitionContentMapper.class,
                 (proxy, method, args) -> "insert".equals(method.getName()) ? 1 : defaultValue(method.getReturnType())));
         ReflectionTestUtils.setField(service, "fieldAnalyzer", new RecordingRuleFieldAnalyzer());
+        ReflectionTestUtils.setField(service, "lifecycleService", new RuleLifecycleService() {
+            @Override
+            public RuleRevision ensureDraft(Long definitionId) {
+                throw new AssertionError("新建规则不能自动创建草稿修订");
+            }
+        });
 
         service.createWithContent(definition);
 

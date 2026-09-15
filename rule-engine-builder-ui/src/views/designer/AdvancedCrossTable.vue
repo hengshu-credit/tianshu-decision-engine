@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -40,22 +41,32 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
-          <rule-designer-action-bar
+        <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
             :can-edit="canEditDraft"
             :can-test="designerCanTest"
             :state="designerActionState"
+          :busy="designerBusy"
             :recovery="designerRecoveryCandidate"
             :report="designerValidationReport"
             @save="handleSave"
-            @save-check="handleCompile"
+            @compile="handleCompile"
             @test="handleTest"
-            @lifecycle="goRuleLifecycle"
+            @publish="handlePublish"
             @restore="restoreDesignerRecovery"
             @discard-recovery="discardDesignerRecovery"
           />
       </div>
     </div>
+
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
 
     <!-- 维度配置区：行维度 + 列维度 并排 -->
     <div class="act-dim-row">
@@ -505,7 +516,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="CROSS_ADV"
-      :model-json-provider="buildSaveModel"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -527,7 +538,6 @@ import {
   Delete as ElIconDelete,
   Close as ElIconClose,
 } from '@element-plus/icons-vue'
-import { executeRule } from '@/api/definition'
 import { VAR_TYPE_FORM_OPTIONS } from '@/constants/varTypes'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
@@ -809,12 +819,10 @@ export default {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
-        if (content && content.modelJson && content.modelJson !== '{}') {
+        if (content && content.modelJson) {
           const parsed = JSON.parse(content.modelJson)
           this.model = parsed
-          if (parsed.cells) {
-            this.cellData = this.flattenCells(parsed.cells)
-          }
+            this.cellData = parsed.cells ? this.flattenCells(parsed.cells) : []
         }
       } catch (e) {
         this.$message.error('加载内容失败: ' + (e.message || '未知错误'))
@@ -1096,16 +1104,27 @@ export default {
     serializeDesignerDraft() {
       return JSON.stringify(this.buildSaveModel())
     },
-    async handleSave() {
+    async performDesignerSave() {
       const result = await this.saveDraftModel(this.serializeDesignerDraft())
+      if (!result) return false
       this.refreshProjectRefs()
 
       this.$message.success('草稿已保存')
       return result
     },
-    async handleCompile() {
-      const result = await this.handleSave()
-      return this.completeRuleCompile(result)
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
+      })
     },
     async handleTest() {
       if (!this.ensureDesignerReadyForTest()) return
@@ -1168,7 +1187,7 @@ export default {
         this.$message.error('参数 JSON 格式错误')
         return
       }
-      const res = await executeRule({ definitionId: this.definitionId, params })
+      const res = await this.executeDesignerPreview(params, 'CROSS_ADV')
       this.testResult = res && res.data ? res.data : res
     },
   },

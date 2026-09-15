@@ -11,6 +11,7 @@ function mountHost() {
   return mount({
     name: 'RuleDraftMixinHost',
     mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
     template: '<div />',
   }, {
     mocks: {
@@ -27,6 +28,7 @@ function mountCachedHost() {
       CachedHost: {
         name: 'CachedRuleDraftMixinHost',
         mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
         template: '<div />',
       },
     },
@@ -44,6 +46,17 @@ function mountCachedHost() {
 }
 
 describe('ruleDraftMixin', () => {
+  test('校验定位锁定来源修订，草稿锁版本变化时提示重新校验', () => {
+    const context = {
+      $route: { query: { sourceType: 'REVISION', sourceId: '6', validationSourceId: '6', validationLockVersion: '4', validationPath: '$.nodes[0]', validationMessage: '检查字段' } },
+      viewRevision: { id: 6, lockVersion: 4 },
+    }
+    expect(ruleDraftMixin.computed.incomingValidationIssue.call(context).path).toBe('$.nodes[0]')
+    context.viewRevision.lockVersion = 5
+    expect(ruleDraftMixin.computed.incomingValidationIssue.call(context).stale).toBe(true)
+    context.$route.query.sourceId = '7'
+    expect(ruleDraftMixin.computed.incomingValidationIssue.call(context)).toBeNull()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
     window.sessionStorage.clear()
@@ -54,20 +67,18 @@ describe('ruleDraftMixin', () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, definitionId: 30, state: 'DRAFT', lockVersion: 4 }],
     })
-    definitionApi.preflightRuleRevision.mockResolvedValueOnce({
-      data: { valid: true, errors: [], warnings: [] },
+    definitionApi.compileDesignerModel.mockResolvedValueOnce({
+      data: { compileSuccess: true, preflightReport: { valid: true, errors: [], warnings: [] } },
     })
     const wrapper = mountHost()
     await flushPromises()
     wrapper.vm.initializeDesignerDraftTracking('{}')
     wrapper.vm.markDesignerDraftSaved('{}')
 
-    await wrapper.vm.completeRuleCompile(
-      { compileSuccess: true, revision: { id: 6 } },
-      { successMessage: '编译成功' }
-    )
+    wrapper.vm.serializeDesignerDraft = () => '{}'
+    await wrapper.vm.compileDesignerDraft()
 
-    expect(definitionApi.preflightRuleRevision).toHaveBeenCalledWith(30, 6)
+    expect(definitionApi.compileDesignerModel).toHaveBeenCalledWith('30', expect.objectContaining({ modelJson: '{}' }))
     expect(wrapper.vm.designerActionState).toBe('READY_TO_TEST')
     expect(wrapper.vm.designerCanTest).toBe(true)
     expect(wrapper.vm.designerValidationReport).toEqual({
@@ -79,7 +90,7 @@ describe('ruleDraftMixin', () => {
     wrapper.unmount()
   })
 
-  test('内容变更后静默记录会话恢复草稿并统一拦截离开', async () => {
+  test('内容变更只留在页面，不自动记录会话草稿，并统一拦截离开', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, definitionId: 30, state: 'DRAFT', lockVersion: 4 }],
     })
@@ -93,13 +104,28 @@ describe('ruleDraftMixin', () => {
     expect(wrapper.vm.designerActionState).toBe('DIRTY')
     expect(wrapper.vm.designerHasUnsavedChanges).toBe(true)
     expect(wrapper.vm.designerRecoveryCandidate).toBeNull()
-    expect(window.sessionStorage.length).toBe(1)
+    expect(window.sessionStorage.length).toBe(0)
     await expect(wrapper.vm.confirmDesignerLeave()).resolves.toBe(true)
     expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
       '当前设计有未保存修改，放弃修改并离开吗？',
       '未保存提醒',
       expect.objectContaining({ type: 'warning' })
     )
+    wrapper.unmount()
+  })
+
+  test('默认打开最新正式版本而不是现有草稿，明确暂存前没有写请求', async () => {
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [{ id: 6, state: 'DRAFT', revisionNo: 3, modelJson: '{}' }] })
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({ data: [{ id: 81, version: 2 }, { id: 80, version: 1 }] })
+    definitionApi.getVersionById.mockResolvedValueOnce({ data: { id: 81, definitionId: 30, version: 2, modelJson: '{"rules":[]}' } })
+    const wrapper = mountHost()
+    await flushPromises()
+    expect(definitionApi.getVersionById).toHaveBeenCalledWith(30, '81')
+    expect(wrapper.vm.viewRevision).toMatchObject({ id: 81, state: 'VERSION' })
+    expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
+    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -117,6 +143,7 @@ describe('ruleDraftMixin', () => {
     const wrapper = mount({
       name: 'ActivatedDesignerLeaveGuardHost',
       mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
       data() {
         return { definitionId: 30 }
       },
@@ -143,7 +170,7 @@ describe('ruleDraftMixin', () => {
     wrapper.unmount()
   })
 
-  test('重新进入相同草稿时才展示上次会话的恢复候选', async() => {
+  test('重新进入时不会自动恢复从未暂存的页面修改', async() => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, definitionId: 30, state: 'DRAFT', lockVersion: 4 }],
     })
@@ -161,38 +188,32 @@ describe('ruleDraftMixin', () => {
     await flushPromises()
     reopened.vm.initializeDesignerDraftTracking('{"script":"old"}')
 
-    expect(reopened.vm.designerRecoveryCandidate).toMatchObject({
-      definitionId: '30',
-      revisionId: '6',
-      lockVersion: 4,
-      modelJson: '{"script":"new"}',
-    })
+    expect(reopened.vm.designerRecoveryCandidate).toBeNull()
+    expect(window.sessionStorage.length).toBe(0)
     reopened.unmount()
   })
 
-  test('发布前检查存在阻断项时保持不可测试并展示报告', async () => {
+  test('发布前检查存在阻断项时仍可测试并展示报告', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, definitionId: 30, state: 'DRAFT', lockVersion: 4 }],
     })
-    definitionApi.preflightRuleRevision.mockResolvedValueOnce({
-      data: {
+    definitionApi.compileDesignerModel.mockResolvedValueOnce({
+      data: { compileSuccess: true, preflightReport: {
         valid: false,
         errors: [{ code: 'MISSING_REFERENCE', message: '变量不存在' }],
         warnings: [],
-      },
+      } },
     })
     const wrapper = mountHost()
     await flushPromises()
     wrapper.vm.initializeDesignerDraftTracking('{}')
     wrapper.vm.markDesignerDraftSaved('{}')
 
-    await wrapper.vm.completeRuleCompile({
-      compileSuccess: true,
-      revision: { id: 6 },
-    })
+    wrapper.vm.serializeDesignerDraft = () => '{}'
+    await wrapper.vm.compileDesignerDraft()
 
     expect(wrapper.vm.designerActionState).toBe('CHECK_FAILED')
-    expect(wrapper.vm.designerCanTest).toBe(false)
+    expect(wrapper.vm.designerCanTest).toBe(true)
     expect(wrapper.vm.designerValidationReport.valid).toBe(false)
     wrapper.unmount()
   })
@@ -209,7 +230,7 @@ describe('ruleDraftMixin', () => {
     wrapper.vm.initializeDesignerDraftTracking('{"script":"old"}')
     wrapper.vm.serializeDesignerDraft = () => '{"script":"new"}'
     wrapper.vm.captureDesignerDraftState()
-    wrapper.vm.$confirm = vi.fn().mockRejectedValueOnce(new Error('cancel'))
+    wrapper.vm.requestDesignerChoice = async () => ({ action: 'cancel' })
 
     await wrapper.vm.switchDesignerSource('REVISION:5')
 
@@ -231,7 +252,7 @@ describe('ruleDraftMixin', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: {
           id: 6,
@@ -250,12 +271,11 @@ describe('ruleDraftMixin', () => {
       '{"script":"x = input.x"}'
     )
 
-    expect(definitionApi.saveContent).toHaveBeenCalledWith({
-      definitionId: 30,
-      revisionId: 6,
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({
+      revisionId: '6',
       lockVersion: 4,
       modelJson: '{"script":"x = input.x"}',
-    })
+    }))
     expect(result.compileSuccess).toBe(true)
     expect(wrapper.vm.draftRevision.lockVersion).toBe(5)
     wrapper.unmount()
@@ -274,7 +294,7 @@ describe('ruleDraftMixin', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: {
           id: 6,
@@ -299,116 +319,45 @@ describe('ruleDraftMixin', () => {
       unknownField: 'must-not-pass',
     })
 
-    expect(definitionApi.saveContent).toHaveBeenCalledWith({
-      definitionId: 30,
-      revisionId: 6,
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({
+      revisionId: '6',
       lockVersion: 4,
       modelJson: '{"script":"trusted"}',
       openApiConfigJson: '{"enabled":true}',
       updateOpenApiConfig: true,
-    })
+    }))
     wrapper.unmount()
   })
 
-  test('无 DRAFT 时只读展示当前已发布修订且点击开始编辑后才创建草稿', async () => {
-    definitionApi.listRuleRevisions.mockResolvedValueOnce({
-      data: [
-        {
-          id: 5,
-          definitionId: 30,
-          revisionNo: 1,
-          state: 'PUBLISHED',
-          modelJson: '{}',
-        },
-      ],
-    })
-    definitionApi.createDraftRevision.mockResolvedValueOnce({
-      data: {
-        id: 6,
-        definitionId: 30,
-        revisionNo: 2,
-        state: 'DRAFT',
-        lockVersion: 0,
-        modelJson: '{}',
-      },
-    })
-    definitionApi.saveContent.mockResolvedValueOnce({
-      data: {
-        revision: {
-          id: 6,
-          definitionId: 30,
-          revisionNo: 2,
-          state: 'DRAFT',
-          lockVersion: 1,
-          modelJson: '{"script":"editable"}',
-        },
-        compileSuccess: true,
-        issues: [],
-      },
-    })
+  test('已发布修订直接编辑页面副本，只在明确暂存时原子创建并保存', async () => {
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [{ id: 5, definitionId: 30, revisionNo: 1, state: 'PUBLISHED', modelJson: '{}' }] })
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 6, state: 'DRAFT', lockVersion: 1, modelJson: '{"script":"editable"}' }, compileSuccess: true, issues: [] } })
     const wrapper = mountHost()
     await flushPromises()
-
-    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(true)
     expect(wrapper.vm.draftRevision).toBeNull()
-    expect(wrapper.vm.viewRevision).toMatchObject({ id: 5, state: 'PUBLISHED' })
-
-    await wrapper.vm.forkViewRevision()
-
-    expect(definitionApi.createDraftRevision).toHaveBeenCalledWith(30, 5)
-    expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    const result = await wrapper.vm.saveDraftModel('{"script":"editable"}')
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ sourceType: 'REVISION', sourceId: '5', modelJson: '{"script":"editable"}' }))
+    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    expect(result.compileSuccess).toBe(true)
     expect(wrapper.vm.viewRevision).toMatchObject({ id: 6, state: 'DRAFT' })
-
-    await wrapper.vm.saveDraftModel('{"script":"editable"}')
-
-    expect(definitionApi.saveContent).toHaveBeenCalledWith({
-      definitionId: 30,
-      revisionId: 6,
-      lockVersion: 0,
-      modelJson: '{"script":"editable"}',
-    })
-    expect(definitionApi.ensureDraftRevision).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  test('没有治理修订时只读加载旧版内容且点击开始编辑后才创建草稿', async () => {
+  test('没有修订的规则直接加载初始内容，明确暂存才产生首个草稿', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
-    definitionApi.getContent.mockResolvedValueOnce({
-      data: {
-        id: 18,
-        definitionId: 30,
-        modelJson: '{"rules":[{"id":"legacy"}]}',
-      },
-    })
-    definitionApi.createDraftRevision.mockResolvedValueOnce({
-      data: {
-        id: 6,
-        definitionId: 30,
-        revisionNo: 1,
-        state: 'DRAFT',
-        lockVersion: 0,
-        modelJson: '{"rules":[{"id":"legacy"}]}',
-      },
-    })
+    definitionApi.getContent.mockResolvedValueOnce({ data: { modelJson: '{"rules":[]}' } })
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 6, state: 'DRAFT', lockVersion: 1 } } })
     const wrapper = mountHost()
     await flushPromises()
-
-    expect(wrapper.vm.viewRevision).toMatchObject({
-      id: 'legacy-content:30',
-      definitionId: 30,
-      state: 'LEGACY',
-      modelJson: '{"rules":[{"id":"legacy"}]}',
-    })
-    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
-    expect(wrapper.vm.canEditDraft).toBe(false)
-    expect(wrapper.vm.canForkViewRevision).toBe(true)
-
-    await wrapper.vm.forkViewRevision()
-
-    expect(definitionApi.createDraftRevision).toHaveBeenCalledWith(30)
-    expect(wrapper.vm.viewRevision).toMatchObject({ id: 6, state: 'DRAFT' })
+    expect(wrapper.vm.viewRevision).toMatchObject({ state: 'LEGACY', modelJson: '{"rules":[]}' })
     expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    await wrapper.vm.saveDraftModel('{"rules":[{"id":"local"}]}')
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ modelJson: '{"rules":[{"id":"local"}]}' }))
+    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -455,7 +404,7 @@ describe('ruleDraftMixin', () => {
     wrapper.unmount()
   })
 
-  test('编译失败仍更新锁与诊断且不调用旧编译接口', async () => {
+  test('编译失败拒绝保存且不更新锁', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [
         {
@@ -467,7 +416,7 @@ describe('ruleDraftMixin', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: {
           id: 6,
@@ -483,18 +432,15 @@ describe('ruleDraftMixin', () => {
     const wrapper = mountHost()
     await flushPromises()
 
-    const result = await wrapper.vm.saveDraftModel('invalid ql')
+    await expect(wrapper.vm.saveDraftModel('invalid ql')).rejects.toThrow('脚本解析失败')
 
-    expect(result.compileSuccess).toBe(false)
-    expect(wrapper.vm.draftRevision.lockVersion).toBe(5)
-    expect(wrapper.vm.draftIssues).toEqual([
-      { code: 'QL_PARSE_ERROR', severity: 'ERROR' },
-    ])
+    expect(wrapper.vm.draftRevision.lockVersion).toBe(4)
+    expect(wrapper.vm.draftIssues).toEqual([])
     expect(definitionApi.compileRule).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  test('保存响应缺少 revision 时拒绝继续沿用旧锁', async () => {
+  test('暂存响应无效时保留页面内容并标记未暂存', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [
         {
@@ -506,17 +452,18 @@ describe('ruleDraftMixin', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: { compileSuccess: true, issues: [] },
     })
     const wrapper = mountHost()
     await flushPromises()
 
     await expect(wrapper.vm.saveDraftModel('{}')).rejects.toThrow(
-      '草稿保存响应缺少 revision'
+      '草稿保存响应无效'
     )
-    expect(wrapper.vm.draftRevision).toBeNull()
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.draftRevision.id).toBe(6)
+    expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(wrapper.vm.designerActionState).toBe('DIRTY')
     wrapper.unmount()
   })
 
@@ -575,7 +522,7 @@ describe('ruleDraftMixin', () => {
       errorMessage: 'revision query failed',
     })
     await expect(wrapper.vm.saveDraftModel('{}')).rejects.toThrow(
-      '当前规则没有可编辑草稿'
+      '当前规则没有可编辑内容'
     )
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -604,7 +551,7 @@ describe('ruleDraftMixin', () => {
       errorMessage: 'initial query failed',
     })
     await expect(wrapper.vm.saveDraftModel('{}')).rejects.toThrow(
-      '当前规则没有可编辑草稿'
+      '当前规则没有可编辑内容'
     )
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -658,7 +605,7 @@ describe('ruleDraftMixin', () => {
     await flushPromises()
 
     expect(definitionApi.listRuleRevisions).toHaveBeenCalledTimes(2)
-    expect(wrapper.vm.$refs.host.canEditDraft).toBe(false)
+    expect(wrapper.vm.$refs.host.canEditDraft).toBe(true)
     expect(wrapper.vm.$refs.host.viewRevision.state).toBe('REVIEW')
     expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -677,6 +624,7 @@ describe('ruleDraftMixin', () => {
     const wrapper = mount({
       name: 'RouteBoundRuleDraftMixinHost',
       mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
       data() {
         return { definitionId: null }
       },
@@ -719,6 +667,7 @@ describe('ruleDraftMixin', () => {
     const wrapper = mount({
       name: 'ExpressionRoundTripRuleDraftMixinHost',
       mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
       data() {
         return { definitionId: null }
       },
@@ -760,6 +709,7 @@ describe('ruleDraftMixin stable source loading', () => {
     return mount({
       name: 'RuleDraftMixinStableSourceHost',
       mixins: [ruleDraftMixin],
+    methods: { requestDesignerChoice: async () => ({ action: 'save', saveMode: 'OVERWRITE' }) },
       template: '<div />',
     }, {
       mocks: {
@@ -789,7 +739,7 @@ describe('ruleDraftMixin stable source loading', () => {
     expect(definitionApi.getRuleRevision).toHaveBeenCalledWith(30, '4')
     expect(wrapper.vm.viewRevision).toMatchObject({ id: 4, modelJson: '{"source":"exact"}' })
     expect(wrapper.vm.draftRevision.id).toBe(6)
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(true)
     wrapper.unmount()
   })
 
@@ -812,7 +762,7 @@ describe('ruleDraftMixin stable source loading', () => {
       sourceId: '9',
       modelJson: '{"source":"snapshot"}',
     })
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(true)
     wrapper.unmount()
   })
 
@@ -854,7 +804,7 @@ describe('ruleDraftMixin stable source loading', () => {
     definitionApi.getVersionById.mockResolvedValueOnce({
       data: { id: 9, version: 7, modelJson: '{"source":"snapshot"}' },
     })
-    definitionApi.createDraftFromSource.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: { id: 12, revisionNo: 8, state: 'DRAFT', lockVersion: 1 },
         issues: [{ code: 'WARN' }],
@@ -863,11 +813,11 @@ describe('ruleDraftMixin stable source loading', () => {
     const wrapper = mountWithRoute({ sourceType: 'VERSION', sourceId: '9' })
     await flushPromises()
 
-    await wrapper.vm.forkViewRevision()
+    await wrapper.vm.saveDraftModel('{"edited":true}')
 
-    expect(definitionApi.createDraftFromSource).toHaveBeenCalledWith(30, {
-      sourceType: 'VERSION', sourceId: '9',
-    })
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({
+      sourceType: 'VERSION', sourceId: '9', modelJson: '{"edited":true}',
+    }))
     expect(wrapper.vm.draftRevision).toMatchObject({ id: 12, state: 'DRAFT' })
     expect(wrapper.vm.viewRevision).toMatchObject({ id: 12, state: 'DRAFT' })
     expect(wrapper.vm.draftIssues).toEqual([{ code: 'WARN' }])
@@ -877,7 +827,7 @@ describe('ruleDraftMixin stable source loading', () => {
     wrapper.unmount()
   })
 
-  test('查看历史版本时已有 DRAFT 则直接切回待修改修订而不重复建草稿', async () => {
+  test('历史版本编辑时不切走或覆盖已有暂存草稿', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, revisionNo: 8, state: 'DRAFT', lockVersion: 2 }],
     })
@@ -887,13 +837,13 @@ describe('ruleDraftMixin stable source loading', () => {
     const wrapper = mountWithRoute({ sourceType: 'VERSION', sourceId: '9' })
     await flushPromises()
 
-    const result = await wrapper.vm.forkViewRevision()
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 10, state: 'DRAFT', lockVersion: 1 }, compileSuccess: true } })
+    await wrapper.vm.saveDraftModel('{}')
 
     expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
-    expect(result).toEqual({ revision: expect.objectContaining({ id: 6, state: 'DRAFT' }) })
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({
-      query: { sourceType: 'REVISION', sourceId: '6' },
-    })
+    expect(wrapper.vm.viewRevision.id).toBe(10)
+    expect(wrapper.vm.$router.replace).toHaveBeenCalled()
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ saveMode: 'NEW', sourceType: 'VERSION', sourceId: '9' }))
     wrapper.unmount()
   })
 
@@ -904,7 +854,7 @@ describe('ruleDraftMixin stable source loading', () => {
         { id: 5, revisionNo: 7, state: 'PUBLISHED' },
       ],
     })
-    definitionApi.listVersions.mockResolvedValueOnce({
+    definitionApi.listPublishedVersions.mockResolvedValueOnce({
       data: [{ id: 9, version: 7 }],
     })
     definitionApi.getVersionById.mockResolvedValueOnce({
@@ -913,15 +863,17 @@ describe('ruleDraftMixin stable source loading', () => {
     const wrapper = mountWithRoute({ sourceType: 'VERSION', sourceId: '9' })
     await flushPromises()
 
-    expect(wrapper.vm.designerSourceOptions).toEqual([
+    expect(wrapper.vm.designerSourceOptions).toEqual(expect.arrayContaining([
       {
         value: 'REVISION:6',
-        label: '待修改修订 v8',
+        label: '草稿 · 8',
+        id: '6', state: 'DRAFT', lockVersion: 2, sourceLabel: '',
         group: 'REVISION',
       },
       {
         value: 'REVISION:5',
-        label: '已发布修订 v7',
+        label: '已发布 · 7',
+        id: '5', state: 'PUBLISHED', lockVersion: undefined, sourceLabel: '',
         group: 'REVISION',
       },
       {
@@ -929,7 +881,8 @@ describe('ruleDraftMixin stable source loading', () => {
         label: '发布版本 v7',
         group: 'VERSION',
       },
-    ])
+    ]))
+    expect(wrapper.vm.designerSourceOptions[0].group).toBe('VERSION')
     expect(wrapper.vm.selectedDesignerSource).toBe('VERSION:9')
 
     wrapper.vm.switchDesignerSource('REVISION:6')
@@ -940,22 +893,23 @@ describe('ruleDraftMixin stable source loading', () => {
     wrapper.unmount()
   })
 
-  test('发布版本列表较慢时不阻塞当前 DRAFT 进入可编辑状态', async () => {
+  test('默认入口等待版本列表确认最新版本，不提前打开草稿', async () => {
     let resolveVersions
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [{ id: 6, revisionNo: 8, state: 'DRAFT', lockVersion: 2 }],
     })
-    definitionApi.listVersions.mockReturnValueOnce(new Promise((resolve) => {
+    definitionApi.listPublishedVersions.mockReturnValueOnce(new Promise((resolve) => {
       resolveVersions = resolve
     }))
 
     const wrapper = mountWithRoute({})
     await flushPromises()
 
-    expect(wrapper.vm.draftGuardLoaded).toBe(true)
-    expect(wrapper.vm.canEditDraft).toBe(true)
+    expect(wrapper.vm.draftGuardLoaded).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(false)
     expect(wrapper.vm.designerSourcesLoading).toBe(true)
 
+    definitionApi.getVersionById.mockResolvedValueOnce({ data: { id: 9, version: 7, modelJson: '{}' } })
     resolveVersions({ data: [{ id: 9, version: 7 }] })
     await flushPromises()
 
@@ -973,17 +927,17 @@ describe('ruleDraftMixin stable source loading', () => {
     definitionApi.getVersionById.mockResolvedValueOnce({
       data: { id: 9, version: 7, modelJson: '{"source":"snapshot"}' },
     })
-    definitionApi.createDraftFromSource.mockRejectedValueOnce(
+    definitionApi.saveDesignerDraft.mockRejectedValueOnce(
       Object.assign(new Error('conflict'), { response: { status: 409 } })
     )
     const wrapper = mountWithRoute({ sourceType: 'VERSION', sourceId: '9' })
     await flushPromises()
     const viewed = wrapper.vm.viewRevision
 
-    await expect(wrapper.vm.forkViewRevision()).rejects.toThrow('conflict')
+    await expect(wrapper.vm.saveDraftModel('{"edited":true}')).rejects.toThrow('conflict')
 
     expect(wrapper.vm.viewRevision).toBe(viewed)
-    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('conflict')
+    expect(wrapper.vm.designerActionState).toBe('SAVE_CONFLICT')
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -997,7 +951,9 @@ describe('ruleDraftMixin stable source loading', () => {
     await flushPromises()
 
     expect(wrapper.vm.canForkViewRevision).toBe(false)
-    await expect(wrapper.vm.forkViewRevision()).rejects.toThrow('当前节点不允许派生草稿')
+    expect(wrapper.vm.canEditDraft).toBe(true)
+    await wrapper.vm.forkViewRevision()
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
     expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -1083,7 +1039,7 @@ describe('ruleDraftMixin stable source loading', () => {
       state: 'PUBLISHED',
       modelJson: '{"source":"historical"}',
     })
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(true)
     wrapper.unmount()
   })
 
@@ -1107,18 +1063,18 @@ describe('ruleDraftMixin stable source loading', () => {
     definitionApi.getRuleRevision.mockResolvedValueOnce({
       data: { id: 9007199254740992, revisionNo: 2, state: 'PUBLISHED' },
     })
-    definitionApi.createDraftFromSource.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: { revision: { id: 12, state: 'DRAFT', lockVersion: 1 }, issues: [] },
     })
     const wrapper = mountWithRoute({ sourceType: 'REVISION', sourceId })
     await flushPromises()
 
-    await wrapper.vm.forkViewRevision()
+    await wrapper.vm.saveDraftModel('{"edited":true}')
 
-    expect(definitionApi.createDraftFromSource).toHaveBeenCalledWith(30, {
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({
       sourceType: 'REVISION',
-      sourceId,
-    })
+      sourceId, modelJson: '{"edited":true}',
+    }))
     wrapper.unmount()
   })
 
@@ -1145,7 +1101,7 @@ describe('ruleDraftMixin stable source loading', () => {
       modelJson: '{"source":"exact"}',
     })
     expect(wrapper.vm.draftRevision).toBeNull()
-    expect(wrapper.vm.canEditDraft).toBe(false)
+    expect(wrapper.vm.canEditDraft).toBe(true)
     wrapper.unmount()
   })
 
@@ -1265,13 +1221,14 @@ describe('ruleDraftMixin stable source loading', () => {
     definitionApi.getRuleRevision.mockResolvedValueOnce({
       data: { id: 4, revisionNo: 2, state: 'PUBLISHED', modelJson: '{"source":"current"}' },
     })
-    definitionApi.createDraftFromSource.mockReturnValueOnce(new Promise((resolve) => {
+    definitionApi.saveDesignerDraft.mockReturnValueOnce(new Promise((resolve) => {
       resolveFork = resolve
     }))
     const wrapper = mountWithRoute({ sourceType: 'VERSION', sourceId: '9' })
     await flushPromises()
 
-    const fork = wrapper.vm.forkViewRevision()
+    const fork = wrapper.vm.saveDraftModel('{"edited":true}')
+    await flushPromises()
     wrapper.vm.$route.query.sourceType = 'REVISION'
     wrapper.vm.$route.query.sourceId = '4'
     ruleDraftMixin.watch['$route.query'].call(wrapper.vm)
@@ -1289,7 +1246,7 @@ describe('ruleDraftMixin stable source loading', () => {
     definitionApi.listRuleRevisions
       .mockResolvedValueOnce({ data: [{ id: 6, revisionNo: 3, state: 'DRAFT', lockVersion: 4 }] })
       .mockResolvedValueOnce({ data: [{ id: 6, revisionNo: 3, state: 'DRAFT', lockVersion: 4 }] })
-    definitionApi.saveContent.mockReturnValueOnce(new Promise((resolve) => {
+    definitionApi.saveDesignerDraft.mockReturnValueOnce(new Promise((resolve) => {
       resolveSave = resolve
     }))
     definitionApi.getRuleRevision.mockResolvedValueOnce({

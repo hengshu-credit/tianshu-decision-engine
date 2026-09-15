@@ -195,40 +195,25 @@ describe('RuleDetail 生命周期治理', () => {
     wrapper.unmount()
   })
 
-  test('forks a version source once and navigates to the returned DRAFT revision', async () => {
+  test('从版本记录进入设计时不创建草稿，直接打开指定版本', async () => {
     const wrapper = await mountAndWait()
-    definitionApi.createDraftFromSource.mockResolvedValueOnce({
-      data: { revision: { id: 101, state: 'DRAFT' }, issues: [] },
-    })
-
     await wrapper.vm.forkDesignerSource('VERSION', 92)
-
-    expect(definitionApi.createDraftFromSource).toHaveBeenCalledWith(1, {
-      sourceType: 'VERSION', sourceId: '92',
-    })
-    expect(definitionApi.rollbackVersion).not.toHaveBeenCalled()
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({
-      query: { sourceType: 'REVISION', sourceId: '101' },
-    }))
+    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
+    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({ query: { sourceType: 'VERSION', sourceId: '92' } }))
     wrapper.unmount()
   })
 
-  test('keeps the version dialog and current comparison when a source fork conflicts', async () => {
+  test('打开版本不改变已有对比选择，也不接触草稿', async () => {
     const wrapper = await mountAndWait()
     wrapper.vm.versionVisible = true
     wrapper.vm.leftVersionNumber = 3
     wrapper.vm.rightVersionNumber = 7
-    definitionApi.createDraftFromSource.mockRejectedValueOnce({
-      response: { status: 409, data: { message: '草稿已存在' } },
-    })
-
     await wrapper.vm.forkDesignerSource('VERSION', 92)
-
-    expect(wrapper.vm.versionVisible).toBe(true)
     expect(wrapper.vm.leftVersionNumber).toBe(3)
     expect(wrapper.vm.rightVersionNumber).toBe(7)
-    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('草稿已存在')
-    expect(wrapper.vm.$router.push).not.toHaveBeenCalled()
+    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -236,11 +221,12 @@ describe('RuleDetail 生命周期治理', () => {
     let resolveRequest
     const request = new Promise((resolve) => { resolveRequest = resolve })
     const wrapper = await mountAndWait()
-    definitionApi.createDraftFromSource.mockReturnValueOnce(request)
+    wrapper.vm.$router.push.mockReturnValueOnce(request)
 
     const first = wrapper.vm.forkDesignerSource('VERSION', 92)
     const second = wrapper.vm.forkDesignerSource('VERSION', 92)
-    expect(definitionApi.createDraftFromSource).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.$router.push).toHaveBeenCalledTimes(1)
+    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
     resolveRequest({ data: { revision: { id: 101, state: 'DRAFT' }, issues: [] } })
     await Promise.all([first, second])
     wrapper.unmount()
@@ -250,15 +236,15 @@ describe('RuleDetail 生命周期治理', () => {
     let resolveRequest
     const request = new Promise((resolve) => { resolveRequest = resolve })
     const wrapper = await mountAndWait()
-    definitionApi.createDraftFromSource.mockReturnValueOnce(request)
+    wrapper.vm.$router.push.mockReturnValueOnce(request)
 
     const forkRequest = wrapper.vm.forkDesignerSource('VERSION', 92)
     await wrapper.vm.openVersionDesigner({ id: 93, version: 8 })
     resolveRequest({ data: { revision: { id: 101, state: 'DRAFT' }, issues: [] } })
     await forkRequest
 
-    expect(wrapper.vm.$router.push).toHaveBeenCalledTimes(1)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({
+    expect(wrapper.vm.$router.push).toHaveBeenCalledTimes(2)
+    expect(wrapper.vm.$router.push).toHaveBeenLastCalledWith(expect.objectContaining({
       query: { sourceType: 'VERSION', sourceId: '93' },
     }))
     wrapper.unmount()
@@ -270,14 +256,15 @@ describe('RuleDetail 生命周期治理', () => {
     const wrapper = await mountAndWait()
     const push = wrapper.vm.$router.push
     const message = wrapper.vm.$message.error
-    definitionApi.createDraftFromSource.mockReturnValueOnce(request)
+    wrapper.vm.$router.push.mockReturnValueOnce(request)
 
     const forkRequest = wrapper.vm.forkDesignerSource('VERSION', 92)
     wrapper.unmount()
     resolveRequest({ data: { revision: { id: 101, state: 'DRAFT' }, issues: [] } })
     await forkRequest
 
-    expect(push).not.toHaveBeenCalled()
+    expect(push).toHaveBeenCalledTimes(1)
+    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
     expect(message).not.toHaveBeenCalled()
   })
 
@@ -635,7 +622,7 @@ describe('RuleDetail — 辅助方法', () => {
   })
 
   test('statusLabel 返回正确的状态标签', () => {
-    expect(wrapper.vm.statusLabel(0)).toBe('草稿')
+    expect(wrapper.vm.statusLabel(0)).toBe('未发布')
     expect(wrapper.vm.statusLabel(1)).toBe('已发布')
     expect(wrapper.vm.statusLabel(2)).toBe('已下线')
   })

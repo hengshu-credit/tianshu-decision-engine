@@ -18,9 +18,15 @@ public class RuleExecutionSession {
     private final boolean testMode;
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
+    private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
+
+    Map<String, com.hengshucredit.rule.model.entity.RulePublished> getResolvedRules() { return resolvedRules; }
     private final Deque<RuleTraceFrame> traceStack = new ArrayDeque<>();
     private final RuleTraceFrame rootTrace;
     private final ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot;
+    private ArtifactRuntimeSnapshotService.RuntimeSnapshot currentArtifactSnapshot;
+    ArtifactRuntimeSnapshotService.RuntimeSnapshot getCurrentArtifactSnapshot() { return currentArtifactSnapshot; }
+    void setCurrentArtifactSnapshot(ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) { currentArtifactSnapshot = snapshot; }
 
     RuleExecutionSession(Long projectId, String projectCode, Map<String, Object> values,
                          Map<String, Object> originalInput, boolean testMode,
@@ -36,6 +42,7 @@ public class RuleExecutionSession {
         this.rootOutputScriptNames = rootOutputScriptNames;
         this.rootTrace = rootTrace;
         this.artifactRuntimeSnapshot = artifactRuntimeSnapshot;
+        this.currentArtifactSnapshot = artifactRuntimeSnapshot;
         if (rootRuleCode != null && !rootRuleCode.trim().isEmpty()) {
             this.ruleStack.addLast(rootRuleCode);
         }

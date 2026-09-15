@@ -333,9 +333,9 @@ public class GovernanceApprovalService {
                             actor,
                             request.getSourceVersionId()));
         } catch (DuplicateKeyException collision) {
-            return markConflict(request, actor, review,
-                    "RESOURCE_IDENTITY_EXISTS",
-                    "资源唯一标识已存在，请修改后重新发起审批");
+            // A participating resource transaction may already be rollback-only.
+            // Preserve the original failure and roll back the entire approval atomically.
+            throw collision;
         }
         Long appliedResourceId = requireAppliedResourceId(applied);
 

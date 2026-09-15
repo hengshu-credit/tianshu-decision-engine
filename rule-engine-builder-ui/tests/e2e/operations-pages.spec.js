@@ -261,8 +261,7 @@ test('血缘共享依赖在部分规则收起及对象展开后保持层级和�
     expect(ruleXs[0]).toBeLessThan(currentX)
     if (expanded) {
       const fieldX = (await node('DATA_FIELD:125').boundingBox()).x
-      expect(objectX).toBeLessThan(fieldX)
-      expect(fieldX).toBeLessThan(ruleXs[0])
+      expect(fieldX).toBeLessThan(objectX)
     }
   }
   await assertLayers(false)
@@ -289,6 +288,54 @@ test('血缘共享依赖在部分规则收起及对象展开后保持层级和�
   expect(pageErrors).toEqual([])
   assertClean()
 })
+
+for (const direction of ['UPSTREAM', 'DOWNSTREAM']) {
+  test(`血缘对象在 ${direction} 按对象、子字段、子子字段向外展开`, async ({ page }) => {
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    const apiData = createOperationsApiData()
+    const startNode = { id: 'RULE:99', refId: 99, type: 'RULE', code: 'credit_rule', label: '授信规则' }
+    const object = { id: 'DATA_OBJECT:2', refId: 2, type: 'DATA_OBJECT', code: 'request', label: '申请数据' }
+    const parent = { id: 'DATA_FIELD:3', refId: 3, type: 'DATA_FIELD', code: 'profile', dataObject: object, parentNodeId: object.id, hasFieldChildren: true }
+    const child = { id: 'DATA_FIELD:4', refId: 4, type: 'DATA_FIELD', code: 'credit', dataObject: object, parentNodeId: parent.id, ancestorFields: [parent], hasFieldChildren: true }
+    const leaf = { id: 'DATA_FIELD:5', refId: 5, type: 'DATA_FIELD', code: 'score', dataObject: object, parentNodeId: child.id, ancestorFields: [parent, child] }
+    apiData.set('/api/rule/lineage/options', [{ ...startNode, id: 99, displayName: '授信规则 (credit_rule)' }])
+    apiData.set('/api/rule/lineage/graph', ({ url }) => url.searchParams.get('nodeId') === '4'
+      ? { startNode: child, nodes: [child, leaf], edges: [{ from: child.id, to: leaf.id, label: '包含字段' }] }
+      : { startNode, nodes: [startNode, child], edges: [{
+        from: direction === 'UPSTREAM' ? child.id : startNode.id,
+        to: direction === 'UPSTREAM' ? startNode.id : child.id, label: '规则字段'
+      }] })
+    const { assertClean, requests } = await installDistRoutes(page, { apiData })
+    await page.goto('http://tianshu.local/index.html#/lineage')
+    await page.locator('.el-select').filter({ has: page.getByRole('combobox', { name: '节点类型', exact: true }) }).click()
+    await page.getByRole('option', { name: '规则', exact: true }).click()
+    await page.getByRole('combobox', { name: '起点', exact: true }).click()
+    await page.getByRole('option', { name: '授信规则 (credit_rule)', exact: true }).click()
+    await page.locator('.el-radio-button').filter({ hasText: direction === 'UPSTREAM' ? '上游' : '下游' }).click()
+    await page.getByRole('button', { name: '生成血缘图', exact: true }).click()
+    const node = id => page.locator(`[data-node-id="${id}"]`)
+    await expect(node(object.id)).toBeVisible()
+    await expect(node(parent.id)).toHaveCount(0)
+    await node(object.id).getByRole('button', { name: '展开字段' }).click()
+    await expect(node(parent.id)).toBeVisible()
+    await expect(node(child.id)).toHaveCount(0)
+    await node(parent.id).getByRole('button', { name: '展开节点' }).click()
+    await node(child.id).getByRole('button', { name: '展开节点' }).click()
+    await expect(node(leaf.id)).toBeVisible()
+    const positions = [await page.locator('.current-node').boundingBox()]
+    for (const id of [object.id, parent.id, child.id, leaf.id]) positions.push(await node(id).boundingBox())
+    if (direction === 'UPSTREAM') positions.reverse()
+    for (let i = 1; i < positions.length; i++) expect(positions[i - 1].x).toBeLessThan(positions[i].x)
+    await expect(page.locator('.edge-path')).toHaveCount(4)
+    await node(parent.id).getByRole('button', { name: '收起节点' }).click()
+    await expect(node(child.id)).toHaveCount(0)
+    await expect(node(leaf.id)).toHaveCount(0)
+    await node(parent.id).getByRole('button', { name: '展开节点' }).click()
+    await expect(node(leaf.id)).toBeVisible()
+    expect(requests.filter(request => new URL(request.url).searchParams.get('nodeId') === '4')).toHaveLength(1)
+    assertClean()
+  })
+}
 
 test('登录鉴权开启后隐藏无编辑权限的名单操作', async ({ page }) => {
   const fixtures = createOperationsApiData()

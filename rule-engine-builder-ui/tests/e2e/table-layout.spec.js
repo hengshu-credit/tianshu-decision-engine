@@ -2,7 +2,7 @@ const { expect, test } = require('@playwright/test')
 const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createOperationsApiData } = require('./support/operationsFixtures.cjs')
 
-const listPages = ['project', 'rule', 'variable', 'list', 'datasource', 'database', 'model', 'function', 'experiment', 'log', 'billing', 'account', 'approval']
+const listPages = ['project', 'rule', 'variable', 'list', 'datasource', 'datasource?tab=api', 'database', 'model', 'function', 'experiment', 'log', 'billing', 'account', 'approval']
 
 for (const colorScheme of ['LIGHT', 'DARK']) {
   for (const route of listPages) {
@@ -45,6 +45,9 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
         for (const cell of element.querySelectorAll('th, td')) {
           const content = cell.querySelector('.cell')
           if (content && getComputedStyle(content).whiteSpace !== 'nowrap') problems.push(`换行: ${cell.textContent.trim()}`)
+          if (cell.classList.contains('table-operation-column') && content && content.scrollWidth > content.clientWidth) {
+            problems.push(`操作列内容被裁剪: ${cell.textContent.trim()}`)
+          }
           if (cell.tagName === 'TH' || cell.classList.contains('el-table-fixed-column--right')) {
             context.clearRect(0, 0, 1, 1)
             context.fillStyle = getComputedStyle(cell).backgroundColor

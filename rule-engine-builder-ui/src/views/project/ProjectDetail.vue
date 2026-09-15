@@ -166,7 +166,7 @@
           ><el-tag
             :type="{ 0: 'info', 1: 'success', 2: 'warning' }[row.status]"
             size="small"
-            >{{ ['草稿', '已发布', '已下线'][row.status] }}</el-tag
+            >{{ ['未发布', '已发布', '已下线'][row.status] }}</el-tag
           ></template
         >
       </el-table-column>
@@ -261,10 +261,11 @@
     </el-tabs>
 
     <!-- 新建规则对话框 -->
-    <el-dialog title="新建规则" v-model="dlgVis" width="500px">
+    <el-dialog title="新建规则" v-model="dlgVis" width="500px" :close-on-click-modal="false" :show-close="!creating" :close-on-press-escape="!creating">
       <el-form
         ref="f"
         :model="fm"
+        :disabled="creating"
         :rules="{
           ruleCode: [{ required: true, message: '必填', trigger: 'blur' }],
           ruleName: [{ required: true, message: '必填', trigger: 'blur' }],
@@ -291,6 +292,7 @@
             <el-option label="复杂评分卡" value="SCORE_ADV" />
             <el-option label="QL脚本" value="SCRIPT" />
           </el-select>
+          <rule-model-type-help :model-type="fm.modelType" />
         </el-form-item>
         <el-form-item label="描述"
           ><el-input v-model="fm.description" type="textarea" :rows="2"
@@ -298,14 +300,15 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="dlgVis = false">取消</el-button
+          <el-button size="small" :disabled="creating" @click="dlgVis = false">取消</el-button
           ><el-button
             v-permission="'rule:edit'"
             size="small"
-            type="primary"
-            @click="submit"
-            >确定</el-button
+            :disabled="creating"
+            @click="submit(false)"
+            >仅创建</el-button
           >
+          <el-button v-permission="'rule:edit'" size="small" type="primary" :loading="creating" :disabled="creating" @click="submit(true)">创建并继续配置</el-button>
         </div>
       </template>
     </el-dialog>
@@ -394,7 +397,7 @@
             ><el-tag
               :type="{ 0: 'info', 1: 'success', 2: 'warning' }[row.status]"
               size="small"
-              >{{ ['草稿', '已发布', '已下线'][row.status] }}</el-tag
+              >{{ ['未发布', '已发布', '已下线'][row.status] }}</el-tag
             ></template
           >
         </el-table-column>
@@ -454,9 +457,11 @@ import request from '@/api/request'
 import { restorePageState, savePageState } from '@/utils/pageStateCache'
 import ProjectWorkbenchOverview from '@/components/ProjectWorkbenchOverview.vue'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
+import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
+import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchActions'
 export default {
   name: 'ProjectDetail',
-  components: { ProjectWorkbenchOverview },
+  components: { ProjectWorkbenchOverview, RuleModelTypeHelp },
   data() {
     return {
       pid: null,
@@ -465,6 +470,7 @@ export default {
       workbench: null,
       workbenchLoading: false,
       workbenchError: '',
+      workbenchRequestId: 0,
       loading: false,
       list: [],
       total: 0,
@@ -483,6 +489,7 @@ export default {
       createTimeRange: null,
       updateTimeRange: null,
       dlgVis: false,
+      creating: false,
       fm: { ruleCode: '', ruleName: '', modelType: '', description: '' },
       // 添加全局规则相关
       addRuleDlgVis: false,
@@ -521,36 +528,32 @@ export default {
       }
     },
     async loadWorkbench() {
+      const requestId = ++this.workbenchRequestId
       this.workbenchLoading = true
       this.workbenchError = ''
+      this.workbench = null
       try {
         const response = await getProjectWorkbench(this.pid)
+        if (requestId !== this.workbenchRequestId) return
         this.workbench = response.data
       } catch (e) {
+        if (requestId !== this.workbenchRequestId) return
         this.workbenchError = e.message || '请稍后重试'
       } finally {
-        this.workbenchLoading = false
+        if (requestId === this.workbenchRequestId) this.workbenchLoading = false
       }
     },
     openWorkbenchAction(item) {
       if (!item || !item.actionCode) return
+      if (!canUseWorkbenchAction(item.actionCode)) {
+        this.$message.warning('当前账号没有对应模块的访问权限，请联系项目管理员')
+        return
+      }
       if (item.actionCode === 'REFRESH_WORKBENCH') {
         this.loadWorkbench()
         return
       }
-      const routes = {
-        MANAGE_PROJECT: '/project',
-        CONFIGURE_FIELDS: '/variable',
-          CONFIGURE_SOURCES: '/datasource',
-          CONFIGURE_EXTERNAL_SOURCES: '/datasource',
-          CONFIGURE_DATABASE_SOURCES: '/database',
-        CONFIGURE_MODELS: '/model',
-        CONFIGURE_RULES: '/rule',
-        TEST_RULES: '/test',
-        REVIEW_APPROVALS: '/approval',
-        VIEW_LOGS: '/log',
-      }
-      const path = routes[item.actionCode]
+      const path = workbenchActionRoute(item.actionCode)
       if (!path) return
       this.$router.push({
         path,
@@ -710,14 +713,28 @@ export default {
         this.$router.push('/approval/' + response.data.id)
       }
     },
-    submit() {
-      this.$refs.f.validate(async (v) => {
+    async submit(continueEditing = false) {
+      if (this.creating) return
+      this.creating = true
+      try {
+        const v = await new Promise(resolve => this.$refs.f.validate(resolve))
         if (!v) return
-        await createDefinition({ ...this.fm, projectId: this.pid })
+        const response = await createDefinition({ ...this.fm, projectId: this.pid })
         this.$message.success('创建成功')
         this.dlgVis = false
-        this.load()
-      })
+        await Promise.all([this.load(), this.loadWorkbench()])
+        const created = response && response.data
+        if (continueEditing && created && created.id) {
+          await this.$router.push({ ...ruleDesignerLocation({ ...this.fm, id: created.id }),
+            query: { projectId: String(this.pid) } })
+        } else if (continueEditing) {
+          this.$message.warning('规则已创建，请从项目规则列表进入详情继续配置')
+        }
+      } catch (e) {
+        if (!e || !e.requestErrorNotified) this.$message.error(this.dlgVis ? ((e && e.message) || '创建失败，请重试') : '规则已创建，请从项目规则列表重新进入详情')
+      } finally {
+        this.creating = false
+      }
     },
     // 打开添加全局规则对话框
     openAddRuleDialog() {

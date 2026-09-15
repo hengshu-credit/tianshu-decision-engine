@@ -12,6 +12,11 @@ public class RuleTraceFrame {
     private String traceId;
     private String traceKind = "RULE";
     private Long ruleId;
+    private Integer ruleVersion;
+    private Long revisionId;
+    private Long versionBindingId;
+    private Long bindingGeneration;
+    private String artifactDigest;
     private String ruleCode;
     private String ruleName;
     private String modelType;

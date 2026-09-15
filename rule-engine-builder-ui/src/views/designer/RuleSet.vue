@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -42,6 +43,8 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <span class="toolbar-label">执行模式</span>
         <el-select
@@ -67,30 +70,29 @@
           >版本历史</el-button
         >
         <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
           :can-test="designerCanTest"
           :state="designerActionState"
+          :busy="designerBusy"
           :recovery="designerRecoveryCandidate"
           :report="designerValidationReport"
           @save="handleSave"
-          @save-check="handleCompile"
+          @compile="handleCompile"
           @test="handleTest"
-          @lifecycle="goRuleLifecycle"
+          @publish="handlePublish"
           @restore="restoreDesignerRecovery"
           @discard-recovery="discardDesignerRecovery"
         />
       </div>
     </div>
 
-    <div v-if="loadingVars || varPickerOptions.length" class="rs-var-status">
-      <span v-if="loadingVars"
-        ><el-icon><el-icon-loading /></el-icon> 加载变量库...</span
-      >
-      <span v-else
-        ><el-icon><el-icon-s-custom /></el-icon> 已加载
-        {{ varPickerOptions.length }} 个变量/常量/对象字段</span
-      >
-    </div>
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
+
 
     <div class="rs-output-config">
       <div class="output-config-title">
@@ -138,6 +140,7 @@
           v-for="(rule, index) in model.rules"
           :key="rule.uid || index"
           class="rs-rule-card"
+          :data-validation-path="'$.rules[' + index + ']'"
           :class="{ 'is-disabled': !rule.enabled }"
           draggable="true"
           @dragstart="onDragStart(index)"
@@ -256,7 +259,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="RULE_SET"
-      :model-json-provider="serializeModel"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
 
@@ -309,15 +312,15 @@
               link
               size="small"
               type="warning"
-              @click="rollbackDraft(row)"
-              >恢复草稿</el-button
+              @click="loadVersionInDesigner(row)"
+              >载入此版本</el-button
             >
             <el-button
               link
               size="small"
               type="success"
               @click="openLifecycle"
-              >进入生命周期</el-button
+              >评审与发布</el-button
             >
           </template>
         </el-table-column>
@@ -364,7 +367,6 @@ import {
   DocumentChecked as ElIconSClaim,
   QuestionFilled as ElIconQuestion,
   Loading as ElIconLoading,
-  SetUp as ElIconSCustom,
   CollectionTag as ElIconCollectionTag,
   Rank as ElIconRank,
   Back as ElIconBack,
@@ -377,11 +379,9 @@ import {
   Bottom as ElIconBottom,
 } from '@element-plus/icons-vue'
 import {
-  executeRule,
   listVersions,
   getVersion,
   compareVersions,
-  rollbackVersion,
 } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleCallMixin from '@/mixins/ruleCallMixin'
@@ -458,7 +458,6 @@ export default {
     ElIconSClaim,
     ElIconQuestion,
     ElIconLoading,
-    ElIconSCustom,
     ElIconCollectionTag,
     ElIconRank,
   },
@@ -502,7 +501,7 @@ export default {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
-        if (content && content.modelJson && content.modelJson !== '{}') {
+        if (content && content.modelJson) {
           this.model = JSON.parse(content.modelJson)
         }
         this.normalizeModel()
@@ -736,32 +735,27 @@ export default {
     createRuleUid() {
       return 'rs-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8)
     },
-    async handleSave() {
-      try {
-        this.normalizeModel()
-        const resultVarError = this.validateResultVar()
-        if (resultVarError) {
-          this.$message.warning(resultVarError)
-          return false
-        }
-        this.repairLegacyRuleCallRefs(this.model)
-        const model = this.serializeModel()
-        const ruleCallErrors = this.validateRuleCallsInModel(model)
-        if (ruleCallErrors.length) {
-          this.showRuleCallErrors(ruleCallErrors)
-          return false
-        }
-        const modelJson = JSON.stringify(model)
-        const result = await this.saveDraftModel(modelJson)
-        this.refreshProjectRefs()
-        this.$message.success('草稿已保存')
-        return result
-      } catch (e) {
-        this.$message.error(
-          '保存失败: ' + (e && e.message ? e.message : '未知错误')
-        )
-        throw e
+    async performDesignerSave() {
+      this.normalizeModel()
+      const resultVarError = this.validateResultVar()
+      if (resultVarError) {
+        this.$message.warning(resultVarError)
+        return false
       }
+      this.repairLegacyRuleCallRefs(this.model)
+      const model = this.serializeModel()
+      const ruleCallErrors = this.validateRuleCallsInModel(model)
+      if (ruleCallErrors.length) {
+        this.showRuleCallErrors(ruleCallErrors)
+        return false
+      }
+      const modelJson = JSON.stringify(model)
+      const result = await this.saveDraftModel(modelJson)
+      if (!result) return false
+      this.refreshProjectRefs()
+      this.$message.success('草稿已保存')
+      return result
+
     },
     serializeModel() {
       const copy = JSON.parse(JSON.stringify(this.model))
@@ -778,11 +772,18 @@ export default {
     buildRuleCallValidationModel() {
       return this.serializeModel()
     },
-    async handleCompile() {
-      const result = await this.handleSave()
-      if (result === false) return false
-      return this.completeRuleCompile(result, {
-        onSuccess: () => this.loadProjectVars(this.definitionId),
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
     buildTestParamsTemplate() {
@@ -797,10 +798,7 @@ export default {
       this.testVisible = true
     },
     async doTest() {
-      const res = await executeRule({
-        definitionId: this.definitionId,
-        params: this.testParams,
-      })
+      const res = await this.executeDesignerPreview(this.testParams, 'RULE_SET')
       this.testResult = res && res.data ? res.data : res
     },
     testVarLabel(code) {
@@ -889,24 +887,18 @@ export default {
         this.$message.error(e.message || '版本对比失败')
       }
     },
-    async rollbackDraft(row) {
-      if (!row || !row.version) return
+    async loadVersionInDesigner(row) {
+      if (!row || !row.id) {
+        this.$message.warning('版本缺少记录 ID，请刷新版本列表')
+        return
+      }
       try {
-        await this.$confirm(
-          '恢复会覆盖当前草稿内容，但不会自动发布，确认恢复到 v' +
-            row.version +
-            '？',
-          '确认恢复',
-          { type: 'warning' }
-        )
-        await rollbackVersion(this.definitionId, row.version)
-        this.$message.success('恢复成功')
-        this.draftGuardPromise = this.loadDraftRevision()
-        await this.draftGuardPromise
-        await this.loadContent()
-        await this.loadVersions()
+        await this.switchDesignerSource(`VERSION:${row.id}`)
+        if (this.selectedDesignerSource === `VERSION:${row.id}`) {
+          this.versionVisible = false
+        }
       } catch (e) {
-        if (e !== 'cancel') this.$message.error(e.message || '恢复失败')
+        this.$message.error(e.message || '版本载入失败')
       }
     },
     openLifecycle() {

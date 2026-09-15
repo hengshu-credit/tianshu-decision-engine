@@ -348,7 +348,7 @@ public class GovernanceApprovalServiceTest {
     }
 
     @Test
-    public void approvalIdentityCollisionBecomesTerminalConflict() {
+    public void failedApplyPropagatesOriginalCollisionWithoutCommittingConflictState() {
         TestService service = new TestService();
         service.applyCollision = true;
         service.request.setId(12L);
@@ -364,15 +364,11 @@ public class GovernanceApprovalServiceTest {
         service.request.setDependencyDigest("dep-digest");
         service.request.setActiveResourceKey("RULE:CREATE:key");
 
-        GovernanceApprovalRequest conflict = service.approve(
-                12L, new GovernanceReviewRequest(), "reviewer");
-
-        Assert.assertEquals("CONFLICT", conflict.getStatus());
-        Assert.assertNull(conflict.getActiveResourceKey());
-        Assert.assertEquals("CONFLICT",
-                service.events.get(0).getAction());
-        Assert.assertTrue(service.events.get(0).getComment()
-                .contains("唯一标识"));
+        Assert.assertThrows(DuplicateKeyException.class,
+                () -> service.approve(12L, new GovernanceReviewRequest(), "reviewer"));
+        Assert.assertEquals("PENDING", service.request.getStatus());
+        Assert.assertEquals("RULE:CREATE:key", service.request.getActiveResourceKey());
+        Assert.assertTrue(service.events.isEmpty());
     }
 
     @Test

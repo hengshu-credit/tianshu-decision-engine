@@ -26,6 +26,7 @@ export function applyTheme(config, root = document.documentElement) {
   root.dataset.theme = normalized.colorScheme.toLowerCase()
   root.dataset.sidebarTheme = normalized.sidebarTheme.toLowerCase()
   root.dataset.navigationLayout = normalized.navigationLayout.toLowerCase()
+  root.dataset.tableScrollMode = normalized.tableScrollMode.toLowerCase()
   root.classList.toggle(
     'theme-content--fixed',
     normalized.contentWidth === 'FIXED'

@@ -1,5 +1,5 @@
 <template>
-  <div class="module-call-log">
+  <div class="module-call-log management-table-region">
     <div class="log-header">
       <div>
         <div class="log-title">{{ title || profile.title }}</div>
@@ -323,7 +323,7 @@
       </el-form>
     </div>
 
-    <el-table show-overflow-tooltip
+    <el-table class="management-table" show-overflow-tooltip
       :data="rows"
       border
       size="small"

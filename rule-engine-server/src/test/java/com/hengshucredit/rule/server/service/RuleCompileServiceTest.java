@@ -16,6 +16,32 @@ import static org.junit.Assert.*;
 public class RuleCompileServiceTest {
 
     @Test
+    public void syntaxPreviewSeparatesCyclePolicyAndDoesNotExecuteScript() {
+        RuleCompileService service = expressionService(true);
+        ReflectionTestUtils.setField(service, "ruleCallCycleService", new RuleCallCycleService() {
+            @Override public String validateNoCycle(Long id, String model) { return "RULE_CALL_CYCLE: cycle"; }
+        });
+        String payload = "{\"script\":\"return 42;\"}";
+        assertFalse(service.compilePreview(7L, payload, "SCRIPT").isSuccess());
+        CompileResult syntax = service.compileSyntaxPreview(7L, payload, "SCRIPT");
+        assertTrue(syntax.getErrorMessage(), syntax.isSuccess());
+        assertEquals("return 42;", syntax.getCompiledScript());
+        assertFalse(service.compileSyntaxPreview(7L, "{\"script\":\"return {\"}", "SCRIPT").isSuccess());
+        CompileSideEffectProbe probe = new CompileSideEffectProbe();
+        com.hengshucredit.rule.core.engine.QLExpressEngineFactory.getInstance()
+                .addFunctionOfServiceMethod("__designerCompileProbe", probe, "invoke", new Class<?>[]{});
+        CompileResult withAction = service.compileSyntaxPreview(7L,
+                "{\"script\":\"return __designerCompileProbe();\"}", "SCRIPT");
+        assertTrue(withAction.getErrorMessage(), withAction.isSuccess());
+        assertEquals(0, probe.calls);
+    }
+
+    public static class CompileSideEffectProbe {
+        int calls;
+        public int invoke() { return ++calls; }
+    }
+
+    @Test
     public void previewCompilationRejectsBlankModelJson() {
         RuleCompileService service = new RuleCompileService();
         ReflectionTestUtils.setField(service, "definitionService", new RuleDefinitionService() {

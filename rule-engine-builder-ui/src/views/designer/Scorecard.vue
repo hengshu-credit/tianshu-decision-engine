@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -40,6 +41,8 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <el-button size="small" :icon="ElIconPlus" @click="addScoreItem"
           >添加评分项</el-button
@@ -49,20 +52,28 @@
         >
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
           :can-test="designerCanTest"
           :state="designerActionState"
+          :busy="designerBusy"
           :recovery="designerRecoveryCandidate"
           :report="designerValidationReport"
           @save="handleSave"
-          @save-check="handleCompile"
+          @compile="handleCompile"
           @test="openTestDialog"
-          @lifecycle="goRuleLifecycle"
+          @publish="handlePublish"
           @restore="restoreDesignerRecovery"
           @discard-recovery="discardDesignerRecovery"
         />
       </div>
     </div>
+
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
 
     <!-- 基础配置 -->
     <div class="sc-card sc-base-config">
@@ -126,6 +137,7 @@
           v-for="(item, idx) in model.scoreItems"
           :key="idx"
           class="score-item-card"
+          :data-validation-path="'$.scoreItems[' + idx + ']'"
         >
           <div class="score-item-header">
             <span class="item-index">{{ idx + 1 }}</span>
@@ -382,7 +394,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCORE"
-      :model-json="model"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -404,7 +416,6 @@ import {
   VideoPlay as ElIconVideoPlay,
   Delete as ElIconDelete,
 } from '@element-plus/icons-vue'
-import { executeRule } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
 import DesignerTestDialog from '@/components/common/DesignerTestDialog.vue'
@@ -558,7 +569,7 @@ export default {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
-        if (content && content.modelJson && content.modelJson !== '{}') {
+        if (content && content.modelJson) {
           this.model = JSON.parse(content.modelJson)
         }
       } catch (e) {
@@ -814,8 +825,9 @@ export default {
     removeThreshold(index) {
       this.model.thresholds.splice(index, 1)
     },
-    async handleSave() {
+    async performDesignerSave() {
       const result = await this.saveDraftModel(this.serializeDesignerDraft())
+      if (!result) return false
       this.refreshProjectRefs()
 
       this.$message.success('草稿已保存')
@@ -833,10 +845,18 @@ export default {
       })
       return JSON.stringify(model)
     },
-    async handleCompile() {
-      const result = await this.handleSave()
-      return this.completeRuleCompile(result, {
-        onSuccess: () => this.loadProjectVars(this.definitionId),
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
     async openTestDialog() {
@@ -894,10 +914,7 @@ export default {
         return
       }
       try {
-        const res = await executeRule({
-          definitionId: this.definitionId,
-          params,
-        })
+        const res = await this.executeDesignerPreview(params, 'SCORE')
         this.testResult = res && res.data ? res.data : res
       } catch (e) {
         this.testResult = { success: false, errorMessage: e.message }
@@ -905,7 +922,7 @@ export default {
         this.testExecuting = false
       }
     },
-    saveTestParams() {
+    async saveTestParams() {
       // 将当前编辑的 JSON 保存到 model.testParams，下次打开时自动填充
       if (!this.testParamsJson || this.testParamsJson === '{}') {
         this.$message.warning('请先填写有效的测试参数')
@@ -919,8 +936,8 @@ export default {
         return
       }
       this.model.testParams = this.testParamsJson
-      this.handleSave()
-      this.$message.success('测试样例已保存')
+      const result = await this.handleSave()
+      if (result) this.$message.success('测试样例已保存')
     },
   },
 }

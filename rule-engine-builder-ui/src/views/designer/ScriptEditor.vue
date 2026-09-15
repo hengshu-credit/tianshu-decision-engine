@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -40,22 +41,32 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
           :can-test="designerCanTest"
           :state="designerActionState"
+          :busy="designerBusy"
           :recovery="designerRecoveryCandidate"
           :report="designerValidationReport"
           @save="handleSave"
-          @save-check="handleCompile"
+          @compile="handleCompile"
           @test="handleTest"
-          @lifecycle="goRuleLifecycle"
+          @publish="handlePublish"
           @restore="restoreDesignerRecovery"
           @discard-recovery="discardDesignerRecovery"
         />
       </div>
     </div>
+
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
 
     <div
       ref="designerBody"
@@ -291,7 +302,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="SCRIPT"
-      :model-json-provider="buildModelJson"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -314,7 +325,6 @@ import {
   VideoPlay as ElIconVideoPlay,
   Search as ElIconSearch,
 } from '@element-plus/icons-vue'
-import { executeRule } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
 import MonacoEditor from '@/components/MonacoEditor'
@@ -688,6 +698,8 @@ export default {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
         if (content) {
+          this.script = ''
+          this.scriptVarRefs = []
           if (content.modelJson && content.modelJson !== '{}') {
             try {
               const model = JSON.parse(content.modelJson)
@@ -731,21 +743,29 @@ export default {
       })
       return JSON.stringify({ script: this.script, scriptVarRefs: refs })
     },
-    async handleSave() {
+    async performDesignerSave() {
       // 保存前：从脚本中提取实际引用的变量，更新 scriptVarRefs
       const modelJson = JSON.stringify(this.buildModelJson())
       const result = await this.saveDraftModel(modelJson)
+      if (!result) return false
       this.compileStatus = result.compileSuccess ? 1 : 2
       this.compileMessage = result.compileMessage || ''
       this.$message.success('草稿已保存')
       this.refreshProjectRefs()
       return result
     },
-    async handleCompile() {
-      const result = await this.handleSave()
-      return this.completeRuleCompile(result, {
-        successMessage: '脚本验证通过',
-        errorPrefix: '脚本验证失败',
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
     async handleTest() {
@@ -772,7 +792,7 @@ export default {
         this.$message.error('参数 JSON 格式错误')
         return
       }
-      const res = await executeRule({ definitionId: this.definitionId, params })
+      const res = await this.executeDesignerPreview(params, 'SCRIPT')
       this.testResult = res && res.data ? res.data : res
     },
     insertVar(v) {

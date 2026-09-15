@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page approval-page">
+  <div class="uiue-list-page approval-page management-list-page">
     <header class="page-header">
       <div>
         <span class="page-eyebrow">LIFECYCLE GOVERNANCE</span>
@@ -27,7 +27,7 @@
       </button>
     </section>
 
-    <section class="approval-card">
+    <section class="approval-card management-table-region">
       <el-tabs
         v-model="activeScope"
         class="module-tabs"
@@ -91,7 +91,7 @@
         v-loading="loading"
         :data="records"
         row-key="id"
-        class="approval-table"
+        class="approval-table management-table"
         @row-click="openDetail"
       >
         <el-table-column label="审批申请" min-width="250">

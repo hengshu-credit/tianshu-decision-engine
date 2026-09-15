@@ -7,7 +7,7 @@
         <el-tag :type="statusTag.type" size="small" class="sp-status-tag">
           {{ statusTag.text }}
         </el-tag>
-        <span class="sp-check-guidance">由顶部“保存并检查”生成</span>
+        <span class="sp-check-guidance">由顶部“编译”生成</span>
       </div>
       <div class="sp-header-right" @click.stop>
         <el-tooltip
@@ -61,7 +61,7 @@
             v-model="editScript"
             class="sp-editor readonly"
             readonly
-            placeholder="请先点击顶部“保存并检查”生成脚本"
+            placeholder="请先点击顶部“编译”生成脚本"
             spellcheck="false"
             autocomplete="off"
             autocorrect="off"
@@ -146,11 +146,11 @@ export default {
             compileMessage: result.compileMessage || '',
           }
         : {}
-      this.editScript = result?.revision?.compiledScript || ''
+      this.editScript = result?.compiledScript || result?.revision?.compiledScript || ''
     },
     copyScript() {
       if (!this.editScript) {
-        this.$message.warning('暂无脚本，请先保存并检查')
+        this.$message.warning('暂无脚本，请先编译')
         return
       }
       if (navigator.clipboard) {

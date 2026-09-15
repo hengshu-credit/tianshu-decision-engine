@@ -304,7 +304,15 @@ public class ActionDataCompiler {
         if (!outputMappingEnabled) {
             outputField = null;
         }
-        String call = empty(outputField)
+        String mode = b.getString("versionMode");
+        if (mode != null && !"LATEST".equals(mode) && !"FIXED".equals(mode)) throw new IllegalArgumentException("未知规则版本策略");
+        boolean fixed = "FIXED".equals(mode);
+        Long bindingId = b.getLong("versionBindingId");
+        if (fixed && (bindingId == null || bindingId <= 0)) throw new IllegalArgumentException("指定版本缺少稳定绑定 ID");
+        if (!fixed && bindingId != null) throw new IllegalArgumentException("最新版引用不能携带指定版本绑定");
+        String call = fixed ? (empty(outputField)
+                ? "executeRuleVersionById(" + quoteString(String.valueOf(ruleId)) + ", " + quoteString(String.valueOf(bindingId)) + ")"
+                : "executeRuleVersionFieldById(" + quoteString(String.valueOf(ruleId)) + ", " + quoteString(String.valueOf(bindingId)) + ", " + quoteString(outputField) + ")") : empty(outputField)
                 ? "executeRuleById(" + quoteString(String.valueOf(ruleId)) + ")"
                 : "executeRuleFieldById(" + quoteString(String.valueOf(ruleId)) + ", " + quoteString(outputField) + ")";
         String target = outputMappingEnabled && b.getJSONObject("targetOperand") != null

@@ -14,11 +14,11 @@ const contracts = [
 ]
 
 describe('all designers use unified test schema', () => {
-  test.each(contracts)('%s passes current model as %s', (fileName, modelType, modelBinding) => {
+  test.each(contracts)('%s passes current model as %s', (fileName, modelType) => {
     const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/designer', fileName), 'utf8')
     expect(source).toContain('<designer-test-dialog')
     expect(source).toContain(':project-id="projectIdForRefs"')
     expect(source).toContain(`model-type="${modelType}"`)
-    expect(source).toContain(modelBinding)
+    expect(source).toContain(':model-json-provider="serializeDesignerDraft"')
   })
 })

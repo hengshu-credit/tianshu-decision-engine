@@ -59,12 +59,12 @@ describe('ScriptPanel', () => {
   test('未检查状态提示从顶部唯一入口生成脚本', () => {
     const { wrapper } = mountPanel()
 
-    expect(wrapper.text()).toContain('由顶部“保存并检查”生成')
+    expect(wrapper.text()).toContain('由顶部“编译”生成')
     expect(wrapper.text()).not.toContain('保存并编译仅更新草稿')
     expect(wrapper.find('[data-testid="designer-lifecycle-guidance"]').exists())
       .toBe(false)
     expect(wrapper.find('textarea').attributes('placeholder'))
-      .toBe('请先点击顶部“保存并检查”生成脚本')
+      .toBe('请先点击顶部“编译”生成脚本')
     wrapper.unmount()
   })
 
@@ -74,7 +74,7 @@ describe('ScriptPanel', () => {
     wrapper.vm.copyScript()
 
     expect(messages.warning).toHaveBeenCalledWith(
-      '暂无脚本，请先保存并检查'
+      '暂无脚本，请先编译'
     )
     wrapper.unmount()
   })

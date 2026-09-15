@@ -14,6 +14,40 @@ import static org.junit.Assert.assertTrue;
 public class RuleReferenceIntegrityServiceTest {
 
     @Test
+    public void batchScanLoadsContentsOnceAndReusesProjectReferenceCatalog() {
+        RuleReferenceIntegrityService service = new RuleReferenceIntegrityService();
+        java.util.concurrent.atomic.AtomicInteger catalogLoads = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger contentLoads = new java.util.concurrent.atomic.AtomicInteger();
+        ReflectionTestUtils.setField(service, "variableService", new RuleVariableService() {
+            public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                catalogLoads.incrementAndGet();
+                return Map.of("VARIABLE:9", "age");
+            }
+        });
+        var definitions = new java.util.ArrayList<com.hengshucredit.rule.model.entity.RuleDefinition>();
+        var contents = new java.util.ArrayList<com.hengshucredit.rule.model.entity.RuleDefinitionContent>();
+        for (long id = 1; id <= 3; id++) {
+            var definition = new com.hengshucredit.rule.model.entity.RuleDefinition();
+            definition.setId(id);
+            definition.setProjectId(1L);
+            definitions.add(definition);
+            var content = new com.hengshucredit.rule.model.entity.RuleDefinitionContent();
+            content.setDefinitionId(id);
+            content.setModelJson("{\"field\":{\"varCode\":\"renamed\",\"_varId\":9,\"_refType\":\"VARIABLE\"}}");
+            contents.add(content);
+        }
+        var mapperType = com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper.class;
+        Object mapper = java.lang.reflect.Proxy.newProxyInstance(mapperType.getClassLoader(), new Class<?>[]{mapperType},
+                (proxy, method, args) -> { contentLoads.incrementAndGet(); return contents; });
+        ReflectionTestUtils.setField(service, "contentMapper", mapper);
+        var reports = service.scanDefinitions(definitions);
+        assertEquals(3, reports.size());
+        assertTrue(reports.stream().allMatch(RuleReferenceIntegrityService.AuditReport::isValid));
+        assertEquals(1, catalogLoads.get());
+        assertEquals(1, contentLoads.get());
+    }
+
+    @Test
     public void auditUsesOnlyIdAndRefTypeAndReportsExactLocation() {
         RuleReferenceIntegrityService service = service();
         String json = "{\"rules\":["

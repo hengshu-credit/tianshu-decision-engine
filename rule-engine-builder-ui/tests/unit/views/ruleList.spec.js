@@ -106,6 +106,28 @@ async function mountAndWait() {
   return wrapper
 }
 
+test('创建并继续配置使用返回 ID，且提交期间不会重复创建', async () => {
+  const wrapper = await mountAndWait()
+  wrapper.vm.handleCreate()
+  wrapper.vm.form.scope = 'GLOBAL'
+  wrapper.vm.form.ruleCode = 'Mixed_Code'
+  wrapper.vm.form.ruleName = '新规则'
+  let complete
+  definitionApi.createDefinition.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+  const first = wrapper.vm.handleSubmit(true)
+  const second = wrapper.vm.handleSubmit(true)
+  await nextTick()
+  expect(definitionApi.createDefinition).toHaveBeenCalledTimes(1)
+  complete({ data: { id: 901 } })
+  await Promise.all([first, second])
+  expect(wrapper.vm.$router.push).toHaveBeenCalledWith(expect.objectContaining({
+    name: 'DecisionTable', params: { id: '901' },
+  }))
+  expect(wrapper.vm.form.ruleCode).toBe('Mixed_Code')
+  wrapper.unmount()
+  sessionStorage.removeItem('projectList')
+})
+
 describe('RuleList — 初始化与数据加载', () => {
   let wrapper
 
@@ -155,7 +177,7 @@ describe('RuleList — 标签与格式化方法', () => {
   })
 
   test('statusLabel 返回正确的状态标签', () => {
-    expect(wrapper.vm.statusLabel(0)).toBe('草稿')
+    expect(wrapper.vm.statusLabel(0)).toBe('未发布')
     expect(wrapper.vm.statusLabel(1)).toBe('已发布')
     expect(wrapper.vm.statusLabel(2)).toBe('已下线')
     expect(wrapper.vm.statusLabel(9)).toBe(9)

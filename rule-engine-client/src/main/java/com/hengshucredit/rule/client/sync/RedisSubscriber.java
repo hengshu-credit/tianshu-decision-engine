@@ -228,6 +228,7 @@ public class RedisSubscriber {
             String action = push.getAction();
 
             if ("PUBLISH".equals(action)) {
+                cache.invalidateVersions(push.getDefinitionId());
                 CachedRule cached = resolvePublishedRule(push);
                 if (cached == null) {
                     log.debug("Ignored rule push outside authorized scope or unavailable: {}", push.getRuleCode());
@@ -236,6 +237,8 @@ public class RedisSubscriber {
                 cache.put(cached);
                 log.info("Rule updated via Redis push: {} v{}", push.getRuleCode(), push.getVersion());
 
+            } else if ("VERSION_UPDATE".equals(action)) {
+                cache.invalidateVersions(push.getDefinitionId());
             } else if ("UNPUBLISH".equals(action) || "DELETE".equals(action)) {
                 cache.remove(push.getRuleCode());
                 log.info("Rule removed via Redis push: {}", push.getRuleCode());
@@ -267,6 +270,9 @@ public class RedisSubscriber {
         }
         CachedRule cached = new CachedRule();
         cached.setRuleCode(push.getRuleCode());
+        cached.setDefinitionId(push.getDefinitionId());
+        cached.setVersionBindingId(push.getVersionBindingId());
+        cached.setBindingGeneration(push.getBindingGeneration());
         cached.setProjectCode(push.getProjectCode());
         cached.setVersion(push.getVersion() != null ? push.getVersion() : 0);
         cached.setRevisionId(push.getRevisionId());

@@ -61,6 +61,24 @@ describe('ThemeSettingsDrawer', () => {
     expect(wrapper.find('[aria-label="固定侧栏"]').exists()).toBe(false)
   })
 
+  test('列表滚动方式支持预览、取消、保存和恢复默认', async () => {
+    const wrapper = mountDrawer()
+    await wrapper.get('[data-table-scroll-mode="FIXED"]').trigger('click')
+    expect(wrapper.emitted('preview').at(-1)[0].tableScrollMode).toBe('FIXED')
+    expect(wrapper.get('[data-table-scroll-mode="FIXED"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-action="cancel"]').trigger('click')
+    expect(wrapper.emitted('cancel').at(-1)[0].tableScrollMode).toBe('AUTO')
+    await wrapper.setProps({ modelValue: false })
+    await wrapper.setProps({ modelValue: true })
+    expect(wrapper.get('[data-table-scroll-mode="AUTO"]').attributes('aria-pressed')).toBe('true')
+    await wrapper.get('[data-table-scroll-mode="FIXED"]').trigger('click')
+    await wrapper.get('[data-action="save"]').trigger('click')
+    expect(wrapper.emitted('save').at(-1)[0].tableScrollMode).toBe('FIXED')
+    await wrapper.get('[data-action="restore-default"]').trigger('click')
+    expect(wrapper.emitted('preview').at(-1)[0].tableScrollMode).toBe('AUTO')
+    wrapper.unmount()
+  })
+
   test('展示 8 个纯色和 4 个固定渐变色卡', () => {
     const wrapper = mountDrawer()
 

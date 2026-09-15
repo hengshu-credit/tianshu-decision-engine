@@ -70,6 +70,19 @@ import { clearCurrentUser, setCurrentUser } from '@/security/permissionState'
 import ApprovalDetail from '@/views/approval/ApprovalDetail.vue'
 
 describe('统一审批详情', () => {
+  test('审批请求失败保留意见和对话框，不产生未处理拒绝', async () => {
+    const wrapper = shallowMount(ApprovalDetail, { global: { directives: { permission: {} } } })
+    await flushPromises()
+    wrapper.vm.openAction('approve')
+    wrapper.vm.actionComment = '审查意见'
+    approveGovernanceRequest.mockRejectedValueOnce(Object.assign(new Error('发布写入失败'), { requestErrorNotified: true }))
+    await expect(wrapper.vm.confirmAction()).resolves.toBeUndefined()
+    expect(wrapper.vm.actionDialogVisible).toBe(true)
+    expect(wrapper.vm.actionComment).toBe('审查意见')
+    expect(wrapper.vm.actionLoading).toBe(false)
+    expect(ElMessage.success).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
   beforeEach(() => {
     vi.clearAllMocks()
   })

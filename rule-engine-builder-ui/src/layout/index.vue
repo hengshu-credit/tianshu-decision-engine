@@ -241,7 +241,7 @@ export default {
         ? viewKey(this.$route.fullPath)
         : this.$route.fullPath
       const current = this.$store.state.currentProject
-      const projectId = normalizeProjectId(current && current.id)
+      const projectId = normalizeProjectId(this.$route.query?.projectId) || normalizeProjectId(current && current.id)
       return routeSupportsProjectContext(this.$route.path) && projectId
         ? `${baseKey}::project:${projectId}`
         : baseKey

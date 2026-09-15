@@ -198,6 +198,19 @@ public class RuleLineageService {
         Object objectKey = source.get("objectNodeId");
         if (objectKey != null && full.nodes.containsKey(objectKey)) {
             node.put("dataObject", new LinkedHashMap<>(full.nodes.get(objectKey)));
+            List<Map<String, Object>> ancestors = new ArrayList<>();
+            Set<String> visited = new LinkedHashSet<>();
+            visited.add(key);
+            String parentKey = (String) source.get("parentNodeId");
+            while (parentKey != null && visited.add(parentKey)) {
+                Map<String, Object> parent = full.nodes.get(parentKey);
+                if (parent == null || !"DATA_FIELD".equals(parent.get("type"))) break;
+                Map<String, Object> ancestor = new LinkedHashMap<>(parent);
+                ancestor.put("dataObject", node.get("dataObject"));
+                ancestors.add(0, ancestor);
+                parentKey = (String) parent.get("parentNodeId");
+            }
+            node.put("ancestorFields", ancestors);
         }
         return node;
     }
@@ -249,13 +262,26 @@ public class RuleLineageService {
             addNode(graph, "DATA_OBJECT", item.getId(), item.getObjectCode(), item.getObjectLabel());
             addProjectEdge(graph, item.getProjectId(), nodeKey("DATA_OBJECT", item.getId()));
         }
-        for (RuleDataObjectField item : dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>())) {
+        List<RuleDataObjectField> objectFields = dataObjectFieldMapper.selectList(new LambdaQueryWrapper<RuleDataObjectField>());
+        for (RuleDataObjectField item : objectFields) {
             addNode(graph, "DATA_FIELD", item.getId(), item.getScriptName() != null ? item.getScriptName() : item.getVarCode(), item.getVarLabel());
+            String objectKey = nodeKey("DATA_OBJECT", item.getObjectId());
+            if (graph.nodes.containsKey(objectKey) && item.getId() != null) {
+                graph.nodes.get(nodeKey("DATA_FIELD", item.getId())).put("objectNodeId", objectKey);
+            }
+        }
+        for (RuleDataObjectField item : objectFields) {
             String fieldKey = nodeKey("DATA_FIELD", item.getId());
             String objectKey = nodeKey("DATA_OBJECT", item.getObjectId());
             if (graph.nodes.containsKey(objectKey) && graph.nodes.containsKey(fieldKey)) {
-                graph.nodes.get(fieldKey).put("objectNodeId", objectKey);
-                addEdge(graph, objectKey, fieldKey, "包含字段");
+                String parentKey = nodeKey("DATA_FIELD", item.getParentFieldId());
+                Map<String, Object> parent = graph.nodes.get(parentKey);
+                if (parent == null || parentKey.equals(fieldKey) || !objectKey.equals(parent.get("objectNodeId"))) {
+                    parentKey = objectKey;
+                }
+                graph.nodes.get(fieldKey).put("parentNodeId", parentKey);
+                graph.nodes.get(parentKey).put("hasFieldChildren", true);
+                addEdge(graph, parentKey, fieldKey, "包含字段");
             } else {
                 addProjectEdge(graph, item.getProjectId(), fieldKey);
             }

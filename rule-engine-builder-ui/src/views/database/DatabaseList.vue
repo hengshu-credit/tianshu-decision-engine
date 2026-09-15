@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page database-page">
+  <div class="uiue-list-page database-page management-list-page">
     <div class="module-hint">
       <div class="hint-title">数据库管理</div>
       <div class="hint-text">
@@ -17,8 +17,8 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab">
-      <el-tab-pane label="数据源配置" name="datasource">
+    <el-tabs class="management-table-region" v-model="activeTab">
+      <el-tab-pane class="management-table-region" label="数据源配置" name="datasource">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleQuery">
             <el-form-item label="项目编码">
@@ -115,7 +115,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="tableData"
           border
           size="small"
@@ -268,8 +268,8 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane label="调用日志" name="logs">
-        <module-call-log module-type="DATABASE" title="数据库调用日志" />
+      <el-tab-pane class="management-table-region" label="调用日志" name="logs">
+        <module-call-log class="management-table-region" module-type="DATABASE" title="数据库调用日志" />
       </el-tab-pane>
     </el-tabs>
 
@@ -740,6 +740,7 @@
 </template>
 
 <script>
+import { analyzeSqlQuery, validateReadOnlyQuery } from '@/utils/sqlQuery'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -1140,103 +1141,7 @@ export default {
       if (resetResult) this.resetQueryResult()
     },
     countSqlPlaceholders(sql) {
-      const text = String(sql || '')
-      let count = 0
-      let state = 'NORMAL'
-      let dollarDelimiter = ''
-      let oracleQuoteEnd = ''
-      for (let index = 0; index < text.length; index++) {
-        const char = text[index]
-        const next = text[index + 1]
-        if (state === 'LINE_COMMENT') {
-          if (char === '\n' || char === '\r') state = 'NORMAL'
-          continue
-        }
-        if (state === 'BLOCK_COMMENT') {
-          if (char === '*' && next === '/') {
-            state = 'NORMAL'
-            index++
-          }
-          continue
-        }
-        if (state === 'DOLLAR_QUOTE') {
-          if (text.startsWith(dollarDelimiter, index)) {
-            state = 'NORMAL'
-            index += dollarDelimiter.length - 1
-          }
-          continue
-        }
-        if (state === 'ORACLE_QUOTE') {
-          if (char === oracleQuoteEnd && next === "'") {
-            state = 'NORMAL'
-            index++
-          }
-          continue
-        }
-        if (state === 'BRACKET_QUOTE') {
-          if (char === ']' && next === ']') {
-            index++
-          } else if (char === ']') {
-            state = 'NORMAL'
-          }
-          continue
-        }
-        if (state !== 'NORMAL') {
-          const quote =
-            state === 'SINGLE_QUOTE'
-              ? "'"
-              : state === 'DOUBLE_QUOTE'
-              ? '"'
-              : '`'
-          if (char === quote && next === quote) {
-            index++
-          } else if (char === '\\') {
-            index++
-          } else if (char === quote) {
-            state = 'NORMAL'
-          }
-          continue
-        }
-        if (char === '-' && next === '-') {
-          state = 'LINE_COMMENT'
-          index++
-        } else if (char === '#') {
-          state = 'LINE_COMMENT'
-        } else if (char === '/' && next === '*') {
-          state = 'BLOCK_COMMENT'
-          index++
-        } else if (char === '$') {
-          const match = text
-            .slice(index)
-            .match(/^\$(?:[A-Za-z_][A-Za-z0-9_]*)?\$/)
-          if (match) {
-            dollarDelimiter = match[0]
-            state = 'DOLLAR_QUOTE'
-            index += dollarDelimiter.length - 1
-          }
-        } else if (
-          (char === 'q' || char === 'Q') &&
-          next === "'" &&
-          text[index + 2]
-        ) {
-          const opener = text[index + 2]
-          const quotePairs = { '[': ']', '(': ')', '{': '}', '<': '>' }
-          oracleQuoteEnd = quotePairs[opener] || opener
-          state = 'ORACLE_QUOTE'
-          index += 2
-        } else if (char === '[') {
-          state = 'BRACKET_QUOTE'
-        } else if (char === "'") {
-          state = 'SINGLE_QUOTE'
-        } else if (char === '"') {
-          state = 'DOUBLE_QUOTE'
-        } else if (char === '`') {
-          state = 'BACKTICK_QUOTE'
-        } else if (char === '?') {
-          count++
-        }
-      }
-      return count
+      return analyzeSqlQuery(sql).placeholderCount
     },
     onQueryParamTypeChange(param) {
       if (param.type === 'NUMBER' || param.type === 'NULL') param.value = null
@@ -1264,15 +1169,7 @@ export default {
       }
       return ''
     },
-    validateReadOnlyQuery(sql) {
-      const text = String(sql || '').trim()
-      if (!text) return '请输入要执行的 SELECT 查询'
-      if (!/^select\b/i.test(text)) return '只允许执行 SELECT 查询'
-      if (text.indexOf(';') >= 0) return '只允许单条查询，请移除 SQL 分号'
-      if (/\bfor\s+update\b|\block\s+in\s+share\s+mode\b/i.test(text))
-        return '只读查询不允许使用数据库锁定语句'
-      return ''
-    },
+    validateReadOnlyQuery,
     isActiveQueryRequest(requestId, datasourceId) {
       return (
         requestId === this.queryRequestId &&

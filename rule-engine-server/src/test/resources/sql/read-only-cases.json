@@ -1,0 +1,19 @@
+[
+  {"sql":"SELECT ? AS score", "valid":true, "params":1},
+  {"sql":"-- query\n SELECT ';?' AS note, ? AS score; -- end", "valid":true, "params":1},
+  {"sql":"/* note ; ? */ SELECT 1;", "valid":true, "params":0},
+  {"sql":"SELECT 'for update', 'it''s;?' AS note", "valid":true, "params":0},
+  {"sql":"SELECT $$;?$$, $tag$;?$tag$, [?], q'[;?]', ?;", "valid":true, "params":1},
+  {"sql":"SELECT 1; SELECT 2", "valid":false, "params":0},
+  {"sql":"SELECT 1;;", "valid":false, "params":0},
+  {"sql":"SELECT 1 FOR /* note */ UPDATE", "valid":false, "params":0},
+  {"sql":"SELECT 1 FOR SHARE", "valid":false, "params":0},
+  {"sql":"SELECT 1 LOCK IN SHARE MODE", "valid":false, "params":0},
+  {"sql":"SELECT 1 INTO OUTFILE 'x'", "valid":false, "params":0},
+  {"sql":"SELECT 1 /*! INTO OUTFILE 'x' */", "valid":false, "params":0},
+  {"sql":"UPDATE users SET score = ?", "valid":false, "params":1},
+  {"sql":"SELECT 'unfinished", "valid":false, "params":0},
+  {"sql":"SELECT 1 /* unfinished", "valid":false, "params":0},
+  {"sql":"WITH x AS (SELECT 1) SELECT * FROM x", "valid":false, "params":0},
+  {"sql":"", "valid":false, "params":0}
+]

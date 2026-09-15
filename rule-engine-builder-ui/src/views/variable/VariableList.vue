@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <div class="linkage-hint">
       <el-icon><el-icon-info /></el-icon> 变量在规则设计时使用，<router-link
         to="/test"
@@ -10,11 +10,11 @@
     <!-- Tabs -->
     <el-tabs
       v-model="activeTab"
-      class="var-tabs"
+      class="var-tabs management-table-region"
       @tab-click="onTabClick"
     >
       <!-- Tab 1: Variable List -->
-      <el-tab-pane label="变量列表" name="list">
+      <el-tab-pane label="变量列表" name="list" class="management-table-region">
         <div class="tab-filter-row" @keyup.enter="handleQuery">
           <div class="tab-filter-fields">
           <el-select
@@ -108,8 +108,11 @@
         </div>
 
         <!-- 1. 普通变量（系统新增） -->
-        <div v-if="standaloneVars.length > 0" class="var-list-section">
-          <el-table show-overflow-tooltip
+        <div v-if="standaloneVars.length > 0" class="var-list-section management-table-region">
+          <div class="variable-column-options">
+            <el-checkbox v-model="showExtraVariableColumns" @change="saveCachedState">显示脚本名称、默认值和取值范围</el-checkbox>
+          </div>
+          <el-table class="management-table" show-overflow-tooltip
             :data="standaloneVars"
             border
             size="small"
@@ -148,7 +151,7 @@
               min-width="120"
               show-overflow-tooltip
             />
-            <el-table-column label="脚本名称" min-width="130">
+            <el-table-column v-if="showExtraVariableColumns" label="脚本名称" min-width="130">
               <template v-slot="{ row }">
                 <code class="script-name-code">{{
                   row.scriptName || '—'
@@ -181,12 +184,14 @@
             </el-table-column>
             <el-table-column
               prop="defaultValue"
+              v-if="showExtraVariableColumns"
               label="默认值"
               min-width="90"
               show-overflow-tooltip
             />
             <el-table-column
               prop="valueRange"
+              v-if="showExtraVariableColumns"
               label="取值范围"
               min-width="120"
               show-overflow-tooltip
@@ -211,7 +216,7 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="330" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="320" align="center" fixed="right">
               <template v-slot="{ row }">
                 <el-button
                   v-permission="'field:edit'"
@@ -241,14 +246,14 @@
                   >测试</el-button
                 >
                 <el-button
+                  v-if="row.varType === 'ENUM'"
                   v-permission="'field:edit'"
                   link
                   data-action="configure"
                   size="small"
-                  type="info"
-                  @click="handleOptions(row)"
-                  v-if="row.varType === 'ENUM'"
-                  >选项</el-button
+                  type="primary"
+                  @click="handleVariableRowCommand('options', row)"
+                  >枚举</el-button
                 >
                 <el-button
                   v-if="row.scope === 'PROJECT'"
@@ -256,9 +261,9 @@
                   link
                   data-action="global"
                   size="small"
-                  type="success"
-                  @click="handleToGlobal(row)"
-                  >转为全局</el-button
+                  type="primary"
+                  @click="handleVariableRowCommand('global', row)"
+                  >转全局</el-button
                 >
                 <el-button
                   v-permission="'field:edit'"
@@ -267,7 +272,7 @@
                   size="small"
                   type="danger"
                   class="btn-delete"
-                  @click="handleDelete(row)"
+                  @click="handleVariableRowCommand('delete', row)"
                   >删除</el-button
                 >
               </template>
@@ -303,7 +308,7 @@
       </el-tab-pane>
 
       <!-- Tab 2: Data Objects -->
-      <el-tab-pane label="数据对象" name="objects">
+      <el-tab-pane label="数据对象" name="objects" class="management-table-region">
         <div class="tab-filter-row" @keyup.enter="onObjFilterChange">
           <div class="tab-filter-fields">
           <el-select
@@ -373,8 +378,8 @@
         >
           暂无数据对象，点击「新建对象」或「批量导入」添加
         </div>
-        <div v-else v-loading="objLoading">
-          <el-table
+        <div class="management-table-region" v-else v-loading="objLoading">
+          <el-table class="management-table"
             data-testid="data-object-table"
             show-overflow-tooltip
             :data="paginatedObjectTree"
@@ -644,7 +649,7 @@
       </el-tab-pane>
 
       <!-- Tab 3: 常量列表（与变量列表相同分页模型，必须有默认值） -->
-      <el-tab-pane label="常量列表" name="constants">
+      <el-tab-pane label="常量列表" name="constants" class="management-table-region">
         <div class="tab-filter-row" @keyup.enter="handleConstQuery">
           <div class="tab-filter-fields">
           <el-select
@@ -720,7 +725,7 @@
             @validate="handleBatchValidate"
           />
         </div>
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           v-loading="constLoading"
           :data="constantRows"
           border
@@ -861,7 +866,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="字段校验" name="validations">
+      <el-tab-pane label="字段校验" name="validations" class="management-table-region">
         <el-alert
           title="字段校验规则可在规则输入字段中复用。新建、修改、启停和删除会先生成审批草稿，审批通过前线上规则不变。"
           type="info"
@@ -931,7 +936,7 @@
             @create="handlePrimaryCreate"
           />
         </div>
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           v-loading="validationLoading"
           :data="validationRows"
           border
@@ -1405,17 +1410,21 @@
             />
           </el-form-item>
           <el-form-item label="SQL 参数">
-            <monaco-editor
+            <sql-parameter-editor
               v-model:value="form.dbParams"
-              language="json"
-              height="90px"
+              :sql="form.dbSql"
+              :variables="listReferenceOptions"
             />
           </el-form-item>
           <el-form-item label="结果路径">
             <el-input v-model="form.dbResultPath" placeholder="0.score" />
+            <div class="field-help">例如 0.score 表示第一行的 score；留空按返回行列数自动取值。可在预览后选择结果。</div>
           </el-form-item>
-          <el-form-item label="异常策略">
+          <el-form-item label="最多返回行数">
             <el-input-number v-model="form.dbMaxRows" :min="1" :max="500" />
+            <span class="field-help">行（1–500）</span>
+          </el-form-item>
+          <el-form-item label="查询失败时">
             <el-select
               v-model="form.dbExceptionStrategy"
               style="width: 180px; margin-left: 8px"
@@ -1577,12 +1586,22 @@
           />
           <div class="draft-preview-panel__body">
             <div>
+              <div v-if="form.varSource === 'DB'" class="db-sample-fields">
+                <label v-for="field in dbSampleFields" :key="field.key">
+                  {{ field.label }}
+                  <el-input :model-value="dbSampleValue(field)" :aria-label="'样例 ' + field.label" @update:model-value="setDbSampleValue(field, $event)" />
+                </label>
+                <p v-if="!dbSampleFields.length" class="field-help">固定值参数可直接预览；业务字段参数选择后可在这里填写样例。</p>
+              </div>
+              <details :open="form.varSource !== 'DB'">
+                <summary>样例参数 JSON</summary>
               <label>样例参数（JSON 对象）</label>
               <monaco-editor
                 v-model:value="draftPreviewParamsText"
                 language="json"
                 height="120px"
               />
+              </details>
             </div>
             <div>
               <label>预览结果</label>
@@ -1591,6 +1610,15 @@
               }}</pre>
               <div v-else class="draft-preview-empty">尚未预览</div>
             </div>
+          </div>
+          <div v-if="form.varSource === 'DB' && draftDatabaseRows" class="db-preview-rows">
+            <strong>查询返回 {{ draftDatabaseRows.length }} 行</strong>
+            <el-select v-if="dbResultChoices.length" :model-value="form.dbResultPath" aria-label="选择查询结果" placeholder="选择一行或一个字段作为变量结果" @update:model-value="form.dbResultPath = $event">
+              <el-option v-for="choice in dbResultChoices" :key="choice.path" :label="choice.label" :value="choice.path" />
+            </el-select>
+            <el-table :data="draftDatabaseRows" size="small" max-height="180" empty-text="查询成功，没有匹配记录">
+              <el-table-column v-for="column in Object.keys(draftDatabaseRows[0] || {})" :key="column" :prop="column" :label="column" min-width="120" show-overflow-tooltip />
+            </el-table>
           </div>
         </section>
         <el-form-item v-if="!isObjectField" label="默认值">
@@ -2478,6 +2506,9 @@
 </template>
 
 <script>
+import SqlParameterEditor from '@/components/common/SqlParameterEditor.vue'
+import { validateReadOnlyQuery } from '@/utils/sqlQuery'
+import { parseSqlParameters, validateSqlParameters } from '@/utils/sqlParameters'
 import { markRaw } from 'vue'
 import {
   InfoFilled as ElIconInfo,
@@ -2626,6 +2657,7 @@ export default {
       allObjectNames: [],
       filteredObjectNames: [],
       dialogVisible: false,
+      showExtraVariableColumns: false,
       form: this.initForm(),
       apiConfigOptions: [],
       dbDatasourceOptions: [],
@@ -2811,6 +2843,7 @@ export default {
     }
   },
   components: {
+    SqlParameterEditor,
     MonacoEditor,
     OperandPicker,
     RemoteFilterSelect,
@@ -2856,6 +2889,28 @@ export default {
     },
   },
   computed: {
+    dbSampleFields() {
+      let params
+      try { params = parseSqlParameters(this.form.dbParams) } catch (e) { return [] }
+      const seen = new Set()
+      return params.filter(value => value && value.kind === 'REFERENCE' && value.refType === 'VARIABLE').flatMap(value => {
+        const key = `${value.refType}:${value.refId}`
+        const option = this.listReferenceOptions.find(item => `${item._refType}:${item._varId}` === key)
+        if (!option || seen.has(key)) return []
+        seen.add(key)
+        return [{ key, code: option.varCode, label: option.varLabelText || option.varLabel || option.varCode, type: option.varType }]
+      })
+    },
+    draftDatabaseRows() {
+      const rows = this.draftPreviewResult && this.draftPreviewResult.databaseRows
+      return Array.isArray(rows) ? rows : null
+    },
+    dbResultChoices() {
+      return (this.draftDatabaseRows || []).slice(0, 5).flatMap((row, index) => [
+        { path: String(index), label: `第 ${index + 1} 行（对象）` },
+        ...Object.keys(row || {}).filter(key => !key.includes('.')).map(key => ({ path: `${index}.${key}`, label: `第 ${index + 1} 行 · ${key}` })),
+      ])
+    },
     standaloneVars() {
       return this.tableData || []
     },
@@ -2987,9 +3042,10 @@ export default {
       } else if (this.form.varSource === 'API') {
         sourced = !!this.form.apiConfigId
       } else if (this.form.varSource === 'DB') {
-        sourced = !!(
-          this.form.dbDatasourceId && String(this.form.dbSql || '').trim()
-        )
+        try {
+          sourced = !!this.form.dbDatasourceId && !validateReadOnlyQuery(this.form.dbSql) &&
+            !validateSqlParameters(this.form.dbSql, parseSqlParameters(this.form.dbParams))
+        } catch (e) { sourced = false }
       } else if (this.form.varSource === 'LIST') {
         sourced =
           this.form.listIds.length > 0 &&
@@ -3066,6 +3122,28 @@ export default {
     },
   },
   methods: {
+    handleVariableRowCommand(command, row) {
+      if (!hasPermission('field:edit')) { this.$message.warning('当前账号没有字段编辑权限'); return }
+      if (command === 'options') return this.handleOptions(row)
+      if (command === 'global') return this.handleToGlobal(row)
+      if (command === 'delete') return this.handleDelete(row)
+    },
+    dbSampleValue(field) { const params = this.parseJsonSafe(this.draftPreviewParamsText, {}); const value = params[field.code]; return value == null ? '' : String(value) },
+    setDbSampleValue(field, value) {
+      let params
+      try {
+        params = JSON.parse(this.draftPreviewParamsText || '{}')
+        if (!params || Array.isArray(params) || typeof params !== 'object') throw new Error('invalid')
+      } catch (e) { this.$message.warning('样例参数 JSON 无效，请先修正；原内容已保留'); return }
+      if (value === '') delete params[field.code]
+      else {
+        let typed = value
+        if (['INTEGER', 'LONG', 'NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL'].includes(field.type) && Number.isFinite(Number(value))) typed = Number(value)
+        else if (field.type === 'BOOLEAN' && ['true', 'false'].includes(value)) typed = value === 'true'
+        params = { ...params, [field.code]: typed }
+      }
+      this.draftPreviewParamsText = JSON.stringify(params, null, 2)
+    },
     onTabClick(tab) {
       const rawName = tab && (tab.paneName ?? tab.name ?? tab.props?.name)
       const name = rawName && typeof rawName === 'object'
@@ -3079,6 +3157,7 @@ export default {
     },
     restoreCachedState() {
       const state = restorePageState('VariableList')
+      this.showExtraVariableColumns = state.showExtraVariableColumns === true
       if (state.activeTab) this.activeTab = state.activeTab
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
       if (state.constQp) this.constQp = { ...this.constQp, ...state.constQp }
@@ -3091,6 +3170,7 @@ export default {
     },
     saveCachedState() {
       savePageState('VariableList', {
+        showExtraVariableColumns: this.showExtraVariableColumns,
         activeTab: this.activeTab,
         qp: this.qp,
         constQp: this.constQp,
@@ -3160,13 +3240,13 @@ export default {
       if (source === 'LIST')
         this.onListReturnModeChange(this.form.listReturnMode)
       await this.loadVariableSourceCatalog(true)
-      if (source === 'LIST') await this.loadListExpressionOptions()
+      if (['LIST', 'DB'].includes(source)) await this.loadListExpressionOptions()
     },
     async onVariableProjectChange() {
       this.listReferenceProjectId = null
       this.resetDraftPreview()
       await this.loadVariableSourceCatalog(true)
-      if (this.form.varSource === 'LIST') await this.loadListExpressionOptions()
+      if (['LIST', 'DB'].includes(this.form.varSource)) await this.loadListExpressionOptions()
     },
     resetDraftPreview() {
       this.draftPreviewParamsText = '{}'
@@ -3344,7 +3424,7 @@ export default {
           this.listLibraryOptions = []
         }
       }
-      if (source === 'LIST') await this.loadListExpressionOptions()
+      if (['LIST', 'DB'].includes(source)) await this.loadListExpressionOptions()
     },
     normalizeSourceList(res) {
       const data = res && res.data !== undefined ? res.data : res
@@ -3395,7 +3475,7 @@ export default {
       } catch (e) {
         this.listReferenceOptions = []
         this.listFunctionOptions = []
-        this.$message.warning('名单查询字段加载失败，请检查项目后重试')
+        this.$message.warning('查询字段加载失败，请检查项目后重试')
       }
     },
     applySourceConfigToForm() {
@@ -3479,6 +3559,8 @@ export default {
           this.$message.warning('SQL 参数必须是 JSON 数组')
           return null
         }
+        const sqlError = validateReadOnlyQuery(payload.dbSql) || validateSqlParameters(payload.dbSql, params)
+        if (sqlError) { this.$message.warning(sqlError); return null }
         payload.sourceConfig = JSON.stringify({
           dbDatasourceId: payload.dbDatasourceId,
           sql: payload.dbSql,
@@ -4489,7 +4571,7 @@ export default {
       this.resetDraftPreview()
       this.draftPreviewParamsText = this.buildTestParamTemplate(row)
       this.loadVariableSourceCatalog(true)
-      if (this.form.varSource === 'LIST') this.loadListExpressionOptions()
+      if (['LIST', 'DB'].includes(this.form.varSource)) this.loadListExpressionOptions()
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
@@ -4559,7 +4641,7 @@ export default {
         const response = payload.id
           ? await updateVariable(payload)
           : await createVariable(payload)
-        this.openApproval(response, '字段变更已送审')
+        this.openApproval(response, '字段变更审批草稿已生成')
         this.dialogVisible = false
         this.isConstantCreate = false
         if (wasConstant) this.activeTab = 'constants'
@@ -5261,6 +5343,9 @@ export default {
 </script>
 
 <style scoped>
+.variable-column-options { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.db-sample-fields label { display: grid; gap: 4px; margin-bottom: 8px; }
+.db-preview-rows { display: grid; gap: 8px; margin-top: 12px; min-width: 0; }
 .linkage-hint {
   font-size: 12px;
   color: var(--tianshu-text-tertiary);

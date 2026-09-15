@@ -67,6 +67,221 @@ const designers = [
   }
 ]
 
+// 初始数据只有正式版本；草稿只能由 UI 暂存请求生成。
+function manualDraftFixtures(definitionId, modelJson = '{}') {
+  const apiData = createDesignerApiData()
+  const saves = []
+  let draft = null
+  const base = `/api/rule/definition/${definitionId}`
+  apiData.set(`${base}/revisions`, () => draft ? [draft] : [])
+  apiData.set(`${base}/published-versions`, [
+    { id: 82, definitionId, version: 2 },
+    { id: 81, definitionId, version: 1 }
+  ])
+  for (const id of [81, 82]) {
+    apiData.set(`${base}/versions/${id}`, { id, definitionId, version: id - 80, modelJson })
+  }
+  apiData.set(`POST ${base}/designer/drafts`, ({ request }) => {
+    const payload = request.postDataJSON()
+    saves.push(payload)
+    draft = { id: 901, definitionId, revisionNo: 3, state: 'DRAFT', lockVersion: 1, modelJson: payload.modelJson }
+    return { revision: draft, compileSuccess: true, issues: [] }
+  })
+  apiData.set(`${base}/revisions/901`, () => draft)
+  return { apiData, saves }
+}
+
+for (const designer of [...designers, { name: 'QL 脚本', path: '/designer/script/109' }]) {
+  test(`${designer.name}慢加载使用页内 info，不遮挡页面且保留编辑保护`, async ({ page }) => {
+    const definitionId = Number(designer.path.split('/').pop())
+    const { apiData } = manualDraftFixtures(definitionId)
+    let release
+    const pendingVersion = new Promise(resolve => { release = resolve })
+    apiData.set(`/api/rule/definition/${definitionId}/versions/82`, async () => {
+      await pendingVersion
+      return { id: 82, definitionId, version: 2, modelJson: '{}' }
+    })
+    const { requests, assertClean } = await installDistRoutes(page, { apiData })
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto(`http://tianshu.local/index.html#${designer.path}`)
+    const notice = page.getByRole('status', { name: '规则版本信息' })
+    try {
+      await expect(notice).toContainText('正在加载规则版本')
+      await expect(page.getByRole('dialog')).toHaveCount(0)
+      const layout = await notice.evaluate(element => {
+        const box = element.getBoundingClientRect()
+        const toolbar = element.parentElement.nextElementSibling.getBoundingClientRect()
+        return { position: getComputedStyle(element).position, bottom: box.bottom, toolbarTop: toolbar.top, height: box.height }
+      })
+      expect(layout.position).toBe('static')
+      expect(layout.height).toBeLessThan(120)
+      expect(layout.bottom).toBeLessThanOrEqual(layout.toolbarTop)
+      await expect(page.locator('main [data-action="save"]')).toBeDisabled()
+      await expect(notice.getByRole('button', { name: '返回', exact: true })).toBeEnabled()
+      expect(await notice.evaluate(element => !!element.closest('[inert]'))).toBe(false)
+      expect(await page.locator('main [data-action="save"]').evaluate(element => !!element.closest('[inert]'))).toBe(true)
+      expect(requests.filter(request => request.method !== 'GET')).toEqual([])
+    } finally {
+      release()
+    }
+    await expect(notice).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+    expect(await page.locator('main [data-action="save"]').evaluate(element => !!element.closest('[inert]'))).toBe(false)
+    assertClean()
+  })
+
+  test(`${designer.name}仅在明确暂存时创建服务端草稿，刷新后可恢复`, async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 900 })
+    const definitionId = Number(designer.path.split('/').pop())
+    const { apiData, saves } = manualDraftFixtures(definitionId)
+    const { requests, assertClean } = await installDistRoutes(page, { apiData })
+    const writes = () => requests.filter(request => request.method !== 'GET')
+    await page.goto(`http://tianshu.local/index.html#${designer.path}`)
+    await expect(page.getByTestId('designer-version-select')).toContainText('发布版本 v2')
+    expect(writes()).toEqual([])
+    await page.getByTestId('designer-version-select').getByText('发布版本 v2', { exact: true }).click()
+    await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
+    await expect(page).toHaveURL(/sourceType=VERSION&sourceId=81/)
+    await expect(page.getByRole('status', { name: '规则版本信息' })).toHaveCount(0)
+    await expect(page.getByRole('status')).toContainText('已加载，尚未修改')
+    expect(writes()).toEqual([])
+
+    let count
+    if (designer.action) {
+      count = await page.locator(designer.itemSelector).count()
+      await page.getByRole('button', { name: designer.action, exact: true }).first().click()
+      await expect(page.locator(designer.itemSelector)).toHaveCount(count + 1)
+    } else {
+      await page.locator('.se-var-item').filter({ hasText: 'age' }).first().dblclick()
+      await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue('age')
+    }
+    await expect(page.getByRole('status')).toContainText('有未保存修改')
+    expect(writes()).toEqual([])
+    expect(await page.evaluate(() => [...Object.keys(sessionStorage), ...Object.keys(localStorage)]
+      .filter(key => key.startsWith('tianshu:rule-designer-recovery')))).toEqual([])
+    await page.getByRole('button', { name: '保存', exact: true }).click()
+    await expect(page.getByRole('status')).toContainText('草稿已保存')
+    await expect(page).toHaveURL(/sourceType=REVISION&sourceId=901/)
+    expect(saves).toHaveLength(1)
+    expect(saves[0]).toMatchObject({ sourceType: 'VERSION', sourceId: '81' })
+    expect(JSON.parse(saves[0].modelJson)).not.toEqual({})
+    expect(writes()).toHaveLength(1)
+    expect(writes().map(write => new URL(write.url).pathname)).toEqual([
+      `/api/rule/definition/${definitionId}/designer/drafts`
+    ])
+
+    await page.reload()
+    await expect(page.getByTestId('designer-version-select')).toContainText('草稿 · 3')
+    if (designer.action) await expect(page.locator(designer.itemSelector)).toHaveCount(count + 1)
+    else await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue('age')
+    expect(writes()).toHaveLength(1)
+    assertClean()
+  })
+}
+
+test('版本读取失败在页内重试恢复，不弹确认也不创建草稿', async ({ page }) => {
+  const { apiData } = manualDraftFixtures(109, JSON.stringify({ script: 'result = 2' }))
+  const { requests, assertClean } = await installDistRoutes(page, { apiData })
+  let attempts = 0
+  await page.route('**/api/rule/definition/109/versions/82', async route => {
+    attempts++
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(attempts === 1
+        ? { code: 400, message: '模拟版本读取失败' }
+        : { code: 200, data: { id: 82, definitionId: 109, version: 2, modelJson: '{"script":"result = 2"}' } })
+    })
+  })
+  await page.goto('http://tianshu.local/index.html#/designer/script/109?sourceType=VERSION&sourceId=82')
+  const notice = page.getByRole('status', { name: '规则版本信息' })
+  await expect(notice).toContainText('当前版本加载失败')
+  await expect(page.getByRole('dialog')).toHaveCount(0)
+  await expect(page.locator('main [data-action="save"]')).toBeDisabled()
+  await notice.getByRole('button', { name: '重试', exact: true }).click()
+  await expect(notice).toHaveCount(0)
+  await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue('result = 2')
+  await expect(page.getByRole('button', { name: '保存', exact: true })).toBeEnabled()
+  expect(attempts).toBe(2)
+  expect(requests.filter(request => request.method !== 'GET')).toEqual([])
+  assertClean()
+})
+
+for (const colorScheme of ['LIGHT', 'DARK']) {
+  test(`${colorScheme} 只读用户通过 info 区切版查看，无模态遮挡且文字清晰`, async ({ page }) => {
+    await page.addInitScript(scheme => {
+      localStorage.setItem('tianshu-ui-theme-v1', JSON.stringify({
+        schemaVersion: 1, colorScheme: scheme, accentPreset: 'LIQUID_PURPLE',
+        sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false
+      }))
+    }, colorScheme)
+    const { apiData } = manualDraftFixtures(109, JSON.stringify({ script: 'result = 2' }))
+    apiData.set('/api/auth/console/config', { loginEnabled: true })
+    apiData.set('/api/auth/console/me', { username: 'reader', permissions: ['rule:view'] })
+    apiData.set('/api/auth/console/preferences/theme', {
+      schemaVersion: 1, colorScheme, accentPreset: 'LIQUID_PURPLE',
+      sidebarTheme: 'DARK', contentWidth: 'FLUID', fixedSidebar: true, colorWeak: false
+    })
+    apiData.set('/api/rule/definition/109/versions/81', { id: 81, definitionId: 109, version: 1, modelJson: '{"script":"result = 1"}' })
+    const { requests, assertClean } = await installDistRoutes(page, { apiData })
+    await page.goto('http://tianshu.local/index.html#/designer/script/109')
+    const notice = page.getByRole('status', { name: '规则版本信息' })
+    await expect(notice).toContainText('当前账号没有规则编辑权限')
+    await expect(page.locator('html')).toHaveAttribute('data-theme', colorScheme.toLowerCase())
+    const contrast = await notice.evaluate(element => {
+      const style = getComputedStyle(element)
+      const luminance = color => {
+        const channels = color.match(/[\d.]+/g).slice(0, 3).map(Number).map(channel => {
+          const value = channel / 255
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+        })
+        return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+      }
+      const text = luminance(style.color)
+      const background = luminance(style.backgroundColor)
+      return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05)
+    })
+    expect(contrast).toBeGreaterThanOrEqual(4.5)
+    await expect(page.getByRole('dialog')).toHaveCount(0)
+    await notice.getByText('发布版本 v2', { exact: true }).click()
+    await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
+    await expect(page).toHaveURL(/sourceType=VERSION&sourceId=81/)
+    await expect(notice).toContainText('版本 1')
+    await expect(page.locator('.view-lines')).toContainText('result')
+    expect(await page.locator('.se-body').evaluate(element => element.hasAttribute('inert'))).toBe(true)
+    expect(requests.filter(request => request.method !== 'GET')).toEqual([])
+    assertClean()
+  })
+}
+
+test('重新进入默认最新版本，已有草稿需主动选择；切版取消保留未暂存内容', async ({ page }) => {
+  const { apiData, saves } = manualDraftFixtures(109, JSON.stringify({ script: 'result = 2' }))
+  apiData.set('/api/rule/definition/109/versions/81', {
+    id: 81, definitionId: 109, version: 1, modelJson: JSON.stringify({ script: 'result = 1' })
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.goto('http://tianshu.local/index.html#/designer/script/109')
+  const editor = page.getByRole('textbox', { name: /Editor content/ })
+  await expect(editor).toHaveValue('result = 2')
+  await editor.press('Control+End')
+  await editor.press('Space')
+  await expect(page.getByRole('status')).toContainText('有未保存修改')
+  await page.getByTestId('designer-version-select').getByText('发布版本 v2', { exact: true }).click()
+  await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(editor).toHaveValue('result = 2 ')
+  expect(saves).toHaveLength(0)
+  await page.getByRole('button', { name: '保存', exact: true }).click()
+  await expect(page.getByRole('status')).toContainText('草稿已保存')
+  await page.goto('http://tianshu.local/index.html#/designer/script/109')
+  await expect(editor).toHaveValue('result = 2')
+  await page.getByTestId('designer-version-select').getByText('发布版本 v2', { exact: true }).click()
+  await page.getByRole('option', { name: /^草稿 · 3/ }).click()
+  await expect(editor).toHaveValue('result = 2 ')
+  expect(saves).toHaveLength(1)
+  assertClean()
+})
+
 async function expectDesignerShell(page, title, saveButtonName) {
   const main = page.getByRole('main')
   await expect(main.getByText(title, { exact: true })).toBeVisible()
@@ -146,9 +361,9 @@ for (const designer of designers) {
     })
     await page.goto(`http://tianshu.local/index.html#${designer.path}`)
 
-    await expectDesignerShell(page, designer.title, '保存并检查')
-    await expect(page.getByRole('button', { name: '仅保存草稿' })).toBeVisible()
-    await expect(page.getByRole('button', { name: '进入测试' })).toBeDisabled()
+    await expectDesignerShell(page, designer.title, '编译')
+    await expect(page.getByRole('button', { name: '保存' })).toBeVisible()
+    await expect(page.getByRole('button', { name: '测试', exact: true })).toBeEnabled()
     if (designer.loadsVariables) {
       await expect.poll(() => requests.some(request =>
         new URL(request.url).pathname === '/api/rule/variable/project/1'
@@ -226,7 +441,7 @@ for (const designer of designers.filter(item => ['决策树', '决策流'].inclu
         createTime: '2026-07-23 12:00:00'
       }
     ])
-    apiData.set('POST /api/rule/definition/save', async ({ request }) => {
+    apiData.set(`POST /api/rule/definition/${definitionId}/designer/drafts`, async ({ request }) => {
       savedPayload = JSON.parse(request.postData())
       modelJson = savedPayload.modelJson
       return {
@@ -265,7 +480,10 @@ for (const designer of designers.filter(item => ['决策树', '决策流'].inclu
     await page.mouse.move(targetBox.x + targetBox.width / 2, targetBox.y, { steps: 10 })
     await page.mouse.up()
 
-    await page.getByRole('button', { name: '仅保存草稿' }).click()
+    await page.getByRole('button', { name: '保存' }).click()
+    const saveDialog = page.getByRole('dialog', { name: '保存草稿', exact: true })
+    await saveDialog.getByText('覆盖当前草稿', { exact: true }).click()
+    await saveDialog.locator('[data-action="confirm-save"]').click()
     await expect.poll(() => savedPayload).not.toBeNull()
     const savedModel = JSON.parse(savedPayload.modelJson)
     expect(savedModel.logicflow.edges[0]).toMatchObject({
@@ -351,9 +569,9 @@ test('QL 脚本编辑器可加载变量、插入字段并保持工具栏可操�
   })
   await page.goto('http://tianshu.local/index.html#/designer/script/109')
 
-  await expectDesignerShell(page, 'QL脚本编辑器', '保存并检查')
-  await expect(page.getByRole('button', { name: '仅保存草稿' })).toBeVisible()
-  await expect(page.getByRole('button', { name: '进入测试' })).toBeDisabled()
+  await expectDesignerShell(page, 'QL脚本编辑器', '编译')
+  await expect(page.getByRole('button', { name: '保存' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '测试', exact: true })).toBeEnabled()
   const variable = page.locator('.se-var-item').filter({ hasText: 'age' }).first()
   await expect(variable).toBeVisible()
   await variable.dblclick()

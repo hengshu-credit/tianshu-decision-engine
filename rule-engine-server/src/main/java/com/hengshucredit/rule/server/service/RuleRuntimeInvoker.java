@@ -40,6 +40,8 @@ public class RuleRuntimeInvoker {
     private static final Logger log = LoggerFactory.getLogger(RuleRuntimeInvoker.class);
     private static final Class<?>[] ONE_STRING = new Class<?>[]{String.class};
     private static final Class<?>[] TWO_STRINGS = new Class<?>[]{String.class, String.class};
+    private static final Class<?>[] THREE_STRINGS = new Class<?>[]{String.class, String.class, String.class};
+    @Resource private RuleVersionBindingService versionBindingService;
     private static final Class<?>[] NO_ARGS = new Class<?>[]{};
 
     @Resource
@@ -87,6 +89,8 @@ public class RuleRuntimeInvoker {
             runner.addFunctionOfServiceMethod("executeRuleField", this, "executeRuleField", TWO_STRINGS);
             runner.addFunctionOfServiceMethod("executeRuleById", this, "executeRuleById", ONE_STRING);
             runner.addFunctionOfServiceMethod("executeRuleFieldById", this, "executeRuleFieldById", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleVersionById", this, "executeRuleVersionById", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleVersionFieldById", this, "executeRuleVersionFieldById", THREE_STRINGS);
             runner.addFunctionOfServiceMethod("terminateAllRules", this, "terminateAllRules", NO_ARGS);
         } catch (Exception e) {
             registered.set(false);
@@ -219,6 +223,14 @@ public class RuleRuntimeInvoker {
         return extractOutput(result, outputField);
     }
 
+    public Object executeRuleVersionById(String ruleId, String bindingId) {
+        return doExecuteRule(parseRuleId(ruleId), null, parseRuleId(bindingId));
+    }
+
+    public Object executeRuleVersionFieldById(String ruleId, String bindingId, String field) {
+        return extractOutput(executeRuleVersionById(ruleId, bindingId), field);
+    }
+
     public Object terminateAllRules() {
         if (currentSession.get() == null) {
             throw new IllegalStateException("terminateAllRules 只能在规则执行过程中调用");
@@ -253,6 +265,10 @@ public class RuleRuntimeInvoker {
     }
 
     private Object doExecuteRule(Long definitionId, String ruleCode) {
+        return doExecuteRule(definitionId, ruleCode, null);
+    }
+
+    private Object doExecuteRule(Long definitionId, String ruleCode, Long bindingId) {
         if (definitionId == null && !hasText(ruleCode)) {
             throw new IllegalArgumentException("调用规则标识不能为空");
         }
@@ -260,53 +276,48 @@ public class RuleRuntimeInvoker {
         if (session == null) {
             throw new IllegalStateException("executeRule 只能在规则执行过程中调用");
         }
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot rootArtifactSnapshot =
-                session.getArtifactRuntimeSnapshot();
-        ArtifactRuntimeSnapshotService.NestedRuleSnapshot frozenRule = session.isTestMode()
-                || rootArtifactSnapshot == null ? null
-                : rootArtifactSnapshot.findNestedRule(definitionId, ruleCode);
-        RuleDefinition definition = frozenRule != null ? frozenDefinition(frozenRule, session)
-                : definitionId == null
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot callerArtifact = session.getCurrentArtifactSnapshot();
+        if (callerArtifact != null && callerArtifact.isImported()) {
+            if (definitionId == null) throw new IllegalStateException("导入制品的规则调用必须使用显式 ID 绑定");
+            Long mapped = callerArtifact.getBindings().get("RULE:" + definitionId);
+            if (mapped == null) throw new IllegalStateException("导入制品缺少规则绑定: " + definitionId);
+            definitionId = mapped;
+            if (bindingId != null) {
+                Long mappedVersion = callerArtifact.getBindings().get("RULE_VERSION:" + bindingId);
+                if (mappedVersion == null) throw new IllegalStateException("导入制品缺少指定版本绑定");
+                bindingId = mappedVersion;
+            }
+        }
+        RuleDefinition definition = definitionId == null
                 ? findDefinitionForTest(ruleCode, session.getCurrentProjectId())
                 : definitionService.getById(definitionId);
-        String targetRuleCode = frozenRule != null ? frozenRule.getRuleCode()
-                : definition != null && hasText(definition.getRuleCode())
+        String targetRuleCode = definition != null && hasText(definition.getRuleCode())
                 ? definition.getRuleCode() : ruleCode;
         if (session.getRuleStack().contains(targetRuleCode)) {
             throw new IllegalStateException("规则调用存在循环: "
                     + buildCyclePath(session.getRuleStack(), targetRuleCode));
         }
-        RuleDefinitionContent currentContent = frozenRule == null && session.isTestMode() && definition != null
-                ? definitionService.getContent(definition.getId()) : null;
-        RulePublished published = null;
-        String compiledScript;
-        Long targetDefinitionId;
-        boolean useCurrentContent = currentContent != null
-                && Integer.valueOf(1).equals(currentContent.getCompileStatus());
-        if (frozenRule != null) {
-            if (!hasText(frozenRule.getCompiledScript())) {
-                throw new IllegalStateException("制品中的子规则缺少冻结编译脚本: " + targetRuleCode);
-            }
-            compiledScript = frozenRule.getCompiledScript();
-            targetDefinitionId = frozenRule.getDefinitionId();
-        } else if (useCurrentContent) {
-            compiledScript = currentContent.getCompiledScript();
-            targetDefinitionId = definition.getId();
-        } else {
+        // Resolve once per execution; never use the parent artifact's old bundled child.
+        String referenceKey = (definitionId == null ? "legacy:" + ruleCode : definitionId.toString()) + ":" + (bindingId == null ? "LATEST" : bindingId);
+        RulePublished published = session.getResolvedRules().get(referenceKey);
+        if (published == null) {
             published = definitionId == null
                     ? findPublishedRule(ruleCode, session.getCurrentProjectId(), session.getCurrentProjectCode())
                     : findPublishedRule(definitionId, session.getCurrentProjectId(), session.getCurrentProjectCode());
-            if (published == null) {
-                throw new IllegalArgumentException("调用规则不存在、未编译或未发布: "
-                        + (definitionId == null ? ruleCode : definitionId));
-            }
-            compiledScript = published.getCompiledScript();
-            targetDefinitionId = published.getDefinitionId();
-            if (definition == null) {
-                definition = definitionService.getById(targetDefinitionId);
-                targetRuleCode = definition != null && hasText(definition.getRuleCode())
-                        ? definition.getRuleCode() : published.getRuleCode();
-            }
+            if (published != null && versionBindingService != null) published = versionBindingService.resolvePublished(published, bindingId);
+            else if (bindingId != null) throw new IllegalStateException("版本解析服务不可用");
+            if (published != null) session.getResolvedRules().put(referenceKey, published);
+        }
+        if (published == null) {
+            throw new IllegalArgumentException("调用规则不存在、未编译或未发布: "
+                    + (definitionId == null ? ruleCode : definitionId));
+        }
+        String compiledScript = published.getCompiledScript();
+        Long targetDefinitionId = published.getDefinitionId();
+        if (definition == null) {
+            definition = definitionService.getById(targetDefinitionId);
+            targetRuleCode = definition != null && hasText(definition.getRuleCode())
+                    ? definition.getRuleCode() : published.getRuleCode();
         }
         String publishedProjectCode = published == null ? null : published.getProjectCode();
         Long previousProjectId = session.getCurrentProjectId();
@@ -314,35 +325,36 @@ public class RuleRuntimeInvoker {
         Map<String, Object> previousRule = RuntimeContextBridge.currentRule();
         List<String> previousMatchedConditions = RuntimeContextBridge.currentMatchedConditions();
         Map<String, Map<String, Object>> previousSourceStates = RuntimeContextBridge.currentSourceStates();
-        Long projectId = frozenRule != null ? previousProjectId
-                : definition != null ? definition.getProjectId() : previousProjectId;
-        String projectCode = frozenRule != null ? previousProjectCode : hasText(publishedProjectCode)
+        Long projectId = definition != null ? definition.getProjectId() : previousProjectId;
+        String projectCode = hasText(publishedProjectCode)
                 ? publishedProjectCode : resolveProjectCode(projectId);
-        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = frozenRule != null
-                ? rootArtifactSnapshot : published == null
-                || published.getArtifactId() == null ? null
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published.getArtifactId() == null ? null
                 : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), targetDefinitionId, projectId);
         if (runtimeSnapshot != null) {
             registerFrozenFunctions(runtimeSnapshot.getFunctions());
-            if (frozenRule == null && hasText(runtimeSnapshot.getCompiledScript())) {
+            if (hasText(runtimeSnapshot.getCompiledScript())) {
                 compiledScript = runtimeSnapshot.getCompiledScript();
             }
-            if (frozenRule == null && definition != null && hasText(runtimeSnapshot.getModelType())) {
+            if (definition != null && hasText(runtimeSnapshot.getModelType())) {
                 definition.setModelType(runtimeSnapshot.getModelType());
             }
         }
-        String childModelJson = frozenRule != null ? frozenRule.getModelJson()
-                : runtimeSnapshot != null && runtimeSnapshot.getModelJson() != null
-                ? runtimeSnapshot.getModelJson() : useCurrentContent
-                ? currentContent.getModelJson() : (published == null ? null : published.getModelJson());
+        String childModelJson = runtimeSnapshot != null && runtimeSnapshot.getModelJson() != null
+                ? runtimeSnapshot.getModelJson() : published.getModelJson();
         RuleTraceFrame childTrace = createTraceFrame(definition, projectCode,
                 session.currentTrace().getTraceId(), childModelJson);
+        if (published != null) {
+            childTrace.setRuleVersion(published.getVersion()); childTrace.setRevisionId(published.getRevisionId());
+            childTrace.setArtifactDigest(published.getArtifactDigest()); childTrace.setVersionBindingId(published.getVersionBindingId());
+            childTrace.setBindingGeneration(published.getBindingGeneration());
+        }
         session.currentTrace().getChildren().add(childTrace);
         session.getTraceStack().addLast(childTrace);
         session.getRuleStack().addLast(targetRuleCode);
         long childStart = System.currentTimeMillis();
         try {
+            session.setCurrentArtifactSnapshot(runtimeSnapshot);
             session.setCurrentProjectId(projectId);
             session.setCurrentProjectCode(projectCode);
             Map<String, Object> childRule = new LinkedHashMap<>();
@@ -357,8 +369,7 @@ public class RuleRuntimeInvoker {
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
-            List<RuleDefinitionInputField> childFields = frozenRule != null
-                    ? frozenRule.getInputFields() : runtimeSnapshot == null
+            List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)
                     : runtimeSnapshot.getInputFields();
             List<RuleDefinitionInputField> directFields = directInputFields(
@@ -403,6 +414,7 @@ public class RuleRuntimeInvoker {
             session.getTraceStack().removeLast();
             session.setCurrentProjectId(previousProjectId);
             session.setCurrentProjectCode(previousProjectCode);
+            session.setCurrentArtifactSnapshot(callerArtifact);
             RuntimeContextBridge.setRuleContext(previousRule, previousMatchedConditions);
             RuntimeContextBridge.replaceSourceStates(previousSourceStates);
         }
@@ -453,27 +465,6 @@ public class RuleRuntimeInvoker {
                     .or().eq(RuleDefinition::getScope, "GLOBAL"));
         }
         return definitionService.getOne(wrapper, false);
-    }
-
-    private Set<String> requiredInputNames(Long definitionId) {
-        return requiredInputNames(definitionId == null
-                ? Collections.emptyList() : definitionService.listInputFields(definitionId));
-    }
-
-    private RuleDefinition frozenDefinition(
-            ArtifactRuntimeSnapshotService.NestedRuleSnapshot frozenRule,
-            RuleExecutionSession session) {
-        RuleDefinition definition = new RuleDefinition();
-        definition.setId(frozenRule.getDefinitionId());
-        definition.setProjectId(session.getCurrentProjectId());
-        definition.setRuleCode(frozenRule.getRuleCode());
-        definition.setRuleName(frozenRule.getRuleName());
-        definition.setModelType(hasText(frozenRule.getModelType())
-                ? frozenRule.getModelType() : "SCRIPT");
-        definition.setScope(session.getCurrentProjectId() != null
-                && session.getCurrentProjectId() > 0 ? "PROJECT" : "GLOBAL");
-        definition.setStatus(1);
-        return definition;
     }
 
     private Set<String> requiredInputNames(List<RuleDefinitionInputField> fields) {

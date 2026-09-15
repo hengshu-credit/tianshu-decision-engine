@@ -156,9 +156,6 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
 
         // 创建时触发一次字段解析，确保规则详情页能正确展示出入参
         fieldAnalyzer.analyzeAndPersist(definition.getId(), "{}", definition.getModelType(), definition.getProjectId());
-        if (lifecycleService != null) {
-            lifecycleService.ensureDraft(definition.getId());
-        }
 
         return definition;
     }
@@ -226,6 +223,14 @@ public class RuleDefinitionService extends ServiceImpl<RuleDefinitionMapper, Rul
         RuleDraftSaveResponse saved =
                 ruleDraftService.save(request);
         refreshParentFields(request.getDefinitionId());
+        return saved;
+    }
+
+    @Transactional
+    public RuleDraftSaveResponse saveTemporaryDraft(Long definitionId,
+            com.hengshucredit.rule.model.dto.RuleDraftSourceRequest request) {
+        RuleDraftSaveResponse saved = lifecycleService.saveTemporaryDraft(definitionId, request);
+        refreshParentFields(definitionId);
         return saved;
     }
 

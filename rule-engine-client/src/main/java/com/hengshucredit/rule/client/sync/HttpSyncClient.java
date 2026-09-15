@@ -47,9 +47,19 @@ public class HttpSyncClient {
     }
 
     public CachedRule fetchRule(String ruleCode) {
+        return fetchRulePath("/api/rule/sync/" + ruleCode);
+    }
+
+    public CachedRule fetchRuleById(Long ruleId, Long bindingId) {
+        CachedRule rule = fetchRulePath("/api/rule/sync/by-id/" + ruleId + (bindingId == null ? "" : "?versionBindingId=" + bindingId));
+        if (rule != null) rule.setFixedVersion(bindingId != null);
+        return rule;
+    }
+
+    private CachedRule fetchRulePath(String path) {
         try {
             Request.Builder requestBuilder = new Request.Builder()
-                    .url(serverUrl + "/api/rule/sync/" + ruleCode)
+                    .url(serverUrl + path)
                     .get();
             Request request = authenticate(requestBuilder.build());
             try (Response response = httpClient.newCall(request).execute()) {
@@ -64,7 +74,7 @@ public class HttpSyncClient {
         } catch (ProjectClientAuthenticationException e) {
             throw e;
         } catch (Exception e) {
-            log.warn("Failed to fetch rule {}: {}", ruleCode, e.getMessage());
+            log.warn("Failed to fetch rule {}: {}", path, e.getMessage());
         }
         return null;
     }
@@ -204,6 +214,16 @@ public class HttpSyncClient {
         if (obj == null) return null;
         CachedRule rule = new CachedRule();
         rule.setRuleCode(obj.getString("ruleCode"));
+        rule.setDefinitionId(obj.getLong("definitionId"));
+        rule.setVersionBindingId(obj.getLong("versionBindingId"));
+        rule.setBindingGeneration(obj.getLong("bindingGeneration"));
+        rule.setImported(obj.getBooleanValue("imported"));
+        JSONObject bindings = obj.getJSONObject("importBindings");
+        if (bindings != null) {
+            java.util.Map<String, Long> ids = new java.util.LinkedHashMap<>();
+            for (String key : bindings.keySet()) ids.put(key, bindings.getLong(key));
+            rule.setImportBindings(ids);
+        }
         rule.setProjectCode(obj.getString("projectCode"));
         rule.setVersion(obj.getIntValue("version"));
         rule.setRevisionId(obj.getLong("revisionId"));

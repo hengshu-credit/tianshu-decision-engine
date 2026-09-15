@@ -293,6 +293,27 @@
         </div>
       </section>
 
+      <section class="theme-section" aria-labelledby="table-scroll-title">
+        <h3 id="table-scroll-title">列表表格</h3>
+        <div class="setting-row">
+          <span>滚动方式</span>
+          <div class="segmented-control" aria-label="列表表格滚动方式">
+            <button
+              v-for="option in tableScrollOptions"
+              :key="option.value"
+              type="button"
+              :class="{ 'is-active': draft.tableScrollMode === option.value }"
+              :data-table-scroll-mode="option.value"
+              :aria-pressed="draft.tableScrollMode === option.value"
+              @click="patchDraft({ tableScrollMode: option.value })"
+            >
+              {{ option.label }}
+            </button>
+          </div>
+        </div>
+        <p class="section-hint">表格内滚动时，管理列表占满可用高度，表头和底部分页保持可见；随内容增高时，滚动整个内容区。</p>
+      </section>
+
       <section class="theme-section" aria-labelledby="other-settings-title">
         <h3 id="other-settings-title">其他设置</h3>
         <label class="setting-row">
@@ -397,6 +418,10 @@ export default {
       contentWidthOptions: [
         { value: 'FLUID', label: '流式' },
         { value: 'FIXED', label: '定宽' },
+      ],
+      tableScrollOptions: [
+        { value: 'AUTO', label: '随内容增高' },
+        { value: 'FIXED', label: '表格内滚动' },
       ],
     }
   },

@@ -18,6 +18,14 @@ public class RulePublished {
     /** 规则所属项目编码 */
     private String projectCode;
     private Integer version;
+    @TableField(exist = false)
+    private Long versionBindingId;
+    @TableField(exist = false)
+    private Long bindingGeneration;
+    @TableField(exist = false)
+    private boolean imported;
+    @TableField(exist = false)
+    private java.util.Map<String, Long> importBindings;
     private String modelType;
     private String compiledScript;
     private String compiledType;

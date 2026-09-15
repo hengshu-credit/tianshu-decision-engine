@@ -29,6 +29,14 @@ PowerShell 可使用 `Copy-Item .env.example .env`。Compose 不再提供 MySQL/
 
 ### 后端
 
+Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端：
+
+```powershell
+.\start-dev.cmd
+```
+
+需先配置根目录 `.env`，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 `PATH` 调用。命令会编译后端依赖、在缺少前端依赖时执行 `npm ci`，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 `.env` 的 `SERVER_PORT` 和 `VITE_PORT`，日志及本次启动的进程 ID 保存在 `.codex-run-logs/`。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。
+
 ```bash
 mvn clean install -DskipTests
 cd rule-engine-server

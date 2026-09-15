@@ -353,6 +353,7 @@ function createDetailApiData() {
   })
   routes.set('/api/rule/experiment/logs', { records: [], total: 0 })
 
+  routes.set('/api/rule/definition/101/published-versions', routes.get('/api/rule/definition/versions/101'))
   return routes
 }
 

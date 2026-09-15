@@ -2,40 +2,21 @@ import { mount } from '@test-utils'
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 
 describe('RuleDesignerActionBar', () => {
-  test('只保留一个主动作且未检查内容不能进入测试', async () => {
-    const wrapper = mount(RuleDesignerActionBar, {
-      props: {
-        canEdit: true,
-        state: 'DIRTY',
-        canTest: false,
-      },
-    })
-
-    const primaryButtons = wrapper.findAll('.rule-designer-actions__primary')
-    expect(primaryButtons).toHaveLength(1)
-    expect(wrapper.text()).toContain('保存并检查')
-    expect(wrapper.text()).toContain('仅保存草稿')
-    expect(wrapper.text()).toContain('进入测试')
-    expect(wrapper.get('[data-action="test"]').attributes('disabled')).toBeDefined()
-
-    await wrapper.get('[data-action="save-check"]').trigger('click')
-    expect(wrapper.emitted('save-check')).toHaveLength(1)
+  test('未保存配置仍可独立编译与测试', async () => {
+    const wrapper = mount(RuleDesignerActionBar, { props: { canEdit: true, state: 'DIRTY', canTest: true } })
+    expect(wrapper.findAll('[data-action]').map(button => button.attributes('data-action'))).toEqual(['compile', 'save', 'publish', 'test'])
+    expect(wrapper.get('[data-action="test"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-action="compile"]').trigger('click')
+    expect(wrapper.emitted('compile')).toHaveLength(1)
+    expect(wrapper.emitted('save')).toBeUndefined()
   })
 
-  test('检查通过后启用测试并以文字链接呈现生命周期入口', async () => {
-    const wrapper = mount(RuleDesignerActionBar, {
-      props: {
-        canEdit: true,
-        state: 'READY_TO_TEST',
-        canTest: true,
-      },
-    })
-
-    expect(wrapper.get('[data-action="test"]').attributes('disabled')).toBeUndefined()
-    expect(wrapper.get('[data-action="lifecycle"]').classes()).toContain(
-      'rule-designer-actions__link'
-    )
-    await wrapper.get('[data-action="lifecycle"]').trigger('click')
-    expect(wrapper.emitted('lifecycle')).toHaveLength(1)
+  test('进行中禁止重复操作，无执行权限时测试禁用', async () => {
+    const wrapper = mount(RuleDesignerActionBar, { props: { canEdit: true, busy: true, canTest: false } })
+    expect(wrapper.findAll('button').every(button => button.attributes('disabled') !== undefined)).toBe(true)
+    await wrapper.setProps({ busy: false })
+    expect(wrapper.get('[data-action="test"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-action="publish"]').trigger('click')
+    expect(wrapper.emitted('publish')).toHaveLength(1)
   })
 })

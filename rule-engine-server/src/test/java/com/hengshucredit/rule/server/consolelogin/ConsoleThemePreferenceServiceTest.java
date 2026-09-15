@@ -21,7 +21,7 @@ public class ConsoleThemePreferenceServiceTest {
     public void missingPreferenceUsesTheCompleteSystemDefault() {
         ConsoleThemePreference theme = service(new HashMap<>()).load(7L);
 
-        assertEquals(Integer.valueOf(2), theme.getSchemaVersion());
+        assertEquals(Integer.valueOf(3), theme.getSchemaVersion());
         assertEquals("LIGHT", theme.getColorScheme());
         assertEquals("PRESET", theme.getAccentMode());
         assertEquals("THEME_BLUE", theme.getAccentPreset());
@@ -33,6 +33,7 @@ public class ConsoleThemePreferenceServiceTest {
         assertEquals("LEFT", theme.getNavigationLayout());
         assertEquals("DARK", theme.getSidebarTheme());
         assertEquals("FLUID", theme.getContentWidth());
+        assertEquals("AUTO", theme.getTableScrollMode());
         assertTrue(theme.getFixedSidebar());
         assertFalse(theme.getColorWeak());
     }
@@ -86,7 +87,7 @@ public class ConsoleThemePreferenceServiceTest {
 
         ConsoleThemePreference loaded = service(rows).load(7L);
 
-        assertEquals(Integer.valueOf(2), loaded.getSchemaVersion());
+        assertEquals(Integer.valueOf(3), loaded.getSchemaVersion());
         assertEquals("DARK", loaded.getColorScheme());
         assertEquals("NEBULA_GRADIENT", loaded.getAccentPreset());
         assertEquals("LIGHT", loaded.getSidebarTheme());
@@ -115,7 +116,7 @@ public class ConsoleThemePreferenceServiceTest {
         Map<String, Object> wrongType = validTheme();
         wrongType.put("fixedSidebar", "true");
         Map<String, Object> futureVersion = validTheme();
-        futureVersion.put("schemaVersion", 3);
+        futureVersion.put("schemaVersion", 4);
 
         assertThrows(IllegalArgumentException.class,
                 () -> service.save(7L, "alice", missingField));
@@ -162,9 +163,55 @@ public class ConsoleThemePreferenceServiceTest {
         assertEquals("THEME_BLUE", loaded.getAccentPreset());
     }
 
+    @Test
+    public void tableScrollModesRoundTripAndRemainIsolatedByUser() {
+        ConsoleThemePreferenceService service = service(new HashMap<>());
+        for (String mode : List.of("FIXED", "AUTO")) {
+            Map<String, Object> request = validTheme();
+            request.put("tableScrollMode", mode);
+            assertEquals(mode, service.save(7L, "alice", request).getTableScrollMode());
+            assertEquals(mode, service.load(7L).getTableScrollMode());
+            assertEquals("AUTO", service.load(8L).getTableScrollMode());
+        }
+    }
+
+    @Test
+    public void v2PreferenceKeepsAppearanceAndDefaultsToAutoHeight() {
+        Map<String, String> rows = new HashMap<>();
+        Map<String, Object> legacy = validTheme();
+        legacy.put("schemaVersion", 2);
+        legacy.remove("tableScrollMode");
+        legacy.put("colorScheme", "DARK");
+        legacy.put("navigationLayout", "TOP");
+        rows.put("7:UI_THEME", com.alibaba.fastjson.JSON.toJSONString(legacy));
+
+        ConsoleThemePreference loaded = service(rows).load(7L);
+        assertEquals(Integer.valueOf(3), loaded.getSchemaVersion());
+        assertEquals("DARK", loaded.getColorScheme());
+        assertEquals("TOP", loaded.getNavigationLayout());
+        assertEquals("AUTO", loaded.getTableScrollMode());
+    }
+
+    @Test
+    public void invalidOrMissingTableScrollModeDoesNotOverwriteSavedPreference() {
+        ConsoleThemePreferenceService service = service(new HashMap<>());
+        Map<String, Object> request = validTheme();
+        request.put("tableScrollMode", "FIXED");
+        service.save(7L, "alice", request);
+        for (Object mode : List.of("SCROLL", true, 1)) {
+            request.put("tableScrollMode", mode);
+            assertThrows(IllegalArgumentException.class,
+                    () -> service.save(7L, "alice", request));
+        }
+        request.remove("tableScrollMode");
+        assertThrows(IllegalArgumentException.class,
+                () -> service.save(7L, "alice", request));
+        assertEquals("FIXED", service.load(7L).getTableScrollMode());
+    }
+
     private static Map<String, Object> validTheme() {
         Map<String, Object> value = new HashMap<>();
-        value.put("schemaVersion", 2);
+        value.put("schemaVersion", 3);
         value.put("colorScheme", "LIGHT");
         value.put("accentMode", "PRESET");
         value.put("accentPreset", "THEME_BLUE");
@@ -175,6 +222,7 @@ public class ConsoleThemePreferenceServiceTest {
         value.put("navigationLayout", "LEFT");
         value.put("sidebarTheme", "DARK");
         value.put("contentWidth", "FLUID");
+        value.put("tableScrollMode", "AUTO");
         value.put("fixedSidebar", true);
         value.put("colorWeak", false);
         return value;

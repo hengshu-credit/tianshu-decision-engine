@@ -291,6 +291,12 @@ public class RuleDefinitionController {
                 definitionId, request));
     }
 
+    @PostMapping("/{definitionId}/revisions/temporary-draft")
+    public R<RuleDraftSaveResponse> saveTemporaryDraft(
+            @PathVariable Long definitionId, @RequestBody RuleDraftSourceRequest request) {
+        return R.ok(definitionService.saveTemporaryDraft(definitionId, request));
+    }
+
     @GetMapping("/{definitionId}/revisions/repair-preview")
     public R<RuleRevisionRepairService.RepairPreview>
     repairPreview(@PathVariable Long definitionId) {

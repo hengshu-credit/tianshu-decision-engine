@@ -570,6 +570,8 @@ export default {
           ElMessage.success('操作成功')
         }
         await this.loadDetail()
+      } catch (error) {
+        if (!error?.requestErrorNotified) ElMessage.error(error?.message || '审批操作失败，请重试')
       } finally {
         this.actionLoading = false
       }

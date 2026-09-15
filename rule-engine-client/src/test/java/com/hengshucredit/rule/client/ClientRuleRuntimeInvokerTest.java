@@ -19,6 +19,48 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class ClientRuleRuntimeInvokerTest {
+    @Test
+    public void importedCallsRequireExplicitTargetIdsAndRestoreParentBindings() {
+        L1MemoryCache cache = new L1MemoryCache(10);
+        CachedRule root = rule("ROOT", "SCRIPT", "return 0;"); root.setDefinitionId(1L);
+        root.setImported(true); root.setImportBindings(Map.of("RULE:7", 22L, "RULE_VERSION:8", 81L));
+        CachedRule child = rule("CHILD", "SCRIPT", "return 9;"); child.setDefinitionId(22L);
+        child.setFixedVersion(true); child.setVersionBindingId(81L);
+        cache.put(root); cache.put(child);
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleEngineClientConfig config = new RuleEngineClientConfig(); config.setProjectId(1L);
+        ClientRuleRuntimeInvoker invoker = new ClientRuleRuntimeInvoker(cache, null, engine, config);
+        invoker.register(engine.getRunner()); invoker.enter(root, new LinkedHashMap<>());
+        try {
+            assertEquals(9, ((Number) invoker.executeRuleVersionById("7", "8")).intValue());
+            assertEquals(9, ((Number) invoker.executeRuleVersionById("7", "8")).intValue());
+            org.junit.Assert.assertThrows(IllegalStateException.class, () -> invoker.executeRuleById("22"));
+            org.junit.Assert.assertThrows(IllegalStateException.class, () -> invoker.executeRule("CHILD"));
+        } finally { invoker.exit(); }
+    }
+    @Test
+    public void fixedAndLatestCallsUseIdsAndPinResolutionForOneExecution() {
+        L1MemoryCache cache = new L1MemoryCache(10);
+        CachedRule root = rule("ROOT", "SCRIPT", "return 0;"); root.setDefinitionId(1L);
+        CachedRule latest = rule("CHILD", "SCRIPT", "return 2;"); latest.setDefinitionId(22L); latest.setVersion(2); latest.setVersionBindingId(82L); latest.setBindingGeneration(1L);
+        CachedRule fixed = rule("CHILD", "SCRIPT", "return 1;"); fixed.setDefinitionId(22L); fixed.setVersion(1); fixed.setVersionBindingId(81L); fixed.setBindingGeneration(1L); fixed.setFixedVersion(true);
+        cache.put(root); cache.put(latest); cache.put(fixed);
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleEngineClientConfig config = new RuleEngineClientConfig(); config.setProjectId(1L);
+        ClientRuleRuntimeInvoker invoker = new ClientRuleRuntimeInvoker(cache, null, engine, config);
+        invoker.register(engine.getRunner());
+        Map<String, Object> values = new LinkedHashMap<>(); invoker.enter(root, values);
+        try {
+            RuleResult result = engine.execute("executeRuleVersionById(\"22\", \"81\") + executeRuleById(\"22\")", values, true);
+            assertTrue(result.getErrorMessage(), result.isSuccess()); assertEquals(3, ((Number) result.getResult()).intValue());
+            CachedRule replacement = rule("CHILD", "SCRIPT", "return 7;"); replacement.setDefinitionId(22L); replacement.setVersion(2); replacement.setVersionBindingId(82L); replacement.setBindingGeneration(2L);
+            cache.put(replacement);
+            assertEquals(2, ((Number) invoker.executeRuleById("22")).intValue());
+        } finally { invoker.exit(); }
+        invoker.enter(root, new LinkedHashMap<>());
+        try { assertEquals(7, ((Number) invoker.executeRuleById("22")).intValue()); assertEquals(1, ((Number) invoker.executeRuleVersionById("22", "81")).intValue()); }
+        finally { invoker.exit(); }
+    }
 
     @Test
     public void childCurrentRuleReturnAllowsLocalParentToContinue() {

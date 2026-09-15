@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page billing-page">
+  <div class="uiue-list-page billing-page management-list-page">
     <div class="module-hint">
       <div class="hint-title">账单管理</div>
       <div class="hint-text">
@@ -8,8 +8,8 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab" @tab-click="onTabChange">
-      <el-tab-pane label="计费配置" name="config">
+    <el-tabs class="management-table-region" v-model="activeTab" @tab-click="onTabChange">
+      <el-tab-pane class="management-table-region" label="计费配置" name="config">
         <el-alert
           title="计费配置变更先审批、后生效；审批通过前，当前计费口径保持不变。计费明细查询和汇总刷新仍可即时使用。"
           type="info"
@@ -101,7 +101,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="configList"
           border
           size="small"
@@ -209,7 +209,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="计费明细" name="record">
+      <el-tab-pane class="management-table-region" label="计费明细" name="record">
         <div class="uiue-search-container">
           <el-form :inline="true" size="small" @keyup.enter="handleRecordQuery">
             <el-form-item label="项目编码">
@@ -301,7 +301,7 @@
           </el-form>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="recordList"
           border
           size="small"
@@ -412,7 +412,7 @@
         />
       </el-tab-pane>
 
-      <el-tab-pane label="计费汇总" name="summary">
+      <el-tab-pane class="management-table-region" label="计费汇总" name="summary">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form
             :inline="true"
@@ -521,7 +521,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="summaryList"
           border
           size="small"

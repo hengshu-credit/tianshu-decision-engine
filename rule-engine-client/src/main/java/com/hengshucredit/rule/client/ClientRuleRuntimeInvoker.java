@@ -52,6 +52,10 @@ class ClientRuleRuntimeInvoker {
         try {
             runner.addFunctionOfServiceMethod("executeRule", this, "executeRule", ONE_STRING);
             runner.addFunctionOfServiceMethod("executeRuleField", this, "executeRuleField", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleById", this, "executeRuleById", ONE_STRING);
+            runner.addFunctionOfServiceMethod("executeRuleFieldById", this, "executeRuleFieldById", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleVersionById", this, "executeRuleVersionById", TWO_STRINGS);
+            runner.addFunctionOfServiceMethod("executeRuleVersionFieldById", this, "executeRuleVersionFieldById", new Class<?>[]{String.class, String.class, String.class});
             runner.addFunctionOfServiceMethod("terminateAllRules", this, "terminateAllRules", NO_ARGS);
         } catch (Exception e) {
             registered.set(false);
@@ -69,6 +73,7 @@ class ClientRuleRuntimeInvoker {
 
     void enter(CachedRule rule, Object context) {
         ExecutionFrame frame = new ExecutionFrame();
+        frame.currentRule = rule;
         frame.context = context;
         frame.rootOutputScriptNames = rule == null || rule.getOutputScriptNames() == null
                 ? Collections.<String>emptyList() : rule.getOutputScriptNames();
@@ -114,6 +119,44 @@ class ClientRuleRuntimeInvoker {
         return doExecuteRule(ruleCode);
     }
 
+    public Object executeRuleById(String ruleId) { return executeVersion(ruleId, null); }
+    public Object executeRuleVersionById(String ruleId, String bindingId) { return executeVersion(ruleId, bindingId); }
+    public Object executeRuleFieldById(String ruleId, String field) { return output(executeVersion(ruleId, null), field); }
+    public Object executeRuleVersionFieldById(String ruleId, String bindingId, String field) { return output(executeVersion(ruleId, bindingId), field); }
+    private Object output(Object value, String field) { return value instanceof Map<?, ?> map ? map.get(field) : null; }
+    private Object executeVersion(String rawId, String rawBinding) {
+        Long id = positiveId(rawId), binding = rawBinding == null ? null : positiveId(rawBinding);
+        ExecutionFrame frame = currentFrame.get();
+        if (frame == null) throw new IllegalStateException("规则调用只能在执行期间使用");
+        if (frame.currentRule != null && frame.currentRule.isImported()) {
+            Map<String, Long> bindings = frame.currentRule.getImportBindings();
+            Long mappedId = bindings == null ? null : bindings.get("RULE:" + id);
+            if (mappedId == null) throw new IllegalStateException("导入制品缺少规则 ID 绑定");
+            id = mappedId;
+            if (binding != null) {
+                binding = bindings.get("RULE_VERSION:" + binding);
+                if (binding == null) throw new IllegalStateException("导入制品缺少指定版本绑定");
+            }
+        }
+        String key = id + ":" + (binding == null ? "LATEST" : binding);
+        CachedRule rule = frame.resolvedRules.get(key);
+        if (rule == null) {
+            rule = l1Cache.getById(id, binding);
+            if (rule == null) {
+                rule = httpSyncClient.fetchRuleById(id, binding);
+                if (rule == null || !id.equals(rule.getDefinitionId()) || (binding != null && !binding.equals(rule.getVersionBindingId())))
+                    throw new IllegalArgumentException("指定规则版本不存在或不可访问: " + key);
+                l1Cache.put(rule);
+            }
+            frame.resolvedRules.put(key, rule);
+        }
+        return doExecuteRule(rule.getRuleCode(), rule);
+    }
+    private static Long positiveId(String id) {
+        if (id == null || !id.matches("[1-9][0-9]*")) throw new IllegalArgumentException("规则或版本 ID 无效");
+        return Long.valueOf(id);
+    }
+
     public Object executeRuleField(String ruleCode, String outputField) {
         Object result = doExecuteRule(ruleCode);
         if (!hasText(outputField) || result == null) {
@@ -151,6 +194,12 @@ class ClientRuleRuntimeInvoker {
     }
 
     private Object doExecuteRule(String ruleCode) {
+        ExecutionFrame frame = currentFrame.get();
+        if (frame != null && frame.currentRule != null && frame.currentRule.isImported())
+            throw new IllegalStateException("导入制品的规则调用必须使用显式 ID 绑定");
+        return doExecuteRule(ruleCode, null);
+    }
+    private Object doExecuteRule(String ruleCode, CachedRule selected) {
         if (!hasText(ruleCode)) {
             throw new IllegalArgumentException("调用规则编码不能为空");
         }
@@ -161,7 +210,7 @@ class ClientRuleRuntimeInvoker {
         if (frame.stack.contains(ruleCode)) {
             throw new IllegalStateException("规则调用存在循环: " + buildCyclePath(frame.stack, ruleCode));
         }
-        CachedRule cached = getCachedRule(ruleCode);
+        CachedRule cached = selected == null ? getCachedRule(ruleCode) : selected;
         if (cached == null) {
             throw new IllegalArgumentException("调用规则不存在或未同步: " + ruleCode);
         }
@@ -172,7 +221,9 @@ class ClientRuleRuntimeInvoker {
         List<String> previousMatchedConditions = RuntimeContextBridge.currentMatchedConditions();
         frame.stack.addLast(ruleCode);
         long childStart = System.currentTimeMillis();
+        CachedRule caller = frame.currentRule;
         try {
+            frame.currentRule = cached;
             setRuleContext(cached, childTrace.getTraceId());
             RuleResult result = engine.execute(cached.getCompiledScript(), frame.context, config.isTraceEnabled());
             childTrace.setExpressionTrace(result.getTraces() == null
@@ -192,6 +243,7 @@ class ClientRuleRuntimeInvoker {
             childTrace.setDurationMs(System.currentTimeMillis() - childStart);
             frame.stack.removeLast();
             frame.traceStack.removeLast();
+            frame.currentRule = caller;
             RuntimeContextBridge.setRuleContext(previousRule, previousMatchedConditions);
         }
     }
@@ -206,6 +258,11 @@ class ClientRuleRuntimeInvoker {
         trace.setTraceId(TraceIdGenerator.generate(
                 TraceIdGenerator.ruleTypeCode(modelType), scopeType, scopeCode));
         trace.setRuleCode(rule == null ? null : rule.getRuleCode());
+        if (rule != null) {
+            trace.setRuleId(rule.getDefinitionId()); trace.setRuleVersion(rule.getVersion());
+            trace.setRevisionId(rule.getRevisionId()); trace.setArtifactDigest(rule.getArtifactDigest());
+            trace.setVersionBindingId(rule.getVersionBindingId()); trace.setBindingGeneration(rule.getBindingGeneration());
+        }
         trace.setRuleName(rule == null ? null : rule.getRuleCode());
         trace.setModelType(modelType);
         trace.setModelJson(rule == null ? null : rule.getModelJson());
@@ -283,6 +340,8 @@ class ClientRuleRuntimeInvoker {
     }
 
     private static class ExecutionFrame {
+        private CachedRule currentRule;
+        private final Map<String, CachedRule> resolvedRules = new LinkedHashMap<>();
         private Object context;
         private final Deque<String> stack = new ArrayDeque<>();
         private final Deque<RuleTraceFrame> traceStack = new ArrayDeque<>();

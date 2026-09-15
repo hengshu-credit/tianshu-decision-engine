@@ -46,15 +46,22 @@ public class RulePreflightValidationService {
             new RuleSchemaCompatibilityService();
 
     public RulePreflightReport validate(Long revisionId) {
-        RulePreflightReport report = new RulePreflightReport();
+        RulePreflightReport report = validatePreview(loadRevision(revisionId));
         report.setRevisionId(revisionId);
-        RuleRevision revision = loadRevision(revisionId);
+        return report;
+    }
+
+    /** 与持久化预检共享校验，但绝不插入临时修订。 */
+    public RulePreflightReport validatePreview(RuleRevision revision) {
+        RulePreflightReport report = new RulePreflightReport();
+        report.setRevisionId(revision == null ? null : revision.getId());
         if (revision == null) {
             report.getErrors().add(RuleValidationIssue.error("REVISION_NOT_FOUND", "$", "规则修订不存在"));
             report.setValid(false);
             return report;
         }
         RuleDefinition definition = loadDefinition(revision.getDefinitionId());
+        report.setLockVersion(revision.getLockVersion());
         if (definition == null) {
             report.getErrors().add(RuleValidationIssue.error("DEFINITION_NOT_FOUND", "$", "规则定义不存在"));
             report.setValid(false);
@@ -252,7 +259,7 @@ public class RulePreflightValidationService {
     }
 
     protected CompileResult compile(RuleDefinition definition, RuleRevision revision) {
-        return compileService.compilePreview(definition.getId(), revision.getModelJson(), definition.getModelType());
+        return compileService.compileSyntaxPreview(definition.getId(), revision.getModelJson(), definition.getModelType());
     }
 
     protected RuleFieldAnalyzer.ResolvedFields resolveFields(
@@ -264,7 +271,7 @@ public class RulePreflightValidationService {
     protected RuleDependencyClosureService.DependencyClosure resolveDependencies(
             RuleDefinition definition, RuleRevision revision,
             RuleFieldAnalyzer.ResolvedFields fields) {
-        return dependencyClosureService.resolve(definition.getId(), revision.getId(), fields);
+        return dependencyClosureService.resolvePreview(revision, fields);
     }
 
     protected List<RuleDefinitionInputField> loadInputFields(Long definitionId) {

@@ -16,8 +16,19 @@ describe('themeRuntime — 全局主题应用和本地降级', () => {
     document.documentElement.removeAttribute('data-theme')
     document.documentElement.removeAttribute('data-sidebar-theme')
     document.documentElement.removeAttribute('data-navigation-layout')
+    document.documentElement.removeAttribute('data-table-scroll-mode')
     document.documentElement.className = ''
     document.documentElement.removeAttribute('style')
+  })
+
+  test('表格滚动模式能应用、持久化并恢复默认', () => {
+    const fixed = { ...DEFAULT_THEME_CONFIG, tableScrollMode: 'FIXED' }
+    writeLocalTheme(window.localStorage, fixed)
+    bootstrapLocalTheme(window.localStorage)
+    expect(document.documentElement.dataset.tableScrollMode).toBe('fixed')
+    expect(readLocalTheme(window.localStorage).tableScrollMode).toBe('FIXED')
+    applyTheme(DEFAULT_THEME_CONFIG)
+    expect(document.documentElement.dataset.tableScrollMode).toBe('auto')
   })
 
   test('夜间渐变主题一次更新根属性、布局状态和 Element Plus 主色', () => {

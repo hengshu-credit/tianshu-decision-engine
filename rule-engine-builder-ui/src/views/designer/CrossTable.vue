@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -40,6 +41,8 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <el-button-group>
           <el-button size="small" :icon="ElIconPlus" @click="addRow"
@@ -51,20 +54,28 @@
         </el-button-group>
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
           :can-test="designerCanTest"
           :state="designerActionState"
+          :busy="designerBusy"
           :recovery="designerRecoveryCandidate"
           :report="designerValidationReport"
           @save="handleSave"
-          @save-check="handleCompile"
+          @compile="handleCompile"
           @test="handleTest"
-          @lifecycle="goRuleLifecycle"
+          @publish="handlePublish"
           @restore="restoreDesignerRecovery"
           @discard-recovery="discardDesignerRecovery"
         />
       </div>
     </div>
+
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
 
     <!-- 维度变量定义 -->
     <div class="ct-dim-panel">
@@ -317,7 +328,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="CROSS"
-      :model-json="model"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -518,7 +529,7 @@ export default {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
-        if (content && content.modelJson && content.modelJson !== '{}') {
+        if (content && content.modelJson) {
           this.model = JSON.parse(content.modelJson)
         }
       } catch (e) {
@@ -639,8 +650,9 @@ export default {
       this.model.colHeaderOperands.splice(ci, 1)
       this.model.cellOperands.forEach((row) => row.splice(ci, 1))
     },
-    async handleSave() {
+    async performDesignerSave() {
       const result = await this.saveDraftModel(JSON.stringify(this.model))
+      if (!result) return false
       this.refreshProjectRefs()
 
       this.$message.success('草稿已保存')
@@ -649,10 +661,18 @@ export default {
     serializeDesignerDraft() {
       return JSON.stringify(JSON.parse(JSON.stringify(this.model)))
     },
-    async handleCompile() {
-      const result = await this.handleSave()
-      return this.completeRuleCompile(result, {
-        onSuccess: () => this.loadProjectVars(this.definitionId),
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
     async handleTest() {

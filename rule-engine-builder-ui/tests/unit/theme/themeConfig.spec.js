@@ -10,7 +10,7 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
   test('损坏、缺字段或未来版本配置整体回退默认值', () => {
     expect(normalizeThemeConfig(null)).toEqual(DEFAULT_THEME_CONFIG)
     expect(normalizeThemeConfig({
-      schemaVersion: 3,
+      schemaVersion: 4,
       colorScheme: 'DARK',
       accentPreset: 'url(evil)',
     })).toEqual(DEFAULT_THEME_CONFIG)
@@ -51,7 +51,7 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
     })
   })
 
-  test('v1 配置自动迁移到 v2 并保留原有外观选择', () => {
+  test('v1 配置自动迁移到当前版本并保留原有外观选择', () => {
     const legacy = {
       schemaVersion: 1,
       colorScheme: 'DARK',
@@ -71,6 +71,30 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
       fixedSidebar: false,
       colorWeak: true,
     })
+  })
+
+  test('v2 配置保留自定义外观并默认随内容增高', () => {
+    const legacy = { ...DEFAULT_THEME_CONFIG, schemaVersion: 2, navigationLayout: 'TOP', colorScheme: 'DARK' }
+    delete legacy.tableScrollMode
+
+    expect(normalizeThemeConfig(legacy)).toEqual({
+      ...legacy, schemaVersion: 3, tableScrollMode: 'AUTO',
+    })
+    expect(normalizeThemeConfig({ ...legacy, unknown: true })).toEqual(DEFAULT_THEME_CONFIG)
+  })
+
+  test.each(['AUTO', 'FIXED'])('表格滚动方式 %s 参与主题保存', tableScrollMode => {
+    const config = { ...DEFAULT_THEME_CONFIG, tableScrollMode, colorScheme: 'DARK' }
+    expect(normalizeThemeConfig(config)).toEqual(config)
+  })
+
+  test('表格滚动配置缺失或非法时回退默认值', () => {
+    const config = { ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK' }
+    delete config.tableScrollMode
+    expect(normalizeThemeConfig(config)).toEqual(DEFAULT_THEME_CONFIG)
+    for (const value of ['SCROLL', null, true]) {
+      expect(normalizeThemeConfig({ ...config, tableScrollMode: value })).toEqual(DEFAULT_THEME_CONFIG)
+    }
   })
 
   test('自定义纯色生成与主色协调但不同的辅助色', () => {

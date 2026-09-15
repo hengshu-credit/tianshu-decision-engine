@@ -114,7 +114,7 @@
                   "
                   size="small"
                 >
-                  {{ ['草稿', '已发布', '已下线'][selectedRule.status] }}
+                  {{ ['未发布', '已发布', '已下线'][selectedRule.status] }}
                 </el-tag>
               </el-descriptions-item>
             </el-descriptions>

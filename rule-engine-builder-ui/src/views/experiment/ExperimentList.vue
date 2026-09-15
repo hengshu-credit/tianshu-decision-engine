@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page experiment-page uiue-compact-workbench">
+  <div class="uiue-list-page experiment-page uiue-compact-workbench management-list-page">
     <div class="page-head">
       <div>
         <h2>分流实验</h2>
@@ -69,7 +69,7 @@
       </div>
     </div>
 
-    <el-table show-overflow-tooltip :data="experiments" border size="small" v-loading="loading">
+    <el-table class="management-table" show-overflow-tooltip :data="experiments" border size="small" v-loading="loading">
       <el-table-column
         prop="experimentCode"
         label="实验编码"

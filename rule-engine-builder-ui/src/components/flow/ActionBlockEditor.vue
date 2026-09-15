@@ -341,6 +341,8 @@
             @select="(rule) => onRuleSelect(block, rule)"
           />
           <div class="shared-context-hint">
+            <rule-call-version-select :rule-id="block.ruleId" :version-mode="block.versionMode || 'LATEST'" :version-binding-id="block.versionBindingId"
+              @change="value => changeRuleVersion(block, value)" @fields="value => ruleVersionFields[value.bindingId] = value.outputFields" />
             <el-icon><el-icon-info /></el-icon>
             子规则全部输出会写入当前共享上下文，后续动作可直接引用最新值
           </div>
@@ -655,6 +657,7 @@
 </template>
 
 <script>
+import RuleCallVersionSelect from './RuleCallVersionSelect.vue'
 import { markRaw } from 'vue'
 import {
   InfoFilled as ElIconInfo,
@@ -691,6 +694,7 @@ export default {
   data() {
     return {
       blocks: [],
+      ruleVersionFields: {},
       blockTypes: BLOCK_TYPES,
       literalKinds: ['LITERAL'],
       readKinds: getExpressionContext('READ_EXPRESSION').allowedKinds,
@@ -703,6 +707,7 @@ export default {
     }
   },
   components: {
+    RuleCallVersionSelect,
     AssignmentRow,
     AssignmentTarget,
     OperandPicker,
@@ -739,6 +744,15 @@ export default {
     },
   },
   methods: {
+    changeRuleVersion(block, value) {
+      block.versionMode = value.versionMode
+      if (value.versionBindingId) block.versionBindingId = value.versionBindingId
+      else delete block.versionBindingId
+      if (block.outputField && !this.ruleOutputFields(block).some(field => (field.scriptName || field.fieldName) === block.outputField)) {
+        block.outputField = ''; block.targetOperand = null
+      }
+      this.sync()
+    },
     sync() {
       $emit(this, 'update', blocksToActionData(this.blocks))
     },
@@ -937,6 +951,8 @@ export default {
           ruleCode: block.ruleCode || '',
           ruleName: block.ruleName || '',
           modelType: block.modelType || '',
+          versionMode: block.versionMode || 'LATEST',
+          versionBindingId: block.versionBindingId || null,
           enableOutputMapping: isRuleOutputMappingEnabled(block),
           outputField: block.outputField || '',
           targetOperand: block.targetOperand
@@ -954,6 +970,8 @@ export default {
         ruleCode: '',
         ruleName: '',
         modelType: '',
+        versionMode: 'LATEST',
+        versionBindingId: null,
         outputField: '',
         targetOperand: null,
       }
@@ -1015,6 +1033,7 @@ export default {
         this.sync()
         return
       }
+      if (String(block.ruleId) !== String(rule.id)) { block.versionMode = 'LATEST'; delete block.versionBindingId }
       block['ruleId'] = rule.id || null
       block['ruleCode'] = rule.ruleCode || ''
       block['ruleName'] = rule.ruleName || ''
@@ -1057,6 +1076,7 @@ export default {
       return name + code + (rule.modelType ? ' - ' + rule.modelType : '')
     },
     ruleOutputFields(block) {
+      if (block.versionMode === 'FIXED') return this.ruleVersionFields[String(block.versionBindingId)] || []
       const rule = (this.rules || []).find(
         (item) =>
           (block.ruleId != null && String(item.id) === String(block.ruleId)) ||

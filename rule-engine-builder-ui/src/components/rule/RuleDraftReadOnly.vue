@@ -4,42 +4,16 @@
       v-if="visible"
       class="rule-draft-read-only"
       data-testid="draft-read-only"
-      role="dialog"
-      aria-modal="true"
-      aria-label="规则只读提示"
+      role="status"
+      aria-label="规则版本信息"
       aria-live="polite"
     >
       <div class="rule-draft-read-only__card">
-        <app-icon :name="loading ? 'Loading' : 'Lock'" />
-        <strong>{{
-          loading
-            ? '正在确认草稿状态'
-            : loadError
-              ? '当前节点加载失败'
-              : hasEditableDraft
-                ? '当前正在查看历史版本'
-                : '当前规则没有可编辑草稿'
-        }}</strong>
-        <span v-if="loading">正在确认草稿和当前查看节点。</span>
-        <span v-else-if="loadError">无法显示当前节点，请返回后重试。</span>
-        <span v-else>
-          <template v-if="revisionLabel">{{ revisionLabel }}：</template>
-          <template v-if="hasEditableDraft">
-            当前内容只读；规则已有待修改修订，继续编辑将打开该修订。
-          </template>
-          <template v-else-if="canFork && revisionState === 'LEGACY'">
-            该规则来自旧版历史内容，只读展示；点击“开始编辑”后创建草稿。
-          </template>
-          <template v-else-if="canFork">
-            当前内容只读；点击“开始编辑”后基于此节点创建草稿。
-          </template>
-          <template v-else-if="revisionState === 'REVIEW'">
-            需前往规则生命周期退回后编辑。
-          </template>
-          <template v-else>
-            当前内容可查看；如需修改，请先在规则生命周期中创建或退回草稿。
-          </template>
-        </span>
+        <app-icon :name="loading ? 'Loading' : 'InfoFilled'" />
+        <strong>{{ loading ? '正在加载规则版本' : loadError ? '当前版本加载失败' : '当前版本只读' }}</strong>
+        <span v-if="loading">正在读取所选版本，不会创建草稿。</span>
+        <span v-else-if="loadError">无法显示当前版本，可重试或选择其他版本。</span>
+        <span v-else>{{ revisionLabel }}：当前账号没有规则编辑权限，可选择版本查看。</span>
         <rule-designer-version-select
           v-if="sourceOptions.length"
           :options="sourceOptions"
@@ -49,29 +23,22 @@
         />
         <div class="rule-draft-read-only__actions">
           <el-button
+            v-if="loadError && !loading"
+            link
+            type="primary"
+            size="small"
+            data-testid="designer-source-retry"
+            @click="$emit('retry')"
+          >
+            重试
+          </el-button>
+          <el-button
+            link
             size="small"
             data-testid="draft-read-only-back"
             @click="$emit('go-back')"
           >
             返回
-          </el-button>
-          <el-button
-            v-if="canFork && !loading && !loadError"
-            type="primary"
-            size="small"
-            data-testid="fork-view-revision"
-            @click="$emit('fork')"
-          >
-            {{ hasEditableDraft ? '打开待修改版本' : '开始编辑' }}
-          </el-button>
-          <el-button
-            v-else-if="!loading"
-            type="primary"
-            size="small"
-            data-testid="go-rule-lifecycle"
-            @click="$emit('go-lifecycle')"
-          >
-            前往规则生命周期
           </el-button>
         </div>
       </div>
@@ -102,7 +69,7 @@ export default {
     selectedSource: { type: String, default: '' },
     sourceLoading: { type: Boolean, default: false },
   },
-  emits: ['change-source', 'fork', 'go-back', 'go-lifecycle'],
+  emits: ['change-source', 'fork', 'go-back', 'go-lifecycle', 'retry'],
   mounted() {
     this.syncInertSiblings()
   },
@@ -140,14 +107,12 @@ export default {
 }
 
 .rule-draft-read-only {
-  position: absolute;
-  inset: 0;
-  z-index: 100;
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding-top: 72px;
-  background: rgba(248, 250, 252, 0.52);
+  flex-shrink: 0;
+  min-width: 0;
+  margin-bottom: 8px;
+  color: var(--tianshu-text-secondary);
+  background: var(--tianshu-bg-muted);
+  border-radius: 4px;
 }
 
 .rule-draft-read-only__card {
@@ -155,13 +120,7 @@ export default {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  max-width: min(960px, calc(100vw - 48px));
-  padding: 14px 18px;
-  color: var(--tianshu-text-secondary);
-  background: var(--tianshu-bg-surface);
-  border: 1px solid var(--tianshu-border);
-  border-radius: 8px;
-  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  padding: 8px 12px;
 
   strong {
     color: var(--tianshu-text-primary);

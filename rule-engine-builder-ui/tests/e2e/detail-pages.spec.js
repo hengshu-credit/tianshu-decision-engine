@@ -326,7 +326,7 @@ test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', a
 
   await page.getByTestId('view-design').click()
   await page.waitForURL(/sourceType=REVISION.*sourceId=41/)
-  await expect(page.getByText("result = 'revision-41'", { exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue("result = 'revision-41'")
 
   await page.goto('http://tianshu.local/index.html#/rule/101')
   await expect(page.getByRole('main')).toBeVisible()
@@ -335,7 +335,7 @@ test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', a
   await expect(versionDialog).toBeVisible()
   await versionDialog.getByRole('button', { name: '查看设计', exact: true }).click()
   await page.waitForURL(/sourceType=VERSION.*sourceId=81/)
-  await expect(page.getByText("result = 'version-81'", { exact: true })).toBeVisible()
+  await expect(page.getByRole('textbox', { name: /Editor content/ })).toHaveValue("result = 'version-81'")
   await expect(
     page.getByRole('combobox', { name: '选择规则版本' })
   ).toBeVisible()

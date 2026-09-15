@@ -233,7 +233,7 @@ function configureQueryApis() {
 }
 
 function mountDesigner(component, query = {}, options = {}) {
-  return mount(component, {
+  const wrapper = mount(component, {
     mocks: {
       $route: { params: { id: 30 }, query },
       $router: {
@@ -257,6 +257,8 @@ function mountDesigner(component, query = {}, options = {}) {
     },
     directives: options.directives,
   })
+  wrapper.vm.requestDesignerChoice = async () => ({ action: 'save', saveMode: 'OVERWRITE' })
+  return wrapper
 }
 
 describe('九类设计器草稿保护', () => {
@@ -265,8 +267,37 @@ describe('九类设计器草稿保护', () => {
     configureQueryApis()
   })
 
+  test.each(explicitRevisionSources)('$name 加载失败可原地重试精确版本，成功前不能保存', async ({ component, model, assertLoaded }) => {
+    definitionApi.listRuleRevisions.mockResolvedValue({ data: [] })
+    definitionApi.listPublishedVersions.mockResolvedValue({ data: [] })
+    let resolveRetry
+    definitionApi.getVersionById
+      .mockRejectedValueOnce(new Error('读取失败'))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveRetry = resolve }))
+    const wrapper = mountDesigner(component, { sourceType: 'VERSION', sourceId: '81' })
+    await flushPromises()
+
+    expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[role="dialog"][aria-modal="true"]').exists()).toBe(false)
+    await wrapper.get('[data-testid="designer-source-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-testid="designer-source-retry"]').exists()).toBe(false)
+    resolveRetry({ data: { id: 81, definitionId: 30, version: 1, modelJson: JSON.stringify(model) } })
+    await flushPromises()
+
+    expect(definitionApi.getVersionById).toHaveBeenNthCalledWith(2, 30, '81')
+    expect(wrapper.vm.viewRevision).toMatchObject({ id: 81, sourceType: 'VERSION' })
+    assertLoaded(wrapper.vm)
+    expect(wrapper.get('[data-action="save"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
   test.each(designerToolbars)(
-    '%s 使用统一草稿操作栏并仅保留一个主动作',
+    '%s 使用统一四动作操作栏',
     async (_name, component, toolbarSelector) => {
       definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
       definitionApi.getContent.mockResolvedValueOnce({
@@ -279,7 +310,7 @@ describe('九类设计器草稿保护', () => {
       expect(
         toolbar.findComponent({ name: 'RuleDesignerActionBar' }).exists()
       ).toBe(true)
-      expect(toolbar.text()).toContain('保存并检查')
+      expect(toolbar.findAll('.rule-designer-actions [data-action]').map(button => button.attributes('data-action'))).toEqual(['compile', 'save', 'publish', 'test'])
       expect(toolbar.text()).not.toContain('临时保存配置')
       expect(toolbar.text()).not.toContain('编译后测试')
       wrapper.unmount()
@@ -321,9 +352,7 @@ describe('九类设计器草稿保护', () => {
     })
     await flushPromises()
 
-    await wrapper
-      .get('[aria-label="前往规则生命周期审核发布"]')
-      .trigger('click')
+    wrapper.vm.goRuleLifecycle()
 
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith({
       name: 'RuleDetail',
@@ -347,9 +376,7 @@ describe('九类设计器草稿保护', () => {
     const wrapper = mountDesigner(ScriptEditor)
     await flushPromises()
 
-    await wrapper
-      .get('[aria-label="前往规则生命周期审核发布"]')
-      .trigger('click')
+    wrapper.vm.goRuleLifecycle()
 
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith({
       name: 'RuleDetail',
@@ -359,51 +386,22 @@ describe('九类设计器草稿保护', () => {
     wrapper.unmount()
   })
 
-  test.each(designers)('%s 在无 DRAFT 时只读展示且点击开始编辑后才创建草稿', async (
-    _name,
-    component
-  ) => {
-    definitionApi.listRuleRevisions.mockResolvedValueOnce({
-      data: [
-        {
-          id: 5,
-          definitionId: 30,
-          revisionNo: 1,
-          state: 'PUBLISHED',
-          lockVersion: 0,
-          modelJson: '{}',
-        },
-      ],
-    })
-    definitionApi.createDraftRevision.mockResolvedValueOnce({
-      data: {
-        id: 6,
-        definitionId: 30,
-        revisionNo: 2,
-        state: 'DRAFT',
-        lockVersion: 0,
-        modelJson: '{}',
-      },
-    })
-
+  test.each(designers)('%s 没有草稿也可直接编辑，点击暂存才持久化', async (_name, component) => {
+    const published = { id: 5, definitionId: 30, revisionNo: 1, state: 'PUBLISHED', lockVersion: 0, modelJson: '{}' }
+    definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [published] })
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 6, state: 'DRAFT', lockVersion: 1, modelJson: '{}' }, compileSuccess: true, issues: [] } })
     const wrapper = mountDesigner(component)
     await flushPromises()
-
-    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
-    expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(true)
-    expect(wrapper.vm.canEditDraft).toBe(false)
-    expect(wrapper.vm.draftRevision).toBeNull()
-    expect(wrapper.vm.viewRevision).toMatchObject({ id: 5, state: 'PUBLISHED' })
-
-    await wrapper.findComponent({ name: 'RuleDraftReadOnly' }).vm.$emit('fork')
-    await flushPromises()
-
-    expect(definitionApi.createDraftRevision).toHaveBeenCalledWith(30, 5)
     expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
     expect(wrapper.vm.canEditDraft).toBe(true)
-    expect(wrapper.vm.draftRevision).toMatchObject({ id: 6, state: 'DRAFT' })
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
+    await wrapper.get('[data-action="save"]').trigger('click')
+    await flushPromises()
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ sourceType: 'REVISION', sourceId: '5', modelJson: expect.any(String) }))
+    expect(wrapper.vm.viewRevision).toMatchObject({ id: 6, state: 'DRAFT' })
+    expect(published.modelJson).toBe('{}')
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
-    expect(definitionApi.ensureDraftRevision).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -442,51 +440,27 @@ describe('九类设计器草稿保护', () => {
   })
 
   test.each(explicitRevisionSources)(
-    '$name 在没有治理修订时只读加载旧版内容且点击开始编辑后才创建草稿',
+    '$name 无版本时直接加载初始内容，只有点击暂存才写服务端',
     async ({ component, model, assertLoaded }) => {
       definitionApi.listRuleRevisions.mockResolvedValueOnce({ data: [] })
-      definitionApi.getContent.mockResolvedValueOnce({
-        data: {
-          id: 18,
-          definitionId: 30,
-          modelJson: JSON.stringify(model),
-        },
-      })
-      definitionApi.createDraftRevision.mockResolvedValueOnce({
-        data: {
-          id: 6,
-          definitionId: 30,
-          revisionNo: 1,
-          state: 'DRAFT',
-          lockVersion: 0,
-          modelJson: JSON.stringify(model),
-        },
-      })
-
+      definitionApi.getContent.mockResolvedValueOnce({ data: { modelJson: JSON.stringify(model) } })
+      definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 6, state: 'DRAFT', lockVersion: 1, modelJson: JSON.stringify(model) }, compileSuccess: true, issues: [] } })
       const wrapper = mountDesigner(component)
       await flushPromises()
-
-      expect(wrapper.vm.viewRevision).toMatchObject({
-        id: 'legacy-content:30',
-        state: 'LEGACY',
-      })
       assertLoaded(wrapper.vm)
-      expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
-      expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(true)
-      expect(wrapper.vm.canEditDraft).toBe(false)
-
-      await wrapper.findComponent({ name: 'RuleDraftReadOnly' }).vm.$emit('fork')
-      await flushPromises()
-
-      expect(definitionApi.createDraftRevision).toHaveBeenCalledWith(30)
-      expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
       expect(wrapper.vm.canEditDraft).toBe(true)
+      expect(wrapper.find('[data-testid="draft-read-only"]').exists()).toBe(false)
+      expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+      await wrapper.get('[data-action="save"]').trigger('click')
+      await flushPromises()
+      expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ modelJson: expect.any(String) }))
+      expect(definitionApi.createDraftRevision).not.toHaveBeenCalled()
       expect(definitionApi.saveContent).not.toHaveBeenCalled()
       wrapper.unmount()
     }
   )
 
-  test.each(designers)('%s 查看历史节点时已有 DRAFT 则从真实只读遮罩切回待修改修订', async (
+  test.each(designers)('%s 查看历史节点时已有 DRAFT 则也不自动切换或覆盖暂存草稿', async (
     _name,
     component
   ) => {
@@ -520,7 +494,7 @@ describe('九类设计器草稿保护', () => {
 
     const readOnly = wrapper.findComponent({ name: 'RuleDraftReadOnly' })
     expect(readOnly.props()).toMatchObject({
-      visible: true,
+      visible: false,
       loading: false,
       loadError: false,
       revisionLabel: '修订 7',
@@ -528,14 +502,12 @@ describe('九类设计器草稿保护', () => {
       canFork: true,
     })
 
-    await readOnly.vm.$emit('fork')
-    await flushPromises()
-
-    expect(definitionApi.createDraftFromSource).not.toHaveBeenCalled()
-    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({
-      query: { sourceType: 'REVISION', sourceId: '6' },
-    })
-    expect(wrapper.vm.draftRevision).toMatchObject({ id: 6, state: 'DRAFT' })
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({ data: { revision: { id: 42, state: 'DRAFT', lockVersion: 1 }, compileSuccess: true } })
+    await wrapper.vm.handleSave()
+    expect(definitionApi.saveDesignerDraft).toHaveBeenCalledWith('30', expect.objectContaining({ saveMode: 'NEW', sourceId: '41' }))
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    expect(wrapper.vm.$router.replace).toHaveBeenCalled()
+    expect(wrapper.vm.viewRevision.id).toBe(42)
     wrapper.unmount()
   })
 
@@ -577,7 +549,7 @@ describe('九类设计器草稿保护', () => {
     }
   )
 
-  test.each(designers)('%s 历史只读时执行保存入口仍由共享守卫阻止', async (
+  test.each(designers)('%s 已删除来源时执行保存入口仍由共享守卫阻止', async (
     _name,
     component
   ) => {
@@ -598,7 +570,7 @@ describe('九类设计器草稿保护', () => {
         id: 41,
         definitionId: 30,
         revisionNo: 7,
-        state: 'PUBLISHED',
+        state: 'DELETED',
         lockVersion: 3,
         modelJson: '{}',
       },
@@ -609,12 +581,13 @@ describe('九类设计器草稿保护', () => {
     })
     await flushPromises()
 
-    await expect(wrapper.vm.handleSave()).rejects.toThrow('没有可编辑草稿')
+    await expect(wrapper.vm.handleSave()).resolves.toBe(false)
+    expect(wrapper.vm.$message.error).toHaveBeenCalled()
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  test('DecisionTable 的结构编辑后编译入口不能绕过历史只读保存守卫', async () => {
+  test('DecisionTable 结构编辑后可直接编译历史副本且不保存', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [
         {
@@ -645,7 +618,9 @@ describe('九类设计器草稿保护', () => {
 
     wrapper.vm.addRule()
     expect(wrapper.vm.model.rules).toHaveLength(1)
-    await expect(wrapper.vm.handleCompile()).rejects.toThrow('没有可编辑草稿')
+    definitionApi.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: true, compiledScript: 'result = true;', preflightReport: { valid: true } } })
+    await wrapper.vm.handleCompile()
+    expect(definitionApi.compileDesignerModel).toHaveBeenCalledWith('30', expect.objectContaining({ sourceId: '41', modelJson: expect.any(String) }))
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
@@ -673,7 +648,7 @@ describe('九类设计器草稿保护', () => {
     expect(wrapper.vm.draftGuardError).toBeInstanceOf(Error)
     await expect(wrapper.vm.handleTest()).resolves.toBeUndefined()
     expect(wrapper.vm.$message.warning).toHaveBeenCalledWith(
-      '请先保存并检查当前内容，通过后再进入测试'
+      '当前内容未加载或没有规则执行权限'
     )
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
@@ -714,17 +689,17 @@ describe('九类设计器草稿保护', () => {
         id: 41,
         definitionId: 30,
         revisionNo: 7,
-        state: 'PUBLISHED',
+        state: 'DELETED',
         lockVersion: 3,
         modelJson: '{}',
       },
     })
-    await expect(pendingSave).rejects.toThrow('没有可编辑草稿')
+    await expect(pendingSave).resolves.toBe(false)
     expect(definitionApi.saveContent).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
-  test('ScriptEditor 从非空 DRAFT 加载稳定引用并在编译失败后推进锁且不打开测试', async () => {
+  test('ScriptEditor 从非空 DRAFT 加载稳定引用并在编译失败不推进锁且仍可打开测试', async () => {
     const scriptModel = {
       script: 'credit_score = profile.score;',
       scriptVarRefs: [
@@ -747,7 +722,7 @@ describe('九类设计器草稿保护', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.compileDesignerModel.mockResolvedValueOnce({
       data: {
         revision: {
           id: 6,
@@ -772,24 +747,11 @@ describe('九类设计器草稿保护', () => {
     await wrapper.vm.handleCompile()
     await wrapper.vm.handleTest()
 
-    const payload = definitionApi.saveContent.mock.calls[0][0]
-    expect({
-      definitionId: payload.definitionId,
-      revisionId: payload.revisionId,
-      lockVersion: payload.lockVersion,
-      savedModel: JSON.parse(payload.modelJson),
-      nextLockVersion: wrapper.vm.draftRevision.lockVersion,
-      issues: wrapper.vm.draftIssues,
-      testVisible: wrapper.vm.testVisible,
-    }).toEqual({
-      definitionId: 30,
-      revisionId: 6,
-      lockVersion: 4,
-      savedModel: scriptModel,
-      nextLockVersion: 5,
-      issues: [{ code: 'QL_PARSE_ERROR', severity: 'ERROR' }],
-      testVisible: false,
-    })
+    const payload = definitionApi.compileDesignerModel.mock.calls[0][1]
+    expect(JSON.parse(payload.modelJson)).toEqual(scriptModel)
+    expect(wrapper.vm.draftRevision.lockVersion).toBe(4)
+    expect(wrapper.vm.testVisible).toBe(true)
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 
@@ -839,7 +801,7 @@ describe('九类设计器草稿保护', () => {
         },
       ],
     })
-    definitionApi.saveContent.mockResolvedValueOnce({
+    definitionApi.saveDesignerDraft.mockResolvedValueOnce({
       data: {
         revision: {
           id: 7,
@@ -862,9 +824,10 @@ describe('九类设计器草稿保护', () => {
         leftRefType: 'VARIABLE',
       },
     })
+    wrapper.vm.lf.getGraphData().nodes[0].properties.nodeName = '修改后的评分任务'
     await wrapper.vm.handleSave()
 
-    const payload = definitionApi.saveContent.mock.calls[0][0]
+    const payload = definitionApi.saveDesignerDraft.mock.calls[0][1]
     const savedModel = JSON.parse(payload.modelJson)
     expect({
       revisionId: payload.revisionId,
@@ -872,7 +835,7 @@ describe('九类设计器草稿保护', () => {
       backendNode: savedModel.nodes[0],
       logicflowNode: savedModel.logicflow.nodes[0],
     }).toEqual({
-      revisionId: 7,
+      revisionId: '7',
       lockVersion: 2,
       backendNode: expect.objectContaining({
         id: 'task_1',
@@ -1280,14 +1243,10 @@ describe('九类设计器草稿保护', () => {
     wrapper.unmount()
   })
 
-  test('RuleSet 回滚后重载服务端 DRAFT 模型与锁并用于下一次保存', async () => {
+  test('RuleSet 版本历史只按稳定 ID 载入版本，不回滚或写入草稿', async () => {
     const oldModel = {
       executionMode: 'SERIAL',
       rules: [{ code: 'OLD_RULE', enabled: true }],
-    }
-    const restoredModel = {
-      executionMode: 'PARALLEL',
-      rules: [{ code: 'RESTORED_RULE', enabled: true }],
     }
     definitionApi.listRuleRevisions
       .mockResolvedValueOnce({
@@ -1302,53 +1261,22 @@ describe('九类设计器草稿保护', () => {
           },
         ],
       })
-      .mockResolvedValueOnce({
-        data: [
-          {
-            id: 6,
-            definitionId: 30,
-            revisionNo: 2,
-            state: 'DRAFT',
-            lockVersion: 5,
-            modelJson: JSON.stringify(restoredModel),
-          },
-        ],
-      })
-    definitionApi.rollbackVersion.mockResolvedValueOnce({})
-    definitionApi.listVersions.mockResolvedValueOnce({ data: [] })
-    definitionApi.saveContent.mockResolvedValueOnce({
-      data: {
-        revision: {
-          id: 6,
-          definitionId: 30,
-          revisionNo: 2,
-          state: 'DRAFT',
-          lockVersion: 6,
-          modelJson: JSON.stringify(restoredModel),
-        },
-        compileSuccess: true,
-        issues: [],
-      },
-    })
     const wrapper = mountDesigner(RuleSet)
     await flushPromises()
 
     expect(wrapper.vm.model.rules[0].code).toBe('OLD_RULE')
-    await wrapper.vm.rollbackDraft({ version: 1 })
-    await wrapper.vm.handleSave()
-
-    const payload = definitionApi.saveContent.mock.calls[0][0]
-    expect({
-      revisionQueries: definitionApi.listRuleRevisions.mock.calls.length,
-      modelCode: wrapper.vm.model.rules[0].code,
-      lockVersion: payload.lockVersion,
-      savedModelCode: JSON.parse(payload.modelJson).rules[0].code,
-    }).toEqual({
-      revisionQueries: 2,
-      modelCode: 'RESTORED_RULE',
-      lockVersion: 5,
-      savedModelCode: 'RESTORED_RULE',
+    await wrapper.vm.loadVersionInDesigner({ id: '9007199254740993', version: 1 })
+    expect(wrapper.vm.$router.replace).toHaveBeenCalledWith({
+      query: { sourceType: 'VERSION', sourceId: '9007199254740993' },
     })
+    expect(definitionApi.rollbackVersion).not.toHaveBeenCalled()
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    expect(definitionApi.saveDesignerDraft).not.toHaveBeenCalled()
+    expect(wrapper.vm.draftRevision.lockVersion).toBe(4)
+
+    wrapper.vm.$router.replace.mockClear()
+    await wrapper.vm.loadVersionInDesigner({ version: 1 })
+    expect(wrapper.vm.$router.replace).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -40,21 +41,26 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <el-button size="small" :icon="ElIconPlus" @click="addRule"
           >添加行</el-button
         >
         <el-divider direction="vertical" />
         <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
           :can-edit="canEditDraft"
           :can-test="designerCanTest"
           :state="designerActionState"
+          :busy="designerBusy"
           :recovery="designerRecoveryCandidate"
           :report="designerValidationReport"
           @save="handleSave"
-          @save-check="handleCompile"
+          @compile="handleCompile"
           @test="handleTest"
-          @lifecycle="goRuleLifecycle"
+          @publish="handlePublish"
           @restore="restoreDesignerRecovery"
           @discard-recovery="discardDesignerRecovery"
         />
@@ -71,16 +77,12 @@
       </div>
     </div>
 
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
+
     <!-- 变量加载状态 -->
-    <div v-if="loadingVars || varPickerOptions.length" class="dt-var-status">
-      <span v-if="loadingVars" style="font-size: 12px; color: var(--tianshu-text-tertiary)"
-        ><el-icon><el-icon-loading /></el-icon> 加载变量库...</span
-      >
-      <span v-else style="font-size: 12px; color: var(--el-color-primary)">
-        <el-icon><el-icon-s-custom /></el-icon> 已加载
-        {{ varPickerOptions.length }} 个变量/常量/对象字段
-      </span>
-    </div>
 
     <!-- 规则列表：每条含条件树 + 动作 -->
     <div class="dt-rules-wrap">
@@ -89,6 +91,7 @@
           v-for="(row, ri) in model.rules"
           :key="'rule-' + ri"
           class="dt-rule-card"
+          :data-validation-path="'$.rules[' + ri + ']'"
         >
           <div class="dt-rule-toolbar">
             <span class="dt-rule-no">#{{ ri + 1 }}</span>
@@ -241,7 +244,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="TABLE"
-      :model-json="model"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -253,7 +256,6 @@ import {
   Grid as ElIconSGrid,
   QuestionFilled as ElIconQuestion,
   Loading as ElIconLoading,
-  SetUp as ElIconSCustom,
   Delete as ElIconDelete,
   Back as ElIconBack,
   Plus as ElIconPlus,
@@ -261,7 +263,6 @@ import {
   Cpu as ElIconCpu,
   VideoPlay as ElIconVideoPlay,
 } from '@element-plus/icons-vue'
-import { executeRule } from '@/api/definition'
 import varPickerMixin from '@/mixins/varPickerMixin'
 import ruleDraftMixin from '@/mixins/ruleDraftMixin'
 import OperandPicker from '@/components/common/OperandPicker.vue'
@@ -326,7 +327,6 @@ export default {
     ElIconSGrid,
     ElIconQuestion,
     ElIconLoading,
-    ElIconSCustom,
     ElIconDelete,
   },
   name: 'DecisionTable',
@@ -392,7 +392,7 @@ export default {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
         const content = this.viewRevision
-        if (content && content.modelJson && content.modelJson !== '{}') {
+        if (content && content.modelJson) {
           this.model = JSON.parse(content.modelJson)
           this.normalizeModel()
         }
@@ -657,29 +657,32 @@ export default {
       this.model.rules.splice(index, 1)
     },
 
-    async handleSave() {
-      try {
-        this.normalizeModel()
-        const result = await this.saveDraftModel(JSON.stringify(this.model))
-        this.refreshProjectRefs()
-        this.$message.success('草稿已保存')
-        return result
-      } catch (e) {
-        this.$message.error(
-          '保存失败: ' + (e && e.message ? e.message : '未知错误')
-        )
-        throw e
-      }
+    async performDesignerSave() {
+      this.normalizeModel()
+      const result = await this.saveDraftModel(JSON.stringify(this.model))
+      if (!result) return false
+      this.refreshProjectRefs()
+      this.$message.success('草稿已保存')
+      return result
+
     },
 
     serializeDesignerDraft() {
       return JSON.stringify(JSON.parse(JSON.stringify(this.model)))
     },
 
-    async handleCompile() {
-      const result = await this.handleSave()
-      return this.completeRuleCompile(result, {
-        onSuccess: () => this.loadProjectVars(this.definitionId),
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
 
@@ -744,10 +747,7 @@ export default {
     },
 
     async doTest() {
-      const res = await executeRule({
-        definitionId: this.definitionId,
-        params: this.testParams,
-      })
+      const res = await this.executeDesignerPreview(this.testParams, 'TABLE')
       this.testResult = res && res.data ? res.data : res
     },
 

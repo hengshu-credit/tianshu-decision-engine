@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <el-alert
       v-if="contextError"
       class="context-error"
@@ -17,7 +17,7 @@
       <el-tab-pane label="执行明细" name="logs" />
       <el-tab-pane label="规则集命中统计" name="ruleSetStats" />
     </el-tabs>
-    <div v-if="activeView === 'logs'">
+    <div class="management-table-region" v-if="activeView === 'logs'">
       <div class="uiue-search-container">
         <el-form :inline="true" size="small" @keyup.enter="handleQuery">
           <el-form-item label="来源" style="width: 150px">
@@ -145,7 +145,7 @@
           </el-form-item>
         </el-form>
       </div>
-      <el-table show-overflow-tooltip
+      <el-table class="management-table" show-overflow-tooltip
         :data="list"
         border
         size="small"

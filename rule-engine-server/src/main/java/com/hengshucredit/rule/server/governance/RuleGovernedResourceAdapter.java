@@ -270,7 +270,7 @@ public class RuleGovernedResourceAdapter
         }
         RuleRevision published = approveAndPublish(
                 applied.resourceId(), context.snapshot(),
-                context.actor());
+                context.actor(), context.requestId());
         String effectiveStatus = published != null
                 && RuleRevisionState.PUBLISHED.name()
                 .equals(published.getState())
@@ -312,12 +312,15 @@ public class RuleGovernedResourceAdapter
     private RuleRevision approveAndPublish(
                                            Long definitionId,
                                            ResourceSnapshot snapshot,
-                                           String actor) {
+                                           String actor, Long requestId) {
         RuleLifecycleActionRequest action =
                 lifecycleAction(actor);
         List<RuleRevision> revisions =
                 lifecycleService.listRevisions(definitionId);
-        RuleRevision revision = latestTransient(revisions);
+        RuleRevision revision = requestId == null ? null : revisions.stream()
+                .filter(item -> requestId.equals(item.getGovernanceRequestId()))
+                .findFirst().orElse(null);
+        if (revision == null) revision = latestTransient(revisions);
         if (revision == null) {
             RuleRevision base = latestStable(revisions);
             revision = lifecycleService.createDraft(
@@ -376,25 +379,14 @@ public class RuleGovernedResourceAdapter
     }
 
     private Long offlinePublished(Long definitionId) {
-        List<RuleRevision> revisions =
-                lifecycleService.listRevisions(definitionId);
-        RuleRevision published = revisions.stream()
-                .filter(revision -> RuleRevisionState.PUBLISHED.name()
-                        .equals(revision.getState()))
-                .findFirst()
-                .orElse(null);
-        if (published == null) {
-            return null;
-        }
-        Long artifactId = published.getArtifactId();
-        lifecycleService.offline(published.getId(),
+        RuleRevision offline = lifecycleService.offlinePublished(definitionId,
                 lifecycleAction("统一生命周期审批"));
-        return artifactId;
+        return offline == null ? null : offline.getArtifactId();
     }
 
     private RuleRevision latestTransient(
             List<RuleRevision> revisions) {
-        return revisions.stream()
+        List<RuleRevision> candidates = revisions.stream()
                 .filter(revision ->
                         RuleRevisionState.DRAFT.name()
                                 .equals(revision.getState())
@@ -402,8 +394,13 @@ public class RuleGovernedResourceAdapter
                                 .equals(revision.getState())
                                 || RuleRevisionState.APPROVED.name()
                                 .equals(revision.getState()))
-                .findFirst()
-                .orElse(null);
+                .toList();
+        // Legacy approvals may predate governanceRequestId. Never pick a newer unrelated draft.
+        List<RuleRevision> frozen = candidates.stream()
+                .filter(item -> !RuleRevisionState.DRAFT.name().equals(item.getState())).toList();
+        if (frozen.size() == 1) return frozen.get(0);
+        if (candidates.size() > 1) throw new IllegalStateException("存在多个候选草稿，审批必须绑定明确的规则修订");
+        return candidates.isEmpty() ? null : candidates.get(0);
     }
 
     private RuleRevision latestStable(

@@ -5,9 +5,15 @@
         <h3>项目工作台</h3>
         <p>集中查看配置进度、待处理事项和最近运行情况。</p>
       </div>
-      <el-tag :type="remainingCount ? 'warning' : 'success'">
-        {{ remainingCount ? `还有 ${remainingCount} 项待处理` : '当前已就绪' }}
-      </el-tag>
+      <div class="overview-status" aria-live="polite">
+        <el-tag :type="readinessSummary.type">{{ readinessSummary.label }}</el-tag>
+        <el-button
+          data-testid="refresh-workbench"
+          :loading="loading"
+          :disabled="loading"
+          @click="$emit('action', { actionCode: 'REFRESH_WORKBENCH' })"
+        >{{ error ? '重新加载' : '刷新状态' }}</el-button>
+      </div>
     </div>
 
     <el-alert
@@ -38,6 +44,8 @@
       <el-button
         v-if="nextCheck.actionCode"
         type="primary"
+        :disabled="!canUseAction(nextCheck.actionCode)"
+        :title="canUseAction(nextCheck.actionCode) ? '' : '当前账号没有此模块的访问权限'"
         @click="$emit('action', nextCheck)"
       >
         {{ nextCheck.actionLabel || '立即处理' }}
@@ -56,10 +64,10 @@
       <div class="panel readiness-panel">
         <div class="panel-heading">
           <div>
-            <h4>上线就绪检查</h4>
-            <p>系统根据真实配置动态判断，无需按固定步骤操作。</p>
+            <h4>配置与运行检查</h4>
+            <p>根据当前配置和执行记录检查；发布仍需完成规则校验与审批。</p>
           </div>
-          <span>{{ readyCount }}/{{ checks.length }} 已就绪</span>
+          <span>{{ checks.length ? `${readyCount}/${checks.length} 已就绪` : '待检查' }}</span>
         </div>
         <div v-if="checks.length" class="check-list">
           <div v-for="item in checks" :key="item.code" class="check-row">
@@ -79,13 +87,15 @@
               v-if="item.actionCode"
               link
               type="primary"
+              :disabled="!canUseAction(item.actionCode)"
+              :title="canUseAction(item.actionCode) ? '' : '当前账号没有此模块的访问权限'"
               @click="$emit('action', item)"
             >
               {{ item.actionLabel || '查看' }}
             </el-button>
           </div>
         </div>
-        <el-empty v-else :image-size="64" description="暂无检查结果" />
+        <el-empty v-else :image-size="64" :description="loading ? '正在读取检查结果' : '暂无检查结果，请重新加载'" />
       </div>
 
       <div class="side-column">
@@ -101,18 +111,22 @@
               v-for="action in quickActions"
               :key="action.actionCode"
               plain
+              :disabled="!canUseAction(action.actionCode)"
               @click="$emit('action', action)"
             >
               {{ action.actionLabel }}
             </el-button>
           </div>
+          <p v-if="quickActions.some(action => !canUseAction(action.actionCode))" class="permission-hint">
+            灰色入口表示当前账号没有对应模块的访问权限，请联系项目管理员。
+          </p>
         </div>
 
         <div class="panel recent-panel">
           <div class="panel-heading">
             <div>
               <h4>最近一次执行</h4>
-              <p>快速确认已发布规则是否被真实调用。</p>
+              <p>查看最近执行结果；调用来源和修订以日志详情为准。</p>
             </div>
           </div>
           <template v-if="recentExecution">
@@ -136,7 +150,7 @@
                 <dd>{{ recentExecution.createTime || '-' }}</dd>
               </div>
             </dl>
-            <el-button link type="primary" @click="$emit('action', logAction)">
+            <el-button link type="primary" :disabled="!canUseAction(logAction.actionCode)" @click="$emit('action', logAction)">
               查看执行日志
             </el-button>
           </template>
@@ -148,6 +162,8 @@
 </template>
 
 <script>
+import { canUseWorkbenchAction } from '@/utils/workbenchActions'
+
 const STATUS_TEXT = {
   READY: '已就绪',
   OPTIONAL: '可选',
@@ -193,7 +209,19 @@ export default {
       return (this.workbench && this.workbench.metrics) || {}
     },
     checks() {
+      if (this.loading || this.error) return []
       return (this.workbench && this.workbench.checks) || []
+    },
+    readinessSummary() {
+      if (this.loading) return { type: 'info', label: '正在检查' }
+      if (this.error) return { type: 'danger', label: '状态读取失败' }
+      if (!this.checks.length) return { type: 'info', label: '尚未获取检查结果' }
+      if (this.warnings.length || this.checks.some(item => item.status === 'UNAVAILABLE')) {
+        return { type: 'warning', label: '部分状态待确认' }
+      }
+      return this.remainingCount
+        ? { type: 'warning', label: `还有 ${this.remainingCount} 项待处理` }
+        : { type: 'success', label: '当前检查项已就绪' }
     },
     warnings() {
       return (this.workbench && this.workbench.warnings) || []
@@ -269,6 +297,7 @@ export default {
     },
   },
   methods: {
+    canUseAction: canUseWorkbenchAction,
     statusText(status) {
       return STATUS_TEXT[status] || status
     },
@@ -296,6 +325,15 @@ export default {
 
 .overview-heading {
   margin-bottom: 12px;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.overview-status {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .overview-heading h3,
@@ -485,6 +523,8 @@ export default {
 .quick-actions :deep(.el-button) {
   margin-left: 0;
 }
+
+.permission-hint { color: var(--tianshu-text-secondary); font-size: 12px; line-height: 1.5; }
 
 .recent-summary {
   justify-content: flex-start;

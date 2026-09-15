@@ -1,211 +1,51 @@
 <template>
-  <section class="rule-designer-actions" aria-label="规则草稿操作">
-    <div class="rule-designer-actions__status" role="status">
-      <span class="rule-designer-actions__status-dot" :class="statusClass" />
-      <span>{{ statusLabel }}</span>
-    </div>
+  <section class="rule-designer-actions" aria-label="规则设计操作">
     <div class="rule-designer-actions__buttons">
-      <button
-        v-permission="'rule:edit'"
-        type="button"
-        class="rule-designer-actions__button rule-designer-actions__secondary"
-        data-action="save"
-        :disabled="!canEdit || busy"
-        @click="$emit('save')"
-      >
-        仅保存草稿
-      </button>
-      <button
-        v-permission="'rule:edit'"
-        type="button"
-        class="rule-designer-actions__button rule-designer-actions__primary"
-        data-action="save-check"
-        :disabled="!canEdit || busy"
-        @click="$emit('save-check')"
-      >
-        {{ busy ? '处理中…' : '保存并检查' }}
-      </button>
-      <button
-        v-permission="'rule:edit'"
-        type="button"
-        class="rule-designer-actions__button rule-designer-actions__secondary"
-        data-action="test"
-        :disabled="!canEdit || !canTest || busy"
-        :title="canTest ? '使用已检查的最新草稿进行测试' : '请先保存并检查当前内容'"
-        @click="$emit('test')"
-      >
-        进入测试
-      </button>
-      <button
-        type="button"
-        class="rule-designer-actions__link"
-        data-action="lifecycle"
-        aria-label="前往规则生命周期审核发布"
-        title="前往规则生命周期审核发布"
-        @click="$emit('lifecycle')"
-      >
-        生命周期
-      </button>
+      <button v-for="action in actions" :key="action.key" type="button"
+        v-permission="action.key === 'publish' ? 'rule:submit' : 'rule:edit'"
+        class="rule-designer-actions__button" :class="'rule-designer-actions__' + action.key"
+        :data-action="action.key" :disabled="busy || state === 'SAVING' || (action.key === 'test' ? !canTest : !canEdit)"
+        :aria-busy="busy" :title="action.key === 'test' ? '使用当前页面配置测试' : action.label"
+        @click="$emit(action.key)">{{ action.label }}</button>
     </div>
-    <el-alert
-      v-if="recovery"
-      class="rule-designer-actions__recovery"
-      type="warning"
-      :closable="false"
-      title="检测到本次浏览器会话中尚未保存的内容"
-    >
-      <template #default>
-        <span>恢复时间：{{ recovery.savedAt || '未知' }}</span>
-        <button type="button" data-action="restore" @click="$emit('restore')">
-          恢复内容
-        </button>
-        <button type="button" data-action="discard-recovery" @click="$emit('discard-recovery')">
-          忽略
-        </button>
-      </template>
-    </el-alert>
-    <rule-validation-report
-      v-if="report"
-      class="rule-designer-actions__report"
-      :report="report"
-    />
+    <div v-if="issueContext" class="issue-context">
+      <span>校验定位 · {{ pathLabel(issueContext.path) }}：{{ issueContext.message }}</span>
+      <button type="button" :disabled="issueContext.stale" @click="$emit('locate', issueContext)">定位问题</button>
+    </div>
+    <rule-validation-report v-if="report" class="rule-designer-actions__report" :report="report" locatable @locate="$emit('locate', $event)" />
   </section>
 </template>
 
 <script>
 import RuleValidationReport from '@/components/rule/RuleValidationReport.vue'
-
-const STATUS_LABELS = {
-  CLEAN: '已保存',
-  DIRTY: '有未保存修改',
-  SAVING: '正在保存',
-  SAVED_UNCHECKED: '已保存，等待检查',
-  CHECK_FAILED: '检查未通过',
-  READY_TO_TEST: '已检查，可测试',
-  SAVE_CONFLICT: '保存冲突，请重新加载后处理',
-}
-
+import { validationPathLabel } from '@/utils/validationIssueLocation'
 export default {
   name: 'RuleDesignerActionBar',
   components: { RuleValidationReport },
   props: {
-    canEdit: { type: Boolean, default: false },
-    canTest: { type: Boolean, default: false },
+    canEdit: Boolean, canTest: Boolean, busy: Boolean,
     state: { type: String, default: 'CLEAN' },
-    recovery: { type: Object, default: null },
     report: { type: Object, default: null },
+    issueContext: { type: Object, default: null },
+    recovery: { type: Object, default: null },
   },
-  emits: [
-    'save',
-    'save-check',
-    'test',
-    'lifecycle',
-    'restore',
-    'discard-recovery',
-  ],
-  computed: {
-    busy() {
-      return this.state === 'SAVING'
-    },
-    statusLabel() {
-      return STATUS_LABELS[this.state] || STATUS_LABELS.CLEAN
-    },
-    statusClass() {
-      return `is-${String(this.state || 'CLEAN').toLowerCase()}`
-    },
-  },
+  emits: ['compile', 'save', 'publish', 'test', 'locate', 'restore', 'discard-recovery'],
+  data: () => ({ actions: [{ key: 'compile', label: '编译' }, { key: 'save', label: '保存' }, { key: 'publish', label: '发布' }, { key: 'test', label: '测试' }] }),
+  methods: { pathLabel: validationPathLabel },
 }
 </script>
 
 <style scoped>
-.rule-designer-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.rule-designer-actions__status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: var(--tianshu-text-secondary, #64748b);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.rule-designer-actions__status-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #94a3b8;
-}
-
-.rule-designer-actions__status-dot.is-dirty,
-.rule-designer-actions__status-dot.is-saved_unchecked {
-  background: #d97706;
-}
-
-.rule-designer-actions__status-dot.is-ready_to_test {
-  background: #16a34a;
-}
-
-.rule-designer-actions__status-dot.is-check_failed,
-.rule-designer-actions__status-dot.is-save_conflict {
-  background: #dc2626;
-}
-
-.rule-designer-actions__buttons {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.rule-designer-actions__button,
-.rule-designer-actions__link {
-  min-height: 32px;
-  border-radius: 6px;
-  font: inherit;
-  cursor: pointer;
-}
-
-.rule-designer-actions__button {
-  padding: 0 14px;
-  border: 1px solid var(--el-border-color, #d1d5db);
-  background: var(--el-bg-color, #fff);
-  color: var(--tianshu-text-primary, #1f2937);
-}
-
-.rule-designer-actions__primary {
-  border-color: var(--el-color-primary, #2563eb);
-  background: var(--el-color-primary, #2563eb);
-  color: #fff;
-  font-weight: 600;
-}
-
-.rule-designer-actions__link {
-  padding: 0 4px;
-  border: 0;
-  background: transparent;
-  color: var(--el-color-primary, #2563eb);
-}
-
-.rule-designer-actions__button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.rule-designer-actions__recovery,
-.rule-designer-actions__report {
-  flex: 1 0 100%;
-}
-
-.rule-designer-actions__recovery button {
-  margin-left: 12px;
-  border: 0;
-  background: transparent;
-  color: var(--el-color-primary, #2563eb);
-  cursor: pointer;
-}
+.rule-designer-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 12px; }
+.rule-designer-actions__buttons { display: inline-flex; align-items: center; gap: 8px; }
+.rule-designer-actions__button { min-height: 32px; padding: 0 14px; border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; background: var(--tianshu-bg-surface); color: var(--tianshu-text-primary); font: inherit; cursor: pointer; }
+.rule-designer-actions__button:hover:not(:disabled) { background: var(--tianshu-bg-muted); color: var(--tianshu-text-primary); }
+.rule-designer-actions__publish { border-color: var(--el-color-primary); background-color: var(--el-color-primary); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }
+.rule-designer-actions__publish:hover:not(:disabled) { background-color: var(--el-color-primary-dark-1); background-image: var(--tianshu-brand-gradient); color: var(--tianshu-brand-foreground); }
+.rule-designer-actions__publish:active:not(:disabled) { background-color: var(--el-color-primary-dark-2); }
+.rule-designer-actions__button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
+.rule-designer-actions__button:disabled { background: var(--tianshu-bg-muted); color: var(--tianshu-text-secondary); border-color: var(--tianshu-border-subtle); cursor: not-allowed; }
+.rule-designer-actions__button[aria-busy="true"] { cursor: progress; }
+.rule-designer-actions__report, .issue-context { flex: 1 0 100%; }
+.issue-context { color: var(--tianshu-text-primary); background: var(--tianshu-bg-muted); padding: 8px; }
 </style>

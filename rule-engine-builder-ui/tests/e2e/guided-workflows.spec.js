@@ -3,6 +3,87 @@ const { installDistRoutes } = require('./support/distRoutes.cjs')
 const { createDetailApiData } = require('./support/detailFixtures.cjs')
 const { createManagementApiData } = require('./support/managementFixtures.cjs')
 
+test('项目工作台加载失败后可重试，且未取得结果时不显示已就绪', async ({ page }, testInfo) => {
+  const { pageErrors } = await installDistRoutes(page, { apiData: workflowFixtures() })
+  let calls = 0
+  let releaseFirst
+  await page.route('**/api/rule/project/1/workbench', async route => {
+    calls++
+    if (calls === 1) {
+      await new Promise(resolve => { releaseFirst = resolve })
+      await route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ message: '检查服务暂不可用' }) })
+      return
+    }
+    await route.fulfill({ contentType: 'application/json', body: JSON.stringify({
+      code: 200, data: { metrics: {}, checks: [{ code: 'RULE', title: '设计决策规则', status: 'READY', reason: '已配置规则' }], warnings: [] },
+    }) })
+  })
+  await page.goto('http://tianshu.local/index.html#/project/1')
+  await expect(page.getByText('正在检查', { exact: true })).toBeVisible()
+  await expect(page.getByTestId('refresh-workbench')).toBeDisabled()
+  releaseFirst()
+  await expect(page.getByText('状态读取失败', { exact: true })).toBeVisible()
+  await expect(page.getByText('当前检查项已就绪', { exact: true })).toHaveCount(0)
+  await page.getByRole('button', { name: '重新加载', exact: true }).click()
+  await expect(page.getByText('当前检查项已就绪', { exact: true })).toBeVisible()
+  expect(calls).toBe(2)
+  expect(pageErrors).toEqual([])
+  await page.screenshot({ path: testInfo.outputPath('workbench-recovered.png') })
+})
+
+test('工作台显示执行失败建议并携带项目范围进入日志', async ({ page }, testInfo) => {
+  const fixtures = workflowFixtures()
+  fixtures.set('/api/rule/project/1/workbench', {
+    metrics: { recentExecutionCount: 12, recentSuccessRate: 83.3 },
+    checks: [{ code: 'RUN', title: '检查执行结果', status: 'ATTENTION', reason: '最近 24 小时共有 12 次执行，其中 2 次失败，请查看日志。', actionCode: 'VIEW_LOGS', actionLabel: '排查执行失败' }],
+    recentExecution: { success: 0, ruleCode: 'age_rule', executeTimeMs: 23, source: 'SERVER' },
+    warnings: [],
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await page.goto('http://tianshu.local/index.html#/project/1')
+  await expect(page.getByText('还有 1 项待处理', { exact: true })).toBeVisible()
+  await expect(page.locator('.next-action-card')).toContainText('2 次失败')
+  await page.screenshot({ path: testInfo.outputPath('workbench-failed-run.png') })
+  await page.locator('.next-action-card').getByRole('button', { name: '排查执行失败' }).click()
+  await expect(page).toHaveURL(/#\/log\?projectId=1$/)
+  assertClean()
+})
+
+for (const entry of ['project', 'rule']) {
+  test(`${entry} 新建规则按业务说明选型并保留输入内容和类型`, async ({ page }, testInfo) => {
+    const fixtures = workflowFixtures()
+    let submitted
+    fixtures.set('POST /api/rule/definition', ({ request }) => {
+      submitted = request.postDataJSON()
+      return { id: 202, ...submitted }
+    })
+    const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+    await page.setViewportSize({ width: 1280, height: 720 })
+    await page.goto(`http://tianshu.local/index.html#/${entry === 'project' ? 'project/1' : 'rule?projectId=1'}`)
+    if (entry === 'project') await page.getByRole('tab', { name: '项目规则', exact: true }).click()
+    await page.getByRole('button', { name: '新建规则', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '新建规则' })
+    await dialog.getByRole('textbox', { name: '规则编码' }).fill('Audit_Rule_MixedCase')
+    await dialog.getByRole('textbox', { name: '规则名称' }).fill('审批前评分验证')
+    for (const [type, help] of [['决策流', '编排多个判断'], ['QL脚本', '直接编写 QL 脚本'], ['评分卡', '按权重累加']]) {
+      await dialog.locator('.el-form-item').filter({ hasText: '模型类型' }).locator('.el-select').click()
+      await page.getByRole('option', { name: type, exact: true }).click()
+      await expect(dialog.locator('.model-type-help')).toContainText(help)
+    }
+    await expect(dialog.locator('.model-type-help')).toContainText('通过校验和审批后再发布')
+    const box = await dialog.boundingBox()
+    expect(box.y).toBeGreaterThanOrEqual(0)
+    expect(box.y + box.height).toBeLessThanOrEqual(720)
+    await page.screenshot({ path: testInfo.outputPath(`${entry}-rule-guide.png`) })
+    await dialog.getByRole('button', { name: '仅创建', exact: true }).click()
+    await expect(dialog).not.toBeVisible()
+    expect(submitted).toEqual(expect.objectContaining({ ruleCode: 'Audit_Rule_MixedCase', ruleName: '审批前评分验证', modelType: 'SCORE' }))
+    expect(String(submitted.projectId)).toBe('1')
+    assertClean()
+  })
+}
+
 function workflowFixtures() {
   const routes = new Map([
     ...createDetailApiData(),

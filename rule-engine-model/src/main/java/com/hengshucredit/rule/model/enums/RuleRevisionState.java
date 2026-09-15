@@ -6,11 +6,12 @@ public enum RuleRevisionState {
     REJECTED,
     APPROVED,
     PUBLISHED,
-    OFFLINE;
+    OFFLINE,
+    DELETED;
 
     public boolean canTransitionTo(RuleRevisionState target) {
         if (target == null) return false;
-        if (this == DRAFT) return target == REVIEW;
+        if (this == DRAFT) return target == REVIEW || target == DELETED;
         if (this == REVIEW) {
             return target == REJECTED || target == APPROVED;
         }

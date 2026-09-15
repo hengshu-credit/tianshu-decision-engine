@@ -19,6 +19,13 @@ import java.util.Map;
 public class RulePreflightValidationServiceTest {
 
     @Test
+    public void reportIdentifiesTheExactDraftLockVersion() {
+        FixtureService service = new FixtureService();
+        service.revision.setLockVersion(7);
+        Assert.assertEquals(Integer.valueOf(7), service.validate(200L).getLockVersion());
+    }
+
+    @Test
     public void aggregatesReferenceCompileAndDependencyErrors() {
         FixtureService service = new FixtureService();
         service.audit = new RuleReferenceIntegrityService.AuditReport(100L,

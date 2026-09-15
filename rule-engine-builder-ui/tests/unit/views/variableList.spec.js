@@ -535,7 +535,8 @@ describe('VariableList — 变量操作', () => {
     const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
 
     expect(variableTable).toContain('row.scope === \'PROJECT\'')
-    expect(variableTable).toContain('转为全局')
+    expect(variableTable).toContain('转全局')
+    expect(variableTable).not.toContain('<el-dropdown')
     expect(constantTable).toContain('row.scope === \'PROJECT\'')
     expect(constantTable).toContain('转为全局')
   })
@@ -617,8 +618,6 @@ describe('VariableList — 变量操作', () => {
   test('所有字段、常量和数据对象写操作均由字段编辑权限控制', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const guardedHandlers = [
-      'handleOptions(row)',
-      'handleToGlobal(row)',
       'handleObjectToGlobal(node.object)',
       'handleAddObjectField(node)',
       'handleDeleteObject(node.object)',
@@ -627,6 +626,9 @@ describe('VariableList — 变量操作', () => {
       'handleDeleteObjectField(row)',
       'editFieldValidation(row)',
       'removeFieldValidation(row)',
+      "handleVariableRowCommand('options', row)",
+      "handleVariableRowCommand('global', row)",
+      "handleVariableRowCommand('delete', row)",
     ]
 
     guardedHandlers.forEach(handler => {
@@ -636,6 +638,10 @@ describe('VariableList — 变量操作', () => {
         's'
       ))
     })
+    expect(source).toContain("if (!hasPermission('field:edit'))")
+    expect(source).toContain("if (command === 'options') return this.handleOptions(row)")
+    expect(source).toContain("if (command === 'global') return this.handleToGlobal(row)")
+    expect(source).toContain("if (command === 'delete') return this.handleDelete(row)")
     expect(source).toMatch(/v-model="node\.object\.objectType"[\s\S]*?:disabled="!canEditFields"/)
     expect(source).not.toContain('v-model="node.object.scriptName"')
     expect(source).not.toContain('v-model="row.scriptName"')
@@ -905,6 +911,23 @@ describe('VariableList — 变量操作', () => {
     expect(wrapper.vm.draftPreviewResult.resolvedValue).toBe(88)
   })
 
+  test('SQL 业务字段样例按真实选择器元数据生成，并保持当前字段编码', async () => {
+    wrapper.vm.form.dbParams = JSON.stringify([{ kind: 'REFERENCE', refType: 'VARIABLE', refId: 7, value: 'oldName' }])
+    wrapper.vm.listReferenceOptions = [{ _refType: 'VARIABLE', _varId: 7, varCode: 'newAge', varLabel: '年龄 newAge', varLabelText: '年龄', varType: 'INTEGER' }]
+    expect(wrapper.vm.dbSampleFields).toEqual([{ key: 'VARIABLE:7', code: 'newAge', label: '年龄', type: 'INTEGER' }])
+    wrapper.vm.setDbSampleValue(wrapper.vm.dbSampleFields[0], '28')
+    expect(JSON.parse(wrapper.vm.draftPreviewParamsText)).toEqual({ newAge: 28 })
+  })
+
+  test('数据库配置进度只有在 SQL 和参数完整时才显示就绪', () => {
+    wrapper.vm.form = { ...wrapper.vm.initForm(), scope: 'PROJECT', projectId: 1, varCode: 'score', varLabel: '评分', varSource: 'DB', dbDatasourceId: 31, dbSql: 'SELECT ?', dbParams: '[]' }
+    expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(false)
+    wrapper.vm.form.dbParams = '[0]'
+    expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(true)
+    wrapper.vm.form.dbParams = '{invalid'
+    expect(wrapper.vm.variableConfigurationChecklist[2].ready).toBe(false)
+  })
+
   test('保存前预览使用高对比度实心主按钮', async () => {
     wrapper.vm.dialogVisible = true
     wrapper.vm.form = {
@@ -1108,7 +1131,7 @@ describe('VariableList — 字段校验规则库', () => {
     const wrapper = await mountAndWait()
     const source = fs.readFileSync(path.resolve(__dirname, '../../../src/views/variable/VariableList.vue'), 'utf8')
 
-    expect(source).toContain('<el-tab-pane label="字段校验" name="validations">')
+    expect(source).toMatch(/<el-tab-pane\b[^>]*label="字段校验"[^>]*name="validations"[^>]*>/)
     await wrapper.vm.onTabClick({ paneName: 'validations' })
     expect(variableApi.listFieldValidations).toHaveBeenCalled()
     wrapper.unmount()

@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page list-library-page">
+  <div class="uiue-list-page list-library-page management-list-page">
     <div class="module-hint">
       <div class="hint-title">名单管理</div>
       <div class="hint-text">
@@ -14,8 +14,8 @@
       </div>
     </div>
 
-    <el-tabs v-model="activeTab">
-      <el-tab-pane label="名单管理" name="list">
+    <el-tabs class="management-table-region" v-model="activeTab">
+      <el-tab-pane class="management-table-region" label="名单管理" name="list">
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleQuery">
             <el-form-item label="项目编码">
@@ -99,7 +99,7 @@
           </div>
         </div>
 
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="tableData"
           border
           size="small"
@@ -218,8 +218,8 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane label="名单日志" name="logs">
-        <module-call-log module-type="LIST" title="名单匹配日志" />
+      <el-tab-pane class="management-table-region" label="名单日志" name="logs">
+        <module-call-log class="management-table-region" module-type="LIST" title="名单匹配日志" />
       </el-tab-pane>
     </el-tabs>
 

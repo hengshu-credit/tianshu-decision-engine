@@ -90,6 +90,7 @@ public class RuleRuntimeInvokerTest {
                         return plan;
                     }
                 });
+        installPublishedFixture(invoker);
         invoker.register(engine.getRunner());
 
         Map<String, Object> values = new LinkedHashMap<>();
@@ -117,6 +118,7 @@ public class RuleRuntimeInvokerTest {
         ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
         ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        installPublishedFixture(invoker);
         invoker.register(engine.getRunner());
 
         Map<String, Object> values = new LinkedHashMap<>();
@@ -144,6 +146,7 @@ public class RuleRuntimeInvokerTest {
         ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
         ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        installPublishedFixture(invoker);
         invoker.register(engine.getRunner());
 
         RuleDefinition root = new RuleDefinition();
@@ -197,9 +200,11 @@ public class RuleRuntimeInvokerTest {
     }
 
     @Test
-    public void testModeExecutesCompiledChildByStableIdWithoutPublishing() {
+    public void testModeDoesNotExecuteUnpublishedChildDraft() {
         RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
         ReflectionTestUtils.setField(invoker, "definitionService", new TestDefinitionService());
+        ReflectionTestUtils.setField(invoker, "publishedMapper", Proxy.newProxyInstance(RulePublishedMapper.class.getClassLoader(),
+                new Class<?>[]{RulePublishedMapper.class}, (proxy, method, args) -> null));
         ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
         ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
@@ -209,7 +214,7 @@ public class RuleRuntimeInvokerTest {
         context.put("age", "22");
         invoker.enter("JCLTest", 0L, null, context, true);
         try {
-            assertEquals("PASS", invoker.executeRuleById("1"));
+            org.junit.Assert.assertThrows(IllegalArgumentException.class, () -> invoker.executeRuleById("1"));
             assertEquals("JCLTest", RuntimeContextBridge.currentRule().get("code"));
         } finally {
             invoker.exit();
@@ -225,6 +230,7 @@ public class RuleRuntimeInvokerTest {
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
         ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
 
+        installPublishedFixture(invoker);
         invoker.enter("PARENT", 0L, null, new LinkedHashMap<String, Object>(), true);
         try {
             assertEquals("子规则", invoker.executeRuleById("2"));
@@ -244,6 +250,7 @@ public class RuleRuntimeInvokerTest {
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", new QLExpressEngine());
         ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
 
+        installPublishedFixture(invoker);
         invoker.enter("PARENT", 0L, null, new LinkedHashMap<String, Object>(), true);
         try {
             assertEquals("子规则", invoker.executeRuleById("2"));
@@ -266,6 +273,7 @@ public class RuleRuntimeInvokerTest {
 
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("CREDIT_AMOUNT", 1000);
+        installPublishedFixture(invoker);
         invoker.enter("PARENT", 0L, null, values, true);
         try {
             RuleExecutionSession session = invoker.currentSession();
@@ -308,6 +316,7 @@ public class RuleRuntimeInvokerTest {
         ReflectionTestUtils.setField(invoker, "variableSourceResolver", new PassThroughVariableResolver());
         ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
         ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        installPublishedFixture(invoker);
         invoker.register(engine.getRunner());
 
         Map<String, Object> values = new LinkedHashMap<>();
@@ -438,7 +447,7 @@ public class RuleRuntimeInvokerTest {
     }
 
     @Test
-    public void parentArtifactCallsItsBundledChildWithoutCurrentPublishedLookup() {
+    public void parentArtifactResolvesLatestChildInsteadOfBundledOldSnapshot() {
         RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
         QLExpressEngine engine = new QLExpressEngine();
         FrozenChildResolver resolver = new FrozenChildResolver();
@@ -461,11 +470,21 @@ public class RuleRuntimeInvokerTest {
         input.setFieldType("INTEGER");
         child.setInputFields(Collections.singletonList(input));
         snapshot.getNestedRules().add(child);
+        RulePublished latest = new RulePublished();
+        latest.setDefinitionId(2L); latest.setRuleCode("CHILD"); latest.setVersion(2); latest.setArtifactId(702L);
+        latest.setCompiledScript("return 99;"); latest.setModelJson("{\"script\":\"return 99;\"}");
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot childSnapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        ReflectionTestUtils.setField(childSnapshot, "compiledScript", "return 99;");
+        ReflectionTestUtils.setField(invoker, "artifactRuntimeSnapshotService", new ArtifactRuntimeSnapshotService() {
+            @Override public RuntimeSnapshot load(Long artifactId, Long definitionId, Long projectId) {
+                assertEquals(Long.valueOf(702), artifactId); return childSnapshot;
+            }
+        });
         RulePublishedMapper forbiddenMapper = (RulePublishedMapper) Proxy.newProxyInstance(
                 RulePublishedMapper.class.getClassLoader(),
                 new Class<?>[]{RulePublishedMapper.class},
                 (proxy, method, args) -> {
-                    throw new AssertionError("父制品不得查询当前子规则发布记录");
+                    return latest;
                 });
         ReflectionTestUtils.setField(invoker, "publishedMapper", forbiddenMapper);
         ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
@@ -485,12 +504,25 @@ public class RuleRuntimeInvokerTest {
         invoker.enterArtifact(root, 9L, "target_project", new LinkedHashMap<String, Object>(),
                 Collections.<String, Object>emptyMap(), false, "{}", snapshot);
         try {
-            assertEquals(Integer.valueOf(73), invoker.executeRuleById("2"));
+            assertEquals(Integer.valueOf(99), invoker.executeRuleById("2"));
             assertTrue(resolver.snapshotCalled);
             assertFalse(resolver.currentCalled);
         } finally {
             invoker.exit();
         }
+    }
+
+    /** Explicit published projection for the shared-context and termination behavior tests. */
+    private static void installPublishedFixture(RuleRuntimeInvoker invoker) {
+        RuleDefinitionService definitions = (RuleDefinitionService) ReflectionTestUtils.getField(invoker, "definitionService");
+        RuleDefinition definition = definitions.getById(1L);
+        RuleDefinitionContent content = definitions.getContent(definition.getId());
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(definition.getId()); published.setRuleCode(definition.getRuleCode());
+        published.setVersion(1); published.setStatus(1); published.setModelType(definition.getModelType());
+        published.setCompiledScript(content.getCompiledScript()); published.setModelJson(content.getModelJson());
+        ReflectionTestUtils.setField(invoker, "publishedMapper", Proxy.newProxyInstance(RulePublishedMapper.class.getClassLoader(),
+                new Class<?>[]{RulePublishedMapper.class}, (proxy, method, args) -> published));
     }
 
     private static class TestDefinitionService extends RuleDefinitionService {

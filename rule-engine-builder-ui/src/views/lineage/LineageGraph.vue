@@ -296,6 +296,9 @@ export default {
       knownEdges: [],
       loadedDirections: { UPSTREAM: false, DOWNSTREAM: false },
       expandedObjects: {},
+      expandedFields: {},
+      loadedHierarchy: {},
+      hierarchyLoading: {},
       graphHeight: 440,
       viewport: { x: 0, y: 0, scale: 1 },
       positionOverrides: {},
@@ -375,21 +378,22 @@ export default {
         collect(this.downstreamRoots, 'DOWNSTREAM', 1, 'CURRENT')
       return result
     },
+    fieldChildren() {
+      const children = new Map()
+      Object.values(this.knownNodes).forEach(node => {
+        if (!node.dataObject) return
+        const parentId = node.parentNodeId || node.dataObject.id
+        if (!children.has(parentId)) children.set(parentId, [])
+        children.get(parentId).push(node)
+      })
+      return children
+    },
     visibleGraph() {
       const nodes = new Map()
       const edges = new Map()
       const currentId = this.startNode?.id
       const canonicalId = id => id === currentId ? 'CURRENT' : id
       const objects = new Map()
-      this.branchPaths.forEach(item => {
-        const object = item.branch.node.dataObject
-        if (object) objects.set(object.id, object)
-      })
-      if (this.startNode?.type === 'DATA_OBJECT') objects.set(currentId, this.startNode)
-      const displayId = id => {
-        const object = this.knownNodes[id]?.dataObject
-        return canonicalId(object && !this.expandedObjects[object.id] ? object.id : id)
-      }
       const addNode = item => {
         const id = item.branch.node.id
         if (id === currentId) return
@@ -404,23 +408,62 @@ export default {
       }
       this.branchPaths.forEach(item => {
         const { branch } = item
-        const object = branch.node.dataObject
+        const object = branch.node.dataObject || (branch.node.type === 'DATA_OBJECT' ? branch.node : null)
         if (object) {
-          const expanded = Boolean(this.expandedObjects[object.id])
-          addNode({
-            ...item,
-            branch: { node: object, instanceId: object.id, objectGroup: true, expanded, children: [] },
-          })
-          if (expanded) {
-            addNode(item)
-            addEdge(canonicalId(object.id), canonicalId(branch.node.id), '包含字段')
-          }
-        } else if (!objects.has(branch.node.id)) {
+          if (!objects.has(object.id)) objects.set(object.id, { ...item, node: object })
+        } else {
           addNode(item)
         }
       })
-      // 折叠仅决定节点可见性；仍可见的共享节点之间保留全部已加载的真实依赖。
-      this.knownEdges.forEach(edge => addEdge(displayId(edge.from), displayId(edge.to), edge.label || ''))
+      if (this.startNode?.type === 'DATA_OBJECT') {
+        objects.set(currentId, { node: this.startNode, side: this.query.direction === 'UPSTREAM' ? 'UPSTREAM' : 'DOWNSTREAM' })
+      }
+      // 对象保持靠近依赖节点；字段按父子关系向上游左侧或下游右侧逐级展开。
+      objects.forEach(item => {
+        const addHierarchy = (node, parentId, path) => {
+          if (path.has(node.id)) return
+          const objectGroup = node.type === 'DATA_OBJECT'
+          const expanded = Boolean((objectGroup ? this.expandedObjects : this.expandedFields)[node.id])
+          addNode({ ...item, branch: {
+            node, instanceId: canonicalId(node.id), objectGroup, fieldGroup: !objectGroup,
+            expanded, loading: this.hierarchyLoading[node.id], children: [],
+            hasMore: node.hasFieldChildren || (this.fieldChildren.get(node.id) || []).length > 0,
+          } })
+          if (parentId) {
+            const upstream = item.side === 'UPSTREAM'
+            addEdge(canonicalId(upstream ? node.id : parentId), canonicalId(upstream ? parentId : node.id),
+              upstream ? (parentId === item.node.id ? '所属对象' : '所属字段') : '包含字段')
+          }
+          if (expanded || node.id === currentId && !objectGroup) {
+            const nextPath = new Set([...path, node.id])
+            ;(this.fieldChildren.get(node.id) || []).forEach(child => addHierarchy(child, node.id, nextPath))
+          }
+        }
+        addHierarchy(this.knownNodes[item.node.id] || item.node, null, new Set())
+      })
+      const displayId = id => {
+        const visited = new Set()
+        let node = this.knownNodes[id]
+        while (node?.dataObject && id !== currentId && !nodes.has(id) && !visited.has(id)) {
+          visited.add(id)
+          id = node.parentNodeId || node.dataObject.id
+          node = this.knownNodes[id]
+        }
+        return canonicalId(id)
+      }
+      const objectForField = id => id === currentId ? undefined : objects.get(this.knownNodes[id]?.dataObject?.id)
+      // 收起分支不删除共享依赖；靠近当前节点的一端始终汇总到对象，避免字段绕过对象直连规则。
+      this.knownEdges.forEach(edge => {
+        if (edge.label === '包含字段') return
+        const sourceObject = objectForField(edge.from)
+        const targetObject = objectForField(edge.to)
+        const sameObject = sourceObject && sourceObject.node.id === targetObject?.node.id
+        const fromId = sourceObject?.side === 'UPSTREAM' && !sameObject
+          ? canonicalId(sourceObject.node.id) : displayId(edge.from)
+        const toId = targetObject?.side === 'DOWNSTREAM' && !sameObject
+          ? canonicalId(targetObject.node.id) : displayId(edge.to)
+        addEdge(fromId, toId, edge.label || '')
+      })
       const visibleIds = new Set(['CURRENT', ...nodes.keys()])
       return {
         nodes: [...nodes.values()],
@@ -509,7 +552,9 @@ export default {
   methods: {
     mergeGraph(data) {
       ;[...(data.nodes || []), data.startNode].filter(Boolean).forEach(node => {
-        this.knownNodes[node.id] = node
+        ;[node.dataObject, ...(node.ancestorFields || []), node].filter(Boolean).forEach(item => {
+          this.knownNodes[item.id] = { ...this.knownNodes[item.id], ...item }
+        })
       })
       const edges = new Map(this.knownEdges.map(edge => [`${edge.from}->${edge.to}:${edge.label || ''}`, edge]))
       ;(data.edges || []).forEach(edge => edges.set(`${edge.from}->${edge.to}:${edge.label || ''}`, edge))
@@ -530,8 +575,26 @@ export default {
         this.$nextTick(() => this.fitGraph())
       }
     },
-    toggleObject(id) {
-      this.expandedObjects[id] = !this.expandedObjects[id]
+    async toggleObject(id) {
+      await this.toggleHierarchy(id, this.expandedObjects)
+    },
+    async toggleHierarchy(id, expanded) {
+      if (this.hierarchyLoading[id]) return
+      const node = this.knownNodes[id]
+      if (!expanded[id] && !this.fieldChildren.has(id) && !this.loadedHierarchy[id]) {
+        this.hierarchyLoading[id] = true
+        try {
+          const res = await getLineageGraph({ nodeType: node.type, nodeId: node.refId, direction: 'DOWNSTREAM', maxDepth: 1 })
+          this.mergeGraph(res?.data || {})
+          this.loadedHierarchy[id] = true
+        } catch (e) {
+          this.$message.error('字段层级加载失败，请重试')
+          return
+        } finally {
+          this.hierarchyLoading[id] = false
+        }
+      }
+      expanded[id] = !expanded[id]
       this.$nextTick(() => this.fitGraph())
     },
     async loadOptions(keyword) {
@@ -559,6 +622,9 @@ export default {
       this.knownEdges = []
       this.loadedDirections = { UPSTREAM: false, DOWNSTREAM: false }
       this.expandedObjects = {}
+      this.expandedFields = {}
+      this.loadedHierarchy = {}
+      this.hierarchyLoading = {}
       this.positionOverrides = {}
       this.pointerInteraction = null
       this.viewport = { x: 0, y: 0, scale: 1 }
@@ -814,7 +880,11 @@ export default {
     },
     async toggleBranch(branch) {
       if (branch?.objectGroup) {
-        this.toggleObject(branch.node.id)
+        await this.toggleObject(branch.node.id)
+        return
+      }
+      if (branch?.fieldGroup) {
+        await this.toggleHierarchy(branch.node.id, this.expandedFields)
         return
       }
       if (!branch || branch.loading || branch.cycle) return
@@ -854,8 +924,7 @@ export default {
       }
     },
     canToggle(branch) {
-      if (branch?.loaded && branch.node.dataObject && branch.direction === 'UPSTREAM' &&
-        branch.children.every(child => child.node.id === branch.node.dataObject.id)) return false
+      if (branch?.fieldGroup) return Boolean(branch.hasMore)
       return Boolean(
         branch && (branch.objectGroup || (!branch.cycle && (branch.hasMore || branch.children.length)))
       )

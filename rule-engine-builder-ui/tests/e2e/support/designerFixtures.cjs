@@ -142,6 +142,15 @@ function createDesignerApiData() {
         : [])
   }
 
+  for (const definition of definitions) {
+    routes.set(`/api/rule/definition/${definition.id}/published-versions`, routes.get(`/api/rule/definition/versions/${definition.id}`))
+    routes.set(`POST /api/rule/definition/${definition.id}/designer/compile`, {
+      compileSuccess: true, compiledScript: 'return 1;', preflightReport: { valid: true, errors: [], warnings: [] }
+    })
+  }
+  routes.set('/api/rule/definition/101/versions/81', {
+    id: 81, definitionId: 101, version: 2, modelJson: '{}',
+  })
   return routes
 }
 

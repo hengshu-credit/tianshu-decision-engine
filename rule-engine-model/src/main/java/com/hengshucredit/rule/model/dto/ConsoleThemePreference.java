@@ -21,6 +21,7 @@ public class ConsoleThemePreference {
     private String navigationLayout;
     private String sidebarTheme;
     private String contentWidth;
+    private String tableScrollMode;
     private Boolean fixedSidebar;
     private Boolean colorWeak;
 }

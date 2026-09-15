@@ -37,6 +37,9 @@ public class PublishedRuleFieldSnapshotResolver {
     private RulePublishedMapper publishedMapper;
     @Resource
     private DecisionArtifactMapper artifactMapper;
+    @Resource
+    @org.springframework.context.annotation.Lazy
+    private com.hengshucredit.rule.server.service.RuleVersionBindingService versionService;
 
     private final DecisionArtifactPackageCodec codec = new DecisionArtifactPackageCodec();
 
@@ -46,6 +49,17 @@ public class PublishedRuleFieldSnapshotResolver {
             return missing(definitionId, null, "未找到生效的已发布规则");
         }
         return resolve(published);
+    }
+
+    public RuleFieldAnalyzer.ResolvedFields resolve(Long definitionId, Long versionBindingId) {
+        if (versionBindingId == null) return resolve(definitionId);
+        RulePublished published = loadPublishedRule(definitionId);
+        if (published == null) return missing(definitionId, null, "未找到生效的已发布规则");
+        try {
+            return resolve(versionService.resolvePublished(published, versionBindingId));
+        } catch (IllegalArgumentException | IllegalStateException failure) {
+            return missing(definitionId, null, failure.getMessage());
+        }
     }
 
     public RuleFieldAnalyzer.ResolvedFields resolve(RulePublished published) {

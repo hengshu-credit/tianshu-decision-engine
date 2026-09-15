@@ -42,13 +42,17 @@ public class ArtifactRuntimeSnapshotService {
     private ArtifactResourceBindingMapper bindingMapper;
 
     private final DecisionArtifactPackageCodec codec = new DecisionArtifactPackageCodec();
+    private static final int MAX_DECODED_PACKAGES = 64;
+    private static final long MAX_DECODED_BYTES = 64L * 1024 * 1024;
+    private final Map<String, CachedPackage> decodedPackages = new LinkedHashMap<>(16, 0.75f, true);
+    private long decodedBytes;
 
     public RuntimeSnapshot load(Long artifactId, Long definitionId, Long executionProjectId) {
         DecisionArtifact artifact = loadArtifact(artifactId);
         if (artifact == null || artifact.getPackageContent() == null) {
             throw new IllegalStateException("已发布规则缺少不可变决策制品");
         }
-        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(artifact.getPackageContent());
+        DecisionArtifactPackageCodec.DecodedPackage decoded = decodeVerified(artifact);
         if (!same(artifact.getArtifactDigest(), decoded.getArtifactDigest())
                 || !same(artifact.getPackageDigest(), decoded.getPackageDigest())) {
             throw new IllegalStateException("已发布决策制品摘要校验失败");
@@ -65,6 +69,7 @@ public class ArtifactRuntimeSnapshotService {
         }
 
         RuntimeSnapshot snapshot = new RuntimeSnapshot();
+        snapshot.imported = deployment != null;
         snapshot.artifactId = artifactId;
         snapshot.artifactDigest = artifact.getArtifactDigest();
         snapshot.modelType = text(decoded.getArtifactPackage().getMetadata().get("modelType"));
@@ -109,6 +114,45 @@ public class ArtifactRuntimeSnapshotService {
         return snapshot;
     }
 
+    private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {
+        byte[] content = artifact.getPackageContent();
+        String digest = Sha256Digests.bytes(content);
+        // 每次验证实际字节，不能仅凭数据库里的摘要命中缓存而漏过内容被修改的情况。
+        if (!same(digest, artifact.getPackageDigest())) {
+            throw new IllegalStateException("已发布决策制品摘要校验失败");
+        }
+        synchronized (decodedPackages) {
+            CachedPackage cached = decodedPackages.get(digest);
+            if (cached != null) return cached.decoded();
+        }
+        // 解压在锁外进行；缓存只保留未绑定的组件，每次执行仍创建独立变量和模型。
+        DecisionArtifactPackageCodec.DecodedPackage decoded = codec.decode(content);
+        if (!same(decoded.getArtifactDigest(), artifact.getArtifactDigest())) {
+            throw new IllegalStateException("已发布决策制品摘要校验失败");
+        }
+        long weight = CanonicalJson.writeBytes(decoded.getArtifactPackage().getMetadata()).length;
+        for (DecisionArtifactPackage.Component component : decoded.getArtifactPackage().getComponents().values()) {
+            weight += component.getContent().length + CanonicalJson.writeBytes(component.getMetadata()).length;
+        }
+        if (weight <= MAX_DECODED_BYTES) {
+            synchronized (decodedPackages) {
+                CachedPackage existing = decodedPackages.get(digest);
+                if (existing != null) return existing.decoded();
+                while (!decodedPackages.isEmpty() && (decodedPackages.size() >= MAX_DECODED_PACKAGES
+                        || decodedBytes + weight > MAX_DECODED_BYTES)) {
+                    var oldest = decodedPackages.entrySet().iterator();
+                    decodedBytes -= oldest.next().getValue().weight();
+                    oldest.remove();
+                }
+                decodedPackages.put(digest, new CachedPackage(decoded, weight));
+                decodedBytes += weight;
+            }
+        }
+        return decoded;
+    }
+
+    private record CachedPackage(DecisionArtifactPackageCodec.DecodedPackage decoded, long weight) { }
+
     private RuleModel model(DecisionArtifactPackage.Component component, Long executionProjectId) {
         Object modelMetadata = component.getMetadata().get("model");
         if (modelMetadata == null) {
@@ -142,7 +186,8 @@ public class ArtifactRuntimeSnapshotService {
         if ("API".equals(source) || "EXTERNAL".equals(source)) {
             replaceSingle(config, "apiConfigId", "EXTERNAL_API", bindings, fallback);
         } else if ("DB".equals(source) || "DATABASE".equals(source)) {
-            replaceSingle(config, "datasourceId", "DB_DATASOURCE", bindings, fallback);
+            replaceSingle(config, config.containsKey("dbDatasourceId") ? "dbDatasourceId" : "datasourceId",
+                    "DB_DATASOURCE", bindings, fallback);
         } else if ("LIST".equals(source)) {
             JSONArray ids = config.getJSONArray("listIds");
             if (ids != null) {
@@ -202,6 +247,8 @@ public class ArtifactRuntimeSnapshotService {
     }
 
     public static final class RuntimeSnapshot {
+        private boolean imported;
+        public boolean isImported() { return imported; }
         private Long artifactId;
         private String artifactDigest;
         private String modelType;

@@ -71,6 +71,7 @@ public class RuleDependencyClosureService {
     private RuleDataObjectMapper dataObjectMapper;
     @Resource
     private RulePublishedMapper publishedMapper;
+    @Resource private com.hengshucredit.rule.server.service.RuleVersionBindingService versionBindingService;
     @Resource
     private PublishedRuleFieldSnapshotResolver publishedFieldSnapshotResolver;
 
@@ -91,31 +92,42 @@ public class RuleDependencyClosureService {
             issues.add(RuleValidationIssue.error("REVISION_DEFINITION_MISMATCH", "$", "修订不属于指定规则"));
             return DependencyClosure.of(Collections.emptyList(), issues);
         }
-        collectDefinition(definitionId, revision, rootFields, false, dependencies, issues,
+        collectDefinition(definitionId, revision, rootFields, false, null, dependencies, issues,
                 new LinkedHashSet<>(), new LinkedHashSet<>());
+        return DependencyClosure.of(new ArrayList<>(dependencies.values()), issues);
+    }
+
+    /** 当前请求的根配置仅存在于内存中，嵌套依赖仍读取已发布快照。 */
+    public DependencyClosure resolvePreview(RuleRevision revision,
+                                            RuleFieldAnalyzer.ResolvedFields fields) {
+        List<RuleValidationIssue> issues = new ArrayList<>();
+        Map<String, ArtifactDependency> dependencies = new TreeMap<>();
+        collectDefinition(revision.getDefinitionId(), revision, fields, false, null,
+                dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
         return DependencyClosure.of(new ArrayList<>(dependencies.values()), issues);
     }
 
     private void collectDefinition(Long definitionId, RuleRevision revision,
                                    RuleFieldAnalyzer.ResolvedFields resolvedFields,
-                                   boolean dependency,
+                                   boolean dependency, Long bindingId,
                                    Map<String, ArtifactDependency> dependencies,
                                    List<RuleValidationIssue> issues,
-                                   Set<Long> visitingRules, Set<Long> visitedRules) {
-        if (!visitingRules.add(definitionId)) {
+                                   Set<String> visitingRules, Set<String> visitedRules) {
+        String referenceKey = definitionId + ":" + (bindingId == null ? "LATEST" : bindingId);
+        if (!visitingRules.add(referenceKey)) {
             issues.add(RuleValidationIssue.error("RULE_DEPENDENCY_CYCLE", "$", "RULE", definitionId,
                     "规则依赖形成循环，ruleId=" + definitionId));
             return;
         }
-        if (visitedRules.contains(definitionId)) {
-            visitingRules.remove(definitionId);
+        if (visitedRules.contains(referenceKey)) {
+            visitingRules.remove(referenceKey);
             return;
         }
         RuleDefinition definition = loadDefinition(definitionId);
         if (definition == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", "$", "RULE", definitionId,
                     "规则依赖不存在"));
-            visitingRules.remove(definitionId);
+            visitingRules.remove(referenceKey);
             return;
         }
         if (dependency && !active(definition.getStatus())) {
@@ -128,17 +140,24 @@ public class RuleDependencyClosureService {
             modelJson = revision.getModelJson();
         } else {
             RulePublished published = loadPublishedRule(definitionId);
+            if (bindingId != null && published != null) {
+                try { published = versionBindingService.resolvePublished(published, bindingId); }
+                catch (RuntimeException error) {
+                    issues.add(RuleValidationIssue.error("RULE_VERSION_UNAVAILABLE", "$", "RULE", definitionId, error.getMessage()));
+                    visitingRules.remove(referenceKey); return;
+                }
+            }
             if (published == null || !active(published.getStatus())) {
                 issues.add(RuleValidationIssue.error("RULE_DEPENDENCY_NOT_PUBLISHED", "$",
                         "RULE", definitionId, "被调用规则尚未发布或已下线"));
-                visitingRules.remove(definitionId);
+                visitingRules.remove(referenceKey);
                 return;
             }
             resolvedFields = resolvePublishedFields(published);
             issues.addAll(resolvedFields.getDiagnostics());
             if (resolvedFields.getDiagnostics().stream()
                     .anyMatch(issue -> "ERROR".equals(issue.getSeverity()))) {
-                visitingRules.remove(definitionId);
+                visitingRules.remove(referenceKey);
                 return;
             }
             modelJson = published.getModelJson();
@@ -170,14 +189,14 @@ public class RuleDependencyClosureService {
                         "output." + field.getFieldName(), dependencies, issues);
             }
         }
-        visitingRules.remove(definitionId);
-        visitedRules.add(definitionId);
+        visitingRules.remove(referenceKey);
+        visitedRules.add(referenceKey);
     }
 
     private void collectStructuredReferences(String modelJson, Long projectId,
                                              Map<String, ArtifactDependency> dependencies,
                                              List<RuleValidationIssue> issues,
-                                             Set<Long> visitingRules, Set<Long> visitedRules) {
+                                             Set<String> visitingRules, Set<String> visitedRules) {
         Object root;
         try {
             root = JSON.parse(modelJson);
@@ -204,7 +223,15 @@ public class RuleDependencyClosureService {
                     issues.add(RuleValidationIssue.error("MISSING_RULE_ID", reference.getPath(),
                             "规则调用缺少 ruleId，禁止通过规则编码关联"));
                 } else {
-                    collectDefinition(reference.getRefId(), null, null, true, dependencies, issues,
+                    boolean fixed = "FIXED".equals(reference.getVersionMode());
+                    if (fixed && reference.getVersionBindingId() == null) {
+                        issues.add(RuleValidationIssue.error("RULE_VERSION_MISSING", reference.getPath(), "指定版本缺少绑定 ID")); continue;
+                    }
+                    RuleDefinition target = loadDefinition(reference.getRefId());
+                    if (target != null && !available(target.getScope(), target.getProjectId(), projectId)) {
+                        issues.add(RuleValidationIssue.error("RULE_SCOPE_MISMATCH", reference.getPath(), "被调用规则不在当前项目范围内")); continue;
+                    }
+                    collectDefinition(reference.getRefId(), null, null, true, fixed ? reference.getVersionBindingId() : null, dependencies, issues,
                             visitingRules, visitedRules);
                 }
             } else {
@@ -253,6 +280,7 @@ public class RuleDependencyClosureService {
                     "引用类型与资源类型不一致"));
             return;
         }
+        if (dependencies.containsKey(actualType + ":" + variableId)) return;
         Map<String, Object> snapshot = new LinkedHashMap<>();
         snapshot.put("id", variable.getId());
         snapshot.put("projectId", variable.getProjectId());
@@ -293,8 +321,18 @@ public class RuleDependencyClosureService {
             addExternalBinding(variable, actualType, "EXTERNAL_API", config.getLong("apiConfigId"),
                     path, dependencies, issues);
         } else if ("DB".equals(source) || "DATABASE".equals(source)) {
-            addExternalBinding(variable, actualType, "DB_DATASOURCE", config.getLong("datasourceId"),
+            addExternalBinding(variable, actualType, "DB_DATASOURCE",
+                    config.containsKey("dbDatasourceId") ? config.getLong("dbDatasourceId") : config.getLong("datasourceId"),
                     path, dependencies, issues);
+            JSONArray params = config.getJSONArray("params");
+            if (params != null) {
+                for (int index = 0; index < params.size(); index++) {
+                    if (params.get(index) instanceof JSONObject operand && "REFERENCE".equals(operand.getString("kind"))) {
+                        collectFieldReference(operand.getString("refType"), operand.getLong("refId"),
+                                variable.getProjectId(), path + ".params[" + index + "]", dependencies, issues);
+                    }
+                }
+            }
         } else if ("LIST".equals(source)) {
             JSONArray ids = config.getJSONArray("listIds");
             if (ids == null || ids.isEmpty()) {
@@ -518,6 +556,10 @@ public class RuleDependencyClosureService {
             snapshot.put("modelType", resolvedFields.getSnapshotModelType());
         }
         snapshot.put("version", published.getVersion());
+        snapshot.put("versionBindingId", published.getVersionBindingId());
+        snapshot.put("bindingGeneration", published.getBindingGeneration());
+        snapshot.put("revisionId", published.getRevisionId());
+        snapshot.put("artifactDigest", published.getArtifactDigest());
         snapshot.put("modelJson", published.getModelJson());
         snapshot.put("compiledScript", published.getCompiledScript());
         snapshot.put("compiledType", published.getCompiledType());
@@ -526,7 +568,7 @@ public class RuleDependencyClosureService {
         Integer version = published.getVersion();
         String componentId = "RULE:" + definition.getId() + ":" + (version == null ? 0 : version);
         addJsonDependency(componentId, "RULE", definition.getId(), version,
-                "rules/" + definition.getId() + ".json", "EMBEDDED", snapshot, dependencies);
+                "rules/" + definition.getId() + "/" + (version == null ? 0 : version) + ".json", "EMBEDDED", snapshot, dependencies);
     }
 
     private void addJsonDependency(String componentId, String type, Long id, Integer version,

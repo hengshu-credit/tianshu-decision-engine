@@ -1,5 +1,5 @@
 <template>
-  <div class="uiue-list-page account-page">
+  <div class="uiue-list-page account-page management-list-page">
     <header class="page-header">
       <div>
         <span class="page-eyebrow">CONSOLE ACCESS</span>
@@ -24,10 +24,10 @@
       </el-button>
     </header>
 
-    <section class="content-card">
-      <el-tabs v-model="activeTab">
-        <el-tab-pane label="账户" name="accounts">
-          <el-table show-overflow-tooltip v-loading="loading" :data="accounts" row-key="id">
+    <section class="content-card management-table-region">
+      <el-tabs class="management-table-region" v-model="activeTab">
+        <el-tab-pane class="management-table-region" label="账户" name="accounts">
+          <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="accounts" row-key="id">
             <el-table-column label="账户" min-width="180">
               <template #default="{ row }">
                 <div class="identity-cell">
@@ -113,8 +113,8 @@
           </el-table>
         </el-tab-pane>
 
-        <el-tab-pane label="角色" name="roles">
-          <el-table show-overflow-tooltip v-loading="loading" :data="roles" row-key="id">
+        <el-tab-pane class="management-table-region" label="角色" name="roles">
+          <el-table class="management-table" show-overflow-tooltip v-loading="loading" :data="roles" row-key="id">
             <el-table-column prop="roleName" label="角色名称" min-width="180" />
             <el-table-column prop="roleCode" label="角色编码" min-width="160" />
             <el-table-column label="已授权" width="110" align="right">

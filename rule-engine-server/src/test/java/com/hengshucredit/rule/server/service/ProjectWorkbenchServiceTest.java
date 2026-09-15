@@ -13,6 +13,31 @@ import static org.junit.Assert.assertEquals;
 public class ProjectWorkbenchServiceTest {
 
     @Test
+    public void fieldCheckUsesActualReferenceIdsIncludingGlobalFields() {
+        RuleReferenceIntegrityService integrity = new RuleReferenceIntegrityService();
+        org.springframework.test.util.ReflectionTestUtils.setField(integrity, "variableService", new RuleVariableService() {
+            public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                return Map.of("VARIABLE:7", "globalAge", "VARIABLE:8", "localScore");
+            }
+        });
+        ProjectWorkbenchService service = new ProjectWorkbenchService();
+        org.springframework.test.util.ReflectionTestUtils.setField(service, "referenceIntegrityService", new RuleReferenceIntegrityService() {
+            public java.util.List<AuditReport> scanDefinitions(java.util.List<com.hengshucredit.rule.model.entity.RuleDefinition> definitions) {
+                return definitions.stream().map(rule -> integrity.audit(rule.getId(), 9L,
+                        "{\"operand\":{\"kind\":\"PATH\",\"refType\":\"VARIABLE\",\"refId\":" + rule.getId() + ",\"code\":\"displayOnly\"}}")).toList();
+            }
+        });
+        var rule = new com.hengshucredit.rule.model.entity.RuleDefinition();
+        rule.setId(7L);
+        rule.setRuleName("使用全局字段");
+        assertEquals("READY", service.checkRuleFieldReferences(java.util.List.of(rule)).getStatus());
+        rule.setId(9L);
+        assertEquals("BLOCKED", service.checkRuleFieldReferences(java.util.List.of(rule)).getStatus());
+        assertEquals("OPTIONAL", service.checkRuleFieldReferences(java.util.List.of()).getStatus());
+        assertEquals("UNAVAILABLE", service.checkRuleFieldReferences(null).getStatus());
+    }
+
+    @Test
     public void buildChecksExplainsIncompleteProjectWithoutBlockingOptionalResources() {
         RuleProject project = project(0);
         ProjectWorkbenchDTO.Metrics metrics = metrics();
@@ -24,7 +49,7 @@ public class ProjectWorkbenchServiceTest {
                 new ProjectWorkbenchService().buildChecks(project, metrics, null));
 
         assertEquals("BLOCKED", checks.get("PROJECT").getStatus());
-        assertEquals("ACTION_REQUIRED", checks.get("FIELD").getStatus());
+        assertEquals("UNAVAILABLE", checks.get("FIELD").getStatus());
         assertEquals("OPTIONAL", checks.get("SOURCE").getStatus());
         assertEquals("OPTIONAL", checks.get("MODEL").getStatus());
         assertEquals("READY", checks.get("RULE").getStatus());
@@ -47,7 +72,7 @@ public class ProjectWorkbenchServiceTest {
         metrics.setPublishedRuleCount(1L);
         metrics.setTestScenarioCount(2L);
         metrics.setRecentExecutionCount(12L);
-        metrics.setRecentSuccessCount(10L);
+        metrics.setRecentSuccessCount(12L);
         RuleExecutionLog latest = new RuleExecutionLog();
         latest.setRuleCode("RISK_MAIN");
         latest.setSuccess(1);
@@ -56,7 +81,7 @@ public class ProjectWorkbenchServiceTest {
                 new ProjectWorkbenchService().buildChecks(project, metrics, latest));
 
         assertEquals("READY", checks.get("PROJECT").getStatus());
-        assertEquals("READY", checks.get("FIELD").getStatus());
+        assertEquals("UNAVAILABLE", checks.get("FIELD").getStatus());
         assertEquals("READY", checks.get("SOURCE").getStatus());
         assertEquals("READY", checks.get("MODEL").getStatus());
         assertEquals("READY", checks.get("PUBLISH").getStatus());
@@ -95,6 +120,55 @@ public class ProjectWorkbenchServiceTest {
         assertEquals("ATTENTION", checks.get("SOURCE").getStatus());
         assertEquals("CONFIGURE_DATABASE_SOURCES",
                 checks.get("SOURCE").getActionCode());
+    }
+
+    @Test
+    public void runCheckRequiresAttentionWhenRecentExecutionsFailed() {
+        ProjectWorkbenchDTO.Metrics metrics = metrics();
+        metrics.setPublishedRuleCount(1L);
+        metrics.setRecentExecutionCount(12L);
+        metrics.setRecentSuccessCount(10L);
+        RuleExecutionLog latest = new RuleExecutionLog();
+        latest.setSuccess(1);
+        ProjectWorkbenchDTO.CheckItem run = checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, latest)).get("RUN");
+        assertEquals("ATTENTION", run.getStatus());
+        assertEquals("VIEW_LOGS", run.getActionCode());
+        org.junit.Assert.assertTrue(run.getReason().contains("2 次失败"));
+    }
+
+    @Test
+    public void runCheckDoesNotTreatLatestFailureAsReadyEvenIfCountsLag() {
+        ProjectWorkbenchDTO.Metrics metrics = metrics();
+        metrics.setPublishedRuleCount(1L);
+        metrics.setRecentExecutionCount(1L);
+        metrics.setRecentSuccessCount(1L);
+        RuleExecutionLog latest = new RuleExecutionLog();
+        latest.setSuccess(0);
+        ProjectWorkbenchDTO.CheckItem run = checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, latest)).get("RUN");
+        assertEquals("ATTENTION", run.getStatus());
+        org.junit.Assert.assertTrue(run.getReason().contains("最近一次执行失败"));
+    }
+
+    @Test
+    public void runCheckDistinguishesMissingEvidenceFromUnpublishedRules() {
+        ProjectWorkbenchDTO.Metrics metrics = metrics();
+        metrics.setPublishedRuleCount(null);
+        assertEquals("UNAVAILABLE", checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, null)).get("RUN").getStatus());
+        metrics.setPublishedRuleCount(1L);
+        metrics.setRecentExecutionCount(1L);
+        assertEquals("UNAVAILABLE", checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, null)).get("RUN").getStatus());
+        RuleExecutionLog latest = new RuleExecutionLog();
+        latest.setSuccess(1);
+        metrics.setRecentSuccessCount(null);
+        assertEquals("UNAVAILABLE", checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, latest)).get("RUN").getStatus());
+        metrics.setPublishedRuleCount(0L);
+        assertEquals("BLOCKED", checks(new ProjectWorkbenchService()
+                .buildChecks(project(1), metrics, null)).get("RUN").getStatus());
     }
 
     private RuleProject project(int status) {

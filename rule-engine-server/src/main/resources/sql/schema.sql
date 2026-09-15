@@ -567,6 +567,8 @@ CREATE TABLE IF NOT EXISTS `rule_revision` (
   `state`                    VARCHAR(16)   NOT NULL,
   `base_revision_id`         BIGINT        DEFAULT NULL,
   `base_artifact_id`         BIGINT        DEFAULT NULL,
+  `source_type`              VARCHAR(16)   DEFAULT NULL,
+  `source_id`                BIGINT        DEFAULT NULL,
   `model_json`               LONGTEXT      NOT NULL,
   `compiled_script`          LONGTEXT      DEFAULT NULL,
   `compiled_type`            VARCHAR(16)   DEFAULT NULL,
@@ -597,6 +599,18 @@ CREATE TABLE IF NOT EXISTS `rule_revision` (
   KEY `idx_revision_artifact` (`artifact_id`),
   KEY `idx_revision_governance_request` (`governance_request_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule revision lifecycle';
+
+CREATE TABLE IF NOT EXISTS `rule_designer_save_operation` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `definition_id` BIGINT NOT NULL,
+  `request_id` VARCHAR(128) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `request_digest` CHAR(64) NOT NULL,
+  `response_json` LONGTEXT NOT NULL,
+  `create_by` VARCHAR(64) NOT NULL,
+  `create_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_designer_save_request` (`definition_id`, `request_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Designer save idempotency and original response';
 
 CREATE TABLE IF NOT EXISTS `rule_lifecycle_event` (
   `id`                       BIGINT        NOT NULL AUTO_INCREMENT,
@@ -1868,3 +1882,67 @@ END$$
 DELIMITER ;
 CALL `rule_engine`.`ensure_decision_artifact_columns`();
 DROP PROCEDURE `rule_engine`.`ensure_decision_artifact_columns`;
+
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_designer_draft_columns`()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_revision' AND COLUMN_NAME = 'source_type') THEN
+    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `source_type` VARCHAR(16) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = 'rule_engine' AND TABLE_NAME = 'rule_revision' AND COLUMN_NAME = 'source_id') THEN
+    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `source_id` BIGINT DEFAULT NULL;
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_designer_draft_columns`();
+DROP PROCEDURE `rule_engine`.`ensure_designer_draft_columns`;
+-- Additive business-version migration; historical scripts and IDs are unchanged.
+CREATE TABLE IF NOT EXISTS `rule_engine`.`rule_version_binding` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `definition_id` BIGINT NOT NULL,
+  `version_no` INT NOT NULL,
+  `generation` BIGINT NOT NULL DEFAULT 0,
+  `snapshot_id` BIGINT DEFAULT NULL,
+  `status` INT NOT NULL DEFAULT 1,
+  `update_time` DATETIME DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_rule_business_version` (`definition_id`, `version_no`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_rule_business_versions`;
+DELIMITER $$
+CREATE PROCEDURE `rule_engine`.`ensure_rule_business_versions`()
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='publish_mode') THEN
+    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `publish_mode` VARCHAR(16) DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='target_version_id') THEN
+    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `target_version_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_revision' AND COLUMN_NAME='target_generation') THEN
+    ALTER TABLE `rule_engine`.`rule_revision` ADD COLUMN `target_generation` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='business_version') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `business_version` INT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='version_binding_id') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `version_binding_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='binding_generation') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `binding_generation` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='revision_id') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `revision_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='artifact_id') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `artifact_id` BIGINT DEFAULT NULL;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='rule_engine' AND TABLE_NAME='rule_definition_version' AND COLUMN_NAME='artifact_digest') THEN
+    ALTER TABLE `rule_engine`.`rule_definition_version` ADD COLUMN `artifact_digest` CHAR(64) DEFAULT NULL;
+  END IF;
+END$$
+DELIMITER ;
+CALL `rule_engine`.`ensure_rule_business_versions`();
+DROP PROCEDURE `rule_engine`.`ensure_rule_business_versions`;

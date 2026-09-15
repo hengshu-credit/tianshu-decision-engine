@@ -12,6 +12,7 @@
       :selected-source="selectedDesignerSource"
       :source-loading="designerSourcesLoading"
       @go-back="$router.back()"
+      @retry="startViewedRevisionRefresh(true)"
       @go-lifecycle="goRuleLifecycle"
       @fork="forkViewRevision"
       @change-source="switchDesignerSource"
@@ -161,25 +162,35 @@
           :model-value="selectedDesignerSource"
           :loading="designerSourcesLoading"
           @change="switchDesignerSource"
+          @delete="deleteDesignerSource"
+          :disabled="designerBusy"
         />
         <el-button size="small" :icon="ElIconCircleCheck" @click="handleValidate"
           >验证</el-button
         >
-          <rule-designer-action-bar
+        <rule-designer-action-bar
+          @locate="locateDesignerIssue"
+          :issue-context="incomingValidationIssue"
             :can-edit="canEditDraft"
             :can-test="designerCanTest"
             :state="designerActionState"
+          :busy="designerBusy"
             :recovery="designerRecoveryCandidate"
             :report="designerValidationReport"
             @save="handleSave"
-            @save-check="handleCompile"
+            @compile="handleCompile"
             @test="handleTest"
-            @lifecycle="goRuleLifecycle"
+            @publish="handlePublish"
             @restore="restoreDesignerRecovery"
             @discard-recovery="discardDesignerRecovery"
           />
       </div>
     </div>
+
+    <rule-designer-status :state="designerActionState" :field-count="varPickerOptions.length" :loading="loadingVars" :source-label="viewRevisionLabel" />
+    <rule-designer-dialogs :choice="designerChoice" @resolve="resolveDesignerChoice" />
+
+
 
     <!-- 主体：画布 + 属性面板 -->
     <div class="flow-body">
@@ -490,7 +501,7 @@
       :definition-id="definitionId"
       :project-id="projectIdForRefs"
       model-type="FLOW"
-      :model-json-provider="buildBackendModel"
+      :model-json-provider="serializeDesignerDraft"
       :params-template="testParamsTemplate"
     />
   </div>
@@ -561,7 +572,6 @@ import {
   applyGlobalEdgeTypeToInheritedEdges,
   mergeEdgePropertiesFromForm,
 } from '@/components/flow/edgeLineType'
-import { executeRule } from '@/api/definition'
 import {
   generateScript,
   normalizeGraphActionData,
@@ -1921,7 +1931,7 @@ export default {
       }
     },
 
-    async handleSave() {
+    async performDesignerSave() {
       const model = this.buildBackendModel()
       this.repairLegacyRuleCallRefs(model)
       const ruleCallErrors = this.validateRuleCallsInModel(model)
@@ -1931,6 +1941,7 @@ export default {
       }
       const modelJson = JSON.stringify(model)
       const result = await this.saveDraftModel(modelJson)
+      if (!result) return false
       this.refreshProjectRefs()
 
       this.$message.success('草稿已保存')
@@ -1945,11 +1956,18 @@ export default {
       return this.buildBackendModel()
     },
 
-    async handleCompile() {
-      const result = await this.handleSave()
-      if (result === false) return false
-      return this.completeRuleCompile(result, {
-        onSuccess: () => this.loadProjectVars(this.definitionId),
+    handleSave() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.performDesignerSave() } finally { this.designerBusy = false }
+      })
+    },
+    handleCompile() {
+      return this.runDesignerAction(async () => {
+        if (this.designerBusy) return false
+        this.designerBusy = true
+        try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
     },
 
@@ -2020,7 +2038,7 @@ export default {
         this.$message.error('参数 JSON 格式错误')
         return
       }
-      const res = await executeRule({ definitionId: this.definitionId, params })
+      const res = await this.executeDesignerPreview(params, 'FLOW')
       this.testResult = res && res.data ? res.data : res
     },
     varTypeTag(varType) {

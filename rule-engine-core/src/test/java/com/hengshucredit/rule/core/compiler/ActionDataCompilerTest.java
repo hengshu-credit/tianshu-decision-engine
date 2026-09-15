@@ -16,6 +16,13 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ActionDataCompilerTest {
+    @org.junit.Test
+    public void fixedRuleCallKeepsStableBusinessVersionBinding() {
+        com.alibaba.fastjson.JSONObject action = com.alibaba.fastjson.JSON.parseObject(
+                "{\"type\":\"rule-call\",\"ruleId\":22,\"versionMode\":\"FIXED\",\"versionBindingId\":18}");
+        com.alibaba.fastjson.JSONArray actions = new com.alibaba.fastjson.JSONArray(); actions.add(action);
+        org.junit.Assert.assertTrue(ActionDataCompiler.compile(actions).contains("executeRuleVersionById(\"22\", \"18\")"));
+    }
 
     @Test
     public void compileUnifiedOperands() {

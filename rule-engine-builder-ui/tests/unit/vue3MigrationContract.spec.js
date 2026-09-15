@@ -97,7 +97,7 @@ describe('Vue 3 migration contract', () => {
       ],
       [
         'Element Plus deprecated radio value alias',
-        /<el-radio(?:-button)?\b[^>]*\b:?label\s*=/
+        /<el-radio(?:-button)?(?=\s|\/?>)[^>]*\s:?label\s*=/
       ],
       [
         'custom CSS class passed as Element Plus tag type',

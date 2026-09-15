@@ -59,6 +59,7 @@ public class ArtifactDeploymentService {
     private RuleDefinitionService definitionService;
     @Resource
     private RuleLifecycleService lifecycleService;
+    @Resource private com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper versionBindingMapper;
     @Resource
     private RuleVariableMapper variableMapper;
     @Resource
@@ -182,6 +183,12 @@ public class ArtifactDeploymentService {
             if (targetId == null) throw new IllegalArgumentException("绑定目标 ID 不能为空: " + requirement.getKey());
             validateTargetBinding(requirement.getValue(), targetId, targetProjectId);
         }
+        for (var reference : ruleReferences(decoded.getArtifactPackage())) {
+            if (!"FIXED".equals(reference.getVersionMode())) continue;
+            var target = versionBindingMapper.selectById(requestedBindings.get("RULE_VERSION:" + reference.getVersionBindingId()));
+            if (target == null || !java.util.Objects.equals(target.getDefinitionId(), requestedBindings.get("RULE:" + reference.getRefId())))
+                throw new IllegalArgumentException("指定版本绑定不属于所绑定的规则");
+        }
 
         ArtifactDeployment deployment = new ArtifactDeployment();
         deployment.setArtifactId(artifact.getId());
@@ -278,6 +285,13 @@ public class ArtifactDeploymentService {
 
     private Map<String, String> bindingRequirements(DecisionArtifactPackage artifactPackage) {
         Map<String, String> result = new java.util.TreeMap<>();
+        for (var reference : ruleReferences(artifactPackage)) {
+            result.put("RULE:" + reference.getRefId(), "RULE");
+            if ("FIXED".equals(reference.getVersionMode())) {
+                if (reference.getVersionBindingId() == null) throw new IllegalArgumentException("制品指定版本缺少绑定 ID");
+                result.put("RULE_VERSION:" + reference.getVersionBindingId(), "RULE_VERSION");
+            }
+        }
         for (DecisionArtifactPackage.Component component : artifactPackage.getComponents().values()) {
             Map<String, Object> metadata = component.getMetadata();
             if (!"EXPLICIT_BINDING".equals(metadata.get("embeddingMode"))) continue;
@@ -292,6 +306,14 @@ public class ArtifactDeploymentService {
             }
         }
         return result;
+    }
+
+    private List<com.hengshucredit.rule.server.service.OperandDependencyCollector.Reference> ruleReferences(DecisionArtifactPackage artifactPackage) {
+        DecisionArtifactPackage.Component model = artifactPackage.getComponent("rule/model.json");
+        if (model == null) return Collections.emptyList();
+        return com.hengshucredit.rule.server.service.OperandDependencyCollector.collectReferences(
+                com.alibaba.fastjson.JSON.parse(new String(model.getContent(), java.nio.charset.StandardCharsets.UTF_8)))
+                .stream().filter(ref -> "RULE".equals(ref.getRefType()) && ref.getRefId() != null).toList();
     }
 
     private String manifestJson(DecisionArtifactPackage artifactPackage, String digest) {
@@ -368,6 +390,16 @@ public class ArtifactDeploymentService {
     protected void validateTargetBinding(String targetResourceType, Long targetResourceId,
                                          Long targetProjectId) {
         switch (targetResourceType) {
+            case "RULE" -> {
+                RuleDefinition rule = definitionService.getById(targetResourceId);
+                assertActiveAndOwned(rule == null ? null : rule.getStatus(), rule == null ? null : rule.getScope(),
+                        rule == null ? null : rule.getProjectId(), targetProjectId, targetResourceType);
+            }
+            case "RULE_VERSION" -> {
+                var binding = versionBindingMapper.selectById(targetResourceId);
+                if (binding == null || !Integer.valueOf(1).equals(binding.getStatus())) throw new IllegalArgumentException("指定版本不存在或已下线");
+                validateTargetBinding("RULE", binding.getDefinitionId(), targetProjectId);
+            }
             case "VARIABLE" -> {
                 RuleVariable resource = variableMapper.selectById(targetResourceId);
                 assertActiveAndOwned(resource == null ? null : resource.getStatus(),

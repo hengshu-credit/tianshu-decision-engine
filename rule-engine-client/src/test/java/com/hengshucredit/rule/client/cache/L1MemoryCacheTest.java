@@ -18,6 +18,59 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class L1MemoryCacheTest {
+    @Test public void fixedBindingsCoexistAndOutOfOrderOverwriteCannotReplaceNewerGeneration() {
+        L1MemoryCache cache = new L1MemoryCache(3);
+        CachedRule current = rule("B"); current.setDefinitionId(22L); current.setVersion(2); current.setVersionBindingId(82L); current.setBindingGeneration(2L);
+        CachedRule fixed = rule("B"); fixed.setDefinitionId(22L); fixed.setVersion(1); fixed.setVersionBindingId(81L); fixed.setBindingGeneration(1L); fixed.setFixedVersion(true);
+        cache.put(current); cache.put(fixed);
+        assertEquals(2, cache.getById(22L, null).getVersion());
+        assertEquals(1, cache.getById(22L, 81L).getVersion());
+        CachedRule stale = rule("B"); stale.setDefinitionId(22L); stale.setVersion(2); stale.setVersionBindingId(82L); stale.setBindingGeneration(1L);
+        cache.put(stale); assertEquals(Long.valueOf(2), cache.getById(22L, null).getBindingGeneration());
+        cache.invalidateVersions(22L); assertNull(cache.getById(22L, 81L)); assertEquals(1, cache.size());
+    }
+
+    @Test
+    public void incrementalEvictionProtectsRecentlyReadRule() {
+        L1MemoryCache cache = new L1MemoryCache(2);
+        cache.put(rule("a"));
+        cache.put(rule("b"));
+        cache.get("a");
+        cache.put(rule("c"));
+        assertEquals("a", cache.get("a").getRuleCode());
+        assertNull(cache.get("b"));
+        assertEquals(2, cache.size());
+    }
+
+    @Test
+    public void oversizedSnapshotKeepsHotRulesButUsesIncomingVersions() {
+        L1MemoryCache cache = new L1MemoryCache(2);
+        cache.put(rule("a", 7));
+        cache.put(rule("b", 1));
+        cache.get("a");
+        cache.replaceSnapshot(java.util.List.of(rule("b", 2), rule("c", 2), rule("a", 3)));
+        assertEquals(3, cache.get("a").getVersion());
+        assertEquals(2, cache.size());
+        cache.replaceSnapshot(java.util.List.of(rule("b", 4), rule("c", 4)));
+        assertNull(cache.get("a"));
+        assertEquals(4, cache.get("b").getVersion());
+    }
+
+    @Test
+    public void repeatedColdInsertionsDoNotEvictContinuouslyUsedRule() {
+        L1MemoryCache cache = new L1MemoryCache(8);
+        cache.put(rule("a"));
+        int misses = 0;
+        for (int i = 0; i < 1000; i++) {
+            if (cache.get("a") == null) {
+                misses++;
+                cache.put(rule("a"));
+            }
+            cache.put(rule("cold_" + i));
+        }
+        assertEquals("hot rule misses under 1000 cold insertions", 0, misses);
+        assertEquals(8, cache.size());
+    }
 
     @Test
     public void rejectsNonPositiveMaximumSize() {

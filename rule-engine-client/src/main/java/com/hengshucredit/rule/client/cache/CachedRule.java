@@ -7,6 +7,12 @@ import java.util.List;
 @Data
 public class CachedRule {
     private String ruleCode;
+    private Long definitionId;
+    private Long versionBindingId;
+    private Long bindingGeneration;
+    private boolean fixedVersion;
+    private boolean imported;
+    private java.util.Map<String, Long> importBindings;
     /** 规则所属项目编码 */
     private String projectCode;
     private int version;

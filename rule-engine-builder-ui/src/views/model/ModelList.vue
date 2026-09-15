@@ -1,13 +1,13 @@
 <template>
-  <div class="uiue-list-page">
+  <div class="uiue-list-page management-list-page">
     <!-- 提示信息 -->
     <div class="linkage-hint">
       <el-icon><el-icon-info /></el-icon> 模型仅支持从 ONNX、PMML
       格式文件导入，用于在规则设计时调用机器学习模型进行预测。
     </div>
 
-    <el-tabs v-model="activeTab">
-      <el-tab-pane label="模型管理" name="list">
+    <el-tabs class="management-table-region" v-model="activeTab">
+      <el-tab-pane class="management-table-region" label="模型管理" name="list">
         <!-- 筛选条件 -->
         <div class="uiue-search-container uiue-filter-toolbar">
           <el-form :inline="true" size="small" @keyup.enter="handleQuery">
@@ -113,7 +113,7 @@
         </div>
 
         <!-- 模型列表 -->
-        <el-table show-overflow-tooltip
+        <el-table class="management-table" show-overflow-tooltip
           :data="models"
           border
           size="small"
@@ -326,8 +326,8 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane label="模型执行日志" name="logs">
-        <module-call-log module-type="MODEL" title="模型执行日志" />
+      <el-tab-pane class="management-table-region" label="模型执行日志" name="logs">
+        <module-call-log class="management-table-region" module-type="MODEL" title="模型执行日志" />
       </el-tab-pane>
     </el-tabs>
 
