@@ -30,3 +30,8 @@ docs/superpowers/*
 assets/
 .codex-jdk17-probe
 scripts/quality-gates/fixtures/request.local.json
+
+/.superpowers/
+/.agents/skills/ui-refactor/
+/assets/docs/
+/.codex/
