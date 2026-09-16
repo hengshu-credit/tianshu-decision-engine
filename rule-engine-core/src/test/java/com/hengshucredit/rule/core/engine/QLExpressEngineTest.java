@@ -7,6 +7,7 @@ import org.junit.Test;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -14,6 +15,41 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
 public class QLExpressEngineTest {
+
+    @Test
+    public void preparedScriptIsReusedAndBoundToItsEngine() {
+        QLExpressEngine engine = new QLExpressEngine();
+        QLExpressEngine.PreparedScript prepared = engine.prepare("return age + 1;");
+        org.junit.Assert.assertSame(prepared, engine.prepare("return age + 1;"));
+        assertEquals(19, engine.execute(prepared, Map.of("age", 18), false).getResult());
+        assertEquals(31, engine.execute(prepared, Map.of("age", 30), false).getResult());
+        assertFalse(new QLExpressEngine().execute(prepared, Map.of("age", 18), false).isSuccess());
+    }
+
+    @Test
+    public void preparationRejectsConstantWritesWithoutRequestContext() {
+        QLExpressEngine engine = new QLExpressEngine();
+        for (String script : new String[] { "LIMIT = 1", "LIMIT += 1", "++LIMIT", "LIMIT--",
+                "LIMIT.value = 1", "LIMIT[0] = 1" }) {
+            org.junit.Assert.assertThrows(script, IllegalStateException.class,
+                    () -> engine.prepare(script, Set.of("LIMIT")));
+        }
+        engine.prepare("// LIMIT = 1\nreturn \"LIMIT++\";", Set.of("LIMIT"));
+        engine.prepare("return LIMIT == 1;", Set.of("LIMIT"));
+    }
+
+    @Test
+    public void preparedExecutionStillRejectsDynamicConstantWritesWithoutTrace() {
+        QLExpressEngine engine = new QLExpressEngine();
+        QLExpressEngine.PreparedScript prepared = engine.prepare("setRuntimeValue(path, 1)");
+        RuntimeContextBridge.registerConstant("LIMIT", 5000);
+        try {
+            RuleResult result = engine.execute(prepared, Map.of("path", "LIMIT", "LIMIT", 5000), false);
+            assertFalse(result.isSuccess());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
 
     public static class TerminationDelegate {
         public Object terminateAllRules() {

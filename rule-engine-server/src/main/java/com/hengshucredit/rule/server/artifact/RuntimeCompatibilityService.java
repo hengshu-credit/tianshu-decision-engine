@@ -16,7 +16,7 @@ import java.util.Map;
 @Service
 public class RuntimeCompatibilityService {
     private static final int JAVA_MAJOR = 17;
-    private static final String QL_EXPRESS_VERSION = "4.1.0";
+    private static final String QL_EXPRESS_VERSION = "4.1.3";
     private static final String JPMML_VERSION = "1.7.7";
     private static final String ONNX_RUNTIME_VERSION = "1.26.0";
 
@@ -35,7 +35,11 @@ public class RuntimeCompatibilityService {
         if (requiredJava > JAVA_MAJOR) {
             errors.add("制品要求 Java " + requiredJava + "，当前运行时为 Java " + JAVA_MAJOR);
         }
-        requireVersion(metadata, "qlExpressVersion", QL_EXPRESS_VERSION, "QLExpress", errors);
+        if ("4.1.0".equals(metadata.get("qlExpressVersion"))) {
+            warnings.add("QLExpress 4.1.0 源码制品将在激活前由 4.1.3 重新校验与预编译");
+        } else {
+            requireVersion(metadata, "qlExpressVersion", QL_EXPRESS_VERSION, "QLExpress", errors);
+        }
         requireVersion(metadata, "jpmmlVersion", JPMML_VERSION, "JPMML", errors);
         requireVersion(metadata, "onnxRuntimeVersion", ONNX_RUNTIME_VERSION, "ONNX Runtime", errors);
 

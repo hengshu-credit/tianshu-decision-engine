@@ -102,7 +102,7 @@ public final class OperandDependencyCollector {
     private static void collectScriptCalls(String script, String path, List<Reference> result) {
         try {
             var tree = com.hengshucredit.rule.core.engine.QLExpressEngineFactory.getInstance().parseToSyntaxTree(script);
-            new com.alibaba.qlexpress4.aparser.QLParserBaseVisitor<Void>() {
+            tree.accept(new com.alibaba.qlexpress4.aparser.QLParserBaseVisitor<Void>() {
                 @Override public Void visitVarIdExpr(com.alibaba.qlexpress4.aparser.QLParser.VarIdExprContext call) {
                     String name = call.varId().getText();
                     boolean fixed = "executeRuleVersionById".equals(name) || "executeRuleVersionFieldById".equals(name);
@@ -114,7 +114,7 @@ public final class OperandDependencyCollector {
                     }
                     return super.visitVarIdExpr(call);
                 }
-            }.visit(tree);
+            });
         } catch (com.alibaba.qlexpress4.exception.QLSyntaxException ignored) {
             // Syntax diagnostics are produced by the compile phase; do not invent references on malformed text.
         }

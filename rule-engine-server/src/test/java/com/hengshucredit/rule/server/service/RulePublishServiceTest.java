@@ -54,6 +54,16 @@ public class RulePublishServiceTest {
         final String[] publishedConfig = {null};
 
         RulePublishService service = new RulePublishService();
+        final boolean[] prepared = {false};
+        ReflectionTestUtils.setField(service, "scriptPreparationService", new RuleScriptPreparationService() {
+            @Override
+            public com.hengshucredit.rule.core.engine.QLExpressEngine.PreparedScript prepareProject(String script, Long projectId) {
+                Assert.assertNull(insertedVersion[0]);
+                Assert.assertNull(insertedPublished[0]);
+                prepared[0] = true;
+                return new com.hengshucredit.rule.core.engine.QLExpressEngine().prepare(script);
+            }
+        });
         ReflectionTestUtils.setField(service, "definitionService", definitionService);
         ReflectionTestUtils.setField(service, "projectService", new RuleProjectService() {
             @Override
@@ -97,6 +107,7 @@ public class RulePublishServiceTest {
         String error = service.publish(10L, "开放接口配置");
 
         Assert.assertNull(error);
+        Assert.assertTrue(prepared[0]);
         Assert.assertTrue(insertedVersion[0].getOpenApiConfigJson().contains("\"enabled\":true"));
         Assert.assertEquals(Long.valueOf(10L), insertedPublished[0].getDefinitionId());
         Assert.assertEquals(insertedVersion[0].getOpenApiConfigJson(), publishedConfig[0]);

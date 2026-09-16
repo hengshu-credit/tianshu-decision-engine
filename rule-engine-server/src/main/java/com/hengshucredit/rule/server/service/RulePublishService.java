@@ -29,6 +29,8 @@ import java.util.stream.Collectors;
 
 @Service
 public class RulePublishService {
+    @Resource
+    private RuleScriptPreparationService scriptPreparationService;
 
     @Resource
     private RuleDefinitionService definitionService;
@@ -140,6 +142,7 @@ public class RulePublishService {
         int newVersion = (definition.getPublishedVersion() != null ? definition.getPublishedVersion() : 0) + 1;
 
         String fullScript = buildFullScript(content.getCompiledScript(), definition.getProjectId());
+        scriptPreparationService.prepareProject(fullScript, definition.getProjectId());
 
         String projectCode = null;
         if (definition.getProjectId() != null) {

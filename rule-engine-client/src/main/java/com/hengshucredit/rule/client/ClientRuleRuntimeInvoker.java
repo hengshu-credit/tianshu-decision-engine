@@ -83,6 +83,7 @@ class ClientRuleRuntimeInvoker {
             frame.stack.addLast(rule.getRuleCode());
         }
         currentFrame.set(frame);
+        frame.contextScope = RuntimeContextBridge.install(frame.requestContext);
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
             RuleTraceFrame currentTrace = frame.traceStack.peekLast();
@@ -110,8 +111,13 @@ class ClientRuleRuntimeInvoker {
         }
     }
 
+    com.hengshucredit.rule.core.engine.RequestContext requestContext() {
+        return currentFrame.get().requestContext;
+    }
+
     void exit() {
-        RuntimeContextBridge.clear();
+        ExecutionFrame frame = currentFrame.get();
+        if (frame != null) frame.contextScope.close();
         currentFrame.remove();
     }
 
@@ -225,7 +231,7 @@ class ClientRuleRuntimeInvoker {
         try {
             frame.currentRule = cached;
             setRuleContext(cached, childTrace.getTraceId());
-            RuleResult result = engine.execute(cached.getCompiledScript(), frame.context, config.isTraceEnabled());
+            RuleResult result = engine.execute(engine.prepare(cached.getCompiledScript()), frame.context, config.isTraceEnabled(), frame.requestContext);
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             childTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
@@ -340,6 +346,9 @@ class ClientRuleRuntimeInvoker {
     }
 
     private static class ExecutionFrame {
+        private final com.hengshucredit.rule.core.engine.RequestContext requestContext =
+                new com.hengshucredit.rule.core.engine.RequestContext();
+        private RuntimeContextBridge.ContextScope contextScope;
         private CachedRule currentRule;
         private final Map<String, CachedRule> resolvedRules = new LinkedHashMap<>();
         private Object context;

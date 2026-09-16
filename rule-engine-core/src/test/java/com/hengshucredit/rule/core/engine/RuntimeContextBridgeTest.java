@@ -74,6 +74,23 @@ public class RuntimeContextBridgeTest {
         assertEquals("PARENT", RuntimeContextBridge.currentRule().get("code"));
     }
 
+    @Test
+    public void callerRunsWorkerDoesNotLeakConstantsOrWritesIntoParent() {
+        Map<String, Object> writes = new LinkedHashMap<>();
+        RuntimeContextBridge.bind(writes::put);
+        RuntimeContextBridge.registerConstant("PARENT", 1);
+        try (RuntimeContextBridge.ContextScope ignored =
+                     RuntimeContextBridge.installContext(RuntimeContextBridge.captureContext(), event -> {})) {
+            RuntimeContextBridge.registerConstant("WORKER", 2);
+            RuntimeContextBridge.setValue("value", 3);
+        }
+        org.junit.Assert.assertTrue(writes.isEmpty());
+        RuntimeContextBridge.setValue("WORKER", 4);
+        assertEquals(4, writes.get("WORKER"));
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> RuntimeContextBridge.setValue("PARENT", 5));
+    }
+
     private Map<String, Object> singletonMap(String key, Object value) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put(key, value);

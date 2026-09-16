@@ -10,6 +10,14 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleExecutionSession {
+    private final com.hengshucredit.rule.core.engine.RequestContext requestContext =
+            new com.hengshucredit.rule.core.engine.RequestContext();
+    private com.hengshucredit.rule.core.engine.RuntimeContextBridge.ContextScope contextScope;
+
+    public com.hengshucredit.rule.core.engine.RequestContext getRequestContext() { return requestContext; }
+    void bindContext() { contextScope = com.hengshucredit.rule.core.engine.RuntimeContextBridge.install(requestContext); }
+    void closeContext() { contextScope.close(); }
+
 
     private Long currentProjectId;
     private String currentProjectCode;

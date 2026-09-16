@@ -165,7 +165,8 @@ public class RuleExecuteService {
                     resolveOptions);
             referencePlan.apply(executeParams, explicitReferenceTargets);
             RuntimeContextBridge.replaceSourceStates(resolveOptions.getSourceStates());
-            result = qlExpressEngine.execute(fullScript, executeParams, true);
+            result = qlExpressEngine.execute(qlExpressEngine.prepare(fullScript), executeParams, true,
+                    RuntimeContextBridge.currentContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -347,7 +348,8 @@ public class RuleExecuteService {
             }
             referencePlan.apply(executeParams, explicitReferenceTargets);
             RuntimeContextBridge.replaceSourceStates(effectiveOptions.getSourceStates());
-            result = qlExpressEngine.execute(runtimeScript, executeParams, collectTrace);
+            result = qlExpressEngine.execute(qlExpressEngine.prepare(runtimeScript), executeParams, collectTrace,
+                    RuntimeContextBridge.currentContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());

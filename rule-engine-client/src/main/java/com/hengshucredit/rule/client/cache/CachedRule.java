@@ -6,6 +6,8 @@ import java.util.List;
 
 @Data
 public class CachedRule {
+    @com.alibaba.fastjson.annotation.JSONField(serialize = false, deserialize = false)
+    private transient com.hengshucredit.rule.core.engine.QLExpressEngine.PreparedScript preparedScript;
     private String ruleCode;
     private Long definitionId;
     private Long versionBindingId;

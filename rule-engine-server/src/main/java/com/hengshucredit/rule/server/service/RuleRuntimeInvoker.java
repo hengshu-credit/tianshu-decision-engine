@@ -164,6 +164,7 @@ public class RuleRuntimeInvoker {
                 executionProjectId, projectCode, values, originalInput, testMode,
                 definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot);
         currentSession.set(session);
+        session.bindContext();
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
             RuleTraceFrame currentTrace = session.currentTrace();
@@ -201,7 +202,8 @@ public class RuleRuntimeInvoker {
     }
 
     public void exit() {
-        RuntimeContextBridge.clear();
+        RuleExecutionSession session = currentSession.get();
+        if (session != null) session.closeContext();
         currentSession.remove();
     }
 
@@ -394,7 +396,7 @@ public class RuleRuntimeInvoker {
             }
             referencePlan.apply(session.getValues(), explicitReferenceTargets);
             RuntimeContextBridge.replaceSourceStates(options.getSourceStates());
-            RuleResult result = qlExpressEngine.execute(compiledScript, session.getValues(), true);
+            RuleResult result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript), session.getValues(), true, session.getRequestContext());
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             childTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");

@@ -114,6 +114,7 @@ public class ClientSyncFailureTest {
     private CachedRule rule(String code) {
         CachedRule rule = new CachedRule();
         rule.setRuleCode(code);
+        rule.setCompiledScript("return 1;");
         return rule;
     }
 

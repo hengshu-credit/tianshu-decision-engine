@@ -47,13 +47,14 @@ public class RuleEngineClient {
     private RuleEngineClient(RuleEngineClientConfig config, RedisConnectionFactory connectionFactory,
                              ExecutionLogReporter externalReporter, ApplicationContext applicationContext) {
         this.config = config;
-        this.l1Cache = new L1MemoryCache(config.getL1CacheMaxSize());
+        this.engine = new QLExpressEngine();
+        this.l1Cache = new L1MemoryCache(config.getL1CacheMaxSize(),
+                rule -> rule.setPreparedScript(engine.prepare(rule.getCompiledScript())));
         ClientRequestAuthenticator authenticator = new ClientRequestAuthenticator(
                 config.getServerUrl(), config.getHttpTimeoutMs(), resolveAuthConfig(config));
         this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator);
         this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, resolvePushSubscriptionKey(config),
                 httpSyncClient::fetchRule);
-        this.engine = new QLExpressEngine();
         this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config);
         this.runtimeRuleInvoker.register(engine.getRunner());
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
@@ -88,8 +89,8 @@ public class RuleEngineClient {
                     logReporter.getClass().getSimpleName());
             try {
                 // 先完成首次 HTTP 同步，避免认证/配置错误被 Redis 重试掩盖。
-                fullSync();
                 syncFunctions();
+                fullSync();
                 redisSubscriber.setFunctionRegistrar(functionRegistrar);
                 redisSubscriber.start();
                 scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
@@ -178,7 +179,8 @@ public class RuleEngineClient {
         runtimeRuleInvoker.enter(cached, params);
         RuleResult result = new RuleResult();
         try {
-            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+            result = engine.execute(cached.getPreparedScript(), params, config.isTraceEnabled(),
+                    runtimeRuleInvoker.requestContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -216,7 +218,8 @@ public class RuleEngineClient {
         runtimeRuleInvoker.enter(cached, params);
         RuleResult result = new RuleResult();
         try {
-            result = engine.execute(cached.getCompiledScript(), params, config.isTraceEnabled());
+            result = engine.execute(cached.getPreparedScript(), params, config.isTraceEnabled(),
+                    runtimeRuleInvoker.requestContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());

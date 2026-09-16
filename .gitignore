@@ -35,3 +35,4 @@ scripts/quality-gates/fixtures/request.local.json
 /.agents/skills/ui-refactor/
 /assets/docs/
 /.codex/
+/.codex-validation/

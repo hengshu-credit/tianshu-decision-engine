@@ -52,6 +52,8 @@ import java.util.stream.Collectors;
 @Service
 public class RuleLifecycleService {
     @Resource
+    private RuleScriptPreparationService scriptPreparationService;
+    @Resource
     private RuleRevisionMapper revisionMapper;
     @Resource
     private RuleDefinitionMapper definitionMapper;
@@ -802,6 +804,7 @@ public class RuleLifecycleService {
         }
         DecisionArtifactService.RuntimeProjection projection =
                 artifactService.loadRuntimeProjection(artifact.getId());
+        scriptPreparationService.prepareArtifact(artifact.getId(), definition.getId(), definition.getProjectId());
         RuleDefinitionVersion version = new RuleDefinitionVersion();
         version.setModelJson(projection.getModelJson());
         version.setCompiledScript(projection.getCompiledScript());

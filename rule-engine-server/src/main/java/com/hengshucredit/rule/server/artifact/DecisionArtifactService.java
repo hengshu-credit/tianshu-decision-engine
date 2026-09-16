@@ -80,7 +80,7 @@ public class DecisionArtifactService {
         artifactPackage.putMetadata("contentDigest", report.getContentDigest());
         artifactPackage.putMetadata("dependencyDigest", closure.getDependencyDigest());
         artifactPackage.putMetadata("javaMajor", 17);
-        artifactPackage.putMetadata("qlExpressVersion", "4.1.0");
+        artifactPackage.putMetadata("qlExpressVersion", "4.1.3");
         artifactPackage.putMetadata("jpmmlVersion", "1.7.7");
         artifactPackage.putMetadata("onnxRuntimeVersion", "1.26.0");
         addText(artifactPackage, "rule/model.json", "application/json", revision.getModelJson());

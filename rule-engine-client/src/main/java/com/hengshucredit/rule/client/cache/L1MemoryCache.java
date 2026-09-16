@@ -18,8 +18,14 @@ public class L1MemoryCache {
     private final AtomicLong accessSequence = new AtomicLong();
     private final Map<Long, String> latestById = new LinkedHashMap<>();
     private final int maxSize;
+    private final java.util.function.Consumer<CachedRule> prepareRule;
 
     public L1MemoryCache(int maxSize) {
+        this(maxSize, rule -> {});
+    }
+
+    public L1MemoryCache(int maxSize, java.util.function.Consumer<CachedRule> prepareRule) {
+        this.prepareRule = prepareRule;
         if (maxSize <= 0) {
             throw new IllegalArgumentException("L1 cache maxSize must be greater than zero");
         }
@@ -35,6 +41,7 @@ public class L1MemoryCache {
     }
 
     public void put(CachedRule rule) {
+        prepareRule.accept(rule);
         synchronized (cacheLock) {
             String key = key(rule);
             CacheEntry old = cache.get(key);
@@ -104,6 +111,7 @@ public class L1MemoryCache {
                 if (rule == null || rule.getRuleCode() == null) {
                     continue;
                 }
+                prepareRule.accept(rule);
                 CacheEntry prior = cache.get(key(rule));
                 incoming.put(key(rule), new CacheEntry(prior != null && older(rule, prior.rule) ? prior.rule : rule, 0));
             }

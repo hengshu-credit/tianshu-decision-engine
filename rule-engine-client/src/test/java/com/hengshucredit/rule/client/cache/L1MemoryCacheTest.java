@@ -18,6 +18,25 @@ import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 
 public class L1MemoryCacheTest {
+    @Test
+    public void preparesBeforeAdmissionAndRejectsInvalidSnapshotAtomically() {
+        com.hengshucredit.rule.core.engine.QLExpressEngine engine = new com.hengshucredit.rule.core.engine.QLExpressEngine();
+        L1MemoryCache cache = new L1MemoryCache(10,
+                item -> item.setPreparedScript(engine.prepare(item.getCompiledScript())));
+        CachedRule prior = rule("current");
+        prior.setCompiledScript("return 1;");
+        cache.put(prior);
+        org.junit.Assert.assertNotNull(cache.get("current").getPreparedScript());
+        CachedRule replacement = rule("current", 2);
+        replacement.setCompiledScript("return 2;");
+        CachedRule invalid = rule("invalid");
+        invalid.setCompiledScript("if (");
+        assertThrows(RuntimeException.class, () -> cache.replaceSnapshot(java.util.List.of(replacement, invalid)));
+        org.junit.Assert.assertSame(prior, cache.get("current"));
+        assertNull(cache.get("invalid"));
+        cache.put(replacement);
+        assertEquals(2, engine.execute(cache.get("current").getPreparedScript(), Collections.emptyMap(), false).getResult());
+    }
     @Test public void fixedBindingsCoexistAndOutOfOrderOverwriteCannotReplaceNewerGeneration() {
         L1MemoryCache cache = new L1MemoryCache(3);
         CachedRule current = rule("B"); current.setDefinitionId(22L); current.setVersion(2); current.setVersionBindingId(82L); current.setBindingGeneration(2L);

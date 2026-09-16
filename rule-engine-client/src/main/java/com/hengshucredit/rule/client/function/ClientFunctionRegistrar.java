@@ -3,7 +3,6 @@ package com.hengshucredit.rule.client.function;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
-import com.alibaba.qlexpress4.QLOptions;
 import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
@@ -264,12 +263,15 @@ public class ClientFunctionRegistrar {
             return null;
         }
         List<String> paramNames = extractParamNames(function.getString("paramsJson"));
+        QLExpressEngine.PreparedScript prepared = engine.prepare(script);
         return (context, parameters) -> {
             Map<String, Object> scriptContext = new HashMap<>();
             for (int i = 0; i < paramNames.size(); i++) {
                 scriptContext.put(paramNames.get(i), i < parameters.size() ? parameters.get(i).get() : null);
             }
-            return engine.getRunner().execute(script, scriptContext, QLOptions.builder().cache(true).build()).getResult();
+            com.hengshucredit.rule.model.dto.RuleResult result = engine.execute(prepared, scriptContext, false);
+            if (!result.isSuccess()) throw new IllegalStateException(result.getErrorMessage());
+            return result.getResult();
         };
     }
 

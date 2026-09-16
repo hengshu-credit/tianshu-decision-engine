@@ -1,8 +1,8 @@
 package com.hengshucredit.rule.core.script;
 
 import com.alibaba.qlexpress4.Express4Runner;
-import com.alibaba.qlexpress4.a4runtime.ParserRuleContext;
-import com.alibaba.qlexpress4.a4runtime.tree.ParseTree;
+import com.alibaba.qlexpress4.aparser.RuleContext;
+import com.alibaba.qlexpress4.aparser.ParseTree;
 import com.alibaba.qlexpress4.aparser.QLParser;
 import com.alibaba.qlexpress4.aparser.QLParserBaseVisitor;
 import com.alibaba.qlexpress4.exception.QLSyntaxException;
@@ -11,6 +11,7 @@ import com.hengshucredit.rule.core.engine.QLExpressEngineFactory;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -30,8 +31,8 @@ public class QLScriptAnalyzer {
         try {
             runner.check(script);
             QLParser.ProgramContext tree = runner.parseToSyntaxTree(script);
-            AnalysisVisitor visitor = new AnalysisVisitor();
-            visitor.visit(tree);
+            AnalysisVisitor visitor = new AnalysisVisitor(tree);
+            tree.accept(visitor);
             return visitor.toAnalysis(runner.getOutVarNames(script), runner.getOutVarAttrs(script));
         } catch (QLSyntaxException | IllegalArgumentException error) {
             return QLScriptAnalysis.parseError("QL_PARSE_ERROR", "$", safeMessage(error));
@@ -58,8 +59,18 @@ public class QLScriptAnalyzer {
         private int resultAssignmentPosition;
         private boolean explicitResult;
 
-        private AnalysisVisitor() {
+        private final Set<QLParser.ExpressionContext> topLevelExpressions =
+                Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+
+        private AnalysisVisitor(QLParser.ProgramContext tree) {
             visibleScopes.push(new LinkedHashSet<>());
+            if (tree.blockStatements() != null) {
+                for (QLParser.BlockStatementContext statement : tree.blockStatements().blockStatement()) {
+                    if (statement instanceof QLParser.ExpressionStatementContext expression) {
+                        topLevelExpressions.add(expression.expression());
+                    }
+                }
+            }
         }
 
         @Override
@@ -320,7 +331,7 @@ public class QLScriptAnalyzer {
             return resolveMap(assignment.expression, assignment.position, visited);
         }
 
-        private String resolveExpressionAt(ParserRuleContext expression,
+        private String resolveExpressionAt(RuleContext expression,
                                            int beforePosition,
                                            Set<String> visited) {
             String normalized = normalize(expression);
@@ -355,17 +366,16 @@ public class QLScriptAnalyzer {
             return null;
         }
 
-        private <T extends ParserRuleContext> T soleDescendant(
-                ParserRuleContext context, Class<T> type) {
+        private <T extends RuleContext> T soleDescendant(
+                RuleContext context, Class<T> type) {
             if (type.isInstance(context)) {
                 return type.cast(context);
             }
-            List<ParserRuleContext> ruleChildren = new ArrayList<>();
+            List<RuleContext> ruleChildren = new ArrayList<>();
             for (int i = 0; i < context.getChildCount(); i++) {
                 ParseTree child = context.getChild(i);
-                if (child instanceof ParserRuleContext
-                        && !(child instanceof QLParser.NewlinesContext)) {
-                    ruleChildren.add((ParserRuleContext) child);
+                if (child instanceof RuleContext) {
+                    ruleChildren.add((RuleContext) child);
                 }
             }
             if (ruleChildren.size() != 1) {
@@ -388,13 +398,7 @@ public class QLScriptAnalyzer {
         }
 
         private boolean isTopLevelAssignment(QLParser.ExpressionContext context) {
-            ParseTree statement = context.getParent();
-            if (!(statement instanceof QLParser.ExpressionStatementContext)) {
-                return false;
-            }
-            ParseTree statements = statement.getParent();
-            return statements instanceof QLParser.BlockStatementsContext
-                    && statements.getParent() instanceof QLParser.ProgramContext;
+            return topLevelExpressions.contains(context);
         }
 
         private void visitPathExpressions(List<QLParser.PathPartContext> parts) {
@@ -471,7 +475,7 @@ public class QLScriptAnalyzer {
             return text;
         }
 
-        private static String normalize(ParserRuleContext context) {
+        private static String normalize(RuleContext context) {
             return context == null ? null : context.getText();
         }
 
