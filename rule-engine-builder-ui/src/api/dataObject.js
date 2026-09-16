@@ -7,7 +7,7 @@ export function importJavaEntity(projectId, objectType, javaSource, scope = 'PRO
 
 export function importJavaFile(projectId, objectType, file, scope = 'PROJECT') {
   const formData = new FormData()
-  formData.append('projectId', projectId)
+  if (projectId != null && projectId !== '') formData.append('projectId', projectId)
   formData.append('objectType', objectType)
   formData.append('file', file)
   formData.append('scope', scope)
@@ -28,6 +28,10 @@ export function listDataObjects(projectId) {
 
 export function getDataObject(id) {
   return request({ url: `/rule/dataobject/${id}`, method: 'get' })
+}
+
+export function validateDataObjectFieldReference(objectId, field) {
+  return request({ url: `/rule/dataobject/${objectId}/field/validate-reference`, method: 'post', data: field })
 }
 
 export function getVariableTree(projectId) {

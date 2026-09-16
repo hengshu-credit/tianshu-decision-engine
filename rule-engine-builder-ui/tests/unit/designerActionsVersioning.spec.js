@@ -45,6 +45,18 @@ test('当前配置纯编译，无保存，未保存配置可测试', async () =>
   wrapper.unmount()
 })
 
+test('编译失败保留完整报告交给弹窗，不重复弹出错误提示', async () => {
+  const wrapper = await host()
+  const report = { valid: false, errors: [{ code: 'COMPILE_FAILED', message: '语法错误', path: '$.script' }], warnings: [] }
+  api.compileDesignerModel.mockResolvedValueOnce({ data: { compileSuccess: false, compileMessage: '语法错误', preflightReport: report } })
+  await wrapper.vm.compileDesignerDraft()
+  expect(wrapper.vm.designerValidationReport).toEqual(report)
+  expect(wrapper.vm.designerActionState).toBe('CHECK_FAILED')
+  expect(wrapper.vm.$message.error).not.toHaveBeenCalled()
+  expect(api.saveDesignerDraft).not.toHaveBeenCalled()
+  wrapper.unmount()
+})
+
 test('现有规则编辑角色能够测试，不要求系统不存在的执行权限', async () => {
   setCurrentUser({ permissions: ['rule:view', 'rule:edit'] })
   try {

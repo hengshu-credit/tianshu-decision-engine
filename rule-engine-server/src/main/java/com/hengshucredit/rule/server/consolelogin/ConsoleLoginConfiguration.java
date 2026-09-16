@@ -60,12 +60,14 @@ public class ConsoleLoginConfiguration implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(consoleSessionAuthInterceptor)
                 .addPathPatterns(ruleEngineConsoleLoginProperties.getIncludePatterns())
-                .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns());
+                .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns())
+                .excludePathPatterns("/api/external-callback/*");
         if (consolePermissionService != null) {
             registry.addInterceptor(new ConsolePermissionInterceptor(
                             ruleEngineConsoleLoginProperties, consolePermissionService))
                     .addPathPatterns(ruleEngineConsoleLoginProperties.getIncludePatterns())
-                    .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns());
+                    .excludePathPatterns(ruleEngineConsoleLoginProperties.getExcludePatterns())
+                    .excludePathPatterns("/api/external-callback/*");
         }
     }
 }

@@ -2,7 +2,6 @@
   <section class="workbench-overview" aria-label="项目工作台">
     <div class="overview-heading">
       <div>
-        <h3>项目工作台</h3>
         <p>集中查看配置进度、待处理事项和最近运行情况。</p>
       </div>
       <div class="overview-status" aria-live="polite">
@@ -336,14 +335,9 @@ export default {
   gap: 8px;
 }
 
-.overview-heading h3,
 .panel-heading h4 {
   margin: 0;
   color: var(--tianshu-text-primary);
-}
-
-.overview-heading h3 {
-  font-size: 18px;
 }
 
 .overview-heading p,

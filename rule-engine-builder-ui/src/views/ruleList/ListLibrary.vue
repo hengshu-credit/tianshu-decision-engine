@@ -75,6 +75,7 @@
               <remote-filter-select
                 v-model:value="query.keyword"
                 :fetch-options="fetchKeywordOptions"
+                :option-fields="['listCode', 'listName']"
                 allow-free-input
                 placeholder="编码/名称"
                 style="width: 180px"
@@ -409,22 +410,13 @@ export default {
         this.loading = false
       }
     },
-    async fetchKeywordOptions({ query, pageNum, pageSize }) {
-      const res = await listLibraries({
+    fetchKeywordOptions({ query, pageNum, pageSize }) {
+      return listLibraries({
         ...this.query,
         pageNum,
         pageSize,
         keyword: query || '',
       })
-      const data = (res && res.data) || {}
-      const values = []
-      ;(data.records || []).forEach((row) => {
-        if (row.listCode)
-          values.push({ label: row.listCode, value: row.listCode })
-        if (row.listName)
-          values.push({ label: row.listName, value: row.listName })
-      })
-      return { records: values, total: data.total || values.length }
     },
     handleQuery() {
       this.query.pageNum = 1

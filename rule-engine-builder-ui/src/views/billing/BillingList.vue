@@ -62,9 +62,12 @@
               </el-select>
             </el-form-item>
             <el-form-item label="计费编码">
-              <el-input
-                v-model="configQuery.billingCode"
-                clearable
+              <remote-filter-select
+                v-model:value="configQuery.billingCode"
+                :fetch-options="fetchConfigCodeOptions"
+                option-label-key="billingCode"
+                option-value-key="billingCode"
+                allow-free-input
                 placeholder="前缀筛选"
                 style="width: 150px"
               />
@@ -244,9 +247,12 @@
               </el-select>
             </el-form-item>
             <el-form-item label="计费编码">
-              <el-input
-                v-model="recordQuery.billingCode"
-                clearable
+              <remote-filter-select
+                v-model:value="recordQuery.billingCode"
+                :fetch-options="fetchRecordCodeOptions"
+                option-label-key="billingCode"
+                option-value-key="billingCode"
+                allow-free-input
                 placeholder="前缀筛选"
                 style="width: 150px"
               />
@@ -451,9 +457,12 @@
               </el-select>
             </el-form-item>
             <el-form-item label="计费编码">
-              <el-input
-                v-model="summaryQuery.billingCode"
-                clearable
+              <remote-filter-select
+                v-model:value="summaryQuery.billingCode"
+                :fetch-options="fetchSummaryCodeOptions"
+                option-label-key="billingCode"
+                option-value-key="billingCode"
+                allow-free-input
                 placeholder="前缀筛选"
                 style="width: 150px"
               />
@@ -841,6 +850,7 @@ import { listDefinitions } from '@/api/definition'
 import { listApiConfigs } from '@/api/datasource'
 import { listDbDatasources } from '@/api/database'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 export default {
   data() {
@@ -945,12 +955,21 @@ export default {
     }
   },
   name: 'BillingList',
-  components: { ProjectFilterSelect },
+  components: { ProjectFilterSelect, RemoteFilterSelect },
   created() {
     this.loadProjects()
     this.loadConfigs()
   },
   methods: {
+    fetchConfigCodeOptions({ query, pageNum, pageSize }) {
+      return listBillingConfigs(this.cleanParams({ ...this.configQuery, billingCode: query, pageNum, pageSize }))
+    },
+    fetchRecordCodeOptions({ query, pageNum, pageSize }) {
+      return listBillingRecords(this.cleanParams({ ...this.recordQuery, billingCode: query, pageNum, pageSize }))
+    },
+    fetchSummaryCodeOptions({ query, pageNum, pageSize }) {
+      return listBillingSummaries(this.cleanParams({ ...this.summaryQuery, billingCode: query, pageNum, pageSize }))
+    },
     emptyConfigForm() {
       return {
         id: null,

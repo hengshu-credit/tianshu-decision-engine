@@ -151,6 +151,13 @@ test('变量新建和编辑弹窗的高级设置居中且数字输入框无加�
 
 test('外数的数据源、API、调用日志和质量看板均正常', async ({ page }) => {
   const pageErrors = []
+  const statsRequests = []
+  const logRequests = []
+  page.on('request', request => {
+    const url = new URL(request.url())
+    if (url.pathname === '/api/rule/runtime-log/external-api-stats') statsRequests.push(url)
+    if (url.pathname === '/api/rule/runtime-log/list') logRequests.push(url)
+  })
   page.on('pageerror', error => pageErrors.push(error.message))
   await page.setViewportSize({ width: 1280, height: 720 })
   const { assertClean } = await installDistRoutes(page, {
@@ -163,11 +170,36 @@ test('外数的数据源、API、调用日志和质量看板均正常', async ({
   await expect(apiCode).toBeVisible()
   await expectTextSelectable(apiCode, 'credit_query')
   await expect(page.getByRole('button', { name: '新建接口' })).toBeVisible()
+  expect(statsRequests).toHaveLength(0)
+  expect(logRequests).toHaveLength(0)
+
+  const monitorPane = await activateTab(page, '监控看板')
+  await expect(monitorPane.getByText('外数供应商质量看板', { exact: true })).toBeVisible()
+  await expect(monitorPane.locator('.datasource-stat-cell')).toHaveCount(8)
+  await expect(monitorPane.getByText('credit_query', { exact: true })).toBeVisible()
+  await expect(monitorPane.locator('.module-call-log')).toHaveCount(0)
+  expect(statsRequests).toHaveLength(1)
+  expect(logRequests).toHaveLength(0)
+  await monitorPane.getByRole('button', { name: '刷新指标', exact: true }).click()
+  await expect.poll(() => statsRequests.length).toBe(2)
 
   const logPane = await activateTab(page, '调用日志')
   await expect(logPane.getByText('外数调用日志', { exact: true })).toBeVisible()
   await expect(logPane.getByText('credit_query', { exact: true }).first()).toBeVisible()
-  await expect(logPane.locator('.datasource-stat-cell')).toHaveCount(8)
+  await expect(logPane.locator('.datasource-stat-cell')).toHaveCount(0)
+  expect(logRequests).toHaveLength(1)
+  await logPane.getByRole('button', { name: '刷新', exact: true }).click()
+  await expect.poll(() => logRequests.length).toBe(2)
+  expect(statsRequests).toHaveLength(2)
+  await logPane.getByRole('textbox', { name: 'Trace ID', exact: true }).fill('trace_datasource')
+  await logPane.getByRole('button', { name: '查询', exact: true }).click()
+  await expect.poll(() => logRequests.at(-1)?.searchParams.get('traceId')).toBe('trace_datasource')
+  await activateTab(page, '监控看板')
+  await activateTab(page, '调用日志')
+  await expect(logPane.getByRole('textbox', { name: 'Trace ID', exact: true })).toHaveValue('trace_datasource')
+  await logPane.getByRole('button', { name: '详情', exact: true }).click()
+  await expect(page.getByRole('dialog', { name: 'API外数调用详情' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expectNoRootOverflow(page)
   expect(pageErrors).toEqual([])
   assertClean()

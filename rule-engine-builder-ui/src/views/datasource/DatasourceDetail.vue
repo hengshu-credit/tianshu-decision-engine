@@ -367,6 +367,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import {
   createDatasource,
   getDatasource,
@@ -378,6 +379,7 @@ import { routeProjectId } from '@/utils/projectContext'
 
 export default {
   name: 'DatasourceDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
   components: { MonacoEditor },
   data() {
     return {

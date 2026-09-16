@@ -626,8 +626,9 @@
             <el-form-item label="最大行数">
               <el-input-number
                 v-model="queryForm.maxRows"
-                :min="1"
-                :max="500"
+                :min="0"
+                :max="2147483647"
+                :precision="0"
                 :disabled="queryLoading"
                 style="width: 100%"
                 @change="resetQueryResult"
@@ -635,6 +636,10 @@
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="查询超时（秒）">
+          <el-input-number v-model="queryForm.queryTimeoutSeconds" :min="0" :max="2147483647" :precision="0" :disabled="queryLoading" />
+          <span class="field-help">超时和最大行数设为 0 时不限制。</span>
+        </el-form-item>
         <div v-if="queryParamRows.length" class="query-params">
           <div
             v-for="(param, index) in queryParamRows"
@@ -812,7 +817,7 @@ export default {
       queryDialogVisible: false,
       queryTarget: {},
       queryLoading: false,
-      queryForm: { sql: '', maxRows: 100 },
+      queryForm: { sql: '', maxRows: 100, queryTimeoutSeconds: 5 },
       queryParamRows: [],
       queryStatus: 'IDLE',
       queryError: '',
@@ -905,7 +910,7 @@ export default {
     queryStatusDescription() {
       if (this.queryStatus === 'RUNNING') return '正在连接数据库并读取结果。'
       if (this.queryStatus === 'SUCCESS')
-        return `已返回 ${this.queryRows.length} 行，最多展示 ${this.queryForm.maxRows} 行。`
+        return `已返回 ${this.queryRows.length} 行，${this.queryForm.maxRows === 0 ? '未限制返回行数' : '最多返回 ' + this.queryForm.maxRows + ' 行'}。`
       if (this.queryStatus === 'EMPTY')
         return 'SQL 已正常执行，但当前条件没有匹配记录。'
       if (this.queryStatus === 'ERROR')
@@ -1058,7 +1063,7 @@ export default {
     openQuery(row) {
       ++this.queryRequestId
       this.queryTarget = row
-      this.queryForm = { sql: '', maxRows: 100 }
+      this.queryForm = { sql: '', maxRows: 100, queryTimeoutSeconds: 5 }
       this.queryParamRows = []
       this.queryRows = []
       this.queryColumns = []
@@ -1096,6 +1101,7 @@ export default {
           sql: this.queryForm.sql,
           params,
           maxRows: this.queryForm.maxRows,
+          queryTimeoutSeconds: this.queryForm.queryTimeoutSeconds ?? 5,
         })
         if (!this.isActiveQueryRequest(requestId, datasourceId)) return
         this.queryRows = res.data || []

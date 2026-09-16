@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.dto.*;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
+import java.math.BigDecimal;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -15,12 +16,13 @@ public class JavaEntityParser {
     private static final Pattern CLASS_PATTERN = Pattern.compile(
             "(?:public\\s+)?class\\s+(\\w+)(?:\\s+extends\\s+\\w+)?(?:\\s+implements\\s+[\\w,\\s]+)?\\s*\\{");
 
-    private static final Pattern FIELD_PATTERN = Pattern.compile(
-            "(?:private|protected|public)\\s+(?!static\\s)(\\S+)\\s+(\\w+)\\s*;");
+    private static final String FIELD_TYPE = "([\\w.$]+(?:\\s*<[^;=]+>)?(?:\\s*\\[\\s*\\])*)";
 
-    /** 匹配到 {@code =} 为止；初始化器可能跨多行（数组、List、Map 等），由 {@link #extractConstantInitializer} 单独截取 */
+    private static final Pattern FIELD_PATTERN = Pattern.compile(
+            "(?:private|protected|public)\\s+(?!static\\s)(?:final\\s+|transient\\s+|volatile\\s+)*" + FIELD_TYPE + "\\s+(\\w+)\\s*(?:=[^;]*)?;");
+
     private static final Pattern CONST_HEAD = Pattern.compile(
-            "(?:public|private|protected)?\\s*static\\s+final\\s+(\\S+)\\s+(\\w+)\\s*=");
+            "(?:(?:public|private|protected)\\s+)?static\\s+final\\s+" + FIELD_TYPE + "\\s+(\\w+)\\s*=");
 
     private static final Pattern LIST_FACTORY_CALL = Pattern.compile(
             "(?i)^(Arrays\\.asList|List\\.of|Set\\.of|ImmutableList\\.of|Collections\\.singletonList)\\s*\\(");
@@ -35,7 +37,7 @@ public class JavaEntityParser {
 
     /** 实例字段整行（含行尾 // 注释），用于与文档/注解扫描对齐 */
     private static final Pattern FIELD_LINE_PATTERN = Pattern.compile(
-            "^\\s*(?:private|protected|public)\\s+(?!static\\s)(\\S+)\\s+(\\w+)\\s*;\\s*(?://\\s*(.*))?$");
+            "^\\s*(?:private|protected|public)\\s+(?!static\\s)(?:final\\s+|transient\\s+|volatile\\s+)*" + FIELD_TYPE + "\\s+(\\w+)\\s*(?:=[^;]*)?;\\s*(?://\\s*(.*))?$");
 
     private static final Pattern API_MODEL_PROPERTY_ANNO = Pattern.compile("@ApiModelProperty\\s*\\(");
 
@@ -280,15 +282,12 @@ public class JavaEntityParser {
      * 仅移除块注释，保留行注释，便于大括号配对且仍能读取 // 说明。
      */
     private String removeBlockCommentsOnly(String source) {
-        if (source == null) {
-            return "";
-        }
-        return source.replaceAll("/\\*[\\s\\S]*?\\*/", "");
+        return stripComments(source, false);
     }
 
     /**
      * 解析 {@code static final} 常量：支持跨行的数组 / {@code new Type[]\{\}} / {@code List.of}、{@code Arrays.asList}、{@code Map.of} 等。
-     * 复杂表达式（拼接、方法调用）仍按原文本存入，类型多为 STRING。
+     * 不执行复杂表达式；无法识别为确定字面量时拒绝导入，避免错误常量值。
      */
     public ParsedConstantGroup parseConstants(String javaSource) {
         String cleaned = removeComments(javaSource);
@@ -396,7 +395,7 @@ public class JavaEntityParser {
         if (listM.find()) {
             int openParen = listM.end() - 1;
             int closeParen = indexOfMatchingParen(init, openParen);
-            if (closeParen > openParen) {
+            if (closeParen > openParen && closeParen == init.length() - 1) {
                 String inner = init.substring(openParen + 1, closeParen);
                 JSONArray arr = parseCommaSeparatedLiteralsToJsonArray(inner);
                 if (arr != null) {
@@ -409,7 +408,7 @@ public class JavaEntityParser {
         if (newArr.find()) {
             int lb = init.indexOf('{', newArr.start());
             int rb = indexOfMatchingBrace(init, lb);
-            if (rb > lb) {
+            if (rb > lb && rb == init.length() - 1) {
                 JSONArray arr = parseBraceArrayToJsonArray(init.substring(lb, rb + 1));
                 if (arr != null) {
                     return arr.toJSONString();
@@ -438,7 +437,7 @@ public class JavaEntityParser {
         if (mapM.find()) {
             int openParen = mapM.end() - 1;
             int closeParen = indexOfMatchingParen(init, openParen);
-            if (closeParen > openParen) {
+            if (closeParen > openParen && closeParen == init.length() - 1) {
                 String inner = init.substring(openParen + 1, closeParen);
                 String jsonObj = mapInitializerBodyToJsonObject(inner);
                 if (jsonObj != null) {
@@ -454,7 +453,9 @@ public class JavaEntityParser {
             return "{}";
         }
 
-        return cleanLiteralValue(init);
+        Object literal = parseJavaLiteralOrExpression(init);
+        if (literal == null) throw new IllegalArgumentException("常量初始化值不是受支持的字面量，请勿使用方法调用、拼接、变量表达式或 null：" + init);
+        return String.valueOf(literal);
     }
 
     /**
@@ -580,22 +581,9 @@ public class JavaEntityParser {
         if ("null".equalsIgnoreCase(p)) {
             return null;
         }
-        if (p.matches("-?\\d+")) {
-            try {
-                return Long.parseLong(p);
-            } catch (NumberFormatException e) {
-                return p;
-            }
-        }
-        if (p.matches("-?\\d+\\.\\d+")) {
-            try {
-                return Double.parseDouble(p);
-            } catch (NumberFormatException e) {
-                return p;
-            }
-        }
-        if (p.matches("-?\\d+[LlFfDd]")) {
-            return p.substring(0, p.length() - 1);
+        String number = p.replace("_", "").replaceFirst("[LlFfDd]$", "");
+        if (number.matches("[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][+-]?\\d+)?")) {
+            return new BigDecimal(number);
         }
         return null;
     }
@@ -646,12 +634,12 @@ public class JavaEntityParser {
                 }
             }
             if (c == '"') {
-                break;
+                return part.substring(i + 1).isBlank() ? sb.toString() : null;
             }
             sb.append(c);
             i++;
         }
-        return sb.toString();
+        return null;
     }
 
     private int indexOfMatchingParen(String s, int openIdx) {
@@ -752,6 +740,14 @@ public class JavaEntityParser {
     }
 
     private void resolveType(String rawType, ParsedField field) {
+        rawType = rawType.replaceAll("\\s*\\[\\s*\\]", "[]").trim();
+        if (rawType.endsWith("[]")) {
+            String element = rawType.substring(0, rawType.length() - 2);
+            field.setVarType("LIST");
+            field.setGenericType(mapSimpleType(element));
+            if ("OBJECT".equals(field.getGenericType())) field.setRefObjectCode(element);
+            return;
+        }
         Matcher genericMatcher = GENERIC_PATTERN.matcher(rawType);
         if (genericMatcher.matches()) {
             String container = genericMatcher.group(1);
@@ -811,21 +807,36 @@ public class JavaEntityParser {
     }
 
     private String removeComments(String source) {
-        return source
-                .replaceAll("/\\*[\\s\\S]*?\\*/", "")
-                .replaceAll("//[^\n]*", "");
+        return stripComments(source, true);
     }
 
-    private String cleanLiteralValue(String value) {
-        if (value == null) return "";
-        String v = value.trim();
-        if (v.endsWith("L") || v.endsWith("l") || v.endsWith("f") || v.endsWith("F") || v.endsWith("d") || v.endsWith("D")) {
-            v = v.substring(0, v.length() - 1);
+    private String stripComments(String source, boolean removeLineComments) {
+        if (source == null) return "";
+        StringBuilder result = new StringBuilder();
+        char quote = 0;
+        for (int i = 0; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (quote != 0) {
+                result.append(c);
+                if (c == '\\' && i + 1 < source.length()) result.append(source.charAt(++i));
+                else if (c == quote) quote = 0;
+            } else if (c == '"' || c == '\'') {
+                quote = c;
+                result.append(c);
+            } else if (c == '/' && i + 1 < source.length() && source.charAt(i + 1) == '*') {
+                result.append(' ');
+                i += 2;
+                while (i < source.length() && !(source.charAt(i) == '*' && i + 1 < source.length() && source.charAt(i + 1) == '/')) {
+                    if (source.charAt(i) == '\n') result.append('\n');
+                    i++;
+                }
+                i++;
+            } else if (removeLineComments && c == '/' && i + 1 < source.length() && source.charAt(i + 1) == '/') {
+                while (i < source.length() && source.charAt(i) != '\n') i++;
+                result.append('\n');
+            } else result.append(c);
         }
-        if (v.startsWith("\"") && v.endsWith("\"")) {
-            v = v.substring(1, v.length() - 1);
-        }
-        return v;
+        return result.toString();
     }
 
     private List<ClassBlock> extractClassBlocks(String source) {

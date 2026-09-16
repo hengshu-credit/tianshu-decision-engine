@@ -11,6 +11,10 @@ import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import org.junit.Assert;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
+import com.hengshucredit.rule.server.service.parser.JsonSchemaParser;
+import com.hengshucredit.rule.server.service.parser.JavaEntityParser;
+import com.hengshucredit.rule.server.service.parser.DdlTableParser;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -18,6 +22,63 @@ import java.util.List;
 import java.util.Map;
 
 public class GovernanceBatchImportServiceTest {
+
+    @Test
+    public void allFiveImportEntrypointsCreateReviewableDraftsFromRealParsers() {
+        TestService service = new TestService();
+        ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());
+        ReflectionTestUtils.setField(service, "javaEntityParser", new JavaEntityParser());
+        ReflectionTestUtils.setField(service, "ddlTableParser", new DdlTableParser());
+        Assert.assertEquals(Boolean.TRUE, service.importDataObjectsFromJava(null, "GLOBAL",
+                "public class Java_Request { private String User_ID; private String[] Tags; }", "INPUT", "tester").get("success"));
+        Assert.assertEquals(Boolean.TRUE, service.importDataObjectsFromJson(null, "GLOBAL",
+                "{\"User_ID\":\"U1\",\"Nested\":{\"Age\":30}}", "Json_Request", "INPUT", "tester").get("success"));
+        Assert.assertEquals(Boolean.TRUE, service.importDataObjectsFromDdl(null, "GLOBAL",
+                "CREATE TABLE Ddl_Request (User_ID varchar(30), Amount decimal(12,2));", "INPUT", "tester").get("success"));
+        Assert.assertEquals(Boolean.TRUE, service.importConstantsFromJava(null, "GLOBAL",
+                "public class Limits { public static final int MAX_AGE = 65; }", "tester").get("success"));
+        Assert.assertEquals(Boolean.TRUE, service.importConstantsFromJson(null, "GLOBAL",
+                "{\"CODES\":[\"A\",\"B\"]}", "tester").get("success"));
+        Assert.assertEquals(5, service.drafts.size());
+        Assert.assertEquals(List.of("DATA_OBJECT", "DATA_OBJECT", "DATA_OBJECT", "VARIABLE", "VARIABLE"),
+                service.drafts.stream().map(GovernanceDraftRequest::getResourceType).toList());
+        Assert.assertEquals("LIST", JSON.parseObject(service.drafts.get(4).getSnapshotJson()).getString("varType"));
+    }
+
+    @Test
+    public void importingConstantsCannotConvertAnOrdinaryVariable() {
+        TestService service = new TestService();
+        RuleVariable existing = new RuleVariable();
+        existing.setId(7L);
+        existing.setVarSource("INPUT");
+        service.variables.put("Age", existing);
+        ParsedConstantGroup group = new ParsedConstantGroup();
+        group.setConstants(List.of(constant("Age", "年龄", "NUMBER", "65")));
+        Map<String, Object> result = service.importConstants(null, "GLOBAL", group, "tester");
+        Assert.assertEquals(Boolean.FALSE, result.get("success"));
+        Assert.assertTrue(service.drafts.isEmpty());
+        Assert.assertEquals("INPUT", existing.getVarSource());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void realNestedJsonCreatesAnApprovalWithIntactParentReferences() {
+        TestService service = new TestService();
+        ReflectionTestUtils.setField(service, "jsonSchemaParser", new JsonSchemaParser());
+        Map<String, Object> result = service.importDataObjectsFromJson(
+                7L, "PROJECT", "{\"Request_ID\":\"r1\",\"payload\":{\"Apps\":[{\"app_code\":\"a\"}]}}",
+                "Mixed_Request", "INPUT", "tester");
+
+        Assert.assertEquals(Boolean.TRUE, result.get("success"));
+        Map<String, Object> snapshot = JSON.parseObject(service.drafts.get(0).getSnapshotJson(), Map.class);
+        List<Map<String, Object>> fields = (List<Map<String, Object>>) snapshot.get("fields");
+        Assert.assertEquals(4, fields.size());
+        Assert.assertEquals("Mixed_Request", snapshot.get("objectCode"));
+        Assert.assertEquals(findField(fields, "payload").get("id"), findField(fields, "Apps").get("parentFieldId"));
+        Assert.assertEquals(findField(fields, "Apps").get("id"), findField(fields, "app_code").get("parentFieldId"));
+        Assert.assertEquals("OBJECT", findField(fields, "Apps").get("genericType"));
+        Assert.assertEquals("Request_ID", fields.get(0).get("varCode"));
+    }
 
     @Test
     public void constantImportCreatesDraftsWithoutMutatingEffectiveRows() {

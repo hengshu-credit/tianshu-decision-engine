@@ -242,6 +242,68 @@ test('名单详情加载记录和变更日志且内容可复制', async ({ page 
   errors.assertClean()
 })
 
+test('名单详情筛选和操作同排，日志按类型、操作、关键字和时间查询并可重置', async ({ page }) => {
+  const apiData = createDetailApiData()
+  const logs = [
+    { id: 1, itemType: 'MOBILE', itemContent: '13800138000', operation: 'ADD', reason: '导入', createTime: '2026-08-01 09:00:00' },
+    { id: 2, itemType: 'MOBILE', itemContent: '13800138000', operation: 'UPDATE', reason: '人工核验', createTime: '2026-08-03 09:00:00' },
+    { id: 3, itemType: 'IP', itemContent: '192.0.2.1', operation: 'DELETE', reason: '人工核验', createTime: '2026-08-03 10:00:00' },
+  ]
+  const queries = []
+  apiData.set('/api/rule/list/9/log', ({ url }) => {
+    const query = Object.fromEntries(url.searchParams)
+    queries.push(query)
+    const records = logs.filter(row => (!query.itemType || row.itemType === query.itemType) &&
+      (!query.operation || row.operation === query.operation) && (!query.itemContent || row.itemContent === query.itemContent) &&
+      (!query.keyword || [row.itemContent, row.reason].some(value => value.includes(query.keyword))) &&
+      (!query.startTime || row.createTime >= query.startTime) && (!query.endTime || row.createTime <= query.endTime))
+    return { records, total: records.length }
+  })
+  const errors = await openDetailPage(page, '/list/9', apiData)
+  await page.setViewportSize({ width: 1920, height: 1080 })
+  const checkToolbar = async toolbar => {
+    const form = await toolbar.locator('form').boundingBox()
+    const actions = await toolbar.locator('.uiue-btn-bar').boundingBox()
+    expect(actions.x).toBeGreaterThan(form.x)
+    expect(Math.abs(actions.y - form.y)).toBeLessThanOrEqual(1)
+    expect(form.x + form.width).toBeLessThanOrEqual(actions.x)
+  }
+  await checkToolbar(page.getByTestId('record-filter-toolbar'))
+  await page.getByRole('tab', { name: '变更日志', exact: true }).click()
+  const toolbar = page.getByTestId('log-filter-toolbar')
+  const pane = page.getByRole('tabpanel', { name: '变更日志', exact: true })
+  await checkToolbar(toolbar)
+  await toolbar.locator('.el-form-item').filter({ hasText: '内容类型' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '手机号', exact: true }).click()
+  await toolbar.locator('.el-form-item').filter({ hasText: '执行操作' }).locator('.el-select').click()
+  await page.getByRole('option', { name: '修改', exact: true }).click()
+  const keyword = toolbar.getByRole('textbox', { name: '关键字', exact: true })
+  await keyword.fill('人工核验')
+  await expect(page.locator('.el-autocomplete-suggestion:visible li').filter({ hasText: '人工核验' })).toHaveCount(1)
+  await toolbar.getByPlaceholder('开始时间').fill('2026-08-02 00:00:00')
+  await toolbar.getByPlaceholder('开始时间').press('Tab')
+  await toolbar.getByPlaceholder('结束时间').fill('2026-08-04 23:59:59')
+  await toolbar.getByPlaceholder('结束时间').press('Tab')
+  await toolbar.getByRole('button', { name: '查询', exact: true }).click()
+  await expect.poll(() => queries.filter(query => query.pageSize === '10').at(-1)).toMatchObject({
+    pageNum: '1', itemType: 'MOBILE', operation: 'UPDATE', keyword: '人工核验',
+    startTime: '2026-08-02 00:00:00', endTime: '2026-08-04 23:59:59'
+  })
+  await expect(pane.getByText('共 1 条', { exact: true })).toBeVisible()
+  await expect(pane.getByRole('cell', { name: '13800138000', exact: true })).toBeVisible()
+  await keyword.fill('不存在的内容')
+  await keyword.press('Enter')
+  await expect(pane.getByText('共 0 条', { exact: true })).toBeVisible()
+  await toolbar.getByRole('button', { name: '重置', exact: true }).click()
+  await expect(pane.getByText('共 3 条', { exact: true })).toBeVisible()
+  await expect(keyword).toHaveValue('')
+  await expect(toolbar.getByPlaceholder('开始时间')).toHaveValue('')
+  expect(queries.filter(query => query.pageSize === '10').at(-1)).toEqual({ pageNum: '1', pageSize: '10' })
+  await page.setViewportSize({ width: 1280, height: 720 })
+  await expectNoRootOverflow(page)
+  errors.assertClean()
+})
+
 const editableDetails = [
   {
     name: '外数数据源详情',
@@ -340,10 +402,52 @@ test('规则生命周期和版本历史按稳定 ID 打开对应脚本内容', a
     page.getByRole('combobox', { name: '选择规则版本' })
   ).toBeVisible()
   await expect(
-    page.getByRole('button', { name: 'QL脚本编辑器', exact: true })
+    page.getByRole('button', { name: 'QL脚本 · 年龄判断规则', exact: true })
   ).toHaveCount(1)
 
   expect(errors.pageErrors).toEqual([])
   expect(errors.consoleErrors).toEqual([])
   errors.assertClean()
+})
+
+test('顶部详情页签展示业务标题，长标题省略并在悬停时完整展示', async ({ page }) => {
+  const apiData = createDetailApiData()
+  const projectName = '企业授信审批与风险准入综合决策项目（覆盖全国各分支机构）'
+  const project = { ...apiData.get('/api/rule/project/1'), projectName }
+  apiData.set('/api/rule/project/1', project)
+  apiData.set('/api/rule/project/list', { records: [project], total: 1 })
+  const { assertClean } = await installDistRoutes(page, { apiData })
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await page.goto('http://tianshu.local/index.html#/project')
+  await page.getByRole('button', { name: '进入', exact: true }).click()
+  const fullTitle = `项目 · ${projectName}`
+  const tab = page.locator('.workspace-tab__main').filter({ hasText: fullTitle })
+  await expect(tab).toHaveAttribute('aria-label', fullTitle)
+  await expect.poll(() => page.locator('.workspace-tab').evaluateAll(elements =>
+    elements.map(element => element.getBoundingClientRect().width)
+  )).toEqual([160, 160])
+  const title = tab.locator('.workspace-tab__title')
+  await expect.poll(() => title.evaluate(element => ({
+    truncated: element.scrollWidth > element.clientWidth,
+    overflow: getComputedStyle(element).textOverflow,
+  }))).toEqual({ truncated: true, overflow: 'ellipsis' })
+  await tab.hover()
+  const tooltip = page.getByRole('tooltip', { name: fullTitle, exact: true })
+  await expect(tooltip).toBeVisible()
+  await expect(tooltip).toHaveCSS('opacity', '1')
+  await page.screenshot({ path: test.info().outputPath('workspace-tab-title.png') })
+  await page.locator('.workspace-tab__main[data-path="/project"]').click()
+  await tab.click()
+  await expect(tab).toHaveAttribute('aria-label', fullTitle)
+  await page.reload()
+  await expect(tab).toHaveAttribute('aria-label', fullTitle)
+  await tab.click({ button: 'right' })
+  await page.locator('[data-operation="refresh"]').click()
+  await expect(page.getByRole('heading', { name: projectName, exact: true })).toBeVisible()
+  await expect(tab).toHaveAttribute('aria-label', fullTitle)
+  await page.getByRole('button', { name: `关闭${fullTitle}`, exact: true }).click()
+  await expect(tab).toHaveCount(0)
+  await expect(page).toHaveURL(/#\/project$/)
+  await expectNoRootOverflow(page)
+  assertClean()
 })

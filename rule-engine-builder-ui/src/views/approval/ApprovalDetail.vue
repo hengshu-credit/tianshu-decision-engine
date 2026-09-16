@@ -318,6 +318,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -337,6 +338,7 @@ import LineageGraph from '@/views/lineage/LineageGraph.vue'
 
 export default {
   name: 'ApprovalDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.request ? vm.resourceTitle : '')],
   components: { JsonVersionDiff, LineageGraph },
   setup() {
     return {

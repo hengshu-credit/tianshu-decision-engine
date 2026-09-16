@@ -5,7 +5,8 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObjectFieldOption;
-import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.server.service.DataObjectFieldReferenceValidator;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.artifact.CanonicalJson;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldOptionMapper;
@@ -17,7 +18,6 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Locale;
 import java.util.Set;
 
 public class DataObjectGovernedResourceAdapter
@@ -25,7 +25,7 @@ public class DataObjectGovernedResourceAdapter
 
     private final RuleDataObjectFieldMapper fieldMapper;
     private final RuleDataObjectFieldOptionMapper optionMapper;
-    private final RuleVariableMapper variableMapper;
+    private final DataObjectFieldReferenceValidator referenceValidator;
 
     public DataObjectGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleDataObject>
@@ -43,6 +43,16 @@ public class DataObjectGovernedResourceAdapter
             RuleDataObjectFieldOptionMapper optionMapper,
             GovernanceSecretCodec secretCodec,
             RuleVariableMapper variableMapper) {
+        this(store, fieldMapper, optionMapper, secretCodec, variableMapper, null);
+    }
+
+    public DataObjectGovernedResourceAdapter(
+            SimpleEntityGovernedResourceAdapter.EntityStore<RuleDataObject> store,
+            RuleDataObjectFieldMapper fieldMapper,
+            RuleDataObjectFieldOptionMapper optionMapper,
+            GovernanceSecretCodec secretCodec,
+            RuleVariableMapper variableMapper,
+            RuleDataObjectMapper objectMapper) {
         super(new SimpleEntityGovernedResourceAdapter<>(
                 GovernanceResourceTypes.DATA_OBJECT,
                 RuleDataObject.class,
@@ -56,7 +66,7 @@ public class DataObjectGovernedResourceAdapter
                 secretCodec));
         this.fieldMapper = fieldMapper;
         this.optionMapper = optionMapper;
-        this.variableMapper = variableMapper;
+        this.referenceValidator = new DataObjectFieldReferenceValidator(variableMapper, objectMapper, fieldMapper);
     }
 
     @Override
@@ -167,15 +177,13 @@ public class DataObjectGovernedResourceAdapter
     protected void validateAggregate(Map<String, Object> snapshot,
                                      List<GovernanceIssue> issues) {
         List<FieldDraft> fields = parseDrafts(snapshot);
-        String objectScope = stringValue(snapshot.get("scope"));
-        Long objectProjectId = longValue(snapshot.get("projectId"));
+        RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
+        List<RuleDataObjectField> referenceFields = fields.stream().map(FieldDraft::field).toList();
         Set<Long> ids = new HashSet<>();
-        Map<Long, RuleDataObjectField> fieldsById = new HashMap<>();
         for (FieldDraft draft : fields) {
             RuleDataObjectField field = draft.field();
             if (field.getId() != null) {
                 ids.add(field.getId());
-                fieldsById.put(field.getId(), field);
             }
             if (field.getVarCode() == null
                     || field.getVarCode().isBlank()
@@ -188,8 +196,9 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields"));
             }
-            validateVariableReference(field, objectScope,
-                    objectProjectId, issues);
+            referenceValidator.validate(owner, field, referenceFields).forEach(issue ->
+                    issues.add(GovernanceIssue.error(issue.getCode(), issue.getMessage(),
+                            GovernanceResourceTypes.DATA_OBJECT, owner.getId(), issue.getPath())));
         }
         for (FieldDraft draft : fields) {
             RuleDataObjectField field = draft.field();
@@ -202,112 +211,7 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields[*].parentFieldId"));
             }
-            if (field.getRefVariableId() != null
-                    && hasListAncestor(field, fieldsById)) {
-                issues.add(GovernanceIssue.error(
-                        "DATA_OBJECT_FIELD_LIST_CHILD_REFERENCE_UNSUPPORTED",
-                        "列表元素内部字段不能直接引用变量，请在 LIST 字段上整体引用",
-                        GovernanceResourceTypes.DATA_OBJECT,
-                        field.getObjectId(), "$.fields[" + field.getId()
-                                + "].refVariableId"));
-            }
         }
-    }
-
-    private boolean hasListAncestor(
-            RuleDataObjectField field,
-            Map<Long, RuleDataObjectField> fieldsById) {
-        Set<Long> visited = new HashSet<>();
-        Long parentId = field.getParentFieldId();
-        while (parentId != null && visited.add(parentId)) {
-            RuleDataObjectField parent = fieldsById.get(parentId);
-            if (parent == null) return false;
-            String type = normalize(parent.getVarType());
-            if ("LIST".equals(type) || "ARRAY".equals(type)
-                    || "SET".equals(type)) {
-                return true;
-            }
-            parentId = parent.getParentFieldId();
-        }
-        return false;
-    }
-
-    private void validateVariableReference(
-            RuleDataObjectField field, String objectScope,
-            Long objectProjectId, List<GovernanceIssue> issues) {
-        if (field.getRefVariableId() == null || variableMapper == null) {
-            return;
-        }
-        RuleVariable variable = variableMapper.selectById(
-                field.getRefVariableId());
-        String path = "$.fields[" + field.getId()
-                + "].refVariableId";
-        if (variable == null) {
-            issues.add(GovernanceIssue.error(
-                    "DATA_OBJECT_FIELD_VARIABLE_NOT_FOUND",
-                    "数据对象字段引用的变量不存在",
-                    GovernanceResourceTypes.DATA_OBJECT,
-                    field.getObjectId(), path));
-            return;
-        }
-        if (!Integer.valueOf(1).equals(variable.getStatus())) {
-            issues.add(GovernanceIssue.error(
-                    "DATA_OBJECT_FIELD_VARIABLE_DISABLED",
-                    "数据对象字段引用的变量未启用",
-                    GovernanceResourceTypes.DATA_OBJECT,
-                    field.getObjectId(), path));
-            return;
-        }
-        if ("CONSTANT".equals(normalize(variable.getVarSource()))) {
-            issues.add(GovernanceIssue.error(
-                    "DATA_OBJECT_FIELD_VARIABLE_TYPE_MISMATCH",
-                    "数据对象字段只能引用普通变量，不能引用常量",
-                    GovernanceResourceTypes.DATA_OBJECT,
-                    field.getObjectId(), path));
-            return;
-        }
-        if (!scopeAvailable(objectScope, objectProjectId, variable)) {
-            issues.add(GovernanceIssue.error(
-                    "DATA_OBJECT_FIELD_VARIABLE_SCOPE_MISMATCH",
-                    "数据对象字段引用的变量不在当前作用范围内",
-                    GovernanceResourceTypes.DATA_OBJECT,
-                    field.getObjectId(), path));
-        }
-        if (!typeCompatible(field.getVarType(), variable.getVarType())) {
-            issues.add(GovernanceIssue.error(
-                    "DATA_OBJECT_FIELD_VARIABLE_TYPE_MISMATCH",
-                    "数据对象字段类型与引用变量类型不兼容",
-                    GovernanceResourceTypes.DATA_OBJECT,
-                    field.getObjectId(), path));
-        }
-    }
-
-    private boolean scopeAvailable(
-            String objectScope, Long objectProjectId,
-            RuleVariable variable) {
-        if ("GLOBAL".equals(normalize(objectScope))) {
-            return "GLOBAL".equals(normalize(variable.getScope()));
-        }
-        return "GLOBAL".equals(normalize(variable.getScope()))
-                || ("PROJECT".equals(normalize(variable.getScope()))
-                && objectProjectId != null
-                && objectProjectId.equals(variable.getProjectId()));
-    }
-
-    private boolean typeCompatible(String fieldType, String variableType) {
-        String left = normalize(fieldType);
-        String right = normalize(variableType);
-        if (left == null || right == null) return false;
-        if (left.equals(right)) return true;
-        Set<String> numeric = Set.of(
-                "NUMBER", "INTEGER", "INT", "LONG", "DOUBLE",
-                "FLOAT", "DECIMAL", "PROBABILITY");
-        return numeric.contains(left) && numeric.contains(right);
-    }
-
-    private String normalize(String value) {
-        return value == null || value.isBlank()
-                ? null : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private List<FieldDraft> parseDrafts(Map<String, Object> snapshot) {

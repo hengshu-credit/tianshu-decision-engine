@@ -11,6 +11,42 @@ const ElInputStub = {
 }
 
 describe('ExpressionCanvas', () => {
+  test('空项显示删除入口并支持 Delete、Tab 和操作符键', async () => {
+    const path = ['terms', 1, 'operand']
+    const wrapper = shallowMount(ExpressionCanvas, { props: { node: null, path, selectedPath: path } })
+    await wrapper.get('[title="删除节点（Delete / Backspace）"]').trigger('click')
+    await wrapper.get('.canvas-node').trigger('keydown', { key: 'Delete' })
+    await wrapper.get('.canvas-node').trigger('keydown', { key: 'Tab' })
+    await wrapper.get('.canvas-node').trigger('keydown', { key: 'Tab', shiftKey: true })
+    for (const key of ['+', '-', '*', '/', '|', '&']) {
+      await wrapper.get('.canvas-node').trigger('keydown', { key })
+    }
+    expect(wrapper.emitted().remove).toEqual([[path], [path]])
+    expect(wrapper.emitted().indent).toEqual([[path]])
+    expect(wrapper.emitted().outdent).toEqual([[path]])
+    expect(wrapper.emitted().operatorKey.map(args => args[0].key)).toEqual(['+', '-', '*', '/', '|', '&'])
+  })
+
+  test('输入框的运算符、删除和输入法按键不修改表达式结构，Esc 返回卡片', async () => {
+    const wrapper = shallowMount(ExpressionCanvas, {
+      attachTo: document.body,
+      props: { node: { kind: 'LITERAL', value: 'a+b', valueType: 'STRING' } },
+      stubs: { 'el-input': ElInputStub }
+    })
+    const input = wrapper.get('input')
+    for (const key of ['+', '-', '*', '/', '|', '&', 'Backspace', 'Delete', 'Tab']) {
+      await input.trigger('keydown', { key })
+    }
+    await wrapper.get('.canvas-node').trigger('keydown', { key: '+', isComposing: true })
+    await wrapper.get('.canvas-node').trigger('keydown', { key: '+', ctrlKey: true })
+    expect(wrapper.emitted().operatorKey).toBeUndefined()
+    expect(wrapper.emitted().remove).toBeUndefined()
+    expect(wrapper.emitted().indent).toBeUndefined()
+    await input.trigger('keydown', { key: 'Escape' })
+    expect(document.activeElement).toBe(wrapper.get('.canvas-node').element)
+    wrapper.unmount()
+  })
+
   const node = {
     kind: 'FUNCTION',
     functionCode: 'max',

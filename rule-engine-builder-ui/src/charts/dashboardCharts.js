@@ -8,6 +8,7 @@ import {
   VisualMapComponent
 } from 'echarts/components'
 import { CanvasRenderer } from 'echarts/renderers'
+import { mixThemeColors } from '@/theme/themeConfig'
 
 use([
   BarChart,
@@ -48,8 +49,8 @@ export function createChartInstance(element) {
   return init(element, null, { renderer: 'canvas' })
 }
 
-export function registerDashboardMap(geoJson) {
-  registerMap(DASHBOARD_MAP_NAME, geoJson)
+export function registerDashboardMap(geoJson, mapName = DASHBOARD_MAP_NAME) {
+  registerMap(mapName, geoJson)
 }
 
 function tooltip(palette) {
@@ -132,29 +133,57 @@ export function distributionPieOption(items = [], options = {}) {
 export function geoHeatmapOption(points = [], options = {}) {
   const palette = createDashboardPalette(options.root)
   const max = Math.max(1, ...points.map(point => point.count || 0))
-  const center = Array.isArray(options.center) ? options.center : [104, 35]
-  const zoom = Number.isFinite(options.zoom) ? options.zoom : 1.5
+  const center = options.fitRegion ? undefined : (Array.isArray(options.center) ? options.center : [104, 35])
+  const zoom = options.fitRegion ? 1 : (Number.isFinite(options.zoom) ? options.zoom : 1.5)
+  const regionLabel = params => options.regionNames?.[params.name] || params.name || ''
   return {
     tooltip: {
       ...tooltip(palette),
-      formatter: params => `${params.value[0]}, ${params.value[1]}：${params.value[2]}`
+      renderMode: 'richText',
+      formatter: params => Array.isArray(params.value)
+        ? `${params.value[0]}, ${params.value[1]}：${params.value[2]}`
+        : regionLabel(params)
     },
     visualMap: {
+      show: points.length > 0,
       min: 0,
       max,
       calculable: true,
       left: 16,
       bottom: 12,
       textStyle: { color: palette.muted },
-      inRange: { color: [palette.primaryLight, palette.primary, palette.danger] }
+      inRange: {
+        color: [mixThemeColors(palette.surface, palette.primary, 0.2), palette.primary, palette.secondary]
+      }
     },
     geo: {
-      map: DASHBOARD_MAP_NAME,
+      map: options.mapName || DASHBOARD_MAP_NAME,
+      nameProperty: options.nameProperty || 'NAME_ZH',
+      tooltip: { show: true, formatter: regionLabel },
       roam: true,
       center,
       zoom,
-      itemStyle: { areaColor: palette.surface, borderColor: palette.border },
-      emphasis: { itemStyle: { areaColor: palette.primaryLight } }
+      boundingCoords: options.fitRegion ? options.bounds : undefined,
+      regions: (options.decorations || []).map(decoration => ({
+        name: decoration.id,
+        silent: true,
+        tooltip: { show: false },
+        label: { show: false },
+        emphasis: { disabled: true, label: { show: false } },
+        ...(decoration.role === 'boundary' ? { itemStyle: { areaColor: palette.primary, borderColor: palette.primary } } : {})
+      })),
+      itemStyle: {
+        areaColor: mixThemeColors(palette.surface, palette.primary, 0.1),
+        borderColor: mixThemeColors(palette.border, palette.primary, 0.25)
+      },
+      emphasis: {
+        label: { show: true, color: palette.text, formatter: regionLabel },
+        itemStyle: {
+          areaColor: mixThemeColors(palette.surface, palette.primary, 0.24),
+          borderColor: palette.primary,
+          borderWidth: 2
+        }
+      }
     },
     series: [{
       type: 'heatmap',

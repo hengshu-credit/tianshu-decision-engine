@@ -106,6 +106,70 @@ async function mountAndWait() {
   return wrapper
 }
 
+test('退出项目范围后重新加载全部规则，不恢复项目内筛选和页码', async () => {
+  sessionStorage.clear()
+  projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
+  definitionApi.listProjectDefinitions.mockResolvedValue({ data: { records: mockRules().slice(0, 2), total: 2 } })
+  const projectWrapper = mount(RuleList, createMountOptions({ projectId: '2' }))
+  await nextTick()
+  projectWrapper.vm.queryParams.pageNum = 3
+  projectWrapper.vm.queryParams.ruleCode = 'project_rule'
+  projectWrapper.vm.saveCachedState()
+  projectWrapper.unmount()
+
+  const globalWrapper = await mountAndWait()
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  expect(globalWrapper.vm.contextProjectId).toBeNull()
+  expect(globalWrapper.vm.tableData).toEqual(mockRules())
+  globalWrapper.unmount()
+  sessionStorage.clear()
+})
+
+test('全局和不同项目分别恢复自己的筛选，重置项目不会清空全局筛选', async () => {
+  sessionStorage.clear()
+  const globalWrapper = await mountAndWait()
+  globalWrapper.vm.queryParams.ruleName = '全局查询'
+  globalWrapper.vm.saveCachedState()
+  globalWrapper.unmount()
+
+  definitionApi.listProjectDefinitions.mockResolvedValue({ data: { records: [], total: 0 } })
+  const projectWrapper = mount(RuleList, createMountOptions({ projectId: '2' }))
+  await nextTick()
+  expect(projectWrapper.vm.queryParams.ruleName).toBe('')
+  projectWrapper.vm.queryParams.ruleName = '项目查询'
+  projectWrapper.vm.saveCachedState()
+  projectWrapper.unmount()
+
+  const otherProjectWrapper = mount(RuleList, createMountOptions({ projectId: '1' }))
+  await nextTick()
+  expect(otherProjectWrapper.vm.queryParams.ruleName).toBe('')
+  expect(otherProjectWrapper.vm.queryParams.projectId).toBe(1)
+  otherProjectWrapper.unmount()
+
+  const restoredProjectWrapper = mount(RuleList, createMountOptions({ projectId: '2' }))
+  await nextTick()
+  expect(restoredProjectWrapper.vm.queryParams.ruleName).toBe('项目查询')
+  restoredProjectWrapper.vm.resetQuery()
+  expect(restoredProjectWrapper.vm.queryParams.projectId).toBe(2)
+  restoredProjectWrapper.unmount()
+
+  const restoredGlobalWrapper = await mountAndWait()
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10, ruleName: '全局查询' })
+  restoredGlobalWrapper.unmount()
+  sessionStorage.clear()
+})
+
+test('旧版本缓存中的隐藏项目条件不会继续限制全局规则', async () => {
+  sessionStorage.clear()
+  sessionStorage.setItem('qlexpress.pageState.RuleList', JSON.stringify({
+    queryParams: { pageNum: 5, projectId: 2, ruleCode: 'old_project_rule' },
+  }))
+  const wrapper = await mountAndWait()
+  expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  wrapper.unmount()
+  sessionStorage.clear()
+})
+
 test('创建并继续配置使用返回 ID，且提交期间不会重复创建', async () => {
   const wrapper = await mountAndWait()
   wrapper.vm.handleCreate()

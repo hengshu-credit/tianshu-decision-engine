@@ -29,6 +29,11 @@ vi.mock('@/api/project', () => ({
 }))
 
 vi.mock('@/api/dataObject', () => ({
+  listDataObjects: vi.fn(),
+  validateDataObjectFieldReference: vi.fn(),
+  importJavaEntity: vi.fn(),
+  importJsonObject: vi.fn(),
+  importDdlTable: vi.fn(),
   batchValidateRules: vi.fn(),
   batchValidateAll: vi.fn(),
   getVariableTree: vi.fn(),
@@ -97,6 +102,8 @@ const FormStub = {
 
 
 async function mountAndWait(routeQuery = {}) {
+  dataObjectApi.listDataObjects.mockResolvedValue({ data: [] })
+  dataObjectApi.validateDataObjectFieldReference.mockResolvedValue({ data: [] })
   projectApi.listProjects.mockResolvedValue({ data: { records: mockProjects() } })
   variableApi.listVariables.mockResolvedValue({ data: { records: mockVars(), total: 3 } })
   variableApi.getVariableSourceOptions.mockResolvedValue({ data: {
@@ -145,6 +152,21 @@ async function mountAndWait(routeQuery = {}) {
   await new Promise(r => setTimeout(r, 100))
   return wrapper
 }
+
+test('变量退出项目范围后清除自动项目筛选并从第一页加载', async () => {
+  sessionStorage.clear()
+  const projectWrapper = await mountAndWait({ projectId: '2' })
+  projectWrapper.vm.qp.pageNum = 3
+  projectWrapper.vm.qp.varCode = 'project_variable'
+  projectWrapper.vm.saveCachedState()
+  projectWrapper.unmount()
+
+  const globalWrapper = await mountAndWait()
+  const standaloneCall = variableApi.listVariables.mock.calls.filter(([params]) => params.standaloneOnly).at(-1)
+  expect(standaloneCall[0]).toEqual({ pageNum: 1, pageSize: 10, standaloneOnly: true })
+  globalWrapper.unmount()
+  sessionStorage.clear()
+})
 
 describe('VariableList — 初始化与数据加载', () => {
   let wrapper
@@ -561,7 +583,7 @@ describe('VariableList — 变量操作', () => {
     expect(objectPanel).not.toContain('class="var-group-card"')
   })
 
-  test('对象字段引用变量仅展示同范围且类型兼容的启用普通变量', () => {
+  test('对象字段引用入口同时支持同范围且类型兼容的启用变量和常量', () => {
     wrapper.vm.objectFieldOwner = { scope: 'PROJECT', projectId: 1 }
     wrapper.vm.form.varType = 'NUMBER'
     wrapper.vm.objectFieldReferenceVariables = [
@@ -573,7 +595,8 @@ describe('VariableList — 变量操作', () => {
       { id: 6, scriptName: 'disabledAge', varType: 'NUMBER', varSource: 'INPUT', status: 0, scope: 'PROJECT', projectId: 1 }
     ]
 
-    expect(wrapper.vm.objectFieldReferenceOptions.map(item => item.id)).toEqual([1, 5])
+    expect(wrapper.vm.objectFieldReferenceOptions.map(item => item.id)).toEqual([1, 3, 5])
+    expect(wrapper.vm.objectFieldReferenceGroups.map(item => item.label)).toEqual(['变量', '常量'])
   })
 
   test('编辑对象字段保留 refVariableId 供直接引用变量', () => {
@@ -607,12 +630,86 @@ describe('VariableList — 变量操作', () => {
       status: 1
     }, node)
 
+    await new Promise(resolve => setTimeout(resolve, 0))
     wrapper.vm.handleSubmit()
     await new Promise(resolve => setTimeout(resolve, 0))
 
     expect(dataObjectApi.updateDataObjectField).toHaveBeenCalledWith(
       expect.objectContaining({ id: 30, objectId: 20, refVariableId: 9 })
     )
+  })
+
+  test('编辑引用时不把展示用完整路径写回用户原始脚本名称', () => {
+    const node = { object: { id: 20, scope: 'GLOBAL', projectId: 0 }, variables: [] }
+    wrapper.vm.handleEditObjectField({ id: 30, varCode: 'Age', varLabel: '年龄', varType: 'NUMBER', scriptName: 'Request.Age', originalScriptName: 'Age' }, node)
+    expect(wrapper.vm.form.scriptName).toBe('Age')
+  })
+
+  test('对象引用按类型区分 ID，服务端校验失败时不改变原绑定', async () => {
+    wrapper.vm.objectFieldOwner = { id: 20, scope: 'PROJECT', projectId: 1 }
+    wrapper.vm.objectFieldParentId = 20
+    wrapper.vm.form = { id: 30, varType: 'OBJECT', refVariableId: 9 }
+    wrapper.vm.objectFieldReferenceObjects = [{ id: 9, objectCode: 'Address', scope: 'GLOBAL', projectId: 0, status: 1 }]
+    dataObjectApi.validateDataObjectFieldReference.mockResolvedValueOnce({ data: [{ message: '对象循环引用' }] })
+    await wrapper.vm.changeObjectFieldReference('OBJECT:9')
+    expect(wrapper.vm.form.refVariableId).toBe(9)
+    expect(wrapper.vm.form.refObjectId).toBeUndefined()
+    expect(wrapper.vm.objectFieldReferenceError).toBe('对象循环引用')
+
+    await wrapper.vm.changeObjectFieldReference('OBJECT:9')
+    expect(wrapper.vm.form).toMatchObject({ refVariableId: null, refObjectId: 9, refObjectCode: null })
+    expect(dataObjectApi.validateDataObjectFieldReference).toHaveBeenCalledWith(20, expect.objectContaining({ refObjectId: 9, refVariableId: null }))
+    await wrapper.vm.changeObjectFieldReference('')
+    expect(wrapper.vm.form).toMatchObject({ refVariableId: null, refObjectId: null })
+  })
+
+  test('类型不匹配不能开始绑定，旧校验不能覆盖类型变更', async () => {
+    wrapper.vm.isObjectField = true
+    wrapper.vm.objectFieldOwner = { id: 20, scope: 'GLOBAL', projectId: 0 }
+    wrapper.vm.objectFieldParentId = 20
+    wrapper.vm.form = { varType: 'STRING' }
+    wrapper.vm.objectFieldReferenceVariables = [{ id: 9, varType: 'NUMBER', scope: 'GLOBAL', status: 1 }]
+    await wrapper.vm.changeObjectFieldReference('VARIABLE:9')
+    expect(dataObjectApi.validateDataObjectFieldReference).not.toHaveBeenCalled()
+    expect(wrapper.vm.form.refVariableId).toBeUndefined()
+
+    wrapper.vm.form.varType = 'NUMBER'
+    let resolveValidation
+    dataObjectApi.validateDataObjectFieldReference.mockReturnValueOnce(new Promise(resolve => { resolveValidation = resolve }))
+    const pending = wrapper.vm.changeObjectFieldReference('VARIABLE:9')
+    wrapper.vm.form.varType = 'STRING'
+    wrapper.vm.onObjectFieldTypeChange()
+    resolveValidation({ data: [] })
+    await pending
+    expect(wrapper.vm.form.refVariableId).toBeUndefined()
+  })
+
+  test('字段分页保留完整子树，展开状态按字段 ID 记录', () => {
+    wrapper.vm.objectFieldPageSize = 1
+    const nested = { id: 1, children: [{ id: 2, children: [{ id: 3 }] }] }
+    const node = { object: { id: 20 }, variables: [nested, { id: 4 }] }
+    expect(wrapper.vm.objectFieldTotal(node)).toBe(4)
+    expect(wrapper.vm.objectFieldRootTotal(node)).toBe(2)
+    expect(wrapper.vm.paginatedObjectFields(node)).toEqual([nested])
+    wrapper.vm.setObjectFieldExpansion(node, true)
+    expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([1, 2])
+    wrapper.vm.handleObjectFieldExpandChange(node, nested, false)
+    expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([2])
+    wrapper.vm.handleObjectFieldPageChange(node, 2)
+    expect(wrapper.vm.paginatedObjectFields(node)).toEqual([{ id: 4 }])
+    wrapper.vm.setObjectFieldExpansion(node, false)
+    expect(wrapper.vm.objectFieldExpandedKeys(node)).toEqual([])
+  })
+
+  test('提交前重新校验引用，拒绝已失效的绑定', async () => {
+    wrapper.vm.isObjectField = true
+    wrapper.vm.objectFieldParentId = 20
+    wrapper.vm.form = { id: 30, varCode: 'Alias', varLabel: '引用', varType: 'STRING', refVariableId: 9 }
+    dataObjectApi.validateDataObjectFieldReference.mockResolvedValueOnce({ data: [{ message: '引用资源已停用' }] })
+    wrapper.vm.handleSubmit()
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(wrapper.vm.objectFieldReferenceError).toBe('引用资源已停用')
+    expect(dataObjectApi.updateDataObjectField).not.toHaveBeenCalled()
   })
 
   test('所有字段、常量和数据对象写操作均由字段编辑权限控制', () => {
@@ -909,6 +1006,40 @@ describe('VariableList — 变量操作', () => {
       { customerId: 'C001' }
     )
     expect(wrapper.vm.draftPreviewResult.resolvedValue).toBe(88)
+  })
+
+  test.each([
+    ['java-entity', 'doImportJavaEntity', 'importJavaEntity'],
+    ['json-object', 'doImportJsonObject', 'importJsonObject'],
+    ['ddl-table', 'doImportDdl', 'importDdlTable'],
+    ['java-const', 'doImportJavaConst', 'importJavaConstants'],
+    ['json-const', 'doImportJsonConst', 'importJsonConstants'],
+  ])('%s 使用当前作用范围提交并展示审批草稿结果', async (mode, method, apiName) => {
+    const api = mode.endsWith('-const') ? variableApi[apiName] : dataObjectApi[apiName]
+    api.mockResolvedValueOnce({ data: { success: true, requestIds: [88], requestCount: 1 } })
+    wrapper.vm.handleImportCmd(mode)
+    Object.assign(wrapper.vm.importForm, { scope: 'GLOBAL', objectCode: 'Mixed_Request', javaSource: 'class Request {}', jsonContent: '{"Age":18}', ddlSource: 'CREATE TABLE Request (Age int);' })
+    await wrapper.vm[method]()
+    expect(api).toHaveBeenCalledTimes(1)
+    expect(wrapper.vm.importResult.success).toBe(true)
+    expect(wrapper.vm.importResultVisible).toBe(true)
+    wrapper.vm.goImportApprovals()
+    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/88')
+  })
+
+  test('导入失败保留原输入，提交期间阻止重复请求', async () => {
+    wrapper.vm.handleImportCmd('json-object')
+    Object.assign(wrapper.vm.importForm, { scope: 'GLOBAL', objectCode: 'Bad_Request', jsonContent: '{"items":[1,"A"]}' })
+    let complete
+    dataObjectApi.importJsonObject.mockReturnValueOnce(new Promise(resolve => { complete = resolve }))
+    const first = wrapper.vm.doImportJsonObject()
+    await wrapper.vm.doImportJsonObject()
+    expect(dataObjectApi.importJsonObject).toHaveBeenCalledTimes(1)
+    complete({ data: { success: false, error: '数组元素类型不一致' } })
+    await first
+    expect(wrapper.vm.importJsonObjectVisible).toBe(true)
+    expect(wrapper.vm.importForm.jsonContent).toBe('{"items":[1,"A"]}')
+    expect(wrapper.vm.importResult.error).toContain('类型不一致')
   })
 
   test('SQL 业务字段样例按真实选择器元数据生成，并保持当前字段编码', async () => {

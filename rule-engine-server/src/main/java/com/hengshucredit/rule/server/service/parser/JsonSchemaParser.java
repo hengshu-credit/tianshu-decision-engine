@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.service.parser;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
+import com.alibaba.fastjson.parser.Feature;
 import com.hengshucredit.rule.model.dto.ParsedConstant;
 import com.hengshucredit.rule.model.dto.ParsedConstantGroup;
 import com.hengshucredit.rule.model.dto.ParsedField;
@@ -41,7 +42,8 @@ public class JsonSchemaParser {
      * → 所有字段均在同一个数据对象中，通过 parentFieldId 形成嵌套层级</p>
      */
     public ParsedObject parseObject(String jsonContent, String objectCode) {
-        JSONObject json = JSON.parseObject(jsonContent);
+        JSONObject json = JSON.parseObject(jsonContent, Feature.OrderedField);
+        if (json == null) throw new IllegalArgumentException("JSON 顶层必须是对象，不能为 null");
         ParsedObject obj = new ParsedObject();
         obj.setObjectCode(objectCode);
         obj.setObjectLabel(objectCode);
@@ -73,6 +75,8 @@ public class JsonSchemaParser {
             field.setTempId(tempFieldId);
             field.setScriptName(fieldPath);
             field.setParentFieldId(parentFieldId);
+            // 审批快照需要先分配父字段 ID，再绑定子字段；同时保持样本中的字段顺序。
+            root.getFields().add(field);
 
             if (value instanceof JSONObject) {
                 // 嵌套对象：类型为 OBJECT，递归解析子字段
@@ -81,22 +85,24 @@ public class JsonSchemaParser {
             } else if (value instanceof JSONArray) {
                 field.setVarType("LIST");
                 JSONArray arr = (JSONArray) value;
-                if (!arr.isEmpty()) {
-                    Object first = arr.get(0);
+                Object first = arr.stream().filter(item -> item != null).findFirst().orElse(null);
+                if (first != null) {
+                    String elementType = first instanceof JSONObject ? "OBJECT" : first instanceof JSONArray ? "LIST" : inferPrimitiveType(first);
+                    if (arr.stream().filter(item -> item != null).anyMatch(item -> !elementType.equals(
+                            item instanceof JSONObject ? "OBJECT" : item instanceof JSONArray ? "LIST" : inferPrimitiveType(item)))) {
+                        throw new IllegalArgumentException("数组 [" + fieldPath + "] 的元素类型不一致，请提供同类型的样本");
+                    }
                     if (first instanceof JSONObject) {
                         field.setGenericType("OBJECT");
                         // 数组元素为对象时，递归解析第一个元素的结构
                         parseJsonRecursive((JSONObject) first, root, tempFieldId, fieldPath);
                     } else {
-                        field.setGenericType(inferPrimitiveType(first));
+                        field.setGenericType(elementType);
                     }
-                } else {
-                    field.setGenericType("STRING");
                 }
             } else {
                 field.setVarType(inferPrimitiveType(value));
             }
-            root.getFields().add(field);
         }
     }
 
@@ -107,18 +113,18 @@ public class JsonSchemaParser {
     }
 
     /**
-     * 解析扁平 JSON 为常量列表（无常量组概念时占位元数据仅用于解析器内部）。
+     * 将 JSON 顶层键值解析为常量；数组和对象分别保存为 LIST 和 MAP 常量。
      */
     public ParsedConstantGroup parseConstants(String jsonContent) {
         return parseConstants(jsonContent, "IMPORT", "导入的常量");
     }
 
     /**
-     * Parse flat JSON key-value pairs as constants.
-     * All top-level primitive keys become constants with inferred types.
+     * Parse JSON key-value pairs without dropping structured values.
      */
     public ParsedConstantGroup parseConstants(String jsonContent, String groupCode, String groupLabel) {
-        JSONObject json = JSON.parseObject(jsonContent);
+        JSONObject json = JSON.parseObject(jsonContent, Feature.OrderedField);
+        if (json == null) throw new IllegalArgumentException("JSON 顶层必须是对象，不能为 null");
         ParsedConstantGroup group = new ParsedConstantGroup();
         group.setGroupCode(groupCode);
         group.setGroupLabel(groupLabel);
@@ -127,16 +133,14 @@ public class JsonSchemaParser {
         for (Map.Entry<String, Object> entry : json.entrySet()) {
             String key = entry.getKey();
             Object value = entry.getValue();
-            if (value instanceof JSONObject || value instanceof JSONArray) {
-                continue;
-            }
+            if (value == null) throw new IllegalArgumentException("常量 [" + key + "] 不能为 null，请提供明确的常量值");
 
             ParsedConstant pc = new ParsedConstant();
             pc.setConstCode(key);
             pc.setConstLabel(key);
             pc.setScriptName(key);
-            pc.setConstType(inferPrimitiveType(value));
-            pc.setConstValue(value == null ? "" : String.valueOf(value));
+            pc.setConstType(value instanceof JSONObject ? "MAP" : value instanceof JSONArray ? "LIST" : inferPrimitiveType(value));
+            pc.setConstValue(value instanceof JSONObject || value instanceof JSONArray ? JSON.toJSONString(value) : String.valueOf(value));
             group.getConstants().add(pc);
         }
         return group;

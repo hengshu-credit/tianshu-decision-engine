@@ -835,7 +835,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
-import { routeProjectId } from '@/utils/projectContext'
+import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import {
   ONNX_TASKS,
   createOnnxConfig,
@@ -1103,11 +1103,11 @@ export default {
     },
   },
   created() {
-    this.restoreCachedState()
     this.contextProjectId = routeProjectId(
       this.$route,
       this.$store && this.$store.state.currentProject
     )
+    this.restoreCachedState()
     if (this.contextProjectId) this.qp.projectId = this.contextProjectId
     this.loadProjects()
   },
@@ -1116,11 +1116,11 @@ export default {
   },
   methods: {
     restoreCachedState() {
-      const state = restorePageState('ModelList')
+      const state = restorePageState(projectPageStateKey('ModelList', this.contextProjectId))
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
     },
     saveCachedState() {
-      savePageState('ModelList', { qp: this.qp })
+      savePageState(projectPageStateKey('ModelList', this.contextProjectId), { qp: this.qp })
     },
     async loadProjects() {
       try {
@@ -1233,7 +1233,7 @@ export default {
         projectCode: '',
         projectName: '',
       }
-      clearPageState('ModelList')
+      clearPageState(projectPageStateKey('ModelList', this.contextProjectId))
       this.load()
     },
     modelTypeLabel(t) {

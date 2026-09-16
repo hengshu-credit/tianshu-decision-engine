@@ -159,7 +159,7 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
     expect(resolveAccentPreset('LIQUID_PURPLE_GRADIENT')).toEqual(
       expect.objectContaining({
         primary: '#873FF2',
-        secondary: '#2CC7B8',
+        secondary: '#B16CF2',
         foreground: '#FFFFFF',
         background: 'linear-gradient(135deg, #19103B 0%, #873FF2 100%)',
       })

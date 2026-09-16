@@ -39,6 +39,47 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
+  test('Token 业务失效条件可以保存并重新加载', () => {
+    const ctx = createContext({
+      tokenFailureMode: 'CUSTOM',
+      tokenFailureConditionRoot: { type: 'group', operator: 'OR', children: [
+        { path: 'httpStatus', operator: 'in', values: ['401', '498'] },
+        { path: 'body.code', operator: '==', value: 'TOKEN_EXPIRED' }
+      ] }
+    })
+    const data = ctx.normalizeForm(ctx.form)
+    expect(JSON.parse(data.tokenFailureCondition).children).toHaveLength(2)
+    ctx.form = data
+    ctx.syncEditableRowsFromForm()
+    expect(ctx.tokenFailureMode).toBe('CUSTOM')
+    expect(ctx.tokenFailureConditionRoot.children[1].value).toBe('TOKEN_EXPIRED')
+  })
+
+  test('提交任务号与回调任务号配置分别保存，不互相覆盖', () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), requestMode: 'ASYNC', asyncResultMode: 'CALLBACK', asyncCallbackUrl: 'https://engine.example/api/external-callback/${invocationId}' },
+      asyncShared: { taskIdPath: 'body.receipt.id' },
+      asyncCallbackConfig: { ...ApiDetail.methods.emptyAsyncCallbackConfig(), taskIdPath: 'body.report.job', signatureHeader: 'X-Signature', signatureSecret: 'test-secret' }
+    })
+    const data = ctx.normalizeForm(ctx.form)
+    expect(JSON.parse(data.asyncCallbackConfig)).toMatchObject({ submissionTaskIdPath: 'body.receipt.id', taskIdPath: 'body.report.job' })
+    ctx.form = data
+    ctx.syncAsyncConfigFromForm()
+    expect(ctx.asyncShared.taskIdPath).toBe('body.receipt.id')
+    expect(ctx.asyncCallbackConfig.taskIdPath).toBe('body.report.job')
+  })
+
+  test('轮询请求体与失败状态能保存，缺少结果查询地址时阻止保存', () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), requestMode: 'ASYNC', asyncResultMode: 'POLL' },
+      asyncPollRequestText: '{"requestMapping":{"job":"$.taskId"}}'
+    })
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('结果查询地址')
+    ctx.asyncPollConfig.resultEndpointUrl = '/query'
+    ctx.asyncPollConfig.requestMethod = 'POST'
+    const data = ctx.normalizeForm(ctx.form)
+    expect(JSON.parse(data.asyncPollConfig)).toMatchObject({ requestMapping: { job: '$.taskId' }, failureValue: 'FAILED' })
+  })
   test('默认只展示业务配置并把稳定性与高级能力分层', () => {
     const ctx = createContext({ activeConfigGroup: 'business' })
     ctx.configTabs = ApiDetail.data.call(ctx).configTabs

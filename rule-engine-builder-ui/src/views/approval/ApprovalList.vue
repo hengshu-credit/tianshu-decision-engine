@@ -41,13 +41,14 @@
         />
       </el-tabs>
 
-      <div class="filter-bar">
-        <el-input
-          v-model="filters.keyword"
-          clearable
+      <div class="filter-bar" @keyup.enter="search">
+        <remote-filter-select
+          v-model:value="filters.keyword"
+          :fetch-options="fetchKeywordOptions"
+          :option-fields="['requestNo', 'changeSummary']"
+          allow-free-input
           placeholder="审批单号或变更说明"
           class="keyword-filter"
-          @keyup.enter="search"
         />
         <el-select
           v-model="filters.resourceType"
@@ -164,6 +165,7 @@ import {
   listGovernanceRequests,
 } from '@/api/governance'
 import { routeProjectId } from '@/utils/projectContext'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 const STATUS_OPTIONS = [
   { value: 'EDITING', label: '编辑中' },
@@ -210,6 +212,7 @@ const RESOURCE_OPTIONS = [
 
 export default {
   name: 'ApprovalList',
+  components: { RemoteFilterSelect },
   data() {
     return {
       taskScopes: [
@@ -306,6 +309,16 @@ export default {
     this.loadRequests()
   },
   methods: {
+    fetchKeywordOptions({ query, pageNum, pageSize }) {
+      return listGovernanceRequests({
+        ...this.filters,
+        taskScope: this.activeScope,
+        projectId: this.contextProjectId || undefined,
+        keyword: query,
+        pageNum,
+        pageSize,
+      })
+    },
     async loadSummary() {
       const response = await getGovernanceSummary({
         ...(this.contextProjectId

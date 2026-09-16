@@ -37,5 +37,5 @@ export function testDbDatasourceDraft(data) {
 }
 
 export function queryDbDatasource(id, data) {
-  return request({ url: `/rule/database/${id}/query`, method: 'post', data })
+  return request({ url: `/rule/database/${id}/query`, method: 'post', data, timeout: 0 })
 }

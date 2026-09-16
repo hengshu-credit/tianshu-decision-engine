@@ -1,225 +1,168 @@
-import { mount } from '@test-utils'
+import { shallowMount, flushPromises } from '@test-utils'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
-const ElSelectStub = {
-  name: 'ElSelect',
-  props: {
-    teleported: { type: Boolean, default: true }
-  },
-  mounted() {
-    this.popperElm = this.$refs.popper
-  },
-  methods: {
-    blur() {
-      this.$refs.input.blur()
-    }
-  },
-  template: `
-    <div class="el-select-stub">
-      <input ref="input" class="filter-input" readonly />
-      <div ref="popper" class="el-select-dropdown">
-        <button class="dropdown-option">选项</button>
-      </div>
-    </div>
-  `
+const AutocompleteStub = {
+  name: 'ElAutocomplete',
+  props: ['modelValue', 'fetchSuggestions', 'teleported', 'highlightFirstItem'],
+  methods: { close: vi.fn() },
+  template: '<input :value="modelValue" />',
 }
 
-function mountSelect(propsData = {}) {
-  return mount(RemoteFilterSelect, {
+function mountSelect(props = {}) {
+  return shallowMount(RemoteFilterSelect, {
     props: {
-      fetchOptions: vi.fn().mockResolvedValue({ data: { records: [], total: 0 } }),
-      ...propsData
+      fetchOptions: vi.fn().mockResolvedValue({ records: [], total: 0 }),
+      allowFreeInput: true,
+      ...props,
     },
-    stubs: {
-      'el-select': ElSelectStub,
-      'el-option': true
-    },
-    attachTo: document.body
+    stubs: { 'el-autocomplete': AutocompleteStub },
   })
 }
 
 describe('RemoteFilterSelect', () => {
-  test('下拉层传送至 body，避免嵌套定位上下文导致水平偏移', () => {
+  test('候选层传送至 body，回车不默认选中首项', () => {
     const wrapper = mountSelect()
-
-    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(true)
+    const autocomplete = wrapper.findComponent(AutocompleteStub)
+    expect(autocomplete.props('teleported')).toBe(true)
+    expect(autocomplete.props('highlightFirstItem')).toBe(false)
     wrapper.unmount()
   })
 
-  test('自由输入在原生 input 事件时立即同步，点击查询无需按 Enter', async () => {
-    const wrapper = mountSelect({ allowFreeInput: true })
-    const input = wrapper.find('.filter-input')
-
-    await wrapper.vm.$nextTick()
-    await input.setValue('NO_MATCH_CLICK_RULE')
-
-    expect(wrapper.emitted('update:value')?.at(-1)).toEqual([
-      'NO_MATCH_CLICK_RULE'
-    ])
+  test('数据源及展示、筛选字段可配置，建议加载不修改条件', async () => {
+    const fetchOptions = vi.fn().mockResolvedValue({
+      data: { records: [{ id: 7, title: '风险规则' }], total: 1 },
+    })
+    const wrapper = mountSelect({ value: 'risk', fetchOptions, optionLabelKey: 'title', optionValueKey: 'id' })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('risk', callback)
+    await flushPromises()
+    expect(fetchOptions).toHaveBeenCalledWith({ query: 'risk', pageNum: 1, pageSize: 20 })
+    expect(callback).toHaveBeenLastCalledWith([{ label: '风险规则', value: 7 }])
+    expect(wrapper.emitted('update:value')).toBeUndefined()
     wrapper.unmount()
   })
 
-  test('同一次自由输入只向父级同步一次', () => {
-    const wrapper = mountSelect({ allowFreeInput: true })
-
-    wrapper.vm.handleNativeInput({ target: { value: 'age_rule' } })
-    wrapper.vm.handleRemote('age_rule')
-    wrapper.vm.handleEnter({ target: { value: 'age_rule' } })
-
-    expect(wrapper.emitted('update:value')).toEqual([['age_rule']])
-    wrapper.unmount()
-  })
-
-  test('父级重置自由输入值时同步清空原生输入框', async () => {
+  test('关闭候选与外部重置均丢弃未完成的旧响应', async () => {
+    let resolve
     const wrapper = mountSelect({
-      allowFreeInput: true,
-      value: 'e2e_project'
+      value: 'old',
+      fetchOptions: vi.fn(() => new Promise(done => { resolve = done })),
     })
-
-    await wrapper.vm.$nextTick()
-    const input = wrapper.find('.filter-input').element
-    input.value = 'e2e_project'
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('old', callback)
     await wrapper.setProps({ value: '' })
-    await wrapper.vm.$nextTick()
-
-    expect(input.isConnected).toBe(false)
-    expect(wrapper.find('.filter-input').element.value).toBe('')
-    wrapper.unmount()
-  })
-
-  test('父级重置时同步收起下拉并阻止退场浮层拦截后续点击', async () => {
-    const wrapper = mountSelect({
-      allowFreeInput: true,
-      value: 'e2e_project'
-    })
-    const input = wrapper.find('.filter-input').element
-    const popper = wrapper.find('.el-select-dropdown').element
-    const blur = vi.spyOn(wrapper.findComponent(ElSelectStub).vm, 'blur')
-
-    wrapper.vm.handleVisibleChange(true)
-    input.focus()
-    await wrapper.setProps({ value: '' })
-    await wrapper.vm.$nextTick()
-
-    expect(blur).toHaveBeenCalledTimes(1)
-    expect(popper.style.pointerEvents).toBe('none')
-    expect(popper.hasAttribute('inert')).toBe(true)
-    expect(input.isConnected).toBe(false)
-    expect(wrapper.find('.filter-input').element.value).toBe('')
-    wrapper.unmount()
-  })
-
-  test('自由输入按 Enter 时先同步当前值再让父级查询', async () => {
-    const Parent = {
-      components: { RemoteFilterSelect },
-      data() {
-        return {
-          filterValue: '',
-          queriedValue: null
-        }
-      },
-      methods: {
-        fetchOptions() {
-          return Promise.resolve({ data: { records: [], total: 0 } })
-        },
-        handleQuery() {
-          this.queriedValue = this.filterValue
-        }
-      },
-      template: `
-        <form @keyup.enter="handleQuery">
-          <remote-filter-select
-            v-model:value="filterValue"
-            :fetch-options="fetchOptions"
-            allow-free-input
-          />
-        </form>
-      `
-    }
-    const wrapper = mount(Parent, {
-      stubs: {
-        'el-select': ElSelectStub,
-        'el-option': true
-      }
-    })
-    const input = wrapper.find('.filter-input')
-
-    await input.setValue('NO_MATCH_ENTER_RULE')
-    await input.trigger('keyup', { key: 'Enter', keyCode: 13 })
-
-    expect(wrapper.vm.filterValue).toBe('NO_MATCH_ENTER_RULE')
-    expect(wrapper.vm.queriedValue).toBe('NO_MATCH_ENTER_RULE')
-    wrapper.unmount()
-  })
-
-  test('挂载后保持原生筛选输入框可直接输入', async () => {
-    const wrapper = mountSelect()
-    const input = wrapper.find('.filter-input').element
-    const popper = wrapper.find('.el-select-dropdown').element
-
-    await wrapper.vm.$nextTick()
-    expect(input.hasAttribute('readonly')).toBe(false)
-    expect(popper.hasAttribute('inert')).toBe(true)
-    expect(popper.getAttribute('aria-hidden')).toBe('true')
-
-    input.setAttribute('readonly', 'readonly')
-    await new Promise(resolve => setTimeout(resolve, 0))
-    expect(input.hasAttribute('readonly')).toBe(false)
-    wrapper.unmount()
-  })
-
-  test('关闭下拉时隔离隐藏选项并仅保留已选项', async () => {
-    const wrapper = mountSelect({ value: 'selected' })
-    const input = wrapper.find('.filter-input').element
-    const popper = wrapper.find('.el-select-dropdown').element
-    await wrapper.vm.$nextTick()
-    popper.setAttribute('inert', '')
-    popper.setAttribute('aria-hidden', 'true')
-
-    wrapper.vm.handleVisibleChange(true)
-    await wrapper.vm.$nextTick()
-    expect(popper.hasAttribute('inert')).toBe(false)
-    expect(popper.hasAttribute('aria-hidden')).toBe(false)
-    expect(popper.style.pointerEvents).toBe('')
-
-    wrapper.vm.options = [
-      { label: '已选', value: 'selected' },
-      { label: '其他', value: 'other' }
-    ]
-    wrapper.find('.dropdown-option').element.focus()
-    wrapper.vm.handleVisibleChange(false)
-    await wrapper.vm.$nextTick()
-    expect(document.activeElement).toBe(input)
-    expect(popper.hasAttribute('inert')).toBe(true)
-    expect(popper.getAttribute('aria-hidden')).toBe('true')
-    expect(popper.style.pointerEvents).toBe('none')
-    expect(wrapper.vm.options).toEqual([{ label: '已选', value: 'selected' }])
-    wrapper.unmount()
-  })
-
-  test('无已选值关闭下拉时清空远程选项且下拉挂到 body', async () => {
-    const wrapper = mountSelect()
-    wrapper.vm.options = [{ label: '其他', value: 'other' }]
-
-    wrapper.vm.handleVisibleChange(false)
-    await wrapper.vm.$nextTick()
-
+    resolve({ records: ['old'], total: 1 })
+    await flushPromises()
+    expect(callback).toHaveBeenLastCalledWith([])
     expect(wrapper.vm.options).toEqual([])
-    expect(wrapper.findComponent(ElSelectStub).props('teleported')).toBe(true)
+    expect(wrapper.vm.loading).toBe(false)
+    expect(wrapper.emitted('update:value')).toBeUndefined()
     wrapper.unmount()
   })
 
-  test('关闭后忽略尚未返回的远程选项', async () => {
-    let resolveFetch
-    const fetchOptions = vi.fn(() => new Promise(resolve => { resolveFetch = resolve }))
+  test('连续输入时旧请求不覆盖新候选，含防抖等待阶段', async () => {
+    const pending = []
+    const wrapper = mountSelect({
+      value: 'r',
+      fetchOptions: vi.fn(() => new Promise(resolve => pending.push(resolve))),
+    })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('r', callback)
+    wrapper.vm.updateValue('risk')
+    pending[0]({ records: ['旧候选'], total: 1 })
+    await flushPromises()
+    expect(callback).toHaveBeenLastCalledWith([])
+    await wrapper.setProps({ value: 'risk' })
+    wrapper.vm.fetchSuggestions('risk', callback)
+    pending[1]({ records: ['risk_main'], total: 1 })
+    await flushPromises()
+    expect(callback).toHaveBeenLastCalledWith([{ label: 'risk_main', value: 'risk_main' }])
+    expect(wrapper.emitted('update:value')).toEqual([['risk']])
+    wrapper.unmount()
+  })
+
+  test('重置后排队的防抖任务不再请求旧条件', async () => {
+    const fetchOptions = vi.fn()
     const wrapper = mountSelect({ fetchOptions })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('old', callback)
+    expect(fetchOptions).not.toHaveBeenCalled()
+    expect(callback).toHaveBeenCalledWith([])
+    wrapper.unmount()
+  })
 
-    wrapper.vm.handleVisibleChange(true)
-    wrapper.vm.handleVisibleChange(false)
-    resolveFetch({ data: { records: [{ label: '延迟选项', value: 'late' }], total: 1 } })
-    await new Promise(resolve => setTimeout(resolve, 0))
+  test('分页追加去重，按服务端记录数判断结束，保留数值 0', async () => {
+    const fetchOptions = vi.fn()
+      .mockResolvedValueOnce({ records: [0, 'risk'], total: 4 })
+      .mockResolvedValueOnce({ records: ['risk', 'other'], total: 4 })
+    const wrapper = mountSelect({ fetchOptions, pageSize: 2 })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('', callback)
+    await flushPromises()
+    await wrapper.vm.loadOptions(false)
+    expect(fetchOptions).toHaveBeenLastCalledWith({ query: '', pageNum: 2, pageSize: 2 })
+    expect(callback).toHaveBeenLastCalledWith([
+      { label: 0, value: 0 }, { label: 'risk', value: 'risk' }, { label: 'other', value: 'other' },
+    ])
+    expect(wrapper.vm.hasMore).toBe(false)
+    await wrapper.vm.loadOptions(false)
+    expect(fetchOptions).toHaveBeenCalledTimes(2)
+    wrapper.unmount()
+  })
 
-    expect(wrapper.vm.options).toHaveLength(0)
+  test('候选请求失败不丢失输入且可再次加载', async () => {
+    const error = new Error('offline')
+    const fetchOptions = vi.fn().mockRejectedValueOnce(error).mockResolvedValueOnce(['risk'])
+    const wrapper = mountSelect({ value: 'risk', fetchOptions })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('risk', callback)
+    await flushPromises()
+    expect(wrapper.vm.loading).toBe(false)
+    expect(callback).toHaveBeenLastCalledWith([])
+    expect(wrapper.emitted('load-error')).toEqual([[error]])
+    expect(wrapper.emitted('update:value')).toBeUndefined()
+    wrapper.vm.fetchSuggestions('risk', callback)
+    await flushPromises()
+    expect(callback).toHaveBeenLastCalledWith([{ label: 'risk', value: 'risk' }])
+    wrapper.unmount()
+  })
+
+  test('关键字候选支持多个字段，分页按原始记录计数', async () => {
+    const fetchOptions = vi.fn()
+      .mockResolvedValueOnce({ records: [{ code: 'risk_1', name: '风控' }], total: 2 })
+      .mockResolvedValueOnce({ records: [{ code: 'risk_2', name: '风控' }], total: 2 })
+    const wrapper = mountSelect({ fetchOptions, pageSize: 1, optionFields: ['code', 'name'] })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('', callback)
+    await flushPromises()
+    expect(wrapper.vm.hasMore).toBe(true)
+    await wrapper.vm.loadOptions(false)
+    expect(callback).toHaveBeenLastCalledWith([
+      { label: 'risk_1', value: 'risk_1' }, { label: '风控', value: '风控' }, { label: 'risk_2', value: 'risk_2' },
+    ])
+    expect(wrapper.vm.hasMore).toBe(false)
+    wrapper.unmount()
+  })
+
+  test('多字段关键字只展示匹配当前文字的候选', async () => {
+    const wrapper = mountSelect({
+      value: '风控',
+      optionFields: ['code', 'name'],
+      fetchOptions: vi.fn().mockResolvedValue({ records: [{ code: 'risk', name: '风控规则' }], total: 1 }),
+    })
+    const callback = vi.fn()
+    wrapper.vm.fetchSuggestions('风控', callback)
+    await flushPromises()
+    expect(callback).toHaveBeenLastCalledWith([{ label: '风控规则', value: '风控规则' }])
+    wrapper.unmount()
+  })
+
+  test('只允许选项模式的搜索不把文字当作关联 ID', async () => {
+    const wrapper = mountSelect({ allowFreeInput: false, value: 7 })
+    wrapper.vm.handleRemote('风险')
+    await flushPromises()
+    expect(wrapper.emitted('update:value')).toBeUndefined()
+    expect(wrapper.findComponent({ name: 'ElSelect' }).exists()).toBe(true)
     wrapper.unmount()
   })
 })

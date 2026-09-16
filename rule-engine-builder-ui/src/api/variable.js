@@ -52,7 +52,7 @@ export function deleteVariable(id) {
 }
 
 export function testVariable(id, params) {
-  return request({ url: `/rule/variable/${id}/test`, method: 'post', data: params || {} })
+  return request({ url: `/rule/variable/${id}/test`, method: 'post', data: params || {}, timeout: 0 })
 }
 
 export function getVariableSourceOptions(params) {
@@ -67,6 +67,7 @@ export function previewVariableDraft(variable, params) {
   return request({
     url: '/rule/variable/preview',
     method: 'post',
+    timeout: 0,
     data: { variable, params: params || {} }
   })
 }
@@ -136,7 +137,7 @@ export function importJavaConstants(javaSource, scope, projectId) {
   return request({ url: '/rule/variable/import/constants/java', method: 'post', data: { javaSource, scope, projectId } })
 }
 
-/** 从扁平 JSON 批量导入常量 */
+/** 从 JSON 顶层键值批量导入常量，支持基本类型、数组和对象 */
 export function importJsonConstants(jsonContent, scope, projectId) {
   return request({ url: '/rule/variable/import/constants/json', method: 'post', data: { jsonContent, scope, projectId } })
 }

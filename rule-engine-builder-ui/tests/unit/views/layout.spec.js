@@ -384,7 +384,9 @@ describe('Layout — 全局布局集成', () => {
       draft: null
     })
 
-    expect(wrapper.vm.routeTab(route).title).toBe('决策表 · 右操作数')
+    expect(wrapper.vm.routeTab(route)).toMatchObject({
+      title: '配置表达式', detailTitle: '决策表 · 右操作数'
+    })
     wrapper.unmount()
   })
 
@@ -528,6 +530,17 @@ describe('Layout — 全局布局集成', () => {
     expect(wrapper.find('[data-account-command="settings"]').exists()).toBe(true)
     expect(wrapper.find('[data-account-command="theme"]').exists()).toBe(true)
     expect(wrapper.find('[data-account-command="logout"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('刷新布局恢复非活动详情页时保留具体标题', async() => {
+    window.sessionStorage.setItem('tianshu:layout:workspace-tabs', JSON.stringify({
+      tabs: [{ ...createRoute('/project/1', '项目详情'), detailTitle: '企业授信' }],
+      activePath: '/project/1'
+    }))
+    const { wrapper, store } = mountLayout()
+    await nextTick()
+    expect(store.state.workspaceTabs.tabs.find(tab => tab.path === '/project/1').detailTitle).toBe('企业授信')
     wrapper.unmount()
   })
 

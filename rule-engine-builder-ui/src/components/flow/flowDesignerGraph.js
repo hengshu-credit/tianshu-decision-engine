@@ -30,9 +30,13 @@ const ANCHOR_DIRECTION_BY_SUFFIX = {
   3: 'left'
 }
 
+const OPPOSITE_DIRECTION = { top: 'bottom', right: 'left', bottom: 'top', left: 'right' }
+const LAYOUT_GRID_SIZE = 20
+
 const DEFAULT_LAYOUT_OPTIONS = {
   horizontalGap: 240,
-  verticalGap: 140,
+  // 偶数分支的半间距也须落在 LogicFlow 的 20px 网格上。
+  verticalGap: 160,
   collisionGap: 36,
   maxCollisionAttempts: 100,
   rootColumns: 3,
@@ -140,7 +144,7 @@ function getLayoutNodeSize(node) {
     }
   }
   if (node.type === 'script-task') return { width: 160, height: 42 }
-  if (node.type === 'exclusive-gateway') return { width: 90, height: 70 }
+  if (node.type === 'exclusive-gateway' || node.type === 'join-gateway') return { width: 56, height: 56 }
   return { width: 50, height: 50 }
 }
 
@@ -176,15 +180,70 @@ function findNonOverlappingPosition(base, node, placed, direction, options) {
   return base
 }
 
-function findNearestIncomingEdge(node, edges, originalPositions) {
-  const target = originalPositions.get(node.id)
-  const nearest = (edges || []).reduce((closest, edge) => {
-    const source = originalPositions.get(edge.sourceNodeId)
-    if (!source || !target) return closest
-    const distance = Math.pow(source.x - target.x, 2) + Math.pow(source.y - target.y, 2)
-    return !closest || distance < closest.distance ? { edge, distance } : closest
-  }, null)
-  return nearest ? nearest.edge : null
+function branchOffsets(nodes, edges, byId, directions, incoming, options) {
+  const groups = new Map(nodes.map(node => [node.id, new Map()]))
+  edges.forEach(edge => {
+    const direction = directions.get(edge)
+    const key = edge.sourceAnchorId || direction.sourceDirection || `${direction.x}:${direction.y}`
+    const outgoing = groups.get(edge.sourceNodeId)
+    if (!outgoing.has(key)) outgoing.set(key, [])
+    outgoing.get(key).push(edge)
+  })
+  const crossAxis = group => {
+    const direction = directions.get(group[0])
+    return ['top', 'bottom'].includes(direction.sourceDirection) || !direction.x ? 'x' : 'y'
+  }
+  const targets = (group, axis) => [...new Set(group.map(edge => edge.targetNodeId))]
+    .sort((a, b) => byId.get(a)[axis] - byId.get(b)[axis] || String(a).localeCompare(String(b), 'en', { numeric: true }))
+  const spacing = (extents, axis) => {
+    const minimum = axis === 'x' ? options.horizontalGap : options.verticalGap
+    const required = Math.max(minimum, ...extents.slice(1).map((extent, index) => (extent + extents[index]) / 2))
+    const step = LAYOUT_GRID_SIZE * 2
+    return Math.ceil(required / step) * step // 半间距仍落在网格上。
+  }
+  const spans = { x: new Map(), y: new Map() }
+  const span = (id, axis, visiting = new Set()) => {
+    const size = getLayoutNodeSize(byId.get(id))
+    let extent = (axis === 'x' ? size.width : size.height) + options.collisionGap
+    if (visiting.has(id)) return extent
+    // 共享汇合节点的后续子树只排一次，不计入每条入分支的宽度。
+    if (new Set(incoming.get(id).map(edge => edge.sourceNodeId)).size > 1) return extent
+    if (spans[axis].has(id)) return spans[axis].get(id)
+    const next = new Set([...visiting, id])
+    groups.get(id).forEach(group => {
+      if (crossAxis(group) !== axis) return
+      const extents = targets(group, axis).map(child => span(child, axis, next))
+      const step = spacing(extents, axis)
+      extent = Math.max(extent, ...extents.map((childExtent, index) => childExtent + 2 * Math.abs(index - (extents.length - 1) / 2) * step))
+    })
+    spans[axis].set(id, extent)
+    return extent
+  }
+  const offsets = new Map()
+  groups.forEach(outgoing => outgoing.forEach(group => {
+    const axis = crossAxis(group)
+    const children = targets(group, axis)
+    const step = spacing(children.map(id => span(id, axis)), axis)
+    group.forEach(edge => {
+      const source = byId.get(edge.sourceNodeId)
+      const target = byId.get(edge.targetNodeId)
+      const sourceOffset = Number.isFinite(edge.startPoint?.[axis]) ? edge.startPoint[axis] - source[axis] : 0
+      const targetOffset = Number.isFinite(edge.endPoint?.[axis]) ? edge.endPoint[axis] - target[axis] : 0
+      offsets.set(edge, { axis, value: (children.indexOf(target.id) - (children.length - 1) / 2) * step + sourceOffset - targetOffset })
+    })
+  }))
+  return offsets
+}
+
+function mergeIncomingPositions(candidates) {
+  const position = {}
+  for (const axis of ['x', 'y']) {
+    const average = candidates.reduce((sum, candidate) => sum + candidate[axis], 0) / candidates.length
+    const lower = Math.max(-Infinity, ...candidates.filter(candidate => candidate.direction[axis] > 0).map(candidate => candidate[axis]))
+    const upper = Math.min(Infinity, ...candidates.filter(candidate => candidate.direction[axis] < 0).map(candidate => candidate[axis]))
+    position[axis] = lower <= upper ? Math.max(lower, Math.min(upper, average)) : average
+  }
+  return position
 }
 
 function compactGridPosition(index, origin, columns, horizontalGap, verticalGap) {
@@ -253,38 +312,155 @@ function clearEdgeGeometry(edge) {
   if (edge.text && typeof edge.text === 'object') edge.text = edge.text.value || ''
 }
 
+function layoutAnchorOffset(node, direction, point) {
+  if (point && Number.isFinite(point.x) && Number.isFinite(point.y) &&
+    (Math.abs(point.x - node.x) > 1 || Math.abs(point.y - node.y) > 1)) {
+    return { x: point.x - node.x, y: point.y - node.y }
+  }
+  const size = getLayoutNodeSize(node)
+  const vector = DIRECTION_VECTOR[direction]
+  return { x: vector.x * size.width / 2, y: vector.y * size.height / 2 }
+}
+
+function orthogonalRoute(start, end, axis, lane) {
+  const points = [start, { ...start, [axis]: lane }, { ...end, [axis]: lane }, end]
+  const result = []
+  points.forEach(point => {
+    const last = result.at(-1)
+    if (last && last.x === point.x && last.y === point.y) return
+    const previous = result.at(-2)
+    if (previous && (previous.x === last.x && last.x === point.x || previous.y === last.y && last.y === point.y)) result.pop()
+    result.push(point)
+  })
+  return result
+}
+
+function routeCrossesNode(points, node) {
+  const size = getLayoutNodeSize(node)
+  const left = node.x - size.width / 2, right = node.x + size.width / 2
+  const top = node.y - size.height / 2, bottom = node.y + size.height / 2
+  return points.slice(1).some((point, index) => {
+    const previous = points[index]
+    return previous.x === point.x
+      ? point.x > left && point.x < right && Math.max(previous.y, point.y) > top && Math.min(previous.y, point.y) < bottom
+      : point.y > top && point.y < bottom && Math.max(previous.x, point.x) > left && Math.min(previous.x, point.x) < right
+  })
+}
+
+function routeLayoutEdges(nodes, edges, byId, anchors, options) {
+  const groups = new Map()
+  edges.forEach(edge => {
+    const anchor = anchors.get(edge)
+    // 直线、弧线及混合方向锚点继续使用各自的路由器。
+    if (edge.type !== 'polyline' || OPPOSITE_DIRECTION[anchor.sourceDirection] !== anchor.targetDirection) return
+    const key = JSON.stringify([edge.sourceNodeId, edge.sourceAnchorId || anchor.sourceDirection])
+    if (!groups.has(key)) groups.set(key, [])
+    groups.get(key).push(edge)
+  })
+  const endpoint = (edge, role) => {
+    const node = byId.get(role === 'source' ? edge.sourceNodeId : edge.targetNodeId)
+    const offset = anchors.get(edge)[role]
+    return { x: node.x + offset.x, y: node.y + offset.y }
+  }
+  const crossesOtherNode = (edge, points) => nodes.some(node =>
+    node.id !== edge.sourceNodeId && node.id !== edge.targetNodeId && routeCrossesNode(points, node))
+  const routes = new Map()
+  groups.forEach(group => {
+    const direction = DIRECTION_VECTOR[anchors.get(group[0]).sourceDirection]
+    const axis = direction.x ? 'x' : 'y'
+    const crossAxis = axis === 'x' ? 'y' : 'x'
+    const sign = direction[axis]
+    const lower = Math.max(...group.map(edge => endpoint(edge, 'source')[axis] * sign)) + LAYOUT_GRID_SIZE
+    const upper = Math.min(...group.map(edge => endpoint(edge, 'target')[axis] * sign)) - LAYOUT_GRID_SIZE
+    // 主干使用双倍网格间距，两侧主干的中点仍能精确落在节点网格上。
+    const step = LAYOUT_GRID_SIZE * 2
+    const projectedLane = Math.floor(upper / step) * step
+    if (projectedLane < lower) return
+    const lane = projectedLane * sign
+    const bent = group.some(edge => endpoint(edge, 'source')[crossAxis] !== endpoint(edge, 'target')[crossAxis])
+    if (group.some(edge => crossesOtherNode(edge, orthogonalRoute(endpoint(edge, 'source'), endpoint(edge, 'target'), axis, lane)))) return
+    group.forEach(edge => routes.set(edge, { axis, sign, lane, bent }))
+  })
+
+  nodes.forEach(node => {
+    const incoming = edges.filter(edge => edge.targetNodeId === node.id)
+    const outgoing = edges.filter(edge => edge.sourceNodeId === node.id)
+    if (!incoming.length || !outgoing.length) return
+    const connected = [...incoming, ...outgoing].map(edge => routes.get(edge))
+    const reference = connected[0]
+    if (!reference || connected.some(route => !route || route.axis !== reference.axis || route.sign !== reference.sign)) return
+    if (!incoming.some(edge => routes.get(edge).bent) || !outgoing.some(edge => routes.get(edge).bent)) return
+    const { axis, sign } = reference
+    const before = Math.max(...incoming.map(edge => routes.get(edge).lane * sign))
+    const after = Math.min(...outgoing.map(edge => routes.get(edge).lane * sign))
+    const size = getLayoutNodeSize(node)
+    if (after - before < (axis === 'x' ? size.width : size.height) + LAYOUT_GRID_SIZE * 2) return
+    const candidate = { x: node.x, y: node.y, [axis]: (before + after) / 2 * sign }
+    const others = nodes.filter(other => other.id !== node.id).map(other => ({ node: other, x: other.x, y: other.y }))
+    if (!overlapsPlacedNode(candidate, node, others, options.collisionGap)) node[axis] = candidate[axis]
+  })
+
+  groups.forEach(group => {
+    const route = routes.get(group[0])
+    if (!route) return
+    const paths = group.map(edge => orthogonalRoute(endpoint(edge, 'source'), endpoint(edge, 'target'), route.axis, route.lane))
+    if (group.some((edge, index) => crossesOtherNode(edge, paths[index]))) return
+    group.forEach((edge, index) => {
+      edge.pointsList = paths[index]
+      edge.startPoint = paths[index][0]
+      edge.endPoint = paths[index].at(-1)
+    })
+  })
+}
+
 export function layoutGraphByAnchors(graph, layoutOptions = {}) {
   const result = cloneGraphData(graph)
   const options = { ...DEFAULT_LAYOUT_OPTIONS, ...layoutOptions }
   const businessNodes = (result.nodes || []).filter(node => node.type !== 'dynamic-group' && !(node.properties && node.properties.isGroup))
   const byId = new Map(businessNodes.map(node => [node.id, node]))
-  const originalPositions = new Map(businessNodes.map(node => [node.id, { x: node.x, y: node.y }]))
   const edges = (result.edges || []).filter(edge => byId.has(edge.sourceNodeId) && byId.has(edge.targetNodeId))
   const edgeDirections = new Map(edges.map(edge => [
     edge,
     resolveEdgeDirections(edge, byId.get(edge.sourceNodeId), byId.get(edge.targetNodeId))
   ]))
+  const anchors = new Map(edges.map(edge => {
+    const direction = edgeDirections.get(edge)
+    const sourceDirection = direction.sourceDirection || (direction.x ? direction.x > 0 ? 'right' : 'left' : direction.y > 0 ? 'bottom' : 'top')
+    const targetDirection = direction.targetDirection || OPPOSITE_DIRECTION[sourceDirection]
+    return [edge, {
+      sourceDirection,
+      targetDirection,
+      source: layoutAnchorOffset(byId.get(edge.sourceNodeId), sourceDirection, edge.startPoint),
+      target: layoutAnchorOffset(byId.get(edge.targetNodeId), targetDirection, edge.endPoint),
+    }]
+  }))
   const incoming = new Map(businessNodes.map(node => [node.id, []]))
   edges.forEach(edge => incoming.get(edge.targetNodeId).push(edge))
+  const offsets = branchOffsets(businessNodes, edges, byId, edgeDirections, incoming, options)
   const positions = new Map()
   const placed = []
-  const rootOrigin = businessNodes.reduce((origin, node) => ({
+  const roots = businessNodes.filter(node => !incoming.get(node.id).length)
+  const rootOrigin = (roots.length ? roots : businessNodes).reduce((origin, node) => ({
     x: Math.min(origin.x, node.x),
     y: Math.min(origin.y, node.y),
   }), { x: Number.POSITIVE_INFINITY, y: Number.POSITIVE_INFINITY })
   let rootIndex = 0
 
   getStableTopologicalOrder(businessNodes, edges).forEach(node => {
-    const primaryEdge = findNearestIncomingEdge(node, incoming.get(node.id), originalPositions)
-    const source = primaryEdge ? byId.get(primaryEdge.sourceNodeId) : null
-    const sourcePosition = source ? positions.get(source.id) : null
-    const direction = primaryEdge ? edgeDirections.get(primaryEdge) : null
-    const hasPrimaryPosition = Boolean(sourcePosition && direction)
-    const base = hasPrimaryPosition
-      ? {
-          x: sourcePosition.x + direction.x * options.horizontalGap,
-          y: sourcePosition.y + direction.y * options.verticalGap
-        }
+    const candidates = incoming.get(node.id).filter(edge => positions.has(edge.sourceNodeId)).map(edge => {
+      const source = positions.get(edge.sourceNodeId)
+      const direction = edgeDirections.get(edge)
+      const offset = offsets.get(edge)
+      const position = {
+        x: source.x + direction.x * options.horizontalGap,
+        y: source.y + direction.y * options.verticalGap,
+        direction,
+      }
+      position[offset.axis] += offset.value
+      return position
+    })
+    const base = candidates.length
+      ? mergeIncomingPositions(candidates)
       : compactGridPosition(
           rootIndex++,
           rootOrigin,
@@ -292,7 +468,7 @@ export function layoutGraphByAnchors(graph, layoutOptions = {}) {
           options.horizontalGap,
           options.verticalGap
         )
-    const layoutDirection = hasPrimaryPosition ? direction : { x: 0, y: 0 }
+    const layoutDirection = candidates[0]?.direction || { x: 0, y: 0 }
     const position = findNonOverlappingPosition(base, node, placed, layoutDirection, options)
     node.x = position.x
     node.y = position.y
@@ -300,8 +476,9 @@ export function layoutGraphByAnchors(graph, layoutOptions = {}) {
     placed.push({ node, ...position })
   })
 
-  refreshDynamicGroupBounds(result.nodes || [])
   ;(result.edges || []).forEach(clearEdgeGeometry)
+  routeLayoutEdges(businessNodes, edges, byId, anchors, options)
+  refreshDynamicGroupBounds(result.nodes || [])
   return result
 }
 

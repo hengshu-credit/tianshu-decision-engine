@@ -158,15 +158,36 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
 
     public IPage<RuleListRecordLog> pageLogs(Long listId, int pageNum, int pageSize, Long recordId,
                                              String itemType, String itemContent) {
+        return pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent, null, null, null, null);
+    }
+
+    public IPage<RuleListRecordLog> pageLogs(Long listId, int pageNum, int pageSize, Long recordId,
+                                             String itemType, String itemContent, String operation,
+                                             String keyword, LocalDateTime startTime, LocalDateTime endTime) {
+        if (startTime != null && endTime != null && startTime.isAfter(endTime)) {
+            throw new IllegalArgumentException("开始时间不能晚于结束时间");
+        }
         LambdaQueryWrapper<RuleListRecordLog> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(RuleListRecordLog::getListId, listId);
         if (recordId != null) {
             wrapper.eq(RuleListRecordLog::getRecordId, recordId);
         }
-        if (hasText(itemType) && hasText(itemContent)) {
+        if (hasText(itemType) && !"ANY".equalsIgnoreCase(itemType)) {
             wrapper.eq(RuleListRecordLog::getItemType, normalizeItemType(itemType));
+        }
+        if (hasText(itemContent)) {
             wrapper.eq(RuleListRecordLog::getItemContent, itemContent);
         }
+        if (hasText(operation)) {
+            wrapper.eq(RuleListRecordLog::getOperation, normalizeOperation(operation));
+        }
+        if (hasText(keyword)) {
+            wrapper.and(w -> w.like(RuleListRecordLog::getItemContent, keyword)
+                    .or().like(RuleListRecordLog::getReason, keyword)
+                    .or().like(RuleListRecordLog::getRemark, keyword));
+        }
+        wrapper.ge(startTime != null, RuleListRecordLog::getCreateTime, startTime);
+        wrapper.le(endTime != null, RuleListRecordLog::getCreateTime, endTime);
         wrapper.orderByDesc(RuleListRecordLog::getCreateTime);
         IPage<RuleListRecordLog> page = logMapper.selectPage(new Page<>(pageNum, pageSize), wrapper);
         fillLogChangeContent(page.getRecords());

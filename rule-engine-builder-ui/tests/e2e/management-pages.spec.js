@@ -71,8 +71,8 @@ function visibleFilterArea(page) {
 async function projectCodeInput(page, pageCase) {
   if (pageCase.projectSelectIndex != null) {
     return visibleFilterArea(page)
-      .locator('.el-select input:visible')
-      .nth(pageCase.projectSelectIndex)
+      .locator('.remote-filter-input input:visible')
+      .first()
   }
   return page
     .locator('.el-form-item')

@@ -1355,6 +1355,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `concurrent_wait_timeout_ms` INT     NOT NULL DEFAULT 0      COMMENT '等待并发许可的毫秒数',
   `token_refresh_ahead_seconds` INT    NOT NULL DEFAULT 60     COMMENT 'Token提前刷新秒数',
   `token_refresh_on_unauthorized` TINYINT NOT NULL DEFAULT 1  COMMENT '401或403是否强制刷新Token',
+  `token_failure_condition` JSON DEFAULT NULL COMMENT 'Token鉴权失败条件；空值按HTTP 401或403判断',
   `token_log_enabled`    TINYINT      NOT NULL DEFAULT 1      COMMENT '是否记录Token动作日志',
   `retry_count`          INT          NOT NULL DEFAULT 0      COMMENT '重试次数',
   `retry_interval_ms`    INT          NOT NULL DEFAULT 200    COMMENT '重试间隔毫秒',

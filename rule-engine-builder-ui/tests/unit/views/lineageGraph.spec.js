@@ -72,6 +72,30 @@ function sharedOutputGraph() {
 afterEach(() => vi.clearAllMocks())
 
 describe('LineageGraph', () => {
+  test('项目直达变量的跨层边避开外数源和 API，最佳布局保留全部依赖', async () => {
+    const wrapper = mountPage()
+    const data = graphResponse()
+    data.nodes = data.nodes.slice(0, 3)
+    data.nodes.push({ id: 'PROJECT:5', type: 'PROJECT', refId: 5, code: 'project' })
+    data.edges = data.edges.slice(0, 2)
+    data.edges.push({ from: 'PROJECT:5', to: 'DATASOURCE:8', label: '项目包含' }, { from: 'PROJECT:5', to: 'VARIABLE:1', label: '项目包含' })
+    wrapper.vm.query.nodeId = 1
+    lineageApi.getLineageGraph.mockResolvedValueOnce({ data })
+    await wrapper.vm.loadGraph()
+    const positions = wrapper.vm.mindMapLayout.positions
+    const shortcut = wrapper.vm.edgeLines.find(edge => edge.fromId === 'PROJECT:5' && edge.toId === 'CURRENT')
+    expect(positions['DATASOURCE:8'].top).toBe(positions['API:7'].top)
+    expect(positions['PROJECT:5'].top).toBe(positions.CURRENT.top)
+    expect(positions['API:7'].top).not.toBe(positions.CURRENT.top)
+    expect(shortcut.path.match(/ C /g).length).toBeGreaterThan(1)
+    expect(wrapper.vm.edgeLines).toHaveLength(4)
+    expect(wrapper.vm.mindMapLayout.width).toBeLessThan(1200)
+    wrapper.vm.positionOverrides = { CURRENT: { left: 0, top: 0 } }
+    wrapper.vm.resetToBestLayout()
+    expect(wrapper.vm.mindMapLayout.positions).toEqual(positions)
+    wrapper.unmount()
+  })
+
   test.each(['UPSTREAM', 'DOWNSTREAM'])('%s 对象字段按父子关系向外逐级展开，收起后可恢复', async direction => {
     const wrapper = mountPage()
     const startNode = { id: 'RULE:1', refId: 1, type: 'RULE', code: 'rule' }

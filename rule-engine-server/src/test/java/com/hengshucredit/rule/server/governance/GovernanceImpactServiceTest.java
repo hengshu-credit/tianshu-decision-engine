@@ -6,8 +6,25 @@ import org.junit.Test;
 
 import java.util.List;
 import java.util.Map;
+import java.util.LinkedHashMap;
 
 public class GovernanceImpactServiceTest {
+
+    @Test
+    public void deletingNestedObjectDoesNotTreatItsOwnFieldsAsConsumers() {
+        GovernanceImpactService service = new GovernanceImpactService(lineage(List.of(
+                objectField(8L, 4L), objectField(9L, 4L))));
+        Assert.assertTrue(service.analyze("DATA_OBJECT", 4L, "DELETE",
+                ResourceSnapshot.ofJson("{\"id\":4,\"fields\":[{\"id\":8},{\"id\":9,\"parentFieldId\":8}]}")).isEmpty());
+    }
+
+    @Test
+    public void anotherObjectsFieldRemainsAnExternalConsumer() {
+        GovernanceImpactService service = new GovernanceImpactService(lineage(List.of(
+                objectField(8L, 4L), objectField(9L, 5L))));
+        Assert.assertFalse(service.analyze("DATA_OBJECT", 4L, "DELETE",
+                ResourceSnapshot.ofJson("{\"id\":4,\"fields\":[{\"id\":8}]}")).isEmpty());
+    }
 
     @Test
     public void disableIsBlockedWhenEffectiveDownstreamExists() {
@@ -90,7 +107,13 @@ public class GovernanceImpactServiceTest {
 
     private Map<String, Object> node(
             String type, Long id, String label) {
-        return Map.of("type", type, "id", id,
+        return Map.of("type", type, "id", type + ":" + id, "refId", id,
                 "label", label, "code", label);
+    }
+
+    private Map<String, Object> objectField(Long fieldId, Long objectId) {
+        Map<String, Object> node = new LinkedHashMap<>(node("DATA_FIELD", fieldId, "字段" + fieldId));
+        node.put("objectNodeId", "DATA_OBJECT:" + objectId);
+        return node;
     }
 }

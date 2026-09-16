@@ -792,6 +792,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import { listProjects } from '@/api/project'
@@ -897,7 +898,7 @@ export default {
     GroupActionForm,
     TraceTree,
   },
-  mixins: [varPickerMixin],
+  mixins: [varPickerMixin, workspaceTabTitleMixin(vm => vm.form.experimentName)],
   computed: {
     experimentId() {
       return this.$route.params.experimentId

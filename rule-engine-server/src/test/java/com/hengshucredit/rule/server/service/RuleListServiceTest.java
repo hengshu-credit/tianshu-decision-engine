@@ -139,6 +139,51 @@ public class RuleListServiceTest {
     }
 
     @Test
+    public void pageLogsFiltersItemTypeWithoutRequiringContent() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeLogMapper logMapper = new FakeLogMapper();
+        setField(service, "logMapper", logMapper.proxy());
+
+        service.pageLogs(9L, 1, 10, null, "MOBILE", null);
+
+        String sql = logMapper.selectedWrapper.getSqlSegment();
+        assertTrue(sql, sql.contains("itemType ="));
+        assertTrue(logMapper.selectedWrapper.getParamNameValuePairs().containsValue("MOBILE"));
+    }
+
+    @Test
+    public void pageLogsCombinesKeywordOperationTimeAndExactTraceBeforePaging() throws Exception {
+        RuleListService service = new RuleListService();
+        FakeLogMapper logMapper = new FakeLogMapper();
+        setField(service, "logMapper", logMapper.proxy());
+        LocalDateTime start = LocalDateTime.of(2026, 8, 1, 0, 0);
+        LocalDateTime end = LocalDateTime.of(2026, 8, 31, 23, 59, 59);
+
+        service.pageLogs(9L, 2, 30, 77L, "MOBILE", "13800138000", "update", "核验", start, end);
+
+        assertEquals(2L, logMapper.selectedPage.getCurrent());
+        assertEquals(30L, logMapper.selectedPage.getSize());
+        String sql = logMapper.selectedWrapper.getSqlSegment();
+        assertTrue(sql, sql.contains("itemType ="));
+        assertTrue(sql, sql.contains("itemContent ="));
+        assertTrue(sql, sql.contains("operation ="));
+        assertTrue(sql, sql.contains("AND (itemContent LIKE"));
+        assertTrue(sql, sql.contains("OR reason LIKE"));
+        assertTrue(sql, sql.contains("OR remark LIKE"));
+        assertTrue(sql, sql.contains("createTime >="));
+        assertTrue(sql, sql.contains("createTime <="));
+        for (Object value : new Object[]{9L, 77L, "MOBILE", "13800138000", "UPDATE", "%核验%", start, end}) {
+            assertTrue(String.valueOf(value), logMapper.selectedWrapper.getParamNameValuePairs().containsValue(value));
+        }
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void pageLogsRejectsReversedTimeRange() {
+        new RuleListService().pageLogs(9L, 1, 10, null, null, null, null, null,
+                LocalDateTime.of(2026, 8, 2, 0, 0), LocalDateTime.of(2026, 8, 1, 0, 0));
+    }
+
+    @Test
     public void updateRecordChangesContentByIdWithoutInsert() throws Exception {
         RuleListService service = new RuleListService();
         FakeRecordMapper recordMapper = new FakeRecordMapper();

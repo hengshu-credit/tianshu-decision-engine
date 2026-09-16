@@ -80,7 +80,7 @@ public class GovernanceBatchImportService {
         }
         if (parsed == null || parsed.getConstants() == null
                 || parsed.getConstants().isEmpty()) {
-            return failure("未能从 JSON 中解析出任何常量，请确保顶层包含基本类型键值对");
+            return failure("未能从 JSON 中解析出任何常量，请提供非空对象，值可为基本类型、数组或对象");
         }
         return importConstants(projectId, scope, parsed, actor);
     }
@@ -144,6 +144,7 @@ public class GovernanceBatchImportService {
         Long effectiveProjectId = effectiveProjectId(
                 normalizedScope, projectId);
         List<ConstantDraft> pending = new ArrayList<>();
+        Set<String> importedCodes = new LinkedHashSet<>();
         int order = 0;
         for (ParsedConstant constant : parsed.getConstants()) {
             if (constant.getConstCode() == null
@@ -157,6 +158,12 @@ public class GovernanceBatchImportService {
             RuleVariable existing = findVariable(
                     effectiveProjectId, normalizedScope,
                     constant.getConstCode());
+            if (!importedCodes.add(constant.getConstCode())) {
+                return failure("同一批次存在重复常量编码：" + constant.getConstCode());
+            }
+            if (existing != null && !"CONSTANT".equals(existing.getVarSource())) {
+                return failure("常量编码 [" + constant.getConstCode() + "] 已被普通变量占用，请调整编码后导入");
+            }
             Map<String, Object> snapshot = existing == null
                     ? new LinkedHashMap<>()
                     : loadEffective(GovernanceResourceTypes.VARIABLE,
@@ -475,7 +482,9 @@ public class GovernanceBatchImportService {
         if (parsedObjects != null) {
             for (ParsedObject object : parsedObjects) {
                 if (object != null) {
-                    distinct.putIfAbsent(object.getObjectCode(), object);
+                    if (distinct.putIfAbsent(object.getObjectCode(), object) != null) {
+                        throw new IllegalArgumentException("同一批次存在重复数据对象编码：" + object.getObjectCode());
+                    }
                 }
             }
         }

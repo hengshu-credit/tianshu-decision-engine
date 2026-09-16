@@ -90,6 +90,10 @@ public class GovernanceImpactService {
                 .map(Map.class::cast)
                 .filter(node -> !sameNode(
                         lineageType, lineageId, node))
+                // 整体下线/删除对象时，其内部字段随对象处理，不是外部消费者。
+                .filter(node -> !(GovernanceResourceTypes.DATA_OBJECT.equals(resourceType)
+                        && "DATA_FIELD".equals(node.get("type"))
+                        && ("DATA_OBJECT:" + resourceId).equals(node.get("objectNodeId"))))
                 .limit(5)
                 .map(this::nodeLabel)
                 .toList();
@@ -107,7 +111,7 @@ public class GovernanceImpactService {
                              Map<?, ?> node) {
         return type.equalsIgnoreCase(
                 String.valueOf(node.get("type")))
-                && id.equals(longValue(node.get("id")));
+                && id.equals(longValue(node.containsKey("refId") ? node.get("refId") : node.get("id")));
     }
 
     private String nodeLabel(Map<?, ?> node) {

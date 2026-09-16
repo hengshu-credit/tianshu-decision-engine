@@ -16,6 +16,7 @@ import { createChartInstance } from '@/charts/dashboardCharts'
 
 export default {
   name: 'DashboardChart',
+  emits: ['region-click'],
   props: {
     option: { type: Object, default: null },
     empty: { type: Boolean, default: false },
@@ -53,8 +54,14 @@ export default {
   methods: {
     renderChart() {
       if (this.empty || !this.option || !this.$refs.chart) return
-      if (!this.chart) this.chart = createChartInstance(this.$refs.chart)
+      if (!this.chart) {
+        this.chart = createChartInstance(this.$refs.chart)
+        this.chart.on('click', this.handleChartClick)
+      }
       this.chart.setOption(this.option, true)
+    },
+    handleChartClick(params) {
+      if (params.componentType === 'geo') this.$emit('region-click', params.name)
     },
     handleThemeChange() {
       this.renderChart()

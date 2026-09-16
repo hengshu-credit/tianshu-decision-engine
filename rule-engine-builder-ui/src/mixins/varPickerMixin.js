@@ -16,6 +16,7 @@
  */
 
 import { getDefinition } from '@/api/definition'
+import { syncWorkspaceTabTitle } from '@/mixins/workspaceTabTitleMixin'
 import { listVariablesByProject, getVariableOptions } from '@/api/variable'
 import { getVariableTree, getDataObjectFieldOptions } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
@@ -171,11 +172,16 @@ export default {
      * 根据定义 ID 拉取项目下变量树、常量、对象字段与函数列表，并组装 projectRefs。
      */
     async loadProjectVars(definitionId) {
+      const route = this.$route
       this.loadingVars = true
       this.varsLoadError = false
       try {
         const defRes = await getDefinition(definitionId)
         const def = defRes && defRes.data ? defRes.data : defRes
+        if (/^\/designer\/(?!expression\/)/.test(route?.path || '') &&
+            String(route.params.id) === String(definitionId) && def?.ruleName) {
+          syncWorkspaceTabTitle(this.$store, route, def.ruleName)
+        }
         // projectId == null 表示规则数据不完整；projectId = 0 表示 GLOBAL 规则，需继续调用 API
         if (!def || def.projectId == null) {
           this.loadingVars = false

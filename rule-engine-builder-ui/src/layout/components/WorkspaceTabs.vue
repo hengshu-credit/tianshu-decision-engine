@@ -2,23 +2,30 @@
   <nav class="workspace-tabs" aria-label="工作区页签">
     <div ref="scroll" class="workspace-tabs__scroll">
       <div
-        v-for="tab in tabs"
+        v-for="tab in displayTabs"
         :key="tab.fullPath"
         class="workspace-tab"
         :class="{ 'is-active': tab.fullPath === activePath }"
         :data-tab="tab.fullPath"
         @contextmenu.prevent.stop="openContextMenu($event, tab.fullPath)"
       >
-        <button
-          type="button"
-          class="workspace-tab__main"
-          :data-path="tab.fullPath"
-          :title="tab.title"
-          @click="$emit('activate', tab.fullPath)"
+        <el-tooltip
+          :content="tab.title"
+          placement="bottom"
+          :show-after="300"
+          popper-class="workspace-tab-tooltip"
         >
-          <span class="workspace-tab__dot" aria-hidden="true" />
-          <span class="workspace-tab__title">{{ tab.title }}</span>
-        </button>
+          <button
+            type="button"
+            class="workspace-tab__main"
+            :data-path="tab.fullPath"
+            :aria-label="tab.title"
+            @click="$emit('activate', tab.fullPath)"
+          >
+            <span class="workspace-tab__dot" aria-hidden="true" />
+            <span class="workspace-tab__title">{{ tab.title }}</span>
+          </button>
+        </el-tooltip>
         <button
           type="button"
           class="workspace-tab__close"
@@ -63,6 +70,12 @@
 <script>
 import { Close as ElIconClose } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
+const TAB_TITLE_LABELS = {
+  '外数数据源详情': '外数',
+  '外数 API 详情': 'API',
+  '数据库数据源详情': '数据库',
+  '配置表达式': '表达式',
+}
 export default {
   components: {
     ElIconClose,
@@ -99,6 +112,17 @@ export default {
         { key: 'all', label: '关闭全部', icon: 'CircleClose' },
       ],
     }
+  },
+  computed: {
+    displayTabs() {
+      return this.tabs.map(tab => {
+        const title = TAB_TITLE_LABELS[tab.title] || tab.title.replace(/(?:管理|详情|设计器|编辑器)$/, '').trim()
+        return {
+          ...tab,
+          title: tab.detailTitle ? `${title} · ${tab.detailTitle}` : title,
+        }
+      })
+    },
   },
   watch: {
     activePath() {
@@ -197,9 +221,10 @@ export default {
 .workspace-tab {
   position: relative;
   display: flex;
-  flex: none;
+  flex: 0 0 160px;
   height: 34px;
-  max-width: 200px;
+  width: 160px;
+  box-sizing: border-box;
   align-items: center;
   color: var(--tianshu-text-secondary);
   background: transparent;
@@ -241,9 +266,10 @@ export default {
 }
 .workspace-tab__main {
   display: flex;
+  flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 0 4px 0 12px;
+  padding: 0 28px;
   align-items: center;
   color: inherit;
   font: inherit;
@@ -257,27 +283,37 @@ export default {
   }
 }
 .workspace-tab__dot {
+  position: absolute;
+  left: 12px;
   flex: none;
   width: 6px;
   height: 6px;
-  margin-right: 8px;
   background: var(--tianshu-border, #cbd5e1);
   border-radius: 50%;
 }
 .workspace-tab__title {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   font-size: 13px;
   line-height: 20px;
+  text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+:global(.workspace-tab-tooltip) {
+  max-width: min(480px, calc(100vw - 32px));
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
 .workspace-tab__close {
+  position: absolute;
+  right: 4px;
   display: flex;
   flex: none;
   width: 24px;
   height: 24px;
   padding: 0;
-  margin-right: 4px;
   align-items: center;
   justify-content: center;
   color: var(--tianshu-text-disabled);

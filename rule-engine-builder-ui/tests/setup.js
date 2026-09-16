@@ -199,6 +199,7 @@ vi.mock('@/api/variable', () => ({
   __esModule: true
 }))
 vi.mock('@/api/dataObject', () => ({
+  validateDataObjectFieldReference: vi.fn(),
   listDataObjects: vi.fn(),
   getVariableTree: vi.fn(),
   getDataObjectFieldOptions: vi.fn(),
@@ -395,7 +396,7 @@ config.global.components.AppIcon = {
 }
 config.global.renderStubDefaultSlot = true
 const globalStubNames = [
-  'el-alert', 'el-badge', 'el-button', 'el-button-group', 'el-card',
+  'el-alert', 'el-autocomplete', 'el-badge', 'el-button', 'el-button-group', 'el-card',
   'el-checkbox', 'el-checkbox-group', 'el-col', 'el-collapse',
   'el-collapse-item', 'el-date-picker', 'el-descriptions',
   'el-descriptions-item', 'el-dialog', 'el-divider', 'el-drawer',
@@ -410,6 +411,12 @@ config.global.stubs = globalStubNames.reduce((stubs, name) => {
   stubs[name] = true
   return stubs
 }, {})
+config.global.stubs['el-autocomplete'] = {
+  name: 'ElAutocomplete',
+  props: ['modelValue', 'size'],
+  methods: { close() {} },
+  template: '<input :value="modelValue" />',
+}
 config.global.stubs['el-table-column'] = {
   name: 'ElTableColumn',
   props: ['prop', 'label'],

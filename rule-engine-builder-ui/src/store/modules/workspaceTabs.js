@@ -35,7 +35,7 @@ function uniqueTabs(tabs) {
     if (!tab || typeof tab.fullPath !== 'string' || !tab.fullPath) return
     const key = workspaceTabKey(tab)
     if (indexes.has(key)) {
-      result[indexes.get(key)] = tab
+      result[indexes.get(key)] = { ...result[indexes.get(key)], ...tab }
       return
     }
     indexes.set(key, result.length)
@@ -98,12 +98,18 @@ const mutations = {
     if (index < 0) {
       state.tabs = [...state.tabs, tab]
     } else {
-      state.tabs = state.tabs.map((item, itemIndex) => itemIndex === index ? tab : item)
+      state.tabs = state.tabs.map((item, itemIndex) => itemIndex === index ? { ...item, ...tab } : item)
     }
     state.activePath = tab.fullPath
   },
   ACTIVATE(state, fullPath) {
     if (state.tabs.some(tab => tab.fullPath === fullPath)) state.activePath = fullPath
+  },
+  UPDATE_DETAIL_TITLE(state, payload) {
+    const key = workspaceTabKey(payload)
+    state.tabs = state.tabs.map(tab => workspaceTabKey(tab) === key
+      ? { ...tab, detailTitle: payload.detailTitle }
+      : tab)
   },
   REPLACE(state, payload) {
     state.tabs = payload.tabs
@@ -140,6 +146,10 @@ const actions = {
   },
   activate({ commit, state }, fullPath) {
     commit('ACTIVATE', fullPath)
+    persist(state)
+  },
+  updateDetailTitle({ commit, state }, payload) {
+    commit('UPDATE_DETAIL_TITLE', payload)
     persist(state)
   },
   close({ commit, state }, payload) {

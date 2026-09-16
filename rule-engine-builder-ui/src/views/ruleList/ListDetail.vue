@@ -68,8 +68,8 @@
 
     <el-tabs v-model="activeTab">
       <el-tab-pane label="名单内容" name="records">
-        <div class="uiue-search-container">
-          <el-form :inline="true" size="small" @keyup.enter="handleQuery">
+        <div class="uiue-search-container uiue-filter-toolbar" data-testid="record-filter-toolbar">
+          <el-form :inline="true" size="small" @submit.prevent @keyup.enter="handleQuery">
             <el-form-item label="内容类型">
               <el-select
                 v-model="query.itemType"
@@ -102,29 +102,29 @@
               >
             </el-form-item>
             <el-form-item label="关键字">
-              <el-input
-                v-model="query.keyword"
-                clearable
-                placeholder="内容/原因/备注"
+              <remote-filter-select
+                v-model:value="query.keyword"
+                :fetch-options="fetchKeywordOptions"
+                :option-fields="['itemContent', 'reason', 'remark']"
+                allow-free-input
+                :placeholder="keywordPlaceholder(query.itemType)"
                 style="width: 180px"
               />
             </el-form-item>
-            <el-form-item>
-              <el-button type="primary" @click="handleQuery">查询</el-button>
-              <el-button @click="resetQuery">重置</el-button>
-            </el-form-item>
           </el-form>
-        </div>
-        <div class="uiue-btn-bar">
-          <div class="btn-right">
-            <el-button
-              v-permission="'field:edit'"
-              type="primary"
-              size="small"
-              :icon="ElIconPlus"
-              @click="handleCreate"
-              >新增变更</el-button
-            >
+          <div class="uiue-btn-bar">
+            <div class="btn-right">
+              <el-button size="small" type="primary" @click="handleQuery">查询</el-button>
+              <el-button size="small" @click="resetQuery">重置</el-button>
+              <el-button
+                v-permission="'field:edit'"
+                type="primary"
+                size="small"
+                :icon="ElIconPlus"
+                @click="handleCreate"
+                >新增变更</el-button
+              >
+            </div>
           </div>
         </div>
         <el-table show-overflow-tooltip
@@ -232,14 +232,44 @@
         />
       </el-tab-pane>
       <el-tab-pane label="变更日志" name="logs">
-        <div class="uiue-btn-bar log-toolbar">
-          <span v-if="traceRecord" class="trace-title"
-            >正在追踪：{{ traceRecord.itemContent }}</span
-          >
-          <el-button v-if="traceRecord" size="small" @click="clearTrace"
-            >查看全部日志</el-button
-          >
+        <div class="uiue-search-container uiue-filter-toolbar" data-testid="log-filter-toolbar">
+          <el-form :inline="true" size="small" @submit.prevent @keyup.enter="handleLogQuery">
+            <el-form-item label="内容类型">
+              <el-select v-model="logQuery.itemType" :disabled="Boolean(traceRecord)" clearable placeholder="全部" style="width: 120px">
+                <el-option v-for="opt in itemTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="执行操作">
+              <el-select v-model="logQuery.operation" clearable placeholder="全部" style="width: 100px">
+                <el-option label="新增" value="ADD" />
+                <el-option label="修改" value="UPDATE" />
+                <el-option label="删除" value="DELETE" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="关键字">
+              <remote-filter-select
+                v-model:value="logQuery.keyword"
+                :fetch-options="fetchLogKeywordOptions"
+                :option-fields="['itemContent', 'reason', 'remark']"
+                allow-free-input
+                :placeholder="keywordPlaceholder(logQuery.itemType)"
+                style="width: 180px"
+              />
+            </el-form-item>
+            <el-form-item label="操作时间">
+              <el-date-picker v-model="logTimeRange" type="datetimerange" value-format="YYYY-MM-DD HH:mm:ss"
+                range-separator="至" start-placeholder="开始时间" end-placeholder="结束时间" style="width: 340px" />
+            </el-form-item>
+          </el-form>
+          <div class="uiue-btn-bar">
+            <div class="btn-right">
+              <el-button size="small" type="primary" @click="handleLogQuery">查询</el-button>
+              <el-button size="small" @click="resetLogQuery">重置</el-button>
+              <el-button v-if="traceRecord" size="small" @click="clearTrace">查看全部日志</el-button>
+            </div>
+          </div>
         </div>
+        <div v-if="traceRecord" class="trace-title">正在追踪：{{ traceRecord.itemContent }}</div>
         <el-table show-overflow-tooltip
           :data="logs"
           border
@@ -375,6 +405,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
   Download as ElIconDownload,
@@ -390,8 +421,18 @@ import {
   listTemplateUrl,
   listExportUrl,
 } from '@/api/ruleList'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+
+function emptyRecordQuery(pageSize = 10) {
+  return { pageNum: 1, pageSize, itemType: '', status: '', keyword: '', effectiveOnly: false }
+}
+
+function emptyLogQuery(pageSize = 10) {
+  return { pageNum: 1, pageSize, itemType: '', operation: '', keyword: '' }
+}
 
 export default {
+  components: { RemoteFilterSelect },
   data() {
     return {
       listId: this.$route.params.id,
@@ -405,15 +446,9 @@ export default {
       traceRecord: null,
       total: 0,
       logTotal: 0,
-      query: {
-        pageNum: 1,
-        pageSize: 10,
-        itemType: '',
-        status: '',
-        keyword: '',
-        effectiveOnly: false,
-      },
-      logQuery: { pageNum: 1, pageSize: 10 },
+      query: emptyRecordQuery(),
+      logQuery: emptyLogQuery(),
+      logTimeRange: [],
       dialogVisible: false,
       validRange: [],
       form: this.emptyForm(),
@@ -443,6 +478,7 @@ export default {
     }
   },
   name: 'ListDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.library.listName)],
   created() {
     this.loadLibrary()
     this.loadRecords()
@@ -458,7 +494,9 @@ export default {
       this.traceRecord = null
       this.batchFeedback = null
       this.logTotal = 0
-      this.logQuery = { pageNum: 1, pageSize: this.logQuery.pageSize }
+      this.query = emptyRecordQuery(this.query.pageSize)
+      this.logQuery = emptyLogQuery(this.logQuery.pageSize)
+      this.logTimeRange = []
       this.activeTab = 'records'
       this.dialogVisible = false
       this.form = this.emptyForm()
@@ -469,6 +507,32 @@ export default {
     },
   },
   methods: {
+    keywordPlaceholder(itemType) {
+      return `${itemType ? this.itemTypeLabel(itemType) : '内容'}/原因/备注`
+    },
+    fetchKeywordOptions({ query, pageNum, pageSize }) {
+      const params = { ...this.query, keyword: query, pageNum, pageSize }
+      if (params.status === '') delete params.status
+      return listRecords(this.listId, params)
+    },
+    fetchLogKeywordOptions({ query, pageNum, pageSize }) {
+      return listRecordLogs(this.listId, this.buildLogParams({ keyword: query, pageNum, pageSize }))
+    },
+    buildLogParams(overrides = {}) {
+      const params = { ...this.logQuery, ...overrides }
+      if (this.traceRecord) {
+        params.itemType = this.traceRecord.itemType
+        params.itemContent = this.traceRecord.itemContent
+      }
+      if (this.logTimeRange && this.logTimeRange.length === 2) {
+        params.startTime = this.logTimeRange[0]
+        params.endTime = this.logTimeRange[1]
+      }
+      ;['itemType', 'operation', 'keyword'].forEach(field => {
+        if (!params[field]) delete params[field]
+      })
+      return params
+    },
     emptyForm() {
       return {
         id: null,
@@ -501,16 +565,7 @@ export default {
     async loadLogs() {
       this.logLoading = true
       try {
-        const params = { ...this.logQuery }
-        if (
-          this.traceRecord &&
-          this.traceRecord.itemType &&
-          this.traceRecord.itemContent
-        ) {
-          params.itemType = this.traceRecord.itemType
-          params.itemContent = this.traceRecord.itemContent
-        }
-        const res = await listRecordLogs(this.listId, params)
+        const res = await listRecordLogs(this.listId, this.buildLogParams())
         this.logs = (res.data && res.data.records) || []
         this.logTotal = (res.data && res.data.total) || 0
       } finally {
@@ -522,15 +577,18 @@ export default {
       this.loadRecords()
     },
     resetQuery() {
-      this.query = {
-        pageNum: 1,
-        pageSize: this.query.pageSize,
-        itemType: '',
-        status: '',
-        keyword: '',
-        effectiveOnly: false,
-      }
+      this.query = emptyRecordQuery(this.query.pageSize)
       this.loadRecords()
+    },
+    handleLogQuery() {
+      this.logQuery.pageNum = 1
+      this.loadLogs()
+    },
+    resetLogQuery() {
+      this.logQuery = emptyLogQuery(this.logQuery.pageSize)
+      if (this.traceRecord) this.logQuery.itemType = this.traceRecord.itemType
+      this.logTimeRange = []
+      this.loadLogs()
     },
     handleCreate() {
       this.batchFeedback = null
@@ -553,14 +611,12 @@ export default {
     handleTrace(row) {
       if (!row || !row.itemType || !String(row.itemContent || '').trim()) return
       this.traceRecord = row
-      this.logQuery.pageNum = 1
       this.activeTab = 'logs'
-      this.loadLogs()
+      this.resetLogQuery()
     },
     clearTrace() {
       this.traceRecord = null
-      this.logQuery.pageNum = 1
-      this.loadLogs()
+      this.resetLogQuery()
     },
     onLogPageChange(page) {
       this.logQuery.pageNum = page
@@ -677,6 +733,9 @@ export default {
 </script>
 
 <style scoped>
+.list-detail-page :deep(.uiue-filter-toolbar .el-form-item) {
+  margin-right: 16px;
+}
 .detail-header {
   display: flex;
   flex-wrap: wrap;
@@ -776,11 +835,8 @@ export default {
   font-size: 12px;
   line-height: 1.7;
 }
-.log-toolbar {
-  justify-content: flex-start;
-  gap: 12px;
-}
 .trace-title {
+  margin-bottom: 12px;
   color: var(--tianshu-text-secondary);
   font-size: 13px;
 }

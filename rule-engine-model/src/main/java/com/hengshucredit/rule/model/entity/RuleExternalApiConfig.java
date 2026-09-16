@@ -51,6 +51,7 @@ public class RuleExternalApiConfig {
     private Integer concurrentWaitTimeoutMs;
     private Integer tokenRefreshAheadSeconds;
     private Integer tokenRefreshOnUnauthorized;
+    private String tokenFailureCondition;
     private Integer tokenLogEnabled;
     private Integer retryCount;
     private Integer retryIntervalMs;

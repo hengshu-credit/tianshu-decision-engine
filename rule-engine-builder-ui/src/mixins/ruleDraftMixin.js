@@ -774,9 +774,8 @@ export default {
       this.designerValidationReport = result?.preflightReport || null
       this.designerCheckedFingerprint = result?.compileSuccess ? createDraftFingerprint(modelJson) : ''
       this.designerActionState = result?.compileSuccess && result?.preflightReport?.valid ? 'READY_TO_TEST' : 'CHECK_FAILED'
-      if (!result?.compileSuccess) this.$message.error(result?.compileMessage || '编译失败')
-      else if (!result?.preflightReport?.valid) this.$message.warning('编译成功，但发布前检查存在阻断项')
-      else this.$message.success('编译与发布前检查通过')
+      if (this.designerActionState === 'READY_TO_TEST') this.$message.success('编译与发布前检查通过')
+      else if (!this.designerValidationReport) this.$message.error(result?.compileMessage || '编译失败')
       return result
     },
     executeDesignerPreview(params, modelType) {

@@ -13,6 +13,8 @@ import {
   moveExpressionSibling,
   outdentExpressionOperation,
   removeExpressionNode,
+  removeExpressionSelection,
+  replaceExpressionOperator,
   setExpressionNode,
   wrapExpressionNode
 } from '@/components/expression/expressionTree'
@@ -20,6 +22,50 @@ import { createLiteralOperand, createOperationOperand } from '@/utils/operand'
 import { compileOperand } from '@/utils/operand'
 
 describe('expressionTree', () => {
+  test('删除嵌套空运算项时移除连接符，剩余单项回到原参数位置', () => {
+    const field = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 17, code: 'amount' }
+    const source = { kind: 'FUNCTION', functionCode: 'max', args: [createOperationOperand([
+      { operand: field }, { operator: '+', operand: null }, { operator: '*', operand: null }
+    ])] }
+    const first = removeExpressionSelection(source, ['args', 0, 'terms', 1, 'operand'])
+    expect(first.root.args[0].terms.map(term => term.operator || '')).toEqual(['', '*'])
+    expect(first.selectedPath).toEqual(['args', 0, 'terms', 1, 'operand'])
+    const second = removeExpressionSelection(first.root, first.selectedPath)
+    expect(second.root.args[0]).toEqual(field)
+    expect(second.selectedPath).toEqual(['args', 0])
+    expect(source.args[0].terms).toHaveLength(3)
+  })
+
+  test('删除首项清理悬空操作符，删除最后的空项不留下无效选择路径', () => {
+    const source = createOperationOperand([{ operand: null }, { operator: '+', operand: null }, { operator: '*', operand: null }])
+    const first = removeExpressionSelection(source, ['terms', 0, 'operand'])
+    expect(first.root.terms[0]).toEqual({ operand: null })
+    const second = removeExpressionSelection(first.root, first.selectedPath)
+    expect(second.root).toBeNull()
+    expect(second.selectedPath).toEqual([])
+    expect(removeExpressionSelection(null, []).changed).toBe(false)
+  })
+
+  test('修改操作符保留两侧内容，连续给空项输入操作符不增加空项', () => {
+    const source = createOperationOperand([{ operand: createLiteralOperand(1, 'NUMBER') }, { operator: '+', operand: null }])
+    const result = insertExpressionOperation(source, ['terms', 1, 'operand'], '*')
+    expect(result.root.terms).toEqual([{ operand: source.terms[0].operand }, { operator: '*', operand: null }])
+    const filled = setExpressionNode(result.root, result.selectedPath, createLiteralOperand(2, 'NUMBER'))
+    const replaced = replaceExpressionOperator(filled, result.selectedPath, '-')
+    expect(compileOperand(replaced.root)).toBe('(1 - 2)')
+    expect(replaceExpressionOperator(filled, ['terms', 0, 'operand'], '+').changed).toBe(false)
+  })
+
+  test('空项可缩进且在当前子项直接反缩进恢复同级结构', () => {
+    const source = createOperationOperand([{ operand: createLiteralOperand(1, 'NUMBER') }, { operator: '+', operand: null }, { operator: '*', operand: null }])
+    const grouped = indentExpressionTerm(source, ['terms', 2, 'operand'])
+    expect(grouped.changed).toBe(true)
+    expect(grouped.root.terms[1].operand.terms).toEqual([{ operand: null }, { operator: '*', operand: null }])
+    const restored = outdentExpressionOperation(grouped.root, grouped.selectedPath)
+    expect(restored.root).toEqual(source)
+    expect(restored.selectedPath).toEqual(['terms', 2, 'operand'])
+  })
+
   test('按路径替换和删除递归参数且不修改原值', () => {
     const source = { kind: 'FUNCTION', functionCode: 'max', args: [{ kind: 'LITERAL', value: '1', valueType: 'NUMBER' }, null] }
     const replaced = setExpressionNode(source, ['args', 1], { kind: 'LITERAL', value: '2', valueType: 'NUMBER' })

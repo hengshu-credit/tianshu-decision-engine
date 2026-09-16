@@ -52,7 +52,8 @@ public class ExternalConfigDefaultsTest {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
         config.setRequestMode("ASYNC");
         config.setAsyncResultMode("POLL");
-        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\"}");
+        String pollConfig = "{\"resultEndpointUrl\":\"/result/${taskId}\",\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\"}";
+        config.setAsyncPollConfig(pollConfig);
         config.setAsyncCallbackConfig("");
         config.setAsyncCallbackUrl("  ");
         config.setAsyncResultPath("body.data");
@@ -61,7 +62,7 @@ public class ExternalConfigDefaultsTest {
 
         assertEquals("ASYNC", config.getRequestMode());
         assertEquals("POLL", config.getAsyncResultMode());
-        assertEquals("{\"resultEndpointUrl\":\"/result/${taskId}\"}", config.getAsyncPollConfig());
+        assertEquals(pollConfig, config.getAsyncPollConfig());
         assertNull(config.getAsyncCallbackConfig());
         assertNull(config.getAsyncCallbackUrl());
         assertEquals("body.data", config.getAsyncResultPath());

@@ -309,7 +309,7 @@ describe('flowDesignerGraph', () => {
     expect(end.y).toBe(middle.y)
   })
 
-  test('多入边节点与美化前距离最近的直接上游平齐', () => {
+  test('多入边节点置于所有前驱之后并保持居中', () => {
     const graph = {
       nodes: [
         { id: 'far', type: 'script-task', x: 100, y: 100, properties: {} },
@@ -323,10 +323,11 @@ describe('flowDesignerGraph', () => {
     }
 
     const result = layoutGraphByAnchors(graph)
+    const far = result.nodes.find(node => node.id === 'far')
     const near = result.nodes.find(node => node.id === 'near')
     const target = result.nodes.find(node => node.id === 'target')
 
-    expect(target.y).toBe(near.y)
+    expect(target.y).toBe((far.y + near.y) / 2)
     expect(target.x).toBeGreaterThan(near.x)
   })
 
@@ -349,7 +350,7 @@ describe('flowDesignerGraph', () => {
 
     expect(branchA.x).toBeGreaterThan(result.nodes[0].x)
     expect(branchB.x).toBe(branchA.x)
-    expect(branchA.y).toBe(result.nodes[0].y)
+    expect((branchA.y + branchB.y) / 2).toBe(result.nodes[0].y)
     expect(branchB.y).not.toBe(branchA.y)
   })
 
@@ -372,7 +373,7 @@ describe('flowDesignerGraph', () => {
 
     expect(branchA.y).toBeGreaterThan(result.nodes[0].y)
     expect(branchB.y).toBe(branchA.y)
-    expect(branchA.x).toBe(result.nodes[0].x)
+    expect((branchA.x + branchB.x) / 2).toBe(result.nodes[0].x)
     expect(branchB.x).not.toBe(branchA.x)
   })
 
@@ -439,5 +440,106 @@ describe('flowDesignerGraph', () => {
     expect(positions.size).toBe(6)
     expect(Math.max(...xs) - Math.min(...xs)).toBeLessThanOrEqual(480)
     expect(Math.max(...ys) - Math.min(...ys)).toBeLessThanOrEqual(280)
+  })
+
+  test.each([
+    ['right', 1, 3, 'x', 'y', 1], ['left', 3, 1, 'x', 'y', -1],
+    ['bottom', 2, 0, 'y', 'x', 1], ['top', 0, 2, 'y', 'x', -1]
+  ])('%s 同锚点的四个分支均匀居中，汇合后回到中线，重复美化不漂移', (_name, sourceAnchor, targetAnchor, axis, crossAxis, sign) => {
+    const nodes = ['root', 'a', 'b', 'c', 'd', 'join', 'end'].map((id, index) => ({
+      id, type: id === 'join' ? 'join-gateway' : 'script-task', x: 300 + index * 20, y: 300 + index * 10
+    }))
+    const connect = (source, target) => ({ id: `${source}-${target}`, sourceNodeId: source, targetNodeId: target, sourceAnchorId: `${source}_${sourceAnchor}`, targetAnchorId: `${target}_${targetAnchor}` })
+    const graph = { nodes, edges: ['a', 'b', 'c', 'd'].flatMap(id => [connect('root', id), connect(id, 'join')]).concat(connect('join', 'end')) }
+    const layout = layoutGraphByAnchors(graph)
+    const byId = Object.fromEntries(layout.nodes.map(node => [node.id, node]))
+    const branches = ['a', 'b', 'c', 'd'].map(id => byId[id]).sort((a, b) => a[crossAxis] - b[crossAxis])
+    expect(branches.reduce((sum, node) => sum + node[crossAxis], 0) / 4).toBe(byId.root[crossAxis])
+    const spacing = branches[1][crossAxis] - branches[0][crossAxis]
+    expect(spacing).toBeGreaterThan(0)
+    branches.slice(1).forEach((node, index) => expect(node[crossAxis] - branches[index][crossAxis]).toBe(spacing))
+    branches.forEach(node => {
+      expect((node[axis] - byId.root[axis]) * sign).toBeGreaterThan(0)
+      expect((byId.join[axis] - node[axis]) * sign).toBeGreaterThan(0)
+    })
+    expect(byId.join[crossAxis]).toBe(byId.root[crossAxis])
+    expect(byId.end[crossAxis]).toBe(byId.root[crossAxis])
+    expect(layoutGraphByAnchors(layout)).toEqual(layout)
+  })
+
+  test('嵌套分支按子树宽度留白，保留引用且不重叠', () => {
+    const nodes = ['root', 'a', 'b', 'a1', 'a2', 'a3', 'b1', 'b2', 'b3'].map((id, index) => ({
+      id, type: 'script-task', x: 100 + index, y: 100, properties: { actionData: [{ _varId: 7 }] }
+    }))
+    const edges = [['root', 'a'], ['root', 'b'], ...['a', 'b'].flatMap(id => [1, 2, 3].map(i => [id, id + i]))]
+      .map(([source, target]) => ({ sourceNodeId: source, targetNodeId: target, sourceAnchorId: source + '_1', targetAnchorId: target + '_3' }))
+    const graph = { nodes, edges }
+    const snapshot = JSON.stringify(graph)
+    const result = layoutGraphByAnchors(graph)
+    const byId = Object.fromEntries(result.nodes.map(node => [node.id, node]))
+    expect((byId.a.y + byId.b.y) / 2).toBe(byId.root.y)
+    for (const id of ['a', 'b']) expect((byId[id + '1'].y + byId[id + '3'].y) / 2).toBe(byId[id].y)
+    result.nodes.forEach((node, index) => result.nodes.slice(index + 1).forEach(other => {
+      expect(Math.abs(node.x - other.x) >= 196 || Math.abs(node.y - other.y) >= 78).toBe(true)
+    }))
+    expect(JSON.stringify(graph)).toBe(snapshot)
+    expect(result.nodes[1].properties).toEqual(nodes[1].properties)
+  })
+
+  test.each([
+    ['right', 1, 3, 'x', 'y', 1], ['left', 3, 1, 'x', 'y', -1],
+    ['bottom', 2, 0, 'y', 'x', 1], ['top', 0, 2, 'y', 'x', -1]
+  ])('%s 分支共用折线主干，中间菱形位于两侧主干中点', (_name, sourceAnchor, targetAnchor, axis, crossAxis, sign) => {
+    const point = (main, cross) => ({ [axis]: main * sign, [crossAxis]: cross })
+    const graph = {
+      nodes: [
+        { id: 'root', type: 'exclusive-gateway', ...point(300, 300) },
+        { id: 'd', type: 'script-task', ...point(540, 180) },
+        { id: 'middle', type: 'exclusive-gateway', ...point(540, 420) },
+        ...['a', 'b', 'c'].map((id, index) => ({ id, type: 'script-task', ...point(780, 260 + index * 160) }))
+      ],
+      edges: [['root', 'd'], ['root', 'middle'], ['middle', 'a'], ['middle', 'b'], ['middle', 'c']]
+        .map(([source, target]) => ({
+          id: `${source}-${target}`, type: 'polyline', sourceNodeId: source, targetNodeId: target,
+          sourceAnchorId: `${source}_${sourceAnchor}`, targetAnchorId: `${target}_${targetAnchor}`,
+          properties: { conditionName: target, leftVarId: 7, leftRefType: 'VARIABLE' }
+        }))
+    }
+    const snapshot = JSON.parse(JSON.stringify(graph))
+    const result = layoutGraphByAnchors(graph)
+    const edges = Object.fromEntries(result.edges.map(edge => [edge.id, edge]))
+    const middle = result.nodes.find(node => node.id === 'middle')
+    const inLane = edges['root-middle'].pointsList[1][axis]
+    const outLane = edges['middle-a'].pointsList[1][axis]
+    expect(edges['root-d'].pointsList[1][axis]).toBe(inLane)
+    expect(edges['middle-c'].pointsList[1][axis]).toBe(outLane)
+    expect(middle[axis]).toBe((inLane + outLane) / 2)
+    expect(middle[axis] % 20).toBeCloseTo(0)
+    expect(Math.abs(edges['root-middle'].endPoint[axis] - inLane))
+      .toBe(Math.abs(outLane - edges['middle-a'].startPoint[axis]))
+    expect(edges['root-middle'].endPoint[axis]).toBe(middle[axis] - sign * 28)
+    result.edges.forEach((edge, index) => {
+      expect(edge.properties).toEqual(graph.edges[index].properties)
+      expect(edge.sourceAnchorId).toBe(graph.edges[index].sourceAnchorId)
+      expect(edge.targetAnchorId).toBe(graph.edges[index].targetAnchorId)
+      expect(edge.pointsList[0]).toEqual(edge.startPoint)
+      expect(edge.pointsList.at(-1)).toEqual(edge.endPoint)
+      edge.pointsList.slice(1).forEach((p, i) => {
+        const previous = edge.pointsList[i]
+        expect(p.x === previous.x || p.y === previous.y).toBe(true)
+      })
+    })
+    expect(graph).toEqual(snapshot)
+    expect(layoutGraphByAnchors(result)).toEqual(result)
+  })
+
+  test.each(['line', 'bezier'])('%s 美化保留连线类型，交给原有渲染器重新计算路径', type => {
+    const graph = {
+      nodes: [{ id: 'a', type: 'start-event', x: 100, y: 100 }, { id: 'b', type: 'script-task', x: 300, y: 200 }],
+      edges: [{ id: 'a-b', type, sourceNodeId: 'a', targetNodeId: 'b', sourceAnchorId: 'a_1', targetAnchorId: 'b_3', pointsList: [{ x: 0, y: 0 }] }]
+    }
+    const result = layoutGraphByAnchors(graph)
+    expect(result.edges[0].type).toBe(type)
+    expect(result.edges[0]).not.toHaveProperty('pointsList')
   })
 })

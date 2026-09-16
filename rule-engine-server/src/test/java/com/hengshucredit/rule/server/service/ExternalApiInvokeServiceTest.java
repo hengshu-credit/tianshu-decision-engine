@@ -35,6 +35,166 @@ import static org.junit.Assert.assertTrue;
 public class ExternalApiInvokeServiceTest {
 
     @Test
+    public void businessTokenFailureRefreshesBeforeResponseMapping() throws Exception {
+        AtomicInteger tokens = new AtomicInteger();
+        AtomicInteger calls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            byte[] body = ("{\"token\":\"t" + tokens.incrementAndGet() + "\"}").getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/score", exchange -> {
+            String result = calls.incrementAndGet() == 1 ? "{\"code\":\"TOKEN_EXPIRED\"}" : "{\"score\":720}";
+            byte[] body = result.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = httpDatasource(server);
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\"}");
+            RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/score");
+            config.setAuthMode("INHERIT");
+            com.alibaba.fastjson.JSONObject json = (com.alibaba.fastjson.JSONObject) com.alibaba.fastjson.JSON.toJSON(config);
+            json.put("tokenFailureCondition", "{\"path\":\"body.code\",\"operator\":\"==\",\"value\":\"TOKEN_EXPIRED\"}");
+            config = json.toJavaObject(RuleExternalApiConfig.class);
+            Map<String, Object> result = configuredService(config, datasource).invoke(1L, Map.of());
+            assertEquals(720, ((Map<?, ?>) result.get("body")).get("score"));
+            assertEquals(2, tokens.get());
+            assertEquals(2, calls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void asyncPollReturnsFinalResultInsteadOfSubmissionReceipt() throws Exception {
+        AtomicInteger submissions = new AtomicInteger();
+        AtomicInteger polls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            submissions.incrementAndGet();
+            byte[] body = "{\"taskId\":\"task-1\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(202, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/result/task-1", exchange -> {
+            String value = polls.incrementAndGet() == 1 ? "{\"status\":\"PENDING\"}"
+                    : "{\"status\":\"SUCCESS\",\"data\":{\"score\":680}}";
+            byte[] body = value.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
+            config.setRequestMode("ASYNC");
+            config.setAsyncResultMode("POLL");
+            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/result/${taskId}\","
+                    + "\"requestMethod\":\"GET\",\"intervalMs\":1,\"maxAttempts\":3,"
+                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
+            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
+            assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));
+            assertEquals(1, submissions.get());
+            assertEquals(2, polls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    private RuleExternalDatasource httpDatasource(HttpServer server) {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(1L);
+        datasource.setProtocol("HTTP");
+        datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
+        datasource.setAuthType("NONE");
+        return datasource;
+    }
+
+    @Test
+    public void callbackArrivingBeforeSubmissionResponseIsUsedByVariableAndRule() throws Exception {
+        ExternalApiCallbackStore callbacks = ExternalApiCallbackStoreTest.store();
+        AtomicReference<Throwable> callbackError = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            try {
+                var submitted = com.alibaba.fastjson.JSON.parseObject(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+                String url = submitted.getString("callback");
+                byte[] body = "{\"job\":\"task-2\",\"status\":\"DONE\",\"report\":{\"score\":730}}".getBytes(StandardCharsets.UTF_8);
+                callbacks.accept(url.substring(url.lastIndexOf('/') + 1), ExternalApiCallbackStoreTest.signature(body), body);
+                byte[] receipt = "{\"taskId\":\"task-2\"}".getBytes(StandardCharsets.UTF_8);
+                exchange.sendResponseHeaders(202, receipt.length);
+                exchange.getResponseBody().write(receipt);
+            } catch (Throwable error) {
+                callbackError.set(error);
+            } finally { exchange.close(); }
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
+            config.setRequestMethod("POST");
+            config.setRequestMode("ASYNC");
+            config.setAsyncResultMode("CALLBACK");
+            config.setAsyncCallbackConfig(ExternalApiCallbackStoreTest.protocol().toJSONString());
+            config.setAsyncCallbackUrl("http://engine.example/api/external-callback/${invocationId}");
+            config.setRequestMapping("{\"callback\":\"$.callbackUrl\"}");
+            ExternalApiInvokeService api = configuredService(config, httpDatasource(server));
+            ReflectionTestUtils.setField(api, "callbackStore", callbacks);
+            var variable = new com.hengshucredit.rule.model.entity.RuleVariable();
+            variable.setId(3L); variable.setProjectId(1L); variable.setVarCode("riskScore");
+            variable.setVarSource("API"); variable.setStatus(1);
+            variable.setSourceConfig("{\"apiConfigId\":1,\"resultPath\":\"body.score\"}");
+            VariableSourceResolver resolver = new VariableSourceResolver();
+            ReflectionTestUtils.setField(resolver, "variableService", new RuleVariableService() {
+                @Override
+                public java.util.List<com.hengshucredit.rule.model.entity.RuleVariable> listByProject(Long id, String source) {
+                    return java.util.List.of(variable);
+                }
+            });
+            ReflectionTestUtils.setField(resolver, "externalApiInvokeService", api);
+            Map<String, Object> values = resolver.resolve(1L, Map.of());
+            assertNull(callbackError.get());
+            assertEquals(730, values.get("riskScore"));
+            var runner = new com.alibaba.qlexpress4.Express4Runner(com.alibaba.qlexpress4.InitOptions.builder().build());
+            assertEquals(true, runner.execute("riskScore > 700", values, com.alibaba.qlexpress4.QLOptions.builder().build()).getResult());
+        } finally { server.stop(0); }
+    }
+
+    @Test
+    public void asynchronousTimeoutDoesNotResubmitAndUsesConfiguredFallback() throws Exception {
+        AtomicInteger submissions = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            submissions.incrementAndGet();
+            byte[] body = "{\"taskId\":\"t\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(202, body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.createContext("/poll", exchange -> {
+            byte[] body = "{\"status\":\"PENDING\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length); exchange.getResponseBody().write(body); exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(1L, 1L, "/submit");
+            config.setRequestMode("ASYNC"); config.setAsyncResultMode("POLL");
+            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/poll\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\",\"intervalMs\":1,\"maxAttempts\":2}");
+            config.setRetryCount(2); config.setRetryOnTimeout(1);
+            config.setExceptionStrategy("RETURN_DEFAULT"); config.setFallbackValue("{\"score\":0}");
+            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
+            assertEquals(1, submissions.get());
+            assertEquals(true, result.get("fallback"));
+            assertEquals("TIMEOUT", result.get("sourceOutcome"));
+            assertEquals(0, ((Map<?, ?>) result.get("body")).get("score"));
+        } finally { server.stop(0); }
+    }
+
+    @Test
     public void apiTimeoutIsATotalDeadlineAcrossRetries() throws Exception {
         AtomicInteger calls = new AtomicInteger();
         HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);

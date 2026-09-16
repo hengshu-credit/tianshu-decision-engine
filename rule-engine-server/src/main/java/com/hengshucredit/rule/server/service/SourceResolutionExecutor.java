@@ -46,7 +46,12 @@ public class SourceResolutionExecutor implements AutoCloseable {
         if (executor == null) {
             return callInline(task);
         }
-        return CompletableFuture.supplyAsync(() -> call(task), executor);
+        Long deadline = RequestDeadlineContext.capture();
+        return CompletableFuture.supplyAsync(() -> {
+            try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
+                return call(task);
+            }
+        }, executor);
     }
 
     private <T> CompletableFuture<T> callInline(Callable<T> task) {

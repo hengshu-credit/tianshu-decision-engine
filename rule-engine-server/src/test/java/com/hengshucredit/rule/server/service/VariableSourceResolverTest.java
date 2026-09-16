@@ -845,6 +845,48 @@ public class VariableSourceResolverTest {
     }
 
     @Test
+    public void forceRefreshCompletesDependenciesBeforeCallingApi() throws Exception {
+        RuleVariable apiScore = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
+        RuleVariable dbScore = variable("dbScore", "DB", "{\"datasourceId\":3,\"sql\":\"select score from t\"}");
+        FakeApiService api = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, dbScore), api,
+                new FakeDbPools(Collections.singletonList(singletonMap("score", 72))));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setForceRefreshSource(true);
+        options.setRequiredScriptNames(new LinkedHashSet<>(Collections.singletonList("riskScore")));
+        Map<String, Object> result = resolver.resolve(1L, singletonMap("dbScore", 1), options);
+        assertEquals(88, result.get("riskScore"));
+        assertEquals(72, api.lastParams.get("score"));
+    }
+
+    @Test
+    public void asyncDependenciesExcludeGeneratedParametersAndIncludePollingInputs() throws Exception {
+        RuleVariable variable = variable("result", "API", "{\"apiConfigId\":7}");
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setId(7L); config.setRequestMode("ASYNC"); config.setAsyncResultMode("CALLBACK");
+        config.setRequestMapping("{\"callback\":\"$.callbackUrl\",\"customer\":\"$.customerId\"}");
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()),
+                new FakeDbPools(Collections.emptyList()), new FakeRuleListService(false), null, config);
+        assertEquals(new LinkedHashSet<>(Collections.singletonList("customerId")), resolver.collectVariableDependencies(variable));
+        config.setAsyncResultMode("POLL"); config.setRequestMapping(null);
+        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\",\"requestMapping\":{\"customer\":\"$.customerId\",\"job\":\"$.submission.body.id\"}}");
+        assertEquals(new LinkedHashSet<>(Collections.singletonList("customerId")), resolver.collectVariableDependencies(variable));
+    }
+
+    @Test
+    public void databaseMultipleRowsKeepEverySingleColumnValueAndConfiguredTimeout() throws Exception {
+        RuleVariable variable = variable("scores", "DB",
+                "{\"datasourceId\":3,\"sql\":\"select score from t\",\"maxRows\":0,\"queryTimeoutSeconds\":30}");
+        List<Map<String, Object>> rows = Arrays.asList(singletonMap("score", 72), singletonMap("score", 88));
+        FakeDbPools dbPools = new FakeDbPools(rows);
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable), new FakeApiService(Collections.emptyMap()), dbPools);
+        assertEquals(rows, resolver.resolve(1L, Collections.emptyMap()).get("scores"));
+        assertEquals(0, dbPools.lastMaxRows);
+        assertEquals(30, dbPools.lastTimeoutSeconds);
+    }
+
+    @Test
     public void independentApiAndDbVariablesResolveInTheSameDependencyWave() throws Exception {
         RuleVariable apiVariable = variable("apiScore", "API",
                 "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
@@ -1098,6 +1140,8 @@ public class VariableSourceResolverTest {
         private final RuntimeException error;
         private Long lastDatasourceId;
         private List<Object> lastParams;
+        private int lastMaxRows;
+        private int lastTimeoutSeconds;
 
         private FakeDbPools(List<Map<String, Object>> rows) {
             this.rows = rows;
@@ -1110,11 +1154,13 @@ public class VariableSourceResolverTest {
         }
 
         @Override
-        public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params, int maxRows) {
+        public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params, int maxRows, int queryTimeoutSeconds) {
             if (error != null) {
                 throw error;
             }
             this.lastDatasourceId = datasourceId;
+            this.lastMaxRows = maxRows;
+            this.lastTimeoutSeconds = queryTimeoutSeconds;
             this.lastParams = params == null ? Collections.emptyList() : Arrays.asList(params.toArray());
             return rows;
         }
@@ -1152,7 +1198,7 @@ public class VariableSourceResolverTest {
 
         @Override
         public List<Map<String, Object>> query(Long datasourceId, String sql,
-                                               List<Object> params, int maxRows) {
+                                               List<Object> params, int maxRows, int queryTimeoutSeconds) {
             entered.countDown();
             awaitRelease(release);
             Map<String, Object> row = new LinkedHashMap<>();
@@ -1166,7 +1212,7 @@ public class VariableSourceResolverTest {
 
         @Override
         public List<Map<String, Object>> query(Long datasourceId, String sql,
-                                               List<Object> params, int maxRows) {
+                                               List<Object> params, int maxRows, int queryTimeoutSeconds) {
             if (Long.valueOf(1L).equals(datasourceId)) {
                 awaitRelease(secondCompleted);
             } else {

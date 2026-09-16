@@ -1,21 +1,18 @@
 <template>
-  <section class="expression-formula-preview">
+  <section class="expression-formula-preview" aria-label="表达式预览">
     <div
-      v-if="!editing"
       class="expression-formula-preview__read"
       title="双击编辑执行脚本"
-      @dblclick="startEditing"
+      @dblclick="!editing && startEditing()"
     >
       <div class="expression-formula-preview__business">
         <span>业务公式</span
         ><code>{{ formula || '请选择中间位置并添加内容' }}</code>
+        <el-button v-if="!editing" size="small" @click.stop="startEditing">编辑脚本</el-button>
       </div>
-      <div class="expression-formula-preview__script">
-        <span>执行脚本</span><code>{{ script || '-' }}</code>
-      </div>
-      <small>双击可手工编辑脚本；确认后会重新解析为结构化公式。</small>
+      <small>公式随配置实时更新；双击可编辑脚本，确认后同步到公式。</small>
     </div>
-    <div v-else class="expression-formula-preview__editor">
+    <div v-if="editing" class="expression-formula-preview__editor">
       <monaco-editor
         v-model:value="editScript"
         language="ql"
@@ -32,12 +29,21 @@
         >
       </div>
     </div>
+    <script-panel
+      v-show="!editing"
+      class="expression-formula-preview__script"
+      :compile-result="previewResult"
+      guidance="根据当前表达式实时生成"
+      placeholder="配置表达式后生成脚本"
+      empty-message="暂无脚本，请先配置表达式"
+    />
   </section>
 </template>
 
 <script>
 import { $emit } from '../../utils/gogocodeTransfer'
 import MonacoEditor from '@/components/MonacoEditor.vue'
+import ScriptPanel from '@/components/common/ScriptPanel.vue'
 import { compileOperand } from '@/utils/operand'
 import { formatExpressionFormula } from '@/utils/expressionDisplay'
 import {
@@ -47,7 +53,7 @@ import {
 
 export default {
   name: 'ExpressionFormulaPreview',
-  components: { MonacoEditor },
+  components: { MonacoEditor, ScriptPanel },
   props: {
     operand: { type: Object, default: null },
     vars: { type: Array, default: () => [] },
@@ -76,6 +82,9 @@ export default {
       } catch (e) {
         return ''
       }
+    },
+    previewResult() {
+      return this.script ? { compileSuccess: true, compiledScript: this.script } : null
     },
   },
   methods: {
@@ -115,9 +124,7 @@ export default {
 
 <style scoped>
 .expression-formula-preview {
-  margin-bottom: 12px;
-  border: 1px solid var(--tianshu-border);
-  border-radius: 7px;
+  border-top: 1px solid var(--tianshu-border-subtle);
   background: var(--tianshu-bg-surface);
 }
 .expression-formula-preview__read {
@@ -126,24 +133,32 @@ export default {
   padding: 10px 13px;
   cursor: text;
 }
-.expression-formula-preview__business,
-.expression-formula-preview__script {
+.expression-formula-preview__business {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
   gap: 10px;
 }
-.expression-formula-preview span {
+.expression-formula-preview__business > span {
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
 }
-.expression-formula-preview code {
+.expression-formula-preview__business code {
   color: var(--el-color-primary);
   font-family: Consolas, monospace;
   overflow-wrap: anywhere;
   white-space: normal;
+  max-height: 80px;
+  overflow: auto;
 }
-.expression-formula-preview__script code {
-  color: var(--tianshu-text-secondary);
+.expression-formula-preview__script {
+  margin: 0 12px 12px;
+}
+@media (max-height: 800px) {
+  .expression-formula-preview__script :deep(.sp-editor-container),
+  .expression-formula-preview__script :deep(.sp-editor) {
+    min-height: 160px;
+  }
 }
 .expression-formula-preview small {
   color: var(--tianshu-text-tertiary);

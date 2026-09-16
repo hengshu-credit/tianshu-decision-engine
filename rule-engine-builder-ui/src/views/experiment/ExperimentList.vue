@@ -43,9 +43,11 @@
           </el-select>
         </el-form-item>
         <el-form-item label="关键字">
-          <el-input
-            v-model="query.keyword"
-            clearable
+          <remote-filter-select
+            v-model:value="query.keyword"
+            :fetch-options="fetchKeywordOptions"
+            :option-fields="['experimentCode', 'experimentName']"
+            allow-free-input
             placeholder="编码或名称"
             style="width: 180px"
           />
@@ -771,6 +773,7 @@ import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue
 import RuleExecutionSelector from '@/components/common/RuleExecutionSelector.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -850,6 +853,7 @@ export default {
     RuleExecutionSelector,
     MonacoEditor,
     ProjectFilterSelect,
+    RemoteFilterSelect,
   },
   mixins: [varPickerMixin],
   computed: {
@@ -984,6 +988,14 @@ export default {
       } finally {
         this.loading = false
       }
+    },
+    fetchKeywordOptions({ query, pageNum, pageSize }) {
+      return listExperiments(this.cleanParams({
+        ...this.query,
+        keyword: query,
+        pageNum,
+        pageSize,
+      }))
     },
     handleQuery() {
       this.query.pageNum = 1

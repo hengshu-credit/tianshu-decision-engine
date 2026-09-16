@@ -52,7 +52,6 @@
           </el-select>
           <span>{{ term.operand ? '已配置' : '待配置' }}</span>
           <el-button
-            v-if="node.terms.length > 2"
             link
             @click="removeOperationTerm(index)"
             >删除</el-button
@@ -228,6 +227,7 @@
 import { Position as ElIconPosition } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import { cloneOperand, OPERATION_OPERATORS } from '@/utils/operand'
+import { removeExpressionNode } from './expressionTree'
 import {
   LIST_COMBINATION_MODES,
   LIST_ITEM_TYPES,
@@ -317,11 +317,7 @@ export default {
       })
     },
     removeOperationTerm(index) {
-      const terms = cloneOperand(this.node.terms || [])
-      if (terms.length <= 2) return
-      terms.splice(index, 1)
-      if (terms[0]) delete terms[0].operator
-      this.patch({ terms })
+      $emit(this, 'update:value', removeExpressionNode(this.node, ['terms', index, 'operand']))
     },
     addChild(key) {
       this.patch({ [key]: (this.node[key] || []).concat([null]) })

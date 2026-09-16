@@ -25,8 +25,8 @@
         role="button"
         :tabindex="isSelected(path) ? 0 : -1"
         :draggable="!!node"
-        @click.stop="$emit('select', path)"
-        @keydown.tab="handleTab"
+        @click.stop="selectNode"
+        @keydown="handleNodeKeydown"
         @dragstart.stop="onDragStart"
         @dragover.prevent
         @drop.stop.prevent="onDrop"
@@ -109,7 +109,7 @@
         >
       </div>
       <div
-        v-if="isSelected(path) && node"
+        v-if="isSelected(path)"
         class="canvas-node-actions"
         @click.stop
       >
@@ -133,6 +133,15 @@
         >
           <el-icon><el-icon-back /></el-icon>
         </button>
+        <button
+          type="button"
+          class="canvas-node-delete"
+          title="删除节点（Delete / Backspace）"
+          aria-label="删除节点"
+          @click="$emit('remove', path.slice())"
+        >
+          <app-icon name="Delete" />
+        </button>
       </div>
     </div>
     <div v-if="node && children.length && !collapsed" class="canvas-children">
@@ -141,9 +150,30 @@
         :key="entry.path.join('.')"
         class="canvas-child"
       >
-        <span v-if="entry.operator" class="canvas-edge-operator">{{
-          entry.operator
-        }}</span>
+        <el-dropdown
+          v-if="entry.operator"
+          trigger="click"
+          popper-class="expression-editor-select-popper"
+          @command="changeOperator(entry, $event)"
+        >
+          <button
+            type="button"
+            class="canvas-edge-operator"
+            :aria-label="'修改运算符 ' + entry.operator"
+            title="修改运算符"
+            @keydown="handleOperatorKeydown(entry, $event)"
+          >
+            {{ entry.operator }}<app-icon name="ArrowDown" />
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="operator in operators" :key="operator" :command="operator">
+                {{ operator }}
+              </el-dropdown-item>
+              <el-dropdown-item command="remove" divided>删除运算符及后一项</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
         <span v-else class="canvas-edge-label">{{ entry.label }}</span>
         <expression-canvas
           :node="entry.value"
@@ -163,6 +193,9 @@
           @outdent="$emit('outdent', $event)"
           @move="$emit('move', $event)"
           @moveNode="$emit('moveNode', $event)"
+          @remove="$emit('remove', $event)"
+          @replaceOperator="$emit('replaceOperator', $event)"
+          @operatorKey="$emit('operatorKey', $event)"
         />
       </div>
     </div>
@@ -177,7 +210,7 @@ import {
   Right as ElIconRight,
   Back as ElIconBack,
 } from '@element-plus/icons-vue'
-import { operandDisplay } from '@/utils/operand'
+import { operandDisplay, OPERATION_OPERATORS } from '@/utils/operand'
 import {
   expressionChildEntries,
   expressionDescendantCount,
@@ -205,6 +238,7 @@ export default {
   },
   data() {
     return {
+      operators: OPERATION_OPERATORS,
       valueTypes: [
         { label: '文本', value: 'STRING' },
         { label: '数字', value: 'NUMBER' },
@@ -236,6 +270,9 @@ export default {
         ['LITERAL', 'PATH'].includes(this.node.kind)
       )
     },
+    selected() {
+      return this.isSelected(this.path)
+    },
     showNodeRow() {
       return !(
         this.path.length === 0 &&
@@ -248,11 +285,54 @@ export default {
     editingManual(value) {
       if (value) this.focusManualInput()
     },
+    selected(value) {
+      if (value && !this.editingManual) this.focusCard()
+    },
   },
   mounted() {
     if (this.editingManual) this.focusManualInput()
+    else if (this.selected) this.focusCard()
   },
   methods: {
+    focusCard() {
+      this.$nextTick(() => this.$el.querySelector('.canvas-node--selected')?.focus())
+    },
+    selectNode(event) {
+      this.$emit('select', this.path.slice())
+      event.currentTarget.focus()
+    },
+    handleNodeKeydown(event) {
+      if (!this.selected || event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return
+      if (event.target.closest('input, textarea, select, [contenteditable="true"], [role="combobox"]')) {
+        if (event.key === 'Escape') {
+          event.preventDefault()
+          event.stopPropagation()
+          event.currentTarget.focus()
+        }
+        return
+      }
+      if (event.key === 'Tab') this.handleTab(event)
+      else this.handleStructureKey(event, this.path)
+    },
+    handleOperatorKeydown(entry, event) {
+      this.handleStructureKey(event, entry.path, true)
+    },
+    handleStructureKey(event, path, replace = false) {
+      if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey || event.repeat) return
+      if (['Delete', 'Backspace'].includes(event.key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.$emit('remove', path.slice())
+      } else if (['+', '-', '*', '/', '%', '|', '&', '=', '!', '<', '>'].includes(event.key)) {
+        event.preventDefault()
+        event.stopPropagation()
+        this.$emit('operatorKey', { path: path.slice(), key: event.key, replace })
+      }
+    },
+    changeOperator(entry, operator) {
+      if (operator === 'remove') this.$emit('remove', entry.path.slice())
+      else this.$emit('replaceOperator', { path: entry.path.slice(), operator })
+    },
     focusManualInput() {
       this.$nextTick(() => {
         if (
@@ -266,7 +346,7 @@ export default {
       return pathsEqual(path, this.selectedPath)
     },
     handleTab(event) {
-      if (!this.isSelected(this.path) || !this.node) return
+      if (!this.isSelected(this.path)) return
       event.preventDefault()
       event.stopPropagation()
       this.$emit(event.shiftKey ? 'outdent' : 'indent', this.path.slice())
@@ -346,6 +426,9 @@ export default {
     'outdent',
     'move',
     'moveNode',
+    'remove',
+    'replaceOperator',
+    'operatorKey',
   ],
 }
 </script>
@@ -433,6 +516,11 @@ export default {
   border-color: var(--el-color-primary);
   color: var(--el-color-primary);
 }
+.canvas-node-actions .canvas-node-delete {
+  grid-column: 1 / -1;
+  min-height: 22px;
+  color: var(--el-color-danger);
+}
 .canvas-collapse,
 .canvas-collapse-spacer {
   width: 24px;
@@ -481,14 +569,22 @@ export default {
   display: inline-flex;
   min-width: 28px;
   justify-content: center;
+  align-items: center;
+  gap: 5px;
   margin: 0 0 5px 30px;
   padding: 2px 7px;
   border-radius: 4px;
+  border: 1px solid transparent;
   background: var(--tianshu-designer-accent-bg);
   color: var(--el-color-primary);
   font-family: Consolas, monospace;
   font-size: 12px;
   font-weight: 700;
+  cursor: pointer;
+}
+.canvas-edge-operator:hover,
+.canvas-edge-operator:focus-visible {
+  border-color: var(--el-color-primary);
 }
 .canvas-path-candidates {
   position: absolute;

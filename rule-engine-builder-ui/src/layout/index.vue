@@ -280,7 +280,7 @@ export default {
         typeof getter === 'function' ? getter(route.params.sessionId) : null
       return {
         ...tab,
-        title: session && session.title ? session.title : tab.title,
+        ...(session && session.title ? { detailTitle: session.title } : {}),
       }
     },
     restoreWorkspaceTabs() {
@@ -290,7 +290,9 @@ export default {
         .map((tab) => {
           try {
             const resolved = this.$router.resolve(tab.fullPath)
-            return isWorkspaceRoute(resolved) ? this.routeTab(resolved) : null
+            return isWorkspaceRoute(resolved)
+              ? { ...tab, ...this.routeTab(resolved) }
+              : null
           } catch (e) {
             return null
           }

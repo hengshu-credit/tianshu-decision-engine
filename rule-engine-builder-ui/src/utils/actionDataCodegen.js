@@ -1,6 +1,7 @@
 import { compileOperand, createLiteralOperand, createPathOperand, OPERAND_KINDS } from '@/utils/operand'
 import { compileConditionOperands } from '@/utils/conditionOperand'
 import { isRuleOutputMappingEnabled } from '@/utils/ruleCallConfig'
+import { ExpressionParseError, parseExpressionScript } from '@/utils/expressionParser'
 
 function quoteString(value) {
   return '"' + String(value == null ? '' : value).replace(/\\/g, '\\\\').replace(/"/g, '\\"') + '"'
@@ -153,20 +154,25 @@ export function generateScript(actionData) {
   return actionData.map(block => generateBlock(block, 0)).filter(Boolean).join('\n')
 }
 
-export function actionDataToBlocks(actionData) {
+export function actionDataToBlocks(actionData, options = {}) {
   if (!Array.isArray(actionData) || !actionData.length) return []
-  return actionData.map(normalizeActionBlock)
+  return actionData.map(block => normalizeActionBlock(block, options))
 }
 
 export function normalizeGraphActionData(modelData) {
   if (!modelData || typeof modelData !== 'object') return modelData
+  // 只沿用模型已经保存的 ID 绑定，不从项目变量名称推断引用关系。
+  const options = {
+    vars: (modelData.scriptVarRefs || []).filter(ref => ref.varId != null && ref.refType)
+      .map(ref => ({ ...ref, refId: ref.varId }))
+  }
   ;(modelData.nodes || []).forEach(node => {
-    node.actionData = actionDataToBlocks(node.actionData)
+    node.actionData = actionDataToBlocks(node.actionData, options)
   })
   const logicflow = modelData.logicflow
   ;(logicflow && logicflow.nodes || []).forEach(node => {
     if (!node.properties) node.properties = {}
-    node.properties.actionData = actionDataToBlocks(node.properties.actionData)
+    node.properties.actionData = actionDataToBlocks(node.properties.actionData, options)
   })
   return modelData
 }
@@ -176,7 +182,7 @@ export function blocksToActionData(blocks) {
   return JSON.parse(JSON.stringify(blocks))
 }
 
-function normalizeActionBlock(source) {
+function normalizeActionBlock(source, options) {
   const block = JSON.parse(JSON.stringify(source || {}))
   const targetOperand = block.targetOperand || legacyReferenceOperand(
     block.target,
@@ -187,25 +193,25 @@ function normalizeActionBlock(source) {
   if (block.target !== undefined || block.targetOperand !== undefined) block.targetOperand = targetOperand
 
   if (block.type === 'assign') {
-    block.valueOperand = block.valueOperand || legacyValueOperand(block.value, block.valueType)
+    block.valueOperand = block.valueOperand || legacyValueOperand(block.value, block.valueType, options)
   } else if (block.type === 'if-block') {
     block.branches = (block.branches || []).map(branch => ({
       ...branch,
-      leftOperand: branch.leftOperand || legacyReferenceOperand(branch.condVar, branch._varId, branch._refType, branch.condVarType),
+      leftOperand: branch.leftOperand || legacyReferenceOperand(branch.condVar, branch._condVarId ?? branch._varId, branch._condVarRefType || branch._refType, branch.condVarType),
       operator: branch.operator || branch.condOp || '==',
       rightOperand: branch.rightOperand || legacyLiteralOperand(branch.condValue, branch.condVarType),
-      actions: (branch.actions || []).map(normalizeActionBlock)
+      actions: actionDataToBlocks(branch.actions, options)
     }))
-    block.branches.forEach(branch => removeKeys(branch, ['condVar', 'condOp', 'condValue', 'condVarType', '_varId', '_refType']))
+    block.branches.forEach(branch => removeKeys(branch, ['condVar', 'condOp', 'condValue', 'condVarType', '_varId', '_refType', '_condVarId', '_condVarRefType']))
   } else if (block.type === 'switch-block') {
     block.matchOperand = block.matchOperand || legacyReferenceOperand(block.matchVar)
     block.cases = (block.cases || []).map(item => ({
       ...item,
       valueOperand: item.valueOperand || legacyLiteralOperand(item.value),
-      actions: (item.actions || []).map(normalizeActionBlock)
+      actions: actionDataToBlocks(item.actions, options)
     }))
     block.cases.forEach(item => removeKeys(item, ['value']))
-    block.defaultActions = (block.defaultActions || []).map(normalizeActionBlock)
+    block.defaultActions = actionDataToBlocks(block.defaultActions, options)
   } else if (block.type === 'func-call') {
     block.functionCode = block.functionCode || block.funcName || ''
     const refs = block._argRefs || []
@@ -218,18 +224,18 @@ function normalizeActionBlock(source) {
     })
   } else if (block.type === 'foreach') {
     block.listOperand = block.listOperand || legacyReferenceOperand(block.listExpr)
-    block.actions = (block.actions || []).map(normalizeActionBlock)
+    block.actions = actionDataToBlocks(block.actions, options)
   } else if (block.type === 'ternary') {
     block.leftOperand = block.leftOperand || legacyReferenceOperand(block.condVar, block._condVarId, block._condRefType, block.condVarType)
     block.operator = block.operator || block.condOp || '=='
     block.rightOperand = block.rightOperand || legacyLiteralOperand(block.condValue, block.condVarType)
-    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue)
-    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue)
+    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue, undefined, options)
+    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue, undefined, options)
   } else if (block.type === 'in-check') {
     block.checkOperand = block.checkOperand || legacyReferenceOperand(block.checkVar)
     block.inOperands = block.inOperands || (block.inValues || []).map(value => legacyLiteralOperand(value))
-    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue)
-    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue)
+    block.trueOperand = block.trueOperand || legacyValueOperand(block.trueValue, undefined, options)
+    block.falseOperand = block.falseOperand || legacyValueOperand(block.falseValue, undefined, options)
   } else if (block.type === 'template-str') {
     block.parts = (block.parts || []).map(part => part.operand
       ? part
@@ -274,14 +280,20 @@ function legacyLiteralOperand(value, valueType) {
   return createLiteralOperand(normalizedValue, type)
 }
 
-function legacyValueOperand(value, valueType) {
+function legacyValueOperand(value, valueType, options) {
   if (value == null || String(value).trim() === '') return null
   const text = String(value).trim()
   const isQuoted = text.length >= 2 && ((text[0] === '"' && text[text.length - 1] === '"') || (text[0] === "'" && text[text.length - 1] === "'"))
   if (valueType || isQuoted || !isNaN(text) || text === 'true' || text === 'false' || text === 'null') {
     return legacyLiteralOperand(text, valueType || (text === 'null' ? 'NULL' : undefined))
   }
-  return createPathOperand(text)
+  try {
+    return parseExpressionScript(text, options)
+  } catch (error) {
+    if (!(error instanceof ExpressionParseError)) throw error
+    // 超出可视化解析范围的旧 QL 语法仍保留原文，避免加载时丢失动作。
+    return createPathOperand(text)
+  }
 }
 
 function removeKeys(target, keys) {

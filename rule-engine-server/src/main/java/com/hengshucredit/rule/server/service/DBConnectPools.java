@@ -28,8 +28,6 @@ import java.util.regex.Pattern;
 @Service
 public class DBConnectPools implements DisposableBean {
 
-    private static final int QUERY_TIMEOUT_SECONDS = 5;
-
     @Resource
     private RuleDbDatasourceMapper datasourceMapper;
 
@@ -81,15 +79,20 @@ public class DBConnectPools implements DisposableBean {
     }
 
     public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params, int maxRows) throws Exception {
+        return query(datasourceId, sql, params, maxRows, 5);
+    }
+
+    public List<Map<String, Object>> query(Long datasourceId, String sql, List<Object> params,
+                                           int maxRows, int queryTimeoutSeconds) throws Exception {
+        DatabaseQueryOptions options = new DatabaseQueryOptions(maxRows, queryTimeoutSeconds);
         if (!isReadOnlySelectSql(sql)) {
             throw new IllegalArgumentException("只允许执行 SELECT 查询");
         }
-        int limit = maxRows <= 0 ? 100 : Math.min(maxRows, 500);
         HikariDataSource dataSource = getDataSource(datasourceId);
         try (Connection connection = dataSource.getConnection();
              PreparedStatement statement = connection.prepareStatement(SqlQuerySupport.executableSql(sql))) {
-            statement.setMaxRows(limit);
-            statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+            statement.setMaxRows(options.maxRows());
+            statement.setQueryTimeout(options.queryTimeoutSeconds());
             if (params != null) {
                 for (int i = 0; i < params.size(); i++) {
                     statement.setObject(i + 1, params.get(i));

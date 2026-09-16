@@ -10,6 +10,57 @@ import static org.junit.Assert.assertTrue;
 public class DBConnectPoolsTest {
 
     @Test
+    public void queryHonorsConfiguredRowCountAboveFiveHundred() throws Exception {
+        java.util.Map<String, Object> settings = new java.util.HashMap<>();
+        java.sql.ResultSetMetaData metadata = jdbcProxy(java.sql.ResultSetMetaData.class,
+                (name, args) -> "getColumnCount".equals(name) ? 0 : null);
+        java.sql.ResultSet rows = jdbcProxy(java.sql.ResultSet.class,
+                (name, args) -> "getMetaData".equals(name) ? metadata : "next".equals(name) ? false : null);
+        java.sql.PreparedStatement statement = jdbcProxy(java.sql.PreparedStatement.class, (name, args) -> {
+            if (name.startsWith("set")) settings.put(name, args[0]);
+            return "executeQuery".equals(name) ? rows : null;
+        });
+        java.sql.Connection connection = jdbcProxy(java.sql.Connection.class,
+                (name, args) -> "prepareStatement".equals(name) ? statement : null);
+        DBConnectPools pools = new DBConnectPools() {
+            @Override
+            public com.zaxxer.hikari.HikariDataSource getDataSource(Long id) {
+                return new com.zaxxer.hikari.HikariDataSource() {
+                    @Override
+                    public java.sql.Connection getConnection() { return connection; }
+                };
+            }
+        };
+
+        pools.query(1L, "select 1", java.util.List.of(), 2000);
+
+        assertEquals(2000, settings.get("setMaxRows"));
+        assertEquals(5, settings.get("setQueryTimeout"));
+        pools.query(1L, "select 1", java.util.List.of(), 0, 12);
+        assertEquals(0, settings.get("setMaxRows"));
+        assertEquals(12, settings.get("setQueryTimeout"));
+        pools.query(1L, "select 1", java.util.List.of(), 2000, 0);
+        assertEquals(0, settings.get("setQueryTimeout"));
+    }
+
+    @Test
+    public void queryOptionsRejectNegativeFractionalAndOverflowValues() {
+        for (Object invalid : java.util.List.of(-1, 1.5, "2147483648", "abc")) {
+            org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                    () -> DatabaseQueryOptions.from(java.util.Map.of("maxRows", invalid), 1));
+            org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                    () -> DatabaseQueryOptions.from(java.util.Map.of("queryTimeoutSeconds", invalid), 1));
+        }
+        assertEquals(new DatabaseQueryOptions(0, 0), DatabaseQueryOptions.from(
+                java.util.Map.of("maxRows", 0, "queryTimeoutSeconds", 0), 1));
+    }
+
+    private <T> T jdbcProxy(Class<T> type, java.util.function.BiFunction<String, Object[], Object> handler) {
+        return type.cast(java.lang.reflect.Proxy.newProxyInstance(type.getClassLoader(), new Class[]{type},
+                (proxy, method, args) -> handler.apply(method.getName(), args)));
+    }
+
+    @Test
     public void validatesSharedFrontendBackendSqlCases() throws Exception {
         try (var input = getClass().getResourceAsStream("/sql/read-only-cases.json")) {
             var cases = com.alibaba.fastjson.JSON.parseArray(new String(input.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8));

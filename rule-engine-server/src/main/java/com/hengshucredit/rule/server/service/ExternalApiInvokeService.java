@@ -74,6 +74,9 @@ public class ExternalApiInvokeService {
     private RuntimeTraceService runtimeTraceService;
 
     @Resource
+    private ExternalApiCallbackStore callbackStore;
+
+    @Resource
     private ExternalApiScriptService externalApiScriptService = new ExternalApiScriptService();
 
     @Resource
@@ -113,6 +116,7 @@ public class ExternalApiInvokeService {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不能为空");
         }
+        ExternalApiConfigValidator.validate(apiConfig);
         int totalTimeoutMs = apiConfig.getTimeoutMs() == null ? 3000 : Math.max(1, apiConfig.getTimeoutMs());
         try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.limit(totalTimeoutMs)) {
         RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
@@ -157,6 +161,7 @@ public class ExternalApiInvokeService {
                 } else {
                     result = doInvoke(apiConfig, datasource, invokeParams, trace);
                 }
+                RequestDeadlineContext.check();
                 long cost = System.currentTimeMillis() - start;
                 result.put("costTimeMs", cost);
                 result.put("cached", false);
@@ -182,7 +187,7 @@ public class ExternalApiInvokeService {
                         || e instanceof ApiHttpClientRegistry.PoolBusyException) {
                     break;
                 }
-                if (i >= retryCount || !shouldRetry(apiConfig, e)) {
+                if ("ASYNC".equals(apiConfig.getRequestMode()) || i >= retryCount || !shouldRetry(apiConfig, e)) {
                     break;
                 }
                 int retryDelayMs = retryDelayMs(apiConfig, retryIntervalMs, i);
@@ -479,43 +484,14 @@ public class ExternalApiInvokeService {
                                                 RuleExternalDatasource datasource,
                                                 Map<String, Object> params, InvokeTrace trace) throws Exception {
         if (isRuleEngineDatasource(datasource)) {
+            if ("ASYNC".equals(apiConfig.getRequestMode())) {
+                throw new IllegalArgumentException("内部规则数据源不支持异步外数协议");
+            }
             return doInvokeRuleEngine(apiConfig, datasource, params, trace);
         }
-        PreparedHttpRequest prepared = prepareHttpRequest(apiConfig, datasource, params, false, null);
-        int timeout = effectiveTimeout(apiConfig.getTimeoutMs());
-        updateRequestTrace(trace, prepared);
-        ResponseEntity<String> response;
-        try {
-            response = exchangeHttp(apiConfig, datasource, prepared, timeout, trace);
-        } catch (HttpStatusCodeException e) {
-            recordHttpError(trace, e);
-            if (!shouldRefreshToken(apiConfig, e.getRawStatusCode()) || prepared.tokenCacheKey == null) {
-                throw e;
-            }
-            PreparedHttpRequest refreshed = prepareHttpRequest(apiConfig, datasource, params, false, null, true);
-            updateRequestTrace(trace, refreshed);
-            try {
-                response = exchangeHttp(apiConfig, datasource, refreshed,
-                        effectiveTimeout(apiConfig.getTimeoutMs()), trace);
-                prepared = refreshed;
-            } catch (HttpStatusCodeException refreshedError) {
-                recordHttpError(trace, refreshedError);
-                if (refreshedError.getRawStatusCode() == 401 || refreshedError.getRawStatusCode() == 403) {
-                    throw new TokenRefreshRejectedException(refreshedError);
-                }
-                throw refreshedError;
-            }
-        }
-
-        Map<String, Object> result = new LinkedHashMap<>();
-        Object responseBody = parseJsonOrRaw(response.getBody());
-        responseBody = executeResponseScript(apiConfig, params, responseBody, response.getBody(),
-                response.getStatusCodeValue(), response.getHeaders(), prepared.state);
-        trace.responseStatus = response.getStatusCodeValue();
-        trace.responseBody = responseBody;
-        result.put("success", response.getStatusCode().is2xxSuccessful());
-        result.put("httpStatus", response.getStatusCodeValue());
-        result.put("body", responseBody);
+        Map<String, Object> result = "ASYNC".equals(apiConfig.getRequestMode())
+                ? invokeAsync(apiConfig, datasource, params, trace)
+                : invokeHttp(apiConfig, datasource, params, trace);
         if (!matchesResponseCondition(apiConfig.getSuccessCondition(), result)) {
             result.put("success", false);
             boolean retryable = hasText(apiConfig.getRetryCondition())
@@ -523,6 +499,146 @@ public class ExternalApiInvokeService {
             throw new BusinessResponseException(businessResponseMessage(result), retryable);
         }
         return applyResponseMapping(apiConfig, result);
+    }
+
+    private Map<String, Object> invokeHttp(RuleExternalApiConfig config, RuleExternalDatasource datasource,
+                                          Map<String, Object> params, InvokeTrace trace) throws Exception {
+        boolean refresh = false;
+        while (true) {
+            RequestDeadlineContext.check();
+            PreparedHttpRequest prepared = prepareHttpRequest(config, datasource, params, false, null, refresh);
+            updateRequestTrace(trace, prepared);
+            ResponseEntity<String> response;
+            HttpStatusCodeException httpError = null;
+            try {
+                response = exchangeHttp(config, datasource, prepared, effectiveTimeout(config.getTimeoutMs()), trace);
+            } catch (HttpStatusCodeException error) {
+                recordHttpError(trace, error);
+                httpError = error;
+                response = new ResponseEntity<>(error.getResponseBodyAsString(), error.getResponseHeaders(), error.getStatusCode());
+            }
+            Map<String, Object> envelope = new LinkedHashMap<>();
+            envelope.put("httpStatus", response.getStatusCodeValue());
+            envelope.put("headers", headersForScript(response.getHeaders()));
+            envelope.put("body", parseJsonOrRaw(response.getBody()));
+            if (prepared.tokenCacheKey != null && shouldRefreshToken(config, envelope)) {
+                if (trace.tokenRefreshAttempted) throw new TokenRefreshRejectedException(httpError);
+                trace.tokenRefreshAttempted = true;
+                refresh = true;
+                continue;
+            }
+            if (httpError != null) throw httpError;
+            Object body = executeResponseScript(config, params, envelope.get("body"), response.getBody(),
+                    response.getStatusCodeValue(), response.getHeaders(), prepared.state);
+            envelope.put("body", body);
+            envelope.put("success", response.getStatusCode().is2xxSuccessful());
+            trace.responseStatus = response.getStatusCodeValue();
+            trace.responseBody = body;
+            return envelope;
+        }
+    }
+
+    private Map<String, Object> invokeAsync(RuleExternalApiConfig config, RuleExternalDatasource datasource,
+                                           Map<String, Object> params, InvokeTrace trace) throws Exception {
+        boolean callback = "CALLBACK".equals(config.getAsyncResultMode());
+        JSONObject protocol = JSON.parseObject(callback ? config.getAsyncCallbackConfig() : config.getAsyncPollConfig());
+        String invocationId = callback ? callbackStore.register(protocol) : null;
+        Map<String, Object> input = new LinkedHashMap<>(params);
+        if (callback) input.put("callbackUrl", config.getAsyncCallbackUrl().replace("${invocationId}", invocationId));
+        try {
+            Map<String, Object> receipt = invokeHttp(config, datasource, input, trace);
+            String taskPath = callback ? firstText(protocol.get("submissionTaskIdPath"), protocol.get("taskIdPath"))
+                    : protocol.getString("taskIdPath");
+            Object taskId = readPath(receipt, taskPath);
+            if (taskId == null || String.valueOf(taskId).isBlank()) {
+                throw new IllegalStateException("异步提交响应缺少任务号：" + taskPath);
+            }
+            input.put("taskId", taskId);
+            input.put("submission", receipt);
+            Map<String, Object> completed = callback
+                    ? awaitCallback(invocationId, protocol, taskId)
+                    : pollAsync(config, datasource, protocol, input, trace);
+            String resultPath = firstText(config.getAsyncResultPath(), protocol.get("resultPath"));
+            Object result = hasText(resultPath) ? readPath(completed, resultPath) : completed.get("body");
+            if (hasText(resultPath) && result == null) throw new IllegalStateException("异步最终结果路径无值：" + resultPath);
+            Map<String, Object> response = new LinkedHashMap<>(completed);
+            response.put("asyncTaskId", taskId);
+            response.put("asyncResultMode", config.getAsyncResultMode());
+            response.put("asyncResponse", completed.get("body"));
+            response.put("body", result);
+            response.put("success", true);
+            trace.responseStatus = ((Number) response.get("httpStatus")).intValue();
+            trace.responseBody = result;
+            return response;
+        } finally {
+            if (invocationId != null) callbackStore.close(invocationId);
+        }
+    }
+
+    private Map<String, Object> pollAsync(RuleExternalApiConfig config, RuleExternalDatasource datasource,
+                                         JSONObject protocol, Map<String, Object> params, InvokeTrace trace) throws Exception {
+        RuleExternalApiConfig poll = JSON.parseObject(JSON.toJSONString(config), RuleExternalApiConfig.class);
+        poll.setRequestMode("SYNC");
+        poll.setEndpointUrl(protocol.getString("resultEndpointUrl"));
+        poll.setRequestMethod(firstText(protocol.get("requestMethod"), "GET"));
+        poll.setContentType(firstText(protocol.get("contentType"), config.getContentType()));
+        poll.setHeaderConfig(protocol.containsKey("headerConfig") ? JSON.toJSONString(protocol.get("headerConfig")) : config.getHeaderConfig());
+        poll.setQueryConfig(JSON.toJSONString(protocol.getOrDefault("queryConfig", Map.of())));
+        poll.setRequestMapping(JSON.toJSONString(protocol.getOrDefault("requestMapping", Map.of())));
+        poll.setBodyTemplate("{}");
+        poll.setRequestScript(protocol.getString("requestScript"));
+        poll.setResponseScript(protocol.getString("responseScript"));
+        int attempts = ExternalApiConfigValidator.positive(protocol, "maxAttempts", 20);
+        int interval = ExternalApiConfigValidator.positive(protocol, "intervalMs", 3000);
+        int failures = 0;
+        int retries = config.getRetryCount() == null ? 0 : Math.max(0, config.getRetryCount());
+        for (int i = 0; i < attempts; i++) {
+            if (i > 0) waitWithinDeadline(interval);
+            Map<String, Object> result;
+            try {
+                result = invokeHttp(poll, datasource, params, trace);
+            } catch (Exception error) {
+                if (error instanceof TokenRefreshRejectedException || failures++ >= retries
+                        || !shouldRetry(config, error) || i + 1 == attempts) throw error;
+                continue;
+            }
+            failures = 0;
+            if (asyncCompleted(protocol, result)) return result;
+        }
+        throw new TimeoutException("异步轮询达到最大次数，仍未取得最终结果");
+    }
+
+    private Map<String, Object> awaitCallback(String invocationId, JSONObject protocol, Object taskId) throws Exception {
+        while (true) {
+            RequestDeadlineContext.check();
+            Map<String, Object> result = callbackStore.result(invocationId);
+            if (result != null) {
+                Object callbackTaskId = readPath(result, protocol.getString("taskIdPath"));
+                if (!valuesEqual(taskId, callbackTaskId)) throw new IllegalStateException("回调任务号与提交任务号不一致");
+                if (asyncCompleted(protocol, result)) return result;
+            }
+            waitWithinDeadline(100);
+        }
+    }
+
+    private boolean asyncCompleted(JSONObject protocol, Map<String, Object> response) {
+        Object status = readPath(response, protocol.getString("statusPath"));
+        if (status == null) throw new IllegalStateException("异步响应缺少状态字段：" + protocol.getString("statusPath"));
+        if (hasText(protocol.getString("failureValue")) && valuesEqual(status, protocol.get("failureValue"))) {
+            throw new IllegalStateException("异步外数任务执行失败，状态：" + status);
+        }
+        return valuesEqual(status, protocol.get("successValue"));
+    }
+
+    private void waitWithinDeadline(int millis) throws Exception {
+        RequestDeadlineContext.check();
+        try {
+            Thread.sleep(Math.min(millis, RequestDeadlineContext.remainingMillis()));
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw e;
+        }
+        RequestDeadlineContext.check();
     }
 
     private String businessResponseMessage(Map<String, Object> response) {
@@ -589,9 +705,13 @@ public class ExternalApiInvokeService {
         trace.responseBody = parseJsonOrRaw(error.getResponseBodyAsString());
     }
 
-    private boolean shouldRefreshToken(RuleExternalApiConfig apiConfig, int statusCode) {
-        return (statusCode == 401 || statusCode == 403)
-                && !Integer.valueOf(0).equals(apiConfig.getTokenRefreshOnUnauthorized());
+    private boolean shouldRefreshToken(RuleExternalApiConfig apiConfig, Map<String, Object> response) {
+        if (Integer.valueOf(0).equals(apiConfig.getTokenRefreshOnUnauthorized())) return false;
+        if (hasText(apiConfig.getTokenFailureCondition())) {
+            return matchesResponseCondition(apiConfig.getTokenFailureCondition(), response);
+        }
+        return Integer.valueOf(401).equals(response.get("httpStatus"))
+                || Integer.valueOf(403).equals(response.get("httpStatus"));
     }
 
     boolean isRuleEngineDatasource(RuleExternalDatasource datasource) {
@@ -2115,6 +2235,7 @@ public class ExternalApiInvokeService {
     }
 
     private static class InvokeTrace {
+        private boolean tokenRefreshAttempted;
         private RuntimeTraceService.ModuleTrace runtimeTrace;
         private String requestMethod;
         private String requestUrl;

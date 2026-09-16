@@ -467,7 +467,10 @@
           "
         />
       </el-tab-pane>
-      <el-tab-pane class="management-table-region" label="调用日志" name="logs">
+      <el-tab-pane class="management-table-region" label="监控看板" name="monitor" lazy>
+        <external-api-monitor />
+      </el-tab-pane>
+      <el-tab-pane class="management-table-region" label="调用日志" name="logs" lazy>
         <module-call-log class="management-table-region" module-type="DATASOURCE" title="外数调用日志" />
       </el-tab-pane>
     </el-tabs>
@@ -1366,6 +1369,7 @@ import { getProject, listProjects } from '@/api/project'
 import { listDataObjects } from '@/api/dataObject'
 import { collectReferencePaths, setPathValue } from '@/utils/testParamTemplate'
 import ModuleCallLog from '@/components/common/ModuleCallLog.vue'
+import ExternalApiMonitor from '@/components/common/ExternalApiMonitor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
@@ -1529,13 +1533,15 @@ export default {
   name: 'DatasourceList',
   components: {
     ModuleCallLog,
+    ExternalApiMonitor,
     MonacoEditor,
     RemoteFilterSelect,
     ProjectFilterSelect,
   },
   async created() {
-    if (this.$route && this.$route.query && this.$route.query.tab === 'api') {
-      this.activeTab = 'api'
+    const requestedTab = this.$route && this.$route.query && this.$route.query.tab
+    if (['datasource', 'api', 'monitor', 'logs'].includes(requestedTab)) {
+      this.activeTab = requestedTab
     }
     const contextProjectId = routeProjectId(
       this.$route,

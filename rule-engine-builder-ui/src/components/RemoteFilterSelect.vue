@@ -1,27 +1,49 @@
 <template>
+  <el-autocomplete
+    v-if="allowFreeInput"
+    v-bind="$attrs"
+    ref="autocomplete"
+    class="remote-filter-input"
+    popper-class="remote-filter-suggestions"
+    :model-value="value"
+    :fetch-suggestions="fetchSuggestions"
+    :debounce="200"
+    :highlight-first-item="false"
+    :teleported="true"
+    :placeholder="placeholder"
+    clearable
+    fit-input-width
+    @update:model-value="updateValue"
+    @change="$emit('change', $event)"
+    @select="handleSelect"
+    @blur="closeSuggestions"
+    @clear="closeSuggestions"
+    @click="openSuggestions"
+    @keydown.enter.capture="handleEnterStart"
+    @keyup.enter="handleEnter"
+  >
+    <template #default="{ item }">{{ item.label }}</template>
+  </el-autocomplete>
   <el-select
-    :key="selectGeneration"
+    v-else
     v-bind="$attrs"
     ref="select"
     :model-value="value"
     clearable
     filterable
     remote
-    reserve-keyword
-    :allow-create="allowFreeInput"
-    :default-first-option="allowFreeInput"
     :teleported="true"
     :placeholder="placeholder"
     :loading="loading"
+    :remote-method="handleRemote"
     @update:model-value="updateValue"
     @change="$emit('change', $event)"
-    @keyup.enter="handleEnter"
     @visible-change="handleVisibleChange"
-    :remote-method="handleRemote"
+    @popup-scroll="handleDropdownScroll"
   >
     <el-option
       v-for="option in options"
-      :key="optionKey(option)"
+      :key="optionValue(option)"
       :label="optionLabel(option)"
       :value="optionValue(option)"
     />
@@ -30,6 +52,9 @@
 
 <script>
 import { $emit } from '../utils/gogocodeTransfer'
+
+// 文本筛选使用受控输入；候选查询只更新建议，不改写筛选条件。
+// 页面通过 fetchOptions、optionLabelKey、optionValueKey 配置数据源和字段。
 export default {
   name: 'RemoteFilterSelect',
   inheritAttrs: false,
@@ -39,6 +64,7 @@ export default {
     placeholder: { type: String, default: '输入筛选' },
     optionLabelKey: { type: String, default: 'label' },
     optionValueKey: { type: String, default: 'value' },
+    optionFields: { type: Array, default: () => [] },
     pageSize: { type: Number, default: 20 },
     allowFreeInput: { type: Boolean, default: false },
   },
@@ -48,180 +74,97 @@ export default {
       loading: false,
       query: '',
       pageNum: 1,
-      total: 0,
       hasMore: true,
-      dropdownWrap: null,
-      editableInput: null,
-      lastEmittedFreeInput: null,
-      inputObserver: null,
+      loadedCount: 0,
       optionsRequestId: 0,
-      selectGeneration: 0,
+      suggestionsCallback: null,
+      dropdownWrap: null,
+      lastInputValue: this.value,
+      composingEnter: false,
     }
   },
   watch: {
     value(value) {
-      if (!this.allowFreeInput) return
-      const nextValue = value == null ? '' : String(value)
-      this.query = nextValue
-      this.lastEmittedFreeInput = nextValue
-      if (!nextValue) {
-        this.closeDropdownForReset()
-        this.selectGeneration += 1
-      }
-      this.$nextTick(() => {
-        const input = this.nativeInput()
-        if (input && input.value !== nextValue) input.value = nextValue
-      })
+      // 外部重置取消旧请求；普通输入（包括删空）不重建组件或丢失焦点。
+      if (value !== this.lastInputValue) this.closeSuggestions()
+      this.lastInputValue = value
     },
   },
   beforeUnmount() {
-    this.unbindEditableInput()
-    this.unbindDropdownScroll()
+    this.closeSuggestions()
   },
   methods: {
     updateValue(value) {
-      if (this.allowFreeInput) {
-        this.lastEmittedFreeInput = value == null ? '' : String(value)
-      }
+      this.lastInputValue = value
+      // 输入一变化就作废旧请求，不等候选查询的防抖结束。
+      this.cancelPendingLoad()
+      this.suggestionsCallback?.([])
       $emit(this, 'update:value', value)
     },
-    emitFreeInput(value) {
-      const nextValue = value == null ? '' : String(value)
-      if (this.lastEmittedFreeInput === nextValue) return
-      this.lastEmittedFreeInput = nextValue
-      $emit(this, 'update:value', nextValue)
+    handleSelect() {
+      this.$emit('change', this.lastInputValue)
+      this.closeSuggestions()
+    },
+    openSuggestions() {
+      const autocomplete = this.$refs.autocomplete
+      if (autocomplete && !this.suggestionsCallback && !this.loading) {
+        autocomplete.getData(String(this.value ?? ''))
+      }
+    },
+    handleEnterStart(event) {
+      this.composingEnter = event.isComposing || event.keyCode === 229
     },
     handleEnter(event) {
-      if (!this.allowFreeInput) return
-      this.query = event && event.target ? event.target.value : this.query
-      this.emitFreeInput(this.query || '')
+      if (this.composingEnter || event.isComposing || event.keyCode === 229) {
+        event.stopPropagation()
+        this.composingEnter = false
+        return
+      }
+      this.closeSuggestions()
+      // 值已经由 update:model-value 同步，keyup 冒泡到页面只执行一次查询。
     },
-    handleNativeInput(event) {
-      if (!this.allowFreeInput) return
-      this.query = event && event.target ? event.target.value : ''
-      this.emitFreeInput(this.query)
+    fetchSuggestions(query, callback) {
+      // 自动补全组件可能还有重置前排队的防抖任务。
+      if (String(query ?? '') !== String(this.value ?? '')) {
+        callback([])
+        return
+      }
+      this.query = query || ''
+      this.suggestionsCallback = callback
+      this.loadOptions(true)
     },
     handleRemote(query) {
       this.query = query || ''
-      if (this.allowFreeInput) {
-        this.emitFreeInput(this.query)
-      }
       this.loadOptions(true)
     },
     handleVisibleChange(visible) {
       if (visible) {
-        this.setDropdownAccessible(true)
-        this.query = this.allowFreeInput ? this.value || '' : this.query
+        this.query = ''
         this.loadOptions(true)
-        this.$nextTick(this.bindDropdownScroll)
       } else {
         this.cancelPendingLoad()
-        this.setDropdownAccessible(false)
-        this.retainSelectedOption()
-        this.unbindDropdownScroll()
       }
     },
-    closeDropdownForReset() {
-      const select = this.$refs.select
-      if (select && typeof select.blur === 'function') select.blur()
+    closeSuggestions() {
       this.cancelPendingLoad()
-      this.options = []
-      this.setDropdownAccessible(false)
+      this.suggestionsCallback?.([])
+      this.suggestionsCallback = null
+      this.$refs.autocomplete?.close()
       this.unbindDropdownScroll()
-    },
-    nativeInput() {
-      const select = this.$refs.select
-      const reference = select && select.$refs ? select.$refs.reference : null
-      return (
-        (reference && reference.$refs && reference.$refs.input) ||
-        (select && select.$el ? select.$el.querySelector('input') : null)
-      )
-    },
-    dropdownElement() {
-      const select = this.$refs.select
-      if (!select) return null
-      return (
-        (select.popperRef && select.popperRef.contentRef) ||
-        select.popperElm ||
-        (select.$refs && select.$refs.popper ? select.$refs.popper.$el : null) ||
-        (select.$el
-          ? select.$el.querySelector('.el-select__popper, .el-select-dropdown')
-          : null)
-      )
-    },
-    bindEditableInput() {
-      this.unbindEditableInput()
-      const input = this.nativeInput()
-      if (!input) return
-      input.removeAttribute('readonly')
-      this.editableInput = input
-      input.addEventListener('input', this.handleNativeInput)
-      this.inputObserver = new MutationObserver(() => {
-        if (input.hasAttribute('readonly')) input.removeAttribute('readonly')
-      })
-      this.inputObserver.observe(input, {
-        attributes: true,
-        attributeFilter: ['readonly'],
-      })
-    },
-    unbindEditableInput() {
-      if (this.editableInput) {
-        this.editableInput.removeEventListener('input', this.handleNativeInput)
-        this.editableInput = null
-      }
-      if (this.inputObserver) {
-        this.inputObserver.disconnect()
-        this.inputObserver = null
-      }
-    },
-    setDropdownAccessible(visible) {
-      const dropdown = this.dropdownElement()
-      if (!dropdown) return
-      if (visible) {
-        dropdown.style.pointerEvents = ''
-        dropdown.removeAttribute('inert')
-        dropdown.removeAttribute('aria-hidden')
-        return
-      }
-      if (dropdown.contains(document.activeElement)) {
-        const input = this.nativeInput()
-        if (input) input.focus()
-      }
-      dropdown.setAttribute('inert', '')
-      dropdown.setAttribute('aria-hidden', 'true')
-      dropdown.style.pointerEvents = 'none'
-    },
-    retainSelectedOption() {
-      if (
-        this.value === undefined ||
-        this.value === null ||
-        this.value === ''
-      ) {
-        this.options = []
-        return
-      }
-      const selectedValue = String(this.value)
-      this.options = this.options.filter(
-        (option) => String(this.optionValue(option)) === selectedValue
-      )
     },
     cancelPendingLoad() {
       this.optionsRequestId += 1
       this.loading = false
     },
     async loadOptions(reset) {
-      if (this.loading) {
-        if (!reset) return
-        this.cancelPendingLoad()
-      }
+      if (!reset && (this.loading || !this.hasMore)) return
       const requestId = ++this.optionsRequestId
       if (reset) {
         this.pageNum = 1
-        this.total = 0
+        this.loadedCount = 0
         this.hasMore = true
         this.options = []
       }
-      if (!this.hasMore) return
       this.loading = true
       try {
         const result = await this.fetchOptions({
@@ -231,92 +174,86 @@ export default {
         })
         if (requestId !== this.optionsRequestId) return
         const page = this.normalizeResult(result)
-        this.appendOptions(page.records)
-        this.total = page.total
-        this.hasMore =
-          page.records.length >= this.pageSize &&
-          (this.total <= 0 || this.options.length < this.total)
+        this.appendOptions(this.optionFields.length
+          ? page.records.flatMap(record => this.optionFields.map(field => record[field]))
+            .filter(value => value != null && String(value).toLowerCase().includes(this.query.toLowerCase()))
+          : page.records)
+        this.loadedCount += page.records.length
+        this.hasMore = page.records.length >= this.pageSize &&
+          (page.total <= 0 || this.loadedCount < page.total)
         this.pageNum += 1
+        this.suggestionsCallback?.(this.options.map(option => ({
+          value: this.optionValue(option),
+          label: this.optionLabel(option),
+        })))
+        this.$nextTick(this.bindDropdownScroll)
+      } catch (error) {
+        if (requestId !== this.optionsRequestId) return
+        this.hasMore = false
+        this.suggestionsCallback?.([])
+        // 请求层负责错误提示；候选加载失败不阻止用户使用已输入的条件。
+        this.$emit('load-error', error)
       } finally {
         if (requestId === this.optionsRequestId) this.loading = false
       }
     },
     normalizeResult(result) {
       const data = result && result.data ? result.data : result
-      if (Array.isArray(data)) {
-        return { records: data, total: data.length }
-      }
+      if (Array.isArray(data)) return { records: data, total: data.length }
       if (data && Array.isArray(data.records)) {
         return { records: data.records, total: Number(data.total || 0) }
       }
       return { records: [], total: 0 }
     },
     appendOptions(records) {
-      const seen = new Set(
-        this.options.map((item) => String(this.optionValue(item)))
-      )
-      ;(records || []).forEach((item) => {
+      const seen = new Set(this.options.map(item => String(this.optionValue(item))))
+      records.forEach(item => {
         const value = this.optionValue(item)
         if (value === undefined || value === null || value === '') return
-        const key = String(value)
-        if (!seen.has(key)) {
+        if (!seen.has(String(value))) {
           this.options.push(item)
-          seen.add(key)
+          seen.add(String(value))
         }
       })
     },
     optionLabel(option) {
       if (option == null) return ''
-      if (typeof option !== 'object') return option
-      return option[this.optionLabelKey]
+      return typeof option === 'object' ? option[this.optionLabelKey] : option
     },
     optionValue(option) {
       if (option == null) return ''
-      if (typeof option !== 'object') return option
-      return option[this.optionValueKey]
-    },
-    optionKey(option) {
-      return this.optionValue(option)
+      return typeof option === 'object' ? option[this.optionValueKey] : option
     },
     bindDropdownScroll() {
       this.unbindDropdownScroll()
-      const select = this.$refs.select
-      const dropdown = this.dropdownElement()
-      const wrap =
-        (dropdown && dropdown.querySelector('.el-scrollbar__wrap')) ||
-        (select &&
-        select.$refs &&
-        select.$refs.scrollbar &&
-        select.$refs.scrollbar.$refs
-          ? select.$refs.scrollbar.$refs.wrap
-          : null)
+      const dropdown = this.$refs.autocomplete?.popperRef?.popperRef?.contentRef
+      const wrap = dropdown?.querySelector('.el-scrollbar__wrap')
       if (!wrap) return
       this.dropdownWrap = wrap
-      wrap.addEventListener('scroll', this.handleDropdownScroll)
+      wrap.addEventListener('scroll', this.handleDropdownScroll, { passive: true })
     },
     unbindDropdownScroll() {
-      if (this.dropdownWrap) {
-        this.dropdownWrap.removeEventListener(
-          'scroll',
-          this.handleDropdownScroll
-        )
-        this.dropdownWrap = null
-      }
+      if (!this.dropdownWrap) return
+      this.dropdownWrap.removeEventListener('scroll', this.handleDropdownScroll)
+      this.dropdownWrap = null
     },
     handleDropdownScroll(event) {
-      const el = event.target
-      if (!el || this.loading || !this.hasMore) return
-      if (el.scrollTop + el.clientHeight >= el.scrollHeight - 32) {
+      const el = event.target || this.$refs.select?.scrollbarRef?.wrapRef
+      if (el && el.scrollTop + el.clientHeight >= el.scrollHeight - 32) {
         this.loadOptions(false)
       }
     },
   },
-  mounted() {
-    this.$nextTick(() => {
-      this.bindEditableInput()
-      this.setDropdownAccessible(false)
-    })
-  },
-  emits: ['input', 'update:value', 'change'],
+  emits: ['input', 'update:value', 'change', 'load-error'],
 }
 </script>
+
+<style scoped>
+.remote-filter-input {
+  width: 100%;
+}
+
+:global(.remote-filter-suggestions[aria-hidden='true']) {
+  pointer-events: none;
+}
+</style>

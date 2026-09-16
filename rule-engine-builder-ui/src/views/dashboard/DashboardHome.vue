@@ -136,17 +136,72 @@
                 <el-button
                   data-testid="dashboard-map-reset"
                   size="small"
+                  :disabled="mapLoading"
                   @click="resetMapView"
                 >恢复视角</el-button>
               </template>
+              <div class="dashboard-map-toolbar">
+                <el-select
+                  :model-value="mapCountry"
+                  aria-label="地图国家或地区"
+                  placeholder="全球国家／地区"
+                  filterable
+                  size="small"
+                  @change="changeMapCountry"
+                >
+                  <el-option label="全球国家／地区" value="" />
+                  <el-option
+                    v-for="country in mapCountryOptions"
+                    :key="country.code"
+                    :label="country.name"
+                    :value="country.code"
+                  />
+                </el-select>
+                <el-select
+                  v-if="mapCountry"
+                  :model-value="mapLevel"
+                  aria-label="地图行政层级"
+                  size="small"
+                  @change="changeMapLevel"
+                >
+                  <el-option
+                    v-for="layer in mapLayerOptions"
+                    :key="layer.level"
+                    :label="layer.label || adminLevelLabels[layer.level]"
+                    :value="layer.level"
+                  />
+                </el-select>
+                <el-button v-if="mapCountry" size="small" @click="changeMapCountry('')">返回全球</el-button>
+                <el-button v-if="mapCountry !== 'CHN'" size="small" @click="changeMapCountry('CHN')">中国全图</el-button>
+                <span>{{ mapCountry ? '各国行政层级不同，仅展示有边界数据的层级。' : '悬停查看区域名称，点击国家可查看行政区。' }}</span>
+              </div>
+              <div v-if="mapCatalogError" class="dashboard-map-error">
+                <el-alert :title="mapCatalogError" type="warning" :closable="false" show-icon />
+                <el-button size="small" @click="loadMapCatalog">重试目录</el-button>
+              </div>
+              <div v-if="mapError" class="dashboard-map-error">
+                <el-alert :title="mapError" type="warning" :closable="false" show-icon />
+                <el-button size="small" @click="loadMap">重试地图</el-button>
+              </div>
               <dashboard-chart
                 :key="mapViewVersion"
                 aria-label="进件地图热力图"
-                height="360px"
-                :empty="!mapReady || !applications.geo || !applications.geo.points.length"
-                :empty-description="mapReady ? '暂无合法经纬度记录' : '本地地图正在加载'"
+                height="clamp(560px, 70vh, 800px)"
+                :empty="!mapReady"
+                :empty-description="mapError || (mapCountry && mapCountry !== 'CHN' ? '行政区边界正在加载' : '本地地图正在加载')"
                 :option="geoOption"
+                @region-click="openMapCountry"
               />
+              <p v-if="mapCountry === 'CHN'" class="dashboard-map-source">
+                中国边界：<a href="https://datav.aliyun.com/portal/school/atlas/area_selector" target="_blank" rel="noopener noreferrer">DataV GeoAtlas</a>
+                · 市县：天地图来源整理数据 · 本地加载
+                <span v-if="mapLevel === 'ADM3'"> · 台湾省区县级资料暂缺，保留已有市县边界。</span>
+              </p>
+              <p v-else-if="mapCountry && mapLayer" class="dashboard-map-source">
+                边界年份：{{ mapLayer.year }} · 数据来源：
+                <a href="https://www.geoboundaries.org" target="_blank" rel="noopener noreferrer">geoBoundaries</a>
+                （CC BY 4.0，按需在线加载）
+              </p>
             </chart-card>
           </div>
         </template>
@@ -268,6 +323,16 @@ import ResourceCard from '@/components/dashboard/DashboardResourceCard.vue'
 import DashboardSection from '@/components/dashboard/DashboardSection.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
+  ADMIN_LEVEL_LABELS,
+  CHINA_MAP_BOUNDS,
+  DASHBOARD_REGION_MAP_NAME,
+  dashboardCountryBounds,
+  dashboardCountryOptions,
+  dashboardRegionNames,
+  dashboardWorldCountries,
+  prioritizeChinaBoundary
+} from '@/utils/dashboardMapLayers'
+import {
   dashboardQuickRange,
   defaultDashboardFilters,
   readDashboardMapView,
@@ -299,6 +364,17 @@ export default {
       projects: [],
       rangeError: '',
       mapReady: false,
+      mapLoading: false,
+      mapError: '',
+      mapCatalogError: '',
+      mapCatalog: null,
+      mapCountry: 'CHN',
+      mapLevel: 'ADM1',
+      mapRegionNames: {},
+      mapDecorations: [],
+      worldCountries: {},
+      worldCountryBounds: {},
+      adminLevelLabels: ADMIN_LEVEL_LABELS,
       mapView: readDashboardMapView(window.sessionStorage),
       mapViewVersion: 0,
       themeVersion: 0,
@@ -336,8 +412,23 @@ export default {
       void this.themeVersion
       return geoHeatmapOption((this.applications.geo || {}).points || [], {
         center: [this.mapView.longitude, this.mapView.latitude],
-        zoom: this.mapView.zoom
+        zoom: this.mapView.zoom,
+        mapName: this.mapCountry ? DASHBOARD_REGION_MAP_NAME : undefined,
+        nameProperty: this.mapCountry ? 'shapeID' : 'NAME_ZH',
+        regionNames: this.mapRegionNames,
+        bounds: this.mapCountry === 'CHN' ? CHINA_MAP_BOUNDS : this.worldCountryBounds[this.mapCountry],
+        decorations: this.mapDecorations,
+        fitRegion: Boolean(this.mapCountry)
       })
+    },
+    mapCountryOptions() {
+      return dashboardCountryOptions(this.mapCatalog, this.worldCountries)
+    },
+    mapLayerOptions() {
+      return this.mapCountryOptions.find(country => country.code === this.mapCountry)?.layers || []
+    },
+    mapLayer() {
+      return this.mapLayerOptions.find(layer => layer.level === this.mapLevel)
     },
     listCategoryOption() {
       void this.themeVersion
@@ -356,16 +447,22 @@ export default {
     },
     geoNote() {
       const geo = this.applications.geo || {}
-      return `合法记录 ${this.number(geo.validCount)}，排除 ${this.number(geo.excludedCount)}`
+      const counts = `合法记录 ${this.number(geo.validCount)}，排除 ${this.number(geo.excludedCount)}`
+      return this.mapReady && !(geo.points || []).length
+        ? `${counts} · 暂无合法经纬度记录，展示初始视角`
+        : counts
     }
   },
   mounted() {
     window.addEventListener('tianshu-theme-change', this.handleThemeChange)
     this.loadProjects()
     this.loadMap()
+    this.loadMapCatalog()
     this.refreshAll()
   },
   beforeUnmount() {
+    this.mapLoadController?.abort()
+    this.mapLoadController = null
     window.removeEventListener('tianshu-theme-change', this.handleThemeChange)
   },
   methods: {
@@ -382,14 +479,99 @@ export default {
       }
     },
     async loadMap() {
+      this.mapLoadController?.abort()
+      const controller = new AbortController()
+      this.mapLoadController = controller
+      const timeout = window.setTimeout(() => controller.abort(), 45000)
+      this.mapReady = false
+      this.mapLoading = true
+      this.mapError = ''
       try {
-        const response = await fetch('/maps/dashboard-world.geojson')
-        if (!response.ok) throw new Error('地图资源加载失败')
-        registerDashboardMap(await response.json())
+        if (this.mapCountry && !this.mapLayer) throw new Error('当前国家暂无该层级的边界数据')
+        const country = this.mapCountry
+        let geoJson
+        if (!country || (country !== 'CHN' && this.mapLevel === 'ADM0')) {
+          const world = await this.loadWorldMap()
+          geoJson = country ? {
+            type: 'FeatureCollection',
+            features: world.features.filter(feature => feature.properties.ADM0_A3 === country).map(feature => ({
+              ...feature, properties: { ...feature.properties, shapeID: country, shapeName: feature.properties.NAME_ZH }
+            }))
+          } : world
+        } else {
+          const response = await fetch(this.mapLayer.url, { signal: controller.signal })
+          if (!response.ok) throw new Error('地图资源加载失败')
+          geoJson = await response.json()
+          if (this.mapLoadController !== controller) return
+          if (country !== 'CHN') {
+            if (!this.chinaLandGeometry) {
+              const chinaResponse = await fetch('/maps/dashboard-china-land.geojson', { signal: controller.signal })
+              if (!chinaResponse.ok) throw new Error('中国边界校验数据加载失败')
+              this.chinaLandGeometry = (await chinaResponse.json()).features[0].geometry
+            }
+            geoJson = prioritizeChinaBoundary(geoJson, this.chinaLandGeometry)
+          }
+        }
+        if (this.mapLoadController !== controller) return
+        this.mapDecorations = geoJson.features.filter(feature => feature.properties.mapRole).map(feature => ({
+          id: feature.properties.shapeID, role: feature.properties.mapRole
+        }))
+        if (country) {
+          this.mapRegionNames = dashboardRegionNames(geoJson)
+          registerDashboardMap(geoJson, DASHBOARD_REGION_MAP_NAME)
+        } else {
+          this.worldCountries = dashboardWorldCountries(geoJson)
+          this.worldCountryBounds = dashboardCountryBounds(geoJson)
+          this.mapRegionNames = {}
+          registerDashboardMap(geoJson)
+        }
+        this.mapViewVersion += 1
         this.mapReady = true
       } catch (error) {
-        this.mapReady = false
+        if (this.mapLoadController !== controller) return
+        this.mapError = this.mapCountry
+          ? '行政区边界加载失败，请检查网络后重试，或返回全球地图。'
+          : '本地地图加载失败，请重试。'
+      } finally {
+        window.clearTimeout(timeout)
+        if (this.mapLoadController === controller) this.mapLoading = false
       }
+    },
+    async loadMapCatalog() {
+      this.mapCatalogError = ''
+      try {
+        const [response] = await Promise.all([fetch('/maps/dashboard-boundaries.json'), this.loadWorldMap()])
+        if (!response.ok) throw new Error('目录加载失败')
+        this.mapCatalog = await response.json()
+      } catch (error) {
+        this.mapCatalogError = '其他国家的行政区目录加载失败，仍可浏览中国地图。'
+      }
+    },
+    async loadWorldMap() {
+      if (this.worldMapData) return this.worldMapData
+      const response = await fetch('/maps/dashboard-world.geojson')
+      if (!response.ok) throw new Error('全球地图加载失败')
+      const geoJson = await response.json()
+      this.worldMapData = geoJson
+      this.worldCountries = dashboardWorldCountries(geoJson)
+      this.worldCountryBounds = dashboardCountryBounds(geoJson)
+      return geoJson
+    },
+    changeMapCountry(country) {
+      this.mapCountry = country
+      const layers = this.mapLayerOptions
+      this.mapLevel = (layers.find(layer => layer.level === 'ADM1') || layers[0])?.level || 'ADM0'
+      return this.loadMap()
+    },
+    changeMapLevel(level) {
+      this.mapLevel = level
+      return this.loadMap()
+    },
+    openMapCountry(name) {
+      if (this.mapCountry) return
+      const country = this.worldCountries[name]
+      if (this.mapCountryOptions.some(item => item.code === country)) this.changeMapCountry(country)
+      else this.$message.info('该国家或地区暂无可用的行政区边界')
     },
     queryParams() {
       return {
@@ -645,6 +827,35 @@ export default {
 
 .dashboard-chart-card--wide {
   grid-column: 1 / -1;
+}
+
+.dashboard-map-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.dashboard-map-toolbar .el-select {
+  width: 240px;
+}
+
+.dashboard-map-toolbar > span,
+.dashboard-map-source {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+.dashboard-map-source a {
+  color: var(--el-color-primary);
+}
+
+.dashboard-map-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 :deep(.dashboard-resource-count) {

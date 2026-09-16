@@ -119,6 +119,20 @@ async function mountAndWait(routeQuery = {}) {
   return wrapper
 }
 
+test('模型退出项目范围后清除自动项目筛选并从第一页加载', async () => {
+  sessionStorage.clear()
+  const projectWrapper = await mountAndWait({ projectId: '2' })
+  projectWrapper.vm.qp.pageNum = 3
+  projectWrapper.vm.qp.modelCode = 'project_model'
+  projectWrapper.vm.saveCachedState()
+  projectWrapper.unmount()
+
+  const globalWrapper = await mountAndWait()
+  expect(modelApi.listModels).toHaveBeenLastCalledWith({ pageNum: 1, pageSize: 10 })
+  globalWrapper.unmount()
+  sessionStorage.clear()
+})
+
 describe('ModelList — 初始化与数据加载', () => {
   let wrapper
 

@@ -17,6 +17,18 @@ import static org.junit.Assert.assertTrue;
 public class SourceResolutionExecutorTest {
 
     @Test
+    public void parallelSourcesInheritDeadlineAndDoNotLeakItToNextRequest() throws Exception {
+        try (SourceResolutionExecutor executor = new SourceResolutionExecutor(2)) {
+            RequestDeadlineContext.start(5000);
+            try {
+                int remaining = executor.submit(RequestDeadlineContext::remainingMillis).get(1, TimeUnit.SECONDS);
+                assertTrue(remaining > 0 && remaining <= 5000);
+            } finally { RequestDeadlineContext.clear(); }
+            assertEquals(Integer.valueOf(Integer.MAX_VALUE), executor.submit(RequestDeadlineContext::remainingMillis).get(1, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
     public void rejectsNonPositiveParallelism() {
         assertThrows(IllegalArgumentException.class, () -> new SourceResolutionExecutor(0));
         assertThrows(IllegalArgumentException.class, () -> new SourceResolutionExecutor(-1));

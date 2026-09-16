@@ -105,6 +105,22 @@ describe('varPickerMixin', () => {
   }
 
   // ─── API Mock 验证测试 ────────────────────────────────────
+  test('设计器加载规则名称后只更新请求发起时的所属页签', async () => {
+    let resolveDefinition
+    definitionApi.getDefinition.mockReturnValueOnce(new Promise(resolve => { resolveDefinition = resolve }))
+    const vm = createMixinVM()
+    const route = { fullPath: '/designer/table/1', path: '/designer/table/1', params: { id: '1' } }
+    vm.$route = route
+    vm.$store = { getters: { 'workspaceTabs/tabs': [] }, dispatch: vi.fn() }
+    const pending = vm.loadProjectVars(1)
+    vm.$route = { fullPath: '/project/2', path: '/project/2', params: { id: '2' } }
+    resolveDefinition({ ...mockDefs, ruleName: '授信准入规则' })
+    await pending
+    expect(vm.$store.dispatch).toHaveBeenCalledWith('workspaceTabs/updateDetailTitle', {
+      fullPath: '/designer/table/1', path: '/designer/table/1', detailTitle: '授信准入规则'
+    })
+  })
+
   test('loadProjectVars 调用正确的 API 并传入正确的参数', async () => {
     const vm = createMixinVM()
     await vm.loadProjectVars(1)

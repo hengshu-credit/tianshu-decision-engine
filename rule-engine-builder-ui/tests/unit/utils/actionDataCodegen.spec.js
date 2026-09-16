@@ -6,7 +6,7 @@ import {
   newBlock,
   normalizeGraphActionData
 } from '@/utils/actionDataCodegen'
-import { createLiteralOperand, createOperationOperand, createPathOperand } from '@/utils/operand'
+import { collectOperandReferences, createLiteralOperand, createOperationOperand, createPathOperand, syncOperandReference } from '@/utils/operand'
 
 const literal = (value, type = 'STRING') => createLiteralOperand(value, type)
 const path = value => createPathOperand(value)
@@ -228,6 +228,57 @@ describe('动作数据转换', () => {
     expect(blocks[0].args[0]).toMatchObject({ kind: 'REFERENCE', code: 'idcard_no', refId: 6 })
     expect(blocks[0]).not.toHaveProperty('funcName')
     expect(blocks[0]).not.toHaveProperty('_argRefs')
+  })
+
+  test('旧敞口公式转换为运算树，只收集真正的变量依赖', () => {
+    const blocks = actionDataToBlocks([
+      { type: 'assign', target: 'excludingTaxAmount', value: 'totalAmount / (1 + taxRate)' },
+      { type: 'assign', target: 'taxAmount', value: 'excludingTaxAmount * taxRate' },
+      { type: 'assign', target: 'exemptAmount', value: 'taxAmount * 0.5' },
+      { type: 'assign', target: 'finalTaxAmount', value: 'taxAmount - exemptAmount' }
+    ])
+
+    expect(blocks.map(block => collectOperandReferences(block.valueOperand).map(item => item.code))).toEqual([
+      ['totalAmount', 'taxRate'], ['excludingTaxAmount', 'taxRate'], ['taxAmount'], ['taxAmount', 'exemptAmount']
+    ])
+    expect(generateScript(blocks)).toBe([
+      'excludingTaxAmount = (totalAmount / (1 + taxRate))',
+      'taxAmount = (excludingTaxAmount * taxRate)',
+      'exemptAmount = (taxAmount * 0.5)',
+      'finalTaxAmount = (taxAmount - exemptAmount)'
+    ].join('\n'))
+    expect(actionDataToBlocks(blocks)).toEqual(blocks)
+  })
+
+  test('图模型迁移在嵌套公式中保留已有 ID，变量改名后仍可同步', () => {
+    const actionData = [{
+      type: 'if-block',
+      branches: [{
+        type: 'if', condVar: 'isExempt', condOp: '==', condValue: 'true',
+        _condVarId: 264, _condVarRefType: 'VARIABLE',
+        actions: [{ type: 'assign', target: 'excludingTaxAmount', value: 'totalAmount / (1 + taxRate)' }]
+      }]
+    }]
+    const model = normalizeGraphActionData({
+      scriptVarRefs: [
+        { refCode: 'totalAmount', varId: 263, refType: 'VARIABLE' },
+        { refCode: 'taxRate', varId: 257, refType: 'VARIABLE' }
+      ],
+      nodes: [{ actionData }],
+      logicflow: { nodes: [{ properties: { actionData } }] }
+    })
+
+    for (const blocks of [model.nodes[0].actionData, model.logicflow.nodes[0].properties.actionData]) {
+      const branch = blocks[0].branches[0]
+      expect(branch.leftOperand).toMatchObject({ kind: 'REFERENCE', refId: 264, refType: 'VARIABLE' })
+      const value = branch.actions[0].valueOperand
+      expect(collectOperandReferences(value)).toMatchObject([
+        { kind: 'REFERENCE', code: 'totalAmount', refId: 263, refType: 'VARIABLE' },
+        { kind: 'REFERENCE', code: 'taxRate', refId: 257, refType: 'VARIABLE' }
+      ])
+      const renamed = syncOperandReference(value, [{ refId: 263, refType: 'VARIABLE', code: 'transactionAmount' }])
+      expect(collectOperandReferences(renamed.operand)[0]).toMatchObject({ code: 'transactionAmount', refId: 263 })
+    }
   })
 
   test('图模型的后端节点和画布节点共用动作归一化', () => {

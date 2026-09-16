@@ -49,24 +49,14 @@
             />
           </el-form-item>
           <el-form-item label="规则">
-            <el-select
-              v-model="qp.ruleCode"
-              clearable
-              filterable
-              remote
-              reserve-keyword
+            <remote-filter-select
+              v-model:value="qp.ruleCode"
+              :fetch-options="fetchRuleOptions"
+              option-label-key="ruleName"
+              option-value-key="ruleCode"
+              allow-free-input
               placeholder="全部规则"
-              :remote-method="searchRules"
-              :loading="ruleOptionsLoading"
-              @visible-change="onRuleFilterVisible"
-            >
-              <el-option
-                v-for="r in filteredRules"
-                :key="r.ruleCode"
-                :label="r.ruleName"
-                :value="r.ruleCode"
-              />
-            </el-select>
+            />
           </el-form-item>
           <el-form-item label="模型类型" style="width: 170px">
             <el-select v-model="qp.modelType" clearable placeholder="全部类型">
@@ -295,7 +285,7 @@
     </div>
     <div v-else class="rule-set-stats">
       <div class="uiue-search-container">
-        <el-form :inline="true" size="small">
+        <el-form :inline="true" size="small" @keyup.enter="loadRuleSetStats">
           <el-form-item label="项目编码">
             <project-filter-select
               v-model:value="qp.projectCode"
@@ -314,24 +304,14 @@
             />
           </el-form-item>
           <el-form-item label="规则集">
-            <el-select
-              v-model="qp.ruleCode"
-              clearable
-              filterable
-              remote
-              reserve-keyword
+            <remote-filter-select
+              v-model:value="qp.ruleCode"
+              :fetch-options="fetchRuleSetOptions"
+              option-label-key="ruleName"
+              option-value-key="ruleCode"
+              allow-free-input
               placeholder="全部规则集"
-              :remote-method="searchRules"
-              :loading="ruleOptionsLoading"
-              @visible-change="onRuleFilterVisible"
-            >
-              <el-option
-                v-for="r in filteredRuleSets"
-                :key="r.ruleCode"
-                :label="r.ruleName"
-                :value="r.ruleCode"
-              />
-            </el-select>
+            />
           </el-form-item>
           <el-form-item label="时间范围">
             <el-date-picker
@@ -355,6 +335,7 @@
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="loadRuleSetStats">查询</el-button>
+            <el-button @click="resetQuery">重置</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -579,18 +560,20 @@ import { getRuleSetStats } from '@/api/runtimeLog'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
   clearPageState,
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { routeProjectId } from '@/utils/projectContext'
+import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 
 export default {
   components: {
     TraceTree,
 AsyncState,
 ProjectFilterSelect,
+RemoteFilterSelect,
     ElIconView,ElIconConnection,
   },
   data() {
@@ -737,11 +720,12 @@ if (val) this.detailTab = 'basic'
 },
 created: async function () {
 this.initDefaultTimeRange()
-this.restoreCachedState()
 var contextId = routeProjectId(
   this.$route,
   this.$store && this.$store.state.currentProject
 )
+this.contextProjectId = contextId
+this.restoreCachedState()
 if (contextId) {
   var currentProject = this.$store && this.$store.state.currentProject
   if (currentProject && Number(currentProject.id) === contextId && currentProject.projectCode) {
@@ -810,7 +794,7 @@ var cost = Number(value)
 return (isFinite(cost) ? cost.toFixed(2) : '0.00') + ' ms'
 },
 restoreCachedState: function () {
-var state = restorePageState('ExecutionLog')
+var state = restorePageState(projectPageStateKey('ExecutionLog', this.contextProjectId))
 if (state.qp) this.qp = Object.assign({}, this.qp, state.qp)
 if (state.timeRange) this.timeRange = state.timeRange
 this.normalizePagination()
@@ -823,7 +807,7 @@ this.qp.pageNum = Number.isInteger(pageNum) && pageNum > 0 ? pageNum : 1
 this.qp.pageSize = allowedPageSizes.indexOf(pageSize) >= 0 ? pageSize : 10
 },
 saveCachedState: function () {
-savePageState('ExecutionLog', {
+savePageState(projectPageStateKey('ExecutionLog', this.contextProjectId), {
   qp: this.qp,
   timeRange: this.timeRange,
 })
@@ -865,6 +849,19 @@ try {
 } finally {
   this.projectOptionsLoading = false
 }
+},
+fetchRuleOptions: function ({ query, pageNum, pageSize, modelType }) {
+return listRules({
+  projectCode: this.qp.projectCode || '',
+  projectName: this.qp.projectName || '',
+  keyword: query,
+  modelType,
+  pageNum,
+  pageSize,
+})
+},
+fetchRuleSetOptions: function (params) {
+return this.fetchRuleOptions({ ...params, modelType: 'RULE_SET' })
 },
 async loadRules(keyword) {
 this.ruleOptionsLoading = true
@@ -1124,12 +1121,9 @@ sourceTagType: function (source) {
 return source === 'SERVER' ? undefined : 'success'
 },
 onSourceChange: function () {
-this.qp.projectCode = this.contextProjectCode || ''
-this.qp.projectName = ''
-this.qp.ruleCode = ''
+this.ruleOptionsLoaded = false
 },
 onProjectChange: function () {
-this.qp.ruleCode = ''
 this.ruleList = []
 this.ruleOptionsLoaded = false
 },
@@ -1150,8 +1144,9 @@ this.qp.tokenCode = ''
 this.qp.traceId = ''
 this.qp.pageNum = 1
 this.initDefaultTimeRange()
-clearPageState('ExecutionLog')
-this.load()
+clearPageState(projectPageStateKey('ExecutionLog', this.contextProjectId))
+if (this.activeView === 'ruleSetStats') this.loadRuleSetStats()
+else this.load()
 },
 /** 初始化默认时间范围为最近三个月 */
 initDefaultTimeRange: function () {

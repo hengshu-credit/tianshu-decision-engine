@@ -154,6 +154,9 @@ public class VariableSourceResolver {
             }
             if (!readyVariables.isEmpty()) {
                 resolveVariableWave(readyVariables, resolvedParams, effectiveOptions, invocationCache);
+                for (RuleVariable variable : readyVariables) {
+                    variableMap.remove(resolveScriptName(variable));
+                }
                 progressed = true;
             }
             pendingVariables = delayedVariables;
@@ -167,6 +170,7 @@ public class VariableSourceResolver {
                     continue;
                 }
                 resolveOneModel(model, modelCode, resolvedParams, effectiveOptions, functions);
+                modelMap.remove(modelCode);
                 progressed = true;
             }
             pendingModels = delayedModels;
@@ -639,6 +643,20 @@ public class VariableSourceResolver {
         collectDependencyValues(parseJsonMap(apiConfig.getRequestMapping()), dependencies);
         collectDependencyValues(parseJsonOrRaw(apiConfig.getBodyTemplate()), dependencies);
         collectDependencyValues(parseJsonMap(apiConfig.getAuthApiConfig()), dependencies);
+        if ("ASYNC".equals(apiConfig.getRequestMode())) {
+            if ("CALLBACK".equals(apiConfig.getAsyncResultMode())) {
+                dependencies.removeIf(name -> "callbackUrl".equals(name) || name.startsWith("callbackUrl."));
+            } else {
+                Map<String, Object> poll = parseJsonMap(apiConfig.getAsyncPollConfig());
+                Set<String> pollDependencies = new LinkedHashSet<>();
+                for (String key : new String[]{"headerConfig", "queryConfig", "requestMapping", "resultEndpointUrl"}) {
+                    collectDependencyValues(poll.get(key), pollDependencies);
+                }
+                pollDependencies.removeIf(name -> "taskId".equals(name) || "submission".equals(name)
+                        || name.startsWith("submission.") || name.startsWith("taskId."));
+                dependencies.addAll(pollDependencies);
+            }
+        }
     }
 
     private Set<String> collectModelInputNames(RuleModel model) {
@@ -1033,15 +1051,18 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("DB变量缺少查询SQL");
         }
         List<Object> queryParams = alignQueryParamsWithSql(sql, buildDbParamList(variable, config.get("params"), params, options));
-        int maxRows = intValue(config.get("maxRows"), 1);
+        DatabaseQueryOptions queryOptions = DatabaseQueryOptions.from(config, 1);
+        int maxRows = queryOptions.maxRows();
         long start = System.currentTimeMillis();
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = loadDbDatasource(datasourceId);
         Map<String, Object> request = buildDbLogRequest(datasource, variable, config, sql, queryParams, maxRows, startTime);
+        request.put("queryTimeoutSeconds", queryOptions.queryTimeoutSeconds());
         RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
                 "DATABASE", variable.getProjectId(), datasourceId, resolveScriptName(variable));
         try {
-            List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams, maxRows);
+            List<Map<String, Object>> rows = dbConnectPools.query(datasourceId, sql, queryParams,
+                    maxRows, queryOptions.queryTimeoutSeconds());
             if (options.isCaptureDatabasePreview()) options.setDatabasePreviewRows(rows);
             options.recordSourceState("VARIABLE", variable.getId(), "OUTCOME", "SUCCESS");
             options.recordSourceState("VARIABLE", variable.getId(), "DATA_STATE",
@@ -1553,6 +1574,7 @@ public class VariableSourceResolver {
         if (rows == null || rows.isEmpty()) {
             return null;
         }
+        if (maxRows != 1) return rows;
         Map<String, Object> first = rows.get(0);
         if (first == null || first.isEmpty()) {
             return null;

@@ -4,7 +4,8 @@ import {
   createFunctionOperand,
   createLiteralOperand,
   createOperationOperand,
-  inferOperandType
+  inferOperandType,
+  OPERATION_OPERATORS
 } from '@/utils/operand'
 
 export function getExpressionNode(root, path = []) {
@@ -26,7 +27,38 @@ export function setExpressionNode(root, path = [], value) {
 }
 
 export function removeExpressionNode(root, path = []) {
-  return setExpressionNode(root, path, null)
+  return removeExpressionSelection(root, path).root
+}
+
+export function removeExpressionSelection(root, path = []) {
+  const location = operationTermLocation(root, path)
+  if (location) {
+    const terms = cloneOperand(location.parent.terms)
+    terms.splice(location.index, 1)
+    if (terms[0]) delete terms[0].operator
+    const next = terms.length > 1
+      ? { ...cloneOperand(location.parent), terms }
+      : (terms[0] && terms[0].operand) || null
+    return {
+      root: setExpressionNode(root, location.parentPath, next),
+      selectedPath: terms.length > 1
+        ? location.parentPath.concat(['terms', Math.min(location.index, terms.length - 1), 'operand'])
+        : firstEditablePath(next, location.parentPath),
+      changed: true
+    }
+  }
+  if (!getExpressionNode(root, path)) return unchanged(root, path)
+  return { root: setExpressionNode(root, path, null), selectedPath: path.slice(), changed: true }
+}
+
+export function replaceExpressionOperator(root, path, operator) {
+  const location = operationTermLocation(root, path)
+  if (!location || location.index === 0 || !OPERATION_OPERATORS.includes(operator) || location.parent.terms[location.index].operator === operator) {
+    return unchanged(root, path)
+  }
+  const next = cloneOperand(location.parent)
+  next.terms[location.index].operator = operator
+  return { root: setExpressionNode(root, location.parentPath, next), selectedPath: path.slice(), changed: true }
 }
 
 export function expressionChildEntries(node, basePath = []) {
@@ -133,15 +165,21 @@ export function functionParameters(fn) {
 }
 
 export function insertExpressionOperation(root, selectedPath = [], operator) {
+  if (!OPERATION_OPERATORS.includes(operator)) return unchanged(root, selectedPath)
   const path = selectedPath.slice()
   const current = getExpressionNode(root, path)
+  const location = operationTermLocation(root, path)
+  if (!current && location && location.index > 0) {
+    return replaceExpressionOperator(root, path, operator)
+  }
   if (current && current.kind === 'OPERATION') {
     const next = cloneOperand(current)
     const index = (next.terms || []).length
     next.terms = (next.terms || []).concat([{ operator, operand: null }])
     return {
       root: setExpressionNode(root, path, next),
-      selectedPath: path.concat(['terms', index, 'operand'])
+      selectedPath: path.concat(['terms', index, 'operand']),
+      changed: true
     }
   }
 
@@ -154,7 +192,8 @@ export function insertExpressionOperation(root, selectedPath = [], operator) {
       next.terms.splice(index + 1, 0, { operator, operand: null })
       return {
         root: setExpressionNode(root, parentPath, next),
-        selectedPath: parentPath.concat(['terms', index + 1, 'operand'])
+        selectedPath: parentPath.concat(['terms', index + 1, 'operand']),
+        changed: true
       }
     }
   }
@@ -165,7 +204,8 @@ export function insertExpressionOperation(root, selectedPath = [], operator) {
   ], inferOperandType(current))
   return {
     root: setExpressionNode(root, path, next),
-    selectedPath: path.concat(['terms', 1, 'operand'])
+    selectedPath: path.concat(['terms', 1, 'operand']),
+    changed: true
   }
 }
 
@@ -204,7 +244,7 @@ export function indentExpressionTerm(root, selectedPath = []) {
   const previousIndex = location.index - 1
   const previous = terms[previousIndex]
   const current = terms[location.index]
-  if (!previous || !previous.operand || !current || !current.operand || !current.operator) return unchanged(root, selectedPath)
+  if (!previous || !current || !current.operator) return unchanged(root, selectedPath)
 
   const nested = createOperationOperand([
     { operand: previous.operand },
@@ -225,6 +265,14 @@ export function indentExpressionTerm(root, selectedPath = []) {
 export function outdentExpressionOperation(root, selectedPath = []) {
   const location = operationTermLocation(root, selectedPath)
   const current = getExpressionNode(root, selectedPath)
+  // Tab selects the grouped child. Shift+Tab must also work from that child.
+  if (location && (!current || current.kind !== 'OPERATION')) {
+    const outer = operationTermLocation(root, location.parentPath)
+    if (!outer) return unchanged(root, selectedPath)
+    const result = outdentExpressionOperation(root, location.parentPath)
+    if (result.changed) result.selectedPath = outer.parentPath.concat(['terms', outer.index + location.index, 'operand'])
+    return result
+  }
   if (!location || !current || current.kind !== 'OPERATION' || (current.terms || []).length < 2) {
     return unchanged(root, selectedPath)
   }

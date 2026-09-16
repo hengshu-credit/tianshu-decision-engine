@@ -27,6 +27,57 @@ function createHorizontalGraph() {
 }
 
 describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
+  test.each(['legacy', 'logicflow'])('%s 模型加载、编译序列化与再次加载保留脚本引用 ID', async format => {
+    let graph = { nodes: [], edges: [] }
+    const conditionExpression = 'taxpayerType == "一般纳税人"'
+    const scriptVarRefs = [{ refCode: 'taxpayerType', varId: 255, refType: 'VARIABLE' }]
+    const source = {
+      nodes: [
+        { id: 'start', type: 'start', x: 100, y: 100 },
+        { id: 'end', type: 'end', x: 300, y: 100 }
+      ],
+      edges: [{ id: 'condition', source: 'start', target: 'end', conditionExpression }],
+      scriptVarRefs
+    }
+    if (format === 'logicflow') source.logicflow = designer.methods.convertLegacyModel(source)
+    const context = {
+      viewRevision: { modelJson: JSON.stringify(source) },
+      lf: {
+        render: vi.fn(data => { graph = data }),
+        getGraphData: () => graph,
+        setDefaultEdgeType: vi.fn(),
+        graphModel: { edges: [] }
+      },
+      convertLegacyModel: designer.methods.convertLegacyModel,
+      lfTypeToBackend: designer.methods.lfTypeToBackend,
+      refreshStartNodeState: vi.fn(),
+      updateZoom: vi.fn(),
+      _syncModelVarRefs: vi.fn(),
+      initializeDesignerDraftTracking: vi.fn(),
+      serializeDesignerDraft() {
+        return JSON.stringify(designer.methods.buildBackendModel.call(this, false))
+      },
+      $nextTick: callback => callback(),
+      $message: { error: vi.fn() }
+    }
+
+    await designer.methods.loadContent.call(context)
+    const serialized = context.serializeDesignerDraft()
+    expect(context.$message.error).not.toHaveBeenCalled()
+    expect(JSON.parse(serialized)).toMatchObject({
+      scriptVarRefs,
+      edges: [{ conditionExpression }]
+    })
+
+    context.viewRevision = { modelJson: serialized }
+    await designer.methods.loadContent.call(context)
+    expect(JSON.parse(context.serializeDesignerDraft()).scriptVarRefs).toEqual(scriptVarRefs)
+
+    context.viewRevision = { modelJson: JSON.stringify({ ...source, scriptVarRefs: undefined }) }
+    await designer.methods.loadContent.call(context)
+    expect(JSON.parse(context.serializeDesignerDraft()).scriptVarRefs).toEqual([])
+  })
+
   test('锚点轻微拖动且未创建连线时仍打开快捷新增菜单', () => {
     const payload = { data: { id: 'task_1' }, nodeModel: { id: 'task' }, e: { clientX: 106, clientY: 100 } }
     const context = { anchorGesture: null, openAnchorMenu: vi.fn() }

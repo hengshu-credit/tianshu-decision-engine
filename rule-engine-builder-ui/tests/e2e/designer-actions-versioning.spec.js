@@ -71,8 +71,14 @@ for (const [route, id, modelType, add] of designers) {
     expect(data.executed[0]).toMatchObject({ definitionId: String(id), projectId: 1, modelType, modelJson: expect.any(String) })
     expect(data.saved).toHaveLength(0)
     await page.getByRole('dialog', { name: '测试执行' }).getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(page.getByRole('dialog', { name: '测试执行' })).toBeHidden()
+    const beforeCompile = await bar.boundingBox()
     await bar.locator('[data-action="compile"]').click()
     await expect(page.getByTestId('designer-info')).toContainText('编译与发布前检查通过')
+    const afterCompile = await bar.boundingBox()
+    expect(afterCompile.height).toBe(beforeCompile.height)
+    expect(afterCompile.y).toBe(beforeCompile.y)
+    await expect(page.getByRole('dialog', { name: '编译检查结果' })).toHaveCount(0)
     expect(data.compiled[0]).toMatchObject({ sourceType: 'VERSION', sourceId: '81', modelJson: data.executed[0].modelJson })
     expect(data.saved).toHaveLength(0)
     await bar.locator('[data-action="save"]').click()
@@ -82,9 +88,134 @@ for (const [route, id, modelType, add] of designers) {
     expect(data.saved[0]).not.toHaveProperty('revisionId')
     await expect(page.getByTestId('designer-version-select')).toContainText('草稿')
     await expect(page.getByTestId('designer-version-select')).not.toContainText('999')
+    await page.getByTestId('designer-version-select').click()
+    const draftOption = page.getByRole('option', { name: /草稿 · 1/ })
+    const optionBox = await draftOption.boundingBox()
+    const deleteBox = await draftOption.getByRole('button', { name: /删除草稿/ }).boundingBox()
+    expect(Math.abs(deleteBox.y + deleteBox.height / 2 - optionBox.y - optionBox.height / 2)).toBeLessThanOrEqual(1)
+    expect(deleteBox.x + deleteBox.width).toBeLessThanOrEqual(optionBox.x + optionBox.width)
+    await page.getByRole('combobox', { name: '选择规则版本' }).press('Escape')
     await page.reload()
     await expect(page.getByTestId('designer-version-select')).toContainText('草稿')
     expect(data.saved).toHaveLength(1)
+    harness.assertClean()
+  })
+}
+
+for (const route of ['table', 'flow', 'tree', 'script']) {
+  test(`${route} 编译错误在弹窗展示，关闭报告后操作栏保持高度`, async ({ page }) => {
+    const [, id] = designers.find(item => item[0] === route)
+    const data = fixtures(id)
+    const issue = { code: 'COMPILE_FAILED', message: '表达式缺少右括号', path: '$.script' }
+    data.apiData.set(`POST /api/rule/definition/${id}/designer/compile`, {
+      compileSuccess: false, compileMessage: issue.message,
+      preflightReport: { valid: false, errors: [issue], warnings: [] }
+    })
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}`)
+    const bar = page.locator('main .rule-designer-actions')
+    await expect(bar.locator('[data-action="compile"]')).toBeEnabled()
+    const before = await bar.boundingBox()
+    await bar.locator('[data-action="compile"]').click()
+    const report = page.getByRole('dialog', { name: '编译检查结果' })
+    await expect(report).toContainText(issue.message)
+    await expect(bar.locator('.validation-report')).toHaveCount(0)
+    await report.getByRole('button', { name: '关闭', exact: true }).click()
+    await expect(report).toBeHidden()
+    const after = await bar.boundingBox()
+    expect(after.height).toBe(before.height)
+    expect(after.y).toBe(before.y)
+    expect(data.saved).toHaveLength(0)
+    harness.assertClean()
+  })
+}
+
+for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom']) {
+  test(`${route} ${direction} 美化后分支在实际网格画布中等距居中`, async ({ page }) => {
+    const [, id] = designers.find(item => item[0] === route)
+    const data = fixtures(id)
+    const nodes = [
+      { id: 'root', type: 'exclusive-gateway', x: 300, y: 300, properties: { nodeName: '分支中心' } },
+      { id: 'a', type: 'script-task', x: 520, y: 300, properties: { nodeName: '分支 A' } },
+      { id: 'b', type: 'script-task', x: 520, y: 460, properties: { nodeName: '分支 B' } },
+    ]
+    const edges = ['a', 'b'].map(target => ({
+      id: `root-${target}`, type: 'polyline', sourceNodeId: 'root', targetNodeId: target,
+      sourceAnchorId: `root_${direction === 'right' ? 1 : 2}`,
+      targetAnchorId: `${target}_${direction === 'right' ? 3 : 0}`, properties: {}
+    }))
+    data.apiData.set(`/api/rule/definition/${id}/versions/81`, { id: 81, version: 1, modelJson: JSON.stringify({ logicflow: { nodes, edges } }) })
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}`)
+    const canvasNodes = page.locator(`.${route}-canvas .lf-node:not(.lf-mini-map .lf-node)`)
+    await expect(canvasNodes).toHaveCount(3)
+    await page.getByRole('button', { name: '一键美化', exact: true }).click()
+    const readPositions = () => canvasNodes.evaluateAll(elements => Object.fromEntries(elements.map(element => {
+      const box = element.querySelector('circle, rect, polygon').getBBox()
+      return [element.textContent.trim(), { x: box.x + box.width / 2, y: box.y + box.height / 2 }]
+    })))
+    const axis = direction === 'right' ? 'y' : 'x'
+    const positions = await readPositions()
+    expect((positions['分支 A'][axis] + positions['分支 B'][axis]) / 2).toBe(positions['分支中心'][axis])
+    expect(positions['分支 A'][axis]).not.toBe(positions['分支 B'][axis])
+    await page.getByRole('button', { name: '一键美化', exact: true }).click()
+    expect(await readPositions()).toEqual(positions)
+    expect(data.saved).toHaveLength(0)
+    harness.assertClean()
+  })
+}
+
+for (const route of ['flow', 'tree']) for (const direction of ['right', 'bottom']) {
+  test(`${route} ${direction} 美化统一折线主干并将中间节点居中，保存重载保留路径`, async ({ page }) => {
+    const [, id] = designers.find(item => item[0] === route)
+    const data = fixtures(id)
+    const point = (main, cross) => direction === 'right' ? { x: main, y: cross } : { x: cross, y: main }
+    const nodes = [
+      { id: 'root', type: 'exclusive-gateway', ...point(300, 300), properties: { nodeName: '是否有违' } },
+      { id: 'd', type: 'script-task', ...point(540, 180), properties: { nodeName: '信用等级D' } },
+      { id: 'middle', type: 'exclusive-gateway', ...point(540, 420), properties: { nodeName: '合规评分' } },
+      ...['a', 'b', 'c'].map((id, index) => ({ id, type: 'script-task', ...point(780, 260 + index * 160), properties: { nodeName: `信用等级${id.toUpperCase()}` } }))
+    ]
+    const edges = [['root', 'd'], ['root', 'middle'], ['middle', 'a'], ['middle', 'b'], ['middle', 'c']]
+      .map(([source, target]) => ({
+        id: `${source}-${target}`, type: 'polyline', sourceNodeId: source, targetNodeId: target,
+        sourceAnchorId: `${source}_${direction === 'right' ? 1 : 2}`,
+        targetAnchorId: `${target}_${direction === 'right' ? 3 : 0}`, properties: {}
+      }))
+    data.apiData.set(`/api/rule/definition/${id}/versions/81`, { id: 81, version: 1, modelJson: JSON.stringify({ logicflow: { nodes, edges } }) })
+    const harness = await installDistRoutes(page, { apiData: data.apiData })
+    await page.setViewportSize({ width: 1600, height: 1000 })
+    await page.goto(`http://tianshu.local/index.html#/designer/${route}/${id}`)
+    const canvas = page.locator(`.${route}-canvas`)
+    await expect(canvas.locator('.lf-node:not(.lf-mini-map .lf-node)')).toHaveCount(6)
+    const geometry = () => canvas.evaluate(element => {
+      const paths = Object.fromEntries([...element.querySelectorAll('.lf-edge polyline[marker-end]')]
+        .filter(edge => !edge.closest('.lf-mini-map'))
+        .map(edge => [edge.getAttribute('marker-end').match(/#marker-end-(.+)\)/)[1], edge.getAttribute('points').trim().split(/\s+/).map(point => point.split(',').map(Number))]))
+      const middle = [...element.querySelectorAll('.lf-node')].find(node => !node.closest('.lf-mini-map') && node.textContent === '合规评分')
+      const bounds = middle.querySelector('polygon').getBBox()
+      return { paths, center: [bounds.x + bounds.width / 2, bounds.y + bounds.height / 2] }
+    })
+    const axis = direction === 'right' ? 0 : 1
+    const cross = 1 - axis
+    const lane = points => points.slice(1).map((p, i) => ({ p, previous: points[i] }))
+      .filter(({ p, previous }) => p[axis] === previous[axis])
+      .sort((a, b) => Math.abs(b.p[cross] - b.previous[cross]) - Math.abs(a.p[cross] - a.previous[cross]))[0]?.p[axis]
+    await page.getByRole('button', { name: '一键美化', exact: true }).click()
+    const result = await geometry()
+    const before = lane(result.paths['root-middle'])
+    const after = lane(result.paths['middle-a'])
+    expect(lane(result.paths['root-d'])).toBe(before)
+    expect(lane(result.paths['middle-c'])).toBe(after)
+    expect(result.center[axis]).toBe((before + after) / 2)
+    await page.getByRole('button', { name: '一键美化', exact: true }).click()
+    expect(await geometry()).toEqual(result)
+    await page.locator('main .rule-designer-actions [data-action="save"]').click()
+    await expect(page).toHaveURL(/sourceId=9001/)
+    await page.reload()
+    await expect(canvas.locator('.lf-node:not(.lf-mini-map .lf-node)')).toHaveCount(6)
+    expect(await geometry()).toEqual(result)
     harness.assertClean()
   })
 }

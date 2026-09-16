@@ -30,7 +30,9 @@ const expectedBindings = [
   ['views/experiment/ExperimentList.vue', '@keyup.enter="handleQuery"', 1],
   ['views/ruleList/ListLibrary.vue', '@keyup.enter="handleQuery"', 1],
   ['views/ruleList/ListDetail.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/ruleList/ListDetail.vue', '@keyup.enter="handleLogQuery"', 1],
   ['views/log/ExecutionLog.vue', '@keyup.enter="handleQuery"', 1],
+  ['views/log/ExecutionLog.vue', '@keyup.enter="loadRuleSetStats"', 1],
   ['components/common/ModuleCallLog.vue', '@keyup.enter="handleQuery"', 1]
 ]
 
@@ -46,8 +48,8 @@ const expectedBindingTotals = {
   'views/billing/BillingList.vue': 3,
   'views/experiment/ExperimentList.vue': 1,
   'views/ruleList/ListLibrary.vue': 1,
-  'views/ruleList/ListDetail.vue': 1,
-  'views/log/ExecutionLog.vue': 1,
+  'views/ruleList/ListDetail.vue': 2,
+  'views/log/ExecutionLog.vue': 2,
   'components/common/ModuleCallLog.vue': 1
 }
 

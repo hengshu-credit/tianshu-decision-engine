@@ -667,6 +667,7 @@ export default {
       edgeOrderVersion: 0,
       actionMode: 'visual',
       currentActionData: [],
+      scriptVarRefs: [],
       testVisible: false,
       endNodeScopeVisible: false,
       testParamsTemplate: {},
@@ -1638,11 +1639,13 @@ export default {
     async loadContent() {
       try {
         if (this.draftGuardPromise) await this.draftGuardPromise
+        this.scriptVarRefs = []
         const content = this.viewRevision
         if (content && content.modelJson && content.modelJson !== '{}') {
           const modelData = normalizeGraphActionData(
             JSON.parse(content.modelJson)
           )
+          this.scriptVarRefs = modelData.scriptVarRefs || []
           migrateModelJsonForEdgeLineTypes(modelData)
           this.globalEdgeLineType = modelData.defaultEdgeLineType
           this.lf.setDefaultEdgeType(this.globalEdgeLineType)
@@ -1926,6 +1929,7 @@ export default {
       return {
         nodes,
         edges,
+        scriptVarRefs: JSON.parse(JSON.stringify(this.scriptVarRefs || [])),
         defaultEdgeLineType: this.globalEdgeLineType,
         logicflow: { nodes: logicflowNodes, edges: logicflowEdges },
       }

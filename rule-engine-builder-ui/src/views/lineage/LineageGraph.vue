@@ -127,7 +127,7 @@
         <div v-if="showUpstream" class="side-caption is-upstream">
           {{ upstreamRoots.length ? '上游' : '暂无上游' }}
         </div>
-        <div class="side-caption is-current">当前节点</div>
+        <div class="side-caption is-current" :style="{ left: mindMapLayout.currentCenterX + 'px' }">当前节点</div>
         <div v-if="showDownstream" class="side-caption is-downstream">
           {{ downstreamRoots.length ? '下游' : '暂无下游' }}
         </div>
@@ -248,7 +248,7 @@
 import { markRaw } from 'vue'
 import { Share as ElIconShare } from '@element-plus/icons-vue'
 import { getLineageGraph, listLineageOptions } from '@/api/lineage'
-import { lineageLayers } from '@/utils/lineageLayers'
+import { lineageLayout } from '@/utils/lineageLayers'
 
 const CARD_W = 200
 const CARD_H = 88
@@ -475,34 +475,26 @@ export default {
     },
     mindMapLayout() {
       const nodeIds = ['CURRENT', ...this.visibleBranches.map(item => item.branch.instanceId)]
-      const layers = lineageLayers(nodeIds, this.visibleGraph.edges, 'CURRENT')
-      const maxDepth = Math.max(1, ...[...layers.values()].map(Math.abs))
+      const layout = lineageLayout(nodeIds, this.visibleGraph.edges, 'CURRENT')
+      const points = [...layout.positions.values(), ...[...layout.routes.values()].flat()]
+      const minLayer = Math.min(...points.map(point => point.layer))
+      const maxLayer = Math.max(...points.map(point => point.layer))
+      const contentWidth = CARD_W + (maxLayer - minLayer) * LEVEL_STEP
       const width = Math.max(
         MIN_CANVAS_W,
-        PADDING_X * 2 + CARD_W + maxDepth * LEVEL_STEP * 2
+        PADDING_X * 2 + contentWidth
       )
-      const columns = new Map()
-      nodeIds.forEach(id => {
-        const layer = layers.get(id)
-        if (!columns.has(layer)) columns.set(layer, [])
-        columns.get(layer).push(id)
+      const minRow = Math.min(...points.map(point => point.row))
+      const maxRow = Math.max(...points.map(point => point.row))
+      const contentHeight = CARD_H + (maxRow - minRow) * ROW_STEP
+      const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + contentHeight)
+      const position = point => ({
+        left: (width - contentWidth) / 2 + (point.layer - minLayer) * LEVEL_STEP,
+        top: (height - contentHeight) / 2 + (point.row - minRow) * ROW_STEP,
       })
-      const positions = {}
-      let maxOffset = 0
-      columns.forEach((ids, layer) => {
-        // 固定排序，避免收起某条路径后共享节点换用另一个路径实例而乱序。
-        ids.sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
-        const currentIndex = ids.indexOf('CURRENT')
-        const center = currentIndex >= 0 ? currentIndex : (ids.length - 1) / 2
-        ids.forEach((id, index) => {
-          const offset = (index - center) * ROW_STEP
-          maxOffset = Math.max(maxOffset, Math.abs(offset))
-          positions[id] = { left: (width - CARD_W) / 2 + layer * LEVEL_STEP, top: offset }
-        })
-      })
-      const height = Math.max(MIN_CANVAS_H, PADDING_Y * 2 + CARD_H + maxOffset * 2)
-      Object.values(positions).forEach(pos => { pos.top += (height - CARD_H) / 2 })
-      return { width, height, positions }
+      const positions = Object.fromEntries([...layout.positions].map(([id, point]) => [id, position(point)]))
+      const routes = Object.fromEntries([...layout.routes].map(([key, route]) => [key, route.map(position)]))
+      return { width, height, positions, routes, currentCenterX: positions.CURRENT.left + CARD_W / 2 }
     },
     canvasSize() {
       return {
@@ -530,11 +522,19 @@ export default {
           const x2 = to.left + (forward ? 0 : CARD_W)
           const y2 = to.top + CARD_H / 2
           const midX = sameLayer ? x1 + 48 : (x1 + x2) / 2
+          const route = this.mindMapLayout.routes[edge.key] || []
+          const points = [{ x: x1, y: y1 }, ...route.map(point => ({ x: point.left + CARD_W / 2, y: point.top + CARD_H / 2 })), { x: x2, y: y2 }]
+          const path = points.slice(1).reduce((path, point, index) => {
+            const previous = points[index]
+            const controlX = sameLayer ? midX : (previous.x + point.x) / 2
+            return `${path} C ${controlX} ${previous.y}, ${controlX} ${point.y}, ${point.x} ${point.y}`
+          }, `M ${x1} ${y1}`)
+          const labelPoint = route.length ? points[Math.floor(points.length / 2)] : { x: midX, y: (y1 + y2) / 2 }
           return {
             ...edge,
-            path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}`,
-            labelX: midX,
-            labelY: (y1 + y2) / 2 - 8,
+            path,
+            labelX: labelPoint.x,
+            labelY: labelPoint.y - 8,
           }
         })
         .filter(Boolean)

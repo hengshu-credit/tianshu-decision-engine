@@ -2,6 +2,8 @@ package com.hengshucredit.rule.server.controller.mgmt;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
 import com.hengshucredit.rule.model.entity.RuleDataObject;
+import com.hengshucredit.rule.model.dto.RuleValidationIssue;
+import com.hengshucredit.rule.server.service.DataObjectFieldReferenceValidator;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDataObjectFieldOption;
 import com.hengshucredit.rule.server.common.R;
@@ -34,6 +36,16 @@ public class RuleDataObjectController {
 
     @Resource
     private ConsoleOperatorResolver operatorResolver;
+
+    @Resource
+    private DataObjectFieldReferenceValidator fieldReferenceValidator;
+
+    @PostMapping("/{objectId:\\d+}/field/validate-reference")
+    @RequirePermission("field:edit")
+    public R<List<RuleValidationIssue>> validateFieldReference(
+            @PathVariable Long objectId, @RequestBody RuleDataObjectField field) {
+        return R.ok(fieldReferenceValidator.validateCandidate(objectId, field));
+    }
 
     @PostMapping("/import/java")
     @RequirePermission("approval:submit")

@@ -282,7 +282,7 @@
                     v-model="form.tokenRefreshOnUnauthorized"
                     :active-value="1"
                     :inactive-value="0"
-                    active-text="401/403 刷新一次" /></el-form-item
+                    active-text="命中条件后刷新一次" /></el-form-item
               ></el-col>
               <el-col :lg="8" :md="12"
                 ><el-form-item label="Token日志"
@@ -294,6 +294,14 @@
               ></el-col>
             </el-row>
 
+            <el-form-item v-if="form.tokenRefreshOnUnauthorized === 1" label="Token失效条件">
+              <el-radio-group v-model="tokenFailureMode">
+                <el-radio-button value="DEFAULT">HTTP 401 / 403</el-radio-button>
+                <el-radio-button value="CUSTOM">自定义条件</el-radio-button>
+              </el-radio-group>
+              <div class="field-help">自定义条件替代默认判断，可组合 httpStatus、body.code 等原始响应字段。每次调用最多刷新一次，刷新后仍失效则失败。</div>
+              <response-condition-tree-editor v-if="tokenFailureMode === 'CUSTOM'" :group="tokenFailureConditionRoot" :path-options="responsePathOptions" />
+            </el-form-item>
             <div
               v-if="form.authMode === 'INHERIT' || form.authMode === 'NONE'"
               class="empty-state"
@@ -1208,10 +1216,11 @@
 
         <el-tab-pane
           v-if="isConfigTabVisible('async')"
-          label="异步回调"
+          label="异步结果"
           name="async"
         >
           <div class="tab-section">
+            <el-alert title="规则会在 API 总超时内等待最终结果，再将结果交给 API 变量。提交、轮询或回调共用该时间；超时走异常策略。" type="info" :closable="false" />
             <el-row :gutter="12">
               <el-col :lg="8" :md="24">
                 <el-form-item label="结果获取方式">
@@ -1222,7 +1231,7 @@
                 </el-form-item>
               </el-col>
               <el-col :lg="8" :md="12">
-                <el-form-item label="任务号路径">
+                <el-form-item label="提交任务号路径">
                   <el-input
                     v-model="asyncShared.taskIdPath"
                     placeholder="如 body.taskId"
@@ -1268,7 +1277,7 @@
                   <el-form-item label="间隔毫秒">
                     <el-input-number
                       v-model="asyncPollConfig.intervalMs"
-                      :min="500"
+                      :min="1"
                       :step="500"
                       style="width: 100%"
                     />
@@ -1279,7 +1288,7 @@
                     <el-input-number
                       v-model="asyncPollConfig.maxAttempts"
                       :min="1"
-                      :max="200"
+                      :max="2147483647"
                       style="width: 100%"
                     />
                   </el-form-item>
@@ -1311,8 +1320,14 @@
                   </el-form-item>
                 </el-col>
               </el-row>
+              <el-form-item label="失败状态值">
+                <el-input v-model="asyncPollConfig.failureValue" placeholder="如 FAILED；命中后立即执行异常策略" />
+              </el-form-item>
+              <el-form-item label="轮询请求配置">
+                <monaco-editor v-model:value="asyncPollRequestText" language="json" height="180px" />
+                <div class="field-help">可配置 headerConfig、queryConfig、requestMapping、contentType、requestScript、responseScript。使用 $.taskId 或 ${taskId} 引用提交任务号；$.submission.body 可读取提交响应。</div>
+              </el-form-item>
             </div>
-
             <div v-else>
               <el-row :gutter="12">
                 <el-col :lg="12" :md="24">
@@ -1322,7 +1337,7 @@
                       :placeholder="engineCallbackPlaceholder"
                     />
                     <div class="field-help">
-                      把该地址配置给外部服务，外部服务完成后把任务号和结果通知给引擎。
+                      填写公网地址模板，保留 ${invocationId}。提交请求参数用 $.callbackUrl 引用本次回调地址，并传给外部服务。回调按原始请求体进行 HMAC-SHA256 验签，签名使用十六进制。
                     </div>
                   </el-form-item>
                 </el-col>
@@ -1366,7 +1381,7 @@
                   <el-form-item label="签名Header">
                     <el-input
                       v-model="asyncCallbackConfig.signatureHeader"
-                      placeholder="如 X-Signature，可为空"
+                      placeholder="如 X-Signature，必填"
                     />
                   </el-form-item>
                 </el-col>
@@ -1375,11 +1390,14 @@
                     <el-input
                       v-model="asyncCallbackConfig.signatureSecret"
                       show-password
-                      placeholder="用于验签，可为空"
+                      placeholder="HMAC-SHA256 共享密钥，必填"
                     />
                   </el-form-item>
                 </el-col>
               </el-row>
+              <el-form-item label="失败状态值">
+                <el-input v-model="asyncCallbackConfig.failureValue" placeholder="如 FAILED；命中后立即执行异常策略" />
+              </el-form-item>
             </div>
           </div>
         </el-tab-pane>
@@ -1831,6 +1849,8 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
+import { ASYNC_REQUEST_KEYS, parseAsyncRequest, validateAsyncApi } from '@/utils/externalApiConfig'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -1922,6 +1942,9 @@ export default {
         '2'
       ),
       retryConditionRoot: this.emptyApiConditionRoot(),
+      tokenFailureMode: 'DEFAULT',
+      tokenFailureConditionRoot: this.emptyApiConditionRoot('body.code', '==', 'TOKEN_EXPIRED'),
+      asyncPollRequestText: '{}',
       billingConfig: this.emptyBillingConfig(),
       asyncShared: this.emptyAsyncShared(),
       asyncPollConfig: this.emptyAsyncPollConfig(),
@@ -1968,6 +1991,7 @@ export default {
     }
   },
   name: 'ApiDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.form.apiName)],
   components: {
     ConditionGroupEditor,
     MonacoEditor,
@@ -2072,8 +2096,7 @@ export default {
       return this.uniquePathOptions(common.concat(fields))
     },
     engineCallbackPlaceholder() {
-      const code = this.form.apiCode || '{apiCode}'
-      return '/rule/datasource/api-callback/' + code
+      return 'https://公网地址/api/external-callback/${invocationId}'
     },
     visibleConfigTabs() {
       return this.configTabs.filter((item) => {
@@ -2286,6 +2309,7 @@ export default {
         concurrentWaitTimeoutMs: 0,
         tokenRefreshAheadSeconds: 60,
         tokenRefreshOnUnauthorized: 1,
+        tokenFailureCondition: '',
         tokenLogEnabled: 1,
         retryIntervalMs: 200,
         retryStatusCodes: '502,503,504',
@@ -2417,6 +2441,7 @@ export default {
         statusPath: 'body.status',
         successValue: 'SUCCESS',
         resultPath: 'body.data',
+        failureValue: 'FAILED',
       }
     },
     emptyAsyncCallbackConfig() {
@@ -2427,6 +2452,7 @@ export default {
         resultPath: 'body.data',
         signatureHeader: '',
         signatureSecret: '',
+        failureValue: 'FAILED',
       }
     },
     async loadDatasourceOptions() {
@@ -2519,6 +2545,8 @@ export default {
       this.syncCacheKeyConfigFromForm()
       this.syncSuccessConditionFromForm()
       this.syncRetryConditionFromForm()
+      this.tokenFailureMode = this.form.tokenFailureCondition ? 'CUSTOM' : 'DEFAULT'
+      this.tokenFailureConditionRoot = this.normalizeApiConditionRoot(this.parseConfigForTemplate(this.form.tokenFailureCondition), 'body.code', '==', 'TOKEN_EXPIRED')
       this.syncBillingConfigFromForm()
     },
     syncAuthConfigFromForm() {
@@ -2565,11 +2593,15 @@ export default {
         this.emptyAsyncCallbackConfig(),
         this.form.asyncCallbackConfig
       )
-      this.asyncShared.taskIdPath =
-        this.asyncPollConfig.taskIdPath ||
-        this.asyncCallbackConfig.taskIdPath ||
-        'body.taskId'
+      this.asyncShared.taskIdPath = this.form.asyncResultMode === 'CALLBACK'
+        ? this.asyncCallbackConfig.submissionTaskIdPath || this.asyncCallbackConfig.taskIdPath || 'body.taskId'
+        : this.asyncPollConfig.taskIdPath || 'body.taskId'
       if (!this.form.asyncResultMode) this.form.asyncResultMode = 'POLL'
+      const request = {}
+      ASYNC_REQUEST_KEYS.forEach((key) => {
+        if (this.asyncPollConfig[key] != null) request[key] = this.asyncPollConfig[key]
+      })
+      this.asyncPollRequestText = this.stringifyJson(request)
     },
     mergeJsonConfig(base, text) {
       if (!text) return { ...base }
@@ -2853,6 +2885,8 @@ export default {
       this.form.retryCondition = this.jsonTextOrBlank(
         this.buildRetryConditionConfig()
       )
+      this.form.tokenFailureCondition = this.tokenFailureMode === 'CUSTOM'
+        ? JSON.stringify(this.sanitizeApiConditionTree(this.tokenFailureConditionRoot)) : ''
       this.form.billingCondition = this.jsonTextOrBlank(
         this.buildBillingConditionConfig()
       )
@@ -2861,6 +2895,7 @@ export default {
           this.form.asyncResultMode === 'POLL'
             ? this.jsonTextOrBlank({
                 ...this.asyncPollConfig,
+                ...parseAsyncRequest(this.asyncPollRequestText),
                 taskIdPath: this.asyncShared.taskIdPath,
               })
             : ''
@@ -2868,7 +2903,7 @@ export default {
           this.form.asyncResultMode === 'CALLBACK'
             ? this.jsonTextOrBlank({
                 ...this.asyncCallbackConfig,
-                taskIdPath: this.asyncShared.taskIdPath,
+                submissionTaskIdPath: this.asyncShared.taskIdPath,
               })
             : ''
       } else {
@@ -3290,6 +3325,7 @@ export default {
         throw new Error('启用响应缓存时必须配置缓存键字段')
       }
       const successCondition = this.buildSuccessConditionConfig()
+      if (this.tokenFailureMode === 'CUSTOM') this.validateApiConditionTree(this.tokenFailureConditionRoot, 'Token鉴权失败条件')
       this.validateApiConditionTree(successCondition, '请求成功条件')
       const retryCondition = this.buildRetryConditionConfig()
       if (Object.keys(retryCondition).length) {
@@ -3315,6 +3351,7 @@ export default {
         cacheKeyConfig: '缓存键配置',
         successCondition: '请求成功条件',
         retryCondition: '业务响应重试条件',
+        tokenFailureCondition: 'Token鉴权失败条件',
         billingCondition: '计费条件',
         fallbackValue: '兜底返回',
         testSampleParams: '测试样例',
@@ -3325,6 +3362,7 @@ export default {
       })
       data.requestScript = this.blankToNull(data.requestScript)
       data.responseScript = this.blankToNull(data.responseScript)
+      validateAsyncApi(data)
       return data
     },
     handleBack() {
@@ -3554,6 +3592,7 @@ export default {
       const sample = {}
       const paths = []
       const addPath = (path) => {
+        if (row && row.requestMode === 'ASYNC' && row.asyncResultMode === 'CALLBACK' && path === 'callbackUrl') return
         if (path && paths.indexOf(path) < 0) paths.push(path)
       }
       const addPaths = (value) => {
@@ -3578,6 +3617,14 @@ export default {
       addPaths(row && row.queryConfig)
       addPaths(row && row.requestMapping)
       addPaths(row && row.bodyTemplate)
+      if (row && row.requestMode === 'ASYNC' && row.asyncResultMode === 'POLL') {
+        const poll = this.parseConfigForTemplate(row.asyncPollConfig) || {}
+        ;['headerConfig', 'queryConfig', 'requestMapping', 'resultEndpointUrl'].forEach((key) => {
+          collectReferencePaths(poll[key], { allowBarePath: false }).forEach((path) => {
+            if (path !== 'taskId' && path !== 'submission' && !path.startsWith('submission.')) addPath(path)
+          })
+        })
+      }
 
       const authConfig = this.parseConfigForTemplate(row && row.authApiConfig)
       if (authConfig && typeof authConfig === 'object') {

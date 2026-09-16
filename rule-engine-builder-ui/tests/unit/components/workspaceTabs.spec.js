@@ -26,6 +26,33 @@ function mountTabs(overrides = {}) {
 }
 
 describe('WorkspaceTabs', () => {
+  test('业务页签同时显示名称和具体标题，并将完整内容交给悬停提示', () => {
+    const title = '授信准入规则'.repeat(12)
+    const wrapper = mountTabs({ tabs: [{ ...TABS[1], title: '规则详情', detailTitle: title }] })
+    const fullTitle = `规则 · ${title}`
+
+    expect(wrapper.find('.workspace-tab__title').text()).toBe(fullTitle)
+    expect(wrapper.find('.workspace-tab__main').attributes('aria-label')).toBe(fullTitle)
+    expect(wrapper.find('.workspace-tab__close').attributes('aria-label')).toBe(`关闭${fullTitle}`)
+    expect(wrapper.find('el-tooltip-stub').attributes('content')).toBe(fullTitle)
+    wrapper.unmount()
+  })
+
+  test.each([
+    ['项目管理', '', '项目'],
+    ['项目详情', '授信项目', '项目 · 授信项目'],
+    ['决策表设计器', '准入规则', '决策表 · 准入规则'],
+    ['QL脚本编辑器', '计算额度', 'QL脚本 · 计算额度'],
+    ['外数数据源详情', '征信服务', '外数 · 征信服务'],
+    ['外数 API 详情', '风险查询', 'API · 风险查询'],
+    ['数据库数据源详情', '风控只读库', '数据库 · 风控只读库'],
+    ['配置表达式', '决策表 · 左操作数', '表达式 · 决策表 · 左操作数'],
+  ])('页签名称 %s 简化后保留具体业务标题', (title, detailTitle, expected) => {
+    const wrapper = mountTabs({ tabs: [{ ...TABS[0], title, detailTitle }] })
+    expect(wrapper.find('.workspace-tab__title').text()).toBe(expected)
+    wrapper.unmount()
+  })
+
   test('渲染所有页签并标记活动页', () => {
     const wrapper = mountTabs()
 

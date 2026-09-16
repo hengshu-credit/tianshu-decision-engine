@@ -576,6 +576,7 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         Map<Long, List<Map<String, Object>>> childrenByParent = new HashMap<>();
         for (RuleDataObjectField field : sorted) {
             Map<String, Object> row = toVariableRow(field);
+            row.put("originalScriptName", field.getScriptName());
             normalizeObjectFieldScriptName(row, objScriptName);
             normalizeObjectFieldDisplay(row, objScriptName);
             rowById.put(field.getId(), row);

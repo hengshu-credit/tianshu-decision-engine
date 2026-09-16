@@ -29,6 +29,64 @@ function mountEditor(propsData = {}) {
 }
 
 describe('ExpressionEditorDialog', () => {
+  test('画布空项删除与操作符替换可以撤销重做且不改变原始引用', async () => {
+    const field = { kind: 'REFERENCE', refType: 'VARIABLE', refId: 17, code: 'amount' }
+    const value = createOperationOperand([{ operand: field }, { operator: '+', operand: null }])
+    const wrapper = mountEditor({ value })
+    const canvas = wrapper.findComponent({ name: 'ExpressionCanvas' })
+    const path = ['terms', 1, 'operand']
+    canvas.vm.$emit('replaceOperator', { path, operator: '*' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.draft.terms[1].operator).toBe('*')
+    canvas.vm.$emit('remove', path)
+    expect(wrapper.vm.draft).toEqual(field)
+    expect(wrapper.vm.selectedPath).toEqual([])
+    wrapper.vm.undo()
+    expect(wrapper.vm.draft.terms[1]).toEqual({ operator: '*', operand: null })
+    wrapper.vm.undo()
+    expect(wrapper.vm.draft).toEqual(value)
+    wrapper.vm.redo()
+    wrapper.vm.redo()
+    expect(wrapper.vm.draft).toEqual(field)
+    expect(value.terms).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('键盘逻辑与比较运算符合并为有效操作符，不积累空项或重复历史', () => {
+    const wrapper = mountEditor({ value: { kind: 'LITERAL', value: 1, valueType: 'NUMBER' } })
+    wrapper.vm.operatorKey({ path: [], key: '|' })
+    const path = ['terms', 1, 'operand']
+    expect(wrapper.vm.draft.terms[1].operator).toBe('||')
+    const historyIndex = wrapper.vm.historyIndex
+    wrapper.vm.operatorKey({ path, key: '|' })
+    expect(wrapper.vm.historyIndex).toBe(historyIndex)
+    wrapper.vm.operatorKey({ path, key: '&' })
+    expect(wrapper.vm.draft.terms[1].operator).toBe('&&')
+    wrapper.vm.operatorKey({ path, key: '>' })
+    wrapper.vm.operatorKey({ path, key: '=' })
+    expect(wrapper.vm.draft.terms[1].operator).toBe('>=')
+    wrapper.vm.operatorKey({ path, key: '!' })
+    wrapper.vm.operatorKey({ path, key: '=' })
+    expect(wrapper.vm.draft.terms[1].operator).toBe('!=')
+    expect(wrapper.vm.draft.terms).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  test('公式与脚本预览独立放在编辑区下方，配置变化及撤销实时更新预览', async () => {
+    const wrapper = mountEditor({ embedded: true, value: { kind: 'LITERAL', value: '1', valueType: 'NUMBER' } })
+    const body = wrapper.find('.expression-editor__body')
+    const preview = wrapper.findComponent({ name: 'ExpressionFormulaPreview' })
+    expect(body.findComponent({ name: 'ExpressionFormulaPreview' }).exists()).toBe(false)
+    expect(body.element.compareDocumentPosition(preview.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    wrapper.vm.insertTemplate({ kind: 'LITERAL', value: '2', valueType: 'NUMBER' })
+    await wrapper.vm.$nextTick()
+    expect(preview.props('operand').value).toBe('2')
+    wrapper.vm.undo()
+    await wrapper.vm.$nextTick()
+    expect(preview.props('operand').value).toBe('1')
+    wrapper.unmount()
+  })
+
   test('点击函数插入当前槽并自动选中首个参数', () => {
     const wrapper = mountEditor()
     wrapper.vm.insertTemplate(wrapper.vm.functionTemplate({ id: 7, funcCode: 'max', paramsJson: '[{"name":"a","type":"NUMBER"},{"name":"b","type":"NUMBER"}]' }))

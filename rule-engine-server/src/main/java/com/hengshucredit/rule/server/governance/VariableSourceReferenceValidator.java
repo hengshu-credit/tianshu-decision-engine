@@ -12,6 +12,7 @@ import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
+import com.hengshucredit.rule.server.service.DatabaseQueryOptions;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -178,6 +179,11 @@ public class VariableSourceReferenceValidator {
 
     private void validateDatabase(RuleVariable variable, JSONObject config,
                                   List<GovernanceIssue> issues) {
+        try {
+            DatabaseQueryOptions.from(config, 1);
+        } catch (IllegalArgumentException exception) {
+            issues.add(issue(variable, "VARIABLE_SOURCE_QUERY_LIMIT_INVALID", exception.getMessage(), "$.sourceConfig"));
+        }
         Long datasourceId = longValue(config.get("dbDatasourceId"));
         if (datasourceId == null) {
             datasourceId = longValue(config.get("datasourceId"));

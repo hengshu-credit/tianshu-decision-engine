@@ -45,14 +45,8 @@
           @insert="insertTemplate"
         />
         <section class="expression-workspace">
-          <expression-formula-preview
-            :operand="draft"
-            :vars="vars"
-            :functions="functions"
-            @confirm="replaceDraftFromScript"
-          />
           <div class="workspace-tools">
-            <span>复杂公式可折叠子表达式，当前编辑位置会自动展开。</span>
+            <span>选中卡片后：Tab 缩进，Shift+Tab 取消缩进，Delete 删除，输入运算符添加或调整。输入框内按 Esc 返回卡片。</span>
             <div>
               <el-button size="small" @click="collapseToOverview"
                 >折叠到两层</el-button
@@ -67,7 +61,7 @@
             show-icon
             :title="validationErrors[0].message"
           />
-          <div class="canvas-scroll">
+          <div ref="canvasScroll" class="canvas-scroll">
             <expression-canvas
               :node="draft"
               :selected-path="selectedPath"
@@ -85,6 +79,9 @@
               @outdent="outdentPath"
               @move="movePath"
               @moveNode="moveNode"
+              @remove="removePath"
+              @replaceOperator="replaceOperator"
+              @operatorKey="operatorKey"
             />
           </div>
         </section>
@@ -95,6 +92,14 @@
           @remove="removeSelected"
         />
       </main>
+
+      <expression-formula-preview
+        class="expression-editor__preview"
+        :operand="draft"
+        :vars="vars"
+        :functions="functions"
+        @confirm="replaceDraftFromScript"
+      />
 
       <footer v-if="!embedded" class="expression-editor__footer">
         <span
@@ -138,7 +143,8 @@ import {
   moveExpressionNode,
   moveExpressionSibling,
   outdentExpressionOperation,
-  removeExpressionNode,
+  removeExpressionSelection,
+  replaceExpressionOperator,
   setExpressionNode,
   wrapExpressionNode,
 } from './expressionTree'
@@ -255,11 +261,7 @@ export default {
           this.selectedPath,
           term && term.operator
         )
-        this.commit(result.root)
-        this.selectedPath = result.selectedPath
-        this.revealPath(this.selectedPath)
-        this.validationErrors = []
-        this.clearPathCandidates()
+        this.applyTreeResult(result)
         return
       }
       const current = getExpressionNode(this.draft, this.selectedPath)
@@ -287,14 +289,32 @@ export default {
       if (nextCount > previousCount) {
         this.selectedPath = basePath.concat(['terms', nextCount - 1, 'operand'])
         this.revealPath(this.selectedPath)
+      } else if (nextCount < previousCount) {
+        this.selectedPath = firstEditablePath(node, basePath)
+        this.revealPath(this.selectedPath)
       }
       this.clearPathCandidates()
     },
     removeSelected() {
-      const path = this.selectedPath.slice()
-      this.commit(removeExpressionNode(this.draft, path))
-      this.selectedPath = path
-      this.clearPathCandidates()
+      this.removePath(this.selectedPath)
+    },
+    removePath(path) {
+      this.applyTreeResult(removeExpressionSelection(this.draft, path))
+    },
+    replaceOperator({ path, operator }) {
+      this.applyTreeResult(replaceExpressionOperator(this.draft, path, operator))
+    },
+    operatorKey({ path, key, replace = false }) {
+      if (!this.effectiveAllowedKinds.includes('OPERATION')) return
+      const current = getExpressionNode(this.draft, path)
+      const term = getExpressionNode(this.draft, path.slice(0, -1))
+      const previous = (replace || !current) && term && term.operator
+      const operator = key === '=' && ['>', '<', '!=', '>=', '<='].includes(previous)
+        ? (previous.length === 1 ? previous + '=' : previous)
+        : ({ '|': '||', '&': '&&', '=': '==', '!': '!=' }[key] || key)
+      this.applyTreeResult(replace
+        ? replaceExpressionOperator(this.draft, path, operator)
+        : insertExpressionOperation(this.draft, path, operator))
     },
     patchCanvasNode({ path, fields }) {
       const current = getExpressionNode(this.draft, path)
@@ -338,6 +358,13 @@ export default {
       this.revealPath(this.selectedPath)
       this.validationErrors = []
       this.clearPathCandidates()
+      this.focusCanvasSelection()
+    },
+    async focusCanvasSelection() {
+      // Newly mounted inline inputs focus themselves; keep structural shortcuts on the card.
+      await this.$nextTick()
+      await this.$nextTick()
+      this.$refs.canvasScroll?.querySelector('.canvas-node--selected')?.focus()
     },
     replaceDraftFromScript(operand) {
       this.commit(operand)
@@ -498,7 +525,7 @@ export default {
   z-index: 3200;
   inset: 0;
   display: grid;
-  grid-template-rows: 68px minmax(0, 1fr) 64px;
+  grid-template-rows: 68px minmax(0, 1fr) auto 64px;
   background: var(--tianshu-bg-surface);
   color: var(--tianshu-text-primary);
 }
@@ -509,7 +536,7 @@ export default {
   width: 100%;
   height: 100%;
   min-height: 0;
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
@@ -555,6 +582,11 @@ export default {
   min-height: 0;
   overflow: auto;
 }
+.expression-editor__preview {
+  min-height: 0;
+  max-height: 50vh;
+  overflow: auto;
+}
 .expression-workspace {
   display: flex;
   min-width: 300px;
@@ -566,6 +598,7 @@ export default {
 }
 .workspace-tools {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -573,10 +606,14 @@ export default {
   color: var(--tianshu-text-tertiary);
   font-size: 12px;
 }
+.workspace-tools > span {
+  flex: 1 1 240px;
+}
 .workspace-tools > div {
   display: flex;
   flex: none;
   gap: 6px;
+  margin-left: auto;
 }
 .canvas-scroll {
   flex: 1;

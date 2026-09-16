@@ -361,7 +361,7 @@ import {
 } from '@/utils/pageStateCache'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
-import { routeProjectId } from '@/utils/projectContext'
+import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
 
@@ -419,11 +419,11 @@ export default {
   name: 'RuleList',
   components: { RemoteFilterSelect, ProjectFilterSelect, RuleModelTypeHelp },
   created() {
-    this.restoreCachedState()
     this.contextProjectId = routeProjectId(
       this.$route,
       this.$store && this.$store.state.currentProject
     )
+    this.restoreCachedState()
     if (this.contextProjectId) {
       this.queryParams.projectId = this.contextProjectId
     }
@@ -432,12 +432,12 @@ export default {
   },
   methods: {
     restoreCachedState() {
-      const state = restorePageState('RuleList')
+      const state = restorePageState(projectPageStateKey('RuleList', this.contextProjectId))
       if (state.queryParams)
         this.queryParams = { ...this.queryParams, ...state.queryParams }
     },
     saveCachedState() {
-      savePageState('RuleList', { queryParams: this.queryParams })
+      savePageState(projectPageStateKey('RuleList', this.contextProjectId), { queryParams: this.queryParams })
     },
     async loadProjectList() {
       // 项目列表会话级缓存，避免每次进页面都请求
@@ -578,7 +578,7 @@ export default {
           ? { projectId: this.contextProjectId }
           : {}),
       }
-      clearPageState('RuleList')
+      clearPageState(projectPageStateKey('RuleList', this.contextProjectId))
       this.loadData()
     },
     onRuleScopeChange(val) {

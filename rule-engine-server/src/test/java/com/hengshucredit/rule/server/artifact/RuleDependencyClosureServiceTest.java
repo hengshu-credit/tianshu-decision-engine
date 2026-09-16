@@ -112,6 +112,31 @@ public class RuleDependencyClosureServiceTest {
     }
 
     @Test
+    public void dataObjectConstantReferenceFreezesAsAConstantDependency() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{}");
+        service.inputs = List.of(field("DATA_OBJECT", 30L));
+        RuleDataObjectField mapped = new RuleDataObjectField();
+        mapped.setId(30L);
+        mapped.setProjectId(9L);
+        mapped.setScope("PROJECT");
+        mapped.setVarType("NUMBER");
+        mapped.setRefVariableId(7L);
+        mapped.setStatus(1);
+        service.dataObjectFields.put(30L, mapped);
+        RuleVariable constant = variable(7L, 1);
+        constant.setProjectId(9L);
+        constant.setScope("PROJECT");
+        constant.setVarSource("CONSTANT");
+        constant.setDefaultValue("65");
+        service.variables.put(7L, constant);
+
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertTrue(closure.getDependencies().stream().anyMatch(value -> "CONSTANT:7".equals(value.getComponentId())));
+    }
+
+    @Test
     public void referencedInactiveRuleRemainsAHardDependencyError() {
         FixtureService service = new FixtureService();
         service.revision.setModelJson("{\"kind\":\"RULE_CALL\",\"ruleId\":101}");

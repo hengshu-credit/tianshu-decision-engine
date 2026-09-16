@@ -37,7 +37,7 @@ export const ACCENT_PRESETS = Object.freeze([
     'LIQUID_PURPLE_GRADIENT',
     '凝液紫渐变',
     '#873FF2',
-    '#2CC7B8',
+    '#B16CF2',
     'linear-gradient(135deg, #19103B 0%, #873FF2 100%)'
   ),
   gradient(

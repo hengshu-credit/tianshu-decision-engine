@@ -68,7 +68,7 @@ public class GovernanceResourceAdapterConfiguration {
             RuleVariableMapper variableMapper) {
         return new DataObjectGovernedResourceAdapter(
                 store(mapper), fieldMapper, optionMapper,
-                secretCodec, variableMapper);
+                secretCodec, variableMapper, mapper);
     }
 
     @Bean
@@ -101,16 +101,7 @@ public class GovernanceResourceAdapterConfiguration {
     public GovernedResourceAdapter externalApiGovernanceAdapter(
             RuleExternalApiConfigMapper mapper,
             GovernanceSecretCodec secretCodec) {
-        return adapter(GovernanceResourceTypes.EXTERNAL_API,
-                RuleExternalApiConfig.class, mapper,
-                RuleExternalApiConfig::getId,
-                RuleExternalApiConfig::setId,
-                RuleExternalApiConfig::getStatus,
-                RuleExternalApiConfig::setStatus,
-                Set.of("datasourceId", "apiCode", "apiName",
-                        "requestMethod", "endpointUrl"),
-                Set.of("authApiConfig", "headerConfig"),
-                secretCodec);
+        return new ExternalApiGovernedResourceAdapter(store(mapper), secretCodec);
     }
 
     @Bean

@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.governance.GovernedProjectionMutation;
 import com.hengshucredit.rule.server.service.DBConnectPools;
+import com.hengshucredit.rule.server.service.DatabaseQueryOptions;
 import com.hengshucredit.rule.server.service.RuleDbDatasourceService;
 import com.hengshucredit.rule.server.service.RuleRuntimeCallLogService;
 import org.springframework.web.bind.annotation.*;
@@ -112,10 +113,14 @@ public class DbDatasourceController {
         RuleDbDatasource datasource = datasourceService.getById(id);
         String sql = body.get("sql") == null ? null : String.valueOf(body.get("sql"));
         List<Object> params = body.get("params") instanceof List ? (List<Object>) body.get("params") : Collections.emptyList();
-        Integer maxRows = body.get("maxRows") instanceof Number ? ((Number) body.get("maxRows")).intValue() : 100;
+        Integer maxRows = null;
         try {
-            List<Map<String, Object>> rows = dbConnectPools.query(id, sql, params, maxRows);
-            logDatabaseCall(datasource, "QUERY", buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime),
+            DatabaseQueryOptions options = DatabaseQueryOptions.from(body, 100);
+            maxRows = options.maxRows();
+            List<Map<String, Object>> rows = dbConnectPools.query(id, sql, params, maxRows, options.queryTimeoutSeconds());
+            Map<String, Object> request = buildDatabaseRequest(datasource, sql, params, maxRows, null, startTime);
+            request.put("queryTimeoutSeconds", options.queryTimeoutSeconds());
+            logDatabaseCall(datasource, "QUERY", request,
                     buildDatabaseResponse("SUCCESS", null, rows, null, null, startTime), true, null, System.currentTimeMillis() - start);
             return R.ok(rows);
         } catch (Exception e) {

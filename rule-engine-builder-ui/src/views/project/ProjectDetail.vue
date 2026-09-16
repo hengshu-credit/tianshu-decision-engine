@@ -32,7 +32,6 @@
 
     <div class="rule-section-heading">
       <div>
-        <h3>项目规则</h3>
         <p>管理项目自有规则以及当前项目引用的全局规则。</p>
       </div>
     </div>
@@ -60,10 +59,24 @@
           </el-select>
         </el-form-item>
         <el-form-item label="规则编码">
-          <el-input v-model="qp.ruleCode" clearable style="width: 150px" />
+          <remote-filter-select
+            v-model:value="qp.ruleCode"
+            :fetch-options="fetchRuleCodeOptions"
+            option-label-key="ruleCode"
+            option-value-key="ruleCode"
+            allow-free-input
+            style="width: 150px"
+          />
         </el-form-item>
         <el-form-item label="规则名称">
-          <el-input v-model="qp.ruleName" clearable style="width: 150px" />
+          <remote-filter-select
+            v-model:value="qp.ruleName"
+            :fetch-options="fetchRuleNameOptions"
+            option-label-key="ruleName"
+            option-value-key="ruleName"
+            allow-free-input
+            style="width: 150px"
+          />
         </el-form-item>
         <el-form-item label="创建时间">
           <el-date-picker
@@ -440,6 +453,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
   Back as ElIconBack,
@@ -448,6 +462,7 @@ import {
 } from '@element-plus/icons-vue'
 import {
   createDefinition,
+  listProjectDefinitions,
   createProjectBinding,
   deleteDefinition,
   deleteProjectBinding,
@@ -456,12 +471,14 @@ import { getProject, getProjectWorkbench } from '@/api/project'
 import request from '@/api/request'
 import { restorePageState, savePageState } from '@/utils/pageStateCache'
 import ProjectWorkbenchOverview from '@/components/ProjectWorkbenchOverview.vue'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import { ruleDesignerLocation } from '@/utils/ruleDesignerNavigation'
 import RuleModelTypeHelp from '@/components/rule/RuleModelTypeHelp.vue'
 import { canUseWorkbenchAction, workbenchActionRoute } from '@/utils/workbenchActions'
 export default {
   name: 'ProjectDetail',
-  components: { ProjectWorkbenchOverview, RuleModelTypeHelp },
+  mixins: [workspaceTabTitleMixin(vm => vm.project?.projectName)],
+  components: { ProjectWorkbenchOverview, RuleModelTypeHelp, RemoteFilterSelect },
   data() {
     return {
       pid: null,
@@ -736,6 +753,12 @@ export default {
         this.creating = false
       }
     },
+    fetchRuleCodeOptions({ query, pageNum, pageSize }) {
+      return listProjectDefinitions(this.pid, { ...this.qp, ruleCode: query, pageNum, pageSize })
+    },
+    fetchRuleNameOptions({ query, pageNum, pageSize }) {
+      return listProjectDefinitions(this.pid, { ...this.qp, ruleName: query, pageNum, pageSize })
+    },
     // 打开添加全局规则对话框
     openAddRuleDialog() {
       this.addRuleDlgVis = true
@@ -794,12 +817,6 @@ export default {
 <style lang="scss" scoped>
 .rule-section-heading {
   margin-bottom: 12px;
-}
-
-.rule-section-heading h3 {
-  margin: 0;
-  color: var(--tianshu-text-primary);
-  font-size: 18px;
 }
 
 .rule-section-heading p {

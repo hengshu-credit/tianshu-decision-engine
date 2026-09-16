@@ -57,6 +57,17 @@
           <el-tab-pane label="执行输出" name="output">
             <pre class="result-pre">{{ formatOutput(result.output) }}</pre>
           </el-tab-pane>
+          <el-tab-pane label="表达式追踪树" name="tree" lazy>
+            <div class="result-trace">
+              <trace-tree
+                :trace-info="traceInfoJson"
+                :model-type="modelType"
+                :input-params="JSON.stringify(lastInput)"
+                :output-result="outputResultJson"
+                :execute-time-ms="result.executeTimeMs"
+              />
+            </div>
+          </el-tab-pane>
           <el-tab-pane v-if="result.errorMessage" label="错误信息" name="error">
             <pre class="result-pre error-pre">{{ result.errorMessage }}</pre>
           </el-tab-pane>
@@ -86,6 +97,7 @@ import { VideoPlay as ElIconVideoPlay } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
 import { executeRule, getRuleTestSchema } from '@/api/definition'
 import MonacoEditor from '@/components/MonacoEditor'
+import TraceTree from '@/components/common/TraceTree.vue'
 import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
 
 export default {
@@ -105,7 +117,7 @@ export default {
     }
   },
   name: 'DesignerTestDialog',
-  components: { MonacoEditor },
+  components: { MonacoEditor, TraceTree },
   props: {
     visible: {
       type: Boolean,
@@ -141,6 +153,16 @@ export default {
     },
   },
   computed: {
+    traceInfoJson() {
+      return this.result && this.result.traces
+        ? JSON.stringify(this.result.traces)
+        : ''
+    },
+    outputResultJson() {
+      return this.result && this.result.hasOutput
+        ? JSON.stringify(this.result.output)
+        : ''
+    },
     innerVisible: {
       get() {
         return this.visible
@@ -310,6 +332,10 @@ export default {
 }
 .result-tabs {
   margin-top: 10px;
+}
+.result-trace {
+  max-height: 420px;
+  overflow: auto;
 }
 .result-pre {
   background: var(--tianshu-bg-muted);

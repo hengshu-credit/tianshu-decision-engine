@@ -21,8 +21,10 @@
           :label="item.label"
           :value="item.value"
         >
-          <span :title="item.sourceLabel">{{ item.label }}</span>
-          <button v-if="item.state === 'DRAFT'" v-permission="'rule:edit'" type="button" class="delete-draft" :aria-label="`删除${item.label}`" :disabled="disabled" @click.stop="$emit('delete', item)">删除</button>
+          <div class="version-option">
+            <span class="version-option__label" :title="item.sourceLabel || item.label">{{ item.label }}</span>
+            <button v-if="item.state === 'DRAFT'" v-permission="'rule:edit'" type="button" class="delete-draft" :aria-label="`删除${item.label}`" :disabled="disabled" @click.stop="$emit('delete', item)">删除</button>
+          </div>
         </el-option>
       </el-option-group>
     </el-select>
@@ -63,9 +65,8 @@ export default {
 .rule-designer-version-select .el-select {
   width: 184px;
 }
-</style>
-
-<style scoped>
-.delete-draft { float: right; margin-left: 12px; color: var(--tianshu-text-primary); background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 4px; cursor: pointer; }
+.version-option { display: flex; align-items: center; justify-content: space-between; gap: 12px; height: 100%; }
+.version-option__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.delete-draft { flex: none; padding: 2px 8px; line-height: 20px; color: var(--tianshu-text-primary); background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 4px; cursor: pointer; }
 .delete-draft:focus-visible { outline: 2px solid var(--el-color-primary); }
 </style>

@@ -1317,6 +1317,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
   ArrowDown as ElIconArrowDown,
@@ -1632,6 +1633,7 @@ export default {
     ElIconDocumentChecked,
   },
   name: 'RuleDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.rule.ruleName)],
   beforeUnmount() {
     this.designerForkActive = false
     this.designerForkRequestId++

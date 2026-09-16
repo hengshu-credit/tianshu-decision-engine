@@ -184,6 +184,18 @@ public class AggregateGovernedResourceAdapterTest {
     }
 
     @Test
+    public void dataObjectFieldMayReferenceATypeCompatibleConstant() {
+        RuleDataObject object = dataObject(4L, "PROJECT", 2L);
+        RuleDataObjectField field = dataObjectField(8L, 4L, "NUMBER", 7L);
+        RuleVariable constant = referencedVariable(7L, "GLOBAL", 0L, "NUMBER", 1);
+        constant.setVarSource("CONSTANT");
+        constant.setDefaultValue("65");
+        DataObjectGovernedResourceAdapter adapter = dataObjectAdapter(object, field, constant);
+
+        Assert.assertTrue(adapter.validate(adapter.loadEffective(4L), "UPDATE").isEmpty());
+    }
+
+    @Test
     public void dataObjectFieldRejectsDisabledOrIncompatibleVariable() {
         RuleDataObject object = dataObject(4L, "PROJECT", 2L);
         RuleDataObjectField field = dataObjectField(8L, 4L, "STRING", 7L);

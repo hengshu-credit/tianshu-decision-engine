@@ -12,8 +12,13 @@
       <span>校验定位 · {{ pathLabel(issueContext.path) }}：{{ issueContext.message }}</span>
       <button type="button" :disabled="issueContext.stale" @click="$emit('locate', issueContext)">定位问题</button>
     </div>
-    <rule-validation-report v-if="report" class="rule-designer-actions__report" :report="report" locatable @locate="$emit('locate', $event)" />
   </section>
+  <el-dialog v-model="reportVisible" title="编译检查结果" width="880px" append-to-body :close-on-click-modal="false">
+    <rule-validation-report v-if="report" class="rule-designer-validation" :report="report" locatable @locate="locateIssue" />
+    <template #footer>
+      <el-button data-action="close-report" @click="reportVisible = false">关闭</el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <script>
@@ -30,8 +35,22 @@ export default {
     recovery: { type: Object, default: null },
   },
   emits: ['compile', 'save', 'publish', 'test', 'locate', 'restore', 'discard-recovery'],
-  data: () => ({ actions: [{ key: 'compile', label: '编译' }, { key: 'save', label: '保存' }, { key: 'publish', label: '发布' }, { key: 'test', label: '测试' }] }),
-  methods: { pathLabel: validationPathLabel },
+  data: () => ({ reportVisible: false, actions: [{ key: 'compile', label: '编译' }, { key: 'save', label: '保存' }, { key: 'publish', label: '发布' }, { key: 'test', label: '测试' }] }),
+  watch: {
+    report: {
+      immediate: true,
+      handler(report) {
+        this.reportVisible = Boolean(report && (!report.valid || report.errors?.length || report.warnings?.length))
+      },
+    },
+  },
+  methods: {
+    pathLabel: validationPathLabel,
+    locateIssue(issue) {
+      this.reportVisible = false
+      this.$emit('locate', issue)
+    },
+  },
 }
 </script>
 
@@ -46,6 +65,8 @@ export default {
 .rule-designer-actions__button:focus-visible { outline: 2px solid var(--el-color-primary); outline-offset: 2px; }
 .rule-designer-actions__button:disabled { background: var(--tianshu-bg-muted); color: var(--tianshu-text-secondary); border-color: var(--tianshu-border-subtle); cursor: not-allowed; }
 .rule-designer-actions__button[aria-busy="true"] { cursor: progress; }
-.rule-designer-actions__report, .issue-context { flex: 1 0 100%; }
+.rule-designer-validation { color: var(--tianshu-text-primary); }
+.rule-designer-validation :deep(.issue-row) { grid-template-columns: minmax(0, 1fr); overflow-wrap: anywhere; }
+.issue-context { flex: 1 0 100%; }
 .issue-context { color: var(--tianshu-text-primary); background: var(--tianshu-bg-muted); padding: 8px; }
 </style>

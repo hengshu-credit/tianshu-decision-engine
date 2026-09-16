@@ -134,6 +134,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         config.setCacheKeyConfig(nullIfBlank(config.getCacheKeyConfig()));
         config.setSuccessCondition(nullIfBlank(config.getSuccessCondition()));
         config.setRetryCondition(nullIfBlank(config.getRetryCondition()));
+        config.setTokenFailureCondition(nullIfBlank(config.getTokenFailureCondition()));
         config.setBillingCondition(nullIfBlank(config.getBillingCondition()));
         config.setAuthApiConfig(nullIfBlank(config.getAuthApiConfig()));
         config.setTestSampleParams(nullIfBlank(config.getTestSampleParams()));
@@ -232,6 +233,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         if (config.getStatus() == null) {
             config.setStatus(1);
         }
+        ExternalApiConfigValidator.validate(config);
     }
 
     private void fillDatasourceInfo(List<RuleExternalApiConfig> list) {

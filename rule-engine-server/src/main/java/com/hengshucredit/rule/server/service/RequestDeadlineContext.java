@@ -33,6 +33,15 @@ public final class RequestDeadlineContext {
         return new Scope(previous);
     }
 
+    static Long capture() { return DEADLINE.get(); }
+
+    static Scope install(Long deadline) {
+        Long previous = DEADLINE.get();
+        if (deadline == null) DEADLINE.remove();
+        else DEADLINE.set(deadline);
+        return new Scope(previous);
+    }
+
     public static int remainingMillis() {
         Long deadline = DEADLINE.get();
         if (deadline == null) return Integer.MAX_VALUE;

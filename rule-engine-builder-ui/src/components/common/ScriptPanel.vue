@@ -7,7 +7,7 @@
         <el-tag :type="statusTag.type" size="small" class="sp-status-tag">
           {{ statusTag.text }}
         </el-tag>
-        <span class="sp-check-guidance">由顶部“编译”生成</span>
+        <span class="sp-check-guidance">{{ guidance }}</span>
       </div>
       <div class="sp-header-right" @click.stop>
         <el-tooltip
@@ -61,7 +61,7 @@
             v-model="editScript"
             class="sp-editor readonly"
             readonly
-            placeholder="请先点击顶部“编译”生成脚本"
+            :placeholder="placeholder"
             spellcheck="false"
             autocomplete="off"
             autocorrect="off"
@@ -104,6 +104,9 @@ export default {
   },
   props: {
     compileResult: { type: Object, default: null },
+    guidance: { type: String, default: '由顶部“编译”生成' },
+    placeholder: { type: String, default: '请先点击顶部“编译”生成脚本' },
+    emptyMessage: { type: String, default: '暂无脚本，请先编译' },
   },
   data() {
     return {
@@ -150,7 +153,7 @@ export default {
     },
     copyScript() {
       if (!this.editScript) {
-        this.$message.warning('暂无脚本，请先编译')
+        this.$message.warning(this.emptyMessage)
         return
       }
       if (navigator.clipboard) {

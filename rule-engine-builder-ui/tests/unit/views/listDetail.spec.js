@@ -124,6 +124,45 @@ describe('ListDetail governed record changes', () => {
     expect(permissions).toContain('field:edit')
   })
 
+  test('日志组合筛选和翻页保留条件，重置回到第一页', async () => {
+    Object.assign(wrapper.vm.logQuery, { pageNum: 3, pageSize: 30, itemType: 'MOBILE', operation: 'UPDATE', keyword: '核验' })
+    wrapper.vm.logTimeRange = ['2026-08-01 00:00:00', '2026-08-31 23:59:59']
+    wrapper.vm.handleLogQuery()
+    await flush()
+    const filters = { pageNum: 1, pageSize: 30, itemType: 'MOBILE', operation: 'UPDATE', keyword: '核验', startTime: '2026-08-01 00:00:00', endTime: '2026-08-31 23:59:59' }
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, filters)
+    wrapper.vm.onLogPageChange(2)
+    await flush()
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { ...filters, pageNum: 2 })
+    wrapper.vm.resetLogQuery()
+    await flush()
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { pageNum: 1, pageSize: 30 })
+    expect(wrapper.vm.logTimeRange).toEqual([])
+  })
+
+  test('日志候选使用当前名单和筛选条件，不改变列表分页', async () => {
+    Object.assign(wrapper.vm.logQuery, { pageNum: 4, operation: 'DELETE', itemType: 'IP' })
+    await wrapper.vm.fetchLogKeywordOptions({ query: '192.', pageNum: 1, pageSize: 20 })
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { pageNum: 1, pageSize: 20, itemType: 'IP', operation: 'DELETE', keyword: '192.' })
+    expect(wrapper.vm.logQuery.pageNum).toBe(4)
+  })
+
+  test('进入追踪清除旧筛选，重置仍保留精确记录，查看全部才退出追踪', async () => {
+    Object.assign(wrapper.vm.logQuery, { itemType: 'IP', operation: 'DELETE', keyword: '旧条件' })
+    wrapper.vm.logTimeRange = ['2026-08-01 00:00:00', '2026-08-02 00:00:00']
+    wrapper.vm.handleTrace({ itemType: 'MOBILE', itemContent: '13800138000' })
+    await flush()
+    const identity = { pageNum: 1, pageSize: 10, itemType: 'MOBILE', itemContent: '13800138000' }
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, identity)
+    wrapper.vm.logQuery.operation = 'UPDATE'
+    wrapper.vm.resetLogQuery()
+    await flush()
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, identity)
+    wrapper.vm.clearTrace()
+    await flush()
+    expect(ruleListApi.listRecordLogs).toHaveBeenLastCalledWith(9, { pageNum: 1, pageSize: 10 })
+  })
+
   test('new record stages approval with normalized validity period', async () => {
     ruleListApi.stageRecordChange.mockResolvedValue({ data: batchResult() })
     wrapper.vm.handleCreate()
@@ -275,6 +314,8 @@ describe('ListDetail route reuse', () => {
       data: batchResult({ approvalRequestId: 94 })
     })
     wrapper.vm.logQuery = { pageNum: 3, pageSize: 30 }
+    wrapper.vm.query.keyword = '前一个名单'
+    wrapper.vm.logTimeRange = ['2026-08-01 00:00:00', '2026-08-31 23:59:59']
     wrapper.vm.$options.watch['$route.params.id'].call(wrapper.vm, 12, 9)
     await flush()
 
@@ -285,7 +326,9 @@ describe('ListDetail route reuse', () => {
     await flush()
 
     expect(wrapper.vm.listId).toBe(12)
-    expect(wrapper.vm.logQuery).toEqual({ pageNum: 1, pageSize: 30 })
+    expect(wrapper.vm.logQuery).toEqual({ pageNum: 1, pageSize: 30, itemType: '', operation: '', keyword: '' })
+    expect(wrapper.vm.query.keyword).toBe('')
+    expect(wrapper.vm.logTimeRange).toEqual([])
     expect(ruleListApi.stageRecordChange).toHaveBeenLastCalledWith(
       12,
       'ADD',

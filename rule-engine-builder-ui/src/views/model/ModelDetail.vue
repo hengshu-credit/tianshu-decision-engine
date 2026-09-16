@@ -884,6 +884,7 @@
 </template>
 
 <script>
+import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
 import { markRaw } from 'vue'
 import {
   ArrowDown as ElIconArrowDown,
@@ -1016,6 +1017,7 @@ export default {
     ElIconArrowUp,
   },
   name: 'ModelDetail',
+  mixins: [workspaceTabTitleMixin(vm => vm.model.modelName)],
   computed: {
     modelSampleStatus() {
       try {

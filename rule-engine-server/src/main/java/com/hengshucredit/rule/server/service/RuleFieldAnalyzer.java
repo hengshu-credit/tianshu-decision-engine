@@ -1562,6 +1562,9 @@ public class RuleFieldAnalyzer {
                 && meta.get("refVariableId") instanceof Long) {
             Map<String, Object> referencedMeta = findMetaById(
                     (Long) meta.get("refVariableId"), "VARIABLE", varMetaMap);
+            if (referencedMeta == null) {
+                referencedMeta = findMetaById((Long) meta.get("refVariableId"), "CONSTANT", varMetaMap);
+            }
             if (referencedMeta != null) {
                 expandFieldRecursive(inputFieldFromMeta(referencedMeta),
                         varMetaMap, seen, visited, result);

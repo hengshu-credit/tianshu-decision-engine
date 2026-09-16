@@ -13,7 +13,7 @@ import java.util.regex.Pattern;
 /**
  * 从 MySQL / OceanBase 等风格的 {@code CREATE TABLE} DDL 解析数据对象与字段。
  * <p>列展示名取自 {@code COMMENT '...'}；无 COMMENT 时用列名。类型映射为规则引擎的 STRING/NUMBER/DATE/BOOLEAN。</p>
- * <p>局限：不解析跨行拆开的列定义、双引号标识符、非标准语法；遇 PRIMARY KEY / KEY / INDEX 等约束行后停止解析列。</p>
+ * <p>按括号和字符串之外的逗号切分列定义，约束与索引不生成字段。</p>
  */
 @Component
 public class DdlTableParser {
@@ -44,7 +44,7 @@ public class DdlTableParser {
             int bodyStart = head.end();
             int bodyEnd = indexOfMatchingCloseParen(ddlSource, bodyStart);
             if (bodyEnd < 0) {
-                break;
+                throw new IllegalArgumentException("建表语句括号未闭合：" + tableName);
             }
             String body = ddlSource.substring(bodyStart, bodyEnd);
             ParsedObject po = buildParsedObject(tableName, body);
@@ -57,7 +57,7 @@ public class DdlTableParser {
     }
 
     /**
-     * 将表体（括号内文本）按行扫描为字段列表。
+     * 将表体（括号内文本）按列扫描，支持一行多列与跨行定义。
      */
     private ParsedObject buildParsedObject(String rawTableName, String innerBody) {
         ParsedObject obj = new ParsedObject();
@@ -67,8 +67,7 @@ public class DdlTableParser {
         obj.setObjectLabel(objectCode);
         obj.setScriptName(objectCode);
 
-        String[] lines = innerBody.split("\\R");
-        for (String raw : lines) {
+        for (String raw : splitColumns(innerBody)) {
             String line = raw.trim();
             if (line.isEmpty()) {
                 continue;
@@ -78,14 +77,38 @@ public class DdlTableParser {
                 continue;
             }
             if (isConstraintOrIndexLine(line)) {
-                break;
+                continue;
             }
             ParsedField field = tryParseColumnLine(line);
-            if (field != null) {
-                obj.getFields().add(field);
-            }
+            if (field == null) throw new IllegalArgumentException("无法识别表 [" + table + "] 的列定义：" + line);
+            obj.getFields().add(field);
         }
         return obj;
+    }
+
+    private List<String> splitColumns(String body) {
+        List<String> columns = new ArrayList<>();
+        int start = 0;
+        int depth = 0;
+        char quote = 0;
+        for (int i = 0; i < body.length(); i++) {
+            char c = body.charAt(i);
+            if (quote != 0) {
+                if (c == '\\' && i + 1 < body.length()) i++;
+                else if (c == quote) {
+                    if (i + 1 < body.length() && body.charAt(i + 1) == quote) i++;
+                    else quote = 0;
+                }
+            } else if (c == '\'' || c == '"' || c == '`') quote = c;
+            else if (c == '(') depth++;
+            else if (c == ')') depth--;
+            else if (c == ',' && depth == 0) {
+                columns.add(body.substring(start, i));
+                start = i + 1;
+            }
+        }
+        columns.add(body.substring(start));
+        return columns;
     }
 
     /**

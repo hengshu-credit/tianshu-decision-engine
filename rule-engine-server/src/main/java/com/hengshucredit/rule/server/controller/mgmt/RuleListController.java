@@ -12,6 +12,7 @@ import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleListChangeBatchService;
 import com.hengshucredit.rule.server.service.RuleListService;
 import org.apache.poi.ss.usermodel.Workbook;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -29,6 +30,7 @@ import jakarta.annotation.Resource;
 import java.io.ByteArrayOutputStream;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 
 @RestController
 @RequestMapping("/api/rule/list")
@@ -94,8 +96,13 @@ public class RuleListController {
             @RequestParam(value = "pageSize", defaultValue = "10") int pageSize,
             @RequestParam(required = false) Long recordId,
             @RequestParam(required = false) String itemType,
-            @RequestParam(required = false) String itemContent) {
-        return R.ok(listService.pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent));
+            @RequestParam(required = false) String itemContent,
+            @RequestParam(required = false) String operation,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
+            @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
+        return R.ok(listService.pageLogs(listId, pageNum, pageSize, recordId, itemType, itemContent,
+                operation, keyword, startTime, endTime));
     }
 
     @GetMapping("/template")

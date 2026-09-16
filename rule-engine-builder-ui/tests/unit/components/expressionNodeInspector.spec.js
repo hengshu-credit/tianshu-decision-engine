@@ -12,6 +12,13 @@ function mountInspector(node) {
 }
 
 describe('ExpressionNodeInspector', () => {
+  test('两项运算删除空项后还原单项而不禁止删除', () => {
+    const value = literal('1')
+    const wrapper = mountInspector(createOperationOperand([{ operand: value }, { operator: '+', operand: null }]))
+    wrapper.vm.removeOperationTerm(1)
+    expect(wrapper.emitted().input[0][0]).toEqual(value)
+  })
+
   test('阈值只在画布当前卡片编辑，检查器不再重复生成输入行', () => {
     const wrapper = mountInspector(createLiteralOperand('1', 'NUMBER'))
 

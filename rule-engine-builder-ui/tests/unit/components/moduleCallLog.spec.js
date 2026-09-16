@@ -43,13 +43,7 @@ describe('ModuleCallLog', () => {
     expect(wrapper.vm.query.traceId).toBe('')
   })
 
-  test('外数模块加载 MySQL 统计并格式化供应商质量指标', async () => {
-    getExternalApiStats.mockResolvedValue({
-      data: {
-        overview: { queryCount: 20, cacheHitRate: 0.25, requestSuccessRate: 0.9, foundRate: 0.6 },
-        providers: [{ targetCode: 'vendor_a', queryCount: 20, foundRate: 0.6 }]
-      }
-    })
+  test('外数调用日志只加载日志，刷新不请求监控指标', async () => {
     const wrapper = shallowMount(ModuleCallLog, {
       props: { moduleType: 'DATASOURCE' },
       stubs: [
@@ -61,9 +55,11 @@ describe('ModuleCallLog', () => {
     await wrapper.vm.$nextTick()
     await Promise.resolve()
 
-    expect(getExternalApiStats).toHaveBeenCalled()
-    expect(wrapper.vm.externalStats.overview.queryCount).toBe(20)
-    expect(wrapper.vm.formatRate(0.25)).toBe('25.00%')
-    expect(wrapper.vm.externalStats.providers[0].targetCode).toBe('vendor_a')
+    expect(wrapper.find('.stats-panel').exists()).toBe(false)
+    expect(listRuntimeLogs).toHaveBeenCalledTimes(1)
+    await wrapper.vm.load()
+    expect(listRuntimeLogs).toHaveBeenCalledTimes(2)
+    expect(getExternalApiStats).not.toHaveBeenCalled()
+    wrapper.unmount()
   })
 })

@@ -379,7 +379,7 @@
           暂无数据对象，点击「新建对象」或「批量导入」添加
         </div>
         <div class="management-table-region" v-else v-loading="objLoading">
-          <el-table class="management-table"
+          <el-table class="management-table data-object-table"
             data-testid="data-object-table"
             show-overflow-tooltip
             :data="paginatedObjectTree"
@@ -389,6 +389,7 @@
             size="small"
             style="width: 100%"
             @expand-change="handleObjectExpandChange"
+            @row-click="handleObjectRowClick"
           >
             <el-table-column type="expand" width="48">
               <template v-slot="{ row: node }">
@@ -396,8 +397,11 @@
                   <div class="object-field-expansion__heading">
                     <div>
                       <strong>{{ node.object.objectLabel || node.object.objectCode }} · 字段明细</strong>
-                      <span>对象字段按层级展开，引用关系均通过稳定 ID 保存。</span>
+                      <span>共 {{ objectFieldTotal(node) }} 个字段；点击字段行展开层级，每页保留完整子树。</span>
                     </div>
+                    <div class="object-field-expansion__actions">
+                    <el-button size="small" :disabled="!objectFieldBranchIds(node).length" @click="setObjectFieldExpansion(node, true)">展开全部</el-button>
+                    <el-button size="small" :disabled="!objectFieldExpandedKeys(node).length" @click="setObjectFieldExpansion(node, false)">收起全部</el-button>
                     <el-button
                       v-permission="'field:edit'"
                       link
@@ -406,9 +410,15 @@
                       @click.stop="handleAddObjectField(node)"
                       >添加字段</el-button
                     >
+                    </div>
                   </div>
               <el-table show-overflow-tooltip
                 :data="paginatedObjectFields(node)"
+                :expand-row-keys="objectFieldExpandedKeys(node).map(String)"
+                :indent="24"
+                max-height="480"
+                @expand-change="(field, expanded) => handleObjectFieldExpandChange(node, field, expanded)"
+                @row-click="(field, column, event) => handleObjectFieldRowClick(node, field, event)"
                 size="small"
                 border
                 row-key="id"
@@ -446,35 +456,13 @@
                     }}</el-tag></template
                   >
                 </el-table-column>
-                <el-table-column label="引用变量" min-width="150" show-overflow-tooltip>
+                <el-table-column label="引用变量" min-width="220" show-overflow-tooltip>
                   <template v-slot="{ row }">
-                    <span v-if="row.refVariableId" class="reference-variable-cell">
-                      <strong>{{ referenceVariableLabel(row.refVariableId) }}</strong>
-                      <code v-if="referenceVariableScriptName(row.refVariableId)">{{
-                        referenceVariableScriptName(row.refVariableId)
-                      }}</code>
+                    <span v-if="row.refVariableId || row.refObjectId || row.refObjectCode" class="reference-variable-cell">
+                      <strong>{{ objectFieldReferenceLabel(row) }}</strong>
+                      <code>{{ objectFieldReferenceScriptName(row) }}</code>
                     </span>
                     <span v-else class="text-muted">—</span>
-                  </template>
-                </el-table-column>
-                <el-table-column
-                  prop="refObjectCode"
-                  label="引用对象"
-                  min-width="110"
-                  show-overflow-tooltip
-                >
-                  <template v-slot="{ row }">
-                    <span
-                      v-if="row.refObjectId && objectIdMap[row.refObjectId]"
-                      class="badge badge-obj"
-                      >{{ objectIdMap[row.refObjectId] }}</span
-                    >
-                    <span
-                      v-else-if="row.refObjectCode"
-                      class="badge badge-obj"
-                      >{{ row.refObjectCode }}</span
-                    >
-                    <span v-else style="color: #ccc">—</span>
                   </template>
                 </el-table-column>
                 <el-table-column fixed="right" class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="140" align="center">
@@ -516,7 +504,7 @@
                 style="margin-top: 8px; text-align: right"
                 :current-page="objectFieldPage(node)"
                 :page-size="objectFieldPageSize"
-                :total="objectFieldTotal(node)"
+                :total="objectFieldRootTotal(node)"
                 layout="total,prev,pager,next"
                 @current-change="(p) => handleObjectFieldPageChange(node, p)"
               />
@@ -594,7 +582,7 @@
                 }}</span>
               </template>
             </el-table-column>
-            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="250" align="center" fixed="right">
+            <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="300" align="center" fixed="right">
               <template v-slot="{ row: node }">
                 <template v-if="node && node.object">
                   <el-button
@@ -918,9 +906,11 @@
               :value="item.value"
             />
           </el-select>
-          <el-input
-            v-model="validationQp.keyword"
-            clearable
+          <remote-filter-select
+            v-model:value="validationQp.keyword"
+            :fetch-options="fetchValidationOptions"
+            :option-fields="['validationCode', 'validationName']"
+            allow-free-input
             placeholder="编码或名称"
             size="small"
             style="width: 180px"
@@ -1421,8 +1411,12 @@
             <div class="field-help">例如 0.score 表示第一行的 score；留空按返回行列数自动取值。可在预览后选择结果。</div>
           </el-form-item>
           <el-form-item label="最多返回行数">
-            <el-input-number v-model="form.dbMaxRows" :min="1" :max="500" />
-            <span class="field-help">行（1–500）</span>
+            <el-input-number v-model="form.dbMaxRows" :min="0" :max="2147483647" :precision="0" />
+            <span class="field-help">0 表示不限制；多行查询默认返回行集合。</span>
+          </el-form-item>
+          <el-form-item label="查询超时（秒）">
+            <el-input-number v-model="form.dbQueryTimeoutSeconds" :min="0" :max="2147483647" :precision="0" />
+            <span class="field-help">默认 5 秒，0 表示不设置查询超时。</span>
           </el-form-item>
           <el-form-item label="查询失败时">
             <el-select
@@ -1627,40 +1621,33 @@
             :placeholder="form.varSource === 'CONSTANT' ? '常量必填' : '可选'"
           />
         </el-form-item>
-        <el-form-item v-if="isObjectField" label="引用变量">
+        <el-form-item v-if="isObjectField && ['LIST', 'ARRAY', 'SET'].includes(form.varType)" label="元素类型">
+          <el-select v-model="form.genericType" clearable placeholder="请选择列表元素类型" @change="onObjectFieldTypeChange">
+            <el-option v-for="item in varTypeFormOptions" :key="item.value" :label="item.label" :value="item.value" />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="isObjectField" label="引用变量" :error="objectFieldReferenceError">
           <el-select
-            v-model="form.refVariableId"
+            :model-value="objectFieldReferenceValue"
             clearable
             filterable
-            :loading="objectFieldReferenceLoading"
-            :disabled="!!objectFieldReferenceBlockedReason"
-            placeholder="可选：直接引用已有变量"
+            :loading="objectFieldReferenceLoading || objectFieldReferenceValidating"
+            :disabled="objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting"
+            placeholder="可选：选择变量、常量或数据对象"
             style="width: 100%"
+            @update:model-value="changeObjectFieldReference"
           >
-            <el-option
-              v-for="item in objectFieldReferenceOptions"
-              :key="item.id"
-              :label="referenceVariableOptionLabel(item)"
-              :value="item.id"
-            />
+            <el-option-group v-for="group in objectFieldReferenceGroups" :key="group.label" :label="group.label">
+              <el-option v-for="item in group.options" :key="referenceOptionKey(item)" :label="referenceVariableOptionLabel(item)" :value="referenceOptionKey(item)" />
+            </el-option-group>
+            <el-option v-if="objectFieldReferenceValue && !objectFieldReferenceOptions.some(item => referenceOptionKey(item) === objectFieldReferenceValue)"
+              :value="objectFieldReferenceValue" :label="'当前引用不可用：' + objectFieldReferenceLabel(form)" disabled />
           </el-select>
           <div class="field-help">
-            <span v-if="objectFieldReferenceBlockedReason">{{
-              objectFieldReferenceBlockedReason
-            }}</span>
-            <span v-else>
-              调用时未传当前对象字段，将从该变量取值；显式传入当前对象字段时优先使用当前字段值。
-            </span>
+            <span v-if="objectFieldReferenceMessage" class="reference-validation-success">{{ objectFieldReferenceMessage }}</span>
+            <span>仅显示类型和项目范围兼容的已启用资源，校验通过后才会绑定。变量、常量在当前字段未传值时提供取值；数据对象用于复用字段结构。</span>
+            <span v-if="objectFieldReferenceBlockedReason">{{ objectFieldReferenceBlockedReason }}</span>
           </div>
-        </el-form-item>
-        <el-form-item
-          v-if="
-            isObjectField &&
-            (form.varType === 'OBJECT' || form.varType === 'LIST')
-          "
-          label="引用对象编码"
-        >
-          <el-input v-model="form.refObjectCode" placeholder="如嵌套对象编码" />
         </el-form-item>
         <el-collapse
           v-if="!isObjectField"
@@ -1717,7 +1704,7 @@
           <el-button size="small" @click="dialogVisible = false"
             >取消</el-button
           >
-          <el-button size="small" type="primary" @click="handleSubmit"
+          <el-button size="small" type="primary" :loading="isObjectField && (objectFieldReferenceValidating || objectFieldSubmitting)" :disabled="isObjectField && (objectFieldReferenceLoading || objectFieldReferenceValidating || objectFieldSubmitting)" @click="handleSubmit"
             >{{ isObjectField ? '确定' : '生成审批草稿' }}</el-button
           >
         </div>
@@ -2034,8 +2021,11 @@
       v-model="importJavaEntityVisible"
       width="700px"
       :close-on-click-modal="false"
+      :show-close="!importing"
+      :close-on-press-escape="!importing"
     >
-      <el-form size="small" label-width="100px">
+      <variable-import-help mode="java-entity" :disabled="importing || !!importForm.javaSource.trim()" @use-example="importForm.javaSource = $event" />
+      <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
             <el-radio value="GLOBAL">全局（所有项目可用）</el-radio>
@@ -2090,7 +2080,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="importJavaEntityVisible = false"
+          <el-button size="small" :disabled="importing" @click="importJavaEntityVisible = false"
             >取消</el-button
           >
           <el-button
@@ -2110,8 +2100,11 @@
       v-model="importJsonObjectVisible"
       width="700px"
       :close-on-click-modal="false"
+      :show-close="!importing"
+      :close-on-press-escape="!importing"
     >
-      <el-form size="small" label-width="100px">
+      <variable-import-help mode="json-object" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
+      <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
             <el-radio value="GLOBAL">全局（所有项目可用）</el-radio>
@@ -2159,7 +2152,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="importJsonObjectVisible = false"
+          <el-button size="small" :disabled="importing" @click="importJsonObjectVisible = false"
             >取消</el-button
           >
           <el-button
@@ -2179,8 +2172,11 @@
       v-model="importDdlVisible"
       width="720px"
       :close-on-click-modal="false"
+      :show-close="!importing"
+      :close-on-press-escape="!importing"
     >
-      <el-form size="small" label-width="100px">
+      <variable-import-help mode="ddl-table" :disabled="importing || !!importForm.ddlSource.trim()" @use-example="importForm.ddlSource = $event" />
+      <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
             <el-radio value="GLOBAL">全局（所有项目可用）</el-radio>
@@ -2223,7 +2219,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="importDdlVisible = false"
+          <el-button size="small" :disabled="importing" @click="importDdlVisible = false"
             >取消</el-button
           >
           <el-button
@@ -2243,8 +2239,11 @@
       v-model="importJavaConstVisible"
       width="700px"
       :close-on-click-modal="false"
+      :show-close="!importing"
+      :close-on-press-escape="!importing"
     >
-      <el-form size="small" label-width="100px">
+      <variable-import-help mode="java-const" :disabled="importing || !!importForm.javaSource.trim()" @use-example="importForm.javaSource = $event" />
+      <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
             <el-radio value="GLOBAL">全局（所有项目可用）</el-radio>
@@ -2292,7 +2291,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="importJavaConstVisible = false"
+          <el-button size="small" :disabled="importing" @click="importJavaConstVisible = false"
             >取消</el-button
           >
           <el-button
@@ -2312,8 +2311,11 @@
       v-model="importJsonConstVisible"
       width="700px"
       :close-on-click-modal="false"
+      :show-close="!importing"
+      :close-on-press-escape="!importing"
     >
-      <el-form size="small" label-width="100px">
+      <variable-import-help mode="json-const" :disabled="importing || !!importForm.jsonContent.trim()" @use-example="importForm.jsonContent = $event" />
+      <el-form :disabled="importing" size="small" label-width="100px">
         <el-form-item label="作用范围">
           <el-radio-group v-model="importForm.scope">
             <el-radio value="GLOBAL">全局（所有项目可用）</el-radio>
@@ -2349,7 +2351,7 @@
       </el-form>
       <template v-slot:footer>
         <div>
-          <el-button size="small" @click="importJsonConstVisible = false"
+          <el-button size="small" :disabled="importing" @click="importJsonConstVisible = false"
             >取消</el-button
           >
           <el-button
@@ -2543,6 +2545,8 @@ import { getRuleTestSchema } from '@/api/definition'
 import request from '@/api/request'
 import {
   importJavaEntity,
+  listDataObjects,
+  validateDataObjectFieldReference,
   importJsonObject,
   importDdlTable,
   updateObjectType,
@@ -2593,7 +2597,7 @@ import {
 } from '@/utils/testParamTemplate'
 import { normalizeTestSchema } from '@/utils/testSchema'
 import { normalizeTestResult } from '@/utils/testResult'
-import { routeProjectId } from '@/utils/projectContext'
+import { projectPageStateKey, routeProjectId } from '@/utils/projectContext'
 import {
   cloneOperand,
   collectOperandReferences,
@@ -2610,6 +2614,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
+import VariableImportHelp from './components/VariableImportHelp.vue'
 import { hasPermission } from '@/security/permissionState'
 
 export default {
@@ -2716,6 +2721,15 @@ export default {
       objectFieldOwner: null,
       objectFieldNode: null,
       objectFieldReferenceVariables: [],
+      objectFieldReferenceObjects: [],
+      objectReferenceObjectMap: {},
+      objectFieldReferenceRequestId: 0,
+      objectFieldValidationRequestId: 0,
+      objectFieldReferenceValidating: false,
+      objectFieldSubmitting: false,
+      objectFieldReferenceMessage: '',
+      objectFieldReferenceError: '',
+      objectFieldExpandMap: {},
       objectFieldReferenceLoading: false,
       objectReferenceVariableMap: {},
       // 常量列表（分页，与变量接口相同）
@@ -2825,7 +2839,7 @@ export default {
       objPageSize: 10,
       objExpanded: {},
       objectFieldPageMap: {},
-      objectFieldPageSize: 100,
+      objectFieldPageSize: 20,
       objQp: {
         scope: '',
         projectCode: '',
@@ -2850,17 +2864,18 @@ export default {
     ProjectFilterSelect,
     VariableSourceSelector,
     VariableToolbarActions,
+    VariableImportHelp,
     ElIconInfo,
     ElIconSuccess,
   },
   name: 'VariableList',
   created() {
-    this.restoreCachedState()
     this.currentProjectId =
       routeProjectId(
         this.$route,
         this.$store && this.$store.state.currentProject
       ) || ''
+    this.restoreCachedState()
     if (this.currentProjectId) {
       this.qp.projectId = this.currentProjectId
       this.validationQp.projectId = this.currentProjectId
@@ -2986,28 +3001,34 @@ export default {
         listCode: item.code,
       }))
     },
+    objectFieldReferenceValue() {
+      if (this.form.refVariableId) return `VARIABLE:${this.form.refVariableId}`
+      if (this.form.refObjectId) return `OBJECT:${this.form.refObjectId}`
+      return ''
+    },
+    objectFieldReferenceGroups() {
+      return [
+        { label: '变量', options: this.objectFieldReferenceOptions.filter(item => item._referenceType === 'VARIABLE') },
+        { label: '常量', options: this.objectFieldReferenceOptions.filter(item => item._referenceType === 'CONSTANT') },
+        { label: '数据对象', options: this.objectFieldReferenceOptions.filter(item => item._referenceType === 'OBJECT') },
+      ].filter(group => group.options.length)
+    },
     objectFieldReferenceOptions() {
       const owner = this.objectFieldOwner
       const fieldType = this.form && this.form.varType
       if (!owner || !fieldType) return []
-      return this.objectFieldReferenceVariables.filter((item) => {
+      const available = item => {
         if (!item || item.status !== 1) return false
-        if (String(item.varSource || '').toUpperCase() === 'CONSTANT')
-          return false
-        const scope = String(item.scope || '').toUpperCase()
-        if (String(owner.scope || '').toUpperCase() === 'GLOBAL') {
-          if (scope !== 'GLOBAL') return false
-        } else if (
-          scope !== 'GLOBAL' &&
-          Number(item.projectId) !== Number(owner.projectId)
-        ) {
-          return false
-        }
-        return this.objectFieldReferenceTypeCompatible(
-          fieldType,
-          item.varType
-        )
-      })
+        if (item.scope === 'GLOBAL') return true
+        return owner.scope === 'PROJECT' && item.scope === 'PROJECT' && Number(item.projectId) === Number(owner.projectId)
+      }
+      const variables = this.objectFieldReferenceBlockedReason ? [] : this.objectFieldReferenceVariables
+        .filter(item => available(item) && this.objectFieldReferenceTypeCompatible(fieldType, item.varType))
+        .map(item => ({ ...item, _referenceType: item.varSource === 'CONSTANT' ? 'CONSTANT' : 'VARIABLE' }))
+      const objects = this.canReferenceObjectType(this.form) ? this.objectFieldReferenceObjects
+        .filter(item => available(item) && Number(item.id) !== Number(owner.id))
+        .map(item => ({ ...item, _referenceType: 'OBJECT' })) : []
+      return [...variables, ...objects]
     },
     objectFieldReferenceBlockedReason() {
       if (!this.isObjectField || !this.objectFieldNode) return ''
@@ -3021,7 +3042,7 @@ export default {
         const parent = byId[current]
         if (!parent) return ''
         if (['LIST', 'ARRAY', 'SET'].includes(String(parent.varType).toUpperCase())) {
-          return '列表元素内部字段不能直接引用变量，请在 LIST 字段上整体引用。'
+          return '列表元素内部字段不能直接取变量或常量值，请在列表字段上整体引用；内部对象仍可关联数据对象结构。'
         }
         current = parent.parentFieldId
       }
@@ -3156,7 +3177,7 @@ export default {
       if (name === 'validations') return this.loadFieldValidations()
     },
     restoreCachedState() {
-      const state = restorePageState('VariableList')
+      const state = restorePageState(projectPageStateKey('VariableList', this.currentProjectId))
       this.showExtraVariableColumns = state.showExtraVariableColumns === true
       if (state.activeTab) this.activeTab = state.activeTab
       if (state.qp) this.qp = { ...this.qp, ...state.qp }
@@ -3167,9 +3188,10 @@ export default {
       if (state.objectFieldPageMap)
         this.objectFieldPageMap = state.objectFieldPageMap
       if (state.objExpanded) this.objExpanded = state.objExpanded
+      if (state.objectFieldExpandMap) this.objectFieldExpandMap = state.objectFieldExpandMap
     },
     saveCachedState() {
-      savePageState('VariableList', {
+      savePageState(projectPageStateKey('VariableList', this.currentProjectId), {
         showExtraVariableColumns: this.showExtraVariableColumns,
         activeTab: this.activeTab,
         qp: this.qp,
@@ -3179,6 +3201,7 @@ export default {
         objPageSize: this.objPageSize,
         objectFieldPageMap: this.objectFieldPageMap,
         objExpanded: this.objExpanded,
+        objectFieldExpandMap: this.objectFieldExpandMap,
       })
     },
     initForm() {
@@ -3202,6 +3225,7 @@ export default {
         dbParams: '[]',
         dbResultPath: '',
         dbMaxRows: 1,
+        dbQueryTimeoutSeconds: 5,
         dbForceRefresh: false,
         dbExceptionStrategy: 'ERROR',
         dbFallbackValue: '',
@@ -3496,7 +3520,8 @@ export default {
         this.form.dbSql = config.sql || ''
         this.form.dbParams = this.stringifyConfig(config.params || [])
         this.form.dbResultPath = config.resultPath || ''
-        this.form.dbMaxRows = config.maxRows || 1
+        this.form.dbMaxRows = config.maxRows ?? 1
+        this.form.dbQueryTimeoutSeconds = config.queryTimeoutSeconds ?? 5
         this.form.dbForceRefresh = config.forceRefresh === true
         this.form.dbExceptionStrategy = config.exceptionStrategy || 'ERROR'
         this.form.dbFallbackValue =
@@ -3566,7 +3591,8 @@ export default {
           sql: payload.dbSql,
           params,
           resultPath: payload.dbResultPath || '',
-          maxRows: payload.dbMaxRows || 1,
+          maxRows: payload.dbMaxRows ?? 1,
+          queryTimeoutSeconds: payload.dbQueryTimeoutSeconds ?? 5,
           forceRefresh: payload.dbForceRefresh === true,
           exceptionStrategy: payload.dbExceptionStrategy || 'ERROR',
           fallbackValue: payload.dbFallbackValue || null,
@@ -3632,6 +3658,7 @@ export default {
         'dbParams',
         'dbResultPath',
         'dbMaxRows',
+        'dbQueryTimeoutSeconds',
         'dbForceRefresh',
         'dbExceptionStrategy',
         'dbFallbackValue',
@@ -3826,6 +3853,34 @@ export default {
       this.objExpanded[node.object.id] = expanded
       this.saveCachedState()
     },
+    isObjectRowControl(event) {
+      return !!(event && event.target && event.target.closest('button, a, input, select, textarea, .el-select, .el-input, [role="combobox"], .el-table__expand-icon'))
+    },
+    handleObjectRowClick(node, column, event) {
+      if (!node || !node.object || this.isObjectRowControl(event)) return
+      this.toggleObjectExpand(node)
+    },
+    objectFieldExpandedKeys(node) {
+      return this.objectFieldExpandMap[node.object.id] || []
+    },
+    objectFieldBranchIds(node) {
+      return this.flattenObjectFields(this.paginatedObjectFields(node)).filter(field => field.children && field.children.length).map(field => field.id)
+    },
+    setObjectFieldExpansion(node, expanded) {
+      this.objectFieldExpandMap[node.object.id] = expanded ? this.objectFieldBranchIds(node) : []
+      this.saveCachedState()
+    },
+    handleObjectFieldExpandChange(node, field, expanded) {
+      const keys = new Set(this.objectFieldExpandedKeys(node))
+      if (expanded) keys.add(field.id)
+      else keys.delete(field.id)
+      this.objectFieldExpandMap[node.object.id] = [...keys]
+      this.saveCachedState()
+    },
+    handleObjectFieldRowClick(node, field, event) {
+      if (!field.children || !field.children.length || this.isObjectRowControl(event)) return
+      this.handleObjectFieldExpandChange(node, field, !this.objectFieldExpandedKeys(node).includes(field.id))
+    },
     handleObjPageChange(p) {
       this.objPageNum = p
       this.saveCachedState()
@@ -3833,8 +3888,11 @@ export default {
     objectFieldTotal(node) {
       return this.countObjectFields(node && node.variables)
     },
+    objectFieldRootTotal(node) {
+      return (node && node.variables || []).length
+    },
     objectFieldNeedsPaging(node) {
-      return this.objectFieldTotal(node) > this.objectFieldPageSize
+      return this.objectFieldRootTotal(node) > this.objectFieldPageSize
     },
     objectFieldPage(node) {
       const id = node && node.object ? node.object.id : null
@@ -3845,29 +3903,7 @@ export default {
       if (!this.objectFieldNeedsPaging(node)) return rows
       const page = this.objectFieldPage(node)
       const start = (page - 1) * this.objectFieldPageSize
-      return this.sliceObjectFieldTree(
-        rows,
-        start,
-        start + this.objectFieldPageSize
-      )
-    },
-    sliceObjectFieldTree(rows, start, end) {
-      let index = 0
-      const visit = (list) => {
-        return (list || [])
-          .map((row) => {
-            const current = index++
-            const children = visit(row.children || [])
-            const includeSelf = current >= start && current < end
-            if (!includeSelf && !children.length) return null
-            return {
-              ...row,
-              children,
-            }
-          })
-          .filter(Boolean)
-      }
-      return visit(rows)
+      return rows.slice(start, start + this.objectFieldPageSize)
     },
     handleObjectFieldPageChange(node, page) {
       const id = node && node.object ? node.object.id : null
@@ -3881,7 +3917,7 @@ export default {
       tree.forEach((node) => {
         const id = node && node.object ? node.object.id : null
         if (!id) return
-        const total = this.objectFieldTotal(node)
+        const total = this.objectFieldRootTotal(node)
         const max = Math.max(1, Math.ceil(total / this.objectFieldPageSize))
         const page = this.objectFieldPageMap[id] || 1
         next[id] = Math.min(Math.max(page, 1), max)
@@ -3905,7 +3941,10 @@ export default {
       const normalize = (value) => String(value || '').trim().toUpperCase()
       const left = normalize(fieldType)
       const right = normalize(variableType)
+      if (!left || !right) return false
       if (left === right) return true
+      if (['LIST', 'ARRAY', 'SET'].includes(left) && ['LIST', 'ARRAY', 'SET'].includes(right)) return true
+      if (['OBJECT', 'MAP'].includes(left) && ['OBJECT', 'MAP'].includes(right)) return true
       const numeric = new Set([
         'NUMBER',
         'INTEGER',
@@ -3918,10 +3957,76 @@ export default {
       ])
       return numeric.has(left) && numeric.has(right)
     },
-    referenceVariableOptionLabel(variable) {
-      const label = variable.varLabel || variable.varCode || variable.scriptName
-      const scriptName = variable.scriptName || variable.varCode
-      return label === scriptName ? label : `${label} / ${scriptName}`
+    canReferenceObjectType(field) {
+      if (['OBJECT', 'MAP'].includes(field.varType)) return true
+      return ['LIST', 'ARRAY', 'SET'].includes(field.varType) && (!field.genericType || ['OBJECT', 'MAP'].includes(field.genericType))
+    },
+    referenceOptionKey(item) {
+      return `${item._referenceType === 'OBJECT' ? 'OBJECT' : 'VARIABLE'}:${item.id}`
+    },
+    referenceVariableOptionLabel(item) {
+      const label = item.objectLabel || item.varLabel || item.objectCode || item.varCode || item.scriptName
+      const code = item.objectCode || item.varCode || item.scriptName
+      const type = item._referenceType === 'OBJECT' ? '对象结构' : this.typeLabel(item.varType)
+      return `${label === code ? label : `${label} / ${code}`} · ${type}`
+    },
+    objectFieldReferenceLabel(field) {
+      if (field.refVariableId) {
+        const variable = this.objectReferenceVariableMap[field.refVariableId]
+        return `${variable && variable.varSource === 'CONSTANT' ? '常量' : '变量'} · ${this.referenceVariableLabel(field.refVariableId)}`
+      }
+      if (field.refObjectId) {
+        const object = this.objectReferenceObjectMap[field.refObjectId]
+        return `数据对象 · ${object ? object.objectLabel || object.objectCode : this.objectIdMap[field.refObjectId] || `#${field.refObjectId}`}`
+      }
+      return '旧对象编码未绑定，请重新选择引用'
+    },
+    objectFieldReferenceScriptName(field) {
+      if (field.refVariableId) return this.referenceVariableScriptName(field.refVariableId)
+      const object = this.objectReferenceObjectMap[field.refObjectId]
+      return object ? object.objectCode : this.objectIdMap[field.refObjectId] || field.refObjectCode || ''
+    },
+    async changeObjectFieldReference(value) {
+      const requestId = ++this.objectFieldValidationRequestId
+      this.objectFieldReferenceError = ''
+      this.objectFieldReferenceMessage = ''
+      if (!value) {
+        this.form.refVariableId = null
+        this.form.refObjectId = null
+        this.form.refObjectCode = null
+        this.objectFieldReferenceValidating = false
+        return
+      }
+      const option = this.objectFieldReferenceOptions.find(item => this.referenceOptionKey(item) === value)
+      if (!option) {
+        this.objectFieldReferenceError = '该资源类型或项目范围不匹配，不能绑定'
+        return
+      }
+      const objectReference = option._referenceType === 'OBJECT'
+      const fieldForm = this.form
+      const payload = {
+        ...this.form,
+        refVariableId: objectReference ? null : option.id,
+        refObjectId: objectReference ? option.id : null,
+        refObjectCode: null,
+        genericType: objectReference && ['LIST', 'ARRAY', 'SET'].includes(this.form.varType) ? 'OBJECT' : this.form.genericType,
+      }
+      this.objectFieldReferenceValidating = true
+      try {
+        const response = await validateDataObjectFieldReference(this.objectFieldParentId, payload)
+        if (requestId !== this.objectFieldValidationRequestId || this.form !== fieldForm) return
+        const issues = response.data || []
+        if (issues.length) {
+          this.objectFieldReferenceError = issues.map(item => item.message).join('；')
+          return
+        }
+        Object.assign(this.form, { refVariableId: payload.refVariableId, refObjectId: payload.refObjectId, refObjectCode: null, genericType: payload.genericType })
+        this.objectFieldReferenceMessage = '类型和项目范围校验通过，已绑定引用。'
+      } catch (error) {
+        if (requestId === this.objectFieldValidationRequestId) this.objectFieldReferenceError = error.message || '引用校验失败，请重试'
+      } finally {
+        if (requestId === this.objectFieldValidationRequestId) this.objectFieldReferenceValidating = false
+      }
     },
     referenceVariableLabel(variableId) {
       const variable = this.objectReferenceVariableMap[variableId]
@@ -3945,24 +4050,35 @@ export default {
       return Array.isArray(data) ? data : data.records || []
     },
     async loadObjectFieldReferenceVariables(object) {
+      const requestId = ++this.objectFieldReferenceRequestId
+      ++this.objectFieldValidationRequestId
+      this.objectFieldReferenceValidating = false
+      this.objectFieldReferenceError = ''
+      this.objectFieldReferenceMessage = ''
+      this.objectFieldReferenceVariables = []
+      this.objectFieldReferenceObjects = []
       this.objectFieldReferenceLoading = true
       try {
-        const projectId =
-          String(object && object.scope).toUpperCase() === 'GLOBAL'
-            ? 0
-            : object && object.projectId
-        const response = await listVariablesByProject(projectId || 0)
-        const variables = this.variableRows(response)
+        const projectId = object && object.scope === 'PROJECT' ? object.projectId : 0
+        const [variableResponse, objectResponse] = await Promise.all([
+          listVariablesByProject(projectId || 0),
+          listDataObjects(projectId || 0),
+        ])
+        if (requestId !== this.objectFieldReferenceRequestId) return
+        const variables = this.variableRows(variableResponse)
+        const objects = this.variableRows(objectResponse)
         this.objectFieldReferenceVariables = variables
+        this.objectFieldReferenceObjects = objects
         this.mergeObjectReferenceVariables(variables)
+        objects.forEach(item => { this.objectReferenceObjectMap[item.id] = item })
       } catch (error) {
-        this.objectFieldReferenceVariables = []
-        this.$message.error('加载可引用变量失败')
+        if (requestId === this.objectFieldReferenceRequestId) this.objectFieldReferenceError = '加载可引用资源失败，请关闭后重试'
       } finally {
-        this.objectFieldReferenceLoading = false
+        if (requestId === this.objectFieldReferenceRequestId) this.objectFieldReferenceLoading = false
       }
     },
     async loadObjectReferenceVariablesForTree(tree) {
+      ;(tree || []).forEach(node => { this.objectReferenceObjectMap[node.object.id] = node.object })
       const projectIds = new Set()
       ;(tree || []).forEach((node) => {
         const object = node && node.object
@@ -3986,17 +4102,17 @@ export default {
       }
     },
     onObjectFieldTypeChange() {
-      if (!this.isObjectField || !this.form.refVariableId) return
-      const selected = this.objectReferenceVariableMap[this.form.refVariableId]
-      if (
-        selected &&
-        !this.objectFieldReferenceTypeCompatible(
-          this.form.varType,
-          selected.varType
-        )
-      ) {
+      if (!this.isObjectField) return
+      ++this.objectFieldValidationRequestId
+      this.objectFieldReferenceValidating = false
+      this.objectFieldReferenceError = ''
+      if (this.form.refVariableId || this.form.refObjectId) {
         this.form.refVariableId = null
+        this.form.refObjectId = null
+        this.form.refObjectCode = null
+        this.objectFieldReferenceMessage = '类型已变化，请重新选择并校验引用。'
       }
+      if (!['LIST', 'ARRAY', 'SET'].includes(this.form.varType)) this.form.genericType = null
     },
     async loadData() {
       this.loading = true
@@ -4053,7 +4169,7 @@ export default {
         varCode: '',
         varLabel: '',
       }
-      clearPageState('VariableList')
+      clearPageState(projectPageStateKey('VariableList', this.currentProjectId))
       this.loadData()
     },
 
@@ -4239,7 +4355,7 @@ export default {
         projectId: row.projectId,
         varCode: row.varCode,
         varLabel: row.varLabel,
-        scriptName: row.scriptName,
+        scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
         varType: row.varType || 'STRING',
         refVariableId: row.refVariableId || null,
         refObjectCode: row.refObjectCode || '',
@@ -4423,6 +4539,9 @@ export default {
         this.validationLoading = false
       }
     },
+    fetchValidationOptions({ query, pageNum, pageSize }) {
+      return listFieldValidations({ ...this.validationQp, keyword: query, pageNum, pageSize })
+    },
     handleFieldValidationQuery() {
       this.validationQp.pageNum = 1
       return this.loadFieldValidations()
@@ -4587,7 +4706,8 @@ export default {
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
         if (this.isObjectField) {
-          if (!this.form.projectId) this.form.projectId = this.currentProjectId
+          if (this.objectFieldReferenceLoading || this.objectFieldReferenceValidating || this.objectFieldSubmitting) return
+          const fieldForm = this.form
           const payload = {
             id: this.form.id,
             projectId: this.form.projectId,
@@ -4604,15 +4724,26 @@ export default {
             sortOrder: this.form.sortOrder,
             status: this.form.status,
           }
-          const response = this.form.id
-            ? await updateDataObjectField(payload)
-            : await createDataObjectField(
-                this.objectFieldParentId,
-                payload
-              )
-          this.openApproval(response, '对象字段变更已送审')
-          this.dialogVisible = false
-          this.isObjectField = false
+          this.objectFieldSubmitting = true
+          try {
+            const validation = await validateDataObjectFieldReference(this.objectFieldParentId, payload)
+            if (this.form !== fieldForm || !this.isObjectField) return
+            const issues = validation.data || []
+            if (issues.length) {
+              this.objectFieldReferenceError = issues.map(item => item.message).join('；')
+              return
+            }
+            const response = payload.id
+              ? await updateDataObjectField(payload)
+              : await createDataObjectField(payload.objectId, payload)
+            this.openApproval(response, '对象字段变更已送审')
+            this.dialogVisible = false
+            this.isObjectField = false
+          } catch (error) {
+            if (!error.requestErrorNotified) this.$message.error(error.message || '保存对象字段失败')
+          } finally {
+            this.objectFieldSubmitting = false
+          }
           return
         }
         if (!this.form.scope) {
@@ -5146,6 +5277,7 @@ export default {
       return true
     },
     async doImportJavaEntity() {
+      if (this.importing) return
       if (!this.ensureImportScope()) return
       if (!this.importForm.javaSource.trim()) {
         this.$message.warning('请输入或上传 Java 源码')
@@ -5162,7 +5294,7 @@ export default {
           this.importForm.scope
         )
         this.importResult = res.data || {}
-        this.importJavaEntityVisible = false
+        if (this.importResult.success) this.importJavaEntityVisible = false
         this.importResultVisible = true
       } catch (e) {
         this.$message.error('导入失败: ' + (e.message || ''))
@@ -5171,6 +5303,7 @@ export default {
       }
     },
     async doImportJsonObject() {
+      if (this.importing) return
       if (!this.ensureImportScope()) return
       if (!this.importForm.objectCode.trim()) {
         this.$message.warning('请输入对象编码')
@@ -5192,7 +5325,7 @@ export default {
           this.importForm.scope
         )
         this.importResult = res.data || {}
-        this.importJsonObjectVisible = false
+        if (this.importResult.success) this.importJsonObjectVisible = false
         this.importResultVisible = true
       } catch (e) {
         this.$message.error('导入失败: ' + (e.message || ''))
@@ -5202,6 +5335,7 @@ export default {
     },
     /** 从 CREATE TABLE DDL 导入数据对象（COMMENT → 变量名称） */
     async doImportDdl() {
+      if (this.importing) return
       if (!this.ensureImportScope()) return
       if (!this.importForm.ddlSource || !this.importForm.ddlSource.trim()) {
         this.$message.warning('请输入建表 DDL')
@@ -5218,7 +5352,7 @@ export default {
           this.importForm.scope
         )
         this.importResult = res.data || {}
-        this.importDdlVisible = false
+        if (this.importResult.success) this.importDdlVisible = false
         this.importResultVisible = true
       } catch (e) {
         this.$message.error('导入失败: ' + (e.message || ''))
@@ -5227,6 +5361,7 @@ export default {
       }
     },
     async doImportJavaConst() {
+      if (this.importing) return
       if (!this.ensureImportScope()) return
       if (!this.importForm.javaSource.trim()) {
         this.$message.warning('请输入或上传 Java 源码')
@@ -5242,7 +5377,7 @@ export default {
           projectId
         )
         this.importResult = res.data || {}
-        this.importJavaConstVisible = false
+        if (this.importResult.success) this.importJavaConstVisible = false
         this.importResultVisible = true
       } catch (e) {
         this.$message.error('导入失败: ' + (e.message || ''))
@@ -5251,6 +5386,7 @@ export default {
       }
     },
     async doImportJsonConst() {
+      if (this.importing) return
       if (!this.ensureImportScope()) return
       if (!this.importForm.jsonContent.trim()) {
         this.$message.warning('请输入 JSON 内容')
@@ -5266,7 +5402,7 @@ export default {
           projectId
         )
         this.importResult = res.data || {}
-        this.importJsonConstVisible = false
+        if (this.importResult.success) this.importJsonConstVisible = false
         this.importResultVisible = true
       } catch (e) {
         this.$message.error('导入失败: ' + (e.message || ''))
@@ -5282,7 +5418,8 @@ export default {
     },
     goImportApprovals() {
       this.importResultVisible = false
-      this.$router.push('/approval')
+      const ids = this.importResult.requestIds || []
+      this.$router.push(ids.length === 1 ? '/approval/' + ids[0] : '/approval')
     },
     async doBatchValidate() {
       this.validating = true
@@ -5437,9 +5574,29 @@ export default {
   padding-bottom: 6px;
   border-bottom: 1px solid var(--tianshu-border-subtle);
 }
+.object-field-expansion__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.reference-validation-success {
+  display: block;
+  color: var(--el-color-success);
+}
 .object-field-expansion {
+  position: sticky;
+  left: 0;
+  width: calc(100cqw - 2px);
+  box-sizing: border-box;
   padding: 12px 16px 16px;
   background: var(--tianshu-bg-soft);
+}
+.data-object-table {
+  container-type: inline-size;
+}
+.data-object-table :deep(.el-table__expanded-cell) {
+  padding: 0;
 }
 .object-field-expansion__heading {
   display: flex;

@@ -802,6 +802,8 @@ public class SchemaSyncService {
                 "`token_refresh_ahead_seconds` INT NOT NULL DEFAULT 60 COMMENT 'Token提前刷新秒数' AFTER `concurrent_wait_timeout_ms`");
         addColumnIfMissing(table, "token_refresh_on_unauthorized",
                 "`token_refresh_on_unauthorized` TINYINT NOT NULL DEFAULT 1 COMMENT '401或403是否刷新Token' AFTER `token_refresh_ahead_seconds`");
+        addColumnIfMissing(table, "token_failure_condition",
+                "`token_failure_condition` JSON DEFAULT NULL COMMENT 'Token鉴权失败条件' AFTER `token_refresh_on_unauthorized`");
         addColumnIfMissing(table, "token_log_enabled",
                 "`token_log_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否记录Token动作日志' AFTER `token_refresh_on_unauthorized`");
         addColumnIfMissing(table, "retry_status_codes",

@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import org.junit.After;
 import org.junit.Test;
 
 import java.util.Collections;
@@ -20,6 +22,11 @@ public class DataObjectFieldReferenceResolverTest {
     private final DataObjectFieldReferenceResolver resolver =
             new DataObjectFieldReferenceResolver();
     private final ExecutionParameterBinder binder = new ExecutionParameterBinder();
+
+    @After
+    public void clearRuntimeContext() {
+        RuntimeContextBridge.clear();
+    }
 
     @Test
     public void sourceVariableIsAssembledIntoMappedObjectPath() {
@@ -90,6 +97,30 @@ public class DataObjectFieldReferenceResolverTest {
     }
 
     private DataObjectFieldReferenceResolver.ReferencePlan plan() {
+        return plan("INPUT");
+    }
+
+    @Test
+    public void referencedConstantDefaultSuppliesTheMissingObjectField() {
+        var plan = plan("CONSTANT");
+        Map<String, Object> input = new LinkedHashMap<>();
+        var bindingFields = plan.mergeBindingFields(Collections.emptyList());
+        assertTrue(bindingFields.stream().anyMatch(field -> "CONSTANT".equals(field.getRefType())));
+        Map<String, Object> values = binder.bindRuleInputs(bindingFields, input);
+        RuleVariable constant = new RuleVariable();
+        constant.setId(9L);
+        constant.setVarCode("age");
+        constant.setScriptName("age");
+        constant.setVarType("NUMBER");
+        constant.setVarSource("CONSTANT");
+        constant.setDefaultValue("65");
+        constant.setStatus(1);
+        new VariableSourceResolver().resolveIntoSnapshot(List.of(constant), List.of(), List.of(), values, null);
+        plan.apply(values, plan.captureExplicitTargets(input));
+        assertEquals(65D, ((Number) ((Map<?, ?>) values.get("request")).get("age")).doubleValue(), 0D);
+    }
+
+    private DataObjectFieldReferenceResolver.ReferencePlan plan(String sourceType) {
         RuleDefinitionInputField target = new RuleDefinitionInputField();
         target.setVarId(30L);
         target.setRefType("DATA_OBJECT");
@@ -107,7 +138,8 @@ public class DataObjectFieldReferenceResolverTest {
         source.setVarLabel("年龄");
         source.setScriptName("age");
         source.setVarType("NUMBER");
-        source.setVarSource("INPUT");
+        source.setVarSource(sourceType);
+        if ("CONSTANT".equals(sourceType)) source.setDefaultValue("65");
         source.setStatus(1);
 
         return resolver.resolveSnapshot(

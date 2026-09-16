@@ -18,6 +18,11 @@ export function normalizeProjectId(value) {
   return Number.isInteger(id) && id > 0 ? id : null
 }
 
+export function projectPageStateKey(pageKey, projectId) {
+  // 全局和各项目独立缓存，避免自动项目筛选在退出范围后被恢复。
+  return `${pageKey}:project:${normalizeProjectId(projectId) || 'all'}`
+}
+
 export function projectContextStorage() {
   try {
     return typeof window !== 'undefined' ? window.sessionStorage : null

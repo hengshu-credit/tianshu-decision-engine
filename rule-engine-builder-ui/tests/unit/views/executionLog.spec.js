@@ -127,6 +127,34 @@ test('uses project code and name fuzzy filters', async () => {
   wrapper.unmount()
 })
 
+test('日志退出项目范围后清除自动项目编码并从第一页加载', async () => {
+  sessionStorage.clear()
+  projectApi.getProject.mockResolvedValueOnce({ data: { id: 2, projectCode: 'project_b' } })
+  requestApi.mockResolvedValue({ data: { records: [], total: 0 } })
+  const projectWrapper = shallowMount(ExecutionLog, {
+    mocks: {
+      ...defaultMocks,
+      $route: { params: {}, query: { projectId: '2' } },
+      $store: { state: { currentProject: null } },
+    },
+    stubs: defaultStubs,
+  })
+  await nextTick()
+  await new Promise(resolve => setTimeout(resolve, 20))
+  expect(projectWrapper.vm.qp.projectCode).toBe('project_b')
+  projectWrapper.vm.qp.pageNum = 3
+  projectWrapper.vm.saveCachedState()
+  projectWrapper.unmount()
+
+  const globalWrapper = await mountAndWait()
+  expect(requestApi).toHaveBeenLastCalledWith(expect.objectContaining({
+    url: '/rule/log/list',
+    params: expect.objectContaining({ projectCode: '', projectName: '', pageNum: 1 }),
+  }))
+  globalWrapper.unmount()
+  sessionStorage.clear()
+})
+
 test('project context metadata failure does not fall back to all execution logs', async () => {
   projectApi.getProject.mockRejectedValueOnce(new Error('project missing'))
   requestApi.mockResolvedValue({ data: { records: mockLogs(), total: 3 } })
@@ -248,6 +276,30 @@ describe('ExecutionLog — 筛选与分页', () => {
   beforeEach(async () => { wrapper = await mountAndWait() })
   afterEach(() => { if (wrapper) wrapper.unmount() })
 
+  test('修改项目或来源时保留已输入的其余筛选条件', () => {
+    Object.assign(wrapper.vm.qp, { projectCode: 'project_a', projectName: '项目A', ruleCode: 'risk', traceId: 'trace' })
+    wrapper.vm.onProjectChange()
+    wrapper.vm.onSourceChange()
+    expect(wrapper.vm.qp).toMatchObject({ projectCode: 'project_a', projectName: '项目A', ruleCode: 'risk', traceId: 'trace' })
+  })
+
+  test('规则及规则集建议按当前项目与关键字加载，统计仅建议规则集', async () => {
+    wrapper.vm.qp.projectCode = 'project_a'
+    await wrapper.vm.fetchRuleSetOptions({ query: 'risk', pageNum: 2, pageSize: 20 })
+    expect(definitionApi.listDefinitions).toHaveBeenLastCalledWith({
+      projectCode: 'project_a', projectName: '', keyword: 'risk', modelType: 'RULE_SET', pageNum: 2, pageSize: 20,
+    })
+  })
+
+  test('规则集统计重置后刷新统计，查询前保留条件', async () => {
+    wrapper.vm.activeView = 'ruleSetStats'
+    wrapper.vm.qp.ruleCode = 'risk'
+    const loadStats = vi.spyOn(wrapper.vm, 'loadRuleSetStats').mockResolvedValue()
+    wrapper.vm.resetQuery()
+    expect(wrapper.vm.qp.ruleCode).toBe('')
+    expect(loadStats).toHaveBeenCalledOnce()
+  })
+
   test('handleQuery 重置页码并重新加载', async () => {
     wrapper.vm.qp.pageNum = 5
     requestApi.mockResolvedValueOnce({ data: { records: [], total: 0 } })
@@ -283,7 +335,7 @@ describe('ExecutionLog — 筛选与分页', () => {
   })
 
   test('缓存中的非法 1000 页大小回落为默认 10', () => {
-    window.sessionStorage.setItem('qlexpress.pageState.ExecutionLog', JSON.stringify({
+    window.sessionStorage.setItem('qlexpress.pageState.ExecutionLog:project:all', JSON.stringify({
       qp: { pageNum: 3, pageSize: 1000 }
     }))
 
@@ -291,7 +343,7 @@ describe('ExecutionLog — 筛选与分页', () => {
 
     expect(wrapper.vm.qp.pageNum).toBe(3)
     expect(wrapper.vm.qp.pageSize).toBe(10)
-    window.sessionStorage.removeItem('qlexpress.pageState.ExecutionLog')
+    window.sessionStorage.removeItem('qlexpress.pageState.ExecutionLog:project:all')
   })
 
   test('项目和规则筛选器仅在展开时按小页加载', async () => {

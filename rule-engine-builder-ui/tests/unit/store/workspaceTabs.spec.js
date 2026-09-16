@@ -22,6 +22,36 @@ beforeEach(() => {
 })
 
 describe('workspaceTabs store', () => {
+  test('异步业务标题只更新对应页签，切换回来和刷新恢复后仍保留', async() => {
+    const store = createTestStore()
+    const detail = tab('/rule/7', '规则详情')
+    await store.dispatch('workspaceTabs/open', detail)
+    await store.dispatch('workspaceTabs/open', tab('/rule/8', '规则详情'))
+    await store.dispatch('workspaceTabs/updateDetailTitle', { ...detail, detailTitle: '授信准入规则' })
+
+    expect(store.state.workspaceTabs.tabs[0].detailTitle).toBe('授信准入规则')
+    expect(store.state.workspaceTabs.tabs[1].detailTitle).toBeUndefined()
+    expect(store.state.workspaceTabs.activePath).toBe('/rule/8')
+    await store.dispatch('workspaceTabs/open', detail)
+    expect(store.state.workspaceTabs.tabs[0].detailTitle).toBe('授信准入规则')
+    const cached = readWorkspaceTabs()
+    await store.dispatch('workspaceTabs/restore', { cachedTabs: cached.tabs, currentTab: detail })
+    expect(store.state.workspaceTabs.tabs[0].detailTitle).toBe('授信准入规则')
+  })
+
+  test('设计器更换版本后接收标题，但不恢复已关闭的页签', async() => {
+    const store = createTestStore()
+    const original = tab('/designer/table/7?sourceType=VERSION&sourceId=1', '决策表设计器')
+    const current = tab('/designer/table/7?sourceType=REVISION&sourceId=2', '决策表设计器')
+    await store.dispatch('workspaceTabs/open', original)
+    await store.dispatch('workspaceTabs/open', current)
+    await store.dispatch('workspaceTabs/updateDetailTitle', { ...original, detailTitle: '授信准入规则' })
+    expect(store.state.workspaceTabs.tabs).toEqual([{ ...current, detailTitle: '授信准入规则' }])
+    await store.dispatch('workspaceTabs/close', { operation: 'current', targetPath: current.fullPath })
+    await store.dispatch('workspaceTabs/updateDetailTitle', { ...original, detailTitle: '迟到的标题' })
+    expect(store.state.workspaceTabs.tabs).toEqual([])
+  })
+
   test('打开相同 fullPath 只激活而不重复', async() => {
     const store = createTestStore()
     await store.dispatch('workspaceTabs/open', tab('/rule', '规则管理'))

@@ -69,11 +69,11 @@ async function apiProjectId(data) {
 }
 
 export function invokeApiConfig(id, data) {
-  return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data })
+  return request({ url: `/rule/datasource/api-config/${id}/invoke`, method: 'post', data, timeout: 0 })
 }
 
 export function invokeApiConfigPreview(id, data) {
-  return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data })
+  return request({ url: `/rule/datasource/api-config/${id}/invoke-preview`, method: 'post', data, timeout: 0 })
 }
 
 export function previewApiConfigRequest(id, data) {
