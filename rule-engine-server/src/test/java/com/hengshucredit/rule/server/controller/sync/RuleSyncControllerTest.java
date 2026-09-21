@@ -21,6 +21,52 @@ import static org.junit.Assert.assertTrue;
 public class RuleSyncControllerTest {
 
     @Test
+    public void executionHonorsTraceChoiceAndKeepsDefaultEnabled() {
+        RuleSyncController controller = new RuleSyncController();
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L);
+        com.hengshucredit.rule.server.mapper.RulePublishedMapper mapper =
+                (com.hengshucredit.rule.server.mapper.RulePublishedMapper) java.lang.reflect.Proxy.newProxyInstance(
+                        getClass().getClassLoader(),
+                        new Class<?>[]{com.hengshucredit.rule.server.mapper.RulePublishedMapper.class},
+                        (proxy, method, args) -> published);
+        ReflectionTestUtils.setField(controller, "publishedMapper", mapper);
+        boolean[] flags = new boolean[2];
+        ReflectionTestUtils.setField(controller, "executeService",
+                new com.hengshucredit.rule.server.service.RuleExecuteService() {
+                    @Override
+                    public com.hengshucredit.rule.model.dto.RuleResult executePublished(
+                            RulePublished rule, Map<String, Object> params, Long projectId, String appName,
+                            com.hengshucredit.rule.server.auth.ProjectAuthContext auth,
+                            boolean collectTrace, boolean recordTrace) {
+                        assertEquals(Long.valueOf(1L), projectId);
+                        assertEquals("business-service", appName);
+                        assertEquals(18, params.get("age"));
+                        flags[0] = collectTrace;
+                        flags[1] = recordTrace;
+                        return new com.hengshucredit.rule.model.dto.RuleResult();
+                    }
+                });
+        org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+        request.setAttribute("projectId", 1L);
+        request.setAttribute("projectCode", "credit");
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("params", Collections.singletonMap("age", 18));
+        body.put("clientAppName", "business-service");
+        for (Object value : new Object[]{null, false, true, "false", "true"}) {
+            body.put("traceEnabled", value);
+            controller.execute("RISK", body, request);
+            boolean expected = value == null || Boolean.parseBoolean(value.toString());
+            assertEquals(expected, flags[0]);
+            assertEquals(expected, flags[1]);
+        }
+        for (Object invalid : new Object[]{0, "off", Collections.singletonList(false)}) {
+            body.put("traceEnabled", invalid);
+            assertEquals(400, controller.execute("RISK", body, request).getCode());
+        }
+    }
+
+    @Test
     public void enrichesPublishedRuleWithOrderedRootOutputScriptNames() {
         RuleSyncController controller = new RuleSyncController();
         ReflectionTestUtils.setField(controller, "definitionService", new RuleDefinitionService() {

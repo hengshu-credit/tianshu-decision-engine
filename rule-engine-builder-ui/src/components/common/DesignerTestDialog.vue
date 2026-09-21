@@ -1,5 +1,6 @@
 <template>
   <el-dialog
+    class="resizable-config-dialog"
     title="测试执行"
     v-model="innerVisible"
     width="760px"
@@ -25,7 +26,9 @@
         />
         <span style="color: var(--tianshu-text-tertiary)">毫秒</span>
       </div>
+      <dialog-resize-handle :visible="visible" :min-width="640" :min-height="420" />
       <div class="editor-label">输入参数 JSON</div>
+      <div v-if="schemaLoading" class="schema-loading" role="status">正在加载字段样例，可以先编辑参数；已输入内容会保留。</div>
       <el-alert
         v-if="schemaDiagnostics.length"
         :title="schemaDiagnostics.join('；')"
@@ -37,9 +40,9 @@
       <monaco-editor
         v-model:value="paramsJson"
         language="json"
-        height="260px"
+        height="max(160px, calc(260px + var(--dialog-resize-height-delta, 0px)))"
         :key="editorKey"
-        @input="validateJson"
+        @change="validateJson"
       />
       <div v-if="jsonError" class="json-error">{{ jsonError }}</div>
 
@@ -77,12 +80,13 @@
     </div>
     <template v-slot:footer>
       <el-button size="small" @click="close">关闭</el-button>
-      <el-button size="small" @click="resetParams">重置样例</el-button>
+      <el-button size="small" :disabled="schemaLoading || executing" @click="resetParams">重置样例</el-button>
       <el-button
         size="small"
         type="primary"
         :icon="ElIconVideoPlay"
         :loading="executing"
+        :disabled="schemaLoading || executing"
         @click="execute"
       >
         执行测试
@@ -98,6 +102,7 @@ import { $emit } from '../../utils/gogocodeTransfer'
 import { executeRule, getRuleTestSchema } from '@/api/definition'
 import MonacoEditor from '@/components/MonacoEditor'
 import TraceTree from '@/components/common/TraceTree.vue'
+import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
 import { normalizeTestResult, formatTestOutput } from '@/utils/testResult'
 
 export default {
@@ -112,12 +117,17 @@ export default {
       activeTab: 'output',
       resolvedTemplate: null,
       schemaDiagnostics: [],
+      schemaLoading: false,
+      schemaRequestId: 0,
+      executionRequestId: 0,
+      sampleOwnerKey: '',
+      lastGeneratedParams: '{}',
       requestTimeoutMs: 180000,
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
     }
   },
   name: 'DesignerTestDialog',
-  components: { MonacoEditor, TraceTree },
+  components: { MonacoEditor, TraceTree, DialogResizeHandle },
   props: {
     visible: {
       type: Boolean,
@@ -175,26 +185,46 @@ export default {
   watch: {
     visible(value) {
       if (value) this.open()
+      else this.invalidateRequests()
     },
     paramsTemplate: {
       deep: true,
       handler() {
-        if (this.visible) this.resetParams()
+        if (this.visible && !this.schemaLoading && this.paramsJson === this.lastGeneratedParams) this.resetParams()
       },
     },
   },
+  beforeUnmount() { this.invalidateRequests() },
   methods: {
     async open() {
+      this.executionRequestId++
+      this.executing = false
       this.result = null
       this.lastInput = null
       this.activeTab = 'output'
       this.resolvedTemplate = null
-      await this.loadTestSchema()
-      this.resetParams()
+      this.schemaDiagnostics = []
+      const owner = `${this.targetType}:${this.definitionId}:${this.projectId}`
+      if (owner !== this.sampleOwnerKey) {
+        this.sampleOwnerKey = owner
+        this.resetParams()
+      }
+      const inputAtOpen = this.paramsJson
+      const wasEdited = inputAtOpen !== this.lastGeneratedParams
+      const requestId = ++this.schemaRequestId
+      await this.loadTestSchema(requestId)
+      if (requestId === this.schemaRequestId && !wasEdited && this.paramsJson === inputAtOpen) this.resetParams()
     },
-    async loadTestSchema() {
+    invalidateRequests() {
+      this.schemaRequestId++
+      this.executionRequestId++
+      this.schemaLoading = false
+      this.executing = false
+    },
+    async loadTestSchema(requestId = ++this.schemaRequestId) {
       const modelJson = this.currentModelJson()
       if (!this.definitionId && !modelJson) return
+      this.schemaLoading = true
       try {
         const response = await getRuleTestSchema({
           targetType: this.targetType || 'RULE',
@@ -205,18 +235,21 @@ export default {
         })
         const schema =
           response && response.data !== undefined ? response.data : response
+        if (requestId !== this.schemaRequestId) return
         if (schema && schema.sampleParams)
           this.resolvedTemplate = schema.sampleParams
         this.schemaDiagnostics =
           schema && Array.isArray(schema.diagnostics) ? schema.diagnostics : []
       } catch (e) {
-        this.schemaDiagnostics = [e.message || '测试字段解析失败']
+        if (requestId === this.schemaRequestId) this.schemaDiagnostics = [e.message || '测试字段解析失败']
+      } finally {
+        if (requestId === this.schemaRequestId) this.schemaLoading = false
       }
     },
     resetParams() {
       this.paramsJson = this.formatJson(this.normalizeTemplate())
+      this.lastGeneratedParams = this.paramsJson
       this.jsonError = ''
-      this.editorKey += 1
     },
     normalizeTemplate() {
       if (this.resolvedTemplate !== null) return this.resolvedTemplate
@@ -239,6 +272,7 @@ export default {
       }
     },
     async execute() {
+      if (this.schemaLoading || this.executing) return
       if (this.jsonError) {
         this.$message.error('请先修正 JSON 格式错误')
         return
@@ -251,6 +285,7 @@ export default {
         return
       }
       this.executing = true
+      const requestId = ++this.executionRequestId
       this.result = null
       this.lastInput = params
       try {
@@ -264,10 +299,12 @@ export default {
           },
           this.requestTimeoutMs
         )
+        if (requestId !== this.executionRequestId) return
         this.result = normalizeTestResult(res)
         this.activeTab =
           this.result && this.result.errorMessage ? 'error' : 'output'
       } catch (e) {
+        if (requestId !== this.executionRequestId) return
         this.result = normalizeTestResult({
           success: false,
           errorMessage: e.message || '执行异常',
@@ -276,10 +313,11 @@ export default {
         })
         this.activeTab = 'error'
       } finally {
-        this.executing = false
+        if (requestId === this.executionRequestId) this.executing = false
       }
     },
     close() {
+      this.invalidateRequests()
       this.innerVisible = false
     },
     currentModelJson() {
@@ -321,6 +359,11 @@ export default {
   font-weight: 600;
   color: var(--tianshu-text-primary);
   margin-bottom: 8px;
+}
+.schema-loading {
+  margin-bottom: 8px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
 }
 .json-error {
   color: #f56c6c;

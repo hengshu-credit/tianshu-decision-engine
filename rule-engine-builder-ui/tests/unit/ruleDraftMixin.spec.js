@@ -404,7 +404,7 @@ describe('ruleDraftMixin', () => {
     wrapper.unmount()
   })
 
-  test('编译失败拒绝保存且不更新锁', async () => {
+  test('未完成配置可以暂存，更新锁并保留发布阻断诊断', async () => {
     definitionApi.listRuleRevisions.mockResolvedValueOnce({
       data: [
         {
@@ -432,10 +432,13 @@ describe('ruleDraftMixin', () => {
     const wrapper = mountHost()
     await flushPromises()
 
-    await expect(wrapper.vm.saveDraftModel('invalid ql')).rejects.toThrow('脚本解析失败')
+    const saved = await wrapper.vm.saveDraftModel('{"script":"return {"}')
 
-    expect(wrapper.vm.draftRevision.lockVersion).toBe(4)
-    expect(wrapper.vm.draftIssues).toEqual([])
+    expect(saved.compileSuccess).toBe(false)
+    expect(wrapper.vm.draftRevision.lockVersion).toBe(5)
+    expect(wrapper.vm.designerHasUnsavedChanges).toBe(false)
+    expect(wrapper.vm.draftIssues).toEqual([{ code: 'QL_PARSE_ERROR', severity: 'ERROR' }])
+    expect(wrapper.vm.designerValidationReport.errors).toEqual(wrapper.vm.draftIssues)
     expect(definitionApi.compileRule).not.toHaveBeenCalled()
     wrapper.unmount()
   })

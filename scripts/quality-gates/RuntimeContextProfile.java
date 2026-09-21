@@ -1,4 +1,5 @@
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RequestContext;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.sun.management.ThreadMXBean;
@@ -55,6 +56,12 @@ public class RuntimeContextProfile {
         });
         workloads.put("execute", () -> {
             RuleResult result = engine.execute("return age >= 18 && score >= 600;", values, false);
+            if (!result.isSuccess() || !Boolean.TRUE.equals(result.getResult())) throw new AssertionError(result.getErrorMessage());
+            sink = result;
+        });
+        QLExpressEngine.PreparedScript prepared = engine.prepare("return age >= 18 && score >= 600;");
+        workloads.put("execute_empty_request", () -> {
+            RuleResult result = engine.execute(prepared, values, false, new RequestContext());
             if (!result.isSuccess() || !Boolean.TRUE.equals(result.getResult())) throw new AssertionError(result.getErrorMessage());
             sink = result;
         });

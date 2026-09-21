@@ -174,6 +174,30 @@ public class RuleProjectServiceTest {
         return new ExportFixture(service, scenarioService);
     }
 
+    @Test
+    public void apiDocumentationUsesResolvedUpstreamInsteadOfPersistedDerivedRoot() {
+        ExportFixture fixture = exportFixture();
+        var content = new com.hengshucredit.rule.model.entity.RuleDefinitionContent();
+        content.setModelJson("{}");
+        var derived = new com.hengshucredit.rule.model.entity.RuleDefinitionInputField();
+        derived.setVarId(1L); derived.setRefType("VARIABLE"); derived.setFieldName("historyMetric"); derived.setScriptName("historyMetric");
+        var upstream = new com.hengshucredit.rule.model.entity.RuleDefinitionInputField();
+        upstream.setVarId(2L); upstream.setRefType("VARIABLE"); upstream.setFieldName("contacts"); upstream.setScriptName("contacts"); upstream.setFieldType("LIST");
+        ReflectionTestUtils.setField(fixture.service, "contentMapper", mapper(RuleDefinitionContentMapper.class,
+                (proxy, method, args) -> "selectOne".equals(method.getName()) ? content : defaultValue(method.getReturnType())));
+        ReflectionTestUtils.setField(fixture.service, "inputFieldMapper", listMapper(RuleDefinitionInputFieldMapper.class, List.of(derived)));
+        ReflectionTestUtils.setField(fixture.service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public ResolvedFields resolveFields(Long id, String modelJson, String modelType, Long projectId) {
+                assertEquals(Long.valueOf(7), projectId);
+                return new ResolvedFields(List.of(upstream), List.of());
+            }
+        });
+        ApiDocDTO doc = fixture.service.exportApiDoc(7L);
+        assertEquals(1, doc.getRules().get(0).getInputVariables().size());
+        assertEquals("contacts", doc.getRules().get(0).getInputVariables().get(0).getVarCode());
+        assertEquals("LIST", doc.getRules().get(0).getInputVariables().get(0).getVarType());
+    }
+
     private ProjectAuthDTO auth(String code, String name, String type, int status) {
         ProjectAuthDTO auth = new ProjectAuthDTO();
         auth.setAuthCode(code);

@@ -35,6 +35,7 @@ public class RuleEngineAutoConfiguration {
 
         @Bean
         @ConditionalOnMissingBean(ExecutionLogReporter.class)
+        @ConditionalOnProperty(prefix = "rule-engine.client", name = "log-report-enabled", havingValue = "true", matchIfMissing = true)
         public ExecutionLogReporter kafkaLogReporter(KafkaTemplate<String, String> kafkaTemplate,
                                                      RuleEngineClientProperties props) {
             return new KafkaLogReporter(kafkaTemplate, props.getKafkaLogTopic());
@@ -77,6 +78,6 @@ public class RuleEngineAutoConfiguration {
     }
 
     static boolean shouldUseExternalReporter(RuleEngineClientProperties properties) {
-        return true;
+        return properties.isLogReportEnabled();
     }
 }

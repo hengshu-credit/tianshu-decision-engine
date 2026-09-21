@@ -2,8 +2,8 @@ export function validationRepairHint(issue) {
   const code = String(issue && issue.code || '')
   if (/REFERENCE|DEPENDENCY|MISSING_.*ID/.test(code)) return '请在问题位置重新选择已启用的字段或依赖；引用使用 ID，修改显示名称不能修复失效引用。'
   if (/SCHEMA|FIELD|TYPE/.test(code)) return '请核对输入、输出字段的类型和必填要求，修改后重新校验当前修订。'
-  if (/COMPILE|MODEL_JSON/.test(code)) return '请检查条件、动作和模型内容是否完整，修复后点击“暂存并检查”。'
-  return '请核对该位置的配置。修复后暂存并检查，再返回生命周期重新校验。'
+  if (/COMPILE|MODEL_JSON/.test(code)) return '请检查条件、动作和模型内容是否完整，修复后点击“编译”。未完成配置可先点击“保存”保留草稿。'
+  return '请核对该位置的配置。修复后点击“保存”和“编译”，再返回生命周期重新校验。'
 }
 
 export function validationPathLabel(path) {

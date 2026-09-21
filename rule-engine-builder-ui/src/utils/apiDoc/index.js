@@ -5,6 +5,7 @@ import { renderLayoutScript, renderResizeHandles } from './layout'
 import { renderCodeEditorScript } from './editor'
 import { renderAuthentication, renderResponseContract, renderRuleEndpoint } from './sections'
 import { apiDocStyles } from './styles'
+import { renderJavaIntegration } from './javaIntegration'
 
 function renderOverview(doc) {
   return `<section id="overview" class="panel">
@@ -25,7 +26,7 @@ function renderNavigation(doc, logoSvg) {
     </div>
     <div class="brand-project"><strong>${escapeHtml(doc.project.projectName || '未命名项目')}</strong><code>${escapeHtml(doc.project.projectCode || '-')}</code></div>
   </div>
-  <div class="nav-group"><div class="nav-title">接入说明</div><a class="nav-link" href="#overview">基础项目信息</a><a class="nav-link" href="#response-contract">通用响应约定与码表</a><a class="nav-link" href="#authentication">认证鉴权</a></div>
+  <div class="nav-group"><div class="nav-title">接入说明</div><a class="nav-link" href="#overview">基础项目信息</a><a class="nav-link" href="#response-contract">通用响应约定与码表</a><a class="nav-link" href="#authentication">认证鉴权</a><a class="nav-link" href="#java-integration">Java 服务接入</a></div>
     <div class="nav-group"><div class="nav-title">API 接口</div>${endpointLinks || '<div class="empty">暂无已发布接口</div>'}</div>
   </nav>`
 }
@@ -98,6 +99,7 @@ export function generateApiDocHtml(doc, options = {}) {
       ${renderOverview(normalized)}
       ${renderResponseContract()}
       ${renderAuthentication(normalized)}
+      ${renderJavaIntegration(normalized)}
       ${endpointPanels || '<section class="panel empty">当前项目暂无可导出的已发布规则。</section>'}
     </main>
     ${resizeHandles.runner}

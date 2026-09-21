@@ -1,8 +1,12 @@
 <template>
   <el-dialog :model-value="Boolean(choice)" :title="title" width="480px" :close-on-click-modal="false" append-to-body :before-close="cancel">
     <template v-if="choice">
-      <template v-if="choice.kind === 'publish'">
+      <template v-if="choice.kind === 'submitted'">
+        <p>当前配置已提交发布审批，审批通过后才会生效。已有生效版本保持不变。</p>
+      </template>
+      <template v-else-if="choice.kind === 'publish'">
         <p>提交审批后，审批通过才会更新生效版本。</p>
+        <el-alert v-for="(warning, index) in choice.warnings || []" :key="index" type="warning" :title="warning.message" :closable="false" show-icon />
         <el-radio-group v-model="publishMode" aria-label="发布方式">
           <el-radio value="NEW">新增正式版本</el-radio>
           <el-radio value="OVERWRITE" :disabled="!choice.versions.length">覆盖已有版本</el-radio>
@@ -15,17 +19,23 @@
       <template v-else>
         <p>{{ choice.kind === 'switch' ? '当前配置有未保存修改，请选择保存后切换或直接放弃修改。' : '请选择如何保存当前配置。' }}</p>
         <el-radio-group v-model="saveMode" aria-label="草稿保存方式">
-          <el-radio value="NEW">新增草稿</el-radio>
           <el-radio v-if="choice.canOverwrite" value="OVERWRITE">覆盖当前草稿</el-radio>
+          <el-radio value="NEW">{{ choice.canOverwrite ? '另存为新草稿' : '新增草稿' }}</el-radio>
         </el-radio-group>
         <p v-if="!choice.canOverwrite">将创建独立草稿，保留原版本。</p>
       </template>
     </template>
     <template #footer>
-      <el-button data-action="cancel-choice" @click="resolve({ action: 'cancel' })">取消</el-button>
-      <el-button v-if="choice?.kind === 'switch'" data-action="discard-switch" @click="resolve({ action: 'discard' })">不保存直接切换</el-button>
-      <el-button v-if="choice?.kind === 'publish'" type="primary" data-action="confirm-publish" :disabled="publishMode === 'OVERWRITE' && !targetVersionId" @click="resolve({ action: 'publish', publishMode, targetVersionId, comment })">提交发布审批</el-button>
-      <el-button v-else type="primary" data-action="confirm-save" @click="resolve({ action: 'save', saveMode })">{{ choice?.kind === 'switch' ? '保存并切换' : '保存草稿' }}</el-button>
+      <template v-if="choice?.kind === 'submitted'">
+        <el-button data-action="stay-designer" @click="resolve({ action: 'cancel' })">留在设计器</el-button>
+        <el-button v-if="choice.approvalRequestId && choice.canViewApproval" type="primary" data-action="view-approval" @click="resolve({ action: 'approval' })">查看审批</el-button>
+      </template>
+      <template v-else>
+        <el-button data-action="cancel-choice" @click="resolve({ action: 'cancel' })">取消</el-button>
+        <el-button v-if="choice?.kind === 'switch'" data-action="discard-switch" @click="resolve({ action: 'discard' })">不保存直接切换</el-button>
+        <el-button v-if="choice?.kind === 'publish'" type="primary" data-action="confirm-publish" :disabled="publishMode === 'OVERWRITE' && !targetVersionId" @click="resolve({ action: 'publish', publishMode, targetVersionId, comment })">提交发布审批</el-button>
+        <el-button v-else type="primary" data-action="confirm-save" @click="resolve({ action: 'save', saveMode })">{{ choice?.kind === 'switch' ? '保存并切换' : '保存草稿' }}</el-button>
+      </template>
     </template>
   </el-dialog>
 </template>
@@ -36,8 +46,13 @@ export default {
   props: { choice: { type: Object, default: null } },
   emits: ['resolve'],
   data: () => ({ saveMode: 'NEW', publishMode: 'NEW', targetVersionId: '', comment: '' }),
-  computed: { title() { return this.choice?.kind === 'publish' ? '发布规则' : this.choice?.kind === 'switch' ? '切换版本' : '保存草稿' } },
-  watch: { choice() { this.saveMode = 'NEW'; this.publishMode = 'NEW'; this.targetVersionId = ''; this.comment = '' } },
+  computed: { title() { return this.choice?.kind === 'submitted' ? '已提交发布审批' : this.choice?.kind === 'publish' ? '发布规则' : this.choice?.kind === 'switch' ? '切换版本' : '保存草稿' } },
+  watch: {
+    choice: {
+      immediate: true,
+      handler(choice) { this.saveMode = choice?.canOverwrite ? 'OVERWRITE' : 'NEW'; this.publishMode = 'NEW'; this.targetVersionId = ''; this.comment = '' },
+    },
+  },
   methods: {
     resolve(choice) { if (this.choice) this.$emit('resolve', choice) },
     cancel(done) { this.resolve({ action: 'cancel' }); done() },

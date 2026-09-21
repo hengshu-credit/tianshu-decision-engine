@@ -2,6 +2,7 @@ package com.hengshucredit.rule.core.engine;
 
 import com.alibaba.qlexpress4.runtime.trace.ExpressionTrace;
 import com.alibaba.qlexpress4.runtime.trace.TraceType;
+import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
@@ -22,12 +23,41 @@ public final class RequestContext {
 
     private BiConsumer<String, Object> listener;
     private Map<String, Object> rule = Collections.emptyMap();
+    private Map<String, Object> rootRule = Collections.emptyMap();
+    private java.time.LocalDateTime startedAt = java.time.LocalDateTime.now();
     private List<String> matchedConditions = Collections.emptyList();
-    private final Map<String, Object> constantValues = new LinkedHashMap<>();
+    private Map<String, Object> constantValues;
     private Consumer<Map<String, Object>> traceEventListener;
     private Map<String, Map<String, Object>> sourceStates = Collections.emptyMap();
     private List<RuntimeWrite> runtimeWrites;
     private int runtimeWriteDepth;
+    private Map<String, CustomFunction> functions = Collections.emptyMap();
+
+    public CustomFunction function(String code) {
+        return functions.get(code);
+    }
+
+    /** A rule or conversion function owns its entire binding set; missing targets never fall back to another rule. */
+    public FunctionScope bindFunctions(Map<String, CustomFunction> bindings) {
+        FunctionScope scope = new FunctionScope(functions);
+        functions = Map.copyOf(bindings);
+        return scope;
+    }
+
+    public final class FunctionScope implements AutoCloseable {
+        private final Map<String, CustomFunction> previous;
+        private boolean closed;
+
+        private FunctionScope(Map<String, CustomFunction> previous) { this.previous = previous; }
+
+        @Override
+        public void close() {
+            if (!closed) {
+                functions = previous;
+                closed = true;
+            }
+        }
+    }
 
     public void bind(BiConsumer<String, Object> listener) {
         this.listener = listener;
@@ -41,6 +71,7 @@ public final class RequestContext {
                 ? Collections.<String>emptyList()
                 : Collections.unmodifiableList(new ArrayList<>(matchedConditions));
         this.rule = safeRule;
+        if (rootRule.isEmpty() && !safeRule.isEmpty()) rootRule = safeRule;
         this.matchedConditions = safeConditions;
     }
 
@@ -52,14 +83,18 @@ public final class RequestContext {
     RequestContext forkForWorker(Consumer<Map<String, Object>> listener) {
         RequestContext child = new RequestContext();
         child.rule = rule;
+        child.rootRule = rootRule;
+        child.startedAt = startedAt;
         child.matchedConditions = matchedConditions;
         child.sourceStates = sourceStates;
         child.traceEventListener = listener;
+        child.functions = functions;
         return child;
     }
 
     public Set<String> constantNames() {
-        return Collections.unmodifiableSet(constantValues.keySet());
+        return constantValues == null ? Collections.emptySet()
+                : Collections.unmodifiableSet(constantValues.keySet());
     }
 
     public void addTraceEvent(Map<String, Object> event) {
@@ -74,6 +109,10 @@ public final class RequestContext {
         return rule == null ? Collections.<String, Object>emptyMap() : rule;
     }
 
+    public Map<String, Object> rootRule() { return rootRule; }
+
+    public java.time.LocalDateTime startedAt() { return startedAt; }
+
     public List<String> currentMatchedConditions() {
         List<String> conditions = this.matchedConditions;
         return conditions == null ? Collections.<String>emptyList() : conditions;
@@ -85,6 +124,10 @@ public final class RequestContext {
             return;
         }
         Map<String, Object> constants = constantValues;
+        if (constants == null) {
+            constants = new LinkedHashMap<>();
+            constantValues = constants;
+        }
         constants.put(rootPath, snapshotValue(value));
     }
 
@@ -193,6 +236,7 @@ public final class RequestContext {
         if (listener != null) {
             listener.accept(path, value);
             if (recordRuntimeWrite && runtimeWriteDepth > 0) {
+                if (runtimeWrites == null) runtimeWrites = new ArrayList<>();
                 runtimeWrites.add(new RuntimeWrite(path, value));
             }
         }
@@ -200,13 +244,8 @@ public final class RequestContext {
     }
 
     int beginRuntimeWriteScope() {
-        List<RuntimeWrite> writes = runtimeWrites;
-        if (writes == null) {
-            writes = new ArrayList<>();
-            runtimeWrites = writes;
-        }
         runtimeWriteDepth++;
-        return writes.size();
+        return runtimeWrites == null ? 0 : runtimeWrites.size();
     }
 
     void replayRuntimeWrites(int marker, Object context) {

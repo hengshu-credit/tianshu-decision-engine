@@ -37,6 +37,9 @@ public class VariableSourceReferenceValidator {
     @Resource
     private RuleListLibraryMapper listLibraryMapper;
 
+    @Resource
+    private com.hengshucredit.rule.server.derived.DerivedVariableValidator derivedVariableValidator;
+
     public VariableSourceCatalog catalog(String scope, Long projectId) {
         String normalizedScope = normalizeScope(scope, projectId);
         Map<Long, RuleExternalDatasource> compatibleApiSources =
@@ -131,6 +134,13 @@ public class VariableSourceReferenceValidator {
             case "API" -> validateApi(variable, config, issues);
             case "DB" -> validateDatabase(variable, config, issues);
             case "LIST" -> validateLists(variable, config, issues);
+            case "DERIVED" -> {
+                try {
+                    derivedVariableValidator.validate(variable, config);
+                } catch (IllegalArgumentException exception) {
+                    issues.add(issue(variable, "VARIABLE_SOURCE_DERIVED_INVALID", exception.getMessage(), "$.sourceConfig"));
+                }
+            }
             default -> {
             }
         }
@@ -308,7 +318,7 @@ public class VariableSourceReferenceValidator {
 
     private boolean isExternalSource(String source) {
         return "API".equals(source) || "DB".equals(source)
-                || "LIST".equals(source);
+                || "LIST".equals(source) || "DERIVED".equals(source);
     }
 
     private boolean isEnabled(Integer status) {

@@ -13,15 +13,18 @@ const authAxios = axios.create({
 })
 
 /**
- * 控制台登录配置缓存（模块级，整个页面生命周期只请求一次）
+ * 只缓存成功的登录配置；后端短暂不可用后允许再次登录重试。
  */
 var _consoleConfigPromise = null
 
-function fetchConsoleConfig() {
+export function fetchConsoleConfig() {
   if (!_consoleConfigPromise) {
     _consoleConfigPromise = authAxios.get('/auth/console/config')
-      .then(function (res) { return res.data })
-      .catch(function () { return null })
+      .then(function (res) {
+        if (res.data?.code !== 200 || !res.data.data) _consoleConfigPromise = null
+        return res.data
+      })
+      .catch(function () { _consoleConfigPromise = null; return null })
   }
   return _consoleConfigPromise
 }

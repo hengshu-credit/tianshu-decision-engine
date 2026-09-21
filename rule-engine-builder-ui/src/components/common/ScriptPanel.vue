@@ -176,12 +176,6 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-$editor-bg: #1e1e2e;
-$editor-text: #cdd6f4;
-$editor-line-bg: #181825;
-$editor-line-text: #9399b2;
-$editor-border: #313244;
-
 .script-panel {
   margin-top: 16px;
   overflow: hidden;
@@ -236,22 +230,22 @@ $editor-border: #313244;
 }
 
 .sp-body {
-  background: $editor-bg;
+  background: var(--tianshu-bg-soft);
 }
 
 .sp-statusbar {
   padding: 6px 12px;
-  background: #11111b;
-  border-bottom: 1px solid $editor-border;
+  background: var(--tianshu-bg-muted);
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 
 .sp-statusbar-item {
   font-size: 11px;
-  color: #9399b2;
+  color: var(--tianshu-text-tertiary);
 }
 
 .sp-error {
-  color: #ff6b6b;
+  color: var(--tianshu-danger-text);
 }
 
 .sp-statusbar-spacer {
@@ -261,16 +255,16 @@ $editor-border: #313244;
 .sp-statusbar :deep(.el-button) {
   min-height: 26px;
   padding: 6px 12px;
-  color: #1d39c4 !important;
+  color: var(--tianshu-info-text);
   font-weight: 600;
-  background: #f8faff;
-  border-color: #adc6ff !important;
+  background: var(--tianshu-info-bg);
+  border-color: var(--tianshu-info-border);
 }
 
 .sp-statusbar :deep(.el-button:hover) {
-  color: #1d39c4 !important;
-  background: #eaf2ff;
-  border-color: #85a5ff !important;
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-bg-active);
+  border-color: var(--el-color-primary);
 }
 
 .sp-editor-container {
@@ -284,10 +278,10 @@ $editor-border: #313244;
   min-width: 42px;
   padding: 12px 8px 12px 12px;
   overflow: hidden;
-  color: $editor-line-text;
+  color: var(--tianshu-text-tertiary);
   text-align: right;
-  background: $editor-line-bg;
-  border-right: 1px solid $editor-border;
+  background: var(--tianshu-bg-muted);
+  border-right: 1px solid var(--tianshu-border-subtle);
 }
 
 .sp-line-num,
@@ -309,9 +303,9 @@ $editor-border: #313244;
   max-height: 420px;
   padding: 12px 16px;
   overflow: auto;
-  color: $editor-text;
+  color: var(--tianshu-text-primary);
   resize: none;
-  background: $editor-bg;
+  background: var(--tianshu-bg-soft);
   border: none;
   outline: none;
 }
@@ -319,9 +313,9 @@ $editor-border: #313244;
 .sp-footer {
   justify-content: space-between;
   padding: 5px 12px;
-  color: $editor-line-text;
-  background: #11111b;
-  border-top: 1px solid $editor-border;
+  color: var(--tianshu-text-tertiary);
+  background: var(--tianshu-bg-muted);
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 
 .sp-footer-tip,

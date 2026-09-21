@@ -14,6 +14,20 @@ import static org.junit.Assert.assertTrue;
 public class RuleReferenceIntegrityServiceTest {
 
     @Test
+    public void scriptFunctionReferenceUsesEnabledFunctionIdNotItsDisplayCode() {
+        RuleReferenceIntegrityService service = service();
+        ReflectionTestUtils.setField(service, "functionService", new RuleFunctionService() {
+            @Override public Map<Long, String> buildFunctionCodeMap(Long projectId) {
+                assertEquals(Long.valueOf(1), projectId);
+                return Map.of(77L, "renamedFunction");
+            }
+        });
+        String model = "{\"scriptVarRefs\":[{\"varId\":77,\"refType\":\"FUNCTION\",\"refCode\":\"versioned\"}]}";
+        assertTrue(service.audit(7L, 1L, model).isValid());
+        assertFalse(service.audit(7L, 1L, model.replace("77", "78")).isValid());
+    }
+
+    @Test
     public void batchScanLoadsContentsOnceAndReusesProjectReferenceCatalog() {
         RuleReferenceIntegrityService service = new RuleReferenceIntegrityService();
         java.util.concurrent.atomic.AtomicInteger catalogLoads = new java.util.concurrent.atomic.AtomicInteger();

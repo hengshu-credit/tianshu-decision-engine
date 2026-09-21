@@ -14,6 +14,8 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
+import com.hengshucredit.rule.server.derived.DerivedVariableConfig;
+import com.hengshucredit.rule.server.derived.DerivedVariableService;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
@@ -70,6 +72,9 @@ public class VariableSourceResolver {
     @Resource
     private SourceResolutionExecutor sourceResolutionExecutor;
 
+    @Resource
+    private DerivedVariableService derivedVariableService;
+
     public Map<String, Object> resolve(Long projectId, Map<String, Object> inputParams) {
         return resolve(projectId, inputParams, VariableResolveOptions.defaults());
     }
@@ -89,6 +94,9 @@ public class VariableSourceResolver {
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
         effectiveOptions.setVariableReferencePaths(variableReferencePaths(variables));
+        if (variables.stream().anyMatch(variable -> "DERIVED".equals(variable.getVarSource()))) {
+            effectiveOptions.setDerivedReferencePaths(derivedVariableService.referencePaths(projectId));
+        }
         removeCallerConstantValues(variables, resolvedParams);
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
@@ -110,6 +118,9 @@ public class VariableSourceResolver {
         List<RuleVariable> frozenVariables = variables == null ? Collections.emptyList() : variables;
         List<RuleModel> frozenModels = models == null ? Collections.emptyList() : models;
         effectiveOptions.setVariableReferencePaths(variableReferencePaths(frozenVariables));
+        if (effectiveOptions.getDerivedReferencePaths() == null) {
+            effectiveOptions.setDerivedReferencePaths(effectiveOptions.getVariableReferencePaths());
+        }
         Map<String, Object> resolvedParams = target == null
                 ? new LinkedHashMap<>() : target;
         removeCallerConstantValues(frozenVariables, resolvedParams);
@@ -125,6 +136,7 @@ public class VariableSourceResolver {
                 }
             }
         }
+        effectiveOptions.setDerivedFunctions(Collections.unmodifiableMap(functionMap));
         resolveVariablesAndModels(frozenVariables, frozenModels, requiredScriptNames,
                 resolvedParams, effectiveOptions, new VariableResolutionInvocationCache(), functionMap);
         return resolvedParams;
@@ -258,6 +270,8 @@ public class VariableSourceResolver {
         copy.setForceRefreshSource(source.isForceRefreshSource());
         copy.setRequiredNamesUpstreamOnly(source.isRequiredNamesUpstreamOnly());
         copy.setVariableReferencePaths(source.getVariableReferencePaths());
+        copy.setDerivedReferencePaths(source.getDerivedReferencePaths());
+        copy.setDerivedFunctions(source.getDerivedFunctions());
         copy.setListMatchTime(source.getListMatchTime());
         copy.setRequiredScriptNames(source.getRequiredScriptNames() == null
                 ? null : new LinkedHashSet<>(source.getRequiredScriptNames()));
@@ -345,6 +359,9 @@ public class VariableSourceResolver {
                 value = resolveApiVariable(variable, config, resolvedParams, effectiveOptions, invocationCache);
             } else if ("DB".equals(varSource)) {
                 value = resolveDbVariable(variable, config, resolvedParams, effectiveOptions);
+            } else if ("DERIVED".equals(varSource)) {
+                value = derivedVariableService.resolve(variable, resolvedParams,
+                        effectiveOptions.getDerivedReferencePaths(), effectiveOptions.getDerivedFunctions());
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
             }
@@ -370,7 +387,8 @@ public class VariableSourceResolver {
             return false;
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource) && !"CONSTANT".equals(varSource)) {
+        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)
+                && !"CONSTANT".equals(varSource) && !"DERIVED".equals(varSource)) {
             return false;
         }
         if (requiredScriptNames == null) {
@@ -389,6 +407,8 @@ public class VariableSourceResolver {
         if (variable == null || scriptName == null) {
             return false;
         }
+        // 衍生值是引擎计算结果，调用方不能通过伪造同名入参绕过计算。
+        if ("DERIVED".equals(variable.getVarSource())) return true;
         if (options != null && options.isForceRefreshSource()) {
             return true;
         }
@@ -603,7 +623,22 @@ public class VariableSourceResolver {
         }
         Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
         String varSource = variable.getVarSource();
-        if ("API".equals(varSource)) {
+        if ("DERIVED".equals(varSource)) {
+            Map<String, String> paths = options != null && options.getDerivedReferencePaths() != null
+                    ? options.getDerivedReferencePaths() : derivedVariableService.referencePaths(variable.getProjectId());
+            JSONObject derivedConfig = JSON.parseObject(variable.getSourceConfig());
+            DerivedVariableConfig.validate(derivedConfig);
+            for (JSONObject input : DerivedVariableConfig.currentInputs(derivedConfig)) {
+                for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(input)) {
+                    if ("FUNCTION".equals(reference.getRefType())) continue;
+                    String key = reference.getRefType() + ":" + reference.getRefId();
+                    String path = paths.get(key);
+                    if (path == null) throw new IllegalArgumentException("衍生上游字段不可用: " + key);
+                    if (path.equals(resolveScriptName(variable))) throw new IllegalArgumentException("衍生变量不能依赖自身: " + key);
+                    dependencies.add(path);
+                }
+            }
+        } else if ("API".equals(varSource)) {
             Object mapping = config.get("paramMapping");
             collectDependencyValues(mapping, dependencies);
             collectApiConfigDependencies(config.get("apiConfigId"), dependencies);
@@ -961,8 +996,8 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("变量不存在");
         }
         String varSource = variable.getVarSource();
-        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource)) {
-            throw new IllegalArgumentException("仅支持测试 API、数据库、名单变量");
+        if (!"API".equals(varSource) && !"DB".equals(varSource) && !"LIST".equals(varSource) && !"DERIVED".equals(varSource)) {
+            throw new IllegalArgumentException("仅支持测试 API、数据库、名单、衍生变量");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -991,9 +1026,9 @@ public class VariableSourceResolver {
         }
         String varSource = variable.getVarSource();
         if (!"API".equals(varSource) && !"DB".equals(varSource)
-                && !"LIST".equals(varSource)) {
+                && !"LIST".equals(varSource) && !"DERIVED".equals(varSource)) {
             throw new IllegalArgumentException(
-                    "仅支持预览 API、数据库、名单字段");
+                    "仅支持预览 API、数据库、名单、衍生字段");
         }
         String scriptName = resolveScriptName(variable);
         if (!hasText(scriptName)) {
@@ -1006,6 +1041,11 @@ public class VariableSourceResolver {
                 ? new LinkedHashMap<>()
                 : new LinkedHashMap<>(inputParams);
         Map<String, Object> resolved = new LinkedHashMap<>(params);
+        if ("DERIVED".equals(varSource)) {
+            options.setDerivedReferencePaths(derivedVariableService.referencePaths(variable.getProjectId()));
+            options.setRequiredScriptNames(collectVariableDependencies(variable, options));
+            resolveInto(variable.getProjectId(), resolved, options);
+        }
         resolveOneSourceVariable(variable, scriptName,
                 parseJsonMap(variable.getSourceConfig()), resolved,
                 options, new VariableResolutionInvocationCache());

@@ -159,10 +159,15 @@ public class HttpSyncClient {
     }
 
     public RuleResult executeRule(String ruleCode, Object params, String clientAppName) {
+        return executeRule(ruleCode, params, clientAppName, true);
+    }
+
+    public RuleResult executeRule(String ruleCode, Object params, String clientAppName, boolean traceEnabled) {
         try {
             JSONObject body = new JSONObject();
             body.put("params", params);
             body.put("clientAppName", clientAppName);
+            body.put("traceEnabled", traceEnabled);
             RequestBody requestBody = RequestBody.create(JSON.toJSONString(body), JSON_MEDIA_TYPE);
             Request.Builder requestBuilder = new Request.Builder()
                     .url(serverUrl + "/api/rule/sync/execute/" + ruleCode)

@@ -189,8 +189,13 @@ test('发布覆盖请求使用已保存修订锁和业务绑定代次，取消�
   await flushPromises()
   expect(wrapper.vm.designerChoice.kind).toBe('publish')
   wrapper.vm.resolveDesignerChoice({ action: 'publish', publishMode: 'OVERWRITE', targetVersionId: '8001', comment: '更新额度' })
+  await flushPromises()
+  expect(wrapper.vm.designerChoice).toMatchObject({ kind: 'submitted', approvalRequestId: '19' })
+  expect(wrapper.vm.designerValidationReport).toBeNull()
+  wrapper.vm.resolveDesignerChoice({ action: 'approval' })
   await pending
   expect(api.publishDesignerDraft).toHaveBeenCalledWith('30', { revisionId: draft.id, lockVersion: 4, publishMode: 'OVERWRITE', targetVersionId: '8001', targetGeneration: 3, comment: '更新额度' })
   expect(api.saveDesignerDraft).not.toHaveBeenCalled()
+  expect(wrapper.vm.$router.push).toHaveBeenCalledWith({ name: 'ApprovalDetail', params: { id: '19' } })
   wrapper.unmount()
 })

@@ -5,8 +5,58 @@ import * as definitionApi from '@/api/definition'
 const TraceTree = (await vi.importActual('../../../src/components/common/TraceTree.vue')).default
 
 describe('DesignerTestDialog unified schema', () => {
+  test('测试弹窗接入尺寸拖拽，显示状态传给拖拽控件', async () => {
+    const wrapper = shallowMount(DesignerTestDialog, { props: { visible: true } })
+    const resize = wrapper.findComponent({ name: 'DialogResizeHandle' })
+    expect(resize.exists()).toBe(true)
+    expect(resize.props('visible')).toBe(true)
+    await wrapper.setProps({ visible: false })
+    expect(resize.props('visible')).toBe(false)
+    wrapper.unmount()
+  })
+
   beforeEach(() => {
     vi.clearAllMocks()
+  })
+
+  test('延迟字段样例不能覆盖用户已输入的参数，关闭后的旧请求不能污染下一次打开', async () => {
+    let resolveFirst
+    let resolveSecond
+    definitionApi.getRuleTestSchema
+      .mockImplementationOnce(() => new Promise(resolve => { resolveFirst = resolve }))
+      .mockImplementationOnce(() => new Promise(resolve => { resolveSecond = resolve }))
+    const wrapper = shallowMount(DesignerTestDialog, { props: { definitionId: 7 } })
+    const first = wrapper.vm.open()
+    await wrapper.setData({ paramsJson: '{"客户":"用户刚输入"}' })
+    wrapper.vm.close()
+    const second = wrapper.vm.open()
+    resolveSecond({ data: { sampleParams: { latest: true }, diagnostics: [] } })
+    await second
+    resolveFirst({ data: { sampleParams: { stale: true }, diagnostics: ['旧诊断'] } })
+    await first
+    expect(JSON.parse(wrapper.vm.paramsJson)).toEqual({ 客户: '用户刚输入' })
+    expect(wrapper.vm.schemaDiagnostics).toEqual([])
+    expect(wrapper.vm.resolvedTemplate).toEqual({ latest: true })
+    wrapper.unmount()
+  })
+
+  test('加载字段样例或执行中不能重复发起测试', async () => {
+    let resolveSchema
+    definitionApi.getRuleTestSchema.mockImplementation(() => new Promise(resolve => { resolveSchema = resolve }))
+    const wrapper = shallowMount(DesignerTestDialog, { props: { definitionId: 7 } })
+    const opening = wrapper.vm.open()
+    await wrapper.vm.execute()
+    expect(definitionApi.executeRule).not.toHaveBeenCalled()
+    resolveSchema({ data: { sampleParams: {}, diagnostics: [] } })
+    await opening
+    let finish
+    definitionApi.executeRule.mockImplementation(() => new Promise(resolve => { finish = resolve }))
+    const executing = wrapper.vm.execute()
+    await wrapper.vm.execute()
+    expect(definitionApi.executeRule).toHaveBeenCalledTimes(1)
+    finish({ data: { success: true, result: 1 } })
+    await executing
+    wrapper.unmount()
   })
 
   test('未保存的决策流使用后端统一样例参数', async () => {

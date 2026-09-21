@@ -7,7 +7,6 @@ import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
-import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.dto.RuleTraceFrame;
@@ -70,6 +69,9 @@ public class RuleRuntimeInvoker {
 
     @Resource
     private FunctionRegistrar functionRegistrar;
+
+    @Resource
+    private RuleFunctionService functionService;
 
     @Resource
     private RuleFieldAnalyzer ruleFieldAnalyzer;
@@ -168,7 +170,7 @@ public class RuleRuntimeInvoker {
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
             RuleTraceFrame currentTrace = session.currentTrace();
-            if (currentTrace != null) {
+            if (session.isTraceEnabled() && currentTrace != null) {
                 currentTrace.getEvents().add(event);
             }
         });
@@ -187,6 +189,11 @@ public class RuleRuntimeInvoker {
         return currentSession.get();
     }
 
+    public void setTraceEnabled(boolean traceEnabled) {
+        RuleExecutionSession session = currentSession.get();
+        if (session != null) session.setTraceEnabled(traceEnabled);
+    }
+
     public void completeRoot(RuleResult result) {
         RuleExecutionSession session = currentSession.get();
         if (session == null || result == null) {
@@ -198,7 +205,7 @@ public class RuleRuntimeInvoker {
         rootTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
         rootTrace.setDurationMs(result.getExecuteTimeMs());
         result.setTraceId(rootTrace.getTraceId());
-        result.setTraces(Collections.<Object>singletonList(rootTrace));
+        result.setTraces(session.isTraceEnabled() ? Collections.<Object>singletonList(rootTrace) : null);
     }
 
     public void exit() {
@@ -334,7 +341,6 @@ public class RuleRuntimeInvoker {
                 : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), targetDefinitionId, projectId);
         if (runtimeSnapshot != null) {
-            registerFrozenFunctions(runtimeSnapshot.getFunctions());
             if (hasText(runtimeSnapshot.getCompiledScript())) {
                 compiledScript = runtimeSnapshot.getCompiledScript();
             }
@@ -355,7 +361,15 @@ public class RuleRuntimeInvoker {
         session.getTraceStack().addLast(childTrace);
         session.getRuleStack().addLast(targetRuleCode);
         long childStart = System.currentTimeMillis();
+        com.hengshucredit.rule.core.engine.RequestContext.FunctionScope functionScope = null;
         try {
+            if (functionRegistrar != null) {
+                List<RuleFunction> functions = runtimeSnapshot == null
+                        ? functionService == null ? Collections.emptyList() : functionService.listByProject(projectId)
+                        : runtimeSnapshot.getFunctions();
+                functionScope = session.getRequestContext().bindFunctions(
+                        functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner()));
+            }
             session.setCurrentArtifactSnapshot(runtimeSnapshot);
             session.setCurrentProjectId(projectId);
             session.setCurrentProjectCode(projectCode);
@@ -374,8 +388,9 @@ public class RuleRuntimeInvoker {
             List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)
                     : runtimeSnapshot.getInputFields();
-            List<RuleDefinitionInputField> directFields = directInputFields(
-                    childModelJson, definition == null ? null : definition.getModelType());
+            List<RuleDefinitionInputField> directFields = runtimeSnapshot == null
+                    ? directInputFields(childModelJson, definition == null ? null : definition.getModelType())
+                    : childFields;
             DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                     referencePlan(runtimeSnapshot, directFields);
             Set<String> explicitReferenceTargets =
@@ -383,10 +398,13 @@ public class RuleRuntimeInvoker {
             Set<String> requiredNames = requiredInputNames(childFields);
             requiredNames.addAll(referencePlan.requiredSourceNames());
             options.setRequiredScriptNames(requiredNames);
-            Map<String, Object> boundParams = executionParameterBinder.bindRuleInputs(
+            if (runtimeSnapshot != null) {
+                com.hengshucredit.rule.server.derived.DerivedVariableService.prepareSnapshot(
+                        options, childModelJson, runtimeSnapshot);
+            }
+            executionParameterBinder.bindRuleInputsInPlace(
                     referencePlan.mergeBindingFields(childFields),
                     session.getValues(), options);
-            session.getValues().putAll(boundParams);
             if (runtimeSnapshot == null) {
                 variableSourceResolver.resolveInto(projectId, session.getValues(), options);
             } else {
@@ -396,7 +414,8 @@ public class RuleRuntimeInvoker {
             }
             referencePlan.apply(session.getValues(), explicitReferenceTargets);
             RuntimeContextBridge.replaceSourceStates(options.getSourceStates());
-            RuleResult result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript), session.getValues(), true, session.getRequestContext());
+            RuleResult result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript),
+                    session.getValues(), session.isTraceEnabled(), session.getRequestContext());
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             childTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
@@ -411,6 +430,7 @@ public class RuleRuntimeInvoker {
             childTrace.setStatus("FAILED");
             throw e;
         } finally {
+            if (functionScope != null) functionScope.close();
             childTrace.setDurationMs(System.currentTimeMillis() - childStart);
             session.getRuleStack().removeLast();
             session.getTraceStack().removeLast();
@@ -500,16 +520,6 @@ public class RuleRuntimeInvoker {
         return dataObjectFieldReferenceResolver.resolveSnapshot(
                 directFields, runtimeSnapshot.getDataObjectFields(),
                 runtimeSnapshot.getVariables());
-    }
-
-    private void registerFrozenFunctions(List<RuleFunction> functions) {
-        if (functionRegistrar == null) return;
-        List<RuleFunction> safeFunctions = functions == null ? Collections.emptyList() : functions;
-        functionRegistrar.registerJavaFunctions(safeFunctions, qlExpressEngine.getRunner());
-        functionRegistrar.registerBeanFunctions(safeFunctions, qlExpressEngine.getRunner());
-        functionRegistrar.registerServerFunctions(qlExpressEngine.getRunner());
-        AggregateBuiltinFunctionRegistry.register(qlExpressEngine.getRunner());
-        register(qlExpressEngine.getRunner());
     }
 
     private List<String> resolveOutputScriptNames(Long definitionId) {

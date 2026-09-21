@@ -157,6 +157,28 @@ public class FieldDependencyResolver {
         return planFromRuleFields(fields.getInputFields(), fields.getOutputFields());
     }
 
+    public ResolutionPlan resolveDerivedDraft(RuleVariable variable) {
+        if (variable == null || !"DERIVED".equals(variable.getVarSource())) {
+            throw new IllegalArgumentException("仅支持生成衍生字段草稿的上游结构");
+        }
+        JSONObject config = com.alibaba.fastjson.JSON.parseObject(variable.getSourceConfig());
+        com.hengshucredit.rule.server.derived.DerivedVariableConfig.validate(config);
+        List<RuleDefinitionInputField> inputs = new ArrayList<>();
+        Map<String, String> paths = variableService.buildRefScriptNameMap(variable.getProjectId());
+        for (JSONObject operand : com.hengshucredit.rule.server.derived.DerivedVariableConfig.currentInputs(config)) {
+            for (var reference : OperandDependencyCollector.collectReferences(operand)) {
+                if ("FUNCTION".equals(reference.getRefType())) continue;
+                String path = paths.get(reference.getRefType() + ":" + reference.getRefId());
+                if (path == null) throw new IllegalArgumentException("衍生上游引用字段不可用");
+                RuleDefinitionInputField field = new RuleDefinitionInputField();
+                field.setVarId(reference.getRefId()); field.setRefType(reference.getRefType());
+                field.setFieldName(path); field.setScriptName(path); field.setStatus(1);
+                inputs.add(field);
+            }
+        }
+        return planFromRuleFields(ruleFieldAnalyzer.resolveInputFields(inputs, variable.getProjectId()), List.of());
+    }
+
     private ResolutionPlan planFromRuleFields(List<RuleDefinitionInputField> inputs,
                                                List<RuleDefinitionOutputField> outputs) {
         ResolutionPlan plan = new ResolutionPlan();
@@ -195,7 +217,7 @@ public class FieldDependencyResolver {
         }
         String source = variable.getVarSource().trim().toUpperCase(Locale.ROOT);
         if (!"LIST".equals(source) && !"API".equals(source)
-                && !"DB".equals(source)) {
+                && !"DB".equals(source) && !"DERIVED".equals(source)) {
             return null;
         }
         if (!Integer.valueOf(1).equals(variable.getStatus())) {

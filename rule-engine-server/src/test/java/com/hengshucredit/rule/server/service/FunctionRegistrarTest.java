@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import com.hengshucredit.rule.core.engine.RequestContext;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.functions.RuleListFunctions;
@@ -17,6 +18,88 @@ import static org.junit.Assert.assertTrue;
 
 public class FunctionRegistrarTest {
 
+    public static class VersionOne { public int value() { return 1; } }
+    public static class VersionTwo { public int value() { return 2; } }
+
+    @Test
+    public void requestFunctionScopeRestoresParentBindingAfterNestedRule() {
+        QLExpressEngine engine = new QLExpressEngine();
+        FunctionRegistrar registrar = new FunctionRegistrar();
+        RuleFunction first = javaFunction("versioned", VersionOne.class.getName());
+        RuleFunction second = javaFunction("versioned", VersionTwo.class.getName());
+        RequestContext request = new RequestContext();
+        try (RequestContext.FunctionScope outer = request.bindFunctions(
+                registrar.prepareFunctions(Collections.singletonList(first), engine.getRunner()))) {
+            assertEquals(1, ((Number) engine.execute(engine.prepare("return versioned();"),
+                    Collections.emptyMap(), false, request).getResult()).intValue());
+            try (RequestContext.FunctionScope inner = request.bindFunctions(
+                    registrar.prepareFunctions(Collections.singletonList(second), engine.getRunner()))) {
+                assertEquals(2, ((Number) engine.execute(engine.prepare("return versioned();"),
+                        Collections.emptyMap(), false, request).getResult()).intValue());
+            }
+            assertEquals(1, ((Number) engine.execute(engine.prepare("return versioned();"),
+                    Collections.emptyMap(), false, request).getResult()).intValue());
+        }
+        org.junit.Assert.assertFalse(engine.execute(engine.prepare("return versioned();"),
+                Collections.emptyMap(), false, request).isSuccess());
+    }
+
+    @Test
+    public void concurrentRequestsAndBeanVersionsNeverShareFunctionTargets() throws Exception {
+        QLExpressEngine engine = new QLExpressEngine();
+        FunctionRegistrar registrar = new FunctionRegistrar();
+        org.springframework.context.support.StaticApplicationContext beans =
+                new org.springframework.context.support.StaticApplicationContext();
+        beans.getBeanFactory().registerSingleton("first", new VersionOne());
+        beans.getBeanFactory().registerSingleton("second", new VersionTwo());
+        ReflectionTestUtils.setField(registrar, "applicationContext", beans);
+        RuleFunction first = javaFunction("versioned", null);
+        first.setImplType("BEAN"); first.setImplBeanName("first");
+        RuleFunction second = javaFunction("versioned", null);
+        second.setImplType("BEAN"); second.setImplBeanName("second");
+        var firstBindings = registrar.prepareFunctions(Collections.singletonList(first), engine.getRunner());
+        var secondBindings = registrar.prepareFunctions(Collections.singletonList(second), engine.getRunner());
+        var prepared = engine.prepare("return versioned();");
+        java.util.concurrent.ExecutorService workers = java.util.concurrent.Executors.newFixedThreadPool(2);
+        java.util.concurrent.CyclicBarrier together = new java.util.concurrent.CyclicBarrier(2);
+        try {
+            java.util.List<java.util.concurrent.Future<?>> results = new java.util.ArrayList<>();
+            for (int expected = 1; expected <= 2; expected++) {
+                int value = expected;
+                results.add(workers.submit(() -> {
+                    RequestContext request = new RequestContext();
+                    try (var ignored = request.bindFunctions(value == 1 ? firstBindings : secondBindings)) {
+                        for (int i = 0; i < 100; i++) {
+                            together.await(5, java.util.concurrent.TimeUnit.SECONDS);
+                            RuleResult result = engine.execute(prepared, Collections.emptyMap(), false, request);
+                            assertTrue(result.getErrorMessage(), result.isSuccess());
+                            assertEquals(value, result.getResult());
+                        }
+                    }
+                    return null;
+                }));
+            }
+            for (var result : results) result.get(15, java.util.concurrent.TimeUnit.SECONDS);
+        } finally {
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS));
+            beans.close();
+        }
+    }
+
+    @Test
+    public void preparationRejectsMissingImplementationAndForeignNameCollision() {
+        QLExpressEngine engine = new QLExpressEngine();
+        FunctionRegistrar registrar = new FunctionRegistrar();
+        RuleFunction missing = javaFunction("missing", "not.present.Function");
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> registrar.prepareFunctions(Collections.singletonList(missing), engine.getRunner()));
+        engine.getRunner().addFunction("owned", (Runnable) () -> {});
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> registrar.prepareFunctions(Collections.singletonList(
+                        javaFunction("owned", VersionOne.class.getName())), engine.getRunner()));
+    }
+
     @Test
     public void javaFunctionFallsBackFromExampleClassToServerClass() {
         RuleFunction function = new RuleFunction();
@@ -27,12 +110,13 @@ public class FunctionRegistrarTest {
         function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\"},{\"name\":\"rate\",\"type\":\"NUMBER\"}]");
 
         QLExpressEngine engine = new QLExpressEngine();
-        new FunctionRegistrar().registerJavaFunctions(Collections.singletonList(function), engine.getRunner());
+        RequestContext request = new RequestContext();
+        request.bindFunctions(new FunctionRegistrar().prepareFunctions(Collections.singletonList(function), engine.getRunner()));
 
-        RuleResult result = engine.execute(
+        RuleResult result = engine.execute(engine.prepare(
                 "taxAmount = calculateVAT(113000, 0.13);\n" +
-                "_result = {\"taxAmount\": taxAmount}",
-                Collections.emptyMap());
+                "_result = {\"taxAmount\": taxAmount}"),
+                Collections.emptyMap(), false, request);
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
         Map<?, ?> output = (Map<?, ?>) result.getResult();
@@ -49,12 +133,13 @@ public class FunctionRegistrarTest {
         function.setParamsJson("[{\"name\":\"amount\",\"type\":\"NUMBER\"}]");
 
         QLExpressEngine engine = new QLExpressEngine();
-        new FunctionRegistrar().registerJavaFunctions(Collections.singletonList(function), engine.getRunner());
+        RequestContext request = new RequestContext();
+        request.bindFunctions(new FunctionRegistrar().prepareFunctions(Collections.singletonList(function), engine.getRunner()));
 
-        RuleResult result = engine.execute(
+        RuleResult result = engine.execute(engine.prepare(
                 "formatted = formatAmount(13000.0);\n" +
-                "_result = {\"formatted\": formatted}",
-                Collections.emptyMap());
+                "_result = {\"formatted\": formatted}"),
+                Collections.emptyMap(), false, request);
 
         assertTrue(result.getErrorMessage(), result.isSuccess());
         Map<?, ?> output = (Map<?, ?>) result.getResult();
@@ -164,6 +249,17 @@ public class FunctionRegistrarTest {
         function.setImplType("SCRIPT");
         function.setParamsJson(paramsJson);
         function.setImplScript(implScript);
+        return function;
+    }
+
+    private static RuleFunction javaFunction(String funcCode, String implClass) {
+        RuleFunction function = new RuleFunction();
+        function.setId(77L);
+        function.setFuncCode(funcCode);
+        function.setImplType("JAVA");
+        function.setImplClass(implClass);
+        function.setImplMethod("value");
+        function.setParamsJson("[]");
         return function;
     }
 

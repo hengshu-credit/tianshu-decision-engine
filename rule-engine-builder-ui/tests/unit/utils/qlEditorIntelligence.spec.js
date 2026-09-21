@@ -38,6 +38,11 @@ const functions = [
 ]
 
 describe('qlEditorIntelligence', () => {
+  test('函数补全携带明确选择的函数 ID，不按名称推断引用', () => {
+    expect(buildQlCompletionItems([], [{ id: 77, funcCode: 'versioned' }], 'vers')[0].stableReference)
+      .toEqual({ varId: 77, refType: 'FUNCTION', refCode: 'versioned' })
+    expect(buildQlCompletionItems([], [{ funcCode: 'unbound' }], '')[0].stableReference).toBeNull()
+  })
   test('成员补全只插入光标后的剩余路径并携带稳定引用', () => {
     const items = buildQlCompletionItems(refs, functions, 'contact.')
     const city = items.find((item) => item.refCode === 'contact.address.city')

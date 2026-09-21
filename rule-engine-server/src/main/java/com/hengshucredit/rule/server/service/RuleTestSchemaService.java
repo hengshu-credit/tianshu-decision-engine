@@ -27,6 +27,10 @@ public class RuleTestSchemaService {
         return build(fieldDependencyResolver.resolve(request));
     }
 
+    public RuleTestSchema buildDerivedDraft(com.hengshucredit.rule.model.entity.RuleVariable variable) {
+        return build(fieldDependencyResolver.resolveDerivedDraft(variable));
+    }
+
     public RuleTestSchema build(ResolutionPlan plan) {
         RuleTestSchema schema = new RuleTestSchema();
         schema.setInputs(new ArrayList<>(plan.getExternalInputs()));

@@ -128,8 +128,16 @@ public class RuleSyncController {
         String clientAppName = body == null || body.get("clientAppName") == null
                 ? null
                 : String.valueOf(body.get("clientAppName"));
+        Object traceOption = body == null ? null : body.get("traceEnabled");
+        // multipart 的标量字段为字符串；JSON 调用也只接受明确的 true / false。
+        if (traceOption != null && !(traceOption instanceof Boolean)
+                && !(traceOption instanceof String && ("true".equalsIgnoreCase((String) traceOption)
+                || "false".equalsIgnoreCase((String) traceOption)))) {
+            return R.fail(400, "traceEnabled must be true or false");
+        }
+        boolean traceEnabled = traceOption == null || Boolean.parseBoolean(traceOption.toString());
         return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName,
-                ProjectAuthContext.from(request)));
+                ProjectAuthContext.from(request), traceEnabled, traceEnabled));
     }
 
     static Map<String, Object> buildMultipartBody(Map<String, String[]> fields,

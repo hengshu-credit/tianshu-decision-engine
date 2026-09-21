@@ -6,21 +6,29 @@ server:
 # ============================================================
 rule-engine:
   client:
-    server-url: http://localhost:8080
-    app-name: risk-control-example
-    token: ${PROJECT_ACCESS_TOKEN:demo-token-change-me}
+    server-url: ${RULE_SERVER_URL:http://localhost:8080}
+    app-name: ${RULE_CLIENT_APP_NAME:risk-control-example}
+    token: ${PROJECT_ACCESS_TOKEN}
+    project-code: ${RULE_PROJECT_CODE}
     l1-cache-max-size: 500
-    http-timeout-ms: 3000
-    project-id: 1
-    # 是否开启表达式追踪，默认 true；生产环境如不需要追踪信息可设为 false 以提升性能
-    trace-enabled: true
+    http-timeout-ms: ${RULE_HTTP_TIMEOUT_MS:10000}
+    project-id: ${RULE_PROJECT_ID}
+    # 涉及服务端变量、模型和外数时设为 true；原有本地函数示例保持 false
+    server-side-execution: ${RULE_SERVER_SIDE_EXECUTION:false}
+    # 表达式追踪与本地日志上报独立配置；不影响服务端基础日志、审计和计费
+    trace-enabled: ${RULE_TRACE_ENABLED:true}
+    log-report-enabled: ${RULE_LOG_REPORT_ENABLED:true}
 
 # ============================================================
 # Redis 配置 - SDK 通过 Redis Pub/Sub 接收规则推送
 # 需要与 rule-engine-server 使用同一个 Redis 实例
 # ============================================================
 spring:
-  # 默认不启用 Kafka（避免误配外网地址）；需要执行日志上报时再引入 spring.kafka 并删除下行 exclude
+  config:
+    import:
+      - optional:file:.env[.properties]
+      - optional:file:../.env[.properties]
+  # 默认通过 HTTP 上报本地日志；需要 Kafka 时配置 spring.kafka 并删除下行 exclude
   autoconfigure:
     exclude:
       - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
@@ -28,8 +36,8 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD:1qaz@WSX}
-      database: 0
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
       timeout: 3000ms
       lettuce:
         pool:

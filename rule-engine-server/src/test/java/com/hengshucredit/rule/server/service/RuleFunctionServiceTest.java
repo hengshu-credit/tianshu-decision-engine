@@ -24,6 +24,22 @@ import static org.junit.Assert.assertTrue;
 
 public class RuleFunctionServiceTest {
 
+    public static class VersionOne { public int value() { return 1; } }
+    public static class VersionTwo { public int value() { return 2; } }
+
+    @Test
+    public void frozenJavaFunctionVersionsRemainIndependentOnOneEngine() {
+        RuleFunction first = javaFunction("versioned", "[]", VersionOne.class.getName(), "value");
+        first.setId(77L);
+        RuleFunction second = javaFunction("versioned", "[]", VersionTwo.class.getName(), "value");
+        second.setId(77L);
+        RuleFunctionService service = serviceWithFunction(first);
+
+        assertEquals(1, service.invokeSnapshot(first, List.of()));
+        assertEquals(2, service.invokeSnapshot(second, List.of()));
+        assertEquals(1, service.invokeSnapshot(first, List.of()));
+    }
+
     @After
     public void clearRuntimeContext() {
         RuntimeContextBridge.clear();

@@ -27,6 +27,58 @@ function createHorizontalGraph() {
 }
 
 describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
+  test('默认分支不凭空生成空条件，已配置的半填条件仍保留供校验', () => {
+    const context = {
+      createConditionRootFromVisual: designer.methods.createConditionRootFromVisual,
+      syncCondVisualFromExpr: designer.methods.syncCondVisualFromExpr,
+    }
+    const empty = designer.methods.parseConditionConfig.call(context, null, '')
+    expect(empty.children).toEqual([])
+    const partial = designer.methods.createConditionRootFromVisual({ leftVar: 'age', leftVarId: 91, leftRefType: 'VARIABLE', rightValue: '' })
+    expect(partial.children).toHaveLength(1)
+    expect(designer.methods.parseConditionConfig.call(context, partial, '').children).toHaveLength(1)
+  })
+
+  test('未选完子规则也可暂存，不通过前端校验阻断保存', async () => {
+    const model = { nodes: [{ id: 'call', type: 'rule', ruleId: null }], edges: [] }
+    const context = {
+      buildBackendModel: () => model,
+      repairLegacyRuleCallRefs: vi.fn(),
+      validateRuleCallsInModel: () => ['请选择规则'],
+      showRuleCallErrors: vi.fn(),
+      saveDraftModel: vi.fn().mockResolvedValue({ compileSuccess: false }),
+      refreshProjectRefs: vi.fn(), $message: { success: vi.fn() },
+    }
+    await designer.methods.performDesignerSave.call(context)
+    expect(context.saveDraftModel).toHaveBeenCalledWith(JSON.stringify(model))
+  })
+
+  test('仅查看默认分支再暂存时，不会将它改成始终为真的条件分支', () => {
+    const context = {
+      activeElement: { baseType: 'edge' }, edgeCondMode: 'visual',
+      edgeConditionRoot: { type: 'group', op: 'AND', children: [] },
+      edgeProps: { conditionExpr: '', conditionConfig: null }, onEdgeChange: vi.fn(),
+    }
+    designer.methods.persistEdgeConditionDraft.call(context)
+    expect(context.edgeProps.conditionExpr).toBe('')
+    expect(context.edgeProps.conditionConfig).toBeNull()
+  })
+
+  test('旧配置的显式恒真表达式不能因查看属性被改成默认分支，主动清空条件才转换', () => {
+    const root = { type: 'group', op: 'AND', children: [] }
+    const context = {
+      activeElement: { baseType: 'edge' }, edgeCondMode: 'visual',
+      edgeConditionRoot: root,
+      edgeProps: { conditionExpr: 'true', conditionConfig: root }, onEdgeChange: vi.fn(),
+    }
+    designer.methods.persistEdgeConditionDraft.call(context)
+    expect(context.edgeProps.conditionExpr).toBe('true')
+    expect(context.onEdgeChange).not.toHaveBeenCalled()
+    designer.methods.persistEdgeConditionDraft.call(context, true)
+    expect(context.edgeProps.conditionExpr).toBe('')
+    expect(context.edgeProps.conditionConfig).toBeNull()
+  })
+
   test.each(['legacy', 'logicflow'])('%s 模型加载、编译序列化与再次加载保留脚本引用 ID', async format => {
     let graph = { nodes: [], edges: [] }
     const conditionExpression = 'taxpayerType == "一般纳税人"'

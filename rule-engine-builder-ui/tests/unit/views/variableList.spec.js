@@ -957,6 +957,29 @@ describe('VariableList — 变量操作', () => {
     expect(variableApi.listVariablesByProject).toHaveBeenCalledWith(1)
   })
 
+  test.each(['LIST', 'API', 'DB'])('%s 取值预览两列各自只保留一个标题，数据库样例字段不挤占左列', async (source) => {
+    await wrapper.setData({
+      dialogVisible: true,
+      form: { ...wrapper.vm.initForm(), varSource: source },
+    })
+    const columns = wrapper.findAll('.draft-preview-panel__body > div')
+    expect(columns).toHaveLength(2)
+    expect(columns[0].findAll('summary, label')).toHaveLength(1)
+    expect(columns[1].findAll('summary, label')).toHaveLength(1)
+    expect(columns[0].find('.db-sample-fields').exists()).toBe(false)
+  })
+
+  test('新增变量弹窗启用宽高拖拽，关闭时传递清理状态', async () => {
+    wrapper.vm.handleCreate()
+    await nextTick()
+    const resize = wrapper.findComponent({ name: 'DialogResizeHandle' })
+    expect(resize.exists()).toBe(true)
+    expect(resize.props('visible')).toBe(true)
+    wrapper.vm.dialogVisible = false
+    await nextTick()
+    expect(resize.props('visible')).toBe(false)
+  })
+
   test('buildVariablePayload 生成接口变量配置', async () => {
     wrapper.vm.form = {
       ...wrapper.vm.initForm(),

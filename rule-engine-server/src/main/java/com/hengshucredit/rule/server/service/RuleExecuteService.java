@@ -1,11 +1,11 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.core.compiler.CompileResult;
-import com.hengshucredit.rule.core.function.AggregateBuiltinFunctionRegistry;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleDefinitionContent;
@@ -27,7 +27,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 @Service
 public class RuleExecuteService {
@@ -73,6 +72,9 @@ public class RuleExecuteService {
 
     @Resource
     private DataObjectFieldReferenceResolver dataObjectFieldReferenceResolver;
+
+    @Resource
+    private com.hengshucredit.rule.server.derived.DerivedVariableService derivedVariableService;
 
     public RuleResult testExecute(Long definitionId, Map<String, Object> params) {
         return testExecute(definitionId, params, null);
@@ -137,14 +139,16 @@ public class RuleExecuteService {
                                    List<RuleDefinitionInputField> inputFields,
                                    Map<String, Object> params,
                                    Long executionProjectId) {
-        String funcPrefix = prepareProjectFunctions(executionProjectId, true);
+        List<RuleFunction> functions = functionService.listByProject(executionProjectId);
+        Map<String, CustomFunction> functionBindings = prepareFunctions(functions);
+        String funcPrefix = functionRegistrar.buildScriptFunctionPrefix(functions);
         String fullScript = funcPrefix.isEmpty() ? compiledScript : funcPrefix + "\n" + compiledScript;
         List<RuleDefinitionInputField> directFields = directInputFields(modelJson, definition.getModelType());
         DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                 referencePlan(null, directFields);
         Set<String> explicitReferenceTargets = referencePlan.captureExplicitTargets(params);
         VariableResolveOptions resolveOptions = withInputFields(
-                VariableResolveOptions.defaults(), inputFields, modelJson, definition.getModelType());
+                VariableResolveOptions.defaults(), inputFields, modelJson, directFields);
         includeReferenceSources(resolveOptions, referencePlan);
         Map<String, Object> executeParams = bindInputs(
                 referencePlan.mergeBindingFields(inputFields), params, resolveOptions);
@@ -160,7 +164,7 @@ public class RuleExecuteService {
                 executeParams, originalInput, true, modelJson);
         long executionStart = System.currentTimeMillis();
         RuleResult result = new RuleResult();
-        try {
+        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
             variableSourceResolver.resolveInto(executionProjectId, executeParams,
                     resolveOptions);
             referencePlan.apply(executeParams, explicitReferenceTargets);
@@ -290,11 +294,8 @@ public class RuleExecuteService {
         ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot = published.getArtifactId() == null
                 ? null : artifactRuntimeSnapshotService.load(
                         published.getArtifactId(), published.getDefinitionId(), executionProjectId);
-        if (runtimeSnapshot == null) {
-            prepareProjectFunctions(executionProjectId, false);
-        } else {
-            prepareFunctions(runtimeSnapshot.getFunctions(), false);
-        }
+        Map<String, CustomFunction> functionBindings = prepareFunctions(runtimeSnapshot == null
+                ? functionService.listByProject(executionProjectId) : runtimeSnapshot.getFunctions());
 
         List<RuleDefinitionInputField> inputFields = runtimeSnapshot == null
                 ? definitionService.listInputFields(published.getDefinitionId())
@@ -305,13 +306,18 @@ public class RuleExecuteService {
                 ? published.getModelType() : runtimeSnapshot.getModelType();
         String runtimeScript = runtimeSnapshot == null || runtimeSnapshot.getCompiledScript() == null
                 ? published.getCompiledScript() : runtimeSnapshot.getCompiledScript();
-        List<RuleDefinitionInputField> directFields = directInputFields(
-                runtimeModelJson, runtimeModelType);
+        // Published artifacts already carry ID-bound fields. Never re-resolve them against live metadata.
+        List<RuleDefinitionInputField> directFields = runtimeSnapshot == null
+                ? directInputFields(runtimeModelJson, runtimeModelType) : inputFields;
         DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                 referencePlan(runtimeSnapshot, directFields);
         Set<String> explicitReferenceTargets = referencePlan.captureExplicitTargets(params);
         VariableResolveOptions effectiveOptions = withInputFields(resolveOptions, inputFields,
-                runtimeModelJson, runtimeModelType);
+                runtimeModelJson, directFields);
+        if (runtimeSnapshot != null) {
+            com.hengshucredit.rule.server.derived.DerivedVariableService.prepareSnapshot(
+                    effectiveOptions, runtimeModelJson, runtimeSnapshot);
+        }
         includeReferenceSources(effectiveOptions, referencePlan);
         Map<String, Object> executeParams = bindInputs(
                 referencePlan.mergeBindingFields(inputFields), params, effectiveOptions);
@@ -336,9 +342,10 @@ public class RuleExecuteService {
                     executeParams, originalInput, false, runtimeModelJson,
                     runtimeSnapshot);
         }
+        runtimeRuleInvoker.setTraceEnabled(collectTrace);
         long executionStart = System.currentTimeMillis();
         RuleResult result = new RuleResult();
-        try {
+        try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
             if (runtimeSnapshot == null) {
                 variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
             } else {
@@ -384,6 +391,10 @@ public class RuleExecuteService {
         }
         if (!isExperimentSource(source)) {
             logService.save(log);
+            if (derivedVariableService != null) {
+                derivedVariableService.record(executionProjectId, published.getDefinitionId(),
+                        executeParams, result, runtimeSnapshot);
+            }
         }
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(),
                 result.getErrorMessage(), authContext);
@@ -418,7 +429,7 @@ public class RuleExecuteService {
 
     private VariableResolveOptions withInputFields(VariableResolveOptions options,
                                                    List<RuleDefinitionInputField> inputFields,
-                                                   String modelJson, String modelType) {
+                                                   String modelJson, List<RuleDefinitionInputField> directFields) {
         VariableResolveOptions effective = options == null ? VariableResolveOptions.defaults() : options;
         if (effective.getStatusReferenceKeys() == null) {
             effective.setStatusReferenceKeys(SourceStatusUsage.scan(modelJson));
@@ -433,10 +444,8 @@ public class RuleExecuteService {
                 addRequiredScriptName(names, field);
             }
         }
-        if (ruleFieldAnalyzer != null && modelJson != null && !modelJson.trim().isEmpty()) {
-            for (RuleDefinitionInputField field : ruleFieldAnalyzer.extractDirectModelInputFields(modelJson, modelType)) {
-                addRequiredScriptName(names, field);
-            }
+        for (RuleDefinitionInputField field : directFields) {
+            addRequiredScriptName(names, field);
         }
         effective.setRequiredScriptNames(names);
         return effective;
@@ -486,29 +495,9 @@ public class RuleExecuteService {
         return executionParameterBinder.bindRuleInputs(fields, safeParams, options);
     }
 
-    private String prepareProjectFunctions(Long projectId, boolean includeScriptPrefix) {
-        return prepareFunctions(functionService.listByProject(projectId), includeScriptPrefix);
-    }
-
-    private String prepareFunctions(List<RuleFunction> functions, boolean includeScriptPrefix) {
-        List<RuleFunction> allFuncs = functions == null ? Collections.emptyList() : functions;
-        List<RuleFunction> javaFuncs = allFuncs.stream()
-                .filter(f -> "JAVA".equals(f.getImplType())).collect(Collectors.toList());
-        List<RuleFunction> beanFuncs = allFuncs.stream()
-                .filter(f -> "BEAN".equals(f.getImplType())).collect(Collectors.toList());
-
-        functionRegistrar.registerJavaFunctions(javaFuncs, qlExpressEngine.getRunner());
-        functionRegistrar.registerBeanFunctions(beanFuncs, qlExpressEngine.getRunner());
-        functionRegistrar.registerServerFunctions(qlExpressEngine.getRunner());
-        AggregateBuiltinFunctionRegistry.register(qlExpressEngine.getRunner());
+    private Map<String, CustomFunction> prepareFunctions(List<RuleFunction> functions) {
         runtimeRuleInvoker.register(qlExpressEngine.getRunner());
-
-        if (!includeScriptPrefix) {
-            return "";
-        }
-        List<RuleFunction> scriptFuncs = allFuncs.stream()
-                .filter(f -> "SCRIPT".equals(f.getImplType())).collect(Collectors.toList());
-        return functionRegistrar.buildScriptFunctionPrefix(scriptFuncs);
+        return functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner());
     }
 
     private String toJsonSafely(Object value) {

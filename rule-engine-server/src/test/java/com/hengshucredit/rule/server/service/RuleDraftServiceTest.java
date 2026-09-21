@@ -1,6 +1,10 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.compiler.CompileResult;
+import com.baomidou.mybatisplus.core.MybatisConfiguration;
+import com.baomidou.mybatisplus.core.metadata.TableInfoHelper;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import org.apache.ibatis.builder.MapperBuilderAssistant;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveRequest;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveResponse;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
@@ -31,6 +35,7 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertNull;
 
 public class RuleDraftServiceTest {
 
@@ -44,6 +49,8 @@ public class RuleDraftServiceTest {
 
     @Before
     public void setUp() {
+        TableInfoHelper.initTableInfo(new MapperBuilderAssistant(new MybatisConfiguration(), ""),
+                RuleDefinitionContent.class);
         fixture = new FixtureService();
         beforeRevision = copy(fixture.databaseRevision);
         beforeContent = copy(fixture.databaseContent);
@@ -185,16 +192,25 @@ public class RuleDraftServiceTest {
     }
 
     @Test
-    public void invalidDraftIsRejectedWithoutWritingAnyProjection() {
+    public void unfinishedDraftIsSavedWithDiagnosticsAndClearsOldExecutableScript() {
         fixture.compileResult =
                 CompileResult.fail("QL_PARSE_ERROR: 第 1 行语法错误");
+        fixture.databaseRevision.setCompiledScript("return old;");
+        fixture.databaseContent.setCompiledScript("return old;");
+        fixture.databaseContent.setCompileStatus(1);
 
-        RuleGovernanceException error = assertThrows(RuleGovernanceException.class,
-                () -> service.save(request(30L, 6L, 0, "{\"script\":\"_result = {\"}")));
-        assertTrue(error.getIssues().stream()
+        String unfinished = "{\"script\":\"_result = {\"}";
+        RuleDraftSaveResponse saved = service.save(request(30L, 6L, 0, unfinished));
+        assertTrue(saved.getIssues().stream()
                 .anyMatch(issue -> "QL_PARSE_ERROR".equals(issue.getCode())));
-        assertEquals(beforeRevision, fixture.databaseRevision);
-        assertTrue(fixture.writeOrder.isEmpty());
+        assertFalse(saved.isCompileSuccess());
+        assertEquals("DRAFT", saved.getRevision().getState());
+        assertEquals(Integer.valueOf(1), saved.getRevision().getLockVersion());
+        assertEquals(unfinished, fixture.databaseRevision.getModelJson());
+        assertEquals(unfinished, fixture.databaseContent.getModelJson());
+        assertEquals(Integer.valueOf(2), fixture.databaseContent.getCompileStatus());
+        assertNull(fixture.databaseRevision.getCompiledScript());
+        assertNull(fixture.databaseContent.getCompiledScript());
     }
 
     @Test
@@ -202,11 +218,10 @@ public class RuleDraftServiceTest {
         fixture.compileResult =
                 CompileResult.fail("DATABASE_TIMEOUT: internal detail");
 
-        RuleGovernanceException error = assertThrows(RuleGovernanceException.class,
-                () -> service.save(request(30L, 6L, 0, modelJson())));
-        assertTrue(error.getIssues().stream()
+        RuleDraftSaveResponse saved = service.save(request(30L, 6L, 0, modelJson()));
+        assertTrue(saved.getIssues().stream()
                 .anyMatch(issue -> "COMPILE_FAILED".equals(issue.getCode())));
-        assertFalse(error.getIssues().stream()
+        assertFalse(saved.getIssues().stream()
                 .anyMatch(issue -> "DATABASE_TIMEOUT".equals(issue.getCode())));
     }
 
@@ -235,6 +250,33 @@ public class RuleDraftServiceTest {
         assertEquals(Integer.valueOf(2), fixture.databaseRevision.getLockVersion());
         assertEquals(beforeContent, fixture.databaseContent);
         assertEquals(beforeFields, fixture.databaseFields);
+    }
+
+    @Test
+    public void contentMapperExplicitlyClearsNullableProjectionFields() {
+        RuleDraftService target = new RuleDraftService();
+        List<String> updates = new ArrayList<>();
+        RuleDefinitionContentMapper mapper = (RuleDefinitionContentMapper) Proxy.newProxyInstance(
+                RuleDefinitionContentMapper.class.getClassLoader(),
+                new Class<?>[]{RuleDefinitionContentMapper.class}, (proxy, method, args) -> {
+                    if ("update".equals(method.getName())) {
+                        LambdaUpdateWrapper<?> wrapper = (LambdaUpdateWrapper<?>) args[1];
+                        updates.add(wrapper.getSqlSet());
+                        assertEquals(4, wrapper.getParamNameValuePairs().values().stream()
+                                .filter(java.util.Objects::isNull).count());
+                        return 1;
+                    }
+                    throw new AssertionError("Unexpected mapper call: " + method.getName());
+                });
+        ReflectionTestUtils.setField(target, "contentMapper", mapper);
+        RuleDefinitionContent content = new RuleDefinitionContent();
+        content.setId(16L);
+        target.persistContent(content);
+        assertEquals(1, updates.size());
+        assertTrue(updates.get(0).contains("compiled_script="));
+        assertTrue(updates.get(0).contains("compiled_type="));
+        assertTrue(updates.get(0).contains("compile_message="));
+        assertTrue(updates.get(0).contains("open_api_config_json="));
     }
 
     @Test

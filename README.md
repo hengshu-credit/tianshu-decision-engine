@@ -306,6 +306,8 @@ SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-
 
 完整环境变量、启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见[部署与接入说明](docs/deployment.md)。
 
+“业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](docs/java-service-integration.md)。项目导出的 API 文档内也提供 Java 服务接入示例。
+
 
 ## 交流与许可证
 

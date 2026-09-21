@@ -24,6 +24,7 @@ public class RuleExecutionSession {
     private final Map<String, Object> values;
     private final Map<String, Object> originalInput;
     private final boolean testMode;
+    private boolean traceEnabled = true;
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
@@ -83,6 +84,14 @@ public class RuleExecutionSession {
 
     public boolean isTestMode() {
         return testMode;
+    }
+
+    public boolean isTraceEnabled() {
+        return traceEnabled;
+    }
+
+    void setTraceEnabled(boolean traceEnabled) {
+        this.traceEnabled = traceEnabled;
     }
 
     public List<String> getRootOutputScriptNames() {

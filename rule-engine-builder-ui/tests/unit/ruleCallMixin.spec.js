@@ -13,7 +13,32 @@ function createContext() {
 }
 
 describe('ruleCallMixin', () => {
+  test('返回缓存设计器时刷新已发布规则状态，保留当前模型', async () => {
+    const ctx = createContext()
+    ctx.$route = { path: '/designer/flow/7', params: { id: '7' } }
+    ctx.model = { nodes: [{ id: 'unsaved' }] }
+    definitionApi.getDefinition.mockResolvedValue({ id: 7, projectId: 2, ruleCode: 'Main' })
+    definitionApi.listProjectDefinitions.mockResolvedValue({ records: [{ id: 8, ruleCode: 'Child', modelType: 'RULE_SET', status: 1 }] })
+    expect(typeof ruleCallMixin.activated).toBe('function')
+    await ruleCallMixin.activated.call(ctx)
+    expect(ctx.projectRules[0]).toMatchObject({ id: 8, status: 1 })
+    expect(ctx.model.nodes).toEqual([{ id: 'unsaved' }])
+  })
   beforeEach(() => vi.clearAllMocks())
+
+  test('旧规则目录请求晚到时不能覆盖刷新后的发布状态', async () => {
+    const ctx = createContext()
+    definitionApi.getDefinition.mockResolvedValue({ id: 7, projectId: 2 })
+    let resolveOld
+    definitionApi.listProjectDefinitions.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve }))
+    const old = ctx.loadRuleCallOptions(7)
+    await Promise.resolve()
+    definitionApi.listProjectDefinitions.mockResolvedValueOnce({ records: [{ id: 8, modelType: 'RULE_SET', status: 1 }] })
+    await ctx.loadRuleCallOptions(7)
+    resolveOld({ records: [{ id: 8, modelType: 'RULE_SET', status: 0 }] })
+    await old
+    expect(ctx.projectRules[0].status).toBe(1)
+  })
 
   test('加载项目规则和已关联全局规则且保留原始编码', async () => {
     definitionApi.getDefinition.mockResolvedValue({ id: 7, projectId: 2, ruleCode: 'Main_Flow' })

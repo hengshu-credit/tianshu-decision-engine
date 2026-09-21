@@ -99,6 +99,10 @@ public class ArtifactRuntimeSnapshotService {
             } else if ("DATA_OBJECT".equals(resourceType)) {
                 snapshot.dataObjectFields.add(JSON.parseObject(
                         component.getContent(), RuleDataObjectField.class));
+                JSONObject field = JSON.parseObject(component.getContent());
+                if (field.getString("referencePath") != null) {
+                    snapshot.referencePaths.put("DATA_OBJECT:" + field.getLong("id"), field.getString("referencePath"));
+                }
             } else if ("RULE".equals(resourceType)) {
                 snapshot.nestedRules.add(JSON.parseObject(component.getContent(), NestedRuleSnapshot.class));
             } else if ("rule/input-fields.json".equals(component.getPath())) {
@@ -262,6 +266,7 @@ public class ArtifactRuntimeSnapshotService {
         private final List<RuleDataObjectField> dataObjectFields = new ArrayList<>();
         private final List<NestedRuleSnapshot> nestedRules = new ArrayList<>();
         private final Map<String, Long> bindings = new LinkedHashMap<>();
+        private final Map<String, String> referencePaths = new LinkedHashMap<>();
 
         public Long getArtifactId() { return artifactId; }
         public String getArtifactDigest() { return artifactDigest; }
@@ -276,6 +281,7 @@ public class ArtifactRuntimeSnapshotService {
         public List<RuleDataObjectField> getDataObjectFields() { return dataObjectFields; }
         public List<NestedRuleSnapshot> getNestedRules() { return nestedRules; }
         public Map<String, Long> getBindings() { return bindings; }
+        public Map<String, String> getReferencePaths() { return referencePaths; }
 
         public NestedRuleSnapshot findNestedRule(Long definitionId, String ruleCode) {
             for (NestedRuleSnapshot rule : nestedRules) {

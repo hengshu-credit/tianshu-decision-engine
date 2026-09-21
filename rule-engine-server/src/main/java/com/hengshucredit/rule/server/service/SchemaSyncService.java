@@ -87,6 +87,7 @@ public class SchemaSyncService {
             ensureDataObjectFieldReferenceSchema();
             ensureDataObjectFieldUniqueKey();
             ensureDashboardIndexes();
+            ensureTablesFromSchema(List.of("rule_application_history"));
         } catch (Exception e) {
             log.warn("运行时数据库结构同步失败，请检查 sql/schema.sql 与当前数据库: {}", e.getMessage());
         }

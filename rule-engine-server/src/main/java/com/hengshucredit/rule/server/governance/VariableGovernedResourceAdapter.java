@@ -2,10 +2,14 @@ package com.hengshucredit.rule.server.governance;
 
 import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.model.entity.RuleVariableOption;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
+
+import jakarta.annotation.Resource;
 
 import java.util.List;
 import java.util.Map;
@@ -16,6 +20,9 @@ public class VariableGovernedResourceAdapter
 
     private final RuleVariableOptionMapper optionMapper;
     private final VariableSourceReferenceValidator sourceValidator;
+
+    @Resource
+    private RuleDataObjectFieldMapper dataObjectFieldMapper;
 
     public VariableGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleVariable>
@@ -44,6 +51,24 @@ public class VariableGovernedResourceAdapter
                 secretCodec));
         this.optionMapper = optionMapper;
         this.sourceValidator = sourceValidator;
+    }
+
+    @Override
+    public List<ResourceDependencyRef> collectDependencies(ResourceSnapshot draft) {
+        return super.collectDependencies(draft).stream().map(dependency -> {
+            String path = dependency.referencePath();
+            if (dataObjectFieldMapper == null
+                    || !GovernanceResourceTypes.DATA_OBJECT.equals(dependency.targetResourceType())
+                    || path == null || !(path.endsWith(".refId") || path.endsWith(".varId"))) {
+                return dependency;
+            }
+            // Operand 的 DATA_OBJECT ID 是字段 ID，治理版本归属于字段所在的数据对象。
+            RuleDataObjectField field = dataObjectFieldMapper.selectById(dependency.targetResourceId());
+            if (field == null || field.getObjectId() == null) return dependency;
+            return new ResourceDependencyRef(GovernanceResourceTypes.DATA_OBJECT,
+                    field.getObjectId(), GovernanceResourceTypes.DATA_OBJECT,
+                    path, dependency.relationType(), dependency.required());
+        }).toList();
     }
 
     @Override

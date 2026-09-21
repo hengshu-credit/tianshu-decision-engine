@@ -1947,3 +1947,18 @@ END$$
 DELIMITER ;
 CALL `rule_engine`.`ensure_rule_business_versions`();
 DROP PROCEDURE `rule_engine`.`ensure_rule_business_versions`;
+
+-- 正式进件历史：只由最外层对外规则写入，字段值以 refType:ID 固定关联。
+CREATE TABLE IF NOT EXISTS `rule_application_history` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT DEFAULT NULL,
+  `root_rule_id` BIGINT NOT NULL,
+  `trace_id` VARCHAR(128) NOT NULL,
+  `occurred_at` DATETIME(6) NOT NULL,
+  `field_values` JSON NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_application_trace` (`trace_id`),
+  KEY `idx_application_time` (`occurred_at`),
+  KEY `idx_application_project_time` (`project_id`, `occurred_at`),
+  KEY `idx_application_rule_time` (`root_rule_id`, `project_id`, `occurred_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

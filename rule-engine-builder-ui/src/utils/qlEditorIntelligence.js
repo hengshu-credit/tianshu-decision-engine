@@ -73,6 +73,11 @@ export function buildQlCompletionItems(refs = [], functions = [], linePrefix = '
           .join('\n'),
         kind: 'FUNCTION',
         snippet: true,
+        stableReference: func.id == null ? null : {
+          refCode: func.funcCode,
+          varId: func.id,
+          refType: 'FUNCTION',
+        },
       }
     })
   return [...referenceItems, ...functionItems]

@@ -10,6 +10,8 @@ const LABELS = {
   CLEAN: '已加载，尚未修改', DIRTY: '有未保存修改', SAVING: '正在保存',
   SAVED_UNCHECKED: '草稿已保存', CHECK_FAILED: '编译或发布前检查未通过',
   READY_TO_TEST: '编译与发布前检查通过', SAVE_CONFLICT: '保存冲突，修改仍保留',
+  SUBMITTED: '已提交发布审批，尚未生效',
+  SAVED_WITH_ISSUES: '草稿已保存，存在待修复问题（不可发布）',
 }
 export default {
   name: 'RuleDesignerStatus',

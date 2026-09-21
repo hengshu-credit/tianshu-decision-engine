@@ -102,9 +102,11 @@
                         class="vp-row"
                         :class="{
                           'vp-row--selected':
-                            !isFieldGroup(v) && v.varCode === currentValue,
+                            !isFieldGroup(v) && isCurrentOption(v),
                         }"
+                        :tabindex="isCurrentOption(v) ? 0 : -1"
                         @click="onItemClick(v)"
+                        @keydown.enter.prevent.stop="onItemClick(v)"
                       >
                         <td class="vp-td vp-td--type">
                           <span
@@ -147,9 +149,11 @@
                                 class="vp-child-item"
                                 :class="{
                                   'vp-child-item--selected':
-                                    child.varCode === currentValue,
+                                    isCurrentOption(child),
                                 }"
+                                :tabindex="isCurrentOption(child) ? 0 : -1"
                                 @click.stop="onItemClick(child)"
+                                @keydown.enter.prevent.stop="onItemClick(child)"
                               >
                                 <span class="vp-child-path">{{
                                   fieldChildRelativePath(child)
@@ -313,23 +317,6 @@ import {
   operandKindMeta,
 } from '@/utils/operand'
 
-function pickerValueIdentity(value, valueKey) {
-  if (value == null || value === '') return 'EMPTY'
-  if (typeof value !== 'object') {
-    return (valueKey === 'id' ? 'ID:' : 'CODE:') + String(value)
-  }
-  var kind = value.kind || 'OBJECT'
-  if (value.refId != null && value.refType) {
-    return kind + ':' + value.refType + ':' + String(value.refId)
-  }
-  if (value.functionId != null || value.functionCode) {
-    return (
-      kind + ':' + String(value.functionId != null ? value.functionId : value.functionCode)
-    )
-  }
-  return kind + ':' + String(value.value != null ? value.value : value.code || '')
-}
-
 export default {
   data() {
     return {
@@ -362,9 +349,7 @@ export default {
       suppressFocusOpen: false,
       pointerFocusPending: false,
       focusOpenTimer: null,
-      valueGeneration: 0,
-      positionedValueGeneration: -1,
-      positionedValueIdentity: pickerValueIdentity(this.value, this.valueKey),
+      pendingValuePosition: false,
       ElIconSearch: markRaw(ElIconSearch),
     }
   },
@@ -428,7 +413,9 @@ export default {
       } else {
         this._autoSwitchIfUnmatched()
       }
+      this.restorePendingPosition()
     },
+    functions() { this.restorePendingPosition() },
     categoryList: {
       deep: true,
       immediate: true,
@@ -448,20 +435,19 @@ export default {
       },
     },
     value(newVal) {
-      var nextIdentity = pickerValueIdentity(newVal, this.valueKey)
-      if (nextIdentity !== this.positionedValueIdentity) {
-        this.positionedValueIdentity = nextIdentity
-        this.valueGeneration += 1
-      }
       this.localCustomValue = newVal || ''
       this._autoSwitchIfUnmatched()
     },
     customMode(val) {
       if (val) this.localCustomValue = this.value || ''
     },
-    searchText() {
-      this.rightPage = 1
-      this.objectChildPages = {}
+    searchText: {
+      flush: 'sync',
+      handler(value) {
+        this.rightPage = 1
+        this.objectChildPages = {}
+        if (value) this.pendingValuePosition = false
+      },
     },
     popoverVisible(val) {
       this.updateDocumentListener(val)
@@ -887,21 +873,21 @@ export default {
     findOptionByIdentity(id, refType) {
       if (id == null || id === '' || !refType) return null
       return (
-        this.vars.find(function (v) {
-          var optionId =
-            v.id != null
-              ? v.id
-              : v._varId != null
-              ? v._varId
-              : v.varObj && v.varObj.id
-          var optionType =
-            v._refType ||
-            v.refType ||
-            (v.varObj && v.varObj.refType) ||
-            (v._ref && v._ref.refType)
-          return String(optionId) === String(id) && optionType === refType
-        }) || null
+        this.vars.find(v => this.optionIdentityKey(v) === refType + ':' + id) || null
       )
+    },
+    isCurrentOption(item) {
+      if (!item || this.isFieldGroup(item) || this.value == null || this.value === '') return false
+      if (this.operandMode && typeof this.value === 'object') {
+        if (this.value.kind === 'FUNCTION') {
+          const fn = item.function || {}
+          return item._function && this.value.functionId != null &&
+            String(fn.functionId != null ? fn.functionId : fn.id) === String(this.value.functionId)
+        }
+        return this.value.refId != null && !!this.value.refType &&
+          this.optionIdentityKey(item) === this.value.refType + ':' + this.value.refId
+      }
+      return this.valueKey === 'id' ? String(item.id) === String(this.value) : item.varCode === this.value
     },
     resolveSelectedOption(item) {
       if (item == null || item === '') return null
@@ -920,6 +906,10 @@ export default {
       return this.findOptionByIdentity(id, refType)
     },
     optionIdentityKey(item) {
+      if (item && item._function) {
+        const fn = item.function || {}
+        return 'FUNCTION:' + (fn.functionId != null ? fn.functionId : fn.id != null ? fn.id : item.varCode)
+      }
       var id =
         item &&
         (item._varId != null
@@ -1021,11 +1011,13 @@ export default {
     },
     /** 分类点击 */
     onCategoryClick(cat) {
+      this.pendingValuePosition = false
       this.activeCategory = cat
       this.expandedObject = null
       this.rightPage = 1
     },
     onRightPageChange(page) {
+      this.pendingValuePosition = false
       this.rightPage = page
     },
     objectChildPageKey(item) {
@@ -1064,11 +1056,13 @@ export default {
       return starts.concat(contains)
     },
     onObjectChildPageChange(item, page) {
+      this.pendingValuePosition = false
       var key = this.objectChildPageKey(item)
       if (key) this.objectChildPages[key] = page
     },
     /** 行点击：字段分组展开嵌套，其他直接选中 */
     onItemClick(item) {
+      this.pendingValuePosition = false
       if (this.isFieldGroup(item)) {
         var groupKey = this.fieldGroupKey(item) || item.varCode
         if (this.expandedObject === groupKey) {
@@ -1208,9 +1202,9 @@ export default {
       })
     },
     /** 点击输入框时弹出选择器面板 */
-    onInputClick() {
+    onInputClick(options) {
       this.pointerFocusPending = false
-      this.openPopover()
+      this.openPopover(options)
     },
     onReferenceKeydown(event) {
       if (!event) return
@@ -1223,40 +1217,37 @@ export default {
       event.stopPropagation()
       this.openPopover()
     },
-    openPopover() {
+    openPopover(options = {}) {
       if (this.groupedByCategory && (this.hasVarOptions || this.operandMode)) {
         var wasVisible = this.popoverVisible
         this.setPickerInert(false)
         this.popoverVisible = true
         if (!this.referenceKeyword) this.searchText = ''
-        if (
-          !wasVisible &&
-          this.positionedValueGeneration !== this.valueGeneration
-        ) {
-          if (
-            this.operandMode &&
-            !this.value &&
-            (this.allowsOperandKind('LITERAL') ||
-              this.allowsOperandKind('PATH'))
-          ) {
-            this.positionPickerCategory('manual')
-          } else if (this.value) {
-            this.focusCurrentValueInPicker()
-          }
-          this.positionedValueGeneration = this.valueGeneration
+        if (!wasVisible && !this.referenceKeyword && this.value != null && this.value !== '') {
+          this.pendingValuePosition = !this.focusCurrentValueInPicker(options)
         }
       }
     },
-    focusCurrentValueInPicker() {
+    restorePendingPosition() {
+      if (this.popoverVisible && this.pendingValuePosition) {
+        this.pendingValuePosition = !this.focusCurrentValueInPicker()
+      }
+    },
+    focusCurrentValueInPicker(options = {}) {
       var option
       if (this.operandMode && this.value && typeof this.value === 'object') {
         if (this.value.kind === 'LITERAL' || this.value.kind === 'PATH') {
           this.positionPickerCategory('manual')
-          return
+          if (options.restoreManual !== false && this.allowsOperandKind(this.value.kind)) this.requestManualEdit(this.value.kind)
+          return true
         }
         if (this.value.kind === 'FUNCTION') {
-          this.positionPickerCategory('function')
-          return
+          if (this.positionPickerCategory('function') !== 'function') return false
+          option = this.rightItems.find(this.isCurrentOption)
+          if (!option) return false
+          this.focusFlatOption(option)
+          this.scrollCurrentValueIntoView()
+          return true
         }
         option = this.findOptionByIdentity(this.value.refId, this.value.refType)
       } else {
@@ -1267,15 +1258,15 @@ export default {
                   return String(v.id) === String(this.value)
                 }.bind(this)
               )
-            : null
+            : this.vars.find(v => v.varCode === this.value)
       }
       if (!option) {
         this.positionPickerCategory(this.activeCategory)
-        return
+        return false
       }
 
       var category = this.optionCategory(option)
-      if (this.positionPickerCategory(category) !== category) return
+      if (this.positionPickerCategory(category) !== category) return false
 
       if (this.isGroupedFieldCategory(category)) {
         this.focusGroupedOption(option)
@@ -1283,6 +1274,7 @@ export default {
         this.focusFlatOption(option)
       }
       this.scrollCurrentValueIntoView()
+      return true
     },
     positionPickerCategory(category) {
       var categories = this.categoryList || []
@@ -1311,8 +1303,7 @@ export default {
       var index = list.findIndex(
         function (item) {
           return (
-            this.optionIdentityKey(item) === this.optionIdentityKey(option) ||
-            item.varCode === option.varCode
+            this.optionIdentityKey(item) === this.optionIdentityKey(option)
           )
         }.bind(this)
       )
@@ -1346,8 +1337,7 @@ export default {
           function (child) {
             return (
               this.optionIdentityKey(child) ===
-                this.optionIdentityKey(option) ||
-              child.varCode === option.varCode
+                this.optionIdentityKey(option)
             )
           }.bind(this)
         )
@@ -1359,6 +1349,7 @@ export default {
     },
     scrollCurrentValueIntoView() {
       this.$nextTick(function () {
+        if (!this.popoverVisible) return
         var popper = this.getPopoverElement()
         if (!popper) return
         var target = popper.querySelector(
@@ -1366,6 +1357,7 @@ export default {
         )
         if (target && target.scrollIntoView) {
           target.scrollIntoView({ block: 'nearest' })
+          if (target.focus) target.focus({ preventScroll: true })
         }
       })
     },

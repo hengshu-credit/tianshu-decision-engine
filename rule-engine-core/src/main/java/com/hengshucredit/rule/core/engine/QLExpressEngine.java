@@ -14,6 +14,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.Collections;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -26,7 +28,9 @@ public class QLExpressEngine {
     private static final QLOptions NORMAL_OPTIONS = QLOptions.builder().traceExpression(false).build();
     private static final QLOptions TRACE_OPTIONS = QLOptions.builder().traceExpression(true).build();
     private final Express4Runner runner;
-    private final Map<String, PreparedScript> preparedScripts = new ConcurrentHashMap<>();
+    private final Map<String, PreparedEntry> preparedScripts = new ConcurrentHashMap<>();
+    // Guarded by preparedScripts; cache hits only set the entry's second-chance bit.
+    private final Deque<PreparedEntry> preparationOrder = new ArrayDeque<>();
 
     public QLExpressEngine() {
         this.runner = new Express4Runner(InitOptions.builder()
@@ -44,11 +48,11 @@ public class QLExpressEngine {
     /** Parse, bind and collect static checks once. The cache is local to this runner and bounded. */
     public PreparedScript prepare(String script) {
         if (script == null || script.isBlank()) throw new IllegalArgumentException("QL 脚本不能为空");
-        PreparedScript cached = preparedScripts.get(script);
-        if (cached != null) return cached.requireValid();
+        PreparedEntry cached = preparedScripts.get(script);
+        if (cached != null) return cached.access();
         synchronized (preparedScripts) {
             cached = preparedScripts.get(script);
-            if (cached != null) return cached.requireValid();
+            if (cached != null) return cached.access();
             PreparedScript prepared;
             try {
                 LoadedParseCache loaded = runner.loadSerializableCache(runner.parseToSerializableCache(script));
@@ -57,9 +61,18 @@ public class QLExpressEngine {
                 prepared = new PreparedScript(this, null, Collections.emptySet(), invalid);
             }
             if (preparedScripts.size() >= MAX_PREPARED_SCRIPTS) {
-                preparedScripts.remove(preparedScripts.keySet().iterator().next());
+                // Scan at most one rotation, even when every entry is concurrently accessed.
+                int remaining = preparationOrder.size();
+                while (remaining-- > 0 && preparationOrder.peekFirst().recentlyUsed) {
+                    PreparedEntry candidate = preparationOrder.removeFirst();
+                    candidate.recentlyUsed = false;
+                    preparationOrder.addLast(candidate);
+                }
+                preparedScripts.remove(preparationOrder.removeFirst().source);
             }
-            preparedScripts.put(script, prepared);
+            PreparedEntry entry = new PreparedEntry(script, prepared);
+            preparedScripts.put(script, entry);
+            preparationOrder.addLast(entry);
             return prepared.requireValid();
         }
     }
@@ -74,6 +87,7 @@ public class QLExpressEngine {
     public void clearPreparedScripts() {
         synchronized (preparedScripts) {
             preparedScripts.clear();
+            preparationOrder.clear();
             runner.clearCompileCache();
         }
     }
@@ -158,6 +172,22 @@ public class QLExpressEngine {
         private PreparedScript requireValid() {
             if (preparationFailure != null) throw preparationFailure;
             return this;
+        }
+    }
+
+    private static final class PreparedEntry {
+        private final String source;
+        private final PreparedScript script;
+        private volatile boolean recentlyUsed;
+
+        private PreparedEntry(String source, PreparedScript script) {
+            this.source = source;
+            this.script = script;
+        }
+
+        private PreparedScript access() {
+            recentlyUsed = true;
+            return script.requireValid();
         }
     }
 

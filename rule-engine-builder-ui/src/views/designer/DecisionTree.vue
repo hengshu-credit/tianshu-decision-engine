@@ -277,6 +277,9 @@
 
               <!-- 可视化条件构建 -->
               <div v-if="edgeCondMode === 'visual'" class="cond-builder">
+                <div v-if="!edgeProps.conditionExpr && !edgeConditionRoot?.children?.length" class="hint-box">
+                  当前为默认分支；添加条件后按条件判断。
+                </div>
                 <condition-group-editor
                   v-if="edgeConditionRoot"
                   :group="edgeConditionRoot"
@@ -285,7 +288,7 @@
                   :list-options="projectLists"
                   :get-var-options-fn="getVarOptions"
                   :selected-vars="selectedVarPickerOptions"
-                  @changed="persistEdgeConditionDraft"
+                  @changed="persistEdgeConditionDraft(true)"
                 />
                 <el-button
                   type="primary"
@@ -796,19 +799,17 @@ export default {
       })
       this.edgeOrderVersion++
     },
-    persistEdgeConditionDraft() {
+    persistEdgeConditionDraft(edited = false) {
       if (
         !this.activeElement ||
         this.activeElement.baseType !== 'edge' ||
         this.edgeCondMode !== 'visual' ||
         !this.edgeConditionRoot
       ) return
-      this.edgeProps.conditionExpr = compileConditionTreeExpression(
-        this.edgeConditionRoot
-      )
-      this.edgeProps.conditionConfig = JSON.parse(
-        JSON.stringify(this.edgeConditionRoot)
-      )
+      const empty = this.edgeConditionRoot.type === 'group' && !this.edgeConditionRoot.children?.length
+      if (empty && !edited && this.edgeProps.conditionExpr) return
+      this.edgeProps.conditionExpr = empty ? '' : compileConditionTreeExpression(this.edgeConditionRoot)
+      this.edgeProps.conditionConfig = empty ? null : JSON.parse(JSON.stringify(this.edgeConditionRoot))
       this.edgeProps.leftVarId = null
       this.edgeProps.leftRefType = null
       this.edgeProps.rightVarId = null
@@ -891,6 +892,7 @@ export default {
     },
     createConditionRootFromVisual(visual) {
       const root = createEmptyGroup('AND')
+      if (!visual?.leftVar) return root
       const leaf = createEmptyLeaf()
       if (visual && visual.leftVar) {
         leaf.leftOperand = operandFromReferenceFields({
@@ -1327,7 +1329,7 @@ export default {
       this.edgeCondMode =
         this.edgeProps.conditionExpr &&
         !this.edgeCondVisual.leftVar &&
-        !this.edgeProps.conditionConfig
+        (!this.edgeProps.conditionConfig || (this.edgeConditionRoot.type === 'group' && !this.edgeConditionRoot.children?.length))
           ? 'script'
           : 'visual'
       this.hasSelection = true
@@ -1932,11 +1934,6 @@ export default {
     async performDesignerSave() {
       const model = this.buildBackendModel()
       this.repairLegacyRuleCallRefs(model)
-      const ruleCallErrors = this.validateRuleCallsInModel(model)
-      if (ruleCallErrors.length) {
-        this.showRuleCallErrors(ruleCallErrors)
-        return false
-      }
       const modelJson = JSON.stringify(model)
       const result = await this.saveDraftModel(modelJson)
       if (!result) return false
@@ -2108,11 +2105,10 @@ export default {
           this.edgeCondVisual
         )
       }
-      const expr = compileConditionTreeExpression(this.edgeConditionRoot)
+      const empty = this.edgeConditionRoot.type === 'group' && !this.edgeConditionRoot.children?.length
+      const expr = empty ? '' : compileConditionTreeExpression(this.edgeConditionRoot)
       this.edgeProps.conditionExpr = expr
-      this.edgeProps.conditionConfig = JSON.parse(
-        JSON.stringify(this.edgeConditionRoot)
-      )
+      this.edgeProps.conditionConfig = empty ? null : JSON.parse(JSON.stringify(this.edgeConditionRoot))
       this.edgeProps.leftVarId = null
       this.edgeProps.leftRefType = null
       this.edgeProps.rightVarId = null
@@ -2122,7 +2118,7 @@ export default {
       }
       this.onEdgeChange()
 
-      this.$message.success('已生成: ' + expr)
+      this.$message.success(empty ? '已设为默认分支' : '已生成: ' + expr)
     },
 
     syncCondVisualFromExpr(expr) {

@@ -2,7 +2,7 @@ import { mount } from '@test-utils'
 import VariableSourceSelector from '@/views/variable/components/VariableSourceSelector.vue'
 
 describe('VariableSourceSelector', () => {
-  test('以业务语言展示六种取值方式和当前范围可用数量', () => {
+  test('以业务语言展示七种取值方式和当前范围可用数量', () => {
     const wrapper = mount(VariableSourceSelector, {
       props: {
         modelValue: 'INPUT',
@@ -11,7 +11,8 @@ describe('VariableSourceSelector', () => {
     })
 
     expect(wrapper.attributes('role')).toBe('radiogroup')
-    expect(wrapper.findAll('button')).toHaveLength(6)
+    expect(wrapper.findAll('button')).toHaveLength(7)
+    expect(wrapper.text()).toContain('衍生变量')
     expect(wrapper.text()).toContain('请求输入')
     expect(wrapper.text()).toContain('外数接口')
     expect(wrapper.text()).toContain('2 个可用')

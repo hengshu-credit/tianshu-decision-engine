@@ -59,15 +59,15 @@ public class RuleEngineClient {
         this.runtimeRuleInvoker.register(engine.getRunner());
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
 
-        if (externalReporter != null) {
+        if (!config.isLogReportEnabled()) {
+            this.logReporter = new NoOpLogReporter();
+            this.ownsLogReporter = true;
+        } else if (externalReporter != null) {
             this.logReporter = externalReporter;
             this.ownsLogReporter = false;
-        } else if (config.isLogReportEnabled()) {
+        } else {
             this.logReporter = new HttpLogReporter(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator,
                     config.getLogBufferSize(), config.getLogBatchSize(), config.getLogFlushIntervalMs());
-            this.ownsLogReporter = true;
-        } else {
-            this.logReporter = new NoOpLogReporter();
             this.ownsLogReporter = true;
         }
     }
@@ -131,7 +131,7 @@ public class RuleEngineClient {
     }
 
     /**
-     * 执行规则，默认开启表达式追踪（成功时 traceInfo 始终回传）
+     * 执行规则，是否采集表达式追踪由 traceEnabled 配置决定（默认开启）。
      */
     public RuleResult execute(String ruleCode, Map<String, Object> params) {
         return doExecute(ruleCode, params);
@@ -157,7 +157,7 @@ public class RuleEngineClient {
 
     private RuleResult doExecute(String ruleCode, Map<String, Object> params) {
         if (config.isServerSideExecution()) {
-            return httpSyncClient.executeRule(ruleCode, params, config.getAppName());
+            return httpSyncClient.executeRule(ruleCode, params, config.getAppName(), config.isTraceEnabled());
         }
         long start = System.currentTimeMillis();
 
@@ -175,7 +175,7 @@ public class RuleEngineClient {
             return r;
         }
 
-        String originalInputJson = toJsonSafely(params);
+        String originalInputJson = config.isLogReportEnabled() ? toJsonSafely(params) : null;
         runtimeRuleInvoker.enter(cached, params);
         RuleResult result = new RuleResult();
         try {
@@ -196,7 +196,7 @@ public class RuleEngineClient {
 
     private RuleResult doExecute(String ruleCode, Object params) {
         if (config.isServerSideExecution()) {
-            return httpSyncClient.executeRule(ruleCode, params, config.getAppName());
+            return httpSyncClient.executeRule(ruleCode, params, config.getAppName(), config.isTraceEnabled());
         }
         long start = System.currentTimeMillis();
 
@@ -214,7 +214,7 @@ public class RuleEngineClient {
             return r;
         }
 
-        String originalInputJson = toJsonSafely(params);
+        String originalInputJson = config.isLogReportEnabled() ? toJsonSafely(params) : null;
         runtimeRuleInvoker.enter(cached, params);
         RuleResult result = new RuleResult();
         try {
@@ -235,6 +235,7 @@ public class RuleEngineClient {
 
     private void reportLog(String ruleCode, CachedRule cached, String originalInputJson,
                            RuleResult result, long costMs) {
+        if (!config.isLogReportEnabled()) return;
         try {
             RuleExecutionLog entry = new RuleExecutionLog();
             entry.setTraceId(result.getTraceId());

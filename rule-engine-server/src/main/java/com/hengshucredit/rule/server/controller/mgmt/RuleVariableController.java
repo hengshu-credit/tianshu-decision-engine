@@ -51,6 +51,16 @@ public class RuleVariableController {
     @Resource
     private VariableSourceReferenceValidator sourceReferenceValidator;
 
+    @Resource
+    private com.hengshucredit.rule.server.service.RuleTestSchemaService ruleTestSchemaService;
+
+    @PostMapping("/derived-schema")
+    @RequirePermission("field:view")
+    public R<com.hengshucredit.rule.model.dto.RuleTestSchema> derivedSchema(@RequestBody RuleVariable variable) {
+        sourceReferenceValidator.validateOrThrow(variable);
+        return R.ok(ruleTestSchemaService.buildDerivedDraft(variable));
+    }
+
     /** 健康检查，用于验证变量管理接口是否正常注册 */
     @GetMapping("/health")
     public R<String> health() {

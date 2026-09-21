@@ -91,6 +91,55 @@ public class RuntimeContextBridgeTest {
                 () -> RuntimeContextBridge.setValue("PARENT", 5));
     }
 
+    @Test
+    public void nestedWriteScopesReplayOnlyTheirWritesAndResetBetweenRequests() {
+        RequestContext request = new RequestContext();
+        Map<String, Object> captured = new LinkedHashMap<>();
+        request.bind(captured::put);
+        int outer = request.beginRuntimeWriteScope();
+        int empty = request.beginRuntimeWriteScope();
+        request.replayRuntimeWrites(empty, captured);
+        request.endRuntimeWriteScope();
+        request.setValue("before", 1);
+        int inner = request.beginRuntimeWriteScope();
+        request.setValue("inside", 2);
+        Map<String, Object> innerValues = new LinkedHashMap<>();
+        request.replayRuntimeWrites(inner, innerValues);
+        request.endRuntimeWriteScope();
+        assertEquals(Map.of("inside", 2), innerValues);
+        request.setValue("after", 3);
+        Map<String, Object> outerValues = new LinkedHashMap<>();
+        request.replayRuntimeWrites(outer, outerValues);
+        request.endRuntimeWriteScope();
+        assertEquals(Map.of("before", 1, "inside", 2, "after", 3), outerValues);
+
+        int next = request.beginRuntimeWriteScope();
+        Map<String, Object> nextValues = new LinkedHashMap<>();
+        request.replayRuntimeWrites(next, nextValues);
+        request.endRuntimeWriteScope();
+        assertEquals(Collections.emptyMap(), nextValues);
+    }
+
+    @Test
+    public void firstConstantRegistrationRemainsReadOnlyAndProtectsMutableValues() {
+        RequestContext request = new RequestContext();
+        assertEquals(Collections.emptySet(), request.constantNames());
+        List<Integer> limit = new ArrayList<>(List.of(1, 2));
+        Map<String, Object> values = new LinkedHashMap<>();
+        values.put("LIMIT", limit);
+        request.registerConstant("LIMIT", limit);
+        request.registerConstant("OTHER", 3);
+        values.put("OTHER", 3);
+        org.junit.Assert.assertThrows(UnsupportedOperationException.class,
+                () -> request.constantNames().remove("LIMIT"));
+        limit.set(0, 9);
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> request.assertConstantsUnchanged(values));
+        assertEquals(List.of(1, 2), values.get("LIMIT"));
+        org.junit.Assert.assertThrows(IllegalStateException.class,
+                () -> request.setValue("OTHER", 4));
+    }
+
     private Map<String, Object> singletonMap(String key, Object value) {
         Map<String, Object> map = new LinkedHashMap<>();
         map.put(key, value);

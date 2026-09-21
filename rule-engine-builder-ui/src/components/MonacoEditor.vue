@@ -501,6 +501,7 @@ export default {
 .monaco-editor-container {
   width: 100%;
   min-width: 0;
+  background: var(--tianshu-bg-soft);
   border: 1px solid var(--tianshu-border);
   border-radius: 4px;
   overflow: hidden;

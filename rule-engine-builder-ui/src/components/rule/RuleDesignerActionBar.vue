@@ -8,6 +8,10 @@
         :aria-busy="busy" :title="action.key === 'test' ? '使用当前页面配置测试' : action.label"
         @click="$emit(action.key)">{{ action.label }}</button>
     </div>
+    <button v-if="report && (report.errors?.length || report.warnings?.length)" type="button"
+      class="rule-designer-actions__button" data-action="show-report" @click="reportVisible = true">
+      {{ report.errors?.length ? '查看待修复问题' : `查看提醒（${report.warnings.length}）` }}
+    </button>
     <div v-if="issueContext" class="issue-context">
       <span>校验定位 · {{ pathLabel(issueContext.path) }}：{{ issueContext.message }}</span>
       <button type="button" :disabled="issueContext.stale" @click="$emit('locate', issueContext)">定位问题</button>
@@ -40,7 +44,7 @@ export default {
     report: {
       immediate: true,
       handler(report) {
-        this.reportVisible = Boolean(report && (!report.valid || report.errors?.length || report.warnings?.length))
+        this.reportVisible = Boolean(report && report.autoOpen !== false && (!report.valid || report.errors?.length))
       },
     },
   },

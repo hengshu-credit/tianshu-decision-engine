@@ -27,10 +27,17 @@ public class ExecutionParameterBinder {
                                                Map<String, Object> params,
                                                VariableResolveOptions options) {
         Map<String, Object> result = copyMap(params);
-        for (RuleDefinitionInputField field : fields == null ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
-            bindRuleField(result, field, options == null ? VariableResolveOptions.defaults() : options);
-        }
+        bindRuleInputsInPlace(fields, result, options);
         return result;
+    }
+
+    /** 子规则沿用当前会话，只绑定声明入参，不能替换父规则已持有的嵌套输出对象。 */
+    public void bindRuleInputsInPlace(List<RuleDefinitionInputField> fields,
+                                     Map<String, Object> params,
+                                     VariableResolveOptions options) {
+        for (RuleDefinitionInputField field : fields == null ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
+            bindRuleField(params, field, options == null ? VariableResolveOptions.defaults() : options);
+        }
     }
 
     public Map<String, Object> bindModelInputs(List<RuleModelInputField> fields,

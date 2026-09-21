@@ -299,6 +299,10 @@ public class RuleDependencyClosureService {
         snapshot.put("status", variable.getStatus());
         addJsonDependency(actualType + ":" + variableId, actualType, variableId, null,
                 "variables/" + variableId + ".json", "EMBEDDED", snapshot, dependencies);
+        if ("DERIVED".equals(variable.getVarSource())) {
+            collectStructuredReferences(variable.getSourceConfig(), projectId, dependencies,
+                    issues, new LinkedHashSet<>(), new LinkedHashSet<>());
+        }
         if (externalSource(variable.getVarSource())) {
             addExternalSourceBindings(variable, actualType, path, dependencies, issues);
         }
@@ -522,6 +526,15 @@ public class RuleDependencyClosureService {
         snapshot.put("genericType", field.getGenericType());
         snapshot.put("refObjectId", field.getRefObjectId());
         snapshot.put("refVariableId", field.getRefVariableId());
+        RuleDataObject owner = field.getObjectId() == null ? null : loadDataObject(field.getObjectId());
+        String objectPath = owner == null ? null : owner.getScriptName();
+        if (owner != null && (objectPath == null || objectPath.isBlank())) objectPath = owner.getObjectCode();
+        String fieldPath = field.getScriptName();
+        if (fieldPath == null || fieldPath.isBlank()) fieldPath = field.getVarCode();
+        if (objectPath != null && fieldPath != null && !fieldPath.equals(objectPath) && !fieldPath.startsWith(objectPath + ".")) {
+            fieldPath = objectPath + "." + fieldPath;
+        }
+        snapshot.put("referencePath", fieldPath);
         addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
                 "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies);
         if (field.getRefVariableId() != null) {

@@ -442,7 +442,7 @@ describe('VarPicker', () => {
     expect(wrapper.vm.rightPage).toBe(2)
   })
 
-  test('打开时同步定位已有字段且后续用户分类和展开不被延迟回写', async () => {
+  test('打开时同步定位，浏览期间不跳回；重开仍定位已配置字段', async () => {
     const wrapper = mountPicker({
       operandMode: true,
       allowedKinds: ['LITERAL', 'REFERENCE'],
@@ -486,8 +486,81 @@ describe('VarPicker', () => {
     wrapper.vm.openPopover()
     await nextTick()
 
-    expect(wrapper.vm.activeCategory).toBe('object')
-    expect(wrapper.vm.expandedObject).toBe(groupKey)
+    expect(wrapper.vm.activeCategory).toBe('standalone')
+    expect(wrapper.vm.expandedObject).toBeNull()
+  })
+
+  test('同编码字段按 ID 唯一高亮，已配置字段每次打开恢复分页', async () => {
+    const vars = standaloneOptions(150).map(v => ({ ...v, varCode: 'sameCode' }))
+    const wrapper = mountPicker({ operandMode: true, vars, value: { kind: 'REFERENCE', refId: 149, refType: 'VARIABLE', code: 'sameCode' } })
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.vm.rightPage).toBe(2)
+    expect(wrapper.findAll('.vp-row--selected')).toHaveLength(1)
+    expect(wrapper.get('.vp-row--selected').text()).toContain('变量149')
+    wrapper.vm.onRightPageChange(1)
+    wrapper.vm.closePopover()
+    await nextTick()
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.vm.rightPage).toBe(2)
+    wrapper.unmount()
+  })
+
+  test('函数按 ID 定位分页和高亮，不按旧编码误选同名方法，也不重置参数', async () => {
+    const functions = Array.from({ length: 130 }, (_, i) => ({ id: i + 1, functionCode: 'same', functionName: `函数${i + 1}` }))
+    const value = { kind: 'FUNCTION', functionId: 129, functionCode: 'old', args: [{ kind: 'LITERAL', value: '8' }] }
+    const wrapper = mountPicker({ operandMode: true, allowedKinds: ['FUNCTION'], functions, value })
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.vm.activeCategory).toBe('function')
+    expect(wrapper.vm.rightPage).toBe(2)
+    expect(wrapper.findAll('.vp-row--selected')).toHaveLength(1)
+    expect(wrapper.get('.vp-row--selected').text()).toContain('函数129')
+    expect(wrapper.emitted().input).toBeUndefined()
+    expect(value.args[0].value).toBe('8')
+    wrapper.unmount()
+  })
+
+  test.each(['object', 'model'])('%s 字段展开所属分组和子字段分页', async category => {
+    const refType = category === 'model' ? 'MODEL_OUTPUT' : 'DATA_OBJECT'
+    const vars = Array.from({ length: 125 }, (_, i) => ({
+      _varId: i + 1, _refType: refType, varCode: `current.f${String(i + 1).padStart(3, '0')}`, varLabel: `字段${i + 1}`,
+      _ref: { category, objectCode: 'current', modelCode: 'current', refType },
+    }))
+    const wrapper = mountPicker({ operandMode: true, vars, value: { kind: 'REFERENCE', refId: 122, refType, code: 'old.name' } })
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.vm.activeCategory).toBe(category)
+    expect(wrapper.vm.expandedObject).toBe(category === 'model' ? 'model:current' : 'current')
+    expect(wrapper.vm.objectChildPage(wrapper.vm.rightItems[0])).toBe(2)
+    expect(wrapper.get('.vp-child-item--selected').text()).toContain('字段122')
+    wrapper.unmount()
+  })
+
+  test('字段目录延迟加载后补定位，但用户开始浏览后不抢回分类', async () => {
+    const value = { kind: 'REFERENCE', refId: 99, refType: 'VARIABLE', code: 'v99' }
+    const wrapper = mountPicker({ operandMode: true, vars: [], value })
+    wrapper.vm.openPopover()
+    await wrapper.setProps({ vars: standaloneOptions(150) })
+    expect(wrapper.vm.activeCategory).toBe('standalone')
+    expect(wrapper.vm.rightPage).toBe(2)
+    wrapper.unmount()
+    const browsing = mountPicker({ operandMode: true, vars: standaloneOptions(1), value })
+    browsing.vm.openPopover()
+    browsing.vm.onCategoryClick('manual')
+    await browsing.setProps({ vars: standaloneOptions(150) })
+    expect(browsing.vm.activeCategory).toBe('manual')
+    browsing.unmount()
+  })
+
+  test('失效的引用 ID 不按旧编码定位到其他变量', async () => {
+    const wrapper = mountPicker({ operandMode: true, vars: standaloneOptions(1), value: { kind: 'REFERENCE', refId: 999, refType: 'VARIABLE', code: 'v1' } })
+    wrapper.vm.openPopover()
+    await nextTick()
+    expect(wrapper.find('.vp-row--selected').exists()).toBe(false)
+    expect(wrapper.emitted().input).toBeUndefined()
+    wrapper.unmount()
   })
 
   test('绑定值语义变化后下一次打开重新定位新字段', async () => {
@@ -757,6 +830,18 @@ describe('VarPicker', () => {
     wrapper.vm.onInputFocus()
     await nextTick()
     expect(wrapper.vm.popoverVisible).toBe(true)
+  })
+
+  test.each([
+    { kind: 'LITERAL', value: '18', valueType: 'NUMBER' },
+    { kind: 'PATH', value: 'request.age', refId: 99, refType: 'DATA_OBJECT', resolved: true },
+  ])('已配置 $kind 打开时直接进入输入位，而不要求再选类型', value => {
+    const wrapper = mountPicker({ operandMode: true, value, allowedKinds: ['LITERAL', 'PATH', 'REFERENCE'] })
+    wrapper.vm.openPopover()
+    expect(wrapper.emitted()['manual-edit']).toEqual([[value.kind]])
+    expect(wrapper.vm.popoverVisible).toBe(false)
+    expect(wrapper.emitted().input).toBeUndefined()
+    wrapper.unmount()
   })
 
   test('鼠标单击只在 click 阶段打开一次避免 focus 与 click 重入', () => {

@@ -53,6 +53,11 @@ const ITEMS = [
     help: '由规则动作或表达式在运行中写入',
   },
   {
+    value: 'DERIVED',
+    label: '衍生变量',
+    help: '上游字段计算、内部进件聚合与多级关联',
+  },
+  {
     value: 'CONSTANT',
     label: '固定常量',
     help: '始终使用配置好的固定值',

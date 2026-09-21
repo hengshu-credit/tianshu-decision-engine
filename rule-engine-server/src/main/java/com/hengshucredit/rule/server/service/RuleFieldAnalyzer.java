@@ -1576,7 +1576,23 @@ public class RuleFieldAnalyzer {
         String visitKey = (refType != null ? refType : "NONE") + ":" + (scriptName != null ? scriptName.toLowerCase() : "null");
         boolean alreadyVisited = !visited.add(visitKey);
         if (alreadyVisited) {
+            if ("DERIVED".equals(varSource)) throw new IllegalArgumentException("衍生变量依赖存在循环: " + scriptName);
             addInputFieldIfAbsent(result, seen, field);
+            return;
+        }
+
+        if ("DERIVED".equals(varSource)) {
+            JSONObject config = parseObject((String) meta.get("sourceConfig"));
+            com.hengshucredit.rule.server.derived.DerivedVariableConfig.validate(config);
+            for (JSONObject operand : com.hengshucredit.rule.server.derived.DerivedVariableConfig.currentInputs(config)) {
+                for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(operand)) {
+                    if ("FUNCTION".equals(reference.getRefType())) continue;
+                    Map<String, Object> dependency = findMetaById(reference.getRefId(), reference.getRefType(), varMetaMap);
+                    if (dependency == null) throw new IllegalArgumentException("衍生上游字段不可用: " + reference.getRefType() + ":" + reference.getRefId());
+                    expandFieldRecursive(inputFieldFromMeta(dependency), varMetaMap, seen, visited, result);
+                }
+            }
+            visited.remove(visitKey);
             return;
         }
 

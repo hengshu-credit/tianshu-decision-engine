@@ -43,22 +43,21 @@ public class RuleScriptPreparationService implements ApplicationRunner {
 
     public QLExpressEngine.PreparedScript prepareArtifact(Long artifactId, Long definitionId, Long projectId) {
         ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = snapshots.load(artifactId, definitionId, projectId);
-        registerFunctions(snapshot.getFunctions());
-        return engine.prepare(snapshot.getCompiledScript(), constantNames(snapshot.getVariables()));
+        runtimeInvoker.register(engine.getRunner());
+        var bindings = functionRegistrar.prepareFunctions(snapshot.getFunctions(), engine.getRunner());
+        var prepared = engine.prepare(snapshot.getCompiledScript(), constantNames(snapshot.getVariables()));
+        functionRegistrar.validateFunctionBindings(snapshot.getCompiledScript(), bindings, engine.getRunner());
+        return prepared;
     }
 
     public QLExpressEngine.PreparedScript prepareProject(String script, Long projectId) {
-        registerFunctions(functionService.listByProject(projectId));
+        runtimeInvoker.register(engine.getRunner());
+        var bindings = functionRegistrar.prepareFunctions(functionService.listByProject(projectId), engine.getRunner());
         List<RuleVariable> variables = projectId != null && projectId > 0
                 ? variableService.listByProject(projectId, null) : variableService.listGlobalOnly();
-        return engine.prepare(script, constantNames(variables));
-    }
-
-    private void registerFunctions(List<RuleFunction> functions) {
-        functionRegistrar.registerJavaFunctions(functions, engine.getRunner());
-        functionRegistrar.registerBeanFunctions(functions, engine.getRunner());
-        functionRegistrar.registerServerFunctions(engine.getRunner());
-        runtimeInvoker.register(engine.getRunner());
+        var prepared = engine.prepare(script, constantNames(variables));
+        functionRegistrar.validateFunctionBindings(script, bindings, engine.getRunner());
+        return prepared;
     }
 
     static Set<String> constantNames(List<RuleVariable> variables) {
@@ -93,12 +92,18 @@ public class RuleScriptPreparationService implements ApplicationRunner {
                     .eq(RuleVersionBinding::getDefinitionId, published.getDefinitionId())
                     .eq(RuleVersionBinding::getStatus, 1))) {
                 if (java.util.Objects.equals(binding.getVersionNo(), published.getVersion())) continue;
-                RuleDefinitionVersion version = versionMapper.selectById(binding.getSnapshotId());
-                if (version == null || version.getArtifactId() == null || version.getRevisionId() == null) {
-                    log.info("Skipping non-executable legacy binding {} without an artifact", binding.getId());
-                    continue;
+                try {
+                    RuleDefinitionVersion version = versionMapper.selectById(binding.getSnapshotId());
+                    if (version == null || version.getArtifactId() == null || version.getRevisionId() == null) {
+                        log.info("Skipping non-executable legacy binding {} without an artifact", binding.getId());
+                        continue;
+                    }
+                    if (warm(versionService.resolvePublished(published, binding.getId()))) count++; else failed++;
+                } catch (RuntimeException invalid) {
+                    failed++;
+                    log.error("QLExpress warmup rejected rule id={} binding={} version={}: {}",
+                            published.getDefinitionId(), binding.getId(), binding.getVersionNo(), invalid.getMessage());
                 }
-                if (warm(versionService.resolvePublished(published, binding.getId()))) count++; else failed++;
             }
         }
         log.info("QLExpress prepared {} active rule versions before readiness; {} rejected", count, failed);

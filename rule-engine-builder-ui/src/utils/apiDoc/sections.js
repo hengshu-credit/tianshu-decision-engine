@@ -170,7 +170,7 @@ export function renderRuleEndpoint(rule, authentications, active = false) {
     <div class="endpoint-head"><span class="method">POST</span><code class="path">${escapeHtml(path)}</code><span class="badge">${escapeHtml(rule.ruleName || rule.ruleCode)}</span></div>
     <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>
     <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>按“认证鉴权”页当前 Tab 传递</td></tr></tbody></table></div>
-    ${renderFields('请求体 Body', [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, ...(rule.requestFields || [])])}
+    ${renderFields('请求体 Body', [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])])}
     <h3>参数结构</h3><pre><code>${escapeHtml(body)}</code></pre>
     <h3>响应头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr></tbody></table></div>
     ${renderFields('响应体 Body', responseFields)}

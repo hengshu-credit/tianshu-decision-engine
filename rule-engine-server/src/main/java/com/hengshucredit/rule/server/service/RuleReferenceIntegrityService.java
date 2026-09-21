@@ -34,6 +34,9 @@ public class RuleReferenceIntegrityService {
     private RuleVariableService variableService;
 
     @Resource
+    private RuleFunctionService functionService;
+
+    @Resource
     private RuleFieldAnalyzer fieldAnalyzer;
 
     public AuditReport scan(Long definitionId) {
@@ -60,7 +63,7 @@ public class RuleReferenceIntegrityService {
     }
 
     public AuditReport audit(Long definitionId, Long projectId, String modelJson) {
-        Map<String, String> validRefs = variableService.buildRefScriptNameMap(projectId);
+        Map<String, String> validRefs = referenceCatalog(projectId);
         return auditWithCatalog(definitionId, modelJson, validRefs);
     }
 
@@ -75,10 +78,18 @@ public class RuleReferenceIntegrityService {
         Map<Long, Map<String, String>> catalogs = new LinkedHashMap<>();
         List<AuditReport> reports = new ArrayList<>();
         for (RuleDefinition definition : definitions) {
-            Map<String, String> catalog = catalogs.computeIfAbsent(definition.getProjectId(), variableService::buildRefScriptNameMap);
+            Map<String, String> catalog = catalogs.computeIfAbsent(definition.getProjectId(), this::referenceCatalog);
             reports.add(auditWithCatalog(definition.getId(), models.get(definition.getId()), catalog));
         }
         return reports;
+    }
+
+    private Map<String, String> referenceCatalog(Long projectId) {
+        Map<String, String> catalog = new LinkedHashMap<>(variableService.buildRefScriptNameMap(projectId));
+        if (functionService != null) {
+            functionService.buildFunctionCodeMap(projectId).forEach((id, code) -> catalog.put("FUNCTION:" + id, code));
+        }
+        return catalog;
     }
 
     private AuditReport auditWithCatalog(Long definitionId, String modelJson, Map<String, String> validRefs) {

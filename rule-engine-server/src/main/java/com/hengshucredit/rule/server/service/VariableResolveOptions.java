@@ -21,6 +21,9 @@ public class VariableResolveOptions {
     private Map<String, Map<String, Object>> sourceStates = new LinkedHashMap<>();
     /** 本次执行使用的冻结变量路径；null 表示尚未装载，不得将空快照回退为主表。 */
     private Map<String, String> variableReferencePaths;
+    /** 衍生表达式使用的 ID 路径与函数快照，历史侧字段不参与本次请求的上游计算。 */
+    private Map<String, String> derivedReferencePaths;
+    private Map<Long, com.hengshucredit.rule.model.entity.RuleFunction> derivedFunctions;
     private boolean captureDatabasePreview;
     private java.util.List<Map<String, Object>> databasePreviewRows;
 

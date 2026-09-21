@@ -421,7 +421,18 @@ public class ActionDataCompiler {
         if (empty(code) || empty(resolvedTarget)) {
             return code;
         }
-        return code + "\n" + pad(indent) + "setRuntimeValue("
+        StringBuilder containers = new StringBuilder();
+        if (resolvedTarget.matches("[\\p{L}_$][\\p{L}\\p{N}_$]*(\\.[\\p{L}_$][\\p{L}\\p{N}_$]*)+")) {
+            for (int dot = resolvedTarget.indexOf('.'); dot >= 0; dot = resolvedTarget.indexOf('.', dot + 1)) {
+                String parent = resolvedTarget.substring(0, dot);
+                containers.append(pad(indent)).append("if (").append(parent).append(" == null) {\n")
+                        .append(pad(indent + 1)).append(parent).append(" = jsonParse(\"{}\");\n")
+                        .append(pad(indent + 1)).append("setRuntimeValue(").append(quoteString(parent))
+                        .append(", ").append(parent).append(");\n")
+                        .append(pad(indent)).append("}\n");
+            }
+        }
+        return containers + code + "\n" + pad(indent) + "setRuntimeValue("
                 + quoteString(resolvedTarget) + ", " + resolvedTarget + ")";
     }
 

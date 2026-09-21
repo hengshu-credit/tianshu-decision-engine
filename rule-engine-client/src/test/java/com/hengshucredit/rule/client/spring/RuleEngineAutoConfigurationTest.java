@@ -12,6 +12,7 @@ import java.util.Enumeration;
 import java.util.stream.Collectors;
 
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 public class RuleEngineAutoConfigurationTest {
 
@@ -30,6 +31,14 @@ public class RuleEngineAutoConfigurationTest {
         }
 
         assertTrue("RuleEngineAutoConfiguration is not registered for Spring Boot 3", registered);
+    }
+
+    @Test
+    public void disabledLoggingDoesNotUseExternalReporter() {
+        RuleEngineClientProperties properties = new RuleEngineClientProperties();
+        properties.setLogReportEnabled(false);
+
+        assertFalse(RuleEngineAutoConfiguration.shouldUseExternalReporter(properties));
     }
 
     @Test

@@ -39,6 +39,57 @@ import static org.junit.Assert.fail;
 public class RuleRuntimeInvokerTest {
 
     @Test
+    public void frozenChildFunctionDoesNotReplaceParentAndFailureRestoresParent() {
+        RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
+        QLExpressEngine engine = new QLExpressEngine();
+        FunctionRegistrar registrar = new FunctionRegistrar();
+        RuleFunction first = new RuleFunction();
+        first.setId(77L); first.setFuncCode("versioned"); first.setImplType("JAVA");
+        first.setImplClass(FunctionRegistrarTest.VersionOne.class.getName()); first.setImplMethod("value");
+        RuleFunction second = new RuleFunction();
+        second.setId(77L); second.setFuncCode("versioned"); second.setImplType("JAVA");
+        second.setImplClass(FunctionRegistrarTest.VersionTwo.class.getName()); second.setImplMethod("value");
+        var snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        snapshot.getFunctions().add(second);
+        ReflectionTestUtils.setField(snapshot, "compiledScript", "return versioned();");
+        ReflectionTestUtils.setField(snapshot, "modelJson", "{\"script\":\"return versioned();\"}");
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(2L); published.setArtifactId(701L); published.setRuleCode("CHILD");
+        published.setProjectCode("target_project"); published.setModelType("SCRIPT");
+        ReflectionTestUtils.setField(invoker, "publishedMapper", Proxy.newProxyInstance(
+                RulePublishedMapper.class.getClassLoader(), new Class<?>[]{RulePublishedMapper.class},
+                (proxy, method, args) -> "selectOne".equals(method.getName()) ? published : null));
+        ReflectionTestUtils.setField(invoker, "definitionService", new ContextDefinitionService());
+        ReflectionTestUtils.setField(invoker, "projectService", new GlobalProjectService());
+        ReflectionTestUtils.setField(invoker, "variableSourceResolver", new VariableSourceResolver());
+        ReflectionTestUtils.setField(invoker, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(invoker, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(invoker, "functionRegistrar", registrar);
+        ReflectionTestUtils.setField(invoker, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public List<RuleDefinitionInputField> extractDirectModelInputFields(String json, String type) {
+                throw new AssertionError("frozen child must not analyze live fields");
+            }
+        });
+        ReflectionTestUtils.setField(invoker, "artifactRuntimeSnapshotService", new ArtifactRuntimeSnapshotService() {
+            @Override public RuntimeSnapshot load(Long artifact, Long definition, Long project) { return snapshot; }
+        });
+        invoker.register(engine.getRunner());
+        Map<String, Object> values = new LinkedHashMap<>();
+        invoker.enter("PARENT", 9L, "target_project", values, false);
+        try (var ignored = invoker.currentSession().getRequestContext().bindFunctions(
+                registrar.prepareFunctions(Collections.singletonList(first), engine.getRunner()))) {
+            RuleResult result = engine.execute("return versioned() + executeRuleById('2') + versioned();", values);
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(4, result.getResult());
+            ReflectionTestUtils.setField(snapshot, "compiledScript", "return missingChildFunction();");
+            org.junit.Assert.assertThrows(IllegalStateException.class, () -> invoker.executeRuleById("2"));
+            assertEquals(1, engine.execute("return versioned();", values).getResult());
+        } finally {
+            invoker.exit();
+        }
+    }
+
+    @Test
     public void childRuleAlsoAssemblesMappedDataObjectField() {
         RuleRuntimeInvoker invoker = new RuleRuntimeInvoker();
         QLExpressEngine engine = new QLExpressEngine();

@@ -70,6 +70,7 @@
 <script>
 import { Close as ElIconClose } from '@element-plus/icons-vue'
 import { $emit } from '../../utils/gogocodeTransfer'
+import { SIDEBAR_MENUS } from '@/layout/layoutState'
 const TAB_TITLE_LABELS = {
   '外数数据源详情': '外数',
   '外数 API 详情': 'API',
@@ -116,7 +117,9 @@ export default {
   computed: {
     displayTabs() {
       return this.tabs.map(tab => {
-        const title = TAB_TITLE_LABELS[tab.title] || tab.title.replace(/(?:管理|详情|设计器|编辑器)$/, '').trim()
+        const path = tab.path || String(tab.fullPath || '').split('?')[0]
+        const topLevel = SIDEBAR_MENUS.some(menu => menu.index === path)
+        const title = topLevel ? tab.title : TAB_TITLE_LABELS[tab.title] || tab.title.replace(/(?:管理|详情|设计器|编辑器)$/, '').trim()
         return {
           ...tab,
           title: tab.detailTitle ? `${title} · ${tab.detailTitle}` : title,

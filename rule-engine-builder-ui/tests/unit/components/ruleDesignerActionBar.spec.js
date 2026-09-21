@@ -26,17 +26,19 @@ describe('RuleDesignerActionBar', () => {
     wrapper.unmount()
   })
 
-  test('成功不展开报告，提醒可关闭，再次编译的报告仍可弹出', async () => {
+  test('非阻断提醒可主动查看，不自动弹窗打断发布', async () => {
     const wrapper = mountWithReport()
     await wrapper.setProps({ report: { valid: true, errors: [], warnings: [] } })
     expect(wrapper.find('.validation-report').exists()).toBe(false)
     const warning = { valid: true, warnings: [{ message: '依赖版本已更新' }] }
     await wrapper.setProps({ report: warning })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.get('[data-action="show-report"]').trigger('click')
     expect(wrapper.get('[role="dialog"]').text()).toContain('依赖版本已更新')
     await wrapper.get('[data-action="close-report"]').trigger('click')
     expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     await wrapper.setProps({ report: { ...warning } })
-    expect(wrapper.find('[role="dialog"]').exists()).toBe(true)
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -47,6 +49,15 @@ describe('RuleDesignerActionBar', () => {
     await wrapper.get('[data-action="compile"]').trigger('click')
     expect(wrapper.emitted('compile')).toHaveLength(1)
     expect(wrapper.emitted('save')).toBeUndefined()
+  })
+
+  test('暂存成功的诊断保留主动入口，不弹窗打断继续配置', async () => {
+    const wrapper = mountWithReport()
+    await wrapper.setProps({ report: { valid: false, autoOpen: false, errors: [{ message: '缺少结束节点' }], warnings: [] } })
+    expect(wrapper.find('[role="dialog"]').exists()).toBe(false)
+    await wrapper.get('[data-action="show-report"]').trigger('click')
+    expect(wrapper.get('[role="dialog"]').text()).toContain('缺少结束节点')
+    wrapper.unmount()
   })
 
   test('进行中禁止重复操作，无执行权限时测试禁用', async () => {

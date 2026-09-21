@@ -81,6 +81,38 @@ public class ProjectAuthServiceTest {
     }
 
     @Test
+    public void defaultApiKeyHeaderWorksCaseInsensitivelyAndStillChecksSecretAndLocation() {
+        RuleProject project = project(8L, "fraud", null);
+        service.projects.add(project);
+        service.auths.add(auth(12L, project.getId(), "API_DEFAULT", ProjectAuthType.API_KEY,
+                null, "api-secret", "{\"placement\":\"HEADER\",\"parameterName\":\"X-Rule-Api-Key\"}"));
+        MockHttpServletRequest valid = new MockHttpServletRequest();
+        valid.addHeader("x-rule-api-key", "api-secret");
+        assertNotNull(service.authenticate(valid));
+        assertEquals("API_DEFAULT", service.authenticate(valid).getAuthCode());
+
+        MockHttpServletRequest wrongSecret = new MockHttpServletRequest();
+        wrongSecret.addHeader("X-Rule-Api-Key", "wrong");
+        assertNull(service.authenticate(wrongSecret));
+        MockHttpServletRequest wrongLocation = new MockHttpServletRequest();
+        wrongLocation.setParameter("X-Rule-Api-Key", "api-secret");
+        assertNull(service.authenticate(wrongLocation));
+    }
+
+    @Test
+    public void reservedProtocolHeadersCannotAuthenticateAsApiKey() {
+        service.projects.add(project(8L, "fraud", null));
+        for (String header : List.of("X-Rule-Token", "X-Rule-Access-Key", "X-Rule-Signature", "X-Rule-Nonce")) {
+            service.auths.clear();
+            service.auths.add(auth(12L, 8L, "API_RESERVED", ProjectAuthType.API_KEY,
+                    null, "api-secret", JSON.toJSONString(Map.of("placement", "HEADER", "parameterName", header))));
+            MockHttpServletRequest request = new MockHttpServletRequest();
+            request.addHeader(header, "api-secret");
+            assertNull(service.authenticate(request));
+        }
+    }
+
+    @Test
     public void legacyHeaderAndQueryParameterRemainCompatible() {
         RuleProject project = project(9L, "legacy", null);
         service.projects.add(project);

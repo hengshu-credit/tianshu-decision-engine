@@ -787,7 +787,8 @@ public class ProjectAuthService {
                 || name.regionMatches(true, 0, "X-Forwarded-", 0, 12)) {
             return false;
         }
-        return !name.regionMatches(true, 0, "X-Rule-", 0, 7);
+        return "X-Rule-Api-Key".equalsIgnoreCase(name)
+                || !name.regionMatches(true, 0, "X-Rule-", 0, 7);
     }
 
     private void addCredential(List<PresentedCredential> credentials, String placement,

@@ -4,6 +4,9 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
+import com.alibaba.qlexpress4.runtime.function.CustomFunction;
+import com.alibaba.qlexpress4.runtime.function.QMethodFunction;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.server.functions.RuleListFunctions;
 import org.slf4j.Logger;
@@ -16,14 +19,16 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.Objects;
 
 /**
  * 函数注册器 —— 将 rule_function 表中的自定义函数注册到 QLExpress 引擎。
  *
  * <ul>
  *   <li>SCRIPT 类型：包装为 QLExpress function 定义，拼接在编译脚本前面</li>
- *   <li>JAVA 类型：反射实例化 Java 类，通过 addFunctionOfServiceMethod 注册</li>
- *   <li>BEAN 类型：从 Spring 容器获取 Bean，通过 addFunctionOfServiceMethod 注册</li>
+ *   <li>JAVA / BEAN 类型：Runner 注册稳定分发器，具体实现由请求中的冻结函数集选择</li>
  * </ul>
  */
 @Service
@@ -39,6 +44,9 @@ public class FunctionRegistrar {
 
     /** 缓存 JAVA 类型的实例，避免重复反射创建 */
     private final Map<String, Object> javaInstanceCache = new ConcurrentHashMap<>();
+    private final Map<FunctionKey, CustomFunction> targets = new LinkedHashMap<>(16, 0.75f, true);
+    private static final int MAX_FUNCTION_TARGETS = 1024;
+    private static final Map<String, RuleFunction> BUILTINS = builtinDefinitions();
 
     /**
      * 将 SCRIPT 类型函数包装为 QLExpress function 定义脚本，用于拼接在编译脚本之前。
@@ -72,36 +80,101 @@ public class FunctionRegistrar {
         return sb.toString();
     }
 
-    /**
-     * 将 JAVA 类型函数注册到 Express4Runner。
-     * 通过反射实例化 implClass 指定的类，将 implMethod 方法注册为 QL 函数。
-     */
-    public void registerJavaFunctions(List<RuleFunction> functions, Express4Runner runner) {
-        if (functions == null) return;
-        for (RuleFunction func : functions) {
-            if (!"JAVA".equals(func.getImplType())) continue;
-            try {
-                String className = func.getImplClass();
-                if (className == null || className.trim().isEmpty()) {
-                    log.warn("[FunctionRegistrar] JAVA 函数 {} 未配置 implClass", func.getFuncCode());
-                    continue;
-                }
-                String methodName = resolveMethodName(func);
-                Object instance = javaInstanceCache.computeIfAbsent(className, k -> {
-                    try {
-                        Class<?> clazz = loadFunctionClass(k);
-                        return clazz.getDeclaredConstructor().newInstance();
-                    } catch (Exception e) {
-                        throw new RuntimeException("无法实例化 Java 类: " + k, e);
-                    }
-                });
-                Class<?>[] paramTypes = resolveParamTypes(func.getParamsJson());
-                runner.addFunctionOfServiceMethod(func.getFuncCode(), instance, methodName, paramTypes);
-                log.debug("[FunctionRegistrar] 注册 JAVA 函数: {} -> {}.{}", func.getFuncCode(), className, methodName);
-            } catch (Exception e) {
-                log.error("[FunctionRegistrar] 注册 JAVA 函数 {} 失败: {}", func.getFuncCode(), e.getMessage(), e);
+    /** Prepare without executing user code or installing request state. Safe for startup and publication. */
+    public Map<String, CustomFunction> prepareFunctions(List<RuleFunction> functions, Express4Runner runner) {
+        registerServerFunctions(runner);
+        Map<String, RuleFunction> selected = new LinkedHashMap<>();
+        for (RuleFunction function : functions == null ? Collections.<RuleFunction>emptyList() : functions) {
+            if (function == null) continue;
+            RuleFunction previous = selected.get(function.getFuncCode());
+            if (previous == null || "GLOBAL".equals(previous.getScope())) {
+                selected.put(function.getFuncCode(), function);
+            } else if (!"GLOBAL".equals(function.getScope()) && !Objects.equals(previous.getId(), function.getId())) {
+                throw new IllegalStateException("同一函数编码关联多个 ID: " + function.getFuncCode());
             }
         }
+        Map<String, CustomFunction> bindings = new LinkedHashMap<>();
+        for (RuleFunction function : selected.values()) {
+            if (!"JAVA".equals(function.getImplType()) && !"BEAN".equals(function.getImplType())) continue;
+            String code = function.getFuncCode();
+            synchronized (runner) {
+                CustomFunction existing = runner.getFunction(code);
+                if (existing != null && !(existing instanceof RequestFunction)) {
+                    if (isBuiltin(function)) continue;
+                    throw new IllegalStateException("函数编码与内置或外部注册冲突: " + code);
+                }
+                if (existing == null && !runner.addFunction(code, new RequestFunction(code))) {
+                    throw new IllegalStateException("注册函数分发器失败: " + code);
+                }
+            }
+            bindings.put(code, prepareTarget(function));
+        }
+        return Map.copyOf(bindings);
+    }
+
+    private CustomFunction prepareTarget(RuleFunction function) {
+        FunctionKey key = new FunctionKey(function.getId(), function.getImplType(), function.getImplClass(),
+                function.getImplBeanName(), resolveMethodName(function), function.getParamsJson());
+        synchronized (targets) {
+            CustomFunction cached = targets.get(key);
+            if (cached != null) return cached;
+            try {
+                Object instance;
+                if ("JAVA".equals(key.type())) {
+                    instance = javaInstanceCache.computeIfAbsent(key.className(), name -> {
+                        try { return loadFunctionClass(name).getDeclaredConstructor().newInstance(); }
+                        catch (Exception e) { throw new IllegalStateException("无法实例化 Java 类: " + name, e); }
+                    });
+                } else {
+                    instance = applicationContext.getBean(key.beanName());
+                }
+                CustomFunction target = new QMethodFunction(instance,
+                        instance.getClass().getMethod(key.method(), resolveParamTypes(key.params())));
+                if (targets.size() >= MAX_FUNCTION_TARGETS) targets.remove(targets.keySet().iterator().next());
+                targets.put(key, target);
+                return target;
+            } catch (Exception e) {
+                throw new IllegalStateException("准备函数失败: " + function.getFuncCode(), e);
+            }
+        }
+    }
+
+    /** Static dependency check for publication/warmup, never for each execution. */
+    public void validateFunctionBindings(String script, Map<String, CustomFunction> bindings, Express4Runner runner) {
+        for (String code : runner.getOutFunctions(script)) {
+            CustomFunction registered = runner.getFunction(code);
+            if (registered == null || registered instanceof RequestFunction && !bindings.containsKey(code)) {
+                throw new IllegalStateException("函数未绑定到当前规则制品，请从函数选择器插入并重新保存: " + code);
+            }
+        }
+    }
+
+    private record FunctionKey(Long id, String type, String className, String beanName, String method, String params) { }
+
+    private static final class RequestFunction implements CustomFunction {
+        private final String code;
+        private RequestFunction(String code) { this.code = code; }
+        @Override
+        public Object call(com.alibaba.qlexpress4.runtime.QContext context,
+                           com.alibaba.qlexpress4.runtime.Parameters parameters) throws Throwable {
+            CustomFunction target = RuntimeContextBridge.currentContext().function(code);
+            if (target == null) throw new IllegalStateException("当前规则未绑定函数: " + code);
+            return target.call(context, parameters);
+        }
+    }
+
+    private static Map<String, RuleFunction> builtinDefinitions() {
+        Map<String, RuleFunction> definitions = new LinkedHashMap<>();
+        for (RuleFunction function : BuiltinFunctionCatalog.definitions()) definitions.put(function.getFuncCode(), function);
+        return definitions;
+    }
+
+    private boolean isBuiltin(RuleFunction function) {
+        RuleFunction builtin = BUILTINS.get(function.getFuncCode());
+        return builtin != null && Objects.equals(builtin.getImplType(), function.getImplType())
+                && Objects.equals(builtin.getImplClass(), function.getImplClass())
+                && Objects.equals(builtin.getImplBeanName(), function.getImplBeanName())
+                && Objects.equals(resolveMethodName(builtin), resolveMethodName(function));
     }
 
     private Class<?> loadFunctionClass(String className) throws ClassNotFoundException {
@@ -119,31 +192,6 @@ public class FunctionRegistrar {
                 }
             }
             throw e;
-        }
-    }
-
-    /**
-     * 将 BEAN 类型函数注册到 Express4Runner。
-     * 从 Spring ApplicationContext 获取 Bean，将指定方法注册为 QL 函数。
-     */
-    public void registerBeanFunctions(List<RuleFunction> functions, Express4Runner runner) {
-        if (functions == null) return;
-        for (RuleFunction func : functions) {
-            if (!"BEAN".equals(func.getImplType())) continue;
-            try {
-                String beanName = func.getImplBeanName();
-                if (beanName == null || beanName.trim().isEmpty()) {
-                    log.warn("[FunctionRegistrar] BEAN 函数 {} 未配置 implBeanName", func.getFuncCode());
-                    continue;
-                }
-                String methodName = resolveMethodName(func);
-                Object bean = applicationContext.getBean(beanName);
-                Class<?>[] paramTypes = resolveParamTypes(func.getParamsJson());
-                runner.addFunctionOfServiceMethod(func.getFuncCode(), bean, methodName, paramTypes);
-                log.debug("[FunctionRegistrar] 注册 BEAN 函数: {} -> {}.{}", func.getFuncCode(), beanName, methodName);
-            } catch (Exception e) {
-                log.error("[FunctionRegistrar] 注册 BEAN 函数 {} 失败: {}", func.getFuncCode(), e.getMessage(), e);
-            }
         }
     }
 

@@ -57,6 +57,7 @@
             <el-option label="接口调用" value="API" />
             <el-option label="名单查询" value="LIST" />
             <el-option label="计算得出" value="COMPUTED" />
+            <el-option label="衍生变量" value="DERIVED" />
             <el-option label="常量" value="CONSTANT" />
           </el-select>
           <el-select
@@ -1191,10 +1192,12 @@
     <!-- Create/Edit Variable Dialog -->
     <el-dialog
       :title="variableDialogTitle"
+      class="resizable-config-dialog"
       v-model="dialogVisible"
       :width="form.varSource === 'LIST' ? '920px' : '820px'"
       :close-on-click-modal="false"
     >
+      <dialog-resize-handle :visible="dialogVisible" :min-width="720" :min-height="520" />
       <section
         v-if="!isObjectField"
         class="variable-config-guide"
@@ -1325,6 +1328,14 @@
             <span v-else>已自动过滤停用及其他项目的来源。</span>
           </div>
         </el-form-item>
+        <derived-variable-editor
+          v-if="!isObjectField && form.varSource === 'DERIVED'"
+          v-model="form.derivedConfig"
+          :vars="listReferenceOptions"
+          :functions="listFunctionOptions"
+          :result-type="form.varType"
+          @type-change="form.varType = $event"
+        />
         <template v-if="!isObjectField && form.varSource === 'API'">
           <el-form-item label="接口配置">
             <el-select
@@ -1548,7 +1559,7 @@
           </el-form-item>
         </template>
         <section
-          v-if="!isObjectField && ['API', 'DB', 'LIST'].includes(form.varSource)"
+          v-if="!isObjectField && ['API', 'DB', 'LIST', 'DERIVED'].includes(form.varSource)"
           class="draft-preview-panel"
         >
           <div class="draft-preview-panel__heading">
@@ -1556,6 +1567,7 @@
               <strong>保存前验证取值</strong>
               <span>输入一组业务样例，确认来源配置能得到预期结果。</span>
             </div>
+            <el-button v-if="form.varSource === 'DERIVED'" @click="generateDerivedSample">生成上游入参</el-button>
             <el-button
               type="primary"
               :loading="draftPreviewing"
@@ -1578,26 +1590,23 @@
             show-icon
             :title="draftPreviewError"
           />
+          <div v-if="form.varSource === 'DB'" class="db-sample-fields">
+            <label v-for="field in dbSampleFields" :key="field.key">
+              {{ field.label }}
+              <el-input :model-value="dbSampleValue(field)" :aria-label="'样例 ' + field.label" @update:model-value="setDbSampleValue(field, $event)" />
+            </label>
+            <p v-if="!dbSampleFields.length" class="field-help">固定值参数可直接预览；业务字段参数选择后可在这里填写样例。</p>
+          </div>
           <div class="draft-preview-panel__body">
-            <div>
-              <div v-if="form.varSource === 'DB'" class="db-sample-fields">
-                <label v-for="field in dbSampleFields" :key="field.key">
-                  {{ field.label }}
-                  <el-input :model-value="dbSampleValue(field)" :aria-label="'样例 ' + field.label" @update:model-value="setDbSampleValue(field, $event)" />
-                </label>
-                <p v-if="!dbSampleFields.length" class="field-help">固定值参数可直接预览；业务字段参数选择后可在这里填写样例。</p>
-              </div>
-              <details :open="form.varSource !== 'DB'">
-                <summary>样例参数 JSON</summary>
+            <div class="draft-preview-column">
               <label>样例参数（JSON 对象）</label>
               <monaco-editor
                 v-model:value="draftPreviewParamsText"
                 language="json"
                 height="120px"
               />
-              </details>
             </div>
-            <div>
+            <div class="draft-preview-column">
               <label>预览结果</label>
               <pre v-if="draftPreviewResult !== null" class="draft-preview-result">{{
                 formatJson(draftPreviewResult)
@@ -2509,6 +2518,8 @@
 
 <script>
 import SqlParameterEditor from '@/components/common/SqlParameterEditor.vue'
+import DerivedVariableEditor from './components/DerivedVariableEditor.vue'
+import { createDerivedConfig, validateDerivedConfig, derivedCurrentInputs } from '@/utils/derivedVariable'
 import { validateReadOnlyQuery } from '@/utils/sqlQuery'
 import { parseSqlParameters, validateSqlParameters } from '@/utils/sqlParameters'
 import { markRaw } from 'vue'
@@ -2612,6 +2623,7 @@ import MonacoEditor from '@/components/MonacoEditor'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
+import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
@@ -2857,6 +2869,7 @@ export default {
     }
   },
   components: {
+    DerivedVariableEditor,
     SqlParameterEditor,
     MonacoEditor,
     OperandPicker,
@@ -2865,6 +2878,7 @@ export default {
     VariableSourceSelector,
     VariableToolbarActions,
     VariableImportHelp,
+    DialogResizeHandle,
     ElIconInfo,
     ElIconSuccess,
   },
@@ -3077,8 +3091,10 @@ export default {
                 allowedKinds: this.listQueryOperandKinds,
               }).length === 0
           )
+      } else if (this.form.varSource === 'DERIVED') {
+        sourced = !validateDerivedConfig(this.form.derivedConfig)
       }
-      const requiresPreview = ['API', 'DB', 'LIST'].includes(
+      const requiresPreview = ['API', 'DB', 'LIST', 'DERIVED'].includes(
         this.form.varSource
       )
       const sourceReady = defined && sourced
@@ -3214,6 +3230,7 @@ export default {
         varType: 'STRING',
         varSource: 'INPUT',
         sourceConfig: '',
+        derivedConfig: createDerivedConfig(),
         apiConfigId: '',
         apiParamMapping: '{}',
         apiResultPath: 'body',
@@ -3264,13 +3281,13 @@ export default {
       if (source === 'LIST')
         this.onListReturnModeChange(this.form.listReturnMode)
       await this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB'].includes(source)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
     },
     async onVariableProjectChange() {
       this.listReferenceProjectId = null
       this.resetDraftPreview()
       await this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB'].includes(this.form.varSource)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) await this.loadListExpressionOptions()
     },
     resetDraftPreview() {
       this.draftPreviewParamsText = '{}'
@@ -3408,6 +3425,17 @@ export default {
         }
       }
     },
+    async generateDerivedSample() {
+      const payload = this.buildVariablePayload()
+      if (!payload) return
+      try {
+        const response = await request.post('/rule/variable/derived-schema', payload)
+        const schema = normalizeTestSchema(response)
+        this.draftPreviewParamsText = this.formatJson(schema.sampleParams)
+      } catch (error) {
+        if (!error.requestErrorNotified) this.$message.error(error.message || '上游入参生成失败')
+      }
+    },
     async loadVariableSourceOptions(source) {
       if (source === 'API' && !this.sourceOptionsLoaded.API) {
         try {
@@ -3448,7 +3476,7 @@ export default {
           this.listLibraryOptions = []
         }
       }
-      if (['LIST', 'DB'].includes(source)) await this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'DERIVED'].includes(source)) await this.loadListExpressionOptions()
     },
     normalizeSourceList(res) {
       const data = res && res.data !== undefined ? res.data : res
@@ -3504,7 +3532,9 @@ export default {
     },
     applySourceConfigToForm() {
       const config = this.parseJsonSafe(this.form.sourceConfig, {})
-      if (this.form.varSource === 'API') {
+      if (this.form.varSource === 'DERIVED') {
+        this.form.derivedConfig = { ...createDerivedConfig(), ...config }
+      } else if (this.form.varSource === 'API') {
         this.form.apiConfigId = config.apiConfigId || ''
         this.form.apiParamMapping = this.stringifyConfig(
           config.paramMapping || {}
@@ -3557,7 +3587,11 @@ export default {
     },
     buildVariablePayload() {
       const payload = { ...this.form }
-      if (payload.varSource === 'API') {
+      if (payload.varSource === 'DERIVED') {
+        const error = validateDerivedConfig(payload.derivedConfig)
+        if (error) { this.$message.warning(error); return null }
+        payload.sourceConfig = JSON.stringify(payload.derivedConfig)
+      } else if (payload.varSource === 'API') {
         if (!payload.apiConfigId) {
           this.$message.warning('请选择接口配置')
           return null
@@ -3647,6 +3681,7 @@ export default {
     },
     removeSourceFormFields(payload) {
       const sourceFormFields = [
+        'derivedConfig',
         'apiConfigId',
         'apiParamMapping',
         'apiResultPath',
@@ -4690,7 +4725,7 @@ export default {
       this.resetDraftPreview()
       this.draftPreviewParamsText = this.buildTestParamTemplate(row)
       this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB'].includes(this.form.varSource)) this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions()
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
@@ -4807,7 +4842,7 @@ export default {
       }
     },
     isTestableSource(row) {
-      return row && ['API', 'DB', 'LIST'].indexOf(row.varSource) >= 0
+      return row && ['API', 'DB', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
     },
     async handleViewSourceDetail(row) {
       await this.loadVariableSourceOptions(row && row.varSource)
@@ -4817,7 +4852,13 @@ export default {
     sourceInputFields(row) {
       const config = this.parseJson(row && row.sourceConfig, {})
       const rows = []
-      if (row && row.varSource === 'API') {
+      if (row && row.varSource === 'DERIVED') {
+        derivedCurrentInputs(config).forEach((operand, index) => {
+          const refs = collectOperandReferences(operand)
+          rows.push({ field: refs.map(ref => ref.code || ref.path).join(', ') || '无外部字段依赖',
+            usage: '衍生上游 #' + (index + 1), expression: operandDisplay(operand) })
+        })
+      } else if (row && row.varSource === 'API') {
         const mapping =
           config.paramMapping || this.apiInputConfig(config.apiConfigId)
         Object.keys(mapping).forEach((key) => {
@@ -5012,13 +5053,16 @@ export default {
     sourceBusinessTitle(row) {
       if (!row) return '取数配置'
       return (
-        { API: '接口取数', DB: '数据库查询', LIST: '名单匹配' }[
+        { API: '接口取数', DB: '数据库查询', LIST: '名单匹配', DERIVED: '衍生变量' }[
           row.varSource
         ] || '取数配置'
       )
     },
     sourceBusinessDesc(row) {
       const config = this.parseJson(row && row.sourceConfig, {})
+      if (row && row.varSource === 'DERIVED') {
+        return config.mode === 'HISTORY' ? '基于引擎内部正式进件，按时间窗口、关联路径、筛选条件计算统计值。' : '递归解析上游字段并执行配置好的表达式，调用方无需提供衍生结果。'
+      }
       if (row && row.varSource === 'API') {
         const api = this.apiOption(config.apiConfigId)
         return (
@@ -5451,6 +5495,7 @@ export default {
         {
           INPUT: '输入',
           COMPUTED: '计算',
+          DERIVED: '衍生',
           CONSTANT: '常量',
           DB: '数据库',
           API: '接口',
@@ -5461,6 +5506,7 @@ export default {
     sourceTagColor(s) {
       return {
         COMPUTED: 'warning',
+        DERIVED: 'warning',
         CONSTANT: 'success',
         DB: 'info',
         API: 'info',
@@ -5958,10 +6004,25 @@ export default {
   font-size: 12px;
   font-weight: 600;
 }
+.draft-preview-column {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.draft-preview-column > label {
+  flex: none;
+}
+.draft-preview-column :deep(.monaco-editor-container) {
+  box-sizing: border-box;
+  height: 120px;
+}
+.draft-preview-panel .db-sample-fields {
+  margin-top: 12px;
+}
 .draft-preview-result,
 .draft-preview-empty {
   box-sizing: border-box;
-  min-height: 120px;
+  height: 120px;
   margin: 0;
   padding: 10px;
   border: 1px solid var(--tianshu-border);
@@ -5969,7 +6030,6 @@ export default {
   background: var(--tianshu-bg-surface);
 }
 .draft-preview-result {
-  max-height: 220px;
   overflow: auto;
   color: var(--tianshu-text-primary);
   font-size: 12px;

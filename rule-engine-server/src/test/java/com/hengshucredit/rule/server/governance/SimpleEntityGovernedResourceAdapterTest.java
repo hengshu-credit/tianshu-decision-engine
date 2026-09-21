@@ -12,6 +12,17 @@ import java.util.Set;
 public class SimpleEntityGovernedResourceAdapterTest {
 
     @Test
+    public void scriptFunctionIdIsNotMisclassifiedAsVariableId() {
+        var adapter = adapter(new TestStore());
+        var snapshot = ResourceSnapshot.ofJson("{\"scriptVarRefs\":["
+                + "{\"varId\":161,\"refType\":\"FUNCTION\",\"refCode\":\"versioned\"}]}");
+        var dependencies = adapter.collectDependencies(snapshot);
+        Assert.assertEquals(1, dependencies.size());
+        Assert.assertEquals("FUNCTION", dependencies.get(0).targetResourceType());
+        Assert.assertEquals(Long.valueOf(161), dependencies.get(0).targetResourceId());
+    }
+
+    @Test
     public void deleteActionIsAppliedAsDisabledProjectionNotPhysicalDelete() {
         TestStore store = new TestStore();
         SampleResource current = new SampleResource();

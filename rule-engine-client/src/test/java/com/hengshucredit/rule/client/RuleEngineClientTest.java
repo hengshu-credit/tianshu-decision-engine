@@ -141,6 +141,76 @@ public class RuleEngineClientTest {
     }
 
     @Test
+    public void disabledLogReportingOverridesExternalReporterForMapAndPojo() throws Exception {
+        RecordingReporter reporter = new RecordingReporter();
+        RuleEngineClient client = RuleEngineClient.builder()
+                .connectionFactory(connectionFactory())
+                .projectId(1L)
+                .logReportEnabled(false)
+                .logReporter(reporter)
+                .build();
+        L1MemoryCache cache = (L1MemoryCache) getField(client, "l1Cache");
+        cache.put(rule("LOCAL", "SCRIPT", "1 + 1"));
+
+        for (Object params : Arrays.asList(new LinkedHashMap<>(), new Query())) {
+            RuleResult result = client.execute("LOCAL", params);
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(2, ((Number) result.getResult()).intValue());
+            assertNull("关闭日志时不能调用外部 reporter", reporter.logs);
+        }
+        client.close();
+    }
+
+    @Test
+    public void remoteExecutionForwardsTraceSettingForMapAndPojo() throws Exception {
+        com.sun.net.httpserver.HttpServer server = com.sun.net.httpserver.HttpServer.create(
+                new java.net.InetSocketAddress("127.0.0.1", 0), 0);
+        java.util.concurrent.atomic.AtomicReference<com.alibaba.fastjson.JSONObject> request =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        server.createContext("/api/rule/sync/execute/REMOTE", exchange -> {
+            request.set(com.alibaba.fastjson.JSON.parseObject(new String(
+                    exchange.getRequestBody().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8)));
+            byte[] response = "{\"code\":200,\"data\":{\"success\":true,\"result\":2}}"
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            for (boolean enabled : new boolean[]{false, true}) {
+                RuleEngineClient client = RuleEngineClient.builder()
+                        .connectionFactory(connectionFactory())
+                        .serverUrl("http://127.0.0.1:" + server.getAddress().getPort())
+                        .appName("business-service")
+                        .serverSideExecution(true)
+                        .traceEnabled(enabled)
+                        .logReportEnabled(false)
+                        .build();
+                try {
+                    RuleResult mapResult = client.execute("REMOTE", Collections.singletonMap("age", 18));
+                    assertTrue(mapResult.getErrorMessage(), mapResult.isSuccess());
+                    assertEquals(Boolean.valueOf(enabled), request.get().get("traceEnabled"));
+                    assertEquals("business-service", request.get().getString("clientAppName"));
+                    assertEquals(18, request.get().getJSONObject("params").getIntValue("age"));
+                    RuleResult pojoResult = client.execute("REMOTE", new Query());
+                    assertTrue(pojoResult.getErrorMessage(), pojoResult.isSuccess());
+                    assertEquals(Boolean.valueOf(enabled), request.get().get("traceEnabled"));
+                    assertEquals(18, request.get().getJSONObject("params").getIntValue("age"));
+                } finally {
+                    client.close();
+                }
+            }
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    public static class Query {
+        public int getAge() { return 18; }
+    }
+
+    @Test
     public void reporterFailureDoesNotChangeSuccessfulRuleResult() throws Exception {
         RuleEngineClient client = RuleEngineClient.builder()
                 .connectionFactory(connectionFactory())

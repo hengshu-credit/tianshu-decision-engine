@@ -61,6 +61,20 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('credit')
   })
 
+  test('包含 Java 服务接入、项目隔离和独立日志开关说明', () => {
+    const html = generateApiDocHtml(doc, { logoSvg: '<svg></svg>' })
+
+    expect(html).toContain('href="#java-integration"')
+    expect(html).toContain('业务端 → Java 服务 → 决策引擎')
+    expect(html).toContain('project-code: &quot;credit&quot;')
+    expect(html).toContain('trace-enabled: false')
+    expect(html).toContain('log-report-enabled: false')
+    expect(html).toContain('已关联的全局规则')
+    expect(html).toContain('服务端审计')
+    expect(html).toContain('ruleClient.execute(')
+    expect(html).toContain('traceEnabled')
+  })
+
   test('文档数据中的 script 闭合标签不会突破内联数据脚本', () => {
     const malicious = JSON.parse(JSON.stringify(doc))
     malicious.project.description = '</script><script>alert(1)</script>'

@@ -247,6 +247,7 @@ public class SimpleEntityGovernedResourceAdapter<T>
                 .toUpperCase(Locale.ROOT);
         return switch (type) {
             case "MODEL" -> "MODEL";
+            case "FUNCTION" -> "FUNCTION";
             case "DATA_OBJECT", "OBJECT" -> "DATA_OBJECT";
             default -> "VARIABLE";
         };

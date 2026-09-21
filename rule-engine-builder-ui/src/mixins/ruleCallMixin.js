@@ -22,15 +22,24 @@ export default {
       currentRuleId: null,
       currentRuleCode: '',
       loadingRuleOptions: false,
-      ruleOptionsLoadError: false
+      ruleOptionsLoadError: false,
+      ruleOptionsRequestId: 0
     }
   },
+  activated() {
+    const id = this.definitionId || this.$route?.params?.id
+    if (this.isOwnDesignerRoute && !this.isOwnDesignerRoute()) return
+    if (id && /^\/designer\/(?!expression\/)/.test(this.$route?.path || '')) return this.loadRuleCallOptions(id)
+  },
+  beforeUnmount() { this.ruleOptionsRequestId++ },
   methods: {
     async loadRuleCallOptions(definitionId) {
+      const requestId = ++this.ruleOptionsRequestId
       this.loadingRuleOptions = true
       this.ruleOptionsLoadError = false
       try {
         const definition = unwrap(await getDefinition(definitionId))
+        if (requestId !== this.ruleOptionsRequestId) return
         if (!definition || definition.projectId == null) {
           this.projectRules = []
           return
@@ -40,14 +49,15 @@ export default {
         this.projectIdForRefs = definition.projectId
         const params = { pageNum: 1, pageSize: 1000 }
         if (Number(definition.projectId) === 0) params.scope = 'GLOBAL'
-        this.projectRules = normalizeRuleOptions(records(
-          await listProjectDefinitions(definition.projectId, params)
-        ))
+        const response = await listProjectDefinitions(definition.projectId, params)
+        if (requestId !== this.ruleOptionsRequestId) return
+        this.projectRules = normalizeRuleOptions(records(response))
       } catch (e) {
+        if (requestId !== this.ruleOptionsRequestId) return
         this.projectRules = []
         this.ruleOptionsLoadError = true
       } finally {
-        this.loadingRuleOptions = false
+        if (requestId === this.ruleOptionsRequestId) this.loadingRuleOptions = false
       }
     },
     repairLegacyRuleCallRefs(model) {

@@ -329,6 +329,11 @@ public class GraphScriptGenerator {
         if (Boolean.TRUE.equals(node.getBoolean("fallback"))) return false;
         String type = node.getString("type");
         if ("leaf".equals(type)) {
+            if (node.getJSONObject("leftOperand") == null
+                    && (node.getString("varCode") == null || node.getString("varCode").isBlank())
+                    && !"*".equals(node.getString("operator"))) {
+                throw new IllegalArgumentException("条件未配置完整：请选择左侧参数");
+            }
             if (ConditionOperandCompiler.supports(node)) return ConditionOperandCompiler.hasUsableCondition(node);
             String op = node.getString("operator");
             if (op == null || op.trim().isEmpty()) op = "==";
@@ -375,6 +380,11 @@ public class GraphScriptGenerator {
     }
 
     private static String compileConditionLeaf(JSONObject leaf, VarContext varContext) {
+        if (leaf.getJSONObject("leftOperand") == null
+                && (leaf.getString("varCode") == null || leaf.getString("varCode").isBlank())
+                && !"*".equals(leaf.getString("operator")) && !Boolean.TRUE.equals(leaf.getBoolean("fallback"))) {
+            throw new IllegalArgumentException("条件未配置完整：请选择左侧参数");
+        }
         if (ConditionOperandCompiler.supports(leaf)) return ConditionOperandCompiler.compile(leaf, varContext);
         String leftCode = leaf.getString("varCode");
         if (leftCode == null || leftCode.trim().isEmpty()) return "true";

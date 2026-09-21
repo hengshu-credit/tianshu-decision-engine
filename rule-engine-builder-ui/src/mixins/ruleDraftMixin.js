@@ -648,9 +648,9 @@ export default {
         return false
       }
     },
-    requestDesignerChoice(kind) {
+    requestDesignerChoice(kind, extra = {}) {
       if (this.designerChoice) return Promise.resolve({ action: 'cancel' })
-      this.designerChoice = { kind, canOverwrite: this.viewRevision?.state === 'DRAFT', versions: this.designerVersions }
+      this.designerChoice = { kind, canOverwrite: this.viewRevision?.state === 'DRAFT', versions: this.designerVersions, ...extra }
       return new Promise(resolve => { this.designerChoiceResolve = resolve })
     },
     resolveDesignerChoice(choice = { action: 'cancel' }) {
@@ -739,7 +739,7 @@ export default {
       let result
       try {
         result = unwrap(await definitionApi.saveDesignerDraft(definitionId, body))
-        if (!result?.revision || result.revision.state !== 'DRAFT' || result.compileSuccess === false) throw new Error(result?.compileMessage || '草稿保存响应无效，页面修改仍保留')
+        if (!result?.revision || result.revision.state !== 'DRAFT') throw new Error('草稿保存响应无效，页面修改仍保留')
       } catch (error) {
         if (this.isCurrentViewAction(action)) {
           this.designerActionState = error?.response?.status === 409 ? 'SAVE_CONFLICT' : 'DIRTY'
@@ -755,12 +755,19 @@ export default {
       this.draftIssues = Array.isArray(result.issues) ? result.issues : []
       this.designerRevisions = [result.revision, ...this.designerRevisions.filter(item => String(item.id) !== String(result.revision.id))]
       this.markDesignerDraftSaved(body.modelJson)
+      if (this.draftIssues.length) {
+        const errors = this.draftIssues.filter(issue => issue.severity !== 'WARNING')
+        this.designerValidationReport = {
+          valid: errors.length === 0, errors, autoOpen: false,
+          warnings: this.draftIssues.filter(issue => issue.severity === 'WARNING'),
+        }
+        if (errors.length && this.designerActionState === 'SAVED_UNCHECKED') this.designerActionState = 'SAVED_WITH_ISSUES'
+      }
       if (!extra.stayOnSource) {
         const sourceId = String(result.revision.id)
         this.draftGuardRouteKey = `${this.draftGuardDefinitionId}:REVISION:${sourceId}`
         await this.$router.replace({ query: { ...(this.$route?.query || {}), sourceType: 'REVISION', sourceId } })
       }
-      if (this.draftIssues.some(issue => issue.severity !== 'WARNING')) this.$message.warning('草稿已保存，但发布前检查存在阻断项')
       return result
     },
     async compileDesignerDraft() {
@@ -800,7 +807,7 @@ export default {
           this.designerVersions = this.normalizeDesignerVersions(await definitionApi.listPublishedVersions(String(this.definitionId || this.$route.params.id)))
           const action = this.designerActionSnapshot()
           const modelJson = this.serializeDesignerDraft()
-          const choice = await this.requestDesignerChoice('publish')
+          const choice = await this.requestDesignerChoice('publish', { warnings: compiled.preflightReport?.warnings || [] })
           if (choice.action !== 'publish' || !this.isCurrentViewAction(action)) return false
           if (!this.designerConfigurationMatches(action, modelJson)) {
             compiled = await this.compileDesignerDraft()
@@ -824,7 +831,16 @@ export default {
             this.designerRevisions = [result.revision, ...this.designerRevisions.filter(item => String(item.id) !== String(result.revision.id))]
             if (String(this.draftRevision?.id) === String(result.revision.id)) this.draftRevision = null
           }
-          this.$message.success('已提交发布审批，审批通过后生效')
+          this.designerValidationReport = null
+          this.designerActionState = 'SUBMITTED'
+          const approvalRequestId = result?.approvalRequestId || result?.revision?.governanceRequestId
+          const submittedAction = this.designerActionSnapshot()
+          const submitted = await this.requestDesignerChoice('submitted', {
+            approvalRequestId, canViewApproval: hasPermission('approval:view'),
+          })
+          if (submitted.action === 'approval' && approvalRequestId && hasPermission('approval:view') && this.isCurrentViewAction(submittedAction)) {
+            await this.$router.push({ name: 'ApprovalDetail', params: { id: String(approvalRequestId) } })
+          }
           return result
         } finally {
           this.designerBusy = false

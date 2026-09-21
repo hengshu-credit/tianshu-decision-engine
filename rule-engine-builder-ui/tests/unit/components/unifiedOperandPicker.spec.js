@@ -23,6 +23,28 @@ function mountPicker(propsData = {}, options = {}) {
 }
 
 describe('统一 OperandPicker', () => {
+  test.each([
+    { kind: 'LITERAL', value: '', valueType: 'STRING' },
+    { kind: 'LITERAL', value: 0, valueType: 'NUMBER' },
+    { kind: 'LITERAL', value: false, valueType: 'BOOLEAN' },
+    { kind: 'PATH', value: 'request.age', code: 'request.age', refId: 8, refType: 'DATA_OBJECT', resolved: true },
+  ])('重新编辑 $kind 保留原值、类型和引用，不因打开而写回', async value => {
+    const wrapper = mountPicker({ value })
+    wrapper.vm.openManualInput(value.kind)
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.manualOperand).toEqual(value)
+    expect(wrapper.vm.manualOperand).not.toBe(value)
+    expect(focusManualInput).toHaveBeenCalled()
+    expect(wrapper.emitted().input).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  test('选择文本阈值立即记录合法空字符串，不能保存为缺少操作数', () => {
+    const wrapper = mountPicker({ expectedType: 'STRING' })
+    wrapper.vm.openManualInput('LITERAL')
+    expect(wrapper.emitted().input?.at(-1)?.[0]).toEqual({ kind: 'LITERAL', value: '', valueType: 'STRING' })
+    wrapper.unmount()
+  })
   beforeEach(() => {
     focusManualInput.mockClear()
   })

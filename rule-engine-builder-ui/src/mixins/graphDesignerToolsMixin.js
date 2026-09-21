@@ -26,11 +26,10 @@ export default {
         this.graphNavigationTarget = ''
       }
     },
-    locateGraphElement(item) {
+    async locateGraphElement(item) {
       if (!this.lf || !item || !item.elementId) return
       try {
         this.lf.selectElementById(item.elementId, false, true)
-        this.lf.focusOn(item.elementId)
       } catch (e) { /* 画布仍可通过属性面板定位 */ }
       const graph = this.graphDataForTools()
       if (item.baseType === 'edge') {
@@ -40,6 +39,11 @@ export default {
         const node = (graph.nodes || []).find(value => value.id === item.elementId)
         if (node && typeof this.selectNodeData === 'function') this.selectNodeData(node)
       }
+      await this.$nextTick()
+      if (!this.lf) return
+      const canvas = this.$refs.canvasContainer
+      if (canvas?.clientWidth && canvas?.clientHeight) this.lf.resize(canvas.clientWidth, canvas.clientHeight)
+      this.lf.focusOn(item.elementId)
     },
     checkGraphConfiguration() {
       const modelType = this.$options.name === 'DecisionTree' ? 'TREE' : 'FLOW'

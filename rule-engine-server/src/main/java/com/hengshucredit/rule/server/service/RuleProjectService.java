@@ -180,6 +180,10 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     @Resource
     private RuleApiDocScenarioService apiDocScenarioService;
 
+    @Resource
+    @org.springframework.context.annotation.Lazy
+    private RuleFieldAnalyzer ruleFieldAnalyzer;
+
     /**
      * 导出项目API文档
      */
@@ -334,7 +338,12 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                     new LambdaQueryWrapper<RuleDefinitionInputField>()
                             .eq(RuleDefinitionInputField::getDefinitionId, def.getId())
                             .orderByAsc(RuleDefinitionInputField::getSortOrder));
-            if (persistedInputFields != null && !persistedInputFields.isEmpty()) {
+            boolean resolvedInputs = ruleFieldAnalyzer != null && modelJson != null && !modelJson.isBlank();
+            if (resolvedInputs) {
+                persistedInputFields = ruleFieldAnalyzer.resolveFields(def.getId(), modelJson,
+                        def.getModelType(), projectId).getInputFields();
+            }
+            if (persistedInputFields != null && (resolvedInputs || !persistedInputFields.isEmpty())) {
                 inputCodes = new LinkedHashSet<>();
                 for (RuleDefinitionInputField field : persistedInputFields) {
                     ApiDocDTO.VariableInfo fieldInfo = toVariableInfo(field, varCodeMap);
@@ -574,6 +583,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         switch (varSource) {
             case "INPUT": return "输入参数";
             case "COMPUTED": return "计算变量";
+            case "DERIVED": return "衍生变量";
             case "CONSTANT": return "常量";
             case "DB": return "数据库查询";
             case "API": return "API调用";

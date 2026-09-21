@@ -49,6 +49,7 @@ final class ScriptStaticChecks {
     }
 
     static void assertDoesNotAssignConstants(Set<String> writes, Set<String> constants) {
+        if (constants.isEmpty()) return;
         for (String root : writes) {
             if (constants.contains(root)) throw new IllegalStateException("常量字段不允许赋值: " + root);
         }

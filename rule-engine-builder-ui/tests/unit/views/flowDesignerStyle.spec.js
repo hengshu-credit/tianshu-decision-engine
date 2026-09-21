@@ -44,12 +44,13 @@ describe('flow designer style regressions', () => {
     })
   })
 
-  test('脚本面板深色状态栏按钮使用亮底深字', () => {
+  test('脚本面板状态栏按钮使用随日夜和自定义主题适配的可读配色', () => {
     const source = readSource('src/components/common/ScriptPanel.vue')
 
     expect(source).toContain('.sp-statusbar :deep(.el-button)')
-    expect(source.toLowerCase()).toContain('background: #f8faff;')
-    expect(source.toLowerCase()).toContain('color: #1d39c4 !important;')
+    expect(source).toContain('background: var(--tianshu-info-bg);')
+    expect(source).toContain('color: var(--tianshu-info-text);')
+    expect(source).toContain('border-color: var(--tianshu-info-border);')
   })
 
   test('决策树和决策流属性面板最多占页面百分之八十', () => {

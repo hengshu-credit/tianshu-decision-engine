@@ -103,8 +103,6 @@ public class RuleDraftService {
         if (!compileResult.isSuccess()) {
             issues.add(compileIssue(compileResult.getErrorMessage(),
                     request.getRevisionId()));
-            throw new RuleGovernanceException(400, "COMPILE_FAILED",
-                    compileResult.getErrorMessage(), issues);
         }
 
         revision.setModelJson(request.getModelJson());
@@ -450,7 +448,18 @@ public class RuleDraftService {
         if (content.getId() == null) {
             written = contentMapper.insert(content);
         } else {
-            written = contentMapper.updateById(content);
+            // MyBatis 的 NOT_NULL 更新策略不会清除旧脚本；失败草稿不能残留可执行投影。
+            written = contentMapper.update(content,
+                    new LambdaUpdateWrapper<RuleDefinitionContent>()
+                            .eq(RuleDefinitionContent::getId, content.getId())
+                            .set(content.getCompiledScript() == null,
+                                    RuleDefinitionContent::getCompiledScript, null)
+                            .set(content.getCompiledType() == null,
+                                    RuleDefinitionContent::getCompiledType, null)
+                            .set(content.getCompileMessage() == null,
+                                    RuleDefinitionContent::getCompileMessage, null)
+                            .set(content.getOpenApiConfigJson() == null,
+                                    RuleDefinitionContent::getOpenApiConfigJson, null));
         }
         if (written != 1) {
             throw new IllegalStateException(

@@ -419,7 +419,7 @@ export default {
         tabSize: 2,
         insertSpaces: true,
         formatOnPaste: true,
-        automaticLayout: false,
+        automaticLayout: true,
       }
     },
     lineCount() {
@@ -489,6 +489,9 @@ export default {
           hasSubGroups: false,
           children: this.projectFunctions.map((f) => ({
             varCode: f.funcCode + '()',
+            refCode: f.funcCode,
+            _varId: f.id,
+            _refType: 'FUNCTION',
             varLabel: f.funcName,
             varType: 'FUNC',
           })),
@@ -737,7 +740,8 @@ export default {
       const refs = (this.scriptVarRefs || []).filter((ref) => {
         if (ref.varId == null || !ref.refType || !ref.refCode) return false
         const regex = new RegExp(
-          '\\b' + this.escapeRegex(ref.refCode) + '\\b'
+          '(?<![\\p{L}\\p{N}_$])' + this.escapeRegex(ref.refCode) + '(?![\\p{L}\\p{N}_$])',
+          'u'
         )
         return regex.test(this.script || '')
       })
@@ -813,14 +817,15 @@ export default {
       ])
       // 同步记录引用的 varId（以最后一次插入同名变量时的 _varId 为准）
       const selectedRefType = v._refType || v.refType || null
+      const refCode = selectedRefType === 'FUNCTION' ? v.refCode : code
       if (v._varId != null && selectedRefType) {
-        const existing = this.scriptVarRefs.find((r) => r.refCode === code)
+        const existing = this.scriptVarRefs.find((r) => r.refCode === refCode)
         if (existing) {
           existing.varId = v._varId
           existing.refType = selectedRefType
         } else {
           this.scriptVarRefs.push({
-            refCode: code,
+            refCode,
             varId: v._varId,
             refType: selectedRefType,
           })
@@ -984,8 +989,11 @@ export default {
       const script = this.script
       const matched = (this.scriptVarRefs || []).filter((ref) => {
         if (ref.varId == null || !ref.refType || !ref.refCode) return false
-        // 使用 word boundary 匹配，防止 "amount" 匹配到 "billingAmount"
-        const regex = new RegExp('\\b' + this.escapeRegex(ref.refCode) + '\\b')
+        // 标识符边界同时支持中文与 $，并防止匹配到更长的字段名。
+        const regex = new RegExp(
+          '(?<![\\p{L}\\p{N}_$])' + this.escapeRegex(ref.refCode) + '(?![\\p{L}\\p{N}_$])',
+          'u'
+        )
         return regex.test(script)
       })
       this.scriptVarRefs = matched
@@ -1020,22 +1028,16 @@ export default {
 </script>
 
 <style lang="scss" scoped>
-$editor-bg: #1e1e2e;
-$editor-text: #cdd6f4;
-$editor-line-bg: #181825;
-$editor-line-text: #9399b2;
-$editor-border: #313244;
-
 .se-designer {
   position: relative;
-  background: #f3f3f3;
+  background: var(--tianshu-bg-workspace);
   height: calc(100vh - 82px);
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border-radius: 4px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--tianshu-shadow-small);
 }
 .se-header {
   display: flex;
@@ -1043,7 +1045,7 @@ $editor-border: #313244;
   justify-content: space-between;
   background: var(--tianshu-bg-surface);
   padding: 12px 20px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--tianshu-shadow-small);
   flex-wrap: wrap;
   gap: 8px;
   flex-shrink: 0;
@@ -1054,13 +1056,13 @@ $editor-border: #313244;
 }
 .se-title-icon {
   font-size: 18px;
-  color: #722ed1;
+  color: var(--el-color-primary);
   margin-right: 8px;
 }
 .se-title {
   font-size: 16px;
   font-weight: bold;
-  color: #282828;
+  color: var(--tianshu-text-primary);
 }
 .se-toolbar {
   display: flex;
@@ -1101,7 +1103,7 @@ $editor-border: #313244;
   border-bottom: 1px solid var(--tianshu-border-subtle);
   font-size: 13px;
   font-weight: 600;
-  color: #555;
+  color: var(--tianshu-text-secondary);
   cursor: pointer;
   gap: 6px;
   i {
@@ -1137,7 +1139,7 @@ $editor-border: #313244;
   border-bottom: 1px solid var(--tianshu-border-subtle);
   user-select: none;
   &:hover {
-    background: #f0f0f0;
+    background: var(--tianshu-bg-hover);
   }
 }
 .se-toggle-icon {
@@ -1149,7 +1151,7 @@ $editor-border: #313244;
 }
 .se-cat-icon {
   font-size: 13px;
-  color: #8c8c8c;
+  color: var(--tianshu-text-tertiary);
   flex-shrink: 0;
 }
 .se-cat-label {
@@ -1162,8 +1164,8 @@ $editor-border: #313244;
 .se-cat-count {
   flex-shrink: 0;
   font-size: 10px;
-  color: #fff;
-  background: #64748b;
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
   border-radius: 8px;
   padding: 0 5px;
   line-height: 16px;
@@ -1179,11 +1181,11 @@ $editor-border: #313244;
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
-  color: #555;
+  color: var(--tianshu-text-secondary);
   user-select: none;
-  border-bottom: 1px solid #fafafa;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
   &:hover {
-    background: #f5f5f5;
+    background: var(--tianshu-bg-hover);
   }
 }
 .se-group-label {
@@ -1202,7 +1204,7 @@ $editor-border: #313244;
   font-size: 12px;
   transition: background 0.15s;
   &:hover {
-    background: var(--el-color-primary-light-9);
+    background: var(--tianshu-bg-active);
   }
 }
 .se-var-indent {
@@ -1245,7 +1247,7 @@ $editor-border: #313244;
   transition: background 0.15s;
   &:hover,
   .se-body.is-resizing & {
-    background: #eef4ff;
+    background: var(--tianshu-bg-active);
   }
   &:hover .se-resizer-handle,
   .se-body.is-resizing & .se-resizer-handle {
@@ -1256,7 +1258,7 @@ $editor-border: #313244;
   width: 2px;
   height: 36px;
   border-radius: 2px;
-  background: #d9d9d9;
+  background: var(--tianshu-border);
   transition: background 0.15s;
 }
 .se-editor-area {
@@ -1273,20 +1275,21 @@ $editor-border: #313244;
   align-items: center;
   gap: 8px;
   padding: 6px 12px;
-  background: #11111b;
-  border-bottom: 1px solid $editor-border;
+  flex-shrink: 0;
+  background: var(--tianshu-bg-muted);
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 .se-status-item {
   font-size: 11px;
-  color: #888;
+  color: var(--tianshu-text-tertiary);
   display: flex;
   align-items: center;
   gap: 3px;
   &.status-ok {
-    color: #52c41a;
+    color: var(--tianshu-success-text);
   }
   &.status-err {
-    color: #ff6b6b;
+    color: var(--tianshu-danger-text);
   }
 }
 .se-statusbar-spacer {
@@ -1294,26 +1297,33 @@ $editor-border: #313244;
 }
 .se-line-info {
   font-size: 11px;
-  color: $editor-line-text;
+  color: var(--tianshu-text-tertiary);
   font-family: 'Consolas', monospace;
 }
 .se-editor-container {
-  display: flex;
+  position: relative;
   flex: 1;
-  min-height: 400px;
+  min-height: 0;
   overflow: hidden;
-  background: $editor-bg;
+  background: var(--tianshu-bg-soft);
+}
+.se-editor-container :deep(.monaco-editor-container) {
+  position: absolute;
+  inset: 0;
+  border: none;
+  border-radius: 0;
 }
 .se-footer {
   display: flex;
   align-items: center;
   padding: 5px 12px;
-  background: #11111b;
-  border-top: 1px solid $editor-border;
+  flex-shrink: 0;
+  background: var(--tianshu-bg-muted);
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 .se-footer-tip {
   font-size: 11px;
-  color: #a6e3a1;
+  color: var(--tianshu-text-secondary);
   display: flex;
   align-items: center;
   gap: 4px;

@@ -91,10 +91,6 @@ public class RuleDesignerService {
         }
         revision.setModelJson(request.getModelJson());
         RuleDesignerCompileResponse compiled = compile(revision);
-        if (!compiled.isCompileSuccess()) {
-            throw new RuleGovernanceException(400, "COMPILE_FAILED", compiled.getCompileMessage(),
-                    compiled.getPreflightReport().getErrors());
-        }
         if (!overwrite) insertDraft(revision);
 
         RuleDraftSaveRequest save = new RuleDraftSaveRequest();
@@ -109,7 +105,8 @@ public class RuleDesignerService {
         issues.addAll(compiled.getPreflightReport().getWarnings());
         for (RuleValidationIssue issue : response.getIssues()) {
             if (issues.stream().noneMatch(prior -> prior.getCode().equals(issue.getCode())
-                    && java.util.Objects.equals(prior.getPath(), issue.getPath()))) issues.add(issue);
+                    && (java.util.Objects.equals(prior.getPath(), issue.getPath())
+                    || java.util.Objects.equals(prior.getMessage(), issue.getMessage())))) issues.add(issue);
         }
         response.setIssues(issues);
         recordSave(response.getRevision(), request.getSaveMode());

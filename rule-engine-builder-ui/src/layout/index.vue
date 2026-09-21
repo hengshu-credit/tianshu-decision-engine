@@ -126,6 +126,7 @@
       @save="saveTheme"
       @cancel="cancelThemePreview"
     />
+    <designer-input-tooltip :enabled="$route.path.startsWith('/designer/')" />
   </div>
 </template>
 
@@ -135,6 +136,7 @@ import LayoutSidebar from '@/layout/components/LayoutSidebar.vue'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
 import ProjectContextBar from '@/components/ProjectContextBar.vue'
 import ThemeSettingsDrawer from '@/components/theme/ThemeSettingsDrawer.vue'
+import DesignerInputTooltip from '@/components/common/DesignerInputTooltip.vue'
 import {
   SIDEBAR_COMPACT_THRESHOLD,
   SIDEBAR_MENUS,
@@ -202,6 +204,7 @@ export default {
     WorkspaceTabs,
     ProjectContextBar,
     ThemeSettingsDrawer,
+    DesignerInputTooltip,
   },
   data() {
     const sidebarState = readSidebarState(browserSessionStorage())

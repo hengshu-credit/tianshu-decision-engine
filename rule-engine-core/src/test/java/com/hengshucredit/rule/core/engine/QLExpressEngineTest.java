@@ -8,6 +8,13 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -24,6 +31,94 @@ public class QLExpressEngineTest {
         assertEquals(19, engine.execute(prepared, Map.of("age", 18), false).getResult());
         assertEquals(31, engine.execute(prepared, Map.of("age", 30), false).getResult());
         assertFalse(new QLExpressEngine().execute(prepared, Map.of("age", 18), false).isSuccess());
+    }
+
+    @Test
+    public void preparationChurnRetainsFrequentlyUsedScriptsAndEvictsColdScripts() {
+        QLExpressEngine engine = new QLExpressEngine();
+        Map<String, QLExpressEngine.PreparedScript> hot = new LinkedHashMap<>();
+        for (int i = 0; i < 32; i++) {
+            String script = "return " + i + "; // hot";
+            hot.put(script, engine.prepare(script));
+        }
+        QLExpressEngine.PreparedScript cold = engine.prepare("return -1; // cold");
+        int reloads = 0;
+        for (int i = 0; i < 2048; i++) {
+            for (Map.Entry<String, QLExpressEngine.PreparedScript> entry : hot.entrySet()) {
+                QLExpressEngine.PreparedScript current = engine.prepare(entry.getKey());
+                if (current != entry.getValue()) {
+                    reloads++;
+                    entry.setValue(current);
+                }
+            }
+            engine.prepare("return " + i + "; // cold");
+        }
+        assertEquals("hot scripts should not be reparsed under cold-script churn", 0, reloads);
+        org.junit.Assert.assertNotSame(cold, engine.prepare("return -1; // cold"));
+        assertEquals(-1, engine.execute(cold, Map.of(), false).getResult());
+    }
+
+    @Test
+    public void clearingPreparationCacheRepreparesWithoutInvalidatingInFlightHandles() {
+        QLExpressEngine engine = new QLExpressEngine();
+        QLExpressEngine.PreparedScript prepared = engine.prepare("return 7;");
+        engine.clearPreparedScripts();
+        org.junit.Assert.assertNotSame(prepared, engine.prepare("return 7;"));
+        assertEquals(7, engine.execute(prepared, Map.of(), false).getResult());
+    }
+
+    @Test
+    public void concurrentPreparationAndClearingKeepHandlesExecutable() throws Exception {
+        QLExpressEngine engine = new QLExpressEngine();
+        for (int i = 0; i < 1024; i++) engine.prepare("return " + i + ";");
+        ExecutorService workers = Executors.newFixedThreadPool(5);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<?>> results = new ArrayList<>();
+        try {
+            for (int worker = 0; worker < 4; worker++) {
+                final int workerId = worker;
+                results.add(workers.submit(() -> {
+                    start.await();
+                    for (int i = 0; i < 512; i++) {
+                        int expected = 1024 + workerId * 512 + i;
+                        QLExpressEngine.PreparedScript prepared = engine.prepare("return " + expected + ";");
+                        RuleResult result = engine.execute(prepared, Map.of(), false, new RequestContext());
+                        assertTrue(result.getErrorMessage(), result.isSuccess());
+                        assertEquals(expected, result.getResult());
+                    }
+                    return null;
+                }));
+            }
+            results.add(workers.submit(() -> {
+                start.await();
+                for (int i = 0; i < 64; i++) engine.clearPreparedScripts();
+                return null;
+            }));
+            start.countDown();
+            for (Future<?> result : results) result.get(10, TimeUnit.SECONDS);
+        } finally {
+            workers.shutdownNow();
+            assertTrue(workers.awaitTermination(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    public void failedExecutionDoesNotReplayWritesIntoNextExecution() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunction("fail", (Runnable) () -> { throw new IllegalStateException("test failure"); });
+        RequestContext request = new RequestContext();
+        Map<String, Object> captured = new LinkedHashMap<>();
+        request.bind(captured::put);
+        RuleResult failed = engine.execute(engine.prepare("setRuntimeValue('old', 1); fail();"),
+                new LinkedHashMap<>(), false, request);
+        assertFalse(failed.isSuccess());
+        assertEquals(1, captured.get("old"));
+
+        Map<String, Object> next = new LinkedHashMap<>();
+        RuleResult result = engine.execute(engine.prepare("return 7;"), next, false, request);
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(7, result.getResult());
+        assertTrue("previous writes must be cleared even after failure", next.isEmpty());
     }
 
     @Test

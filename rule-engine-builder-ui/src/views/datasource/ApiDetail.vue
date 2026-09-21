@@ -17,13 +17,19 @@
           size="small"
           type="primary"
           :loading="saving"
+          :disabled="initializing || Boolean(initializationError)"
           @click="handleSave"
           >生成审批草稿</el-button
         >
       </div>
     </div>
 
+    <div v-if="initializing" data-testid="api-detail-loading" role="status">正在加载接口配置，请稍候…</div>
+    <el-alert v-else-if="initializationError" type="error" :closable="false" title="接口配置加载失败" :description="initializationError" show-icon>
+      <el-button size="small" @click="initializeRoute">重新加载</el-button>
+    </el-alert>
     <el-form
+      v-if="!initializing && !initializationError"
       ref="form"
       :model="form"
       :rules="rules"
@@ -1880,6 +1886,9 @@ export default {
   data() {
     return {
       datasourceOptions: [],
+      initializing: true,
+      initializationError: '',
+      initializationId: 0,
       contextProjectId: null,
       dataObjectOptions: [],
       dataObjectTree: [],
@@ -2212,7 +2221,6 @@ export default {
       this.$route,
       this.$store && this.$store.state.currentProject
     )
-    await this.loadDatasourceOptions()
     await this.initializeRoute()
   },
   methods: {
@@ -2251,26 +2259,38 @@ export default {
       }
     },
     async initializeRoute() {
-      this.form = this.emptyForm()
-      this.activeConfigGroup = 'business'
-      this.activeConfigTab = 'auth'
-      this.invokeResultText = ''
-      this.requestPreviewText = ''
-      this.previewToken = ''
-      if (this.isCreateMode) {
-        if (this.$route.query.datasourceId) {
-          this.form.datasourceId = Number(this.$route.query.datasourceId)
-          await this.loadDataObjectOptions(
-            this.resolveDatasourceProjectId(this.form.datasourceId)
-          )
-        } else {
-          await this.loadDataObjectOptions(0)
+      const requestId = this.initializationId = (this.initializationId || 0) + 1
+      this.initializing = true
+      this.initializationError = ''
+      try {
+        await this.loadDatasourceOptions()
+        if (requestId !== this.initializationId) return
+        this.form = this.emptyForm()
+        this.activeConfigGroup = 'business'
+        this.activeConfigTab = 'auth'
+        this.invokeResultText = ''
+        this.requestPreviewText = ''
+        this.previewToken = ''
+        if (this.isCreateMode) {
+          if (this.$route.query.datasourceId) {
+            this.form.datasourceId = Number(this.$route.query.datasourceId)
+            await this.loadDataObjectOptions(
+              this.resolveDatasourceProjectId(this.form.datasourceId)
+            )
+          } else {
+            await this.loadDataObjectOptions(0)
+          }
+          if (requestId !== this.initializationId) return
+          this.syncEditableRowsFromForm()
+          this.regenerateTestParams()
+          return
         }
-        this.syncEditableRowsFromForm()
-        this.regenerateTestParams()
-        return
+        await this.loadDetail(requestId)
+      } catch (error) {
+        if (requestId === this.initializationId) this.initializationError = error.message || '无法读取接口配置，请重试'
+      } finally {
+        if (requestId === this.initializationId) this.initializing = false
       }
-      await this.loadDetail()
     },
     emptyForm() {
       return {
@@ -2488,13 +2508,15 @@ export default {
         this.dataObjectTree = []
       }
     },
-    async loadDetail() {
+    async loadDetail(requestId = this.initializationId) {
       const res = await getApiConfig(this.$route.params.id)
+      if (requestId !== this.initializationId) return
       const data = res && res.data ? res.data : res
       this.form = { ...this.emptyForm(), ...data }
       await this.loadDataObjectOptions(
         this.resolveDatasourceProjectId(this.form.datasourceId)
       )
+      if (requestId !== this.initializationId) return
       this.syncEditableRowsFromForm()
       this.loadSavedSample()
     },
@@ -3377,6 +3399,7 @@ export default {
       })
     },
     handleSave() {
+      if (this.initializing || this.initializationError) return
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
         let data

@@ -737,18 +737,8 @@ export default {
     },
     async performDesignerSave() {
       this.normalizeModel()
-      const resultVarError = this.validateResultVar()
-      if (resultVarError) {
-        this.$message.warning(resultVarError)
-        return false
-      }
       this.repairLegacyRuleCallRefs(this.model)
       const model = this.serializeModel()
-      const ruleCallErrors = this.validateRuleCallsInModel(model)
-      if (ruleCallErrors.length) {
-        this.showRuleCallErrors(ruleCallErrors)
-        return false
-      }
       const modelJson = JSON.stringify(model)
       const result = await this.saveDraftModel(modelJson)
       if (!result) return false

@@ -7,7 +7,7 @@ const LIGHT_DEFAULTS = {
   border: '#E2E8F0',
   primary: '#2639E9',
   activePrimary: '#1E2EBA',
-  secondaryAccent: '#F76E6C',
+  secondaryText: '#793F46',
 }
 
 const DARK_DEFAULTS = {
@@ -19,7 +19,7 @@ const DARK_DEFAULTS = {
   border: '#28344D',
   primary: '#2639E9',
   activePrimary: '#6775F0',
-  secondaryAccent: '#F76E6C',
+  secondaryText: '#FDD4D3',
 }
 
 export function getMonacoScrollbarOptions(root = document.documentElement) {
@@ -71,10 +71,10 @@ export function syncMonacoTheme(
       dark ? '--el-color-primary-light-3' : '--el-color-primary-dark-2',
       defaults.activePrimary
     ),
-    secondaryAccent: readColor(
+    secondaryText: readColor(
       styles,
-      '--tianshu-color-secondary',
-      defaults.secondaryAccent
+      '--tianshu-success-text',
+      defaults.secondaryText
     ),
   }
   const name = dark ? 'tianshu-dark' : 'tianshu-light'
@@ -84,11 +84,11 @@ export function syncMonacoTheme(
     inherit: true,
     rules: [
       { token: 'keyword', foreground: stripHash(colors.activePrimary), fontStyle: 'bold' },
-      { token: 'function', foreground: stripHash(colors.secondaryAccent) },
-      { token: 'predefined', foreground: stripHash(colors.secondaryAccent) },
+      { token: 'function', foreground: stripHash(colors.secondaryText) },
+      { token: 'predefined', foreground: stripHash(colors.secondaryText) },
       { token: 'identifier', foreground: stripHash(colors.foreground) },
-      { token: 'number', foreground: stripHash(colors.secondaryAccent) },
-      { token: 'string', foreground: stripHash(colors.primary) },
+      { token: 'number', foreground: stripHash(colors.secondaryText) },
+      { token: 'string', foreground: stripHash(colors.activePrimary) },
       { token: 'string.escape', foreground: stripHash(colors.activePrimary) },
       { token: 'comment', foreground: stripHash(colors.tertiary), fontStyle: 'italic' },
       { token: 'operator', foreground: stripHash(colors.activePrimary) },

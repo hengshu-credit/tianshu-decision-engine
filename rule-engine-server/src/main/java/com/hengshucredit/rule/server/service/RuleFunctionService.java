@@ -256,8 +256,11 @@ public class RuleFunctionService {
         }
         Map<String, Object> context = params == null ? new LinkedHashMap<>() : new LinkedHashMap<>(params);
         String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
-        registerFunctionIfNeeded(function, implType);
-        RuleResult ruleResult = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, true);
+        RuleResult ruleResult;
+        try (var ignored = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().bindFunctions(
+                functionRegistrar.prepareFunctions(Collections.singletonList(function), qlExpressEngine.getRunner()))) {
+            ruleResult = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, true);
+        }
 
         Map<String, Object> result = new LinkedHashMap<>();
         result.put("success", ruleResult.isSuccess());
@@ -298,8 +301,11 @@ public class RuleFunctionService {
             context.put(paramNames.get(i), values.get(i));
         }
         String implType = function.getImplType() == null ? "SCRIPT" : function.getImplType().trim().toUpperCase();
-        registerFunctionIfNeeded(function, implType);
-        RuleResult result = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, false);
+        RuleResult result;
+        try (var ignored = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext().bindFunctions(
+                functionRegistrar.prepareFunctions(Collections.singletonList(function), qlExpressEngine.getRunner()))) {
+            result = qlExpressEngine.execute(buildFunctionTestScript(function, implType), context, false);
+        }
         if (!result.isSuccess()) {
             throw new IllegalArgumentException("转换函数 " + function.getFuncCode() + " 执行失败: " + result.getErrorMessage());
         }
@@ -384,14 +390,6 @@ public class RuleFunctionService {
     private boolean sameText(String left, String right) {
         if (left == null) return right == null;
         return left.equals(right);
-    }
-
-    private void registerFunctionIfNeeded(RuleFunction function, String implType) {
-        if ("JAVA".equals(implType)) {
-            functionRegistrar.registerJavaFunctions(Collections.singletonList(function), qlExpressEngine.getRunner());
-        } else if ("BEAN".equals(implType)) {
-            functionRegistrar.registerBeanFunctions(Collections.singletonList(function), qlExpressEngine.getRunner());
-        }
     }
 
     private String buildFunctionTestScript(RuleFunction function, String implType) {

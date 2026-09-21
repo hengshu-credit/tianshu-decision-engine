@@ -17,6 +17,7 @@ describe('Monaco 全局日夜主题同步', () => {
     document.documentElement.style.setProperty('--el-color-primary-dark-2', '#1e2eba')
     document.documentElement.style.setProperty('--el-color-primary-light-3', '#6775f0')
     document.documentElement.style.setProperty('--tianshu-color-secondary', '#f76e6c')
+    document.documentElement.style.setProperty('--tianshu-success-text', '#793f46')
     monaco.editor.setTheme.mockClear()
     monaco.editor.defineTheme.mockClear()
   })
@@ -94,6 +95,22 @@ describe('Monaco 全局日夜主题同步', () => {
     }))
 
     expect(monaco.editor.setTheme).toHaveBeenCalledWith('tianshu-dark')
+    wrapper.unmount()
+  })
+
+  test('夜间代码高亮使用可读的主题文字色，而非深色原始主色', async () => {
+    document.documentElement.dataset.theme = 'dark'
+    document.documentElement.style.setProperty('--el-color-primary', '#873ff2')
+    document.documentElement.style.setProperty('--el-color-primary-light-3', '#ab79f6')
+    document.documentElement.style.setProperty('--tianshu-success-text', '#aef3e0')
+    const wrapper = mount(MonacoEditor, { props: { value: '{"result":"ok"}' } })
+    await wrapper.vm.$nextTick()
+
+    const theme = monaco.editor.defineTheme.mock.calls.at(-1)[1]
+    expect(theme.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({ token: 'string', foreground: 'AB79F6' }),
+      expect.objectContaining({ token: 'function', foreground: 'AEF3E0' }),
+    ]))
     wrapper.unmount()
   })
 

@@ -1,6 +1,13 @@
 import ApiDetail from '@/views/datasource/ApiDetail.vue'
+import { mount, flushPromises } from '@test-utils'
 import * as dataObjectApi from '@/api/dataObject'
 import * as datasourceApi from '@/api/datasource'
+
+vi.mock('@/api/datasource', () => ({
+  createApiConfig: vi.fn(), getApiConfig: vi.fn(), updateApiConfig: vi.fn(),
+  invokeApiConfigPreview: vi.fn(), previewApiConfigRequest: vi.fn(),
+  listDatasources: vi.fn().mockResolvedValue({ data: { records: [] } }),
+}))
 
 afterEach(() => { vi.clearAllMocks() })
 
@@ -39,6 +46,35 @@ function createContext(overrides = {}) {
 }
 
 describe('ApiDetail helpers', () => {
+  test('接口配置加载完成前不暴露可编辑的空表单，避免迟到响应覆盖输入', async () => {
+    let finish
+    datasourceApi.listDatasources.mockResolvedValue({ data: { records: [] } })
+    datasourceApi.getApiConfig.mockImplementationOnce(() => new Promise(resolve => { finish = resolve }))
+    const wrapper = mount(ApiDetail, { mocks: { $route: { params: { id: '20' }, query: {} } } })
+    await flushPromises()
+    try {
+      expect(wrapper.find('.detail-form').exists()).toBe(false)
+      expect(wrapper.find('[data-testid="api-detail-loading"]').exists()).toBe(true)
+    } finally {
+      finish({ data: { id: 20, endpointUrl: '/saved', apiCode: 'EXISTING_API' } })
+      await flushPromises()
+    }
+    expect(wrapper.find('.detail-form').exists()).toBe(true)
+    expect(wrapper.vm.form.endpointUrl).toBe('/saved')
+    wrapper.unmount()
+  })
+
+  test('接口加载失败保留错误提示，重试成功后才恢复编辑', async () => {
+    const ctx = createContext({ isCreateMode: false })
+    ctx.loadDatasourceOptions = vi.fn().mockResolvedValue()
+    ctx.loadDetail = vi.fn().mockRejectedValueOnce(new Error('接口暂不可用')).mockResolvedValue()
+    await ctx.initializeRoute()
+    expect(ctx.initializing).toBe(false)
+    expect(ctx.initializationError).toBe('接口暂不可用')
+    await ctx.initializeRoute()
+    expect(ctx.initializationError).toBe('')
+  })
+
   test('Token 业务失效条件可以保存并重新加载', () => {
     const ctx = createContext({
       tokenFailureMode: 'CUSTOM',
@@ -203,6 +239,7 @@ describe('ApiDetail helpers', () => {
       }
     })
     ctx.loadDetail = vi.fn().mockResolvedValue()
+    ctx.loadDatasourceOptions = vi.fn().mockResolvedValue()
 
     await ctx.initializeRoute()
 

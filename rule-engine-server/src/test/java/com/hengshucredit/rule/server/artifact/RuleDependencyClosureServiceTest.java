@@ -26,6 +26,18 @@ import java.util.Map;
 public class RuleDependencyClosureServiceTest {
 
     @Test
+    public void scriptFunctionPickerReferenceFreezesFunctionById() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"return picked();\",\"scriptVarRefs\":["
+                + "{\"refCode\":\"picked\",\"varId\":13,\"refType\":\"FUNCTION\"}]}");
+        service.functions.put(13L, function(13L, 1, "JAVA"));
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertEquals(List.of("FUNCTION:13"), closure.getDependencies().stream()
+                .map(ArtifactDependency::getComponentId).toList());
+    }
+
+    @Test
     public void resolvesExplicitIdsAndPinsModelVersionAndDigest() {
         FixtureService service = new FixtureService();
         service.revision.setModelJson("{\"kind\":\"FUNCTION\",\"functionId\":13,"

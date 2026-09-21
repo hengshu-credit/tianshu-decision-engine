@@ -303,11 +303,13 @@ export default {
     },
     openManualInput(kind) {
       this.manualKind = kind
+      const existing = this.value && this.value.kind === kind
       this.manualOperand =
-        kind === 'PATH'
+        existing ? cloneOperand(this.value) : kind === 'PATH'
           ? createPathOperand('')
           : createLiteralOperand('', this.expectedType || 'STRING')
       this.manualPathCandidates = []
+      if (!existing && kind === 'LITERAL' && this.manualOperand.valueType === 'STRING') this.emitManualOperand()
       this.$nextTick(this.focusManualInput)
     },
     focusManualInput() {
@@ -370,7 +372,7 @@ export default {
           this.$refs.varPicker &&
           typeof this.$refs.varPicker.onInputClick === 'function'
         )
-          this.$refs.varPicker.onInputClick()
+          this.$refs.varPicker.onInputClick({ restoreManual: false })
       })
     },
     onEditorApply(operand) {

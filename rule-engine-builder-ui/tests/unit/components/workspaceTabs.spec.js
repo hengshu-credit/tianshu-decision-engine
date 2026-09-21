@@ -1,5 +1,6 @@
 import { mount } from '@test-utils'
 import WorkspaceTabs from '@/layout/components/WorkspaceTabs.vue'
+import { SIDEBAR_MENUS } from '@/layout/layoutState'
 
 const TABS = [
   { fullPath: '/project', path: '/project', name: 'ProjectList', title: '项目管理' },
@@ -28,7 +29,7 @@ function mountTabs(overrides = {}) {
 describe('WorkspaceTabs', () => {
   test('业务页签同时显示名称和具体标题，并将完整内容交给悬停提示', () => {
     const title = '授信准入规则'.repeat(12)
-    const wrapper = mountTabs({ tabs: [{ ...TABS[1], title: '规则详情', detailTitle: title }] })
+    const wrapper = mountTabs({ tabs: [{ ...TABS[1], path: '/rule/8', fullPath: '/rule/8', title: '规则详情', detailTitle: title }] })
     const fullTitle = `规则 · ${title}`
 
     expect(wrapper.find('.workspace-tab__title').text()).toBe(fullTitle)
@@ -39,7 +40,6 @@ describe('WorkspaceTabs', () => {
   })
 
   test.each([
-    ['项目管理', '', '项目'],
     ['项目详情', '授信项目', '项目 · 授信项目'],
     ['决策表设计器', '准入规则', '决策表 · 准入规则'],
     ['QL脚本编辑器', '计算额度', 'QL脚本 · 计算额度'],
@@ -48,8 +48,16 @@ describe('WorkspaceTabs', () => {
     ['数据库数据源详情', '风控只读库', '数据库 · 风控只读库'],
     ['配置表达式', '决策表 · 左操作数', '表达式 · 决策表 · 左操作数'],
   ])('页签名称 %s 简化后保留具体业务标题', (title, detailTitle, expected) => {
-    const wrapper = mountTabs({ tabs: [{ ...TABS[0], title, detailTitle }] })
+    const wrapper = mountTabs({ tabs: [{ ...TABS[0], path: '/project/8', fullPath: '/project/8', title, detailTitle }] })
     expect(wrapper.find('.workspace-tab__title').text()).toBe(expected)
+    wrapper.unmount()
+  })
+
+  test.each(SIDEBAR_MENUS)('一级页面 $label 保留完整菜单名称，包括带查询参数的缓存页签', ({ index, label }) => {
+    const wrapper = mountTabs({ tabs: [{ path: index, fullPath: index + '?projectId=3', title: label }] })
+    expect(wrapper.get('.workspace-tab__title').text()).toBe(label)
+    expect(wrapper.get('.workspace-tab__main').attributes('aria-label')).toBe(label)
+    expect(wrapper.get('.workspace-tab__close').attributes('aria-label')).toBe('关闭' + label)
     wrapper.unmount()
   })
 

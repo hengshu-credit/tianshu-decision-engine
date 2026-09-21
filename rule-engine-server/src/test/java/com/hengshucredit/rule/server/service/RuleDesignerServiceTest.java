@@ -60,14 +60,20 @@ public class RuleDesignerServiceTest {
     }
 
     @Test
-    public void syntaxFailureDoesNotCreateDraftButGovernanceFailureCanBeSaved() {
+    public void unfinishedConfigurationCanBeSavedButPreflightStillBlocksPublication() {
         Fixture service = new Fixture();
         RuleDesignerDraftRequest invalid = request("invalid");
         invalid.setModelJson("{\"script\":\"return {\"}");
         assertFalse(service.compile(30L, invalid).isCompileSuccess());
-        assertThrows(RuleGovernanceException.class, () -> service.save(30L, invalid));
-        assertTrue(service.revisions.isEmpty());
-        assertTrue(service.operations.isEmpty());
+        RuleDraftSaveResponse unfinished = service.save(30L, invalid);
+        assertFalse(unfinished.isCompileSuccess());
+        assertEquals("DRAFT", unfinished.getRevision().getState());
+        assertEquals(invalid.getModelJson(), unfinished.getRevision().getModelJson());
+        assertEquals("COMPILE_FAILED", unfinished.getIssues().get(0).getCode());
+        assertEquals(1, unfinished.getIssues().size());
+        assertFalse(service.compile(30L, invalid).getPreflightReport().isValid());
+        assertEquals(unfinished, service.save(30L, invalid));
+        assertEquals(1, service.saves);
         service.governanceFailure = true;
         RuleDraftSaveResponse saved = service.save(30L, request("valid"));
         assertTrue(saved.isCompileSuccess());
@@ -130,7 +136,11 @@ public class RuleDesignerServiceTest {
             RuleDraftSaveResponse response = new RuleDraftSaveResponse();
             response.setRevision(revision);
             response.setDesignVersion(saves);
-            response.setCompileSuccess(true);
+            CompileResult compiled = new ScriptPassthroughCompiler().compile(request.getModelJson());
+            response.setCompileSuccess(compiled.isSuccess());
+            response.setCompileMessage(compiled.getErrorMessage());
+            if (!compiled.isSuccess()) response.setIssues(List.of(
+                    RuleValidationIssue.error("COMPILE_FAILED", "$.script", compiled.getErrorMessage())));
             return response;
         }
         @Override protected void recordSave(RuleRevision revision, String mode) { }

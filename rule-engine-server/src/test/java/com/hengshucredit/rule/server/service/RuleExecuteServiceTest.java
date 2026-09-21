@@ -39,6 +39,57 @@ import static org.junit.Assert.assertTrue;
 public class RuleExecuteServiceTest {
 
     @Test
+    public void publishedScriptUsesFrozenFieldsWithoutReenteringLiveAnalysis() {
+        RuleExecuteService service = new RuleExecuteService();
+        QLExpressEngine engine = new QLExpressEngine();
+        String script = "return frozenScore;";
+        QLExpressEngine.PreparedScript prepared = engine.prepare(script);
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        ReflectionTestUtils.setField(snapshot, "compiledScript", script);
+        ReflectionTestUtils.setField(snapshot, "modelType", "SCRIPT");
+        ReflectionTestUtils.setField(snapshot, "modelJson", "{\"script\":\"return frozenScore;\",\"scriptVarRefs\":[{\"varId\":7,\"refType\":\"VARIABLE\",\"refCode\":\"frozenScore\"}]}");
+        RuleDefinitionInputField field = new RuleDefinitionInputField();
+        field.setVarId(7L); field.setRefType("VARIABLE"); field.setScriptName("frozenScore"); field.setFieldType("NUMBER");
+        snapshot.getInputFields().add(field);
+        ReflectionTestUtils.setField(service, "qlExpressEngine", engine);
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveIntoSnapshot(List<RuleVariable> variables, List<RuleModel> models,
+                    List<RuleFunction> functions, Map<String, Object> values, VariableResolveOptions options) {
+                assertEquals(Set.of("frozenScore"), options.getRequiredScriptNames());
+                return values;
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public List<RuleDefinitionInputField> extractDirectModelInputFields(String json, String type) {
+                throw new AssertionError("published scripts must not parse source or read live references");
+            }
+        });
+        ReflectionTestUtils.setField(service, "artifactRuntimeSnapshotService", new ArtifactRuntimeSnapshotService() {
+            @Override public RuntimeSnapshot load(Long artifact, Long definition, Long project) { return snapshot; }
+        });
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setArtifactId(99L); published.setRuleCode("FROZEN");
+        published.setProjectCode("project_a"); published.setModelType("SCRIPT"); published.setVersion(1);
+        try {
+            for (int i = 0; i < 2; i++) {
+                RuleResult result = service.executePublished(published, Map.of("frozenScore", "91"), 1L, "test");
+                assertTrue(result.getErrorMessage(), result.isSuccess());
+                assertEquals(91d, result.getResult());
+                assertSame(prepared, engine.prepare(script));
+            }
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
     public void publishedExecutionAssemblesMappedObjectFieldAndKeepsExplicitTargetPriority() {
         RuleExecuteService service = new RuleExecuteService();
         RuleDefinitionInputField age = new RuleDefinitionInputField();

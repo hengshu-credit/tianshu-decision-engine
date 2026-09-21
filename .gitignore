@@ -36,3 +36,5 @@ scripts/quality-gates/fixtures/request.local.json
 /assets/docs/
 /.codex/
 /.codex-validation/
+/.playwright-cli/
+/output/
