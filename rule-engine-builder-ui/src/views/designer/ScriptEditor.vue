@@ -481,6 +481,17 @@ export default {
         })
       }
 
+      const modelRefs = refs.filter((v) => v._ref && v._ref.category === 'model')
+      if (modelRefs.length) {
+        tree.push({
+          key: '__model__',
+          label: '模型输出',
+          icon: 'DataAnalysis',
+          hasSubGroups: false,
+          children: modelRefs,
+        })
+      }
+
       if (this.projectFunctions && this.projectFunctions.length) {
         tree.push({
           key: '__function__',

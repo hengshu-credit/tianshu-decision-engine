@@ -66,6 +66,114 @@ public class RuleSchemaCompatibilityServiceTest {
     }
 
     @Test
+    public void runtimeExternalFieldsCannotBeReplacedByRequiredRawInputsWithoutMigration() {
+        Map<String, Object> previousProperty = new java.util.LinkedHashMap<>();
+        previousProperty.put("type", "number");
+        Map<String, Object> previousInput = schema(
+                Map.of("外数结果.指标.当前逾期天数", previousProperty),
+                "外数结果.指标.当前逾期天数");
+        Map<String, Object> currentProperty = new java.util.LinkedHashMap<>();
+        currentProperty.put("type", "string");
+        currentProperty.put("x-legacy-input", true);
+        Map<String, Object> currentInput = schema(
+                Map.of("mobile_no", currentProperty), "mobile_no");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previousInput, emptySchema(), currentInput, emptySchema());
+
+        Assert.assertTrue(report.hasBreakingChanges());
+        Assert.assertTrue(report.getChanges().stream()
+                .anyMatch(change -> "REQUIRED_INPUT_ADDED".equals(change.getChangeType())
+                        && "mobile_no".equals(change.getFieldName()) && change.isBreaking()));
+        Assert.assertTrue(report.getChanges().stream()
+                .anyMatch(change -> "INPUT_REMOVED".equals(change.getChangeType())
+                        && "外数结果.指标.当前逾期天数".equals(change.getFieldName())
+                        && change.isBreaking()));
+    }
+
+    @Test
+    public void legacyAliasCannotMakeFieldRenameCompatible() {
+        Map<String, Object> previous = schema(properties("申请信息.手机号", "string"), "申请信息.手机号");
+        Map<String, Object> current = schema(Map.of("mobile_no",
+                legacyProperty("string", "申请信息.手机号")), "mobile_no");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previous, emptySchema(), current, emptySchema());
+
+        assertBreakingChange(report, "INPUT_REMOVED", "申请信息.手机号");
+        assertBreakingChange(report, "REQUIRED_INPUT_ADDED", "mobile_no");
+    }
+
+    @Test
+    public void legacyAliasCannotSuppressTypeChangeOnSameNamedField() {
+        Map<String, Object> previous = schema(properties("mobile_no", "number"), "mobile_no");
+        Map<String, Object> current = schema(Map.of("mobile_no",
+                legacyProperty("string", "mobile_no")), "mobile_no");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previous, emptySchema(), current, emptySchema());
+
+        assertBreakingChange(report, "INPUT_TYPE_CHANGED", "mobile_no");
+    }
+
+    @Test
+    public void legacyAliasCannotSuppressFormatAndConstraintChanges() {
+        Map<String, Object> previousProperty = Map.of(
+                "type", "string", "format", "date", "enum", List.of("A", "B"));
+        Map<String, Object> currentProperty = legacyProperty("string", "eventAt");
+        currentProperty.put("format", "date-time");
+        currentProperty.put("enum", List.of("A"));
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                schema(Map.of("eventAt", previousProperty), "eventAt"), emptySchema(),
+                schema(Map.of("eventAt", currentProperty), "eventAt"), emptySchema());
+
+        assertBreakingChange(report, "INPUT_FORMAT_CHANGED", "eventAt");
+        assertBreakingChange(report, "INPUT_CONSTRAINT_CHANGED", "eventAt");
+    }
+
+    @Test
+    public void legacyAliasCannotHideExistingFieldBehindAnotherPreviousField() {
+        Map<String, Object> previous = schema(properties(
+                "name", "string", "riskHit", "number"), "name", "riskHit");
+        Map<String, Object> current = schema(Map.of(
+                "name", Map.of("type", "string"),
+                "riskHit", legacyProperty("string", "name")), "name", "riskHit");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previous, emptySchema(), current, emptySchema());
+
+        assertBreakingChange(report, "INPUT_TYPE_CHANGED", "riskHit");
+    }
+
+    @Test
+    public void retainedExternalFieldDoesNotPermitUnrelatedRequiredInputAddition() {
+        String externalField = "外数结果.指标.当前逾期天数";
+        Map<String, Object> previous = schema(properties(externalField, "number"), externalField);
+        Map<String, Object> current = schema(Map.of(
+                externalField, Map.of("type", "number"),
+                "mobile_no", legacyProperty("string", "申请信息.手机号")), externalField, "mobile_no");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previous, emptySchema(), current, emptySchema());
+
+        assertBreakingChange(report, "REQUIRED_INPUT_ADDED", "mobile_no");
+    }
+
+    @Test
+    public void removingObsoleteLegacyAnnotationsDoesNotChangeTheContract() {
+        Map<String, Object> previous = schema(Map.of("mobile_no",
+                legacyProperty("string", "申请信息.手机号")), "mobile_no");
+        Map<String, Object> current = schema(properties("mobile_no", "string"), "mobile_no");
+
+        RuleSchemaCompatibilityService.CompatibilityReport report = service.compare(
+                previous, emptySchema(), current, emptySchema());
+
+        Assert.assertFalse(report.hasBreakingChanges());
+        Assert.assertTrue(report.getChanges().isEmpty());
+    }
+
+    @Test
     public void outputRemovalAndTypeChangeAreBreaking() {
         Map<String, Object> previousOutput = schema(properties(
                 "score", "number", "decision", "string"));
@@ -108,6 +216,21 @@ public class RuleSchemaCompatibilityServiceTest {
     @SuppressWarnings("unchecked")
     private static Map<String, Object> properties(Map<String, Object> schema) {
         return (Map<String, Object>) schema.get("properties");
+    }
+
+    private static Map<String, Object> legacyProperty(String type, String alias) {
+        Map<String, Object> property = new java.util.LinkedHashMap<>();
+        property.put("type", type);
+        property.put("x-legacy-input", true);
+        property.put("x-legacy-names", List.of(alias));
+        return property;
+    }
+
+    private static void assertBreakingChange(RuleSchemaCompatibilityService.CompatibilityReport report,
+                                             String changeType, String fieldName) {
+        Assert.assertTrue(report.hasBreakingChanges());
+        Assert.assertTrue(report.getChanges().stream().anyMatch(change -> change.isBreaking()
+                && changeType.equals(change.getChangeType()) && fieldName.equals(change.getFieldName())));
     }
 
     private static Map<String, Object> emptySchema() {

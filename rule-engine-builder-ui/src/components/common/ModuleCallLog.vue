@@ -331,6 +331,7 @@
             title="响应内容"
             :content="pretty(detail.responseBody)"
           />
+          <detail-block v-if="detail.historyFields" title="历史统计字段结果（字段 ID）" :content="pretty(detail.historyFields)" />
         </template>
       </div>
     </el-drawer>

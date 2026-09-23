@@ -23,7 +23,12 @@ public class VariableResolveOptions {
     private Map<String, String> variableReferencePaths;
     /** 衍生表达式使用的 ID 路径与函数快照，历史侧字段不参与本次请求的上游计算。 */
     private Map<String, String> derivedReferencePaths;
+    /** 对象本身的路径，用于已有子字段优先；不改变冻结的字段 ID。 */
+    private Map<String, String> dataObjectReferencePaths;
     private Map<Long, com.hengshucredit.rule.model.entity.RuleFunction> derivedFunctions;
+    /** 同一根规则请求（含子规则）共享的外数调用 single-flight/cache。 */
+    private VariableResolutionInvocationCache invocationCache;
+    private Map<String, com.hengshucredit.rule.server.derived.HistoricalFieldDefinition> historyFieldDefinitions;
     private boolean captureDatabasePreview;
     private java.util.List<Map<String, Object>> databasePreviewRows;
 
@@ -33,7 +38,7 @@ public class VariableResolveOptions {
     }
 
     public void recordSourceState(String refType, Long refId, String dimension, Object value) {
-        if (!requiresSourceStatus(refType, refId) || dimension == null) return;
+        if (refType == null || refId == null || dimension == null) return;
         String key = statusKey(refType, refId);
         Map<String, Object> state = sourceStates.get(key);
         if (state == null) {

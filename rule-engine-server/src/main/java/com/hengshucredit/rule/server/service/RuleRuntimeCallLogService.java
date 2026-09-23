@@ -59,6 +59,14 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (log == null) {
             return;
         }
+        if (log.getRootTraceId() != null && "API_INVOKE".equals(log.getActionType()) && log.getHistoryFields() != null) {
+            try {
+                if (!save(log)) throw new IllegalStateException("insert returned false");
+            } catch (RuntimeException failure) {
+                throw new HistoryLogWriteException("外数历史结果日志写入失败，不能将本次进件作为完整统计事实", failure);
+            }
+            return;
+        }
         if (asyncWriter != null) {
             asyncWriter.offer(log);
             return;
@@ -68,6 +76,10 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         } catch (Exception ignored) {
             // 业务调用不能因为诊断日志写入失败而失败。
         }
+    }
+
+    public static final class HistoryLogWriteException extends IllegalStateException {
+        public HistoryLogWriteException(String message, Throwable cause) { super(message, cause); }
     }
 
     public Map<String, Object> externalApiStats(Long projectId, Long targetRefId,

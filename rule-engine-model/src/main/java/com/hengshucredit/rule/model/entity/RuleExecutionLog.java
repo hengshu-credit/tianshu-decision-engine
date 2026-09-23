@@ -10,6 +10,11 @@ public class RuleExecutionLog {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String traceId;
+    private Long rootRuleId;
+    private Long executionProjectId;
+    private LocalDateTime startedAt;
+    /** 按执行时字段 ID 保存的请求入参和显式开启记录的结果，不按名称回填旧日志。 */
+    private String historyFields;
     private String ruleCode;
     private String projectCode;
     private Integer ruleVersion;

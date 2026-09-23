@@ -3820,7 +3820,7 @@ export default {
   .detail-title {
     font-size: 20px;
     font-weight: 700;
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
   }
   .detail-meta,
   .field-help,
@@ -3838,15 +3838,15 @@ export default {
   }
   .detail-form {
     background: var(--tianshu-bg-surface);
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 16px;
   }
   .configuration-guide {
     margin: -16px -16px 18px;
     padding: 18px 20px;
-    border-bottom: 1px solid #dce5f2;
-    background: linear-gradient(135deg, #f7faff 0%, #eef4ff 100%);
+    border-bottom: 1px solid var(--tianshu-info-border);
+    background: var(--tianshu-info-bg);
   }
   .guide-heading {
     display: flex;
@@ -3859,7 +3859,7 @@ export default {
     padding: 5px 9px;
     border-radius: 999px;
     background: var(--tianshu-bg-surface);
-    color: var(--el-color-primary);
+    color: var(--tianshu-info-text);
     font-size: 12px;
     font-weight: 700;
   }
@@ -3874,15 +3874,15 @@ export default {
     align-items: center;
     gap: 9px;
     padding: 10px;
-    border: 1px solid #dce4ef;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 8px;
-    background: rgb(255 255 255 / 88%);
+    background: var(--tianshu-bg-surface);
     color: var(--tianshu-text-secondary);
     cursor: pointer;
     text-align: left;
   }
   .checklist-item:hover {
-    border-color: #8eafea;
+    border-color: var(--tianshu-info-border);
   }
   .checklist-item > span:last-child {
     display: flex;
@@ -3890,13 +3890,13 @@ export default {
     flex-direction: column;
   }
   .checklist-item strong {
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-size: 13px;
   }
   .checklist-item small {
     margin-top: 3px;
     overflow: hidden;
-    color: #738096;
+    color: var(--tianshu-text-tertiary);
     font-size: 11px;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -3908,17 +3908,17 @@ export default {
     flex: 0 0 24px;
     place-items: center;
     border-radius: 50%;
-    background: #fff1d6;
-    color: #9a5d00;
+    background: var(--tianshu-warning-bg);
+    color: var(--tianshu-warning-text);
     font-size: 12px;
     font-weight: 700;
   }
   .checklist-item.is-ready .checklist-state {
-    background: #dff6e8;
-    color: #177245;
+    background: var(--tianshu-success-bg);
+    color: var(--tianshu-success-text);
   }
   .basic-panel {
-    border-bottom: 1px solid #e5e7eb;
+    border-bottom: 1px solid var(--tianshu-border-subtle);
     padding-bottom: 8px;
     margin-bottom: 12px;
   }
@@ -3942,11 +3942,11 @@ export default {
   }
   .config-group-bar button:hover,
   .config-group-bar button.is-active {
-    border-color: #8eafea;
-    background: #f3f7ff;
+    border-color: var(--tianshu-info-border);
+    background: var(--tianshu-info-bg);
   }
   .config-group-bar strong {
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-size: 13px;
   }
   .config-group-bar small {
@@ -3963,7 +3963,7 @@ export default {
   .panel-title,
   .section-title,
   .reference-title {
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-weight: 700;
   }
   .panel-subtitle,
@@ -3998,7 +3998,7 @@ export default {
   }
   .field-reference {
     width: 360px;
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 10px;
     background: var(--tianshu-bg-soft);
@@ -4016,14 +4016,14 @@ export default {
     padding: 10px 12px;
   }
   .response-condition-card {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     padding: 12px;
     margin-bottom: 12px;
     background: var(--tianshu-bg-surface);
   }
   .config-card {
-    border: 1px solid #e5e7eb;
+    border: 1px solid var(--tianshu-border-subtle);
     border-radius: 4px;
     background: var(--tianshu-bg-soft);
     padding: 12px;
@@ -4045,7 +4045,7 @@ export default {
     line-height: 24px;
     text-align: center;
     border-radius: 50%;
-    background: #e2e8f0;
+    background: var(--tianshu-bg-muted);
     color: var(--tianshu-text-secondary);
     font-size: 12px;
   }
@@ -4057,24 +4057,24 @@ export default {
     margin-bottom: 10px;
   }
   .response-condition-title {
-    color: #1f2937;
+    color: var(--tianshu-text-primary);
     font-weight: 700;
   }
   .response-condition-tree {
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--tianshu-border-subtle);
     padding-top: 10px;
   }
   .test-toolbar {
-    border-top: 1px solid #e5e7eb;
+    border-top: 1px solid var(--tianshu-border-subtle);
     padding-top: 14px;
     margin-top: 8px;
   }
   .btn-delete {
-    color: #dc2626;
+    color: var(--tianshu-danger-text);
   }
   code {
-    color: #1e40af;
-    background: #eff6ff;
+    color: var(--tianshu-info-text);
+    background: var(--tianshu-info-bg);
     border-radius: 3px;
     padding: 0 4px;
   }

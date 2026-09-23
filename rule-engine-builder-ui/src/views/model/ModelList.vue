@@ -1608,7 +1608,7 @@ export default {
   line-height: 1.5;
 }
 .runtime-hint-error {
-  color: #e6a23c;
+  color: var(--tianshu-warning-text);
 }
 .runtime-unit {
   margin-left: 8px;

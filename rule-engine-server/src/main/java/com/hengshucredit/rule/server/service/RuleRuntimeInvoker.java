@@ -384,19 +384,30 @@ public class RuleRuntimeInvoker {
             RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
+            options.setInvocationCache(session.getInvocationCache());
             options.setStatusReferenceKeys(SourceStatusUsage.scan(childModelJson));
             List<RuleDefinitionInputField> childFields = runtimeSnapshot == null
                     ? definitionService.listInputFields(targetDefinitionId)
                     : runtimeSnapshot.getInputFields();
             List<RuleDefinitionInputField> directFields = runtimeSnapshot == null
-                    ? directInputFields(childModelJson, definition == null ? null : definition.getModelType())
-                    : childFields;
+                    ? directInputFields(childModelJson, definition == null ? null : definition.getModelType(), projectId)
+                    : frozenDirectInputFields(childModelJson, runtimeSnapshot, childFields,
+                            published.getModelType());
             DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                     referencePlan(runtimeSnapshot, directFields);
             Set<String> explicitReferenceTargets =
                     referencePlan.captureExplicitTargets(session.getValues());
             Set<String> requiredNames = requiredInputNames(childFields);
+            requiredNames.addAll(requiredInputNames(directFields));
             requiredNames.addAll(referencePlan.requiredSourceNames());
+            if (childModelJson != null && !childModelJson.trim().isEmpty()) {
+                try {
+                    requiredNames.addAll(OperandDependencyCollector.collectReferenceDisplayCodes(
+                            JSONObject.parseObject(childModelJson), "VARIABLE"));
+                } catch (RuntimeException ignored) {
+                    // 模型快照已在发布阶段校验；运行时不替换已记录的编译错误。
+                }
+            }
             options.setRequiredScriptNames(requiredNames);
             if (runtimeSnapshot != null) {
                 com.hengshucredit.rule.server.derived.DerivedVariableService.prepareSnapshot(
@@ -405,17 +416,20 @@ public class RuleRuntimeInvoker {
             executionParameterBinder.bindRuleInputsInPlace(
                     referencePlan.mergeBindingFields(childFields),
                     session.getValues(), options);
-            if (runtimeSnapshot == null) {
-                variableSourceResolver.resolveInto(projectId, session.getValues(), options);
-            } else {
-                variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
-                        runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(),
-                        session.getValues(), options);
+            RuleResult result;
+            try (var context = RuleVariableExecutionContext.prepare(
+                    runtimeSnapshot == null ? published.getModelType() : runtimeSnapshot.getModelType(),
+                    session.getValues(), options, referencePlan, explicitReferenceTargets, () -> {
+                        if (runtimeSnapshot == null) {
+                            variableSourceResolver.resolveInto(projectId, session.getValues(), options);
+                        } else {
+                            variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
+                                    runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(), session.getValues(), options);
+                        }
+                    })) {
+                result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript),
+                        context, session.isTraceEnabled(), session.getRequestContext());
             }
-            referencePlan.apply(session.getValues(), explicitReferenceTargets);
-            RuntimeContextBridge.replaceSourceStates(options.getSourceStates());
-            RuleResult result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript),
-                    session.getValues(), session.isTraceEnabled(), session.getRequestContext());
             childTrace.setExpressionTrace(result.getTraces() == null
                     ? Collections.<Object>emptyList() : result.getTraces());
             childTrace.setStatus(result.isSuccess() ? "SUCCESS" : "FAILED");
@@ -501,11 +515,21 @@ public class RuleRuntimeInvoker {
     }
 
     private List<RuleDefinitionInputField> directInputFields(
-            String modelJson, String modelType) {
+            String modelJson, String modelType, Long projectId) {
         if (ruleFieldAnalyzer == null || modelJson == null || modelJson.trim().isEmpty()) {
             return Collections.emptyList();
         }
-        return ruleFieldAnalyzer.extractDirectModelInputFields(modelJson, modelType);
+        return ruleFieldAnalyzer.resolveDirectModelInputFields(modelJson, modelType, projectId);
+    }
+
+    private List<RuleDefinitionInputField> frozenDirectInputFields(
+            String modelJson, ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot,
+            List<RuleDefinitionInputField> fallback, String definitionModelType) {
+        return ruleFieldAnalyzer == null
+                ? (fallback == null ? Collections.emptyList() : fallback)
+                : ruleFieldAnalyzer.extractFrozenModelInputFields(
+                        modelJson, snapshot.getModelType() == null
+                                ? definitionModelType : snapshot.getModelType(), snapshot);
     }
 
     private DataObjectFieldReferenceResolver.ReferencePlan referencePlan(

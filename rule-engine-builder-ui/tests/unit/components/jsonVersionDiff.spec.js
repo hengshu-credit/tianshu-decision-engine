@@ -23,4 +23,18 @@ describe('JsonVersionDiff', () => {
     expect(wrapper.text()).toContain('V1')
     expect(wrapper.text()).toContain('当前审批版本')
   })
+
+  test('可隐藏重复的版本标题但保留差异编辑器', () => {
+    const wrapper = shallowMount(JsonVersionDiff, {
+      props: {
+        original: '{"a":1}',
+        modified: '{"a":2}',
+        showHeader: false,
+      },
+      stubs: { MonacoDiffEditor: true },
+    })
+
+    expect(wrapper.find('.json-version-diff__head').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'MonacoDiffEditor' }).exists()).toBe(true)
+  })
 })

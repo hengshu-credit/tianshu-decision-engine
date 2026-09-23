@@ -2,6 +2,7 @@ import {
   FLOW_MENU_OPTIONS,
   FLOW_THEME_COLOR,
   addConnectedNode,
+  blurActiveDesignerControl,
   calculateGroupBounds,
   createAnchorGesture,
   createFlowNodeData,
@@ -10,6 +11,7 @@ import {
   getPersistableGraphData,
   createDynamicGroup,
   isAnchorClickGesture,
+  isDesignerInteractiveTarget,
   layoutGraphByAnchors,
   resolveAnchorDirection,
   resolveEdgeDirections,
@@ -17,6 +19,39 @@ import {
 } from '@/components/flow/flowDesignerGraph'
 
 describe('flowDesignerGraph', () => {
+  test('清理设计器输入控件焦点但不干扰画布外的普通焦点', () => {
+    const wrapper = document.createElement('div')
+    wrapper.className = 'el-input'
+    const input = document.createElement('input')
+    wrapper.appendChild(input)
+    document.body.appendChild(wrapper)
+    input.focus()
+
+    expect(document.activeElement).toBe(input)
+    expect(blurActiveDesignerControl()).toBe(true)
+    expect(document.activeElement).not.toBe(input)
+
+    const button = document.createElement('button')
+    document.body.appendChild(button)
+    button.focus()
+    expect(blurActiveDesignerControl()).toBe(false)
+    expect(document.activeElement).toBe(button)
+
+    wrapper.remove()
+    button.remove()
+  })
+
+  test('识别设计器空白点击与输入控件点击', () => {
+    const blank = document.createElement('div')
+    const input = document.createElement('input')
+    const selectWrapper = document.createElement('div')
+    selectWrapper.className = 'el-select'
+
+    expect(isDesignerInteractiveTarget(blank)).toBe(false)
+    expect(isDesignerInteractiveTarget(input)).toBe(true)
+    expect(isDesignerInteractiveTarget(selectWrapper)).toBe(true)
+  })
+
   test('锚点移动不超过可视拖线阈值时仍按单击处理', () => {
     const gesture = updateAnchorGesture(
       createAnchorGesture({ e: { clientX: 100, clientY: 100 } }),

@@ -899,9 +899,19 @@ describe('九类设计器草稿保护', () => {
     }
     await wrapper.vm.$nextTick()
 
+    const propertyInput = document.createElement('input')
+    const propertyInputWrapper = document.createElement('div')
+    propertyInputWrapper.className = 'el-input'
+    propertyInputWrapper.appendChild(propertyInput)
+    document.body.appendChild(propertyInputWrapper)
+    propertyInput.focus()
+    expect(document.activeElement).toBe(propertyInput)
+
     await wrapper.get('.prop-close').trigger('click')
 
     expect(wrapper.vm.activeElement).toBeNull()
+    expect(document.activeElement).not.toBe(propertyInput)
+    propertyInputWrapper.remove()
     wrapper.unmount()
   })
 

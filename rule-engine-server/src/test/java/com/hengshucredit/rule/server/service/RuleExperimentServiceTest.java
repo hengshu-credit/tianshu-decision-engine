@@ -20,6 +20,8 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.LinkedHashSet;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -151,6 +153,92 @@ public class RuleExperimentServiceTest {
         Map<String, Object> bound = (Map<String, Object>) method.invoke(typedService, experiment, params);
 
         assertEquals(Integer.valueOf(22), bound.get("age"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void routingResolvesOnlyConditionAndRequestKeyDependencies() throws Exception {
+        RuleExperiment experiment = experiment("CONDITION", "RATIO");
+        experiment.setId(9L);
+        experiment.setProjectId(3L);
+        experiment.setRequestKeyPath("{\"kind\":\"REFERENCE\",\"refId\":37,\"refType\":\"VARIABLE\",\"code\":\"age\",\"value\":\"age\"}");
+        List<RuleExperimentGroup> groups = new ArrayList<>();
+        groups.add(group("champion", "CHAMPION", 100, 0, "age >= 22", null));
+        groups.add(group("challenger", "CHALLENGER", 0, 1, "", null));
+
+        RuleDefinitionInputField age = new RuleDefinitionInputField();
+        age.setVarId(37L);
+        age.setRefType("VARIABLE");
+        age.setScriptName("age");
+        age.setFieldType("NUMBER");
+        RuleDefinitionInputField unrelatedApi = new RuleDefinitionInputField();
+        unrelatedApi.setVarId(228L);
+        unrelatedApi.setRefType("VARIABLE");
+        unrelatedApi.setScriptName("current_overdue_days");
+        unrelatedApi.setFieldType("NUMBER");
+
+        setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson, String modelType, Long projectId) {
+                return new ResolvedFields(Collections.singletonList(age), Collections.emptyList());
+            }
+        });
+        setField(service, "variableService", new RuleVariableService() {
+            @Override
+            public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                return Map.of("VARIABLE:37", "age", "VARIABLE:228", "current_overdue_days");
+            }
+        });
+        final Set<String>[] captured = new Set[]{null};
+        setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override
+            public Map<String, Object> resolve(Long projectId, Map<String, Object> params,
+                                                VariableResolveOptions options) {
+                captured[0] = new LinkedHashSet<>(options.getRequiredScriptNames());
+                params.put("age", 36);
+                return params;
+            }
+        });
+
+        Method method = RuleExperimentService.class.getDeclaredMethod(
+                "resolveRoutingParams", RuleExperiment.class, List.class, Map.class);
+        method.setAccessible(true);
+        Map<String, Object> params = new HashMap<>();
+        params.put("age", 99);
+        Map<String, Object> resolved = (Map<String, Object>) method.invoke(service, experiment, groups, params);
+
+        assertEquals(Set.of("age"), captured[0]);
+        assertEquals(Integer.valueOf(36), resolved.get("age"));
+    }
+
+    @Test
+    public void routingConditionRetainsDerivedNodeAfterPublicInputProjection() throws Exception {
+        RuleExperiment experiment = experiment("CONDITION", "RATIO");
+        experiment.setProjectId(3L); experiment.setRequestKeyPath(null);
+        var champion = group("champion", "CHAMPION", 100, 0, "", null);
+        champion.setConditionConfig("{\"type\":\"group\",\"op\":\"AND\",\"children\":[{\"type\":\"leaf\",\"operator\":\">=\",\"leftOperand\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":37,\"code\":\"staleAge\"},\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":22,\"valueType\":\"NUMBER\"}}]}");
+        RuleDefinitionInputField raw = new RuleDefinitionInputField();
+        raw.setVarId(6L); raw.setRefType("VARIABLE"); raw.setScriptName("idcard_no");
+        setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public ResolvedFields resolveFields(Long id, String json, String type, Long project) {
+                return new ResolvedFields(List.of(raw), List.of());
+            }
+        });
+        setField(service, "variableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long project) {
+                return Map.of("VARIABLE:6", "idcard_no", "VARIABLE:37", "age");
+            }
+        });
+        setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolve(Long project, Map<String, Object> params, VariableResolveOptions options) {
+                assertTrue("只传入身份证不能代替计算年龄", options.getRequiredScriptNames().contains("age"));
+                assertTrue(options.getRequiredScriptNames().contains("idcard_no"));
+                return params;
+            }
+        });
+        Method method = RuleExperimentService.class.getDeclaredMethod("resolveRoutingParams", RuleExperiment.class, List.class, Map.class);
+        method.setAccessible(true);
+        method.invoke(service, experiment, List.of(champion), new HashMap<>());
     }
 
     @Test

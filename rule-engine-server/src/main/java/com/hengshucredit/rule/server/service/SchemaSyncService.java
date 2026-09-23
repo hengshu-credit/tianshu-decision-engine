@@ -85,8 +85,10 @@ public class SchemaSyncService {
             ensureModelScopeConsistency();
             ensureModelFieldForeignKeysRemoved();
             ensureDataObjectFieldReferenceSchema();
+            ensureDataObjectReferenceLoading();
             ensureDataObjectFieldUniqueKey();
             ensureDashboardIndexes();
+            ensureHistoricalFieldSnapshots();
             ensureTablesFromSchema(List.of("rule_application_history"));
         } catch (Exception e) {
             log.warn("运行时数据库结构同步失败，请检查 sql/schema.sql 与当前数据库: {}", e.getMessage());
@@ -99,6 +101,32 @@ public class SchemaSyncService {
     public String readSchema() throws IOException {
         ClassPathResource resource = new ClassPathResource("sql/schema.sql");
         return StreamUtils.copyToString(resource.getInputStream(), StandardCharsets.UTF_8);
+    }
+
+    private void ensureDataObjectReferenceLoading() {
+        if (tableExists("rule_data_object")) addColumnIfMissing("rule_data_object", "lazy_load_references",
+                "`lazy_load_references` TINYINT NOT NULL DEFAULT 0 COMMENT '引用型叶子字段按需取值，默认关闭'");
+        if (tableExists("rule_data_object_field")) addColumnIfMissing("rule_data_object_field", "reference_mode",
+                "`reference_mode` VARCHAR(16) NOT NULL DEFAULT 'VALUE' COMMENT 'VALUE缺失时引用取值，STRUCTURE仅复用定义'");
+    }
+
+    private void ensureHistoricalFieldSnapshots() {
+        for (String table : List.of("rule_variable", "rule_data_object_field", "rule_model_output_field")) {
+            if (tableExists(table)) addColumnIfMissing(table, "record_result",
+                    "`record_result` TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计'");
+        }
+        if (tableExists("rule_execution_log")) {
+            addColumnIfMissing("rule_execution_log", "root_rule_id", "`root_rule_id` BIGINT DEFAULT NULL");
+            addColumnIfMissing("rule_execution_log", "execution_project_id", "`execution_project_id` BIGINT DEFAULT NULL");
+            addColumnIfMissing("rule_execution_log", "started_at", "`started_at` DATETIME(6) DEFAULT NULL");
+            addColumnIfMissing("rule_execution_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
+            addIndexIfMissing("rule_execution_log", "idx_history_scope_time", "`execution_project_id`, `root_rule_id`, `started_at`");
+        }
+        if (tableExists("rule_runtime_call_log")) {
+            addColumnIfMissing("rule_runtime_call_log", "root_trace_id", "`root_trace_id` CHAR(36) DEFAULT NULL");
+            addColumnIfMissing("rule_runtime_call_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
+            addIndexIfMissing("rule_runtime_call_log", "idx_history_root_api", "`root_trace_id`, `action_type`, `target_ref_id`");
+        }
     }
 
     /**

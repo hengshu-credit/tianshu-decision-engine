@@ -291,6 +291,7 @@ public class RuleDependencyClosureService {
         snapshot.put("varType", variable.getVarType());
         snapshot.put("varSource", variable.getVarSource());
         snapshot.put("sourceConfig", variable.getSourceConfig());
+        snapshot.put("recordResult", variable.getRecordResult());
         snapshot.put("defaultValue", variable.getDefaultValue());
         snapshot.put("valueRange", variable.getValueRange());
         snapshot.put("exampleValue", variable.getExampleValue());
@@ -338,6 +339,8 @@ public class RuleDependencyClosureService {
                 }
             }
         } else if ("LIST".equals(source)) {
+            collectStructuredReferences(JSON.toJSONString(config.get("queryOperands")),
+                    variable.getProjectId(), dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
             JSONArray ids = config.getJSONArray("listIds");
             if (ids == null || ids.isEmpty()) {
                 addExternalBinding(variable, actualType, "LIST_LIBRARY", null,
@@ -387,6 +390,7 @@ public class RuleDependencyClosureService {
     private void addModel(Long modelId, Long projectId, String path,
                           Map<String, ArtifactDependency> dependencies,
                           List<RuleValidationIssue> issues) {
+        if (dependencies.keySet().stream().anyMatch(key -> key.startsWith("MODEL:" + modelId + ":"))) return;
         RuleModel model = loadModel(modelId);
         if (model == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path, "MODEL", modelId,
@@ -447,13 +451,33 @@ public class RuleDependencyClosureService {
         modelSnapshot.put("currentVersion", version);
         modelSnapshot.put("status", 1);
         metadata.put("model", modelSnapshot);
-        metadata.put("inputFields", beanMaps(loadModelInputFields(modelId)));
-        metadata.put("outputFields", beanMaps(loadModelOutputFields(modelId)));
+        List<RuleModelInputField> modelInputs = loadModelInputFields(modelId);
+        List<RuleModelOutputField> modelOutputs = loadModelOutputFields(modelId);
+        metadata.put("inputFields", beanMaps(modelInputs));
+        metadata.put("outputFields", beanMaps(modelOutputs));
         ArtifactDependency dependency = new ArtifactDependency("MODEL:" + modelId + ":" + version,
                 "MODEL", modelId, version,
                 "models/" + modelId + "/" + version + "." + format.toLowerCase(Locale.ROOT),
                 "application/octet-stream", "EMBEDDED", digest, content, metadata);
         dependencies.putIfAbsent(dependency.getComponentId(), dependency);
+        for (RuleModelInputField field : modelInputs) {
+            if (field.getVarId() != null) collectFieldReference(field.getRefType(), field.getVarId(), projectId,
+                    path + ".input." + field.getFieldName(), dependencies, issues);
+            collectModelOperand(field.getSourceOperand(), projectId, dependencies, issues);
+            collectModelOperand(field.getDefaultOperand(), projectId, dependencies, issues);
+        }
+        for (RuleModelOutputField field : modelOutputs) {
+            if (field.getVarId() != null) collectFieldReference(field.getRefType(), field.getVarId(), projectId,
+                    path + ".output." + field.getFieldName(), dependencies, issues);
+            collectModelOperand(field.getTargetOperand(), projectId, dependencies, issues);
+            collectModelOperand(field.getTransformOperand(), projectId, dependencies, issues);
+        }
+    }
+
+    private void collectModelOperand(String json, Long projectId, Map<String, ArtifactDependency> dependencies,
+                                      List<RuleValidationIssue> issues) {
+        if (json == null || json.isBlank()) return;
+        collectStructuredReferences(json, projectId, dependencies, issues, new LinkedHashSet<>(), new LinkedHashSet<>());
     }
 
     private void addFunction(Long functionId, Long projectId, String path,
@@ -506,6 +530,17 @@ public class RuleDependencyClosureService {
     private void addDataObjectField(Long fieldId, Long projectId, String path,
                                     Map<String, ArtifactDependency> dependencies,
                                     List<RuleValidationIssue> issues) {
+        addDataObjectField(fieldId, projectId, path, dependencies, issues, new LinkedHashSet<>());
+    }
+
+    private void addDataObjectField(Long fieldId, Long projectId, String path,
+                                    Map<String, ArtifactDependency> dependencies,
+                                    List<RuleValidationIssue> issues, Set<Long> ancestors) {
+        if (!ancestors.add(fieldId)) {
+            issues.add(RuleValidationIssue.error("DATA_OBJECT_PARENT_CYCLE", path, "数据对象父级字段存在循环"));
+            return;
+        }
+        if (dependencies.containsKey("DATA_OBJECT:" + fieldId)) return;
         RuleDataObjectField field = loadDataObjectField(fieldId);
         if (field == null) {
             issues.add(RuleValidationIssue.error("DEPENDENCY_NOT_FOUND", path,
@@ -526,7 +561,11 @@ public class RuleDependencyClosureService {
         snapshot.put("genericType", field.getGenericType());
         snapshot.put("refObjectId", field.getRefObjectId());
         snapshot.put("refVariableId", field.getRefVariableId());
+        snapshot.put("referenceMode", field.getReferenceMode());
+        snapshot.put("parentFieldId", field.getParentFieldId());
+        snapshot.put("recordResult", field.getRecordResult());
         RuleDataObject owner = field.getObjectId() == null ? null : loadDataObject(field.getObjectId());
+        snapshot.put("lazyReference", owner != null && Boolean.TRUE.equals(owner.getLazyLoadReferences()));
         String objectPath = owner == null ? null : owner.getScriptName();
         if (owner != null && (objectPath == null || objectPath.isBlank())) objectPath = owner.getObjectCode();
         String fieldPath = field.getScriptName();
@@ -537,7 +576,10 @@ public class RuleDependencyClosureService {
         snapshot.put("referencePath", fieldPath);
         addJsonDependency("DATA_OBJECT:" + fieldId, "DATA_OBJECT", fieldId, null,
                 "data-object-fields/" + fieldId + ".json", "EMBEDDED", snapshot, dependencies);
-        if (field.getRefVariableId() != null) {
+        if (field.getParentFieldId() != null) {
+            addDataObjectField(field.getParentFieldId(), projectId, path + ".parentFieldId", dependencies, issues, ancestors);
+        }
+        if (field.referencesValue()) {
             RuleVariable referenced = loadVariable(field.getRefVariableId());
             String referenceType = referenced != null && "CONSTANT".equals(referenced.getVarSource()) ? "CONSTANT" : "VARIABLE";
             addVariable(referenceType, field.getRefVariableId(), projectId,

@@ -53,6 +53,14 @@ public class RuleSetCompilerTest {
     }
 
     @Test
+    public void rejectsUnknownExecutionMode() {
+        CompileResult result = compiler.compile("{\"executionMode\":\"UNKNOWN\",\"rules\":[]}");
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("执行模式不支持"));
+    }
+
+    @Test
     public void testSerialModeReturnsHitListWhenTraceEnabled() {
         CompileResult compiled = compiler.compile("{\n" +
                 "  \"executionMode\":\"SERIAL\",\n" +

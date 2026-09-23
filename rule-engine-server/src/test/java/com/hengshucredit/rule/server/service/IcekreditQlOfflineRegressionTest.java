@@ -97,6 +97,11 @@ public class IcekreditQlOfflineRegressionTest {
         CountingApiService api = new CountingApiService();
         VariableSourceResolver resolver = resolverWithApiVariable(api);
         VariableResolveOptions options = VariableResolveOptions.defaults();
+        // 离线回放显式导入可信的引擎取值记录，不把调用方同名参数当作已执行来源。
+        VariableResolutionInvocationCache replay = new VariableResolutionInvocationCache();
+        replay.resolveVariable("VARIABLE:" + VARIABLE_ID,
+                () -> new SourceResolutionResult(0, SCRIPT_ROOT, true, features, Map.of(), List.of()));
+        options.setInvocationCache(replay);
         options.setRequiredScriptNames(new LinkedHashSet<>(Arrays.asList(
                 "icekredit_vn_credit_profile_features.credit_score_v1",
                 "icekredit_vn_credit_profile_features.credit_apply_count_1m")));

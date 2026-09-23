@@ -91,14 +91,15 @@ describe('统一审批详情', () => {
     clearCurrentUser()
   })
 
-  test('左右展示基准和提交版本差异', async() => {
+  test('左右展示基准和当前审批版本差异', async() => {
     const wrapper = shallowMount(ApprovalDetail, {
       global: { directives: { permission: {} } }
     })
     await flushPromises()
 
     expect(wrapper.text()).toContain('基准版本')
-    expect(wrapper.text()).toContain('提交版本')
+    expect(wrapper.vm.compareLeftLabel).toBe('历史生效 V2')
+    expect(wrapper.vm.compareRightLabel).toBe('当前审批（冻结快照）')
     expect(wrapper.text()).toContain('db-old')
     expect(wrapper.text()).toContain('db-new')
   })
@@ -192,6 +193,29 @@ describe('统一审批详情', () => {
     expect(wrapper.vm.compareModified).toBe('{"host":"db-new","port":3306}')
   })
 
+  test('配置差异不重复渲染左右版本标题条', async() => {
+    const wrapper = shallowMount(ApprovalDetail, {
+      global: { directives: { permission: {} } }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('.diff-columns-head').exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'JsonVersionDiff' }).exists()).toBe(true)
+  })
+
+  test('版本选择器分列展示且差异总结紧跟配置差异标题', async() => {
+    const wrapper = shallowMount(ApprovalDetail, {
+      global: { directives: { permission: {} } }
+    })
+    await flushPromises()
+
+    expect(wrapper.find('h2 .diff-summary').exists()).toBe(true)
+    expect(wrapper.find('.section-heading > .diff-summary').exists()).toBe(false)
+    expect(wrapper.vm.compareStatusLabel).toBe('内容有差异')
+    expect(wrapper.find('.version-selector-left').exists()).toBe(true)
+    expect(wrapper.find('.version-selector-right').exists()).toBe(true)
+  })
+
   test('血缘依赖区复用统一血缘图组件并启用完整画布能力', async() => {
     const wrapper = shallowMount(ApprovalDetail, {
       global: { directives: { permission: {} } }
@@ -213,6 +237,42 @@ describe('统一审批详情', () => {
       embedded: true,
       initialNodeType: 'RULE',
       initialNodeId: 27,
+      initialDirection: 'ALL'
+    })
+  })
+
+  test('数据对象审批复用血缘图并将引用路径解析为具体内容', async() => {
+    const wrapper = shallowMount(ApprovalDetail, {
+      global: { directives: { permission: {} } }
+    })
+    await flushPromises()
+    wrapper.vm.detail = {
+      ...wrapper.vm.detail,
+      request: {
+        ...wrapper.vm.detail.request,
+        resourceType: 'DATA_OBJECT',
+        resourceId: 3,
+        submittedSnapshotJson: JSON.stringify({
+          fields: [{ projectId: 3, varLabel: '项目归属' }]
+        })
+      },
+      dependencies: [{
+        targetResourceType: 'PROJECT',
+        targetResourceId: 3,
+        targetVersionNo: 1,
+        referencePath: '$.fields[0].projectId'
+      }]
+    }
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.vm.lineageNodeType).toBe('DATA_OBJECT')
+    expect(wrapper.vm.lineageNodeId).toBe(3)
+    expect(wrapper.vm.dependencyReferenceLabel(wrapper.vm.detail.dependencies[0]))
+      .toBe('字段 1（项目归属） · 项目 ID = 3')
+    expect(wrapper.findComponent({ name: 'LineageGraph' }).props()).toMatchObject({
+      embedded: true,
+      initialNodeType: 'DATA_OBJECT',
+      initialNodeId: 3,
       initialDirection: 'ALL'
     })
   })

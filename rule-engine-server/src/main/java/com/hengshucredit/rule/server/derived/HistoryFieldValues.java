@@ -12,6 +12,26 @@ import java.util.Map;
 public final class HistoryFieldValues {
     private HistoryFieldValues() { }
 
+    /** 按路径是否存在判断；显式 null（包括空父对象）不能被当成需要取数。 */
+    public static boolean present(Map<String, Object> values, String path) {
+        if (values == null || path == null) return false;
+        if (values.containsKey(path)) return true;
+        Object current = values;
+        for (String part : path.split("\\.")) {
+            if (!(current instanceof Map<?, ?> map) || !map.containsKey(part)) return false;
+            current = map.get(part);
+            if (current == null) return true;
+        }
+        return true;
+    }
+
+    public static void preferAssignedObjectPaths(Map<String, String> resolved,
+            Map<String, String> objectPaths, Map<String, Object> values) {
+        objectPaths.forEach((key, path) -> {
+            if (key.startsWith("DATA_OBJECT:") && present(values, path)) resolved.put(key, path);
+        });
+    }
+
     public static Map<String, Object> snapshot(Map<String, String> paths, Map<String, Object> values) {
         Map<String, Object> result = new LinkedHashMap<>();
         paths.forEach((key, path) -> {
@@ -68,12 +88,34 @@ public final class HistoryFieldValues {
     }
 
     public static void applyAliases(Map<String, String> paths, List<com.hengshucredit.rule.model.entity.RuleDataObjectField> fields) {
+        Map<String, String> original = new LinkedHashMap<>(paths);
+        Map<Long, com.hengshucredit.rule.model.entity.RuleDataObjectField> byId = new LinkedHashMap<>();
+        fields.forEach(field -> byId.put(field.getId(), field));
         for (var field : fields) {
-            if (field.getRefVariableId() == null) continue;
-            String path = paths.get("VARIABLE:" + field.getRefVariableId());
-            if (path == null) path = paths.get("CONSTANT:" + field.getRefVariableId());
+            String path = aliasPath(field, original, byId, new java.util.HashSet<>());
             if (path != null) paths.put("DATA_OBJECT:" + field.getId(), path);
         }
+    }
+
+    private static String aliasPath(com.hengshucredit.rule.model.entity.RuleDataObjectField field,
+            Map<String, String> original, Map<Long, com.hengshucredit.rule.model.entity.RuleDataObjectField> fields,
+            java.util.Set<Long> visited) {
+        if (!visited.add(field.getId())) throw new IllegalArgumentException("数据对象字段父级存在循环");
+        if (field.referencesValue()) {
+            String variable = original.get("VARIABLE:" + field.getRefVariableId());
+            if (variable == null) variable = original.get("CONSTANT:" + field.getRefVariableId());
+            if (variable != null) return variable;
+        }
+        String path = original.get("DATA_OBJECT:" + field.getId());
+        var parent = fields.get(field.getParentFieldId());
+        if (parent != null) {
+            String previousParent = original.get("DATA_OBJECT:" + parent.getId());
+            String resolvedParent = aliasPath(parent, original, fields, visited);
+            if (path != null && previousParent != null && resolvedParent != null && path.startsWith(previousParent + ".")) {
+                return resolvedParent + path.substring(previousParent.length());
+            }
+        }
+        return path;
     }
 
     private static void put(Map<String, String> paths, String type, Long id, String path) {

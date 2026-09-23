@@ -14,6 +14,24 @@ import static org.junit.Assert.assertEquals;
 
 public class RuntimeContextBridgeTest {
 
+    @Test
+    public void nestedSourceStateResolversRestoreParentAndDoNotLeakIntoWorkers() {
+        List<String> calls = new ArrayList<>();
+        var context = RuntimeContextBridge.currentContext();
+        try (var parent = context.bindSourceStateResolver(key -> calls.add("parent:" + key))) {
+            context.sourceStatusMatches("VARIABLE", "1", "OUTCOME", "SUCCESS");
+            try (var child = context.bindSourceStateResolver(key -> calls.add("child:" + key))) {
+                context.sourceStatusMatches("VARIABLE", "2", "OUTCOME", "SUCCESS");
+                try (var worker = RuntimeContextBridge.installContext(RuntimeContextBridge.captureContext(), null)) {
+                    RuntimeContextBridge.sourceStatusMatches("VARIABLE", "3", "OUTCOME", "SUCCESS");
+                }
+            }
+            context.sourceStatusMatches("VARIABLE", "4", "OUTCOME", "SUCCESS");
+        }
+        context.sourceStatusMatches("VARIABLE", "5", "OUTCOME", "SUCCESS");
+        assertEquals(List.of("parent:VARIABLE:1", "child:VARIABLE:2", "parent:VARIABLE:4"), calls);
+    }
+
     @After
     public void clearContext() {
         RuntimeContextBridge.clear();

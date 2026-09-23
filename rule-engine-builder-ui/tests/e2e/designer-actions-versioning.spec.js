@@ -90,10 +90,20 @@ for (const [route, id, modelType, add] of designers) {
     await expect(page.getByTestId('designer-version-select')).not.toContainText('999')
     await page.getByTestId('designer-version-select').click()
     const draftOption = page.getByRole('option', { name: /草稿 · 1/ })
-    const optionBox = await draftOption.boundingBox()
-    const deleteBox = await draftOption.getByRole('button', { name: /删除草稿/ }).boundingBox()
-    expect(Math.abs(deleteBox.y + deleteBox.height / 2 - optionBox.y - optionBox.height / 2)).toBeLessThanOrEqual(1)
-    expect(deleteBox.x + deleteBox.width).toBeLessThanOrEqual(optionBox.x + optionBox.width)
+    await expect(draftOption.getByRole('button', { name: /删除草稿/ })).toBeVisible()
+    // 下拉层入场有缩放动画，父子矩形必须在同一帧读取。
+    await expect(async () => {
+      const { verticalOffset, rightOverflow } = await draftOption.evaluate(option => {
+        const optionBox = option.getBoundingClientRect()
+        const deleteBox = option.querySelector('.delete-draft').getBoundingClientRect()
+        return {
+          verticalOffset: Math.abs(deleteBox.y + deleteBox.height / 2 - optionBox.y - optionBox.height / 2),
+          rightOverflow: deleteBox.right - optionBox.right
+        }
+      })
+      expect(verticalOffset).toBeLessThanOrEqual(1)
+      expect(rightOverflow).toBeLessThanOrEqual(0)
+    }).toPass()
     await page.getByRole('combobox', { name: '选择规则版本' }).press('Escape')
     await page.reload()
     await expect(page.getByTestId('designer-version-select')).toContainText('草稿')
@@ -245,7 +255,8 @@ test('草稿新增与覆盖、取消切版、保存并切换、发布绑定请�
   expect(data.saved).toHaveLength(2)
   await page.getByTestId('designer-version-select').click()
   await page.getByRole('option', { name: '发布版本 v1', exact: true }).click()
-  await switching.getByText('新增草稿', { exact: true }).click()
+  await switching.getByText('另存为新草稿', { exact: true }).click()
+  await expect(switching.getByRole('radio', { name: '另存为新草稿', exact: true })).toBeChecked()
   await switching.locator('[data-action="confirm-save"]').click()
   await expect(page).toHaveURL(/sourceType=VERSION&sourceId=81/)
   expect(data.saved[2]).toMatchObject({ saveMode: 'NEW', sourceId: '9001' })
@@ -259,7 +270,8 @@ test('草稿新增与覆盖、取消切版、保存并切换、发布绑定请�
   await page.getByRole('option', { name: '版本 v1', exact: true }).click()
   await publish.getByRole('textbox', { name: '变更说明' }).fill('调整额度')
   await publish.locator('[data-action="confirm-publish"]').click()
-  await expect(page.getByText('已提交发布审批，审批通过后生效')).toBeVisible()
+  await expect(page.getByRole('dialog', { name: '已提交发布审批', exact: true }))
+    .toContainText('当前配置已提交发布审批，审批通过后才会生效。已有生效版本保持不变。')
   expect(data.published[0]).toEqual({ revisionId: '9002', lockVersion: 1, publishMode: 'OVERWRITE', targetVersionId: '8001', targetGeneration: 3, comment: '调整额度' })
   expect(data.saved).toHaveLength(3)
   harness.assertClean()

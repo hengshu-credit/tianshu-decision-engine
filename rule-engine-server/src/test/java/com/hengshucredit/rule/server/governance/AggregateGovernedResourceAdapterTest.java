@@ -43,6 +43,19 @@ import java.util.Map;
 public class AggregateGovernedResourceAdapterTest {
 
     @Test
+    public void restoringLegacyObjectSnapshotExplicitlyRestoresDefaultLoadingPolicy() {
+        var adapter = new DataObjectGovernedResourceAdapter(null, null, null, codec());
+        var legacy = adapter.normalizeDraft(ResourceSnapshot.ofJson("{\"id\":4,\"fields\":[{\"id\":8,\"refVariableId\":7}]}"));
+        var restored = CanonicalJson.readMap(legacy.snapshotJson());
+        Assert.assertEquals(Boolean.FALSE, restored.get("lazyLoadReferences"));
+        Assert.assertEquals("VALUE", ((Map<?, ?>) ((List<?>) restored.get("fields")).get(0)).get("referenceMode"));
+        var configured = CanonicalJson.readMap(adapter.normalizeDraft(ResourceSnapshot.ofJson(
+                "{\"lazyLoadReferences\":true,\"fields\":[{\"referenceMode\":\"STRUCTURE\"}]}")).snapshotJson());
+        Assert.assertEquals(Boolean.TRUE, configured.get("lazyLoadReferences"));
+        Assert.assertEquals("STRUCTURE", ((Map<?, ?>) ((List<?>) configured.get("fields")).get(0)).get("referenceMode"));
+    }
+
+    @Test
     public void variableVersionContainsAndAppliesOptions() {
         RuleVariable variable = variable();
         RuleVariableOption option = new RuleVariableOption();

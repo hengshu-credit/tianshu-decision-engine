@@ -187,10 +187,25 @@ export default {
   },
   watch: {
     value(value) {
-      if (value != null) return
-      this.manualKind = ''
-      this.manualOperand = null
-      this.manualPathCandidates = []
+      if (value == null) {
+        this.manualKind = ''
+        this.manualOperand = null
+        this.manualPathCandidates = []
+        return
+      }
+      if (this.manualKind && value.kind !== this.manualKind) {
+        this.manualKind = ''
+        this.manualOperand = null
+        this.manualPathCandidates = []
+        return
+      }
+      // 组件实例会在切换节点/动作块时复用；手输编辑器必须同步新的绑定值，
+      // 否则用户会看到上一个节点留下的阈值或路径。
+      if (this.manualKind && value.kind === this.manualKind) {
+        this.manualOperand = cloneOperand(value)
+        this.manualPathCandidates = []
+        this.$nextTick(this.focusManualInput)
+      }
     },
   },
   activated() {
@@ -385,23 +400,20 @@ export default {
       this.editorVisible = false
     },
     findFunction(operand) {
-      return (
-        this.functions.find((fn) => {
-          const id = fn.functionId != null ? fn.functionId : fn.id
-          const code =
-            fn.functionCode ||
-            fn.funcCode ||
-            fn.functionName ||
-            fn.funcName ||
-            fn.name ||
-            ''
-          return (
-            (operand.functionId != null &&
-              String(id) === String(operand.functionId)) ||
-            code === operand.functionCode
-          )
-        }) || null
-      )
+      if (!operand) return null
+      const byId = operand.functionId == null
+        ? null
+        : this.functions.find((fn) => {
+            const id = fn.functionId != null ? fn.functionId : fn.id
+            return String(id) === String(operand.functionId)
+          })
+      if (byId) return byId
+      // 有稳定 ID 但目录中不存在时不能按可变编码猜测另一个同名方法。
+      if (operand.functionId != null) return null
+      return this.functions.find((fn) => {
+        const code = fn.functionCode || fn.funcCode || fn.functionName || fn.funcName || fn.name || ''
+        return code === operand.functionCode
+      }) || null
     },
     candidateKey(item) {
       const type =

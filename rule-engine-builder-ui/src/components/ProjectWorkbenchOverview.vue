@@ -358,9 +358,9 @@ export default {
   gap: 16px;
   margin-bottom: 12px;
   padding: 16px;
-  border: 1px solid #bfdbfe;
+  border: 1px solid var(--tianshu-info-border);
   border-radius: 6px;
-  background: #eff6ff;
+  background: var(--tianshu-info-bg);
 }
 
 .next-action-card strong {
@@ -371,7 +371,7 @@ export default {
 }
 
 .section-kicker {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
   font-size: 12px;
   font-weight: 700;
 }
@@ -436,14 +436,14 @@ export default {
 }
 
 .check-list {
-  border-top: 1px solid #eef2f7;
+  border-top: 1px solid var(--tianshu-border-subtle);
 }
 
 .check-row {
   justify-content: flex-start;
   gap: 10px;
   min-height: 58px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 
 .check-row:last-child {
@@ -453,32 +453,32 @@ export default {
 .status-mark {
   width: 9px;
   height: 9px;
-  border: 2px solid #94a3b8;
+  border: 2px solid var(--tianshu-border-strong);
   border-radius: 50%;
   box-sizing: border-box;
   flex: 0 0 auto;
 }
 
 .status-ready {
-  border-color: #16a34a;
-  background: #16a34a;
+  border-color: var(--tianshu-success-border);
+  background: var(--tianshu-success-text);
 }
 
 .status-optional {
-  border-color: #64748b;
+  border-color: var(--tianshu-border-strong);
   background: var(--tianshu-bg-surface);
 }
 
 .status-action_required,
 .status-attention {
-  border-color: #d97706;
-  background: #fef3c7;
+  border-color: var(--tianshu-warning-border);
+  background: var(--tianshu-warning-bg);
 }
 
 .status-blocked,
 .status-unavailable {
-  border-color: #dc2626;
-  background: #fee2e2;
+  border-color: var(--tianshu-danger-border);
+  background: var(--tianshu-danger-bg);
 }
 
 .check-content {

@@ -253,41 +253,35 @@
                         >
                           <span class="fc-func-arg-name">{{ arg.label }}</span>
                           <span class="fc-func-arg-eq">=</span>
-                          <code class="fc-func-arg-val">{{ arg.value }}</code>
+                          <code class="fc-func-arg-val" tabindex="0" :aria-label="'参数 ' + arg.label">{{ arg.value }}</code>
                         </span>
                       </div>
                     </div>
-                    <div class="fc-expr-row" style="margin-top: 8px">
-                      <code class="fc-expr">{{ card.expression }}</code>
-                      <span class="fc-expr-result">{{
-                        card.resultDisplay
-                      }}</span>
-                    </div>
                   </template>
-                  <!-- 赋值类 / 计算类 / 结束：_result 汇总不展示左侧表达式，每个输出变量独占一行 -->
-                  <template v-else>
-                    <div
-                      class="fc-expr-row"
-                      :class="{
-                        'fc-expr-row--result-only':
-                          card.targetVar === '_result',
-                      }"
-                    >
-                      <code
-                        v-if="card.targetVar !== '_result'"
-                        class="fc-expr"
-                        >{{ card.expression }}</code
-                      >
-                      <span
+                  <!-- 表达式与结果各自限宽；最终输出汇总占整行。 -->
+                  <div
+                    v-if="card.stepType !== 'decision'"
+                    class="fc-expr-row"
+                    :class="{ 'fc-expr-row--result-only': card.targetVar === '_result' }"
+                  >
+                    <div v-if="card.targetVar !== '_result'" class="fc-expr-panel">
+                      <div class="fc-panel-label">规则表达式</div>
+                      <pre class="fc-expr" tabindex="0" aria-label="规则表达式">{{ card.expression }}</pre>
+                    </div>
+                    <div class="fc-result-panel">
+                      <div class="fc-panel-label">执行结果</div>
+                      <pre
                         class="fc-expr-result"
                         :class="{
                           'is-end': card.stepType === 'end',
                           'is-result-map': card.targetVar === '_result',
                         }"
-                        >{{ card.resultDisplay }}</span
+                        tabindex="0"
+                        aria-label="执行结果"
+                        >{{ card.resultDisplay }}</pre
                       >
                     </div>
-                  </template>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1386,6 +1380,34 @@ export default {
       }
       return nodes
     },
+    ruleSetConditionTraces: function () {
+      var assignments = Object.create(null)
+      var markers = []
+      var walk = function (node) {
+        if (!node || node.type === 'DEFINE_FUNCTION' || node.type === 'DEFINE_MACRO') return
+        var children = node.children || []
+        if (node.type === 'OPERATOR' && node.token === '=' && children[0] &&
+            /^_ruleSetEval\d+$/.test(children[0].token)) {
+          assignments[children[0].token] = children[1]
+        }
+        if (node.type === 'FUNCTION' && node.token === 'recordRuleSetItem' && children.length >= 3) {
+          // 未执行的字符串常量仍保留 token，用它定位被串行模式跳过的规则。
+          var code = children[0].value
+          if (code === undefined) {
+            try { code = JSON.parse(children[0].token) } catch (e) { code = null }
+          }
+          if (code != null) markers.push({ code: String(code), variable: children[2].token })
+        }
+        children.forEach(walk)
+      }
+      this._getStatements().forEach(walk)
+      var conditions = Object.create(null)
+      markers.forEach(function (marker) {
+        if (Object.prototype.hasOwnProperty.call(assignments, marker.variable))
+          conditions[marker.code] = assignments[marker.variable]
+      })
+      return conditions
+    },
     ruleSetOutputHits: function () {
       var output = this.parsedOutput
       if (!Array.isArray(output)) return null
@@ -1420,8 +1442,15 @@ export default {
       for (var i = 0; i < rules.length; i++) {
         var rule = rules[i]
         var ifNode = this.ruleSetIfNodes[i] || null
-        var ruleCode = rule.ruleCode || 'R' + String(i + 1).padStart(4, '0')
-        var traceStatus = this._ruleSetRowStatus(ifNode)
+        var ruleCode = rule.ruleCode || 'R' + String(rule._originOrder || i + 1).padStart(4, '0')
+        var currentTrace = Object.prototype.hasOwnProperty.call(this.ruleSetConditionTraces, ruleCode)
+        var conditionTrace = currentTrace
+          ? this.ruleSetConditionTraces[ruleCode] : this._ruleSetConditionNode(ifNode)
+        var conditionTree = this._buildRuleSetConditionTree(rule.conditionRoot, conditionTrace)
+        var traceStatus = currentTrace
+          ? !conditionTrace || conditionTrace.evaluated === false || typeof conditionTrace.value !== 'boolean'
+            ? 'skipped' : conditionTrace.value ? 'hit' : 'miss'
+          : this._ruleSetRowStatus(ifNode)
         var status = traceStatus
         if (this.ruleSetEventStatuses !== null) {
           status = Object.prototype.hasOwnProperty.call(
@@ -1454,14 +1483,8 @@ export default {
               ? '跳过'
               : '未命中',
           hit: status === 'hit',
-          conditionTree: this._buildRuleSetConditionTree(
-            rule.conditionRoot,
-            this._ruleSetConditionNode(ifNode)
-          ),
-          conditions: this._buildRuleSetConditionItems(
-            rule.conditionRoot,
-            this._ruleSetConditionNode(ifNode)
-          ),
+          conditionTree: conditionTree,
+          conditions: this._buildRuleSetConditionItems(conditionTree),
           actions:
             status === 'hit'
               ? this._buildRuleSetActionItems(rule.actionData)
@@ -1617,9 +1640,12 @@ export default {
             var nextStmt = i + 1 < stmts.length ? stmts[i + 1] : null
             if (nextStmt && nextStmt.type === 'IF') {
               var dimItems = this._walkScoreAdvChain(nextStmt, varName)
+              var scoreWeight = this._scoreAdvWeight(varName)
               var dimHitScore = 0
               var anyHit = false
               for (var d = 0; d < dimItems.length; d++) {
+                dimItems[d].score = dimItems[d].score * scoreWeight
+                dimItems[d].scoreDisplay = (dimItems[d].score >= 0 ? '+' : '') + dimItems[d].score
                 if (dimItems[d].hit) {
                   dimHitScore = dimItems[d].score
                   anyHit = true
@@ -1683,7 +1709,6 @@ export default {
       }
       return items
     },
-
     /** 根据模型类型返回对应的评分卡行数据 */
     effectiveScoreItems: function () {
       return this.effectiveType === 'SCORE_ADV'
@@ -2780,10 +2805,17 @@ export default {
       walk(node)
       return hit
     },
-    _buildRuleSetConditionItems: function (root, traceNode) {
-      if (!root || !root.children || root.children.length === 0) return []
+    _buildRuleSetConditionItems: function (tree) {
       var items = []
-      this._appendRuleSetConditionItems(root, traceNode, items)
+      var append = function (node) {
+        if (!node) return
+        if (node.kind !== 'group') { items.push(node); return }
+        node.children.forEach(function (child, index) {
+          if (index) items.push({ kind: 'join', text: node.operator === 'OR' ? '或' : '且' })
+          append(child)
+        })
+      }
+      append(tree)
       return items
     },
     _buildRuleSetConditionTree: function (node, traceNode) {
@@ -2795,37 +2827,41 @@ export default {
           ? 'OR'
           : 'AND'
       var traceOperator = operator === 'OR' ? '||' : '&&'
-      var matchedTrace =
-        traceNode &&
-        traceNode.type === 'OPERATOR' &&
-        traceNode.token === traceOperator
-          ? traceNode
-          : null
       var children = []
       var sourceChildren = node.children || []
+      var childTraces = this._ruleSetGroupTraces(traceNode, traceOperator, sourceChildren.length)
       for (var i = 0; i < sourceChildren.length; i++) {
-        var childTrace =
-          matchedTrace && matchedTrace.children
-            ? matchedTrace.children[i]
-            : traceNode
         var child = this._buildRuleSetConditionTree(
           sourceChildren[i],
-          childTrace
+          childTraces[i] || null
         )
         if (child) children.push(child)
       }
-      var skipped = matchedTrace && matchedTrace.evaluated === false
+      var skipped = traceNode && traceNode.evaluated === false
       var result = skipped
         ? null
-        : matchedTrace && typeof matchedTrace.value === 'boolean'
-        ? matchedTrace.value
+        : traceNode && typeof traceNode.value === 'boolean'
+        ? traceNode.value
         : this._ruleSetGroupResult(operator, children)
       return {
         kind: 'group',
         operator: operator,
         result: result,
+        traceStatus: skipped ? 'skipped' : result === null ? 'missing' : 'evaluated',
         children: children,
       }
+    },
+    _ruleSetGroupTraces: function (traceNode, operator, count) {
+      if (count <= 1) return [traceNode]
+      if (!traceNode || traceNode.type !== 'OPERATOR' || traceNode.token !== operator) return []
+      var children = traceNode.children || []
+      if (children.length === count) return children
+      // QLExpress 将 a && b && c 编成 (a && b) && c；只拆当前组，不拆子组/叶条件。
+      if (children.length === 2) {
+        var left = this._ruleSetGroupTraces(children[0], operator, count - 1)
+        if (left.length === count - 1) return left.concat([children[1]])
+      }
+      return []
     },
     _ruleSetGroupResult: function (operator, children) {
       var results = (children || []).map(function (child) {
@@ -2841,179 +2877,52 @@ export default {
         return null
       return operator === 'OR' ? false : true
     },
-    _appendRuleSetConditionItems: function (node, traceNode, items) {
-      if (!node) return
-      if (node.type === 'group') {
-        var children = node.children || []
-        for (var i = 0; i < children.length; i++) {
-          if (i > 0)
-            items.push({ kind: 'join', text: node.op === 'OR' ? '或' : '且' })
-          this._appendRuleSetConditionItems(children[i], traceNode, items)
-        }
-        return
-      }
-      if (node.type !== 'leaf') return
-      items.push(this._buildRuleSetConditionLeaf(node, traceNode))
-    },
     _buildRuleSetConditionLeaf: function (leaf, traceNode) {
       var varCode = this._ruleSetLeafCode(leaf)
-      var actual = this._actualFromTraceOrInput(varCode, traceNode)
-      var matched = this._findRuleSetConditionTrace(leaf, traceNode)
       var skipped = traceNode && traceNode.evaluated === false
-      var result =
-        !skipped && matched && matched.value !== undefined
-          ? this._ruleSetConditionTraceResult(leaf.operator, matched.value)
-          : null
-      if (!skipped && result === null && actual !== undefined)
-        result = this._evalRuleSetLeaf(leaf, actual)
+      var operands = this._ruleSetTraceOperands(leaf, traceNode)
+      var actual = skipped ? undefined : this._traceOperandValue(operands[0])
+      var actualSource = actual === undefined ? 'none' : 'trace'
+      if (actual === undefined) {
+        actual = this.getInputValue(varCode)
+        if (actual !== undefined) actualSource = 'input'
+      }
+      var result = !skipped && traceNode && typeof traceNode.value === 'boolean'
+        ? traceNode.value : null
       return {
         kind: 'condition',
         varCode: varCode || '?',
         varName: this._ruleSetVarName(leaf),
-        actualText: actual === undefined ? '未取值' : this.fmtVal(actual),
+        actualText: actual === undefined ? (skipped ? '未执行' : '未记录') : this.fmtVal(actual),
+        actualSource: actualSource,
+        traceStatus: skipped ? 'skipped' : result === null ? 'missing' : 'evaluated',
         operatorText: this._ruleSetOperatorText(leaf.operator, leaf.varType),
-        thresholdText: this._ruleSetThresholdText(leaf),
+        thresholdText: this._ruleSetThresholdText(leaf, skipped ? [] : operands),
         result: result,
       }
     },
-    _actualFromTraceOrInput: function (varCode, traceNode) {
-      var fromTrace = this._findTraceVariableValue(traceNode, varCode)
-      if (fromTrace !== undefined) return fromTrace
-      return this.getInputValue(varCode)
-    },
-    _findTraceVariableValue: function (node, varCode) {
-      if (!node || !varCode) return undefined
-      if (this._traceOperandCode(node) === varCode) {
-        var value = this._traceOperandValue(node)
-        if (value !== undefined) return value
-      }
-      if (node.children) {
-        for (var i = 0; i < node.children.length; i++) {
-          var v = this._findTraceVariableValue(node.children[i], varCode)
-          if (v !== undefined) return v
-        }
-      }
-      return undefined
-    },
-    _findRuleSetConditionTrace: function (leaf, traceNode) {
-      if (!leaf || !traceNode) return null
-      var varCode = this._ruleSetLeafCode(leaf)
-      var direct = this._findBinaryConditionTrace(
-        traceNode,
-        varCode,
-        leaf.operator
-      )
-      if (direct) return direct
-      return this._findFunctionConditionTrace(traceNode, varCode, leaf.operator)
-    },
-    _findBinaryConditionTrace: function (node, varCode, operator) {
-      if (!node) return null
-      var op = this._ruleSetTraceOperator(operator)
-      if (
-        node.type === 'OPERATOR' &&
-        node.token === op &&
-        node.children &&
-        node.children.length >= 1
-      ) {
-        var left = node.children[0]
-        if (this._traceOperandCode(left) === varCode) return node
-      }
-      if (node.children) {
-        for (var i = 0; i < node.children.length; i++) {
-          var found = this._findBinaryConditionTrace(
-            node.children[i],
-            varCode,
-            operator
-          )
-          if (found) return found
-        }
-      }
-      return null
-    },
-    _findFunctionConditionTrace: function (node, varCode, operator) {
-      if (!node) return null
-      var func = this._ruleSetTraceFunction(operator)
-      if (
-        func &&
-        (node.type === 'FUNCTION' || node.type === 'METHOD') &&
-        node.token === func &&
-        node.children &&
-        this._traceOperandCode(node.children[0]) === varCode
-      ) {
-        return node
-      }
-      if (node.children) {
-        for (var i = 0; i < node.children.length; i++) {
-          var found = this._findFunctionConditionTrace(
-            node.children[i],
-            varCode,
-            operator
-          )
-          if (found) return found
-        }
-      }
-      return null
-    },
-    _traceOperandCode: function (node) {
-      if (!node) return ''
-      if (node.type === 'VARIABLE') return node.token || ''
-      if (node.type === 'FIELD') {
-        var owner = node.children && node.children[0]
-        var ownerCode = this._traceOperandCode(owner)
-        return ownerCode
-          ? ownerCode + '.' + (node.token || '')
-          : node.token || ''
-      }
-      return ''
+    _ruleSetTraceOperands: function (leaf, traceNode) {
+      var node = traceNode
+      if (node && node.type === 'OPERATOR' && node.token === '!') node = (node.children || [])[0]
+      if ((leaf.operator === 'between' || leaf.operator === 'not_between') &&
+          node && node.token === '&&') node = (node.children || [])[0]
+      if (!node) return []
+      var children = node.children || []
+      if (leaf.operator === 'in_array' || leaf.operator === 'not_in_array')
+        return [children[1], children[0]]
+      return children
     },
     _traceOperandValue: function (node) {
-      if (!node) return undefined
+      if (!node || node.evaluated === false) return undefined
       if (node.value !== undefined) return node.value
       if (node.type === 'FIELD' && node.children && node.children[0]) {
         var ownerValue = this._traceOperandValue(node.children[0])
-        if (ownerValue && typeof ownerValue === 'object')
+        if (ownerValue && typeof ownerValue === 'object' &&
+            Object.prototype.hasOwnProperty.call(ownerValue, node.token))
           return ownerValue[node.token]
       }
-      return undefined
-    },
-    _ruleSetTraceOperator: function (operator) {
-      if (
-        operator === 'is_null' ||
-        operator === 'is_true' ||
-        operator === 'is_false'
-      )
-        return '=='
-      if (operator === 'not_null') return '!='
-      return operator || '=='
-    },
-    _ruleSetConditionTraceResult: function (operator, value) {
-      var result = value === true
-      if (
-        operator === 'not_contains' ||
-        operator === 'not_starts_with' ||
-        operator === 'not_ends_with' ||
-        operator === 'not_has_key'
-      ) {
-        return !result
-      }
-      return result
-    },
-    _ruleSetTraceFunction: function (operator) {
-      var map = {
-        is_empty: 'isBlank',
-        not_empty: 'isNotBlank',
-        contains: 'containsValue',
-        not_contains: 'containsValue',
-        starts_with: 'startsWithValue',
-        not_starts_with: 'startsWithValue',
-        ends_with: 'endsWithValue',
-        not_ends_with: 'endsWithValue',
-        contains_any: 'containsAnyValue',
-        contains_all: 'containsAllValues',
-        has_key: 'hasKey',
-        not_has_key: 'hasKey',
-      }
-      return map[operator] || ''
+      // QLExpress 已执行但返回 null 的节点，序列化时可能省略 value。
+      return node.evaluated === true ? null : undefined
     },
     _ruleSetVarName: function (leaf) {
       var code = this._ruleSetLeafCode(leaf)
@@ -3030,7 +2939,7 @@ export default {
         .trim()
       return text || label || code || '?'
     },
-    _ruleSetThresholdText: function (leaf) {
+    _ruleSetThresholdText: function (leaf, operands) {
       var op = leaf && leaf.operator
       if (
         op === '*' ||
@@ -3046,14 +2955,16 @@ export default {
       if (leaf && leaf.valueKind === 'VAR') {
         var label =
           leaf.rightVarLabel || this.varMap[leaf.value] || leaf.value || '?'
-        var val = this.getInputValue(leaf.value)
+        var val = this._traceOperandValue(operands && operands[1])
+        if (val === undefined) val = this.getInputValue(leaf.value)
         return label + (val !== undefined ? ' = ' + this.fmtVal(val) : '')
       }
       if (leaf && leaf.rightOperand) {
         var operand = leaf.rightOperand
         if (operand.kind === 'REFERENCE' || operand.kind === 'PATH') {
           var operandCode = operand.code || operand.value || ''
-          var operandValue = this.getInputValue(operandCode)
+          var operandValue = this._traceOperandValue(operands && operands[1])
+          if (operandValue === undefined) operandValue = this.getInputValue(operandCode)
           return (
             operandDisplay(operand) +
             (operandValue !== undefined
@@ -3097,66 +3008,11 @@ export default {
       }
       return map[operator] || operator || '等于'
     },
-    _evalRuleSetLeaf: function (leaf, actual) {
-      var op = leaf.operator || '=='
-      var raw = this._ruleSetOperandValue(leaf)
-      if (op === '*') return true
-      if (op === 'is_null') return actual === null || actual === undefined
-      if (op === 'not_null') return !(actual === null || actual === undefined)
-      if (op === 'is_empty')
-        return (
-          actual === null ||
-          actual === undefined ||
-          actual === '' ||
-          (Array.isArray(actual) && actual.length === 0)
-        )
-      if (op === 'not_empty')
-        return !(
-          actual === null ||
-          actual === undefined ||
-          actual === '' ||
-          (Array.isArray(actual) && actual.length === 0)
-        )
-      if (op === 'is_true') return actual === true || actual === 'true'
-      if (op === 'is_false') return actual === false || actual === 'false'
-      if (raw === undefined || raw === null || raw === '') return null
-      var av = this._coerceCompareValue(actual)
-      var bv = this._coerceCompareValue(raw)
-      if (op === '==') return av == bv
-      if (op === '!=') return av != bv
-      if (op === '>') return Number(av) > Number(bv)
-      if (op === '>=') return Number(av) >= Number(bv)
-      if (op === '<') return Number(av) < Number(bv)
-      if (op === '<=') return Number(av) <= Number(bv)
-      if (op === 'contains') return String(actual).indexOf(String(raw)) !== -1
-      if (op === 'not_contains')
-        return String(actual).indexOf(String(raw)) === -1
-      return null
-    },
     _ruleSetLeafCode: function (leaf) {
       if (!leaf) return ''
       return leaf.leftOperand
         ? compileOperand(leaf.leftOperand)
         : leaf.varCode || ''
-    },
-    _ruleSetOperandValue: function (leaf) {
-      if (leaf && leaf.rightOperand) {
-        var operand = leaf.rightOperand
-        if (operand.kind === 'LITERAL') return operand.value
-        if (operand.kind === 'REFERENCE' || operand.kind === 'PATH')
-          return this.getInputValue(operand.code || operand.value)
-        return undefined
-      }
-      return leaf.valueKind === 'VAR'
-        ? this.getInputValue(leaf.value)
-        : leaf.value
-    },
-    _coerceCompareValue: function (v) {
-      if (v === true || v === 'true') return true
-      if (v === false || v === 'false') return false
-      if (v !== null && v !== undefined && v !== '' && !isNaN(Number(v)))
-        return Number(v)
-      return v
     },
     _buildRuleSetActionItems: function (actionData) {
       var actions = Array.isArray(actionData) ? actionData : []
@@ -3241,6 +3097,21 @@ export default {
       walk(thenBlock)
       return delta
     },
+    /** 读取复杂评分卡编译器实际使用的组权重 × 维度权重。 */
+    _scoreAdvWeight: function (dimVarName) {
+      var match = /^_dim_(\d+)_(\d+)$/.exec(String(dimVarName || ''))
+      var groups = this.definitionModel && this.definitionModel.dimensionGroups
+      if (!match || !Array.isArray(groups)) return 1
+      var group = groups[Number(match[1])]
+      var dimension = group && Array.isArray(group.dimensions)
+        ? group.dimensions[Number(match[2])] : null
+      if (!group || !dimension) return 1
+      var groupWeight = group.weight == null ? 1 : Number(group.weight)
+      var dimensionWeight = dimension.weight == null ? 1 : Number(dimension.weight)
+      return Number.isFinite(groupWeight) && groupWeight >= 0 && Number.isFinite(dimensionWeight) && dimensionWeight >= 0
+        ? groupWeight * dimensionWeight : 1
+    },
+
     /** 遍历复杂评分卡同维度 if/else if 完整链（含未求值分支） */
     _walkScoreAdvChain: function (ifNode, dimVarName) {
       var items = []
@@ -4019,11 +3890,10 @@ export default {
       if (
         value !== null &&
         value !== undefined &&
-        typeof value === 'object' &&
-        !Array.isArray(value)
+        typeof value === 'object'
       ) {
         try {
-          return JSON.stringify(value)
+          return JSON.stringify(value, null, 2)
         } catch (e) {
           return String(value)
         }
@@ -4901,6 +4771,7 @@ export default {
 }
 .fc-card {
   flex: 1;
+  min-width: 0;
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
   background: var(--tianshu-bg-surface);
@@ -4926,17 +4797,22 @@ export default {
 }
 .fc-card-head {
   display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
   border-bottom: 1px solid var(--tianshu-border-subtle);
 }
 .fc-card-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-size: 14px;
   font-weight: 600;
   color: var(--tianshu-text-primary);
 }
 .fc-card-badge {
+  flex-shrink: 0;
   font-size: 11px;
   padding: 2px 10px;
   border-radius: 10px;
@@ -5036,6 +4912,8 @@ export default {
   color: #531dab;
 }
 .fc-func-name code {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font-family: 'Consolas', 'Monaco', monospace;
   background: #f9f0ff;
   padding: 1px 8px;
@@ -5061,7 +4939,10 @@ export default {
 }
 .fc-func-arg {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
   gap: 3px;
   background: var(--tianshu-bg-muted);
   border: 1px solid var(--tianshu-border-subtle);
@@ -5071,54 +4952,79 @@ export default {
 .fc-func-arg-name {
   color: #595959;
   font-weight: 500;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow-wrap: anywhere;
 }
 .fc-func-arg-eq {
   color: var(--tianshu-text-tertiary);
+  flex-shrink: 0;
 }
 .fc-func-arg-val {
   font-family: 'Consolas', 'Monaco', monospace;
   color: var(--el-color-primary);
+  min-width: 0;
+  max-height: 96px;
+  overflow: auto;
+  overflow-wrap: anywhere;
 }
 .fc-expr-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  align-items: start;
   gap: 16px;
 }
-.fc-expr {
+.fc-func-row + .fc-expr-row {
+  margin-top: 8px;
+}
+.fc-expr-panel,
+.fc-result-panel {
+  min-width: 0;
+}
+.fc-panel-label {
+  margin-bottom: 6px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.fc-expr,
+.fc-expr-result {
+  display: block;
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  max-height: 240px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
-  color: var(--tianshu-text-primary);
-  flex: 1;
-  word-break: break-all;
   line-height: 1.7;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 4px;
+}
+.fc-expr {
+  color: var(--tianshu-text-primary);
+  background: var(--tianshu-bg-soft);
 }
 .fc-expr-result {
-  font-size: 18px;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--el-color-primary);
-  flex-shrink: 0;
-  padding: 2px 12px;
-  background: #f0f7ff;
-  border-radius: 4px;
+  background: var(--el-color-primary-light-9);
 }
 .fc-expr-result.is-end {
   color: #52c41a;
   background: #f6ffed;
-  font-size: 20px;
 }
 .fc-expr-row--result-only {
-  justify-content: flex-start;
+  grid-template-columns: minmax(0, 1fr);
 }
 .fc-expr-row--result-only .fc-expr-result.is-result-map {
-  flex: 1;
-  max-width: 100%;
   text-align: left;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font-size: 15px;
   font-weight: 600;
-  line-height: 1.6;
 }
 .mv-tree {
   padding: 12px 0;

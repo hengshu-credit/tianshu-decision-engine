@@ -744,6 +744,7 @@ CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Reliable Redis publication outbox';
 
 CREATE TABLE IF NOT EXISTS `rule_data_object` (
+  `lazy_load_references` TINYINT NOT NULL DEFAULT 0 COMMENT '引用型叶子字段按需取值，默认关闭',
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
   `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
@@ -766,6 +767,8 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
 -- 7. rule_data_object_field - 数据对象字段表（与 rule_variable 解耦）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
+  `reference_mode` VARCHAR(16) NOT NULL DEFAULT 'VALUE' COMMENT 'VALUE缺失时引用取值，STRUCTURE仅复用定义',
+  `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计',
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`       BIGINT       NOT NULL                COMMENT '所属项目ID',
   `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
@@ -808,6 +811,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field_option` (
 -- 9. rule_variable - 规则变量表（普通变量与常量，var_source=CONSTANT 时须配置 default_value）
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_variable` (
+  `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录字段结果供历史统计',
   `id`                BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `project_id`        BIGINT       NOT NULL                COMMENT '所属项目ID',
   `scope`             VARCHAR(16)  NOT NULL DEFAULT 'PROJECT' COMMENT '作用范围：GLOBAL-全局，PROJECT-项目级',
@@ -1027,6 +1031,10 @@ CREATE TABLE IF NOT EXISTS `rule_function_version` (
 -- 先删除原有分区（如果是修改现有表）
 -- ALTER TABLE rule_execution_log REMOVE PARTITIONING;
 CREATE TABLE IF NOT EXISTS `rule_execution_log` (
+  `root_rule_id` BIGINT DEFAULT NULL COMMENT '根规则ID快照',
+  `execution_project_id` BIGINT DEFAULT NULL COMMENT '执行项目ID快照',
+  `started_at` DATETIME(6) DEFAULT NULL COMMENT '根请求开始时间',
+  `history_fields` LONGTEXT DEFAULT NULL COMMENT '按ID存储的请求和显式记录结果快照',
    `revision_id`     BIGINT        DEFAULT NULL             COMMENT 'Rule revision ID',
    `artifact_digest` CHAR(64)      DEFAULT NULL             COMMENT 'Decision artifact SHA-256',
    `id`              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
@@ -1224,6 +1232,7 @@ CREATE TABLE IF NOT EXISTS `rule_model_input_field` (
 -- 15. rule_model_output_field - 统一模型输出字段表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_model_output_field` (
+  `record_result`    TINYINT NOT NULL DEFAULT 0 COMMENT '显式记录模型输出供历史统计',
   `id`               BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `model_id`         BIGINT       NOT NULL                COMMENT '所属模型ID',
   `var_id`          BIGINT       DEFAULT NULL             COMMENT '关联字段ID，需结合 ref_type 判断所属资源表',
@@ -1397,6 +1406,8 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
 -- 19.1 rule_runtime_call_log - 运行时调用诊断日志表
 -- ============================================================
 CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
+  `root_trace_id` CHAR(36) DEFAULT NULL COMMENT '根请求Trace ID',
+  `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `trace_id`        CHAR(36)     DEFAULT NULL            COMMENT '全局唯一Trace ID',
   `rule_trace_id`   CHAR(36)     DEFAULT NULL            COMMENT '发起调用的规则Trace ID',

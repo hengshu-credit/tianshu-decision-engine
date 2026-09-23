@@ -18,6 +18,8 @@ public class RuleDataObject {
     /** 脚本中的对象引用名（默认驼峰，如 taxRequest） */
     private String scriptName;
     private String objectType;
+    /** 仅引用型叶子字段可按需取值；默认关闭。 */
+    private Boolean lazyLoadReferences;
     private String sourceType;
     private String sourceContent;
     private Long parentObjectId;

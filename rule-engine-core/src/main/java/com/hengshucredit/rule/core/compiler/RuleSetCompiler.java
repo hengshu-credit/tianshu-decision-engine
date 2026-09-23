@@ -41,7 +41,16 @@ public class RuleSetCompiler implements RuleCompiler {
             }
 
             String executionMode = model.getString("executionMode");
-            boolean serial = executionMode == null || "SERIAL".equalsIgnoreCase(executionMode);
+            boolean serial;
+            if (executionMode == null || executionMode.trim().isEmpty()
+                    || "SERIAL".equalsIgnoreCase(executionMode)) {
+                serial = true;
+            } else if ("PARALLEL".equalsIgnoreCase(executionMode)) {
+                serial = false;
+            } else {
+                throw new IllegalArgumentException("规则集执行模式不支持: " + executionMode
+                        + "，仅支持 SERIAL、PARALLEL");
+            }
             List<RuleEntry> entries = normalizeRules(rules);
             String resultTarget = resolveResultTarget(model.getJSONObject("resultVar"), varContext);
 

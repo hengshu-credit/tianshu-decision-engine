@@ -31,6 +31,7 @@ function refEntry({ id, refType, refCode, label, varType, category, varObj, extr
 }
 
 export function buildReferenceCatalog(variables = [], objectTree = [], models = []) {
+  const variableById = new Map(variables.map(variable => [String(variable.id), variable]))
   const refs = []
   const options = {
     variable: [],
@@ -61,6 +62,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
       extra: {
         sourceType: constant ? 'constant' : 'variable',
         varSource: variable.varSource,
+        recordResult: variable.recordResult === true,
         constantValue: constant ? variable.defaultValue : undefined
       }
     })
@@ -72,7 +74,17 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
     const objectCode = object.scriptName || object.objectCode || ''
     const objectLabel = object.objectLabel || object.objectCode || ''
     const fields = group.flatVariables || flattenObjectFields(group.variables)
+    const fieldById = new Map((fields || []).map(field => [String(field.id), field]))
     ;(fields || []).forEach(field => {
+      let anchor = field
+      const visited = new Set()
+      while ((!anchor.refVariableId || anchor.referenceMode === 'STRUCTURE') && anchor.parentFieldId && !visited.has(anchor.id)) {
+        visited.add(anchor.id)
+        const parent = fieldById.get(String(anchor.parentFieldId))
+        if (!parent) break
+        anchor = parent
+      }
+      const source = anchor.referenceMode === 'STRUCTURE' ? null : variableById.get(String(anchor.refVariableId))
       const fieldPath = stripPrefix(field.scriptName || field.varCode || '', objectCode)
       const refCode = [objectCode, fieldPath].filter(Boolean).join('.')
       const fieldLabel = stripPrefix(field.varLabel || field.varCode || fieldPath, objectCode)
@@ -87,7 +99,8 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
         varObj: Object.assign({ objectField: true }, field),
         extra: {
           sourceType: 'dataObject',
-          varSource: 'INPUT',
+          varSource: source?.varSource || 'INPUT',
+          recordResult: field.recordResult === true || source?.recordResult === true,
           objectCode,
           objectRawCode: object.objectCode || '',
           objectLabel
@@ -103,7 +116,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
     const modelLabel = model.modelName || modelCode
     const inputFields = model.inputFields || []
     ;(model.outputFields || []).forEach(field => {
-      const outputCode = field.scriptName || field.fieldName || ''
+      const outputCode = field.fieldName || field.featureName || field.scriptName || ''
       if (!outputCode) return
       const entry = refEntry({
         id: field.id,
@@ -118,7 +131,7 @@ export function buildReferenceCatalog(variables = [], objectTree = [], models = 
           modelName: modelLabel,
           modelInputFields: inputFields
         }),
-        extra: { sourceType: 'model', modelCode, modelId: model.id, modelLabel, modelInputFields: inputFields }
+        extra: { sourceType: 'model', varSource: 'MODEL', recordResult: field.recordResult === true, modelCode, modelId: model.id, modelLabel, modelInputFields: inputFields }
       })
       addRef(entry, 'model')
     })
@@ -151,6 +164,7 @@ export function buildDetailReferenceState(catalog) {
       varLabelText: ref.refLabel && ref.refLabel.label,
       varType: ref.varType,
       varSource: ref.varSource,
+      recordResult: ref.recordResult,
       sourceType: ref.sourceType,
       sourceLabel: ref.objectLabel || ref.modelLabel || '',
       sourceCode: ref.objectCode || ref.modelCode || '',
@@ -186,6 +200,7 @@ export function buildPickerOptions(catalog) {
     refType: ref.refType,
     sourceType: ref.sourceType,
     varSource: ref.varSource,
+    recordResult: ref.recordResult,
     constantValue: ref.constantValue,
     _varId: ref.id,
     _refType: ref.refType,

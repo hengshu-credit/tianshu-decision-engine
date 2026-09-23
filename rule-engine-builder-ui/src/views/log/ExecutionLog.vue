@@ -510,6 +510,10 @@
               <div class="uiue-card-title">输出结果</div>
               <pre class="log-pre">{{ fj(detail.outputResult) }}</pre>
             </div>
+            <div v-if="detail.historyFields" class="uiue-card" style="margin-top: 12px">
+              <div class="uiue-card-title">历史统计字段快照（字段 ID）</div>
+              <pre class="log-pre">{{ fj(detail.historyFields) }}</pre>
+            </div>
             <div
               class="uiue-card"
               style="margin-top: 12px"

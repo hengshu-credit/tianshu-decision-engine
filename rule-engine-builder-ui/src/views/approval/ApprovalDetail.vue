@@ -109,12 +109,18 @@
           <div class="section-heading">
             <div>
               <span class="section-kicker">VERSION COMPARISON</span>
-              <h2>配置差异</h2>
+              <h2>
+                配置差异
+                <span class="diff-summary">{{ compareStatusLabel }}</span>
+              </h2>
             </div>
-            <span class="diff-summary">{{ diff.summary || '无配置差异' }}</span>
           </div>
           <div class="version-selector-row">
-            <el-select v-model="compareLeftKey" size="small">
+            <el-select
+              v-model="compareLeftKey"
+              class="version-selector-left"
+              size="small"
+            >
               <el-option
                 v-for="item in compareOptions"
                 :key="`left-${item.value}`"
@@ -122,8 +128,12 @@
                 :value="item.value"
               />
             </el-select>
-            <span>对比</span>
-            <el-select v-model="compareRightKey" size="small">
+            <span class="version-selector-operator">对比</span>
+            <el-select
+              v-model="compareRightKey"
+              class="version-selector-right"
+              size="small"
+            >
               <el-option
                 v-for="item in compareOptions"
                 :key="`right-${item.value}`"
@@ -132,21 +142,12 @@
               />
             </el-select>
           </div>
-          <div class="diff-columns-head">
-            <div>
-              <span>左侧版本</span>
-              <strong>{{ compareLeftLabel }}</strong>
-            </div>
-            <div>
-              <span>提交版本</span>
-              <strong>{{ compareRightLabel }}</strong>
-            </div>
-          </div>
           <json-version-diff
             :original="compareOriginal"
             :modified="compareModified"
             :original-label="compareLeftLabel"
             :modified-label="compareRightLabel"
+            :show-header="false"
             height="400px"
           />
           <div v-if="isRequestComparison && changedFields.length" class="diff-list">
@@ -210,19 +211,36 @@
               :initial-node-id="lineageNodeId"
               initial-direction="ALL"
             />
-            <el-table show-overflow-tooltip v-else :data="detail.dependencies || []" size="small">
-              <el-table-column prop="targetResourceType" label="依赖类型" width="130" />
-              <el-table-column prop="targetResourceId" label="资源 ID" width="100" />
-              <el-table-column label="生效版本" width="100">
-                <template #default="{ row }">
-                  {{ row.targetVersionNo ? `V${row.targetVersionNo}` : '—' }}
-                </template>
-              </el-table-column>
-              <el-table-column prop="referencePath" label="引用位置" min-width="180" />
-              <template #empty>
-                <div class="table-empty">当前配置没有外部依赖</div>
-              </template>
-            </el-table>
+            <div v-if="(detail.dependencies || []).length" class="dependency-details">
+              <div v-if="lineageNodeId && lineageNodeType" class="dependency-details-title">
+                依赖明细
+              </div>
+              <el-table show-overflow-tooltip :data="detail.dependencies" size="small">
+                <el-table-column prop="targetResourceType" label="依赖类型" width="130" />
+                <el-table-column prop="targetResourceId" label="资源 ID" width="100" />
+                <el-table-column label="生效版本" width="100">
+                  <template #default="{ row }">
+                    {{ row.targetVersionNo ? `V${row.targetVersionNo}` : '—' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="引用位置" min-width="240">
+                  <template #default="{ row }">
+                    <span
+                      class="dependency-reference"
+                      :title="row.referencePath || ''"
+                    >
+                      {{ dependencyReferenceLabel(row) }}
+                    </span>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+            <div
+              v-else-if="!lineageNodeId || !lineageNodeType"
+              class="table-empty"
+            >
+              当前配置没有外部依赖
+            </div>
           </article>
 
           <article class="content-card">
@@ -395,6 +413,12 @@ export default {
     compareRightLabel() {
       return this.comparisonLabel(this.compareRightKey)
     },
+    compareStatusLabel() {
+      return this.prettySnapshot(this.compareOriginal) ===
+        this.prettySnapshot(this.compareModified)
+        ? '内容一致'
+        : '内容有差异'
+    },
     isRequestComparison() {
       const base = (this.detail.versions || []).find(version =>
         version.versionNo === this.request?.baseVersionNo
@@ -407,6 +431,7 @@ export default {
       return {
         PROJECT: 'PROJECT',
         VARIABLE: 'VARIABLE',
+        DATA_OBJECT: 'DATA_OBJECT',
         RULE: 'RULE',
         RULE_PROJECT_BINDING: 'RULE',
         MODEL: 'MODEL',
@@ -486,6 +511,31 @@ export default {
     this.loadDetail()
   },
   methods: {
+    dependencyReferenceLabel(dependency) {
+      const path = dependency && dependency.referencePath
+      const segments = this.referencePathSegments(path)
+      if (!segments.length) return path || '—'
+
+      const labels = []
+      segments.forEach((segment, index) => {
+        if (/^\d+$/.test(segment)) {
+          const collection = labels.pop() || '项目'
+          const item = this.resolveDependencyReference(
+            segments.slice(0, index + 1)
+          )
+          const itemLabel = this.referenceItemLabel(item)
+          labels.push(`${collection} ${Number(segment) + 1}${itemLabel ? `（${itemLabel}）` : ''}`)
+          return
+        }
+        labels.push(this.referenceSegmentLabel(segment))
+      })
+
+      const value = this.resolveDependencyReference(segments)
+      const suffix = value === undefined
+        ? ''
+        : ` = ${this.formatDependencyValue(value)}`
+      return `${labels.join(' · ')}${suffix}`
+    },
     goBack() {
       this.navigation.back()
     },
@@ -637,6 +687,69 @@ export default {
       } catch (error) {
         return {}
       }
+    },
+    referencePathSegments(path) {
+      if (!path || typeof path !== 'string') return []
+      return path
+        .replace(/^\$\.?/, '')
+        .replace(/\[['"]([^'"]+)['"]\]/g, '.$1')
+        .replace(/\[(\d+)\]/g, '.$1')
+        .split('.')
+        .filter(Boolean)
+    },
+    resolveDependencyReference(pathOrSegments) {
+      const segments = Array.isArray(pathOrSegments)
+        ? pathOrSegments
+        : this.referencePathSegments(pathOrSegments)
+      let value = this.requestSnapshot()
+      for (const segment of segments) {
+        if (value === null || value === undefined || segment === '*') return undefined
+        value = Array.isArray(value)
+          ? value[Number(segment)]
+          : value[segment]
+      }
+      return value
+    },
+    referenceSegmentLabel(segment) {
+      return {
+        '*': '任意项',
+        fields: '字段',
+        options: '选项',
+        projectId: '项目 ID',
+        parentFieldId: '父字段 ID',
+        targetRefId: '目标 ID',
+        refId: '引用 ID',
+        varId: '变量 ID',
+        refVariableId: '引用变量 ID',
+        refModelId: '引用模型 ID',
+        refObjectId: '引用对象 ID',
+        variableId: '变量 ID',
+        modelId: '模型 ID',
+        datasourceId: '数据源 ID',
+        apiConfigId: '接口 ID',
+        definitionId: '规则 ID',
+        functionId: '函数 ID',
+        listId: '名单 ID',
+        objectId: '对象 ID',
+        requestObjectId: '请求对象 ID',
+        responseObjectId: '响应对象 ID',
+      }[segment] || segment
+    },
+    referenceItemLabel(value) {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return ''
+      return value.varLabel || value.fieldLabel || value.label ||
+        value.varCode || value.fieldName || value.code || ''
+    },
+    formatDependencyValue(value) {
+      if (value === null) return '空值'
+      if (typeof value === 'object') {
+        try {
+          return JSON.stringify(value)
+        } catch (error) {
+          return String(value)
+        }
+      }
+      return String(value)
     },
     parseReport(text) {
       try {
@@ -824,14 +937,14 @@ export default {
   gap: 5px;
   margin-bottom: 16px;
   padding: 15px 18px;
-  border: 1px solid #efc7c7;
-  border-left: 4px solid #c93636;
+  border: 1px solid var(--tianshu-danger-border);
+  border-left: 4px solid var(--tianshu-danger-text);
   border-radius: 9px;
-  background: #fff8f8;
+  background: var(--tianshu-danger-bg);
 }
 
 .terminal-notice span {
-  color: #6d7582;
+  color: var(--tianshu-danger-text);
   font-size: 13px;
 }
 
@@ -861,47 +974,67 @@ export default {
 }
 
 .section-heading h2 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
   margin: 4px 0 0;
   font-size: 19px;
 }
 
-.section-heading > span,
-.diff-summary {
+.section-heading > span {
   color: #727c8b;
   font-size: 13px;
 }
 
-.diff-columns-head {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin: 0 0 9px 0;
+.diff-summary {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 999px;
+  color: var(--tianshu-text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
 }
 
 .version-selector-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
 .version-selector-row .el-select {
-  width: 220px;
+  width: 100%;
+  min-width: 0;
 }
 
-.diff-columns-head > div {
-  display: flex;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border: 1px solid #e5e9ef;
-  border-radius: 8px;
-  background: #f8f9fb;
-  color: #687384;
+.version-selector-operator {
+  color: var(--tianshu-text-secondary);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.dependency-details {
+  margin-top: 12px;
+}
+
+.dependency-details-title {
+  margin-bottom: 8px;
+  color: var(--tianshu-text-secondary);
   font-size: 12px;
+  font-weight: 600;
 }
 
-.diff-columns-head strong {
-  color: #2b3544;
+.dependency-reference {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-list {
@@ -1090,9 +1223,16 @@ export default {
   }
 
   .overview-grid,
-  .diff-columns-head,
   .diff-values {
     grid-template-columns: 1fr;
+  }
+
+  .version-selector-row {
+    grid-template-columns: 1fr;
+  }
+
+  .version-selector-operator {
+    justify-self: start;
   }
 
   .diff-values pre:first-child {

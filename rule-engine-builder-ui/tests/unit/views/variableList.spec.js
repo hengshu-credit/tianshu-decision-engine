@@ -73,6 +73,23 @@ import path from 'path'
 
 afterEach(() => { vi.clearAllMocks() })
 
+it('对象引用默认全量取值，编辑保留懒加载用途和字段记录开关', async () => {
+  const wrapper = await mountAndWait()
+  wrapper.vm.handleCreateObject()
+  expect(wrapper.vm.objectForm.lazyLoadReferences).toBe(false)
+  wrapper.vm.handleEditObject({ id: 20, objectCode: 'Request', lazyLoadReferences: true })
+  expect(wrapper.vm.objectForm.lazyLoadReferences).toBe(true)
+  wrapper.vm.handleEditObjectField({ id: 30, varCode: 'age', refVariableId: 9, referenceMode: 'STRUCTURE', recordResult: true }, { object: { id: 20, projectId: 1 } })
+  expect(wrapper.vm.form.referenceMode).toBe('STRUCTURE')
+  expect(wrapper.vm.form.recordResult).toBe(true)
+  wrapper.vm.form.parentFieldId = 1
+  wrapper.vm.objectFieldNode = { variables: [{ id: 1, varType: 'LIST' }] }
+  expect(wrapper.vm.objectFieldReferenceBlockedReason).toBe('')
+  wrapper.vm.form.referenceMode = 'VALUE'
+  expect(wrapper.vm.objectFieldReferenceBlockedReason).toContain('列表元素内部字段不能直接取')
+  wrapper.unmount()
+})
+
 // ─── Mock 数据 ───────────────────────────────────────────
 function mockVars() {
   return [

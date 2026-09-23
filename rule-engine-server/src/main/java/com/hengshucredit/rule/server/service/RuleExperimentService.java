@@ -85,6 +85,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private RuleFieldAnalyzer ruleFieldAnalyzer;
 
     @Resource
+    private VariableSourceResolver variableSourceResolver;
+    @Resource
+    private com.hengshucredit.rule.server.derived.DerivedVariableService derivedVariableService;
+
+    @Resource
     private RuleFunctionService ruleFunctionService;
 
     @Resource
@@ -309,6 +314,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 ? Collections.emptyMap()
                 : request.getParams();
         params = bindExperimentParams(experiment, params);
+        params = resolveRoutingParams(experiment, groups, params);
         String requestKey = resolveRequestKey(experiment, request, params);
         LocalDateTime requestTime = resolveRequestTime(request, params);
         String clientAppName = request == null ? null : request.getClientAppName();
@@ -373,6 +379,88 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     private Map<String, Object> bindExperimentParams(RuleExperiment experiment, Map<String, Object> params) {
         return executionParameterBinder.bindRuleInputs(
                 resolveTestFields(experiment.getId()).getInputFields(), params);
+    }
+
+    /**
+     * 分流判定前只解析路由条件和请求键实际依赖的字段。
+     * 不能用实验组规则的完整入参列表预热，否则会提前调用与路由无关的 API/模型；
+     * 衍生变量则由统一变量解析器按稳定 ID 展开其上游依赖，并覆盖调用方伪造的同名值。
+     */
+    private Map<String, Object> resolveRoutingParams(RuleExperiment experiment,
+                                                      List<RuleExperimentGroup> groups,
+                                                      Map<String, Object> params) {
+        if (variableSourceResolver == null || experiment == null) {
+            return params;
+        }
+        Set<String> required = new LinkedHashSet<>();
+        Map<String, String> referencePaths = variableService == null
+                ? Collections.emptyMap() : variableService.buildRefScriptNameMap(experiment.getProjectId());
+        if (derivedVariableService != null) referencePaths = derivedVariableService.referencePaths(experiment.getProjectId());
+
+        boolean productionCondition = ROUTING_CONDITION.equals(experiment.getRoutingMode());
+        boolean testCondition = ROUTING_CONDITION.equals(experiment.getTestRoutingMode());
+        if (groups != null) {
+            List<Map<String, Object>> conditionNodes = new ArrayList<>();
+            for (RuleExperimentGroup group : groups) {
+                if (!isActive(group)) continue;
+                boolean production = GROUP_CHAMPION.equals(group.getGroupType())
+                        || GROUP_CHALLENGER.equals(group.getGroupType());
+                boolean test = GROUP_TEST.equals(group.getGroupType());
+                if ((production && !productionCondition) || (test && !testCondition)) continue;
+                if (isFallbackGroup(group)) continue;
+                Map<String, Object> node = new LinkedHashMap<>();
+                if (hasText(group.getConditionConfig())) {
+                    try {
+                        node.put("conditionConfig", JSON.parseObject(group.getConditionConfig()));
+                    } catch (Exception e) {
+                        node.put("conditionExpression", group.getConditionConfig());
+                    }
+                }
+                if (hasText(group.getConditionExpression())) {
+                    node.put("conditionExpression", group.getConditionExpression());
+                }
+                if (!node.isEmpty()) conditionNodes.add(node);
+            }
+            if (!conditionNodes.isEmpty()) {
+                Map<String, Object> model = new LinkedHashMap<>();
+                model.put("nodes", conditionNodes);
+                addRequiredFields(required, referencePaths,
+                        ruleFieldAnalyzer.resolveFields(null, JSON.toJSONString(model), "FLOW",
+                                experiment.getProjectId()).getInputFields());
+                for (var reference : OperandDependencyCollector.collectReferences(JSON.toJSON(model))) {
+                    String path = referencePaths.get(reference.getRefType() + ":" + reference.getRefId());
+                    if (hasText(path)) required.add(path);
+                }
+            }
+        }
+        // 独立路由规则由已发布执行器解析自己的冻结依赖，不提前回读实时草稿。
+
+        if (hasText(experiment.getRequestKeyPath())) {
+            for (JSONObject operand : OperandValueResolver.collectReferences(experiment.getRequestKeyPath())) {
+                String refType = firstNonBlank(operand.getString("refType"), "VARIABLE");
+                Long refId = operand.getLong("refId");
+                String stablePath = refId == null ? null : referencePaths.get(refType.toUpperCase() + ":" + refId);
+                String path = firstNonBlank(stablePath, operand.getString("code"), operand.getString("value"));
+                if (hasText(path)) required.add(path);
+            }
+        }
+        if (required.isEmpty()) return params;
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(required);
+        options.setRequiredNamesUpstreamOnly(true);
+        return variableSourceResolver.resolve(experiment.getProjectId(), params, options);
+    }
+
+    private void addRequiredFields(Set<String> required, Map<String, String> referencePaths,
+                                   List<RuleDefinitionInputField> fields) {
+        if (fields == null) return;
+        for (RuleDefinitionInputField field : fields) {
+            if (field == null) continue;
+            String stablePath = field.getVarId() == null || !hasText(field.getRefType())
+                    ? null : referencePaths.get(field.getRefType().toUpperCase() + ":" + field.getVarId());
+            String path = firstNonBlank(stablePath, field.getScriptName(), field.getFieldName());
+            if (hasText(path)) required.add(path);
+        }
     }
 
     private List<RuleDefinitionInputField> deduplicateInputs(List<RuleDefinitionInputField> inputs) {

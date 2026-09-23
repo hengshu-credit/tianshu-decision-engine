@@ -24,6 +24,42 @@ import java.util.List;
 import java.util.Map;
 
 public class RuleDependencyClosureServiceTest {
+    @Test
+    public void modelInputRuntimeVariableAndFunctionAreFrozenBeyondPublicInputProjection() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"kind\":\"REFERENCE\",\"refType\":\"MODEL\",\"refId\":11,\"code\":\"risk\"}");
+        service.models.put(11L, model(11L, 3, 1, digest('a')));
+        service.versions.put("11:3", version(11L, 3, digest('a')));
+        var input = new com.hengshucredit.rule.model.entity.RuleModelInputField();
+        input.setSourceOperand("{\"kind\":\"FUNCTION\",\"functionId\":13,\"args\":[{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":7,\"code\":\"apiScore\"}]}");
+        service.modelInputs = List.of(input);
+        RuleVariable api = variable(7L, 1);
+        api.setVarSource("API"); api.setSourceConfig("{\"apiConfigId\":21}");
+        service.variables.put(7L, api);
+        service.functions.put(13L, function(13L, 1, "SCRIPT"));
+        var closure = service.resolve(100L, 200L);
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        var ids = closure.getDependencies().stream().map(ArtifactDependency::getComponentId).toList();
+        Assert.assertTrue(ids.toString(), ids.containsAll(List.of("VARIABLE:7", "FUNCTION:13", "BINDING:EXTERNAL_API:21")));
+    }
+
+    @Test
+    public void listPathFreezesItsUpstreamEvenWhenPublicInputsOnlyContainRawFields() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"kind\":\"PATH\",\"refType\":\"VARIABLE\",\"refId\":7,\"value\":\"listHit\"}");
+        RuleVariable list = variable(7L, 1);
+        list.setVarSource("LIST");
+        list.setSourceConfig("{\"listIds\":[9],\"queryOperands\":[{\"kind\":\"PATH\","
+                + "\"refType\":\"VARIABLE\",\"refId\":8,\"value\":\"oldMobile\"}]}");
+        service.variables.put(7L, list);
+        service.variables.put(8L, variable(8L, 1));
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertTrue(closure.getDependencies().stream().anyMatch(value -> "VARIABLE:7".equals(value.getComponentId())));
+        Assert.assertTrue(closure.getDependencies().stream().anyMatch(value -> "VARIABLE:8".equals(value.getComponentId())));
+    }
 
     @Test
     public void scriptFunctionPickerReferenceFreezesFunctionById() {
@@ -79,6 +115,7 @@ public class RuleDependencyClosureServiceTest {
         service.dataObjectFields.put(30L, objectField);
         RuleDataObject object = new RuleDataObject();
         object.setId(20L);
+        object.setLazyLoadReferences(true);
         object.setProjectId(9L);
         object.setScope("PROJECT");
         object.setStatus(1);
@@ -106,6 +143,7 @@ public class RuleDependencyClosureServiceTest {
                 new String(frozenField.getContent(), java.nio.charset.StandardCharsets.UTF_8),
                 RuleDataObjectField.class);
         Assert.assertEquals(Long.valueOf(7L), frozen.getRefVariableId());
+        Assert.assertEquals(Boolean.TRUE, frozen.getLazyReference());
     }
 
     @Test
@@ -445,6 +483,7 @@ public class RuleDependencyClosureServiceTest {
         private final Map<Long, RuleFunction> functions = new HashMap<>();
         private final Map<Long, RuleDataObjectField> dataObjectFields = new HashMap<>();
         private final Map<Long, RuleDataObject> dataObjects = new HashMap<>();
+        private List<com.hengshucredit.rule.model.entity.RuleModelInputField> modelInputs = List.of();
         private int variableLoadCount;
         private int inputFieldLoadCount;
         private RuleDefinition childDefinition;
@@ -502,6 +541,8 @@ public class RuleDependencyClosureServiceTest {
             variableLoadCount++;
             return variables.get(variableId);
         }
+
+        @Override protected List<com.hengshucredit.rule.model.entity.RuleModelInputField> loadModelInputFields(Long modelId) { return modelInputs; }
 
         @Override
         protected RuleModel loadModel(Long modelId) {

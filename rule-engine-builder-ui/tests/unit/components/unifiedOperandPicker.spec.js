@@ -39,6 +39,25 @@ describe('统一 OperandPicker', () => {
     wrapper.unmount()
   })
 
+  test('手输编辑器随外部切换节点同步新的阈值，不残留上一个节点内容', async () => {
+    const wrapper = mountPicker({ value: { kind: 'LITERAL', value: 'old', valueType: 'NUMBER' } })
+    wrapper.vm.openManualInput('LITERAL')
+    await wrapper.setProps({ value: { kind: 'LITERAL', value: 'new', valueType: 'NUMBER' } })
+    expect(wrapper.vm.manualOperand).toEqual({ kind: 'LITERAL', value: 'new', valueType: 'NUMBER' })
+    expect(focusManualInput).toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  test('同编码方法按稳定 ID 选择，不能回退到列表中的另一个同名方法', () => {
+    const wrapper = mountPicker({ functions: [
+      { id: 1, funcCode: 'same', paramsJson: '[]' },
+      { id: 2, funcCode: 'same', paramsJson: '[{"name":"a","type":"NUMBER"}]' },
+    ] })
+    expect(wrapper.vm.findFunction({ functionId: 2, functionCode: 'same' }).id).toBe(2)
+    expect(wrapper.vm.findFunction({ functionId: 999, functionCode: 'same' })).toBeNull()
+    wrapper.unmount()
+  })
+
   test('选择文本阈值立即记录合法空字符串，不能保存为缺少操作数', () => {
     const wrapper = mountPicker({ expectedType: 'STRING' })
     wrapper.vm.openManualInput('LITERAL')
@@ -251,6 +270,15 @@ describe('统一 OperandPicker', () => {
     const emitted = wrapper.emitted().input
     expect(emitted[emitted.length - 1][0]).toEqual({ kind: 'LITERAL', value: 'true', valueType: 'BOOLEAN' })
     expect(wrapper.vm.editorVisible).toBe(false)
+  })
+
+  test('节点切换为引用时退出旧阈值编辑，不能继续编辑上一个节点的值', async() => {
+    const wrapper = mountPicker({ value: { kind: 'LITERAL', value: '5', valueType: 'NUMBER' } })
+    wrapper.vm.openManualInput('LITERAL')
+    await wrapper.setProps({ value: { kind: 'REFERENCE', refId: 6, refType: 'VARIABLE', code: 'idcard_no', valueType: 'STRING' } })
+    expect(wrapper.vm.manualKind).toBe('')
+    expect(wrapper.vm.manualOperand).toBeNull()
+    expect(wrapper.find('.operand-manual-editor').exists()).toBe(false)
   })
 
   test('外部清空值时退出手输状态并回到字段选择器', async() => {

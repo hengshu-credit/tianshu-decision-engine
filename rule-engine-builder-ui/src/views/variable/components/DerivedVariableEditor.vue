@@ -13,7 +13,7 @@
       <p class="derived-help">支持多级衍生。字段按 ID 关联；测试和 API 入参会展开到最上游原始字段。身份证年龄可选内置 idCardAge；登记地址码不等同于当前户籍地。</p>
     </template>
     <template v-else>
-      <el-alert :closable="false" type="info" title="仅统计已完成的正式进件，不含测试和本次请求；子规则统一归属最外层规则。新快照启用前的旧日志不会自动回填。" />
+      <el-alert :closable="false" type="info" title="默认统计请求入参和进件当时三方调用日志中的结果；其他字段须先开启“记录字段结果”。不含测试和本次请求；旧的无ID快照日志不按当前名称回填。" />
       <el-form-item label="统计范围">
         <el-select :model-value="config.scope" @update:model-value="patch({ scope: $event })">
           <el-option label="当前最外层规则" value="RULE" />
@@ -24,7 +24,7 @@
       <el-form-item label="最近时间窗口">
         <el-input-number :model-value="config.window" :min="1" :max="36500" :precision="0" @update:model-value="patch({ window: $event })" />
         <el-select class="unit-select" :model-value="config.windowUnit" @update:model-value="patch({ windowUnit: $event })">
-          <el-option label="分钟" value="MINUTE" /><el-option label="小时" value="HOUR" /><el-option label="天" value="DAY" />
+          <el-option label="分钟" value="MINUTE" /><el-option label="小时" value="HOUR" /><el-option label="滚动天" value="DAY" /><el-option label="自然日（当日）" value="CALENDAR_DAY" />
         </el-select>
       </el-form-item>
       <div class="history-steps">
@@ -33,25 +33,25 @@
         <div v-for="(step, index) in config.steps" :key="index" class="history-step">
           <div class="step-title"><strong>第 {{ index + 1 }} 层：{{ index === 0 ? '本次请求关联历史' : '上一层命中进件关联历史' }}</strong><el-button text type="danger" @click="removeStep(index)">移除此层及后续</el-button></div>
           <div v-for="(field, pairIndex) in step.fields" :key="pairIndex" class="join-pair">
-            <operand-picker :value="index === 0 ? step.inputs[pairIndex] : step.fromFields[pairIndex]" :vars="vars" :functions="functions" :allowed-kinds="index === 0 ? operandKinds : ['REFERENCE']" :placeholder="index === 0 ? '本次字段 / 表达式' : '上一层的历史字段'" @input="setPair(index, pairIndex, index === 0 ? 'inputs' : 'fromFields', $event)" />
+            <operand-picker :value="index === 0 ? step.inputs[pairIndex] : step.fromFields[pairIndex]" :vars="index === 0 ? vars : historyVars" :functions="functions" :allowed-kinds="index === 0 ? operandKinds : ['REFERENCE']" :placeholder="index === 0 ? '本次字段 / 表达式' : '上一层的历史字段'" @input="setPair(index, pairIndex, index === 0 ? 'inputs' : 'fromFields', $event)" />
             <span>匹配</span>
-            <operand-picker :value="field" :vars="vars" :allowed-kinds="['REFERENCE']" placeholder="历史匹配字段" @input="setPair(index, pairIndex, 'fields', $event)" />
+            <operand-picker :value="field" :vars="historyVars" :allowed-kinds="['REFERENCE']" placeholder="历史匹配字段" @input="setPair(index, pairIndex, 'fields', $event)" />
             <el-button v-if="step.fields.length > 1" text type="danger" @click="removePair(index, pairIndex)">移除</el-button>
           </div>
           <el-button text @click="addPair(index)">添加联合关联字段</el-button>
-          <history-filters :model-value="step.filters || []" :vars="vars" :functions="functions" @update:model-value="patchStep(index, { filters: $event })" />
+          <history-filters :model-value="step.filters || []" :vars="vars" :history-vars="historyVars" :functions="functions" @update:model-value="patchStep(index, { filters: $event })" />
         </div>
         <el-button :disabled="config.steps.length >= 8" @click="addStep">添加关联层</el-button>
       </div>
-      <el-form-item label="最终属性筛选"><history-filters :model-value="config.filters" :vars="vars" :functions="functions" @update:model-value="patch({ filters: $event })" /></el-form-item>
+      <el-form-item label="最终属性筛选"><history-filters :model-value="config.filters" :vars="vars" :history-vars="historyVars" :functions="functions" @update:model-value="patch({ filters: $event })" /></el-form-item>
       <el-form-item label="地理范围筛选"><el-switch :model-value="!!config.geo" @update:model-value="toggleGeo" /></el-form-item>
       <template v-if="config.geo">
         <el-form-item v-for="item in geoItems" :key="item.key" :label="item.label">
-          <operand-picker :value="config.geo[item.key]" :vars="vars" :functions="functions" :allowed-kinds="item.history ? ['REFERENCE'] : operandKinds" expected-type="NUMBER" @input="patch({ geo: { ...config.geo, [item.key]: $event } })" />
+          <operand-picker :value="config.geo[item.key]" :vars="item.history ? historyVars : vars" :functions="functions" :allowed-kinds="item.history ? ['REFERENCE'] : operandKinds" expected-type="NUMBER" @input="patch({ geo: { ...config.geo, [item.key]: $event } })" />
         </el-form-item>
       </template>
       <el-form-item label="统计属性字段">
-        <operand-picker :value="config.valueField" :vars="vars" :allowed-kinds="['REFERENCE']" placeholder="计数可不选；其他统计请选择历史属性" @input="setValueField" />
+        <operand-picker :value="config.valueField" :vars="historyVars" :allowed-kinds="['REFERENCE']" placeholder="计数可不选；其他统计请选择历史属性" @input="setValueField" />
       </el-form-item>
       <el-form-item label="统计方法">
         <el-select :model-value="config.aggregate" @update:model-value="setAggregate">
@@ -60,7 +60,7 @@
       </el-form-item>
       <el-form-item label="主体 key">
         <el-select multiple filterable :model-value="subjectKeys" placeholder="可选单字段或联合字段，如身份证 + 手机号" @update:model-value="setSubjects">
-          <el-option v-for="option in vars" :key="fieldKey(option)" :value="fieldKey(option)" :label="option.varLabel || option.varCode" />
+          <el-option v-for="option in historyVars" :key="fieldKey(option)" :value="fieldKey(option)" :label="option.varLabel || option.varCode" />
         </el-select>
       </el-form-item>
       <el-form-item label="重复主体取值">
@@ -82,7 +82,7 @@
 <script>
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import HistoryFilters from './HistoryFilters.vue'
-import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions } from '@/utils/derivedVariable'
+import { createDerivedConfig, DERIVED_OPERAND_KINDS, historyAggregateOptions, historyFieldEligible } from '@/utils/derivedVariable'
 
 export default {
   name: 'DerivedVariableEditor',
@@ -96,6 +96,7 @@ export default {
     ] }
   },
   computed: {
+    historyVars() { return this.vars.filter(historyFieldEligible) },
     config() { return { ...createDerivedConfig(), ...this.modelValue } },
     valueType() {
       const field = this.config.valueField

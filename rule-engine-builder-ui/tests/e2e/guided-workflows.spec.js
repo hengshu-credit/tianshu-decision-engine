@@ -170,6 +170,114 @@ test('审批任务中心默认跨模块展示待处理事项并覆盖全部资�
   assertClean()
 })
 
+test('审批详情配置差异只显示一组编辑器版本标题', async ({ page }) => {
+  const fixtures = workflowFixtures()
+  fixtures.set('/api/rule/governance/requests/91', {
+    request: {
+      id: 91,
+      requestNo: 'GOV-E2E-91',
+      resourceType: 'UNKNOWN',
+      resourceId: 7,
+      action: 'UPDATE',
+      status: 'PENDING',
+      applicant: 'e2e-applicant',
+      baseVersionNo: 1,
+      submittedSnapshotJson: '{"timeout":60}'
+    },
+    diff: {
+      summary: '共 1 项变更',
+      fields: [{
+        key: '$.timeout',
+        leftValue: 30,
+        rightValue: 60,
+        changeType: 'MODIFIED',
+        changed: true
+      }]
+    },
+    events: [],
+    dependencies: [],
+    versions: [{
+      id: 100,
+      versionNo: 1,
+      snapshotJson: '{"timeout":30}'
+    }]
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+
+  await page.goto('http://tianshu.local/index.html#/approval/91')
+  await expect(page.locator('h2').filter({ hasText: '配置差异' }).first()).toBeVisible()
+  await expect(page.locator('h2 .diff-summary')).toHaveText('内容有差异')
+  const leftSelector = page.locator('.version-selector-left')
+  const rightSelector = page.locator('.version-selector-right')
+  const leftBox = await leftSelector.boundingBox()
+  const rightBox = await rightSelector.boundingBox()
+  expect(leftBox.width).toBeGreaterThan(0)
+  expect(rightBox.width).toBeGreaterThan(0)
+  expect(rightBox.x).toBeGreaterThan(leftBox.x + leftBox.width)
+  await expect(page.locator('.diff-columns-head')).toHaveCount(0)
+  await expect(page.locator('.json-version-diff__head')).toHaveCount(0)
+  assertClean()
+})
+
+test('审批详情血缘复用统一血缘图并展示解析后的引用内容', async ({ page }) => {
+  const fixtures = workflowFixtures()
+  fixtures.set('/api/rule/governance/requests/91', {
+    request: {
+      id: 91,
+      requestNo: 'GOV-E2E-91',
+      resourceType: 'DATA_OBJECT',
+      resourceId: 3,
+      action: 'UPDATE',
+      status: 'PENDING',
+      applicant: 'e2e-applicant',
+      baseVersionNo: 1,
+      submittedSnapshotJson: JSON.stringify({
+        fields: [{ projectId: 3, varLabel: '项目归属' }]
+      })
+    },
+    diff: { summary: '共 1 项变更', fields: [] },
+    events: [],
+    dependencies: [{
+      targetResourceType: 'PROJECT',
+      targetResourceId: 3,
+      targetVersionNo: 1,
+      referencePath: '$.fields[0].projectId'
+    }],
+    versions: [{ id: 100, versionNo: 1, snapshotJson: '{"fields":[]}' }]
+  })
+  fixtures.set('/api/rule/lineage/graph', {
+    startNode: {
+      id: 'DATA_OBJECT:3',
+      refId: 3,
+      type: 'DATA_OBJECT',
+      code: 'application',
+      label: '申请信息',
+      hasUpstream: true,
+      hasDownstream: false
+    },
+    nodes: [{
+      id: 'DATA_OBJECT:3',
+      refId: 3,
+      type: 'DATA_OBJECT',
+      code: 'application',
+      label: '申请信息',
+      hasUpstream: true,
+      hasDownstream: false
+    }],
+    edges: []
+  })
+  const { assertClean } = await installDistRoutes(page, { apiData: fixtures })
+
+  await page.goto('http://tianshu.local/index.html#/approval/91')
+  await expect(page.locator('.lineage-page.is-embedded')).toBeVisible()
+  await expect(page.locator('.dependency-reference')).toContainText(
+    '字段 1（项目归属） · 项目 ID = 3'
+  )
+  await expect(page.locator('.dependency-reference')).not.toContainText('$.fields')
+  await expect(page.locator('.lineage-page.is-embedded')).toContainText('申请信息')
+  assertClean()
+})
+
 test('外数 API 按业务、稳定性和高级能力分层且保留完整配置入口', async ({
   page
 }) => {
@@ -265,7 +373,8 @@ test('数据库只读查询按 SQL 占位符引导填写参数并区分结果状
   expect(queryPayload).toEqual({
     sql: 'SELECT ? AS score',
     params: [88],
-    maxRows: 100
+    maxRows: 100,
+    queryTimeoutSeconds: 5
   })
   assertClean()
 })

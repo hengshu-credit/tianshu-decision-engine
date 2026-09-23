@@ -89,6 +89,7 @@ public class DecisionController {
     <h3>4. 日志与追踪选项</h3>
     <p><code>trace-enabled</code> 默认 true，控制本地及服务端执行的表达式追踪；false 时不返回表达式 traces，仍保留 traceId。直接调用引擎 HTTP 接口使用请求体顶层 <code>traceEnabled: false</code>，省略时默认 true。</p>
     <p><code>log-report-enabled</code> 默认 true，仅控制 SDK 本地执行日志上报；false 时 HTTP、Kafka 和自定义 reporter 均不接收执行日志。服务端执行不重复上报，服务端审计、基础执行日志、外数日志与计费不受该开关影响。两项均为 false 不等于关闭所有平台日志。</p>
-    <p>完整可运行服务参考源码 <code>rule-engine-example</code>；启动后可调用 <code>POST /api/example/execute</code>，请求体为 <code>{"ruleCode":"已发布规则编码","params":{}}</code>。该通用接口仅供联调，生产业务服务应固定或校验允许执行的规则。</p>
+    <p>以上配置针对完整 SDK <code>rule-engine-client</code>。对外公司无需源码或 Maven 私服时，使用源码 <code>rule-engine-example/README.md</code> 中的离线 tar.gz 交付方式；当前默认示例使用独立的 <code>rule-engine-client-http</code>，不需要 Redis、不下载规则，配置 RULE_SERVER_URL、项目凭据及 RULE_ALLOWED_CODES 后启动，RULE_TRACE_ENABLED 默认 false。</p>
+    <p>示例接口为 <code>POST /api/example/execute</code>，请求体为 <code>{"ruleCode":"已发布规则编码","params":{}}</code>。该通用接口仅供联调，生产业务服务应接入自身鉴权并校验允许执行的规则。</p>
   </section>`
 }

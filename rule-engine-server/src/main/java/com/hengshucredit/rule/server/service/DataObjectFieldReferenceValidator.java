@@ -47,6 +47,9 @@ public class DataObjectFieldReferenceValidator {
     public List<RuleValidationIssue> validate(RuleDataObject owner, RuleDataObjectField field,
                                             List<RuleDataObjectField> fields) {
         List<RuleValidationIssue> issues = new ArrayList<>();
+        if (field.getReferenceMode() != null && !Set.of("VALUE", "STRUCTURE").contains(field.getReferenceMode())) {
+            add(issues, field, "REFERENCE_MODE_INVALID", "引用用途必须为引用取值或仅复用结构");
+        }
         if (field.getRefVariableId() != null && field.getRefObjectId() != null) {
             add(issues, field, "REFERENCE_CONFLICT", "只能绑定一个引用变量、常量或数据对象");
             return issues;
@@ -79,7 +82,7 @@ public class DataObjectFieldReferenceValidator {
             add(issues, field, "VARIABLE_TYPE_MISMATCH", "字段类型 " + field.getVarType()
                     + " 与引用类型 " + variable.getVarType() + " 不兼容");
         }
-        if ("CONSTANT".equals(variable.getVarSource()) && isList(field.getVarType()) && !normalized(field.getGenericType()).isEmpty()) {
+        if (field.referencesValue() && "CONSTANT".equals(variable.getVarSource()) && isList(field.getVarType()) && !normalized(field.getGenericType()).isEmpty()) {
             try {
                 List<?> values = JSON.parseArray(variable.getDefaultValue());
                 if (values == null || values.stream().filter(Objects::nonNull).anyMatch(value -> !typeCompatible(field.getGenericType(),
@@ -96,7 +99,7 @@ public class DataObjectFieldReferenceValidator {
             Long id = parentId;
             RuleDataObjectField parent = fields.stream().filter(item -> Objects.equals(id, item.getId())).findFirst().orElse(null);
             if (parent == null) break;
-            if (isList(parent.getVarType())) {
+            if (field.referencesValue() && isList(parent.getVarType())) {
                 add(issues, field, "LIST_CHILD_REFERENCE_UNSUPPORTED", "列表元素内部字段不能直接取变量或常量值，请在列表字段上整体引用；内部对象仍可关联数据对象结构");
                 break;
             }

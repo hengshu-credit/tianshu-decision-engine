@@ -60,6 +60,8 @@ public class RuntimeCallLogAsyncWriter {
         RuleRuntimeCallLog target = new RuleRuntimeCallLog();
         target.setTraceId(source.getTraceId());
         target.setRuleTraceId(source.getRuleTraceId());
+        target.setRootTraceId(source.getRootTraceId());
+        target.setHistoryFields(source.getHistoryFields());
         target.setModuleType(source.getModuleType());
         target.setActionType(source.getActionType());
         target.setProjectId(source.getProjectId());

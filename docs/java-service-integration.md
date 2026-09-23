@@ -1,6 +1,8 @@
 # Java 业务服务接入决策引擎
 
-目标链路：业务端请求 Java 服务，Java 服务通过 `rule-engine-client` 执行已发布规则，读取决策结果并返回业务端。可运行参考为 `rule-engine-example`，项目管理页面导出的 API 文档也包含对应项目的 Java 接入配置和 Controller 示例。
+对外公司或无需引擎源码/Maven 私服的接入，请优先使用 [rule-engine-example 离线交付指南](../rule-engine-example/README.md)：默认使用纯 HTTP 的 `rule-engine-client-http`，提供 tar.gz、全部运行依赖和可离线重编译的业务服务示例，不需要 Redis。
+
+以下第 1–5、7 节描述原有完整 SDK `rule-engine-client`，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。
 
 ## 1. 确定规则范围与执行位置
 
@@ -114,13 +116,9 @@ HTTP 响应先检查外层 `code == 200`，再检查 `data.success`，最后读�
 
 ## 6. 运行现成示例
 
-1. 启动引擎及 Redis；在控制台完成项目凭据配置、规则设计、审核发布，全局规则还需关联到调用项目。
-2. 在仓库根目录 `.env` 或进程环境中配置 `PROJECT_ACCESS_TOKEN`、`RULE_PROJECT_ID`、`RULE_PROJECT_CODE`、`REDIS_PASSWORD`；按需指定 `RULE_SERVER_URL`、`REDIS_HOST`、`REDIS_PORT`、`REDIS_DATABASE`。
-3. 对实际项目规则设置 `RULE_SERVER_SIDE_EXECUTION=true`，构建依赖后，在 `rule-engine-example` 目录执行 `mvn spring-boot:run`，默认监听 7070。
-4. 调用 `POST http://localhost:7070/api/example/execute`，请求 `{"ruleCode":"RISK_RULE","params":{"age":18}}`，替换为实际规则及入参。该接口返回原始 `RuleResult`；业务示例服务不是生产网关。
-5. 设置 `RULE_TRACE_ENABLED=false` / `RULE_LOG_REPORT_ENABLED=false` 并重启示例服务，可验证关闭效果。示例保留原有本地执行默认值 `RULE_SERVER_SIDE_EXECUTION=false`；其中本地 Java/Bean 函数演示依赖示例进程注册的函数，不应直接切为服务端执行。
+当前默认示例已改为 HTTP-only，配置 `RULE_SERVER_URL`、`PROJECT_ACCESS_TOKEN`、`RULE_ALLOWED_CODES` 即可接入，不再使用 `RULE_PROJECT_ID`、`RULE_PROJECT_CODE` 或 Redis。表达式追踪使用 `RULE_TRACE_ENABLED`，默认关闭；没有本地日志上报。
 
-示例首页中的预设业务表单依赖可选 `data-example.sql`，不代表当前数据库一定存在对应规则；不要为运行示例覆盖现有数据库。通用执行接口可直接调用控制台已有的授权规则。
+在根目录运行 `node scripts/package-java-offline.mjs` 生成对外 tar.gz。解压后复制配置模板，执行 `start.ps1` 或 `sh start.sh`，访问默认 7070 端口的联调页。完整使用方法见 [离线交付指南](../rule-engine-example/README.md)。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 `rule-engine-example/legacy/`，不随对外包交付。
 
 ## 7. 一个 Java 服务连接多个项目
 

@@ -5,6 +5,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import java.util.LinkedHashSet;
+import java.util.Locale;
 
 /**
  * 决策表：将 JSON 模型编译为 QLExpress 脚本。
@@ -33,6 +34,12 @@ public class DecisionTableCompiler implements RuleCompiler {
             JSONObject model = JSON.parseObject(modelJson);
             String hitPolicy = model.getString("hitPolicy");
             if (hitPolicy == null) hitPolicy = "FIRST";
+            hitPolicy = hitPolicy.trim().toUpperCase(Locale.ROOT);
+            if (!"FIRST".equals(hitPolicy) && !"ALL".equals(hitPolicy)
+                    && !"UNIQUE".equals(hitPolicy)) {
+                return CompileResult.fail("决策表命中策略不支持: " + hitPolicy
+                        + "，仅支持 FIRST、ALL、UNIQUE");
+            }
             JSONArray legacyColumnDefs = model.getJSONArray("conditions");
             if (legacyColumnDefs == null) legacyColumnDefs = new JSONArray();
             JSONArray globalActionDefs = model.getJSONArray("actions");

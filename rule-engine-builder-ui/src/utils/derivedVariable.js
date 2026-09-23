@@ -41,6 +41,12 @@ export function historyAggregateOptions(type) {
   return HISTORY_AGGREGATES.filter(option => !option.types || option.types.includes(type))
 }
 
+export function historyFieldEligible(field) {
+  const type = field._refType || field.refType
+  const source = field.varSource || field.varObj?.varSource || (type === 'MODEL_OUTPUT' ? 'MODEL' : type === 'CONSTANT' ? 'CONSTANT' : 'INPUT')
+  return ['INPUT', 'API'].includes(source) || field.recordResult === true || field.varObj?.recordResult === true
+}
+
 export function validateDerivedConfig(config) {
   if (!config || !['EXPRESSION', 'HISTORY'].includes(config.mode)) return '请选择衍生方式'
   if (config.mode === 'EXPRESSION' && !config.expression) return '请配置衍生表达式'
@@ -51,7 +57,7 @@ export function validateDerivedConfig(config) {
   if (config.mode === 'EXPRESSION') return ''
   if (!Number.isInteger(config.window) || config.window < 1 || config.window > 36500) return '时间窗口必须是 1 至 36500 的整数'
   if (!['RULE', 'PROJECT', 'GLOBAL'].includes(config.scope)) return '请选择历史统计范围'
-  if (!['MINUTE', 'HOUR', 'DAY'].includes(config.windowUnit)) return '请选择时间窗口单位'
+  if (!['MINUTE', 'HOUR', 'DAY', 'CALENDAR_DAY'].includes(config.windowUnit)) return '请选择时间窗口单位'
   const fieldError = field => !field || field.kind !== 'REFERENCE' || !field.refId || !field.refType
   if (config.aggregate === 'DISTINCT_COUNT' || config.recordMode === 'LATEST_PER_SUBJECT') {
     if (!config.subjectFields?.length || config.subjectFields.some(fieldError)) return '请选择主体 key 字段'

@@ -61,6 +61,14 @@ public class DecisionTableCompilerTest {
         assertNotNull(r.getCompiledScript());
     }
 
+    @Test
+    public void rejectsUnknownHitPolicy() {
+        CompileResult result = compiler.compile("{\"hitPolicy\":\"UNKNOWN\",\"rules\":[]}");
+
+        assertFalse(result.isSuccess());
+        assertTrue(result.getErrorMessage().contains("命中策略不支持"));
+    }
+
     /** 单一规则无条件无动作，返回输出变量声明 */
     @Test
     public void test单一规则无动作_返回脚本() {

@@ -707,6 +707,17 @@ $info-color: #475569;
   }
 
   .table-operation-column {
+    text-align: left !important;
+
+    .cell {
+      text-align: left !important;
+    }
+
+    .table-operation-group,
+    [class*='-actions'] {
+      justify-content: flex-start !important;
+    }
+
     .el-button {
       flex-shrink: 0;
       white-space: nowrap;

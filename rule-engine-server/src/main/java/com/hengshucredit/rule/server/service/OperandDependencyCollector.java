@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -37,6 +38,23 @@ public final class OperandDependencyCollector {
         return references;
     }
 
+    /**
+     * 返回模型中按稳定引用类型持久化的字段编码。运行时需要用它补齐
+     * 由表达式直接引用、但不会出现在对外输入字段投影中的衍生变量。
+     */
+    public static Set<String> collectReferenceDisplayCodes(Object root, String refType) {
+        Set<String> codes = new LinkedHashSet<>();
+        if (refType == null || refType.trim().isEmpty()) return codes;
+        for (Reference reference : collectReferences(root)) {
+            if (refType.equalsIgnoreCase(reference.getRefType())
+                    && reference.getDisplayCode() != null
+                    && !reference.getDisplayCode().trim().isEmpty()) {
+                codes.add(reference.getDisplayCode().trim());
+            }
+        }
+        return codes;
+    }
+
     public static void collectReferences(JSONObject operand, List<Reference> result) {
         if (operand == null || result == null) return;
         collectReferencesFromTree(operand, "$", result);
@@ -45,9 +63,18 @@ public final class OperandDependencyCollector {
     private static void collectReferencesFromTree(Object node, String path, List<Reference> result) {
         if (node instanceof JSONObject object) {
             String kind = object.getString("kind");
-            if ("REFERENCE".equals(kind)) {
-                result.add(new Reference(object.getString("refType"), object.getLong("refId"),
-                        firstText(object.getString("code"), object.getString("value")), path));
+            if ("REFERENCE".equals(kind) || "PATH".equals(kind)) {
+                String refType = object.getString("refType");
+                Long refId = object.getLong("refId");
+                if (refId != null && refType != null && !refType.isBlank()) {
+                    addUnique(result, new Reference(refType, refId,
+                            firstText(object.getString("code"), object.getString("value")), path));
+                }
+                if ("PATH".equals(kind)) return;
+                if (refId == null || refType == null || refType.isBlank()) {
+                    result.add(new Reference(refType, refId,
+                            firstText(object.getString("code"), object.getString("value")), path));
+                }
             } else if ("FUNCTION".equals(kind)) {
                 result.add(new Reference("FUNCTION", object.getLong("functionId"),
                         object.getString("functionCode"), path));

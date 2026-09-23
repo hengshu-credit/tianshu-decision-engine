@@ -67,6 +67,9 @@ public class RuleModelService {
     @Resource
     private RuleVariableService variableService;
     @Resource
+    @org.springframework.context.annotation.Lazy
+    private VariableSourceResolver variableSourceResolver;
+    @Resource
     private OnnxRuntimeSessionManager onnxSessionManager;
     @Resource
     private OnnxModelExecutionService onnxModelExecutionService;
@@ -1377,6 +1380,12 @@ public class RuleModelService {
             throw new IllegalArgumentException("模型文件内容为空");
         }
 
+        if (!(params instanceof BoundModelInputs) && variableSourceResolver != null) {
+            model.setInputFields(listInputFields(modelId));
+            model.setOutputFields(listOutputFields(modelId));
+            return variableSourceResolver.executeModel(model, params, referenceProjectId(model));
+        }
+
         int timeoutMs = normalizedExecutionTimeout(model.getExecutionTimeoutMs());
         return modelExecutionTimeoutExecutor.execute(
                 () -> executeConfiguredModel(model, params, Collections.emptyMap()), timeoutMs);
@@ -1401,14 +1410,17 @@ public class RuleModelService {
         Long modelId = model.getId();
         List<RuleModelInputField> inputFields = model.getInputFields() == null
                 ? listInputFields(modelId) : model.getInputFields();
-        Map<String, Object> referenceValues = model.getInputFields() == null
+        Map<String, Object> referenceValues = params instanceof BoundModelInputs bound ? bound.references() : model.getInputFields() == null
                 ? referenceValues(referenceProjectId(model), params)
                 : snapshotReferenceValues(inputFields, params);
-        Map<String, Object> resolvedParams = OperandValueResolver.bindModelInputs(
+        Map<String, Object> resolvedParams = params instanceof BoundModelInputs ? params : OperandValueResolver.bindModelInputs(
                 inputFields, params, referenceValues,
                 (functionId, functionCode, args) -> invokeOperandFunction(
                         functionId, functionCode, args, functions));
         Map<String, Object> boundContext = executionParameterBinder.bindModelInputs(inputFields, resolvedParams);
+        if (params instanceof BoundModelInputs bound) {
+            boundContext = new BoundModelInputs(boundContext, bound.references(), bound.referencePaths(), bound.frozen());
+        }
         Map<String, Object> executionParams = executionParameterBinder.projectModelInputs(
                 inputFields, boundContext);
         boundContext.putAll(executionParams);
@@ -1651,14 +1663,17 @@ public class RuleModelService {
         if (model.getModelCode() != null && !model.getModelCode().trim().isEmpty()) {
             context.put(model.getModelCode(), original);
         }
-        Map<String, Object> referenceValues = model.getOutputFields() == null
+        Map<String, Object> referenceValues = params instanceof BoundModelInputs bound
+                ? new LinkedHashMap<>(bound.references()) : model.getOutputFields() == null
                 ? new LinkedHashMap<>(referenceValues(referenceProjectId(model), context))
                 : new LinkedHashMap<>();
         List<RuleModelOutputField> outputFields = model.getOutputFields() == null
                 ? listOutputFields(model.getId()) : model.getOutputFields();
         for (RuleModelOutputField field : outputFields) {
             Object rawValue = original.get(outputKey(field, original));
-            OperandValueResolver.write(field.getTargetOperand(), context, rawValue);
+            OperandValueResolver.write(field.getTargetOperand(), context, rawValue,
+                    params instanceof BoundModelInputs bound ? bound.referencePaths() : null);
+            if (field.getId() != null) referenceValues.put("MODEL_OUTPUT:" + field.getId(), rawValue);
             if (field.getVarId() != null && field.getRefType() != null && !field.getRefType().trim().isEmpty()) {
                 referenceValues.put(field.getRefType().trim().toUpperCase() + ":" + field.getVarId(), rawValue);
             }
@@ -1686,6 +1701,9 @@ public class RuleModelService {
             }
             String outputKey = outputKey(field, original);
             RuleFunction frozen = functions == null ? null : functions.get(functionId);
+            if (frozen == null && params instanceof BoundModelInputs bound && bound.frozen()) {
+                throw new IllegalArgumentException("模型输出转换函数不在执行快照中: " + functionId);
+            }
             transformed.put(outputKey, frozen == null
                     ? ruleFunctionService.invoke(functionId, args)
                     : ruleFunctionService.invokeSnapshot(frozen, args));
@@ -1845,6 +1863,7 @@ public class RuleModelService {
         existing.setFieldLabel(field.getFieldLabel());
         existing.setFieldType(field.getFieldType());
         existing.setTargetField(field.getTargetField());
+        if (field.getRecordResult() != null) existing.setRecordResult(field.getRecordResult());
         existing.setTargetOperand(field.getTargetOperand());
         existing.setTransformOperand(field.getTransformOperand());
         outputFieldMapper.updateById(existing);

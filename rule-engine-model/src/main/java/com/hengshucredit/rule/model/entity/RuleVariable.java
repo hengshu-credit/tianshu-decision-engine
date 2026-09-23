@@ -21,6 +21,8 @@ public class RuleVariable {
     private String varSource;
     /** API/DB 等外部来源的绑定配置JSON */
     private String sourceConfig;
+    /** 显式记录运行结果，供后续进件的历史衍生统计使用。 */
+    private Boolean recordResult;
     private String defaultValue;
     private String valueRange;
     private String exampleValue;

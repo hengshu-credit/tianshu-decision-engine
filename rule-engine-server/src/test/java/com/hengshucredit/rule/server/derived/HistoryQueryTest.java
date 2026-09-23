@@ -121,6 +121,16 @@ public class HistoryQueryTest {
         assertEquals(1L, evaluate(config, List.of(row(1, Map.of("VARIABLE:1", 0, "VARIABLE:2", 0)), row(2, Map.of("VARIABLE:1", 10, "VARIABLE:2", 10)))));
     }
 
+    @Test
+    public void calendarDayWindowStartsAtLocalMidnightNotRollingTwentyFourHours() {
+        assertEquals(LocalDateTime.of(2026, 9, 21, 0, 0),
+                DerivedVariableService.historyStart(
+                        LocalDateTime.of(2026, 9, 21, 12, 0), 1, "CALENDAR_DAY"));
+        assertEquals(LocalDateTime.of(2026, 9, 20, 0, 0),
+                DerivedVariableService.historyStart(
+                        LocalDateTime.of(2026, 9, 21, 12, 0), 2, "CALENDAR_DAY"));
+    }
+
     private static Object evaluate(JSONObject query, List<HistoryQuery.Row> rows) {
         return HistoryQuery.evaluate(query, rows, operand -> operand.get("value"), null);
     }

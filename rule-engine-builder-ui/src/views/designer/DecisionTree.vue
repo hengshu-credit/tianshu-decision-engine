@@ -1,5 +1,8 @@
 <template>
-  <div class="tree-designer uiue-compact-workbench uiue-compact-designer">
+  <div
+    class="tree-designer uiue-compact-workbench uiue-compact-designer"
+    @mousedown.capture="onDesignerMouseDown"
+  >
     <rule-draft-read-only
       :visible="!canEditDraft"
       :loading="!draftGuardLoaded"
@@ -238,86 +241,23 @@
           <!-- ========== 连线属性（可视化+脚本双模式） ========== -->
           <template v-if="isEdge">
             <div class="prop-section">
-              <el-form size="small" label-width="70px" class="prop-form">
-                <el-form-item label="连接线类型">
-                  <el-select
-                    v-model="edgeProps.edgeLineType"
-                    size="small"
-                    style="width: 100%"
-                    @change="onEdgeLineShapeChange"
-                  >
-                    <el-option label="跟随全局" value="" />
-                    <el-option label="折线" value="polyline" />
-                    <el-option label="直线" value="line" />
-                    <el-option label="弧线" value="bezier" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item label="分支标签">
-                  <el-input
-                    v-model="edgeProps.conditionName"
-                    placeholder="如：是、否、金额>500"
-                    @update:model-value="onEdgeChange"
-                  />
-                </el-form-item>
-              </el-form>
-              <div class="hint-box">
+              <edge-properties-editor
+                :model-value="edgeProps"
+                :condition-root="edgeConditionRoot"
+                :mode="edgeCondMode"
+                :vars="varPickerOptions"
+                :functions="projectFunctions"
+                :list-options="projectLists"
+                :get-var-options-fn="getVarOptions"
+                :selected-vars="selectedVarPickerOptions"
+                @update:model-value="updateActiveEdgeForm"
+                @update:mode="changeActiveEdgeMode"
+                @condition-change="persistEdgeConditionDraft(true)"
+                @generate="applyEdgeCondVisual"
+              />
+              <div class="hint-box" style="margin-top: 6px">
                 <el-icon><el-icon-info /></el-icon>
                 拖动连线两端的圆点，可切换节点的连接锚点
-              </div>
-            </div>
-
-            <div class="prop-section">
-              <div class="section-title">
-                <span>条件表达式</span>
-                <el-radio-group v-model="edgeCondMode" size="small">
-                  <el-radio-button value="visual">可视化</el-radio-button>
-                  <el-radio-button value="script">脚本</el-radio-button>
-                </el-radio-group>
-              </div>
-
-              <!-- 可视化条件构建 -->
-              <div v-if="edgeCondMode === 'visual'" class="cond-builder">
-                <div v-if="!edgeProps.conditionExpr && !edgeConditionRoot?.children?.length" class="hint-box">
-                  当前为默认分支；添加条件后按条件判断。
-                </div>
-                <condition-group-editor
-                  v-if="edgeConditionRoot"
-                  :group="edgeConditionRoot"
-                  :vars="varPickerOptions"
-                  :functions="projectFunctions"
-                  :list-options="projectLists"
-                  :get-var-options-fn="getVarOptions"
-                  :selected-vars="selectedVarPickerOptions"
-                  @changed="persistEdgeConditionDraft(true)"
-                />
-                <el-button
-                  type="primary"
-                  size="small"
-                  :icon="ElIconCheck"
-                  style="width: 100%; margin-top: 8px"
-                  @click="applyEdgeCondVisual"
-                >
-                  生成表达式
-                </el-button>
-                <div v-if="edgeProps.conditionExpr" class="generated-expr">
-                  <code>{{ edgeProps.conditionExpr }}</code>
-                </div>
-              </div>
-
-              <!-- 脚本模式 -->
-              <div v-else class="cond-script">
-                <el-input
-                  v-model="edgeProps.conditionExpr"
-                  type="textarea"
-                  :rows="3"
-                  placeholder="QLExpress 表达式，如：amount > 100000"
-                  class="mono-input"
-                  @update:model-value="onEdgeChange"
-                />
-              </div>
-
-              <div class="hint-box" style="margin-top: 6px">
-                <el-icon><el-icon-info /></el-icon> 条件为空表示默认分支（else）
               </div>
             </div>
           </template>
@@ -361,41 +301,28 @@
               />
             </div>
 
-            <!-- ===== 条件节点：只显示分支出口 ===== -->
+            <!-- ===== 条件节点：直接编辑分支出口 ===== -->
             <template v-if="activeElement.type === 'exclusive-gateway'">
               <div class="prop-section">
                 <div class="section-title"><span>分支出口</span></div>
                 <div class="out-edges">
-                  <div
+                  <gateway-branch-editor
                     v-for="(edge, ei) in outEdges"
                     :key="edge.id"
-                    class="out-edge-item"
-                    @click="selectEdgeById(edge.id)"
-                  >
-                    <span class="edge-idx">{{ ei + 1 }}</span>
-                    <el-icon class="edge-arrow"><el-icon-right /></el-icon>
-                    <span class="edge-name">{{
-                      edgeLabel(edge) || '（点击配置条件）'
-                    }}</span>
-                    <span class="edge-priority">P{{ edgePriority(edge, ei) }}</span>
-                    <el-button
-                      link
-                      size="small"
-                      class="edge-priority-up"
-                      :disabled="ei === 0"
-                      @click.stop="moveGatewayEdge(edge.id, -1)"
-                    >上移</el-button>
-                    <el-button
-                      link
-                      size="small"
-                      class="edge-priority-down"
-                      :disabled="ei === outEdges.length - 1"
-                      @click.stop="moveGatewayEdge(edge.id, 1)"
-                    >下移</el-button>
-                    <el-tag v-if="!edgeLabel(edge)" size="small" type="warning"
-                      >未设置</el-tag
-                    >
-                  </div>
+                    :edge="edge"
+                    :index="ei"
+                    :count="outEdges.length"
+                    :priority="edgePriority(edge, ei)"
+                    :target-name="edgeTargetName(edge)"
+                    :parse-condition-config="parseConditionConfig"
+                    :vars="varPickerOptions"
+                    :functions="projectFunctions"
+                    :list-options="projectLists"
+                    :get-var-options-fn="getVarOptions"
+                    :selected-vars="selectedVarPickerOptions"
+                    @change="onEdgeChange(edge.id, $event)"
+                    @move="moveGatewayEdge(edge.id, $event)"
+                  />
                   <div v-if="outEdges.length === 0" class="hint-box">
                     <el-icon><el-icon-info /></el-icon>
                     从节点锚点拖拽到目标节点创建分支
@@ -403,7 +330,7 @@
                 </div>
                 <div class="hint-box" style="margin-top: 6px">
                   <el-icon><el-icon-info /></el-icon>
-                  点击分支连线可配置条件表达式（可视化或脚本）
+                  点击分支标题可展开或收起，也可单独点击画布连线修改属性
                 </div>
               </div>
             </template>
@@ -502,7 +429,6 @@ import {
   SetUp as ElIconSetUp,
   Close as ElIconClose,
   InfoFilled as ElIconInfo,
-  Right as ElIconRight,
   Share as ElIconShare,
   Back as ElIconBack,
   Delete as ElIconDelete,
@@ -519,7 +445,6 @@ import {
   Document as ElIconDocument,
   Cpu as ElIconCpu,
   VideoPlay as ElIconVideoPlay,
-  Check as ElIconCheck,
 } from '@element-plus/icons-vue'
 import LogicFlow from '@logicflow/core'
 import {
@@ -542,6 +467,7 @@ import {
   FLOW_MENU_OPTIONS,
   FLOW_THEME_COLOR,
   addConnectedNode,
+  blurActiveDesignerControl,
   createAnchorGesture,
   createDynamicGroup,
   createFlowNodeData,
@@ -549,6 +475,7 @@ import {
   getBusinessGraphData,
   getPersistableGraphData,
   isAnchorClickGesture,
+  isDesignerInteractiveTarget,
   layoutGraphByAnchors,
   resolveAnchorDirection,
   updateAnchorGesture,
@@ -575,7 +502,8 @@ import RuleDesignerVersionSelect from '@/components/rule/RuleDesignerVersionSele
 import RuleDesignerActionBar from '@/components/rule/RuleDesignerActionBar.vue'
 import EndNodeScopeDialog from '@/components/flow/EndNodeScopeDialog.vue'
 import ActionBlockEditor from '@/components/flow/ActionBlockEditor.vue'
-import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
+import EdgePropertiesEditor from '@/components/flow/EdgePropertiesEditor.vue'
+import GatewayBranchEditor from '@/components/flow/GatewayBranchEditor.vue'
 import {
   createEmptyGroup,
   createEmptyLeaf,
@@ -681,7 +609,6 @@ export default {
       ElIconDocument: markRaw(ElIconDocument),
       ElIconCpu: markRaw(ElIconCpu),
       ElIconVideoPlay: markRaw(ElIconVideoPlay),
-      ElIconCheck: markRaw(ElIconCheck),
     }
   },
   components: {
@@ -693,12 +620,12 @@ export default {
     FlowNodeAddMenu,
     ScriptPanel,
     ActionBlockEditor,
-    ConditionGroupEditor,
+    EdgePropertiesEditor,
+    GatewayBranchEditor,
     GraphDesignerNavigator,
     ElIconSetUp,
     ElIconClose,
     ElIconInfo,
-    ElIconRight,
     ElIconShare,
   },
   name: 'DecisionTree',
@@ -836,10 +763,15 @@ export default {
       }
     },
     closePropertyPanel() {
+      blurActiveDesignerControl()
       this.flushActiveEditor()
       this.activeElement = null
       this.hasSelection = false
       this.selectedBusinessNodeCount = 0
+    },
+    onDesignerMouseDown(event) {
+      if (isDesignerInteractiveTarget(event && event.target)) return
+      blurActiveDesignerControl()
     },
     refreshStartNodeState() {
       if (!this.lf) {
@@ -914,7 +846,7 @@ export default {
       root.children.push(leaf)
       return root
     },
-    parseConditionConfig(config, expr) {
+    parseConditionConfig(config, expr, references = {}) {
       if (config) {
         if (typeof config === 'object')
           return normalizeConditionTreeOperands(
@@ -926,9 +858,16 @@ export default {
           /* ignore */
         }
       }
-      return this.createConditionRootFromVisual(
-        this.syncCondVisualFromExpr(expr)
-      )
+      const visual = this.syncCondVisualFromExpr(expr)
+      visual.leftVarId = references.leftVarId || null
+      visual.leftRefType = references.leftRefType || null
+      if (references.rightVarId) {
+        visual.rightType = 'var'
+        visual.rightVar = visual.rightValue
+        visual.rightVarId = references.rightVarId
+        visual.rightRefType = references.rightRefType || null
+      }
+      return this.createConditionRootFromVisual(visual)
     },
     collectConditionVarItems(config) {
       const items = []
@@ -1107,6 +1046,7 @@ export default {
       this.lf.on('node:dbclick', ({ data }) => this.selectNodeData(data))
       this.lf.on('edge:dbclick', ({ data }) => this.selectEdgeData(data))
       this.lf.on('history:change', () => {
+        this.edgeOrderVersion++
         this.updateZoom()
         this.queueDesignerDraftCapture()
       })
@@ -1305,11 +1245,17 @@ export default {
         targetNodeId: data.targetNodeId,
         properties: JSON.parse(JSON.stringify(properties)),
       }
+      const sourceEdges = this.lf.getNodeEdges?.(model?.sourceNodeId || data.sourceNodeId) || []
+      const sourceIndex = sourceEdges
+        .filter(edge => edge.sourceNodeId === (model?.sourceNodeId || data.sourceNodeId))
+        .findIndex(edge => edge.id === data.id)
       this.edgeProps = {
+        ...this.activeElement.properties,
         conditionName: this.activeElement.properties.conditionName || '',
         conditionExpr: this.activeElement.properties.conditionExpr || '',
         conditionConfig: this.activeElement.properties.conditionConfig || null,
         edgeLineType: this.activeElement.properties.edgeLineType || '',
+        priority: this.edgePriority(model || data, Math.max(0, sourceIndex)),
       }
       this.edgeCondVisual = this.syncCondVisualFromExpr(
         this.edgeProps.conditionExpr
@@ -1324,7 +1270,8 @@ export default {
         this.activeElement.properties.rightRefType || null
       this.edgeConditionRoot = this.parseConditionConfig(
         this.edgeProps.conditionConfig,
-        this.edgeProps.conditionExpr
+        this.edgeProps.conditionExpr,
+        this.edgeProps
       )
       this.edgeCondMode =
         this.edgeProps.conditionExpr &&
@@ -1370,39 +1317,46 @@ export default {
     /**
      * 同步连线分支文案与条件等到模型，并保持与连接线类型相关的 properties 一致
      */
-    onEdgeChange() {
-      if (
-        !this.lf ||
-        !this.activeElement ||
-        this.activeElement.baseType !== 'edge'
-      )
-        return
-      const curProps = this.lf.getProperties(this.activeElement.id) || {}
-      const props = mergeEdgePropertiesFromForm(curProps, this.edgeProps)
-      this.lf.setProperties(this.activeElement.id, props)
-      const effectiveType = this.edgeProps.edgeLineType
-        ? normalizeDefaultEdgeLineType(this.edgeProps.edgeLineType)
+    updateActiveEdgeForm(form) {
+      this.edgeProps = form
+      this.onEdgeChange()
+    },
+    changeActiveEdgeMode(mode) {
+      if (mode === 'visual') {
+        this.edgeConditionRoot = this.parseConditionConfig(
+          this.edgeProps.conditionConfig,
+          this.edgeProps.conditionExpr,
+          this.edgeProps
+        )
+      }
+      this.edgeCondMode = mode
+    },
+    edgeTargetName(edge) {
+      const node = this.lf?.getNodeModelById?.(edge.targetNodeId)
+      return node?.properties?.nodeName || edge.targetNodeId || '未连接节点'
+    },
+    onEdgeChange(edgeId = this.activeElement?.id, form = this.edgeProps) {
+      if (!this.lf || !edgeId) return
+      const curProps = this.lf.getProperties(edgeId) || {}
+      const props = mergeEdgePropertiesFromForm(curProps, form)
+      this.lf.setProperties(edgeId, props)
+      if (!form.edgeLineType && curProps.edgeLineType) {
+        this.lf.deleteProperty(edgeId, 'edgeLineType')
+      }
+      const effectiveType = form.edgeLineType
+        ? normalizeDefaultEdgeLineType(form.edgeLineType)
         : this.globalEdgeLineType
       try {
-        this.lf.changeEdgeType(this.activeElement.id, effectiveType)
+        this.lf.changeEdgeType(edgeId, effectiveType)
       } catch (e) {
         /* ignore */
       }
       try {
-        this.lf.updateText(
-          this.activeElement.id,
-          this.edgeProps.conditionName || ''
-        )
+        this.lf.updateText(edgeId, form.conditionName || '')
       } catch (e) {
         /* ignore */
       }
-    },
-
-    /**
-     * 仅修改当前连线的连接线类型（跟随全局或单独指定）
-     */
-    onEdgeLineShapeChange() {
-      this.onEdgeChange()
+      this.edgeOrderVersion++
     },
 
     /**
@@ -1516,14 +1470,6 @@ export default {
         'join-gateway': 'info',
       }
       return map[type] || 'info'
-    },
-
-    edgeLabel(edge) {
-      if (edge.properties && edge.properties.conditionName)
-        return edge.properties.conditionName
-      if (edge.properties && edge.properties.conditionExpr)
-        return edge.properties.conditionExpr
-      return ''
     },
 
     updateSelectedBusinessNodeCount() {
@@ -1756,7 +1702,7 @@ export default {
         }
         if (this.syncConditionConfigVarRefs(props.conditionConfig))
           changed = true
-        if (changed) this.lf.setEdgeData(edge.id, { properties: props })
+        if (changed) this.lf.setProperties(edge.id, props)
       }
     },
 
@@ -1832,20 +1778,6 @@ export default {
           ...currentProps,
           actionData: this.currentActionData || [],
         })
-      }
-      if (
-        flushEditor &&
-        this.activeElement &&
-        this.activeElement.baseType === 'edge' &&
-        this.edgeCondMode === 'visual' &&
-        this.edgeConditionRoot
-      ) {
-        const expr = compileConditionTreeExpression(this.edgeConditionRoot)
-        this.edgeProps.conditionExpr = expr
-        this.edgeProps.conditionConfig = JSON.parse(
-          JSON.stringify(this.edgeConditionRoot)
-        )
-        this.onEdgeChange()
       }
       const canvasGraph = getPersistableGraphData(this.lf)
       const graphData = getBusinessGraphData(canvasGraph)
@@ -2454,19 +2386,6 @@ export default {
   flex-shrink: 0;
   text-align: right;
 }
-.generated-expr {
-  margin-top: 8px;
-  padding: 6px 8px;
-  background: var(--tianshu-designer-accent-bg);
-  border: 1px solid var(--tianshu-designer-accent-border);
-  border-radius: 4px;
-  code {
-    font-family: 'Consolas', monospace;
-    font-size: 12px;
-    color: var(--el-color-primary);
-    word-break: break-all;
-  }
-}
 .action-builder {
   padding: 0;
 }
@@ -2541,54 +2460,9 @@ export default {
 .out-edges {
   padding: 0;
 }
-.out-edge-item {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 10px;
-  border: 1px solid var(--tianshu-border-subtle);
-  border-radius: 4px;
-  margin-bottom: 6px;
-  cursor: pointer;
-  transition: all 0.15s;
-  &:hover {
-    background: var(--tianshu-designer-accent-bg);
-    border-color: var(--el-color-primary);
-  }
-}
-.edge-idx {
-  font-size: 11px;
-  font-weight: bold;
-  color: #fff;
-  background: var(--el-color-primary);
-  padding: 1px 6px;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-.edge-arrow {
-  color: var(--el-color-primary);
-  font-size: 13px;
-}
-.edge-name {
-  flex: 1;
-  font-size: 12px;
-  color: var(--tianshu-text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 
 .tree-toolbar :deep(.rule-designer-version-select) {
   color: #fff;
-}
-.edge-priority {
-  flex-shrink: 0;
-  color: var(--tianshu-text-tertiary);
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.out-edge-item :deep(.el-button) {
-  padding: 0 2px;
 }
 .hint-box {
   font-size: 12px;

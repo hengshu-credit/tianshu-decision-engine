@@ -13,9 +13,11 @@ public class RuleModelOutputField {
     private Long modelId;
 
     /** 关联字段ID，需结合 refType 判断所属资源表 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long varId;
 
     /** 引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String refType;
 
     private String fieldName;
@@ -26,14 +28,17 @@ public class RuleModelOutputField {
 
     /** 字段类型：STRING/NUMBER/INTEGER/DOUBLE/PROBABILITY/VECTOR */
     private String fieldType;
+    private Boolean recordResult;
 
     private String targetField;
 
     /** 统一 Operand JSON：模型输出写入的引擎字段/路径 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String targetOperand;
     private String featureName;
 
     /** 函数转换 Operand；顶层必须是 FUNCTION */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String transformOperand;
 
     /** 是否概率输出：0-否，1-是 */

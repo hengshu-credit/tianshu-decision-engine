@@ -388,6 +388,12 @@
             </template>
           </el-table-column>
           <!-- 转换方法（可编辑） -->
+          <el-table-column label="记录字段结果" width="125">
+            <template v-slot="{ row }">
+              <el-switch v-if="row._editing" v-model="row.recordResult" aria-label="记录模型输出结果" />
+              <span v-else>{{ row.recordResult ? '已开启' : '未开启' }}</span>
+            </template>
+          </el-table-column>
           <el-table-column label="转换方法" min-width="420">
             <template v-slot="{ row }">
               <div v-if="row._editing" class="transform-editor">
@@ -1840,6 +1846,7 @@ export default {
         fieldLabel: row.fieldLabel,
         scriptName: row.scriptName,
         transformOperand: this.parseOperand(row.transformOperand),
+        recordResult: row.recordResult === true,
         targetOperand: row.targetOperand,
       }
     },
@@ -1855,6 +1862,7 @@ export default {
             fieldLabel: row.fieldLabel,
             fieldType: row.fieldType,
             targetField: row.targetField,
+            recordResult: row.recordResult === true,
             targetOperand: row.targetOperand
               ? JSON.stringify(row.targetOperand)
               : null,
@@ -2495,18 +2503,18 @@ export default {
 }
 .test-load-state.is-error strong,
 .test-load-state.is-error span {
-  color: #b91c1c;
+  color: var(--tianshu-danger-text);
 }
 .test-readiness {
   padding: 10px 12px;
   margin-bottom: 12px;
-  border: 1px solid #bbf7d0;
+  border: 1px solid var(--tianshu-success-border);
   border-radius: 4px;
-  background: #f0fdf4;
+  background: var(--tianshu-success-bg);
 }
 .test-readiness.is-degraded {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: var(--tianshu-warning-border);
+  background: var(--tianshu-warning-bg);
 }
 .test-readiness-main {
   display: flex;
@@ -2520,11 +2528,11 @@ export default {
   gap: 2px;
 }
 .test-readiness-main strong {
-  color: #166534;
+  color: var(--tianshu-success-text);
   font-size: 13px;
 }
 .test-readiness.is-degraded .test-readiness-main strong {
-  color: #92400e;
+  color: var(--tianshu-warning-text);
 }
 .test-readiness-main span,
 .test-load-warnings {
@@ -2535,7 +2543,7 @@ export default {
 .test-load-warnings {
   padding-left: 18px;
   margin: 8px 0 0;
-  color: #92400e;
+  color: var(--tianshu-warning-text);
 }
 .test-toolbar {
   display: flex;

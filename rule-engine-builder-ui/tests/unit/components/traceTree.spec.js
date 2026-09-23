@@ -174,6 +174,24 @@ function skippedTableCondition(operator) {
   }
 }
 
+// RuleSetCompiler 先赋值 _ruleSetEvalN，再记录规则标识并执行 if (_ruleSetEvalN)。
+function compiledRuleTrace(code, index, predicate, mode = 'PARALLEL', evaluated = true) {
+  const name = '_ruleSetEval' + index
+  const body = [
+    { type: 'OPERATOR', token: '=', evaluated, value: predicate.value,
+      children: [variableNode(name, undefined, evaluated), predicate] },
+    { type: 'FUNCTION', token: 'recordRuleSetItem', evaluated,
+      children: [valueNode(evaluated ? code : undefined, JSON.stringify(code), evaluated),
+        valueNode(code), variableNode(name, predicate.value, evaluated)] },
+    { type: 'IF', evaluated, children: [variableNode(name, predicate.value, evaluated),
+      { type: 'BLOCK', evaluated: predicate.value === true, children: [] }] }
+  ]
+  return mode === 'PARALLEL' ? body : [{ type: 'IF', evaluated: true, children: [
+    { type: 'OPERATOR', token: '!', evaluated: true, value: evaluated, children: [variableNode('_ruleSetMatched', !evaluated)] },
+    { type: 'BLOCK', evaluated, children: body }
+  ] }]
+}
+
 describe('TraceTree', () => {
   test('默认表达式追踪按顶层语句拆成纵向步骤', () => {
     const wrapper = mountTraceTree({
@@ -406,9 +424,35 @@ describe('TraceTree', () => {
     const functionCard = wrapper.vm.flowCards.find(card => card.stepType === 'function')
 
     expect(functionCard.funcArgs[1].value).toBe(JSON.stringify(faces))
-    expect(functionCard.resultDisplay).toBe(JSON.stringify(faces))
+    expect(functionCard.resultDisplay).toBe(JSON.stringify(faces, null, 2))
     expect(wrapper.vm._displayVal(faces)).toBe(JSON.stringify(faces))
     expect(wrapper.text()).not.toContain('[object Object]')
+  })
+
+  test.each(['FLOW', 'SCRIPT'])('%s 长结果与表达式分区且完整保留内容', modelType => {
+    const result = { hits: Array.from({ length: 30 }, (_, i) => ({ name: '命中规则' + i })), tail: '完整结果末尾' }
+    const wrapper = mountTraceTree({
+      modelType,
+      traceInfo: JSON.stringify([
+        { type: 'FUNCTION', token: 'setRuntimeValue', evaluated: true, value: result,
+          children: [valueNode('策略结果'), variableNode('策略结果', result)] },
+        assignNode('长文本', '长文本结果'.repeat(500)),
+        assignNode('短结果', false),
+        assignNode('_result', { decision: 'REJECT' })
+      ])
+    })
+
+    const functionCard = wrapper.find('.fc-card--function')
+    expect(functionCard.find('.fc-expr-panel').text()).toContain('规则表达式')
+    expect(functionCard.find('.fc-expr').text()).toContain('setRuntimeValue')
+    expect(functionCard.find('.fc-result-panel').text()).toContain('执行结果')
+    expect(JSON.parse(functionCard.find('.fc-expr-result').text())).toEqual(result)
+    expect(wrapper.findAll('.fc-expr-result')[1].text()).toBe('长文本结果'.repeat(500))
+    expect(wrapper.findAll('.fc-expr-result')[2].text()).toBe('false')
+    const final = wrapper.find('.fc-expr-row--result-only')
+    expect(final.find('.fc-expr-panel').exists()).toBe(false)
+    expect(final.find('.fc-expr-result').text()).toBe('decision:REJECT')
+    wrapper.unmount()
   })
 
   test('规则集追踪按规则独立成行并展示命中摘要', () => {
@@ -564,7 +608,94 @@ describe('TraceTree', () => {
 
     const item = wrapper.vm._buildRuleSetConditionLeaf(leaf, null)
 
-    expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', thresholdText: '成年年龄 adultAge = 18', result: true })
+    expect(item).toMatchObject({ varCode: 'request.age', varName: '年龄', actualText: '20', actualSource: 'input', thresholdText: '成年年龄 adultAge = 18', result: null })
+  })
+
+  test.each(['SERIAL', 'PARALLEL'])('%s 当前编译格式按规则标识读取条件赋值中的实际值', mode => {
+    const root = { type: 'group', op: 'AND', children: [{ type: 'leaf', varCode: 'idcard_validity_days', operator: '<=', value: '30' }] }
+    const wrapper = mountTraceTree({ modelType: 'RULE_SET',
+      definitionModel: { executionMode: mode, rules: [{ ruleCode: 'R-DAYS', conditionRoot: root }] },
+      traceInfo: JSON.stringify(compiledRuleTrace('R-DAYS', 0, compareNode('idcard_validity_days', '<=', 12, 30, true), mode))
+    })
+    expect(wrapper.vm.ruleSetRows[0]).toMatchObject({ status: 'hit', conditionTree: { result: true,
+      children: [{ actualText: '12', actualSource: 'trace', result: true }] } })
+    expect(wrapper.vm.ruleSetRows[0].conditions[0]).toMatchObject({ actualText: '12', result: true })
+    wrapper.unmount()
+  })
+
+  test('函数参数不同的同名调用读取各自返回值，右侧也使用当时的执行值', () => {
+    const call = (index, name) => ({ type: 'FUNCTION', token: 'toStringValue', evaluated: true, value: name,
+      children: [{ type: 'FUNCTION', token: 'jsonGet', evaluated: true, value: name,
+        children: [variableNode('contacts', []), valueNode('$[' + index + '].联系人姓名')] }] })
+    const root = { type: 'group', op: 'OR', children: [0, 1].map(i => ({ type: 'leaf',
+      varCode: 'toStringValue(jsonGet(contacts, "$[' + i + '].联系人姓名"))', operator: '==', valueKind: 'VAR', value: 'name' })) }
+    const predicate = logicalNode('||', ['测试乙', '测试甲'].map((name, i) => ({ type: 'OPERATOR', token: '==',
+      evaluated: true, value: i === 1, children: [call(i, name), variableNode('name', '测试甲')] })), true)
+    const wrapper = mountTraceTree({ modelType: 'RULE_SET', inputParams: '{"name":"旧值"}',
+      definitionModel: { rules: [{ ruleCode: 'R-CONTACT', conditionRoot: root }] },
+      traceInfo: JSON.stringify(compiledRuleTrace('R-CONTACT', 0, predicate)) })
+    expect(wrapper.vm.ruleSetRows[0].conditionTree.children).toMatchObject([
+      { actualText: '测试乙', thresholdText: 'name = 测试甲', result: false },
+      { actualText: '测试甲', thresholdText: 'name = 测试甲', result: true }
+    ])
+    wrapper.unmount()
+  })
+
+  test('同一变量的三个 OR 条件按二叉追踪顺序对应，短路条件不可用输入值推算', () => {
+    const root = { type: 'group', op: 'OR', children: [1, 2, 3].map(value => ({ type: 'leaf', varCode: 'count', operator: '==', value })) }
+    const predicate = logicalNode('||', [logicalNode('||', [compareNode('count', '==', 2, 1, false), compareNode('count', '==', 2, 2, true)], true),
+      compareNode('count', '==', undefined, undefined, undefined, false)], true)
+    const wrapper = mountTraceTree({ modelType: 'RULE_SET', inputParams: '{"count":3}',
+      definitionModel: { rules: [{ ruleCode: 'R-OR', conditionRoot: root }] },
+      traceInfo: JSON.stringify(compiledRuleTrace('R-OR', 0, predicate)) })
+    const row = wrapper.vm.ruleSetRows[0]
+    expect(row.conditionTree.children).toMatchObject([
+      { actualText: '2', result: false }, { actualText: '2', result: true },
+      { actualText: '3', actualSource: 'input', result: null, traceStatus: 'skipped' }
+    ])
+    expect(row.conditions.filter(item => item.kind !== 'join').map(item => item.result)).toEqual([false, true, null])
+    wrapper.unmount()
+  })
+
+  test('串行首次命中后跳过的规则保留未执行状态，空值不会误报未取值', () => {
+    const leaf = { type: 'leaf', varCode: 'optional', operator: 'is_null' }
+    const nullTrace = { type: 'OPERATOR', token: '==', evaluated: true, value: true,
+      children: [variableNode('optional', undefined), valueNode(null)] }
+    const wrapper = mountTraceTree({ modelType: 'RULE_SET',
+      definitionModel: { rules: ['R-FIRST', 'R-SKIP'].map(ruleCode => ({ ruleCode, conditionRoot: leaf })) },
+      traceInfo: JSON.stringify([...compiledRuleTrace('R-FIRST', 0, nullTrace, 'SERIAL'),
+        ...compiledRuleTrace('R-SKIP', 1, { type: 'OPERATOR', token: '==', evaluated: false, children: [] }, 'SERIAL', false)]) })
+    expect(wrapper.vm.ruleSetRows[0].conditionTree).toMatchObject({ actualText: '空', result: true })
+    expect(wrapper.vm.ruleSetRows[1]).toMatchObject({ status: 'skipped', conditionTree: { actualText: '未执行', result: null } })
+    wrapper.unmount()
+  })
+
+  test('排序和禁用规则不影响当前追踪关联，旧字段编码不会遮蔽执行值', () => {
+    const rules = [
+      { enabled: false, priority: 99 },
+      { priority: 1, conditionRoot: { type: 'leaf', varCode: 'oldCode', operator: '<', value: '20' } },
+      { ruleCode: 'R-HIGH', priority: 9, conditionRoot: { type: 'leaf', varCode: 'score', operator: '>', value: '60' } }
+    ]
+    const wrapper = mountTraceTree({ modelType: 'RULE_SET', definitionModel: { rules },
+      traceInfo: JSON.stringify([...compiledRuleTrace('R-HIGH', 0, compareNode('score', '>', 90, 60, true)),
+        ...compiledRuleTrace('R0002', 1, compareNode('latestCode', '<', 10, 20, true))]) })
+    expect(wrapper.vm.ruleSetRows.map(row => [row.ruleCode, row.conditionTree.actualText])).toEqual([
+      ['R-HIGH', '90'], ['R0002', '10']
+    ])
+    wrapper.unmount()
+  })
+
+  test('复合范围及否定函数读取原始条件结果，不把辅助函数值当作最终布尔值', () => {
+    const wrapper = mountTraceTree({})
+    const between = logicalNode('&&', [compareNode('age', '>=', 32, 18, true), compareNode('age', '<=', 32, 55, true)], true)
+    expect(wrapper.vm._buildRuleSetConditionLeaf({ varCode: 'age', operator: 'between', value: '18,55' }, between))
+      .toMatchObject({ actualText: '32', result: true })
+    const notContains = { type: 'OPERATOR', token: '!', evaluated: true, value: true, children: [
+      { type: 'FUNCTION', token: 'containsValue', evaluated: true, value: false, children: [variableNode('tags', ['A']), valueNode('B')] }
+    ] }
+    expect(wrapper.vm._buildRuleSetConditionLeaf({ varCode: 'tags', operator: 'not_contains', value: 'B' }, notContains))
+      .toMatchObject({ actualText: '["A"]', result: true })
+    wrapper.unmount()
   })
 
   test('规则集统一操作数动作展示目标和值', () => {
@@ -765,6 +896,21 @@ describe('TraceTree', () => {
     })
     expect(advanced.vm.traceAdvCellDisplay(0, 0)).toBe('1.147')
     advanced.unmount()
+  })
+
+  test('复杂评分卡追踪使用组权重和维度权重', () => {
+    const wrapper = mountTraceTree({
+      modelType: 'SCORE_ADV',
+      definitionModel: {
+        dimensionGroups: [{
+          weight: 0.5,
+          dimensions: [{ weight: 2, rules: [] }]
+        }]
+      }
+    })
+
+    expect(wrapper.vm._scoreAdvWeight('_dim_0_0')).toBe(1)
+    expect(wrapper.vm._scoreAdvWeight('_dim_9_9')).toBe(1)
   })
 
   test('规则集追踪保留三层 AND OR 条件组结构并传给递归节点', () => {

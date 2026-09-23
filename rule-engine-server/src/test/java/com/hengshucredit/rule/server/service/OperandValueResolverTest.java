@@ -16,6 +16,19 @@ import java.util.Map;
 public class OperandValueResolverTest {
 
     @Test
+    public void managedPathUsesStableIdAndRelativePathInsteadOfStaleDisplayCode() {
+        String operand = "{\"kind\":\"PATH\",\"refId\":7,\"refType\":\"VARIABLE\","
+                + "\"value\":\"oldContacts[0].mobile\",\"relativePath\":\"[0].mobile\"}";
+        Assert.assertEquals("13800138000", OperandValueResolver.resolve(operand,
+                Map.of("oldContacts", java.util.List.of(Map.of("mobile", "wrong"))),
+                Map.of("VARIABLE:7", java.util.List.of(Map.of("mobile", "13800138000")))));
+        Map<String, Object> references = new LinkedHashMap<>();
+        references.put("VARIABLE:7", null);
+        Assert.assertNull(OperandValueResolver.resolve(operand,
+                Map.of("oldContacts", java.util.List.of(Map.of("mobile", "wrong"))), references));
+    }
+
+    @Test
     public void resolvesLiteralPathReferenceAndFunction() {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("score", 620);

@@ -1,6 +1,6 @@
 <template>
   <div class="json-version-diff">
-    <div class="json-version-diff__head">
+    <div v-if="showHeader" class="json-version-diff__head">
       <strong>{{ originalLabel }}</strong>
       <el-tag size="small" :type="changed ? 'warning' : 'success'">
         {{ changed ? '内容有差异' : '内容一致' }}
@@ -37,6 +37,7 @@ export default {
     modified: { type: [String, Object, Array], default: '' },
     originalLabel: { type: String, default: '左侧版本' },
     modifiedLabel: { type: String, default: '右侧版本' },
+    showHeader: { type: Boolean, default: true },
     height: { type: String, default: '420px' },
   },
   computed: {

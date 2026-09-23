@@ -1,53 +1,12 @@
 server:
-  port: 7070
-
-# ============================================================
-# 规则引擎客户端配置（示例：信贷 / 交易风控场景）
-# ============================================================
-rule-engine:
-  client:
-    server-url: ${RULE_SERVER_URL:http://localhost:8080}
-    app-name: ${RULE_CLIENT_APP_NAME:risk-control-example}
-    token: ${PROJECT_ACCESS_TOKEN}
-    project-code: ${RULE_PROJECT_CODE}
-    l1-cache-max-size: 500
-    http-timeout-ms: ${RULE_HTTP_TIMEOUT_MS:10000}
-    project-id: ${RULE_PROJECT_ID}
-    # 涉及服务端变量、模型和外数时设为 true；原有本地函数示例保持 false
-    server-side-execution: ${RULE_SERVER_SIDE_EXECUTION:false}
-    # 表达式追踪与本地日志上报独立配置；不影响服务端基础日志、审计和计费
-    trace-enabled: ${RULE_TRACE_ENABLED:true}
-    log-report-enabled: ${RULE_LOG_REPORT_ENABLED:true}
-
-# ============================================================
-# Redis 配置 - SDK 通过 Redis Pub/Sub 接收规则推送
-# 需要与 rule-engine-server 使用同一个 Redis 实例
-# ============================================================
+  # 默认只在本机提供联调页；对外暴露请通过业务网关配置 TLS、鉴权和限流。
+  address: ${EXAMPLE_BIND_ADDRESS:127.0.0.1}
+  port: ${EXAMPLE_PORT:7070}
 spring:
+  application:
+    name: tianshu-java-example
   config:
-    import:
-      - optional:file:.env[.properties]
-      - optional:file:../.env[.properties]
-  # 默认通过 HTTP 上报本地日志；需要 Kafka 时配置 spring.kafka 并删除下行 exclude
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.kafka.KafkaAutoConfiguration
-  data:
-    redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
-      password: ${REDIS_PASSWORD}
-      database: ${REDIS_DATABASE:0}
-      timeout: 3000ms
-      lettuce:
-        pool:
-          max-active: 8
-          max-idle: 4
-          min-idle: 1
-
-# ============================================================
-# Actuator 健康检查
-# ============================================================
+    import: optional:file:./config/example.properties
 management:
   endpoints:
     web:
@@ -55,9 +14,4 @@ management:
         include: health,info
   endpoint:
     health:
-      show-details: always
-
-logging:
-  level:
-    com.hengshucredit.rule.client: DEBUG
-    com.hengshucredit.rule.example: DEBUG
+      show-details: never

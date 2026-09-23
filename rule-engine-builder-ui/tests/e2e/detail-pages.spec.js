@@ -423,9 +423,10 @@ test('顶部详情页签展示业务标题，长标题省略并在悬停时完�
   const fullTitle = `项目 · ${projectName}`
   const tab = page.locator('.workspace-tab__main').filter({ hasText: fullTitle })
   await expect(tab).toHaveAttribute('aria-label', fullTitle)
-  await expect.poll(() => page.locator('.workspace-tab').evaluateAll(elements =>
-    elements.map(element => element.getBoundingClientRect().width)
-  )).toEqual([160, 160])
+  await expect.poll(() => page.locator('.workspace-tab').evaluateAll(elements => {
+    const widths = elements.map(element => element.getBoundingClientRect().width)
+    return [widths.length, widths[0] < 160, widths[1] === 160]
+  })).toEqual([2, true, true])
   const title = tab.locator('.workspace-tab__title')
   await expect.poll(() => title.evaluate(element => ({
     truncated: element.scrollWidth > element.clientWidth,

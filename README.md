@@ -291,7 +291,8 @@
 | `rule-engine-server` | 管理、同步、执行与日志 API | 8080 |
 | `rule-engine-core` / `rule-engine-model` | 规则编译执行、公共实体与 DTO | — |
 | `rule-engine-client` | Java SDK，规则同步、缓存和执行 | — |
-| `rule-engine-example` | SDK 集成示例 | 7070 |
+| `rule-engine-client-http` | 对外纯 HTTP SDK，不同步规则、不依赖 Redis | — |
+| `rule-engine-example` | HTTP 接入示例、Java 离线 tar.gz 交付 | 7070 |
 | MySQL / Redis | 持久化配置、规则变更通知 | 3306 / 6379 |
 
 运行环境为 JDK 17、Maven 3.6+、MySQL 8、Redis 和 Node.js 20.19+。前端构建产物独立部署，业务系统通过服务端同步规则，不直连管理数据库。
@@ -305,6 +306,8 @@ RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap)
 SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-code` 用于项目路由，需与服务端项目编码一致；`app-name` 标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
 
 完整环境变量、启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见[部署与接入说明](docs/deployment.md)。
+
+外部公司接入优先参考 [Java 离线交付与可运行示例](rule-engine-example/README.md)。执行 `node scripts/package-java-offline.mjs` 生成 SDK、依赖、可运行服务和示例源码的 tar.gz；客户仅需 JDK 17，无需引擎源码或 Maven 下载即可运行及重编译示例。
 
 “业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](docs/java-service-integration.md)。项目导出的 API 文档内也提供 Java 服务接入示例。
 

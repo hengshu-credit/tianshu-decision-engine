@@ -2,6 +2,17 @@ import { mount } from '@test-utils'
 import RuleSetConditionTraceNode from '@/components/common/RuleSetConditionTraceNode.vue'
 
 describe('RuleSetConditionTraceNode', () => {
+  test('输入回退值不伪装成已执行，缺失追踪与真正跳过明确区分', async () => {
+    const node = { kind: 'condition', varCode: 'age', varName: '年龄', actualText: '32',
+      actualSource: 'input', operatorText: '大于', thresholdText: '18', result: null, traceStatus: 'skipped' }
+    const wrapper = mount(RuleSetConditionTraceNode, { props: { node } })
+    expect(wrapper.text()).toContain('输入值 32')
+    expect(wrapper.find('.rs-trace-leaf-result').text()).toBe('未执行')
+    await wrapper.setProps({ node: { ...node, traceStatus: 'missing' } })
+    expect(wrapper.find('.rs-trace-leaf-result').text()).toBe('未记录追踪')
+    wrapper.unmount()
+  })
+
   test('递归渲染条件组层级、组运算符和叶子结果', () => {
     const wrapper = mount(RuleSetConditionTraceNode, {
       props: {

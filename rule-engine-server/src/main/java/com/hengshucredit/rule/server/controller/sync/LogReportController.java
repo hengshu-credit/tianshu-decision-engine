@@ -56,6 +56,11 @@ public class LogReportController {
                     return R.fail(403, "Project token does not match log project");
                 }
                 log.setProjectCode(projectCode);
+                // 客户端诊断上报不能伪造服务端进件事实及字段 ID 快照。
+                log.setRootRuleId(null);
+                log.setExecutionProjectId(null);
+                log.setStartedAt(null);
+                log.setHistoryFields(null);
                 applyAuthAttribution(log, authContext);
                 logService.applyPublishedAttribution(log, projectCode);
                 if (log.getSource() == null || log.getSource().trim().isEmpty()) {

@@ -71,6 +71,8 @@ public class RuleDataObjectService extends ServiceImpl<RuleDataObjectMapper, Rul
         m.put("refObjectCode", f.getRefObjectCode());
         m.put("refObjectId", f.getRefObjectId());
         m.put("refVariableId", f.getRefVariableId());
+        m.put("referenceMode", f.getReferenceMode() == null ? "VALUE" : f.getReferenceMode());
+        m.put("recordResult", Boolean.TRUE.equals(f.getRecordResult()));
         m.put("genericType", f.getGenericType());
         m.put("parentFieldId", f.getParentFieldId());
         m.put("varSource", "INPUT");

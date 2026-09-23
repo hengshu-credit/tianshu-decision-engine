@@ -89,20 +89,49 @@ public class VariableSourceResolver {
 
     public Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
                                            VariableResolveOptions options) {
+        return resolveInto(projectId, target, options, null);
+    }
+
+    public Map<String, Object> executeModel(RuleModel model, Map<String, Object> input, Long projectId) {
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(Set.of(model.getModelCode()));
+        options.setRequiredNamesUpstreamOnly(true);
+        resolveInto(projectId, input == null ? new LinkedHashMap<>() : new LinkedHashMap<>(input), options, model);
+        return options.getInvocationCache().resolve("MODEL:" + model.getId(),
+                () -> { throw new IllegalStateException("模型未进入执行计划"); });
+    }
+
+    private Map<String, Object> resolveInto(Long projectId, Map<String, Object> target,
+                                            VariableResolveOptions options, RuleModel explicitModel) {
         VariableResolveOptions effectiveOptions = options == null ? VariableResolveOptions.defaults() : options;
         Map<String, Object> resolvedParams = target == null ? new LinkedHashMap<String, Object>() : target;
         List<RuleVariable> variables = variableService.listByProject(projectId, null);
         if (variables == null) variables = Collections.emptyList();
         effectiveOptions.setVariableReferencePaths(variableReferencePaths(variables));
-        if (variables.stream().anyMatch(variable -> "DERIVED".equals(variable.getVarSource()))) {
-            effectiveOptions.setDerivedReferencePaths(derivedVariableService.referencePaths(projectId));
+        if (derivedVariableService != null) {
+            effectiveOptions.setDerivedReferencePaths(derivedVariableService.referencePaths(projectId, resolvedParams));
         }
         removeCallerConstantValues(variables, resolvedParams);
         applyConstantValues(variables, resolvedParams);
         List<RuleModel> models = loadProjectModels(projectId);
+        if (explicitModel != null) {
+            models = new ArrayList<>(models);
+            models.removeIf(model -> java.util.Objects.equals(model.getId(), explicitModel.getId()));
+            models.add(explicitModel);
+        }
         Set<String> requiredScriptNames = expandRequiredScriptNames(effectiveOptions.getRequiredScriptNames(),
                 variables, models, effectiveOptions.isRequiredNamesUpstreamOnly(), effectiveOptions);
-        VariableResolutionInvocationCache invocationCache = new VariableResolutionInvocationCache();
+        VariableResolutionInvocationCache invocationCache = effectiveOptions.getInvocationCache();
+        if (invocationCache == null) {
+            invocationCache = new VariableResolutionInvocationCache();
+            effectiveOptions.setInvocationCache(invocationCache);
+        }
+        Map<String, String> paths = effectiveOptions.getDerivedReferencePaths() == null
+                ? effectiveOptions.getVariableReferencePaths() : effectiveOptions.getDerivedReferencePaths();
+        effectiveOptions.setHistoryFieldDefinitions(derivedVariableService == null
+                ? com.hengshucredit.rule.server.derived.HistoricalFieldDefinition.build(variables, List.of(), models, paths)
+                : derivedVariableService.historyDefinitions(variables, models, paths));
+        registerHistoryFields(effectiveOptions);
         resolveVariablesAndModels(variables, models, requiredScriptNames, resolvedParams,
                 effectiveOptions, invocationCache, Collections.emptyMap());
         return resolvedParams;
@@ -123,6 +152,12 @@ public class VariableSourceResolver {
         }
         Map<String, Object> resolvedParams = target == null
                 ? new LinkedHashMap<>() : target;
+        if (effectiveOptions.getDataObjectReferencePaths() != null) {
+            var paths = new LinkedHashMap<>(effectiveOptions.getDerivedReferencePaths());
+            com.hengshucredit.rule.server.derived.HistoryFieldValues.preferAssignedObjectPaths(
+                    paths, effectiveOptions.getDataObjectReferencePaths(), resolvedParams);
+            effectiveOptions.setDerivedReferencePaths(paths);
+        }
         removeCallerConstantValues(frozenVariables, resolvedParams);
         applyConstantValues(frozenVariables, resolvedParams);
         Set<String> requiredScriptNames = expandRequiredScriptNames(
@@ -137,9 +172,28 @@ public class VariableSourceResolver {
             }
         }
         effectiveOptions.setDerivedFunctions(Collections.unmodifiableMap(functionMap));
+        VariableResolutionInvocationCache invocationCache = effectiveOptions.getInvocationCache();
+        if (invocationCache == null) {
+            invocationCache = new VariableResolutionInvocationCache();
+            effectiveOptions.setInvocationCache(invocationCache);
+        }
+        if (effectiveOptions.getHistoryFieldDefinitions() == null) {
+            effectiveOptions.setHistoryFieldDefinitions(com.hengshucredit.rule.server.derived.HistoricalFieldDefinition.build(
+                    frozenVariables, List.of(), frozenModels, effectiveOptions.getDerivedReferencePaths()));
+        }
+        registerHistoryFields(effectiveOptions);
         resolveVariablesAndModels(frozenVariables, frozenModels, requiredScriptNames,
-                resolvedParams, effectiveOptions, new VariableResolutionInvocationCache(), functionMap);
+                resolvedParams, effectiveOptions, invocationCache, functionMap);
         return resolvedParams;
+    }
+
+    private void registerHistoryFields(VariableResolveOptions options) {
+        options.getInvocationCache().registerHistoryFields(options.getHistoryFieldDefinitions());
+        for (var field : options.getHistoryFieldDefinitions().values()) {
+            if ("API".equals(field.source())) {
+                RuntimeContextBridge.currentContext().registerExternalField(field.apiId(), field.key(), field.apiResultPath());
+            }
+        }
     }
 
     private void resolveVariablesAndModels(List<RuleVariable> variables, List<RuleModel> models,
@@ -149,6 +203,14 @@ public class VariableSourceResolver {
                                            Map<Long, RuleFunction> functions) {
         Map<String, RuleVariable> variableMap = buildVariableMap(variables);
         Map<String, RuleModel> modelMap = buildModelMap(models);
+        if (requiredScriptNames != null) {
+            for (RuleModel model : models) {
+                if (isModelRequired(model.getModelCode(), requiredScriptNames)
+                        && invocationCache.hasResponse("MODEL:" + model.getId())) {
+                    resolveOneModel(model, model.getModelCode(), resolvedParams, effectiveOptions, functions);
+                }
+            }
+        }
         List<RuleVariable> pendingVariables = collectPendingVariables(variables, requiredScriptNames, resolvedParams, effectiveOptions);
         List<RuleModel> pendingModels = collectPendingModels(models, requiredScriptNames, resolvedParams, effectiveOptions);
         while (!pendingVariables.isEmpty() || !pendingModels.isEmpty()) {
@@ -176,7 +238,7 @@ public class VariableSourceResolver {
             List<RuleModel> delayedModels = new ArrayList<>();
             for (RuleModel model : pendingModels) {
                 String modelCode = trimToNull(model.getModelCode());
-                if (hasUnresolvedResolvableDependency(modelCode, collectModelInputNames(model),
+                if (hasUnresolvedResolvableDependency(modelCode, collectModelInputNames(model, effectiveOptions),
                         variableMap, modelMap, requiredScriptNames, resolvedParams, effectiveOptions)) {
                     delayedModels.add(model);
                     continue;
@@ -272,6 +334,9 @@ public class VariableSourceResolver {
         copy.setVariableReferencePaths(source.getVariableReferencePaths());
         copy.setDerivedReferencePaths(source.getDerivedReferencePaths());
         copy.setDerivedFunctions(source.getDerivedFunctions());
+        copy.setDataObjectReferencePaths(source.getDataObjectReferencePaths());
+        copy.setInvocationCache(source.getInvocationCache());
+        copy.setHistoryFieldDefinitions(source.getHistoryFieldDefinitions());
         copy.setListMatchTime(source.getListMatchTime());
         copy.setRequiredScriptNames(source.getRequiredScriptNames() == null
                 ? null : new LinkedHashSet<>(source.getRequiredScriptNames()));
@@ -307,6 +372,11 @@ public class VariableSourceResolver {
             if (!shouldResolveVariable(variable, scriptName, requiredScriptNames)) {
                 continue;
             }
+            if (options.getInvocationCache().hasVariableResult(variableCacheKey(variable))) {
+                applyVariableResult(variable, scriptName, resolvedParams, options,
+                        options.getInvocationCache().variableResult(variableCacheKey(variable)));
+                continue;
+            }
             if (!shouldRefreshVariable(variable, scriptName, resolvedParams, options)) {
                 continue;
             }
@@ -327,6 +397,7 @@ public class VariableSourceResolver {
             if (modelCode == null || !isModelRequired(modelCode, requiredScriptNames)) {
                 continue;
             }
+            if (options.getInvocationCache().hasResponse("MODEL:" + model.getId())) continue;
             if (!shouldRefreshModel(model, modelCode, resolvedParams, options)) {
                 continue;
             }
@@ -341,8 +412,41 @@ public class VariableSourceResolver {
         if ("CONSTANT".equals(variable.getVarSource())) {
             return;
         }
-        resolveOneSourceVariable(variable, scriptName, parseJsonMap(variable.getSourceConfig()),
-                resolvedParams, effectiveOptions, invocationCache);
+        SourceResolutionResult result = invocationCache.resolveVariable(variableCacheKey(variable), () -> {
+            Map<String, Object> values = new LinkedHashMap<>(resolvedParams);
+            values.remove(scriptName);
+            VariableResolveOptions options = copyResolveOptions(effectiveOptions);
+            // 缓存真实失败，不能因首次读取使用了状态操作符而把失败永久变成成功空值。
+            options.setStatusReferenceKeys(Collections.emptySet());
+            RuntimeException failure = null;
+            try {
+                resolveOneSourceVariable(variable, scriptName, parseJsonMap(variable.getSourceConfig()),
+                        values, options, invocationCache);
+            } catch (RuntimeException error) {
+                failure = error;
+            }
+            return new SourceResolutionResult(0, scriptName, values.containsKey(scriptName), values.get(scriptName),
+                    options.getSourceStates(), List.of(), failure);
+        });
+        applyVariableResult(variable, scriptName, resolvedParams, effectiveOptions, result);
+    }
+
+    private String variableCacheKey(RuleVariable variable) {
+        return "VARIABLE:" + (variable.getId() == null ? "DRAFT:" + resolveScriptName(variable) : variable.getId());
+    }
+
+    private void applyVariableResult(RuleVariable variable, String scriptName, Map<String, Object> values,
+                                     VariableResolveOptions options, SourceResolutionResult result) {
+        options.mergeSourceStates(result.getSourceStates());
+        values.remove(scriptName);
+        if (result.getFailure() != null) {
+            if (result.getFailure() instanceof RuleRuntimeCallLogService.HistoryLogWriteException) throw result.getFailure();
+            if (!options.requiresSourceStatus("VARIABLE", variable.getId())) throw result.getFailure();
+            values.put(scriptName, parseDefaultValue(variable));
+        } else if (result.isResolved()) {
+            values.put(scriptName, result.getValue());
+            options.getInvocationCache().rememberFieldResult("VARIABLE:" + variable.getId(), result.getValue());
+        }
     }
 
     private void resolveOneSourceVariable(RuleVariable variable, String scriptName, Map<String, Object> config,
@@ -361,7 +465,8 @@ public class VariableSourceResolver {
                 value = resolveDbVariable(variable, config, resolvedParams, effectiveOptions);
             } else if ("DERIVED".equals(varSource)) {
                 value = derivedVariableService.resolve(variable, resolvedParams,
-                        effectiveOptions.getDerivedReferencePaths(), effectiveOptions.getDerivedFunctions());
+                        effectiveOptions.getDerivedReferencePaths(), effectiveOptions.getDerivedFunctions(),
+                        effectiveOptions.getHistoryFieldDefinitions());
             } else {
                 value = resolveListVariable(variable, config, resolvedParams, effectiveOptions);
             }
@@ -370,6 +475,7 @@ public class VariableSourceResolver {
             }
             resolvedParams.put(scriptName, value);
         } catch (Exception e) {
+            if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException failure) throw failure;
             boolean tracksStatus = effectiveOptions.requiresSourceStatus("VARIABLE", variable.getId());
             if ("API".equals(variable.getVarSource())) {
                 recordApiFailureState(variable, e, effectiveOptions);
@@ -407,19 +513,8 @@ public class VariableSourceResolver {
         if (variable == null || scriptName == null) {
             return false;
         }
-        // 衍生值是引擎计算结果，调用方不能通过伪造同名入参绕过计算。
-        if ("DERIVED".equals(variable.getVarSource())) return true;
-        if (options != null && options.isForceRefreshSource()) {
-            return true;
-        }
-        if (options != null && options.requiresSourceStatus("VARIABLE", variable.getId())) {
-            return true;
-        }
-        Map<String, Object> config = parseJsonMap(variable.getSourceConfig());
-        if (booleanValue(config.get("forceRefresh"))) {
-            return true;
-        }
-        return !resolvedParams.containsKey(scriptName);
+        // 是否执行由根请求的 ID 缓存决定，调用方同名值不是已计算凭据。
+        return !"CONSTANT".equals(variable.getVarSource());
     }
 
     private boolean hasUnresolvedResolvableDependency(String ownName, Set<String> dependencies,
@@ -436,6 +531,7 @@ public class VariableSourceResolver {
             if (dependencyVariable != null) {
                 String scriptName = resolveScriptName(dependencyVariable);
                 if (shouldResolveVariable(dependencyVariable, scriptName, requiredScriptNames)
+                        && !options.getInvocationCache().hasVariableResult(variableCacheKey(dependencyVariable))
                         && shouldRefreshVariable(dependencyVariable, scriptName, resolvedParams, options)) {
                     return true;
                 }
@@ -443,6 +539,7 @@ public class VariableSourceResolver {
             RuleModel dependencyModel = findRequiredModel(dependency, modelMap);
             String modelCode = dependencyModel == null ? null : trimToNull(dependencyModel.getModelCode());
             if (modelCode != null && !modelCode.equals(ownName) && isModelRequired(modelCode, requiredScriptNames)
+                    && !options.getInvocationCache().hasResponse("MODEL:" + dependencyModel.getId())
                     && shouldRefreshModel(dependencyModel, modelCode, resolvedParams, options)) {
                 return true;
             }
@@ -515,7 +612,7 @@ public class VariableSourceResolver {
             }
             RuleModel model = findRequiredModel(name, modelMap);
             if (model != null) {
-                for (String dependency : collectModelInputNames(model)) {
+                for (String dependency : collectModelInputNames(model, options)) {
                     if (expanded.add(dependency)) {
                         queue.add(dependency);
                     }
@@ -657,7 +754,12 @@ public class VariableSourceResolver {
             Object queryOperands = config.get("queryOperands");
             if (queryOperands instanceof Iterable) {
                 for (Object operand : (Iterable<?>) queryOperands) {
-                    dependencies.addAll(OperandValueResolver.collectPaths(JSON.toJSONString(operand)));
+                    for (JSONObject reference : OperandValueResolver.collectReferences(JSON.toJSONString(operand))) {
+                        String path = options == null || options.getDerivedReferencePaths() == null ? null
+                                : options.getDerivedReferencePaths().get(reference.getString("refType") + ":" + reference.getLong("refId"));
+                        dependencies.add(path == null
+                                ? firstText(reference.getString("value"), reference.getString("code")) : path);
+                    }
                 }
             }
         }
@@ -695,14 +797,21 @@ public class VariableSourceResolver {
     }
 
     private Set<String> collectModelInputNames(RuleModel model) {
+        return collectModelInputNames(model, null);
+    }
+
+    private Set<String> collectModelInputNames(RuleModel model, VariableResolveOptions options) {
         Set<String> names = new LinkedHashSet<>();
         RuleModel detail = loadModelDetail(model);
         List<RuleModelInputField> fields = detail == null ? null : detail.getInputFields();
         if (fields != null) {
             for (RuleModelInputField field : fields) {
-                names.addAll(OperandValueResolver.collectPaths(field.getSourceOperand()));
-                names.addAll(OperandValueResolver.collectPaths(field.getDefaultOperand()));
-                String scriptName = firstText(field.getScriptName(), field.getFieldName());
+                names.addAll(modelOperandDependencies(field.getSourceOperand(), options));
+                names.addAll(modelOperandDependencies(field.getDefaultOperand(), options));
+                String scriptName = field.getVarId() == null || options == null || options.getDerivedReferencePaths() == null
+                        ? firstText(field.getScriptName(), field.getFieldName())
+                        : options.getDerivedReferencePaths().get(field.getRefType() + ":" + field.getVarId());
+                if (hasText(field.getSourceOperand())) scriptName = null;
                 if (scriptName != null) {
                     names.add(scriptName);
                 }
@@ -712,7 +821,7 @@ public class VariableSourceResolver {
         List<RuleModelOutputField> outputFields = detail == null ? null : detail.getOutputFields();
         if (outputFields != null) {
             for (RuleModelOutputField field : outputFields) {
-                for (String path : OperandValueResolver.collectPaths(field.getTransformOperand())) {
+                for (String path : modelOperandDependencies(field.getTransformOperand(), options)) {
                     if (modelCode == null || (!path.equals(modelCode) && !path.startsWith(modelCode + "."))) {
                         names.add(path);
                     }
@@ -722,28 +831,44 @@ public class VariableSourceResolver {
         return names;
     }
 
+    private Set<String> modelOperandDependencies(String operand, VariableResolveOptions options) {
+        Set<String> names = new LinkedHashSet<>();
+        for (JSONObject reference : OperandValueResolver.collectReferences(operand)) {
+            String path = options == null || options.getDerivedReferencePaths() == null ? null
+                    : options.getDerivedReferencePaths().get(reference.getString("refType") + ":" + reference.getLong("refId"));
+            if (path == null) path = firstText(reference.getString("value"), reference.getString("code"));
+            if (hasText(path)) names.add(path);
+        }
+        return names;
+    }
+
     private void resolveOneModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams,
                                  VariableResolveOptions options, Map<Long, RuleFunction> functions) {
         RuleModel detail = loadModelDetail(model);
-        Map<String, Object> modelParams = buildModelParams(detail, resolvedParams);
-        RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
-                "MODEL", model.getProjectId(), model.getId(), modelCode);
-        long start = System.currentTimeMillis();
         Map<String, Object> modelResult;
         try {
-            modelResult = model.getModelContent() == null
-                    ? ruleModelService.execute(model.getId(), modelParams)
-                    : ruleModelService.executeSnapshot(model, modelParams, functions);
-            if (!modelSucceeded(modelResult)) {
-                throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(modelResult));
-            }
-            completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
-            logModelExecution(model, modelParams, modelResult, null,
-                    System.currentTimeMillis() - start, runtimeTrace);
+            modelResult = options.getInvocationCache().resolve("MODEL:" + model.getId(), () -> {
+                Map<String, Object> modelParams = buildModelParams(detail, resolvedParams, options);
+                RuntimeTraceService.ModuleTrace runtimeTrace = startRuntimeTrace(
+                        "MODEL", model.getProjectId(), model.getId(), modelCode);
+                long start = System.currentTimeMillis();
+                try {
+                    Map<String, Object> result = model.getModelContent() == null
+                            ? ruleModelService.execute(model.getId(), modelParams)
+                            : ruleModelService.executeSnapshot(model, modelParams, functions);
+                    if (!modelSucceeded(result)) {
+                        throw new IllegalStateException("模型[" + modelCode + "]执行失败：" + modelError(result));
+                    }
+                    completeRuntimeTrace(runtimeTrace, true, null, System.currentTimeMillis() - start);
+                    logModelExecution(model, modelParams, result, null, System.currentTimeMillis() - start, runtimeTrace);
+                    return result;
+                } catch (RuntimeException error) {
+                    completeRuntimeTrace(runtimeTrace, false, error.getMessage(), System.currentTimeMillis() - start);
+                    logModelExecution(model, modelParams, null, error.getMessage(), System.currentTimeMillis() - start, runtimeTrace);
+                    throw error;
+                }
+            });
         } catch (RuntimeException e) {
-            completeRuntimeTrace(runtimeTrace, false, e.getMessage(), System.currentTimeMillis() - start);
-            logModelExecution(model, modelParams, null, e.getMessage(),
-                    System.currentTimeMillis() - start, runtimeTrace);
             if (!requiresModelOutputStatus(detail, options)) throw e;
             recordModelOutcome(detail, options, isTimeout(e) ? "TIMEOUT" : "ERROR", null);
             resolvedParams.put(modelCode, new LinkedHashMap<String, Object>());
@@ -753,15 +878,19 @@ public class VariableSourceResolver {
         Object modelValue = outputs instanceof Map ? outputs : modelResult;
         resolvedParams.put(modelCode, modelValue);
         if (modelValue instanceof Map && detail != null && detail.getOutputFields() != null) {
+            Map<String, String> paths = options.getDerivedReferencePaths() == null ? Map.of() : options.getDerivedReferencePaths();
+            options.getInvocationCache().registerHistoryFields(com.hengshucredit.rule.server.derived.HistoricalFieldDefinition.build(
+                    List.of(), List.of(), List.of(detail), paths));
             Map<?, ?> outputValues = (Map<?, ?>) modelValue;
             for (RuleModelOutputField field : detail.getOutputFields()) {
                 Object value = outputValues.get(firstText(field.getFieldName(), field.getScriptName()));
                 if (value == null && hasText(field.getScriptName())) value = outputValues.get(field.getScriptName());
                 if (value == null && hasText(field.getFeatureName())) value = outputValues.get(field.getFeatureName());
+                options.getInvocationCache().rememberFieldResult("MODEL_OUTPUT:" + field.getId(), value);
                 options.recordSourceState("MODEL_OUTPUT", field.getId(), "OUTCOME", "SUCCESS");
                 options.recordSourceState("MODEL_OUTPUT", field.getId(), "PRESENCE",
                         value == null ? "MISSING" : "PRESENT");
-                OperandValueResolver.write(field.getTargetOperand(), resolvedParams, value);
+                OperandValueResolver.write(field.getTargetOperand(), resolvedParams, value, options.getDerivedReferencePaths());
             }
         }
     }
@@ -856,13 +985,7 @@ public class VariableSourceResolver {
 
     private boolean shouldRefreshModel(RuleModel model, String modelCode, Map<String, Object> resolvedParams,
                                        VariableResolveOptions options) {
-        if (options != null && options.isForceRefreshSource()) {
-            return true;
-        }
-        if (requiresModelOutputStatus(loadModelDetail(model), options)) {
-            return true;
-        }
-        return !resolvedParams.containsKey(modelCode);
+        return !options.getInvocationCache().hasResponse("MODEL:" + model.getId());
     }
 
     private boolean requiresModelOutputStatus(RuleModel model, VariableResolveOptions options) {
@@ -939,6 +1062,36 @@ public class VariableSourceResolver {
             params.put(fieldName, value);
         }
         return params;
+    }
+
+    private Map<String, Object> buildModelParams(RuleModel model, Map<String, Object> values,
+                                                VariableResolveOptions options) {
+        // 仅兼容显式的模型原生输入容器；受管引用不通过字段名称猜测。
+        Map<String, Object> inputs = new LinkedHashMap<>(values);
+        if (model.getInputFields() != null) {
+            for (RuleModelInputField field : model.getInputFields()) {
+                if (field.getVarId() != null || hasText(field.getSourceOperand())) continue;
+                String name = firstText(field.getScriptName(), field.getFieldName());
+                if (!inputs.containsKey(name)) {
+                    Object value = readPath(values, model.getModelCode() + "_fields." + name);
+                    if (value != null) inputs.put(name, value);
+                }
+            }
+        }
+        Map<String, String> paths = options.getDerivedReferencePaths();
+        if (paths == null) paths = options.getVariableReferencePaths();
+        if (paths == null) paths = Collections.emptyMap();
+        Map<String, Object> references = new LinkedHashMap<>();
+        paths.forEach((key, path) -> references.put(key,
+                com.hengshucredit.rule.server.derived.HistoryFieldValues.read(values, path)));
+        OperandValueResolver.FunctionInvoker functions = (id, code, args) -> {
+            if (id == null || options.getDerivedFunctions() == null) return invokeOperandFunction(id, code, args);
+            RuleFunction function = options.getDerivedFunctions().get(id);
+            if (function == null) throw new IllegalArgumentException("模型输入引用函数不在执行快照中: " + id);
+            return ruleFunctionService.invokeSnapshot(function, args);
+        };
+        Map<String, Object> bound = OperandValueResolver.bindModelInputs(model.getInputFields(), inputs, references, functions);
+        return new BoundModelInputs(bound, references, paths, options.getDerivedFunctions() != null);
     }
 
     private Object findUniqueNestedFieldValue(Map<String, Object> params, String fieldName) {
@@ -1069,7 +1222,7 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("API变量缺少 apiConfigId");
         }
         Map<String, Object> requestParams = buildMappedParams(config.get("paramMapping"), params);
-        String cacheKey = apiConfigId + ":" + JSON.toJSONString(requestParams);
+        String cacheKey = "API:" + apiConfigId;
         Map<String, Object> response = invocationCache.resolve(cacheKey,
                 () -> externalApiInvokeService.invoke(apiConfigId, requestParams));
         recordApiState(variable, response, options);
@@ -1226,7 +1379,7 @@ public class VariableSourceResolver {
         List<Long> listIds = buildLongList(config.get("listIds"));
         if (listIds.isEmpty()) throw new IllegalArgumentException("名单变量缺少 listIds");
         List<Object> queryValues = resolveListQueryOperands(
-                config.get("queryOperands"), variable.getProjectId(), params);
+                config.get("queryOperands"), variable.getProjectId(), params, options);
         if (queryValues.isEmpty()) throw new IllegalArgumentException("名单变量缺少 queryOperands");
         String combinationMode = stringValue(config.get("combinationMode"));
         if (!hasText(combinationMode)) throw new IllegalArgumentException("名单变量缺少 combinationMode");
@@ -1354,16 +1507,32 @@ public class VariableSourceResolver {
         return "HTTP";
     }
 
-    private List<Object> resolveListQueryOperands(Object source, Long projectId, Map<String, Object> params) {
+    private List<Object> resolveListQueryOperands(Object source, Long projectId, Map<String, Object> params,
+                                                 VariableResolveOptions options) {
         List<Object> result = new ArrayList<>();
         if (!(source instanceof Iterable)) return result;
-        Map<String, Object> referenceValues = referenceValues(projectId, params);
+        Map<String, Object> referenceValues;
+        if (options != null && options.getDerivedReferencePaths() != null) {
+            referenceValues = new LinkedHashMap<>();
+            options.getDerivedReferencePaths().forEach((key, path) -> referenceValues.put(key,
+                    com.hengshucredit.rule.server.derived.HistoryFieldValues.read(params, path)));
+        } else {
+            referenceValues = referenceValues(projectId, params);
+        }
+        OperandValueResolver.FunctionInvoker functions = (id, code, args) -> {
+            if (id == null || options == null || options.getDerivedFunctions() == null) {
+                return invokeOperandFunction(id, code, args);
+            }
+            RuleFunction function = options.getDerivedFunctions().get(id);
+            if (function == null) throw new IllegalArgumentException("名单引用函数不在执行快照中: " + id);
+            return ruleFunctionService.invokeSnapshot(function, args);
+        };
         for (Object value : (Iterable<?>) source) {
             JSONObject operand = value instanceof JSONObject
                     ? (JSONObject) value
                     : JSON.parseObject(JSON.toJSONString(value));
             result.add(OperandValueResolver.resolve(operand, params,
-                    referenceValues, this::invokeOperandFunction));
+                    referenceValues, functions));
         }
         return result;
     }
@@ -1759,8 +1928,8 @@ public class VariableSourceResolver {
         return result;
     }
 
-    private Object readPath(Object root, String path) {
-        if (root == null || !hasText(path)) {
+    static Object readPath(Object root, String path) {
+        if (root == null || path == null || path.isBlank()) {
             return root;
         }
         String normalized = path.startsWith("$.") ? path.substring(2) : path;
@@ -1833,7 +2002,7 @@ public class VariableSourceResolver {
         return value != null && value.matches("[A-Za-z_][A-Za-z0-9_]*(\\.[A-Za-z_][A-Za-z0-9_]*)*");
     }
 
-    private Integer parseIndex(String text) {
+    private static Integer parseIndex(String text) {
         try {
             return Integer.valueOf(text);
         } catch (Exception e) {

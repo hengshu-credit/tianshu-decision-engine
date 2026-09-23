@@ -1,6 +1,7 @@
 import {
   ACCENT_PRESETS,
   DEFAULT_THEME_CONFIG,
+  mixThemeColors,
   normalizeThemeConfig,
   resolveAccentPreset,
   resolveThemeAccent,
@@ -164,5 +165,9 @@ describe('themeConfig — 配置白名单和固定色卡', () => {
         background: 'linear-gradient(135deg, #19103B 0%, #873FF2 100%)',
       })
     )
+  })
+
+  test('图表使用 Element Plus 三位十六进制表面色时可正常混色', () => {
+    expect(mixThemeColors('#fff', '#2639E9', 0.1)).toMatch(/^#[0-9A-F]{6}$/)
   })
 })

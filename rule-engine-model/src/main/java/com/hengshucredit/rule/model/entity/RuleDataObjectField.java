@@ -22,6 +22,7 @@ public class RuleDataObjectField {
     private String varLabel;
     private String scriptName;
     private String varType;
+    private Boolean recordResult;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String refObjectCode;
     /** 引用对象 ID（铁律四：指向 rule_data_object.id，优先于 refObjectCode） */
@@ -30,6 +31,15 @@ public class RuleDataObjectField {
     /** 字段值直接引用的变量 ID（指向 rule_variable.id） */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long refVariableId;
+    /** VALUE：缺失时引用取值；STRUCTURE：仅复用定义，不解析来源。旧配置默认 VALUE。 */
+    private String referenceMode;
+    /** 发布快照中的有效对象取值策略，不作为字段表列持久化。 */
+    @TableField(exist = false)
+    private Boolean lazyReference;
+
+    public boolean referencesValue() {
+        return refVariableId != null && !"STRUCTURE".equals(referenceMode);
+    }
     /** 泛型类型（LIST 类型字段的元素类型，如 OBJECT / STRING / NUMBER） */
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String genericType;

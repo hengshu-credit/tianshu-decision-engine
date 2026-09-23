@@ -28,8 +28,10 @@ public class RuleExecutionSession {
     private final List<String> rootOutputScriptNames;
     private final Deque<String> ruleStack = new ArrayDeque<>();
     private final Map<String, com.hengshucredit.rule.model.entity.RulePublished> resolvedRules = new LinkedHashMap<>();
+    private final VariableResolutionInvocationCache invocationCache = new VariableResolutionInvocationCache();
 
     Map<String, com.hengshucredit.rule.model.entity.RulePublished> getResolvedRules() { return resolvedRules; }
+    VariableResolutionInvocationCache getInvocationCache() { return invocationCache; }
     private final Deque<RuleTraceFrame> traceStack = new ArrayDeque<>();
     private final RuleTraceFrame rootTrace;
     private final ArtifactRuntimeSnapshotService.RuntimeSnapshot artifactRuntimeSnapshot;

@@ -347,6 +347,92 @@ function createConnectedGraphModel() {
   }
 }
 
+for (const designer of [
+  { name: '决策树', definitionId: 102, path: '/designer/tree/102', canvasClass: '.tree-canvas' },
+  { name: '决策流', definitionId: 103, path: '/designer/flow/103', canvasClass: '.flow-canvas' }
+]) {
+  test(`${designer.name}点击条件编辑器空白区域时清除字段输入焦点`, async ({ page }) => {
+    const modelJson = JSON.stringify({
+      defaultEdgeLineType: 'polyline',
+      logicflow: {
+        nodes: [
+          {
+            id: 'start',
+            type: 'start-event',
+            x: 260,
+            y: 300,
+            properties: { nodeName: '开始', nodeCode: 'START' }
+          },
+          {
+            id: 'task',
+            type: 'script-task',
+            x: 560,
+            y: 300,
+            properties: { nodeName: '执行动作', nodeCode: 'TASK', actionData: [] }
+          }
+        ],
+        edges: [{
+          id: 'edge-1',
+          type: 'polyline',
+          sourceNodeId: 'start',
+          targetNodeId: 'task',
+          sourceAnchorId: 'start_1',
+          targetAnchorId: 'task_3',
+          properties: {
+            conditionConfig: {
+              type: 'group',
+              op: 'AND',
+              children: [{ type: 'leaf', leftOperand: null, operator: '==', rightOperand: null }]
+            }
+          }
+        }]
+      }
+    })
+    const apiData = createDesignerApiData()
+    apiData.set(`/api/rule/definition/content/${designer.definitionId}`, {
+      definitionId: designer.definitionId,
+      modelJson,
+      scriptMode: 'visual'
+    })
+    apiData.set(`/api/rule/definition/${designer.definitionId}/revisions`, [{
+      id: 2000 + designer.definitionId,
+      definitionId: designer.definitionId,
+      revisionNo: 1,
+      state: 'DRAFT',
+      lockVersion: 0,
+      modelJson,
+      createTime: '2026-07-23 12:00:00'
+    }])
+    const { assertClean } = await installDistRoutes(page, { apiData })
+    await page.goto(`http://tianshu.local/index.html#${designer.path}`)
+
+    const edge = page.locator(`${designer.canvasClass} .lf-edge:not(.lf-mini-map .lf-edge)`).first()
+    await expect(edge).toBeVisible()
+    await edge.locator('.lf-edge-append').click({ force: true })
+
+    const leftField = page.getByPlaceholder('选择左操作数...')
+    await expect(leftField).toBeVisible()
+    await leftField.click()
+    const popoverId = await leftField.getAttribute('aria-describedby')
+    const popover = page.locator(`[id="${popoverId}"]`)
+    await popover.locator('.vp-cat-item').filter({ hasText: '普通变量' }).click()
+    await popover.locator('.vp-row').filter({ hasText: 'age' }).click()
+    await expect(leftField).toHaveValue(/age/)
+    await expect(leftField).toBeFocused()
+
+    const blankHint = page.getByText('条件为空表示默认分支（else）', { exact: true })
+    await blankHint.click()
+    await expect(leftField).not.toBeFocused()
+
+    const operator = page.locator('.cg-field--op .el-select__wrapper').first()
+    await operator.click()
+    await expect.poll(() => operator.evaluate(element => element.classList.contains('is-focused'))).toBe(true)
+    await blankHint.click()
+    await expect.poll(() => operator.evaluate(element => element.classList.contains('is-focused'))).toBe(false)
+    assertClean()
+  })
+}
+
 for (const designer of designers) {
   test(`${designer.name}设计器可加载变量、显示工具栏并新增配置项`, async ({ page }) => {
     const pageErrors = []

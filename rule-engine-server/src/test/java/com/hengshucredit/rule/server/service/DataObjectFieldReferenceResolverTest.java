@@ -19,6 +19,29 @@ import static org.junit.Assert.assertTrue;
 
 public class DataObjectFieldReferenceResolverTest {
 
+    @Test
+    public void assignedObjectValueWinsEvenWhenReusableFieldHasRuntimeSource() {
+        for (Object assigned : java.util.Arrays.asList(0, false, "", null, List.of())) {
+            var plan = plan("API");
+            Map<String, Object> request = new LinkedHashMap<>(); request.put("age", assigned);
+            Map<String, Object> values = new LinkedHashMap<>(Map.of("request", request, "age", 999));
+            plan.apply(values, plan.captureExplicitTargets(values));
+            assertEquals(assigned, request.get("age"));
+        }
+    }
+
+    @Test
+    public void structureReferenceDoesNotBecomeRuntimeDependency() {
+        var field = com.alibaba.fastjson.JSON.parseObject("{\"id\":30,\"refVariableId\":9,\"referenceMode\":\"STRUCTURE\"}", RuleDataObjectField.class);
+        var direct = new RuleDefinitionInputField(); direct.setVarId(30L); direct.setRefType("DATA_OBJECT"); direct.setScriptName("request.age");
+        var source = new RuleVariable(); source.setId(9L); source.setScriptName("remoteAge"); source.setVarSource("API");
+        var plan = resolver.resolveSnapshot(List.of(direct), List.of(field), List.of(source));
+        assertTrue(plan.requiredSourceNames().isEmpty());
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("remoteAge", 99));
+        plan.apply(values, Set.of());
+        assertTrue(!values.containsKey("request"));
+    }
+
     private final DataObjectFieldReferenceResolver resolver =
             new DataObjectFieldReferenceResolver();
     private final ExecutionParameterBinder binder = new ExecutionParameterBinder();

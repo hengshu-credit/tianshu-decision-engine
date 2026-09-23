@@ -291,7 +291,7 @@
             formatVersionTime(row.publishTime)
           }}</template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column class-name="table-operation-column" label="操作" width="300" fixed="right">
           <template v-slot="{ row, $index }">
             <el-button
               link

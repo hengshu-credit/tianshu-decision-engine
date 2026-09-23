@@ -20,7 +20,7 @@
       <span>{{ node.varName }}</span>
     </div>
     <span class="rs-trace-leaf-part"
-      >实际值 <strong>{{ node.actualText }}</strong></span
+      >{{ node.actualSource === 'input' ? '输入值' : '实际值' }} <strong>{{ node.actualText }}</strong></span
     >
     <span class="rs-trace-leaf-op">{{ node.operatorText }}</span>
     <span class="rs-trace-leaf-part"
@@ -49,7 +49,7 @@ export default {
         return this.node.kind === 'group' ? '条件组满足' : '满足'
       if (this.node.result === false)
         return this.node.kind === 'group' ? '条件组不满足' : '不满足'
-      return '未执行'
+      return this.node.traceStatus === 'missing' ? '未记录追踪' : '未执行'
     },
   },
 }

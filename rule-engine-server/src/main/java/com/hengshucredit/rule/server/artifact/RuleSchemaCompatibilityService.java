@@ -97,6 +97,8 @@ public class RuleSchemaCompatibilityService {
         constraints.remove("title");
         constraints.remove("description");
         constraints.remove("$comment");
+        constraints.remove("x-legacy-names");
+        constraints.remove("x-legacy-input");
         return constraints;
     }
 

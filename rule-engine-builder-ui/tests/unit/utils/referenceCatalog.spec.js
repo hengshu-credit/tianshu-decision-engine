@@ -7,6 +7,19 @@ import {
 } from '@/utils/referenceCatalog'
 
 describe('referenceCatalog', () => {
+  test('模型输出引用实际返回字段，不误用回填变量名称', () => {
+    const catalog = buildReferenceCatalog([], [], [{ id: 2, modelCode: 'model', outputFields: [
+      { id: 7, fieldName: 'score', scriptName: 'decisionScore', targetOperand: '{"kind":"PATH","value":"decisionScore"}' },
+    ] }])
+    expect(catalog.refs[0].refCode).toBe('model.score')
+  })
+  test('数据对象字段保留引用变量的来源和结果记录资格', () => {
+    const catalog = buildReferenceCatalog([{ id: 1, varCode: 'score', varSource: 'API' }], [{
+      object: { id: 2, objectCode: 'response' },
+      flatVariables: [{ id: 3, varCode: 'score', refVariableId: 1, recordResult: false }],
+    }], [])
+    expect(buildPickerOptions(catalog).find(field => field._varId === 3)).toMatchObject({ varSource: 'API', recordResult: false })
+  })
   test('统一构造普通变量、常量、数据对象完整路径和模型输出', () => {
     const variables = [
       { id: 1, varLabel: '年龄', varCode: 'age', scriptName: 'age', varType: 'INTEGER', varSource: 'INPUT' },

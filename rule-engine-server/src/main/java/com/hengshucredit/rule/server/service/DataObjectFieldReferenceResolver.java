@@ -5,6 +5,8 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
+import com.hengshucredit.rule.server.derived.HistoryFieldValues;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +28,7 @@ public class DataObjectFieldReferenceResolver {
 
     @Resource
     private RuleVariableMapper ruleVariableMapper;
+    @Resource private RuleDataObjectMapper dataObjectMapper;
 
     public ReferencePlan resolveLive(List<RuleDefinitionInputField> directFields) {
         if (dataObjectFieldMapper == null || ruleVariableMapper == null) {
@@ -38,9 +41,11 @@ public class DataObjectFieldReferenceResolver {
                 continue;
             }
             RuleDataObjectField field = dataObjectFieldMapper.selectById(direct.getVarId());
-            if (field == null || field.getRefVariableId() == null) {
+            if (field == null || !field.referencesValue()) {
                 continue;
             }
+            var owner = dataObjectMapper == null || field.getObjectId() == null ? null : dataObjectMapper.selectById(field.getObjectId());
+            field.setLazyReference(owner != null && Boolean.TRUE.equals(owner.getLazyLoadReferences()));
             RuleVariable variable = ruleVariableMapper.selectById(field.getRefVariableId());
             if (variable != null) {
                 fields.put(field.getId(), field);
@@ -80,20 +85,26 @@ public class DataObjectFieldReferenceResolver {
                 continue;
             }
             RuleDataObjectField mappedField = fields.get(direct.getVarId());
-            if (mappedField == null || mappedField.getRefVariableId() == null) {
+            if (mappedField == null || !mappedField.referencesValue()) {
                 continue;
             }
             RuleVariable source = variables.get(mappedField.getRefVariableId());
             String targetPath = pathOf(direct);
-            String sourcePath = source == null ? null : text(source.getScriptName());
+            String sourcePath = source == null ? null : firstText(source.getScriptName(), source.getVarCode());
             if (targetPath == null || sourcePath == null
                     || !seenTargets.add(targetPath.toLowerCase(Locale.ROOT))) {
                 continue;
             }
             bindings.add(new Binding(targetPath, sourcePath,
-                    copyTargetField(direct), sourceField(source)));
+                    copyTargetField(direct), sourceField(source), Boolean.TRUE.equals(mappedField.getLazyReference())
+                    && !Set.of("OBJECT", "MAP").contains(mappedField.getVarType() == null ? "" : mappedField.getVarType())
+                    && !Set.of("OBJECT", "MAP").contains(mappedField.getGenericType() == null ? "" : mappedField.getGenericType())
+                    && mappedField.getRefObjectId() == null
+                    && fields.values().stream().noneMatch(child -> mappedField.getId().equals(child.getParentFieldId()))));
         }
-        return bindings.isEmpty() ? ReferencePlan.empty() : new ReferencePlan(bindings);
+        Set<String> directSources = new LinkedHashSet<>();
+        for (var direct : safe(directFields)) if (!isDataObjectReference(direct) && pathOf(direct) != null) directSources.add(pathOf(direct));
+        return bindings.isEmpty() ? ReferencePlan.empty() : new ReferencePlan(bindings, directSources);
     }
 
     private RuleDefinitionInputField copyTargetField(RuleDefinitionInputField source) {
@@ -115,7 +126,7 @@ public class DataObjectFieldReferenceResolver {
                 ? "CONSTANT" : "VARIABLE");
         field.setFieldName(source.getVarCode());
         field.setFieldLabel(source.getVarLabel());
-        field.setScriptName(source.getScriptName());
+        field.setScriptName(firstText(source.getScriptName(), source.getVarCode()));
         field.setFieldType(source.getVarType());
         field.setDefaultValue(source.getDefaultValue());
         field.setExampleValue(source.getExampleValue());
@@ -152,25 +163,87 @@ public class DataObjectFieldReferenceResolver {
         private final String sourcePath;
         private final RuleDefinitionInputField targetField;
         private final RuleDefinitionInputField sourceField;
+        private final boolean lazy;
 
         private Binding(String targetPath, String sourcePath,
                         RuleDefinitionInputField targetField,
-                        RuleDefinitionInputField sourceField) {
+                        RuleDefinitionInputField sourceField, boolean lazy) {
             this.targetPath = targetPath;
             this.sourcePath = sourcePath;
             this.targetField = targetField;
             this.sourceField = sourceField;
+            this.lazy = lazy;
         }
     }
 
     public static final class ReferencePlan {
         private static final ReferencePlan EMPTY =
-                new ReferencePlan(Collections.emptyList());
+                new ReferencePlan(Collections.emptyList(), Set.of());
 
         private final List<Binding> bindings;
+        private final Set<String> directSources;
 
-        private ReferencePlan(List<Binding> bindings) {
+        private ReferencePlan(List<Binding> bindings, Set<String> directSources) {
             this.bindings = Collections.unmodifiableList(new ArrayList<>(bindings));
+            this.directSources = Set.copyOf(directSources);
+        }
+
+        public Set<String> withoutBindingNames(Set<String> names) {
+            Set<String> result = new LinkedHashSet<>(names);
+            for (Binding binding : bindings) {
+                result.remove(binding.targetPath);
+                if (!directSources.contains(binding.sourcePath)) result.remove(binding.sourcePath);
+            }
+            return result;
+        }
+
+        public Set<String> targetPaths() {
+            Set<String> paths = new LinkedHashSet<>(); bindings.forEach(binding -> paths.add(binding.targetPath)); return paths;
+        }
+
+        public Set<String> lazyPaths() {
+            Set<String> paths = new LinkedHashSet<>(); bindings.stream().filter(binding -> binding.lazy).forEach(binding -> paths.add(binding.targetPath)); return paths;
+        }
+
+        public Set<String> deferredStatusKeys() {
+            Set<String> keys = new LinkedHashSet<>();
+            for (Binding binding : bindings) if (binding.lazy) {
+                keys.add(fieldKey(binding.targetField));
+                if (!directSources.contains(binding.sourcePath)) keys.add(fieldKey(binding.sourceField));
+            }
+            return keys;
+        }
+
+        public Set<String> sourceStatusKeys(Set<String> selected, Set<String> original) {
+            Set<String> keys = new LinkedHashSet<>(original); keys.removeAll(deferredStatusKeys());
+            for (Binding binding : bindings) if (selected.contains(binding.sourcePath)
+                    && (original.contains(fieldKey(binding.targetField)) || original.contains(fieldKey(binding.sourceField)))) keys.add(fieldKey(binding.sourceField));
+            return keys;
+        }
+
+        public Set<String> sourcesForStatus(String key, Map<String, Object> values) {
+            Set<String> names = new LinkedHashSet<>();
+            for (Binding binding : bindings) if (binding.lazy && (fieldKey(binding.sourceField).equals(key)
+                    || fieldKey(binding.targetField).equals(key) && !HistoryFieldValues.present(values, binding.targetPath))) names.add(binding.sourcePath);
+            return names;
+        }
+
+        public void copyTargetStates(Map<String, Object> values, VariableResolveOptions options) {
+            for (Binding binding : bindings) {
+                if (!HistoryFieldValues.present(values, binding.targetPath)) continue;
+                var state = options.getSourceStates().get(fieldKey(binding.sourceField));
+                if (state != null) state.forEach((dimension, value) -> options.recordSourceState("DATA_OBJECT", binding.targetField.getVarId(), dimension, value));
+                options.recordSourceState("DATA_OBJECT", binding.targetField.getVarId(), "PRESENCE", "PRESENT");
+            }
+        }
+
+        public Set<String> missingSources(String path, Map<String, Object> values, boolean includeLazy) {
+            Set<String> sources = new LinkedHashSet<>();
+            for (Binding binding : bindings) {
+                boolean matches = path == null || binding.targetPath.equals(path) || binding.targetPath.startsWith(path + ".") || path.startsWith(binding.targetPath + ".");
+                if (matches && (includeLazy || !binding.lazy || binding.targetPath.equals(path)) && !HistoryFieldValues.present(values, binding.targetPath)) sources.add(binding.sourcePath);
+            }
+            return sources;
         }
 
         public static ReferencePlan empty() {
@@ -201,7 +274,7 @@ public class DataObjectFieldReferenceResolver {
         public Set<String> captureExplicitTargets(Map<String, Object> input) {
             Set<String> paths = new LinkedHashSet<>();
             for (Binding binding : bindings) {
-                if (readPath(input, binding.targetPath).present) {
+                if (HistoryFieldValues.present(input, binding.targetPath)) {
                     paths.add(binding.targetPath);
                 }
             }
@@ -209,10 +282,15 @@ public class DataObjectFieldReferenceResolver {
         }
 
         public void apply(Map<String, Object> values, Set<String> explicitTargets) {
+            apply(values, explicitTargets, requiredSourceNames());
+        }
+
+        public void apply(Map<String, Object> values, Set<String> explicitTargets, Set<String> resolvedNames) {
             Set<String> explicit = explicitTargets == null
                     ? Collections.emptySet() : explicitTargets;
             for (Binding binding : bindings) {
-                if (explicit.contains(binding.targetPath)) {
+                if (explicit.contains(binding.targetPath) || HistoryFieldValues.present(values, binding.targetPath)
+                        || !resolvedNames.contains(binding.sourcePath)) {
                     continue;
                 }
                 PathValue source = readPath(values, binding.sourcePath);

@@ -32,6 +32,8 @@ for (const colorScheme of ['LIGHT', 'DARK']) {
       const header = table.locator('th').filter({ hasText: /^操作$/ })
       await expect(header).toHaveCSS('position', 'sticky')
       await expect(header).toHaveCSS('right', '0px')
+      await expect(header.locator('.cell')).toHaveCSS('text-align', 'left')
+      await expect(table.locator('td.table-operation-column').first().locator('.cell')).toHaveCSS('text-align', 'left')
       const before = await header.boundingBox()
       const scrollWrap = table.locator('.el-scrollbar__wrap').first()
       await scrollWrap.evaluate(element => { element.scrollLeft = element.scrollWidth })

@@ -27,6 +27,21 @@ public class DataObjectGovernedResourceAdapter
     private final RuleDataObjectFieldOptionMapper optionMapper;
     private final DataObjectFieldReferenceValidator referenceValidator;
 
+    @Override
+    @SuppressWarnings("unchecked")
+    public ResourceSnapshot normalizeDraft(ResourceSnapshot draft) {
+        Map<String, Object> value = CanonicalJson.readMap(draft.snapshotJson());
+        // Old versions must restore their defaults, not retain a newer projection's non-null settings.
+        value.putIfAbsent("lazyLoadReferences", false);
+        if (value.get("fields") instanceof List<?> fields) {
+            for (Object field : fields) if (field instanceof Map<?, ?>) {
+                ((Map<String, Object>) field).putIfAbsent("referenceMode", "VALUE");
+            }
+        }
+        return super.normalizeDraft(new ResourceSnapshot(CanonicalJson.write(value), draft.effectiveStatus(),
+                draft.secretPayloadCiphertext(), draft.secretDigest()));
+    }
+
     public DataObjectGovernedResourceAdapter(
             SimpleEntityGovernedResourceAdapter.EntityStore<RuleDataObject>
                     store,

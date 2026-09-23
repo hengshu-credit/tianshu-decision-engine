@@ -308,7 +308,10 @@ function relativeLuminance(color) {
 }
 
 function hexToRgb(value) {
-  const normalized = String(value || '').replace('#', '')
+  let normalized = String(value || '').replace('#', '')
+  if (/^[0-9a-f]{3}$/i.test(normalized)) {
+    normalized = normalized.split('').map(channel => channel + channel).join('')
+  }
   if (!/^[0-9a-f]{6}$/i.test(normalized)) {
     throw new Error('主题配置包含无效色值')
   }

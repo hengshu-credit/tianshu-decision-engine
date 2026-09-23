@@ -50,6 +50,21 @@ public class RuleFieldAnalyzerTest {
     private final RuleFieldAnalyzer analyzer = new RuleFieldAnalyzer();
 
     @Test
+    public void visualRuntimeInputsKeepDataObjectReferenceEvenWhenPublicInputIsExpanded() {
+        String model = "{\"nodes\":[],\"edges\":[{\"conditionConfig\":{\"type\":\"leaf\","
+                + "\"leftOperand\":{\"kind\":\"PATH\",\"refType\":\"DATA_OBJECT\",\"refId\":268,"
+                + "\"value\":\"metrics.found\"},\"operator\":\"==\","
+                + "\"rightOperand\":{\"kind\":\"LITERAL\",\"value\":true,\"valueType\":\"BOOLEAN\"}}}]}";
+
+        List<RuleDefinitionInputField> fields = analyzer.extractDirectModelInputFields(model, "FLOW");
+
+        assertEquals(1, fields.size());
+        assertEquals(Long.valueOf(268), fields.get(0).getVarId());
+        assertEquals("DATA_OBJECT", fields.get(0).getRefType());
+        assertEquals("metrics.found", fields.get(0).getScriptName());
+    }
+
+    @Test
     public void persistResolvedFieldsReplacesProjectionWithoutResolvingAgain()
             throws Exception {
         List<String> writes = new ArrayList<>();
@@ -1011,7 +1026,7 @@ public class RuleFieldAnalyzerTest {
     }
 
     @Test
-    public void resolvedRuleFieldsRetainListSourceForRuntimeAlongsideQueryInputs()
+    public void resolvedRuleFieldsExposeListQueryInputsNotRuntimeSource()
             throws Exception {
         RuleFieldAnalyzer localAnalyzer = new RuleFieldAnalyzer();
         TableInfoHelper.initTableInfo(
@@ -1065,12 +1080,12 @@ public class RuleFieldAnalyzerTest {
                         + "\"valueType\":\"NUMBER\"}}]}}]}",
                 "RULE_SET", 4L);
 
-        assertEquals(Arrays.asList("idcard_no", "mobile_no", "riskHit"),
+        assertEquals(Arrays.asList("idcard_no", "mobile_no"),
                 names(fields.getInputFields()));
     }
 
     @Test
-    public void scriptResolvedFieldsRetainListSourceForRuntimeAlongsideQueryInputs()
+    public void scriptResolvedFieldsExposeListQueryInputsNotRuntimeSource()
             throws Exception {
         TableInfoHelper.initTableInfo(
                 new MapperBuilderAssistant(new Configuration(), ""),
@@ -1127,7 +1142,7 @@ public class RuleFieldAnalyzerTest {
                         + "\"varId\":9,\"refType\":\"VARIABLE\"}]}",
                 "SCRIPT", 4L);
 
-        assertEquals(Arrays.asList("idcard_no", "mobile_no", "riskHit"),
+        assertEquals(Arrays.asList("idcard_no", "mobile_no"),
                 names(fields.getInputFields()));
     }
 

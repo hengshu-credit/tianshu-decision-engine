@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.dto.RuleResult;
 import org.junit.Test;
 
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -37,5 +38,26 @@ public class ActionNestedOutputTest {
         assertTrue(result.getErrorMessage(), result.isSuccess());
         assertEquals("retained", ((Map<?, ?>) result.getResult()).get("keep"));
         assertEquals(7, ((Number) ((Map<?, ?>) ((Map<?, ?>) result.getResult()).get("metrics")).get("value")).intValue());
+    }
+
+    @Test
+    public void resultCollectorPreservesExistingInputParentsForNestedOutputs() {
+        StringBuilder script = new StringBuilder("if (request.age >= 18) {\n"
+                + "    request.score = request.age;\n"
+                + "}\n");
+        RuleScriptResultCollector.prependOutputNullInits(script, List.of("request.score"));
+        RuleScriptResultCollector.appendResultMapReturn(script, List.of("request.score"));
+
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("age", 20);
+        request.put("keep", "yes");
+        Map<String, Object> context = new LinkedHashMap<>();
+        context.put("request", request);
+
+        RuleResult result = new QLExpressEngine().execute(script.toString(), context);
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("yes", request.get("keep"));
+        assertEquals(20, ((Number) request.get("score")).intValue());
     }
 }

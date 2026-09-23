@@ -114,7 +114,7 @@ export default {
   flex-direction: column;
   align-items: flex-start;
   padding: 11px 12px;
-  border: 1px solid #dfe5ee;
+  border: 1px solid var(--tianshu-border-subtle);
   border-radius: 8px;
   background: var(--tianshu-bg-surface);
   color: var(--tianshu-text-tertiary);
@@ -124,9 +124,9 @@ export default {
 
 .source-option:hover,
 .source-option.is-active {
-  border-color: #7fa5ea;
-  background: #f3f7ff;
-  box-shadow: 0 5px 14px rgb(39 99 213 / 8%);
+  border-color: var(--tianshu-info-border);
+  background: var(--tianshu-info-bg);
+  box-shadow: 0 5px 14px var(--tianshu-primary-shadow);
 }
 
 .source-option:disabled {
@@ -140,20 +140,20 @@ export default {
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  color: #1f2937;
+  color: var(--tianshu-text-primary);
   font-size: 13px;
   font-weight: 700;
 }
 
 .source-option__title small {
-  color: var(--el-color-primary);
+  color: var(--tianshu-info-text);
   font-size: 10px;
   font-weight: 600;
 }
 
 .source-option__help {
   margin-top: 6px;
-  color: #768296;
+  color: var(--tianshu-text-tertiary);
   font-size: 11px;
   line-height: 1.45;
 }

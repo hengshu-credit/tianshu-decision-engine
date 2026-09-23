@@ -88,6 +88,22 @@ public class AdvancedScorecardCompilerTest {
         assertTrue(result.getErrorMessage().contains("重叠"));
     }
 
+    @Test
+    public void appliesGroupAndDimensionWeightsToMatchedScore() {
+        CompileResult result = compiler.compile("{"
+                + "\"initialScore\":0,"
+                + "\"resultVar\":{\"varCode\":\"totalScore\",\"varType\":\"NUMBER\"},"
+                + "\"dimensionGroups\":[{\"groupLabel\":\"credit\",\"weight\":0.5,\"dimensions\":[{"
+                + "\"varLabel\":\"score\",\"weight\":1,\"rules\":[{\"conditions\":[],\"score\":10}]}]}]"
+                + "}");
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        RuleResult execution = engine.execute(result.getCompiledScript(), new HashMap<String, Object>());
+
+        assertTrue(execution.getErrorMessage(), execution.isSuccess());
+        assertEquals(5.0, ((Number) ((Map<?, ?>) execution.getResult()).get("totalScore")).doubleValue(), 0.000001);
+    }
+
     private String thresholdModel(String firstMin, String firstMax, String secondMin, String secondMax) {
         return "{"
                 + "\"initialScore\":250,\"resultVar\":{\"varCode\":\"totalScore\",\"varType\":\"NUMBER\"},"

@@ -1328,6 +1328,18 @@
             <span v-else>已自动过滤停用及其他项目的来源。</span>
           </div>
         </el-form-item>
+        <el-form-item label="记录字段结果">
+          <el-switch v-model="form.recordResult" aria-label="记录字段结果" />
+          <div class="field-help">开启后在根规则日志中按字段 ID 保存本次结果，供后续历史衍生统计；请求入参与三方调用结果默认可回溯。已发布规则需重新发布以更新快照，不回填旧日志。</div>
+        </el-form-item>
+        <el-form-item v-if="isObjectField && !form.refObjectId" label="引用用途">
+          <el-select v-model="form.referenceMode" style="width: 100%">
+            <el-option label="引用取值：仅在当前子字段缺失时补取" value="VALUE" />
+            <el-option label="仅复用结构：不执行被引用字段的来源" value="STRUCTURE" />
+          </el-select>
+          <div class="field-help">已有子字段优先，包括 0、false、空字符串和显式 null；引用不会覆盖这些值。</div>
+        </el-form-item>
+        <p v-if="isObjectField && form.refObjectId" class="field-help">引用数据对象只复用结构，不会从另一个同名对象自动复制值。</p>
         <derived-variable-editor
           v-if="!isObjectField && form.varSource === 'DERIVED'"
           v-model="form.derivedConfig"
@@ -1373,11 +1385,7 @@
               <el-option label="返回默认值" value="RETURN_DEFAULT" />
               <el-option label="跳过补值" value="SKIP" />
             </el-select>
-            <el-switch
-              v-model="form.apiForceRefresh"
-              active-text="强制刷新"
-              style="margin-left: 12px"
-            />
+            <span class="form-tip" style="margin-left: 12px">同一根规则（含子规则）复用首次外数结果；接口内部失败重试仍按外数配置执行。</span>
           </el-form-item>
           <el-form-item
             v-if="form.apiExceptionStrategy === 'RETURN_DEFAULT'"
@@ -1438,11 +1446,7 @@
               <el-option label="返回默认值" value="RETURN_DEFAULT" />
               <el-option label="跳过补值" value="SKIP" />
             </el-select>
-            <el-switch
-              v-model="form.dbForceRefresh"
-              active-text="强制刷新"
-              style="margin-left: 12px"
-            />
+            <span class="form-tip" style="margin-left: 12px">同一根规则（含子规则）只取值一次，后续引用复用结果。</span>
           </el-form-item>
           <el-form-item
             v-if="form.dbExceptionStrategy === 'RETURN_DEFAULT'"
@@ -1797,6 +1801,10 @@
             <el-option label="DDL" value="DDL" />
             <el-option label="手动" value="MANUAL" />
           </el-select>
+        </el-form-item>
+        <el-form-item label="懒加载引用字段">
+          <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
+          <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
         </el-form-item>
         <el-form-item label="说明">
           <el-input
@@ -2769,6 +2777,7 @@ export default {
       // Data Object Dialog
       objectDialogVisible: false,
       objectForm: {
+        lazyLoadReferences: false,
         id: null,
         objectCode: '',
         objectLabel: '',
@@ -3045,6 +3054,7 @@ export default {
       return [...variables, ...objects]
     },
     objectFieldReferenceBlockedReason() {
+      if (this.form.referenceMode === 'STRUCTURE') return ''
       if (!this.isObjectField || !this.objectFieldNode) return ''
       const parentId = this.form && this.form.parentFieldId
       let current = parentId
@@ -3230,6 +3240,7 @@ export default {
         varType: 'STRING',
         varSource: 'INPUT',
         sourceConfig: '',
+        recordResult: false,
         derivedConfig: createDerivedConfig(),
         apiConfigId: '',
         apiParamMapping: '{}',
@@ -3483,7 +3494,7 @@ export default {
       if (Array.isArray(data)) return data
       return data && Array.isArray(data.records) ? data.records : []
     },
-    async loadListExpressionOptions() {
+    async loadListExpressionOptions(force = false) {
       const projectId = this.form.scope === 'GLOBAL' ? 0 : this.form.projectId
       if (projectId === '' || projectId == null) {
         this.listReferenceOptions = []
@@ -3491,7 +3502,7 @@ export default {
         return
       }
       if (
-        String(this.listReferenceProjectId) === String(projectId) &&
+        !force && String(this.listReferenceProjectId) === String(projectId) &&
         this.listReferenceOptions.length
       )
         return
@@ -4288,6 +4299,7 @@ export default {
     /** 新建数据对象（从工具栏按钮） */
     handleCreateObject() {
       this.objectForm = {
+        lazyLoadReferences: false,
         id: null,
         objectCode: '',
         objectLabel: '',
@@ -4306,6 +4318,7 @@ export default {
     /** 编辑数据对象（从行内操作） */
     handleEditObject(obj) {
       this.objectForm = {
+        lazyLoadReferences: obj.lazyLoadReferences === true,
         id: obj.id,
         objectCode: obj.objectCode,
         objectLabel: obj.objectLabel || '',
@@ -4366,6 +4379,8 @@ export default {
         scriptName: '',
         varType: 'STRING',
         refVariableId: null,
+        referenceMode: 'VALUE',
+        recordResult: false,
         refObjectCode: '',
         sortOrder: nextOrder,
         status: 1,
@@ -4393,6 +4408,8 @@ export default {
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
         varType: row.varType || 'STRING',
         refVariableId: row.refVariableId || null,
+        referenceMode: row.referenceMode || 'VALUE',
+        recordResult: row.recordResult === true,
         refObjectCode: row.refObjectCode || '',
         refObjectId: row.refObjectId || null,
         genericType: row.genericType || '',
@@ -4725,7 +4742,7 @@ export default {
       this.resetDraftPreview()
       this.draftPreviewParamsText = this.buildTestParamTemplate(row)
       this.loadVariableSourceCatalog(true)
-      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions()
+      if (['LIST', 'DB', 'DERIVED'].includes(this.form.varSource)) this.loadListExpressionOptions(true)
       this.dialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.form) this.$refs.form.clearValidate()
@@ -4754,6 +4771,8 @@ export default {
             refObjectCode: this.form.refObjectCode || null,
             refObjectId: this.form.refObjectId || null,
             refVariableId: this.form.refVariableId || null,
+            referenceMode: this.form.referenceMode || 'VALUE',
+            recordResult: this.form.recordResult === true,
             genericType: this.form.genericType || null,
             parentFieldId: this.form.parentFieldId || null,
             sortOrder: this.form.sortOrder,
@@ -5590,8 +5609,8 @@ export default {
   margin-top: 4px;
 }
 .field-help code {
-  color: #1e40af;
-  background: #eff6ff;
+  color: var(--tianshu-info-text);
+  background: var(--tianshu-info-bg);
   border-radius: 3px;
   padding: 0 4px;
 }
@@ -5917,7 +5936,7 @@ export default {
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: #e8edf5;
+  background: var(--tianshu-bg-muted);
   color: var(--tianshu-text-tertiary);
   font-size: 11px;
   font-weight: 700;

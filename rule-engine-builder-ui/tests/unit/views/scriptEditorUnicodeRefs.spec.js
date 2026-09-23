@@ -1,5 +1,11 @@
 import ScriptEditor from '@/views/designer/ScriptEditor.vue'
 
+test('脚本字段栏提供模型输出，保持可插入的稳定引用ID', () => {
+  const field = { _varId: 7, _refType: 'MODEL_OUTPUT', varCode: 'model.score', _ref: { category: 'model' } }
+  const tree = ScriptEditor.computed.varTree.call({ varPickerOptions: [field], projectFunctions: [] })
+  expect(tree.find(group => group.key === '__model__')?.children).toEqual([field])
+})
+
 describe('ScriptEditor stable references for Unicode identifiers', () => {
   function context(script, refCode) {
     return {

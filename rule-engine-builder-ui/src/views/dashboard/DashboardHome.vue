@@ -172,8 +172,15 @@
                   />
                 </el-select>
                 <el-button v-if="mapCountry" size="small" @click="changeMapCountry('')">返回全球</el-button>
+                <el-button
+                  v-if="mapCountry && previousMapLayer"
+                  size="small"
+                  @click="drillUpMap"
+                >返回上一级</el-button>
                 <el-button v-if="mapCountry !== 'CHN'" size="small" @click="changeMapCountry('CHN')">中国全图</el-button>
-                <span>{{ mapCountry ? '各国行政层级不同，仅展示有边界数据的层级。' : '悬停查看区域名称，点击国家可查看行政区。' }}</span>
+                <span>{{ mapCountry
+                  ? (nextMapLayer ? `点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}` : '已是最细行政区层级。')
+                  : '悬停查看区域名称，点击国家可查看行政区。' }}</span>
               </div>
               <div v-if="mapCatalogError" class="dashboard-map-error">
                 <el-alert :title="mapCatalogError" type="warning" :closable="false" show-icon />
@@ -430,6 +437,14 @@ export default {
     mapLayer() {
       return this.mapLayerOptions.find(layer => layer.level === this.mapLevel)
     },
+    nextMapLayer() {
+      const index = this.mapLayerOptions.findIndex(layer => layer.level === this.mapLevel)
+      return index >= 0 ? this.mapLayerOptions[index + 1] || null : null
+    },
+    previousMapLayer() {
+      const index = this.mapLayerOptions.findIndex(layer => layer.level === this.mapLevel)
+      return index > 0 ? this.mapLayerOptions[index - 1] || null : null
+    },
     listCategoryOption() {
       void this.themeVersion
       return distributionPieOption((this.operations.lists && this.operations.lists.categories
@@ -567,8 +582,18 @@ export default {
       this.mapLevel = level
       return this.loadMap()
     },
+    drillUpMap() {
+      if (!this.previousMapLayer) return Promise.resolve()
+      return this.changeMapLevel(this.previousMapLayer.level)
+    },
     openMapCountry(name) {
-      if (this.mapCountry) return
+      if (this.mapCountry) {
+        if (!this.nextMapLayer) {
+          this.$message.info('已是最细行政区层级')
+          return
+        }
+        return this.changeMapLevel(this.nextMapLayer.level)
+      }
       const country = this.worldCountries[name]
       if (this.mapCountryOptions.some(item => item.code === country)) this.changeMapCountry(country)
       else this.$message.info('该国家或地区暂无可用的行政区边界')

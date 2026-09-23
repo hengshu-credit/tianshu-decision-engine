@@ -16,6 +16,9 @@ public class RuleRuntimeCallLog {
     private Long id;
     private String traceId;
     private String ruleTraceId;
+    private String rootTraceId;
+    /** 本次逻辑调用的受管 API 字段结果快照，重试尝试日志不参与统计。 */
+    private String historyFields;
     private String moduleType;
     private String actionType;
     private Long projectId;

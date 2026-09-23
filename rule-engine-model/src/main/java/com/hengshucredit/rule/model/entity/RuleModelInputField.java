@@ -14,9 +14,11 @@ public class RuleModelInputField {
     private Long modelId;
 
     /** 关联字段ID，需结合 refType 判断所属资源表 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private Long varId;
 
     /** 引用类型：VARIABLE/CONSTANT/DATA_OBJECT/MODEL */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String refType;
 
     /** 字段名称（原始名称） */
@@ -30,12 +32,15 @@ public class RuleModelInputField {
     /** 数据用途类型：CONTINUOUS-连续/CATEGORICAL-类别/ORDINAL-有序 */
     private String dataType;
 
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String defaultValue;
 
     /** 统一 Operand JSON：模型字段从哪个引擎字段/路径取值 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String sourceOperand;
 
     /** 统一 Operand JSON：源值为空时使用的阈值、路径或引用 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String defaultOperand;
 
     /** 有效值列表（JSON数组） */

@@ -33,6 +33,75 @@ import static org.junit.Assert.fail;
 public class VariableSourceResolverTest {
 
     @Test
+    public void frozenListPathResolvesUpstreamByIdWithoutReadingLiveMetadata() throws Exception {
+        RuleVariable upstream = variable("currentMobile", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.mobile\"}");
+        upstream.setId(11L);
+        RuleVariable list = variable("listHit", "LIST", "{\"listIds\":[9],"
+                + "\"queryOperands\":[{\"kind\":\"PATH\",\"refType\":\"VARIABLE\",\"refId\":11,\"value\":\"oldMobile\"}],"
+                + "\"combinationMode\":\"ANY_FIELD_ANY_LIST\",\"matchMode\":\"IN_LIST\",\"itemTypes\":[\"MOBILE\"],\"returnMode\":\"NUMBER\"}");
+        FakeRuleListService lists = new FakeRuleListService(true);
+        FakeApiService api = new FakeApiService(responseBody("mobile", "13800138000"));
+        VariableSourceResolver resolver = resolver(List.of(list, upstream), api, new FakeDbPools(List.of()), lists);
+        setField(resolver, "variableService", new RuleVariableService() {
+            @Override public Map<String, String> buildRefScriptNameMap(Long projectId) {
+                throw new AssertionError("Frozen execution must not read live variable metadata");
+            }
+        });
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(java.util.Set.of("listHit"));
+        options.setDerivedReferencePaths(Map.of("VARIABLE:11", "currentMobile"));
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("oldMobile", "wrong"));
+
+        resolver.resolveIntoSnapshot(List.of(list, upstream), List.of(), List.of(), values, options);
+
+        assertEquals(1, api.callCount);
+        assertEquals("13800138000", lists.lastContent);
+        assertEquals(1, values.get("listHit"));
+    }
+
+    @Test
+    public void rootAndChildResolutionsReuseTheCompleteApiResponseButNextRequestDoesNot() throws Exception {
+        RuleVariable first = variable("firstMetric", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"customerId\":\"$.customerId\"},\"resultPath\":\"body.first\"}");
+        RuleVariable second = variable("secondMetric", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"customerId\":\"$.customerId\"},\"resultPath\":\"body.second\"}");
+        second.setId(2L);
+        FakeApiService api = new FakeApiService(responseBody(mapOf("first", 11, "second", 22)));
+        VariableSourceResolver resolver = resolver(Arrays.asList(first, second), api, new FakeDbPools(Collections.emptyList()));
+        VariableResolutionInvocationCache shared = new VariableResolutionInvocationCache();
+        VariableResolveOptions root = VariableResolveOptions.defaults();
+        root.setInvocationCache(shared);
+        root.setRequiredScriptNames(java.util.Set.of("firstMetric"));
+        Map<String, Object> values = new LinkedHashMap<>(Map.of("customerId", "A"));
+        resolver.resolveInto(1L, values, root);
+        values.put("decision", "parent output");
+        VariableResolveOptions child = VariableResolveOptions.defaults();
+        child.setInvocationCache(shared);
+        child.setRequiredScriptNames(java.util.Set.of("secondMetric"));
+        resolver.resolveIntoSnapshot(Arrays.asList(first, second), List.of(), List.of(), values, child);
+        assertEquals(11, values.get("firstMetric"));
+        assertEquals(22, values.get("secondMetric"));
+        assertEquals("同一根请求中上下文新增输出不应引起第二次 API 调用", 1, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "A"));
+        assertEquals("新请求必须重新进入 API 服务并由接口缓存策略判断", 2, api.callCount);
+    }
+
+    @Test
+    public void sameRootUsesFirstApiResultEvenWhenMappedInputChanges() throws Exception {
+        RuleVariable a = variable("metricA", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"x\":\"$.customerId\",\"y\":1},\"resultPath\":\"body.score\"}");
+        RuleVariable b = variable("metricB", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"y\":1,\"x\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
+        b.setId(2L);
+        FakeApiService api = new FakeApiService(responseBody("score", 88));
+        VariableSourceResolver resolver = resolver(Arrays.asList(a, b), api, new FakeDbPools(Collections.emptyList()));
+        VariableResolveOptions options = VariableResolveOptions.defaults();
+        options.setInvocationCache(new VariableResolutionInvocationCache());
+        resolver.resolve(1L, Map.of("customerId", "A"), options);
+        assertEquals(1, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "B"), options);
+        assertEquals(1, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "B"), VariableResolveOptions.defaults());
+        assertEquals(2, api.callCount);
+    }
+
+    @Test
     public void apiVariableUsesParamMappingAndResultPath() throws Exception {
         RuleVariable variable = variable("riskScore", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"cust\":\"$.customerId\"},\"resultPath\":\"body.data.score\"}");
@@ -66,6 +135,7 @@ public class VariableSourceResolverTest {
                 "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v1\"}");
         RuleVariable scoreV2 = variable("hscreditScoreV2", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"request_id\":\"$.requestId\"},\"resultPath\":\"body.v2\"}");
+        scoreV2.setId(2L);
         Map<String, Object> score = new LinkedHashMap<>();
         score.put("v1", 661.8);
         score.put("v2", 0.064);
@@ -80,7 +150,7 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void sourceVariableDoesNotOverwriteExistingInputByDefault() throws Exception {
+    public void sourceVariableNeverTreatsCallerInputAsAnEngineResult() throws Exception {
         RuleVariable variable = variable("riskScore", "API", "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Collections.singletonList(variable), apiService, new FakeDbPools(Collections.emptyList()));
@@ -89,8 +159,8 @@ public class VariableSourceResolverTest {
         params.put("riskScore", 99);
         Map<String, Object> resolved = resolver.resolve(1L, params);
 
-        assertEquals(99, resolved.get("riskScore"));
-        assertEquals(0, apiService.callCount);
+        assertEquals(88, resolved.get("riskScore"));
+        assertEquals(1, apiService.callCount);
     }
 
     @Test
@@ -278,7 +348,7 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void suppliedApiObjectSatisfiesDottedRequirementsWithoutInvoke() throws Exception {
+    public void suppliedApiObjectCannotSatisfyDottedRequirementsWithoutInvoke() throws Exception {
         RuleVariable variable = variable("api_features", "API",
                 "{\"apiConfigId\":7,\"resultPath\":\"body.features\"}");
         variable.setVarType("OBJECT");
@@ -297,8 +367,8 @@ public class VariableSourceResolverTest {
         Map<String, Object> resolved = resolver.resolve(
                 1L, singletonMap("api_features", features), options);
 
-        assertSame(features, resolved.get("api_features"));
-        assertEquals(0, apiService.callCount);
+        assertEquals(singletonMap("credit_score_v1", 600), resolved.get("api_features"));
+        assertEquals(1, apiService.callCount);
     }
 
     @Test
@@ -322,6 +392,7 @@ public class VariableSourceResolverTest {
                 "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
         RuleVariable dbScore = variable("dbScore", "DB",
                 "{\"datasourceId\":3,\"sql\":\"select score from t\",\"maxRows\":1}");
+        dbScore.setId(2L);
         FakeApiService apiService = new FakeApiService(responseBody("score", 88));
         FakeDbPools dbPools = new FakeDbPools(Collections.singletonList(singletonMap("score", 72)));
         VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, dbScore), apiService, dbPools);
@@ -849,6 +920,7 @@ public class VariableSourceResolverTest {
         RuleVariable apiScore = variable("riskScore", "API",
                 "{\"apiConfigId\":7,\"paramMapping\":{\"score\":\"$.dbScore\"},\"resultPath\":\"body.score\"}");
         RuleVariable dbScore = variable("dbScore", "DB", "{\"datasourceId\":3,\"sql\":\"select score from t\"}");
+        dbScore.setId(2L);
         FakeApiService api = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Arrays.asList(apiScore, dbScore), api,
                 new FakeDbPools(Collections.singletonList(singletonMap("score", 72))));

@@ -180,6 +180,7 @@ public class ExternalApiInvokeService {
                 logDatasourceCall(apiConfig, datasource, trace, true, result, null, cost);
                 return result;
             } catch (Exception e) {
+                if (e instanceof RuleRuntimeCallLogService.HistoryLogWriteException historyFailure) throw historyFailure;
                 lastError = e;
                 if (e instanceof TokenRefreshRejectedException
                         || e instanceof ExternalApiGuardRegistry.RejectedException
@@ -2018,6 +2019,15 @@ public class ExternalApiInvokeService {
         }
         log.setModuleType("DATASOURCE");
         log.setActionType("API_INVOKE");
+        var context = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext();
+        Object rootTraceId = context.rootRule().get("traceId");
+        if (rootTraceId != null) {
+            log.setRootTraceId(String.valueOf(rootTraceId));
+            Map<String, Object> fields = new LinkedHashMap<>();
+            context.externalFieldPaths(apiConfig.getId()).forEach((key, path) ->
+                    fields.put(key, response == null ? null : VariableSourceResolver.readPath(response, path)));
+            log.setHistoryFields(JSON.toJSONString(fields, com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
+        }
         log.setProjectId(datasource.getProjectId());
         log.setDatasourceId(datasource.getId());
         log.setTargetRefId(apiConfig.getId());

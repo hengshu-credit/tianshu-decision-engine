@@ -11,7 +11,6 @@ import com.hengshucredit.rule.server.service.RuleFunctionService;
 import com.hengshucredit.rule.server.service.RuleVariableService;
 import com.hengshucredit.rule.server.service.VariableResolveOptions;
 import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
-import com.hengshucredit.rule.model.dto.RuleResult;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -25,6 +24,8 @@ public class DerivedVariableService {
     @Resource
     private ApplicationHistoryRepository historyRepository;
     @Resource
+    private ExecutionLogHistoryRepository executionLogHistoryRepository;
+    @Resource
     private RuleFunctionService functionService;
     @Resource
     private RuleVariableService variableService;
@@ -32,32 +33,51 @@ public class DerivedVariableService {
     private com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper dataObjectFieldMapper;
 
     public Map<String, String> referencePaths(Long projectId) {
+        return referencePaths(projectId, Map.of());
+    }
+
+    public Map<String, String> objectReferencePaths(Long projectId) {
+        Map<String, String> result = new LinkedHashMap<>();
+        variableService.buildRefScriptNameMap(projectId).forEach((key, path) -> {
+            if (key.startsWith("DATA_OBJECT:")) result.put(key, path);
+        });
+        return result;
+    }
+
+    public Map<String, String> referencePaths(Long projectId, Map<String, Object> values) {
         Map<String, String> paths = new LinkedHashMap<>(variableService.buildRefScriptNameMap(projectId));
+        Map<String, String> original = new LinkedHashMap<>(paths);
         List<Long> ids = paths.keySet().stream().filter(key -> key.startsWith("DATA_OBJECT:"))
                 .map(key -> Long.valueOf(key.substring("DATA_OBJECT:".length()))).toList();
         if (!ids.isEmpty()) HistoryFieldValues.applyAliases(paths, dataObjectFieldMapper.selectBatchIds(ids));
+        HistoryFieldValues.preferAssignedObjectPaths(paths, original, values);
         return paths;
     }
 
-    public void record(Long projectId, Long ruleId, Map<String, Object> values, RuleResult result,
-                       ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
-        if (!result.isSuccess()) return;
-        // 导入制品沿用源端字段 ID，未绑定到本地字段前不能写入本地 ID 命名空间。
-        if (snapshot != null && snapshot.isImported()) return;
-        Map<String, String> paths = referencePaths(projectId);
-        if (snapshot != null) paths.putAll(HistoryFieldValues.frozenPaths(snapshot));
-        Map<String, Object> fields = HistoryFieldValues.snapshot(paths, values);
-        if (result.getResult() instanceof Map<?, ?> output) {
-            Map<String, Object> outputValues = new LinkedHashMap<>();
-            output.forEach((key, value) -> outputValues.put(String.valueOf(key), value));
-            fields.putAll(HistoryFieldValues.snapshot(paths, outputValues));
-        }
-        historyRepository.record(projectId, ruleId, result.getTraceId(), LocalDateTime.now(), fields);
+    public Map<String, HistoricalFieldDefinition> historyDefinitions(List<RuleVariable> variables,
+            List<com.hengshucredit.rule.model.entity.RuleModel> models, Map<String, String> paths) {
+        List<Long> ids = paths.keySet().stream().filter(key -> key.startsWith("DATA_OBJECT:"))
+                .map(key -> Long.valueOf(key.substring("DATA_OBJECT:".length()))).toList();
+        var fields = ids.isEmpty() || dataObjectFieldMapper == null ? List.<com.hengshucredit.rule.model.entity.RuleDataObjectField>of()
+                : dataObjectFieldMapper.selectBatchIds(ids);
+        return HistoricalFieldDefinition.build(variables, fields, models, paths);
+    }
+
+    public Map<String, HistoricalFieldDefinition> historyDefaults(Long projectId) {
+        var definitions = historyDefinitions(variableService.listByProject(projectId, null), List.of(), referencePaths(projectId));
+        Map<String, HistoricalFieldDefinition> defaults = new LinkedHashMap<>();
+        definitions.forEach((key, field) -> {
+            if ("INPUT".equals(field.source()) || "API".equals(field.source())) defaults.put(key, field);
+        });
+        return defaults;
     }
 
     public static void prepareSnapshot(VariableResolveOptions options, String modelJson,
                                        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
         options.setDerivedReferencePaths(HistoryFieldValues.frozenPaths(snapshot));
+        options.setDataObjectReferencePaths(new LinkedHashMap<>(snapshot.getReferencePaths()));
+        options.setHistoryFieldDefinitions(HistoricalFieldDefinition.build(snapshot.getVariables(),
+                snapshot.getDataObjectFields(), snapshot.getModels(), options.getDerivedReferencePaths()));
         java.util.Set<Long> derivedIds = new java.util.HashSet<>();
         snapshot.getVariables().stream().filter(variable -> "DERIVED".equals(variable.getVarSource()))
                 .forEach(variable -> derivedIds.add(variable.getId()));
@@ -78,6 +98,11 @@ public class DerivedVariableService {
 
     public Object resolve(RuleVariable variable, Map<String, Object> values, Map<String, String> paths,
                           Map<Long, RuleFunction> functions) {
+        return resolve(variable, values, paths, functions, null);
+    }
+
+    public Object resolve(RuleVariable variable, Map<String, Object> values, Map<String, String> paths,
+                          Map<Long, RuleFunction> functions, Map<String, HistoricalFieldDefinition> definitions) {
         JSONObject config = JSON.parseObject(variable.getSourceConfig());
         DerivedVariableConfig.validate(config);
         Map<String, Object> references = new LinkedHashMap<>();
@@ -106,16 +131,34 @@ public class DerivedVariableService {
         Long rootRuleId = root.get("id") instanceof Number n ? n.longValue() : null;
         LocalDateTime before = root.isEmpty() ? LocalDateTime.now() : context.startedAt();
         long window = config.getLongValue("window");
-        LocalDateTime from = switch (config.getString("windowUnit")) {
-            case "MINUTE" -> before.minusMinutes(window);
-            case "HOUR" -> before.minusHours(window);
-            default -> before.minusDays(window);
-        };
-        List<HistoryQuery.Row> history = historyRepository.query(config.getString("scope"), projectId, rootRuleId, from, before);
+        LocalDateTime from = historyStart(before, window, config.getString("windowUnit"));
+        java.util.Set<String> historyKeys = new java.util.LinkedHashSet<>();
+        for (JSONObject field : DerivedVariableConfig.historicalFields(config)) {
+            String key = DerivedVariableConfig.fieldKey(field);
+            historyKeys.add(key);
+            if (definitions != null) {
+                HistoricalFieldDefinition definition = definitions.get(key);
+                DerivedVariableConfig.require(definition != null && definition.queryable(),
+                        "历史字段未开启结果记录；默认仅支持请求入参和三方调用结果: " + key);
+            }
+        }
+        List<HistoryQuery.Row> history = executionLogHistoryRepository == null
+                ? historyRepository.query(config.getString("scope"), projectId, rootRuleId, from, before)
+                : executionLogHistoryRepository.query(config.getString("scope"), projectId, rootRuleId,
+                from, before, historyKeys, definitions == null ? Map.of() : definitions);
         Object result = HistoryQuery.evaluate(config, history, input, invoker);
         RuntimeContextBridge.addTraceEvent(new LinkedHashMap<>(Map.of("type", "DERIVED_HISTORY", "variableId", variable.getId() == null ? 0L : variable.getId(),
                 "scope", config.getString("scope"), "from", from.toString(), "before", before.toString(), "candidateCount", history.size())));
         return checkedValue(variable, result);
+    }
+
+    static LocalDateTime historyStart(LocalDateTime before, long window, String unit) {
+        return switch (unit) {
+            case "MINUTE" -> before.minusMinutes(window);
+            case "HOUR" -> before.minusHours(window);
+            case "CALENDAR_DAY" -> before.toLocalDate().minusDays(window - 1).atStartOfDay();
+            default -> before.minusDays(window);
+        };
     }
 
     private Object checkedValue(RuleVariable variable, Object value) {

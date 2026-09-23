@@ -1,7 +1,7 @@
 <template>
   <div class="history-filters">
     <div v-for="(filter, index) in modelValue" :key="index" class="filter-row">
-      <operand-picker :value="filter.field" :vars="vars" :allowed-kinds="['REFERENCE']" placeholder="历史属性字段" @input="patch(index, 'field', $event)" />
+      <operand-picker :value="filter.field" :vars="historyVars || vars" :allowed-kinds="['REFERENCE']" placeholder="历史属性字段" @input="patch(index, 'field', $event)" />
       <el-select :model-value="filter.operator" aria-label="筛选操作" @update:model-value="patch(index, 'operator', $event)">
         <el-option v-for="option in operators" :key="option[0]" :value="option[0]" :label="option[1]" />
       </el-select>
@@ -19,7 +19,7 @@ import { DERIVED_OPERAND_KINDS } from '@/utils/derivedVariable'
 export default {
   name: 'HistoryFilters',
   components: { OperandPicker },
-  props: { modelValue: { type: Array, default: () => [] }, vars: { type: Array, default: () => [] }, functions: { type: Array, default: () => [] } },
+  props: { modelValue: { type: Array, default: () => [] }, vars: { type: Array, default: () => [] }, historyVars: { type: Array, default: null }, functions: { type: Array, default: () => [] } },
   emits: ['update:modelValue'],
   data() {
     return { operandKinds: DERIVED_OPERAND_KINDS, operators: [['EQ', '等于'], ['NE', '不等于'], ['GT', '大于'], ['GE', '大于等于'], ['LT', '小于'], ['LE', '小于等于'], ['IS_NULL', '为空'], ['NOT_NULL', '不为空']] }

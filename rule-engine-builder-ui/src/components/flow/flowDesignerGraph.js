@@ -16,6 +16,38 @@ export const FLOW_MENU_OPTIONS = {
   tree: COMMON_MENU_OPTIONS
 }
 
+/**
+ * 清理设计器属性编辑器中的当前焦点。
+ *
+ * LogicFlow 的画布空白区域本身不会接管浏览器焦点，字段选择器关闭后
+ * 引用输入框因此仍会保持焦点，导致用户点击空白处时看起来仍处于输入态。
+ */
+export function blurActiveDesignerControl() {
+  if (typeof document === 'undefined') return false
+  const active = document.activeElement
+  if (!active || active === document.body) return false
+
+  const isControl =
+    (typeof active.matches === 'function' &&
+      active.matches('input, textarea, select, [contenteditable="true"]')) ||
+    (typeof active.closest === 'function' &&
+      active.closest('.el-input, .el-select, .var-picker-wrap, .operand-picker'))
+  if (!isControl || typeof active.blur !== 'function') return false
+
+  active.blur()
+  return true
+}
+
+export function isDesignerInteractiveTarget(target) {
+  if (!target || typeof target.closest !== 'function') return false
+  return Boolean(
+    target.closest(
+      'input, textarea, select, button, [role="button"], [contenteditable="true"], ' +
+        '.el-input, .el-select, .var-picker-wrap, .el-popper'
+    )
+  )
+}
+
 const DIRECTION_VECTOR = {
   top: { x: 0, y: -1 },
   right: { x: 1, y: 0 },

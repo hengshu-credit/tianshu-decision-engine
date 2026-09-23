@@ -203,11 +203,7 @@ public class RuleFieldAnalyzer {
         preparedOutputFields = deduplicateOutputFields(preparedOutputFields);
         Set<String> retainedLocalOutputs =
                 retainedLocalOutputNames(preparedOutputFields, localRuleCallOutputs);
-        List<RuleDefinitionInputField> runtimeSourceFields =
-                runtimeSourceFields(preparedInputFields, varMetaMap);
         preparedInputFields = expandModelInputFields(preparedInputFields, varMetaMap);
-        preparedInputFields = mergeRuntimeSourceFields(
-                preparedInputFields, runtimeSourceFields);
         preparedInputFields = removeOutputFields(preparedInputFields, preparedOutputFields);
         for (RuleDefinitionInputField field : preparedInputFields) {
             RuleDefinitionInputField existing = existingInputFieldMap.get(inputFieldKey(field));
@@ -302,12 +298,8 @@ public class RuleFieldAnalyzer {
                 scriptFields.getInputFields(), projectId,
                 diagnostics, inputPropertySchemas);
         Map<String, Map<String, Object>> varMetaMap = buildVarMetaMap(projectId);
-        List<RuleDefinitionInputField> runtimeSourceFields =
-                runtimeSourceFields(scriptFields.getInputFields(), varMetaMap);
         List<RuleDefinitionInputField> preparedInputFields =
                 expandStableScriptInputFields(scriptFields.getInputFields(), varMetaMap);
-        preparedInputFields = mergeRuntimeSourceFields(
-                preparedInputFields, runtimeSourceFields);
         List<RuleDefinitionOutputField> preparedOutputFields =
                 deduplicateOutputFields(new ArrayList<>(scriptFields.getOutputFields()));
         Map<String, RuleDefinitionInputField> existingInputFieldMap = definitionId == null
@@ -1103,9 +1095,12 @@ public class RuleFieldAnalyzer {
         List<RuleVariable> vars = ruleVariableMapper.selectList(varWrapper);
         for (RuleVariable v : vars) {
             String key = getVarKey(v);
-            if (key != null && !map.containsKey(key)) {
+            if (key != null && (!map.containsKey(key)
+                    || preferVariableMetadata(v, map.get(key), projectId))) {
                 Map<String, Object> meta = new HashMap<>();
                 meta.put("id", v.getId());
+                meta.put("scope", v.getScope());
+                meta.put("projectId", v.getProjectId());
                 meta.put("varLabel", v.getVarLabel());
                 meta.put("varType", v.getVarType());
                 meta.put("scriptName", v.getScriptName());
@@ -1145,6 +1140,7 @@ public class RuleFieldAnalyzer {
                 meta.put("varSource", "dataObject");
                 meta.put("refType", "DATA_OBJECT");
                 meta.put("refVariableId", f.getRefVariableId());
+                meta.put("referenceMode", f.getReferenceMode());
                 map.put(key, meta);
             }
         }
@@ -1330,6 +1326,18 @@ public class RuleFieldAnalyzer {
         return null;
     }
 
+    private boolean preferVariableMetadata(RuleVariable candidate,
+            Map<String, Object> existing, Long projectId) {
+        if (candidate == null || existing == null) return false;
+        String existingScope = String.valueOf(existing.get("scope"));
+        String candidateScope = candidate.getScope();
+        if (!"PROJECT".equalsIgnoreCase(candidateScope)) return false;
+        if (!"PROJECT".equalsIgnoreCase(existingScope)) return true;
+        Object existingProject = existing.get("projectId");
+        return projectId != null && existingProject instanceof Number
+                && ((Number) existingProject).longValue() != projectId;
+    }
+
     private List<RuleDefinitionInputField> expandModelInputFields(List<RuleDefinitionInputField> inputFields,
             Map<String, Map<String, Object>> varMetaMap) {
         List<RuleDefinitionInputField> result = new ArrayList<>();
@@ -1337,37 +1345,6 @@ public class RuleFieldAnalyzer {
         Set<String> visited = new LinkedHashSet<>();
         for (RuleDefinitionInputField field : inputFields) {
             expandFieldRecursive(field, varMetaMap, seen, visited, result);
-        }
-        return result;
-    }
-
-    private List<RuleDefinitionInputField> runtimeSourceFields(
-            List<RuleDefinitionInputField> inputFields,
-            Map<String, Map<String, Object>> varMetaMap) {
-        List<RuleDefinitionInputField> result = new ArrayList<>();
-        Set<String> seen = new LinkedHashSet<>();
-        for (RuleDefinitionInputField field : inputFields) {
-            Map<String, Object> meta = findFieldMeta(field, varMetaMap);
-            String source = meta == null
-                    ? null : normalizeRefType((String) meta.get("varSource"));
-            if ("LIST".equals(source) || "API".equals(source)
-                    || "DB".equals(source)) {
-                addInputFieldIfAbsent(result, seen, field);
-            }
-        }
-        return result;
-    }
-
-    private List<RuleDefinitionInputField> mergeRuntimeSourceFields(
-            List<RuleDefinitionInputField> inputFields,
-            List<RuleDefinitionInputField> runtimeSourceFields) {
-        List<RuleDefinitionInputField> result = new ArrayList<>(inputFields);
-        Set<String> seen = new LinkedHashSet<>();
-        for (RuleDefinitionInputField field : result) {
-            seen.add(inputFieldKey(field));
-        }
-        for (RuleDefinitionInputField field : runtimeSourceFields) {
-            addInputFieldIfAbsent(result, seen, field);
         }
         return result;
     }
@@ -1559,6 +1536,7 @@ public class RuleFieldAnalyzer {
         }
 
         if ("DATA_OBJECT".equals(refType) && meta != null
+                && !"STRUCTURE".equals(meta.get("referenceMode"))
                 && meta.get("refVariableId") instanceof Long) {
             Map<String, Object> referencedMeta = findMetaById(
                     (Long) meta.get("refVariableId"), "VARIABLE", varMetaMap);
@@ -1778,6 +1756,17 @@ public class RuleFieldAnalyzer {
             Map<String, Object> depMeta = findFieldMeta(depField, varMetaMap);
             if (depField.getRefType() == null && depMeta != null && depMeta.get("varSource") != null) {
                 depField.setRefType("VARIABLE");
+            }
+            if (depField.getVarId() == null && depMeta != null
+                    && depMeta.get("id") instanceof Number id) {
+                depField.setVarId(id.longValue());
+            }
+            if (depField.getRefType() == null && depMeta != null
+                    && depMeta.get("refType") != null) {
+                depField.setRefType(normalizeRefType(String.valueOf(depMeta.get("refType"))));
+            }
+            if (depMeta != null && depMeta.get("varType") != null) {
+                depField.setFieldType(String.valueOf(depMeta.get("varType")));
             }
             String depScriptName = trimToNull(depField.getScriptName());
             String depRefType = normalizeRefType(depField.getRefType());
@@ -2345,7 +2334,8 @@ public class RuleFieldAnalyzer {
             for (RuleDefinitionInputField field
                     : qlScriptFieldResolver.resolve(modelJson, null).getInputFields()) {
                 String refType = normalizeRefType(field.getRefType());
-                if ("VARIABLE".equals(refType) || "MODEL".equals(refType)
+                if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType)
+                        || "MODEL".equals(refType)
                         || "MODEL_OUTPUT".equals(refType)) {
                     result.add(field);
                 }
@@ -2357,11 +2347,68 @@ public class RuleFieldAnalyzer {
         for (RuleDefinitionInputField field : extractInputFields(modelJson, modelType)) {
             applyExplicitRef(field, explicitRefMap);
             String refType = normalizeRefType(field.getRefType());
-            if ("VARIABLE".equals(refType) || "MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
+            if ("VARIABLE".equals(refType) || "DATA_OBJECT".equals(refType)
+                    || "MODEL".equals(refType) || "MODEL_OUTPUT".equals(refType)) {
                 result.add(field);
             }
         }
         return result;
+    }
+
+    /** 与编译器使用同一 ID 元信息，展示路径过期时不能将值写入旧路径。 */
+    public List<RuleDefinitionInputField> resolveDirectModelInputFields(
+            String modelJson, String modelType, Long projectId) {
+        List<RuleDefinitionInputField> fields = extractDirectModelInputFields(modelJson, modelType);
+        if (ruleVariableMapper == null) return fields;
+        Map<String, Map<String, Object>> metadata = buildVarMetaMap(projectId);
+        for (RuleDefinitionInputField field : fields) {
+            // 脚本语法中的访问路径不可重写；其引用在脚本解析阶段已校验。
+            if (!"SCRIPT".equalsIgnoreCase(modelType)) {
+                enrichFieldFromMeta(field, metadata, Collections.emptyMap(), Collections.emptyMap());
+            }
+        }
+        return fields;
+    }
+
+    /** 只读取冻结模型及制品元信息，绝不调用会查询主表的脚本字段解析器。 */
+    public List<RuleDefinitionInputField> extractFrozenModelInputFields(
+            String modelJson, String modelType,
+            com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot) {
+        List<RuleDefinitionInputField> fields = new ArrayList<>();
+        if (modelJson == null || modelJson.isBlank()) return new ArrayList<>(snapshot.getInputFields());
+        Map<String, FieldRef> references = collectExplicitRefs(modelJson);
+        if ("SCRIPT".equalsIgnoreCase(modelType)) {
+            for (String path : new QLScriptAnalyzer().analyze(parseObject(modelJson).getString("script")).getDirectInputs()) {
+                RuleDefinitionInputField field = new RuleDefinitionInputField();
+                field.setFieldName(path);
+                field.setScriptName(path);
+                applyExplicitRef(field, references);
+                if (field.getVarId() != null) fields.add(field);
+            }
+        } else {
+            // 可视化提取只读取 JSON，不查询实时资源。
+            fields.addAll(extractDirectModelInputFields(modelJson, modelType));
+        }
+        Map<String, String> paths = new HashMap<>(snapshot.getReferencePaths());
+        for (RuleVariable variable : snapshot.getVariables()) {
+            paths.put(("CONSTANT".equals(variable.getVarSource()) ? "CONSTANT:" : "VARIABLE:")
+                    + variable.getId(), firstNonBlank(variable.getScriptName(), variable.getVarCode()));
+        }
+        for (RuleDefinitionInputField field : fields) {
+            String path = paths.get(field.getRefType() + ":" + field.getVarId());
+            if (path != null && !"SCRIPT".equalsIgnoreCase(modelType)) field.setScriptName(path);
+            for (RuleVariable variable : snapshot.getVariables()) {
+                if ("VARIABLE".equals(field.getRefType()) && Objects.equals(variable.getId(), field.getVarId())) {
+                    field.setFieldType(variable.getVarType());
+                }
+            }
+            for (RuleDataObjectField dataField : snapshot.getDataObjectFields()) {
+                if ("DATA_OBJECT".equals(field.getRefType()) && Objects.equals(dataField.getId(), field.getVarId())) {
+                    field.setFieldType(dataField.getVarType());
+                }
+            }
+        }
+        return fields;
     }
 
     /**

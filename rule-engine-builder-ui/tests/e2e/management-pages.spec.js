@@ -177,13 +177,16 @@ for (const pageCase of pages) {
     const dialog = page.locator('.el-dialog:visible').last()
     await expect(dialog).toBeVisible()
     await expect(dialog.getByText(pageCase.dialogTitle, { exact: true }).first()).toBeVisible()
-    const box = await dialog.boundingBox()
     const viewport = page.viewportSize()
-    expect(box).not.toBeNull()
-    expect(box.x).toBeGreaterThanOrEqual(0)
-    expect(box.y).toBeGreaterThanOrEqual(0)
-    expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
-    expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
+    // 弹窗可见时入场位移动画可能尚未结束，等待最终布局但保持原视口边界断言。
+    await expect(async () => {
+      const box = await dialog.boundingBox()
+      expect(box).not.toBeNull()
+      expect(box.x).toBeGreaterThanOrEqual(0)
+      expect(box.y).toBeGreaterThanOrEqual(0)
+      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 1)
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 1)
+    }).toPass()
 
     await page.keyboard.press('Escape')
     await expect(dialog).toBeHidden()

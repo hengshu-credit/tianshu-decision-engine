@@ -25,4 +25,8 @@ describe('衍生变量配置', () => {
     config.steps = [{ inputs: [], fields: [ref(1)] }]
     expect(validateDerivedConfig(config)).toContain('第 1 层')
   })
+  it('支持自然日窗口用于当日统计', () => {
+    const config = { ...createDerivedConfig(), mode: 'HISTORY', window: 1, windowUnit: 'CALENDAR_DAY' }
+    expect(validateDerivedConfig(config)).toBe('')
+  })
 })

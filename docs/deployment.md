@@ -103,6 +103,8 @@ VITE_PORT=9091
 
 ## 业务系统 SDK 集成
 
+外部客户优先使用 [纯 HTTP SDK 与离线 tar 包](../rule-engine-example/README.md)。以下配置属于完整 SDK `rule-engine-client`；HTTP-only SDK 不使用 Redis、规则同步、本地执行和本地日志上报。
+
 从业务 HTTP 接口到引擎结果返回的完整示例、全局规则关联、多项目客户端及日志开关语义见 [Java 业务服务接入指南](java-service-integration.md)。
 
 业务系统引入 `rule-engine-client` 后，可继续使用项目原有访问令牌，也可按项目配置账号密码、API Key 或 HMAC-SHA256。非旧令牌方式默认先调用 `/api/rule/auth/token` 换取短期 Bearer Token，再同步或执行规则；调用方不需要也不能传 `authCode`，服务端会根据凭证自动识别鉴权配置。

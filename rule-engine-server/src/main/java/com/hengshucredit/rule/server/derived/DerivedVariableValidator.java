@@ -46,6 +46,10 @@ public class DerivedVariableValidator {
         }
         checkCycle(variable, variable, new HashSet<>());
         if (!"HISTORY".equals(config.getString("mode"))) return;
+        for (JSONObject historical : DerivedVariableConfig.historicalFields(config)) {
+            require(canReadHistory(historical, new HashSet<>()),
+                    "历史统计默认仅支持请求入参和三方结果；请先为所选字段开启结果记录: " + fieldKey(historical));
+        }
         String aggregate = config.getString("aggregate");
         JSONObject field = config.getJSONObject("valueField");
         String type = field == null ? "" : type(field);
@@ -77,6 +81,28 @@ public class DerivedVariableValidator {
         return first != null && second != null && (first.equals(second) || NUMERIC.contains(first) && NUMERIC.contains(second));
     }
 
+    private boolean canReadHistory(JSONObject field, Set<Long> visitingObjects) {
+        Long id = field.getLong("refId");
+        if ("VARIABLE".equals(field.getString("refType")) || "CONSTANT".equals(field.getString("refType"))) {
+            RuleVariable variable = variables.getById(id);
+            return variable != null && ("INPUT".equals(variable.getVarSource()) || "API".equals(variable.getVarSource()) || Boolean.TRUE.equals(variable.getRecordResult()));
+        }
+        if ("MODEL_OUTPUT".equals(field.getString("refType"))) {
+            var output = modelFields.selectById(id);
+            return output != null && Boolean.TRUE.equals(output.getRecordResult());
+        }
+        var object = objectFields.selectById(id);
+        if (object == null || !visitingObjects.add(id)) return false;
+        if (Boolean.TRUE.equals(object.getRecordResult())) return true;
+        if (object.referencesValue()) {
+            return canReadHistory(new JSONObject(Map.of("refType", "VARIABLE", "refId", object.getRefVariableId())), visitingObjects);
+        }
+        if (object.getParentFieldId() != null) {
+            return canReadHistory(new JSONObject(Map.of("refType", "DATA_OBJECT", "refId", object.getParentFieldId())), visitingObjects);
+        }
+        return true; // 未绑定来源的对象字段仅能读取历史请求中的值；运行后结果需显式记录。
+    }
+
     private String type(JSONObject reference) {
         Long id = reference.getLong("refId");
         return switch (reference.getString("refType")) {
@@ -97,7 +123,7 @@ public class DerivedVariableValidator {
                 Long upstreamId = reference.getRefId();
                 if ("DATA_OBJECT".equals(reference.getRefType())) {
                     var field = objectFields.selectById(upstreamId);
-                    upstreamId = field == null ? null : field.getRefVariableId();
+                    upstreamId = field == null || !field.referencesValue() ? null : field.getRefVariableId();
                 } else if (!"VARIABLE".equals(reference.getRefType())) continue;
                 if (upstreamId == null) continue;
                 RuleVariable upstream = upstreamId.equals(draft.getId()) ? draft : variables.getById(upstreamId);

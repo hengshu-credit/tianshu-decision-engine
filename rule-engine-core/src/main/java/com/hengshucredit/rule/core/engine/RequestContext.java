@@ -29,9 +29,57 @@ public final class RequestContext {
     private Map<String, Object> constantValues;
     private Consumer<Map<String, Object>> traceEventListener;
     private Map<String, Map<String, Object>> sourceStates = Collections.emptyMap();
+    private Consumer<String> sourceStateResolver;
+
+    public SourceStateScope bindSourceStateResolver(Consumer<String> resolver) {
+        SourceStateScope scope = new SourceStateScope(sourceStateResolver);
+        sourceStateResolver = resolver;
+        return scope;
+    }
+
+    public final class SourceStateScope implements AutoCloseable {
+        private final Consumer<String> previous;
+        private boolean closed;
+        private SourceStateScope(Consumer<String> previous) { this.previous = previous; }
+        @Override public void close() {
+            if (!closed) { sourceStateResolver = previous; closed = true; }
+        }
+    }
     private List<RuntimeWrite> runtimeWrites;
     private int runtimeWriteDepth;
     private Map<String, CustomFunction> functions = Collections.emptyMap();
+    private Map<Long, Map<String, String>> externalFieldPaths = new java.util.concurrent.ConcurrentHashMap<>();
+    private Map<Long, Map<String, String>> externalDefaultPaths = new java.util.concurrent.ConcurrentHashMap<>();
+    private Map<Long, Map<String, String>> externalDefaultAliases = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void registerExternalDefaultField(Long apiId, String key, String path, String sourceKey) {
+        if (apiId == null || key == null || path == null) return;
+        externalDefaultPaths.computeIfAbsent(apiId, ignored -> new java.util.concurrent.ConcurrentHashMap<>()).putIfAbsent(key, path);
+        if (sourceKey != null && !sourceKey.equals(key)) externalDefaultAliases.computeIfAbsent(apiId,
+                ignored -> new java.util.concurrent.ConcurrentHashMap<>()).putIfAbsent(key, sourceKey);
+    }
+
+    /** 根请求内只增加 ID 绑定的接口字段元信息，工作线程共享并发安全的注册表。 */
+    public void registerExternalField(Long apiId, String referenceKey, String resultPath) {
+        if (apiId == null || referenceKey == null || resultPath == null) return;
+        externalFieldPaths.computeIfAbsent(apiId, ignored -> new java.util.concurrent.ConcurrentHashMap<>())
+                .putIfAbsent(referenceKey, resultPath);
+    }
+
+    public Map<String, String> externalFieldPaths(Long apiId) {
+        Map<String, String> result = new LinkedHashMap<>(externalDefaultPaths.getOrDefault(apiId, Collections.emptyMap()));
+        Map<String, String> actual = externalFieldPaths.getOrDefault(apiId, Collections.emptyMap());
+        externalDefaultAliases.getOrDefault(apiId, Collections.emptyMap()).forEach((key, source) -> {
+            String previous = result.get(source);
+            String replacement = actual.get(source);
+            String path = result.get(key);
+            if (previous != null && replacement != null && path != null && (path.equals(previous) || path.startsWith(previous + "."))) {
+                result.put(key, replacement + path.substring(previous.length()));
+            }
+        });
+        result.putAll(actual);
+        return result;
+    }
 
     public CustomFunction function(String code) {
         return functions.get(code);
@@ -89,6 +137,9 @@ public final class RequestContext {
         child.sourceStates = sourceStates;
         child.traceEventListener = listener;
         child.functions = functions;
+        child.externalFieldPaths = externalFieldPaths;
+        child.externalDefaultPaths = externalDefaultPaths;
+        child.externalDefaultAliases = externalDefaultAliases;
         return child;
     }
 
@@ -170,6 +221,7 @@ public final class RequestContext {
     public boolean sourceStatusMatches(String refType, String refId,
                                               String dimension, String expected) {
         if (empty(refType) || empty(refId) || empty(dimension) || expected == null) return false;
+        if (sourceStateResolver != null) sourceStateResolver.accept(sourceStateKey(refType, refId));
         Map<String, Map<String, Object>> states = sourceStates;
         if (states == null) return false;
         Map<String, Object> state = states.get(sourceStateKey(refType, refId));

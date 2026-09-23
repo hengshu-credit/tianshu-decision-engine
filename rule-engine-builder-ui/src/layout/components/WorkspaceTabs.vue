@@ -22,7 +22,6 @@
             :aria-label="tab.title"
             @click="$emit('activate', tab.fullPath)"
           >
-            <span class="workspace-tab__dot" aria-hidden="true" />
             <span class="workspace-tab__title">{{ tab.title }}</span>
           </button>
         </el-tooltip>
@@ -219,19 +218,21 @@ export default {
   flex: 1;
   align-items: center;
   box-sizing: border-box;
-  gap: 6px;
+  gap: 2px;
 }
 .workspace-tab {
   position: relative;
   display: flex;
-  flex: 0 0 160px;
+  flex: 0 0 auto;
   height: 34px;
-  width: 160px;
+  width: fit-content;
+  min-width: 0;
+  max-width: 160px;
   box-sizing: border-box;
   align-items: center;
   color: var(--tianshu-text-secondary);
-  background: transparent;
-  border: 1px solid transparent;
+  background: var(--tianshu-bg-soft);
+  border: 1px solid var(--tianshu-border);
   border-radius: 8px;
   transition: color 160ms ease, background-color 160ms ease,
     border-color 160ms ease, box-shadow 160ms ease;
@@ -248,22 +249,19 @@ export default {
 
   &:hover {
     color: var(--tianshu-text-primary, #334155);
-    background: var(--tianshu-bg-soft);
+    background: var(--tianshu-bg-hover);
+    border-color: var(--tianshu-info-border);
   }
 
   &.is-active {
     color: var(--tianshu-text-primary);
     font-weight: 600;
     background: var(--tianshu-bg-elevated, var(--tianshu-bg-surface));
-    border-color: var(--tianshu-border-subtle);
+    border-color: var(--tianshu-info-border);
     box-shadow: var(--tianshu-shadow-small, 0 2px 8px rgba(15, 23, 42, 0.08));
 
     &::after {
       background: var(--tianshu-brand-background, #{$--color-primary});
-    }
-
-    .workspace-tab__dot {
-      background: var(--el-color-primary, #{$--color-primary});
     }
   }
 }
@@ -272,7 +270,7 @@ export default {
   flex: 1;
   min-width: 0;
   height: 100%;
-  padding: 0 28px;
+  padding: 0 26px 0 8px;
   align-items: center;
   color: inherit;
   font: inherit;
@@ -285,22 +283,13 @@ export default {
     outline-offset: -2px;
   }
 }
-.workspace-tab__dot {
-  position: absolute;
-  left: 12px;
-  flex: none;
-  width: 6px;
-  height: 6px;
-  background: var(--tianshu-border, #cbd5e1);
-  border-radius: 50%;
-}
 .workspace-tab__title {
   flex: 1;
   min-width: 0;
   overflow: hidden;
   font-size: 13px;
   line-height: 20px;
-  text-align: center;
+  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -311,10 +300,10 @@ export default {
 }
 .workspace-tab__close {
   position: absolute;
-  right: 4px;
+  right: 2px;
   display: flex;
   flex: none;
-  width: 24px;
+  width: 20px;
   height: 24px;
   padding: 0;
   align-items: center;

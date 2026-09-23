@@ -103,6 +103,7 @@ public class RuleExecuteService {
         }
 
         return executeTest(definition, content.getCompiledScript(), content.getModelJson(),
+                definition.getModelType(),
                 definitionService.listInputFields(definitionId), params,
                 effectiveProjectId(definition, executionProjectId));
     }
@@ -131,11 +132,15 @@ public class RuleExecuteService {
         }
         RuleFieldAnalyzer.ResolvedFields fields = ruleFieldAnalyzer.resolveFields(
                 definitionId, modelJson, modelType, effectiveProjectId);
+        String effectiveModelType = modelType == null || modelType.trim().isEmpty()
+                ? definition.getModelType() : modelType.trim().toUpperCase(java.util.Locale.ROOT);
         return executeTest(definition, compileResult.getCompiledScript(), modelJson,
+                effectiveModelType,
                 fields.getInputFields(), params, effectiveProjectId);
     }
 
     private RuleResult executeTest(RuleDefinition definition, String compiledScript, String modelJson,
+                                   String modelType,
                                    List<RuleDefinitionInputField> inputFields,
                                    Map<String, Object> params,
                                    Long executionProjectId) {
@@ -143,7 +148,7 @@ public class RuleExecuteService {
         Map<String, CustomFunction> functionBindings = prepareFunctions(functions);
         String funcPrefix = functionRegistrar.buildScriptFunctionPrefix(functions);
         String fullScript = funcPrefix.isEmpty() ? compiledScript : funcPrefix + "\n" + compiledScript;
-        List<RuleDefinitionInputField> directFields = directInputFields(modelJson, definition.getModelType());
+        List<RuleDefinitionInputField> directFields = directInputFields(modelJson, modelType, executionProjectId);
         DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                 referencePlan(null, directFields);
         Set<String> explicitReferenceTargets = referencePlan.captureExplicitTargets(params);
@@ -162,15 +167,18 @@ public class RuleExecuteService {
         }
         runtimeRuleInvoker.enter(definition, executionProjectId, projectCode,
                 executeParams, originalInput, true, modelJson);
+        bindInvocationCache(resolveOptions);
         long executionStart = System.currentTimeMillis();
+        java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
-            variableSourceResolver.resolveInto(executionProjectId, executeParams,
-                    resolveOptions);
-            referencePlan.apply(executeParams, explicitReferenceTargets);
-            RuntimeContextBridge.replaceSourceStates(resolveOptions.getSourceStates());
-            result = qlExpressEngine.execute(qlExpressEngine.prepare(fullScript), executeParams, true,
-                    RuntimeContextBridge.currentContext());
+            bindHistoryDefaults(executionProjectId, resolveOptions);
+            try (var context = RuleVariableExecutionContext.prepare(modelType, executeParams,
+                    resolveOptions, referencePlan, explicitReferenceTargets,
+                    () -> variableSourceResolver.resolveInto(executionProjectId, executeParams, resolveOptions))) {
+                result = qlExpressEngine.execute(qlExpressEngine.prepare(fullScript), context, true,
+                        RuntimeContextBridge.currentContext());
+            }
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -191,6 +199,11 @@ public class RuleExecuteService {
         log.setRuleVersion(definition.getCurrentVersion());
         log.setModelType(definition.getModelType());
         log.setSource("SERVER");
+        log.setRootRuleId(definition.getId());
+        log.setExecutionProjectId(executionProjectId);
+        log.setStartedAt(historyStartedAt);
+        log.setHistoryFields(JSON.toJSONString(resolveOptions.getInvocationCache().historySnapshot(inputFields, originalInput, executeParams),
+                com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
         log.setInputParams(toJsonSafely(originalInput));
         log.setOutputResult(toJsonSafely(result.getResult()));
         log.setSuccess(result.isSuccess() ? 1 : 0);
@@ -307,8 +320,11 @@ public class RuleExecuteService {
         String runtimeScript = runtimeSnapshot == null || runtimeSnapshot.getCompiledScript() == null
                 ? published.getCompiledScript() : runtimeSnapshot.getCompiledScript();
         // Published artifacts already carry ID-bound fields. Never re-resolve them against live metadata.
+        // 公共输入投影只保留原始字段；数据对象路径仍需从冻结模型建立
+        // DATA_OBJECT -> 源变量绑定，才能自动触发 API/名单等运行时来源。
         List<RuleDefinitionInputField> directFields = runtimeSnapshot == null
-                ? directInputFields(runtimeModelJson, runtimeModelType) : inputFields;
+                ? directInputFields(runtimeModelJson, runtimeModelType, executionProjectId)
+                : ruleFieldAnalyzer.extractFrozenModelInputFields(runtimeModelJson, runtimeModelType, runtimeSnapshot);
         DataObjectFieldReferenceResolver.ReferencePlan referencePlan =
                 referencePlan(runtimeSnapshot, directFields);
         Set<String> explicitReferenceTargets = referencePlan.captureExplicitTargets(params);
@@ -342,21 +358,25 @@ public class RuleExecuteService {
                     executeParams, originalInput, false, runtimeModelJson,
                     runtimeSnapshot);
         }
+        bindInvocationCache(effectiveOptions);
         runtimeRuleInvoker.setTraceEnabled(collectTrace);
         long executionStart = System.currentTimeMillis();
+        java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
         RuleResult result = new RuleResult();
         try (var ignored = RuntimeContextBridge.currentContext().bindFunctions(functionBindings)) {
-            if (runtimeSnapshot == null) {
-                variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
-            } else {
-                variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
-                        runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(),
-                        executeParams, effectiveOptions);
+            bindHistoryDefaults(executionProjectId, effectiveOptions);
+            try (var context = RuleVariableExecutionContext.prepare(runtimeModelType, executeParams,
+                    effectiveOptions, referencePlan, explicitReferenceTargets, () -> {
+                        if (runtimeSnapshot == null) {
+                            variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
+                        } else {
+                            variableSourceResolver.resolveIntoSnapshot(runtimeSnapshot.getVariables(),
+                                    runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(), executeParams, effectiveOptions);
+                        }
+                    })) {
+                result = qlExpressEngine.execute(qlExpressEngine.prepare(runtimeScript), context, collectTrace,
+                        RuntimeContextBridge.currentContext());
             }
-            referencePlan.apply(executeParams, explicitReferenceTargets);
-            RuntimeContextBridge.replaceSourceStates(effectiveOptions.getSourceStates());
-            result = qlExpressEngine.execute(qlExpressEngine.prepare(runtimeScript), executeParams, collectTrace,
-                    RuntimeContextBridge.currentContext());
         } catch (RuleTerminationSignal e) {
             result.setSuccess(true);
             result.setResult(runtimeRuleInvoker.collectTerminationResult());
@@ -379,6 +399,13 @@ public class RuleExecuteService {
         log.setArtifactDigest(published.getArtifactDigest());
         log.setModelType(published.getModelType());
         log.setSource(source == null ? "CLIENT_SERVER" : source);
+        log.setRootRuleId(published.getDefinitionId());
+        log.setExecutionProjectId(executionProjectId);
+        log.setStartedAt(historyStartedAt);
+        if (runtimeSnapshot == null || !runtimeSnapshot.isImported()) {
+            log.setHistoryFields(JSON.toJSONString(effectiveOptions.getInvocationCache().historySnapshot(inputFields, originalInput, executeParams),
+                    com.alibaba.fastjson.serializer.SerializerFeature.WriteMapNullValue));
+        }
         log.setClientAppName(clientAppName);
         applyAuthAttribution(log, authContext);
         log.setInputParams(toJsonSafely(originalInput));
@@ -391,10 +418,6 @@ public class RuleExecuteService {
         }
         if (!isExperimentSource(source)) {
             logService.save(log);
-            if (derivedVariableService != null) {
-                derivedVariableService.record(executionProjectId, published.getDefinitionId(),
-                        executeParams, result, runtimeSnapshot);
-            }
         }
         billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(),
                 result.getErrorMessage(), authContext);
@@ -447,8 +470,41 @@ public class RuleExecuteService {
         for (RuleDefinitionInputField field : directFields) {
             addRequiredScriptName(names, field);
         }
+        // 衍生变量是内部计算节点，不应进入对外输入字段投影；但其本身仍必须
+        // 进入本次解析集合，否则脚本只会读到未取值的同名变量。
+        if (modelJson != null && !modelJson.trim().isEmpty()) {
+            try {
+                names.addAll(OperandDependencyCollector.collectReferenceDisplayCodes(
+                        JSON.parse(modelJson), "VARIABLE"));
+            } catch (RuntimeException ignored) {
+                // 编译阶段会给出模型 JSON 诊断；执行入口不在此处吞掉编译错误。
+            }
+        }
         effective.setRequiredScriptNames(names);
         return effective;
+    }
+
+    private void bindInvocationCache(VariableResolveOptions options) {
+        RuleExecutionSession session = runtimeRuleInvoker.currentSession();
+        if (session != null) {
+            options.setInvocationCache(session.getInvocationCache());
+        } else if (options.getInvocationCache() == null) {
+            options.setInvocationCache(new VariableResolutionInvocationCache());
+        }
+    }
+
+    private void bindHistoryDefaults(Long projectId, VariableResolveOptions options) {
+        if (derivedVariableService == null) return;
+        var defaults = derivedVariableService.historyDefaults(projectId);
+        var objectPaths = new LinkedHashMap<>(derivedVariableService.objectReferencePaths(projectId));
+        if (options.getDataObjectReferencePaths() != null) objectPaths.putAll(options.getDataObjectReferencePaths());
+        var session = runtimeRuleInvoker.currentSession();
+        if (session != null) options.getInvocationCache().registerObjectInputs(objectPaths, session.getOriginalInput());
+        options.getInvocationCache().registerHistoryDefaults(defaults);
+        for (var field : defaults.values()) {
+            if ("API".equals(field.source())) RuntimeContextBridge.currentContext().registerExternalDefaultField(
+                    field.apiId(), field.key(), field.apiResultPath(), field.inputRootKey());
+        }
     }
 
     private void addRequiredScriptName(Set<String> names, RuleDefinitionInputField field) {
@@ -458,11 +514,11 @@ public class RuleExecuteService {
     }
 
     private List<RuleDefinitionInputField> directInputFields(
-            String modelJson, String modelType) {
+            String modelJson, String modelType, Long projectId) {
         if (ruleFieldAnalyzer == null || modelJson == null || modelJson.trim().isEmpty()) {
             return Collections.emptyList();
         }
-        return ruleFieldAnalyzer.extractDirectModelInputFields(modelJson, modelType);
+        return ruleFieldAnalyzer.resolveDirectModelInputFields(modelJson, modelType, projectId);
     }
 
     private DataObjectFieldReferenceResolver.ReferencePlan referencePlan(

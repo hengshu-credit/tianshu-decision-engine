@@ -15,17 +15,27 @@ public final class SourceResolutionResult {
     private final Object value;
     private final Map<String, Map<String, Object>> sourceStates;
     private final List<Map<String, Object>> traceEvents;
+    private final RuntimeException failure;
 
     public SourceResolutionResult(int order, String scriptName, boolean resolved, Object value,
                                   Map<String, Map<String, Object>> sourceStates,
                                   List<Map<String, Object>> traceEvents) {
+        this(order, scriptName, resolved, value, sourceStates, traceEvents, null);
+    }
+
+    public SourceResolutionResult(int order, String scriptName, boolean resolved, Object value,
+                                  Map<String, Map<String, Object>> sourceStates,
+                                  List<Map<String, Object>> traceEvents, RuntimeException failure) {
         this.order = order;
         this.scriptName = scriptName;
         this.resolved = resolved;
         this.value = copyValue(value);
         this.sourceStates = copyStates(sourceStates);
         this.traceEvents = copyEvents(traceEvents);
+        this.failure = failure;
     }
+
+    public RuntimeException getFailure() { return failure; }
 
     public int getOrder() {
         return order;

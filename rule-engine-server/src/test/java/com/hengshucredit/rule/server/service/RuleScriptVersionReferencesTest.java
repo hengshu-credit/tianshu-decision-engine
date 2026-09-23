@@ -4,6 +4,16 @@ import org.junit.Test;
 import static org.junit.Assert.*;
 
 public class RuleScriptVersionReferencesTest {
+
+    @Test public void stablePathOperandsParticipateInDependencyClosure() {
+        var model = JSONObject.parseObject("{\"leftOperand\":{\"kind\":\"PATH\","
+                + "\"refType\":\"DATA_OBJECT\",\"refId\":268,\"value\":\"metrics.found\"},"
+                + "\"manual\":{\"kind\":\"PATH\",\"value\":\"unbound.path\"}}");
+        var refs = OperandDependencyCollector.collectReferences(model);
+        assertEquals(1, refs.size());
+        assertEquals(Long.valueOf(268), refs.get(0).getRefId());
+        assertEquals("DATA_OBJECT", refs.get(0).getRefType());
+    }
     @Test public void literalIdCallsAreCollectedButCommentsAndStringsAreNotCalls() {
         JSONObject model = new JSONObject();
         model.put("script", "// executeRuleById('99')\n text = \"executeRuleById('98')\"; executeRuleVersionById('22', '81'); executeRuleById(dynamicId);");
@@ -12,5 +22,19 @@ public class RuleScriptVersionReferencesTest {
         assertEquals(Long.valueOf(22), references.get(0).getRefId());
         assertEquals("FIXED", references.get(0).getVersionMode());
         assertEquals(Long.valueOf(81), references.get(0).getVersionBindingId());
+    }
+
+    @Test public void variableReferenceDisplayCodesCanBeAddedToRuntimeResolutionSet() {
+        JSONObject model = new JSONObject();
+        JSONObject operand = new JSONObject();
+        operand.put("kind", "REFERENCE");
+        operand.put("refType", "VARIABLE");
+        operand.put("refId", 37L);
+        operand.put("code", "age");
+        model.put("leftOperand", operand);
+        model.put("other", "not-an-operand");
+
+        assertEquals(java.util.Set.of("age"),
+                OperandDependencyCollector.collectReferenceDisplayCodes(model, "VARIABLE"));
     }
 }

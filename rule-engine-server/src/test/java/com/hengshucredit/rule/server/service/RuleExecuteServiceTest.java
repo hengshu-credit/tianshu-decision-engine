@@ -39,6 +39,61 @@ import static org.junit.Assert.assertTrue;
 public class RuleExecuteServiceTest {
 
     @Test
+    public void publishedFlowOnlyResolvesExternalSourceWhenItsBranchReadsTheValue() {
+        RuleExecuteService service = new RuleExecuteService();
+        ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = new ArtifactRuntimeSnapshotService.RuntimeSnapshot();
+        ReflectionTestUtils.setField(snapshot, "compiledScript", "if (reject) { return 0; }\nreturn externalScore + externalScore;");
+        ReflectionTestUtils.setField(snapshot, "modelType", "FLOW");
+        ReflectionTestUtils.setField(snapshot, "modelJson", "{\"nodes\":[],\"edges\":[]}");
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setScriptName("reject"); input.setFieldType("BOOLEAN");
+        snapshot.getInputFields().add(input);
+        RuleDefinitionInputField external = new RuleDefinitionInputField();
+        external.setScriptName("externalScore"); external.setVarId(8L); external.setRefType("VARIABLE");
+        int[] calls = {0};
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override public List<RuleDefinitionInputField> extractFrozenModelInputFields(String json, String type,
+                    ArtifactRuntimeSnapshotService.RuntimeSnapshot frozen) { return List.of(external); }
+        });
+        ReflectionTestUtils.setField(service, "artifactRuntimeSnapshotService", new ArtifactRuntimeSnapshotService() {
+            @Override public RuntimeSnapshot load(Long artifact, Long definition, Long project) { return snapshot; }
+        });
+        ReflectionTestUtils.setField(service, "variableSourceResolver", new VariableSourceResolver() {
+            @Override public Map<String, Object> resolveIntoSnapshot(List<RuleVariable> variables, List<RuleModel> models,
+                    List<RuleFunction> functions, Map<String, Object> values, VariableResolveOptions options) {
+                if (options.getRequiredScriptNames().contains("externalScore")) {
+                    calls[0]++;
+                    values.put("externalScore", 88);
+                }
+                return values;
+            }
+        });
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(10L); published.setArtifactId(99L); published.setRuleCode("BRANCHED");
+        published.setProjectCode("project_a"); published.setModelType("FLOW"); published.setVersion(1);
+        try {
+            RuleResult rejected = service.executePublished(published, Map.of("reject", true), 1L, "test");
+            assertTrue(rejected.getErrorMessage(), rejected.isSuccess());
+            assertEquals(0, ((Number) rejected.getResult()).intValue());
+            assertEquals("提前拒绝不能预先请求未走到分支的外数", 0, calls[0]);
+            RuleResult accepted = service.executePublished(published, Map.of("reject", false), 1L, "test");
+            assertTrue(accepted.getErrorMessage(), accepted.isSuccess());
+            assertEquals(176, ((Number) accepted.getResult()).intValue());
+            assertEquals("相同字段多次读取只解析一次", 1, calls[0]);
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
     public void publishedScriptUsesFrozenFieldsWithoutReenteringLiveAnalysis() {
         RuleExecuteService service = new RuleExecuteService();
         QLExpressEngine engine = new QLExpressEngine();
@@ -291,6 +346,67 @@ public class RuleExecuteServiceTest {
     }
 
     @Test
+    public void runtimeResolutionIncludesDerivedReferencesWithoutExposingThemAsInputFields() {
+        RuleExecuteService service = new RuleExecuteService();
+        RuleDefinitionInputField input = new RuleDefinitionInputField();
+        input.setScriptName("idcard_no");
+        input.setFieldType("STRING");
+
+        VariableResolveOptions options = org.springframework.test.util.ReflectionTestUtils.invokeMethod(
+                service, "withInputFields", VariableResolveOptions.defaults(),
+                Collections.singletonList(input),
+                "{\"leftOperand\":{\"kind\":\"REFERENCE\",\"refType\":\"VARIABLE\",\"refId\":37,\"code\":\"age\"}}",
+                Collections.emptyList());
+
+        assertTrue(options.getRequiredScriptNames().contains("idcard_no"));
+        assertTrue(options.getRequiredScriptNames().contains("age"));
+    }
+
+    @Test
+    public void previewUsesRequestedModelTypeWhenAnalyzingDirectFields() {
+        RuleExecuteService service = new RuleExecuteService();
+        String[] analyzedType = new String[1];
+        RecordingPreviewResolver resolver = new RecordingPreviewResolver();
+
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+        ReflectionTestUtils.setField(service, "definitionService", new FakeDefinitionService());
+        ReflectionTestUtils.setField(service, "projectService", new FakeProjectService());
+        ReflectionTestUtils.setField(service, "logService", new RecordingLogService());
+        ReflectionTestUtils.setField(service, "functionService", new FakeFunctionService());
+        ReflectionTestUtils.setField(service, "functionRegistrar", new FunctionRegistrar());
+        ReflectionTestUtils.setField(service, "billingService", new RecordingBillingService());
+        ReflectionTestUtils.setField(service, "variableSourceResolver", resolver);
+        ReflectionTestUtils.setField(service, "runtimeRuleInvoker", new NoOpRuntimeInvoker());
+        ReflectionTestUtils.setField(service, "executionParameterBinder", new ExecutionParameterBinder());
+        ReflectionTestUtils.setField(service, "compileService", new RuleCompileService() {
+            @Override
+            public CompileResult compilePreview(Long definitionId, String modelJson, String modelType) {
+                return CompileResult.ok("1", "QLEXPRESS");
+            }
+        });
+        ReflectionTestUtils.setField(service, "ruleFieldAnalyzer", new RuleFieldAnalyzer() {
+            @Override
+            public ResolvedFields resolveFields(Long definitionId, String modelJson,
+                                                String modelType, Long projectId) {
+                return new ResolvedFields(Collections.emptyList(), Collections.emptyList());
+            }
+
+            @Override
+            public List<RuleDefinitionInputField> extractDirectModelInputFields(
+                    String modelJson, String modelType) {
+                analyzedType[0] = modelType;
+                return Collections.emptyList();
+            }
+        });
+
+        RuleResult result = service.testExecutePreview(
+                10L, "{\"nodes\":[]}", "FLOW", Collections.emptyMap());
+
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("FLOW", analyzedType[0]);
+    }
+
+    @Test
     public void previewExecutionWithNoInputsRequiresNoSourceVariables() {
         RuleExecuteService service = new RuleExecuteService();
         RecordingPreviewResolver resolver = new RecordingPreviewResolver();
@@ -469,7 +585,7 @@ public class RuleExecuteServiceTest {
     }
 
     @Test
-    public void executePublishedResolvesExternalVariablesBeforeRunningScript() {
+    public void executePublishedFlowResolvesReadSourcesAndPreservesBindingAndLogging() {
         RuleExecuteService service = new RuleExecuteService();
         RecordingVariableSourceResolver resolver = new RecordingVariableSourceResolver();
         RecordingLogService logService = new RecordingLogService();
@@ -523,7 +639,7 @@ public class RuleExecuteServiceTest {
         assertEquals(Long.valueOf(1), resolver.projectId);
         assertNotNull(resolver.requiredScriptNames);
         assertTrue(resolver.requiredScriptNames.contains("externalScore"));
-        assertTrue(resolver.requiredScriptNames.contains("facenox_antispoof.results"));
+        assertFalse("未读取的模型输出不能触发解析", resolver.requiredScriptNames.contains("facenox_antispoof.results"));
         assertNotNull(logService.saved);
         assertEquals(1, logService.saveCount);
         assertEquals("RISK_RULE", logService.saved.getRuleCode());

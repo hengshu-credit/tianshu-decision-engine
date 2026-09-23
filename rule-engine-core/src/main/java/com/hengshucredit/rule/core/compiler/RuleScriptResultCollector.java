@@ -29,7 +29,8 @@ public final class RuleScriptResultCollector {
             return;
         }
         StringBuilder head = new StringBuilder();
-        // 收集需要初始化的父对象路径（去重、保持插入顺序）
+        // 收集需要初始化的父对象路径（去重、保持插入顺序）。父对象可能已经是输入对象，
+        // 只能在为空时创建，不能直接赋值为空对象覆盖调用方数据。
         LinkedHashSet<String> parentInitSet = new LinkedHashSet<>();
         for (String code : uniq) {
             if (code.contains(".")) {
@@ -44,9 +45,13 @@ public final class RuleScriptResultCollector {
                 }
             }
         }
-        // 先初始化父对象
+        // 先按层级初始化缺失父对象，并同步回运行时上下文。
         for (String p : parentInitSet) {
-            head.append(p).append(" = {}\n");
+            head.append("if (").append(p).append(" == null) {\n")
+                    .append("    ").append(p).append(" = jsonParse(\"{}\");\n")
+                    .append("    setRuntimeValue(\"").append(escapeJsonKeyForMapLiteral(p))
+                    .append("\", ").append(p).append(");\n")
+                    .append("}\n");
         }
         // 再初始化字段本身（嵌套属性此时父对象已存在，不会空指针）
         for (String code : uniq) {

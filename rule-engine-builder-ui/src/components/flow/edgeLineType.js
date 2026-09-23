@@ -81,6 +81,7 @@ export function mergeEdgePropertiesFromForm(currentProps, form) {
   const next = { ...(currentProps || {}) }
   next.conditionName = form.conditionName != null ? form.conditionName : ''
   next.conditionExpr = form.conditionExpr != null ? form.conditionExpr : ''
+  if (Number.isFinite(form.priority)) next.priority = form.priority
   ;['leftVarId', 'leftRefType', 'rightVarId', 'rightRefType', 'conditionConfig'].forEach(key => {
     if (Object.prototype.hasOwnProperty.call(form, key)) {
       next[key] = form[key] || null

@@ -59,6 +59,8 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                         String dimLabel = dim.getString("varLabel");
                         JSONArray rules = dim.getJSONArray("rules");
                         if (rules == null || rules.isEmpty()) continue;
+                        double groupWeight = readWeight(group, "groupWeight");
+                        double dimensionWeight = readWeight(dim, "dimensionWeight");
 
                         String dimScoreVar = "_dim_" + g + "_" + d;
                         script.append(dimScoreVar).append(" = 0;\n");
@@ -78,7 +80,9 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
                         script.append("// ").append(dimLabel != null ? dimLabel : "维度" + (d + 1))
                               .append(" 得分累加\n");
                         script.append(resCode).append(" = ").append(resCode)
-                              .append(" + ").append(dimScoreVar).append(";\n");
+                              .append(" + ").append(dimScoreVar)
+                              .append(" * ").append(formatNumber(groupWeight * dimensionWeight))
+                              .append(";\n");
                     }
                 }
             }
@@ -175,6 +179,20 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
 
     private String resolveVar(Long varId, String varCode, VarContext varContext) {
         return resolveVar(varId, null, varCode, varContext);
+    }
+
+    private static double readWeight(JSONObject holder, String label) {
+        if (holder == null || !holder.containsKey("weight")) return 1.0d;
+        double value = holder.getDoubleValue("weight");
+        if (Double.isNaN(value) || Double.isInfinite(value) || value < 0) {
+            throw new IllegalArgumentException(label + "必须是大于或等于 0 的有限数字");
+        }
+        return value;
+    }
+
+    private static String formatNumber(double value) {
+        if (value == Math.rint(value)) return String.format(java.util.Locale.ROOT, "%.0f", value);
+        return Double.toString(value);
     }
 
     private String resolveVar(Long varId, String refType, String varCode, VarContext varContext) {

@@ -38,6 +38,22 @@ test('看板初始加载不拉伸说明区，查询保留图表和页面布局',
   }
 })
 
+test('看板地图可切换到市级和县级行政层级', async ({ page }) => {
+  const { assertClean } = await installDistRoutes(page)
+  await page.goto('http://tianshu.local/index.html#/dashboard')
+
+  const level = page.locator('.dashboard-map-toolbar .el-select').nth(1)
+  await expect(level).toBeVisible()
+  await level.click()
+  await page.getByRole('option', { name: '地市级行政区', exact: true }).click()
+  await expect(level).toContainText('地市级行政区')
+
+  await level.click()
+  await page.getByRole('option', { name: '区县级行政区', exact: true }).click()
+  await expect(level).toContainText('区县级行政区')
+  assertClean()
+})
+
 test('全局字体、业务文本选择和关键按钮语义可用', async ({ page }) => {
   const fontResponses = []
   page.on('response', response => {

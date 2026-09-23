@@ -27,6 +27,24 @@ function createHorizontalGraph() {
 }
 
 describe.each(DESIGNERS)('%s画布持久化', (name, designer) => {
+  test('加载时按ID同步连线引用，通过画布属性API保留条件和连线配置', () => {
+    const conditionConfig = { type: 'group', children: [] }
+    const properties = { leftVarId: 19, leftRefType: 'VARIABLE', leftVarLabel: '旧名称', conditionConfig, priority: 4 }
+    const context = {
+      projectRefs: [{ varObj: { id: 19 }, refType: 'VARIABLE', refLabel: { label: '新名称', code: 'riskFlag' } }],
+      lf: { getGraphData: () => ({ nodes: [], edges: [{ id: 'edge-1', properties }] }), setProperties: vi.fn() },
+      syncActionDataVarRefs: vi.fn(() => false),
+      syncConditionConfigVarRefs: vi.fn(() => false),
+    }
+
+    designer.methods._syncModelVarRefs.call(context)
+
+    expect(context.lf.setProperties).toHaveBeenCalledWith('edge-1', {
+      ...properties, leftVarLabel: '新名称 riskFlag', leftRefType: 'VARIABLE', conditionConfig, priority: 4,
+    })
+    expect(context.syncConditionConfigVarRefs).toHaveBeenCalledWith(conditionConfig)
+  })
+
   test('默认分支不凭空生成空条件，已配置的半填条件仍保留供校验', () => {
     const context = {
       createConditionRootFromVisual: designer.methods.createConditionRootFromVisual,

@@ -65,18 +65,19 @@ public final class OperandValueResolver {
                     && (operand.getLong("refId") == null || empty(operand.getString("refType")))) {
                 throw new IllegalArgumentException("受管字段引用缺少 ID 或引用类型");
             }
-            if ("REFERENCE".equals(kind) && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
+            boolean managed = operand.getLong("refId") != null && !empty(operand.getString("refType"));
+            if (managed && "CONSTANT".equalsIgnoreCase(operand.getString("refType"))) {
                 Long refId = operand.getLong("refId");
                 String refKey = refId == null ? null : "CONSTANT:" + refId;
                 if (refKey == null || referenceValues == null || !referenceValues.containsKey(refKey)) {
                     throw new IllegalArgumentException("常量引用不存在、已停用或值不合法，ID=" + refId);
                 }
-                return referenceValues.get(refKey);
+                return relativeValue(referenceValues.get(refKey), operand.getString("relativePath"));
             }
-            if ("REFERENCE".equals(kind)) {
+            if (managed) {
                 String refKey = operand.getString("refType").trim().toUpperCase() + ":" + operand.getLong("refId");
                 if (referenceValues != null && referenceValues.containsKey(refKey)) {
-                    return referenceValues.get(refKey);
+                    return relativeValue(referenceValues.get(refKey), operand.getString("relativePath"));
                 }
             }
             String path = firstText(operand.getString("value"), operand.getString("code"));
@@ -92,6 +93,14 @@ public final class OperandValueResolver {
             throw new IllegalArgumentException("名单查询节点只能由服务端名单执行器解析");
         }
         throw new IllegalArgumentException("不支持的表达式节点类型: " + kind);
+    }
+
+    private static Object relativeValue(Object value, String path) {
+        if (empty(path)) return value;
+        if (!path.startsWith(".") && !path.startsWith("[")) {
+            throw new IllegalArgumentException("相对字段路径必须以 . 或 [ 开头");
+        }
+        return value == null ? null : com.alibaba.fastjson.JSONPath.eval(value, "$" + path);
     }
 
     public static Set<String> collectPaths(String operandJson) {
@@ -145,14 +154,13 @@ public final class OperandValueResolver {
             Object value = resolve(field.getSourceOperand(), values, referenceValues, functionInvoker);
             boolean sourceIsConstant = isConstantReference(field.getSourceOperand());
             String managedRefKey = managedRefKey(field);
-            boolean managedReferencePresent = empty(field.getSourceOperand())
-                    && managedRefKey != null && referenceValues != null
+            boolean managedReferencePresent = managedRefKey != null && referenceValues != null
                     && referenceValues.containsKey(managedRefKey);
-            if (managedReferencePresent) {
+            if (managedReferencePresent && empty(field.getSourceOperand())) {
                 value = referenceValues.get(managedRefKey);
             }
             boolean defaultIsConstant = false;
-            if (value == null && !sourceIsConstant && !managedReferencePresent) {
+            if (value == null && !sourceIsConstant && !managedReferencePresent && empty(field.getSourceOperand())) {
                 value = readPath(values, firstText(field.getScriptName(), field.getFieldName()));
             }
             if (value == null && !sourceIsConstant && !managedReferencePresent) {
@@ -174,11 +182,21 @@ public final class OperandValueResolver {
     }
 
     public static void write(String operandJson, Map<String, Object> values, Object value) {
+        write(operandJson, values, value, null);
+    }
+
+    public static void write(String operandJson, Map<String, Object> values, Object value,
+                              Map<String, String> referencePaths) {
         if (operandJson == null || operandJson.trim().isEmpty() || values == null) return;
         JSONObject operand = JSON.parseObject(operandJson);
         String kind = operand.getString("kind");
         if (!"PATH".equals(kind) && !"REFERENCE".equals(kind)) return;
         String path = firstText(operand.getString("value"), operand.getString("code"));
+        if (referencePaths != null && operand.getLong("refId") != null && !empty(operand.getString("refType"))) {
+            path = referencePaths.get(operand.getString("refType") + ":" + operand.getLong("refId"));
+            if (empty(path)) throw new IllegalArgumentException("模型输出目标不在执行快照中");
+            if (!empty(operand.getString("relativePath"))) path += operand.getString("relativePath");
+        }
         if (path == null || path.trim().isEmpty()) return;
         String[] parts = path.split("\\.");
         Map<String, Object> current = values;

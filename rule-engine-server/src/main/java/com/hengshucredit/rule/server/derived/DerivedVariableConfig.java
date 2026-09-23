@@ -34,6 +34,27 @@ public final class DerivedVariableConfig {
         return inputs;
     }
 
+    public static List<JSONObject> historicalFields(JSONObject config) {
+        List<JSONObject> fields = new ArrayList<>();
+        if (!"HISTORY".equals(config.getString("mode"))) return fields;
+        add(fields, config.getJSONObject("valueField"));
+        fields.addAll(objects(config, "subjectFields"));
+        for (JSONObject filter : objects(config, "filters")) add(fields, filter.getJSONObject("field"));
+        List<JSONObject> steps = objects(config, "steps");
+        for (int index = 0; index < steps.size(); index++) {
+            JSONObject step = steps.get(index);
+            fields.addAll(objects(step, "fields"));
+            if (index > 0) fields.addAll(objects(step, "fromFields"));
+            for (JSONObject filter : objects(step, "filters")) add(fields, filter.getJSONObject("field"));
+        }
+        JSONObject geo = config.getJSONObject("geo");
+        if (geo != null) {
+            add(fields, geo.getJSONObject("longitudeField"));
+            add(fields, geo.getJSONObject("latitudeField"));
+        }
+        return fields;
+    }
+
     public static void validate(JSONObject config) {
         require(config != null, "请配置衍生逻辑");
         if ("EXPRESSION".equals(config.getString("mode"))) {
@@ -45,7 +66,8 @@ public final class DerivedVariableConfig {
             require(window != null && window > 0 && window <= 36500, "时间窗口必须是 1 至 36500 的整数");
             require(new java.math.BigDecimal(String.valueOf(config.get("window"))).compareTo(java.math.BigDecimal.valueOf(window)) == 0,
                     "时间窗口必须是整数，不能截断小数");
-            require(config.getString("windowUnit") != null && Set.of("MINUTE", "HOUR", "DAY").contains(config.getString("windowUnit")), "时间窗口单位无效");
+            require(config.getString("windowUnit") != null
+                    && Set.of("MINUTE", "HOUR", "DAY", "CALENDAR_DAY").contains(config.getString("windowUnit")), "时间窗口单位无效");
             require(config.getString("aggregate") != null && AGGREGATES.contains(config.getString("aggregate")), "请选择支持的统计方法");
             String mode = config.getString("recordMode");
             require(mode == null || Set.of("ALL", "LATEST_PER_SUBJECT").contains(mode), "进件取值方式无效");
