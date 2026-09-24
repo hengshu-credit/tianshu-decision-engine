@@ -5,7 +5,7 @@
   const themeToggle = document.querySelector('#theme-toggle')
   const search = document.querySelector('#manual-search')
   const tocLinks = [...document.querySelectorAll('#toc a')]
-  const sections = [...document.querySelectorAll('.workflow-scrolly, .manual-section')]
+  const sections = [...document.querySelectorAll('.hero, .manual-section')]
   const searchable = [...document.querySelectorAll('[data-search]')]
   const modal = document.querySelector('#image-modal')
   const modalImage = modal.querySelector('img')

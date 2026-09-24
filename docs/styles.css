@@ -184,6 +184,11 @@ button, input { font: inherit; }
 .image-modal[hidden] { display: none; }
 .image-modal img { max-width: min(1200px, 94vw); max-height: 90vh; border-radius: 10px; box-shadow: 0 25px 80px rgba(0,0,0,.35); }
 .modal-close { position: absolute; top: 18px; right: 24px; width: 39px; height: 39px; border: 0; border-radius: 50%; color: #fff; background: rgba(255,255,255,.15); font-size: 27px; line-height: 1; cursor: pointer; }
+.back-to-top { width: auto; height: auto; padding: 8px 6px; border: 0; color: var(--brand); background: transparent; box-shadow: none; }
+.back-to-top-arrows { display: flex; flex-direction: column; align-items: center; height: 25px; overflow: hidden; font-size: 17px; font-weight: 800; line-height: .62; }
+.back-to-top-arrows i { display: block; height: 12px; font-style: normal; animation: back-to-top-bounce 1.15s ease-in-out infinite; }
+.back-to-top-arrows i:nth-child(2) { animation-delay: .22s; opacity: .62; }
+@keyframes back-to-top-bounce { 0%, 100% { transform: translateY(2px); opacity: .45; } 50% { transform: translateY(-3px); opacity: 1; } }
 body.dark { --ink: #ecf1ff; --ink-muted: #a9b3ce; --paper: #0f1327; --surface: #171c34; --surface-soft: #1c2340; --line: #2a3455; --brand: #8090ff; --brand-deep: #a9b4ff; --shadow: 0 18px 48px rgba(0,0,0,.18); color-scheme: dark; }
 body.dark .site-header { background: rgba(15,19,39,.9); }
 body.dark .button-quiet, body.dark .icon-button, body.dark .sidebar-note, body.dark .screenshot, body.dark .step-card, body.dark .menu-card, body.dark .resource-row, body.dark .designer-card, body.dark .operation-card, body.dark .integration-card, body.dark .checklist-card { background: var(--surface); }
@@ -299,6 +304,7 @@ body.dark .story-chip { border-color: #3c4ca1; background: #1b2456; }.story-stag
 
 /* Full-width shell, header navigation and official company footer. */
 :root { --content-gutter: clamp(20px, 4vw, 78px); }
+html, body { overflow-x: hidden; }
 .site-header-inner { width: 100%; max-width: none; min-height: 72px; padding: 0 var(--content-gutter); gap: clamp(16px, 2vw, 34px); }
 .header-menu, #toc.header-menu { display: flex; flex: 1 1 auto; align-items: center; min-width: 0; gap: 2px; overflow-x: auto; scrollbar-width: none; }
 .header-menu::-webkit-scrollbar { display: none; }
@@ -487,6 +493,23 @@ body.dark .story-chip { border-color: #3c4ca1; background: #1b2456; }.story-stag
   .workflow-triggers { height: 160vh; }
   .workflow-step { height: 32vh; }
   .workflow-stage-wrap { top: 122px; height: 560px; }
+}
+
+/* Homepage replaces the legacy telemetry card with the workflow stage. */
+.hero { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(32px, 5vw, 72px); }
+.hero { min-height: 180vh; overflow: visible; align-items: start; }
+.hero-main { grid-column: 1; align-self: center; }
+.hero-workflow { grid-column: 2; grid-row: 1; width: 100%; min-height: 180vh; height: 180vh; margin: 0; }
+.hero-workflow .workflow-triggers { height: 180vh; }
+.hero-workflow .workflow-stage-wrap { position: sticky; top: 104px; width: 100%; height: 620px; min-height: 0; margin: 0; }
+.hero-workflow .workflow-stage { height: 620px; }
+@media (max-width: 820px) {
+  .hero { grid-template-columns: 1fr; gap: 24px; min-height: 150vh; }
+  .hero-main, .hero-workflow { grid-column: 1; grid-row: auto; }
+  .hero-workflow { height: 150vh; min-height: 150vh; }
+  .hero-workflow .workflow-triggers { height: 150vh; }
+  .hero-workflow .workflow-stage-wrap, .hero-workflow .workflow-stage { height: 540px; }
+  #toc.header-menu { max-width: 100%; overflow-x: auto; }
 }
 @media (max-width: 820px) {
   .workflow-scrolly { min-height: 150vh; }
