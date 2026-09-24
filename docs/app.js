@@ -5,48 +5,10 @@
   const themeToggle = document.querySelector('#theme-toggle')
   const search = document.querySelector('#manual-search')
   const tocLinks = [...document.querySelectorAll('#toc a')]
-  const sections = [...document.querySelectorAll('.scrolly-story, .workflow-scrolly, .manual-section')]
+  const sections = [...document.querySelectorAll('.workflow-scrolly, .manual-section')]
   const searchable = [...document.querySelectorAll('[data-search]')]
   const modal = document.querySelector('#image-modal')
   const modalImage = modal.querySelector('img')
-  const story = document.querySelector('.scrolly-story')
-  const storyStage = story?.querySelector('.story-stage')
-  const storySteps = story ? [...story.querySelectorAll('.story-step')] : []
-  const storyState = [
-    {
-      kicker: '01 · INPUT LAYER',
-      title: '输入已就绪',
-      description: '变量、对象字段和外部资源已经接入当前项目。',
-      value: '0.98',
-      latency: '08ms',
-      confidence: '99.2%',
-      trace: 'ARMED',
-      footer: '等待规则读取输入',
-      caption: 'INPUT / DATA OBJECT / VARIABLE'
-    },
-    {
-      kicker: '02 · RULE ENGINE',
-      title: '规则正在判断',
-      description: '条件已命中，动作正在计算，编译结果保持可预览。',
-      value: 'true',
-      latency: '14ms',
-      confidence: '99.8%',
-      trace: 'RUNNING',
-      footer: '条件命中 · 动作已计算',
-      caption: 'CONDITION / ACTION / COMPILE'
-    },
-    {
-      kicker: '03 · AUDIT LAYER',
-      title: '结果可追溯',
-      description: '修订号、输出和表达式追踪已经被记录，可以回到日志复核。',
-      value: 'LOW',
-      latency: '21ms',
-      confidence: '100%',
-      trace: 'READY',
-      footer: '修订号已冻结 · 追踪已保存',
-      caption: 'RELEASE / REVISION / TRACE'
-    }
-  ]
   const workflow = document.querySelector('.workflow-scrolly')
   const workflowStage = workflow?.querySelector('.workflow-stage')
   const workflowSteps = workflow ? [...workflow.querySelectorAll('.workflow-step')] : []
@@ -121,31 +83,6 @@
   updateScrollState()
   backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }))
 
-  const updateStory = (index) => {
-    if (!storyStage || !storyState[index]) return
-    const state = storyState[index]
-    storyStage.dataset.storyState = index
-    storySteps.forEach(step => step.classList.toggle('is-active', step.dataset.storyStep === String(index)))
-    storyStage.querySelector('[data-story-kicker]').textContent = state.kicker
-    storyStage.querySelector('[data-story-title]').textContent = state.title
-    storyStage.querySelector('[data-story-description]').textContent = state.description
-    storyStage.querySelector('[data-story-value]').textContent = state.value
-    storyStage.querySelector('[data-story-latency]').textContent = state.latency
-    storyStage.querySelector('[data-story-confidence]').textContent = state.confidence
-    storyStage.querySelector('[data-story-trace]').textContent = state.trace
-    storyStage.querySelector('[data-story-footer]').textContent = state.footer
-    storyStage.querySelector('[data-story-caption]').textContent = state.caption
-    storyStage.querySelector('[data-story-progress]').textContent = `${String(index + 1).padStart(2, '0')} / 03`
-  }
-  if (story && storyStage && storySteps.length) {
-    updateStory(0)
-    const storyObserver = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) updateStory(Number(entry.target.dataset.storyStep))
-      })
-    }, { rootMargin: '-40% 0px -43%', threshold: 0 })
-    storySteps.forEach(step => storyObserver.observe(step))
-  }
   const updateWorkflow = (index) => {
     if (!workflowStage || !workflowState[index]) return
     const state = workflowState[index]
