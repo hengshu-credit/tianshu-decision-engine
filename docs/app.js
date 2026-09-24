@@ -104,13 +104,19 @@
   }
   if (workflow && workflowStage && workflowSteps.length) {
     updateWorkflow(0)
-    const workflowObserver = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) updateWorkflow(Number(entry.target.dataset.workflowStep))
-      })
-    }, { rootMargin: '-40% 0px -43%', threshold: 0 })
-    workflowSteps.forEach(step => workflowObserver.observe(step))
+  } else if (workflow && workflowStage) {
+    updateWorkflow(0)
   }
+  workflowNodes.forEach(node => {
+    const selectWorkflow = () => updateWorkflow(Number(node.dataset.workflowNode))
+    node.addEventListener('click', selectWorkflow)
+    node.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault()
+        selectWorkflow()
+      }
+    })
+  })
   if ('IntersectionObserver' in window) {
     const sectionObserver = new IntersectionObserver(entries => {
       entries.forEach(entry => entry.target.classList.toggle('is-inview', entry.isIntersecting))
