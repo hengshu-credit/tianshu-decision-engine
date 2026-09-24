@@ -18,6 +18,17 @@
           <img src="brand/hengshucredit_animated.svg" alt="天枢决策引擎" class="brand-logo" />
           <span class="brand-copy"><strong>天枢决策引擎</strong><small>天工开物，枢衡定策</small></span>
         </a>
+        <nav id="toc" class="header-menu" aria-label="手册目录">
+          <a href="#story">决策旅程</a>
+          <a href="#quickstart">快速上手</a>
+          <a href="#navigation">导航总览</a>
+          <a href="#projects">项目与鉴权</a>
+          <a href="#resources">数据与资源</a>
+          <a href="#rules">规则设计</a>
+          <a href="#operations">运行治理</a>
+          <a href="#integration">接入部署</a>
+          <a href="#checklist">上线清单</a>
+        </nav>
         <div class="header-actions">
           <label class="search-box" for="manual-search">
             <span aria-hidden="true">⌕</span>
@@ -32,25 +43,6 @@
     </header>
 
     <div class="page-shell" id="top">
-      <aside class="sidebar" aria-label="手册目录">
-        <div class="sidebar-heading">操作路径</div>
-        <nav id="toc">
-          <a href="#story">00 · 决策旅程</a>
-          <a href="#quickstart">01 · 快速上手</a>
-          <a href="#navigation">02 · 导航总览</a>
-          <a href="#projects">03 · 项目与鉴权</a>
-          <a href="#resources">04 · 数据与资源</a>
-          <a href="#rules">05 · 规则设计与发布</a>
-          <a href="#operations">06 · 运行与治理</a>
-          <a href="#integration">07 · 接入与部署</a>
-          <a href="#checklist">08 · 上线检查清单</a>
-        </nav>
-        <div class="sidebar-note">
-          <span class="status-dot"></span>
-          <div><strong>当前手册</strong><small>2026.09 · 与当前前端页面同步</small></div>
-        </div>
-      </aside>
-
       <main class="content">
         <section class="hero" data-search="天枢决策引擎 前端操作手册 控制台">
           <div class="eyebrow">TIANSHU DECISION ENGINE · CONSOLE GUIDE</div>
@@ -79,25 +71,10 @@
         </div>
 
         <section class="scrolly-story" id="story" data-search="滚动视觉叙事 决策旅程 输入 判断 追踪">
-          <div class="story-copy">
-            <div class="story-intro">
-              <div class="section-kicker">00 / THE DECISION JOURNEY</div>
-              <h2>让每一次决策，<br /><em>自己讲清楚来路。</em></h2>
-              <p>向下滚动，右侧视觉面板会跟随业务动作切换：数据进入、规则判断、结果留痕。你看到的不是装饰动画，而是控制台实际操作的三段主线。</p>
-              <div class="story-scroll-hint"><span class="scroll-wheel"></span><span>继续向下探索</span></div>
-            </div>
-            <article class="story-step is-active" data-story-step="0">
-              <span class="story-step-index">01</span>
-              <div><h3>先把数据放到正确的位置</h3><p>登录项目后，从变量、数据对象、外数或数据库准备规则需要的输入。每个引用都保留稳定 ID，后续改名也不会断链。</p><span class="story-chip">DATA READY</span></div>
-            </article>
-            <article class="story-step" data-story-step="1">
-              <span class="story-step-index">02</span>
-              <div><h3>再让规则把判断说清楚</h3><p>在九类设计器中组合条件、动作和输出。保存并编译后，用样例执行测试，沿着命中行、分支或评分项检查每一步。</p><span class="story-chip">EVALUATING</span></div>
-            </article>
-            <article class="story-step" data-story-step="2">
-              <span class="story-step-index">03</span>
-              <div><h3>最后让结果可以被追溯</h3><p>通过依赖预检和审核发布后，在执行日志中核对修订号、输入输出、耗时与追踪树。一次决策从配置到线上证据闭环。</p><span class="story-chip">AUDIT READY</span></div>
-            </article>
+          <div class="story-copy story-triggers" aria-hidden="true">
+            <div class="story-step is-active" data-story-step="0"></div>
+            <div class="story-step" data-story-step="1"></div>
+            <div class="story-step" data-story-step="2"></div>
           </div>
           <div class="story-stage-wrap">
             <div class="story-stage" data-story-state="0" aria-label="决策链路动态示意图">
@@ -140,7 +117,7 @@
         <section class="manual-section" id="navigation" data-search="导航总览 项目管理 规则管理 变量管理 名单 外数 数据库 模型 函数 测试 血缘 实验 日志 账单">
           <div class="section-kicker">02 / NAVIGATION</div>
           <h2>导航总览：一级入口保持平铺</h2>
-          <p class="section-lead">左侧导航和顶部导航都使用同一组一级入口。菜单是否显示取决于当前账户权限；进入详情页后，页面会在工作台页签中保留上下文。</p>
+          <p class="section-lead">标题栏导航保持一级入口平铺。菜单是否显示取决于当前账户权限；进入详情页后，页面会在工作台页签中保留上下文。</p>
           <div class="menu-grid">
             <div class="menu-card"><span class="menu-index">01</span><strong>项目管理</strong><p>项目、规则与访问鉴权</p></div>
             <div class="menu-card"><span class="menu-index">02</span><strong>规则管理</strong><p>规则列表、设计器与版本</p></div>
@@ -308,7 +285,25 @@
           <div class="boundary-box"><h3>当前实现边界</h3><ul class="compact-list"><li>血缘对脚本中的复杂动态引用只能做静态识别，关键变更仍需人工复核。</li><li>数据库管理面向只读账号和查询类 SQL；正式交付仍应完成真实环境 E2E、容量、备份恢复和灾备演练。</li><li>外数、数据库和名单变量的在线测试依赖对应数据源可用，失败会写入模块日志。</li></ul></div>
         </section>
 
-        <footer class="site-footer"><div><strong>天枢决策引擎</strong><span>· 前端操作手册</span></div><span>内容随当前仓库版本更新 · <a href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub ↗</a></span></footer>
+        <footer class="site-footer">
+          <div class="site-footer-inner">
+            <div class="footer-meta">
+              <strong>上海衡枢真信科技有限公司</strong>
+              <span>© 2026 上海衡枢真信科技有限公司 · ALL RIGHTS RESERVED</span>
+              <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">沪ICP备2026005682号-1</a>
+              <span>天枢决策引擎前端操作手册 · 保留所有权利</span>
+            </div>
+            <div class="footer-contact">
+              <strong>联系我们</strong>
+              <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a>
+              <span>上海市 · <a href="https://hengshucredit.com/" target="_blank" rel="noreferrer">hengshucredit.com ↗</a></span>
+            </div>
+            <div class="footer-social">
+              <a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber.svg" alt="微信号二维码" /><span>微信号</span></a>
+              <a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber_art.svg" alt="公众号二维码" /><span>公众号</span></a>
+            </div>
+          </div>
+        </footer>
       </main>
     </div>
 
