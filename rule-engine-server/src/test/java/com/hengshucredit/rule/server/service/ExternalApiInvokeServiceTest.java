@@ -27,6 +27,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.fail;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertSame;
@@ -72,6 +73,116 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void inheritedBearerAuthAcceptsLegacyLowercaseTypes() throws Exception {
+        AtomicReference<String> authorization = new AtomicReference<>();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/score", exchange -> {
+            authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            byte[] body = "{\"score\":720}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = httpDatasource(server);
+            datasource.setAuthType("bearer");
+            datasource.setAuthConfig("{\"token\":\"legacy-token\"}");
+            RuleExternalApiConfig config = basicApiConfig(2L, 1L, "/score");
+            config.setAuthMode("inherit");
+
+            Map<String, Object> result = configuredService(config, datasource).invoke(2L, Map.of());
+
+            assertEquals(720, ((Map<?, ?>) result.get("body")).get("score"));
+            assertEquals("Bearer legacy-token", authorization.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void disabledApiCannotBeInvokedByRuleExecution() throws Exception {
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/disabled", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = httpDatasource(server);
+            RuleExternalApiConfig config = basicApiConfig(3L, 1L, "/disabled");
+            config.setStatus(0);
+
+            try {
+                configuredService(config, datasource).invoke(3L, Map.of());
+            } catch (IllegalArgumentException e) {
+                assertTrue(e.getMessage().contains("未启用"));
+            }
+
+            assertEquals(0, providerCalls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void invocationCacheKeyUsesConfiguredComponentsOrAllParamsHashByDefault() {
+        RuleExternalApiConfig config = basicApiConfig(4L, 1L, "/score");
+        config.setCacheKeyConfig("{\"components\":[{\"path\":\"customerId\"}]}");
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        ReflectionTestUtils.setField(service, "apiConfigMapper",
+                mapperProxy(RuleExternalApiConfigMapper.class, config));
+
+        String configuredA = service.invocationCacheKey(4L,
+                Map.of("customerId", "A", "trace", "1"));
+        String configuredB = service.invocationCacheKey(4L,
+                Map.of("customerId", "A", "trace", "2"));
+        assertEquals("已配置缓存键时只由配置组件决定", configuredA, configuredB);
+
+        config.setCacheKeyConfig(null);
+        String defaultA = service.invocationCacheKey(4L,
+                Map.of("customerId", "A", "trace", "1"));
+        String defaultB = service.invocationCacheKey(4L,
+                Map.of("customerId", "A", "trace", "2"));
+        assertNotEquals("未配置缓存键时必须纳入全部请求参数", defaultA, defaultB);
+    }
+
+    @Test
+    public void postIsNotRetriedWithoutExplicitIdempotencyConfirmation() throws Exception {
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/charge", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] body = "{}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(503, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = httpDatasource(server);
+            RuleExternalApiConfig config = basicApiConfig(5L, 1L, "/charge");
+            config.setRequestMethod("POST");
+            config.setRetryCount(2);
+            config.setRetryStatusCodes("503");
+
+            try {
+                configuredService(config, datasource).invoke(5L, Map.of("amount", 100));
+            } catch (ExternalApiInvokeService.ApiInvokeException ignored) {
+                // expected
+            }
+
+            assertEquals(1, providerCalls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
     public void asyncPollReturnsFinalResultInsteadOfSubmissionReceipt() throws Exception {
         AtomicInteger submissions = new AtomicInteger();
         AtomicInteger polls = new AtomicInteger();
@@ -101,6 +212,48 @@ public class ExternalApiInvokeServiceTest {
                     + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
             assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));
+            assertEquals(1, submissions.get());
+            assertEquals(2, polls.get());
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void asyncGetPollingCanRetryWhenPostSubmissionRetryIsDisabled() throws Exception {
+        AtomicInteger submissions = new AtomicInteger();
+        AtomicInteger polls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/submit", exchange -> {
+            submissions.incrementAndGet();
+            byte[] body = "{\"taskId\":\"task-2\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(202, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.createContext("/result/task-2", exchange -> {
+            int attempt = polls.incrementAndGet();
+            int status = attempt == 1 ? 503 : 200;
+            byte[] body = (attempt == 1 ? "{\"status\":\"TEMPORARY\"}" : "{\"status\":\"SUCCESS\",\"data\":{\"score\":681}}")
+                    .getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(status, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalApiConfig config = basicApiConfig(7L, 1L, "/submit");
+            config.setRequestMethod("POST");
+            config.setRequestMode("ASYNC");
+            config.setRetryCount(1);
+            config.setAsyncResultMode("POLL");
+            config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/result/${taskId}\","
+                    + "\"requestMethod\":\"GET\",\"intervalMs\":1,\"maxAttempts\":3,"
+                    + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
+
+            Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(7L, Map.of());
+
+            assertEquals(681, ((Map<?, ?>) result.get("body")).get("score"));
             assertEquals(1, submissions.get());
             assertEquals(2, polls.get());
         } finally {
@@ -339,7 +492,9 @@ public class ExternalApiInvokeServiceTest {
             datasource.setBaseUrl("http://127.0.0.1:" + server.getAddress().getPort());
             datasource.setAuthType("NONE");
             RuleExternalApiConfig config = basicApiConfig(51L, 51L, "/business-retry");
+            config.setRequestMethod("POST");
             config.setRetryCount(3);
+            config.setRetryNonIdempotent(1);
             config.setSuccessCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"00\"}");
             config.setRetryCondition("{\"type\":\"condition\",\"path\":\"body.response_code\",\"operator\":\"==\",\"value\":\"10000429\"}");
             ExternalApiInvokeService service = configuredService(config, datasource);
@@ -661,6 +816,26 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void responseCacheKeyDefaultsToAllRequestParamsWhenNotConfigured() {
+        Map<String, Object> first = new LinkedHashMap<>();
+        first.put("name", "张三");
+        first.put("nested", Map.of("score", 88, "level", "A"));
+        Map<String, Object> reordered = new LinkedHashMap<>();
+        reordered.put("nested", Map.of("level", "A", "score", 88));
+        reordered.put("name", "张三");
+        Map<String, Object> changed = new LinkedHashMap<>(first);
+        changed.put("name", "李四");
+
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        String key = service.buildResponseCacheKey(8L, null, first);
+
+        assertTrue(key.startsWith("8:"));
+        assertFalse(key.contains("张三"));
+        assertEquals(key, service.buildResponseCacheKey(8L, "", reordered));
+        assertNotEquals(key, service.buildResponseCacheKey(8L, null, changed));
+    }
+
+    @Test
     public void copyCachedResponseMarksCacheStateAndKeepsBody() {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("score", 88);
@@ -768,7 +943,6 @@ public class ExternalApiInvokeServiceTest {
             config.setEndpointUrl("/score");
             config.setContentType("application/json");
             config.setResponseCacheSeconds(60);
-            config.setCacheKeyConfig("{\"components\":[{\"path\":\"request_id\"}]}");
             config.setTimeoutMs(3000);
             config.setRetryCount(0);
             config.setRetryIntervalMs(0);
@@ -783,6 +957,7 @@ public class ExternalApiInvokeServiceTest {
 
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("request_id", "r1");
+            params.put("trace", "same-request");
             Map<String, Object> first = service.invoke(99L, params);
             Map<String, Object> second = service.invoke(99L, params);
 
@@ -1274,6 +1449,49 @@ public class ExternalApiInvokeServiceTest {
             assertEquals("FETCH", attemptLogs.get(0).getTokenCacheStatus());
             assertEquals("REFRESH", attemptLogs.get(1).getTokenCacheStatus());
             clientRegistry.close();
+        } finally {
+            server.stop(0);
+        }
+    }
+
+    @Test
+    public void postDoesNotRefreshTokenOrRepeatProviderCallWithoutIdempotencyConfirmation() throws Exception {
+        AtomicInteger tokenCalls = new AtomicInteger();
+        AtomicInteger providerCalls = new AtomicInteger();
+        HttpServer server = HttpServer.create(new InetSocketAddress(0), 0);
+        server.createContext("/token", exchange -> {
+            tokenCalls.incrementAndGet();
+            byte[] response = "{\"token\":\"token-1\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(200, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.createContext("/charge", exchange -> {
+            providerCalls.incrementAndGet();
+            byte[] response = "{\"message\":\"unauthorized\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(401, response.length);
+            exchange.getResponseBody().write(response);
+            exchange.close();
+        });
+        server.start();
+        try {
+            RuleExternalDatasource datasource = httpDatasource(server);
+            datasource.setAuthType("TOKEN_API");
+            datasource.setAuthConfig("{\"tokenUrl\":\"/token\",\"tokenPath\":\"body.token\"}");
+            RuleExternalApiConfig config = basicApiConfig(811L, 1L, "/charge");
+            config.setRequestMethod("POST");
+            config.setAuthMode("INHERIT");
+            config.setRetryCount(2);
+
+            try {
+                configuredService(config, datasource).invoke(811L, Map.of("amount", 100));
+                fail("应因供应商 401 失败");
+            } catch (ExternalApiInvokeService.ApiInvokeException expected) {
+                // 未确认供应商幂等性时，POST 不得刷新 Token 后再次提交。
+            }
+
+            assertEquals(1, tokenCalls.get());
+            assertEquals(1, providerCalls.get());
         } finally {
             server.stop(0);
         }

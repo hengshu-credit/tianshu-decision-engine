@@ -1222,7 +1222,7 @@ public class VariableSourceResolver {
             throw new IllegalArgumentException("API变量缺少 apiConfigId");
         }
         Map<String, Object> requestParams = buildMappedParams(config.get("paramMapping"), params);
-        String cacheKey = "API:" + apiConfigId;
+        String cacheKey = externalApiInvokeService.invocationCacheKey(apiConfigId, requestParams);
         Map<String, Object> response = invocationCache.resolve(cacheKey,
                 () -> externalApiInvokeService.invoke(apiConfigId, requestParams));
         recordApiState(variable, response, options);

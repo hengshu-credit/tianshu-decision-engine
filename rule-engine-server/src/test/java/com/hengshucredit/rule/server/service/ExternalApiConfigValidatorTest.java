@@ -27,4 +27,31 @@ public class ExternalApiConfigValidatorTest {
         config.setTokenFailureCondition("{\"path\":\"body.code\",\"operator\":\"==\",\"value\":\"TOKEN_EXPIRED\"}");
         ExternalApiConfigValidator.validate(config);
     }
+
+    @Test
+    public void invalidSuccessOrRetryConditionFailsBeforeExecution() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setSuccessCondition("{invalid-json");
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalApiConfigValidator.validate(config));
+
+        config.setSuccessCondition(null);
+        config.setRetryCondition("{\"type\":\"group\",\"children\":[]}");
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalApiConfigValidator.validate(config));
+
+        config.setRetryCondition("{\"path\":\"body.code\",\"operator\":\"==\",\"value\":\"RETRY\"}");
+        ExternalApiConfigValidator.validate(config);
+    }
+
+    @Test
+    public void unsupportedAuthModeFailsBeforeExecution() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setAuthMode("UNKNOWN");
+        assertThrows(IllegalArgumentException.class,
+                () -> ExternalApiConfigValidator.validate(config));
+
+        config.setAuthMode("inherit");
+        ExternalApiConfigValidator.validate(config);
+    }
 }

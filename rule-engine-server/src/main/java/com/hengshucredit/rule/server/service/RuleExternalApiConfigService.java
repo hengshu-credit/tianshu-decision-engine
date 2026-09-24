@@ -193,6 +193,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         defaultSwitch(config.getTokenLogEnabled(), config::setTokenLogEnabled, 1);
         defaultInteger(config.getRetryCount(), config::setRetryCount,
                 0, 0, 10, "重试次数");
+        defaultSwitch(config.getRetryNonIdempotent(), config::setRetryNonIdempotent, 0);
         defaultInteger(config.getRetryIntervalMs(), config::setRetryIntervalMs,
                 200, 0, 60000, "重试间隔");
         config.setRetryStatusCodes(hasText(config.getRetryStatusCodes())

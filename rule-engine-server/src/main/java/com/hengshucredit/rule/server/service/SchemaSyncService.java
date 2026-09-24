@@ -835,6 +835,8 @@ public class SchemaSyncService {
                 "`token_failure_condition` JSON DEFAULT NULL COMMENT 'Token鉴权失败条件' AFTER `token_refresh_on_unauthorized`");
         addColumnIfMissing(table, "token_log_enabled",
                 "`token_log_enabled` TINYINT NOT NULL DEFAULT 1 COMMENT '是否记录Token动作日志' AFTER `token_refresh_on_unauthorized`");
+        addColumnIfMissing(table, "retry_non_idempotent",
+                "`retry_non_idempotent` TINYINT NOT NULL DEFAULT 0 COMMENT '是否允许非幂等HTTP方法重试' AFTER `retry_count`");
         addColumnIfMissing(table, "retry_status_codes",
                 "`retry_status_codes` VARCHAR(256) DEFAULT '502,503,504' COMMENT '允许重试HTTP状态码' AFTER `retry_interval_ms`");
         addColumnIfMissing(table, "retry_on_connection_error",

@@ -4,6 +4,7 @@ import org.junit.Test;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -64,6 +65,17 @@ public class VariableResolutionInvocationCacheTest {
 
         assertEquals(1, first.join().get("value"));
         assertEquals(2, second.join().get("value"));
+    }
+
+    @Test
+    public void historySnapshotExtractsApiIdFromParameterizedInvocationKey() {
+        VariableResolutionInvocationCache cache = new VariableResolutionInvocationCache();
+        cache.resolve("API:7:PARAMS:abc123", () -> singletonMap("score", 88));
+
+        Map<String, Object> snapshot = cache.historySnapshot(
+                List.of(), Map.of(), Map.of());
+
+        assertEquals(List.of(7L), snapshot.get("apiIds"));
     }
 
     private static Map<String, Object> blockingResponse(

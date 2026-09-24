@@ -1519,6 +1519,18 @@
                       style="width: 100%" /></el-form-item
                 ></el-col>
               </el-row>
+              <div class="retry-idempotency-confirm">
+                <el-form-item label="允许非幂等方法重试">
+                  <el-switch
+                    v-model="form.retryNonIdempotent"
+                    :active-value="1"
+                    :inactive-value="0"
+                  />
+                </el-form-item>
+                <div class="field-help">
+                  POST、PUT、PATCH、DELETE 可能产生重复副作用；仅在供应商确认接口幂等后开启。
+                </div>
+              </div>
               <div class="section-title">业务响应重试条件</div>
               <div class="field-help">
                 仅当业务成功条件不满足、且本条件树命中时才重试。支持且/或嵌套；不配置则所有业务错误都不重试。
@@ -1684,8 +1696,8 @@
                 <div>
                   <div class="section-title">缓存键</div>
                   <div class="field-help">
-                    按下列顺序组合并生成脱敏摘要。任一字段缺失时绕过缓存，并记录
-                    CACHE_KEY_INCOMPLETE。
+                    配置字段时按顺序组合并生成脱敏摘要；未配置时默认对全部请求参数生成摘要。
+                    已配置字段任一缺失时绕过响应缓存，并记录 CACHE_KEY_INCOMPLETE。
                   </div>
                 </div>
                 <el-button
@@ -2316,6 +2328,7 @@ export default {
         tokenCacheSeconds: 0,
         timeoutMs: 3000,
         retryCount: 0,
+        retryNonIdempotent: 0,
         maxConnections: 100,
         maxConnectionsPerRoute: 100,
         connectionRequestTimeoutMs: 100,
@@ -3339,13 +3352,6 @@ export default {
     normalizeForm(form) {
       this.syncStructuredConfigToForm()
       const data = { ...form }
-      const cacheConfig = this.buildCacheKeyConfig()
-      if (
-        Number(data.responseCacheSeconds) > 0 &&
-        !Array.isArray(cacheConfig.components)
-      ) {
-        throw new Error('启用响应缓存时必须配置缓存键字段')
-      }
       const successCondition = this.buildSuccessConditionConfig()
       if (this.tokenFailureMode === 'CUSTOM') this.validateApiConditionTree(this.tokenFailureConditionRoot, 'Token鉴权失败条件')
       this.validateApiConditionTree(successCondition, '请求成功条件')

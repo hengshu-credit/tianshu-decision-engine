@@ -12,7 +12,9 @@ import org.springframework.stereotype.Service;
 
 import jakarta.annotation.Resource;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -87,9 +89,13 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
         if ("RULE_ENGINE".equalsIgnoreCase(datasource.getProtocol()) && !hasText(datasource.getBaseUrl())) {
             datasource.setBaseUrl("rule-engine://local");
         }
-        if (!hasText(datasource.getAuthType())) {
-            datasource.setAuthType("NONE");
+        String authType = hasText(datasource.getAuthType())
+                ? datasource.getAuthType().trim().toUpperCase(Locale.ROOT) : "NONE";
+        if (!Set.of("NONE", "BASIC", "BEARER", "API_KEY", "OAUTH2",
+                "TOKEN_API", "CUSTOM").contains(authType)) {
+            throw new IllegalArgumentException("数据源鉴权方式不受支持: " + datasource.getAuthType());
         }
+        datasource.setAuthType(authType);
         datasource.setAuthConfig(nullIfBlank(datasource.getAuthConfig()));
         if (datasource.getTokenCacheSeconds() == null) {
             datasource.setTokenCacheSeconds(0);

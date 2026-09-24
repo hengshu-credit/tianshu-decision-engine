@@ -85,20 +85,20 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void sameRootUsesFirstApiResultEvenWhenMappedInputChanges() throws Exception {
+    public void sameRootReusesOnlyWhenMappedRequestKeyMatches() throws Exception {
         RuleVariable a = variable("metricA", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"x\":\"$.customerId\",\"y\":1},\"resultPath\":\"body.score\"}");
-        RuleVariable b = variable("metricB", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"y\":1,\"x\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
+        RuleVariable b = variable("metricB", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"x\":\"$.otherCustomerId\",\"y\":1},\"resultPath\":\"body.score\"}");
         b.setId(2L);
         FakeApiService api = new FakeApiService(responseBody("score", 88));
         VariableSourceResolver resolver = resolver(Arrays.asList(a, b), api, new FakeDbPools(Collections.emptyList()));
         VariableResolveOptions options = VariableResolveOptions.defaults();
         options.setInvocationCache(new VariableResolutionInvocationCache());
-        resolver.resolve(1L, Map.of("customerId", "A"), options);
-        assertEquals(1, api.callCount);
-        resolver.resolve(1L, Map.of("customerId", "B"), options);
-        assertEquals(1, api.callCount);
-        resolver.resolve(1L, Map.of("customerId", "B"), VariableResolveOptions.defaults());
-        assertEquals(2, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "A", "otherCustomerId", "B"), options);
+        assertEquals("不同请求参数必须使用不同的根规则内调用键", 2, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "A", "otherCustomerId", "B"), options);
+        assertEquals("同一根规则内相同调用键不能重复调用", 2, api.callCount);
+        resolver.resolve(1L, Map.of("customerId", "A", "otherCustomerId", "B"), VariableResolveOptions.defaults());
+        assertEquals("新根请求必须重新建立调用缓存", 4, api.callCount);
     }
 
     @Test

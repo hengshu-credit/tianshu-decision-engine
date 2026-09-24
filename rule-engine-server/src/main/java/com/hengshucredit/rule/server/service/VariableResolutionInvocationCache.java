@@ -85,8 +85,20 @@ public class VariableResolutionInvocationCache {
             }
         }
         List<Long> apiIds = apiResponses.keySet().stream().filter(key -> key.startsWith("API:"))
-                .map(key -> Long.valueOf(key.substring(4))).sorted().toList();
+                .map(VariableResolutionInvocationCache::apiIdFromCacheKey)
+                .filter(java.util.Objects::nonNull).distinct().sorted().toList();
         return Map.of("version", 1, "fields", fields, "apiIds", apiIds);
+    }
+
+    private static Long apiIdFromCacheKey(String key) {
+        String value = key.substring(4);
+        int separator = value.indexOf(':');
+        if (separator >= 0) value = value.substring(0, separator);
+        try {
+            return Long.valueOf(value);
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
     }
 
     public boolean hasVariableResult(String key) {

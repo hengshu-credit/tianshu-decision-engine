@@ -4,13 +4,29 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 
+import java.util.Locale;
+import java.util.Set;
+
 /** 保存、审批和草稿试调用使用同一份外数协议校验。 */
 public final class ExternalApiConfigValidator {
     private ExternalApiConfigValidator() { }
 
     public static void validate(RuleExternalApiConfig config) {
+        if (hasText(config.getAuthMode())) {
+            String authMode = config.getAuthMode().trim().toUpperCase(Locale.ROOT);
+            if (!Set.of("INHERIT", "NONE", "BASIC", "BEARER", "API_KEY",
+                    "OAUTH2", "TOKEN_API", "CUSTOM").contains(authMode)) {
+                throw new IllegalArgumentException("接口鉴权方式不受支持: " + config.getAuthMode());
+            }
+        }
+        if (hasText(config.getSuccessCondition())) {
+            validateCondition(parseCondition(config.getSuccessCondition(), "成功条件"), "成功条件");
+        }
+        if (hasText(config.getRetryCondition())) {
+            validateCondition(parseCondition(config.getRetryCondition(), "重试条件"), "重试条件");
+        }
         if (hasText(config.getTokenFailureCondition())) {
-            validateCondition(JSON.parseObject(config.getTokenFailureCondition()), "Token鉴权失败条件");
+            validateCondition(parseCondition(config.getTokenFailureCondition(), "Token鉴权失败条件"), "Token鉴权失败条件");
         }
         if (!"ASYNC".equals(config.getRequestMode())) return;
         String mode = config.getAsyncResultMode();
@@ -57,6 +73,14 @@ public final class ExternalApiConfigValidator {
             // 禁止小数和超出整型范围的配置。
         }
         throw new IllegalArgumentException("异步 " + field + " 必须是正整数");
+    }
+
+    private static JSONObject parseCondition(String text, String label) {
+        try {
+            return JSON.parseObject(text);
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(label + "必须是合法 JSON", error);
+        }
     }
 
     private static void validateCondition(JSONObject condition, String label) {

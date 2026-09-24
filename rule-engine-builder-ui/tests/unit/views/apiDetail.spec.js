@@ -416,11 +416,13 @@ describe('ApiDetail helpers', () => {
     })
   })
 
-  test('normalizeForm rejects enabled cache without configured key components', () => {
+  test('normalizeForm allows enabled cache without configured key components', () => {
     const ctx = createContext({ cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()] })
     ctx.form.responseCacheSeconds = 60
 
-    expect(() => ctx.normalizeForm(ctx.form)).toThrow('缓存键')
+    const normalized = ctx.normalizeForm(ctx.form)
+    expect(normalized.responseCacheSeconds).toBe(60)
+    expect(normalized.cacheKeyConfig).toBeNull()
   })
 
   test('buildRequestMappingConfig nests dotted api field paths', () => {

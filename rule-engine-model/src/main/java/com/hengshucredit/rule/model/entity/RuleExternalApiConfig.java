@@ -54,6 +54,8 @@ public class RuleExternalApiConfig {
     private String tokenFailureCondition;
     private Integer tokenLogEnabled;
     private Integer retryCount;
+    /** 是否允许对 POST/PUT/PATCH/DELETE 等非幂等方法自动重试。 */
+    private Integer retryNonIdempotent;
     private Integer retryIntervalMs;
     private String retryStatusCodes;
     private Integer retryOnConnectionError;

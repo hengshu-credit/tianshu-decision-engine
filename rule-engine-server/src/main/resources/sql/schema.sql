@@ -1367,6 +1367,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `token_failure_condition` JSON DEFAULT NULL COMMENT 'Token鉴权失败条件；空值按HTTP 401或403判断',
   `token_log_enabled`    TINYINT      NOT NULL DEFAULT 1      COMMENT '是否记录Token动作日志',
   `retry_count`          INT          NOT NULL DEFAULT 0      COMMENT '重试次数',
+  `retry_non_idempotent` TINYINT      NOT NULL DEFAULT 0      COMMENT '是否允许非幂等HTTP方法重试',
   `retry_interval_ms`    INT          NOT NULL DEFAULT 200    COMMENT '重试间隔毫秒',
   `retry_status_codes`   VARCHAR(256) DEFAULT '502,503,504'   COMMENT '允许重试的HTTP状态码',
   `retry_on_connection_error` TINYINT NOT NULL DEFAULT 1     COMMENT '连接异常是否重试',

@@ -48,7 +48,7 @@ public class RootResolutionContractTest {
     }
 
     @Test
-    public void oneApiPerRootIgnoresCallerResultAndLaterParameterChanges() {
+    public void sameApiKeyIsReusedButChangedKeyCallsAgain() {
         var first = variable(11, "score", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
         var second = variable(12, "limit", "API", "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.limit\"}");
         AtomicInteger calls = new AtomicInteger();
@@ -66,7 +66,7 @@ public class RootResolutionContractTest {
         values.put("customerId", "changed");
         resolver.resolveIntoSnapshot(List.of(first, second), List.of(), List.of(), values, options(cache, "limit"));
         assertEquals(100, values.get("limit"));
-        assertEquals(1, calls.get());
+        assertEquals("参数变化后调用键变化，应重新调用外数API", 2, calls.get());
     }
 
     @Test

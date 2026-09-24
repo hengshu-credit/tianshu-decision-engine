@@ -38,6 +38,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.HashSet;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -103,6 +104,9 @@ public class ExternalApiInvokeService {
         if (apiConfig == null) {
             throw new IllegalArgumentException("API接口配置不存在");
         }
+        if (apiConfig.getStatus() != null && !Integer.valueOf(1).equals(apiConfig.getStatus())) {
+            throw new IllegalArgumentException("外数API接口未启用");
+        }
         return invoke(apiConfig, params, true);
     }
 
@@ -122,6 +126,9 @@ public class ExternalApiInvokeService {
         RuleExternalDatasource datasource = datasourceMapper.selectById(apiConfig.getDatasourceId());
         if (datasource == null) {
             throw new IllegalArgumentException("外数数据源不存在");
+        }
+        if (datasource.getStatus() != null && !Integer.valueOf(1).equals(datasource.getStatus())) {
+            throw new IllegalArgumentException("外数数据源未启用");
         }
         int retryCount = apiConfig.getRetryCount() == null ? 0 : Math.max(apiConfig.getRetryCount(), 0);
         int retryIntervalMs = apiConfig.getRetryIntervalMs() == null ? 0 : Math.max(apiConfig.getRetryIntervalMs(), 0);
@@ -188,7 +195,9 @@ public class ExternalApiInvokeService {
                         || e instanceof ApiHttpClientRegistry.PoolBusyException) {
                     break;
                 }
-                if ("ASYNC".equals(apiConfig.getRequestMode()) || i >= retryCount || !shouldRetry(apiConfig, e)) {
+                if ("ASYNC".equals(apiConfig.getRequestMode())
+                        || !retryAllowedForMethod(apiConfig)
+                        || i >= retryCount || !shouldRetry(apiConfig, e)) {
                     break;
                 }
                 int retryDelayMs = retryDelayMs(apiConfig, retryIntervalMs, i);
@@ -243,7 +252,11 @@ public class ExternalApiInvokeService {
         if (datasource == null) {
             throw new IllegalArgumentException("外数数据源不存在");
         }
-        String authType = datasource.getAuthType();
+        if (datasource.getStatus() != null && !Integer.valueOf(1).equals(datasource.getStatus())) {
+            throw new IllegalArgumentException("外数数据源未启用");
+        }
+        String authType = firstText(datasource.getAuthType(), "NONE")
+                .toUpperCase(Locale.ROOT);
         Map<String, Object> config = parseJsonMap(datasource.getAuthConfig());
         long start = System.currentTimeMillis();
         InvokeTrace trace = new InvokeTrace();
@@ -315,8 +328,11 @@ public class ExternalApiInvokeService {
     }
 
     String buildResponseCacheKey(Long apiConfigId, String cacheKeyConfig, Map<String, Object> params) {
-        if (apiConfigId == null || !hasText(cacheKeyConfig)) {
+        if (apiConfigId == null) {
             return null;
+        }
+        if (!hasText(cacheKeyConfig)) {
+            return apiConfigId + ":" + sha256(canonicalParams(params));
         }
         Map<String, Object> config = parseJsonMap(cacheKeyConfig);
         Object componentsObject = config.get("components");
@@ -345,6 +361,49 @@ public class ExternalApiInvokeService {
             return null;
         }
         return apiConfigId + ":" + sha256(JSON.toJSONString(values));
+    }
+
+    /** 规则根执行内的 API 幂等键：优先使用配置的缓存键，否则对完整请求参数做摘要。 */
+    String invocationCacheKey(Long apiConfigId, Map<String, Object> params) {
+        if (apiConfigId == null) {
+            throw new IllegalArgumentException("API接口配置ID不能为空");
+        }
+        RuleExternalApiConfig config = apiConfigMapper == null
+                ? null : apiConfigMapper.selectById(apiConfigId);
+        String configuredKey = config == null ? null
+                : buildResponseCacheKey(apiConfigId, config.getCacheKeyConfig(), params);
+        if (configuredKey != null) {
+            return "API:" + configuredKey;
+        }
+        return "API:" + apiConfigId + ":PARAMS:" + sha256(canonicalParams(params));
+    }
+
+    private String canonicalParams(Map<String, Object> params) {
+        return JSON.toJSONString(canonicalize(params == null ? new LinkedHashMap<>() : params));
+    }
+
+    private Object canonicalize(Object value) {
+        if (value instanceof Map<?, ?> map) {
+            Map<String, Object> sorted = new java.util.TreeMap<>();
+            map.forEach((key, item) -> sorted.put(String.valueOf(key), canonicalize(item)));
+            return sorted;
+        }
+        if (value instanceof Iterable<?> iterable) {
+            List<Object> values = new ArrayList<>();
+            for (Object item : iterable) values.add(canonicalize(item));
+            if (value instanceof Set<?>) {
+                values.sort((left, right) -> JSON.toJSONString(left).compareTo(JSON.toJSONString(right)));
+            }
+            return values;
+        }
+        if (value != null && value.getClass().isArray()) {
+            List<Object> values = new ArrayList<>();
+            for (int i = 0; i < Array.getLength(value); i++) {
+                values.add(canonicalize(Array.get(value, i)));
+            }
+            return values;
+        }
+        return value;
     }
 
     private String sha256(String value) {
@@ -401,6 +460,15 @@ public class ExternalApiInvokeService {
         return !Integer.valueOf(0).equals(apiConfig.getRetryOnConnectionError())
                 && (findCause(error, ResourceAccessException.class) != null
                 || findCause(error, IOException.class) != null);
+    }
+
+    private boolean retryAllowedForMethod(RuleExternalApiConfig apiConfig) {
+        String method = firstText(apiConfig == null ? null : apiConfig.getRequestMethod(), "POST")
+                .toUpperCase(Locale.ROOT);
+        if (Set.of("GET", "HEAD", "OPTIONS").contains(method)) {
+            return true;
+        }
+        return Integer.valueOf(1).equals(apiConfig.getRetryNonIdempotent());
     }
 
     private Set<Integer> retryStatusCodes(String configured) {
@@ -523,7 +591,9 @@ public class ExternalApiInvokeService {
             envelope.put("headers", headersForScript(response.getHeaders()));
             envelope.put("body", parseJsonOrRaw(response.getBody()));
             if (prepared.tokenCacheKey != null && shouldRefreshToken(config, envelope)) {
-                if (trace.tokenRefreshAttempted) throw new TokenRefreshRejectedException(httpError);
+                if (trace.tokenRefreshAttempted || !retryAllowedForMethod(config)) {
+                    throw new TokenRefreshRejectedException(httpError);
+                }
                 trace.tokenRefreshAttempted = true;
                 refresh = true;
                 continue;
@@ -599,7 +669,8 @@ public class ExternalApiInvokeService {
             try {
                 result = invokeHttp(poll, datasource, params, trace);
             } catch (Exception error) {
-                if (error instanceof TokenRefreshRejectedException || failures++ >= retries
+                if (error instanceof TokenRefreshRejectedException || !retryAllowedForMethod(poll)
+                        || failures++ >= retries
                         || !shouldRetry(config, error) || i + 1 == attempts) throw error;
                 continue;
             }
@@ -978,10 +1049,12 @@ public class ExternalApiInvokeService {
                                   RuleExternalDatasource datasource, RuleExternalApiConfig apiConfig,
                                   Map<String, Object> params, boolean preview, String previewToken,
                                   boolean forceTokenRefresh) {
-        String authMode = apiConfig.getAuthMode();
+        String authMode = firstText(apiConfig.getAuthMode(), "INHERIT")
+                .toUpperCase(Locale.ROOT);
         String authConfig = apiConfig.getAuthApiConfig();
-        if (authMode == null || authMode.trim().isEmpty() || "INHERIT".equals(authMode)) {
-            authMode = datasource.getAuthType();
+        if ("INHERIT".equals(authMode)) {
+            authMode = firstText(datasource.getAuthType(), "NONE")
+                    .toUpperCase(Locale.ROOT);
             authConfig = datasource.getAuthConfig();
         }
         if (authMode == null || "NONE".equals(authMode)) {
@@ -2120,6 +2193,7 @@ public class ExternalApiInvokeService {
     }
 
     private Map<String, Object> previewStaticAuthConfig(String authType, Map<String, Object> config, Map<String, Object> params) {
+        authType = firstText(authType, "NONE").toUpperCase(Locale.ROOT);
         Map<String, Object> preview = new LinkedHashMap<>();
         if ("BASIC".equals(authType)) {
             preview.put("header", HttpHeaders.AUTHORIZATION);
