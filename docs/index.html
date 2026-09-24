@@ -6,23 +6,28 @@
     <meta name="description" content="天枢决策引擎前端控制台操作手册" />
     <meta name="theme-color" content="#10142d" />
     <title>天枢决策引擎 · 前端操作手册</title>
+    <link rel="icon" href="brand/favicon.ico" sizes="64x64" />
+    <link rel="icon" href="brand/hengshucredit_animated.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <div class="reading-progress" aria-hidden="true"><span></span></div>
     <header class="site-header">
-      <a class="brand" href="#top" aria-label="返回手册首页">
-        <span class="brand-mark" aria-hidden="true">枢</span>
-        <span><strong>天枢决策引擎</strong><small>前端操作手册</small></span>
-      </a>
-      <div class="header-actions">
-        <label class="search-box" for="manual-search">
-          <span aria-hidden="true">⌕</span>
-          <input id="manual-search" type="search" placeholder="搜索本手册" autocomplete="off" />
-          <kbd>/</kbd>
-        </label>
-        <button class="icon-button" id="theme-toggle" type="button" aria-label="切换阅读主题">☼</button>
-        <a class="github-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub ↗</a>
+      <div class="site-header-inner">
+        <a class="brand" href="#top" aria-label="返回手册首页">
+          <img src="brand/hengshucredit_animated.svg" alt="天枢决策引擎" class="brand-logo" />
+          <span class="brand-copy"><strong>天枢决策引擎</strong><small>天工开物，枢衡定策</small></span>
+        </a>
+        <div class="header-actions">
+          <label class="search-box" for="manual-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="manual-search" type="search" placeholder="搜索本手册" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="切换阅读主题">☼</button>
+          <a class="official-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer">官网 ↗</a>
+          <a class="github-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub ↗</a>
+        </div>
       </div>
     </header>
 
@@ -53,6 +58,7 @@
           <p class="hero-copy">这份手册面向规则配置人员、风控运营和项目管理员，按“登录 → 配置数据 → 设计规则 → 测试 → 审核发布 → 追踪运行”的真实操作顺序整理控制台。</p>
           <div class="hero-actions">
             <a class="button button-primary" href="#quickstart">开始操作 <span>↓</span></a>
+            <a class="button button-quiet button-official" href="https://hengshucredit.com/" target="_blank" rel="noreferrer">访问 hengshucredit.com ↗</a>
             <a class="button button-quiet" href="https://github.com/hengshu-credit/tianshu-decision-engine#readme" target="_blank" rel="noreferrer">查看项目说明 ↗</a>
           </div>
           <div class="hero-facts">
@@ -200,7 +206,7 @@
           </div>
         </section>
 
-        <section class="manual-section" id="rules" data-search="规则 设计器 决策表 决策树 决策流 规则集 交叉表 评分卡 QL 脚本 输入 输出 保存 检查 测试 追踪 发布 审核">
+        <section class="manual-section" id="rules" data-search="规则 设计器 决策表 决策树 决策流 规则集 交叉表 评分卡 QL 脚本 输入 输出 保存 检查 测试 追踪 表达式追踪树 发布 审核">
           <div class="section-kicker">05 / DESIGN, TEST & RELEASE</div>
           <h2>设计规则：输入、逻辑、输出三件事</h2>
           <p class="section-lead">进入“规则管理”新建规则，先选择模型类型，再在设计器完成输入字段、条件与动作、输出字段配置。页面顶部的“暂存保存配置”和“保存并编译”含义不同：前者只保存当前配置，后者会编译并更新可测试版本。</p>
@@ -224,6 +230,20 @@
                 <div class="designer-card"><strong>复杂交叉表</strong><p>多维度、区间和枚举组合的决策矩阵。</p><img src="project-usage/project-usage-designer-cross-adv.png" alt="复杂交叉表设计器" loading="lazy" class="zoomable" /></div>
                 <div class="designer-card"><strong>复杂评分卡</strong><p>分组评分、权重和等级区间一起配置。</p><img src="project-usage/project-usage-designer-score-adv.png" alt="复杂评分卡设计器" loading="lazy" class="zoomable" /></div>
                 <div class="designer-card"><strong>QL 脚本</strong><p>直接编写 QLExpress 逻辑，适合复杂表达式。</p><img src="project-usage/project-usage-designer-script.png" alt="QL 脚本设计器" loading="lazy" class="zoomable" /></div>
+              </div>
+              <div class="trace-gallery">
+                <div class="trace-gallery-heading"><div><span class="trace-gallery-kicker">TRACE TREE / 09 VIEWS</span><h3>九类设计器的表达式追踪树</h3></div><p>配置完成后，从追踪树确认实际命中路径、条件结果和动作输出。</p></div>
+                <div class="trace-grid">
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策表</strong><span>01</span></div><img src="readme/rule-table-trace.png" alt="决策表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>命中行 · 条件 · 输出</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策树</strong><span>02</span></div><img src="readme/rule-tree-trace.png" alt="决策树表达式追踪树" loading="lazy" class="zoomable" /><figcaption>分支路径 · 跳过节点</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策流</strong><span>03</span></div><img src="readme/rule-flow-trace.png" alt="决策流表达式追踪树" loading="lazy" class="zoomable" /><figcaption>节点流转 · 汇合路径</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>规则集</strong><span>04</span></div><img src="readme/rule-ruleset-trace.png" alt="规则集表达式追踪树" loading="lazy" class="zoomable" /><figcaption>优先级 · 命中规则</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>交叉表</strong><span>05</span></div><img src="readme/rule-cross-trace.png" alt="交叉表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>行列匹配 · 单元格</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>评分卡</strong><span>06</span></div><img src="readme/rule-score-trace.png" alt="评分卡表达式追踪树" loading="lazy" class="zoomable" /><figcaption>评分项 · 加权总分</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂交叉表</strong><span>07</span></div><img src="readme/rule-cross-adv-trace.png" alt="复杂交叉表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>多维分段 · 矩阵命中</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂评分卡</strong><span>08</span></div><img src="readme/rule-score-adv-trace.png" alt="复杂评分卡表达式追踪树" loading="lazy" class="zoomable" /><figcaption>维度得分 · 等级区间</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>QL 脚本</strong><span>09</span></div><img src="readme/rule-script-trace.png" alt="QL 脚本表达式追踪树" loading="lazy" class="zoomable" /><figcaption>表达式求值 · 返回结果</figcaption></figure>
+                </div>
               </div>
             </div>
             <aside class="side-callout">
@@ -297,3 +317,4 @@
     <script src="app.js"></script>
   </body>
 </html>
+
