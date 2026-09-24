@@ -9,6 +9,7 @@ import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.model.entity.RuleVersionBinding;
 import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
+import com.hengshucredit.rule.server.health.RuleWarmupStatus;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
@@ -40,6 +41,8 @@ public class RuleScriptPreparationService implements ApplicationRunner {
     @Resource private RuleVersionBindingMapper bindingMapper;
     @Resource private RuleDefinitionVersionMapper versionMapper;
     @Resource private RuleVersionBindingService versionService;
+    @Resource private RuleWarmupStatus warmupStatus = new RuleWarmupStatus();
+    private String lastWarmupFailureMessage;
 
     public QLExpressEngine.PreparedScript prepareArtifact(Long artifactId, Long definitionId, Long projectId) {
         ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = snapshots.load(artifactId, definitionId, projectId);
@@ -85,9 +88,19 @@ public class RuleScriptPreparationService implements ApplicationRunner {
     public void run(ApplicationArguments args) {
         int count = 0;
         int failed = 0;
-        for (RulePublished published : publishedMapper.selectList(
-                new LambdaQueryWrapper<RulePublished>().eq(RulePublished::getStatus, 1))) {
-            if (warm(published)) count++; else failed++;
+        List<RulePublished> publishedRules = publishedMapper.selectList(
+                new LambdaQueryWrapper<RulePublished>().eq(RulePublished::getStatus, 1));
+        warmupStatus.start(publishedRules.size());
+        for (RulePublished published : publishedRules) {
+            if (warm(published)) {
+                count++;
+                warmupStatus.recordPrepared();
+            } else {
+                failed++;
+                warmupStatus.recordFailure(published.getDefinitionId(), published.getVersion(),
+                        new IllegalStateException(lastWarmupFailureMessage == null
+                                ? "规则发布版本预热失败" : lastWarmupFailureMessage));
+            }
             for (RuleVersionBinding binding : bindingMapper.selectList(new LambdaQueryWrapper<RuleVersionBinding>()
                     .eq(RuleVersionBinding::getDefinitionId, published.getDefinitionId())
                     .eq(RuleVersionBinding::getStatus, 1))) {
@@ -98,22 +111,34 @@ public class RuleScriptPreparationService implements ApplicationRunner {
                         log.info("Skipping non-executable legacy binding {} without an artifact", binding.getId());
                         continue;
                     }
-                    if (warm(versionService.resolvePublished(published, binding.getId()))) count++; else failed++;
+                    if (warm(versionService.resolvePublished(published, binding.getId()))) {
+                        count++;
+                        warmupStatus.recordPrepared();
+                    } else {
+                        failed++;
+                        warmupStatus.recordFailure(published.getDefinitionId(), binding.getVersionNo(),
+                                new IllegalStateException(lastWarmupFailureMessage == null
+                                        ? "固定规则版本预热失败" : lastWarmupFailureMessage));
+                    }
                 } catch (RuntimeException invalid) {
                     failed++;
+                    warmupStatus.recordFailure(published.getDefinitionId(), binding.getVersionNo(), invalid);
                     log.error("QLExpress warmup rejected rule id={} binding={} version={}: {}",
                             published.getDefinitionId(), binding.getId(), binding.getVersionNo(), invalid.getMessage());
                 }
             }
         }
+        warmupStatus.complete();
         log.info("QLExpress prepared {} active rule versions before readiness; {} rejected", count, failed);
     }
 
     private boolean warm(RulePublished published) {
+        lastWarmupFailureMessage = null;
         try {
             preparePublished(published);
             return true;
         } catch (RuntimeException invalid) {
+            lastWarmupFailureMessage = invalid.getMessage();
             log.error("QLExpress warmup rejected rule id={} version={}: {}",
                     published.getDefinitionId(), published.getVersion(), invalid.getMessage());
             return false;

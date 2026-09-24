@@ -14,7 +14,13 @@
         <el-button size="small" @click="goBack"
           >返回</el-button
         >
-        <el-button size="small" @click="handleTestDraft">测试连接</el-button>
+        <el-button
+          size="small"
+          data-testid="test-database-connection"
+          :loading="connectionTesting"
+          @click="handleTestDraft"
+          >测试连接</el-button
+        >
         <el-button
           v-permission="'database:edit'"
           size="small"
@@ -25,6 +31,24 @@
         >
       </div>
     </div>
+
+    <el-alert
+      class="connection-setup-guide"
+      title="配置步骤：选择作用范围 → 填写数据库连接 → 测试连接 → 保存并送审。高级连接池参数通常保持默认值。"
+      type="info"
+      :closable="false"
+      show-icon
+    />
+
+    <el-alert
+      v-if="connectionTestStatus !== 'idle'"
+      class="connection-test-status"
+      :title="connectionTestStatus === 'success' ? '连接测试成功' : '连接测试失败'"
+      :description="connectionTestMessage"
+      :type="connectionTestStatus === 'success' ? 'success' : 'error'"
+      :closable="false"
+      show-icon
+    />
 
     <el-form
       ref="form"
@@ -262,55 +286,60 @@
           </el-form-item>
         </el-col>
       </el-row>
-      <el-row :gutter="12">
-        <el-col :span="8">
-          <el-form-item label="最大连接数">
-            <el-input-number
-              v-model="form.maxPoolSize"
-              :min="1"
-              :max="100"
-              style="width: 100%"
+      <el-collapse v-model="advancedPanels" class="advanced-settings">
+        <el-collapse-item title="高级连接设置（可选）" name="advanced">
+          <el-row :gutter="12">
+            <el-col :span="8">
+              <el-form-item label="最大连接数">
+                <el-input-number
+                  v-model="form.maxPoolSize"
+                  :min="1"
+                  :max="100"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="最小空闲">
+                <el-input-number
+                  v-model="form.minIdle"
+                  :min="0"
+                  :max="100"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="连接超时">
+                <el-input-number
+                  v-model="form.connectionTimeoutMs"
+                  :min="100"
+                  :step="500"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+            <el-col :span="8">
+              <el-form-item label="空闲超时">
+                <el-input-number
+                  v-model="form.idleTimeoutMs"
+                  :min="10000"
+                  :step="60000"
+                  style="width: 100%"
+                />
+              </el-form-item>
+            </el-col>
+          </el-row>
+          <el-form-item label="校验 SQL">
+            <monaco-editor
+              v-model:value="form.validationQuery"
+              language="sql"
+              height="90px"
             />
+            <div class="field-help">仅允许单条只读 SELECT 查询，例如 MySQL/PostgreSQL 使用 SELECT 1，Oracle 使用 SELECT 1 FROM DUAL。</div>
           </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="最小空闲">
-            <el-input-number
-              v-model="form.minIdle"
-              :min="0"
-              :max="100"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="连接超时">
-            <el-input-number
-              v-model="form.connectionTimeoutMs"
-              :min="100"
-              :step="500"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
-        <el-col :span="8">
-          <el-form-item label="空闲超时">
-            <el-input-number
-              v-model="form.idleTimeoutMs"
-              :min="10000"
-              :step="60000"
-              style="width: 100%"
-            />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="校验 SQL">
-        <monaco-editor
-          v-model:value="form.validationQuery"
-          language="sql"
-          height="90px"
-        />
-      </el-form-item>
+        </el-collapse-item>
+      </el-collapse>
       <el-form-item label="说明">
         <el-input v-model="form.description" type="textarea" :rows="2" />
       </el-form-item>
@@ -347,6 +376,10 @@ export default {
     return {
       projects: [],
       saving: false,
+      connectionTesting: false,
+      connectionTestStatus: 'idle',
+      connectionTestMessage: '',
+      advancedPanels: [],
       form: this.emptyForm(),
       rules: {
         datasourceCode: [
@@ -594,8 +627,20 @@ export default {
     handleTestDraft() {
       this.$refs.form.validate(async (valid) => {
         if (!valid) return
-        await testDbDatasourceDraft(this.normalizeForm(this.form))
-        this.$message.success('连接成功')
+        this.connectionTesting = true
+        this.connectionTestStatus = 'idle'
+        this.connectionTestMessage = ''
+        try {
+          await testDbDatasourceDraft(this.normalizeForm(this.form))
+          this.connectionTestStatus = 'success'
+          this.connectionTestMessage = '数据库连接和校验 SQL 均已通过，可以继续保存并送审。'
+          this.$message.success('连接成功')
+        } catch (e) {
+          this.connectionTestStatus = 'error'
+          this.connectionTestMessage = e.message || '请检查连接地址、账号、网络或校验 SQL。'
+        } finally {
+          this.connectionTesting = false
+        }
       })
     },
   },
@@ -625,6 +670,21 @@ export default {
     display: flex;
     align-items: center;
     gap: 8px;
+  }
+  .connection-setup-guide,
+  .connection-test-status {
+    margin-bottom: 12px;
+  }
+  .advanced-settings {
+    margin: 4px 0 14px;
+    border-top: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+  }
+  .field-help {
+    margin-top: 4px;
+    color: var(--tianshu-text-tertiary);
+    font-size: 12px;
+    line-height: 1.5;
   }
   .detail-form {
     background: var(--tianshu-bg-surface);

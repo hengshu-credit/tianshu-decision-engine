@@ -11,6 +11,9 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Component
 public class SourceResolutionExecutor implements AutoCloseable {
@@ -18,6 +21,9 @@ public class SourceResolutionExecutor implements AutoCloseable {
     private static final long SHUTDOWN_WAIT_SECONDS = 5L;
     private final int parallelism;
     private final ThreadPoolExecutor executor;
+    private final AtomicLong submitted = new AtomicLong();
+    private final AtomicLong completed = new AtomicLong();
+    private final AtomicLong failed = new AtomicLong();
 
     public SourceResolutionExecutor(
             @Value("${rule-engine.source-resolution.parallelism:1}") int parallelism) {
@@ -43,15 +49,38 @@ public class SourceResolutionExecutor implements AutoCloseable {
         if (task == null) {
             throw new IllegalArgumentException("Source resolution task must not be null");
         }
+        submitted.incrementAndGet();
         if (executor == null) {
-            return callInline(task);
+            CompletableFuture<T> inline = callInline(task);
+            observe(inline);
+            return inline;
         }
         Long deadline = RequestDeadlineContext.capture();
-        return CompletableFuture.supplyAsync(() -> {
+        CompletableFuture<T> future = CompletableFuture.supplyAsync(() -> {
             try (RequestDeadlineContext.Scope ignored = RequestDeadlineContext.install(deadline)) {
                 return call(task);
             }
         }, executor);
+        observe(future);
+        return future;
+    }
+
+    public Map<String, Object> snapshot() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("parallelism", parallelism);
+        result.put("submitted", submitted.get());
+        result.put("completed", completed.get());
+        result.put("failed", failed.get());
+        result.put("queueDepth", executor == null ? 0 : executor.getQueue().size());
+        result.put("active", executor == null ? 0 : executor.getActiveCount());
+        return result;
+    }
+
+    private <T> void observe(CompletableFuture<T> future) {
+        future.whenComplete((value, error) -> {
+            if (error == null) completed.incrementAndGet();
+            else failed.incrementAndGet();
+        });
     }
 
     private <T> CompletableFuture<T> callInline(Callable<T> task) {

@@ -1,4 +1,4 @@
-// 与服务端 SqlQuerySupport 共享测试语料；只识别单条 SELECT，不扩大 SQL 执行权限。
+// 与服务端 SqlQuerySupport 共享测试语料；只识别单条只读 SELECT/WITH，不扩大 SQL 执行权限。
 export function analyzeSqlQuery(sql) {
   const text = String(sql || '')
   let code = ''
@@ -56,9 +56,9 @@ export function validateReadOnlyQuery(sql) {
   if (!String(sql || '').trim()) return '请输入要执行的 SELECT 查询'
   const { code, invalid } = analyzeSqlQuery(sql)
   if (invalid) return 'SQL 引号或注释未闭合，或包含不支持的转义/可执行注释'
-  if (!/^select\b/i.test(code)) return '只允许执行 SELECT 查询'
+  if (!/^(?:select|with)\b/i.test(code)) return '只允许执行 SELECT 或只读 WITH 查询'
   if (!/^[^;]*;?$/.test(code)) return '只允许单条 SELECT 查询'
-  if (/\binto\b|\bfor\s+(?:update|share)\b|\block\s+in\s+share\s+mode\b/i.test(code)) {
+  if (/\b(?:insert|update|delete|merge|drop|alter|truncate|create)\b|\binto\b|\bfor\s+(?:update|share)\b|\block\s+in\s+share\s+mode\b/i.test(code)) {
     return '只读查询不允许写入结果或使用数据库锁定语句'
   }
   return ''

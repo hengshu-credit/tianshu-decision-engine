@@ -1127,8 +1127,15 @@ public class RuleFieldAnalyzer {
         }
         fieldWrapper.eq(RuleDataObjectField::getStatus, 1);
         List<RuleDataObjectField> doFields = dataObjectFieldMapper.selectList(fieldWrapper);
+        Map<Long, RuleDataObjectField> objectFieldMap = new HashMap<>();
+        for (RuleDataObjectField field : doFields == null
+                ? Collections.<RuleDataObjectField>emptyList() : doFields) {
+            if (field != null && field.getId() != null) {
+                objectFieldMap.put(field.getId(), field);
+            }
+        }
         for (RuleDataObjectField f : doFields) {
-            String scriptName = buildObjectFieldScriptName(f, objectMap);
+            String scriptName = buildObjectFieldScriptName(f, objectMap, objectFieldMap);
             String key = scriptName != null ? scriptName.toLowerCase() : null;
             if (key != null && !map.containsKey(key)) {
                 Map<String, Object> meta = new HashMap<>();
@@ -1723,21 +1730,38 @@ public class RuleFieldAnalyzer {
             }
         } else if ("API".equals(varSource)) {
             List<RuleDefinitionInputField> requestFields = loadApiRequestObjectFields(sourceConfig);
+            Set<String> requestPaths = new LinkedHashSet<>();
             if (!requestFields.isEmpty()) {
                 for (RuleDefinitionInputField requestField : requestFields) {
                     expandFieldRecursive(requestField, varMetaMap, seen, visited, result);
+                    String requestPath = trimToNull(requestField.getScriptName());
+                    if (requestPath != null) requestPaths.add(requestPath.toLowerCase(Locale.ROOT));
                 }
-                return;
             }
             if (variableSourceResolver != null) {
                 RuleVariable variable = new RuleVariable();
+                variable.setId(field.getVarId());
+                if (meta.get("projectId") instanceof Number projectId) {
+                    variable.setProjectId(projectId.longValue());
+                }
+                if (meta.get("scope") != null) {
+                    variable.setScope(String.valueOf(meta.get("scope")));
+                }
                 variable.setScriptName(trimToNull(field.getScriptName()));
                 variable.setVarSource(varSource);
                 variable.setSourceConfig(sourceConfig);
                 depNames.addAll(variableSourceResolver.collectVariableDependencies(variable));
             }
+            depNames.removeIf(name -> name != null && requestPaths.contains(name.toLowerCase(Locale.ROOT)));
         } else if (variableSourceResolver != null) {
             RuleVariable variable = new RuleVariable();
+            variable.setId(field.getVarId());
+            if (meta.get("projectId") instanceof Number projectId) {
+                variable.setProjectId(projectId.longValue());
+            }
+            if (meta.get("scope") != null) {
+                variable.setScope(String.valueOf(meta.get("scope")));
+            }
             variable.setScriptName(trimToNull(field.getScriptName()));
             variable.setVarSource(varSource);
             variable.setSourceConfig(sourceConfig);
@@ -1933,6 +1957,10 @@ public class RuleFieldAnalyzer {
             field.setFieldLabel(firstNonBlank(operand.getString("label"), field.getFieldName(), scriptName));
             field.setScriptName(scriptName);
             field.setFieldType(firstNonBlank(operand.getString("valueType"), modelField.getFieldType(), "STRING"));
+            field.setDefaultValue(modelField.getDefaultValue());
+            field.setValidValues(modelField.getValidValues());
+            field.setTransformType(modelField.getTransformType());
+            field.setTransformParams(modelField.getTransformParams());
             field.setStatus(1);
             field.setCreateTime(LocalDateTime.now());
             fields.add(field);
@@ -2012,9 +2040,15 @@ public class RuleFieldAnalyzer {
             return Collections.emptyList();
         }
         Map<Long, RuleDataObject> objectMap = Collections.singletonMap(object.getId(), object);
+        Map<Long, RuleDataObjectField> objectFieldMap = new HashMap<>();
+        for (RuleDataObjectField field : fields) {
+            if (field != null && field.getId() != null) {
+                objectFieldMap.put(field.getId(), field);
+            }
+        }
         List<RuleDefinitionInputField> result = new ArrayList<>();
         for (RuleDataObjectField source : fields) {
-            String scriptName = buildObjectFieldScriptName(source, objectMap);
+            String scriptName = buildObjectFieldScriptName(source, objectMap, objectFieldMap);
             if (scriptName == null) {
                 continue;
             }
@@ -3273,13 +3307,25 @@ public class RuleFieldAnalyzer {
         return map;
     }
 
-    private String buildObjectFieldScriptName(RuleDataObjectField field, Map<Long, RuleDataObject> objectMap) {
+    private String buildObjectFieldScriptName(RuleDataObjectField field,
+                                              Map<Long, RuleDataObject> objectMap,
+                                              Map<Long, RuleDataObjectField> objectFieldMap) {
         String fieldScript = trimToNull(field.getScriptName());
-        if (fieldScript == null) {
-            fieldScript = trimToNull(field.getVarCode());
-        }
-        if (fieldScript == null) {
-            return null;
+        if (fieldScript == null) fieldScript = trimToNull(field.getVarCode());
+        if (fieldScript == null) return null;
+        Set<Long> visited = new HashSet<>();
+        Long parentId = field.getParentFieldId();
+        while (parentId != null && visited.add(parentId)) {
+            RuleDataObjectField parent = objectFieldMap == null ? null : objectFieldMap.get(parentId);
+            if (parent == null) break;
+            String parentScript = trimToNull(parent.getScriptName());
+            if (parentScript == null) parentScript = trimToNull(parent.getVarCode());
+            if (parentScript == null) break;
+            if (!fieldScript.equals(parentScript)
+                    && !fieldScript.startsWith(parentScript + ".")) {
+                fieldScript = parentScript + "." + fieldScript;
+            }
+            parentId = parent.getParentFieldId();
         }
         RuleDataObject object = objectMap.get(field.getObjectId());
         String objectScript = object != null ? trimToNull(object.getScriptName()) : null;

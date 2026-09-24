@@ -1,5 +1,14 @@
 <template>
   <div class="uiue-list-page rule-test-page">
+    <config-layer-guide
+      title="规则测试步骤"
+      test-id="rule-test-layers"
+      :items="[
+        { label: '选择范围和规则', detail: '确定项目与规则版本' },
+        { label: '准备输入样例', detail: '加载字段或手工填写参数' },
+        { label: '执行并查看追踪', detail: '核对结果、耗时和命中路径' },
+      ]"
+    />
     <div class="test-layout">
       <!-- 左侧：选择规则 + 参数输入 -->
       <div class="test-left">
@@ -513,6 +522,7 @@ import { listAllFunctionsByProject } from '@/api/function'
 import { getModel } from '@/api/model'
 import TraceTree from '@/components/common/TraceTree.vue'
 import AsyncState from '@/components/common/AsyncState.vue'
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import { sampleValueForVarType } from '@/utils/testParamTemplate'
 import { normalizeTestResult } from '@/utils/testResult'
 import { routeProjectId } from '@/utils/projectContext'
@@ -531,6 +541,7 @@ export default {
   components: {
     TraceTree,
     AsyncState,
+    ConfigLayerGuide,
     ElIconStarOff,
     ElIconVideoPlay,
     ElIconRefresh,

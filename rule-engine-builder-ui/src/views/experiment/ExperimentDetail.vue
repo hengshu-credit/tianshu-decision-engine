@@ -39,6 +39,20 @@
       </div>
     </div>
 
+    <section class="experiment-release-map" data-testid="experiment-release-map">
+      <div>
+        <span class="section-kicker">VERSION &amp; TRAFFIC</span>
+        <strong>版本与分流关系</strong>
+        <small>每次保存形成实验版本；线上只按已生效版本路由，TEST 组只记录结果。</small>
+      </div>
+      <div class="experiment-release-map__stats">
+        <span><b>{{ productionFormGroups.length }}</b> 个生产组</span>
+        <span><b>{{ testFormGroups.length }}</b> 个测试组</span>
+        <span><b>{{ ratioTotal }}%</b> 生产流量</span>
+      </div>
+      <el-button v-if="form.id" size="small" @click="openVersionDialog">查看版本与回滚</el-button>
+    </section>
+
     <el-form
       ref="form"
       :model="form"
@@ -1651,6 +1665,13 @@ export default {
 </script>
 
 <style lang="scss" scoped>
+.experiment-release-map { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 12px; padding: 12px 14px; background: var(--tianshu-bg-surface); border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; }
+.experiment-release-map > div:first-child { display: grid; gap: 4px; }
+.experiment-release-map strong { color: var(--tianshu-text-primary); }
+.experiment-release-map small { color: var(--tianshu-text-secondary); }
+.experiment-release-map__stats { display: flex; gap: 16px; color: var(--tianshu-text-secondary); font-size: 12px; }
+.experiment-release-map__stats b { color: var(--el-color-primary); font-size: 15px; }
+@media (max-width: 900px) { .experiment-release-map { align-items: flex-start; flex-direction: column; } .experiment-release-map__stats { flex-wrap: wrap; } }
 .experiment-detail-page {
   .detail-header {
     display: flex;

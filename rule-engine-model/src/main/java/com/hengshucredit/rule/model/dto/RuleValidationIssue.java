@@ -13,10 +13,14 @@ import java.util.Map;
 public class RuleValidationIssue {
     private String severity;
     private String code;
+    /** 面向业务人员的校验标题，避免页面按 code 猜测文案。 */
+    private String title;
     private String path;
     private String resourceType;
     private Long resourceId;
     private String message;
+    /** 修复后应执行的下一步，例如“重新编译并提交预检”。 */
+    private String nextAction;
     private Long revisionId;
     private String refType;
     private Map<String, Object> details = new LinkedHashMap<>();
@@ -42,16 +46,46 @@ public class RuleValidationIssue {
     }
 
     public static RuleValidationIssue error(String code, String path, String message) {
-        return new RuleValidationIssue("ERROR", code, path, null, null, message);
+        return new RuleValidationIssue("ERROR", code, path, null, null, message)
+                .withTitle(defaultTitle(code)).withNextAction(defaultNextAction(code));
     }
 
     public static RuleValidationIssue error(String code, String path, String resourceType,
                                             Long resourceId, String message) {
-        return new RuleValidationIssue("ERROR", code, path, resourceType, resourceId, message);
+        return new RuleValidationIssue("ERROR", code, path, resourceType, resourceId, message)
+                .withTitle(defaultTitle(code)).withNextAction(defaultNextAction(code));
     }
 
     public static RuleValidationIssue warning(String code, String path, String message) {
-        return new RuleValidationIssue("WARNING", code, path, null, null, message);
+        return new RuleValidationIssue("WARNING", code, path, null, null, message)
+                .withTitle(defaultTitle(code)).withNextAction(defaultNextAction(code));
+    }
+
+    public RuleValidationIssue withTitle(String title) {
+        this.title = title;
+        return this;
+    }
+
+    public RuleValidationIssue withNextAction(String nextAction) {
+        this.nextAction = nextAction;
+        return this;
+    }
+
+    private static String defaultTitle(String code) {
+        if (code == null || code.isBlank()) return "配置校验问题";
+        return switch (code) {
+            case "COMPILE_FAILED" -> "编译未通过";
+            case "BREAKING_SCHEMA_CHANGE" -> "存在破坏性字段变更";
+            case "REFERENCE_MISSING", "MISSING_REFERENCE" -> "存在失效引用";
+            case "DEPENDENCY_CHANGED" -> "依赖版本发生变化";
+            default -> "配置校验问题";
+        };
+    }
+
+    private static String defaultNextAction(String code) {
+        if (code != null && code.contains("COMPILE")) return "修复配置后重新编译，再执行发布前校验";
+        if (code != null && (code.contains("REFERENCE") || code.contains("DEPENDENCY"))) return "按引用位置修复依赖，再执行发布前校验";
+        return "按问题位置修复配置，再执行发布前校验";
     }
 
     public RuleValidationIssue withRevisionId(Long revisionId) {

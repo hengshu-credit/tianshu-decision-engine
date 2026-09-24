@@ -595,6 +595,17 @@ describe('RuleDetail — 初始化与数据加载', () => {
     expect(panel.props('rule').id).toBe(1)
     expect(wrapper.text()).toContain('API 测试用例')
   })
+
+  test('发布进度按六项能力给出下一步', () => {
+    expect(wrapper.vm.releaseChecklist).toHaveLength(6)
+    expect(wrapper.vm.releaseProgressCompleted).toBe(3)
+    expect(wrapper.vm.releaseProgressSummary).toContain('发布前校验')
+
+    wrapper.vm.preflightReport = { valid: true, errors: [], warnings: [] }
+    wrapper.vm.testResult = { success: true }
+    expect(wrapper.vm.releaseProgressCompleted).toBe(5)
+    expect(wrapper.vm.releaseProgressSummary).toContain('审批发布')
+  })
 })
 
 describe('RuleDetail — 辅助方法', () => {

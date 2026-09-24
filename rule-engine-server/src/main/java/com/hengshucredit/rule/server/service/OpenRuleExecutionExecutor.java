@@ -13,11 +13,17 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.LinkedHashMap;
+import java.util.Map;
 
 @Component
 public class OpenRuleExecutionExecutor {
 
     private final ThreadPoolExecutor executor;
+    private final AtomicLong submitted = new AtomicLong();
+    private final AtomicLong rejected = new AtomicLong();
+    private final AtomicLong timedOut = new AtomicLong();
 
     public OpenRuleExecutionExecutor() {
         this(Math.max(4, Math.min(32, Runtime.getRuntime().availableProcessors())), 1000);
@@ -34,6 +40,7 @@ public class OpenRuleExecutionExecutor {
         int timeoutMs = RequestDeadlineContext.remainingMillis();
         if (timeoutMs == 0) throw new TimedOut();
         Future<T> future;
+        submitted.incrementAndGet();
         try {
             future = executor.submit(() -> {
                 if (timeoutMs == Integer.MAX_VALUE) RequestDeadlineContext.clear();
@@ -45,12 +52,14 @@ public class OpenRuleExecutionExecutor {
                 }
             });
         } catch (RejectedExecutionException e) {
+            rejected.incrementAndGet();
             throw new Busy(e);
         }
         try {
             return timeoutMs == Integer.MAX_VALUE
                     ? future.get() : future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {
+            timedOut.incrementAndGet();
             future.cancel(true);
             throw new TimedOut(e);
         } catch (InterruptedException e) {
@@ -63,6 +72,19 @@ public class OpenRuleExecutionExecutor {
             if (cause instanceof Error) throw (Error) cause;
             throw new IllegalStateException("开放规则执行失败", cause);
         }
+    }
+
+    public Map<String, Object> snapshot() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("poolSize", executor.getPoolSize());
+        result.put("active", executor.getActiveCount());
+        result.put("queueDepth", executor.getQueue().size());
+        result.put("queueCapacity", executor.getQueue().remainingCapacity() + executor.getQueue().size());
+        result.put("submitted", submitted.get());
+        result.put("completed", executor.getCompletedTaskCount());
+        result.put("rejected", rejected.get());
+        result.put("timedOut", timedOut.get());
+        return result;
     }
 
     @PreDestroy

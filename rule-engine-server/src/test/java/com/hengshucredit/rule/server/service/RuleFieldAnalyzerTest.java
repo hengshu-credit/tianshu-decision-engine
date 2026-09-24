@@ -36,6 +36,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
@@ -1396,6 +1397,148 @@ public class RuleFieldAnalyzerTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    public void apiRequestObjectExpansionAlsoIncludesApiConfigDependencies() throws Exception {
+        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
+        apiConfig.setId(7L);
+        apiConfig.setRequestObjectId(301L);
+        apiConfig.setHeaderConfig("{\"X-Tenant\":\"$.tenantId\"}");
+
+        RuleDataObject requestObject = new RuleDataObject();
+        requestObject.setId(301L);
+        requestObject.setScriptName("request");
+        RuleDataObjectField requestId = new RuleDataObjectField();
+        requestId.setId(201L);
+        requestId.setObjectId(301L);
+        requestId.setScriptName("id");
+        requestId.setVarCode("id");
+        requestId.setVarLabel("请求ID");
+        requestId.setVarType("STRING");
+        requestId.setStatus(1);
+
+        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
+        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
+        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Collections.singletonList(requestId) : null));
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver() {
+            @Override
+            Set<String> collectVariableDependencies(RuleVariable variable) {
+                return Collections.singleton("tenantId");
+            }
+        });
+
+        Map<String, Object> apiMeta = new HashMap<>();
+        apiMeta.put("id", 101L);
+        apiMeta.put("refType", "VARIABLE");
+        apiMeta.put("scriptName", "api_features");
+        apiMeta.put("varSource", "API");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7}");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("api_features", apiMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod(
+                "expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField apiField = inputField(
+                "api_features", "VARIABLE", "API", 101L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Collections.singletonList(apiField), varMetaMap);
+
+        assertTrue(names(result).contains("request.id"));
+        assertTrue(names(result).contains("tenantId"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void apiRequestObjectExpansionPreservesNestedFieldPaths() throws Exception {
+        RuleExternalApiConfig apiConfig = new RuleExternalApiConfig();
+        apiConfig.setId(7L);
+        apiConfig.setRequestObjectId(301L);
+        RuleDataObject requestObject = new RuleDataObject();
+        requestObject.setId(301L);
+        requestObject.setScriptName("request");
+        RuleDataObjectField profile = new RuleDataObjectField();
+        profile.setId(201L);
+        profile.setObjectId(301L);
+        profile.setScriptName("profile");
+        profile.setVarCode("profile");
+        profile.setVarType("OBJECT");
+        profile.setStatus(1);
+        RuleDataObjectField name = new RuleDataObjectField();
+        name.setId(202L);
+        name.setObjectId(301L);
+        name.setParentFieldId(201L);
+        name.setScriptName("name");
+        name.setVarCode("name");
+        name.setVarType("STRING");
+        name.setStatus(1);
+        setField(analyzer, "externalApiConfigMapper", mapper(RuleExternalApiConfigMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? apiConfig : null));
+        setField(analyzer, "dataObjectMapper", mapper(RuleDataObjectMapper.class,
+                (proxy, method, args) -> "selectById".equals(method.getName()) ? requestObject : null));
+        setField(analyzer, "dataObjectFieldMapper", mapper(RuleDataObjectFieldMapper.class,
+                (proxy, method, args) -> "selectList".equals(method.getName())
+                        ? Arrays.asList(profile, name) : null));
+
+        Map<String, Object> apiMeta = new HashMap<>();
+        apiMeta.put("id", 101L);
+        apiMeta.put("refType", "VARIABLE");
+        apiMeta.put("scriptName", "api_features");
+        apiMeta.put("varSource", "API");
+        apiMeta.put("sourceConfig", "{\"apiConfigId\":7}");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("api_features", apiMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod(
+                "expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField apiField = inputField(
+                "api_features", "VARIABLE", "API", 101L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Collections.singletonList(apiField), varMetaMap);
+
+        assertTrue(names(result).contains("request.profile.name"));
+        assertFalse(names(result).contains("request.name"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void dbSourceExpansionPreservesProjectScopeForDependencyLookup() throws Exception {
+        AtomicReference<Long> observedProjectId = new AtomicReference<>();
+        setField(analyzer, "variableSourceResolver", new VariableSourceResolver() {
+            @Override
+            Set<String> collectVariableDependencies(RuleVariable variable) {
+                observedProjectId.set(variable.getProjectId());
+                return Collections.singleton("customerId");
+            }
+        });
+
+        Map<String, Object> dbMeta = new HashMap<>();
+        dbMeta.put("id", 101L);
+        dbMeta.put("refType", "VARIABLE");
+        dbMeta.put("scriptName", "db_score");
+        dbMeta.put("varSource", "DB");
+        dbMeta.put("projectId", 4L);
+        dbMeta.put("sourceConfig", "{\"params\":[]}");
+        Map<String, Map<String, Object>> varMetaMap = new HashMap<>();
+        varMetaMap.put("db_score", dbMeta);
+
+        Method expand = RuleFieldAnalyzer.class.getDeclaredMethod(
+                "expandModelInputFields", List.class, Map.class);
+        expand.setAccessible(true);
+        RuleDefinitionInputField dbField = inputField(
+                "db_score", "VARIABLE", "DB", 101L);
+        List<RuleDefinitionInputField> result = (List<RuleDefinitionInputField>) expand.invoke(
+                analyzer, Collections.singletonList(dbField), varMetaMap);
+
+        assertEquals(Long.valueOf(4L), observedProjectId.get());
+        assertTrue(names(result).contains("customerId"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     public void sourceVariableWithoutDependenciesDoesNotBecomeExternalInput() throws Exception {
         setField(analyzer, "variableSourceResolver", new VariableSourceResolver());
 
@@ -1722,6 +1865,29 @@ public class RuleFieldAnalyzerTest {
         assertEquals(Arrays.asList("baseAmount", "payload"), names(fields));
         assertEquals(Long.valueOf(11), fields.get(0).getVarId());
         assertEquals(Long.valueOf(12), fields.get(1).getVarId());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void modelOperandDependenciesCarryModelFieldDefaults() throws Exception {
+        RuleModelInputField modelField = new RuleModelInputField();
+        modelField.setFieldName("age");
+        modelField.setFieldType("INTEGER");
+        modelField.setDefaultValue("18");
+        modelField.setValidValues("[18,35]");
+        modelField.setSourceOperand("{\"kind\":\"REFERENCE\",\"refId\":37,"
+                + "\"refType\":\"VARIABLE\",\"code\":\"age\","
+                + "\"valueType\":\"INTEGER\"}");
+
+        Method copy = RuleFieldAnalyzer.class.getDeclaredMethod(
+                "copyModelInputFields", RuleModelInputField.class);
+        copy.setAccessible(true);
+        List<RuleDefinitionInputField> fields = (List<RuleDefinitionInputField>) copy.invoke(
+                analyzer, modelField);
+
+        assertEquals(1, fields.size());
+        assertEquals("18", fields.get(0).getDefaultValue());
+        assertEquals("[18,35]", fields.get(0).getValidValues());
     }
 
     private static RuleDefinitionInputField inputField(String scriptName, String refType, String varSource, Long varId) {

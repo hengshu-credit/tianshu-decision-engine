@@ -86,4 +86,17 @@ public class SourceResolutionExecutorTest {
         assertEquals(8, completed.get());
         executor.close();
     }
+
+    @Test
+    public void exposesQueueAndFailureCounters() throws Exception {
+        try (SourceResolutionExecutor executor = new SourceResolutionExecutor(2)) {
+            executor.submit(() -> "ok").join();
+            assertThrows(RuntimeException.class, () -> executor.submit(() -> {
+                throw new IllegalStateException("failed");
+            }).join());
+            assertEquals(2L, ((Number) executor.snapshot().get("submitted")).longValue());
+            assertEquals(1L, ((Number) executor.snapshot().get("completed")).longValue());
+            assertEquals(1L, ((Number) executor.snapshot().get("failed")).longValue());
+        }
+    }
 }

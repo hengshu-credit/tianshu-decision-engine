@@ -18,6 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.LongSupplier;
 
 @Component
@@ -27,6 +28,11 @@ public class ExternalApiResponseCache {
     private final ExternalResponseDistributedStore distributedStore;
     private final LongSupplier currentTimeMillis;
     private final LinkedHashMap<Long, ApiCache> caches = new LinkedHashMap<>(16, 0.75F, true);
+    private final AtomicLong hits = new AtomicLong();
+    private final AtomicLong staleHits = new AtomicLong();
+    private final AtomicLong misses = new AtomicLong();
+    private final AtomicLong coalesced = new AtomicLong();
+    private final AtomicLong puts = new AtomicLong();
 
     @Autowired
     public ExternalApiResponseCache(ExternalCallProperties properties,
@@ -55,12 +61,18 @@ public class ExternalApiResponseCache {
                 cached = null;
             }
         }
-        if (cached == null) return null;
-        if (cached.staleUntilMillis < now) {
-            apiCache.cache.invalidate(cacheKey);
+        if (cached == null) {
+            misses.incrementAndGet();
             return null;
         }
-        return new Lookup(copy(cached.response), now > cached.expiresAtMillis);
+        if (cached.staleUntilMillis < now) {
+            apiCache.cache.invalidate(cacheKey);
+            misses.incrementAndGet();
+            return null;
+        }
+        boolean stale = now > cached.expiresAtMillis;
+        if (stale) staleHits.incrementAndGet(); else hits.incrementAndGet();
+        return new Lookup(copy(cached.response), stale);
     }
 
     public void put(RuleExternalApiConfig config, String cacheKey, Map<String, Object> response) {
@@ -78,6 +90,7 @@ public class ExternalApiResponseCache {
                 ? 0 : config.getStaleCacheSeconds()) * 1000L;
         CachedResponse cached = new CachedResponse(copied, expiresAt, staleUntil);
         apiCache.cache.put(cacheKey, cached);
+        puts.incrementAndGet();
         if (apiCache.settings.redisEnabled && distributedStore != null) {
             try {
                 distributedStore.put(config.getId(), cacheKey, cached);
@@ -96,6 +109,7 @@ public class ExternalApiResponseCache {
         CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
         CompletableFuture<Map<String, Object>> existing = apiCache.inFlight.putIfAbsent(cacheKey, created);
         if (existing != null) {
+            coalesced.incrementAndGet();
             return new LoadResult(copy(await(existing)), true);
         }
         try {
@@ -132,6 +146,17 @@ public class ExternalApiResponseCache {
     synchronized void cleanUp(Long apiConfigId) {
         ApiCache apiCache = caches.get(apiConfigId);
         if (apiCache != null) apiCache.cache.cleanUp();
+    }
+
+    public synchronized Map<String, Object> snapshot() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registeredApis", caches.size());
+        result.put("hits", hits.get());
+        result.put("staleHits", staleHits.get());
+        result.put("misses", misses.get());
+        result.put("coalesced", coalesced.get());
+        result.put("puts", puts.get());
+        return result;
     }
 
     private synchronized ApiCache apiCache(RuleExternalApiConfig config) {

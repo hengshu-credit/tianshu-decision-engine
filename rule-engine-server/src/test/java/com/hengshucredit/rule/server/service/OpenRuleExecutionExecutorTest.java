@@ -65,4 +65,25 @@ public class OpenRuleExecutionExecutorTest {
         executor.close();
         throw new AssertionError("Expected bounded executor rejection");
     }
+
+    @Test
+    public void exposesQueueAndTimeoutCounters() {
+        OpenRuleExecutionExecutor executor = new OpenRuleExecutionExecutor(1, 1);
+        RequestDeadlineContext.start(1);
+        try {
+            try {
+                executor.execute(() -> {
+                    Thread.sleep(50L);
+                    return "late";
+                });
+            } catch (OpenRuleExecutionExecutor.TimedOut ignored) {
+                // expected
+            }
+            assertEquals(1L, ((Number) executor.snapshot().get("submitted")).longValue());
+            assertEquals(1L, ((Number) executor.snapshot().get("timedOut")).longValue());
+        } finally {
+            RequestDeadlineContext.clear();
+            executor.close();
+        }
+    }
 }

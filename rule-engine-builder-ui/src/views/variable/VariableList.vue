@@ -7,6 +7,16 @@
       >中可加载项目变量作为入参。支持从 Java 实体类、JSON、建表 DDL 批量导入。
     </div>
 
+    <config-layer-guide
+      title="变量配置步骤"
+      test-id="variable-config-layers"
+      :items="[
+        { label: '基础字段', detail: '编码、名称、脚本名和类型' },
+        { label: '取值来源', detail: '输入、接口、数据库、名单或计算' },
+        { label: '保存前验证', detail: '用样例确认结果，再送审生效' },
+      ]"
+    />
+
     <!-- Tabs -->
     <el-tabs
       v-model="activeTab"
@@ -2632,6 +2642,7 @@ import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
+import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
@@ -2888,6 +2899,7 @@ export default {
     VariableToolbarActions,
     VariableImportHelp,
     DialogResizeHandle,
+    ConfigLayerGuide,
     ElIconInfo,
     ElIconSuccess,
   },

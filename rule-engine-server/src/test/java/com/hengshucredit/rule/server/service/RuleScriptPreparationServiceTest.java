@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
+import com.hengshucredit.rule.server.health.RuleWarmupState;
+import com.hengshucredit.rule.server.health.RuleWarmupStatus;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
@@ -97,6 +99,8 @@ public class RuleScriptPreparationServiceTest {
         });
         service.run(null);
         assertEquals(List.of("legacy:return 2;", "artifact:99"), warmed);
+        assertEquals(RuleWarmupState.READY,
+                ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus")).getState());
     }
 
     @Test
@@ -157,6 +161,8 @@ public class RuleScriptPreparationServiceTest {
 
         assertEquals(List.of("return 3;", "artifact:99", "return 4;"), warmed);
         assertEquals(2, bindingQueries.get());
+        assertEquals(RuleWarmupState.FAILED,
+                ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus")).getState());
     }
 
     private RuleScriptPreparationService service(QLExpressEngine engine) {

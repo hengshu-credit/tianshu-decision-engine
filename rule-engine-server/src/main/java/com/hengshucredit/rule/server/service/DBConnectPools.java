@@ -64,13 +64,46 @@ public class DBConnectPools implements DisposableBean {
         closeQuietly(previous);
     }
 
+    public Map<String, Object> snapshot() {
+        Map<String, Object> result = new LinkedHashMap<>();
+        Map<String, Map<String, Object>> poolDetails = new LinkedHashMap<>();
+        long active = 0;
+        long idle = 0;
+        long total = 0;
+        long pending = 0;
+        for (Map.Entry<Long, DbPoolHolder> entry : pools.entrySet()) {
+            DbPoolHolder holder = entry.getValue();
+            if (holder == null || holder.isClosed()) continue;
+            var bean = holder.dataSource.getHikariPoolMXBean();
+            if (bean == null) continue;
+            Map<String, Object> detail = new LinkedHashMap<>();
+            detail.put("active", bean.getActiveConnections());
+            detail.put("idle", bean.getIdleConnections());
+            detail.put("total", bean.getTotalConnections());
+            detail.put("pending", bean.getThreadsAwaitingConnection());
+            poolDetails.put(String.valueOf(entry.getKey()), detail);
+            active += bean.getActiveConnections();
+            idle += bean.getIdleConnections();
+            total += bean.getTotalConnections();
+            pending += bean.getThreadsAwaitingConnection();
+        }
+        result.put("poolCount", poolDetails.size());
+        result.put("active", active);
+        result.put("idle", idle);
+        result.put("total", total);
+        result.put("pending", pending);
+        result.put("pools", poolDetails);
+        return result;
+    }
+
     public void testConnection(RuleDbDatasource datasource) throws Exception {
+        String validationQuery = hasText(datasource.getValidationQuery())
+                ? datasource.getValidationQuery()
+                : "SELECT 1";
+        String executableValidationQuery = validationSql(validationQuery);
         DbPoolHolder testPool = buildPool(datasource);
         try (Connection connection = testPool.dataSource.getConnection()) {
-            String validationQuery = hasText(datasource.getValidationQuery())
-                    ? datasource.getValidationQuery()
-                    : "SELECT 1";
-            try (PreparedStatement statement = connection.prepareStatement(validationQuery)) {
+            try (PreparedStatement statement = connection.prepareStatement(executableValidationQuery)) {
                 statement.execute();
             }
         } finally {
@@ -116,6 +149,13 @@ public class DBConnectPools implements DisposableBean {
 
     static boolean isReadOnlySelectSql(String sql) {
         return SqlQuerySupport.isReadOnlySelect(sql);
+    }
+
+    static String validationSql(String sql) {
+        if (!isReadOnlySelectSql(sql)) {
+            throw new IllegalArgumentException("校验 SQL 只允许单条只读 SELECT 查询，请检查配置");
+        }
+        return SqlQuerySupport.executableSql(sql).trim();
     }
 
     private DbPoolHolder buildPool(RuleDbDatasource datasource) throws Exception {

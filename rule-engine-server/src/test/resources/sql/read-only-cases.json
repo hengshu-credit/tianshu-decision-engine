@@ -14,6 +14,6 @@
   {"sql":"UPDATE users SET score = ?", "valid":false, "params":1},
   {"sql":"SELECT 'unfinished", "valid":false, "params":0},
   {"sql":"SELECT 1 /* unfinished", "valid":false, "params":0},
-  {"sql":"WITH x AS (SELECT 1) SELECT * FROM x", "valid":false, "params":0},
+  {"sql":"WITH x AS (SELECT 1) SELECT * FROM x", "valid":true, "params":0},
   {"sql":"", "valid":false, "params":0}
 ]

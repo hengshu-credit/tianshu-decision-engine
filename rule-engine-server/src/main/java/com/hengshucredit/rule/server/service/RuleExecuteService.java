@@ -53,6 +53,9 @@ public class RuleExecuteService {
     private RuleBillingService billingService;
 
     @Resource
+    private DecisionExecutionPersistence executionPersistence;
+
+    @Resource
     private VariableSourceResolver variableSourceResolver;
 
     @Resource
@@ -212,13 +215,10 @@ public class RuleExecuteService {
         if (result.getTraces() != null) {
             log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
-        logService.save(log);
         ProjectAuthContext billingContext = executionProjectId == null
                 ? null : ProjectAuthContext.direct(
                 executionProjectId, projectCode, null, null, null);
-        billingService.recordEngineExecution(definition, result.isSuccess(),
-                result.getExecuteTimeMs(), result.getErrorMessage(),
-                billingContext);
+        persistExecution(log, definition, result, billingContext);
 
         return result;
     }
@@ -416,13 +416,21 @@ public class RuleExecuteService {
         if (recordTrace && result.getTraces() != null) {
             log.setTraceInfo(toJsonSafely(result.getTraces()));
         }
-        if (!isExperimentSource(source)) {
-            logService.save(log);
-        }
-        billingService.recordEngineExecution(definition, result.isSuccess(), result.getExecuteTimeMs(),
-                result.getErrorMessage(), authContext);
+        persistExecution(isExperimentSource(source) ? null : log, definition, result, authContext);
 
         return new ExecutionOutcome(result, executeParams);
+    }
+
+    private void persistExecution(RuleExecutionLog log, RuleDefinition definition,
+                                  RuleResult result, ProjectAuthContext authContext) {
+        if (executionPersistence != null) {
+            executionPersistence.offer(log, definition, result.isSuccess(),
+                    result.getExecuteTimeMs(), result.getErrorMessage(), authContext);
+            return;
+        }
+        if (log != null) logService.save(log);
+        billingService.recordEngineExecution(definition, result.isSuccess(),
+                result.getExecuteTimeMs(), result.getErrorMessage(), authContext);
     }
 
     private RuleDefinition publishedDefinition(RulePublished published, Long executionProjectId) {

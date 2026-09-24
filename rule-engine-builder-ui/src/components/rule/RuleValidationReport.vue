@@ -23,7 +23,7 @@
         <span>{{ issue.message }}</span>
         <code v-if="issue.path">{{ issue.path }}</code>
         <div class="issue-repair">
-          <span>{{ repairHint(issue) }}</span>
+          <span>{{ issue.nextAction || repairHint(issue) }}</span>
           <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">定位到规则设计</el-button>
         </div>
       </div>
@@ -34,7 +34,7 @@
         <strong>{{ issueTitle(issue, '校验提醒') }}</strong>
         <span>{{ issue.message }}</span>
         <div class="issue-repair">
-          <span>{{ repairHint(issue) }}</span>
+          <span>{{ issue.nextAction || repairHint(issue) }}</span>
           <el-button v-if="locatable" link type="primary" data-action="locate-issue" @click="$emit('locate', issue)">查看配置位置</el-button>
         </div>
       </div>

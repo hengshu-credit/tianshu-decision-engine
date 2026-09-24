@@ -112,4 +112,4 @@ management:
         liveness:
           include: livenessState,ping
         readiness:
-          include: readinessState,db,redis,onnxWarmup
+          include: readinessState,db,redis,onnxWarmup,ruleWarmup

@@ -6,9 +6,10 @@ import java.util.regex.Pattern;
 /** JDBC 查询与数据库变量共用的词法检查；契约语料同时由前端测试执行。 */
 public final class SqlQuerySupport {
     private static final Pattern DOLLAR_QUOTE = Pattern.compile("^\\$(?:[A-Za-z_][A-Za-z0-9_]*)?\\$");
-    private static final Pattern SELECT = Pattern.compile("^select\\b", Pattern.CASE_INSENSITIVE);
+    private static final Pattern READ_ONLY_START = Pattern.compile("^(?:select|with)\\b", Pattern.CASE_INSENSITIVE);
     private static final Pattern WRITE_OR_LOCK = Pattern.compile(
-            "\\binto\\b|\\bfor\\s+(?:update|share)\\b|\\block\\s+in\\s+share\\s+mode\\b", Pattern.CASE_INSENSITIVE);
+            "\\b(?:insert|update|delete|merge|drop|alter|truncate|create)\\b"
+                    + "|\\binto\\b|\\bfor\\s+(?:update|share)\\b|\\block\\s+in\\s+share\\s+mode\\b", Pattern.CASE_INSENSITIVE);
 
     private SqlQuerySupport() { }
 
@@ -71,7 +72,7 @@ public final class SqlQuerySupport {
 
     public static boolean isReadOnlySelect(String sql) {
         Analysis analysis = analyze(sql);
-        return !analysis.invalid() && SELECT.matcher(analysis.code()).find()
+        return !analysis.invalid() && READ_ONLY_START.matcher(analysis.code()).find()
                 && analysis.code().matches("(?s)^[^;]*;?$")
                 && !WRITE_OR_LOCK.matcher(analysis.code()).find();
     }

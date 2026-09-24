@@ -85,6 +85,36 @@
       </div>
     </el-card>
 
+    <el-card shadow="never" class="release-progress-card" data-testid="rule-release-progress">
+      <div class="release-progress-header">
+        <div>
+          <span class="section-kicker">RELEASE READINESS</span>
+          <strong>发布进度</strong>
+          <span class="release-progress-summary">{{ releaseProgressSummary }}</span>
+        </div>
+        <el-tag :type="releaseProgressCompleted === releaseChecklist.length ? 'success' : 'warning'" size="small">
+          {{ releaseProgressCompleted }}/{{ releaseChecklist.length }} 已完成
+        </el-tag>
+      </div>
+      <div class="release-progress-steps">
+        <button
+          v-for="item in releaseChecklist"
+          :key="item.key"
+          type="button"
+          class="release-progress-step"
+          :class="`is-${item.status}`"
+          :data-step="item.key"
+          @click="goToChecklistItem(item)"
+        >
+          <span class="release-progress-step__index">{{ item.status === 'done' ? '✓' : item.index }}</span>
+          <span class="release-progress-step__body">
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.detail }}</small>
+          </span>
+        </button>
+      </div>
+    </el-card>
+
     <el-dialog
       title="编辑规则基本信息"
       v-model="baseEditVisible"
@@ -1733,6 +1763,36 @@ export default {
         })
         .filter(Boolean)
     },
+    releaseChecklist() {
+      const inputs = (this.rule && this.rule.inputFieldsJson) || []
+      const outputs = (this.rule && this.rule.outputFieldsJson) || []
+      const hasBindings = inputs.length > 0 && outputs.length > 0
+        && inputs.every(field => field && field.varId)
+        && outputs.every(field => field && field.varId)
+      const hasDesign = Boolean(
+        (this.activeRevision && this.activeRevision.modelJson)
+        || (this.ruleContent && this.ruleContent.modelJson)
+      )
+      const preflightPassed = Boolean(this.preflightReport && this.preflightReport.valid)
+      const testPassed = Boolean(this.testResult && this.testResult.success)
+      const published = this.lifecycleRevision && this.lifecycleRevision.state === 'PUBLISHED'
+      const steps = [
+        { key: 'base', label: '基础信息', done: Boolean(this.rule.id && this.rule.ruleCode && this.rule.ruleName), detail: '规则编码、名称和模型类型' },
+        { key: 'fields', label: '输入输出', done: hasBindings, detail: `${inputs.length} 个输入 / ${outputs.length} 个输出均已绑定` },
+        { key: 'design', label: '设计内容', done: hasDesign, detail: hasDesign ? '已保存当前修订内容' : '进入设计器完成条件和动作' },
+        { key: 'preflight', label: '发布前校验', done: preflightPassed, detail: preflightPassed ? '依赖、Schema、编译均已通过' : '执行发布前校验并修复阻断项' },
+        { key: 'test', label: '测试样例', done: testPassed, detail: testPassed ? '最近一次测试执行成功' : '执行一次规则测试并核对结果' },
+        { key: 'publish', label: '审批发布', done: published, detail: published ? `线上版本 v${this.rule.publishedVersion || ''}` : '提交审批、批准后发布' },
+      ]
+      return steps.map((item, index) => ({ ...item, index: index + 1, status: item.done ? 'done' : 'pending' }))
+    },
+    releaseProgressCompleted() {
+      return this.releaseChecklist.filter(item => item.done).length
+    },
+    releaseProgressSummary() {
+      const next = this.releaseChecklist.find(item => !item.done)
+      return next ? `下一步：${next.label}` : '当前规则已具备发布条件'
+    },
   },
   created() {
     this.syncDetailTabFromRoute()
@@ -2039,6 +2099,23 @@ export default {
       } finally {
         if (requestId === this.designerForkRequestId) this.forkingDesignerSource = false
       }
+    },
+    async goToChecklistItem(item) {
+      if (!item || item.done) return
+      if (item.key === 'fields') {
+        this.activeDetailTab = 'inputs'
+        return
+      }
+      if (item.key === 'publish' || item.key === 'preflight') {
+        this.activeDetailTab = 'lifecycle'
+        return
+      }
+      if (item.key === 'test') {
+        this.openTestDialog()
+        return
+      }
+      const routeName = this.designerRouteName(this.rule.modelType)
+      if (routeName) await this.openRevisionDesigner(this.lifecycleRevision)
     },
     async loadRepairPreview() {
       this.repairPreviewLoading = true
@@ -3456,6 +3533,21 @@ export default {
 </script>
 
 <style scoped>
+.release-progress-card { margin-bottom: 16px; }
+.release-progress-header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.release-progress-header > div { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.section-kicker { color: var(--tianshu-text-tertiary); font-size: 11px; font-weight: 700; letter-spacing: .08em; }
+.release-progress-summary { color: var(--tianshu-text-secondary); font-size: 13px; }
+.release-progress-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; margin-top: 14px; }
+.release-progress-step { display: flex; min-width: 0; gap: 8px; padding: 10px; color: var(--tianshu-text-primary); text-align: left; background: var(--tianshu-bg-muted); border: 1px solid var(--tianshu-border-subtle); border-radius: 6px; cursor: pointer; }
+.release-progress-step:hover, .release-progress-step:focus-visible { border-color: var(--el-color-primary); outline: none; }
+.release-progress-step__index { display: inline-flex; flex: none; width: 22px; height: 22px; align-items: center; justify-content: center; color: var(--tianshu-text-tertiary); font-size: 12px; font-weight: 700; background: var(--tianshu-bg-soft); border-radius: 50%; }
+.release-progress-step.is-done .release-progress-step__index { color: var(--tianshu-text-inverse); background: var(--el-color-success); }
+.release-progress-step__body { display: grid; min-width: 0; gap: 3px; }
+.release-progress-step__body strong { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.release-progress-step__body small { overflow: hidden; color: var(--tianshu-text-tertiary); font-size: 11px; line-height: 1.35; text-overflow: ellipsis; }
+@media (max-width: 1100px) { .release-progress-steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .release-progress-steps { grid-template-columns: 1fr; } }
 .script-unbound {
   color: var(--tianshu-text-tertiary);
   font-style: italic;

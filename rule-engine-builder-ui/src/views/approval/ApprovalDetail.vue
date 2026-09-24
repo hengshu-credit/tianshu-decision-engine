@@ -90,6 +90,23 @@
           </article>
         </section>
 
+        <section class="content-card release-explanation" data-testid="release-explanation">
+          <div class="section-heading compact">
+            <div>
+              <span class="section-kicker">RELEASE EXPLANATION</span>
+              <h2>发布说明</h2>
+            </div>
+            <span>审批前快速确认变更范围、影响和生效条件</span>
+          </div>
+          <div class="release-explanation-grid">
+            <div v-for="item in releaseExplanation" :key="item.label" class="release-explanation-item">
+              <span>{{ item.label }}</span>
+              <strong>{{ item.value }}</strong>
+              <small>{{ item.detail }}</small>
+            </div>
+          </div>
+        </section>
+
         <section
           v-if="request.status === 'REJECTED'"
           class="terminal-notice is-rejected"
@@ -505,6 +522,33 @@ export default {
       return this.activeAction === 'reject'
         ? '请说明需要修改的具体内容'
         : '填写本次操作说明（可选）'
+    },
+    releaseExplanation() {
+      const changed = this.changedFields.length
+      const dependencies = (this.detail.dependencies || []).length
+      const status = this.request && this.request.status
+      return [
+        {
+          label: '本次动作',
+          value: this.request ? this.actionLabel(this.request.action) : '—',
+          detail: this.resourceTitle,
+        },
+        {
+          label: '配置变化',
+          value: changed ? `${changed} 项字段变化` : '快照未发现字段差异',
+          detail: changed ? '请在下方版本对比中查看具体值' : '可能是新资源或结构化内容未展开',
+        },
+        {
+          label: '影响依赖',
+          value: dependencies ? `${dependencies} 个依赖` : '无外部依赖',
+          detail: this.preflightErrors.length ? `${this.preflightErrors.length} 个阻断问题待处理` : '依赖预检通过',
+        },
+        {
+          label: '生效条件',
+          value: status === 'PENDING' ? '批准后生效' : status === 'EDITING' ? '提交审批后生效' : '按当前状态继续',
+          detail: '批准不会覆盖其他已发布版本，发布后才会进入线上执行链路',
+        },
+      ]
     }
   },
   created() {
@@ -842,6 +886,14 @@ export default {
 </script>
 
 <style scoped>
+.release-explanation { margin-top: 16px; }
+.release-explanation-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.release-explanation-item { display: grid; min-height: 86px; gap: 5px; padding: 12px; background: var(--tianshu-bg-muted); border: 1px solid var(--tianshu-border-subtle); border-radius: 5px; }
+.release-explanation-item > span { color: var(--tianshu-text-tertiary); font-size: 12px; }
+.release-explanation-item strong { color: var(--tianshu-text-primary); font-size: 14px; }
+.release-explanation-item small { color: var(--tianshu-text-secondary); line-height: 1.45; }
+@media (max-width: 1000px) { .release-explanation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .release-explanation-grid { grid-template-columns: 1fr; } }
 .approval-detail-page {
   color: var(--tianshu-text-primary);
 }

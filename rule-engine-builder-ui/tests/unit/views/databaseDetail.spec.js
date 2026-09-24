@@ -30,6 +30,9 @@ function mountPage(route) {
       'el-radio-group': true,
       'el-radio-button': true,
       'el-checkbox': true,
+      'el-alert': true,
+      'el-collapse': true,
+      'el-collapse-item': true,
       'monaco-editor': true
     }
   })
@@ -100,5 +103,41 @@ describe('DatabaseDetail — 项目选择', () => {
       path: '/database',
       query: { projectId: 3 }
     })
+  })
+
+  test('连接测试成功后保留可见的成功状态', async () => {
+    projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
+    databaseApi.testDbDatasourceDraft.mockResolvedValue({ data: '连接成功' })
+    const wrapper = mountPage({ path: '/database/new', params: { id: 'new' }, query: {} })
+    await flushPromises()
+
+    wrapper.vm.form.host = '127.0.0.1'
+    wrapper.vm.form.databaseName = 'risk'
+    wrapper.vm.form.datasourceCode = 'risk_db'
+    wrapper.vm.form.datasourceName = '风险库'
+    wrapper.vm.handleTestDraft()
+    await flushPromises()
+
+    expect(databaseApi.testDbDatasourceDraft).toHaveBeenCalled()
+    expect(wrapper.vm.connectionTestStatus).toBe('success')
+    expect(wrapper.vm.connectionTesting).toBe(false)
+  })
+
+  test('连接测试失败后展示可读错误且允许再次测试', async () => {
+    projectApi.listProjects.mockResolvedValue({ data: { records: [] } })
+    databaseApi.testDbDatasourceDraft.mockRejectedValue(new Error('账号无权访问'))
+    const wrapper = mountPage({ path: '/database/new', params: { id: 'new' }, query: {} })
+    await flushPromises()
+
+    wrapper.vm.form.host = '127.0.0.1'
+    wrapper.vm.form.databaseName = 'risk'
+    wrapper.vm.form.datasourceCode = 'risk_db'
+    wrapper.vm.form.datasourceName = '风险库'
+    wrapper.vm.handleTestDraft()
+    await flushPromises()
+
+    expect(wrapper.vm.connectionTestStatus).toBe('error')
+    expect(wrapper.vm.connectionTestMessage).toBe('账号无权访问')
+    expect(wrapper.vm.connectionTesting).toBe(false)
   })
 })

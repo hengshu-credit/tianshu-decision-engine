@@ -120,6 +120,20 @@ public class DBConnectPoolsTest {
         assertFalse(DBConnectPools.isReadOnlySelectSql("select score from risk_result lock in share mode"));
     }
 
+    @Test
+    public void validationQueryRejectsWriteStatementsBeforeOpeningConnection() {
+        assertEquals("select 1", DBConnectPools.validationSql(" select 1; "));
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> DBConnectPools.validationSql("update risk_result set score = 1"));
+    }
+
+    @Test
+    public void snapshotIsSafeWhenNoPoolHasBeenOpened() {
+        DBConnectPools pools = new DBConnectPools();
+        assertEquals(0, pools.snapshot().get("poolCount"));
+        assertEquals(0L, pools.snapshot().get("pending"));
+    }
+
     private RuleDbDatasource datasource(String dbType, String host, Integer port, String databaseName, String jdbcParams) {
         RuleDbDatasource datasource = new RuleDbDatasource();
         datasource.setDbType(dbType);

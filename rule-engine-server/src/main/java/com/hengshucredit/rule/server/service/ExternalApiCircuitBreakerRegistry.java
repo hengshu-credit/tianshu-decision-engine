@@ -10,6 +10,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.function.LongSupplier;
+import java.util.LinkedHashMap;
 
 @Component
 public class ExternalApiCircuitBreakerRegistry {
@@ -39,6 +40,23 @@ public class ExternalApiCircuitBreakerRegistry {
 
     public synchronized void invalidate(Long apiConfigId) {
         if (apiConfigId != null) states.remove(apiConfigId);
+    }
+
+    public synchronized Map<String, Object> snapshot() {
+        int open = 0;
+        int halfOpen = 0;
+        int closed = 0;
+        for (CircuitState value : states.values()) {
+            if ("OPEN".equals(value.state)) open++;
+            else if ("HALF_OPEN".equals(value.state)) halfOpen++;
+            else closed++;
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("registeredApis", states.size());
+        result.put("open", open);
+        result.put("halfOpen", halfOpen);
+        result.put("closed", closed);
+        return result;
     }
 
     private synchronized CircuitState state(RuleExternalApiConfig config) {
