@@ -454,3 +454,28 @@ body.dark .story-chip { border-color: #3c4ca1; background: #1b2456; }.story-stag
   .manual-section::before { left: -12px; }
   .workflow-stage-wrap { height: 540px; min-height: 0; }
 }
+
+/* Final workflow proportions: one-screen track, aligned console, always-themed section marker. */
+.manual-section::before { background: linear-gradient(180deg, var(--cyan), var(--brand), var(--violet)); box-shadow: 0 0 14px rgba(75,92,255,.3); }
+.workflow-scrolly { min-height: 100vh; margin-bottom: 24px; }
+.workflow-triggers { height: 100vh; }
+.workflow-step { height: 20vh; }
+.workflow-stage { --workflow-inset: clamp(30px, 10vw, 180px); }
+.workflow-console { right: var(--workflow-inset); left: var(--workflow-inset); width: auto; transform: translateY(-50%); }
+.workflow-rail { right: var(--workflow-inset); left: var(--workflow-inset); }
+@media (min-width: 1121px) {
+  .workflow-scrolly { min-height: 100vh; }
+  .workflow-triggers { height: 100vh; }
+  .workflow-step { height: 20vh; }
+}
+@media (max-width: 1120px) {
+  .workflow-scrolly { min-height: 100vh; }
+  .workflow-triggers { height: 100vh; }
+  .workflow-step { height: 20vh; }
+  .workflow-stage { --workflow-inset: 24px; }
+}
+@media (max-width: 820px) {
+  .workflow-stage { --workflow-inset: 15px; }
+  .workflow-console { width: auto; }
+  .workflow-rail { right: 15px; left: 15px; }
+}
