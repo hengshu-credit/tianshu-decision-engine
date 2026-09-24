@@ -21,7 +21,7 @@
         <nav id="toc" class="header-menu" aria-label="手册目录">
           <a href="#story">决策旅程</a>
           <a href="#quickstart">快速上手</a>
-          <a href="#navigation">导航总览</a>
+          <a href="#workflow">导航总览</a>
           <a href="#projects">项目与鉴权</a>
           <a href="#resources">数据与资源</a>
           <a href="#rules">规则设计</a>
@@ -115,6 +115,46 @@
           </div>
         </section>
 
+        <section class="workflow-scrolly" id="workflow" data-search="导航总览 项目与鉴权 数据与资源 规则设计 运行治理 渐进式流程">
+          <div class="workflow-triggers" aria-hidden="true">
+            <div class="workflow-step is-active" data-workflow-step="0"></div>
+            <div class="workflow-step" data-workflow-step="1"></div>
+            <div class="workflow-step" data-workflow-step="2"></div>
+            <div class="workflow-step" data-workflow-step="3"></div>
+            <div class="workflow-step" data-workflow-step="4"></div>
+          </div>
+          <div class="workflow-stage-wrap">
+            <div class="workflow-stage" data-workflow-state="0" aria-label="天枢决策配置到运行的五阶段流程">
+              <div class="workflow-stage-grid" aria-hidden="true"></div>
+              <div class="workflow-stage-glow workflow-stage-glow-a" aria-hidden="true"></div>
+              <div class="workflow-stage-glow workflow-stage-glow-b" aria-hidden="true"></div>
+              <div class="workflow-stage-header"><span><i></i> TIANSHU / OPERATIONS FLOW</span><b data-workflow-progress>01 / 05</b></div>
+              <div class="workflow-rail" aria-hidden="true">
+                <div class="workflow-node is-active" data-workflow-node="0"><span>01</span><strong>导航总览</strong><small>ENTRY MAP</small></div>
+                <div class="workflow-rail-line"></div>
+                <div class="workflow-node" data-workflow-node="1"><span>02</span><strong>项目鉴权</strong><small>PROJECT</small></div>
+                <div class="workflow-rail-line"></div>
+                <div class="workflow-node" data-workflow-node="2"><span>03</span><strong>数据资源</strong><small>INPUTS</small></div>
+                <div class="workflow-rail-line"></div>
+                <div class="workflow-node" data-workflow-node="3"><span>04</span><strong>规则设计</strong><small>DECISION</small></div>
+                <div class="workflow-rail-line"></div>
+                <div class="workflow-node" data-workflow-node="4"><span>05</span><strong>运行治理</strong><small>PROOF</small></div>
+              </div>
+              <div class="workflow-console">
+                <div class="workflow-console-bar"><span class="console-lights"><i></i><i></i><i></i></span><span>scroll / workflow / live</span><span class="workflow-sync"><i></i> SYNCED</span></div>
+                <div class="workflow-console-body">
+                  <div class="workflow-kicker" data-workflow-kicker>01 · NAVIGATION LAYER</div>
+                  <h2 data-workflow-title>先找到正确的入口</h2>
+                  <p data-workflow-description>从标题栏一级菜单进入项目、规则、变量与运行治理，每个入口都保持清晰可见。</p>
+                  <div class="workflow-console-meta"><strong data-workflow-stat>13 个一级入口</strong><span data-workflow-tag>ENTRY MAP</span></div>
+                </div>
+                <div class="workflow-console-footer"><span data-workflow-footer>下一步：确认项目上下文</span><span class="workflow-pulse"><i></i><i></i><i></i></span></div>
+              </div>
+              <div class="workflow-stage-caption"><span class="stage-caption-dot"></span><span data-workflow-caption>MAP / PROJECT / RULE / RUNTIME</span></div>
+            </div>
+          </div>
+        </section>
+
         <section class="manual-section" id="navigation" data-search="导航总览 项目管理 规则管理 变量管理 名单 外数 数据库 模型 函数 测试 血缘 实验 日志 账单">
           <div class="section-kicker">02 / NAVIGATION</div>
           <h2>导航总览：一级入口保持平铺</h2>
@@ -133,6 +173,10 @@
             <div class="menu-card"><span class="menu-index">11</span><strong>分流实验</strong><p>冠军、挑战与测试组</p></div>
             <div class="menu-card"><span class="menu-index">12</span><strong>执行日志</strong><p>请求、输出、耗时与追踪</p></div>
             <div class="menu-card"><span class="menu-index">13</span><strong>账单管理</strong><p>计费项、明细与汇总</p></div>
+          </div>
+          <div class="theme-panel">
+            <div><div class="section-kicker">WORKSPACE</div><h3>按团队习惯调整工作台</h3><p>从账户菜单进入“主题设置”，可切换明暗主题、纯色或渐变、侧边或顶部导航，以及列表的滚动方式。设置保存后会按账户或当前浏览器保留。</p></div>
+            <figure class="screenshot"><img src="project-usage/project-usage-19-theme-presets.png" alt="主题设置" loading="lazy" class="zoomable" /><figcaption>主题设置：即时预览并保存。</figcaption></figure>
           </div>
         </section>
 
@@ -256,10 +300,6 @@
             <article class="operation-card"><div class="operation-icon">⌘</div><h3>血缘分析</h3><p>从变量、规则、模型、外数、数据库和名单查看上下游。结构化引用可追踪，动态脚本引用需要结合代码复核。</p><img src="project-usage/project-usage-14-lineage.png" alt="血缘分析" loading="lazy" class="zoomable" /></article>
             <article class="operation-card"><div class="operation-icon">⚑</div><h3>分流实验</h3><p>配置冠军、挑战和测试组，选择条件或流量路由，并保留实验版本与结果。</p><img src="project-usage/project-usage-15-experiment.png" alt="分流实验" loading="lazy" class="zoomable" /></article>
             <article class="operation-card"><div class="operation-icon">¥</div><h3>账单管理</h3><p>按引擎执行、API 调用和数据库调用配置计费项，查看明细和汇总。</p><img src="project-usage/project-usage-16-billing.png" alt="账单管理" loading="lazy" class="zoomable" /></article>
-          </div>
-          <div class="theme-panel">
-            <div><div class="section-kicker">WORKSPACE</div><h3>按团队习惯调整工作台</h3><p>从账户菜单进入“主题设置”，可切换明暗主题、纯色或渐变、侧边或顶部导航，以及列表的滚动方式。设置保存后会按账户或当前浏览器保留。</p></div>
-            <figure class="screenshot"><img src="project-usage/project-usage-19-theme-presets.png" alt="主题设置" loading="lazy" class="zoomable" /><figcaption>主题设置：即时预览并保存。</figcaption></figure>
           </div>
         </section>
 
