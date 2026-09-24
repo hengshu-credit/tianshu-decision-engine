@@ -518,6 +518,24 @@ html, body { overflow-x: hidden; }
   .workflow-stage-wrap { top: 118px; height: 540px; }
 }
 
+/* Hero workflow uses a compact right column without letting the console overflow. */
+.hero { grid-template-columns: minmax(0, 1fr) minmax(360px, 1.05fr); gap: 32px; }
+.hero-main { align-self: start; padding-top: 32px; }
+.hero-workflow .workflow-stage { --workflow-inset: 24px; }
+.hero-workflow .workflow-rail { right: 24px; left: 24px; }
+.hero-workflow .workflow-console { top: 59%; right: 24px; left: 24px; width: auto; }
+.hero-workflow .workflow-node { flex: 1 1 0; min-width: 0; }
+.hero-workflow .workflow-node strong { font-size: 9px; white-space: nowrap; }
+.hero-workflow .workflow-node small { display: none; }
+.hero-workflow .workflow-rail-line { min-width: 6px; }
+@media (max-width: 820px) {
+  .hero { grid-template-columns: 1fr; gap: 24px; }
+  .hero-main { padding-top: 0; }
+  .hero-workflow .workflow-stage { --workflow-inset: 15px; }
+  .hero-workflow .workflow-rail { right: 15px; left: 15px; }
+  .hero-workflow .workflow-console { right: 15px; left: 15px; }
+}
+
 /* Full-width footer background with content aligned to the header shell. */
 @media (min-width: 1121px) {
   .site-footer-inner { width: 70vw; margin-right: auto; margin-left: auto; padding-right: var(--content-gutter); padding-left: var(--content-gutter); }
