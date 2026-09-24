@@ -511,6 +511,21 @@ html, body { overflow-x: hidden; }
   .hero-workflow .workflow-stage-wrap, .hero-workflow .workflow-stage { height: 540px; }
   #toc.header-menu { max-width: 100%; overflow-x: auto; }
 }
+
+/* Final homepage composition: one viewport-sized hero with a compact sticky stage. */
+.hero { min-height: 760px; overflow: visible; grid-template-columns: minmax(0, .95fr) minmax(340px, 1.05fr); gap: 24px; }
+.hero-workflow { height: 760px; min-height: 760px; }
+.hero-workflow .workflow-triggers { height: 760px; }
+.hero-workflow .workflow-stage-wrap { height: 620px; min-height: 0; }
+.hero-actions .button-primary { color: var(--ink-muted); background: var(--surface); border: 1px solid var(--line); box-shadow: none; }
+.hero-actions .button-primary:hover { color: var(--brand); background: var(--surface); border-color: #c7d0ff; transform: translateY(-1px); }
+@media (max-width: 820px) {
+  .hero { min-height: auto; grid-template-columns: 1fr; }
+  .hero-workflow { height: 620px; min-height: 620px; }
+  .hero-workflow .workflow-triggers { height: 620px; }
+  .hero-workflow .workflow-stage-wrap, .hero-workflow .workflow-stage { height: 540px; }
+  .designer-card img, .trace-card img, .operation-card img { height: auto; max-height: none; object-fit: contain; }
+}
 @media (max-width: 820px) {
   .workflow-scrolly { min-height: 150vh; }
   .workflow-triggers { height: 150vh; }
@@ -644,4 +659,18 @@ html, body { overflow-x: hidden; }
   .workflow-triggers { height: 150vh; }
   .workflow-step { height: 30vh; }
   .workflow-stage-wrap { top: 118px; height: 540px; }
+}
+
+/* Final homepage composition override. */
+.hero { min-height: 760px; overflow: visible; grid-template-columns: minmax(0, .95fr) minmax(340px, 1.05fr); gap: 24px; }
+.hero-workflow { height: 760px; min-height: 760px; }
+.hero-workflow .workflow-triggers { height: 760px; }
+.hero-workflow .workflow-stage-wrap { height: 620px; min-height: 0; }
+.hero-actions .button-primary { color: var(--ink-muted); background: var(--surface); border: 1px solid var(--line); box-shadow: none; }
+.hero-actions .button-primary:hover { color: var(--brand); background: var(--surface); border-color: #c7d0ff; transform: translateY(-1px); }
+@media (max-width: 820px) {
+  .hero { min-height: auto; grid-template-columns: 1fr; }
+  .hero-workflow { height: 620px; min-height: 620px; }
+  .hero-workflow .workflow-triggers { height: 620px; }
+  .hero-workflow .workflow-stage-wrap, .hero-workflow .workflow-stage { height: 540px; }
 }
