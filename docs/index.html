@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="天枢决策引擎前端控制台操作手册" />
+    <meta name="theme-color" content="#10142d" />
+    <title>天枢决策引擎 · 前端操作手册</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="reading-progress" aria-hidden="true"><span></span></div>
+    <header class="site-header">
+      <a class="brand" href="#top" aria-label="返回手册首页">
+        <span class="brand-mark" aria-hidden="true">枢</span>
+        <span><strong>天枢决策引擎</strong><small>前端操作手册</small></span>
+      </a>
+      <div class="header-actions">
+        <label class="search-box" for="manual-search">
+          <span aria-hidden="true">⌕</span>
+          <input id="manual-search" type="search" placeholder="搜索本手册" autocomplete="off" />
+          <kbd>/</kbd>
+        </label>
+        <button class="icon-button" id="theme-toggle" type="button" aria-label="切换阅读主题">☼</button>
+        <a class="github-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub ↗</a>
+      </div>
+    </header>
+
+    <div class="page-shell" id="top">
+      <aside class="sidebar" aria-label="手册目录">
+        <div class="sidebar-heading">操作路径</div>
+        <nav id="toc">
+          <a href="#quickstart">01 · 快速上手</a>
+          <a href="#navigation">02 · 导航总览</a>
+          <a href="#projects">03 · 项目与鉴权</a>
+          <a href="#resources">04 · 数据与资源</a>
+          <a href="#rules">05 · 规则设计与发布</a>
+          <a href="#operations">06 · 运行与治理</a>
+          <a href="#integration">07 · 接入与部署</a>
+          <a href="#checklist">08 · 上线检查清单</a>
+        </nav>
+        <div class="sidebar-note">
+          <span class="status-dot"></span>
+          <div><strong>当前手册</strong><small>2026.09 · 与当前前端页面同步</small></div>
+        </div>
+      </aside>
+
+      <main class="content">
+        <section class="hero" data-search="天枢决策引擎 前端操作手册 控制台">
+          <div class="eyebrow">TIANSHU DECISION ENGINE · CONSOLE GUIDE</div>
+          <h1>把一次决策，配置成<br /><em>可验证、可发布、可追溯</em>的流程。</h1>
+          <p class="hero-copy">这份手册面向规则配置人员、风控运营和项目管理员，按“登录 → 配置数据 → 设计规则 → 测试 → 审核发布 → 追踪运行”的真实操作顺序整理控制台。</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="#quickstart">开始操作 <span>↓</span></a>
+            <a class="button button-quiet" href="https://github.com/hengshu-credit/tianshu-decision-engine#readme" target="_blank" rel="noreferrer">查看项目说明 ↗</a>
+          </div>
+          <div class="hero-facts">
+            <div><strong>13</strong><span>一级菜单</span></div>
+            <div><strong>9</strong><span>规则设计器</span></div>
+            <div><strong>1</strong><span>完整发布链路</span></div>
+          </div>
+        </section>
+
+        <div class="notice notice-blue" data-search="截图 样例 验证边界">
+          <span class="notice-icon">i</span>
+          <p>截图来自当前前端页面和固定业务样例，用于说明按钮位置与操作顺序。实际项目中的变量、权限、接口响应和审批结果以当前环境为准。</p>
+        </div>
+
+        <section class="manual-section" id="quickstart" data-search="快速上手 登录 项目 变量 规则 测试 发布">
+          <div class="section-kicker">01 / QUICK START</div>
+          <h2>从登录到发布，先走通一条主链路</h2>
+          <p class="section-lead">第一次使用时，建议用一个低风险测试项目完成下面 6 步。这样可以在配置正式业务规则前熟悉权限、保存和发布状态。</p>
+          <div class="step-grid">
+            <a class="step-card" href="#projects"><span>01</span><strong>登录并进入项目</strong><small>确认账户权限与项目上下文</small></a>
+            <a class="step-card" href="#resources"><span>02</span><strong>准备变量与数据对象</strong><small>把输入字段和外部数据接入规则</small></a>
+            <a class="step-card" href="#rules"><span>03</span><strong>创建规则</strong><small>选择设计器并配置输入、输出</small></a>
+            <a class="step-card" href="#rules"><span>04</span><strong>保存并检查</strong><small>先处理校验，再执行测试</small></a>
+            <a class="step-card" href="#operations"><span>05</span><strong>执行测试与追踪</strong><small>核对命中路径、动作和输出</small></a>
+            <a class="step-card" href="#checklist"><span>06</span><strong>提交审核并发布</strong><small>完成依赖预检后冻结发布版本</small></a>
+          </div>
+        </section>
+
+        <section class="manual-section" id="navigation" data-search="导航总览 项目管理 规则管理 变量管理 名单 外数 数据库 模型 函数 测试 血缘 实验 日志 账单">
+          <div class="section-kicker">02 / NAVIGATION</div>
+          <h2>导航总览：一级入口保持平铺</h2>
+          <p class="section-lead">左侧导航和顶部导航都使用同一组一级入口。菜单是否显示取决于当前账户权限；进入详情页后，页面会在工作台页签中保留上下文。</p>
+          <div class="menu-grid">
+            <div class="menu-card"><span class="menu-index">01</span><strong>项目管理</strong><p>项目、规则与访问鉴权</p></div>
+            <div class="menu-card"><span class="menu-index">02</span><strong>规则管理</strong><p>规则列表、设计器与版本</p></div>
+            <div class="menu-card"><span class="menu-index">03</span><strong>变量管理</strong><p>输入、计算、API、数据库变量</p></div>
+            <div class="menu-card"><span class="menu-index">04</span><strong>名单管理</strong><p>名单库、记录与匹配日志</p></div>
+            <div class="menu-card"><span class="menu-index">05</span><strong>外数管理</strong><p>外部 API、鉴权和调用日志</p></div>
+            <div class="menu-card"><span class="menu-index">06</span><strong>数据库管理</strong><p>连接、只读 SQL 与结果映射</p></div>
+            <div class="menu-card"><span class="menu-index">07</span><strong>模型管理</strong><p>PMML / ONNX、字段和测试</p></div>
+            <div class="menu-card"><span class="menu-index">08</span><strong>函数管理</strong><p>QLExpress、Java 与 Spring Bean</p></div>
+            <div class="menu-card"><span class="menu-index">09</span><strong>规则测试</strong><p>样例输入、批量测试与追踪树</p></div>
+            <div class="menu-card"><span class="menu-index">10</span><strong>血缘分析</strong><p>资源上下游与变更影响</p></div>
+            <div class="menu-card"><span class="menu-index">11</span><strong>分流实验</strong><p>冠军、挑战与测试组</p></div>
+            <div class="menu-card"><span class="menu-index">12</span><strong>执行日志</strong><p>请求、输出、耗时与追踪</p></div>
+            <div class="menu-card"><span class="menu-index">13</span><strong>账单管理</strong><p>计费项、明细与汇总</p></div>
+          </div>
+        </section>
+
+        <section class="manual-section" id="projects" data-search="登录 项目 项目管理 工作台 访问鉴权 token API 密钥">
+          <div class="section-kicker">03 / PROJECTS & ACCESS</div>
+          <h2>登录、选择项目，再开始配置</h2>
+          <p class="section-lead">项目是规则和资源的边界。进入设计器、执行测试、查看日志前，先确认顶部当前项目与自己的角色权限。</p>
+          <div class="media-block media-block-wide">
+            <figure class="screenshot screenshot-hero"><img src="project-usage/project-usage-01-login.png" alt="天枢决策引擎登录页面" loading="eager" class="zoomable" /><figcaption>登录页：输入用户名和密码进入控制台。</figcaption></figure>
+          </div>
+          <div class="two-column">
+            <div>
+              <h3>操作步骤</h3>
+              <ol class="numbered-list">
+                <li>输入账户信息登录；若菜单缺失，先让管理员检查角色权限。</li>
+                <li>进入“项目管理”，从列表打开目标项目的工作台。</li>
+                <li>在项目详情确认规则、变量和外部资源是否属于同一项目。</li>
+                <li>需要接入业务系统时，在访问鉴权中创建并复制项目令牌。</li>
+              </ol>
+            </div>
+            <div class="media-stack">
+              <figure class="screenshot"><img src="project-usage/project-usage-02-project-list.png" alt="项目列表" loading="lazy" class="zoomable" /><figcaption>项目列表：进入项目工作台。</figcaption></figure>
+              <figure class="screenshot"><img src="project-usage/project-usage-02-project-auth.png" alt="项目访问鉴权" loading="lazy" class="zoomable" /><figcaption>访问鉴权：管理项目调用凭证。</figcaption></figure>
+            </div>
+          </div>
+          <div class="tip-grid">
+            <div class="tip"><strong>权限先于按钮</strong><p>按钮是否出现只反映当前页面权限，服务端仍会再次校验。遇到 403 时，记录项目、动作和时间交给管理员处理。</p></div>
+            <div class="tip"><strong>令牌只显示一次</strong><p>创建或轮换后立即放入安全存储；不要把令牌写进规则、截图或前端代码。</p></div>
+          </div>
+        </section>
+
+        <section class="manual-section" id="resources" data-search="变量 数据对象 常量 API 数据库 名单 外数 模型 函数 配置">
+          <div class="section-kicker">04 / DATA & RESOURCES</div>
+          <h2>先把输入和依赖准备好</h2>
+          <p class="section-lead">规则设计器只负责组合逻辑。变量、数据对象、名单、外数、数据库、模型和函数应先单独配置并完成可用性检查。</p>
+          <div class="resource-list">
+            <article class="resource-row">
+              <div class="resource-copy"><span class="resource-number">A</span><div><h3>变量与数据对象</h3><p>在变量管理创建输入、计算、常量、API、数据库或名单变量；数据对象用于组织嵌套字段。导入 Java 实体、JSON、DDL 后，展开对象核对字段类型和引用变量。</p><ul class="compact-list"><li>字段和变量通过稳定 ID 关联，编码按输入原样保留。</li><li>先保存数据对象，再在规则输入字段中选择它。</li></ul></div></div>
+              <figure class="screenshot"><img src="project-usage/project-usage-03-variable.png" alt="变量管理页面" loading="lazy" class="zoomable" /><figcaption>变量列表与变量类型。</figcaption></figure>
+            </article>
+            <article class="resource-row">
+              <div class="resource-copy"><span class="resource-number">B</span><div><h3>外数、数据库与名单</h3><p>外数 API 配置请求、响应映射、鉴权、超时和重试；数据库仅配置只读账号与查询类 SQL；名单维护记录并查看匹配日志。</p><ul class="compact-list"><li>外部资源上线前，先使用“测试”按钮核对响应结构。</li><li>敏感凭证放在鉴权配置，不要拼进 URL 或规则脚本。</li></ul></div></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-10-datasource.png" alt="外数管理" loading="lazy" class="zoomable" /><figcaption>外数管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-11-database.png" alt="数据库管理" loading="lazy" class="zoomable" /><figcaption>数据库管理</figcaption></figure></div>
+            </article>
+            <article class="resource-row">
+              <div class="resource-copy"><span class="resource-number">C</span><div><h3>模型与函数</h3><p>模型页面配置入参、出参、版本与执行测试；函数页面登记 QLExpress、Java 类或 Spring Bean，供设计器动作和表达式复用。</p><ul class="compact-list"><li>PMML / ONNX 字段名按模型声明精确匹配。</li><li>函数修改后，回到引用它的规则重新执行测试。</li></ul></div></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-13-model.png" alt="模型管理" loading="lazy" class="zoomable" /><figcaption>模型管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-04-function.png" alt="函数管理" loading="lazy" class="zoomable" /><figcaption>函数管理</figcaption></figure></div>
+            </article>
+          </div>
+        </section>
+
+        <section class="manual-section" id="rules" data-search="规则 设计器 决策表 决策树 决策流 规则集 交叉表 评分卡 QL 脚本 输入 输出 保存 检查 测试 追踪 发布 审核">
+          <div class="section-kicker">05 / DESIGN, TEST & RELEASE</div>
+          <h2>设计规则：输入、逻辑、输出三件事</h2>
+          <p class="section-lead">进入“规则管理”新建规则，先选择模型类型，再在设计器完成输入字段、条件与动作、输出字段配置。页面顶部的“暂存保存配置”和“保存并编译”含义不同：前者只保存当前配置，后者会编译并更新可测试版本。</p>
+          <div class="rule-flow">
+            <div class="rule-flow-step"><span>1</span><strong>配置输入输出</strong><small>选择已有变量、数据对象或模型输出</small></div><i>→</i>
+            <div class="rule-flow-step"><span>2</span><strong>编辑条件与动作</strong><small>选择变量、运算符、常量与动作</small></div><i>→</i>
+            <div class="rule-flow-step"><span>3</span><strong>保存并编译</strong><small>查看校验位置与编译结果</small></div><i>→</i>
+            <div class="rule-flow-step"><span>4</span><strong>测试后发布</strong><small>通过预检、审核和发布流程</small></div>
+          </div>
+
+          <div class="rule-layout">
+            <div>
+              <h3>九类设计器怎么选</h3>
+              <div class="designer-grid">
+                <div class="designer-card"><strong>决策表</strong><p>行式条件组合，适合清晰的二维判断。</p><img src="project-usage/project-usage-designer-table.png" alt="决策表设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>决策树</strong><p>分支路径逐层判断，适合树形准入流程。</p><img src="project-usage/project-usage-designer-tree.png" alt="决策树设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>决策流</strong><p>节点编排并支持分支汇合，适合流程化决策。</p><img src="project-usage/project-usage-designer-flow.png" alt="决策流设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>规则集</strong><p>按优先级执行多条相对独立的规则。</p><img src="project-usage/project-usage-designer-ruleset.png" alt="规则集设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>交叉表</strong><p>以行变量和列变量定位有限组合结果。</p><img src="project-usage/project-usage-designer-cross.png" alt="交叉表设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>评分卡</strong><p>按命中项累计分数并输出结果。</p><img src="project-usage/project-usage-designer-score.png" alt="评分卡设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>复杂交叉表</strong><p>多维度、区间和枚举组合的决策矩阵。</p><img src="project-usage/project-usage-designer-cross-adv.png" alt="复杂交叉表设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>复杂评分卡</strong><p>分组评分、权重和等级区间一起配置。</p><img src="project-usage/project-usage-designer-score-adv.png" alt="复杂评分卡设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>QL 脚本</strong><p>直接编写 QLExpress 逻辑，适合复杂表达式。</p><img src="project-usage/project-usage-designer-script.png" alt="QL 脚本设计器" loading="lazy" class="zoomable" /></div>
+              </div>
+            </div>
+            <aside class="side-callout">
+              <h3>配置时记住三点</h3>
+              <div class="callout-item"><span>01</span><p><strong>引用用 ID</strong><br />变量、模型和字段的关联依赖稳定 ID，不要手填名称替代选择器。</p></div>
+              <div class="callout-item"><span>02</span><p><strong>脚本先预览</strong><br />可视化配置和脚本预览应表达同一份模型，保存后再编译。</p></div>
+              <div class="callout-item"><span>03</span><p><strong>发布有版本</strong><br />编辑草稿不会改写已发布制品；发布前要确认版本摘要。</p></div>
+            </aside>
+          </div>
+
+          <div class="subsection-block">
+            <div class="subsection-heading"><span>TEST</span><h3>执行测试并看懂追踪</h3></div>
+            <div class="two-column align-start">
+              <div><ol class="numbered-list"><li>在“规则测试”选择项目和规则，加载输入字段。</li><li>填写一组代表性样例并保存为测试用例。</li><li>执行后先看输出，再打开“表达式追踪树”确认命中行、分支、评分项或脚本表达式。</li><li>边界值、缺失值和外部资源失败场景都要各测一组。</li></ol></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-05-rule-test.png" alt="规则测试页面" loading="lazy" class="zoomable" /><figcaption>规则测试：输入样例并执行。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-05-rule-trace-tree.png" alt="规则追踪树" loading="lazy" class="zoomable" /><figcaption>追踪树：定位命中条件与动作。</figcaption></figure></div>
+            </div>
+          </div>
+
+          <div class="subsection-block">
+            <div class="subsection-heading"><span>RELEASE</span><h3>提交审核、预检并发布</h3></div>
+            <p>在规则详情页按“保存 → 依赖预检 → 提交审核 → 审核通过 → 发布”的顺序操作。预检会提示输入输出、引用资源和版本问题；发布后使用执行日志确认线上调用的是哪个修订版本。</p>
+            <div class="release-strip"><figure class="screenshot"><img src="project-usage/project-usage-08-rule-detail.png" alt="规则详情" loading="lazy" class="zoomable" /><figcaption>规则详情：查看状态和版本。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-preflight.png" alt="规则发布预检" loading="lazy" class="zoomable" /><figcaption>发布预检：处理阻断项。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-published.png" alt="规则已发布" loading="lazy" class="zoomable" /><figcaption>已发布：确认版本摘要。</figcaption></figure></div>
+          </div>
+        </section>
+
+        <section class="manual-section" id="operations" data-search="执行日志 追踪 血缘 分流实验 账单 主题 工作台 运行 治理">
+          <div class="section-kicker">06 / OPERATIONS & GOVERNANCE</div>
+          <h2>发布以后，继续看运行证据</h2>
+          <p class="section-lead">规则上线不是终点。执行日志、血缘、分流实验和账单把每次决策的输入、结果、依赖与成本串起来。</p>
+          <div class="operations-grid">
+            <article class="operation-card"><div class="operation-icon">↯</div><h3>执行日志</h3><p>按项目、规则、时间和状态筛选调用，打开详情查看输入输出、耗时、修订号和追踪树。</p><img src="project-usage/project-usage-06-execution-log.png" alt="执行日志" loading="lazy" class="zoomable" /></article>
+            <article class="operation-card"><div class="operation-icon">⌘</div><h3>血缘分析</h3><p>从变量、规则、模型、外数、数据库和名单查看上下游。结构化引用可追踪，动态脚本引用需要结合代码复核。</p><img src="project-usage/project-usage-14-lineage.png" alt="血缘分析" loading="lazy" class="zoomable" /></article>
+            <article class="operation-card"><div class="operation-icon">⚑</div><h3>分流实验</h3><p>配置冠军、挑战和测试组，选择条件或流量路由，并保留实验版本与结果。</p><img src="project-usage/project-usage-15-experiment.png" alt="分流实验" loading="lazy" class="zoomable" /></article>
+            <article class="operation-card"><div class="operation-icon">¥</div><h3>账单管理</h3><p>按引擎执行、API 调用和数据库调用配置计费项，查看明细和汇总。</p><img src="project-usage/project-usage-16-billing.png" alt="账单管理" loading="lazy" class="zoomable" /></article>
+          </div>
+          <div class="theme-panel">
+            <div><div class="section-kicker">WORKSPACE</div><h3>按团队习惯调整工作台</h3><p>从账户菜单进入“主题设置”，可切换明暗主题、纯色或渐变、侧边或顶部导航，以及列表的滚动方式。设置保存后会按账户或当前浏览器保留。</p></div>
+            <figure class="screenshot"><img src="project-usage/project-usage-19-theme-presets.png" alt="主题设置" loading="lazy" class="zoomable" /><figcaption>主题设置：即时预览并保存。</figcaption></figure>
+          </div>
+        </section>
+
+        <section class="manual-section" id="integration" data-search="接入 部署 API 鉴权 Java SDK Redis MySQL 前端后端">
+          <div class="section-kicker">07 / INTEGRATION</div>
+          <h2>给业务系统接入一条清晰的路</h2>
+          <p class="section-lead">控制台负责配置与治理，业务系统通过服务端开放接口或 Java SDK 调用规则。前端构建产物独立部署，不直接连接 MySQL。</p>
+          <div class="integration-grid">
+            <a class="integration-card" href="deployment.md"><span>部署说明 ↗</span><strong>启动前端、后端、MySQL 与 Redis</strong><p>环境变量、端口、健康检查和生产部署边界。</p></a>
+            <a class="integration-card" href="java-service-integration.md"><span>Java 服务接入 ↗</span><strong>业务端 → Java 服务 → 决策引擎</strong><p>项目路由、鉴权、规则同步和执行日志。</p></a>
+            <a class="integration-card" href="https://github.com/hengshu-credit/tianshu-decision-engine#部署与系统接入" target="_blank" rel="noreferrer"><span>README ↗</span><strong>查看完整能力与九类规则示例</strong><p>平台架构、设计器截图和客户端说明。</p></a>
+          </div>
+          <div class="notice notice-amber"><span class="notice-icon">!</span><p>生产环境不要使用共享默认凭证。MySQL、Redis、控制台账号和项目鉴权都应由部署环境注入并建立轮换流程。</p></div>
+        </section>
+
+        <section class="manual-section" id="checklist" data-search="上线检查清单 发布 检查 checklist 边界">
+          <div class="section-kicker">08 / CHECKLIST</div>
+          <h2>上线前，用这张清单收口</h2>
+          <div class="checklist-grid">
+            <div class="checklist-card"><h3><span>01</span>配置完整</h3><label><input type="checkbox" /> 输入字段和数据对象已确认</label><label><input type="checkbox" /> 外数、数据库、名单和模型测试通过</label><label><input type="checkbox" /> 输出字段、默认分支和命中策略已确认</label></div>
+            <div class="checklist-card"><h3><span>02</span>测试充分</h3><label><input type="checkbox" /> 正常、边界、缺失和异常场景均有样例</label><label><input type="checkbox" /> 追踪树与预期条件、动作一致</label><label><input type="checkbox" /> 测试输入没有携带生产敏感数据</label></div>
+            <div class="checklist-card"><h3><span>03</span>发布可追溯</h3><label><input type="checkbox" /> 依赖预检没有阻断项</label><label><input type="checkbox" /> 审批记录、版本摘要和发布人已留存</label><label><input type="checkbox" /> 发布后从执行日志核对线上修订号</label></div>
+          </div>
+          <div class="boundary-box"><h3>当前实现边界</h3><ul class="compact-list"><li>血缘对脚本中的复杂动态引用只能做静态识别，关键变更仍需人工复核。</li><li>数据库管理面向只读账号和查询类 SQL；正式交付仍应完成真实环境 E2E、容量、备份恢复和灾备演练。</li><li>外数、数据库和名单变量的在线测试依赖对应数据源可用，失败会写入模块日志。</li></ul></div>
+        </section>
+
+        <footer class="site-footer"><div><strong>天枢决策引擎</strong><span>· 前端操作手册</span></div><span>内容随当前仓库版本更新 · <a href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub ↗</a></span></footer>
+      </main>
+    </div>
+
+    <button class="back-to-top" id="back-to-top" type="button" aria-label="返回顶部">↑</button>
+    <div class="image-modal" id="image-modal" role="dialog" aria-modal="true" aria-label="图片预览" hidden><button class="modal-close" type="button" aria-label="关闭预览">×</button><img alt="" /></div>
+    <script src="app.js"></script>
+  </body>
+</html>
