@@ -61,6 +61,10 @@ button, input { font: inherit; }
 .hero-copy { max-width: 675px; margin: 0; color: var(--ink-muted); font-size: 16px; }
 .hero-actions { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 30px; }
 .button { display: inline-flex; align-items: center; gap: 10px; padding: 11px 18px; border-radius: 10px; font-size: 13px; font-weight: 700; transition: .2s ease; }
+.button-link { gap: 8px; }
+.button-icon { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; width: 19px; height: 19px; }
+.button-icon svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; }
+.button-icon-logo img { width: 19px; height: 19px; object-fit: contain; }
 .button-primary { color: #fff; background: var(--brand); box-shadow: 0 9px 20px rgba(75,92,255,.23); }
 .button-primary:hover { background: var(--brand-deep); transform: translateY(-1px); }
 .button-quiet { border: 1px solid var(--line); color: var(--ink-muted); background: var(--surface); }
