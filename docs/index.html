@@ -30,6 +30,7 @@
       <aside class="sidebar" aria-label="手册目录">
         <div class="sidebar-heading">操作路径</div>
         <nav id="toc">
+          <a href="#story">00 · 决策旅程</a>
           <a href="#quickstart">01 · 快速上手</a>
           <a href="#navigation">02 · 导航总览</a>
           <a href="#projects">03 · 项目与鉴权</a>
@@ -59,12 +60,62 @@
             <div><strong>9</strong><span>规则设计器</span></div>
             <div><strong>1</strong><span>完整发布链路</span></div>
           </div>
+          <div class="hero-telemetry" aria-hidden="true">
+            <div class="telemetry-top"><span><i></i> 决策链路在线</span><span>RUN / 09:42:18</span></div>
+            <div class="telemetry-graph"><span class="telemetry-line telemetry-line-a"></span><span class="telemetry-line telemetry-line-b"></span><span class="telemetry-node telemetry-node-a">IN</span><span class="telemetry-node telemetry-node-b">IF</span><span class="telemetry-node telemetry-node-c">OUT</span></div>
+            <div class="telemetry-bottom"><span>INPUT <b>0.98</b></span><span>RULE <b>PASS</b></span><span>TRACE <b>READY</b></span></div>
+          </div>
         </section>
 
         <div class="notice notice-blue" data-search="截图 样例 验证边界">
           <span class="notice-icon">i</span>
           <p>截图来自当前前端页面和固定业务样例，用于说明按钮位置与操作顺序。实际项目中的变量、权限、接口响应和审批结果以当前环境为准。</p>
         </div>
+
+        <section class="scrolly-story" id="story" data-search="滚动视觉叙事 决策旅程 输入 判断 追踪">
+          <div class="story-copy">
+            <div class="story-intro">
+              <div class="section-kicker">00 / THE DECISION JOURNEY</div>
+              <h2>让每一次决策，<br /><em>自己讲清楚来路。</em></h2>
+              <p>向下滚动，右侧视觉面板会跟随业务动作切换：数据进入、规则判断、结果留痕。你看到的不是装饰动画，而是控制台实际操作的三段主线。</p>
+              <div class="story-scroll-hint"><span class="scroll-wheel"></span><span>继续向下探索</span></div>
+            </div>
+            <article class="story-step is-active" data-story-step="0">
+              <span class="story-step-index">01</span>
+              <div><h3>先把数据放到正确的位置</h3><p>登录项目后，从变量、数据对象、外数或数据库准备规则需要的输入。每个引用都保留稳定 ID，后续改名也不会断链。</p><span class="story-chip">DATA READY</span></div>
+            </article>
+            <article class="story-step" data-story-step="1">
+              <span class="story-step-index">02</span>
+              <div><h3>再让规则把判断说清楚</h3><p>在九类设计器中组合条件、动作和输出。保存并编译后，用样例执行测试，沿着命中行、分支或评分项检查每一步。</p><span class="story-chip">EVALUATING</span></div>
+            </article>
+            <article class="story-step" data-story-step="2">
+              <span class="story-step-index">03</span>
+              <div><h3>最后让结果可以被追溯</h3><p>通过依赖预检和审核发布后，在执行日志中核对修订号、输入输出、耗时与追踪树。一次决策从配置到线上证据闭环。</p><span class="story-chip">AUDIT READY</span></div>
+            </article>
+          </div>
+          <div class="story-stage-wrap">
+            <div class="story-stage" data-story-state="0" aria-label="决策链路动态示意图">
+              <div class="stage-stars" aria-hidden="true"></div>
+              <div class="stage-orbit stage-orbit-a" aria-hidden="true"></div>
+              <div class="stage-orbit stage-orbit-b" aria-hidden="true"></div>
+              <div class="stage-glow stage-glow-a" aria-hidden="true"></div>
+              <div class="stage-glow stage-glow-b" aria-hidden="true"></div>
+              <div class="story-network" aria-hidden="true"><span class="network-line network-line-a"></span><span class="network-line network-line-b"></span><span class="network-line network-line-c"></span><span class="network-node network-node-input">01</span><span class="network-node network-node-rule">02</span><span class="network-node network-node-trace">03</span></div>
+              <div class="story-console">
+                <div class="console-bar"><span class="console-lights"><i></i><i></i><i></i></span><span class="console-path">/project / decision-flow / live</span><span class="console-signal"><i></i> SYNCED</span></div>
+                <div class="console-body">
+                  <div class="console-kicker" data-story-kicker>01 · INPUT LAYER</div>
+                  <h3 data-story-title>输入已就绪</h3>
+                  <p data-story-description>变量、对象字段和外部资源已经接入当前项目。</p>
+                  <div class="console-code"><span><b class="code-key">input</b>.livenessScore <i>=</i> <strong data-story-value>0.98</strong></span><span><b class="code-key">input</b>.faceSimilarity <i>=</i> <strong>0.936</strong></span><span><b class="code-comment">// source</b> project.refs / stable-id</span></div>
+                  <div class="console-metrics"><div><span>LATENCY</span><b data-story-latency>08ms</b></div><div><span>CONFIDENCE</span><b data-story-confidence>99.2%</b></div><div><span>TRACE</span><b data-story-trace>ARMED</b></div></div>
+                </div>
+                <div class="console-footer"><span data-story-footer>等待规则读取输入</span><span class="console-pulse"><i></i><i></i><i></i></span></div>
+              </div>
+              <div class="stage-caption"><span class="stage-caption-dot"></span><span data-story-caption>INPUT / DATA OBJECT / VARIABLE</span><b data-story-progress>01 / 03</b></div>
+            </div>
+          </div>
+        </section>
 
         <section class="manual-section" id="quickstart" data-search="快速上手 登录 项目 变量 规则 测试 发布">
           <div class="section-kicker">01 / QUICK START</div>
