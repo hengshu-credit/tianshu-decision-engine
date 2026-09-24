@@ -412,3 +412,24 @@ body.dark .story-chip { border-color: #3c4ca1; background: #1b2456; }.story-stag
 @media (max-width: 540px) {
   .workflow-stage-wrap { top: 118px; height: calc(100vh - 140px); min-height: 430px; }.workflow-stage { border-radius: 0; }.workflow-stage-header { top: 17px; right: 15px; left: 15px; font-size: 8px; }.workflow-rail { top: 17%; }.workflow-console { width: 91%; min-height: 280px; }.workflow-console-bar, .workflow-console-footer { padding: 0 10px; }.workflow-console-body { padding: 20px 15px 18px; }.workflow-console-body h2 { font-size: 22px; }.workflow-console-body p { font-size: 10px; }.workflow-console-meta strong { font-size: 10px; }
 }
+
+/* Keep the desktop reading column, header and footer aligned at 70% of the viewport. */
+@media (min-width: 1121px) {
+  .site-header-inner, .page-shell { width: 70vw; max-width: none; }
+  .page-shell { margin-right: auto; margin-left: auto; }
+  .site-footer { width: calc(100% + (var(--content-gutter) * 2)); margin-right: calc(var(--content-gutter) * -1); margin-left: calc(var(--content-gutter) * -1); }
+  .site-footer-inner { padding-right: 42px; padding-left: 42px; }
+  .header-actions { flex: 0 0 auto; gap: 10px; }
+  .official-link, .github-link { white-space: nowrap; }
+  .search-box { width: min(180px, 18vw); }
+  .hero h1 { max-width: 620px; font-size: clamp(38px, 4vw, 62px); }
+  .hero-copy { max-width: 580px; }
+  .hero-telemetry { width: min(28vw, 270px); }
+}
+@media (max-width: 1120px) {
+  .site-header-inner, .page-shell { width: calc(100% - 36px); }
+  .site-footer { width: 100%; margin-right: 0; margin-left: 0; }
+}
+@media (max-width: 820px) {
+  .site-header-inner, .page-shell { width: 100%; }
+}
