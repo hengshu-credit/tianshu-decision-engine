@@ -25,7 +25,7 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     # 含数据库名，${MYSQL_DATABASE} 可通过环境变量或配置文件注入
-    url: jdbc:mysql://localhost:3306/${MYSQL_DATABASE:rule_engine}?useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
+    url: jdbc:mysql://${MYSQL_HOST:localhost}:${MYSQL_PORT:3306}/${MYSQL_DATABASE:rule_engine}?useUnicode=true&allowMultiQueries=${MYSQL_ALLOW_MULTI_QUERIES:false}&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: ${MYSQL_USERNAME:}
     password: ${MYSQL_PASSWORD:}
   sql:
@@ -51,8 +51,23 @@ spring:
         shutdown-timeout: 200ms
 
 rule-engine:
+  log-retention:
+    # 默认永久保留业务审计日志；生产按部署策略显式开启并设置各类天数。
+    enabled: ${RULE_LOG_RETENTION_ENABLED:false}
+    interval-ms: ${RULE_LOG_RETENTION_INTERVAL_MS:86400000}
+    batch-size: ${RULE_LOG_RETENTION_BATCH_SIZE:1000}
+    max-batches-per-table: ${RULE_LOG_RETENTION_MAX_BATCHES_PER_TABLE:10}
+    query-timeout-seconds: ${RULE_LOG_RETENTION_QUERY_TIMEOUT_SECONDS:5}
+    auth-access-log-days: ${RULE_AUTH_ACCESS_LOG_RETENTION_DAYS:0}
+  trace:
+    # 仅限制持久化日志中的追踪 JSON；请求结果和内存追踪不截断。
+    max-persist-bytes: ${RULE_TRACE_MAX_PERSIST_BYTES:1048576}
+    # 仅遮罩持久化追踪副本，逗号分隔 JSONPath，例如 $.input.idCard,$.items[*].phone。
+    mask-paths: ${RULE_TRACE_MASK_PATHS:}
   source-resolution:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
+  execution-persistence:
+    queue-capacity: ${RULE_EXECUTION_PERSISTENCE_QUEUE_CAPACITY:5000}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}

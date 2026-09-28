@@ -39,9 +39,21 @@ public class ApiDocDTO {
         private String description;
         private Integer currentVersion;
         private Integer publishedVersion;
+        /** 实际对外生效制品的修订和摘要；不包含任何密钥或完整契约秘密。 */
+        private Long publishedRevisionId;
+        private String publishedArtifactDigest;
+        private Boolean openApiEnabled;
+        /** 已发布开放接口契约投影；不包含响应 Header 的具体值。 */
+        private java.util.Map<String, Object> openApiContract;
+        /** 字段契约可信状态：VERIFIED/UNVERIFIED。 */
+        private String schemaTrust;
+        /** 字段快照校验诊断；不返回工作稿内容。 */
+        private java.util.List<String> schemaDiagnostics;
+        /** 由已发布字段快照生成的请求/响应 JSON Schema。 */
+        private java.util.Map<String, Object> inputSchema;
+        private java.util.Map<String, Object> outputSchema;
         private Integer status;
         private String statusLabel;
-        private String modelJson;
         /** 该规则的输入变量（完整定义） */
         private java.util.List<VariableInfo> inputVariables;
         /** 该规则的输出变量（完整定义） */
@@ -91,6 +103,8 @@ public class ApiDocDTO {
         private String exampleValue;
         private String description;
         private String scriptName;
+        /** 输入字段没有默认值时为必填；输出字段始终为必填。 */
+        private Boolean required;
     }
 
     @Data

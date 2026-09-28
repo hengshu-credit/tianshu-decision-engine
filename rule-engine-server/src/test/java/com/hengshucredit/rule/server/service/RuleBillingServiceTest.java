@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
+import org.springframework.dao.DuplicateKeyException;
 import org.junit.Test;
 
 import java.math.BigDecimal;
@@ -17,6 +18,8 @@ import java.util.Collections;
 import java.util.List;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNull;
 
 public class RuleBillingServiceTest {
 
@@ -53,6 +56,51 @@ public class RuleBillingServiceTest {
         assertEquals(Long.valueOf(9L), record.getProjectId());
         assertEquals("calling-project", record.getProjectCode());
         assertEquals(Long.valueOf(9L), service.configProjectId);
+    }
+
+    @Test
+    public void engineBillingUsesStableDedupKeyOnlyWhenRootTraceExists() {
+        InMemoryBillingService service = serviceWithConfig();
+        RuleDefinition definition = definition();
+        definition.setExecutionTraceId("RPG000720260925120000000ABCDEF123456");
+
+        service.recordEngineExecution(definition, true, 12L, null);
+
+        RuleBillingRecord record = service.records.get(0);
+        assertEquals(definition.getExecutionTraceId(), record.getRootTraceId());
+        assertNotNull(record.getBillingDedupKey());
+        assertEquals(64, record.getBillingDedupKey().length());
+    }
+
+    @Test
+    public void engineBillingWithoutRootTraceKeepsLegacyNonIdempotentInsertPath() {
+        InMemoryBillingService service = serviceWithConfig();
+
+        service.recordEngineExecution(definition(), true, 12L, null);
+
+        assertNull(service.records.get(0).getBillingDedupKey());
+    }
+
+    @Test
+    public void concurrentEngineBillingDuplicateIsUpdatedByDatabaseOwnedRow() {
+        ConcurrentBillingService service = new ConcurrentBillingService();
+        RuleBillingConfig config = new RuleBillingConfig();
+        config.setBillingCode("ENGINE_CALL");
+        config.setBillingName("规则调用");
+        config.setBillingTarget("ENGINE");
+        config.setChargeType("COUNT");
+        config.setUnitPrice(BigDecimal.ONE);
+        config.setCurrency("CNY");
+        config.setStatus(1);
+        service.configs = Collections.singletonList(config);
+
+        RuleDefinition definition = definition();
+        definition.setExecutionTraceId("RPG000720260925120000000ABCDEF123456");
+        service.recordEngineExecution(definition, true, 12L, null);
+
+        assertEquals(1, service.updateCount);
+        assertEquals(Long.valueOf(77L), service.updatedRecord.getId());
+        assertNotNull(service.lookupKeyRootTrace);
     }
 
     @Test
@@ -126,7 +174,7 @@ public class RuleBillingServiceTest {
     }
 
     private static class InMemoryBillingService extends RuleBillingService {
-        private List<RuleBillingConfig> configs = Collections.emptyList();
+        protected List<RuleBillingConfig> configs = Collections.emptyList();
         private final List<RuleBillingRecord> records = new ArrayList<>();
         private final List<RuleBillingSummary> summaries = new ArrayList<>();
         private Long configProjectId;
@@ -165,6 +213,31 @@ public class RuleBillingServiceTest {
         @Override
         protected void insertSummary(RuleBillingSummary summary) {
             summaries.add(summary);
+        }
+    }
+
+    private static final class ConcurrentBillingService extends InMemoryBillingService {
+        private int updateCount;
+        private RuleBillingRecord updatedRecord;
+        private String lookupKeyRootTrace;
+
+        @Override
+        protected void insertRecord(RuleBillingRecord record) {
+            throw new DuplicateKeyException("duplicate billing_dedup_key");
+        }
+
+        @Override
+        protected RuleBillingRecord findByBillingDedupKey(String billingDedupKey) {
+            lookupKeyRootTrace = billingDedupKey;
+            RuleBillingRecord existing = new RuleBillingRecord();
+            existing.setId(77L);
+            return existing;
+        }
+
+        @Override
+        protected void updateRecord(RuleBillingRecord record) {
+            updateCount++;
+            updatedRecord = record;
         }
     }
 }

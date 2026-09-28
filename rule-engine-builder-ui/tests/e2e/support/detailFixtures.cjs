@@ -255,6 +255,15 @@ function createDetailApiData() {
     retryCount: 1,
     status: 1
   })
+  routes.set('/api/rule/preflight/EXTERNAL_API/22', {
+    resourceType: 'EXTERNAL_API',
+    resourceId: 22,
+    checkedAt: '2026-09-28T11:00:00',
+    checkScope: 'SAVED_CONFIGURATION',
+    valid: true,
+    errors: [],
+    warnings: []
+  })
 
   routes.set('/api/rule/database/31', {
     id: 31,

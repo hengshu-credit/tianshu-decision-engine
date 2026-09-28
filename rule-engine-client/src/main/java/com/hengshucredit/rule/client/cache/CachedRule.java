@@ -17,6 +17,9 @@ public class CachedRule {
     private java.util.Map<String, Long> importBindings;
     /** 规则所属项目编码 */
     private String projectCode;
+    /** 服务端标记该规则需要变量来源解析/恢复状态时，本地纯计算模式不得静默执行。 */
+    private boolean requiresServerExecution;
+    private String serverExecutionReason;
     private int version;
     private Long revisionId;
     private String artifactDigest;

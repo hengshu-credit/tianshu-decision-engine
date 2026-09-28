@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSONObject;
 import com.alibaba.qlexpress4.Express4Runner;
+import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationResultCollector;
@@ -141,7 +142,15 @@ public class RuleRuntimeInvoker {
                       boolean testMode, String modelJson) {
         enterInternal(definition, executionProjectId, projectCode, values, originalInput,
                 testMode, modelJson, resolveOutputScriptNames(definition == null ? null : definition.getId()),
-                null);
+                null, null);
+    }
+
+    public void enter(RuleDefinition definition, Long executionProjectId, String projectCode,
+                      Map<String, Object> values, Map<String, Object> originalInput,
+                      boolean testMode, String modelJson, String rootTraceId) {
+        enterInternal(definition, executionProjectId, projectCode, values, originalInput,
+                testMode, modelJson, resolveOutputScriptNames(definition == null ? null : definition.getId()),
+                null, rootTraceId);
     }
 
     public void enterArtifact(RuleDefinition definition, Long executionProjectId, String projectCode,
@@ -150,23 +159,61 @@ public class RuleRuntimeInvoker {
                               ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
         enterInternal(definition, executionProjectId, projectCode, values, originalInput,
                 testMode, modelJson, resolveOutputScriptNames(runtimeSnapshot == null
-                        ? Collections.emptyList() : runtimeSnapshot.getOutputFields()), runtimeSnapshot);
+                        ? Collections.emptyList() : runtimeSnapshot.getOutputFields()), runtimeSnapshot, null);
+    }
+
+    public void enterArtifact(RuleDefinition definition, Long executionProjectId, String projectCode,
+                              Map<String, Object> values, Map<String, Object> originalInput,
+                              boolean testMode, String modelJson,
+                              ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot,
+                              String rootTraceId) {
+        enterInternal(definition, executionProjectId, projectCode, values, originalInput,
+                testMode, modelJson, resolveOutputScriptNames(runtimeSnapshot == null
+                        ? Collections.emptyList() : runtimeSnapshot.getOutputFields()), runtimeSnapshot, rootTraceId);
     }
 
     private void enterInternal(RuleDefinition definition, Long executionProjectId, String projectCode,
                                Map<String, Object> values, Map<String, Object> originalInput,
                                boolean testMode, String modelJson,
                                List<String> rootOutputScriptNames,
-                               ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot) {
+                               ArtifactRuntimeSnapshotService.RuntimeSnapshot runtimeSnapshot,
+                               String forcedRootTraceId) {
         if (definition == null) {
             throw new IllegalArgumentException("规则定义不能为空");
         }
-        RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson);
+        RuleTraceFrame rootTrace = createTraceFrame(definition, projectCode, null, modelJson,
+                forcedRootTraceId);
+        if (forcedRootTraceId != null && !forcedRootTraceId.isBlank()) {
+            if (forcedRootTraceId.length() < 7) {
+                throw new IllegalArgumentException("恢复执行的 trace_id 格式无效");
+            }
+            rootTrace.setTraceId(forcedRootTraceId);
+            if (traceRegistryService != null) {
+                com.hengshucredit.rule.model.entity.RuleTraceRegistry registry =
+                        new com.hengshucredit.rule.model.entity.RuleTraceRegistry();
+                registry.setTraceId(forcedRootTraceId);
+                registry.setTraceType(forcedRootTraceId.substring(0, 2));
+                registry.setScopeType(forcedRootTraceId.substring(2, 3));
+                registry.setScopeCode(forcedRootTraceId.substring(3, 7));
+                registry.setProjectId(executionProjectId);
+                registry.setResourceType("RULE");
+                registry.setResourceId(definition.getId());
+                registry.setResourceCode(definition.getRuleCode());
+                try {
+                    traceRegistryService.registerExisting(registry);
+                } catch (IllegalArgumentException duplicate) {
+                    if (duplicate.getMessage() == null || !duplicate.getMessage().contains("已存在")) {
+                        throw duplicate;
+                    }
+                }
+            }
+        }
         RuleExecutionSession session = new RuleExecutionSession(
                 executionProjectId, projectCode, values, originalInput, testMode,
                 definition.getRuleCode(), rootTrace, rootOutputScriptNames, runtimeSnapshot);
         currentSession.set(session);
         session.bindContext();
+        session.getRequestContext().setRootInput(session.getOriginalInput());
         RuntimeContextBridge.bind(this::writeRuntimeValue);
         RuntimeContextBridge.bindTraceEventListener(event -> {
             RuleTraceFrame currentTrace = session.currentTrace();
@@ -182,6 +229,7 @@ public class RuleRuntimeInvoker {
         ruleContext.put("projectId", executionProjectId);
         ruleContext.put("projectCode", projectCode);
         ruleContext.put("traceId", rootTrace.getTraceId());
+        ruleContext.put("modelType", definition.getModelType());
         RuntimeContextBridge.setRuleContext(ruleContext, Collections.<String>emptyList());
     }
 
@@ -363,12 +411,18 @@ public class RuleRuntimeInvoker {
         long childStart = System.currentTimeMillis();
         com.hengshucredit.rule.core.engine.RequestContext.FunctionScope functionScope = null;
         try {
+            Map<String, CustomFunction> functionBindings = Collections.emptyMap();
             if (functionRegistrar != null) {
                 List<RuleFunction> functions = runtimeSnapshot == null
                         ? functionService == null ? Collections.emptyList() : functionService.listByProject(projectId)
                         : runtimeSnapshot.getFunctions();
-                functionScope = session.getRequestContext().bindFunctions(
-                        functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner()));
+                functionBindings = functionRegistrar.prepareFunctions(functions, qlExpressEngine.getRunner());
+                functionScope = session.getRequestContext().bindFunctions(functionBindings);
+            }
+            QLExpressEngine.PreparedScript preparedScript = qlExpressEngine.prepare(compiledScript);
+            if (functionRegistrar != null) {
+                functionRegistrar.validateFunctionBindings(preparedScript.functionNames(), functionBindings,
+                        qlExpressEngine.getRunner());
             }
             session.setCurrentArtifactSnapshot(runtimeSnapshot);
             session.setCurrentProjectId(projectId);
@@ -381,6 +435,7 @@ public class RuleRuntimeInvoker {
             childRule.put("projectId", projectId);
             childRule.put("projectCode", projectCode);
             childRule.put("traceId", childTrace.getTraceId());
+            childRule.put("modelType", definition == null ? published.getModelType() : definition.getModelType());
             RuntimeContextBridge.setRuleContext(childRule, Collections.<String>emptyList());
 
             VariableResolveOptions options = VariableResolveOptions.defaults();
@@ -427,7 +482,7 @@ public class RuleRuntimeInvoker {
                                     runtimeSnapshot.getModels(), runtimeSnapshot.getFunctions(), session.getValues(), options);
                         }
                     })) {
-                result = qlExpressEngine.execute(qlExpressEngine.prepare(compiledScript),
+                result = qlExpressEngine.execute(preparedScript,
                         context, session.isTraceEnabled(), session.getRequestContext());
             }
             childTrace.setExpressionTrace(result.getTraces() == null
@@ -507,7 +562,8 @@ public class RuleRuntimeInvoker {
         Set<String> names = new LinkedHashSet<>();
         if (fields == null) return names;
         for (RuleDefinitionInputField field : fields) {
-            if (field != null && hasText(field.getScriptName())) {
+            if (field != null && !"MODEL_OUTPUT".equalsIgnoreCase(field.getRefType())
+                    && hasText(field.getScriptName())) {
                 names.add(field.getScriptName().trim());
             }
         }
@@ -584,6 +640,12 @@ public class RuleRuntimeInvoker {
 
     private RuleTraceFrame createTraceFrame(RuleDefinition definition, String projectCode,
                                             String parentTraceId, String modelJson) {
+        return createTraceFrame(definition, projectCode, parentTraceId, modelJson, null);
+    }
+
+    private RuleTraceFrame createTraceFrame(RuleDefinition definition, String projectCode,
+                                            String parentTraceId, String modelJson,
+                                            String forcedTraceId) {
         String modelType = definition != null && hasText(definition.getModelType())
                 ? definition.getModelType() : "SCRIPT";
         Long projectId = definition == null ? null : definition.getProjectId();
@@ -594,7 +656,8 @@ public class RuleRuntimeInvoker {
         String scopeCode = global ? TraceIdGenerator.GLOBAL_SCOPE_CODE : resolveTraceScopeCode(projectId);
         String typeCode = TraceIdGenerator.ruleTypeCode(modelType);
         String ruleCode = definition == null ? null : definition.getRuleCode();
-        String traceId = traceRegistryService == null
+        String traceId = forcedTraceId != null && !forcedTraceId.isBlank() ? forcedTraceId
+                : traceRegistryService == null
                 ? TraceIdGenerator.generate(typeCode, scopeType, scopeCode)
                 : traceRegistryService.allocate(typeCode, scopeType, scopeCode, projectId,
                         "RULE", definition == null ? null : definition.getId(), ruleCode, parentTraceId);

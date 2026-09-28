@@ -6,6 +6,7 @@ import com.alibaba.qlexpress4.runtime.function.CustomFunction;
 
 import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -13,7 +14,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 将编译脚本产生的中间结果通知给当前请求的运行时上下文。
@@ -24,12 +28,97 @@ public final class RequestContext {
     private BiConsumer<String, Object> listener;
     private Map<String, Object> rule = Collections.emptyMap();
     private Map<String, Object> rootRule = Collections.emptyMap();
+    private Object rootInput;
+
+    /** 在进入根规则时保存快照，工作线程共享只读输入，避免后续赋值覆盖调用方报文。 */
+    public void setRootInput(Object input) { rootInput = snapshotValue(input); }
+    public Object rootInput() { return snapshotValue(rootInput); }
     private java.time.LocalDateTime startedAt = java.time.LocalDateTime.now();
     private List<String> matchedConditions = Collections.emptyList();
     private Map<String, Object> constantValues;
     private Consumer<Map<String, Object>> traceEventListener;
     private Map<String, Map<String, Object>> sourceStates = Collections.emptyMap();
     private Consumer<String> sourceStateResolver;
+    private final ArrayDeque<Map<String, Object>> executionContexts = new ArrayDeque<>();
+    private Runnable checkpointListener;
+    /** Shared by worker contexts forked from one logical execution. */
+    private Map<String, Object> randomValues = new ConcurrentHashMap<>();
+    private AtomicLong randomSequence = new AtomicLong();
+    /** 每个规则/函数/参数签名的调用序号，避免前面插入了另一个随机节点后发生整体错位。 */
+    private Map<String, AtomicLong> randomSlots = new ConcurrentHashMap<>();
+
+    public void bindCheckpointListener(Runnable listener) {
+        checkpointListener = listener;
+    }
+
+    public Object randomValue(String function, Object argumentsKey, Supplier<Object> generator) {
+        return randomValue(function, null, argumentsKey, generator);
+    }
+
+    /**
+     * Stable random slot API. Compiler/runtime integrations can pass a node identity;
+     * legacy callers continue to use the sequence based key.
+     */
+    public Object randomValue(String function, String stableIdentity,
+                              Object argumentsKey, Supplier<Object> generator) {
+        long sequence = randomSequence.getAndIncrement();
+        String arguments = String.valueOf(argumentsKey);
+        String ruleIdentity = ruleIdentity();
+        String signature = ruleIdentity + "|" + function + "|" + arguments;
+        long slot = randomSlots.computeIfAbsent(signature, ignored -> new AtomicLong()).getAndIncrement();
+        String key = stableIdentity == null || stableIdentity.trim().isEmpty()
+                ? "slot:" + ruleIdentity + "|" + function + "|" + slot + "|" + arguments
+                : "slot:" + stableIdentity.trim() + "#" + arguments;
+        Object restored = randomValues.get(key);
+        if (restored != null || randomValues.containsKey(key)) return restored;
+        // 兼容旧检查点（function#sequence#arguments），按同一参数签名迁移，
+        // 规则前面新增了不同随机节点时仍能命中原结果。
+        if (stableIdentity == null || stableIdentity.trim().isEmpty()) {
+            String legacyPrefix = function + "#";
+            String legacySuffix = "#" + arguments;
+            long wanted = slot;
+            for (Map.Entry<String, Object> entry : randomValues.entrySet()) {
+                if (!entry.getKey().startsWith(legacyPrefix) || !entry.getKey().endsWith(legacySuffix)) continue;
+                if (wanted-- == 0) {
+                    randomValues.put(key, entry.getValue());
+                    return entry.getValue();
+                }
+            }
+        }
+        Object value = generator.get();
+        randomValues.put(key, snapshotValue(value));
+        Runnable listener = checkpointListener;
+        if (listener != null) listener.run();
+        return value;
+    }
+
+    public Map<String, Object> randomSnapshot() {
+        return new LinkedHashMap<>(randomValues);
+    }
+
+    private String ruleIdentity() {
+        Object id = rule == null ? null : rule.get("id");
+        if (id != null) return String.valueOf(id);
+        Object code = rule == null ? null : rule.get("code");
+        return code == null ? "ROOT" : String.valueOf(code);
+    }
+
+    public void restoreRandomValues(Map<String, Object> values) {
+        randomValues.clear();
+        randomSlots.clear();
+        if (values != null) randomValues.putAll(values);
+        long next = randomValues.keySet().stream().map(this::sequenceOf)
+                .filter(java.util.Objects::nonNull).mapToLong(Long::longValue).max().orElse(-1L) + 1L;
+        randomSequence.set(next);
+    }
+
+    private Long sequenceOf(String key) {
+        int start = key == null ? -1 : key.indexOf('#');
+        int end = start < 0 ? -1 : key.indexOf('#', start + 1);
+        if (start < 0 || end < 0) return null;
+        try { return Long.valueOf(key.substring(start + 1, end)); }
+        catch (NumberFormatException ignored) { return null; }
+    }
 
     public SourceStateScope bindSourceStateResolver(Consumer<String> resolver) {
         SourceStateScope scope = new SourceStateScope(sourceStateResolver);
@@ -111,6 +200,27 @@ public final class RequestContext {
         this.listener = listener;
     }
 
+    /** 当前 QLExpress 局部上下文；运行时写入会同步回同一份 Map。 */
+    public ExecutionContextScope bindExecutionContext(Object context) {
+        @SuppressWarnings("unchecked")
+        Map<String, Object> values = context instanceof Map ? (Map<String, Object>) context : null;
+        if (values == null) return new ExecutionContextScope(false);
+        executionContexts.addLast(values);
+        return new ExecutionContextScope(true);
+    }
+
+    public final class ExecutionContextScope implements AutoCloseable {
+        private final boolean bound;
+        private boolean closed;
+        private ExecutionContextScope(boolean bound) { this.bound = bound; }
+        @Override public void close() {
+            if (!closed) {
+                if (bound && !executionContexts.isEmpty()) executionContexts.removeLast();
+                closed = true;
+            }
+        }
+    }
+
     public void setRuleContext(Map<String, Object> rule, List<String> matchedConditions) {
         Map<String, Object> safeRule = rule == null
                 ? Collections.<String, Object>emptyMap()
@@ -132,6 +242,7 @@ public final class RequestContext {
         RequestContext child = new RequestContext();
         child.rule = rule;
         child.rootRule = rootRule;
+        child.rootInput = rootInput;
         child.startedAt = startedAt;
         child.matchedConditions = matchedConditions;
         child.sourceStates = sourceStates;
@@ -140,6 +251,10 @@ public final class RequestContext {
         child.externalFieldPaths = externalFieldPaths;
         child.externalDefaultPaths = externalDefaultPaths;
         child.externalDefaultAliases = externalDefaultAliases;
+        child.checkpointListener = checkpointListener;
+        child.randomValues = randomValues;
+        child.randomSequence = randomSequence;
+        child.randomSlots = randomSlots;
         return child;
     }
 
@@ -292,6 +407,9 @@ public final class RequestContext {
                 runtimeWrites.add(new RuntimeWrite(path, value));
             }
         }
+        for (Map<String, Object> activeContext : executionContexts) {
+            if (activeContext != null) writePathSafely(activeContext, path, value);
+        }
         return value;
     }
 
@@ -313,7 +431,7 @@ public final class RequestContext {
         for (int i = Math.max(0, marker); i < writes.size(); i++) {
             RuntimeWrite write = writes.get(i);
             setValue(write.path, write.value, false);
-            writePath(values, write.path, write.value);
+            writePathSafely(values, write.path, write.value);
         }
     }
 
@@ -356,7 +474,7 @@ public final class RequestContext {
         }
         Object value = trace.getValue();
         setValue(path, value, false);
-        writePath(values, path, value);
+        writePathSafely(values, path, value);
     }
 
     private static boolean isAssignmentOperator(String token) {
@@ -385,13 +503,27 @@ public final class RequestContext {
             if (i == parts.length - 1) {
                 current.put(part, value);
             } else {
-                Object child = current.get(part);
+                Object child = rawValue(current, part);
                 if (!(child instanceof Map)) {
                     child = new LinkedHashMap<String, Object>();
                     current.put(part, child);
                 }
                 current = (Map<String, Object>) child;
             }
+        }
+    }
+
+    private static Object rawValue(Map<String, Object> values, String key) {
+        if (values instanceof RuntimeWriteTarget target) return target.runtimeValue(key);
+        return values.get(key);
+    }
+
+    /** 只读调用方上下文仍应收到运行时监听事件；无法回写时保持原有只读语义。 */
+    private static void writePathSafely(Map<String, Object> values, String path, Object value) {
+        try {
+            writePath(values, path, value);
+        } catch (UnsupportedOperationException ignored) {
+            // Map.of/Collections.unmodifiableMap 等只读上下文不能接收运行时回写。
         }
     }
 

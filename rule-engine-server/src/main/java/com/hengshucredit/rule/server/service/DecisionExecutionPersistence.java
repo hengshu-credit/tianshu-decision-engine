@@ -8,6 +8,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -25,26 +26,42 @@ import java.util.concurrent.atomic.AtomicLong;
 @Component
 public class DecisionExecutionPersistence implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(DecisionExecutionPersistence.class);
+    private static final String OVERFLOW_STRATEGY = "SYNC_FALLBACK";
 
     private final RuleExecutionLogService logService;
     private final RuleBillingService billingService;
+    private final RuleExecutionPersistenceOutboxService recoveryOutbox;
     private final ArrayBlockingQueue<Event> queue;
+    private final int queueCapacity;
     private final ExecutorService executor;
     private final AtomicBoolean running = new AtomicBoolean();
     private final AtomicLong offered = new AtomicLong();
     private final AtomicLong persisted = new AtomicLong();
     private final AtomicLong fallback = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
+    private final AtomicLong logFailed = new AtomicLong();
+    private final AtomicLong billingFailed = new AtomicLong();
     private final AtomicLong totalWriteMs = new AtomicLong();
     private final AtomicLong maxQueueDepth = new AtomicLong();
+    private final AtomicLong lastFallbackAt = new AtomicLong();
+    private final AtomicLong lastFailureAt = new AtomicLong();
 
-    public DecisionExecutionPersistence(
-            RuleExecutionLogService logService,
-            RuleBillingService billingService,
-            @Value("${rule-engine.execution-persistence.queue-capacity:5000}") int capacity) {
+    public DecisionExecutionPersistence(RuleExecutionLogService logService,
+                                        RuleBillingService billingService,
+                                        @Value("${rule-engine.execution-persistence.queue-capacity:5000}") int capacity) {
+        this(logService, billingService, capacity, null);
+    }
+
+    @Autowired
+    public DecisionExecutionPersistence(RuleExecutionLogService logService,
+                                        RuleBillingService billingService,
+                                        @Value("${rule-engine.execution-persistence.queue-capacity:5000}") int capacity,
+                                        RuleExecutionPersistenceOutboxService recoveryOutbox) {
         this.logService = logService;
         this.billingService = billingService;
-        this.queue = new ArrayBlockingQueue<>(Math.max(100, capacity));
+        this.recoveryOutbox = recoveryOutbox;
+        this.queueCapacity = Math.max(100, capacity);
+        this.queue = new ArrayBlockingQueue<>(queueCapacity);
         this.executor = Executors.newSingleThreadExecutor(runnable -> {
             Thread thread = new Thread(runnable, "decision-execution-persistence");
             thread.setDaemon(true);
@@ -65,21 +82,30 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         Event event = new Event(log, definition, success, costTimeMs, errorMessage, authContext);
         if (!queue.offer(event)) {
             fallback.incrementAndGet();
+            lastFallbackAt.set(System.currentTimeMillis());
             persist(event);
             return;
         }
-        maxQueueDepth.accumulateAndGet(queue.size(), Math::max);
+        int queueDepth = queue.size();
+        maxQueueDepth.accumulateAndGet(queueDepth, Math::max);
     }
 
     public Map<String, Object> snapshot() {
         Map<String, Object> result = new LinkedHashMap<>();
-        result.put("queueDepth", queue.size());
-        result.put("queueCapacity", queue.remainingCapacity() + queue.size());
+        int queueDepth = queue.size();
+        result.put("queueDepth", queueDepth);
+        result.put("queueCapacity", queueCapacity);
         result.put("offered", offered.get());
         result.put("persisted", persisted.get());
         result.put("fallback", fallback.get());
         result.put("failed", failed.get());
+        result.put("logFailed", logFailed.get());
+        result.put("billingFailed", billingFailed.get());
         result.put("maxQueueDepth", maxQueueDepth.get());
+        result.put("queueUtilization", (double) queueDepth / (double) queueCapacity);
+        result.put("overflowStrategy", OVERFLOW_STRATEGY);
+        result.put("lastFallbackAt", lastFallbackAt.get() == 0 ? null : lastFallbackAt.get());
+        result.put("lastFailureAt", lastFailureAt.get() == 0 ? null : lastFailureAt.get());
         long count = persisted.get();
         result.put("avgWriteMs", count == 0 ? 0D : (double) totalWriteMs.get() / count);
         return result;
@@ -101,19 +127,59 @@ public class DecisionExecutionPersistence implements AutoCloseable {
 
     private void persist(Event event) {
         long started = System.nanoTime();
-        try {
-            if (event.log != null) logService.save(event.log);
-            if (event.definition != null) {
+        boolean logSucceeded = event.log == null || retry("日志", () -> logService.saveLogical(event.log));
+        if (!logSucceeded) logFailed.incrementAndGet();
+
+        if (event.definition != null && event.log != null) {
+            event.definition.setExecutionTraceId(event.log.getTraceId());
+        }
+        boolean billingSucceeded = event.definition == null || retry("计费", () ->
                 billingService.recordEngineExecution(event.definition, event.success,
-                        event.costTimeMs, event.errorMessage, event.authContext);
-            }
-            persisted.incrementAndGet();
-        } catch (RuntimeException error) {
+                        event.costTimeMs, event.errorMessage, event.authContext));
+        if (!billingSucceeded) billingFailed.incrementAndGet();
+
+        boolean succeeded = logSucceeded && billingSucceeded;
+        if (!succeeded) {
             failed.incrementAndGet();
-            log.error("异步持久化规则执行日志或计费失败: {}", error.getMessage(), error);
-        } finally {
+            lastFailureAt.set(System.currentTimeMillis());
+            if (recoveryOutbox != null) {
+                try {
+                    recoveryOutbox.enqueue(event.log, event.definition, event.success, event.costTimeMs,
+                            event.errorMessage, event.authContext,
+                            event.log != null && !logSucceeded,
+                            event.definition != null && !billingSucceeded);
+                } catch (RuntimeException outboxError) {
+                    log.error("持久化恢复事件入队失败: {}", outboxError.getMessage(), outboxError);
+                }
+            }
+        }
+        if (succeeded) {
+            persisted.incrementAndGet();
             totalWriteMs.addAndGet(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
         }
+    }
+
+    private boolean retry(String operation, Runnable action) {
+        RuntimeException lastError = null;
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            try {
+                action.run();
+                return true;
+            } catch (RuntimeException error) {
+                lastError = error;
+                if (attempt < 3) {
+                    try { Thread.sleep(attempt * 100L); }
+                    catch (InterruptedException interrupted) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+        if (lastError != null) {
+            log.error("异步持久化{}失败: {}", operation, lastError.getMessage(), lastError);
+        }
+        return false;
     }
 
     @PreDestroy

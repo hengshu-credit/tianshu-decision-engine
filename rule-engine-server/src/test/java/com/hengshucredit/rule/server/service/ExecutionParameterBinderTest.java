@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import org.junit.Test;
 
 import java.math.BigDecimal;
+import java.util.LinkedHashMap;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Collections;
@@ -120,8 +121,53 @@ public class ExecutionParameterBinderTest {
                 JSON.parseObject("{\"request\":{\"score\":\"not-a-number\"}}"), options);
 
         assertEquals("MISSING", options.getSourceStates().get("DATA_OBJECT:11").get("PRESENCE"));
-        assertEquals("INVALID", options.getSourceStates().get("DATA_OBJECT:12").get("PRESENCE"));
-        assertEquals(null, ((Map<?, ?>) bound.get("request")).get("score"));
+        assertEquals("PRESENT", options.getSourceStates().get("DATA_OBJECT:12").get("PRESENCE"));
+        assertEquals("not-a-number", ((Map<?, ?>) bound.get("request")).get("score"));
+    }
+
+    @Test
+    public void preservesEmptyAndWhitespaceStringsAndNormalizesJavaInfinities() {
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("empty", "");
+        input.put("blank", "  ");
+        input.put("positive", Double.POSITIVE_INFINITY);
+        input.put("negative", Double.NEGATIVE_INFINITY);
+
+        Map<String, Object> bound = binder.bindRuleInputs(Arrays.asList(
+                ruleField("empty", "STRING"),
+                ruleField("blank", "STRING"),
+                ruleField("positive", "DOUBLE"),
+                ruleField("negative", "DOUBLE")
+        ), input);
+
+        assertEquals("", bound.get("empty"));
+        assertEquals("  ", bound.get("blank"));
+        assertEquals(Double.MAX_VALUE, bound.get("positive"));
+        assertEquals(-Double.MAX_VALUE, bound.get("negative"));
+    }
+
+    @Test
+    public void projectsMissingModelFieldsAsNull() {
+        RuleModelInputField score = new RuleModelInputField();
+        score.setFieldName("score");
+        score.setScriptName("score");
+        score.setFieldType("DOUBLE");
+
+        Map<String, Object> projected = binder.projectModelInputs(
+                Collections.singletonList(score), Collections.emptyMap());
+
+        assertTrue(projected.containsKey("score"));
+        assertEquals(null, projected.get("score"));
+    }
+
+    @Test
+    public void bindsMissingRuleFieldsAsExplicitNull() {
+        RuleDefinitionInputField age = ruleField("request.age", "INTEGER");
+        Map<String, Object> bound = binder.bindRuleInputs(
+                Collections.singletonList(age), Collections.emptyMap());
+        assertTrue(bound.containsKey("request"));
+        assertTrue(((Map<?, ?>) bound.get("request")).containsKey("age"));
+        assertEquals(null, ((Map<?, ?>) bound.get("request")).get("age"));
     }
 
     @Test

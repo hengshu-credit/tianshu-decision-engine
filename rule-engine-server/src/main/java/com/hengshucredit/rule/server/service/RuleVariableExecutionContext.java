@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.core.engine.RuntimeWriteTarget;
 import com.hengshucredit.rule.server.derived.HistoryFieldValues;
 
 import java.util.AbstractMap;
@@ -19,7 +20,7 @@ final class RuleVariableExecutionContext {
         return new Scope(modelType, values, options, plan, explicitTargets, resolve);
     }
 
-    static final class Scope extends AbstractMap<String, Object> implements AutoCloseable {
+    static final class Scope extends AbstractMap<String, Object> implements AutoCloseable, RuntimeWriteTarget {
         private final Map<String, Object> values;
         private final VariableResolveOptions options;
         private final DataObjectFieldReferenceResolver.ReferencePlan plan;
@@ -90,6 +91,7 @@ final class RuleVariableExecutionContext {
         }
 
         @Override public Object get(Object key) { return key instanceof String name ? value(name) : values.get(key); }
+        @Override public Object runtimeValue(String key) { return values.get(key); }
         @Override public boolean containsKey(Object key) { return values.containsKey(key) || key instanceof String name && plan.lazyPaths().stream().anyMatch(path -> path.startsWith(name + ".")); }
         @Override public Set<Entry<String, Object>> entrySet() { return values.entrySet(); }
         @Override public Object put(String key, Object value) {

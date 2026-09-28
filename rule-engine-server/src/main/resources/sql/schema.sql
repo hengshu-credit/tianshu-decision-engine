@@ -737,6 +737,9 @@ CREATE TABLE IF NOT EXISTS `rule_publish_outbox` (
   `create_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_time`     DATETIME      NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   `delivered_time`  DATETIME      DEFAULT NULL,
+  `dead_letter_time` DATETIME      DEFAULT NULL,
+  `claim_token`     CHAR(36)       DEFAULT NULL,
+  `lease_until`     DATETIME       DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_publish_operation` (`operation_id`),
   KEY `idx_outbox_poll` (`delivery_status`, `next_retry_time`),
@@ -1037,6 +1040,7 @@ CREATE TABLE IF NOT EXISTS `rule_execution_log` (
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '按ID存储的请求和显式记录结果快照',
    `revision_id`     BIGINT        DEFAULT NULL             COMMENT 'Rule revision ID',
    `artifact_digest` CHAR(64)      DEFAULT NULL             COMMENT 'Decision artifact SHA-256',
+   `attempt_no`      INT           DEFAULT NULL             COMMENT '逻辑执行恢复尝试次数',
    `id`              BIGINT        NOT NULL AUTO_INCREMENT COMMENT '主键ID',
    `trace_id`        CHAR(36)      DEFAULT NULL             COMMENT '全局唯一Trace ID',
    `rule_code`       VARCHAR(128)  NOT NULL                COMMENT '规则编码',
@@ -1340,6 +1344,7 @@ CREATE TABLE IF NOT EXISTS `rule_external_api_config` (
   `response_script`      LONGTEXT     DEFAULT NULL            COMMENT '响应映射前QLExpress处理脚本',
   `body_template`        LONGTEXT     DEFAULT NULL            COMMENT '请求体模板',
   `request_script`       LONGTEXT     DEFAULT NULL            COMMENT '请求发送前QLExpress处理脚本',
+  `payload_capture_config` JSON       DEFAULT NULL             COMMENT '请求/响应诊断报文留存、解密和字段排除策略JSON',
   `auth_mode`            VARCHAR(32)  NOT NULL DEFAULT 'INHERIT' COMMENT '接口鉴权：INHERIT/NONE/BASIC/BEARER/API_KEY/OAUTH2/TOKEN_API/CUSTOM',
   `auth_api_config`      JSON         DEFAULT NULL            COMMENT '接口级鉴权与token获取配置JSON',
   `token_cache_seconds`  INT          NOT NULL DEFAULT 0      COMMENT '接口token缓存秒数',
@@ -1411,6 +1416,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `history_fields` LONGTEXT DEFAULT NULL COMMENT '逻辑外数调用的受管字段ID结果快照',
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `trace_id`        CHAR(36)     DEFAULT NULL            COMMENT '全局唯一Trace ID',
+  `call_id`         CHAR(36)     DEFAULT NULL            COMMENT '一次逻辑外数调用ID，重试共用',
   `rule_trace_id`   CHAR(36)     DEFAULT NULL            COMMENT '发起调用的规则Trace ID',
   `module_type`     VARCHAR(32)  NOT NULL                COMMENT '模块类型：DATASOURCE/DATABASE/LIST/MODEL',
   `action_type`     VARCHAR(64)  NOT NULL                COMMENT '动作类型：API_INVOKE/AUTH_TEST/QUERY/EXECUTE等',
@@ -1435,8 +1441,15 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   `request_headers` TEXT         DEFAULT NULL            COMMENT '请求头JSON（敏感值脱敏）',
   `request_params`  LONGTEXT     DEFAULT NULL            COMMENT '请求入参JSON',
   `request_body`    LONGTEXT     DEFAULT NULL            COMMENT '请求体JSON或文本',
+  `raw_request_body` LONGTEXT    DEFAULT NULL            COMMENT '原始请求体，仅受控接口返回',
+  `raw_request_metadata` LONGTEXT DEFAULT NULL            COMMENT '原始请求留存策略元数据JSON',
+  `original_request_body` LONGTEXT DEFAULT NULL           COMMENT '供应商实际收到的原始请求体，受控接口返回',
+  `trace_steps` LONGTEXT DEFAULT NULL                    COMMENT '外数调用阶段链路JSON，仅保存脱敏分析副本',
   `response_status` INT          DEFAULT NULL            COMMENT '响应状态码',
   `response_body`   LONGTEXT     DEFAULT NULL            COMMENT '响应内容JSON或文本',
+  `raw_response_body` LONGTEXT   DEFAULT NULL            COMMENT '上游原始响应体，仅受控接口返回',
+  `raw_response_metadata` LONGTEXT DEFAULT NULL           COMMENT '原始响应留存策略元数据JSON',
+  `original_response_body` LONGTEXT DEFAULT NULL          COMMENT '供应商实际返回的原始响应体，受控接口返回',
   `error_type`      VARCHAR(128) DEFAULT NULL            COMMENT '异常类型',
   `error_message`   VARCHAR(2048) DEFAULT NULL           COMMENT '错误信息',
   `cost_time_ms`    BIGINT       DEFAULT NULL            COMMENT '耗时毫秒',
@@ -1446,6 +1459,7 @@ CREATE TABLE IF NOT EXISTS `rule_runtime_call_log` (
   KEY `idx_dashboard_runtime_project_module_action_time` (`module_type`, `action_type`, `provider_request`, `create_time`, `project_code`),
   KEY `idx_runtime_log_target_time` (`target_ref_id`, `create_time`),
   KEY `idx_runtime_trace` (`trace_id`, `rule_trace_id`),
+  KEY `idx_runtime_call_id` (`call_id`),
   KEY `idx_runtime_log_success` (`success`, `create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='运行时调用诊断日志表';
 
@@ -1500,7 +1514,9 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   `id`              BIGINT       NOT NULL AUTO_INCREMENT COMMENT '主键ID',
   `experiment_id`   BIGINT       NOT NULL                COMMENT '实验ID',
   `experiment_code` VARCHAR(128) NOT NULL                COMMENT '实验编码',
+  `config_digest` CHAR(64) DEFAULT NULL                  COMMENT '实验配置摘要',
   `experiment_trace_id` CHAR(36) DEFAULT NULL            COMMENT '本次分流实验Trace ID',
+  `root_trace_id`      CHAR(36) DEFAULT NULL              COMMENT '外层规则根Trace ID',
   `child_trace_id`  CHAR(36)     DEFAULT NULL            COMMENT '实际执行组规则Trace ID',
   `request_key`     VARCHAR(128) DEFAULT NULL            COMMENT '请求唯一键',
   `stage`           VARCHAR(32)  NOT NULL                COMMENT '阶段：PRODUCTION/TEST',
@@ -1519,10 +1535,38 @@ CREATE TABLE IF NOT EXISTS `rule_experiment_execution_log` (
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '执行时间',
   PRIMARY KEY (`id`),
   KEY `idx_exp_log_request` (`experiment_id`, `request_key`, `stage`),
+  KEY `idx_exp_log_replay` (`experiment_id`, `group_id`, `request_key`, `config_digest`, `stage`),
   KEY `idx_exp_log_group` (`group_id`, `create_time`),
   KEY `idx_exp_trace` (`experiment_trace_id`, `child_trace_id`),
+  KEY `idx_exp_root_trace` (`root_trace_id`, `create_time`),
   KEY `idx_exp_log_create` (`create_time`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='分流实验执行明细表';
+
+CREATE TABLE IF NOT EXISTS `rule_experiment_execution_state` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `project_id` BIGINT NOT NULL,
+  `experiment_id` BIGINT NOT NULL,
+  `experiment_code` VARCHAR(128) NOT NULL,
+  `request_key_hash` CHAR(64) NOT NULL,
+  `request_digest` CHAR(64) NOT NULL,
+  `experiment_trace_id` CHAR(36) NOT NULL,
+  `config_digest` CHAR(64) NOT NULL,
+  `status` VARCHAR(32) NOT NULL,
+  `attempt_no` INT NOT NULL DEFAULT 1,
+  `result_json` LONGTEXT DEFAULT NULL,
+  `error_message` VARCHAR(1024) DEFAULT NULL,
+  `lease_owner` VARCHAR(128) DEFAULT NULL,
+  `lease_until` DATETIME(6) DEFAULT NULL,
+  `expire_time` DATETIME(6) DEFAULT NULL,
+  `create_time` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `update_time` DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `finish_time` DATETIME(6) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_experiment_execution_state_key` (`project_id`, `experiment_id`, `request_key_hash`),
+  UNIQUE KEY `uk_experiment_execution_state_trace` (`experiment_trace_id`),
+  KEY `idx_experiment_execution_state_lease` (`status`, `lease_until`),
+  KEY `idx_experiment_execution_state_expire` (`expire_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='实验幂等执行状态';
 
 -- ============================================================
 -- 19.3 rule_trace_registry - 全局Trace编号注册表
@@ -1638,6 +1682,9 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `billing_name`    VARCHAR(128) DEFAULT NULL            COMMENT '计费项名称',
   `billing_target`  VARCHAR(32)  NOT NULL                COMMENT '计费对象：ENGINE/API/DB',
   `target_ref_id`   BIGINT       DEFAULT NULL            COMMENT '具体计费对象ID',
+  `root_trace_id`   CHAR(36)     DEFAULT NULL            COMMENT '规则根Trace ID',
+  `billing_dedup_key` CHAR(64)   DEFAULT NULL            COMMENT '引擎计费幂等键摘要，仅根Trace计费记录使用',
+  `attempt_no`      INT          DEFAULT NULL            COMMENT '逻辑执行恢复尝试次数',
   `request_id`      VARCHAR(128) DEFAULT NULL            COMMENT '请求ID',
   `rule_code`       VARCHAR(128) DEFAULT NULL            COMMENT '规则编码',
   `api_code`        VARCHAR(128) DEFAULT NULL            COMMENT 'API编码',
@@ -1658,8 +1705,10 @@ CREATE TABLE IF NOT EXISTS `rule_billing_record` (
   `occur_time`      DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '发生时间',
   `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
   PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_billing_record_dedup_key` (`billing_dedup_key`),
   KEY `idx_billing_record_occur` (`occur_time`),
   KEY `idx_billing_record_target` (`billing_target`, `target_ref_id`),
+  KEY `idx_billing_record_root_trace` (`root_trace_id`, `occur_time`),
   KEY `idx_billing_record_project` (`project_code`, `occur_time`),
   KEY `idx_dashboard_billing_rule_time` (`rule_code`, `occur_time`, `project_code`),
   KEY `idx_billing_record_auth` (`auth_id`, `token_id`, `occur_time`)
@@ -1694,6 +1743,102 @@ CREATE TABLE IF NOT EXISTS `rule_billing_summary` (
   KEY `idx_billing_summary_target` (`billing_target`, `target_ref_id`),
   KEY `idx_billing_summary_auth` (`auth_id`, `summary_date`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='计费汇总表';
+
+-- ============================================================
+-- 24. rule_execution_state - 跨请求断点恢复状态（非日志）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_execution_state` (
+  `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
+  `project_id`            BIGINT       DEFAULT NULL,
+  `definition_id`         BIGINT       NOT NULL,
+  `rule_code`             VARCHAR(128) NOT NULL,
+  `idempotency_key_hash`  CHAR(64)     NOT NULL,
+  `request_digest`        CHAR(64)     NOT NULL,
+  `root_trace_id`         CHAR(36)     NOT NULL,
+  `status`                VARCHAR(32)  NOT NULL,
+  `attempt_no`            INT          NOT NULL DEFAULT 1,
+  `initial_revision_id`   BIGINT       DEFAULT NULL,
+  `current_revision_id`   BIGINT       DEFAULT NULL,
+  `current_artifact_digest` CHAR(64)   DEFAULT NULL,
+  `checkpoint_json`       LONGTEXT     DEFAULT NULL,
+  `result_json`           LONGTEXT     DEFAULT NULL,
+  `lease_owner`           VARCHAR(128) DEFAULT NULL,
+  `lease_until`           DATETIME(6)  DEFAULT NULL,
+  `error_message`         VARCHAR(1024) DEFAULT NULL,
+  `expire_time`           DATETIME(6)  DEFAULT NULL COMMENT '幂等结果保留截止时间',
+  `create_time`           DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `update_time`           DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  `finish_time`           DATETIME(6)  DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_execution_state_idempotency` (`project_id`, `definition_id`, `idempotency_key_hash`),
+  UNIQUE KEY `uk_execution_state_trace` (`root_trace_id`),
+  KEY `idx_execution_state_status_lease` (`status`, `lease_until`),
+  KEY `idx_execution_state_expire` (`expire_time`),
+  KEY `idx_execution_state_rule_time` (`rule_code`, `update_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则断点恢复状态，不作为执行日志';
+
+-- ============================================================
+-- 25. rule_execution_persistence_outbox - 执行日志与计费失败恢复事件
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_execution_persistence_outbox` (
+  `id`              BIGINT       NOT NULL AUTO_INCREMENT,
+  `event_id`        CHAR(36)     NOT NULL,
+  `log_json`        LONGTEXT     DEFAULT NULL,
+  `definition_json` LONGTEXT     DEFAULT NULL,
+  `success`         TINYINT      NOT NULL DEFAULT 0,
+  `cost_time_ms`    BIGINT       DEFAULT NULL,
+  `error_message`   VARCHAR(2048) DEFAULT NULL,
+  `project_id`      BIGINT       DEFAULT NULL,
+  `project_code`    VARCHAR(128) DEFAULT NULL,
+  `auth_id`         BIGINT       DEFAULT NULL,
+  `auth_code`       VARCHAR(128) DEFAULT NULL,
+  `auth_type`       VARCHAR(32)  DEFAULT NULL,
+  `token_id`        BIGINT       DEFAULT NULL,
+  `token_code`      VARCHAR(128) DEFAULT NULL,
+  `auth_phase`      VARCHAR(32)  DEFAULT NULL,
+  `log_pending`     TINYINT      NOT NULL DEFAULT 0,
+  `billing_pending` TINYINT      NOT NULL DEFAULT 0,
+  `delivery_status` VARCHAR(16)  NOT NULL DEFAULT 'PENDING',
+  `retry_count`     INT          NOT NULL DEFAULT 0,
+  `next_retry_time` DATETIME     DEFAULT NULL,
+  `last_error`      VARCHAR(2048) DEFAULT NULL,
+  `create_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  `update_time`     DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  `delivered_time`  DATETIME     DEFAULT NULL,
+  `claim_token`     CHAR(36)     DEFAULT NULL,
+  `lease_until`     DATETIME     DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_execution_persistence_event` (`event_id`),
+  KEY `idx_execution_persistence_poll` (`delivery_status`, `next_retry_time`),
+  KEY `idx_execution_persistence_create` (`create_time`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则执行日志和计费失败恢复事件';
+
+-- ============================================================
+-- 26. rule_execution_checkpoint - 可重放步骤检查点
+-- ============================================================
+CREATE TABLE IF NOT EXISTS `rule_execution_checkpoint` (
+  `id`                    BIGINT       NOT NULL AUTO_INCREMENT,
+  `root_trace_id`         CHAR(36)     NOT NULL,
+  `step_id`               VARCHAR(128) NOT NULL,
+  `step_type`             VARCHAR(32)  NOT NULL,
+  `step_status`           VARCHAR(32)  NOT NULL,
+  `module_trace_id`       CHAR(36)     DEFAULT NULL,
+  `parent_trace_id`       CHAR(36)     DEFAULT NULL,
+  `input_digest`          CHAR(64)     DEFAULT NULL,
+  `dependency_digest`     CHAR(64)     DEFAULT NULL,
+  `source_revision_id`    BIGINT       DEFAULT NULL,
+  `source_artifact_digest` CHAR(64)    DEFAULT NULL,
+  `resolved_value`        LONGTEXT     DEFAULT NULL,
+  `external_result`       LONGTEXT     DEFAULT NULL,
+  `provider_request_id`   VARCHAR(256) DEFAULT NULL,
+  `attempt_history`       LONGTEXT     DEFAULT NULL,
+  `create_time`           DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  `update_time`           DATETIME(6)  NOT NULL DEFAULT CURRENT_TIMESTAMP(6) ON UPDATE CURRENT_TIMESTAMP(6),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_execution_checkpoint_step` (`root_trace_id`, `step_id`),
+  KEY `idx_execution_checkpoint_status` (`step_status`, `update_time`),
+  KEY `idx_execution_checkpoint_module` (`module_trace_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则断点恢复步骤检查点';
 
 -- 未发布阶段的增量结构同步：mysql-init 每次启动都会执行，已有开发数据卷也能补齐 Operand 列。
 DROP PROCEDURE IF EXISTS `rule_engine`.`ensure_operand_columns`;

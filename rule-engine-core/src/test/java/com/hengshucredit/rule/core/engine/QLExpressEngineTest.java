@@ -201,6 +201,56 @@ public class QLExpressEngineTest {
     }
 
     @Test
+    public void nullComparisonsReturnFalseExceptExplicitNullChecks() {
+        QLExpressEngine engine = new QLExpressEngine();
+        Map<String, Object> context = new HashMap<>();
+
+        RuleResult number = engine.execute("return 90 >= 60 && 90 > 1;", context, false);
+        assertTrue(number.getErrorMessage(), number.isSuccess());
+        assertEquals(Boolean.TRUE, number.getResult());
+
+
+        RuleResult range = engine.execute("return missing >= 0 && missing < 50;", context, false);
+        assertTrue(range.getErrorMessage(), range.isSuccess());
+        assertEquals(Boolean.FALSE, range.getResult());
+
+        RuleResult equality = engine.execute("return missing == null;", context, false);
+        assertTrue(equality.getErrorMessage(), equality.isSuccess());
+        assertEquals(Boolean.TRUE, equality.getResult());
+
+        RuleResult inequality = engine.execute("return missing != null;", context, false);
+        assertTrue(inequality.getErrorMessage(), inequality.isSuccess());
+        assertEquals(Boolean.FALSE, inequality.getResult());
+
+        RuleResult blankRange = engine.execute("return blank >= 0;", Map.of("blank", ""), false);
+        assertTrue(blankRange.getErrorMessage(), blankRange.isSuccess());
+        assertEquals(Boolean.FALSE, blankRange.getResult());
+    }
+
+    @Test
+    public void nonFiniteNumericValuesUseMissingValueSemantics() {
+        QLExpressEngine engine = new QLExpressEngine();
+        RuleResult nan = engine.execute("return value >= 0;", Map.of("value", Double.NaN), false);
+        assertTrue(nan.getErrorMessage(), nan.isSuccess());
+        assertEquals(Boolean.FALSE, nan.getResult());
+        RuleResult positiveInfinity = engine.execute("return value > 1e308;",
+                Map.of("value", Double.POSITIVE_INFINITY), false);
+        assertTrue(positiveInfinity.getErrorMessage(), positiveInfinity.isSuccess());
+        assertEquals(Boolean.TRUE, positiveInfinity.getResult());
+    }
+
+    @Test
+    public void negatedHelpersDoNotTurnMissingValuesIntoHits() {
+        QLExpressEngine engine = new QLExpressEngine();
+        Map<String, Object> context = new HashMap<>();
+        RuleResult result = engine.execute(
+                "return (!isBlank(missing) && !containsValue(missing, \"A\"));",
+                context, false);
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals(Boolean.FALSE, result.getResult());
+    }
+
+    @Test
     public void runtimeValueFunctionNotifiesRequestScopedBridge() {
         Map<String, Object> captured = new LinkedHashMap<>();
         RuntimeContextBridge.bind(captured::put);
@@ -211,6 +261,21 @@ public class QLExpressEngineTest {
             assertTrue(result.getErrorMessage(), result.isSuccess());
             assertEquals(Integer.valueOf(22), captured.get("age"));
             assertEquals(22, ((Number) result.getResult()).intValue());
+        } finally {
+            RuntimeContextBridge.clear();
+        }
+    }
+
+    @Test
+    public void runtimeValueFunctionKeepsReadOnlyCallerContextCompatible() {
+        Map<String, Object> captured = new LinkedHashMap<>();
+        RuntimeContextBridge.bind(captured::put);
+        try {
+            RuleResult result = new QLExpressEngine().execute(
+                    "setRuntimeValue(\"age\", 22); return 1;", Map.of(), false);
+
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(Integer.valueOf(22), captured.get("age"));
         } finally {
             RuntimeContextBridge.clear();
         }
@@ -257,4 +322,42 @@ public class QLExpressEngineTest {
             RuntimeContextBridge.clear();
         }
     }
-}
+
+    @Test
+    public void unknownFunctionMustFailInsteadOfReturningNull() {
+        RuleResult result = new QLExpressEngine().execute("return noSuchFunction(missing);", new HashMap<>(), false);
+        assertFalse(result.getErrorMessage(), result.isSuccess());
+    }
+
+    @Test
+    public void nullReachesObjectFunctionAndUnhandledPrimitiveFails() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod("captureNull", new Object() {
+            public Object captureNull(Object value) { return value == null ? "NULL" : "NON_NULL"; }
+        }, "captureNull", new Class<?>[]{Object.class});
+        RuleResult objectResult = engine.execute("return captureNull(missing);", new HashMap<>(), false);
+        assertTrue(objectResult.getErrorMessage(), objectResult.isSuccess());
+        assertEquals("NULL", objectResult.getResult());
+
+        engine.getRunner().addFunctionOfServiceMethod("primitiveOnly", new Object() {
+            public double primitiveOnly(double value) { return value; }
+        }, "primitiveOnly", new Class<?>[]{double.class});
+        RuleResult primitiveResult = engine.execute("return primitiveOnly(missing);", new HashMap<>(), false);
+        assertFalse(primitiveResult.getErrorMessage(), primitiveResult.isSuccess());
+    }
+    @Test
+    public void nullReachesStringFunctionWithoutConversion() {
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunctionOfServiceMethod("captureString", new Object() {
+            public Object captureString(String value) { return value == null ? "NULL" : value; }
+        }, "captureString", new Class<?>[]{String.class});
+        RuleResult result = engine.execute("return captureString(missing);", new HashMap<>(), false);
+        assertTrue(result.getErrorMessage(), result.isSuccess());
+        assertEquals("NULL", result.getResult());
+    }
+    @Test
+    public void registeredStringFunctionReceivesNullInsteadOfEmptyString() {
+        RuleResult result = new QLExpressEngine().execute(
+                "return strReplace(\"abc\", \"a\", missing);", new HashMap<>(), false);
+        assertFalse(result.getErrorMessage(), result.isSuccess());
+    }}

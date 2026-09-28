@@ -199,8 +199,11 @@ public class DecisionBuiltinFunctions {
         if (text == null || regex == null) {
             return text;
         }
+        if (replacement == null) {
+            throw new IllegalArgumentException("strReplace replacement 不能为 null");
+        }
         try {
-            return text.replaceAll(regex, replacement == null ? "" : replacement);
+            return text.replaceAll(regex, replacement);
         } catch (Exception e) {
             return text;
         }
@@ -227,7 +230,10 @@ public class DecisionBuiltinFunctions {
         if (text == null) {
             return result;
         }
-        if (delimiter == null || delimiter.isEmpty()) {
+        if (delimiter == null) {
+            throw new IllegalArgumentException("strSplit delimiter 不能为 null");
+        }
+        if (delimiter.isEmpty()) {
             result.add(text);
             return result;
         }
@@ -239,7 +245,10 @@ public class DecisionBuiltinFunctions {
     }
 
     public String strJoin(Object values, String delimiter) {
-        String sep = delimiter == null ? "" : delimiter;
+        if (delimiter == null) {
+            throw new IllegalArgumentException("strJoin delimiter 不能为 null");
+        }
+        String sep = delimiter;
         StringBuilder sb = new StringBuilder();
         List<Object> list = toElements(values);
         for (int i = 0; i < list.size(); i++) {
@@ -295,7 +304,10 @@ public class DecisionBuiltinFunctions {
 
     public String strReplaceLiteral(String text, String target, String replacement) {
         if (text == null || target == null) return text;
-        return text.replace(target, replacement == null ? "" : replacement);
+        if (replacement == null) {
+            throw new IllegalArgumentException("strReplaceLiteral replacement 不能为 null");
+        }
+        return text.replace(target, replacement);
     }
 
     public long arrSize(Object values) {

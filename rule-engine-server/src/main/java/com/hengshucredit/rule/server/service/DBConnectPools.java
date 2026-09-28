@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleDbDatasource;
 import com.hengshucredit.rule.server.mapper.RuleDbDatasourceMapper;
+import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.jcraft.jsch.JSch;
 import com.jcraft.jsch.Session;
 import com.zaxxer.hikari.HikariConfig;
@@ -128,7 +129,7 @@ public class DBConnectPools implements DisposableBean {
             statement.setQueryTimeout(options.queryTimeoutSeconds());
             if (params != null) {
                 for (int i = 0; i < params.size(); i++) {
-                    statement.setObject(i + 1, params.get(i));
+                    statement.setObject(i + 1, MissingValueSemantics.normalize(params.get(i)));
                 }
             }
             try (ResultSet resultSet = statement.executeQuery()) {
@@ -138,7 +139,7 @@ public class DBConnectPools implements DisposableBean {
                 while (resultSet.next()) {
                     Map<String, Object> row = new LinkedHashMap<>();
                     for (int i = 1; i <= columnCount; i++) {
-                        row.put(metaData.getColumnLabel(i), resultSet.getObject(i));
+                        row.put(metaData.getColumnLabel(i), MissingValueSemantics.normalize(resultSet.getObject(i)));
                     }
                     rows.add(row);
                 }

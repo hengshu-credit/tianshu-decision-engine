@@ -13,6 +13,10 @@ export function getProjectWorkbench(id) {
   return request({ url: `/rule/project/${id}/workbench`, method: 'get' })
 }
 
+export function retryRuleWarmup() {
+  return request({ url: '/rule/ops/rule-warmup/retry', method: 'post' })
+}
+
 export function createProject(data) {
   return createResourceDraft('PROJECT', data, 'CREATE', {
     projectId: null,

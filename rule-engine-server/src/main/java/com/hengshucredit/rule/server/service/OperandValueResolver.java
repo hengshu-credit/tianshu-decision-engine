@@ -4,6 +4,7 @@ import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONArray;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.core.function.BuiltinFunctionInvoker;
+import com.hengshucredit.rule.core.util.MissingValueSemantics;
 
 import java.math.BigDecimal;
 import java.math.MathContext;
@@ -152,6 +153,7 @@ public final class OperandValueResolver {
             String fieldName = firstText(field.getFieldName(), field.getScriptName());
             if (fieldName == null) continue;
             Object value = resolve(field.getSourceOperand(), values, referenceValues, functionInvoker);
+            value = MissingValueSemantics.normalize(value);
             boolean sourceIsConstant = isConstantReference(field.getSourceOperand());
             String managedRefKey = managedRefKey(field);
             boolean managedReferencePresent = managedRefKey != null && referenceValues != null
@@ -169,9 +171,9 @@ public final class OperandValueResolver {
             }
             if (value == null && !sourceIsConstant && !managedReferencePresent && !defaultIsConstant
                     && field.getDefaultValue() != null && !field.getDefaultValue().trim().isEmpty()) {
-                value = parseJsonOrRaw(field.getDefaultValue());
+                value = MissingValueSemantics.normalize(parseJsonOrRaw(field.getDefaultValue()));
             }
-            result.put(fieldName, value);
+            result.put(fieldName, MissingValueSemantics.normalize(value));
         }
         return result;
     }

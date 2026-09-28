@@ -24,4 +24,7 @@ public class RulePublishOutbox {
     private LocalDateTime createTime;
     private LocalDateTime updateTime;
     private LocalDateTime deliveredTime;
+    private LocalDateTime deadLetterTime;
+    private String claimToken;
+    private LocalDateTime leaseUntil;
 }

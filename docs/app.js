@@ -82,10 +82,33 @@
   window.addEventListener('resize', updateScrollState)
   updateScrollState()
   backToTop.addEventListener('click', () => window.scrollTo({ top: 0, behavior: 'smooth' }))
+  tocLinks.forEach(link => {
+    link.addEventListener('click', event => {
+      const href = link.getAttribute('href')
+      const target = href ? document.querySelector(href) : null
+      if (!target) return
+      event.preventDefault()
+      const targetTop = target.getBoundingClientRect().top + window.scrollY
+      const scrollMargin = Number.parseFloat(window.getComputedStyle(target).scrollMarginTop) || 0
+      const previousScrollBehavior = document.documentElement.style.scrollBehavior
+      document.documentElement.style.scrollBehavior = 'auto'
+      window.scrollTo(0, Math.max(0, targetTop - scrollMargin))
+      document.documentElement.style.scrollBehavior = previousScrollBehavior
+      window.history.replaceState(null, '', href)
+      updateScrollState()
+    })
+  })
+
+  let workflowIndex = 0
+  let workflowTimer = null
+  let workflowPaused = false
+  const prefersReducedMotion = typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
   const updateWorkflow = (index) => {
     if (!workflowStage || !workflowState[index]) return
     const state = workflowState[index]
+    workflowIndex = index
     workflowStage.dataset.workflowState = index
     workflowSteps.forEach(step => step.classList.toggle('is-active', step.dataset.workflowStep === String(index)))
     workflowNodes.forEach((node, nodeIndex) => {
@@ -102,13 +125,38 @@
     workflowStage.querySelector('[data-workflow-caption]').textContent = state.caption
     workflowStage.querySelector('[data-workflow-progress]').textContent = `${String(index + 1).padStart(2, '0')} / 05`
   }
+  const stopWorkflowTimer = () => {
+    if (workflowTimer) {
+      window.clearInterval(workflowTimer)
+      workflowTimer = null
+    }
+  }
+  const startWorkflowTimer = () => {
+    stopWorkflowTimer()
+    if (!workflow || !workflowStage || workflowState.length < 2 || prefersReducedMotion || workflowPaused) return
+    workflowTimer = window.setInterval(() => {
+      if (document.hidden || workflowPaused) return
+      updateWorkflow((workflowIndex + 1) % workflowState.length)
+    }, 4800)
+  }
+  const pauseWorkflow = () => {
+    workflowPaused = true
+    stopWorkflowTimer()
+  }
+  const resumeWorkflow = () => {
+    workflowPaused = false
+    startWorkflowTimer()
+  }
   if (workflow && workflowStage && workflowSteps.length) {
     updateWorkflow(0)
   } else if (workflow && workflowStage) {
     updateWorkflow(0)
   }
   workflowNodes.forEach(node => {
-    const selectWorkflow = () => updateWorkflow(Number(node.dataset.workflowNode))
+    const selectWorkflow = () => {
+      updateWorkflow(Number(node.dataset.workflowNode))
+      startWorkflowTimer()
+    }
     node.addEventListener('click', selectWorkflow)
     node.addEventListener('keydown', event => {
       if (event.key === 'Enter' || event.key === ' ') {
@@ -117,6 +165,17 @@
       }
     })
   })
+  workflow?.addEventListener('mouseenter', pauseWorkflow)
+  workflow?.addEventListener('mouseleave', resumeWorkflow)
+  workflow?.addEventListener('focusin', pauseWorkflow)
+  workflow?.addEventListener('focusout', event => {
+    if (!workflow.contains(event.relatedTarget)) resumeWorkflow()
+  })
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopWorkflowTimer()
+    else startWorkflowTimer()
+  })
+  startWorkflowTimer()
   if ('IntersectionObserver' in window) {
     const sectionObserver = new IntersectionObserver(entries => {
       entries.forEach(entry => entry.target.classList.toggle('is-inview', entry.isIntersecting))

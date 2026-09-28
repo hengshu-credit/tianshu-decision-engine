@@ -43,6 +43,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     private static final String[] PROTECTED_PATH_PREFIXES = {
         "/api/sync",
         "/api/rule/sync",
+        "/api/rule/runtime",
         "/api/rule/open",
         "/api/rule/log/report",
         "/api/rule/auth/token"
@@ -146,7 +147,8 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
 
     static boolean isExecutionPath(String uri) {
         return uri != null && (uri.startsWith("/api/rule/open/execute/")
-                || uri.startsWith("/api/rule/sync/execute/"));
+                || uri.startsWith("/api/rule/sync/execute/")
+                || uri.startsWith("/api/rule/runtime/"));
     }
 
     static boolean isProtectedPath(String uri) {

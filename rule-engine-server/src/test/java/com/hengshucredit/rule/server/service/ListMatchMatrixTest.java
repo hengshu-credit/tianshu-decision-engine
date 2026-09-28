@@ -52,6 +52,19 @@ public class ListMatchMatrixTest {
         assertTrue(snapshot.equals(service.lastMatchTime));
     }
 
+    @Test
+    public void missingAndBlankValuesNeverMatch() {
+        TrackingListService service = new TrackingListService(Collections.singletonMap(" @10", true));
+        ListMatchMatrix matrix = new ListMatchMatrix(service);
+
+        assertFalse(matrix.match(Collections.singletonList(10L), Collections.singletonList(null),
+                "ANY_FIELD_ANY_LIST", "IN_LIST", Collections.<String>emptyList(), null));
+        assertFalse(matrix.match(Collections.singletonList(10L), Collections.singletonList(""),
+                "ANY_FIELD_ANY_LIST", "IN_LIST", Collections.<String>emptyList(), null));
+        assertFalse(matrix.match(Collections.singletonList(10L), Collections.singletonList("  "),
+                "ANY_FIELD_ANY_LIST", "IN_LIST", Collections.<String>emptyList(), null));
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void rejectsUnknownCombinationMode() {
         matrix(Collections.<String, Boolean>emptyMap()).match(Collections.singletonList(10L),

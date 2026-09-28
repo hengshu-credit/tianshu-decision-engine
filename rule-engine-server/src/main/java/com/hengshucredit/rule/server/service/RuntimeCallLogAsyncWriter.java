@@ -59,6 +59,7 @@ public class RuntimeCallLogAsyncWriter {
         if (source == null) return null;
         RuleRuntimeCallLog target = new RuleRuntimeCallLog();
         target.setTraceId(source.getTraceId());
+        target.setCallId(source.getCallId());
         target.setRuleTraceId(source.getRuleTraceId());
         target.setRootTraceId(source.getRootTraceId());
         target.setHistoryFields(source.getHistoryFields());
@@ -85,8 +86,15 @@ public class RuntimeCallLogAsyncWriter {
         target.setRequestHeaders(source.getRequestHeaders());
         target.setRequestParams(source.getRequestParams());
         target.setRequestBody(source.getRequestBody());
+        target.setRawRequestBody(source.getRawRequestBody());
+        target.setRawRequestMetadata(source.getRawRequestMetadata());
+        target.setOriginalRequestBody(source.getOriginalRequestBody());
+        target.setTraceSteps(source.getTraceSteps());
         target.setResponseStatus(source.getResponseStatus());
         target.setResponseBody(source.getResponseBody());
+        target.setRawResponseBody(source.getRawResponseBody());
+        target.setRawResponseMetadata(source.getRawResponseMetadata());
+        target.setOriginalResponseBody(source.getOriginalResponseBody());
         target.setErrorType(source.getErrorType());
         target.setErrorMessage(source.getErrorMessage());
         target.setCostTimeMs(source.getCostTimeMs());

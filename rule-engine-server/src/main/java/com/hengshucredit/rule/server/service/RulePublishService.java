@@ -39,6 +39,9 @@ public class RulePublishService {
     private RuleProjectService projectService;
 
     @Resource
+    private RuleVariableService variableService;
+
+    @Resource
     private RuleDefinitionContentMapper contentMapper;
 
     @Resource
@@ -221,7 +224,6 @@ public class RulePublishService {
         String normalized = OpenApiContractCodec.validateAndNormalize(configJson);
         if (normalized == null) return null;
         OpenApiContract contract = OpenApiContractCodec.parse(normalized);
-        if (!contract.isEnabled()) return normalized;
         Set<String> availableInputReferences = new HashSet<>();
         List<RuleDefinitionInputField> fields = definitionService.listInputFields(definitionId);
         if (fields != null) {
@@ -234,7 +236,28 @@ public class RulePublishService {
                 if (reference != null) availableInputReferences.add(reference);
             }
         }
-        OpenApiContractCodec.validateRequestReferences(contract, availableInputReferences);
+        RuleDefinition definition = definitionService.getById(definitionId);
+        if (definition != null && variableService != null) {
+            availableInputReferences.addAll(variableService.buildRefConstantValueMap(definition.getProjectId()).keySet());
+        }
+        if (contract.isEnabled()) {
+            OpenApiContractCodec.validateRequestReferences(contract, availableInputReferences);
+        }
+        OpenApiContractCodec.validateIdempotencyReferences(contract, availableInputReferences);
+        if (contract.isEnabled()) {
+            Set<String> requestTargets = new HashSet<>();
+            for (OpenApiContract.RequestMapping mapping : contract.getRequestMappings()) {
+                String reference = OpenRequestMapper.referenceKey(
+                        mapping.getTargetRefType(), mapping.getTargetVarId());
+                if (reference != null) requestTargets.add(reference);
+            }
+            for (String reference : OpenApiContractCodec.idempotencyReferences(contract)) {
+                // 常量来自服务端固定上下文，不要求业务请求映射；其余引用必须能从开放接口入参获得。
+                if (!reference.startsWith("CONSTANT:") && !requestTargets.contains(reference)) {
+                    throw new IllegalArgumentException("开放接口幂等键引用未配置请求映射: " + reference);
+                }
+            }
+        }
         Set<String> availableOutputReferences = new HashSet<>();
         List<RuleDefinitionOutputField> outputFields = definitionService.listOutputFields(definitionId);
         if (outputFields != null) {
@@ -244,7 +267,9 @@ public class RulePublishService {
                 if (reference != null) availableOutputReferences.add(reference);
             }
         }
-        OpenApiContractCodec.validateResponseReferences(contract, availableOutputReferences);
+        if (contract.isEnabled()) {
+            OpenApiContractCodec.validateResponseReferences(contract, availableOutputReferences);
+        }
         return normalized;
     }
 

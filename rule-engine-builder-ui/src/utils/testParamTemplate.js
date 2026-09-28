@@ -99,7 +99,7 @@ export function buildObjectFromPaths(paths, value = '') {
 
 export function sampleValueForVarType(type) {
   const normalized = String(type || '').toUpperCase()
-  if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT'].indexOf(normalized) >= 0) return 0
+  if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT', 'PROBABILITY'].indexOf(normalized) >= 0) return 0
   if (['BOOLEAN', 'BOOL'].indexOf(normalized) >= 0) return false
   if (['LIST', 'ARRAY'].indexOf(normalized) >= 0) return []
   if (['MAP', 'OBJECT'].indexOf(normalized) >= 0) return {}

@@ -22,6 +22,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Collection;
 
 /**
  * 规则执行日志服务，提供批量插入等能力
@@ -42,6 +43,48 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
         log.setRuleVersion(published.getVersion());
         log.setRevisionId(published.getRevisionId());
         log.setArtifactDigest(published.getArtifactDigest());
+    }
+
+    /**
+     * 按根 trace 覆盖同一逻辑执行的日志。幂等重试可能跨节点，状态表保证同一时刻只有一个执行者；
+     * 这里用数据库现有索引查找后更新，兼容按 create_time 分区的历史表结构。
+     */
+    public void saveLogical(RuleExecutionLog log) {
+        if (log == null || !hasText(log.getTraceId())) {
+            if (log != null) save(log);
+            return;
+        }
+        // 单元测试和无持久化的预览执行可能通过子类覆盖 save；不要强制调用
+        // MyBatis-Plus 的 lambdaQuery（其 baseMapper 尚未注入）。
+        if (baseMapper == null) {
+            save(log);
+            return;
+        }
+        RuleExecutionLog existing = lambdaQuery()
+                .eq(RuleExecutionLog::getTraceId, log.getTraceId())
+                .orderByDesc(RuleExecutionLog::getCreateTime)
+                .last("LIMIT 1")
+                .one();
+        if (existing == null) {
+            save(log);
+            return;
+        }
+        if (existing.getAttemptNo() != null && log.getAttemptNo() != null
+                && existing.getAttemptNo() > log.getAttemptNo()) {
+            return;
+        }
+        log.setId(existing.getId());
+        if (log.getCreateTime() == null) log.setCreateTime(existing.getCreateTime());
+        updateById(log);
+    }
+
+    public void saveLogicalBatch(Collection<RuleExecutionLog> logs) {
+        if (logs == null || logs.isEmpty()) return;
+        if (baseMapper == null) {
+            saveBatch(logs);
+            return;
+        }
+        for (RuleExecutionLog log : logs) saveLogical(log);
     }
 
     protected RulePublished findPublished(String ruleCode, String projectCode) {

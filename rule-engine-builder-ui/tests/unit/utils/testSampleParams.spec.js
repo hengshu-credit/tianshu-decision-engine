@@ -1,7 +1,9 @@
 import {
   buildSampleParamsFromCodes,
   collectActionDataInputCodes,
-  collectScriptInputCodes
+  collectScriptInputCodes,
+  coerceSampleValue,
+  applyConditionExpressionSamples
 } from '@/utils/testSampleParams'
 
 const refs = [
@@ -12,6 +14,22 @@ const refs = [
 ]
 
 describe('testSampleParams', () => {
+  test('按引用类型将条件样例转换为数值而不是字符串', () => {
+    const numericRefs = [
+      { refCode: 'age', varType: 'INTEGER', varObj: {} },
+      { refCode: 'ratio', varType: 'PROBABILITY', varObj: {} },
+      { refCode: 'amount', varType: 'DOUBLE', varObj: {} }
+    ]
+
+    expect(coerceSampleValue('18', numericRefs[0])).toBe(18)
+    expect(coerceSampleValue('0.25', numericRefs[1])).toBe(0.25)
+    expect(coerceSampleValue('12.5', numericRefs[2])).toBe(12.5)
+    expect(applyConditionExpressionSamples({}, 'age >= 18 && ratio < 0.5', numericRefs)).toEqual({
+      age: 18,
+      ratio: -0.5
+    })
+  })
+
   test('按变量默认值和类型生成样例参数', () => {
     expect(buildSampleParamsFromCodes(['inputAmount', 'riskFlag', 'customerType'], refs)).toEqual({
       inputAmount: 100,

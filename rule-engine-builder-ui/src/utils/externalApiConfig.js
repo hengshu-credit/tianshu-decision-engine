@@ -1,5 +1,82 @@
 export const ASYNC_REQUEST_KEYS = ['headerConfig', 'queryConfig', 'requestMapping', 'contentType', 'requestScript', 'responseScript']
 
+const PAYLOAD_CAPTURE_SOURCES = ['ORIGINAL', 'PROCESSED']
+const PAYLOAD_CAPTURE_DECRYPT_MODES = ['BASE64', 'TRIPLE_DES_BASE64']
+export const MAX_PAYLOAD_CAPTURE_FIELD_BYTES = 50 * 1024 * 1024
+const PAYLOAD_CAPTURE_PATH_PATTERN = /^\$(?:(?:\.[^.[\]\s]+)|(?:\[(?:\d+|\*)\])|(?:\[(?:'(?:\\.|[^'\\])*'|"(?:\\.|[^"\\])*")\]))*$/
+
+export function emptyPayloadCaptureConfig() {
+  return {
+    request: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
+    response: { source: 'ORIGINAL', saveOriginal: true, excludePaths: [], maxFieldBytes: 0, decrypt: { enabled: false, mode: 'BASE64', path: '$', keyVariable: '' } },
+  }
+}
+
+export function isPayloadCapturePath(value) {
+  return PAYLOAD_CAPTURE_PATH_PATTERN.test(String(value || '').trim())
+}
+
+function normalizePayloadCaptureSide(value, label) {
+  const side = value && typeof value === 'object' && !Array.isArray(value) ? value : {}
+  const source = side.source == null || side.source === '' ? 'ORIGINAL' : String(side.source)
+  if (!PAYLOAD_CAPTURE_SOURCES.includes(source)) {
+    throw new Error(label + '留存来源只能是 ORIGINAL 或 PROCESSED')
+  }
+  const rawPaths = side.excludePaths == null ? [] : side.excludePaths
+  if (!Array.isArray(rawPaths)) throw new Error(label + '排除路径必须是数组')
+  const excludePaths = []
+  rawPaths.forEach((path) => {
+    const normalized = String(path == null ? '' : path).trim()
+    if (!normalized) return
+    if (!isPayloadCapturePath(normalized)) {
+      throw new Error(label + '排除路径格式不合法：' + normalized)
+    }
+    if (!excludePaths.includes(normalized)) excludePaths.push(normalized)
+  })
+  const rawMaxFieldBytes = side.maxFieldBytes == null || side.maxFieldBytes === '' ? 0 : Number(side.maxFieldBytes)
+  if (!Number.isSafeInteger(rawMaxFieldBytes) || rawMaxFieldBytes < 0 || rawMaxFieldBytes > MAX_PAYLOAD_CAPTURE_FIELD_BYTES) {
+    throw new Error(label + '单字段上限必须在 0 到 52428800 字节之间')
+  }
+  if (side.saveOriginal != null && typeof side.saveOriginal !== 'boolean') throw new Error(label + '保留原文必须是布尔值')
+  const saveOriginal = side.saveOriginal !== false
+  const rawDecrypt = side.decrypt && typeof side.decrypt === 'object' && !Array.isArray(side.decrypt)
+    ? side.decrypt
+    : {}
+  const decrypt = {
+    enabled: rawDecrypt.enabled === true,
+    mode: rawDecrypt.mode == null || rawDecrypt.mode === '' ? 'BASE64' : String(rawDecrypt.mode).toUpperCase(),
+    path: rawDecrypt.path == null || rawDecrypt.path === '' ? '$' : String(rawDecrypt.path).trim(),
+    keyVariable: rawDecrypt.keyVariable == null ? '' : String(rawDecrypt.keyVariable).trim()
+  }
+  if (!PAYLOAD_CAPTURE_DECRYPT_MODES.includes(decrypt.mode)) throw new Error(label + '解密模式不受支持')
+  if (!isPayloadCapturePath(decrypt.path)) throw new Error(label + '解密路径格式不合法：' + decrypt.path)
+  if (decrypt.enabled && decrypt.mode === 'TRIPLE_DES_BASE64' && !decrypt.keyVariable) throw new Error(label + '3DES解密必须填写密钥变量名')
+  const result = { source, saveOriginal, excludePaths, maxFieldBytes: rawMaxFieldBytes }
+  if (decrypt.enabled || decrypt.keyVariable || decrypt.path !== '$' || decrypt.mode !== 'BASE64') result.decrypt = decrypt
+  return result
+}
+
+export function normalizePayloadCaptureConfig(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('报文留存配置必须是 JSON 对象')
+  }
+  const config = value
+  return {
+    request: normalizePayloadCaptureSide(config.request, '请求'),
+    response: normalizePayloadCaptureSide(config.response, '响应'),
+  }
+}
+
+export function parsePayloadCaptureConfig(value) {
+  if (value == null || String(value).trim() === '') return emptyPayloadCaptureConfig()
+  const parsed = typeof value === 'string' ? JSON.parse(value) : value
+  return normalizePayloadCaptureConfig(parsed)
+}
+
+export function stringifyPayloadCaptureConfig(value) {
+  return JSON.stringify(normalizePayloadCaptureConfig(value))
+}
+
 export function parseAsyncRequest(text) {
   const value = JSON.parse(text || '{}')
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('轮询请求配置必须是 JSON 对象')

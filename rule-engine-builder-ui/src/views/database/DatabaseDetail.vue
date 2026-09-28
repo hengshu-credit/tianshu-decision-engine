@@ -17,6 +17,7 @@
         <el-button
           size="small"
           data-testid="test-database-connection"
+          data-config-anchor="connection-test"
           :loading="connectionTesting"
           @click="handleTestDraft"
           >测试连接</el-button
@@ -25,6 +26,8 @@
           v-permission="'database:edit'"
           size="small"
           type="primary"
+          data-testid="save-database-datasource"
+          data-config-anchor="save"
           :loading="saving"
           @click="handleSubmit"
           >保存</el-button
@@ -32,12 +35,47 @@
       </div>
     </div>
 
-    <el-alert
+    <section
       class="connection-setup-guide"
-      title="配置步骤：选择作用范围 → 填写数据库连接 → 测试连接 → 保存并送审。高级连接池参数通常保持默认值。"
-      type="info"
-      :closable="false"
-      show-icon
+      data-testid="database-config-progress"
+      aria-label="数据库数据源配置进度"
+    >
+      <div class="guide-heading">
+        <div>
+          <div class="panel-title">配置检查</div>
+          <div class="panel-subtitle">
+            按作用范围、连接参数、连接测试、保存送审的顺序完成；高级连接池参数通常保持默认值。
+          </div>
+        </div>
+        <span class="guide-progress">
+          {{ readyChecklistCount }} / {{ configurationChecklist.length }} 已就绪
+        </span>
+      </div>
+      <div class="checklist-grid">
+        <button
+          v-for="item in configurationChecklist"
+          :key="item.key"
+          :data-testid="`database-config-check-${item.key}`"
+          type="button"
+          class="checklist-item"
+          :class="`is-${item.status.toLowerCase()}`"
+          @click="goToChecklistItem(item)"
+        >
+          <span class="checklist-state">
+            {{ item.status === 'READY' ? '✓' : item.order }}
+          </span>
+          <span>
+            <strong>{{ item.label }}</strong>
+            <small>{{ item.help }}</small>
+          </span>
+        </button>
+      </div>
+    </section>
+
+    <resource-preflight-panel
+      resource-type="DATABASE"
+      :resource-id="form.id"
+      :config-signature="preflightConfigSignature"
     />
 
     <el-alert
@@ -60,7 +98,7 @@
     >
       <el-row :gutter="12">
         <el-col :span="12">
-          <el-form-item label="作用范围">
+          <el-form-item label="作用范围" data-config-anchor="scope">
             <el-select
               v-model="form.scope"
               style="width: 100%"
@@ -113,7 +151,7 @@
       </el-row>
       <el-row :gutter="12">
         <el-col :span="8">
-          <el-form-item label="数据库类型">
+          <el-form-item label="数据库类型" data-config-anchor="connection">
             <el-select
               v-model="form.dbType"
               style="width: 100%"
@@ -366,12 +404,13 @@ import {
 } from '@/api/database'
 import { listProjects } from '@/api/project'
 import MonacoEditor from '@/components/MonacoEditor'
+import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import { normalizeProjectId } from '@/utils/projectContext'
 
 export default {
   name: 'DatabaseDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.form.datasourceName)],
-  components: { MonacoEditor },
+  components: { MonacoEditor, ResourcePreflightPanel },
   data() {
     return {
       projects: [],
@@ -379,6 +418,8 @@ export default {
       connectionTesting: false,
       connectionTestStatus: 'idle',
       connectionTestMessage: '',
+      connectionTestSignature: '',
+      submissionSignature: '',
       advancedPanels: [],
       form: this.emptyForm(),
       rules: {
@@ -444,6 +485,64 @@ export default {
     isCreateMode() {
       return !this.$route.params.id || this.$route.params.id === 'new'
     },
+    configurationChecklist() {
+      const scopeReady = this.isScopeConfigured()
+      const connectionReady = this.isConnectionConfigured()
+      const testReady =
+        connectionReady &&
+        this.connectionTestStatus === 'success' &&
+        this.connectionTestSignature === this.connectionConfigSignature()
+      const submissionReady =
+        Boolean(this.submissionSignature) &&
+        this.submissionSignature === this.configurationSignature()
+      return [
+        {
+          key: 'scope',
+          order: 1,
+          label: '作用范围',
+          help: scopeReady ? '已选择资源生效范围' : '选择全局或项目级，并指定项目',
+          status: scopeReady ? 'READY' : 'PENDING',
+          anchor: 'scope',
+        },
+        {
+          key: 'connection',
+          order: 2,
+          label: '连接参数',
+          help: connectionReady
+            ? '地址、驱动和连接方式已填写'
+            : '填写数据库类型、地址、库名和驱动',
+          status: connectionReady ? 'READY' : 'PENDING',
+          anchor: 'connection',
+        },
+        {
+          key: 'connection-test',
+          order: 3,
+          label: '连接测试',
+          help: testReady
+            ? '连接和校验 SQL 已通过'
+            : this.connectionTestStatus === 'error'
+              ? '上次测试失败，修改参数后重新测试'
+              : '填写完成后测试连接',
+          status: testReady ? 'READY' : 'PENDING',
+          anchor: 'connection-test',
+        },
+        {
+          key: 'submission',
+          order: 4,
+          label: '保存送审',
+          help: submissionReady ? '当前草稿已送审' : '完成前置检查后保存并送审',
+          status: submissionReady ? 'READY' : 'PENDING',
+          anchor: 'save',
+        },
+      ]
+    },
+    readyChecklistCount() {
+      return this.configurationChecklist.filter((item) => item.status === 'READY')
+        .length
+    },
+    preflightConfigSignature() {
+      return this.form.id ? this.configurationSignature() : ''
+    },
   },
   async created() {
     await this.loadProjects()
@@ -491,6 +590,73 @@ export default {
         description: '',
         status: 1,
       }
+    },
+    isScopeConfigured() {
+      return (
+        this.form.scope === 'GLOBAL' ||
+        (this.form.scope === 'PROJECT' && Number(this.form.projectId) > 0)
+      )
+    },
+    isConnectionConfigured() {
+      const form = this.form
+      const jdbcUrl = String(form.jdbcUrl || this.buildJdbcUrl(form) || '').trim()
+      const driver = String(form.driverClassName || '').trim()
+      const host = String(form.host || '').trim()
+      const databaseName = String(form.databaseName || '').trim()
+      const endpointReady =
+        Boolean(jdbcUrl) &&
+        (form.dbType === 'OTHER' ||
+          (Boolean(host) && Number(form.port) > 0 && Boolean(databaseName)))
+      if (!endpointReady || !driver) return false
+      if (form.connectionMode !== 'SSH_TUNNEL') return true
+      return Boolean(
+        String(form.sshHost || '').trim() &&
+          String(form.sshUsername || '').trim() &&
+          (String(form.sshPassword || '').trim() ||
+            String(form.sshPrivateKey || '').trim())
+      )
+    },
+    connectionConfigSignature() {
+      const form = this.form
+      return JSON.stringify({
+        dbType: form.dbType,
+        connectionMode: form.connectionMode,
+        host: form.host,
+        port: form.port,
+        databaseName: form.databaseName,
+        jdbcParams: form.jdbcParams,
+        jdbcUrl: form.jdbcUrl,
+        driverClassName: form.driverClassName,
+        username: form.username,
+        password: form.password,
+        sshHost: form.sshHost,
+        sshPort: form.sshPort,
+        sshUsername: form.sshUsername,
+        sshPassword: form.sshPassword,
+        sshPrivateKey: form.sshPrivateKey,
+        sshPassphrase: form.sshPassphrase,
+        sshTimeoutMs: form.sshTimeoutMs,
+        validationQuery: form.validationQuery,
+      })
+    },
+    configurationSignature() {
+      const form = { ...this.form }
+      delete form.jdbcAutoBuild
+      return JSON.stringify(form)
+    },
+    goToChecklistItem(item) {
+      if (!item || !item.anchor || !this.$el) return
+      const target = this.$el.querySelector(
+        `[data-config-anchor="${item.anchor}"]`
+      )
+      if (!target) return
+      if (target.scrollIntoView)
+        target.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      const focusTarget = target.matches && target.matches('input, textarea, button, [tabindex]')
+        ? target
+        : target.querySelector &&
+          target.querySelector('input, textarea, button, [tabindex]')
+      if (focusTarget && focusTarget.focus) focusTarget.focus({ preventScroll: true })
     },
     goBack() {
       const projectId = normalizeProjectId(this.$route.query.projectId)
@@ -616,6 +782,7 @@ export default {
           const response = data.id
             ? await updateDbDatasource(data)
             : await createDbDatasource(data)
+          this.submissionSignature = this.configurationSignature()
           this.$message.success('数据库连接变更已送审')
           if (response.data && response.data.id)
             this.$router.push('/approval/' + response.data.id)
@@ -630,9 +797,11 @@ export default {
         this.connectionTesting = true
         this.connectionTestStatus = 'idle'
         this.connectionTestMessage = ''
+        this.connectionTestSignature = ''
         try {
           await testDbDatasourceDraft(this.normalizeForm(this.form))
           this.connectionTestStatus = 'success'
+          this.connectionTestSignature = this.connectionConfigSignature()
           this.connectionTestMessage = '数据库连接和校验 SQL 均已通过，可以继续保存并送审。'
           this.$message.success('连接成功')
         } catch (e) {

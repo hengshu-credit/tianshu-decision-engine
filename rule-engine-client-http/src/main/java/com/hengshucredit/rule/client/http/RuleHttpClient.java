@@ -5,6 +5,9 @@ import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.client.auth.ClientAuthConfig;
 import com.hengshucredit.rule.client.auth.ClientRequestAuthenticator;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
+import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
+import com.hengshucredit.rule.model.dto.RuleExecutionStatus;
 import okhttp3.HttpUrl;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -70,9 +73,7 @@ public final class RuleHttpClient implements AutoCloseable {
         body.put("params", input);
         body.put("clientAppName", appName);
         body.put("traceEnabled", collectTrace);
-        String prefix = baseUrl.encodedPath().replaceAll("/+$", "");
-        HttpUrl url = baseUrl.newBuilder().encodedPath(prefix + "/api/rule/sync/execute/")
-                .addPathSegment(ruleCode).build();
+        HttpUrl url = executionUrl("sync", ruleCode);
         Request request = new Request.Builder().url(url)
                 .post(RequestBody.create(JSON.toJSONString(body), JSON_TYPE)).build();
         try {
@@ -81,21 +82,9 @@ public final class RuleHttpClient implements AutoCloseable {
             throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
         }
         try (Response response = http.newCall(request).execute()) {
-            if (!response.isSuccessful()) {
-                throw new RuleHttpException("引擎 HTTP 调用失败：" + response.code(), response.code(), null);
-            }
-            if (response.body() == null) throw invalidResponse(response.code());
-            JSONObject envelope;
-            try {
-                envelope = JSON.parseObject(response.body().string());
-            } catch (RuntimeException e) {
-                throw invalidResponse(response.code());
-            }
-            if (envelope == null || !(envelope.get("code") instanceof Number)) throw invalidResponse(response.code());
+            JSONObject envelope = parseEnvelope(response);
             int code = envelope.getIntValue("code");
-            if (code != 200) {
-                throw new RuleHttpException("引擎拒绝请求，平台响应码：" + code, response.code(), code);
-            }
+            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
             if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
             JSONObject data = envelope.getJSONObject("data");
             if (!(data.get("success") instanceof Boolean)) throw invalidResponse(response.code());
@@ -109,8 +98,121 @@ public final class RuleHttpClient implements AutoCloseable {
         }
     }
 
+    public RuleExperimentExecuteResult executeExperiment(String experimentCode,
+                                                          RuleExperimentExecuteRequest request) {
+        if (closed) throw new IllegalStateException("客户端已关闭");
+        required(experimentCode, "experimentCode");
+        JSONObject body = request == null ? new JSONObject() : JSON.parseObject(JSON.toJSONString(request));
+        Request requestBuilder = new Request.Builder()
+                .url(baseUrl.newBuilder().addPathSegments("api/rule/runtime/experiment/execute/")
+                        .addPathSegment(experimentCode).build())
+                .post(RequestBody.create(JSON.toJSONString(body), JSON_TYPE)).build();
+        try {
+            requestBuilder = authenticator.authenticate(requestBuilder);
+        } catch (IOException e) {
+            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+        }
+        try (Response response = http.newCall(requestBuilder).execute()) {
+            JSONObject envelope = parseEnvelope(response);
+            int code = envelope.getIntValue("code");
+            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
+            if (!(envelope.get("data") instanceof JSONObject)) {
+                throw invalidResponse(response.code());
+            }
+            try {
+                return envelope.getJSONObject("data").toJavaObject(RuleExperimentExecuteResult.class);
+            } catch (RuntimeException e) {
+                throw invalidResponse(response.code());
+            }
+        } catch (IOException e) {
+            throw new RuleHttpException("引擎连接失败或超时；执行状态可能未知，请勿盲目重试", 0, null);
+        }
+    }
+
+    /** 查询同一根 trace 的跨请求执行状态，供网络未知或执行中场景轮询。 */
+    public RuleExecutionStatus getExecutionStatus(String traceId) {
+        if (closed) throw new IllegalStateException("客户端已关闭");
+        required(traceId, "traceId");
+        HttpUrl url = baseUrl.newBuilder()
+                .addPathSegment("api").addPathSegment("rule").addPathSegment("runtime")
+                .addPathSegment("executions").addPathSegment(traceId).build();
+        Request request = new Request.Builder().url(url).get().build();
+        try {
+            request = authenticator.authenticate(request);
+        } catch (IOException e) {
+            throw new RuleHttpException("项目鉴权失败，请检查凭据、Token 服务及网络", 0, null);
+        }
+        try (Response response = http.newCall(request).execute()) {
+            JSONObject envelope = parseEnvelope(response);
+            int code = envelope.getIntValue("code");
+            if (!response.isSuccessful() || code != 200) throw platformError(response, envelope, code);
+            if (!(envelope.get("data") instanceof JSONObject)) throw invalidResponse(response.code());
+            return envelope.getJSONObject("data").toJavaObject(RuleExecutionStatus.class);
+        } catch (IOException e) {
+            throw new RuleHttpException("执行状态查询失败；状态可能未知，请稍后重试", 0, null,
+                    "UNKNOWN", traceId, null);
+        }
+    }
+
     private static RuleHttpException invalidResponse(int status) {
         return new RuleHttpException("引擎响应格式无效", status, null);
+    }
+
+    private static JSONObject parseEnvelope(Response response) throws IOException {
+        if (response.body() == null) throw invalidResponse(response.code());
+        final String body = response.body().string();
+        final JSONObject envelope;
+        try {
+            envelope = JSON.parseObject(body);
+        } catch (RuntimeException e) {
+            throw invalidResponse(response.code());
+        }
+        if (envelope == null || !(envelope.get("code") instanceof Number)) {
+            throw invalidResponse(response.code());
+        }
+        return envelope;
+    }
+
+    private static RuleHttpException platformError(Response response, JSONObject envelope, int code) {
+        JSONObject data = envelope == null ? null : envelope.getJSONObject("data");
+        String status = data == null ? null : data.getString("executionStatus");
+        if (status == null || status.trim().isEmpty()) status = statusFor(code, response.code());
+        String traceId = data == null ? null : data.getString("traceId");
+        if (traceId == null || traceId.trim().isEmpty()) traceId = envelope == null ? null : envelope.getString("traceId");
+        Long retryAfterMs = retryAfterMillis(response.header("Retry-After"));
+        String message = response.code() == 0 ? "引擎请求失败" : "引擎请求失败，HTTP " + response.code();
+        if (code != 0 && code != 200) message += "，平台响应码 " + code;
+        return new RuleHttpException(message, response.code(), code == 0 ? null : code,
+                status, traceId, retryAfterMs);
+    }
+
+    private static String statusFor(int platformCode, int httpStatus) {
+        if (platformCode == 400004) return "CONFLICT";
+        if (platformCode == 400005) return "IN_PROGRESS";
+        if (httpStatus == 408 || httpStatus == 429 || httpStatus >= 500) return "UNKNOWN";
+        return "REJECTED";
+    }
+
+    private static Long retryAfterMillis(String value) {
+        if (value == null || value.trim().isEmpty()) return null;
+        try {
+            return Math.max(0L, Long.parseLong(value.trim())) * 1000L;
+        } catch (NumberFormatException ignored) {
+            return null;
+        }
+    }
+
+    private HttpUrl executionUrl(String kind, String code) {
+        requiredPathSegment(code, kind + "Code");
+        return baseUrl.newBuilder().addPathSegment("api").addPathSegment("rule")
+                .addPathSegment("sync").addPathSegment("execute").addPathSegment(code).build();
+    }
+
+    private static void requiredPathSegment(String value, String name) {
+        required(value, name);
+        if (".".equals(value) || "..".equals(value) || value.contains("/") || value.contains("\\")) {
+            throw new IllegalArgumentException(name + " 不能包含路径段");
+        }
     }
 
     private static void validateAuth(ClientAuthConfig auth) {

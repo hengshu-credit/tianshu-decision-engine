@@ -55,6 +55,26 @@ describe('ApiScenarioPanel', () => {
     expect(definitionApi.listApiScenarios).toHaveBeenCalledWith(7)
   })
 
+  test('规则切换时只采用最后一次场景列表响应', async () => {
+    let resolveFirst
+    let resolveSecond
+    definitionApi.listApiScenarios
+      .mockReset()
+      .mockReturnValueOnce(new Promise(resolve => { resolveFirst = resolve }))
+      .mockReturnValueOnce(new Promise(resolve => { resolveSecond = resolve }))
+
+    const first = wrapper.vm.loadScenarios()
+    await wrapper.setProps({ rule: { id: 8, currentVersion: 1, publishedVersion: 1 } })
+    resolveSecond({ code: 200, data: [{ id: 82, scenarioName: '新规则场景' }] })
+    await Promise.resolve()
+    await Promise.resolve()
+    resolveFirst({ code: 200, data: [{ id: 71, scenarioName: '旧规则场景' }] })
+    await first
+
+    expect(wrapper.vm.scenarios).toEqual([{ id: 82, scenarioName: '新规则场景' }])
+    expect(wrapper.vm.loading).toBe(false)
+  })
+
   test('executes schema-generated request and saves selected scenario', async () => {
     const executionResponse = {
       code: 200,

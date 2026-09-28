@@ -7,6 +7,7 @@ import com.hengshucredit.rule.model.entity.RuleModelOutputField;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import org.junit.Test;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -114,6 +115,30 @@ public class VariableSourceResolverTest {
         assertEquals(88, resolved.get("riskScore"));
         assertEquals(7L, apiService.lastApiConfigId.longValue());
         assertEquals("C001", apiService.lastParams.get("cust"));
+    }
+
+    @Test
+    public void apiVariableRecordsActualAssignmentWithStableCallId() throws Exception {
+        RuleVariable variable = variable("riskScore", "API",
+                "{\"apiConfigId\":7,\"resultPath\":\"body.score\"}");
+        Map<String, Object> response = responseBody("score", 88);
+        response.put("callId", "call-assignment-1");
+        response.put("externalCall", Map.of("traceId", "DS001"));
+        VariableSourceResolver resolver = resolver(Collections.singletonList(variable),
+                new FakeApiService(response), new FakeDbPools(Collections.emptyList()));
+        RecordingRuntimeCallLogService logs = new RecordingRuntimeCallLogService();
+        setField(resolver, "runtimeCallLogService", logs);
+
+        Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap());
+
+        assertEquals(88, resolved.get("riskScore"));
+        RuleRuntimeCallLog assignment = logs.logs.stream()
+                .filter(item -> "API_ASSIGNMENT".equals(item.getActionType()))
+                .findFirst().orElseThrow();
+        assertEquals("call-assignment-1", assignment.getCallId());
+        assertEquals("riskScore", assignment.getTargetCode());
+        assertTrue(assignment.getTraceSteps().contains("EXTERNAL_ASSIGNMENT"));
+        assertTrue(assignment.getResponseBody().contains("riskScore"));
     }
 
     @Test
@@ -246,7 +271,7 @@ public class VariableSourceResolverTest {
     }
 
     @Test
-    public void constantResolvesPositiveInfinityAsDouble() throws Exception {
+    public void constantResolvesPositiveInfinityAsFiniteDoubleBound() throws Exception {
         RuleVariable variable = variable("POSITIVE_INFINITY", "CONSTANT", null);
         variable.setVarType("DOUBLE");
         variable.setDefaultValue("Infinity");
@@ -255,7 +280,7 @@ public class VariableSourceResolverTest {
 
         Map<String, Object> resolved = resolver.resolve(1L, Collections.emptyMap());
 
-        assertEquals(Double.POSITIVE_INFINITY, resolved.get("POSITIVE_INFINITY"));
+        assertEquals(Double.MAX_VALUE, resolved.get("POSITIVE_INFINITY"));
     }
 
     @Test
@@ -1204,6 +1229,15 @@ public class VariableSourceResolverTest {
             this.lastApiConfigId = apiConfigId;
             this.lastParams = params;
             return response;
+        }
+    }
+
+    private static class RecordingRuntimeCallLogService extends RuleRuntimeCallLogService {
+        private final List<RuleRuntimeCallLog> logs = new java.util.ArrayList<>();
+
+        @Override
+        public void safeSave(RuleRuntimeCallLog log) {
+            logs.add(log);
         }
     }
 

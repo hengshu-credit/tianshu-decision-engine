@@ -30,9 +30,15 @@ public class RulePublished {
     private String compiledScript;
     private String compiledType;
     private String modelJson;
+    /** 已发布的规则契约快照，包含开放接口和幂等配置。 */
+    private String openApiConfigJson;
     /** 仅用于同步给客户端，不映射数据库字段 */
     @TableField(exist = false)
     private List<String> outputScriptNames;
+    @TableField(exist = false)
+    private boolean requiresServerExecution;
+    @TableField(exist = false)
+    private String serverExecutionReason;
     private Integer status;
     private String publishBy;
     private LocalDateTime publishTime;

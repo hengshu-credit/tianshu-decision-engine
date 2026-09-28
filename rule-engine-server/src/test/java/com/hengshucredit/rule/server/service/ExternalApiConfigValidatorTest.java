@@ -54,4 +54,18 @@ public class ExternalApiConfigValidatorTest {
         config.setAuthMode("inherit");
         ExternalApiConfigValidator.validate(config);
     }
+
+    @Test
+    public void payloadCaptureRejectsInvalidPathsAndAcceptsDecryptConfig() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setPayloadCaptureConfig("{\"response\":{\"excludePaths\":[\"$.items[*].base64\"],"
+                + "\"decrypt\":{\"enabled\":true,\"mode\":\"BASE64\",\"path\":\"$.payload\"}}}");
+        ExternalApiConfigValidator.validate(config);
+
+        config.setPayloadCaptureConfig("{\"response\":{\"excludePaths\":[\"$.items[bad]\"]}}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+
+        config.setPayloadCaptureConfig("{\"response\":{\"decrypt\":{\"enabled\":true,\"mode\":\"TRIPLE_DES_BASE64\",\"path\":\"$\"}}}");
+        assertThrows(IllegalArgumentException.class, () -> ExternalApiConfigValidator.validate(config));
+    }
 }

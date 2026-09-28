@@ -13,6 +13,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.assertFalse;
 
 public class VariableResolutionInvocationCacheTest {
 
@@ -76,6 +77,44 @@ public class VariableResolutionInvocationCacheTest {
                 List.of(), Map.of(), Map.of());
 
         assertEquals(List.of(7L), snapshot.get("apiIds"));
+    }
+
+    @Test
+    public void completedSourceStepRoundTripsAndChecksAllDigests() {
+        VariableResolutionInvocationCache cache = new VariableResolutionInvocationCache();
+        AtomicInteger persisted = new AtomicInteger();
+        cache.setSourceStepListener(step -> persisted.incrementAndGet());
+        VariableResolutionInvocationCache.SourceStep step =
+                new VariableResolutionInvocationCache.SourceStep(
+                        "VARIABLE:7", "VARIABLE", "cfg-1", "input-1", "deps-1", "SUCCESS",
+                        Map.of("score", 88), null,
+                        Map.of("VARIABLE:7", Map.of("OUTCOME", "SUCCESS")),
+                        Map.of("scriptName", "score"));
+        cache.completeStep(step);
+        assertEquals(1, persisted.get());
+        assertTrue(cache.hasReusableStep("VARIABLE:7", "cfg-1", "input-1", "deps-1"));
+        assertFalse(cache.hasReusableStep("VARIABLE:7", "cfg-2", "input-1", "deps-1"));
+
+        VariableResolutionInvocationCache restored = new VariableResolutionInvocationCache();
+        restored.restoreCompletedSteps(cache.snapshotCompletedSteps());
+        assertTrue(restored.hasReusableStep("VARIABLE:7", "cfg-1", "input-1", "deps-1"));
+        assertEquals("score", restored.completedStep("VARIABLE:7").getMetadata().get("scriptName"));
+        assertEquals("SUCCESS", restored.completedStep("VARIABLE:7")
+                .getSourceStates().get("VARIABLE:7").get("OUTCOME"));
+    }
+
+    @Test
+    public void invalidatingModelStepAlsoRemovesItsResponse() {
+        VariableResolutionInvocationCache cache = new VariableResolutionInvocationCache();
+        cache.restoreResponse("MODEL:9", singletonMap("outputs", singletonMap("score", 1)));
+        cache.associateResponse("MODEL:9", "MODEL:9");
+        cache.completeStep(new VariableResolutionInvocationCache.SourceStep(
+                "MODEL:9", "MODEL", "cfg", "input", "deps", "SUCCESS",
+                singletonMap("score", 1), singletonMap("outputs", singletonMap("score", 1)),
+                Map.of(), Map.of("modelCode", "riskModel")));
+        cache.invalidateStep("MODEL:9");
+        assertFalse(cache.hasResponse("MODEL:9"));
+        assertEquals(null, cache.completedStep("MODEL:9"));
     }
 
     private static Map<String, Object> blockingResponse(

@@ -578,6 +578,7 @@ export default {
       executing: false,
       result: null,
       lastRawResponse: null,
+      executedInputParamsJson: '',
       traceTab: 'tree',
       traceStatusFilter: 'ALL',
       traceKeyword: '',
@@ -623,8 +624,8 @@ export default {
       return filtered ? JSON.stringify(filtered) : ''
     },
     inputParamsJson: function () {
-      // inputParamsJson 供 TraceTree 组件渲染入参，始终基于当前 params 构建
-      return JSON.stringify(this.buildParamMap())
+      // 执行结果必须绑定执行时快照；用户在结果页编辑输入不应改写历史追踪。
+      return this.executedInputParamsJson || JSON.stringify(this.buildParamMap())
     },
     outputResultJson: function () {
       if (!this.result || !this.result.hasOutput) return ''
@@ -1437,6 +1438,7 @@ export default {
       const projectId = this.selectedProjectId
       const requestId = ++this.executionRequestId
       const paramMap = this.buildParamMap()
+      this.executedInputParamsJson = JSON.stringify(paramMap)
       this.executing = true
       this.result = null
       this.lastRawResponse = null
@@ -1474,6 +1476,7 @@ export default {
     },
     handleClearParams() {
       this.params = []
+      this.resetExecutionState()
     },
     unwrapResponse(res) {
       if (res && Object.prototype.hasOwnProperty.call(res, 'data'))
@@ -1492,6 +1495,7 @@ export default {
       this.executing = false
       this.result = null
       this.lastRawResponse = null
+      this.executedInputParamsJson = ''
     },
     isActiveInputRequest(requestId, ruleId) {
       return (

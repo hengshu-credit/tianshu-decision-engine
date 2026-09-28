@@ -6,6 +6,7 @@ import org.junit.Test;
 import java.math.BigDecimal;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 public class ExternalApiGuardRegistryTest {
@@ -61,6 +62,17 @@ public class ExternalApiGuardRegistryTest {
         assertEquals(1, registry.size());
     }
 
+    @Test
+    public void usesDistributedLeaseWhenStoreIsConfigured() {
+        RecordingStore store = new RecordingStore();
+        ExternalApiGuardRegistry registry = new ExternalApiGuardRegistry(properties(), store);
+        ExternalApiGuardRegistry.Permit permit = registry.acquire(config());
+        assertEquals(1, store.acquireCalls);
+        assertTrue(store.permitId != null && !store.permitId.isEmpty());
+        permit.close();
+        assertEquals(1, store.releaseCalls);
+    }
+
     private RuleExternalApiConfig config() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
         config.setId(1L);
@@ -73,5 +85,24 @@ public class ExternalApiGuardRegistryTest {
         ExternalCallProperties properties = new ExternalCallProperties();
         properties.setApiGuardRegistryMaxEntries(8);
         return properties;
+    }
+
+    private static final class RecordingStore implements ExternalApiGuardDistributedStore {
+        private int acquireCalls;
+        private int releaseCalls;
+        private String permitId;
+
+        @Override
+        public AcquireResult tryAcquire(Long apiConfigId, double qps, int burstCapacity,
+                                        int maxConcurrent, long leaseMillis, String permitId) {
+            acquireCalls++;
+            this.permitId = permitId;
+            return AcquireResult.ACQUIRED;
+        }
+
+        @Override
+        public void release(Long apiConfigId, String permitId) {
+            releaseCalls++;
+        }
     }
 }

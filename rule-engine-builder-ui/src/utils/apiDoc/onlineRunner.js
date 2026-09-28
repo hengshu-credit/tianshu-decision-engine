@@ -52,7 +52,10 @@ export function renderOnlineRunnerScript() {
   function text(value) { return value == null ? '' : String(value); }
   function currentEndpoint() { return doc.rules.find(function (rule) { return text(rule.id || rule.ruleCode) === state.endpointId; }) || doc.rules[0]; }
   function currentAuth() { var index = Number(elements.auth.value); return doc.authentications[index] || null; }
-  function endpointPath(rule) { return '/api/rule/sync/execute/' + encodeURIComponent(rule.ruleCode); }
+  function endpointPath(rule) {
+    const prefix = rule && rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
+    return prefix + encodeURIComponent(rule.ruleCode)
+  }
   function inputValue(name) { var input = byId('credential-' + name); return input ? input.value : ''; }
   function escapeMarkup(value) { return text(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   function exampleValue(field) { return field && field.exampleValue !== undefined ? field.exampleValue : ''; }
@@ -66,7 +69,7 @@ export function renderOnlineRunnerScript() {
     });
   }
   function buildBody(rule) {
-    var value = { clientAppName: 'api-doc-example', params: {} };
+    var value = rule && rule.openApiEnabled ? {} : { clientAppName: 'api-doc-example', params: {} };
     (rule.requestFields || []).forEach(function (field) { setPath(value, field.path, exampleValue(field)); });
     return value;
   }

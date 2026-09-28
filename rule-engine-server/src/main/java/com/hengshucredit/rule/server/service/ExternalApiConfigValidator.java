@@ -3,6 +3,8 @@ package com.hengshucredit.rule.server.service;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
+import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
 
 import java.util.Locale;
 import java.util.Set;
@@ -12,6 +14,12 @@ public final class ExternalApiConfigValidator {
     private ExternalApiConfigValidator() { }
 
     public static void validate(RuleExternalApiConfig config) {
+        if (hasText(config.getExceptionStrategy())) {
+            String strategy = config.getExceptionStrategy().trim().toUpperCase(Locale.ROOT);
+            if (!Set.of("FAIL_FAST", "RETURN_DEFAULT", "IGNORE", "USE_CACHE").contains(strategy)) {
+                throw new IllegalArgumentException("异常处理策略不受支持: " + config.getExceptionStrategy());
+            }
+        }
         if (hasText(config.getAuthMode())) {
             String authMode = config.getAuthMode().trim().toUpperCase(Locale.ROOT);
             if (!Set.of("INHERIT", "NONE", "BASIC", "BEARER", "API_KEY",
@@ -28,8 +36,17 @@ public final class ExternalApiConfigValidator {
         if (hasText(config.getTokenFailureCondition())) {
             validateCondition(parseCondition(config.getTokenFailureCondition(), "Token鉴权失败条件"), "Token鉴权失败条件");
         }
-        if (!"ASYNC".equals(config.getRequestMode())) return;
-        String mode = config.getAsyncResultMode();
+        if (hasText(config.getPayloadCaptureConfig())) {
+            ExternalApiPayloadCapturePolicy.validate(config.getPayloadCaptureConfig());
+        }
+        String requestMode = config.getRequestMode() == null ? "SYNC"
+                : config.getRequestMode().trim().toUpperCase(Locale.ROOT);
+        if (!"SYNC".equals(requestMode) && !"ASYNC".equals(requestMode)) {
+            throw new IllegalArgumentException("请求模式只能是SYNC或ASYNC");
+        }
+        if (!"ASYNC".equals(requestMode)) return;
+        String mode = config.getAsyncResultMode() == null ? ""
+                : config.getAsyncResultMode().trim().toUpperCase(Locale.ROOT);
         if (!"POLL".equals(mode) && !"CALLBACK".equals(mode)) {
             throw new IllegalArgumentException("异步接口必须选择引擎轮询或外部回调");
         }
@@ -61,6 +78,39 @@ public final class ExternalApiConfigValidator {
             required(protocol.getString("signatureHeader"), "回调签名 Header");
             required(protocol.getString("signatureSecret"), "回调签名密钥");
         }
+    }
+
+    /** 校验外数接口引用的数据源和请求/响应对象属于同一可见作用域。 */
+    public static void validateReferences(RuleExternalApiConfig config,
+                                           RuleExternalDatasource datasource,
+                                           RuleDataObject requestObject,
+                                           RuleDataObject responseObject) {
+        if (config == null || config.getDatasourceId() == null) {
+            throw new IllegalArgumentException("接口必须选择所属数据源");
+        }
+        if (datasource == null || !active(datasource.getStatus())) {
+            throw new IllegalArgumentException("接口所属数据源不存在或已停用");
+        }
+        validateObject(requestObject, datasource, "请求数据对象");
+        validateObject(responseObject, datasource, "响应数据对象");
+    }
+
+    private static void validateObject(RuleDataObject object, RuleExternalDatasource datasource,
+                                       String label) {
+        if (object == null) return;
+        if (!active(object.getStatus())) {
+            throw new IllegalArgumentException(label + "不存在或已停用");
+        }
+        String scope = object.getScope() == null ? "" : object.getScope().trim().toUpperCase(Locale.ROOT);
+        boolean global = "GLOBAL".equals(scope) || object.getProjectId() == null || object.getProjectId() == 0L;
+        Long ownerProjectId = datasource.getProjectId();
+        if (!global && (ownerProjectId == null || !ownerProjectId.equals(object.getProjectId()))) {
+            throw new IllegalArgumentException(label + "必须是全局对象或与数据源属于同一项目");
+        }
+    }
+
+    private static boolean active(Integer status) {
+        return status == null || status == 1;
     }
 
     static int positive(JSONObject config, String field, int fallback) {

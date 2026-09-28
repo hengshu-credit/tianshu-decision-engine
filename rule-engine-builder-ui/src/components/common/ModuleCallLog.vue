@@ -219,6 +219,61 @@
           }}</el-descriptions-item>
         </el-descriptions>
 
+        <template v-if="moduleType === 'DATASOURCE'">
+          <el-alert
+            v-if="detailLoadError"
+            class="payload-alert"
+            type="warning"
+            :closable="false"
+            show-icon
+            :title="detailLoadError"
+          />
+          <div class="detail-grid payload-meta">
+            <div class="detail-kv">
+              <span>调用 ID</span>
+              <strong class="detail-kv-value">
+                <span>{{ apiPayload.callId || detail.callId || '-' }}</span>
+                <el-button
+                  v-if="apiPayload.callId || detail.callId"
+                  link
+                  size="small"
+                  type="primary"
+                  @click="copyText(apiPayload.callId || detail.callId)"
+                  >复制</el-button
+                >
+              </strong>
+            </div>
+            <div class="detail-kv">
+              <span>根 Trace ID</span>
+              <strong class="detail-kv-value">
+                <span>{{ apiPayload.rootTraceId || detail.rootTraceId || '-' }}</span>
+                <el-button
+                  v-if="apiPayload.rootTraceId || detail.rootTraceId"
+                  link
+                  size="small"
+                  type="primary"
+                  @click="copyText(apiPayload.rootTraceId || detail.rootTraceId)"
+                  >复制</el-button
+                >
+              </strong>
+            </div>
+            <div class="detail-kv">
+              <span>分析请求副本</span>
+              <strong>{{ apiPayloadLoaded ? (apiPayload.rawRequestAvailable ? '可用' : '不可用（GET 或历史记录）') : '加载中…' }}</strong>
+            </div>
+            <div class="detail-kv">
+              <span>分析响应副本</span>
+              <strong>{{ apiPayloadLoaded ? (apiPayload.rawResponseAvailable ? '可用' : '不可用（历史记录或脱敏回退）') : '加载中…' }}</strong>
+            </div>
+          </div>
+          <external-call-trace
+            :steps="apiPayload.traceSteps"
+            title="外数调用链"
+            subtitle="从规则入参、鉴权到外部响应和引擎赋值的可关联过程"
+            empty-text="历史记录未保存外数阶段链，仅保留调用摘要和受控报文。"
+          />
+        </template>
+
         <template v-if="moduleType === 'DATABASE'">
           <div class="detail-grid">
             <div class="detail-kv">
@@ -326,10 +381,33 @@
             title="请求参数"
             :content="pretty(detail.requestParams)"
           />
-          <detail-block title="请求体" :content="pretty(detail.requestBody)" />
           <detail-block
-            title="响应内容"
-            :content="pretty(detail.responseBody)"
+            :title="apiPayload.rawRequestAvailable ? '分析请求报文（按配置留存）' : '请求报文（未生成分析副本）'"
+            :content="pretty(apiPayload.requestBody || detail.requestBody)"
+          />
+          <detail-block
+            v-if="apiPayload.originalRequestAvailable"
+            title="供应商原始请求（永久留存）"
+            :content="pretty(apiPayload.originalRequestBody)"
+          />
+          <detail-block
+            :title="apiPayload.rawResponseAvailable ? '分析响应报文（按配置留存）' : '响应内容（未生成分析副本）'"
+            :content="pretty(apiPayload.responseBody || detail.responseBody)"
+          />
+          <detail-block
+            v-if="apiPayload.originalResponseAvailable"
+            title="供应商原始响应（永久留存）"
+            :content="pretty(apiPayload.originalResponseBody)"
+          />
+          <detail-block
+            v-if="apiPayload.rawRequestMetadata && Object.keys(apiPayload.rawRequestMetadata).length"
+            title="请求留存处理"
+            :content="pretty(apiPayload.rawRequestMetadata)"
+          />
+          <detail-block
+            v-if="apiPayload.rawResponseMetadata && Object.keys(apiPayload.rawResponseMetadata).length"
+            title="响应留存处理"
+            :content="pretty(apiPayload.rawResponseMetadata)"
           />
           <detail-block v-if="detail.historyFields" title="历史统计字段结果（字段 ID）" :content="pretty(detail.historyFields)" />
         </template>
@@ -341,10 +419,12 @@
 <script>
 import { markRaw } from 'vue'
 import { Refresh as ElIconRefresh } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { plantRenderPara } from '../../utils/gogocodeTransfer'
 import * as Vue from 'vue'
-import { listRuntimeLogs } from '@/api/runtimeLog'
+import { getRuntimeCallPayload, listRuntimeLogs } from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ExternalCallTrace from './ExternalCallTrace.vue'
 
 const PROFILES = {
   DATASOURCE: {
@@ -419,6 +499,10 @@ export default {
       },
       detailVisible: false,
       detail: null,
+      apiPayload: {},
+      apiPayloadLoaded: false,
+      detailLoadError: '',
+      detailRequestSeq: 0,
       actionMap: {
         API_INVOKE: 'API调用',
         AUTH_TEST: '鉴权测试',
@@ -429,6 +513,7 @@ export default {
         LIST_VARIABLE_MATCH: '名单变量匹配',
         EXECUTE: '执行测试',
         MODEL_EXECUTE: '规则内模型执行',
+        API_ASSIGNMENT: '引擎变量赋值',
       },
       ElIconRefresh: markRaw(ElIconRefresh),
     }
@@ -436,6 +521,7 @@ export default {
   name: 'ModuleCallLog',
   components: {
     RemoteFilterSelect,
+    ExternalCallTrace,
     DetailBlock: function render(_props, _context) {
       const ctx = {
         ..._context,
@@ -549,9 +635,50 @@ export default {
       }
       this.load()
     },
-    openDetail(row) {
+    async openDetail(row) {
       this.detail = row
+      this.apiPayload = {}
+      this.apiPayloadLoaded = false
+      this.detailLoadError = ''
       this.detailVisible = true
+      const requestSeq = ++this.detailRequestSeq
+      if (this.moduleType !== 'DATASOURCE' || !row || !row.id) {
+        this.apiPayloadLoaded = true
+        return
+      }
+      try {
+        const res = await getRuntimeCallPayload(row.id)
+        if (requestSeq !== this.detailRequestSeq) return
+        this.apiPayload = (res && res.data) || {}
+      } catch (error) {
+        if (requestSeq !== this.detailRequestSeq) return
+        this.detailLoadError = '受控报文加载失败，可稍后重试。'
+      } finally {
+        if (requestSeq === this.detailRequestSeq) {
+          this.apiPayloadLoaded = true
+        }
+      }
+    },
+    async copyText(value) {
+      if (!value) return
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(String(value))
+        } else {
+          const input = document.createElement('textarea')
+          input.value = String(value)
+          input.setAttribute('readonly', '')
+          input.style.position = 'fixed'
+          input.style.opacity = '0'
+          document.body.appendChild(input)
+          input.select()
+          document.execCommand('copy')
+          document.body.removeChild(input)
+        }
+        ElMessage.success('已复制关联 ID')
+      } catch (error) {
+        ElMessage.warning('复制失败，请手动选择文本')
+      }
     },
     actionLabel(value) {
       return this.actionMap[value] || value || '-'
@@ -600,6 +727,17 @@ export default {
     prettyInline(value) {
       const text = this.pretty(value)
       return text.replace(/\s+/g, ' ').slice(0, 140)
+    },
+    traceStepKey(step) {
+      return `${step && step.sequence ? step.sequence : ''}-${step && step.type ? step.type : 'step'}`
+    },
+    traceStepStatusLabel(status) {
+      return { SUCCESS: '成功', FAILED: '失败', READY: '已准备', SENT: '已发送', SKIPPED: '已跳过' }[status] || status || '处理中'
+    },
+    traceStepTagType(status) {
+      if (status === 'FAILED') return 'danger'
+      if (status === 'SKIPPED') return 'info'
+      return 'success'
     },
     parseJsonValue(value) {
       if (!value) return {}
@@ -688,6 +826,12 @@ export default {
   gap: 8px;
   margin-top: 12px;
 }
+.payload-alert {
+  margin-top: 12px;
+}
+.payload-meta {
+  margin-top: 12px;
+}
 .detail-kv {
   border: 1px solid var(--tianshu-border-subtle);
   border-radius: 4px;
@@ -706,6 +850,13 @@ export default {
   min-width: 0;
   overflow-wrap: anywhere;
 }
+.detail-kv-value {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  text-align: right;
+}
 .log-pre {
   background: var(--tianshu-bg-soft);
   border: 1px solid var(--tianshu-border-subtle);
@@ -717,5 +868,59 @@ export default {
   font-size: 12px;
   line-height: 1.5;
   font-family: Menlo, Monaco, Consolas, monospace;
+}
+.external-trace-chain {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 6px;
+  background: var(--tianshu-bg-muted);
+}
+.external-trace-step {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.external-trace-step-index {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.external-trace-step-main {
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 5px;
+  background: var(--tianshu-bg-surface);
+}
+.external-trace-step-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--tianshu-text-primary);
+  font-size: 12px;
+}
+.external-trace-step-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.external-trace-step-values .detail-block {
+  min-width: 0;
+  margin-top: 8px;
+}
+@media (max-width: 760px) {
+  .external-trace-step-values { grid-template-columns: 1fr; }
 }
 </style>

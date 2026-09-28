@@ -2,9 +2,14 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ApiDocDTO;
 import com.hengshucredit.rule.model.dto.ProjectAuthDTO;
+import com.alibaba.fastjson.JSON;
 import com.hengshucredit.rule.core.trace.TraceIdGenerator;
 import com.hengshucredit.rule.model.entity.*;
 import com.hengshucredit.rule.server.auth.ProjectAuthContext;
+import com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver;
+import com.hengshucredit.rule.server.artifact.ArtifactRuntimeSnapshotService;
+import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
+import com.hengshucredit.rule.server.artifact.RuleSchemaService;
 import com.hengshucredit.rule.server.mapper.*;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.metadata.IPage;
@@ -181,6 +186,15 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
     private RuleApiDocScenarioService apiDocScenarioService;
 
     @Resource
+    private RulePublishedMapper publishedMapper;
+
+    @Resource
+    private PublishedRuleFieldSnapshotResolver publishedFieldSnapshotResolver;
+
+    @Resource
+    private ArtifactRuntimeSnapshotService artifactRuntimeSnapshotService;
+
+    @Resource
     @org.springframework.context.annotation.Lazy
     private RuleFieldAnalyzer ruleFieldAnalyzer;
 
@@ -232,6 +246,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                         .orderByAsc(RuleVariable::getSortOrder));
         List<ApiDocDTO.VariableInfo> varInfos = new ArrayList<>();
         java.util.Map<String, ApiDocDTO.VariableInfo> varCodeMap = new java.util.HashMap<>();
+        java.util.Map<Long, ApiDocDTO.VariableInfo> varIdMap = new java.util.HashMap<>();
         for (RuleVariable var : variables) {
             ApiDocDTO.VariableInfo varInfo = new ApiDocDTO.VariableInfo();
             varInfo.setId(var.getId());
@@ -247,6 +262,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             varInfo.setDescription(var.getDescription());
             varInfo.setScriptName(var.getScriptName());
             varInfos.add(varInfo);
+            varIdMap.put(var.getId(), varInfo);
             varCodeMap.put(var.getVarCode(), varInfo);
             if (var.getScriptName() != null && !var.getScriptName().trim().isEmpty()) {
                 varCodeMap.put(var.getScriptName(), varInfo);
@@ -265,6 +281,8 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                         .eq(RuleDataObject::getStatus, 1)
                         .orderByAsc(RuleDataObject::getCreateTime));
         List<ApiDocDTO.DataObjectInfo> doInfos = new ArrayList<>();
+        java.util.Map<Long, ApiDocDTO.DataObjectInfo> dataObjectIdMap = new java.util.HashMap<>();
+        java.util.Map<Long, RuleDataObjectField> dataObjectFieldIdMap = new java.util.HashMap<>();
         for (RuleDataObject obj : dataObjects) {
             ApiDocDTO.DataObjectInfo doInfo = new ApiDocDTO.DataObjectInfo();
             doInfo.setId(obj.getId());
@@ -284,6 +302,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                             .orderByAsc(RuleDataObjectField::getSortOrder));
             List<ApiDocDTO.FieldInfo> fieldInfos = new ArrayList<>();
             for (RuleDataObjectField field : fields) {
+                dataObjectFieldIdMap.put(field.getId(), field);
                 ApiDocDTO.FieldInfo fieldInfo = new ApiDocDTO.FieldInfo();
                 fieldInfo.setId(field.getId());
                 fieldInfo.setVarCode(field.getVarCode());
@@ -297,6 +316,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             }
             doInfo.setFields(fieldInfos);
             doInfos.add(doInfo);
+            dataObjectIdMap.put(obj.getId(), doInfo);
         }
         doc.setDataObjects(doInfos);
 
@@ -306,8 +326,23 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         appendProjectRuleScope(definitionWrapper, projectId);
         definitionWrapper.orderByDesc(RuleDefinition::getCreateTime);
         List<RuleDefinition> definitions = definitionMapper.selectList(definitionWrapper);
+        Map<Long, RulePublished> publishedByDefinition = null;
+        if (publishedMapper != null) {
+            publishedByDefinition = new LinkedHashMap<>();
+            List<RulePublished> publishedRows = publishedMapper.selectList(
+                    new LambdaQueryWrapper<RulePublished>().eq(RulePublished::getStatus, 1));
+            for (RulePublished published : publishedRows == null ? Collections.<RulePublished>emptyList() : publishedRows) {
+                if (published != null && published.getDefinitionId() != null) {
+                    publishedByDefinition.put(published.getDefinitionId(), published);
+                }
+            }
+        }
         List<ApiDocDTO.RuleInfo> ruleInfos = new ArrayList<>();
         for (RuleDefinition def : definitions) {
+            RulePublished published = publishedByDefinition == null ? null : publishedByDefinition.get(def.getId());
+            // In production the export must describe executable published assets only.
+            // A null mapper is retained solely for lightweight legacy unit fixtures.
+            if (publishedByDefinition != null && published == null) continue;
             ApiDocDTO.RuleInfo ruleInfo = new ApiDocDTO.RuleInfo();
             ruleInfo.setId(def.getId());
             ruleInfo.setRuleCode(def.getRuleCode());
@@ -317,8 +352,22 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             ruleInfo.setDescription(def.getDescription());
             ruleInfo.setCurrentVersion(def.getCurrentVersion());
             ruleInfo.setPublishedVersion(def.getPublishedVersion());
+            if (published != null) {
+                ruleInfo.setPublishedVersion(published.getVersion());
+                ruleInfo.setPublishedRevisionId(published.getRevisionId());
+                ruleInfo.setPublishedArtifactDigest(published.getArtifactDigest());
+                ruleInfo.setOpenApiEnabled(openApiEnabled(published.getOpenApiConfigJson()));
+                ruleInfo.setOpenApiContract(openApiContractProjection(published.getOpenApiConfigJson()));
+            }
             ruleInfo.setStatus(def.getStatus());
             ruleInfo.setStatusLabel(getStatusLabel(def.getStatus()));
+
+            if (published != null && publishedFieldSnapshotResolver != null) {
+                populatePublishedContract(ruleInfo, published, projectId, varIdMap, dataObjectIdMap,
+                        dataObjectFieldIdMap);
+            } else {
+            // Legacy fixture path: only used when no published mapper/snapshot resolver is available.
+            // Production exports always enter the immutable published contract path above.
 
             // 获取模型JSON
             RuleDefinitionContent content = contentMapper.selectOne(
@@ -327,7 +376,6 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             String modelJson = null;
             if (content != null) {
                 modelJson = content.getModelJson();
-                ruleInfo.setModelJson(modelJson);
             }
 
             // 解析模型的出入参变量代码
@@ -416,6 +464,7 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
             }
             ruleInfo.setInputDataObjects(inputDOs);
             ruleInfo.setOutputDataObjects(outputDOs);
+            }
 
             List<ApiDocDTO.ScenarioInfo> scenarioInfos = new ArrayList<>();
             List<RuleApiDocScenario> scenarios = apiDocScenarioService.listExportable(
@@ -444,7 +493,11 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
         // 自定义函数列表
         List<RuleFunction> functions = functionMapper.selectList(
                 new LambdaQueryWrapper<RuleFunction>()
-                        .eq(RuleFunction::getProjectId, projectId)
+                        .and(w -> w
+                                .eq(RuleFunction::getScope, "GLOBAL")
+                                .or()
+                                .eq(RuleFunction::getScope, "PROJECT")
+                                .eq(RuleFunction::getProjectId, projectId))
                         .eq(RuleFunction::getStatus, 1)
                         .orderByAsc(RuleFunction::getCreateTime));
         List<ApiDocDTO.FunctionInfo> funcInfos = new ArrayList<>();
@@ -472,6 +525,294 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                     .exists("SELECT 1 FROM rule_definition_ref rdr WHERE rdr.definition_id = rule_definition.id AND rdr.project_id = " + projectId));
         } else {
             wrapper.eq(RuleDefinition::getProjectId, 0L);
+        }
+    }
+
+    /**
+     * 用已发布制品中的字段快照生成对外契约。这里禁止回读工作稿或按名称反查资源，
+     * 否则变量改名、字段下线后，已发布 API 文档会与实际执行制品不一致。
+     */
+    private void populatePublishedContract(ApiDocDTO.RuleInfo ruleInfo, RulePublished published,
+                                           Long projectId,
+                                           Map<Long, ApiDocDTO.VariableInfo> variableById,
+                                           Map<Long, ApiDocDTO.DataObjectInfo> dataObjectById,
+                                           Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        RuleFieldAnalyzer.ResolvedFields resolved = publishedFieldSnapshotResolver.resolve(published);
+        List<String> diagnostics = new ArrayList<>();
+        if (resolved.getDiagnostics() != null) {
+            resolved.getDiagnostics().forEach(issue -> {
+                if (issue != null) {
+                    String text = issue.getMessage();
+                    diagnostics.add((issue.getCode() == null ? "" : issue.getCode() + ": ")
+                            + (text == null ? "字段快照校验失败" : text));
+                }
+            });
+        }
+        if (!diagnostics.isEmpty()) {
+            ruleInfo.setSchemaTrust("UNVERIFIED");
+            ruleInfo.setSchemaDiagnostics(diagnostics);
+            ruleInfo.setInputVariables(Collections.emptyList());
+            ruleInfo.setOutputVariables(Collections.emptyList());
+            ruleInfo.setInputDataObjects(Collections.emptyList());
+            ruleInfo.setOutputDataObjects(Collections.emptyList());
+            ruleInfo.setInputSchema(Collections.emptyMap());
+            ruleInfo.setOutputSchema(Collections.emptyMap());
+            return;
+        }
+
+        Map<Long, ApiDocDTO.VariableInfo> frozenVariableById = variableById;
+        Map<Long, RuleDataObjectField> frozenDataObjectFieldById = dataObjectFieldById;
+        if (artifactRuntimeSnapshotService != null) {
+            try {
+                ArtifactRuntimeSnapshotService.RuntimeSnapshot snapshot = artifactRuntimeSnapshotService.load(
+                        published.getArtifactId(), published.getDefinitionId(), projectId);
+                frozenVariableById = new LinkedHashMap<>();
+                for (RuleVariable variable : snapshot.getVariables()) {
+                    if (variable != null && variable.getId() != null) {
+                        frozenVariableById.put(variable.getId(), toVariableInfo(variable));
+                    }
+                }
+                frozenDataObjectFieldById = new LinkedHashMap<>();
+                for (RuleDataObjectField field : snapshot.getDataObjectFields()) {
+                    if (field != null && field.getId() != null) {
+                        frozenDataObjectFieldById.put(field.getId(), field);
+                    }
+                }
+            } catch (RuntimeException e) {
+                ruleInfo.setSchemaTrust("UNVERIFIED");
+                ruleInfo.setSchemaDiagnostics(Collections.singletonList(
+                        "ARTIFACT_SNAPSHOT_INVALID: " + (e.getMessage() == null
+                                ? "已发布制品依赖快照无法加载" : e.getMessage())));
+                ruleInfo.setInputVariables(Collections.emptyList());
+                ruleInfo.setOutputVariables(Collections.emptyList());
+                ruleInfo.setInputDataObjects(Collections.emptyList());
+                ruleInfo.setOutputDataObjects(Collections.emptyList());
+                ruleInfo.setInputSchema(Collections.emptyMap());
+                ruleInfo.setOutputSchema(Collections.emptyMap());
+                return;
+            }
+        }
+
+        for (RuleDefinitionInputField field : resolved.getInputFields()) {
+            if (missingFrozenReference(field.getRefType(), field.getVarId(),
+                    frozenVariableById, frozenDataObjectFieldById)) {
+                diagnostics.add("FROZEN_REFERENCE_MISSING: 输入字段引用未包含在制品依赖快照中: "
+                        + field.getRefType() + ":" + field.getVarId());
+            }
+        }
+        for (RuleDefinitionOutputField field : resolved.getOutputFields()) {
+            if (missingFrozenReference(field.getRefType(), field.getVarId(),
+                    frozenVariableById, frozenDataObjectFieldById)) {
+                diagnostics.add("FROZEN_REFERENCE_MISSING: 输出字段引用未包含在制品依赖快照中: "
+                        + field.getRefType() + ":" + field.getVarId());
+            }
+        }
+        if (!diagnostics.isEmpty()) {
+            ruleInfo.setSchemaTrust("UNVERIFIED");
+            ruleInfo.setSchemaDiagnostics(diagnostics);
+            ruleInfo.setInputVariables(Collections.emptyList());
+            ruleInfo.setOutputVariables(Collections.emptyList());
+            ruleInfo.setInputDataObjects(Collections.emptyList());
+            ruleInfo.setOutputDataObjects(Collections.emptyList());
+            ruleInfo.setInputSchema(Collections.emptyMap());
+            ruleInfo.setOutputSchema(Collections.emptyMap());
+            return;
+        }
+
+        List<RuleDefinitionInputField> requestFields = new ArrayList<>();
+        for (RuleDefinitionInputField field : resolved.getInputFields()) {
+            if (isPublishedRequestField(field, frozenVariableById)) {
+                requestFields.add(field);
+            }
+        }
+        List<RuleDefinitionOutputField> responseFields = new ArrayList<>();
+        for (RuleDefinitionOutputField field : resolved.getOutputFields()) {
+            if (field != null && !resolved.isLocalOutput(field)) {
+                responseFields.add(field);
+            }
+        }
+
+        List<ApiDocDTO.VariableInfo> inputs = new ArrayList<>();
+        List<ApiDocDTO.VariableInfo> outputs = new ArrayList<>();
+        Set<Long> inputObjectIds = new LinkedHashSet<>();
+        Set<Long> outputObjectIds = new LinkedHashSet<>();
+        for (RuleDefinitionInputField field : requestFields) {
+            inputs.add(toFrozenInputInfo(field, frozenVariableById, frozenDataObjectFieldById));
+            Long objectId = objectId(field, frozenDataObjectFieldById);
+            if (objectId != null) inputObjectIds.add(objectId);
+        }
+        for (RuleDefinitionOutputField field : responseFields) {
+            outputs.add(toFrozenOutputInfo(field, frozenVariableById, frozenDataObjectFieldById));
+            Long objectId = objectId(field, frozenDataObjectFieldById);
+            if (objectId != null) outputObjectIds.add(objectId);
+        }
+        RuleSchemaService schemaService = new RuleSchemaService();
+        RuleSchemaService.SchemaSnapshot schemas = schemaService.build(requestFields, responseFields);
+        ruleInfo.setSchemaTrust("VERIFIED");
+        ruleInfo.setSchemaDiagnostics(Collections.emptyList());
+        ruleInfo.setInputVariables(inputs);
+        ruleInfo.setOutputVariables(outputs);
+        ruleInfo.setInputSchema(schemas.getInputSchema());
+        ruleInfo.setOutputSchema(schemas.getOutputSchema());
+        ruleInfo.setInputDataObjects(selectDataObjects(inputObjectIds, dataObjectById));
+        ruleInfo.setOutputDataObjects(selectDataObjects(outputObjectIds, dataObjectById));
+    }
+
+    private boolean isPublishedRequestField(RuleDefinitionInputField field,
+                                             Map<Long, ApiDocDTO.VariableInfo> variableById) {
+        if (field == null || field.getVarId() == null || field.getRefType() == null) return false;
+        if ("DATA_OBJECT".equalsIgnoreCase(field.getRefType())) return true;
+        if (!"VARIABLE".equalsIgnoreCase(field.getRefType())) return false;
+        ApiDocDTO.VariableInfo variable = variableById.get(field.getVarId());
+        return variable != null && "INPUT".equalsIgnoreCase(variable.getVarSource());
+    }
+
+    private boolean missingFrozenReference(String refType, Long refId,
+                                           Map<Long, ApiDocDTO.VariableInfo> variableById,
+                                           Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        if (refType == null || refId == null) return false;
+        if ("VARIABLE".equalsIgnoreCase(refType) || "CONSTANT".equalsIgnoreCase(refType)) {
+            return !variableById.containsKey(refId);
+        }
+        if ("DATA_OBJECT".equalsIgnoreCase(refType)) {
+            return !dataObjectFieldById.containsKey(refId);
+        }
+        return false;
+    }
+
+    private Long objectId(RuleDefinitionInputField field, Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        if (field == null || !"DATA_OBJECT".equalsIgnoreCase(field.getRefType())) return null;
+        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        return dataField == null ? null : dataField.getObjectId();
+    }
+
+    private Long objectId(RuleDefinitionOutputField field, Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        if (field == null || !"DATA_OBJECT".equalsIgnoreCase(field.getRefType())) return null;
+        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        return dataField == null ? null : dataField.getObjectId();
+    }
+
+    private List<ApiDocDTO.DataObjectInfo> selectDataObjects(Set<Long> objectIds,
+                                                               Map<Long, ApiDocDTO.DataObjectInfo> dataObjectById) {
+        List<ApiDocDTO.DataObjectInfo> result = new ArrayList<>();
+        for (Long objectId : objectIds) {
+            ApiDocDTO.DataObjectInfo info = dataObjectById.get(objectId);
+            if (info != null) result.add(info);
+        }
+        return result;
+    }
+
+    private ApiDocDTO.VariableInfo toFrozenInputInfo(RuleDefinitionInputField field,
+                                                       Map<Long, ApiDocDTO.VariableInfo> variableById,
+                                                       Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        ApiDocDTO.VariableInfo base = variableById.get(field.getVarId());
+        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        ApiDocDTO.VariableInfo info = copyVariableInfo(base);
+        if (dataField != null) {
+            info.setVarCode(firstNonBlank(field.getFieldName(), dataField.getVarCode()));
+            info.setVarLabel(firstNonBlank(field.getFieldLabel(), dataField.getVarLabel()));
+            info.setVarType(firstNonBlank(field.getFieldType(), dataField.getVarType()));
+            info.setVarTypeLabel(getVarTypeLabel(info.getVarType()));
+            info.setVarSource("DATA_OBJECT");
+            info.setVarSourceLabel("数据对象字段");
+        } else {
+            info.setVarCode(firstNonBlank(field.getFieldName(), info.getVarCode()));
+            info.setVarLabel(firstNonBlank(field.getFieldLabel(), info.getVarLabel()));
+            info.setVarType(firstNonBlank(field.getFieldType(), info.getVarType()));
+            info.setVarTypeLabel(getVarTypeLabel(info.getVarType()));
+        }
+        info.setId(field.getVarId());
+        info.setScriptName(firstNonBlank(field.getScriptName(), info.getScriptName()));
+        info.setDefaultValue(field.getDefaultValue());
+        info.setRequired(field.getDefaultValue() == null || field.getDefaultValue().isBlank());
+        return info;
+    }
+
+    private ApiDocDTO.VariableInfo toFrozenOutputInfo(RuleDefinitionOutputField field,
+                                                        Map<Long, ApiDocDTO.VariableInfo> variableById,
+                                                        Map<Long, RuleDataObjectField> dataObjectFieldById) {
+        ApiDocDTO.VariableInfo base = variableById.get(field.getVarId());
+        RuleDataObjectField dataField = dataObjectFieldById.get(field.getVarId());
+        ApiDocDTO.VariableInfo info = copyVariableInfo(base);
+        if (dataField != null) {
+            info.setVarCode(firstNonBlank(field.getFieldName(), dataField.getVarCode()));
+            info.setVarLabel(firstNonBlank(field.getFieldLabel(), dataField.getVarLabel()));
+            info.setVarType(firstNonBlank(field.getFieldType(), dataField.getVarType()));
+        } else {
+            info.setVarCode(firstNonBlank(field.getFieldName(), info.getVarCode()));
+            info.setVarLabel(firstNonBlank(field.getFieldLabel(), info.getVarLabel()));
+            info.setVarType(firstNonBlank(field.getFieldType(), info.getVarType()));
+        }
+        info.setId(field.getVarId());
+        info.setVarTypeLabel(getVarTypeLabel(info.getVarType()));
+        info.setScriptName(firstNonBlank(field.getScriptName(), info.getScriptName()));
+        info.setRequired(true);
+        return info;
+    }
+
+    private ApiDocDTO.VariableInfo copyVariableInfo(ApiDocDTO.VariableInfo source) {
+        ApiDocDTO.VariableInfo target = new ApiDocDTO.VariableInfo();
+        if (source == null) return target;
+        target.setId(source.getId());
+        target.setVarCode(source.getVarCode());
+        target.setVarLabel(source.getVarLabel());
+        target.setVarType(source.getVarType());
+        target.setVarTypeLabel(source.getVarTypeLabel());
+        target.setVarSource(source.getVarSource());
+        target.setVarSourceLabel(source.getVarSourceLabel());
+        target.setDefaultValue(source.getDefaultValue());
+        target.setValueRange(source.getValueRange());
+        target.setExampleValue(source.getExampleValue());
+        target.setDescription(source.getDescription());
+        target.setScriptName(source.getScriptName());
+        target.setRequired(source.getRequired());
+        return target;
+    }
+
+    private ApiDocDTO.VariableInfo toVariableInfo(RuleVariable variable) {
+        ApiDocDTO.VariableInfo info = new ApiDocDTO.VariableInfo();
+        info.setId(variable.getId());
+        info.setVarCode(variable.getVarCode());
+        info.setVarLabel(variable.getVarLabel());
+        info.setVarType(variable.getVarType());
+        info.setVarTypeLabel(getVarTypeLabel(variable.getVarType()));
+        info.setVarSource(variable.getVarSource());
+        info.setVarSourceLabel(getVarSourceLabel(variable.getVarSource()));
+        info.setDefaultValue(variable.getDefaultValue());
+        info.setValueRange(variable.getValueRange());
+        info.setExampleValue(variable.getExampleValue());
+        info.setDescription(variable.getDescription());
+        info.setScriptName(variable.getScriptName());
+        return info;
+    }
+
+    private String firstNonBlank(String first, String second) {
+        return first != null && !first.isBlank() ? first : second;
+    }
+
+    private boolean openApiEnabled(String configJson) {
+        if (configJson == null || configJson.isBlank()) return false;
+        try {
+            return JSON.parseObject(configJson).getBooleanValue("enabled");
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private Map<String, Object> openApiContractProjection(String configJson) {
+        if (configJson == null || configJson.isBlank()) return Collections.emptyMap();
+        try {
+            String normalized = OpenApiContractCodec.validateAndNormalize(configJson);
+            com.alibaba.fastjson.JSONObject object = JSON.parseObject(normalized);
+            if (object == null) return Collections.emptyMap();
+            com.alibaba.fastjson.JSONObject headers = object.getJSONObject("responseHeaders");
+            if (headers != null) {
+                object.remove("responseHeaders");
+                object.put("responseHeaderNames", new ArrayList<>(headers.keySet()));
+            }
+            return new LinkedHashMap<>(object);
+        } catch (RuntimeException ignored) {
+            return Collections.emptyMap();
         }
     }
 

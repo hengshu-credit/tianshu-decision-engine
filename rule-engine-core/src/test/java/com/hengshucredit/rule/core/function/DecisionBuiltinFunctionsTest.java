@@ -52,6 +52,34 @@ public class DecisionBuiltinFunctionsTest {
     }
 
     @Test
+    public void stringFunctionsDoNotConvertNullArgumentsToEmptyStrings() {
+        try {
+            functions.strReplace("abc", "a", null);
+            org.junit.Assert.fail("null replacement must remain null and fail explicitly");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        try {
+            functions.strSplit("abc", null);
+            org.junit.Assert.fail("null delimiter must remain null and fail explicitly");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        try {
+            functions.strJoin(Arrays.asList("a"), null);
+            org.junit.Assert.fail("null delimiter must remain null and fail explicitly");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+        try {
+            functions.strReplaceLiteral("abc", "a", null);
+            org.junit.Assert.fail("null replacement must remain null and fail explicitly");
+        } catch (IllegalArgumentException expected) {
+            // expected
+        }
+    }
+
+    @Test
     public void jsonPathAndObjectFunctionsWorkForObjectsAndLargeText() {
         Map<String, Object> sample = sampleJson();
         String jsonText = JSON.toJSONString(sample);

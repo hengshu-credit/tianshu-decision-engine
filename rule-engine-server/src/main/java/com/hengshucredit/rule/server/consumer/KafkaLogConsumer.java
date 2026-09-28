@@ -3,6 +3,7 @@ package com.hengshucredit.rule.server.consumer;
 import cn.hutool.core.collection.CollUtil;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.hengshucredit.rule.server.service.RuleExecutionLogService;
+import com.hengshucredit.rule.server.service.RuleBillingService;
 import com.alibaba.fastjson.JSON;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
@@ -28,6 +29,9 @@ public class KafkaLogConsumer {
     @Resource
     private RuleExecutionLogService logService;
 
+    @Resource
+    private RuleBillingService billingService;
+
     @KafkaListener(topics = "${rule-engine.kafka.log-topic:rule-execution-log}",
                    groupId = "${spring.kafka.consumer.group-id:rule-engine-server}")
     public void onMessage(List<ConsumerRecord<String, String>> records) {
@@ -45,7 +49,10 @@ public class KafkaLogConsumer {
             }
         }
         if (CollUtil.isNotEmpty(list)) {
-            logService.saveBatch(list);
+            for (RuleExecutionLog entry : list) {
+                logService.saveLogical(entry);
+                if (billingService != null) billingService.recordEngineExecutionLog(entry);
+            }
             log.debug("Kafka log batch inserted, size={}", list.size());
         }
     }

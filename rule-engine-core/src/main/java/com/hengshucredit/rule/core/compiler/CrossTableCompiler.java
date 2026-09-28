@@ -322,7 +322,7 @@ public class CrossTableCompiler implements RuleCompiler {
             String val = c.getString("value");
             if (op == null) op = "==";
             if (val == null) {
-                sb.append("true");
+                sb.append("false");
                 continue;
             }
             String scriptName = resolveVar(varId, refType, varCode, varContext);
@@ -368,7 +368,7 @@ public class CrossTableCompiler implements RuleCompiler {
         if (op == null) op = "==";
         if ("*".equals(op)) return "true";
         String value = leaf.getString("value");
-        if (value == null || value.isEmpty()) return "true";
+        if (value == null) return "false";
         String varType = leaf.getString("varType");
         if (varType == null) varType = "STRING";
         String scriptName = resolveVar(varId, refType, varCode, varContext);

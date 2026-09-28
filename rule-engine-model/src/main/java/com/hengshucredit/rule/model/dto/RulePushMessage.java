@@ -6,6 +6,8 @@ import java.util.List;
 
 @Data
 public class RulePushMessage {
+    /** 发布操作唯一 ID；客户端用于幂等去重重复 Redis 投递。 */
+    private String operationId;
     private String ruleCode;
     private Integer version;
     private Long revisionId;

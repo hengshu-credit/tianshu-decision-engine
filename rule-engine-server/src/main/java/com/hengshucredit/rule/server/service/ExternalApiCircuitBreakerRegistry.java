@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -17,22 +18,52 @@ public class ExternalApiCircuitBreakerRegistry {
 
     private final ExternalCallProperties properties;
     private final LongSupplier currentTimeMillis;
+    private final ExternalApiCircuitBreakerDistributedStore distributedStore;
     private final LinkedHashMap<Long, CircuitState> states = new LinkedHashMap<>(16, 0.75F, true);
 
-    @Autowired
     public ExternalApiCircuitBreakerRegistry(ExternalCallProperties properties) {
-        this(properties, System::currentTimeMillis);
+        this(properties, System::currentTimeMillis,
+                (ExternalApiCircuitBreakerDistributedStore) null);
     }
 
     ExternalApiCircuitBreakerRegistry(ExternalCallProperties properties, LongSupplier currentTimeMillis) {
+        this(properties, currentTimeMillis, null);
+    }
+
+    @Autowired
+    public ExternalApiCircuitBreakerRegistry(ExternalCallProperties properties,
+                                             ObjectProvider<ExternalApiCircuitBreakerDistributedStore> storeProvider) {
+        this(properties, System::currentTimeMillis,
+                storeProvider == null ? null : storeProvider.getIfAvailable());
+    }
+
+    ExternalApiCircuitBreakerRegistry(ExternalCallProperties properties, LongSupplier currentTimeMillis,
+                                      ExternalApiCircuitBreakerDistributedStore distributedStore) {
         this.properties = properties;
         this.currentTimeMillis = currentTimeMillis;
+        this.distributedStore = distributedStore;
     }
 
     public CircuitPermit acquire(RuleExternalApiConfig config) {
         if (config == null || config.getId() == null
                 || Integer.valueOf(0).equals(config.getCircuitBreakerEnabled())) {
             return CircuitPermit.disabled();
+        }
+        if (distributedStore != null) {
+            CircuitSettings settings = CircuitSettings.from(config);
+            ExternalApiCircuitBreakerDistributedStore.AcquireResult result;
+            try {
+                result = distributedStore.acquire(config.getId(), settings.failureRate, settings.minCalls,
+                        settings.windowSize, settings.openSeconds, settings.halfOpenCalls);
+            } catch (RedisExternalApiCircuitBreakerStore.DistributedUnavailable e) {
+                throw new OpenException("UNAVAILABLE");
+            }
+            if (result == ExternalApiCircuitBreakerDistributedStore.AcquireResult.OPEN) {
+                throw new OpenException("OPEN");
+            }
+            return CircuitPermit.distributed(distributedStore, config.getId(),
+                    result == ExternalApiCircuitBreakerDistributedStore.AcquireResult.HALF_OPEN,
+                    settings, currentTimeMillis);
         }
         CircuitState state = state(config);
         return state.acquire(currentTimeMillis.getAsLong());
@@ -79,15 +110,33 @@ public class ExternalApiCircuitBreakerRegistry {
         private CircuitState state;
         private final boolean halfOpen;
         private final LongSupplier currentTimeMillis;
+        private final ExternalApiCircuitBreakerDistributedStore distributedStore;
+        private final Long apiConfigId;
+        private final CircuitSettings settings;
 
         private CircuitPermit(CircuitState state, boolean halfOpen, LongSupplier currentTimeMillis) {
+            this(state, halfOpen, currentTimeMillis, null, null, null);
+        }
+
+        private CircuitPermit(CircuitState state, boolean halfOpen, LongSupplier currentTimeMillis,
+                              ExternalApiCircuitBreakerDistributedStore distributedStore,
+                              Long apiConfigId, CircuitSettings settings) {
             this.state = state;
             this.halfOpen = halfOpen;
             this.currentTimeMillis = currentTimeMillis;
+            this.distributedStore = distributedStore;
+            this.apiConfigId = apiConfigId;
+            this.settings = settings;
         }
 
         private static CircuitPermit disabled() {
             return new CircuitPermit(null, false, System::currentTimeMillis);
+        }
+
+        private static CircuitPermit distributed(ExternalApiCircuitBreakerDistributedStore store,
+                                                 Long apiConfigId, boolean halfOpen,
+                                                 CircuitSettings settings, LongSupplier clock) {
+            return new CircuitPermit(null, halfOpen, clock, store, apiConfigId, settings);
         }
 
         public void success() {
@@ -99,14 +148,27 @@ public class ExternalApiCircuitBreakerRegistry {
         }
 
         public String getState() {
-            if (state == null) return "DISABLED";
+            if (state == null) {
+                return distributedStore == null ? "DISABLED" : (halfOpen ? "HALF_OPEN" : "CLOSED");
+            }
             return halfOpen ? "HALF_OPEN" : "CLOSED";
         }
 
         private void complete(boolean success) {
             CircuitState current = state;
-            if (current == null) return;
+            if (current == null && distributedStore == null) return;
             state = null;
+            if (distributedStore != null) {
+                try {
+                    distributedStore.record(apiConfigId, halfOpen, success, settings.failureRate,
+                            settings.minCalls, settings.windowSize, settings.openSeconds,
+                            settings.halfOpenCalls);
+                } catch (RuntimeException ignored) {
+                    // The next acquire fails closed if Redis remains unavailable; do not turn a
+                    // successful provider response into an unrelated circuit error.
+                }
+                return;
+            }
             current.record(success, halfOpen, currentTimeMillis.getAsLong());
         }
     }

@@ -165,11 +165,11 @@ public class AggregateBuiltinFunctions {
     }
 
     public boolean containsValue(Object target, Object value) {
-        if (target == null) {
+        if (target == null || value == null) {
             return false;
         }
         if (target instanceof CharSequence) {
-            return target.toString().contains(value == null ? "" : String.valueOf(value));
+            return target.toString().contains(String.valueOf(value));
         }
         if (target instanceof Map) {
             return ((Map<?, ?>) target).containsKey(value);
@@ -205,11 +205,11 @@ public class AggregateBuiltinFunctions {
     }
 
     public boolean startsWithValue(Object target, Object prefix) {
-        return target != null && String.valueOf(target).startsWith(prefix == null ? "" : String.valueOf(prefix));
+        return target != null && prefix != null && String.valueOf(target).startsWith(String.valueOf(prefix));
     }
 
     public boolean endsWithValue(Object target, Object suffix) {
-        return target != null && String.valueOf(target).endsWith(suffix == null ? "" : String.valueOf(suffix));
+        return target != null && suffix != null && String.valueOf(target).endsWith(String.valueOf(suffix));
     }
 
     public boolean hasKey(Object target, Object key) {
@@ -234,7 +234,8 @@ public class AggregateBuiltinFunctions {
     }
 
     public boolean containsElementValue(Object target, Object value) {
-        String keyword = value == null ? "" : String.valueOf(value);
+        if (value == null) return false;
+        String keyword = String.valueOf(value);
         for (Object element : normalizeToElements(target)) {
             if (element != null && String.valueOf(element).contains(keyword)) return true;
         }
@@ -242,7 +243,8 @@ public class AggregateBuiltinFunctions {
     }
 
     public boolean elementStartsWithValue(Object target, Object value) {
-        String prefix = value == null ? "" : String.valueOf(value);
+        if (value == null) return false;
+        String prefix = String.valueOf(value);
         for (Object element : normalizeToElements(target)) {
             if (element != null && String.valueOf(element).startsWith(prefix)) return true;
         }
@@ -250,7 +252,8 @@ public class AggregateBuiltinFunctions {
     }
 
     public boolean elementEndsWithValue(Object target, Object value) {
-        String suffix = value == null ? "" : String.valueOf(value);
+        if (value == null) return false;
+        String suffix = String.valueOf(value);
         for (Object element : normalizeToElements(target)) {
             if (element != null && String.valueOf(element).endsWith(suffix)) return true;
         }

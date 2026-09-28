@@ -730,6 +730,17 @@ describe('RuleTest — 执行与结果展示', () => {
     }, 180000)
   })
 
+  test('追踪入参固定为执行时快照，不随结果页编辑变化', async () => {
+    definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
+    wrapper.vm.selectedRuleId = 4
+    wrapper.vm.params = [{ key: 'age', value: '18', type: 'INTEGER' }]
+
+    await wrapper.vm.handleExecute()
+    wrapper.vm.params[0].value = '99'
+
+    expect(JSON.parse(wrapper.vm.inputParamsJson)).toEqual({ age: 18 })
+  })
+
   test('project-scoped execution sends the effective project ID', async () => {
     definitionApi.executeRule.mockResolvedValueOnce({ data: mockExecutionResult() })
     wrapper.vm.selectedRuleId = 4

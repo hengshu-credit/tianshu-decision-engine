@@ -2,6 +2,7 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
 import org.junit.Test;
 
 import java.lang.reflect.Method;
@@ -69,6 +70,21 @@ public class ExternalConfigDefaultsTest {
     }
 
     @Test
+    public void apiRequestAndAsyncModesAreNormalizedAndValidated() throws Exception {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setRequestMode(" async ");
+        config.setAsyncResultMode(" poll ");
+        config.setRequestMethod(" get ");
+        config.setAsyncPollConfig("{\"resultEndpointUrl\":\"/result/${taskId}\",\"taskIdPath\":\"body.taskId\",\"statusPath\":\"body.status\",\"successValue\":\"DONE\"}");
+
+        invokeFillDefaults(new RuleExternalApiConfigService(), config);
+
+        assertEquals("ASYNC", config.getRequestMode());
+        assertEquals("POLL", config.getAsyncResultMode());
+        assertEquals("GET", config.getRequestMethod());
+    }
+
+    @Test
     public void apiResilienceSettingsRejectUnboundedRetriesAndInvalidStatusCodes() throws Exception {
         RuleExternalApiConfig excessiveRetries = new RuleExternalApiConfig();
         excessiveRetries.setRetryCount(11);
@@ -77,6 +93,37 @@ public class ExternalConfigDefaultsTest {
         RuleExternalApiConfig invalidStatuses = new RuleExternalApiConfig();
         invalidStatuses.setRetryStatusCodes("502,not-a-status");
         assertInvalidApiConfig(invalidStatuses, "重试状态码");
+    }
+
+    @Test
+    public void apiExceptionStrategyIsNormalizedAndInvalidValuesRejected() throws Exception {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setExceptionStrategy(" use_cache ");
+        invokeFillDefaults(new RuleExternalApiConfigService(), config);
+        assertEquals("USE_CACHE", config.getExceptionStrategy());
+
+        RuleExternalApiConfig invalid = new RuleExternalApiConfig();
+        invalid.setExceptionStrategy("unknown");
+        assertInvalidApiConfig(invalid, "异常处理策略");
+    }
+
+    @Test
+    public void apiReferenceValidationRejectsCrossProjectObjects() {
+        RuleExternalApiConfig config = new RuleExternalApiConfig();
+        config.setDatasourceId(8L);
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setId(8L);
+        datasource.setProjectId(7L);
+        datasource.setScope("PROJECT");
+        datasource.setStatus(1);
+        RuleDataObject object = new RuleDataObject();
+        object.setId(9L);
+        object.setProjectId(99L);
+        object.setScope("PROJECT");
+        object.setStatus(1);
+
+        org.junit.Assert.assertThrows(IllegalArgumentException.class,
+                () -> ExternalApiConfigValidator.validateReferences(config, datasource, object, null));
     }
 
     private void assertInvalidApiConfig(RuleExternalApiConfig config, String expectedMessage) throws Exception {

@@ -153,7 +153,29 @@ function normalizeAuthentication(auth) {
   }
 }
 
+function contractPath(path) {
+  const value = text(path).trim()
+  if (!value || value === '$') return ''
+  return value.replace(/^\$\.?/, '').replace(/\['([^']+)'\]/g, '.$1').replace(/^\./, '')
+}
+
+function openApiRequestFields(contract) {
+  return arrayOf(contract && contract.requestMappings)
+    .filter(item => item && text(item.sourceType).toUpperCase() === 'BODY')
+    .map(item => ({
+      path: contractPath(item.sourcePath),
+      type: text(item.targetType) || 'STRING',
+      required: Boolean(item.required),
+      label: text(item.sourcePath),
+      description: text(item.defaultValue) ? `默认值：${item.defaultValue}` : '',
+      exampleValue: item.defaultValue ?? ''
+    }))
+    .filter(item => item.path)
+}
+
 function normalizeRule(rule) {
+  const openApiContract = rule && rule.openApiContract ? rule.openApiContract : {}
+  const openApiEnabled = Boolean(rule && rule.openApiEnabled)
   return {
     id: rule && rule.id,
     ruleCode: text(rule && rule.ruleCode),
@@ -163,9 +185,17 @@ function normalizeRule(rule) {
     description: text(rule && rule.description),
     currentVersion: rule && rule.currentVersion,
     publishedVersion: rule && rule.publishedVersion,
+    publishedRevisionId: rule && rule.publishedRevisionId,
+    publishedArtifactDigest: text(rule && rule.publishedArtifactDigest),
+    openApiEnabled,
+    openApiContract,
+    schemaTrust: text(rule && rule.schemaTrust),
+    schemaDiagnostics: arrayOf(rule && rule.schemaDiagnostics).map(item => text(item)),
+    inputSchema: rule && rule.inputSchema ? rule.inputSchema : {},
+    outputSchema: rule && rule.outputSchema ? rule.outputSchema : {},
     status: rule && rule.status,
     statusLabel: text(rule && rule.statusLabel),
-    requestFields: flattenRequestFields(rule),
+    requestFields: openApiEnabled ? openApiRequestFields(openApiContract) : flattenRequestFields(rule),
     responseFields: flattenResponseFields(rule),
     scenarios: documentedScenarios(rule)
   }

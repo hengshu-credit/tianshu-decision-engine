@@ -2,10 +2,10 @@ package com.hengshucredit.rule.server.controller.mgmt;
 
 import com.hengshucredit.rule.model.dto.ArtifactDeployRequest;
 import com.hengshucredit.rule.model.dto.ArtifactImportResult;
+import com.hengshucredit.rule.model.dto.RulePublishOutboxSummary;
 import com.hengshucredit.rule.model.entity.ArtifactDeployment;
 import com.hengshucredit.rule.model.entity.ArtifactResourceBinding;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
-import com.hengshucredit.rule.model.entity.RulePublishOutbox;
 import com.hengshucredit.rule.server.artifact.ArtifactDeploymentService;
 import com.hengshucredit.rule.server.common.R;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
@@ -53,9 +53,9 @@ public class DecisionArtifactController {
     }
 
     @GetMapping("/outbox")
-    public R<List<RulePublishOutbox>> outbox(@RequestParam Long definitionId,
+    public R<List<RulePublishOutboxSummary>> outbox(@RequestParam Long definitionId,
                                             @RequestParam(defaultValue = "50") int limit) {
-        return R.ok(outboxService.listRecent(definitionId, limit));
+        return R.ok(outboxService.listRecentSummary(definitionId, limit));
     }
 
     @GetMapping("/{artifactId:\\d+}/download")

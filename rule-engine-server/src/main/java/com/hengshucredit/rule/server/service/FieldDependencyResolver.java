@@ -207,7 +207,8 @@ public class FieldDependencyResolver {
     private RuleVariable runtimeSourceVariable(
             RuleDefinitionInputField field) {
         if (field == null || field.getVarId() == null
-                || !"VARIABLE".equalsIgnoreCase(field.getRefType())
+                || (!"VARIABLE".equalsIgnoreCase(field.getRefType())
+                && !"CONSTANT".equalsIgnoreCase(field.getRefType()))
                 || variableService == null) {
             return null;
         }
@@ -216,7 +217,7 @@ public class FieldDependencyResolver {
             return null;
         }
         String source = variable.getVarSource().trim().toUpperCase(Locale.ROOT);
-        if (!"LIST".equals(source) && !"API".equals(source)
+        if (!"CONSTANT".equals(source) && !"LIST".equals(source) && !"API".equals(source)
                 && !"DB".equals(source) && !"DERIVED".equals(source)) {
             return null;
         }

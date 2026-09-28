@@ -11,6 +11,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.Serializable;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertNotNull;
 
 public class RuleFunctionPushServiceTest {
 
@@ -31,6 +32,7 @@ public class RuleFunctionPushServiceTest {
         assertEquals(Long.valueOf(97L), function.getProjectId());
         assertEquals(RuleFunctionService.SCOPE_GLOBAL, message.getScope());
         assertEquals(null, message.getProjectCode());
+        assertNotNull(message.getOperationId());
     }
 
     @Test

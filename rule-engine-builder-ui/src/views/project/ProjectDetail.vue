@@ -467,7 +467,7 @@ import {
   deleteDefinition,
   deleteProjectBinding,
 } from '@/api/definition'
-import { getProject, getProjectWorkbench } from '@/api/project'
+import { getProject, getProjectWorkbench, retryRuleWarmup } from '@/api/project'
 import request from '@/api/request'
 import { restorePageState, savePageState } from '@/utils/pageStateCache'
 import ProjectWorkbenchOverview from '@/components/ProjectWorkbenchOverview.vue'
@@ -560,7 +560,7 @@ export default {
         if (requestId === this.workbenchRequestId) this.workbenchLoading = false
       }
     },
-    openWorkbenchAction(item) {
+    async openWorkbenchAction(item) {
       if (!item || !item.actionCode) return
       if (!canUseWorkbenchAction(item.actionCode)) {
         this.$message.warning('当前账号没有对应模块的访问权限，请联系项目管理员')
@@ -568,6 +568,16 @@ export default {
       }
       if (item.actionCode === 'REFRESH_WORKBENCH') {
         this.loadWorkbench()
+        return
+      }
+      if (item.actionCode === 'RETRY_WARMUP') {
+        try {
+          await retryRuleWarmup()
+          this.$message.success('规则预热已重新开始，请稍后刷新状态')
+          await this.loadWorkbench()
+        } catch (error) {
+          this.$message.error(error.message || '规则预热重试失败')
+        }
         return
       }
       const path = workbenchActionRoute(item.actionCode)

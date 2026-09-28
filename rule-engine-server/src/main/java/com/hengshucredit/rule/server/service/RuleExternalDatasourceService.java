@@ -75,13 +75,19 @@ public class RuleExternalDatasourceService extends ServiceImpl<RuleExternalDatas
 
     private void fillDefaults(RuleExternalDatasource datasource) {
         if (!hasText(datasource.getScope())) {
-            datasource.setScope(RuleVariableService.SCOPE_PROJECT);
+            datasource.setScope(datasource.getProjectId() != null && datasource.getProjectId() > 0
+                    ? RuleVariableService.SCOPE_PROJECT : RuleVariableService.SCOPE_GLOBAL);
         }
-        if (RuleVariableService.SCOPE_GLOBAL.equals(datasource.getScope())) {
-            datasource.setProjectId(0L);
+        String scope = datasource.getScope().trim().toUpperCase(Locale.ROOT);
+        if (!RuleVariableService.SCOPE_GLOBAL.equals(scope)
+                && !RuleVariableService.SCOPE_PROJECT.equals(scope)) {
+            throw new IllegalArgumentException("数据源作用域只能是GLOBAL或PROJECT");
         }
-        if (datasource.getProjectId() == null) {
+        datasource.setScope(scope);
+        if (RuleVariableService.SCOPE_GLOBAL.equals(scope)) {
             datasource.setProjectId(0L);
+        } else if (datasource.getProjectId() == null || datasource.getProjectId() <= 0) {
+            throw new IllegalArgumentException("项目级数据源必须选择所属项目");
         }
         if (!hasText(datasource.getProtocol())) {
             datasource.setProtocol("HTTP");

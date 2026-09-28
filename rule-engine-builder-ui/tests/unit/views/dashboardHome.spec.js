@@ -3,6 +3,7 @@ import { mount, shallowMount } from '@test-utils'
 import * as dashboardApi from '@/api/dashboard'
 import * as definitionApi from '@/api/definition'
 import * as projectApi from '@/api/project'
+import * as runtimeLogApi from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import DashboardHome from '@/views/dashboard/DashboardHome.vue'
 import { DASHBOARD_MAP_VIEW_KEY } from '@/utils/dashboardFilters'
@@ -10,7 +11,7 @@ import { CHINA_MAP_BOUNDS } from '@/utils/dashboardMapLayers'
 
 const chinaMap = { type: 'FeatureCollection', features: [{
   type: 'Feature', properties: { shapeID: '156710000', shapeName: '台湾省' },
-  geometry: { type: 'Polygon', coordinates: [[[120, 22], [122, 22], [122, 25], [120, 22]]] }
+  geometry: { type: 'Polygon', coordinates: [[[70, 0], [140, 0], [140, 60], [70, 60], [70, 0]]] }
 }] }
 
 function applications() {
@@ -41,6 +42,13 @@ describe('DashboardHome', () => {
     dashboardApi.getDashboardApplications.mockResolvedValue({ data: applications() })
     dashboardApi.getDashboardOperations.mockResolvedValue({ data: {} })
     dashboardApi.getDashboardGovernance.mockResolvedValue({ data: {} })
+    runtimeLogApi.getExecutionMetrics.mockResolvedValue({ data: {
+      persistence: { queueDepth: 2, queueCapacity: 20, fallback: 0, failed: 0, avgWriteMs: 3 },
+      sourceResolution: { queueDepth: 0, active: 1, parallelism: 4, failed: 0 },
+      openExecution: { queueDepth: 0, queueCapacity: 100, rejected: 0, timedOut: 0 },
+      externalCircuitBreakers: { registeredApis: 1, open: 0, halfOpen: 0, closed: 1 },
+      ruleWarmup: { state: 'READY', targetCount: 4, preparedCount: 4, failureCount: 0 }
+    } })
     vi.stubGlobal('fetch', vi.fn().mockImplementation(async url => ({
       ok: true,
       json: () => Promise.resolve(url.includes('dashboard-china') ? chinaMap : { type: 'FeatureCollection', features: [] })
@@ -59,6 +67,7 @@ describe('DashboardHome', () => {
     expect(dashboardApi.getDashboardApplications).toHaveBeenCalledOnce()
     expect(dashboardApi.getDashboardOperations).toHaveBeenCalledOnce()
     expect(dashboardApi.getDashboardGovernance).toHaveBeenCalledOnce()
+    expect(wrapper.findComponent({ name: 'ExecutionMetricsPanel' }).exists()).toBe(true)
     expect(wrapper.vm.summary.applicationCount).toBe(12)
     expect(wrapper.findAllComponents({ name: 'MetricCard' })
       .some(card => card.props('label') === '进件数')).toBe(true)
@@ -79,6 +88,7 @@ describe('DashboardHome', () => {
     })
     await flushPromises()
 
+    expect(runtimeLogApi.getExecutionMetrics).toHaveBeenCalledOnce()
     expect(wrapper.find('.dashboard-metrics').text()).toContain('进件数')
     expect(wrapper.find('.dashboard-metrics').text()).toContain('12')
     wrapper.unmount()
@@ -314,6 +324,64 @@ describe('DashboardHome', () => {
     expect(wrapper.vm.geoOption.geo.center).toEqual([104, 35])
     expect(wrapper.vm.geoOption.geo.zoom).toBe(1.5)
     expect(wrapper.vm.mapReady).toBe(true)
+    wrapper.unmount()
+  })
+
+  test('点击行政区只加载所选区域的下一级，并过滤边界外热力点', async () => {
+    const catalog = { countries: [{ code: 'USA', name: '美国', layers: [
+      { level: 'ADM1', year: '2018', url: '/usa-states.json' },
+      { level: 'ADM2', year: '2018', url: '/usa-counties.json' }
+    ] }] }
+    const world = { type: 'FeatureCollection', features: [{
+      type: 'Feature', properties: { NAME_ZH: '美国', ADM0_A3: 'USA' },
+      geometry: { type: 'Polygon', coordinates: [[[-100, 0], [-80, 0], [-80, 30], [-100, 30], [-100, 0]]] }
+    }] }
+    const rectangle = (id, name, west, south, east, north) => ({
+      type: 'Feature',
+      properties: { shapeID: id, shapeName: name },
+      geometry: { type: 'Polygon', coordinates: [[[west, south], [east, south], [east, north], [west, north], [west, south]]] }
+    })
+    const states = { type: 'FeatureCollection', features: [
+      rectangle('state-1', '州一', -100, 0, -90, 20),
+      rectangle('state-2', '州二', -90, 0, -80, 20)
+    ] }
+    const counties = { type: 'FeatureCollection', features: [
+      rectangle('county-1', '县一', -100, 0, -95, 10),
+      rectangle('county-2', '县二', -90, 0, -85, 10)
+    ] }
+    fetch.mockImplementation(async url => ({ ok: true, json: async () => {
+      if (url.includes('dashboard-boundaries')) return catalog
+      if (url.includes('dashboard-world')) return world
+      if (url.includes('usa-states')) return states
+      if (url.includes('usa-counties')) return counties
+      return chinaMap
+    } }))
+    const wrapper = mount(DashboardHome, { global: { stubs: { DashboardChart: true } } })
+    await flushPromises()
+    await wrapper.vm.changeMapCountry('')
+    await flushPromises()
+    const map = wrapper.findAllComponents({ name: 'DashboardChart' })
+      .find(chart => chart.props('ariaLabel') === '进件地图热力图')
+    map.vm.$emit('region-click', '美国')
+    await flushPromises()
+    await wrapper.vm.openMapCountry('state-1')
+    await flushPromises()
+
+    expect(wrapper.vm.mapLevel).toBe('ADM2')
+    expect(wrapper.vm.mapRegionPathLabel).toBe('州一')
+    expect(Object.keys(wrapper.vm.mapFeatureIndex)).toEqual(['county-1'])
+    wrapper.vm.sections.applications.data.geo = {
+      points: [
+        { longitude: -98, latitude: 5, count: 2 },
+        { longitude: -87, latitude: 5, count: 3 }
+      ]
+    }
+    await wrapper.vm.$nextTick()
+    expect(wrapper.vm.geoOption.series[0].data).toEqual([[-98, 5, 2]])
+    await wrapper.vm.drillUpMap()
+    await flushPromises()
+    expect(wrapper.vm.mapLevel).toBe('ADM1')
+    expect(wrapper.vm.mapRegionPath).toHaveLength(0)
     wrapper.unmount()
   })
 

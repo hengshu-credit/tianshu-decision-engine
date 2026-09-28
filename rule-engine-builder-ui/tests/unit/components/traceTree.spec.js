@@ -193,6 +193,67 @@ function compiledRuleTrace(code, index, predicate, mode = 'PARALLEL', evaluated 
 }
 
 describe('TraceTree', () => {
+  test('外数模块追踪展示从入参到引擎赋值的阶段链', () => {
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify({
+        schemaVersion: 2,
+        traceKind: 'RULE',
+        traceId: 'RT001',
+        ruleCode: 'demo',
+        modelType: 'SCRIPT',
+        events: [{
+          type: 'MODULE_CALL',
+          traceId: 'DS001',
+          moduleType: 'DATASOURCE',
+          resourceCode: 'credit_api',
+          status: 'SUCCESS',
+          traceSteps: [
+            { sequence: 1, type: 'REQUEST_INPUT', label: '规则/变量入参', status: 'SUCCESS', input: { id: 'masked' } },
+            { sequence: 2, type: 'AUTHENTICATION', label: '外数鉴权（已脱敏）', status: 'SUCCESS', output: { headers: { Authorization: 'Bearer ****' } } },
+            { sequence: 3, type: 'ENGINE_ASSIGNMENT', label: '引擎变量和对象赋值', status: 'SUCCESS', output: { mappingCount: 1 } }
+          ]
+        }]
+      })
+    })
+
+    expect(wrapper.vm.moduleTraceSteps(wrapper.vm.ruleModuleEvents[0])).toHaveLength(3)
+    const trace = wrapper.findComponent({ name: 'ExternalCallTrace' })
+    expect(trace.exists()).toBe(true)
+    expect(trace.props('steps')).toHaveLength(3)
+    expect(trace.props('steps')[2].label).toBe('引擎变量和对象赋值')
+    expect(trace.props('steps')[1].output.headers.Authorization).toBe('Bearer ****')
+  })
+
+  test('只有缓存复用的外数赋值事件时按 callId 补出模块阶段链', () => {
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify({
+        schemaVersion: 2,
+        traceKind: 'RULE',
+        traceId: 'RT-CACHE',
+        events: [
+          { type: 'EXTERNAL_ASSIGNMENT', callId: 'call-cache', traceId: 'DS-CACHE', sequence: 1, label: '缓存外数结果赋值', status: 'SUCCESS', value: 0, targetPath: 'score' },
+          { type: 'EXTERNAL_ASSIGNMENT', callId: 'call-cache', traceId: 'DS-CACHE', sequence: 1, label: '缓存外数结果赋值', status: 'SUCCESS', value: false, targetPath: 'flag' },
+        ],
+      }),
+    })
+
+    expect(wrapper.vm.ruleModuleEvents).toHaveLength(1)
+    const event = wrapper.vm.ruleModuleEvents[0]
+    expect(event.synthetic).toBe(true)
+    expect(event.callId).toBe('call-cache')
+    expect(wrapper.vm.moduleTraceSteps(event)).toHaveLength(2)
+    expect(wrapper.findComponent({ name: 'ExternalCallTrace' }).props('steps').map(step => step.value)).toEqual([0, false])
+  })
+
+  test('持久化追踪截断标记显示可解释提示而不是空追踪树', () => {
+    const wrapper = mountTraceTree({
+      traceInfo: JSON.stringify({ truncated: true, originalBytes: 2048, maxBytes: 1024 })
+    })
+
+    expect(wrapper.vm.traceTruncated).toBe(true)
+    expect(wrapper.text()).toContain('表达式追踪已截断')
+    expect(wrapper.text()).toContain('持久化内容超过大小上限')
+  })
   test('默认表达式追踪按顶层语句拆成纵向步骤', () => {
     const wrapper = mountTraceTree({
       traceInfo: JSON.stringify([

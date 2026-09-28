@@ -44,4 +44,10 @@ public class RuleDefinition {
     /** 当前项目与全局规则的关联记录 ID；项目自有规则为空。 */
     @TableField(exist = false)
     private Long projectBindingId;
+
+    /** 当前一次运行的根 Trace，仅在运行时传递给计费，不落规则定义表。 */
+    @TableField(exist = false)
+    private String executionTraceId;
+    @TableField(exist = false)
+    private Integer executionAttemptNo;
 }

@@ -33,6 +33,7 @@ import com.hengshucredit.rule.server.mapper.RuleModelOutputFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import com.hengshucredit.rule.server.service.RuleExternalApiConfigService;
 import com.hengshucredit.rule.server.mapper.RuleVariableOptionMapper;
 import com.hengshucredit.rule.server.service.RuleLifecycleService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
@@ -85,23 +86,19 @@ public class GovernanceResourceAdapterConfiguration {
     @Bean
     public GovernedResourceAdapter externalDatasourceGovernanceAdapter(
             RuleExternalDatasourceMapper mapper,
-            GovernanceSecretCodec secretCodec) {
-        return adapter(GovernanceResourceTypes.EXTERNAL_DATASOURCE,
-                RuleExternalDatasource.class, mapper,
-                RuleExternalDatasource::getId,
-                RuleExternalDatasource::setId,
-                RuleExternalDatasource::getStatus,
-                RuleExternalDatasource::setStatus,
-                Set.of("datasourceCode", "datasourceName",
-                        "protocol"),
-                Set.of("authConfig"), secretCodec);
+            GovernanceSecretCodec secretCodec,
+            RuleExternalApiConfigService apiConfigService) {
+        return new ExternalDatasourceGovernedResourceAdapter(store(mapper), apiConfigService, secretCodec);
     }
 
     @Bean
     public GovernedResourceAdapter externalApiGovernanceAdapter(
             RuleExternalApiConfigMapper mapper,
-            GovernanceSecretCodec secretCodec) {
-        return new ExternalApiGovernedResourceAdapter(store(mapper), secretCodec);
+            GovernanceSecretCodec secretCodec,
+            RuleExternalDatasourceMapper datasourceMapper,
+            RuleDataObjectMapper dataObjectMapper) {
+        return new ExternalApiGovernedResourceAdapter(store(mapper), secretCodec,
+                datasourceMapper, dataObjectMapper);
     }
 
     @Bean

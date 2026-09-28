@@ -31,6 +31,8 @@ public class RuleExternalApiConfig {
     private String bodyTemplate;
     private String requestScript;
     private String responseScript;
+    /** API 请求/响应诊断报文留存策略 JSON；仅影响分析副本，不改变规则执行结果。 */
+    private String payloadCaptureConfig;
     private String authMode;
     private String authApiConfig;
     private Integer tokenCacheSeconds;

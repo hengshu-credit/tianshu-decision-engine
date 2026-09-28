@@ -16,6 +16,7 @@ import org.slf4j.LoggerFactory;
 import java.util.Collections;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,8 +26,21 @@ public class QLExpressEngine {
     private static final Logger log = LoggerFactory.getLogger(QLExpressEngine.class);
 
     private static final int MAX_PREPARED_SCRIPTS = 1024;
-    private static final QLOptions NORMAL_OPTIONS = QLOptions.builder().traceExpression(false).build();
-    private static final QLOptions TRACE_OPTIONS = QLOptions.builder().traceExpression(true).build();
+    /*
+     * Keep QLExpress' null-pointer protection disabled deliberately.  With
+     * avoidNullPointer=true, an unknown function or a null field access can be
+     * converted to a silent null result, which hides a bad rule/function
+     * configuration.  Missing values are handled only by the registered
+     * comparison operators and by the function implementation itself.
+     */
+    private static final QLOptions NORMAL_OPTIONS = QLOptions.builder()
+            .traceExpression(false)
+            .avoidNullPointer(false)
+            .build();
+    private static final QLOptions TRACE_OPTIONS = QLOptions.builder()
+            .traceExpression(true)
+            .avoidNullPointer(false)
+            .build();
     private final Express4Runner runner;
     private final Map<String, PreparedEntry> preparedScripts = new ConcurrentHashMap<>();
     // Guarded by preparedScripts; cache hits only set the entry's second-chance bit.
@@ -38,11 +52,21 @@ public class QLExpressEngine {
                 .securityStrategy(QLExpressScriptSecurity.standardFunctionWhitelist())
                 .build());
         AggregateBuiltinFunctionRegistry.register(this.runner);
+        MissingValueOperators.register(this.runner);
+        registerDecisionTableFunctions();
     }
 
     public QLExpressEngine(InitOptions initOptions) {
         this.runner = new Express4Runner(initOptions);
         AggregateBuiltinFunctionRegistry.register(this.runner);
+        MissingValueOperators.register(this.runner);
+        registerDecisionTableFunctions();
+    }
+
+    private void registerDecisionTableFunctions() {
+        runner.addFunction("UNIQUE_HIT_POLICY_MATCHED_MULTIPLE_RULES", (Runnable) () -> {
+            throw new IllegalStateException("UNIQUE hit policy matched multiple rules");
+        });
     }
 
     /** Parse, bind and collect static checks once. The cache is local to this runner and bounded. */
@@ -56,9 +80,10 @@ public class QLExpressEngine {
             PreparedScript prepared;
             try {
                 LoadedParseCache loaded = runner.loadSerializableCache(runner.parseToSerializableCache(script));
-                prepared = new PreparedScript(this, loaded, ScriptStaticChecks.assignmentRoots(runner, script), null);
+                prepared = new PreparedScript(this, loaded, ScriptStaticChecks.assignmentRoots(runner, script),
+                        Collections.unmodifiableSet(new LinkedHashSet<>(runner.getOutFunctions(script))), null);
             } catch (RuntimeException invalid) {
-                prepared = new PreparedScript(this, null, Collections.emptySet(), invalid);
+                prepared = new PreparedScript(this, null, Collections.emptySet(), Collections.emptySet(), invalid);
             }
             if (preparedScripts.size() >= MAX_PREPARED_SCRIPTS) {
                 // Scan at most one rotation, even when every entry is concurrently accessed.
@@ -120,7 +145,8 @@ public class QLExpressEngine {
         long start = System.currentTimeMillis();
         boolean protectConstants = request.containsRegisteredConstants(context);
         int runtimeWriteMarker = request.beginRuntimeWriteScope();
-        try (RuntimeContextBridge.ContextScope ignored = RuntimeContextBridge.install(request)) {
+        try (RuntimeContextBridge.ContextScope ignored = RuntimeContextBridge.install(request);
+             RequestContext.ExecutionContextScope executionScope = request.bindExecutionContext(context)) {
             if (prepared == null) prepared = prepare(source);
             if (prepared.owner != this) throw new IllegalArgumentException("预编译脚本不能跨执行器复用");
             // Runtime policy check against precomputed targets; no source scanning on execution.
@@ -159,14 +185,21 @@ public class QLExpressEngine {
         private final QLExpressEngine owner;
         private final LoadedParseCache loaded;
         private final Set<String> assignmentRoots;
+        private final Set<String> functionNames;
         private final RuntimeException preparationFailure;
 
         private PreparedScript(QLExpressEngine owner, LoadedParseCache loaded, Set<String> assignmentRoots,
-                               RuntimeException preparationFailure) {
+                               Set<String> functionNames, RuntimeException preparationFailure) {
             this.owner = owner;
             this.loaded = loaded;
             this.assignmentRoots = assignmentRoots;
+            this.functionNames = functionNames;
             this.preparationFailure = preparationFailure;
+        }
+
+        /** 准备阶段提取的外部/自定义函数名，执行阶段不再重新解析脚本。 */
+        public Set<String> functionNames() {
+            return functionNames;
         }
 
         private PreparedScript requireValid() {

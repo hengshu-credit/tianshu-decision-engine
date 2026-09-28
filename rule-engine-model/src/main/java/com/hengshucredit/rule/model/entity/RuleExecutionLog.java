@@ -20,6 +20,7 @@ public class RuleExecutionLog {
     private Integer ruleVersion;
     private Long revisionId;
     private String artifactDigest;
+    private Integer attemptNo;
     private String modelType;
     private String source;
     private String clientAppName;

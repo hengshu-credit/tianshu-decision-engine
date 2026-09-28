@@ -69,6 +69,12 @@
         </div>
       </section>
 
+      <resource-preflight-panel
+        resource-type="EXTERNAL_API"
+        :resource-id="form.id"
+        :config-signature="preflightConfigSignature"
+      />
+
       <div class="basic-panel">
         <div class="panel-heading">
           <div>
@@ -299,6 +305,26 @@
                     active-text="记录获取/刷新" /></el-form-item
               ></el-col>
             </el-row>
+            <el-alert
+              type="info"
+              :closable="false"
+              show-icon
+              class="non-json-policy-alert"
+            >
+              <template #default>
+                非 JSON 鉴权参数缺失时，默认按兼容逻辑发送空字符串；可改为省略字段或直接报错。字符串内容（如 None、na）不会被改写。
+              </template>
+            </el-alert>
+            <el-form-item label="非 JSON 鉴权缺失策略">
+              <el-select v-model="nonJsonNullPolicy.auth" style="width: 280px">
+                <el-option
+                  v-for="item in nonJsonAuthPolicyOptions"
+                  :key="`auth-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
 
             <el-form-item v-if="form.tokenRefreshOnUnauthorized === 1" label="Token失效条件">
               <el-radio-group v-model="tokenFailureMode">
@@ -475,7 +501,11 @@
                   </el-form-item>
                 </el-col>
                 <el-col :lg="8" :md="24">
-                  <el-form-item label="Token Header名称">
+                  <el-form-item
+                    label="Token Header名称"
+                    label-width="140px"
+                    class="token-header-name-item"
+                  >
                     <el-input
                       v-model="apiAuthConfig.tokenHeaderName"
                       placeholder="默认 Authorization；冰鉴填写 token_id"
@@ -486,7 +516,7 @@
                   <el-form-item label="Token前缀">
                     <el-input
                       v-model="apiAuthConfig.tokenPrefix"
-                      placeholder="默认 Bearer；冰鉴留空"
+                      placeholder="默认无前缀，可填写 Bearer 或其他内容（空格会保留）"
                     />
                   </el-form-item>
                 </el-col>
@@ -723,7 +753,8 @@
             </el-row>
             <div class="field-help script-function-help">
               可用函数：apiMd5/apiSha1/apiSha256/apiSm3、apiHmacSha1Base64/apiHmacSha256Base64、apiHmacSha1Base64Key/apiHmacSha256Base64Key、apiSortedKeyValue、apiTripleDesEncryptBase64/apiTripleDesDecryptBase64、apiRsaEncryptBase64/apiRsaSignBase64、apiRandomBase64、apiUrlEncode、apiBase64Encode/apiBase64Decode、apiTimestamp/apiTimestampMillis/apiUuid32、apiPut/apiRemove。请求与响应可通过
-              state 共享仅本次调用有效的临时值。
+              state 共享仅本次调用有效的临时值；报文留存选择 PROCESSED 时，可显式设置
+              state.logRequestBody 或 state.logResponseBody 留存中间明文。
             </div>
           </div>
         </el-tab-pane>
@@ -745,6 +776,18 @@
               <el-button size="small" :icon="ElIconPlus" @click="addHeaderRow"
                 >添加 Header</el-button
               >
+            </div>
+            <div class="non-json-policy-line">
+              <span>缺失值策略</span>
+              <el-select v-model="nonJsonNullPolicy.header" size="small" style="width: 220px">
+                <el-option
+                  v-for="item in nonJsonPolicyOptions"
+                  :key="`header-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <span class="field-help">默认省略缺失 Header；仅影响缺失值，不改写 None、na 等字符串。</span>
             </div>
             <el-table
               :data="headerRows"
@@ -801,6 +844,18 @@
               <el-button size="small" :icon="ElIconPlus" @click="addQueryRow"
                 >添加 Query</el-button
               >
+            </div>
+            <div class="non-json-policy-line">
+              <span>缺失值策略</span>
+              <el-select v-model="nonJsonNullPolicy.query" size="small" style="width: 220px">
+                <el-option
+                  v-for="item in nonJsonQueryPolicyOptions"
+                  :key="`query-${item.value}`"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+              <span class="field-help">默认省略缺失 Query，显式 null 按当前逻辑保留；也可改为空字符串、全部省略或报错。</span>
             </div>
             <el-table :data="queryRows" border size="small" class="config-table">
               <el-table-column label="参数名" min-width="180">
@@ -862,6 +917,19 @@
                     的字段；右侧入参路径是规则引擎已有变量。填写任意一边时，另一边会按同名字段自动补齐。
                   </div>
                   <div>
+                    <el-select
+                      v-model="requestNullPolicy"
+                      size="small"
+                      style="width: 220px; margin-right: 8px"
+                      @change="syncRequestJsonFromRows"
+                    >
+                      <el-option
+                        v-for="item in requestNullPolicyOptions"
+                        :key="item.value"
+                        :label="item.label"
+                        :value="item.value"
+                      />
+                    </el-select>
                     <el-button
                       size="small"
                       :disabled="requestFieldOptions.length === 0"
@@ -1776,6 +1844,162 @@
         </el-tab-pane>
 
         <el-tab-pane
+          v-if="isConfigTabVisible('payloadCapture')"
+          label="报文留存"
+          name="payloadCapture"
+        >
+          <div class="tab-section payload-capture-section" data-testid="payload-capture-tab">
+            <el-alert
+              type="info"
+              :closable="false"
+              show-icon
+              title="只影响调用日志留存和提供给外部分析系统的副本，不改变实时规则结果。"
+            >
+              <template #default>
+                复杂脚本如需留存中间明文，请在脚本中显式设置
+                <code>state.logRequestBody</code> 或
+                <code>state.logResponseBody</code>；选择 PROCESSED 不会额外执行解密脚本。
+              </template>
+            </el-alert>
+            <el-alert
+              v-if="payloadCaptureError"
+              class="payload-capture-warning"
+              type="warning"
+              :closable="false"
+              show-icon
+              :title="payloadCaptureError + '，当前已使用安全默认值。'"
+            />
+            <el-row :gutter="12" class="payload-capture-grid">
+              <el-col :lg="12" :md="24">
+                <div class="config-card payload-capture-card">
+                  <div class="section-title">请求报文</div>
+                  <div class="field-help">
+                    选择留存实际发送内容，或脚本显式写入 state.logRequestBody 的处理中间副本。
+                  </div>
+                  <el-form-item label="留存来源">
+                    <el-radio-group v-model="payloadCapture.request.source" size="small">
+                      <el-radio-button value="ORIGINAL">实际发送内容</el-radio-button>
+                      <el-radio-button value="PROCESSED">处理中间副本</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="保留供应商原文">
+                    <el-switch v-model="payloadCapture.request.saveOriginal" active-text="保留" inactive-text="不保留" />
+                    <div class="field-help">关闭后只保存处理副本；解密或留存处理失败时系统仍会保留原文并标记原因。</div>
+                  </el-form-item>
+                  <el-form-item label="留存解密副本">
+                    <el-switch v-model="payloadCapture.request.decrypt.enabled" active-text="启用" inactive-text="关闭" />
+                    <el-select v-if="payloadCapture.request.decrypt.enabled" v-model="payloadCapture.request.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
+                      <el-option label="Base64 解码" value="BASE64" />
+                      <el-option label="3DES Base64 解密" value="TRIPLE_DES_BASE64" />
+                    </el-select>
+                  </el-form-item>
+                  <template v-if="payloadCapture.request.decrypt.enabled">
+                    <el-form-item label="解密路径">
+                      <el-input v-model="payloadCapture.request.decrypt.path" placeholder="$ 或 $.payload" />
+                    </el-form-item>
+                    <el-form-item v-if="payloadCapture.request.decrypt.mode === 'TRIPLE_DES_BASE64'" label="密钥变量名">
+                      <el-input v-model="payloadCapture.request.decrypt.keyVariable" placeholder="脚本变量中的密钥名，如 desKey" />
+                    </el-form-item>
+                  </template>
+                  <el-form-item label="排除路径">
+                    <div class="payload-path-list">
+                      <div
+                        v-for="(path, index) in payloadCapture.request.excludePaths"
+                        :key="`request-path-${index}`"
+                        class="payload-path-row"
+                      >
+                        <el-input
+                          v-model="payloadCapture.request.excludePaths[index]"
+                          placeholder="如 $.items[*].base64 或 $['含点.字段']"
+                        />
+                        <el-button link size="small" class="btn-delete" @click="removePayloadCapturePath('request', index)">删除</el-button>
+                      </div>
+                      <el-button size="small" @click="addPayloadCapturePath('request')">添加路径</el-button>
+                      <div class="field-help">每行填写一个 JSONPath；保留原大小写，支持 $.x、[0]、[*] 和 ['含点.字段']。</div>
+                    </div>
+                  </el-form-item>
+                  <el-form-item label="单字段上限（字节）">
+                    <el-input-number
+                      v-model="payloadCapture.request.maxFieldBytes"
+                      :min="0"
+                      :max="maxPayloadCaptureFieldBytes"
+                      :step="1024"
+                      controls-position="right"
+                      style="width: 180px"
+                    />
+                    <div class="field-help">超过该值自动省略；填写 0 关闭限制，最大 50 MiB。</div>
+                  </el-form-item>
+                </div>
+              </el-col>
+              <el-col :lg="12" :md="24">
+                <div class="config-card payload-capture-card">
+                  <div class="section-title">响应报文</div>
+                  <div class="field-help">
+                    选择供应商原始内容，或 responseScript 后、responseMapping 前的处理中间副本。
+                  </div>
+                  <el-form-item label="留存来源">
+                    <el-radio-group v-model="payloadCapture.response.source" size="small">
+                      <el-radio-button value="ORIGINAL">原始内容</el-radio-button>
+                      <el-radio-button value="PROCESSED">处理中间副本</el-radio-button>
+                    </el-radio-group>
+                  </el-form-item>
+                  <el-form-item label="保留供应商原文">
+                    <el-switch v-model="payloadCapture.response.saveOriginal" active-text="保留" inactive-text="不保留" />
+                    <div class="field-help">关闭后可避免保存大型 Base64/密文原文；解密失败会强制留存并标明回退原因。</div>
+                  </el-form-item>
+                  <el-form-item label="留存解密副本">
+                    <el-switch v-model="payloadCapture.response.decrypt.enabled" active-text="启用" inactive-text="关闭" />
+                    <el-select v-if="payloadCapture.response.decrypt.enabled" v-model="payloadCapture.response.decrypt.mode" size="small" style="width: 170px; margin-left: 8px">
+                      <el-option label="Base64 解码" value="BASE64" />
+                      <el-option label="3DES Base64 解密" value="TRIPLE_DES_BASE64" />
+                    </el-select>
+                  </el-form-item>
+                  <template v-if="payloadCapture.response.decrypt.enabled">
+                    <el-form-item label="解密路径">
+                      <el-input v-model="payloadCapture.response.decrypt.path" placeholder="$ 或 $.payload" />
+                    </el-form-item>
+                    <el-form-item v-if="payloadCapture.response.decrypt.mode === 'TRIPLE_DES_BASE64'" label="密钥变量名">
+                      <el-input v-model="payloadCapture.response.decrypt.keyVariable" placeholder="脚本变量中的密钥名，如 desKey" />
+                    </el-form-item>
+                  </template>
+                  <div v-if="payloadCapture.response.source === 'PROCESSED' && !String(form.responseScript || '').trim()" class="field-help payload-capture-warning">
+                    当前未配置响应后置脚本，仍可选择 PROCESSED；留存内容将依赖脚本显式写入 state.logResponseBody。
+                  </div>
+                  <el-form-item label="排除路径">
+                    <div class="payload-path-list">
+                      <div
+                        v-for="(path, index) in payloadCapture.response.excludePaths"
+                        :key="`response-path-${index}`"
+                        class="payload-path-row"
+                      >
+                        <el-input
+                          v-model="payloadCapture.response.excludePaths[index]"
+                          placeholder="如 $.items[*].base64 或 $['含点.字段']"
+                        />
+                        <el-button link size="small" class="btn-delete" @click="removePayloadCapturePath('response', index)">删除</el-button>
+                      </div>
+                      <el-button size="small" @click="addPayloadCapturePath('response')">添加路径</el-button>
+                      <div class="field-help">每行填写一个 JSONPath；保留原大小写，支持 $.x、[0]、[*] 和 ['含点.字段']。</div>
+                    </div>
+                  </el-form-item>
+                  <el-form-item label="单字段上限（字节）">
+                    <el-input-number
+                      v-model="payloadCapture.response.maxFieldBytes"
+                      :min="0"
+                      :max="maxPayloadCaptureFieldBytes"
+                      :step="1024"
+                      controls-position="right"
+                      style="width: 180px"
+                    />
+                    <div class="field-help">超过该值自动省略；填写 0 关闭限制，最大 50 MiB。</div>
+                  </el-form-item>
+                </div>
+              </el-col>
+            </el-row>
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane
           v-if="isConfigTabVisible('test')"
           label="接口测试"
           name="test"
@@ -1821,6 +2045,17 @@
                 >
               </div>
             </div>
+            <el-alert
+              class="invoke-risk-notice"
+              type="warning"
+              :closable="false"
+              show-icon
+            >
+              <template #default>
+                <strong>执行测试会真实访问外部接口，可能产生供应商费用或触发业务副作用。</strong>
+                <span>仅检查报文时请使用“生成请求预览”，预览不会访问外部地址。</span>
+              </template>
+            </el-alert>
             <el-form-item label="预览Token">
               <el-input
                 v-model="previewToken"
@@ -1868,7 +2103,15 @@
 
 <script>
 import workspaceTabTitleMixin from '@/mixins/workspaceTabTitleMixin'
-import { ASYNC_REQUEST_KEYS, parseAsyncRequest, validateAsyncApi } from '@/utils/externalApiConfig'
+import {
+  ASYNC_REQUEST_KEYS,
+  emptyPayloadCaptureConfig,
+  MAX_PAYLOAD_CAPTURE_FIELD_BYTES,
+  parseAsyncRequest,
+  parsePayloadCaptureConfig,
+  stringifyPayloadCaptureConfig,
+  validateAsyncApi,
+} from '@/utils/externalApiConfig'
 import { markRaw } from 'vue'
 import { Plus as ElIconPlus } from '@element-plus/icons-vue'
 import {
@@ -1881,6 +2124,7 @@ import {
 } from '@/api/datasource'
 import { getVariableTree, listDataObjects } from '@/api/dataObject'
 import ResponseConditionTreeEditor from '@/components/common/ResponseConditionTreeEditor.vue'
+import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ConditionGroupEditor from '@/components/decision/ConditionGroupEditor.vue'
 import MonacoEditor from '@/components/MonacoEditor'
 import {
@@ -1918,7 +2162,7 @@ export default {
         {
           name: 'business',
           label: '业务配置',
-          help: '鉴权、请求、响应和测试',
+          help: '鉴权、请求、响应、报文留存和测试',
         },
         {
           name: 'reliability',
@@ -1937,6 +2181,7 @@ export default {
         { name: 'query', group: 'business' },
         { name: 'request', group: 'business' },
         { name: 'response', group: 'business' },
+        { name: 'payloadCapture', group: 'business' },
         { name: 'test', group: 'business' },
         { name: 'connection', group: 'reliability' },
         { name: 'async', group: 'reliability', asyncOnly: true },
@@ -1946,9 +2191,39 @@ export default {
       ],
       requestBodyMode: 'MAPPING',
       responseMappingMode: 'MAPPING',
+      requestNullPolicy: 'OMIT_MISSING_SEND_NULL',
+      nonJsonNullPolicy: {
+        header: 'OMIT',
+        query: 'PRESERVE_NULL',
+        auth: 'EMPTY',
+      },
+      nonJsonPolicyOptions: [
+        { value: 'OMIT', label: '缺失时省略字段' },
+        { value: 'EMPTY', label: '缺失时发送空字符串' },
+        { value: 'FAIL', label: '缺失时报错中断' },
+      ],
+      nonJsonQueryPolicyOptions: [
+        { value: 'OMIT', label: '缺失和 null 都省略' },
+        { value: 'EMPTY', label: '缺失和 null 发送空字符串' },
+        { value: 'PRESERVE_NULL', label: '缺失省略，显式 null 按当前逻辑保留' },
+        { value: 'FAIL', label: '缺失时报错中断' },
+      ],
+      nonJsonAuthPolicyOptions: [
+        { value: 'EMPTY', label: '缺失时发送空字符串' },
+        { value: 'OMIT', label: '缺失时省略鉴权字段' },
+        { value: 'FAIL', label: '缺失时报错中断' },
+      ],
+      requestNullPolicyOptions: [
+        { value: 'OMIT_MISSING_SEND_NULL', label: '缺失省略，显式 null 发送' },
+        { value: 'SEND_MISSING_SEND_NULL', label: '缺失和显式 null 都发送' },
+        { value: 'OMIT_MISSING_OMIT_NULL', label: '缺失和显式 null 都省略' },
+      ],
       requestMappingJsonText: '{}',
       responseMappingJsonText: '{}',
       syncingMapping: false,
+      payloadCapture: emptyPayloadCaptureConfig(),
+      payloadCaptureError: '',
+      maxPayloadCaptureFieldBytes: MAX_PAYLOAD_CAPTURE_FIELD_BYTES,
       headerRows: [this.emptyNameValueRow()],
       queryRows: [this.emptyNameValueRow()],
       requestMappingRows: [this.emptyRequestMappingRow()],
@@ -2017,6 +2292,7 @@ export default {
     ConditionGroupEditor,
     MonacoEditor,
     ResponseConditionTreeEditor,
+    ResourcePreflightPanel,
   },
   computed: {
     isCreateMode() {
@@ -2189,6 +2465,9 @@ export default {
         (item) => item.status === 'READY'
       ).length
     },
+    preflightConfigSignature() {
+      return JSON.stringify(this.form || {})
+    },
   },
   watch: {
     'form.requestMode'(value) {
@@ -2236,6 +2515,9 @@ export default {
     await this.initializeRoute()
   },
   methods: {
+    emptyPayloadCaptureConfig() {
+      return emptyPayloadCaptureConfig()
+    },
     hasConfiguredRow(rows, keys) {
       return (rows || []).some((row) =>
         (keys || []).some((key) => String((row && row[key]) || '').trim())
@@ -2366,6 +2648,7 @@ export default {
         retryCondition: '',
         exceptionStrategy: 'FAIL_FAST',
         fallbackValue: '',
+        payloadCaptureConfig: '',
         asyncResultMode: 'POLL',
         asyncPollConfig: '',
         asyncCallbackConfig: '',
@@ -2451,7 +2734,7 @@ export default {
         expiresInPath: 'body.expires_in',
         tokenPlacement: 'HEADER',
         tokenHeaderName: 'Authorization',
-        tokenPrefix: 'Bearer ',
+        tokenPrefix: '',
         headers: '{}',
         body: '{"grant_type":"client_credentials"}',
       }
@@ -2559,6 +2842,22 @@ export default {
       this.headerRows = this.rowsFromNameValueConfig(this.form.headerConfig)
       this.queryRows = this.rowsFromNameValueConfig(this.form.queryConfig)
       this.requestBodyMode = 'MAPPING'
+      try {
+        const requestConfig = this.parseConfigForTemplate(this.form.requestMapping)
+        this.requestNullPolicy =
+          requestConfig && requestConfig._nullPolicy
+            ? requestConfig._nullPolicy
+            : 'OMIT_MISSING_SEND_NULL'
+        const nonJsonPolicy = requestConfig && requestConfig._nonJsonNullPolicy
+        this.nonJsonNullPolicy = {
+          header: (nonJsonPolicy && nonJsonPolicy.header) || 'OMIT',
+          query: (nonJsonPolicy && nonJsonPolicy.query) || 'PRESERVE_NULL',
+          auth: (nonJsonPolicy && nonJsonPolicy.auth) || 'EMPTY',
+        }
+      } catch (e) {
+        this.requestNullPolicy = 'OMIT_MISSING_SEND_NULL'
+        this.nonJsonNullPolicy = { header: 'OMIT', query: 'PRESERVE_NULL', auth: 'EMPTY' }
+      }
       this.requestMappingRows = this.rowsFromRequestMapping(
         this.form.requestMapping
       )
@@ -2583,6 +2882,7 @@ export default {
       this.tokenFailureMode = this.form.tokenFailureCondition ? 'CUSTOM' : 'DEFAULT'
       this.tokenFailureConditionRoot = this.normalizeApiConditionRoot(this.parseConfigForTemplate(this.form.tokenFailureCondition), 'body.code', '==', 'TOKEN_EXPIRED')
       this.syncBillingConfigFromForm()
+      this.syncPayloadCaptureFromForm()
     },
     syncAuthConfigFromForm() {
       const type = this.form.authMode
@@ -2664,6 +2964,27 @@ export default {
       } else {
         this.billingConfig = this.emptyBillingConfig()
       }
+    },
+    syncPayloadCaptureFromForm() {
+      try {
+        this.payloadCapture = parsePayloadCaptureConfig(this.form.payloadCaptureConfig)
+        this.payloadCaptureError = ''
+      } catch (error) {
+        this.payloadCapture = emptyPayloadCaptureConfig()
+        this.payloadCaptureError = error.message || '报文留存配置格式不正确'
+      }
+    },
+    buildPayloadCaptureConfig() {
+      return stringifyPayloadCaptureConfig(this.payloadCapture)
+    },
+    addPayloadCapturePath(side) {
+      if (!this.payloadCapture[side]) this.payloadCapture[side] = emptyPayloadCaptureConfig()[side]
+      this.payloadCapture[side].excludePaths.push('')
+    },
+    removePayloadCapturePath(side, index) {
+      const target = this.payloadCapture[side]
+      if (!target || !Array.isArray(target.excludePaths)) return
+      target.excludePaths.splice(index, 1)
     },
     syncCacheKeyConfigFromForm() {
       const parsed = this.parseConfigForTemplate(this.form.cacheKeyConfig)
@@ -2753,8 +3074,12 @@ export default {
       const config = this.parseConfigForTemplate(text)
       if (!config || typeof config !== 'object' || Array.isArray(config))
         return [this.emptyRequestMappingRow()]
+      if (config._nullPolicy) this.requestNullPolicy = config._nullPolicy
+      const mapping = { ...config }
+      delete mapping._nullPolicy
+      delete mapping.nullValuePolicy
       const rows = []
-      this.flattenMappingRows(config, '', rows)
+      this.flattenMappingRows(mapping, '', rows)
       return rows.length ? rows : [this.emptyRequestMappingRow()]
     },
     rowsFromResponseMapping(text) {
@@ -2925,6 +3250,7 @@ export default {
       this.form.billingCondition = this.jsonTextOrBlank(
         this.buildBillingConditionConfig()
       )
+      this.form.payloadCaptureConfig = this.buildPayloadCaptureConfig()
       if (this.form.requestMode === 'ASYNC') {
         this.form.asyncPollConfig =
           this.form.asyncResultMode === 'POLL'
@@ -3032,6 +3358,26 @@ export default {
     buildRequestMappingConfig() {
       const result = {}
       const rows = this.requestMappingRows || []
+      const validRows = rows.filter(
+        (row) => row && row.targetPath && String(row.targetPath).trim()
+      )
+      if (validRows.length) result._nullPolicy = this.requestNullPolicy
+      const nonJsonPolicy = this.nonJsonNullPolicy || {
+        header: 'OMIT',
+        query: 'PRESERVE_NULL',
+        auth: 'EMPTY',
+      }
+      if (
+        nonJsonPolicy.header !== 'OMIT' ||
+        nonJsonPolicy.query !== 'PRESERVE_NULL' ||
+        nonJsonPolicy.auth !== 'EMPTY'
+      ) {
+        result._nonJsonNullPolicy = {
+          header: nonJsonPolicy.header || 'OMIT',
+          query: nonJsonPolicy.query || 'PRESERVE_NULL',
+          auth: nonJsonPolicy.auth || 'EMPTY',
+        }
+      }
       rows.forEach((row) => {
         if (!row || !row.targetPath || !String(row.targetPath).trim()) return
         setPathValue(result, String(row.targetPath).trim(), row.sourcePath)
@@ -3382,6 +3728,7 @@ export default {
         tokenFailureCondition: 'Token鉴权失败条件',
         billingCondition: '计费条件',
         fallbackValue: '兜底返回',
+        payloadCaptureConfig: '报文留存配置',
         testSampleParams: '测试样例',
       }
       Object.keys(jsonFields).forEach((key) => {
@@ -3923,6 +4270,9 @@ export default {
     background: var(--tianshu-success-bg);
     color: var(--tianshu-success-text);
   }
+  .token-header-name-item :deep(.el-form-item__label) {
+    white-space: nowrap;
+  }
   .basic-panel {
     border-bottom: 1px solid var(--tianshu-border-subtle);
     padding-bottom: 8px;
@@ -4037,6 +4387,32 @@ export default {
   }
   .config-card > .field-help {
     margin-bottom: 10px;
+  }
+  .payload-capture-section {
+    .payload-capture-grid {
+      margin-top: 12px;
+    }
+    .payload-capture-card {
+      height: 100%;
+      box-sizing: border-box;
+    }
+    .payload-path-list {
+      width: 100%;
+    }
+    .payload-path-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .payload-path-row .el-input {
+      flex: 1;
+      min-width: 0;
+    }
+    .payload-capture-warning {
+      margin: -4px 0 12px;
+      color: var(--tianshu-warning-text);
+    }
   }
   .cache-key-row {
     display: grid;

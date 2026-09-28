@@ -57,6 +57,12 @@ public class RuntimeTraceService {
         }
     }
 
+    /** 更新模块调用的结构化诊断信息；与规则表达式追踪共用同一个模块事件。 */
+    public void updateModuleDetails(ModuleTrace trace, Map<String, Object> details) {
+        if (trace == null || details == null || details.isEmpty()) return;
+        trace.event.putAll(details);
+    }
+
     private String resolveProjectScopeCode(Long projectId) {
         if (projectService != null) {
             RuleProject project = projectService.getById(projectId);

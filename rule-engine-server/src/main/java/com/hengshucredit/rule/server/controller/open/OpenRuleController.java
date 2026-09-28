@@ -15,6 +15,7 @@ import com.hengshucredit.rule.server.service.FieldValidationException;
 import com.hengshucredit.rule.server.service.FieldValidationViolation;
 import com.hengshucredit.rule.server.service.RuleFieldValidationService;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
+import com.hengshucredit.rule.server.service.RuleIdempotencyService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -53,6 +54,9 @@ public class OpenRuleController {
     @Resource
     private RuleFieldValidationService fieldValidationService;
 
+    @Resource
+    private RuleIdempotencyService idempotencyService;
+
     @PostMapping("/execute/{ruleCode}")
     public ResponseEntity<Object> execute(@PathVariable String ruleCode,
                                           @RequestBody(required = false) Object body,
@@ -60,6 +64,7 @@ public class OpenRuleController {
                                           HttpServletRequest request) {
         OpenApiContractService.ResolvedContract resolved = null;
         String traceId = null;
+        RuleIdempotencyService.Decision activeIdempotency = null;
         try {
             ProjectAuthContext authContext = ProjectAuthContext.from(request);
             if (authContext == null) {
@@ -71,14 +76,52 @@ public class OpenRuleController {
                     firstHeaders(headers), resolved.getInputReferences());
             fieldValidationService.validateDefinitionInput(
                     resolved.getPublished().getDefinitionId(), params);
+            RuleIdempotencyService.Decision idempotency = idempotencyService == null ? null
+                    : idempotencyService.begin(resolved.getPublished(), resolved.getProject().getId(), params);
+            activeIdempotency = idempotency != null && idempotency.isClaimed() ? idempotency : null;
+            if (idempotency == null) {
+                OpenApiContractService.ResolvedContract executionContract = resolved;
+                RuleResult result = executionExecutor.execute(() -> executeService.executePublished(
+                        executionContract.getPublished(), params, executionContract.getProject().getId(),
+                        "OPEN_API", authContext,
+                        executionContract.getContract().isRecordTrace()
+                                || executionContract.getContract().isReturnTrace(),
+                        executionContract.getContract().isRecordTrace()));
+                if (hasText(result.getTraceId())) traceId = result.getTraceId();
+                return render(resolved.getContract(), result.isSuccess()
+                                ? OpenApiStatuses.success()
+                                : OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常")),
+                        traceId, result.isSuccess() ? outputValues(resolved, result) : errorValues(result.getErrorMessage()));
+            }
+            if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) {
+                RuleResult cached = idempotency.getResult();
+                if (hasText(cached.getTraceId())) traceId = cached.getTraceId();
+                return render(resolved.getContract(), cached.isSuccess()
+                                ? OpenApiStatuses.success()
+                                : OpenApiStatuses.resultError(safeMessage(cached.getErrorMessage(), "结果处理异常")),
+                        traceId, cached.isSuccess() ? outputValues(resolved, cached) : errorValues(cached.getErrorMessage()));
+            }
+            if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
+                return render(resolved.getContract(), new OpenApiStatus(false, "400004",
+                                "幂等键已被其他请求使用且请求内容不同", 409),
+                        traceId, errorValues("幂等键已被其他请求使用且请求内容不同"));
+            }
+            if (idempotency.getStatus() == RuleIdempotencyService.Status.IN_PROGRESS) {
+                return render(resolved.getContract(), new OpenApiStatus(false, "400005",
+                                "相同幂等键的请求正在执行", 409),
+                        traceId, errorValues("相同幂等键的请求正在执行"));
+            }
             OpenApiContractService.ResolvedContract executionContract = resolved;
-            RuleResult result = executionExecutor.execute(() -> executeService.executePublished(
-                    executionContract.getPublished(), params, executionContract.getProject().getId(),
-                    "OPEN_API", authContext,
-                    executionContract.getContract().isRecordTrace()
-                            || executionContract.getContract().isReturnTrace(),
-                    executionContract.getContract().isRecordTrace()));
+            RuleResult result = executionExecutor.execute(() -> idempotencyService.withDecision(idempotency,
+                    () -> executeService.executePublished(
+                            executionContract.getPublished(), params, executionContract.getProject().getId(),
+                            "OPEN_API", authContext,
+                            executionContract.getContract().isRecordTrace()
+                                    || executionContract.getContract().isReturnTrace(),
+                            executionContract.getContract().isRecordTrace())));
             if (hasText(result.getTraceId())) traceId = result.getTraceId();
+            idempotencyService.complete(idempotency, result, null);
+            activeIdempotency = null;
             if (!result.isSuccess()) {
                 Map<String, Object> values = errorValues(result.getErrorMessage());
                 return render(resolved.getContract(), OpenApiStatuses.resultError(
@@ -88,22 +131,34 @@ public class OpenRuleController {
             return render(resolved.getContract(), OpenApiStatuses.success(),
                     traceId, outputValues(resolved, result));
         } catch (OpenRuleExecutionExecutor.TimedOut e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.requestTimeout(),
                     traceId, errorValues("请求处理超时"));
         } catch (OpenRuleExecutionExecutor.Busy e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.qpsConcurrencyExceeded(),
                     traceId, errorValues("QPS 或并发超过限制"));
         } catch (OpenApiException e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, e.getStatus(), traceId, errorValues(e.getMessage()));
         } catch (FieldValidationException e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.parameterValidation(e.getMessage()),
                     traceId, validationErrorValues(e));
         } catch (IllegalArgumentException e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.parameterValidation(
                     safeMessage(e.getMessage(), "入参校验失败")), traceId, errorValues(e.getMessage()));
         } catch (RuntimeException e) {
+            releaseIdempotency(activeIdempotency, e.getMessage());
             return renderSafely(resolved, OpenApiStatuses.systemError(),
                     traceId, errorValues("系统执行异常"));
+        }
+    }
+
+    private void releaseIdempotency(RuleIdempotencyService.Decision decision, String message) {
+        if (decision != null && idempotencyService != null) {
+            idempotencyService.release(decision, hasText(message) ? message : "规则执行异常");
         }
     }
 
@@ -130,6 +185,13 @@ public class OpenRuleController {
     private Map<String, Object> outputValues(OpenApiContractService.ResolvedContract resolved, RuleResult result) {
         Map<String, Object> values = new LinkedHashMap<>();
         values.put("result", result.getResult());
+        values.put("revisionId", result.getRevisionId());
+        values.put("artifactDigest", result.getArtifactDigest());
+        values.put("executionStatus", result.getExecutionStatus());
+        values.put("attemptNo", result.getAttemptNo());
+        values.put("resumed", result.isResumed());
+        values.put("reusedCount", result.getReusedCount());
+        values.put("reexecutedCount", result.getReexecutedCount());
         for (Map.Entry<String, String> entry : resolved.getOutputReferences().entrySet()) {
             values.put("output." + entry.getKey().replace(':', '.'), readPath(result.getResult(), entry.getValue()));
         }

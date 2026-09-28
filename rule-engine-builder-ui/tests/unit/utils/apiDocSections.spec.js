@@ -71,6 +71,7 @@ describe('API 文档内容区块', () => {
     expect(html).toContain('401')
     expect(html).toContain('data.success')
     expect(html).toContain('不是业务决策 code')
+    expect(html).toContain('artifactDigest')
   })
 
   test('接口请求体和响应体使用可折叠树形字段表', () => {
@@ -83,5 +84,6 @@ describe('API 文档内容区块', () => {
     expect(html).toContain('data-field-toggle="params"')
     expect(html).toContain('data-field-toggle="data"')
     expect(html).toContain('--field-depth:2')
+    expect(html).toContain('实际执行制品摘要')
   })
 })

@@ -289,7 +289,7 @@ public class DecisionTableCompiler implements RuleCompiler {
         if ("VAR".equalsIgnoreCase(valueKind)) {
             String right = leaf.getString("value");
             if (right == null || right.trim().isEmpty()) {
-                return "true";
+                return "false";
             }
             Long rightVarId = leaf.containsKey("_rightVarId") ? leaf.getLong("_rightVarId") : null;
             String rightRefType = leaf.getString("_rightRefType");
@@ -353,8 +353,8 @@ public class DecisionTableCompiler implements RuleCompiler {
             }
             String value = cond.getString("value");
 
-            if (value == null || value.isEmpty()) {
-                script.append("true");
+            if (value == null) {
+                script.append("false");
                 continue;
             }
 

@@ -17,7 +17,7 @@ public class ConditionOperandCompilerTest {
         assertEquals("listMatch([request.mobile], [10, 20], \"ANY_FIELD_ANY_LIST\", \"IN_LIST\", [\"MOBILE\"])",
                 ConditionOperandCompiler.compile(leaf, null));
         leaf.put("operator", "not_in_list");
-        assertEquals("!listMatch([request.mobile], [10, 20], \"ANY_FIELD_ANY_LIST\", \"IN_LIST\", [\"MOBILE\"])",
+        assertEquals("(!isBlank(request.mobile) && !(listMatch([request.mobile], [10, 20], \"ANY_FIELD_ANY_LIST\", \"IN_LIST\", [\"MOBILE\"])))",
                 ConditionOperandCompiler.compile(leaf, null));
     }
 

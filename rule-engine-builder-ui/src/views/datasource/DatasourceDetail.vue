@@ -311,7 +311,11 @@
               </el-form-item>
             </el-col>
             <el-col :span="8">
-              <el-form-item label="Token Header名称">
+              <el-form-item
+                label="Token Header名称"
+                label-width="140px"
+                class="token-header-name-item"
+              >
                 <el-input
                   v-model="authConfig.tokenHeaderName"
                   placeholder="默认 Authorization；冰鉴填写 token_id"
@@ -322,7 +326,7 @@
               <el-form-item label="Token前缀">
                 <el-input
                   v-model="authConfig.tokenPrefix"
-                  placeholder="默认 Bearer；冰鉴留空"
+                  placeholder="默认无前缀，可填写 Bearer 或其他内容（空格会保留）"
                 />
               </el-form-item>
             </el-col>
@@ -495,7 +499,7 @@ export default {
         expiresInPath: 'body.expires_in',
         tokenPlacement: 'HEADER',
         tokenHeaderName: 'Authorization',
-        tokenPrefix: 'Bearer ',
+        tokenPrefix: '',
         tokenResponseScript: '',
         headers: '{}',
         body: '{"grant_type":"client_credentials"}',
@@ -713,6 +717,9 @@ export default {
     font-family: Menlo, Monaco, Consolas, monospace;
     font-size: 12px;
     line-height: 1.5;
+  }
+  .token-header-name-item :deep(.el-form-item__label) {
+    white-space: nowrap;
   }
   code {
     color: #1e40af;

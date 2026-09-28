@@ -18,4 +18,6 @@ python -m http.server 4173 --directory docs
 
 <https://hengshu-credit.github.io/tianshu-decision-engine/>
 
+部署参数与教程见 [部署教程](deployment.html)；Java SDK 接入见 [Java 服务接入](java-service-integration.html)，HTTP-only SDK 和离线示例见 [HTTP 接入示例](http-sdk-example.html)。首页的接入卡片会跳转到对应 HTML 页面。
+
 工作流使用 GitHub Actions 作为 Pages 构建来源，不需要额外安装 Node.js 或文档生成器。

@@ -583,7 +583,93 @@
         </div>
       </el-tab-pane>
 
-      <el-tab-pane name="open-api">
+    <el-tab-pane name="execution">
+      <template v-slot:label>
+        <span><el-icon><el-icon-setting /></el-icon> 执行配置</span>
+      </template>
+      <div class="open-api-panel execution-policy-panel">
+        <div class="open-api-toolbar">
+          <div>
+            <div class="open-api-title">规则执行策略</div>
+            <div class="open-api-help">
+              幂等配置同时作用于同步 HTTP、完整 SDK 和开放接口；恢复会沿用同一 trace_id，配置变化后只重新执行受影响步骤。
+            </div>
+          </div>
+          <el-button
+            size="small"
+            type="primary"
+            :loading="openApiSaving"
+            :disabled="!canEditDraft"
+            @click="saveOpenApiConfig"
+            >保存执行配置</el-button
+          >
+        </div>
+        <div class="open-api-section">
+          <div class="open-api-section-head">
+            <div>
+              <div class="open-api-title">规则幂等</div>
+              <div class="open-api-help">
+                每个组件独立计算；空值组件会跳过。至少配置一个稳定的客户入参字段，不能只用固定常量。
+              </div>
+            </div>
+            <el-switch
+              v-model="openApiForm.idempotency.enabled"
+              active-text="启用幂等"
+              @change="onIdempotencyEnabledChange"
+            />
+          </div>
+          <div v-if="openApiForm.idempotency.enabled" class="idempotency-component-list">
+            <div
+              v-for="(component, index) in openApiForm.idempotency.components"
+              :key="component._uid || index"
+              class="idempotency-component-row"
+            >
+              <span class="idempotency-component-index">{{ index + 1 }}</span>
+              <operand-picker
+                :value="component.operand"
+                :vars="openIdempotencyOptions"
+                :functions="idempotencyFunctions"
+                :allowed-kinds="idempotencyOperandKinds"
+                context="READ_EXPRESSION"
+                expected-type="STRING"
+                placeholder="选择字段或配置组合表达式"
+                editor-title="配置幂等键组件"
+                @input="component.operand = $event || null"
+              />
+              <el-button
+                link
+                type="danger"
+                :disabled="openApiForm.idempotency.components.length <= 1"
+                @click="removeIdempotencyComponent(index)"
+                >删除</el-button
+              >
+            </div>
+            <el-button size="small" :icon="ElIconPlus" @click="addIdempotencyComponent">
+              添加字段组件
+            </el-button>
+            <el-alert
+              v-if="idempotencyFormulaPreview.length"
+              class="idempotency-preview"
+              type="info"
+              :closable="false"
+              title="幂等键预览"
+            >
+              <div v-for="item in idempotencyFormulaPreview" :key="item.index">
+                组件 {{ item.index }}：<code>{{ item.formula || '未配置' }}</code>
+              </div>
+              <div class="open-api-help">请求未传入的组件会被跳过，组件顺序会参与规范化键计算。</div>
+            </el-alert>
+          </div>
+          <el-empty v-else description="幂等未启用" :image-size="50" />
+          <el-form-item label="保留时间" label-width="110px">
+            <el-input-number v-model="openApiForm.idempotency.ttlSeconds" :min="60" :max="604800" :step="60" />
+            <span class="open-api-help" style="margin-left: 8px">秒</span>
+          </el-form-item>
+        </div>
+      </div>
+    </el-tab-pane>
+
+    <el-tab-pane name="open-api">
         <template v-slot:label>
           <span
             ><el-icon><el-icon-connection /></el-icon> 开放接口</span
@@ -1363,6 +1449,7 @@ import {
   Plus as ElIconPlus,
   Delete as ElIconDelete,
   Sort as ElIconSort,
+  Setting as ElIconSetting,
 } from '@element-plus/icons-vue'
 import * as api from '@/api/definition'
 import { isRequestErrorNotified } from '@/api/request'
@@ -1394,7 +1481,46 @@ import RuleLifecycleTimeline from '@/components/rule/RuleLifecycleTimeline.vue'
 import RuleFieldHierarchyDisplay from '@/components/rule/RuleFieldHierarchyDisplay.vue'
 import FieldReferenceDisplay from '@/components/common/FieldReferenceDisplay.vue'
 import ArtifactDeploymentDialog from '@/components/artifact/ArtifactDeploymentDialog.vue'
+import OperandPicker from '@/components/common/OperandPicker.vue'
+import { OPERAND_KINDS, collectOperandReferences, validateOperand } from '@/utils/operand'
+import { formatExpressionFormula } from '@/utils/expressionDisplay'
 import * as artifactApi from '@/api/artifact'
+
+const IDEMPOTENCY_PURE_FUNCTIONS = [
+  ['strTrim', '去除首尾空白', [{ name: 'text', type: 'STRING', example: '  A  ' }]],
+  ['strUpper', '转大写', [{ name: 'text', type: 'STRING', example: 'a' }]],
+  ['strLower', '转小写', [{ name: 'text', type: 'STRING', example: 'A' }]],
+  ['strReplace', '正则替换', [
+    { name: 'text', type: 'STRING', example: 'A-1' },
+    { name: 'regex', type: 'STRING', example: '-' },
+    { name: 'replacement', type: 'STRING', example: '' },
+  ]],
+  ['strSubstring', '截取文本', [
+    { name: 'text', type: 'STRING', example: 'ABC' },
+    { name: 'start', type: 'NUMBER', example: 0 },
+    { name: 'end', type: 'NUMBER', example: 2 },
+  ]],
+  ['toJson', '对象转 JSON', [{ name: 'value', type: 'OBJECT', example: {} }]],
+  ['md5', 'MD5 摘要', [{ name: 'text', type: 'STRING', example: 'A' }]],
+  ['sha256', 'SHA-256 摘要', [{ name: 'text', type: 'STRING', example: 'A' }]],
+].map(([functionCode, functionName, params]) => ({
+  functionCode,
+  funcCode: functionCode,
+  functionName,
+  funcName: functionName,
+  params,
+  parameterCount: params.length,
+  parameterTypes: params.map(item => item.type),
+}))
+
+let idempotencyComponentSequence = 0
+
+function createIdempotencyComponent(operand = null) {
+  return {
+    _uid: `idempotency-component-${++idempotencyComponentSequence}`,
+    operand: operand || null,
+  }
+}
 
 const MODEL_TYPE_LABELS = {
   TABLE: '决策表',
@@ -1544,6 +1670,12 @@ function createDefaultOpenApiContract() {
       errorMessage: '${status.message}',
     },
     responseHeaders: {},
+    idempotency: {
+      enabled: false,
+      operand: null,
+      components: [],
+      ttlSeconds: 86400,
+    },
   }
 }
 
@@ -1645,6 +1777,7 @@ export default {
       ElIconPlus: markRaw(ElIconPlus),
       ElIconDelete: markRaw(ElIconDelete),
       ElIconSort: markRaw(ElIconSort),
+      ElIconSetting: markRaw(ElIconSetting),
     }
   },
   components: {
@@ -1656,6 +1789,8 @@ export default {
     RuleFieldHierarchyDisplay,
     FieldReferenceDisplay,
     ArtifactDeploymentDialog,
+    OperandPicker,
+    ElIconSetting,
     ElIconArrowDown,
     ElIconEdit,
     ElIconArrowUp,
@@ -1738,6 +1873,37 @@ export default {
           }
         })
         .filter((item) => item.value)
+    },
+    openIdempotencyOptions() {
+      return this.openInputOptions.map((item) => ({
+        ...item,
+        id: Number(String(item.value).split(':').pop()),
+        refType: String(item.value).split(':')[0],
+        varCode: item.scriptName,
+        varLabel: item.label,
+        varType: item.targetType,
+      }))
+    },
+    idempotencyFunctions() {
+      return IDEMPOTENCY_PURE_FUNCTIONS
+    },
+    idempotencyFormulaPreview() {
+      return (this.openApiForm.idempotency?.components || []).map((item, index) => ({
+        index: index + 1,
+        formula: item && item.operand
+          ? formatExpressionFormula(item.operand)
+          : '',
+      }))
+    },
+    idempotencyOperandKinds() {
+      return [
+        OPERAND_KINDS.LITERAL,
+        OPERAND_KINDS.REFERENCE,
+        OPERAND_KINDS.OPERATION,
+        OPERAND_KINDS.ACCESS,
+        OPERAND_KINDS.CAST,
+        OPERAND_KINDS.ARRAY,
+      ]
     },
     openOutputOptions() {
       return ((this.rule && this.rule.outputFieldsJson) || [])
@@ -2196,6 +2362,27 @@ export default {
             ? JSON.parse(value)
             : value || {}
         parsed = { ...parsed, ...stored }
+        parsed.idempotency = {
+          ...createDefaultOpenApiContract().idempotency,
+          ...(stored.idempotency || {}),
+        }
+        const storedIdempotency = stored.idempotency || {}
+        const storedComponents = Array.isArray(storedIdempotency.components)
+          ? storedIdempotency.components
+          : []
+        // 兼容旧版单 operand 和后端 components 结构，页面内部只保留一种协议。
+        if (storedComponents.length) {
+          parsed.idempotency.components = storedComponents.map(item =>
+            createIdempotencyComponent(item && item.operand ? item.operand : item)
+          )
+        } else if (storedIdempotency.operand) {
+          parsed.idempotency.components = [
+            createIdempotencyComponent(storedIdempotency.operand),
+          ]
+        } else {
+          parsed.idempotency.components = []
+        }
+        parsed.idempotency.operand = null
         if (!Array.isArray(stored.requestMappings))
           parsed.requestMappings = this.defaultOpenRequestMappings()
         if (!Array.isArray(stored.responseMappings))
@@ -2259,6 +2446,19 @@ export default {
     },
     removeOpenRequestMapping(index) {
       this.openApiForm.requestMappings.splice(index, 1)
+    },
+    addIdempotencyComponent() {
+      this.openApiForm.idempotency.components.push(createIdempotencyComponent())
+    },
+    onIdempotencyEnabledChange(enabled) {
+      // 开启后立即给出一个可编辑组件，避免用户看到空白配置而不知道下一步。
+      if (enabled && !this.openApiForm.idempotency.components.length) {
+        this.addIdempotencyComponent()
+      }
+    },
+    removeIdempotencyComponent(index) {
+      if (this.openApiForm.idempotency.components.length <= 1) return
+      this.openApiForm.idempotency.components.splice(index, 1)
     },
     defaultOpenRequestMappings() {
       return this.openInputOptions.map((item) => {
@@ -2380,9 +2580,41 @@ export default {
           this.openResponseHeadersText,
           '响应 Header'
         ),
+        idempotency: {
+          enabled: this.openApiForm.idempotency.enabled === true,
+          components: (this.openApiForm.idempotency.components || [])
+            .map(item => item && item.operand ? { operand: item.operand } : null)
+            .filter(Boolean),
+          ttlSeconds: Number(this.openApiForm.idempotency.ttlSeconds || 86400),
+        },
       }
     },
     validateOpenApiContract(contract) {
+      if (contract.idempotency && contract.idempotency.enabled) {
+        const operands = Array.isArray(contract.idempotency.components)
+          ? contract.idempotency.components.map(item => item && item.operand ? item.operand : item).filter(Boolean)
+          : []
+        if (!operands.length) throw new Error('幂等键表达式不能为空')
+        for (const operand of operands) {
+          const errors = validateOperand(operand, { allowedKinds: this.idempotencyOperandKinds })
+          if (errors.length) throw new Error('幂等键：' + errors[0].message)
+        }
+        if (contract.enabled) {
+          const mapped = new Set((contract.requestMappings || []).map(item =>
+            String(item.targetRefType || '').toUpperCase() + ':' + item.targetVarId
+          ))
+          const references = operands.flatMap(item => collectOperandReferences(item))
+          references.forEach(reference => {
+            const key = String(reference.refType || '').toUpperCase() + ':' + reference.refId
+            if (String(reference.refType || '').toUpperCase() !== 'CONSTANT' && !mapped.has(key)) {
+              throw new Error('幂等键字段未配置请求映射：' + key)
+            }
+          })
+        }
+      }
+      // 开放接口未启用时仍校验幂等表达式，但允许请求/响应映射暂存不完整，
+      // 这样编辑器可以先保存草稿再开启接口完成映射。
+      if (!contract.enabled) return
       const targets = {}
       const bodyPath = /^\$(?:\.[A-Za-z0-9_-]+|\[\d+\])*$/
       const headerName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/
@@ -2539,7 +2771,9 @@ export default {
       let contract
       try {
         contract = this.buildOpenApiContract()
-        if (contract.enabled) this.validateOpenApiContract(contract)
+        // 幂等配置即使在开放接口关闭时也会作用于 HTTP/SDK 同步执行，
+        // 因此保存时始终校验，避免把错误配置拖到发布阶段才暴露。
+        this.validateOpenApiContract(contract)
       } catch (e) {
         this.$message.error(e.message)
         return
@@ -3580,6 +3814,31 @@ export default {
 }
 .open-api-field-empty {
   margin-top: 12px;
+}
+.idempotency-component-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.idempotency-component-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.idempotency-component-row .operand-picker {
+  flex: 1;
+  min-width: 0;
+}
+.idempotency-component-index {
+  width: 24px;
+  color: var(--tianshu-text-tertiary);
+  text-align: center;
+}
+.idempotency-preview {
+  margin-top: 8px;
+}
+.idempotency-preview code {
+  word-break: break-word;
 }
 .open-api-title {
   color: var(--tianshu-text-primary);

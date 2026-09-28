@@ -65,4 +65,14 @@ describe('AdvancedScorecard', () => {
     expect(condition.rightOperand).toBeNull()
     expect(AdvancedScorecard.methods.conditionRequiresValue.call(context, condition)).toBe(false)
   })
+
+  test('没有结果变量时阻止保存并提示配置', () => {
+    const context = {
+      model: { resultVar: { varCode: '', _varId: null, operand: null } },
+      $message: { warning: vi.fn() }
+    }
+
+    expect(AdvancedScorecard.methods.validateResultVariable.call(context)).toBe(false)
+    expect(context.$message.warning).toHaveBeenCalledWith('请先选择复杂评分卡的结果变量')
+  })
 })

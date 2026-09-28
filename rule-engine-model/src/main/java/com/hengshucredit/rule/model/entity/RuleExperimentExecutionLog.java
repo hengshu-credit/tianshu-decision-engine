@@ -15,9 +15,11 @@ public class RuleExperimentExecutionLog {
     @TableId(type = IdType.AUTO)
     private Long id;
     private String experimentTraceId;
+    private String rootTraceId;
     private String childTraceId;
     private Long experimentId;
     private String experimentCode;
+    private String configDigest;
     private String requestKey;
     private String stage;
     private Long groupId;

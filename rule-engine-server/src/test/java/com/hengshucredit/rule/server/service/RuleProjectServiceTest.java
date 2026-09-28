@@ -9,6 +9,11 @@ import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.model.entity.RuleProjectAuth;
+import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
+import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.server.artifact.PublishedRuleFieldSnapshotResolver;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectFieldMapper;
 import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionContentMapper;
@@ -107,6 +112,33 @@ public class RuleProjectServiceTest {
     }
 
     @Test
+    public void exportApiDocOmitsDefinitionsWithoutAnActivePublishedRow() {
+        ExportFixture fixture = exportFixture();
+        RuleDefinition draft = new RuleDefinition();
+        draft.setId(99L);
+        draft.setProjectId(7L);
+        draft.setRuleCode("DRAFT_ONLY");
+        draft.setRuleName("草稿规则");
+        draft.setModelType("SCRIPT");
+        draft.setStatus(1);
+        ReflectionTestUtils.setField(fixture.service, "definitionMapper",
+                listMapper(RuleDefinitionMapper.class, Arrays.asList(
+                        fixture.definition(), draft)));
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(21L);
+        published.setVersion(3);
+        published.setStatus(1);
+        ReflectionTestUtils.setField(fixture.service, "publishedMapper",
+                listMapper(com.hengshucredit.rule.server.mapper.RulePublishedMapper.class,
+                        Collections.singletonList(published)));
+
+        ApiDocDTO doc = fixture.service.exportApiDoc(7L);
+
+        assertEquals(1, doc.getRules().size());
+        assertEquals("RISK_RULE", doc.getRules().get(0).getRuleCode());
+    }
+
+    @Test
     public void exportApiDocIncludesOnlySelectedCurrentPublishedScenarios() {
         ExportFixture fixture = exportFixture();
 
@@ -115,6 +147,100 @@ public class RuleProjectServiceTest {
         assertEquals("风险拒绝", doc.getRules().get(0).getScenarios().get(0).getScenarioName());
         assertEquals(Long.valueOf(21L), fixture.scenarioService.definitionId);
         assertEquals(Integer.valueOf(3), fixture.scenarioService.publishedVersion);
+    }
+
+    @Test
+    public void exportApiDocUsesFrozenPublishedFieldsAndExcludesRuntimeSources() {
+        ExportFixture fixture = exportFixture();
+        RuleVariable input = new RuleVariable();
+        input.setId(101L);
+        input.setVarCode("customer_age");
+        input.setVarLabel("客户年龄");
+        input.setScriptName("customerAge");
+        input.setVarType("INTEGER");
+        input.setVarSource("INPUT");
+        input.setStatus(1);
+        RuleVariable api = new RuleVariable();
+        api.setId(102L);
+        api.setVarCode("credit_score");
+        api.setScriptName("creditScore");
+        api.setVarType("INTEGER");
+        api.setVarSource("API");
+        api.setStatus(1);
+        ReflectionTestUtils.setField(fixture.service, "variableMapper", listMapper(
+                RuleVariableMapper.class, Arrays.asList(input, api)));
+        RulePublished published = new RulePublished();
+        published.setDefinitionId(21L);
+        published.setRevisionId(8L);
+        published.setArtifactId(9L);
+        published.setArtifactDigest("digest");
+        published.setVersion(3);
+        published.setStatus(1);
+        ReflectionTestUtils.setField(fixture.service, "publishedMapper", listMapper(
+                com.hengshucredit.rule.server.mapper.RulePublishedMapper.class,
+                Collections.singletonList(published)));
+        RuleDefinitionInputField inputField = new RuleDefinitionInputField();
+        inputField.setVarId(101L);
+        inputField.setRefType("VARIABLE");
+        inputField.setFieldName("customer_age");
+        inputField.setScriptName("customerAge");
+        inputField.setFieldType("INTEGER");
+        inputField.setStatus(1);
+        RuleDefinitionInputField apiField = new RuleDefinitionInputField();
+        apiField.setVarId(102L);
+        apiField.setRefType("VARIABLE");
+        apiField.setFieldName("credit_score");
+        apiField.setScriptName("creditScore");
+        apiField.setFieldType("INTEGER");
+        apiField.setStatus(1);
+        RuleDefinitionOutputField outputField = new RuleDefinitionOutputField();
+        outputField.setVarId(101L);
+        outputField.setRefType("VARIABLE");
+        outputField.setFieldName("decision");
+        outputField.setScriptName("decision");
+        outputField.setFieldType("STRING");
+        outputField.setStatus(1);
+        ReflectionTestUtils.setField(fixture.service, "publishedFieldSnapshotResolver",
+                new PublishedRuleFieldSnapshotResolver() {
+                    @Override
+                    public RuleFieldAnalyzer.ResolvedFields resolve(RulePublished ignored) {
+                        return new RuleFieldAnalyzer.ResolvedFields(
+                                Arrays.asList(inputField, apiField),
+                                Collections.singletonList(outputField));
+                    }
+                });
+        ReflectionTestUtils.setField(fixture.service, "contentMapper", mapper(
+                RuleDefinitionContentMapper.class, (proxy, method, args) -> {
+                    throw new AssertionError("published export must not read the work draft");
+                }));
+
+        ApiDocDTO.RuleInfo rule = fixture.service.exportApiDoc(7L).getRules().get(0);
+
+        assertEquals("VERIFIED", rule.getSchemaTrust());
+        assertEquals(1, rule.getInputVariables().size());
+        assertEquals("customer_age", rule.getInputVariables().get(0).getVarCode());
+        assertTrue(rule.getInputVariables().get(0).getRequired());
+        assertTrue(rule.getInputSchema().toString().contains("customer_age"));
+    }
+
+    @Test
+    public void openApiProjectionKeepsMappingsAndMasksResponseHeaderValues() throws Exception {
+        RuleProjectService service = new RuleProjectService();
+        Method method = RuleProjectService.class.getDeclaredMethod("openApiContractProjection", String.class);
+        method.setAccessible(true);
+        String json = "{\"enabled\":true,\"requestMappings\":[{\"targetRefType\":\"VARIABLE\",\"targetVarId\":7,\"sourceType\":\"BODY\",\"sourcePath\":\"$.age\",\"required\":true,\"targetType\":\"INTEGER\"}],"
+                + "\"responseMappings\":[{\"sourceRefType\":\"VARIABLE\",\"sourceVarId\":8,\"targetField\":\"decision\"}],"
+                + "\"envelopeTemplate\":{\"data\":\"${data}\"},\"dataPath\":\"$.data\",\"successDataTemplate\":\"${response}\","
+                + "\"errorDataTemplate\":{\"message\":\"${status.message}\"},\"responseHeaders\":{\"X-Trace\":\"secret-value\"}}";
+
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, Object> projection = (java.util.Map<String, Object>) method.invoke(service, json);
+
+        assertTrue(projection.containsKey("requestMappings"));
+        assertTrue(projection.containsKey("responseMappings"));
+        assertTrue(projection.containsKey("responseHeaderNames"));
+        assertFalse(projection.containsKey("responseHeaders"));
+        assertFalse(JSON.toJSONString(projection).contains("secret-value"));
     }
 
     private ExportFixture exportFixture() {
@@ -171,7 +297,7 @@ public class RuleProjectServiceTest {
         ReflectionTestUtils.setField(service, "functionMapper", listMapper(RuleFunctionMapper.class, Collections.emptyList()));
         ReflectionTestUtils.setField(service, "ruleModelVarParser", new RuleModelVarParser());
 
-        return new ExportFixture(service, scenarioService);
+        return new ExportFixture(service, scenarioService, definition);
     }
 
     @Test
@@ -282,10 +408,14 @@ public class RuleProjectServiceTest {
     private static class ExportFixture {
         private final RuleProjectService service;
         private final FakeScenarioService scenarioService;
+        private final RuleDefinition definition;
 
-        private ExportFixture(RuleProjectService service, FakeScenarioService scenarioService) {
+        private ExportFixture(RuleProjectService service, FakeScenarioService scenarioService, RuleDefinition definition) {
             this.service = service;
             this.scenarioService = scenarioService;
+            this.definition = definition;
         }
+
+        private RuleDefinition definition() { return definition; }
     }
 }

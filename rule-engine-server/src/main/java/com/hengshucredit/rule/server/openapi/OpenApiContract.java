@@ -11,6 +11,8 @@ public class OpenApiContract {
     private boolean enabled;
     private boolean recordTrace;
     private boolean returnTrace;
+    /** 规则级用户幂等键配置；未启用时请求不做跨请求去重。 */
+    private IdempotencyConfig idempotency = new IdempotencyConfig();
     private List<RequestMapping> requestMappings = new ArrayList<>();
     private List<ResponseMapping> responseMappings = new ArrayList<>();
     private Object envelopeTemplate;
@@ -41,6 +43,33 @@ public class OpenApiContract {
 
     public void setReturnTrace(boolean returnTrace) {
         this.returnTrace = returnTrace;
+    }
+
+    public IdempotencyConfig getIdempotency() {
+        return idempotency;
+    }
+
+    public void setIdempotency(IdempotencyConfig idempotency) {
+        this.idempotency = idempotency == null ? new IdempotencyConfig() : idempotency;
+    }
+
+    public static class IdempotencyConfig {
+        private boolean enabled;
+        private Object operand;
+        /** 多字段幂等配置；每个元素可直接是 Operand 或 {"operand": Operand}。 */
+        private List<Object> components = new ArrayList<>();
+        private int ttlSeconds = 86400;
+
+        public boolean isEnabled() { return enabled; }
+        public void setEnabled(boolean enabled) { this.enabled = enabled; }
+        public Object getOperand() { return operand; }
+        public void setOperand(Object operand) { this.operand = operand; }
+        public List<Object> getComponents() { return components; }
+        public void setComponents(List<Object> components) {
+            this.components = components == null ? new ArrayList<>() : components;
+        }
+        public int getTtlSeconds() { return ttlSeconds; }
+        public void setTtlSeconds(int ttlSeconds) { this.ttlSeconds = ttlSeconds; }
     }
 
     public List<RequestMapping> getRequestMappings() {

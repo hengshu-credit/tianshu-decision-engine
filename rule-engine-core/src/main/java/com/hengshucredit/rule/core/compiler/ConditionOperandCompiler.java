@@ -41,7 +41,8 @@ final class ConditionOperandCompiler {
         if (("in_list".equals(operator) || "not_in_list".equals(operator))
                 && rightOperand != null && "LIST_QUERY".equals(rightOperand.getString("kind"))) {
             String expression = OperandCompiler.compileListQuery(rightOperand, left);
-            return "not_in_list".equals(operator) ? "!" + expression : expression;
+            return "not_in_list".equals(operator)
+                    ? "(!isBlank(" + left + ") && !(" + expression + "))" : expression;
         }
         boolean literal = rightOperand != null && "LITERAL".equals(rightOperand.getString("kind"));
         String right = literal ? rightOperand.getString("value") : OperandCompiler.compile(rightOperand, varContext);

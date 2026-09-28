@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 
 /** Adapter for QL builtins; request execution passes RequestContext explicitly. */
 public final class RuntimeContextBridge {
@@ -70,6 +71,27 @@ public final class RuntimeContextBridge {
 
     public static void bindTraceEventListener(Consumer<Map<String, Object>> listener) {
         currentContext().bindTraceEventListener(listener);
+    }
+
+    public static void bindCheckpointListener(Runnable listener) {
+        currentContext().bindCheckpointListener(listener);
+    }
+
+    public static Object randomValue(String function, Object argumentsKey, Supplier<Object> generator) {
+        return currentContext().randomValue(function, argumentsKey, generator);
+    }
+
+    public static Object randomSlot(String function, String stableIdentity,
+                                    Object argumentsKey, Supplier<Object> generator) {
+        return currentContext().randomValue(function, stableIdentity, argumentsKey, generator);
+    }
+
+    public static Map<String, Object> randomSnapshot() {
+        return currentContext().randomSnapshot();
+    }
+
+    public static void restoreRandomValues(Map<String, Object> values) {
+        currentContext().restoreRandomValues(values);
     }
 
     public static void addTraceEvent(Map<String, Object> event) {

@@ -1,6 +1,10 @@
 <template>
   <div class="trace-wrap">
-    <div v-if="experimentTraceFrame" class="experiment-trace-session">
+    <div v-if="traceTruncated" class="trace-truncated-notice" role="status">
+      <strong>表达式追踪已截断</strong>
+      <span>持久化内容超过大小上限，当前仅保留结果与截断信息；重新执行并降低追踪范围后可查看完整过程。</span>
+    </div>
+    <div v-else-if="experimentTraceFrame" class="experiment-trace-session">
       <div class="rule-trace-head">
         <div class="rule-trace-identity">
           <span class="rule-trace-type">分流实验</span>
@@ -115,6 +119,12 @@
             {{ ruleTraceStatusLabel(event.status) }} ·
             {{ event.durationMs || 0 }} ms
           </span>
+          <external-call-trace
+            :steps="moduleTraceSteps(event)"
+            :subtitle="moduleTraceSubtitle(event)"
+            empty-text="历史记录未保存外数阶段链，仅保留模块调用摘要。"
+            compact
+          />
         </div>
       </div>
 
@@ -898,6 +908,7 @@ import {
 import TraceNode from './TraceNode.vue'
 import DecisionTreeTraceNode from './DecisionTreeTraceNode.vue'
 import RuleSetConditionTraceNode from './RuleSetConditionTraceNode.vue'
+import ExternalCallTrace from './ExternalCallTrace.vue'
 import { compileOperand, operandDisplay } from '@/utils/operand'
 import { resolveTraceReferences } from '@/utils/traceReference'
 
@@ -952,6 +963,7 @@ export default {
     TraceNode,
     DecisionTreeTraceNode,
     RuleSetConditionTraceNode,
+    ExternalCallTrace,
     ElIconFullScreen,
     ElIconClose,
     ElIconInfo,
@@ -1015,6 +1027,10 @@ export default {
       } catch (e) {
         return null
       }
+    },
+    traceTruncated: function () {
+      var data = this.rawTraceData
+      return Boolean(data && !Array.isArray(data) && data.truncated === true)
     },
     ruleTraceFrame: function () {
       var data = this.rawTraceData
@@ -1125,9 +1141,55 @@ export default {
         this.ruleTraceFrame && Array.isArray(this.ruleTraceFrame.events)
           ? this.ruleTraceFrame.events
           : []
-      return events.filter(function (event) {
+      var moduleEvents = events.filter(function (event) {
         return event && event.type === 'MODULE_CALL'
+      }).map(function (event) {
+        return Object.assign({}, event, {
+          traceSteps: Array.isArray(event.traceSteps) ? event.traceSteps.slice() : [],
+        })
       })
+      var byCallId = new Map()
+      moduleEvents.forEach(function (event) {
+        var callId = event.callId || (event.traceSteps || []).find(function (step) {
+          return step && step.callId
+        })?.callId
+        if (callId && !event.callId) event.callId = callId
+        if (callId && !byCallId.has(callId)) byCallId.set(callId, event)
+        else if (callId && byCallId.has(callId)) {
+          var target = byCallId.get(callId)
+          target.traceSteps = (target.traceSteps || []).concat(event.traceSteps || [])
+        }
+      })
+      events.filter(function (event) {
+        return event && event.type === 'EXTERNAL_ASSIGNMENT' && event.callId
+      }).forEach(function (assignment) {
+        var existing = byCallId.get(assignment.callId)
+        if (existing) {
+          existing.traceSteps = (existing.traceSteps || []).concat(assignment)
+          return
+        }
+        var synthetic = {
+          type: 'MODULE_CALL',
+          traceId: assignment.traceId || ('external-' + assignment.callId),
+          callId: assignment.callId,
+          moduleType: 'DATASOURCE',
+          resourceCode: assignment.apiConfigCode || assignment.apiConfigId || '外数 API',
+          status: assignment.status || 'SUCCESS',
+          traceSteps: [assignment],
+          synthetic: true,
+        }
+        moduleEvents.push(synthetic)
+        byCallId.set(assignment.callId, synthetic)
+      })
+      var returned = []
+      var returnedCallIds = new Set()
+      moduleEvents.forEach(function (event) {
+        var callId = event.callId
+        if (callId && returnedCallIds.has(callId)) return
+        if (callId) returnedCallIds.add(callId)
+        returned.push(event)
+      })
+      return returned
     },
     ruleExpressionModelType: function () {
       return (
@@ -2218,6 +2280,41 @@ export default {
         MODEL: '模型执行',
       }
       return labels[moduleType] || moduleType || '过程调用'
+    },
+    moduleTraceSteps: function (event) {
+      var steps = event && Array.isArray(event.traceSteps) ? event.traceSteps.slice() : []
+      var events = this.ruleTraceFrame && Array.isArray(this.ruleTraceFrame.events)
+        ? this.ruleTraceFrame.events : []
+      var callId = event && event.callId
+      events.filter(function (item) {
+        return item && item.type === 'EXTERNAL_ASSIGNMENT' && callId && item.callId === callId
+      }).forEach(function (item) {
+        if (!steps.some(function (step) { return step === item })) {
+          steps.push(item)
+        }
+      })
+      return steps
+    },
+    moduleTraceSubtitle: function (event) {
+      if (event && event.synthetic) return '仅保留赋值事件，关联 callId：' + (event.callId || '-')
+      if (event && event.callId) return 'callId：' + event.callId
+      return ''
+    },
+    moduleStepKey: function (event, step) {
+      return (event && event.traceId ? event.traceId : 'module') + '-' + (step && step.sequence ? step.sequence : (step && step.type ? step.type : 'step'))
+    },
+    moduleStepStatusLabel: function (status) {
+      var labels = { SUCCESS: '成功', FAILED: '失败', READY: '已准备', SENT: '已发送', SKIPPED: '已跳过' }
+      return labels[status] || status || '处理中'
+    },
+    moduleStepValue: function (value) {
+      if (value === null || value === undefined) return '-'
+      if (typeof value === 'string') return value
+      try {
+        return JSON.stringify(value, null, 2)
+      } catch (e) {
+        return String(value)
+      }
     },
     ruleTraceStatusLabel: function (status) {
       var labels = { SUCCESS: '成功', FAILED: '失败', RUNNING: '执行中' }
@@ -4339,6 +4436,19 @@ export default {
 </script>
 
 <style scoped>
+.trace-truncated-notice {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--tianshu-warning-border, #e6a23c);
+  border-radius: 6px;
+  background: var(--tianshu-warning-bg, #fdf6ec);
+  color: var(--tianshu-text-secondary, #606266);
+  line-height: 1.5;
+}
+.trace-truncated-notice strong {
+  color: var(--tianshu-warning-text, #b88230);
+}
 .trace-wrap {
   font-size: 13px;
   color: var(--tianshu-text-primary);
@@ -4471,6 +4581,77 @@ export default {
 .rule-trace-module-status {
   margin-left: auto;
   font-weight: 600;
+}
+.rule-trace-module-steps {
+  flex: 0 0 100%;
+  display: grid;
+  gap: 6px;
+  margin: 4px 0 2px 0;
+  padding-top: 8px;
+  border-top: 1px dashed rgba(148, 163, 184, 0.45);
+}
+.rule-trace-module-steps-title {
+  color: var(--tianshu-text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+.rule-trace-module-step {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  padding: 6px 7px;
+  border-radius: 4px;
+  background: var(--tianshu-bg-surface);
+}
+.rule-trace-module-step-index {
+  display: inline-flex;
+  width: 20px;
+  height: 20px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--el-color-primary-light-9);
+  color: var(--el-color-primary);
+  font-size: 10px;
+  font-weight: 700;
+}
+.rule-trace-module-step-main { min-width: 0; }
+.rule-trace-module-step-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--tianshu-text-primary);
+  font-size: 11px;
+}
+.rule-trace-module-step-head span { color: var(--el-color-primary); }
+.rule-trace-module-step-head span.is-failed { color: var(--el-color-danger); }
+.rule-trace-module-step-head span.is-skipped { color: var(--tianshu-text-tertiary); }
+.rule-trace-module-step-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 5px;
+}
+.rule-trace-module-step-values > div { min-width: 0; }
+.rule-trace-module-step-values span {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--tianshu-text-tertiary);
+  font-size: 10px;
+}
+.rule-trace-module-step-values pre {
+  max-height: 120px;
+  margin: 0;
+  padding: 5px 6px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--tianshu-border-subtle);
+  border-radius: 3px;
+  background: var(--tianshu-bg-soft);
+  color: var(--tianshu-text-secondary);
+  font: 10px/1.45 Consolas, Monaco, monospace;
 }
 .rule-trace-children > .trace-wrap + .trace-wrap {
   margin-top: 10px;

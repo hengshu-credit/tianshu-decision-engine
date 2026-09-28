@@ -1,6 +1,6 @@
 # Java 业务服务接入决策引擎
 
-对外公司或无需引擎源码/Maven 私服的接入，请优先使用 [rule-engine-example 离线交付指南](../rule-engine-example/README.md)：默认使用纯 HTTP 的 `rule-engine-client-http`，提供 tar.gz、全部运行依赖和可离线重编译的业务服务示例，不需要 Redis。
+对外公司或无需引擎源码/Maven 私服的接入，请优先使用 [HTTP-only SDK 与离线交付指南](http-sdk-example.html)：默认使用纯 HTTP 的 `rule-engine-client-http`，提供 tar.gz、全部运行依赖和可离线重编译的业务服务示例，不需要 Redis。
 
 以下第 1–5、7 节描述原有完整 SDK `rule-engine-client`，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。
 
@@ -13,7 +13,7 @@
 
 `server-side-execution: true` 表示 SDK 通过 HTTP 请求引擎服务端执行。涉及 API、数据库、名单、模型、派生变量或服务端函数等运行依赖时，应使用此模式。
 
-`server-side-execution: false` 表示 Java 服务执行本地缓存的脚本。该模式不执行服务端变量解析流程，需要业务服务准备完整输入并提供所需函数和运行依赖。两种模式都需要配置 Redis；当前 SDK 启动会同步规则/函数并建立订阅。SDK 不直连引擎 MySQL。
+`server-side-execution: false` 表示 Java 服务执行本地缓存的脚本。该模式不执行服务端变量解析流程，需要业务服务准备完整输入并提供所需函数和运行依赖；只有这个本地纯计算模式需要配置 Redis，SDK 启动时才会同步规则/函数并建立项目频道订阅。`server-side-execution: true` 不下载规则、不订阅 Redis，通过 HTTP 调用服务端执行，实验和跨请求执行状态也仅在该模式可用。SDK 两种模式都不直连引擎 MySQL。
 
 ## 2. 引入 SDK
 
@@ -58,7 +58,7 @@ spring:
 
 项目凭据在“项目管理 → 调用鉴权”中取得；实际入口以控制台为准。凭据仅放在 Java 服务的 Secret/环境变量中，不交给浏览器或移动端。Redis 地址、密码和 database 必须与引擎服务端一致。`project-code` 是实时推送路由键；`app-name` 只标识业务应用，不授予权限。HTTP 超时应覆盖规则、外数调用及轮询总耗时。
 
-账号密码、API Key、HMAC-SHA256 的配置见 [部署与接入](deployment.md#业务系统-sdk-集成)，也可直接复制该项目导出 API 文档中的鉴权配置。
+账号密码、API Key、HMAC-SHA256 的配置见 [部署与接入](deployment.html#sdk)，也可直接复制该项目导出 API 文档中的鉴权配置。
 
 ## 4. 暴露业务接口并处理结果
 
@@ -103,6 +103,20 @@ curl -X POST https://engine.example.com/api/rule/sync/execute/RISK_RULE \
 
 HTTP 响应先检查外层 `code == 200`，再检查 `data.success`，最后读取 `data.result`。401/403 检查鉴权；404 检查所属项目、全局关联与发布状态。`traceEnabled` 位于请求体顶层，不在 `params` 中，默认 true；JSON 使用布尔值，multipart 可使用字符串 `true` / `false`，其他值返回业务码 400。
 
+### 外数原始报文关联
+
+规则中的 API 外数变量结果会带有统一的 `externalCall` 信息：`externalCall.callId` 是一次逻辑调用的稳定关联键，`externalCall.request.rawBody`、`externalCall.rawResponseBody` 是供应商请求体和原始响应体，`rawRequestAvailable` / `rawResponseAvailable` 标明对应报文是否实际存在。`externalCall.traceSteps` 还按顺序记录规则入参、API 请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和 API 变量实际赋值。顶层也提供同名 `callId`、`rawRequestBody`、`rawResponseBody`，业务系统可直接落库或透传，不需要根据缓存、重试或 responseMapping 进行分支判断。
+
+需要在规则执行结束后补查报文时，使用同一项目令牌调用：
+
+```text
+GET /api/rule/runtime/external-calls/{callId}
+```
+
+该接口只返回调用所属项目的报文；缓存命中没有真实的供应商请求，`rawRequestAvailable=false` 属于正常情况，响应仍可通过 `callId` 关联。
+
+外数接口的报文留存策略还可以在控制台按请求/响应分别配置：选择实际报文或脚本显式写入的 `state.logRequestBody`/`state.logResponseBody` 中间副本，配置 JSONPath 排除字段和单字段字节上限；Base64、3DES Base64 解密只生成分析副本，失败时不会回退覆盖未处理密文，`originalRequestBody`/`originalResponseBody` 仍保存供应商实际报文，规则实时结果不受影响。
+
 ## 5. 日志追踪开关
 
 | 配置 | 默认值 | 作用 |
@@ -118,7 +132,7 @@ HTTP 响应先检查外层 `code == 200`，再检查 `data.success`，最后读�
 
 当前默认示例已改为 HTTP-only，配置 `RULE_SERVER_URL`、`PROJECT_ACCESS_TOKEN`、`RULE_ALLOWED_CODES` 即可接入，不再使用 `RULE_PROJECT_ID`、`RULE_PROJECT_CODE` 或 Redis。表达式追踪使用 `RULE_TRACE_ENABLED`，默认关闭；没有本地日志上报。
 
-在根目录运行 `node scripts/package-java-offline.mjs` 生成对外 tar.gz。解压后复制配置模板，执行 `start.ps1` 或 `sh start.sh`，访问默认 7070 端口的联调页。完整使用方法见 [离线交付指南](../rule-engine-example/README.md)。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 `rule-engine-example/legacy/`，不随对外包交付。
+在根目录运行 `node scripts/package-java-offline.mjs` 生成对外 tar.gz。解压后复制配置模板，执行 `start.ps1` 或 `sh start.sh`，访问默认 7070 端口的联调页。完整使用方法见 [HTTP 接入示例](http-sdk-example.html)。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 `rule-engine-example/legacy/`，不随对外包交付。
 
 ## 7. 一个 Java 服务连接多个项目
 

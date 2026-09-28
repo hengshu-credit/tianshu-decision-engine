@@ -106,6 +106,9 @@ function createDesignerApiData() {
     { id: 109, modelType: 'SCRIPT', ruleCode: 'ql_script' }
   ]
   for (const definition of definitions) {
+    const initialModelJson = definition.modelType === 'SCORE_ADV'
+      ? JSON.stringify({ initialScore: 0, resultVar: { varCode: 'score' }, dimensionGroups: [], thresholds: [] })
+      : '{}'
     routes.set(`/api/rule/definition/${definition.id}`, {
       ...definition,
       projectId: 1,
@@ -115,7 +118,7 @@ function createDesignerApiData() {
     })
     routes.set(`/api/rule/definition/content/${definition.id}`, {
       definitionId: definition.id,
-      modelJson: '{}',
+      modelJson: initialModelJson,
       scriptMode: definition.modelType === 'SCRIPT' ? 'script' : 'visual'
     })
     routes.set(`/api/rule/definition/${definition.id}/revisions`, [
@@ -125,7 +128,7 @@ function createDesignerApiData() {
         revisionNo: 1,
         state: 'DRAFT',
         lockVersion: 0,
-        modelJson: '{}',
+        modelJson: initialModelJson,
         createTime: '2026-07-23 12:00:00'
       }
     ])

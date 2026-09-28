@@ -84,6 +84,43 @@ export function prioritizeChinaBoundary(geoJson, chinaGeometry) {
   }
 }
 
+/**
+ * 只保留父级行政区范围内的子级边界。
+ *
+ * 行政区目录并不保证各国都提供统一的父级编码，因此这里以几何相交
+ * 作为最终判定，兼容中国 adcode 和 geoBoundaries 的不同编码方式。
+ */
+export function filterDashboardRegionFeatures(geoJson, parentFeature) {
+  if (!parentFeature?.geometry) return geoJson
+  return {
+    ...geoJson,
+    features: (geoJson.features || []).filter(feature => {
+      if (feature.properties?.mapRole) return false
+      const propertyMatch = parentPropertyMatch(feature.properties, parentFeature.properties)
+      return propertyMatch === null
+        ? geometryIntersects(feature.geometry, parentFeature.geometry)
+        : propertyMatch
+    })
+  }
+}
+
+/**
+ * 过滤掉当前地图边界外的热力点。
+ * 地图装饰线（outline/boundary）不参与点位判定，避免全中国外框把海上点
+ * 或当前下钻区域外的点重新带回来。
+ */
+export function dashboardPointsInGeoJson(points = [], geoJson) {
+  const boundaries = (geoJson?.features || [])
+    .filter(feature => !feature.properties?.mapRole && feature.geometry)
+  if (!boundaries.length) return []
+  return points.filter(point => {
+    const longitude = Number(point?.longitude)
+    const latitude = Number(point?.latitude)
+    if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return false
+    return boundaries.some(feature => pointInGeometry([longitude, latitude], feature.geometry))
+  })
+}
+
 function geometryBounds(coordinates, bounds = [Infinity, Infinity, -Infinity, -Infinity]) {
   if (typeof coordinates[0] === 'number') {
     bounds[0] = Math.min(bounds[0], coordinates[0])
@@ -92,6 +129,81 @@ function geometryBounds(coordinates, bounds = [Infinity, Infinity, -Infinity, -I
     bounds[3] = Math.max(bounds[3], coordinates[1])
   } else coordinates.forEach(child => geometryBounds(child, bounds))
   return bounds
+}
+
+function geometryIntersects(left, right) {
+  if (!left || !right || !['Polygon', 'MultiPolygon'].includes(left.type) ||
+    !['Polygon', 'MultiPolygon'].includes(right.type)) return false
+  const leftBounds = geometryBounds(left.coordinates)
+  const rightBounds = geometryBounds(right.coordinates)
+  if (leftBounds[0] > rightBounds[2] || leftBounds[2] < rightBounds[0] ||
+    leftBounds[1] > rightBounds[3] || leftBounds[3] < rightBounds[1]) return false
+
+  const leftPolygons = left.type === 'Polygon' ? [left.coordinates] : left.coordinates
+  const rightPolygons = right.type === 'Polygon' ? [right.coordinates] : right.coordinates
+  if (leftPolygons.some(polygon => polygon.some(ring => ring.some(point => pointInGeometry(point, right, false)))) ||
+    rightPolygons.some(polygon => polygon.some(ring => ring.some(point => pointInGeometry(point, left, false))))) {
+    return true
+  }
+  try {
+    const intersection = polygonClipping.intersection(leftPolygons, rightPolygons)
+    return intersection.some(polygon => polygon.some(ring => ringArea(ring) > 1e-10))
+  } catch (error) {
+    return false
+  }
+}
+
+function parentPropertyMatch(child = {}, parent = {}) {
+  const parentName = normalizeRegionName(parent.shapeName || parent.full_name || parent.name)
+  if (parentName) {
+    const childNames = ['province', 'city'].map(key => normalizeRegionName(child[key])).filter(Boolean)
+    if (childNames.length) return childNames.includes(parentName)
+  }
+  const parentCode = String(parent.adcode || parent.shapeID || '').replace(/\D/g, '')
+  const childCode = String(child.gb || child.adcode || child.shapeID || '').replace(/\D/g, '')
+  if (parentCode.length >= 6 && childCode.length >= 6 &&
+    parentCode.slice(0, 6) === childCode.slice(0, 6)) return true
+  return null
+}
+
+function normalizeRegionName(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, '') : ''
+}
+
+function pointInGeometry(point, geometry, includeBoundary = true) {
+  if (!geometry || !Array.isArray(geometry.coordinates)) return false
+  const polygons = geometry.type === 'Polygon' ? [geometry.coordinates] : geometry.coordinates
+  return geometry.type === 'Polygon' || geometry.type === 'MultiPolygon'
+    ? polygons.some(polygon => pointInPolygon(point, polygon, includeBoundary))
+    : false
+}
+
+function pointInPolygon(point, polygon, includeBoundary) {
+  if (!polygon?.[0]?.length) return false
+  if (!pointInRing(point, polygon[0], includeBoundary)) return false
+  return !polygon.slice(1).some(ring => pointInRing(point, ring, includeBoundary))
+}
+
+function pointInRing([x, y], ring, includeBoundary) {
+  let inside = false
+  for (let index = 0, previous = ring.length - 1; index < ring.length; previous = index++) {
+    const [xi, yi] = ring[index]
+    const [xj, yj] = ring[previous]
+    const cross = (x - xi) * (yj - yi) - (y - yi) * (xj - xi)
+    const onEdge = Math.abs(cross) < 1e-10 &&
+      x >= Math.min(xi, xj) - 1e-10 && x <= Math.max(xi, xj) + 1e-10 &&
+      y >= Math.min(yi, yj) - 1e-10 && y <= Math.max(yi, yj) + 1e-10
+    if (onEdge) return includeBoundary
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside
+  }
+  return inside
+}
+
+function ringArea(ring) {
+  return Math.abs(ring.reduce((area, point, index) => {
+    const next = ring[(index + 1) % ring.length]
+    return area + point[0] * next[1] - next[0] * point[1]
+  }, 0)) / 2
 }
 
 export function dashboardRegionNames(geoJson) {

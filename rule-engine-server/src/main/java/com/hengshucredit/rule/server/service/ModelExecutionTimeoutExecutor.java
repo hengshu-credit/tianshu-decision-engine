@@ -6,7 +6,7 @@ import jakarta.annotation.PreDestroy;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.Future;
 import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
@@ -16,11 +16,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class ModelExecutionTimeoutExecutor {
 
-    private final ExecutorService executor = Executors.newFixedThreadPool(
-            Math.max(2, Runtime.getRuntime().availableProcessors() / 2), new ModelThreadFactory());
+    private final ExecutorService executor = new java.util.concurrent.ThreadPoolExecutor(
+            Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+            Math.max(2, Runtime.getRuntime().availableProcessors() / 2),
+            0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(256),
+            new ModelThreadFactory(), new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
 
     public <T> T execute(Callable<T> task, int timeoutMs) {
-        Future<T> future = executor.submit(task);
+        final Future<T> future;
+        try {
+            future = executor.submit(task);
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            throw new IllegalStateException("模型执行队列已满，请稍后重试", e);
+        }
         try {
             return future.get(timeoutMs, TimeUnit.MILLISECONDS);
         } catch (TimeoutException e) {

@@ -154,7 +154,7 @@ for (const pageCase of pages) {
       await expect(
         page.getByText(pageCase.dialogTitle, { exact: true }).first()
       ).toBeVisible()
-      await expect(page.getByRole('button', { name: '保存' })).toBeVisible()
+      await expect(page.getByRole('button', { name: '保存', exact: true })).toBeVisible()
       await expect(page.getByRole('button', { name: '返回' })).toBeVisible()
       const createPageMetrics = await page.evaluate(() => ({
         viewportWidth: window.innerWidth,

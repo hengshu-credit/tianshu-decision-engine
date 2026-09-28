@@ -18,12 +18,16 @@ import com.hengshucredit.rule.server.mapper.RuleBillingRecordMapper;
 import com.hengshucredit.rule.server.mapper.RuleBillingSummaryMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.Resource;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.LinkedHashMap;
@@ -256,6 +260,9 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setBillingName(config.getBillingName());
             record.setBillingTarget(TARGET_ENGINE);
             record.setTargetRefId(config.getTargetRefId());
+            record.setRootTraceId(definition.getExecutionTraceId());
+            record.setBillingDedupKey(buildEngineBillingDedupKey(record));
+            record.setAttemptNo(definition.getExecutionAttemptNo());
             record.setRuleCode(definition.getRuleCode());
             record.setSuccess(success ? 1 : 0);
             record.setCostTimeMs(costTimeMs);
@@ -266,7 +273,7 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
             record.setQuantity(resolveQuantity(config.getChargeType(), success, costTimeMs));
             record.setAmount(record.getQuantity().multiply(record.getUnitPrice()).setScale(6, RoundingMode.HALF_UP));
             applyAuthAttribution(record, authContext);
-            insertRecord(record);
+            persistEngineBillingRecord(record);
         }
     }
 
@@ -284,6 +291,8 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
         if (definition == null) {
             return;
         }
+        definition.setExecutionTraceId(log.getTraceId());
+        definition.setExecutionAttemptNo(log.getAttemptNo());
         boolean success = log.getSuccess() != null && log.getSuccess() == 1;
         recordEngineExecution(definition, success, log.getExecuteTimeMs(), log.getErrorMessage(), authContext);
     }
@@ -406,6 +415,69 @@ public class RuleBillingService extends ServiceImpl<RuleBillingConfigMapper, Rul
 
     protected void insertRecord(RuleBillingRecord record) {
         recordMapper.insert(record);
+    }
+
+    /**
+     * Persist one logical engine billing record without a select-then-insert
+     * race.  The unique database key is the authority when multiple engine
+     * nodes report the same root trace concurrently.  A duplicate insert is
+     * therefore converted into an update of the already-owned row.
+     */
+    protected void persistEngineBillingRecord(RuleBillingRecord record) {
+        if (!hasText(record.getBillingDedupKey())) {
+            insertRecord(record);
+            return;
+        }
+        try {
+            insertRecord(record);
+        } catch (DuplicateKeyException duplicate) {
+            RuleBillingRecord existing = findByBillingDedupKey(record.getBillingDedupKey());
+            if (existing == null || existing.getId() == null) {
+                throw duplicate;
+            }
+            if (existing.getAttemptNo() != null && record.getAttemptNo() != null
+                    && existing.getAttemptNo() > record.getAttemptNo()) {
+                return;
+            }
+            record.setId(existing.getId());
+            updateRecord(record);
+        }
+    }
+
+    protected RuleBillingRecord findByBillingDedupKey(String billingDedupKey) {
+        return recordMapper.selectOne(new LambdaQueryWrapper<RuleBillingRecord>()
+                .eq(RuleBillingRecord::getBillingDedupKey, billingDedupKey)
+                .last("LIMIT 1"));
+    }
+
+    protected void updateRecord(RuleBillingRecord record) {
+        recordMapper.updateById(record);
+    }
+
+    private String buildEngineBillingDedupKey(RuleBillingRecord record) {
+        if (!hasText(record.getRootTraceId())) {
+            return null;
+        }
+        String identity = String.join("|",
+                record.getRootTraceId(),
+                record.getBillingTarget() == null ? "" : record.getBillingTarget(),
+                record.getBillingCode() == null ? "" : record.getBillingCode(),
+                record.getTargetRefId() == null ? "NULL" : String.valueOf(record.getTargetRefId()));
+        return sha256(identity);
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                    .digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(digest.length * 2);
+            for (byte item : digest) {
+                result.append(String.format("%02x", item & 0xff));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("JRE不支持SHA-256", e);
+        }
     }
 
     protected void deleteSummaries(LocalDate summaryDate) {

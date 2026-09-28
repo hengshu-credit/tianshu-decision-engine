@@ -16,7 +16,7 @@ final class ConditionExpressionBuilder {
         if ("not_empty".equals(op)) return "isNotBlank(" + left + ")";
         if ("is_true".equals(op)) return left + " == true";
         if ("is_false".equals(op)) return left + " == false";
-        if (empty(value)) return "true";
+        if (value == null) return "false";
 
         String rhs = valueIsVariable ? value.trim() : formatConstant(varType, value);
         if ("==".equals(op) || "!=".equals(op) || ">".equals(op) || ">=".equals(op) || "<".equals(op) || "<=".equals(op)) {
@@ -26,19 +26,19 @@ final class ConditionExpressionBuilder {
             return left + " " + op + " " + rhs;
         }
         if ("contains".equals(op)) return "containsValue(" + left + ", " + rhs + ")";
-        if ("not_contains".equals(op)) return "!containsValue(" + left + ", " + rhs + ")";
+        if ("not_contains".equals(op)) return "(!isBlank(" + left + ") && !containsValue(" + left + ", " + rhs + "))";
         if ("starts_with".equals(op)) return "startsWithValue(" + left + ", " + rhs + ")";
-        if ("not_starts_with".equals(op)) return "!startsWithValue(" + left + ", " + rhs + ")";
+        if ("not_starts_with".equals(op)) return "(!isBlank(" + left + ") && !startsWithValue(" + left + ", " + rhs + "))";
         if ("ends_with".equals(op)) return "endsWithValue(" + left + ", " + rhs + ")";
-        if ("not_ends_with".equals(op)) return "!endsWithValue(" + left + ", " + rhs + ")";
+        if ("not_ends_with".equals(op)) return "(!isBlank(" + left + ") && !endsWithValue(" + left + ", " + rhs + "))";
         if ("regex_match".equals(op)) return "regexMatchValue(" + left + ", " + rhs + ")";
-        if ("not_regex_match".equals(op)) return "!regexMatchValue(" + left + ", " + rhs + ")";
+        if ("not_regex_match".equals(op)) return "(!isBlank(" + left + ") && !regexMatchValue(" + left + ", " + rhs + "))";
         if ("in_array".equals(op)) return "containsValue(" + rhs + ", " + left + ")";
-        if ("not_in_array".equals(op)) return "!containsValue(" + rhs + ", " + left + ")";
+        if ("not_in_array".equals(op)) return "(!isBlank(" + left + ") && !containsValue(" + rhs + ", " + left + "))";
         if ("in_list".equals(op)) return "isInLists(" + left + ", " + rhs + ")";
-        if ("not_in_list".equals(op)) return "!isInLists(" + left + ", " + rhs + ")";
+        if ("not_in_list".equals(op)) return "(!isBlank(" + left + ") && !isInLists(" + left + ", " + rhs + "))";
         if ("in".equals(op)) return left + " in " + formatList(varType, value);
-        if ("not_in".equals(op)) return "!(" + left + " in " + formatList(varType, value) + ")";
+        if ("not_in".equals(op)) return "(!isBlank(" + left + ") && !(" + left + " in " + formatList(varType, value) + "))";
         if ("between".equals(op) || "not_between".equals(op)) {
             List<String> parts = splitValues(value);
             if (parts.size() < 2) return "true";
@@ -52,7 +52,7 @@ final class ConditionExpressionBuilder {
             }
             String expr = "(" + rangeLeft + " >= " + lower
                     + " && " + rangeLeft + " <= " + upper + ")";
-            return "between".equals(op) ? expr : "!" + expr;
+            return "between".equals(op) ? expr : "(!isBlank(" + left + ") && !" + expr + ")";
         }
         if ("contains_any".equals(op) || "contains_all".equals(op)) {
             List<String> parts = splitValues(value);
@@ -63,11 +63,11 @@ final class ConditionExpressionBuilder {
             return sb.toString();
         }
         if ("has_key".equals(op)) return "hasKey(" + left + ", " + rhs + ")";
-        if ("not_has_key".equals(op)) return "!hasKey(" + left + ", " + rhs + ")";
+        if ("not_has_key".equals(op)) return "(!isBlank(" + left + ") && !hasKey(" + left + ", " + rhs + "))";
         if ("has_value".equals(op)) return "hasMapValue(" + left + ", " + rhs + ")";
-        if ("not_has_value".equals(op)) return "!hasMapValue(" + left + ", " + rhs + ")";
+        if ("not_has_value".equals(op)) return "(!isBlank(" + left + ") && !hasMapValue(" + left + ", " + rhs + "))";
         if ("array_element_contains".equals(op)) return "containsElementValue(" + left + ", " + rhs + ")";
-        if ("array_element_not_contains".equals(op)) return "!containsElementValue(" + left + ", " + rhs + ")";
+        if ("array_element_not_contains".equals(op)) return "(!isBlank(" + left + ") && !containsElementValue(" + left + ", " + rhs + "))";
         if ("array_element_starts_with".equals(op)) return "elementStartsWithValue(" + left + ", " + rhs + ")";
         if ("array_element_ends_with".equals(op)) return "elementEndsWithValue(" + left + ", " + rhs + ")";
         String sizeOperator = sizeOperator(op);
@@ -106,13 +106,14 @@ final class ConditionExpressionBuilder {
     }
 
     private static String formatSmartConstant(String value) {
-        String text = value == null ? "" : value.trim();
+        String raw = value == null ? "" : value;
+        String text = raw.trim();
         if ("true".equals(text) || "false".equals(text) || "null".equals(text)) return text;
         try {
             Double.parseDouble(text);
             return text;
         } catch (NumberFormatException ignored) {
-            return quote(text);
+            return quote(raw);
         }
     }
 

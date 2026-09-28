@@ -111,4 +111,106 @@ export function generateApiDocHtml(doc, options = {}) {
 </html>`
 }
 
+function openApiType(value) {
+  const type = String(value || 'STRING').toUpperCase()
+  if (['INTEGER', 'INT', 'LONG'].includes(type)) return { type: 'integer' }
+  if (['NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].includes(type)) return { type: 'number' }
+  if (['BOOLEAN', 'BOOL'].includes(type)) return { type: 'boolean' }
+  if (['ARRAY', 'LIST', 'VECTOR'].includes(type)) return { type: 'array', items: {} }
+  if (['OBJECT', 'MAP'].includes(type)) return { type: 'object' }
+  return { type: 'string' }
+}
+
+function setOpenApiField(root, field, prefix = '') {
+  const rawPath = String(field && field.path || '')
+  const path = (prefix && rawPath.startsWith(`${prefix}.`) ? rawPath.slice(prefix.length + 1) : rawPath).split('.').filter(Boolean)
+  if (!path.length) return
+  let current = root
+  path.forEach((part, index) => {
+    if (index === path.length - 1) {
+      current.properties = current.properties || {}
+      const schema = openApiType(field.type)
+      if (field.label) schema.description = field.label
+      if (field.exampleValue != null && field.exampleValue !== '') schema.example = field.exampleValue
+      current.properties[part] = schema
+      if (field.required) current.required = Array.from(new Set([...(current.required || []), part]))
+      return
+    }
+    current.properties = current.properties || {}
+    current.properties[part] = current.properties[part] || { type: 'object', properties: {} }
+    current = current.properties[part]
+  })
+}
+
+function fieldsSchema(fields, prefix = '') {
+  const schema = { type: 'object', properties: {} }
+  ;(fields || []).forEach(field => setOpenApiField(schema, field, prefix))
+  return schema
+}
+
+function openApiSecurity(authentications) {
+  const schemes = {}
+  const alternatives = []
+  ;(authentications || []).forEach((auth, index) => {
+    const name = `projectAuth${index + 1}`
+    const type = String(auth.authType || '').toUpperCase()
+    if (type === 'BASIC') schemes[name] = { type: 'http', scheme: 'basic' }
+    else if (type === 'API_KEY') schemes[name] = { type: 'apiKey', in: auth.placement === 'QUERY' ? 'query' : 'header', name: auth.parameterName || 'X-Rule-Api-Key' }
+    else if (type === 'HMAC_SHA256') schemes[name] = {
+      type: 'apiKey',
+      in: 'header',
+      name: 'X-Rule-Access-Key',
+      description: 'HMAC-SHA256 需要同时发送 X-Rule-Access-Key、X-Rule-Timestamp、X-Rule-Nonce、X-Rule-Signature；签名覆盖请求方法、路径、原始 Query、Body SHA-256、时间戳和 nonce。'
+    }
+    else schemes[name] = { type: 'apiKey', in: 'header', name: 'X-Rule-Token' }
+    alternatives.push({ [name]: [] })
+  })
+  return { schemes, alternatives }
+}
+
+/** Generate an importable OpenAPI 3.1 document from the same normalized doc as the HTML export. */
+export function generateOpenApiDocument(doc) {
+  const normalized = normalizeApiDoc(doc)
+  const security = openApiSecurity(normalized.authentications)
+  const paths = {}
+  normalized.rules.forEach(rule => {
+    const pathPrefix = rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
+    const path = `${pathPrefix}${encodeURIComponent(rule.ruleCode)}`
+    const schemaNote = rule.schemaTrust === 'UNVERIFIED'
+      ? `字段契约未通过已发布制品校验：${(rule.schemaDiagnostics || []).join('；') || '请重新发布后再使用此文档。'}`
+      : ''
+    const requestSchema = fieldsSchema(rule.requestFields, '')
+    paths[path] = { post: {
+      operationId: `execute_${rule.ruleCode}`,
+      summary: rule.ruleName || rule.ruleCode,
+      description: [rule.description || '执行已发布规则并返回统一平台响应。', schemaNote].filter(Boolean).join('\n\n'),
+      'x-rule-schema-trust': rule.schemaTrust || 'UNKNOWN',
+      'x-rule-schema-diagnostics': rule.schemaDiagnostics || [],
+      'x-open-api-contract-enabled': rule.openApiEnabled,
+      'x-open-api-contract': rule.openApiEnabled ? rule.openApiContract : undefined,
+      security: security.alternatives,
+      requestBody: { required: true, content: { 'application/json': { schema: rule.openApiEnabled
+        ? requestSchema
+        : { type: 'object', properties: {
+            clientAppName: { type: 'string' }, traceEnabled: { type: 'boolean', default: true }, params: fieldsSchema(rule.requestFields, 'params')
+          }, required: ['params'] }
+      } } },
+      responses: {
+        '200': { description: '规则执行完成', content: { 'application/json': { schema: {
+          type: 'object', properties: { code: { type: 'integer', example: 200 }, message: { type: 'string' }, data: { type: 'object', properties: {
+            success: { type: 'boolean' }, traceId: { type: 'string' }, revisionId: { type: 'integer' }, artifactDigest: { type: 'string' }, result: fieldsSchema(rule.responseFields, 'data.result')
+          } } }
+        } } } },
+        '400': { description: '请求参数或规则执行失败' }, '401': { description: '鉴权失败' }, '404': { description: '规则不存在' }, '409': { description: '幂等请求冲突或执行中' }, '429': { description: '限流或并发超过限制' }
+      }
+    } }
+  })
+  return {
+    openapi: '3.1.0',
+    info: { title: normalized.project.projectName || normalized.project.projectCode || '天枢决策 API', description: normalized.project.description || '天枢决策引擎已发布规则接口', version: 'published' },
+    servers: [{ url: 'https://api.example.com' }], paths,
+    components: { securitySchemes: security.schemes }
+  }
+}
+
 export { normalizeApiDoc } from './model'

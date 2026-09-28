@@ -104,6 +104,16 @@ public class AdvancedScorecardCompilerTest {
         assertEquals(5.0, ((Number) ((Map<?, ?>) execution.getResult()).get("totalScore")).doubleValue(), 0.000001);
     }
 
+    @Test
+    public void rejectsMissingResultVariableInsteadOfGeneratingInvalidAssignment() {
+        CompileResult result = compiler.compile("{\"initialScore\":100,\"resultVar\":{"
+                + "\"varCode\":\"\",\"_varId\":null},\"dimensionGroups\":[],\"thresholds\":[]}");
+
+        assertTrue(result.isSuccess() == false);
+        assertTrue(result.getErrorMessage().contains("必须配置结果变量"));
+        assertTrue(result.getCompiledScript() == null || !result.getCompiledScript().contains("= 100.0"));
+    }
+
     private String thresholdModel(String firstMin, String firstMax, String secondMin, String secondMax) {
         return "{"
                 + "\"initialScore\":250,\"resultVar\":{\"varCode\":\"totalScore\",\"varType\":\"NUMBER\"},"

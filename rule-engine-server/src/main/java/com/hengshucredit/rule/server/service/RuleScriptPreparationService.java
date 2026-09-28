@@ -49,7 +49,7 @@ public class RuleScriptPreparationService implements ApplicationRunner {
         runtimeInvoker.register(engine.getRunner());
         var bindings = functionRegistrar.prepareFunctions(snapshot.getFunctions(), engine.getRunner());
         var prepared = engine.prepare(snapshot.getCompiledScript(), constantNames(snapshot.getVariables()));
-        functionRegistrar.validateFunctionBindings(snapshot.getCompiledScript(), bindings, engine.getRunner());
+        functionRegistrar.validateFunctionBindings(prepared.functionNames(), bindings, engine.getRunner());
         return prepared;
     }
 
@@ -59,7 +59,7 @@ public class RuleScriptPreparationService implements ApplicationRunner {
         List<RuleVariable> variables = projectId != null && projectId > 0
                 ? variableService.listByProject(projectId, null) : variableService.listGlobalOnly();
         var prepared = engine.prepare(script, constantNames(variables));
-        functionRegistrar.validateFunctionBindings(script, bindings, engine.getRunner());
+        functionRegistrar.validateFunctionBindings(prepared.functionNames(), bindings, engine.getRunner());
         return prepared;
     }
 
@@ -86,50 +86,88 @@ public class RuleScriptPreparationService implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) {
-        int count = 0;
-        int failed = 0;
+        warmupPublishedRules();
+    }
+
+    /**
+     * 只预热已上线的发布记录及仍处于生产绑定状态的固定版本；草稿、审核中版本和下线版本不进入目标集。
+     * 启动流程和管理端修复后重试共用，结果可直接用于 readiness/运维页面。
+     */
+    public synchronized java.util.Map<String, Object> warmupPublishedRules() {
         List<RulePublished> publishedRules = publishedMapper.selectList(
                 new LambdaQueryWrapper<RulePublished>().eq(RulePublished::getStatus, 1));
-        warmupStatus.start(publishedRules.size());
-        for (RulePublished published : publishedRules) {
-            if (warm(published)) {
+        List<WarmupCandidate> targets = collectWarmupTargets(publishedRules);
+        if (warmupStatus.getState() == com.hengshucredit.rule.server.health.RuleWarmupState.NOT_STARTED) {
+            warmupStatus.start(targets.size());
+        } else {
+            warmupStatus.retry(targets.size());
+        }
+        int count = 0;
+        int failed = 0;
+        for (WarmupCandidate target : targets) {
+            if (target.failure() != null) {
+                failed++;
+                warmupStatus.recordFailure(target.definitionId(), target.version(),
+                        target.revisionId(), target.artifactDigest(), target.failure());
+            } else if (warm(target.published())) {
                 count++;
                 warmupStatus.recordPrepared();
             } else {
                 failed++;
+                RulePublished published = target.published();
                 warmupStatus.recordFailure(published.getDefinitionId(), published.getVersion(),
+                        published.getRevisionId(), published.getArtifactDigest(),
                         new IllegalStateException(lastWarmupFailureMessage == null
                                 ? "规则发布版本预热失败" : lastWarmupFailureMessage));
             }
+        }
+        warmupStatus.complete();
+        log.info("QLExpress prepared {} active rule versions before readiness; {} rejected", count, failed);
+        return warmupStatus.details();
+    }
+
+    private List<WarmupCandidate> collectWarmupTargets(List<RulePublished> publishedRules) {
+        List<WarmupCandidate> targets = new java.util.ArrayList<>();
+        for (RulePublished published : publishedRules) {
+            targets.add(new WarmupCandidate(published, published.getDefinitionId(), published.getVersion(),
+                    published.getRevisionId(), published.getArtifactDigest(), null));
             for (RuleVersionBinding binding : bindingMapper.selectList(new LambdaQueryWrapper<RuleVersionBinding>()
                     .eq(RuleVersionBinding::getDefinitionId, published.getDefinitionId())
                     .eq(RuleVersionBinding::getStatus, 1))) {
                 if (java.util.Objects.equals(binding.getVersionNo(), published.getVersion())) continue;
+                RuleDefinitionVersion version;
                 try {
-                    RuleDefinitionVersion version = versionMapper.selectById(binding.getSnapshotId());
-                    if (version == null || version.getArtifactId() == null || version.getRevisionId() == null) {
-                        log.info("Skipping non-executable legacy binding {} without an artifact", binding.getId());
-                        continue;
-                    }
-                    if (warm(versionService.resolvePublished(published, binding.getId()))) {
-                        count++;
-                        warmupStatus.recordPrepared();
+                    version = versionMapper.selectById(binding.getSnapshotId());
+                } catch (RuntimeException invalid) {
+                    targets.add(new WarmupCandidate(null, published.getDefinitionId(), binding.getVersionNo(),
+                            null, null, invalid));
+                    log.error("QLExpress warmup could not load rule id={} binding={} version={}: {}",
+                            published.getDefinitionId(), binding.getId(), binding.getVersionNo(), invalid.getMessage());
+                    continue;
+                }
+                if (version == null || version.getArtifactId() == null || version.getRevisionId() == null) {
+                    log.info("Skipping non-executable legacy binding {} without an artifact", binding.getId());
+                    continue;
+                }
+                try {
+                    RulePublished selected = versionService.resolvePublished(published, binding.getId());
+                    if (selected == null) {
+                        targets.add(new WarmupCandidate(null, published.getDefinitionId(), binding.getVersionNo(),
+                                version.getRevisionId(), version.getArtifactDigest(),
+                                new IllegalStateException("固定版本未解析到发布制品")));
                     } else {
-                        failed++;
-                        warmupStatus.recordFailure(published.getDefinitionId(), binding.getVersionNo(),
-                                new IllegalStateException(lastWarmupFailureMessage == null
-                                        ? "固定规则版本预热失败" : lastWarmupFailureMessage));
+                        targets.add(new WarmupCandidate(selected, published.getDefinitionId(), binding.getVersionNo(),
+                                selected.getRevisionId(), selected.getArtifactDigest(), null));
                     }
                 } catch (RuntimeException invalid) {
-                    failed++;
-                    warmupStatus.recordFailure(published.getDefinitionId(), binding.getVersionNo(), invalid);
+                    targets.add(new WarmupCandidate(null, published.getDefinitionId(), binding.getVersionNo(),
+                            version.getRevisionId(), version.getArtifactDigest(), invalid));
                     log.error("QLExpress warmup rejected rule id={} binding={} version={}: {}",
                             published.getDefinitionId(), binding.getId(), binding.getVersionNo(), invalid.getMessage());
                 }
             }
         }
-        warmupStatus.complete();
-        log.info("QLExpress prepared {} active rule versions before readiness; {} rejected", count, failed);
+        return targets;
     }
 
     private boolean warm(RulePublished published) {
@@ -144,4 +182,7 @@ public class RuleScriptPreparationService implements ApplicationRunner {
             return false;
         }
     }
+
+    private record WarmupCandidate(RulePublished published, Long definitionId, Integer version,
+                                   Long revisionId, String artifactDigest, Throwable failure) { }
 }

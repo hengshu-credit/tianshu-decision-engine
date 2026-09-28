@@ -88,6 +88,8 @@
       show-icon
     />
 
+    <execution-metrics-panel />
+
     <div class="dashboard-sections">
       <dashboard-section
         title="进件与决策"
@@ -173,13 +175,15 @@
                 </el-select>
                 <el-button v-if="mapCountry" size="small" @click="changeMapCountry('')">返回全球</el-button>
                 <el-button
-                  v-if="mapCountry && previousMapLayer"
+                  v-if="mapCountry && mapRegionPath.length"
                   size="small"
                   @click="drillUpMap"
                 >返回上一级</el-button>
                 <el-button v-if="mapCountry !== 'CHN'" size="small" @click="changeMapCountry('CHN')">中国全图</el-button>
                 <span>{{ mapCountry
-                  ? (nextMapLayer ? `点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}` : '已是最细行政区层级。')
+                  ? (nextMapLayer
+                    ? `${mapRegionPathLabel ? `当前：${mapRegionPathLabel} · ` : ''}点击区域下钻到${nextMapLayer.label || adminLevelLabels[nextMapLayer.level]}`
+                    : '已是最细行政区层级。')
                   : '悬停查看区域名称，点击国家可查看行政区。' }}</span>
               </div>
               <div v-if="mapCatalogError" class="dashboard-map-error">
@@ -328,6 +332,7 @@ import ChartCard from '@/components/dashboard/DashboardChartCard.vue'
 import MetricCard from '@/components/dashboard/DashboardMetricCard.vue'
 import ResourceCard from '@/components/dashboard/DashboardResourceCard.vue'
 import DashboardSection from '@/components/dashboard/DashboardSection.vue'
+import ExecutionMetricsPanel from '@/components/dashboard/ExecutionMetricsPanel.vue'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 import {
   ADMIN_LEVEL_LABELS,
@@ -335,8 +340,10 @@ import {
   DASHBOARD_REGION_MAP_NAME,
   dashboardCountryBounds,
   dashboardCountryOptions,
+  dashboardPointsInGeoJson,
   dashboardRegionNames,
   dashboardWorldCountries,
+  filterDashboardRegionFeatures,
   prioritizeChinaBoundary
 } from '@/utils/dashboardMapLayers'
 import {
@@ -356,7 +363,8 @@ export default {
     RemoteFilterSelect,
     MetricCard,
     ChartCard,
-    ResourceCard
+    ResourceCard,
+    ExecutionMetricsPanel
   },
   data() {
     const filters = readDashboardFilters(window.sessionStorage)
@@ -377,8 +385,11 @@ export default {
       mapCatalog: null,
       mapCountry: 'CHN',
       mapLevel: 'ADM1',
+      mapRegionPath: [],
       mapRegionNames: {},
       mapDecorations: [],
+      mapGeoJson: null,
+      mapFeatureIndex: {},
       worldCountries: {},
       worldCountryBounds: {},
       adminLevelLabels: ADMIN_LEVEL_LABELS,
@@ -417,7 +428,8 @@ export default {
     },
     geoOption() {
       void this.themeVersion
-      return geoHeatmapOption((this.applications.geo || {}).points || [], {
+      const points = dashboardPointsInGeoJson((this.applications.geo || {}).points || [], this.mapGeoJson)
+      return geoHeatmapOption(points, {
         center: [this.mapView.longitude, this.mapView.latitude],
         zoom: this.mapView.zoom,
         mapName: this.mapCountry ? DASHBOARD_REGION_MAP_NAME : undefined,
@@ -427,6 +439,9 @@ export default {
         decorations: this.mapDecorations,
         fitRegion: Boolean(this.mapCountry)
       })
+    },
+    mapRegionPathLabel() {
+      return this.mapRegionPath.map(region => region.name).filter(Boolean).join(' / ')
     },
     mapCountryOptions() {
       return dashboardCountryOptions(this.mapCatalog, this.worldCountries)
@@ -501,6 +516,8 @@ export default {
       this.mapReady = false
       this.mapLoading = true
       this.mapError = ''
+      this.mapGeoJson = null
+      this.mapFeatureIndex = {}
       try {
         if (this.mapCountry && !this.mapLayer) throw new Error('当前国家暂无该层级的边界数据')
         const country = this.mapCountry
@@ -528,9 +545,19 @@ export default {
           }
         }
         if (this.mapLoadController !== controller) return
+        if (this.mapRegionPath.length) {
+          const parent = this.mapRegionPath[this.mapRegionPath.length - 1]
+          geoJson = filterDashboardRegionFeatures(geoJson, parent.feature)
+        }
+        if (this.mapRegionPath.length && !geoJson.features?.length) {
+          throw new Error('当前区域暂无下一级行政区边界')
+        }
         this.mapDecorations = geoJson.features.filter(feature => feature.properties.mapRole).map(feature => ({
           id: feature.properties.shapeID, role: feature.properties.mapRole
         }))
+        this.mapFeatureIndex = Object.fromEntries(geoJson.features
+          .filter(feature => !feature.properties?.mapRole && feature.properties?.shapeID)
+          .map(feature => [feature.properties.shapeID, feature]))
         if (country) {
           this.mapRegionNames = dashboardRegionNames(geoJson)
           registerDashboardMap(geoJson, DASHBOARD_REGION_MAP_NAME)
@@ -540,6 +567,7 @@ export default {
           this.mapRegionNames = {}
           registerDashboardMap(geoJson)
         }
+        this.mapGeoJson = geoJson
         this.mapViewVersion += 1
         this.mapReady = true
       } catch (error) {
@@ -574,17 +602,22 @@ export default {
     },
     changeMapCountry(country) {
       this.mapCountry = country
+      this.mapRegionPath = []
       const layers = this.mapLayerOptions
       this.mapLevel = (layers.find(layer => layer.level === 'ADM1') || layers[0])?.level || 'ADM0'
       return this.loadMap()
     },
     changeMapLevel(level) {
+      this.mapRegionPath = []
       this.mapLevel = level
       return this.loadMap()
     },
     drillUpMap() {
-      if (!this.previousMapLayer) return Promise.resolve()
-      return this.changeMapLevel(this.previousMapLayer.level)
+      const previousLayer = this.previousMapLayer
+      if (!this.mapRegionPath.length || !previousLayer) return Promise.resolve()
+      this.mapRegionPath = this.mapRegionPath.slice(0, -1)
+      this.mapLevel = previousLayer.level
+      return this.loadMap()
     },
     openMapCountry(name) {
       if (this.mapCountry) {
@@ -592,7 +625,18 @@ export default {
           this.$message.info('已是最细行政区层级')
           return
         }
-        return this.changeMapLevel(this.nextMapLayer.level)
+        const feature = this.mapFeatureIndex[name]
+        if (!feature) {
+          this.$message.info('当前区域暂无可用的下一级行政区边界')
+          return
+        }
+        this.mapRegionPath = [...this.mapRegionPath, {
+          level: this.mapLevel,
+          name: this.mapRegionNames[name] || name,
+          feature
+        }]
+        this.mapLevel = this.nextMapLayer.level
+        return this.loadMap()
       }
       const country = this.worldCountries[name]
       if (this.mapCountryOptions.some(item => item.code === country)) this.changeMapCountry(country)

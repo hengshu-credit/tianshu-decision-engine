@@ -342,7 +342,7 @@ public class GraphScriptGenerator {
             if (left == null || left.trim().isEmpty()) return false;
             String valueKind = node.getString("valueKind");
             Object value = node.get("value");
-            return value != null && !String.valueOf(value).trim().isEmpty();
+            return value != null;
         }
         if ("group".equals(type)) {
             JSONArray children = node.getJSONArray("children");
@@ -405,7 +405,7 @@ public class GraphScriptGenerator {
             right = resolveVar(rightId, rightRefType, rightCode, varContext);
         } else {
             Object value = leaf.get("value");
-            if (value == null || String.valueOf(value).trim().isEmpty()) return "true";
+            if (value == null) return "false";
             right = formatConditionConstant(leaf.getString("varType"), value);
         }
         return left + " " + op + " " + right;

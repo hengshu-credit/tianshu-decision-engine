@@ -3,6 +3,8 @@ package com.hengshucredit.rule.core.function;
 import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.Arrays;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
 
 /** 普通业务抽样使用的随机整数和随机小数函数，不用于安全随机场景。 */
 public class RandomBuiltinFunctions {
@@ -28,17 +30,11 @@ public class RandomBuiltinFunctions {
             upper--;
         }
         if (lower > upper) throw noInteger();
-        if (lower == upper) return lower;
-        if (upper != Long.MAX_VALUE) {
-            return ThreadLocalRandom.current().nextLong(lower, upper + 1L);
-        }
-        BigInteger origin = BigInteger.valueOf(lower);
-        BigInteger range = LONG_MAX.subtract(origin).add(BigInteger.ONE);
-        BigInteger offset;
-        do {
-            offset = new BigInteger(range.bitLength(), ThreadLocalRandom.current());
-        } while (offset.compareTo(range) >= 0);
-        return origin.add(offset).longValue();
+        String key = Arrays.deepToString(args);
+        final long effectiveLower = lower;
+        final long effectiveUpper = upper;
+        return ((Number) RuntimeContextBridge.randomValue("randomInt", key,
+                () -> randomIntValue(effectiveLower, effectiveUpper))).longValue();
     }
 
     public long randomIntForManagement(double lower, double upper,
@@ -66,15 +62,29 @@ public class RandomBuiltinFunctions {
         }
         if (Double.compare(effectiveLower, effectiveUpper) == 0) return effectiveLower;
 
+        String key = Arrays.deepToString(args);
+        return ((Number) RuntimeContextBridge.randomValue("randomDecimal", key,
+                () -> randomDecimalValue(effectiveLower, effectiveUpper))).doubleValue();
+    }
+
+    private long randomIntValue(long lower, long upper) {
+        if (lower == upper) return lower;
+        if (upper != Long.MAX_VALUE) return ThreadLocalRandom.current().nextLong(lower, upper + 1L);
+        BigInteger origin = BigInteger.valueOf(lower);
+        BigInteger range = LONG_MAX.subtract(origin).add(BigInteger.ONE);
+        BigInteger offset;
+        do { offset = new BigInteger(range.bitLength(), ThreadLocalRandom.current()); }
+        while (offset.compareTo(range) >= 0);
+        return origin.add(offset).longValue();
+    }
+
+    private double randomDecimalValue(double lower, double upper) {
         double unit = ThreadLocalRandom.current().nextDouble();
-        double value;
-        if (effectiveLower < 0D && effectiveUpper > 0D) {
-            value = effectiveLower * (1D - unit) + effectiveUpper * unit;
-        } else {
-            value = effectiveLower + (effectiveUpper - effectiveLower) * unit;
-        }
-        if (Double.isNaN(value) || value < effectiveLower) return effectiveLower;
-        if (Double.isInfinite(value) || value > effectiveUpper) return effectiveUpper;
+        double value = lower < 0D && upper > 0D
+                ? lower * (1D - unit) + upper * unit
+                : lower + (upper - lower) * unit;
+        if (Double.isNaN(value) || value < lower) return lower;
+        if (Double.isInfinite(value) || value > upper) return upper;
         return value;
     }
 

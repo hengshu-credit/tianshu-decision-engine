@@ -10,7 +10,7 @@ public class ConditionExpressionBuilderTest {
     public void compilesRegexArrayElementMapAndSizeOperators() {
         assertEquals("regexMatchValue(name, \"^VIP\")",
                 ConditionExpressionBuilder.build("name", "STRING", "regex_match", "^VIP", false));
-        assertEquals("!regexMatchValue(name, pattern)",
+        assertEquals("(!isBlank(name) && !regexMatchValue(name, pattern))",
                 ConditionExpressionBuilder.build("name", "STRING", "not_regex_match", "pattern", true));
         assertEquals("containsValue(allowedCodes, code)",
                 ConditionExpressionBuilder.build("code", "STRING", "in_array", "allowedCodes", true));
@@ -28,7 +28,7 @@ public class ConditionExpressionBuilderTest {
     public void compilesServerListMembershipAgainstListQueryConfig() {
         assertEquals("isInLists(customer.mobile, [10, 20])",
                 ConditionExpressionBuilder.build("customer.mobile", "STRING", "in_list", "[10, 20]", true));
-        assertEquals("!isInLists(customer.mobile, [10, 20])",
+        assertEquals("(!isBlank(customer.mobile) && !isInLists(customer.mobile, [10, 20]))",
                 ConditionExpressionBuilder.build("customer.mobile", "STRING", "not_in_list", "[10, 20]", true));
     }
 
@@ -40,5 +40,15 @@ public class ConditionExpressionBuilderTest {
                 ConditionExpressionBuilder.build("applyDate", "DATE", "<", "cutoffDate", true));
         assertEquals("(dateToMillis(applyDate) >= dateToMillis(\"2026-01-01\") && dateToMillis(applyDate) <= dateToMillis(\"2026-12-31\"))",
                 ConditionExpressionBuilder.build("applyDate", "DATE", "between", "2026-01-01,2026-12-31", false));
+    }
+
+    @Test
+    public void preservesEmptyAndWhitespaceStringLiterals() {
+        assertEquals("name == \"\"",
+                ConditionExpressionBuilder.build("name", "STRING", "==", "", false));
+        assertEquals("name == \"  \"",
+                ConditionExpressionBuilder.build("name", "STRING", "==", "  ", false));
+        assertEquals("false",
+                ConditionExpressionBuilder.build("name", "STRING", "==", null, false));
     }
 }

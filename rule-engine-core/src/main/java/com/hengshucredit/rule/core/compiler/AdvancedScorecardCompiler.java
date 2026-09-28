@@ -36,8 +36,12 @@ public class AdvancedScorecardCompiler implements RuleCompiler {
 
             Long resVarId = resultVar != null && resultVar.containsKey("_varId") ? resultVar.getLong("_varId") : null;
             String resRefType = resultVar != null ? resultVar.getString("_refType") : null;
-            String varCode = resultVar != null ? resultVar.getString("varCode") : "totalScore";
             JSONObject resultOperand = resultVar != null ? resultVar.getJSONObject("operand") : null;
+            String varCode = resultVar == null ? null : resultVar.getString("varCode");
+            if (resultVar == null || (resultOperand == null && resVarId == null
+                    && (varCode == null || varCode.trim().isEmpty()))) {
+                throw new IllegalArgumentException("复杂评分卡必须配置结果变量");
+            }
             String resCode = resultOperand != null
                     ? OperandCompiler.compile(resultOperand, varContext)
                     : resolveVar(resVarId, resRefType, varCode, varContext);

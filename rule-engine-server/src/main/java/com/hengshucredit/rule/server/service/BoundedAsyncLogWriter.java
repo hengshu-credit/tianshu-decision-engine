@@ -57,11 +57,18 @@ class BoundedAsyncLogWriter<T> implements AutoCloseable {
     boolean offer(T event) {
         if (event == null) return false;
         if (detailQueue.offer(event)) return true;
-        droppedBodies.incrementAndGet();
-        T metadata = metadataOnly.apply(event);
-        if (metadataQueue.offer(metadata)) return true;
-        droppedLogs.incrementAndGet();
-        return false;
+        // Queue pressure must not silently discard a runtime fact. Apply bounded
+        // backpressure by writing the full event on the caller thread.
+        try {
+            sink.write(java.util.Collections.singletonList(event));
+            return true;
+        } catch (Exception synchronousFailure) {
+            droppedBodies.incrementAndGet();
+            T metadata = metadataOnly.apply(event);
+            if (metadataQueue.offer(metadata)) return true;
+            droppedLogs.incrementAndGet();
+            return false;
+        }
     }
 
     long getDroppedBodies() { return droppedBodies.get(); }

@@ -19,7 +19,7 @@ export function workbenchActionRoute(actionCode) {
 }
 
 export function canUseWorkbenchAction(actionCode) {
-  if (actionCode === 'REFRESH_WORKBENCH') return hasPermission('project:view')
+  if (['REFRESH_WORKBENCH', 'RETRY_WARMUP'].includes(actionCode)) return hasPermission('project:view')
   const menu = SIDEBAR_MENUS.find(item => item.index === workbenchActionRoute(actionCode))
   return Boolean(menu && hasPermission(menu.permission))
 }

@@ -150,6 +150,23 @@ public class SchemaSyncServiceTest {
     }
 
     @Test
+    public void billingRecordDedupSchemaAddsColumnAndUniqueConstraintWhenMissing() throws Exception {
+        SchemaSyncService service = new SchemaSyncService();
+        FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate("billing_dedup_key");
+        jdbcTemplate.missingIndexes.add("uk_billing_record_dedup_key");
+        setField(service, "jdbcTemplate", jdbcTemplate);
+
+        Method method = SchemaSyncService.class.getDeclaredMethod("ensureProjectAuthSchema");
+        method.setAccessible(true);
+        method.invoke(service);
+
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_billing_record` ADD COLUMN `billing_dedup_key`"));
+        assertTrue(containsSql(jdbcTemplate.sqlList,
+                "ALTER TABLE `rule_billing_record` ADD UNIQUE KEY `uk_billing_record_dedup_key` (`billing_dedup_key`)"));
+    }
+
+    @Test
     public void consoleRbacSchemaCreatesEveryAuthorizationTableWhenMissing() throws Exception {
         SchemaSyncService service = new SchemaSyncService();
         FakeJdbcTemplate jdbcTemplate = new FakeJdbcTemplate();

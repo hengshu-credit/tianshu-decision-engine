@@ -696,6 +696,29 @@ describe('RuleDetail — 辅助方法', () => {
 })
 
 describe('RuleDetail — 开放接口契约', () => {
+  test('启用幂等后自动创建首个组件，避免空白配置无法操作', async () => {
+    const wrapper = await mountAndWait()
+
+    expect(wrapper.vm.openApiForm.idempotency.components).toEqual([])
+    wrapper.vm.onIdempotencyEnabledChange(true)
+
+    expect(wrapper.vm.openApiForm.idempotency.components).toHaveLength(1)
+    expect(wrapper.vm.openApiForm.idempotency.components[0].operand).toBeNull()
+    wrapper.unmount()
+  })
+
+  test('开放接口关闭时仍校验幂等配置，错误不会拖到发布阶段', async () => {
+    const wrapper = await mountAndWait()
+    wrapper.vm.openApiForm.idempotency.enabled = true
+    wrapper.vm.openApiForm.idempotency.components = []
+
+    await wrapper.vm.saveOpenApiConfig()
+
+    expect(definitionApi.saveContent).not.toHaveBeenCalled()
+    expect(wrapper.vm.$message.error).toHaveBeenCalledWith('幂等键表达式不能为空')
+    wrapper.unmount()
+  })
+
   test('没有规则入参时提示先在设计器引用字段且不添加无效映射', async () => {
     const ruleDetail = { ...mockRuleDetail(1), inputFieldsJson: [] }
     const wrapper = await mountAndWait(undefined, undefined, {}, ruleDetail)

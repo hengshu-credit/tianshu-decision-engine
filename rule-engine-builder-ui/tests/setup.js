@@ -296,6 +296,11 @@ vi.mock('@/api/datasource', () => ({
 vi.mock('@/api/runtimeLog', () => ({
   listRuntimeLogs: vi.fn(),
   getExternalApiStats: vi.fn(),
+  getExecutionMetrics: vi.fn(),
+  retryRuleWarmup: vi.fn(),
+  getRuntimeCallPayload: vi.fn(),
+  getRuntimeCallPayloadByCallId: vi.fn(),
+  getRuntimeCallPayloadsByRootTraceId: vi.fn(),
   getRuleSetStats: vi.fn(),
   __esModule: true
 }))

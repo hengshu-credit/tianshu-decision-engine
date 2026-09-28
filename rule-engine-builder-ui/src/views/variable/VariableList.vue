@@ -1237,6 +1237,12 @@
           </div>
         </div>
       </section>
+      <resource-preflight-panel
+        v-if="!isObjectField"
+        resource-type="VARIABLE"
+        :resource-id="form.id"
+        :config-signature="preflightConfigSignature"
+      />
       <el-form
         ref="form"
         :model="form"
@@ -2643,6 +2649,7 @@ import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import DialogResizeHandle from '@/components/common/DialogResizeHandle.vue'
 import ConfigLayerGuide from '@/components/common/ConfigLayerGuide.vue'
+import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import VariableSourceSelector from './components/VariableSourceSelector.vue'
 import VariableToolbarActions from './components/VariableToolbarActions.vue'
 import VariableImportHelp from './components/VariableImportHelp.vue'
@@ -2900,6 +2907,7 @@ export default {
     VariableImportHelp,
     DialogResizeHandle,
     ConfigLayerGuide,
+    ResourcePreflightPanel,
     ElIconInfo,
     ElIconSuccess,
   },
@@ -2939,6 +2947,16 @@ export default {
     },
   },
   computed: {
+    preflightConfigSignature() {
+      if (!this.form || !this.form.id || this.isObjectField) return ''
+      return JSON.stringify({
+        id: this.form.id,
+        status: this.form.status,
+        varSource: this.form.varSource,
+        sourceConfig: this.form.sourceConfig,
+        updateTime: this.form.updateTime,
+      })
+    },
     dbSampleFields() {
       let params
       try { params = parseSqlParameters(this.form.dbParams) } catch (e) { return [] }

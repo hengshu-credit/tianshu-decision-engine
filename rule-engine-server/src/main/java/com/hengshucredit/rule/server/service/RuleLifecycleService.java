@@ -929,6 +929,7 @@ public class RuleLifecycleService {
                               DecisionArtifact artifact, RulePushMessage message) {
         RulePublishOutbox outbox = new RulePublishOutbox();
         outbox.setOperationId(UUID.randomUUID().toString());
+        message.setOperationId(outbox.getOperationId());
         outbox.setDefinitionId(definition.getId());
         outbox.setRevisionId(revision.getId());
         outbox.setArtifactId(artifact == null ? revision.getArtifactId() : artifact.getId());

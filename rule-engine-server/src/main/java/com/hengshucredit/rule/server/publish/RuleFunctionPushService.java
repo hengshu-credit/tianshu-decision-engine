@@ -6,6 +6,7 @@ import com.hengshucredit.rule.model.entity.RuleProject;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
 import com.hengshucredit.rule.server.service.RuleProjectService;
 import org.springframework.stereotype.Service;
+import java.util.UUID;
 
 import jakarta.annotation.Resource;
 
@@ -23,6 +24,7 @@ public class RuleFunctionPushService {
             throw new IllegalArgumentException("函数不能为空");
         }
         RulePushMessage message = new RulePushMessage();
+        message.setOperationId(UUID.randomUUID().toString());
         message.setAction(action);
         message.setFuncCode(function.getFuncCode());
         message.setFuncName(function.getFuncName());

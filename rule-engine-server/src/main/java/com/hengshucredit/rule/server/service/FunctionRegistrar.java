@@ -141,7 +141,14 @@ public class FunctionRegistrar {
 
     /** Static dependency check for publication/warmup, never for each execution. */
     public void validateFunctionBindings(String script, Map<String, CustomFunction> bindings, Express4Runner runner) {
-        for (String code : runner.getOutFunctions(script)) {
+        validateFunctionBindings(runner.getOutFunctions(script), bindings, runner);
+    }
+
+    /** Validate the function set captured by QLExpress preparation; execution must not reparse source. */
+    public void validateFunctionBindings(Iterable<String> functionNames,
+                                         Map<String, CustomFunction> bindings,
+                                         Express4Runner runner) {
+        for (String code : functionNames == null ? Collections.<String>emptyList() : functionNames) {
             CustomFunction registered = runner.getFunction(code);
             if (registered == null || registered instanceof RequestFunction && !bindings.containsKey(code)) {
                 throw new IllegalStateException("函数未绑定到当前规则制品，请从函数选择器插入并重新保存: " + code);

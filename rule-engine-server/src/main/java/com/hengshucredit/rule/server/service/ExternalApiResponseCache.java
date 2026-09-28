@@ -103,11 +103,16 @@ public class ExternalApiResponseCache {
     public LoadResult singleFlight(RuleExternalApiConfig config, String cacheKey,
                                    Callable<Map<String, Object>> loader) throws Exception {
         ApiCache apiCache = apiCache(config);
+        CompletableFuture<Map<String, Object>> existing = apiCache.inFlight.get(cacheKey);
+        if (existing != null) {
+            coalesced.incrementAndGet();
+            return new LoadResult(copy(await(existing)), true);
+        }
         if (apiCache.inFlight.size() >= apiCache.settings.maxInFlight) {
             return new LoadResult(loader.call(), false);
         }
         CompletableFuture<Map<String, Object>> created = new CompletableFuture<>();
-        CompletableFuture<Map<String, Object>> existing = apiCache.inFlight.putIfAbsent(cacheKey, created);
+        existing = apiCache.inFlight.putIfAbsent(cacheKey, created);
         if (existing != null) {
             coalesced.incrementAndGet();
             return new LoadResult(copy(await(existing)), true);

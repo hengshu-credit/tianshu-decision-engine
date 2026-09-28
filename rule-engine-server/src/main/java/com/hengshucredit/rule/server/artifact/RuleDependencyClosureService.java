@@ -30,6 +30,7 @@ import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
 import com.hengshucredit.rule.server.service.OperandDependencyCollector;
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
 import jakarta.annotation.Resource;
@@ -74,6 +75,18 @@ public class RuleDependencyClosureService {
     @Resource private com.hengshucredit.rule.server.service.RuleVersionBindingService versionBindingService;
     @Resource
     private PublishedRuleFieldSnapshotResolver publishedFieldSnapshotResolver;
+    @Resource
+    private QLExpressEngine qlExpressEngine = new QLExpressEngine();
+
+    // 独立注册表只包含平台内置函数，不受其他项目运行时注册的函数影响。
+    private static final QLExpressEngine BUILTIN_ENGINE = new QLExpressEngine();
+
+    private static final Set<String> RUNTIME_FUNCTIONS = Set.of(
+            "executeRule", "executeRuleById", "executeRuleField", "executeRuleFieldById",
+            "executeRuleVersionById", "executeRuleVersionFieldById", "terminateAllRules",
+            "setRuntimeValue", "currentRule", "currentRuleName", "currentMatchedConditions",
+            "sourceStatus", "recordRuleSetItem", "recordRuleSetSummary",
+            "isInLists", "isInListsNumber", "listMatch", "listMatchNumber");
 
     public DependencyClosure resolve(Long definitionId, Long revisionId) {
         return resolve(definitionId, revisionId, null);
@@ -136,8 +149,10 @@ public class RuleDependencyClosureService {
         }
 
         String modelJson;
+        String compiledScript;
         if (revision != null) {
             modelJson = revision.getModelJson();
+            compiledScript = revision.getCompiledScript();
         } else {
             RulePublished published = loadPublishedRule(definitionId);
             if (bindingId != null && published != null) {
@@ -161,6 +176,7 @@ public class RuleDependencyClosureService {
                 return;
             }
             modelJson = published.getModelJson();
+            compiledScript = published.getCompiledScript();
             addRuleSnapshot(definition, published, resolvedFields, dependencies);
         }
         if (modelJson == null || modelJson.isBlank()) {
@@ -169,6 +185,8 @@ public class RuleDependencyClosureService {
         } else {
             collectStructuredReferences(modelJson, definition.getProjectId(), dependencies,
                     issues, visitingRules, visitedRules);
+            validateScriptFunctionReferences(compiledScript, modelJson,
+                    dependencies, issues);
         }
         List<RuleDefinitionInputField> inputFields = resolvedFields == null
                 ? loadInputFields(definitionId) : resolvedFields.getInputFields();
@@ -193,6 +211,48 @@ public class RuleDependencyClosureService {
         visitedRules.add(referenceKey);
     }
 
+    private void validateScriptFunctionReferences(String script, String modelJson,
+                                                 Map<String, ArtifactDependency> dependencies,
+                                                 List<RuleValidationIssue> issues) {
+        if (script == null || script.isBlank()) return;
+        Object model;
+        try {
+            model = JSON.parse(modelJson);
+        } catch (RuntimeException invalid) {
+            // 结构化引用阶段已记录模型 JSON 错误。
+            return;
+        }
+        Set<String> boundFunctions = new LinkedHashSet<>();
+        for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(model)) {
+            if (!"FUNCTION".equals(normalize(reference.getRefType())) || reference.getRefId() == null) continue;
+            ArtifactDependency dependency = dependencies.get("FUNCTION:" + reference.getRefId());
+            if (dependency != null) {
+                String code = JSON.parseObject(new String(dependency.getContent(), StandardCharsets.UTF_8))
+                        .getString("funcCode");
+                if (code != null) boundFunctions.add(code);
+            }
+        }
+        Set<String> functions;
+        try {
+            functions = qlExpressEngine.getRunner().getOutFunctions(script);
+        } catch (RuntimeException error) {
+            issues.add(RuleValidationIssue.error("INVALID_COMPILED_SCRIPT", "compiledScript",
+                    error.getMessage() == null ? "编译脚本无法解析" : error.getMessage()));
+            return;
+        }
+        for (String code : functions) {
+            if (code == null || code.isBlank() || builtinFunction(code) || boundFunctions.contains(code)) continue;
+            issues.add(RuleValidationIssue.error("FUNCTION_NOT_BOUND", "compiledScript." + code,
+                    "QL 脚本函数缺少稳定 ID 绑定: " + code)
+                    .withTitle("脚本函数尚未绑定")
+                    .withNextAction("从函数选择器选择对应函数，保存并重新编译后提交校验"));
+        }
+    }
+
+    private static boolean builtinFunction(String code) {
+        return RUNTIME_FUNCTIONS.contains(code) || BUILTIN_ENGINE.getRunner().getFunction(code) != null;
+    }
+
     private void collectStructuredReferences(String modelJson, Long projectId,
                                              Map<String, ArtifactDependency> dependencies,
                                              List<RuleValidationIssue> issues,
@@ -212,8 +272,11 @@ public class RuleDependencyClosureService {
                     if (reference.getDisplayCode() == null || reference.getDisplayCode().isBlank()) {
                         issues.add(RuleValidationIssue.error("MISSING_FUNCTION_ID", reference.getPath(),
                                 "函数引用既无 functionId 也无内置函数编码"));
-                    } else {
+                    } else if (builtinFunction(reference.getDisplayCode())) {
                         addBuiltinFunctionRequirement(reference.getDisplayCode(), dependencies);
+                    } else {
+                        issues.add(RuleValidationIssue.error("MISSING_FUNCTION_ID", reference.getPath(),
+                                "自定义函数引用缺少 functionId，请从函数选择器重新选择"));
                     }
                 } else {
                     addFunction(reference.getRefId(), projectId, reference.getPath(), dependencies, issues);

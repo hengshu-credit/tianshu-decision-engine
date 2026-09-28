@@ -127,9 +127,21 @@ public class ClientFunctionRegistrar {
     public void registerRemoteFromPush(String scope, String projectCode, String funcCode, String implType,
                                        String implScript, String implClass, String implMethod,
                                        String implBeanName, String paramsJson) {
+        tryRegisterRemoteFromPush(scope, projectCode, funcCode, implType, implScript, implClass,
+                implMethod, implBeanName, paramsJson);
+    }
+
+    /**
+     * 接收 Redis 函数更新并返回处理结果，供消息幂等层判断是否可以消费 operationId。
+     * 保留 {@link #registerRemoteFromPush(String, String, String, String, String, String, String, String, String)}
+     * 的 void 签名，兼容已编译的旧客户端调用方。
+     */
+    public boolean tryRegisterRemoteFromPush(String scope, String projectCode, String funcCode, String implType,
+                                       String implScript, String implClass, String implMethod,
+                                       String implBeanName, String paramsJson) {
         RemoteFunctionKey key = remoteKey(scope, projectCode, funcCode, false);
         if (key == null) {
-            return;
+            return false;
         }
         JSONObject function = new JSONObject();
         function.put("funcCode", funcCode);
@@ -142,12 +154,12 @@ public class ClientFunctionRegistrar {
         try {
             CustomFunction target = buildFunction(function);
             if (target == null) {
-                return;
+                return false;
             }
             synchronized (functionLock) {
                 if (!ensureDispatcher(key.funcCode)) {
                     log.warn("[ClientFuncReg] 函数 {} 与非客户端注册冲突，忽略远端更新", key.funcCode);
-                    return;
+                    return false;
                 }
                 Map<RemoteFunctionKey, CustomFunction> next = new ConcurrentHashMap<>(remoteFunctions);
                 next.put(key, target);
@@ -155,8 +167,10 @@ public class ClientFunctionRegistrar {
             }
             AggregateBuiltinFunctionRegistry.register(engine.getRunner());
             log.info("[ClientFuncReg] 注册/更新远端 {} 函数: {}", key.scope, key.funcCode);
+            return true;
         } catch (Exception e) {
             log.error("[ClientFuncReg] 注册远端函数 {} 失败: {}", funcCode, e.getMessage(), e);
+            return false;
         }
     }
 
@@ -173,19 +187,25 @@ public class ClientFunctionRegistrar {
 
     /** 删除指定作用域的远端函数；同名另一作用域或手工函数会继续作为后备实现。 */
     public void removeRemote(String scope, String projectCode, String funcCode) {
+        tryRemoveRemote(scope, projectCode, funcCode);
+    }
+
+    /** 删除远端函数并返回处理结果，供消息幂等层判断是否可以消费 operationId。 */
+    public boolean tryRemoveRemote(String scope, String projectCode, String funcCode) {
         RemoteFunctionKey key = remoteKey(scope, projectCode, funcCode, false);
         if (key == null) {
-            return;
+            return false;
         }
         synchronized (functionLock) {
             if (!remoteFunctions.containsKey(key)) {
-                return;
+                return true;
             }
             Map<RemoteFunctionKey, CustomFunction> next = new ConcurrentHashMap<>(remoteFunctions);
             next.remove(key);
             remoteFunctions = next;
         }
         log.info("[ClientFuncReg] 已移除远端 {} 函数: {}", key.scope, key.funcCode);
+        return true;
     }
 
     /** 兼容原有无 scope 的删除调用：按 GLOBAL 处理。 */

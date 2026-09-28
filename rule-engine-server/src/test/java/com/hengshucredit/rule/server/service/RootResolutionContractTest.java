@@ -70,6 +70,28 @@ public class RootResolutionContractTest {
     }
 
     @Test
+    public void durableSourceStepRechecksInputDigestBeforeReuse() {
+        var api = variable(11, "score", "API",
+                "{\"apiConfigId\":7,\"paramMapping\":{\"id\":\"$.customerId\"},\"resultPath\":\"body.score\"}");
+        AtomicInteger calls = new AtomicInteger();
+        VariableSourceResolver resolver = new VariableSourceResolver();
+        ReflectionTestUtils.setField(resolver, "externalApiInvokeService", new ExternalApiInvokeService() {
+            @Override public Map<String, Object> invoke(Long id, Map<String, Object> params) {
+                calls.incrementAndGet();
+                return Map.of("body", Map.of("score", params.get("id")));
+            }
+        });
+        var cache = new VariableResolutionInvocationCache();
+        cache.setSourceStepListener(step -> { });
+        var first = new LinkedHashMap<String, Object>(Map.of("customerId", "A"));
+        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), first, options(cache, "score"));
+        var second = new LinkedHashMap<String, Object>(Map.of("customerId", "B"));
+        resolver.resolveIntoSnapshot(List.of(api), List.of(), List.of(), second, options(cache, "score"));
+        assertEquals("持久化来源的实际输入变化后必须重新调用", 2, calls.get());
+        assertEquals("B", second.get("score"));
+    }
+
+    @Test
     public void modelIsComputedOnceEvenWhenSourceStatusIsReadInAnotherChild() {
         RuleModel model = new RuleModel();
         model.setId(22L); model.setModelCode("riskModel"); model.setModelContent("frozen");

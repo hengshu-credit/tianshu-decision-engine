@@ -19,6 +19,20 @@ import java.util.Map;
 public class RulePreflightValidationServiceTest {
 
     @Test
+    public void dependencyValidationReceivesFreshCompilationWithoutChangingTheDraft() {
+        FixtureService service = new FixtureService();
+        service.revision.setCompiledScript("return stale();");
+        service.compileResult = CompileResult.ok("return current();", "QLEXPRESS");
+
+        service.validate(200L);
+
+        Assert.assertEquals("return current();", service.dependencyRevision.getCompiledScript());
+        Assert.assertEquals("return stale();", service.revision.getCompiledScript());
+        Assert.assertEquals(service.revision.getId(), service.dependencyRevision.getId());
+        Assert.assertEquals(service.revision.getModelJson(), service.dependencyRevision.getModelJson());
+    }
+
+    @Test
     public void reportIdentifiesTheExactDraftLockVersion() {
         FixtureService service = new FixtureService();
         service.revision.setLockVersion(7);
@@ -156,6 +170,7 @@ public class RulePreflightValidationServiceTest {
         private RuleFieldAnalyzer.ResolvedFields resolved =
                 new RuleFieldAnalyzer.ResolvedFields(Collections.emptyList(), Collections.emptyList());
         private int persistedFieldLoadCount;
+        private RuleRevision dependencyRevision;
 
         private FixtureService() {
             revision.setId(200L);
@@ -203,6 +218,7 @@ public class RulePreflightValidationServiceTest {
         protected RuleDependencyClosureService.DependencyClosure resolveDependencies(
                 RuleDefinition currentDefinition, RuleRevision currentRevision,
                 RuleFieldAnalyzer.ResolvedFields currentFields) {
+            dependencyRevision = currentRevision;
             return closure;
         }
 

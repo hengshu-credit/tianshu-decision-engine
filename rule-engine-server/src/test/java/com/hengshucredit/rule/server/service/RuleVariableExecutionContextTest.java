@@ -123,6 +123,31 @@ public class RuleVariableExecutionContextTest {
     }
 
     @Test
+    public void runtimeWriteToLazyMissingPathDoesNotResolveItsSource() {
+        RuleDefinitionInputField target = new RuleDefinitionInputField();
+        target.setVarId(30L); target.setRefType("DATA_OBJECT"); target.setScriptName("report.score");
+        RuleDataObjectField field = new RuleDataObjectField();
+        field.setId(30L); field.setRefVariableId(9L); field.setLazyReference(true);
+        RuleVariable source = new RuleVariable();
+        source.setId(9L); source.setScriptName("sourceScore"); source.setVarSource("API");
+        var plan = new DataObjectFieldReferenceResolver().resolveSnapshot(List.of(target), List.of(field), List.of(source));
+        var options = VariableResolveOptions.defaults();
+        options.setRequiredScriptNames(Set.of("report.score", "sourceScore"));
+        Map<String, Object> values = new LinkedHashMap<>();
+        int[] calls = {0};
+        try (var context = RuleVariableExecutionContext.prepare("TREE", values, options, plan, Set.of(), () -> {
+            if (options.getRequiredScriptNames().contains("sourceScore")) calls[0]++;
+        })) {
+            var result = new QLExpressEngine().execute(
+                    "setRuntimeValue(\"report.score\", 88); return report.score;", context);
+            assertTrue(result.getErrorMessage(), result.isSuccess());
+            assertEquals(88, result.getResult());
+        }
+        assertEquals("runtime assignment must not trigger a lazy source read", 0, calls[0]);
+        assertEquals(88, ((Map<?, ?>) values.get("report")).get("score"));
+    }
+
+    @Test
     public void explicitSourceStatusStillCollectsStatusAndUnusedFieldFailureDoesNotRun() {
         var options = VariableResolveOptions.defaults();
         options.setRequiredScriptNames(Set.of("external"));

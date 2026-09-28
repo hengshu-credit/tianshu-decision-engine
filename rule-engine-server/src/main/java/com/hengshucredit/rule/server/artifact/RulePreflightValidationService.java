@@ -87,8 +87,11 @@ public class RulePreflightValidationService {
             report.setCompiledType(compileResult.getCompiledType());
         }
 
+        RuleRevision compiledRevision = new RuleRevision();
+        org.springframework.beans.BeanUtils.copyProperties(revision, compiledRevision);
+        compiledRevision.setCompiledScript(report.getCompiledScript());
         RuleDependencyClosureService.DependencyClosure closure =
-                resolveDependencies(definition, revision, fields);
+                resolveDependencies(definition, compiledRevision, fields);
         report.setDependencyDigest(closure.getDependencyDigest());
         for (RuleValidationIssue issue : closure.getIssues()) {
             addIssue(report, issue);

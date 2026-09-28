@@ -58,6 +58,27 @@ public class RuleExternalApiConfigServiceTest {
                 .containsValue(3L));
     }
 
+    @Test
+    public void deletingDatasourceInvalidatesAllApiRuntimeRegistries() {
+        RuleExternalApiConfig first = new RuleExternalApiConfig();
+        first.setId(11L);
+        RuleExternalApiConfig second = new RuleExternalApiConfig();
+        second.setId(12L);
+        RecordingMapper apiMapper = new RecordingMapper();
+        apiMapper.records = java.util.Arrays.asList(first, second);
+
+        RuleExternalApiConfigService service = new RuleExternalApiConfigService();
+        ReflectionTestUtils.setField(service, "baseMapper", apiMapper.proxy(RuleExternalApiConfigMapper.class));
+        ReflectionTestUtils.setField(service, "apiHttpClientRegistry", new ApiHttpClientRegistry());
+        ReflectionTestUtils.setField(service, "externalApiGuardRegistry", new ExternalApiGuardRegistry(new ExternalCallProperties()));
+        ReflectionTestUtils.setField(service, "circuitBreakerRegistry", new ExternalApiCircuitBreakerRegistry(new ExternalCallProperties()));
+        ReflectionTestUtils.setField(service, "externalApiResponseCache", new ExternalApiResponseCache(new ExternalCallProperties(), null, System::currentTimeMillis));
+
+        service.deleteByDatasourceId(7L);
+
+        assertTrue(apiMapper.wrapper.getSqlSegment().contains("datasourceId"));
+    }
+
     private static class RecordingMapper {
         private LambdaQueryWrapper<?> wrapper;
         private java.util.List<?> records = Collections.emptyList();

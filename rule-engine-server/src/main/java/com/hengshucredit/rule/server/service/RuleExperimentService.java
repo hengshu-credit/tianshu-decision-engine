@@ -301,6 +301,11 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     public RuleExperimentExecuteResult execute(String experimentCode, RuleExperimentExecuteRequest request) {
+        return execute(experimentCode, request, null);
+    }
+
+    public RuleExperimentExecuteResult execute(String experimentCode, RuleExperimentExecuteRequest request,
+                                                String forcedExperimentTraceId) {
         long start = System.currentTimeMillis();
         RuleExperiment experiment = findEnabledExperiment(experimentCode);
         if (experiment == null) {
@@ -308,7 +313,9 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         }
         List<RuleExperimentGroup> groups = listGroups(experiment.getId());
         validateRuntimeGroups(experiment, groups);
-        String experimentTraceId = allocateExperimentTrace(experiment);
+        String configDigest = configDigest(experiment, groups);
+        String experimentTraceId = hasText(forcedExperimentTraceId)
+                ? forcedExperimentTraceId : allocateExperimentTrace(experiment);
 
         Map<String, Object> params = request == null || request.getParams() == null
                 ? Collections.emptyMap()
@@ -328,14 +335,14 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         RouteChoice productionChoice = chooseProductionGroup(experiment, groups, params, requestKey, clientAppName);
         RuleExperimentGroupResult productionResult = runGroup(experiment, productionChoice.group, params,
                 requestKey, requestTime, clientAppName, "PRODUCTION", productionChoice.reason, true,
-                experimentTraceId, productionChoice.routeTrace);
+                experimentTraceId, configDigest, productionChoice.routeTrace);
         result.setProductionGroup(productionResult);
         result.getTags().add(productionChoice.group.getGroupCode());
 
         List<RouteChoice> testChoices = chooseTestGroups(experiment, groups, params, requestKey);
         for (RouteChoice testChoice : testChoices) {
             RuleExperimentGroup testGroup = testChoice.group;
-            if (hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey)) {
+            if (hasExecutedTestGroup(experiment.getId(), testGroup.getId(), requestKey, configDigest)) {
                 RuleExperimentGroupResult skipped = skippedTestResult(testGroup, "同一请求已执行过测试组，跳过重复空跑");
                 result.getTestGroups().add(skipped);
                 continue;
@@ -343,7 +350,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
             boolean invokeExternal = testGroup.getInvokeExternalSource() == null || testGroup.getInvokeExternalSource() == 1;
             RuleExperimentGroupResult testResult = runGroup(experiment, testGroup, params,
                     requestKey, requestTime, clientAppName, "TEST", testChoice.reason, invokeExternal,
-                    experimentTraceId, testChoice.routeTrace);
+                    experimentTraceId, configDigest, testChoice.routeTrace);
             result.getTestGroups().add(testResult);
             result.getTags().add(testGroup.getGroupCode());
         }
@@ -352,6 +359,47 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         result.setErrorMessage(productionResult.getErrorMessage());
         result.setExecuteTimeMs(System.currentTimeMillis() - start);
         return result;
+    }
+
+    /** 项目运行入口使用项目鉴权上下文限定实验范围，不能复用控制台管理执行入口。 */
+    public RuleExperimentExecuteResult executeForProject(String experimentCode, Long projectId,
+                                                         RuleExperimentExecuteRequest request) {
+        return executeForProject(experimentCode, projectId, request, null);
+    }
+
+    public RuleExperimentExecuteResult executeForProject(String experimentCode, Long projectId,
+                                                         RuleExperimentExecuteRequest request,
+                                                         String forcedExperimentTraceId) {
+        RuleExperiment experiment = findEnabledExperiment(experimentCode);
+        if (experiment == null || experiment.getProjectId() == null
+                || !experiment.getProjectId().equals(projectId)) {
+            throw new IllegalArgumentException("分流实验不存在、未启用或不属于当前项目: " + experimentCode);
+        }
+        return execute(experimentCode, request, forcedExperimentTraceId);
+    }
+
+    public String executionFingerprint(String experimentCode, Long projectId) {
+        RuleExperiment experiment = findEnabledExperiment(experimentCode);
+        if (experiment == null || experiment.getProjectId() == null || !experiment.getProjectId().equals(projectId)) {
+            throw new IllegalArgumentException("分流实验不存在、未启用或不属于当前项目: " + experimentCode);
+        }
+        return configDigest(experiment, listGroups(experiment.getId()));
+    }
+
+    private String configDigest(RuleExperiment experiment, List<RuleExperimentGroup> groups) {
+        return sha256(JSON.toJSONString(Map.of("experiment", experiment,
+                "groups", groups == null ? Collections.emptyList() : groups)));
+    }
+
+    private String sha256(String value) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+            StringBuilder result = new StringBuilder(digest.length * 2);
+            for (byte item : digest) result.append(String.format("%02x", item & 0xff));
+            return result.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("实验配置摘要计算失败", e);
+        }
     }
 
     private String allocateExperimentTrace(RuleExperiment experiment) {
@@ -377,7 +425,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
     }
 
     private Map<String, Object> bindExperimentParams(RuleExperiment experiment, Map<String, Object> params) {
-        return executionParameterBinder.bindRuleInputs(
+        return executionParameterBinder.bindRuleInputsPreservingMissing(
                 resolveTestFields(experiment.getId()).getInputFields(), params);
     }
 
@@ -595,6 +643,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                                String stage, String routeReason,
                                                boolean invokeExternalSource,
                                                String experimentTraceId,
+                                               String configDigest,
                                                List<Map<String, Object>> routeTrace) {
         RulePublished published = findPublishedRule(experiment, group);
         VariableResolveOptions options = VariableResolveOptions.defaults();
@@ -606,7 +655,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 published, params, experiment.getProjectId(), clientAppName, options, "EXPERIMENT_" + stage);
         RuleExperimentGroupResult groupResult = toGroupResult(group, outcome, stage, routeReason);
         saveExecutionLog(experiment, group, groupResult, params, requestKey, stage, routeReason,
-                experimentTraceId, routeTrace);
+                experimentTraceId, configDigest, routeTrace);
         return groupResult;
     }
 
@@ -636,12 +685,17 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                                   RuleExperimentGroupResult result, Map<String, Object> inputParams,
                                   String requestKey, String stage, String routeReason,
                                   String experimentTraceId,
+                                  String configDigest,
                                   List<Map<String, Object>> routeTrace) {
         RuleExperimentExecutionLog log = new RuleExperimentExecutionLog();
         log.setExperimentTraceId(experimentTraceId);
+        Object outerRootTrace = com.hengshucredit.rule.core.engine.RuntimeContextBridge.currentContext()
+                .rootRule().get("traceId");
+        log.setRootTraceId(outerRootTrace == null ? experimentTraceId : String.valueOf(outerRootTrace));
         log.setChildTraceId(result.getTraceId());
         log.setExperimentId(experiment.getId());
         log.setExperimentCode(experiment.getExperimentCode());
+        log.setConfigDigest(configDigest);
         log.setRequestKey(requestKey);
         log.setStage(stage);
         log.setGroupId(group.getId());
@@ -761,7 +815,8 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
         return matched;
     }
 
-    private boolean hasExecutedTestGroup(Long experimentId, Long groupId, String requestKey) {
+    private boolean hasExecutedTestGroup(Long experimentId, Long groupId, String requestKey,
+                                         String configDigest) {
         if (!hasText(requestKey)) {
             return false;
         }
@@ -769,6 +824,7 @@ public class RuleExperimentService extends ServiceImpl<RuleExperimentMapper, Rul
                 .eq(RuleExperimentExecutionLog::getExperimentId, experimentId)
                 .eq(RuleExperimentExecutionLog::getGroupId, groupId)
                 .eq(RuleExperimentExecutionLog::getRequestKey, requestKey)
+                .eq(RuleExperimentExecutionLog::getConfigDigest, configDigest)
                 .eq(RuleExperimentExecutionLog::getStage, "TEST")) > 0;
     }
 

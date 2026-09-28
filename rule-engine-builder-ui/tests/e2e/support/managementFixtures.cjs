@@ -271,6 +271,21 @@ function createManagementApiData() {
         total: 1
       }
     }],
+    ['/api/rule/runtime-log/91/payload', {
+      callId: 'e2e-call-91',
+      rootTraceId: 'e2e-root-trace-91',
+      rawRequestAvailable: true,
+      rawResponseAvailable: true,
+      requestBody: { userId: 'u-91' },
+      responseBody: { risk: 'low' },
+      traceSteps: [
+        { sequence: 1, type: 'REQUEST_INPUT', label: '规则入参', status: 'SUCCESS', input: { userId: 'u-91' } },
+        { sequence: 2, type: 'API_REQUEST', label: '拼装外数请求', status: 'SUCCESS', attempt: 1, refType: 'VARIABLE', refId: 1, targetPath: '$.userId', input: { userId: 'u-91' }, output: { userId: 'u-91' } },
+        { sequence: 3, type: 'AUTHENTICATION', label: '鉴权（已脱敏）', status: 'SUCCESS', output: { Authorization: 'Bearer ****' } },
+        { sequence: 4, type: 'EXTERNAL_RESPONSE', label: '外部数据响应', status: 'SUCCESS', output: { risk: 'low' } },
+        { sequence: 5, type: 'EXTERNAL_ASSIGNMENT', label: '外数结果赋值到引擎变量/对象', status: 'SUCCESS', refType: 'VARIABLE', refId: 2, targetPath: 'riskLevel', resultPath: 'body.risk', value: 'low' }
+      ]
+    }],
     ['/api/rule/runtime-log/external-api-stats', {
       overview: {
         queryCount: 10,

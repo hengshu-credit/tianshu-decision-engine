@@ -1,6 +1,60 @@
-import { generateApiDocHtml } from '@/utils/apiDoc'
+import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
 
 describe('完整 API 文档生成器', () => {
+  test('生成可导入的 OpenAPI 3.1 文档且不输出凭据', () => {
+    const openApi = generateOpenApiDocument({
+      project: { projectCode: 'credit', projectName: '授信决策' },
+      authentications: [{ authType: 'API_KEY', placement: 'HEADER', parameterName: 'X-Partner-Key' }],
+      rules: [{
+        ruleCode: 'RISK', ruleName: '风险决策',
+        inputVariables: [{ varCode: 'age', varType: 'INTEGER', varLabel: '年龄' }],
+        outputVariables: [{ varCode: 'decision', varType: 'STRING', varLabel: '决策' }]
+      }]
+    })
+
+    expect(openApi.openapi).toBe('3.1.0')
+    expect(openApi.paths['/api/rule/sync/execute/RISK']).toBeTruthy()
+    expect(openApi.components.securitySchemes.projectAuth1.name).toBe('X-Partner-Key')
+    expect(openApi.paths['/api/rule/sync/execute/RISK'].post.requestBody.content['application/json'].schema.properties.params.properties.age.type).toBe('integer')
+    expect(openApi.paths['/api/rule/sync/execute/RISK'].post.responses['200'].content['application/json'].schema.properties.data.properties.result.properties.decision.type).toBe('string')
+    expect(JSON.stringify(openApi)).not.toContain('secretMasked')
+  })
+
+  test('HMAC 安全方案声明完整签名头和签名语义', () => {
+    const openApi = generateOpenApiDocument({
+      project: { projectCode: 'credit' },
+      authentications: [{ authType: 'HMAC_SHA256' }],
+      rules: []
+    })
+
+    const scheme = openApi.components.securitySchemes.projectAuth1
+    expect(scheme.name).toBe('X-Rule-Access-Key')
+    expect(scheme.description).toContain('X-Rule-Timestamp')
+    expect(scheme.description).toContain('X-Rule-Signature')
+  })
+
+  test('已启用开放接口契约的规则导出 open 路径并标记契约状态', () => {
+    const openApi = generateOpenApiDocument({
+      project: { projectCode: 'credit' },
+      rules: [{
+        ruleCode: 'OPEN_RULE',
+        openApiEnabled: true,
+        schemaTrust: 'VERIFIED',
+        openApiContract: {
+          enabled: true,
+          requestMappings: [{ sourceType: 'BODY', sourcePath: '$.customer.age', required: true, targetType: 'INTEGER' }],
+          responseMappings: [{ sourceRefType: 'VARIABLE', sourceVarId: 7, targetField: 'decision' }]
+        }
+      }]
+    })
+
+    const operation = openApi.paths['/api/rule/open/execute/OPEN_RULE'].post
+    expect(operation['x-open-api-contract-enabled']).toBe(true)
+    expect(operation['x-rule-schema-trust']).toBe('VERIFIED')
+    expect(operation['x-open-api-contract'].responseMappings[0].targetField).toBe('decision')
+    expect(operation.requestBody.content['application/json'].schema.properties.customer.properties.age.type).toBe('integer')
+    expect(operation.requestBody.content['application/json'].schema.properties.customer.required).toEqual(['age'])
+  })
   const doc = {
     project: { id: 7, projectCode: 'credit', projectName: '授信决策', description: '测试项目' },
     authentications: [{

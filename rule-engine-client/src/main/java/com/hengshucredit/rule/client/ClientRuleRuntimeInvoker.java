@@ -220,6 +220,11 @@ class ClientRuleRuntimeInvoker {
         if (cached == null) {
             throw new IllegalArgumentException("调用规则不存在或未同步: " + ruleCode);
         }
+        if (cached.isRequiresServerExecution()) {
+            throw new IllegalStateException("子规则依赖服务端运行能力，当前为本地纯计算模式；请配置 serverSideExecution=true"
+                    + (cached.getServerExecutionReason() == null || cached.getServerExecutionReason().isBlank()
+                    ? "" : "（" + cached.getServerExecutionReason() + "）"));
+        }
         RuleTraceFrame childTrace = createTraceFrame(cached, frame.traceStack.peekLast().getTraceId());
         frame.traceStack.peekLast().getChildren().add(childTrace);
         frame.traceStack.addLast(childTrace);

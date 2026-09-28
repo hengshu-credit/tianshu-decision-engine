@@ -68,6 +68,17 @@ const apiData = new Map([
   ['/api/rule/definition/list', { records: [], total: 0 }],
   ['/api/rule/variable/project/1', []],
   ['/api/rule/runtime-log/list', { records: [], total: 0 }],
+  ['/api/rule/ops/execution-metrics', {
+    instanceId: 'e2e-node-1',
+    observedAt: '2026-09-28T11:00:00Z',
+    persistence: { queueDepth: 0, queueCapacity: 5000, fallback: 0, failed: 0, avgWriteMs: 0 },
+    sourceResolution: { queueDepth: 0, active: 0, parallelism: 4, failed: 0 },
+    openExecution: { queueDepth: 0, queueCapacity: 1000, rejected: 0, timedOut: 0 },
+    externalCircuitBreakers: { registeredApis: 0, open: 0, halfOpen: 0, closed: 0 },
+    publishOutbox: { pending: 0, delivering: 0, retrying: 0, deadLetter: 0, maxRetries: 20 },
+    executionPersistenceOutbox: { pending: 0, processing: 0, delivered: 0, deadLetter: 0, maxRetries: 20 },
+    ruleWarmup: { state: 'READY', targetCount: 0, preparedCount: 0, failureCount: 0 }
+  }],
   ['/api/rule/model/list', { records: [], total: 0 }],
   ['/api/rule/model/health', { healthy: true }],
   ['/api/rule/model/runtimeCapabilities', { availableProviders: ['CPUExecutionProvider'] }]
@@ -86,8 +97,14 @@ const contentTypes = {
   '.woff2': 'font/woff2'
 }
 
+function resolveApiFixture(routeApiData, pathname) {
+  const direct = routeApiData.get(pathname)
+  if (direct) return direct
+  return null
+}
+
 async function apiResponse(url, request, routeApiData) {
-  const configuredData = routeApiData.get(url.pathname)?.data
+  const configuredData = resolveApiFixture(routeApiData, url.pathname)?.data
   const data = typeof configuredData === 'function'
     ? await configuredData({ url, request })
     : configuredData
@@ -116,6 +133,16 @@ function resolveDistFile(pathname) {
   return absolutePath
 }
 
+// Monaco AMD 的 css/nls 插件把资源 ID 保留在 URL 中；静态服务器需要把
+// /vs/css!vs/editor/editor.main.css 映射为 /vs/editor/editor.main.css，
+// 把 /vs/nls!vs/editor/editor.main.nls 映射为对应的 .nls.js 文件。
+function normalizeMonacoPluginPath(pathname) {
+  const match = /^\/vs\/(css|nls)!vs\/(.+)$/.exec(pathname)
+  if (!match) return pathname
+  const resource = match[2]
+  return `/vs/${match[1] === 'nls' && !/\.js$/.test(resource) ? `${resource}.js` : resource}`
+}
+
 async function installDistRoutes(page, options = {}) {
   const routeApiData = new Map()
   addApiFixtures(routeApiData, apiData)
@@ -136,7 +163,7 @@ async function installDistRoutes(page, options = {}) {
     const url = new URL(route.request().url())
     if (url.pathname.startsWith('/api/')) {
       const method = route.request().method()
-      const fixture = routeApiData.get(url.pathname)
+      const fixture = resolveApiFixture(routeApiData, url.pathname)
       requests.push({ method, url: route.request().url() })
       if (!fixture || fixture.expectedMethod !== method) {
         unmatchedRequests.push({
@@ -153,7 +180,7 @@ async function installDistRoutes(page, options = {}) {
       return
     }
 
-    const absolutePath = resolveDistFile(url.pathname)
+    const absolutePath = resolveDistFile(normalizeMonacoPluginPath(url.pathname))
     if (!absolutePath) {
       await route.fulfill({ status: 403, body: 'Forbidden' })
       return

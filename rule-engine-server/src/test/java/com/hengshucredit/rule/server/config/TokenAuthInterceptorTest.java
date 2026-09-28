@@ -5,6 +5,7 @@ import com.hengshucredit.rule.server.auth.ProjectAuthContext;
 import com.hengshucredit.rule.server.auth.ProjectAuthProperties;
 import com.hengshucredit.rule.server.auth.ProjectAccessPolicy;
 import com.hengshucredit.rule.server.auth.ProjectExecutionGuard;
+import com.hengshucredit.rule.server.auth.ProjectExecutionGuardStore;
 import com.hengshucredit.rule.server.auth.TrustedClientAddressResolver;
 import com.hengshucredit.rule.server.auth.ProjectAuthType;
 import com.hengshucredit.rule.server.service.ProjectAuthService;
@@ -174,12 +175,37 @@ public class TokenAuthInterceptorTest {
         interceptor.afterCompletion(second, new MockHttpServletResponse(), new Object(), null);
     }
 
+    @Test
+    public void rejectsExecutionWhenDistributedGuardIsUnavailable() throws Exception {
+        ProjectAccessPolicy policy = new ProjectAccessPolicy();
+        policy.setMaxConcurrent(1);
+        ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
+                "BASIC_MAIN", ProjectAuthType.BASIC, policy);
+        FakeProjectAuthService service = service(context);
+        TokenAuthInterceptor interceptor = interceptor(service, new FailingStore());
+        MockHttpServletResponse response = new MockHttpServletResponse();
+
+        assertFalse(interceptor.preHandle(
+                new MockHttpServletRequest("POST", "/api/rule/open/execute/RISK"),
+                response, new Object()));
+        assertEquals(429, response.getStatus());
+        assertTrue(response.getContentAsString().contains("\"code\":\"400001\""));
+        assertEquals("DISTRIBUTED_UNAVAILABLE", service.lastFailureReason);
+    }
+
     private TokenAuthInterceptor interceptor(ProjectAuthService service) {
+        return interceptor(service, null);
+    }
+
+    private TokenAuthInterceptor interceptor(ProjectAuthService service,
+                                             ProjectExecutionGuardStore store) {
         TokenAuthInterceptor interceptor = new TokenAuthInterceptor();
         ReflectionTestUtils.setField(interceptor, "projectAuthService", service);
         ProjectAuthProperties properties = new ProjectAuthProperties();
         ReflectionTestUtils.setField(interceptor, "clientAddressResolver", new TrustedClientAddressResolver(properties));
-        ReflectionTestUtils.setField(interceptor, "executionGuard", new ProjectExecutionGuard(64, System::nanoTime));
+        ReflectionTestUtils.setField(interceptor, "executionGuard", store == null
+                ? new ProjectExecutionGuard(64, System::nanoTime)
+                : new ProjectExecutionGuard(64, System::nanoTime, store));
         return interceptor;
     }
 
@@ -229,6 +255,23 @@ public class TokenAuthInterceptorTest {
         @Override
         public void clearTokenFailures(HttpServletRequest request) {
             clearCount++;
+        }
+    }
+
+    private static class FailingStore implements ProjectExecutionGuardStore {
+        @Override
+        public AcquireResult acquire(Long authId, ProjectAccessPolicy policy, String permitId) {
+            throw new DistributedUnavailable(new IllegalStateException("redis offline"));
+        }
+
+        @Override
+        public boolean renew(Long authId, String permitId, long leaseMillis, long hardExpiryMillis) {
+            return false;
+        }
+
+        @Override
+        public boolean release(Long authId, String permitId) {
+            return false;
         }
     }
 }

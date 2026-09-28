@@ -7,6 +7,7 @@ import org.junit.Test;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.lang.reflect.Method;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -81,6 +82,18 @@ public class ClientFunctionRegistrarTest {
         assertResult(engine, "score()", 2);
         assertTrue(registrar.hasRemoteFunction("PROJECT", "project-a", "score"));
         assertTrue(registrar.hasRemoteFunction("GLOBAL", null, "score"));
+    }
+
+    @Test
+    public void legacyRemoteMutationMethodsKeepVoidBinarySignature() throws Exception {
+        Method register = ClientFunctionRegistrar.class.getMethod("registerRemoteFromPush",
+                String.class, String.class, String.class, String.class, String.class,
+                String.class, String.class, String.class, String.class);
+        Method remove = ClientFunctionRegistrar.class.getMethod("removeRemote",
+                String.class, String.class, String.class);
+
+        assertEquals(Void.TYPE, register.getReturnType());
+        assertEquals(Void.TYPE, remove.getReturnType());
     }
 
     private JSONObject function(String code, String script) {

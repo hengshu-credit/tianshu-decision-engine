@@ -52,7 +52,7 @@
 
 ### 项目与规则管理
 
-项目集中管理规则及相关资源，提供项目工作台、访问鉴权和接口说明。规则列表支持进入设计、执行测试与生命周期管理。
+项目集中管理规则及相关资源，提供项目工作台、访问鉴权和接口说明。规则列表支持进入设计、执行测试与生命周期管理；项目列表可分别导出可读 HTML 文档和 OpenAPI 3.1 JSON，便于导入 Swagger、Postman 或网关工具。
 
 ![项目管理](docs/readme/project.png)
 
@@ -126,6 +126,23 @@
 ### 执行日志与账单
 
 执行日志关联规则、耗时、输入输出及追踪信息，支持回看具体决策。外数 API、数据库、名单和模型调用分别记录其请求与响应内容。
+
+外数 API 的逻辑调用会生成稳定 `callId`，同一次调用的重试 attempt 共用该 ID。普通日志列表中的 `requestBody` / `responseBody` 是脱敏或脚本处理后的展示字段；业务分析需要原始供应商报文时，使用受控接口按关联键查询：
+
+```text
+GET /api/rule/runtime-log/{id}/payload
+GET /api/rule/runtime-log/payload/by-call-id?callId={callId}
+GET /api/rule/runtime-log/payload/by-root-trace-id?rootTraceId={rootTraceId}
+GET /api/rule/runtime/external-calls/{callId}
+```
+
+返回中的 `requestBody` / `responseBody` 在 `rawRequestAvailable` / `rawResponseAvailable` 为 `true` 时分别是原始请求体和原始响应体；同时返回 `callId、traceId、rootTraceId、ruleTraceId、requestId、targetRefId、responseStatus、attemptNo`，外部系统可直接按 `callId` 或根 Trace 关联，不需要根据缓存、重试或响应映射状态自行判断。
+
+其中 `/api/rule/runtime/external-calls/{callId}` 面向业务系统的项目令牌，按 `callId` 做项目隔离后返回同一 payload；规则执行返回值中的 `externalCall.callId`、`externalCall.rootTraceId`、`externalCall.request.rawBody`、`externalCall.rawResponseBody`、`externalCall.rawRequestAvailable`/`rawResponseAvailable` 和顶层 `rawRequestBody`、`rawResponseBody` 可直接用于实时分析。payload 的 `traceSteps` 按同一调用返回规则入参、请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和实际 API 变量赋值步骤；缓存命中时不会虚构一次供应商请求，原始请求体可能为空，调用方可通过 `dataOrigin` / `cacheStatus` 判断报文是否来自真实上游请求。
+
+API 配置中的“报文留存”可分别设置 `request` / `response`：`source` 为 `ORIGINAL`（供应商实际报文）或 `PROCESSED`（请求脚本通过 `state.logRequestBody`、响应脚本通过 `state.logResponseBody` 显式提供的中间副本），`excludePaths` 排除 JSONPath 字段，`maxFieldBytes` 按单字段大小自动省略；`decrypt` 支持 `BASE64` 和 `TRIPLE_DES_BASE64`，后者从接口鉴权配置的敏感脚本变量读取密钥。策略只处理日志和外部分析副本，实时规则结果不变；`originalRequestBody` / `originalResponseBody` 永久保留供应商实际报文，`rawRequestMetadata` / `rawResponseMetadata` 说明解密、过滤、省略或失败状态。
+
+生产表达式追踪可通过 `RULE_TRACE_MASK_PATHS` 配置持久化遮罩路径，例如 `$.input.idCard,$.items[*].phone`；遮罩只作用于执行日志中的 `trace_info`，不会改变本次规则结果或内存追踪。
 
 ![规则执行日志](docs/readme/logs.png)
 
@@ -305,11 +322,11 @@ RuleResult result = ruleEngineClient.execute("face_threshold_table", requestMap)
 
 SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-code` 用于项目路由，需与服务端项目编码一致；`app-name` 标识调用应用。规则依赖 API、数据库或名单取数时，使用服务端执行配置。
 
-完整环境变量、启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见[部署与接入说明](docs/deployment.md)。
+完整环境变量、启动命令、ONNX CPU/CUDA 配置和 SDK 接入示例见 [部署与接入说明](https://hengshu-credit.github.io/tianshu-decision-engine/deployment.html)。
 
 外部公司接入优先参考 [Java 离线交付与可运行示例](rule-engine-example/README.md)。执行 `node scripts/package-java-offline.mjs` 生成 SDK、依赖、可运行服务和示例源码的 tar.gz；客户仅需 JDK 17，无需引擎源码或 Maven 下载即可运行及重编译示例。
 
-“业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](docs/java-service-integration.md)。项目导出的 API 文档内也提供 Java 服务接入示例。
+“业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)；HTTP-only SDK 与离线交付示例见 [HTTP 接入示例](https://hengshu-credit.github.io/tianshu-decision-engine/http-sdk-example.html)。项目导出的 API 文档内也提供 Java 服务接入示例。
 
 
 ## 交流与许可证

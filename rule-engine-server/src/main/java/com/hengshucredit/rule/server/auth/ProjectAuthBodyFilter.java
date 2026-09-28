@@ -18,6 +18,7 @@ public class ProjectAuthBodyFilter extends OncePerRequestFilter {
     private static final String[] PATH_PREFIXES = {
             "/api/sync",
             "/api/rule/sync",
+            "/api/rule/runtime",
             "/api/rule/log/report",
             "/api/rule/auth/token"
     };

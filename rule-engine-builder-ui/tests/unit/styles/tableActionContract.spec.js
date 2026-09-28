@@ -21,6 +21,7 @@ const targetViews = [
 ]
 const expectedActionByLabel = {
   API: 'docs',
+  OpenAPI: 'openapi',
   下线: 'disable',
   详情: 'detail',
   删除: 'delete',
@@ -57,6 +58,7 @@ const supportedActions = new Set([
   'disable',
   'add',
   'docs',
+  'openapi',
   'delete',
 ])
 

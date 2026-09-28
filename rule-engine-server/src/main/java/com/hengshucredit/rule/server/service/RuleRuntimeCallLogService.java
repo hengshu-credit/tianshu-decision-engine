@@ -28,6 +28,13 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
+        return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, null,
+                success, startTime, endTime);
+    }
+
+    public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
+                                              String targetCode, String traceId, String callId, Integer success,
+                                              LocalDateTime startTime, LocalDateTime endTime) {
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<>();
         if (hasText(moduleType)) {
             wrapper.eq(RuleRuntimeCallLog::getModuleType, moduleType);
@@ -42,6 +49,9 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
             wrapper.and(w -> w.eq(RuleRuntimeCallLog::getTraceId, traceId)
                     .or().eq(RuleRuntimeCallLog::getRuleTraceId, traceId));
         }
+        if (hasText(callId)) {
+            wrapper.eq(RuleRuntimeCallLog::getCallId, callId);
+        }
         if (success != null) {
             wrapper.eq(RuleRuntimeCallLog::getSuccess, success);
         }
@@ -53,6 +63,189 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         }
         wrapper.orderByDesc(RuleRuntimeCallLog::getCreateTime);
         return page(new Page<>(pageNum, pageSize), wrapper);
+    }
+
+    /** 返回一次调用的原始报文和稳定关联键，供业务分析系统按日志 ID 直接取数。 */
+    public Map<String, Object> payload(Long id) {
+        RuleRuntimeCallLog log = id == null ? null : getById(id);
+        return payloadWithAssignments(log);
+    }
+
+    /**
+     * 按一次逻辑外数调用的稳定 ID 取汇总报文。重试 attempt 共用 callId，优先返回 API_INVOKE 汇总行。
+     */
+    public Map<String, Object> payloadByCallId(String callId) {
+        return payloadByCallId(callId, null);
+    }
+
+    /** 按一次逻辑调用 ID 取报文；projectId 非空时同时做项目隔离。 */
+    public Map<String, Object> payloadByCallId(String callId, Long projectId) {
+        if (!hasText(callId)) return Collections.emptyMap();
+        List<RuleRuntimeCallLog> logs = payloadLogsByCallId(callId, projectId, "API_INVOKE");
+        if (logs.isEmpty()) {
+            logs = payloadLogsByCallId(callId, projectId, "API_ATTEMPT");
+        }
+        return payloadWithAssignments(logs.isEmpty() ? null : logs.get(0));
+    }
+
+    private Map<String, Object> payloadWithAssignments(RuleRuntimeCallLog log) {
+        Map<String, Object> result = payload(log);
+        if (log == null || !"API_INVOKE".equals(log.getActionType()) || !hasText(log.getCallId())) return result;
+        LambdaQueryWrapper<RuleRuntimeCallLog> query = new LambdaQueryWrapper<RuleRuntimeCallLog>()
+                .eq(RuleRuntimeCallLog::getCallId, log.getCallId())
+                .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
+                .eq(RuleRuntimeCallLog::getActionType, "API_ASSIGNMENT")
+                .orderByAsc(RuleRuntimeCallLog::getCreateTime).orderByAsc(RuleRuntimeCallLog::getId);
+        if (log.getProjectId() == null) query.isNull(RuleRuntimeCallLog::getProjectId);
+        else query.eq(RuleRuntimeCallLog::getProjectId, log.getProjectId());
+        List<Map<String, Object>> steps = traceSteps(result);
+        mergeAssignmentSteps(steps, list(query));
+        result.put("traceSteps", steps);
+        return result;
+    }
+
+    private List<RuleRuntimeCallLog> payloadLogsByCallId(String callId, Long projectId, String actionType) {
+        LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
+                .eq(RuleRuntimeCallLog::getCallId, callId)
+                .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
+                .eq(RuleRuntimeCallLog::getActionType, actionType)
+                .orderByDesc(RuleRuntimeCallLog::getCreateTime)
+                .orderByDesc(RuleRuntimeCallLog::getId)
+                .last("LIMIT 1");
+        if (projectId != null) {
+            wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+        }
+        return list(wrapper);
+    }
+
+    /** 按根 Trace 一次取出该规则执行内所有外数逻辑调用的原始报文。 */
+    public List<Map<String, Object>> payloadsByRootTraceId(String rootTraceId) {
+        return payloadsByRootTraceId(rootTraceId, null);
+    }
+
+    /** 按根 Trace 取外数报文；projectId 非空时同时做项目隔离。 */
+    public List<Map<String, Object>> payloadsByRootTraceId(String rootTraceId, Long projectId) {
+        if (!hasText(rootTraceId)) return Collections.emptyList();
+        LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
+                .eq(RuleRuntimeCallLog::getRootTraceId, rootTraceId)
+                .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
+                .eq(RuleRuntimeCallLog::getActionType, "API_INVOKE")
+                .orderByAsc(RuleRuntimeCallLog::getCreateTime)
+                .orderByAsc(RuleRuntimeCallLog::getId);
+        if (projectId != null) {
+            wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+        }
+        List<RuleRuntimeCallLog> summaries = list(wrapper);
+        List<String> callIds = summaries.stream().map(RuleRuntimeCallLog::getCallId)
+                .filter(this::hasText).distinct().toList();
+        Map<String, List<RuleRuntimeCallLog>> assignmentsByCallId = new LinkedHashMap<>();
+        if (!callIds.isEmpty()) {
+            LambdaQueryWrapper<RuleRuntimeCallLog> assignmentWrapper = new LambdaQueryWrapper<RuleRuntimeCallLog>()
+                    .in(RuleRuntimeCallLog::getCallId, callIds)
+                    .eq(RuleRuntimeCallLog::getModuleType, "DATASOURCE")
+                    .eq(RuleRuntimeCallLog::getActionType, "API_ASSIGNMENT")
+                    .orderByAsc(RuleRuntimeCallLog::getCreateTime)
+                    .orderByAsc(RuleRuntimeCallLog::getId);
+            if (projectId != null) assignmentWrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+            for (RuleRuntimeCallLog assignment : list(assignmentWrapper)) {
+                assignmentsByCallId.computeIfAbsent(assignment.getCallId(), ignored -> new ArrayList<>())
+                        .add(assignment);
+            }
+        }
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (RuleRuntimeCallLog log : summaries) {
+            Map<String, Object> item = payload(log);
+            List<Map<String, Object>> steps = traceSteps(item);
+            List<RuleRuntimeCallLog> assignments = assignmentsByCallId.getOrDefault(log.getCallId(), List.of())
+                    .stream().filter(assignment -> java.util.Objects.equals(log.getProjectId(), assignment.getProjectId()))
+                    .toList();
+            mergeAssignmentSteps(steps, assignments);
+            item.put("traceSteps", steps);
+            if (!item.isEmpty()) result.add(item);
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> traceSteps(Map<String, Object> payload) {
+        List<Map<String, Object>> result = new ArrayList<>();
+        if (payload == null) return result;
+        Object existing = payload.get("traceSteps");
+        if (existing instanceof List) {
+            for (Object step : (List<?>) existing) {
+                if (step instanceof Map) result.add(new LinkedHashMap<>((Map<String, Object>) step));
+            }
+        }
+        return result;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void mergeAssignmentSteps(List<Map<String, Object>> target, List<RuleRuntimeCallLog> assignments) {
+        if (target == null || assignments == null) return;
+        for (RuleRuntimeCallLog assignment : assignments) {
+            Object parsed = parseTraceSteps(assignment.getTraceSteps());
+            if (!(parsed instanceof List)) continue;
+            for (Object step : (List<?>) parsed) {
+                if (!(step instanceof Map)) continue;
+                Map<String, Object> copy = new LinkedHashMap<>((Map<String, Object>) step);
+                copy.put("sequence", target.size() + 1);
+                target.add(copy);
+            }
+        }
+    }
+
+    private Map<String, Object> payload(RuleRuntimeCallLog log) {
+        if (log == null) return Collections.emptyMap();
+        Map<String, Object> result = new LinkedHashMap<>();
+        result.put("id", log.getId());
+        result.put("callId", log.getCallId());
+        result.put("traceId", log.getTraceId());
+        result.put("rootTraceId", log.getRootTraceId());
+        result.put("ruleTraceId", log.getRuleTraceId());
+        result.put("requestId", log.getRequestId());
+        result.put("targetRefId", log.getTargetRefId());
+        result.put("targetCode", log.getTargetCode());
+        result.put("requestMethod", log.getRequestMethod());
+        result.put("requestUrl", log.getRequestUrl());
+        result.put("requestBody", log.getRawRequestBody() == null
+                ? log.getRequestBody() : log.getRawRequestBody());
+        result.put("originalRequestBody", log.getOriginalRequestBody());
+        result.put("traceSteps", parseTraceSteps(log.getTraceSteps()));
+        result.put("rawRequestMetadata", parseMetadata(log.getRawRequestMetadata()));
+        result.put("responseStatus", log.getResponseStatus());
+        result.put("responseBody", log.getRawResponseBody() == null
+                ? log.getResponseBody() : log.getRawResponseBody());
+        result.put("originalResponseBody", log.getOriginalResponseBody());
+        result.put("rawResponseMetadata", parseMetadata(log.getRawResponseMetadata()));
+        result.put("rawRequestAvailable", log.getRawRequestBody() != null);
+        result.put("rawResponseAvailable", log.getRawResponseBody() != null);
+        result.put("originalRequestAvailable", log.getOriginalRequestBody() != null);
+        result.put("originalResponseAvailable", log.getOriginalResponseBody() != null);
+        result.put("rawPayloadAvailable", log.getRawRequestBody() != null || log.getRawResponseBody() != null);
+        result.put("success", log.getSuccess());
+        result.put("providerRequest", log.getProviderRequest());
+        result.put("attemptNo", log.getAttemptNo());
+        result.put("createTime", log.getCreateTime());
+        return result;
+    }
+
+    private Object parseTraceSteps(String value) {
+        if (value == null || value.isBlank()) return Collections.emptyList();
+        try {
+            Object parsed = JSON.parse(value);
+            return parsed instanceof List ? parsed : Collections.emptyList();
+        } catch (RuntimeException ignored) {
+            return Collections.singletonList(Collections.singletonMap("status", "TRACE_STEPS_INVALID"));
+        }
+    }
+
+    private Object parseMetadata(String value) {
+        if (value == null || value.isBlank()) return Collections.emptyMap();
+        try {
+            return JSON.parseObject(value);
+        } catch (RuntimeException ignored) {
+            return Collections.singletonMap("status", "METADATA_INVALID");
+        }
     }
 
     public void safeSave(RuleRuntimeCallLog log) {

@@ -16,8 +16,11 @@ function fixtures(id) {
   const saved = [], compiled = [], executed = [], published = []
   const drafts = new Map()
   const versions = [{ id: '81', version: 1, bindingId: '8001', generation: 3 }]
+  const versionModelJson = id === 108
+    ? JSON.stringify({ initialScore: 0, resultVar: { varCode: 'score' }, dimensionGroups: [], thresholds: [] })
+    : '{}'
   apiData.set(`${base}/published-versions`, versions)
-  apiData.set(`${base}/versions/81`, { ...versions[0], definitionId: id, modelJson: '{}' })
+  apiData.set(`${base}/versions/81`, { ...versions[0], definitionId: id, modelJson: versionModelJson })
   apiData.set(`${base}/revisions`, () => [...drafts.values()])
   apiData.set(`POST ${base}/designer/compile`, ({ request }) => {
     compiled.push(request.postDataJSON())

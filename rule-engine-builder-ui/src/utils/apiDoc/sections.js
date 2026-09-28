@@ -83,7 +83,7 @@ export function renderAuthentication(doc) {
 export function renderResponseContract() {
   return `<section id="response-contract" class="panel">
     <h2>通用响应约定与码表</h2>
-    <p class="lead">外层 <code>code</code> 表示平台调用状态；<code>data.success</code> 表示规则是否执行成功。规则结果内的字段由具体规则定义，不是业务决策 code，除非文档场景中已单独配置。</p>
+    <p class="lead">外层 <code>code</code> 表示平台调用状态；<code>data.success</code> 表示规则是否执行成功。规则结果内的字段由具体规则定义，不是业务决策 code，除非文档场景中已单独配置。成功响应还可按接口模板返回实际执行的 <code>revisionId</code> 与 <code>artifactDigest</code>，用于核对线上制品。</p>
     <div class="table-wrap"><table><thead><tr><th>字段 / code</th><th>含义</th><th>调用方处理建议</th></tr></thead><tbody>
       <tr><td><code>code = 200</code></td><td>平台已受理请求；继续检查 <code>data.success</code></td><td>success=true 时读取 result；false 时读取 errorMessage</td></tr>
       <tr><td><code>code = 401</code></td><td>凭据缺失、失效或签名校验失败</td><td>核对鉴权方式、时间戳和生产凭据</td></tr>
@@ -101,7 +101,7 @@ function platformScenarios(rule) {
     kind: 'PLATFORM',
     title: '200 / 执行成功',
     requestJson: request,
-    responseJson: prettyJson({ code: 200, message: 'success', data: { traceId: 'trace-example', result: buildExampleBody(rule.responseFields || []).data?.result || {}, traces: [], success: true, errorMessage: null, executeTimeMs: 12 } })
+    responseJson: prettyJson({ code: 200, message: 'success', data: { traceId: 'trace-example', revisionId: 12, artifactDigest: 'sha256-example', result: buildExampleBody(rule.responseFields || []).data?.result || {}, traces: [], success: true, errorMessage: null, executeTimeMs: 12 } })
   }, {
     kind: 'PLATFORM',
     title: '200 / 规则执行失败',
@@ -162,15 +162,21 @@ function renderCodeTabs(rule, authentications, endpoint) {
 }
 
 export function renderRuleEndpoint(rule, authentications, active = false) {
-  const path = `/api/rule/sync/execute/${encodeURIComponent(rule.ruleCode)}`
-  const body = prettyJson({ clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
-  const responseFields = [{ path: 'code', type: 'INTEGER', required: true, label: '平台响应码', exampleValue: 200 }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: 'success' }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
+  const pathPrefix = rule.openApiEnabled ? '/api/rule/open/execute/' : '/api/rule/sync/execute/'
+  const path = `${pathPrefix}${encodeURIComponent(rule.ruleCode)}`
+  const body = prettyJson(rule.openApiEnabled
+    ? buildExampleBody(rule.requestFields || [])
+    : { clientAppName: 'api-doc-example', params: buildExampleBody(rule.requestFields || []).params || {} })
+  const responseFields = [{ path: 'code', type: 'INTEGER', required: true, label: '平台响应码', exampleValue: 200 }, { path: 'message', type: 'STRING', required: true, label: '平台响应信息', exampleValue: 'success' }, { path: 'data.success', type: 'BOOLEAN', required: true, label: '规则执行状态', exampleValue: true }, { path: 'data.revisionId', type: 'INTEGER', required: false, label: '实际执行修订 ID', exampleValue: 12 }, { path: 'data.artifactDigest', type: 'STRING', required: false, label: '实际执行制品摘要', exampleValue: 'sha256-example' }, { path: 'data.errorMessage', type: 'STRING', required: false, label: '规则执行失败原因', exampleValue: null }, ...(rule.responseFields || [])]
   const endpoint = { method: 'POST', path, baseUrl: 'https://api.example.com', body }
+  const schemaNotice = rule.schemaTrust === 'UNVERIFIED'
+    ? `<div class="notice warning">字段契约未通过已发布制品校验：${escapeHtml((rule.schemaDiagnostics || []).join('；') || '请重新发布后再使用此文档。')}</div>`
+    : ''
   return `<section id="endpoint-${escapeAttribute(rule.ruleCode)}" class="panel endpoint-panel${active ? ' active' : ''}" data-endpoint-id="${escapeAttribute(rule.ruleCode)}" data-endpoint-value="${escapeAttribute(rule.id || rule.ruleCode)}">
     <div class="endpoint-head"><span class="method">POST</span><code class="path">${escapeHtml(path)}</code><span class="badge">${escapeHtml(rule.ruleName || rule.ruleCode)}</span></div>
-    <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>
-    <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>按“认证鉴权”页当前 Tab 传递</td></tr></tbody></table></div>
-    ${renderFields('请求体 Body', [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])])}
+    <p class="lead">${escapeHtml(rule.description || '执行已发布规则并返回统一平台响应。')}</p>${rule.openApiEnabled ? '<div class="notice">该规则已启用开放接口契约，调用时按本页映射和响应模板传参。</div>' : ''}${schemaNotice}
+    <h3>请求头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>必填</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td>是</td><td><code>application/json</code></td></tr><tr><td>鉴权字段</td><td>是</td><td>按“认证鉴权”页当前 Tab 传递</td></tr>${rule.openApiEnabled ? '<tr><td>开放接口映射 Header</td><td>按映射</td><td>契约中的 HEADER 来源字段</td></tr>' : ''}</tbody></table></div>
+    ${renderFields('请求体 Body', rule.openApiEnabled ? (rule.requestFields || []) : [{ path: 'clientAppName', type: 'STRING', required: false, label: '调用方应用名', exampleValue: 'api-doc-example' }, { path: 'traceEnabled', type: 'BOOLEAN', required: false, label: '是否采集表达式追踪，默认 true；false 不关闭服务端基础日志与审计', exampleValue: false }, ...(rule.requestFields || [])])}
     <h3>参数结构</h3><pre><code>${escapeHtml(body)}</code></pre>
     <h3>响应头 Header</h3><div class="table-wrap"><table><thead><tr><th>名称</th><th>说明</th></tr></thead><tbody><tr><td><code>Content-Type</code></td><td><code>application/json</code></td></tr></tbody></table></div>
     ${renderFields('响应体 Body', responseFields)}

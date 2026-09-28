@@ -8,6 +8,7 @@ import com.hengshucredit.rule.model.entity.RuleListLibrary;
 import com.hengshucredit.rule.model.entity.RuleListRecord;
 import com.hengshucredit.rule.model.entity.RuleListRecordLog;
 import com.hengshucredit.rule.model.entity.RuleProject;
+import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.hengshucredit.rule.server.mapper.RuleListLibraryMapper;
 import com.hengshucredit.rule.server.mapper.RuleListRecordLogMapper;
 import com.hengshucredit.rule.server.mapper.RuleListRecordMapper;
@@ -267,8 +268,8 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
     }
 
     public boolean matchAt(Long listId, Object content, List<String> itemTypes, String matchMode, LocalDateTime matchTime) {
-        String itemContent = content == null ? null : String.valueOf(content).trim();
-        if (!hasText(itemContent) || listId == null) {
+        String itemContent = content == null ? null : String.valueOf(content);
+        if (MissingValueSemantics.isMissing(content) || listId == null) {
             return false;
         }
         RuleListLibrary library = getById(listId);
@@ -557,7 +558,9 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
         if (record.getListId() == null) {
             throw new IllegalArgumentException("名单库ID不能为空");
         }
-        record.setItemContent(required(record.getItemContent(), "名单内容不能为空"));
+        if (record.getItemContent() == null || record.getItemContent().isEmpty()) {
+            throw new IllegalArgumentException("名单内容不能为空");
+        }
         record.setItemType(normalizeItemType(record.getItemType()));
     }
 

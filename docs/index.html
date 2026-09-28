@@ -10,7 +10,7 @@
     <link rel="icon" href="brand/hengshucredit_animated.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="styles.css" />
   </head>
-  <body>
+  <body class="home-page">
     <div class="reading-progress" aria-hidden="true"><span></span></div>
     <header class="site-header">
       <div class="site-header-inner">
@@ -51,9 +51,10 @@
             <div class="hero-actions">
               <a class="button button-quiet button-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer" title="访问 hengshucredit 官网"><span class="button-icon button-icon-logo"><img src="brand/hengshucredit_animated.svg" alt="" /></span><span>官网</span></a>
               <a class="button button-quiet button-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer" title="查看开源项目"><span class="button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4M9 18c-4.51 2-5-2-7-2" /></svg></span><span>开源</span></a>
-              <a class="button button-primary button-link" href="#quickstart" title="开始阅读操作教程"><span class="button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2 9 10-5 10 5-10 5L2 9Z" /><path d="M6 11v4c2.8 2.2 9.2 2.2 12 0v-4M22 9v6" /></svg></span><span>教程</span></a>
+              <a class="button button-quiet button-link" href="#quickstart" title="开始阅读操作教程"><span class="button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2 9 10-5 10 5-10 5L2 9Z" /><path d="M6 11v4c2.8 2.2 9.2 2.2 12 0v-4M22 9v6" /></svg></span><span>教程</span></a>
               <a class="button button-quiet button-link" href="https://demo_tianshu.hengshucredit.com" target="_blank" rel="noreferrer" title="打开天枢在线演示"><span class="button-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="1.5" /><rect x="3" y="13" width="18" height="7" rx="1.5" /><path d="M7 7.5h.01M7 16.5h.01M11 7.5h6M11 16.5h6" /></svg></span><span>演示</span></a>
             </div>
+            <div class="hero-direct-links" aria-label="部署与接入快速入口"><span>快速进入</span><a href="deployment.html">部署教程</a><a href="java-service-integration.html">Java SDK</a><a href="http-sdk-example.html">HTTP 示例</a></div>
           </div>
         <div class="workflow-scrolly hero-workflow" aria-label="五阶段决策流程">
           <div class="workflow-triggers" aria-hidden="true">
@@ -68,7 +69,16 @@
               <div class="workflow-stage-grid" aria-hidden="true"></div>
               <div class="workflow-stage-glow workflow-stage-glow-a" aria-hidden="true"></div>
               <div class="workflow-stage-glow workflow-stage-glow-b" aria-hidden="true"></div>
-              <div class="workflow-stage-header"><span><i></i> TIANSHU / OPERATIONS FLOW</span><b data-workflow-progress>01 / 05</b></div>
+              <div class="workflow-console">
+                <div class="workflow-console-bar"><span class="console-lights"><i></i><i></i><i></i></span><span>scroll / workflow / live</span><span class="workflow-sync"><i></i> SYNCED</span></div>
+                <div class="workflow-console-body">
+                  <div class="workflow-kicker" data-workflow-kicker>01 · NAVIGATION LAYER</div>
+                  <h2 data-workflow-title>先找到正确的入口</h2>
+                  <p data-workflow-description>从标题栏一级菜单进入项目、规则、变量与运行治理，每个入口都保持清晰可见。</p>
+                  <div class="workflow-console-meta"><strong data-workflow-stat>13 个一级入口</strong><span data-workflow-tag>ENTRY MAP</span></div>
+                </div>
+                <div class="workflow-console-footer"><span data-workflow-footer>下一步：确认项目上下文</span><span class="workflow-pulse"><i></i><i></i><i></i></span></div>
+              </div>
               <div class="workflow-rail" aria-label="流程节点">
                 <div class="workflow-node is-active" data-workflow-node="0" role="button" tabindex="0" aria-label="切换到导航总览"><span>01</span><strong>导航总览</strong><small>ENTRY MAP</small></div>
                 <div class="workflow-rail-line"></div>
@@ -80,16 +90,7 @@
                 <div class="workflow-rail-line"></div>
                 <div class="workflow-node" data-workflow-node="4" role="button" tabindex="0" aria-label="切换到运行治理"><span>05</span><strong>运行治理</strong><small>PROOF</small></div>
               </div>
-              <div class="workflow-console">
-                <div class="workflow-console-bar"><span class="console-lights"><i></i><i></i><i></i></span><span>scroll / workflow / live</span><span class="workflow-sync"><i></i> SYNCED</span></div>
-                <div class="workflow-console-body">
-                  <div class="workflow-kicker" data-workflow-kicker>01 · NAVIGATION LAYER</div>
-                  <h2 data-workflow-title>先找到正确的入口</h2>
-                  <p data-workflow-description>从标题栏一级菜单进入项目、规则、变量与运行治理，每个入口都保持清晰可见。</p>
-                  <div class="workflow-console-meta"><strong data-workflow-stat>13 个一级入口</strong><span data-workflow-tag>ENTRY MAP</span></div>
-                </div>
-                <div class="workflow-console-footer"><span data-workflow-footer>下一步：确认项目上下文</span><span class="workflow-pulse"><i></i><i></i><i></i></span></div>
-              </div>
+              <div class="workflow-stage-header"><span><i></i> TIANSHU / OPERATIONS FLOW</span><b data-workflow-progress>01 / 05</b></div>
               <div class="workflow-stage-caption"><span class="stage-caption-dot"></span><span data-workflow-caption>MAP / PROJECT / RULE / RUNTIME</span></div>
             </div>
           </div>
@@ -100,6 +101,15 @@
           <span class="notice-icon">i</span>
           <p>截图来自当前前端页面和固定业务样例，用于说明按钮位置与操作顺序。实际项目中的变量、权限、接口响应和审批结果以当前环境为准。</p>
         </div>
+
+        <section class="home-entry-strip" data-search="部署 接入 Java SDK HTTP 示例 快速入口">
+          <div class="home-entry-heading"><div class="section-kicker">START HERE / DEPLOY & INTEGRATE</div><h2>部署与接入，直接进入对应页面</h2><p>把部署、Java SDK 和 HTTP-only 示例放到首屏入口，按你的交付方式开始。</p></div>
+          <div class="home-entry-grid">
+            <a class="home-entry-card" href="deployment.html"><span class="home-entry-index">01</span><div><strong>部署教程</strong><p>Docker、Compose、JAR 和多节点扩容。</p></div><b aria-hidden="true">→</b></a>
+            <a class="home-entry-card" href="java-service-integration.html"><span class="home-entry-index">02</span><div><strong>Java SDK 接入</strong><p>本地执行、服务端执行和日志追踪。</p></div><b aria-hidden="true">→</b></a>
+            <a class="home-entry-card" href="http-sdk-example.html"><span class="home-entry-index">03</span><div><strong>HTTP 接入示例</strong><p>HTTP-only SDK、离线包和示例服务。</p></div><b aria-hidden="true">→</b></a>
+          </div>
+        </section>
 
         <section class="manual-section" id="quickstart" data-search="快速上手 登录 项目 变量 规则 测试 发布">
           <div class="section-kicker">01 / QUICK START</div>
@@ -136,7 +146,7 @@
           </div>
           <div class="theme-panel">
             <div><div class="section-kicker">WORKSPACE</div><h3>按团队习惯调整工作台</h3><p>从账户菜单进入“主题设置”，可切换明暗主题、纯色或渐变、侧边或顶部导航，以及列表的滚动方式。设置保存后会按账户或当前浏览器保留。</p></div>
-            <figure class="screenshot"><img src="project-usage/project-usage-19-theme-presets.png" alt="主题设置" loading="lazy" class="zoomable" /><figcaption>主题设置：即时预览并保存。</figcaption></figure>
+            <figure class="screenshot"><img src="project-usage/project-usage-19-theme-presets.png" alt="主题设置" loading="lazy" class="zoomable" / width="1600" height="1100"><figcaption>主题设置：即时预览并保存。</figcaption></figure>
           </div>
         </section>
 
@@ -145,7 +155,7 @@
           <h2>登录、选择项目，再开始配置</h2>
           <p class="section-lead">项目是规则和资源的边界。进入设计器、执行测试、查看日志前，先确认顶部当前项目与自己的角色权限。</p>
           <div class="media-block media-block-wide">
-            <figure class="screenshot screenshot-hero"><img src="project-usage/project-usage-01-login.png" alt="天枢决策引擎登录页面" loading="eager" class="zoomable" /><figcaption>登录页：输入用户名和密码进入控制台。</figcaption></figure>
+            <figure class="screenshot screenshot-hero"><img src="project-usage/project-usage-01-login.png" alt="天枢决策引擎登录页面" loading="eager" class="zoomable" / width="1600" height="1000"><figcaption>登录页：输入用户名和密码进入控制台。</figcaption></figure>
           </div>
           <div class="two-column">
             <div>
@@ -158,8 +168,8 @@
               </ol>
             </div>
             <div class="media-stack">
-              <figure class="screenshot"><img src="project-usage/project-usage-02-project-list.png" alt="项目列表" loading="lazy" class="zoomable" /><figcaption>项目列表：进入项目工作台。</figcaption></figure>
-              <figure class="screenshot"><img src="project-usage/project-usage-02-project-auth.png" alt="项目访问鉴权" loading="lazy" class="zoomable" /><figcaption>访问鉴权：管理项目调用凭证。</figcaption></figure>
+              <figure class="screenshot"><img src="project-usage/project-usage-02-project-list.png" alt="项目列表" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>项目列表：进入项目工作台。</figcaption></figure>
+              <figure class="screenshot"><img src="project-usage/project-usage-02-project-auth.png" alt="项目访问鉴权" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>访问鉴权：管理项目调用凭证。</figcaption></figure>
             </div>
           </div>
           <div class="tip-grid">
@@ -175,15 +185,15 @@
           <div class="resource-list">
             <article class="resource-row">
               <div class="resource-copy"><span class="resource-number">A</span><div><h3>变量与数据对象</h3><p>在变量管理创建输入、计算、常量、API、数据库或名单变量；数据对象用于组织嵌套字段。导入 Java 实体、JSON、DDL 后，展开对象核对字段类型和引用变量。</p><ul class="compact-list"><li>字段和变量通过稳定 ID 关联，编码按输入原样保留。</li><li>先保存数据对象，再在规则输入字段中选择它。</li></ul></div></div>
-              <figure class="screenshot"><img src="project-usage/project-usage-03-variable.png" alt="变量管理页面" loading="lazy" class="zoomable" /><figcaption>变量列表与变量类型。</figcaption></figure>
+              <figure class="screenshot"><img src="project-usage/project-usage-03-variable.png" alt="变量管理页面" loading="lazy" class="zoomable" / width="1280" height="720"><figcaption>变量列表与变量类型。</figcaption></figure>
             </article>
             <article class="resource-row">
               <div class="resource-copy"><span class="resource-number">B</span><div><h3>外数、数据库与名单</h3><p>外数 API 配置请求、响应映射、鉴权、超时和重试；数据库仅配置只读账号与查询类 SQL；名单维护记录并查看匹配日志。</p><ul class="compact-list"><li>外部资源上线前，先使用“测试”按钮核对响应结构。</li><li>敏感凭证放在鉴权配置，不要拼进 URL 或规则脚本。</li></ul></div></div>
-              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-10-datasource.png" alt="外数管理" loading="lazy" class="zoomable" /><figcaption>外数管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-11-database.png" alt="数据库管理" loading="lazy" class="zoomable" /><figcaption>数据库管理</figcaption></figure></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-10-datasource.png" alt="外数管理" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>外数管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-11-database.png" alt="数据库管理" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>数据库管理</figcaption></figure></div>
             </article>
             <article class="resource-row">
               <div class="resource-copy"><span class="resource-number">C</span><div><h3>模型与函数</h3><p>模型页面配置入参、出参、版本与执行测试；函数页面登记 QLExpress、Java 类或 Spring Bean，供设计器动作和表达式复用。</p><ul class="compact-list"><li>PMML / ONNX 字段名按模型声明精确匹配。</li><li>函数修改后，回到引用它的规则重新执行测试。</li></ul></div></div>
-              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-13-model.png" alt="模型管理" loading="lazy" class="zoomable" /><figcaption>模型管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-04-function.png" alt="函数管理" loading="lazy" class="zoomable" /><figcaption>函数管理</figcaption></figure></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-13-model.png" alt="模型管理" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>模型管理</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-04-function.png" alt="函数管理" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>函数管理</figcaption></figure></div>
             </article>
           </div>
         </section>
@@ -203,28 +213,28 @@
             <div>
               <h3>九类设计器怎么选</h3>
               <div class="designer-grid">
-                <div class="designer-card"><strong>决策表</strong><p>行式条件组合，适合清晰的二维判断。</p><img src="project-usage/project-usage-designer-table.png" alt="决策表设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>决策树</strong><p>分支路径逐层判断，适合树形准入流程。</p><img src="project-usage/project-usage-designer-tree.png" alt="决策树设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>决策流</strong><p>节点编排并支持分支汇合，适合流程化决策。</p><img src="project-usage/project-usage-designer-flow.png" alt="决策流设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>规则集</strong><p>按优先级执行多条相对独立的规则。</p><img src="project-usage/project-usage-designer-ruleset.png" alt="规则集设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>交叉表</strong><p>以行变量和列变量定位有限组合结果。</p><img src="project-usage/project-usage-designer-cross.png" alt="交叉表设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>评分卡</strong><p>按命中项累计分数并输出结果。</p><img src="project-usage/project-usage-designer-score.png" alt="评分卡设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>复杂交叉表</strong><p>多维度、区间和枚举组合的决策矩阵。</p><img src="project-usage/project-usage-designer-cross-adv.png" alt="复杂交叉表设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>复杂评分卡</strong><p>分组评分、权重和等级区间一起配置。</p><img src="project-usage/project-usage-designer-score-adv.png" alt="复杂评分卡设计器" loading="lazy" class="zoomable" /></div>
-                <div class="designer-card"><strong>QL 脚本</strong><p>直接编写 QLExpress 逻辑，适合复杂表达式。</p><img src="project-usage/project-usage-designer-script.png" alt="QL 脚本设计器" loading="lazy" class="zoomable" /></div>
+                <div class="designer-card"><strong>决策表</strong><p>行式条件组合，适合清晰的二维判断。</p><img src="project-usage/project-usage-designer-table.png" alt="决策表设计器" loading="lazy" class="zoomable" / width="1280" height="720"></div>
+                <div class="designer-card"><strong>决策树</strong><p>分支路径逐层判断，适合树形准入流程。</p><img src="project-usage/project-usage-designer-tree.png" alt="决策树设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>决策流</strong><p>节点编排并支持分支汇合，适合流程化决策。</p><img src="project-usage/project-usage-designer-flow.png" alt="决策流设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>规则集</strong><p>按优先级执行多条相对独立的规则。</p><img src="project-usage/project-usage-designer-ruleset.png" alt="规则集设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>交叉表</strong><p>以行变量和列变量定位有限组合结果。</p><img src="project-usage/project-usage-designer-cross.png" alt="交叉表设计器" loading="lazy" class="zoomable" / width="1280" height="720"></div>
+                <div class="designer-card"><strong>评分卡</strong><p>按命中项累计分数并输出结果。</p><img src="project-usage/project-usage-designer-score.png" alt="评分卡设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>复杂交叉表</strong><p>多维度、区间和枚举组合的决策矩阵。</p><img src="project-usage/project-usage-designer-cross-adv.png" alt="复杂交叉表设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>复杂评分卡</strong><p>分组评分、权重和等级区间一起配置。</p><img src="project-usage/project-usage-designer-score-adv.png" alt="复杂评分卡设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
+                <div class="designer-card"><strong>QL 脚本</strong><p>直接编写 QLExpress 逻辑，适合复杂表达式。</p><img src="project-usage/project-usage-designer-script.png" alt="QL 脚本设计器" loading="lazy" class="zoomable" / width="1600" height="1000"></div>
               </div>
               <div class="trace-gallery">
                 <div class="trace-gallery-heading"><div><span class="trace-gallery-kicker">TRACE TREE / 09 VIEWS</span><h3>九类设计器的表达式追踪树</h3></div><p>配置完成后，从追踪树确认实际命中路径、条件结果和动作输出。</p></div>
                 <div class="trace-grid">
-                  <figure class="trace-card"><div class="trace-card-label"><strong>决策表</strong><span>01</span></div><img src="readme/rule-table-trace.png" alt="决策表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>命中行 · 条件 · 输出</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>决策树</strong><span>02</span></div><img src="readme/rule-tree-trace.png" alt="决策树表达式追踪树" loading="lazy" class="zoomable" /><figcaption>分支路径 · 跳过节点</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>决策流</strong><span>03</span></div><img src="readme/rule-flow-trace.png" alt="决策流表达式追踪树" loading="lazy" class="zoomable" /><figcaption>节点流转 · 汇合路径</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>规则集</strong><span>04</span></div><img src="readme/rule-ruleset-trace.png" alt="规则集表达式追踪树" loading="lazy" class="zoomable" /><figcaption>优先级 · 命中规则</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>交叉表</strong><span>05</span></div><img src="readme/rule-cross-trace.png" alt="交叉表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>行列匹配 · 单元格</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>评分卡</strong><span>06</span></div><img src="readme/rule-score-trace.png" alt="评分卡表达式追踪树" loading="lazy" class="zoomable" /><figcaption>评分项 · 加权总分</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂交叉表</strong><span>07</span></div><img src="readme/rule-cross-adv-trace.png" alt="复杂交叉表表达式追踪树" loading="lazy" class="zoomable" /><figcaption>多维分段 · 矩阵命中</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂评分卡</strong><span>08</span></div><img src="readme/rule-score-adv-trace.png" alt="复杂评分卡表达式追踪树" loading="lazy" class="zoomable" /><figcaption>维度得分 · 等级区间</figcaption></figure>
-                  <figure class="trace-card"><div class="trace-card-label"><strong>QL 脚本</strong><span>09</span></div><img src="readme/rule-script-trace.png" alt="QL 脚本表达式追踪树" loading="lazy" class="zoomable" /><figcaption>表达式求值 · 返回结果</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策表</strong><span>01</span></div><img src="readme/rule-table-trace.png" alt="决策表表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>命中行 · 条件 · 输出</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策树</strong><span>02</span></div><img src="readme/rule-tree-trace.png" alt="决策树表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>分支路径 · 跳过节点</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>决策流</strong><span>03</span></div><img src="readme/rule-flow-trace.png" alt="决策流表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>节点流转 · 汇合路径</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>规则集</strong><span>04</span></div><img src="readme/rule-ruleset-trace.png" alt="规则集表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>优先级 · 命中规则</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>交叉表</strong><span>05</span></div><img src="readme/rule-cross-trace.png" alt="交叉表表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>行列匹配 · 单元格</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>评分卡</strong><span>06</span></div><img src="readme/rule-score-trace.png" alt="评分卡表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>评分项 · 加权总分</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂交叉表</strong><span>07</span></div><img src="readme/rule-cross-adv-trace.png" alt="复杂交叉表表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>多维分段 · 矩阵命中</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>复杂评分卡</strong><span>08</span></div><img src="readme/rule-score-adv-trace.png" alt="复杂评分卡表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>维度得分 · 等级区间</figcaption></figure>
+                  <figure class="trace-card"><div class="trace-card-label"><strong>QL 脚本</strong><span>09</span></div><img src="readme/rule-script-trace.png" alt="QL 脚本表达式追踪树" loading="lazy" class="zoomable" / width="1720" height="1120"><figcaption>表达式求值 · 返回结果</figcaption></figure>
                 </div>
               </div>
             </div>
@@ -240,14 +250,14 @@
             <div class="subsection-heading"><span>TEST</span><h3>执行测试并看懂追踪</h3></div>
             <div class="two-column align-start">
               <div><ol class="numbered-list"><li>在“规则测试”选择项目和规则，加载输入字段。</li><li>填写一组代表性样例并保存为测试用例。</li><li>执行后先看输出，再打开“表达式追踪树”确认命中行、分支、评分项或脚本表达式。</li><li>边界值、缺失值和外部资源失败场景都要各测一组。</li></ol></div>
-              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-05-rule-test.png" alt="规则测试页面" loading="lazy" class="zoomable" /><figcaption>规则测试：输入样例并执行。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-05-rule-trace-tree.png" alt="规则追踪树" loading="lazy" class="zoomable" /><figcaption>追踪树：定位命中条件与动作。</figcaption></figure></div>
+              <div class="thumb-pair"><figure class="screenshot"><img src="project-usage/project-usage-05-rule-test.png" alt="规则测试页面" loading="lazy" class="zoomable" / width="1280" height="720"><figcaption>规则测试：输入样例并执行。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-05-rule-trace-tree.png" alt="规则追踪树" loading="lazy" class="zoomable" / width="1280" height="720"><figcaption>追踪树：定位命中条件与动作。</figcaption></figure></div>
             </div>
           </div>
 
           <div class="subsection-block">
             <div class="subsection-heading"><span>RELEASE</span><h3>提交审核、预检并发布</h3></div>
             <p>在规则详情页按“保存 → 依赖预检 → 提交审核 → 审核通过 → 发布”的顺序操作。预检会提示输入输出、引用资源和版本问题；发布后使用执行日志确认线上调用的是哪个修订版本。</p>
-            <div class="release-strip"><figure class="screenshot"><img src="project-usage/project-usage-08-rule-detail.png" alt="规则详情" loading="lazy" class="zoomable" /><figcaption>规则详情：查看状态和版本。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-preflight.png" alt="规则发布预检" loading="lazy" class="zoomable" /><figcaption>发布预检：处理阻断项。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-published.png" alt="规则已发布" loading="lazy" class="zoomable" /><figcaption>已发布：确认版本摘要。</figcaption></figure></div>
+            <div class="release-strip"><figure class="screenshot"><img src="project-usage/project-usage-08-rule-detail.png" alt="规则详情" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>规则详情：查看状态和版本。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-preflight.png" alt="规则发布预检" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>发布预检：处理阻断项。</figcaption></figure><figure class="screenshot"><img src="project-usage/project-usage-08-rule-release-published.png" alt="规则已发布" loading="lazy" class="zoomable" / width="1600" height="1000"><figcaption>已发布：确认版本摘要。</figcaption></figure></div>
           </div>
         </section>
 
@@ -256,10 +266,10 @@
           <h2>发布以后，继续看运行证据</h2>
           <p class="section-lead">规则上线不是终点。执行日志、血缘、分流实验和账单把每次决策的输入、结果、依赖与成本串起来。</p>
           <div class="operations-grid">
-            <article class="operation-card"><div class="operation-icon">↯</div><h3>执行日志</h3><p>按项目、规则、时间和状态筛选调用，打开详情查看输入输出、耗时、修订号和追踪树。</p><img src="project-usage/project-usage-06-execution-log.png" alt="执行日志" loading="lazy" class="zoomable" /></article>
-            <article class="operation-card"><div class="operation-icon">⌘</div><h3>血缘分析</h3><p>从变量、规则、模型、外数、数据库和名单查看上下游。结构化引用可追踪，动态脚本引用需要结合代码复核。</p><img src="project-usage/project-usage-14-lineage.png" alt="血缘分析" loading="lazy" class="zoomable" /></article>
-            <article class="operation-card"><div class="operation-icon">⚑</div><h3>分流实验</h3><p>配置冠军、挑战和测试组，选择条件或流量路由，并保留实验版本与结果。</p><img src="project-usage/project-usage-15-experiment.png" alt="分流实验" loading="lazy" class="zoomable" /></article>
-            <article class="operation-card"><div class="operation-icon">¥</div><h3>账单管理</h3><p>按引擎执行、API 调用和数据库调用配置计费项，查看明细和汇总。</p><img src="project-usage/project-usage-16-billing.png" alt="账单管理" loading="lazy" class="zoomable" /></article>
+            <article class="operation-card"><div class="operation-icon">↯</div><h3>执行日志</h3><p>按项目、规则、时间和状态筛选调用，打开详情查看输入输出、耗时、修订号和追踪树。</p><img src="project-usage/project-usage-06-execution-log.png" alt="执行日志" loading="lazy" class="zoomable" / width="1600" height="1000"></article>
+            <article class="operation-card"><div class="operation-icon">⌘</div><h3>血缘分析</h3><p>从变量、规则、模型、外数、数据库和名单查看上下游。结构化引用可追踪，动态脚本引用需要结合代码复核。</p><img src="project-usage/project-usage-14-lineage.png" alt="血缘分析" loading="lazy" class="zoomable" / width="1600" height="1000"></article>
+            <article class="operation-card"><div class="operation-icon">⚑</div><h3>分流实验</h3><p>配置冠军、挑战和测试组，选择条件或流量路由，并保留实验版本与结果。</p><img src="project-usage/project-usage-15-experiment.png" alt="分流实验" loading="lazy" class="zoomable" / width="1600" height="1000"></article>
+            <article class="operation-card"><div class="operation-icon">¥</div><h3>账单管理</h3><p>按引擎执行、API 调用和数据库调用配置计费项，查看明细和汇总。</p><img src="project-usage/project-usage-16-billing.png" alt="账单管理" loading="lazy" class="zoomable" / width="1280" height="720"></article>
           </div>
         </section>
 
@@ -268,8 +278,9 @@
           <h2>给业务系统接入一条清晰的路</h2>
           <p class="section-lead">控制台负责配置与治理，业务系统通过服务端开放接口或 Java SDK 调用规则。前端构建产物独立部署，不直接连接 MySQL。</p>
           <div class="integration-grid">
-            <a class="integration-card" href="deployment.md"><span>部署说明 ↗</span><strong>启动前端、后端、MySQL 与 Redis</strong><p>环境变量、端口、健康检查和生产部署边界。</p></a>
-            <a class="integration-card" href="java-service-integration.md"><span>Java 服务接入 ↗</span><strong>业务端 → Java 服务 → 决策引擎</strong><p>项目路由、鉴权、规则同步和执行日志。</p></a>
+            <a class="integration-card" href="deployment.html"><span>部署说明 ↗</span><strong>Docker、Compose、JAR 与多节点部署</strong><p>先看参数总览，再按模块直接部署并滚动更新。</p></a>
+            <a class="integration-card" href="java-service-integration.html"><span>Java 服务接入 ↗</span><strong>业务端 → Java 服务 → 决策引擎</strong><p>项目路由、鉴权、规则同步和执行日志。</p></a>
+            <a class="integration-card" href="http-sdk-example.html"><span>HTTP 接入示例 ↗</span><strong>HTTP-only SDK 与离线交付</strong><p>构建、配置、启动示例服务并嵌入客户 Java 服务。</p></a>
             <a class="integration-card" href="https://github.com/hengshu-credit/tianshu-decision-engine#部署与系统接入" target="_blank" rel="noreferrer"><span>README ↗</span><strong>查看完整能力与九类规则示例</strong><p>平台架构、设计器截图和客户端说明。</p></a>
           </div>
           <div class="notice notice-amber"><span class="notice-icon">!</span><p>生产环境不要使用共享默认凭证。MySQL、Redis、控制台账号和项目鉴权都应由部署环境注入并建立轮换流程。</p></div>
@@ -308,7 +319,7 @@
       </main>
     </div>
 
-    <button class="back-to-top" id="back-to-top" type="button" aria-label="返回顶部"><span class="back-to-top-arrows" aria-hidden="true"><i>↑</i><i>↑</i></span></button>
+    <button class="back-to-top" id="back-to-top" type="button" aria-label="返回顶部" title="返回顶部"><svg class="back-to-top-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg></button>
     <div class="image-modal" id="image-modal" role="dialog" aria-modal="true" aria-label="图片预览" hidden><button class="modal-close" type="button" aria-label="关闭预览">×</button><img alt="" /></div>
     <script src="app.js"></script>
   </body>

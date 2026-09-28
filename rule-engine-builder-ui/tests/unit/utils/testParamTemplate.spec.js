@@ -36,6 +36,7 @@ describe('testParamTemplate', () => {
 
   test('sampleValueForVarType returns editable defaults by type', () => {
     expect(sampleValueForVarType('NUMBER')).toBe(0)
+    expect(sampleValueForVarType('PROBABILITY')).toBe(0)
     expect(sampleValueForVarType('BOOLEAN')).toBe(false)
     expect(sampleValueForVarType('LIST')).toEqual([])
     expect(sampleValueForVarType('OBJECT')).toEqual({})

@@ -341,6 +341,12 @@ for (const detail of editableDetails) {
       .first()
     await expect(input).toBeVisible()
     await expect(input).toHaveValue(detail.value)
+    if (detail.path === '/datasource/api/22') {
+      const preflight = page.getByRole('button', { name: '检查已保存配置', exact: true })
+      await expect(preflight).toBeVisible()
+      await preflight.click()
+      await expect(page.getByText('已保存配置检查通过', { exact: true })).toBeVisible()
+    }
     await expectPrimaryActions(page, [
       '返回',
       detail.primaryAction || '保存'

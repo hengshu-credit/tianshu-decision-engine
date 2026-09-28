@@ -21,6 +21,13 @@ public class RuleBillingRecord {
     private String billingName;
     private String billingTarget;
     private Long targetRefId;
+    private String rootTraceId;
+    /**
+     * Engine billing idempotency key.  It is populated only for records that
+     * have a root trace, while API billing records keep this column null.
+     */
+    private String billingDedupKey;
+    private Integer attemptNo;
     private String requestId;
     private String ruleCode;
     private String apiCode;

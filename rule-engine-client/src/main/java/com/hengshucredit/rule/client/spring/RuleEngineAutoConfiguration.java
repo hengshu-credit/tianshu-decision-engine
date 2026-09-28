@@ -5,8 +5,8 @@ import com.hengshucredit.rule.client.log.ExecutionLogReporter;
 import com.hengshucredit.rule.client.log.KafkaLogReporter;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration;
@@ -44,18 +44,17 @@ public class RuleEngineAutoConfiguration {
 
     @Bean
     @ConditionalOnMissingBean
-    @ConditionalOnBean(RedisConnectionFactory.class)
     public RuleEngineClient ruleEngineClient(RuleEngineClientProperties props,
-                                              RedisConnectionFactory connectionFactory,
+                                              ObjectProvider<RedisConnectionFactory> connectionFactoryProvider,
                                               ApplicationContext applicationContext,
                                               ObjectProvider<ExecutionLogReporter> logReporterProvider) {
+        RedisConnectionFactory connectionFactory = connectionFactoryProvider.getIfAvailable();
         RuleEngineClient.Builder builder = RuleEngineClient.builder()
                 .serverUrl(props.getServerUrl())
                 .appName(props.getAppName())
                 .projectCode(props.getProjectCode())
                 .token(props.getToken())
                 .authConfig(props.toAuthConfig())
-                .connectionFactory(connectionFactory)
                 .applicationContext(applicationContext)
                 .l1CacheMaxSize(props.getL1CacheMaxSize())
                 .httpTimeoutMs(props.getHttpTimeoutMs())
@@ -66,6 +65,8 @@ public class RuleEngineAutoConfiguration {
                 .projectId(props.getProjectId())
                 .traceEnabled(props.isTraceEnabled())
                 .serverSideExecution(props.isServerSideExecution());
+
+        if (connectionFactory != null) builder.connectionFactory(connectionFactory);
 
         ExecutionLogReporter reporter = logReporterProvider.getIfAvailable();
         if (reporter != null && shouldUseExternalReporter(props)) {

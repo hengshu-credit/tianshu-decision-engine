@@ -2,6 +2,8 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import org.springframework.stereotype.Component;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.math.BigDecimal;
 import java.util.Iterator;
@@ -9,20 +11,37 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.UUID;
 
 @Component
 public class ExternalApiGuardRegistry {
 
     private final ExternalCallProperties properties;
+    private final ExternalApiGuardDistributedStore distributedStore;
     private final LinkedHashMap<Long, GuardState> states = new LinkedHashMap<>(16, 0.75F, true);
 
     public ExternalApiGuardRegistry(ExternalCallProperties properties) {
+        this(properties, (ExternalApiGuardDistributedStore) null);
+    }
+
+    @Autowired
+    public ExternalApiGuardRegistry(ExternalCallProperties properties,
+                                    ObjectProvider<ExternalApiGuardDistributedStore> storeProvider) {
+        this(properties, storeProvider == null ? null : storeProvider.getIfAvailable());
+    }
+
+    ExternalApiGuardRegistry(ExternalCallProperties properties,
+                             ExternalApiGuardDistributedStore distributedStore) {
         this.properties = properties;
+        this.distributedStore = distributedStore;
     }
 
     public Permit acquire(RuleExternalApiConfig config) {
         if (config == null || config.getId() == null) {
             throw new IllegalArgumentException("API configuration id must not be null");
+        }
+        if (distributedStore != null) {
+            return acquireDistributed(config);
         }
         GuardState state = state(config);
         if (!state.rateLimiter.tryAcquire()) {
@@ -48,6 +67,47 @@ public class ExternalApiGuardRegistry {
             state.active++;
         }
         return new Permit(state);
+    }
+
+    private Permit acquireDistributed(RuleExternalApiConfig config) {
+        GuardSettings settings = GuardSettings.from(config);
+        int configuredWait = config.getConcurrentWaitTimeoutMs() == null
+                ? 0 : Math.max(0, config.getConcurrentWaitTimeoutMs());
+        int remaining = RequestDeadlineContext.remainingMillis();
+        long waitMillis = remaining == Integer.MAX_VALUE
+                ? configuredWait : Math.min(configuredWait, Math.max(0, remaining));
+        long deadline = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(waitMillis);
+        String permitId = UUID.randomUUID().toString();
+        while (true) {
+            ExternalApiGuardDistributedStore.AcquireResult result;
+            try {
+                result = distributedStore.tryAcquire(config.getId(), settings.qps, settings.burst,
+                        settings.maxConcurrent, leaseMillis(config), permitId);
+            } catch (RedisExternalApiGuardStore.DistributedUnavailable e) {
+                throw new RejectedException("API_GUARD_DISTRIBUTED_UNAVAILABLE", "外数API分布式流控不可用");
+            }
+            if (result == ExternalApiGuardDistributedStore.AcquireResult.ACQUIRED) {
+                return new Permit(distributedStore, config.getId(), permitId);
+            }
+            if (waitMillis <= 0 || System.nanoTime() >= deadline) {
+                throw new RejectedException(result == ExternalApiGuardDistributedStore.AcquireResult.RATE_LIMITED
+                        ? "API_RATE_LIMITED" : "API_MAX_CONCURRENT",
+                        result == ExternalApiGuardDistributedStore.AcquireResult.RATE_LIMITED
+                                ? "外数API请求超过QPS限制" : "外数API达到最大并发数");
+            }
+            try {
+                Thread.sleep(Math.min(10L, Math.max(1L,
+                        TimeUnit.NANOSECONDS.toMillis(deadline - System.nanoTime()))));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                throw new RejectedException("API_MAX_CONCURRENT", "等待外数API并发许可时被中断");
+            }
+        }
+    }
+
+    private long leaseMillis(RuleExternalApiConfig config) {
+        int timeout = config.getTimeoutMs() == null ? 3000 : Math.max(1, config.getTimeoutMs());
+        return Math.min(600_000L, Math.max(30_000L, timeout + 5_000L));
     }
 
     public synchronized void invalidate(Long apiConfigId) {
@@ -98,19 +158,42 @@ public class ExternalApiGuardRegistry {
 
     public static final class Permit implements AutoCloseable {
         private GuardState state;
+        private final ExternalApiGuardDistributedStore distributedStore;
+        private final Long apiConfigId;
+        private final String permitId;
 
         private Permit(GuardState state) {
             this.state = state;
+            this.distributedStore = null;
+            this.apiConfigId = null;
+            this.permitId = null;
+        }
+
+        private Permit(ExternalApiGuardDistributedStore distributedStore, Long apiConfigId,
+                       String permitId) {
+            this.state = null;
+            this.distributedStore = distributedStore;
+            this.apiConfigId = apiConfigId;
+            this.permitId = permitId;
         }
 
         @Override
         public void close() {
             GuardState current = state;
-            if (current == null) return;
-            state = null;
-            current.semaphore.release();
-            synchronized (current) {
-                if (current.active > 0) current.active--;
+            if (current != null) {
+                state = null;
+                current.semaphore.release();
+                synchronized (current) {
+                    if (current.active > 0) current.active--;
+                }
+                return;
+            }
+            if (distributedStore != null) {
+                try {
+                    distributedStore.release(apiConfigId, permitId);
+                } catch (RuntimeException ignored) {
+                    // The lease has a bounded TTL; release failure must not hide the request result.
+                }
             }
         }
     }

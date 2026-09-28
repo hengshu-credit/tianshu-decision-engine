@@ -198,6 +198,31 @@ public class OpenRuleControllerTest {
         Assert.assertEquals("PASS", ((Map<?, ?>) responseBody.get("payload")).get("decision_result"));
     }
 
+    @Test
+    public void exposesPublishedRevisionAndArtifactToResponseTemplates() {
+        OpenApiContractService.ResolvedContract resolved = resolvedContract();
+        resolved.getContract().setSuccessDataTemplate(JSON.parse(
+                "{\"revision\":\"${revisionId}\",\"artifact\":\"${artifactDigest}\"}"));
+        resolved.getContract().setEnvelopeTemplate(JSON.parse(
+                "{\"code\":\"${status.code}\",\"data\":\"${data}\"}"));
+        resolved.getContract().setDataPath("$.data");
+        RecordingExecuteService executeService = new RecordingExecuteService();
+        executeService.result.setRevisionId(42L);
+        executeService.result.setArtifactDigest("artifact-42");
+        OpenRuleController controller = controller(resolved, executeService);
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Auth-Code", "AUTH_1");
+
+        ResponseEntity<Object> response = controller.execute("OPEN_RISK",
+                Collections.singletonMap("customer", Collections.singletonMap("idNo", "A001")),
+                headers, authenticatedRequest());
+
+        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        Map<?, ?> data = (Map<?, ?>) body.get("data");
+        Assert.assertEquals(Long.valueOf(42L), data.get("revision"));
+        Assert.assertEquals("artifact-42", data.get("artifact"));
+    }
+
     private static class RecordingExecuteService extends RuleExecuteService {
         private final RuleResult result = new RuleResult();
         private Map<String, Object> params;

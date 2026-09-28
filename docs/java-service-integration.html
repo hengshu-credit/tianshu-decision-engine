@@ -1,0 +1,278 @@
+<!doctype html>
+<!-- GitHub Pages HTML mirror of docs/java-service-integration.md. -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="Java SDK、本地执行、服务端执行、HTTP 调用和日志追踪接入说明" />
+    <meta name="theme-color" content="#10142d" />
+    <title>Java 业务服务接入 · 天枢决策引擎</title>
+    <link rel="icon" href="brand/favicon.ico" sizes="64x64" />
+    <link rel="icon" href="brand/hengshucredit_animated.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="deployment.css" />
+  </head>
+  <body class="deployment-page integration-page">
+    <div class="reading-progress" aria-hidden="true"><span></span></div>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="brand" href="index.html" aria-label="返回操作手册首页">
+          <img src="brand/hengshucredit_animated.svg" alt="天枢决策引擎" class="brand-logo" />
+          <span class="brand-copy"><strong>天枢决策引擎</strong><small>天工开物，枢衡定策</small></span>
+        </a>
+        <nav id="toc" class="header-menu" aria-label="接入教程目录">
+          <a href="#mode">执行模式</a>
+<a href="#sdk">引入 SDK</a>
+<a href="#config">Java 配置</a>
+<a href="#api">业务接口</a>
+<a href="#logging">日志追踪</a>
+<a href="#example">运行示例</a>
+<a href="#multi">多项目</a>
+        </nav>
+        <div class="header-actions">
+          <label class="search-box" for="manual-search"><span aria-hidden="true">⌕</span><input id="manual-search" type="search" placeholder="搜索接入教程" autocomplete="off" /><kbd>/</kbd></label>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="切换阅读主题">☼</button>
+          <a class="official-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer">官网</a>
+          <a class="github-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-shell" id="top">
+      <main class="content">
+        <section class="hero deployment-hero" data-search="Java 业务服务接入 Java SDK、本地执行、服务端执行、HTTP 调用和日志追踪接入说明">
+          <div class="hero-main">
+            <div class="eyebrow">TIANSHU DECISION ENGINE · JAVA INTEGRATION</div>
+            <h1>让 Java 服务，接入<br /><em>可验证的决策执行链路。</em></h1>
+            <p class="hero-copy">根据规则依赖选择本地 SDK、服务端执行或 HTTP-only 交付，并把鉴权、追踪和错误处理放进业务服务边界。</p>
+            <div class="hero-actions">
+              <a class="button button-quiet button-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><span class="button-icon button-icon-logo"><img src="brand/hengshucredit_animated.svg" alt="" /></span><span>官网</span></a>
+              <a class="button button-quiet button-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer"><span class="button-icon">↗</span><span>开源</span></a>
+              <a class="button button-quiet button-link" href="#mode"><span class="button-icon">↓</span><span>教程</span></a>
+              <a class="button button-quiet button-link" href="http-sdk-example.html"><span class="button-icon">→</span><span>HTTP 示例</span></a>
+            </div>
+          </div>
+          <div class="hero-visual sdk-visual" aria-label="Java SDK 接入链路示意">
+            <div class="hero-visual-grid" aria-hidden="true"></div>
+            <div class="hero-visual-head"><span><i></i> JAVA / SDK LINK</span><b>TRACE READY</b></div>
+            <div class="hero-visual-stage hero-visual-flow">
+              <div class="hero-visual-node node-business"><span>01</span><strong>BUSINESS</strong><small>request</small></div><div class="hero-visual-arrow">→</div>
+              <div class="hero-visual-node node-sdk"><span>02</span><strong>SDK</strong><small>auth + cache</small></div><div class="hero-visual-arrow">→</div>
+              <div class="hero-visual-node node-engine"><span>03</span><strong>ENGINE</strong><small>execute</small></div>
+              <div class="hero-visual-line line-flow"></div>
+            </div>
+            <div class="hero-visual-footer"><span>PROJECT / TRACE / LOG</span><code>RESULT → TRACE_ID</code></div>
+          </div>
+        </section>
+
+        <div class="notice notice-blue"><span class="notice-icon">i</span><div class="integration-intro"><strong>先确定交付模式，再复制对应配置。</strong>
+<p>对外公司或无需引擎源码/Maven 私服的接入，请优先使用 <a href="../rule-engine-example/README.md">HTTP-only SDK 与HTTP 接入示例</a>：默认使用纯 HTTP 的 <code>rule-engine-client-http</code>，提供 tar.gz、全部运行依赖和可离线重编译的业务服务示例，不需要 Redis。</p>
+<p>以下第 1–5、7 节描述原有完整 SDK <code>rule-engine-client</code>，适用于需要本地规则缓存执行的内部系统；它仍依赖 Redis，会同步规则，不应与 HTTP-only SDK 的交付边界混淆。</p>
+</div></div>
+        <div class="deployment-body"><section class="manual-section deployment-section" id="mode" data-search="1. 确定规则范围与执行位置 项目规则：使用所属项目的凭据。 全局规则：先在调用项目中关联全局规则，再使用该项目凭据调用。全局不代表匿名可用，也不代表任何项目均可执行。 多项目：每个项目使用独立凭据与 SDK 实例； project-id 、 project-code 必须与凭据所属项目一致。不能通过业务请求中的项目字段扩大权限。 只有已发布规则可以通过开放接口访问；草稿、审核中及下线规则不可调用。 server-side-execution: true 表示 SDK 通过 HTTP 请求引擎服务端执行。涉及 API、数据库、名单、模型、派生变量或服务端函数等运行依赖时，应使用此模式。 server-side-execution: false 表示 Java 服务执行本地缓存的脚本。该模式不执行服务端变量解析流程，需要业务服务准备完整输入并提供所需函数和运行依赖；只有这个本地纯计算模式需要配置 Redis，SDK 启动时才会同步规则/函数并建立项目频道订阅。 server-side-execution: true 不下载规则、不订阅 Redis，通过 HTTP 调用服务端执行，实验和跨请求执行状态也仅在该模式可用。SDK 两种模式都不直连引擎 MySQL。"><h2>1. 确定规则范围与执行位置</h2>
+<ul>
+<li>项目规则：使用所属项目的凭据。</li>
+<li>全局规则：先在调用项目中关联全局规则，再使用该项目凭据调用。全局不代表匿名可用，也不代表任何项目均可执行。</li>
+<li>多项目：每个项目使用独立凭据与 SDK 实例；<code>project-id</code>、<code>project-code</code> 必须与凭据所属项目一致。不能通过业务请求中的项目字段扩大权限。</li>
+<li>只有已发布规则可以通过开放接口访问；草稿、审核中及下线规则不可调用。</li>
+</ul>
+<p><code>server-side-execution: true</code> 表示 SDK 通过 HTTP 请求引擎服务端执行。涉及 API、数据库、名单、模型、派生变量或服务端函数等运行依赖时，应使用此模式。</p>
+<p><code>server-side-execution: false</code> 表示 Java 服务执行本地缓存的脚本。该模式不执行服务端变量解析流程，需要业务服务准备完整输入并提供所需函数和运行依赖；只有这个本地纯计算模式需要配置 Redis，SDK 启动时才会同步规则/函数并建立项目频道订阅。<code>server-side-execution: true</code> 不下载规则、不订阅 Redis，通过 HTTP 调用服务端执行，实验和跨请求执行状态也仅在该模式可用。SDK 两种模式都不直连引擎 MySQL。</p>
+</section><section class="manual-section deployment-section" id="sdk" data-search="2. 引入 SDK 在 JDK 17、Spring Boot 3 的 Web 服务中增加依赖： &lt;dependency&gt;
+    &lt;groupId&gt;com.hengshucredit.rule&lt;/groupId&gt;
+    &lt;artifactId&gt;rule-engine-client&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0-SNAPSHOT&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+&lt;/dependency&gt; SDK 尚未发布公共 Maven 仓库。先在引擎源码根目录执行 mvn clean install -DskipTests 安装本地依赖，或由团队提供内部 Maven 仓库。Web 依赖版本由业务项目的 Spring Boot parent / BOM 管理。"><h2>2. 引入 SDK</h2>
+<p>在 JDK 17、Spring Boot 3 的 Web 服务中增加依赖：</p>
+<pre><code class="language-xml">&lt;dependency&gt;
+    &lt;groupId&gt;com.hengshucredit.rule&lt;/groupId&gt;
+    &lt;artifactId&gt;rule-engine-client&lt;/artifactId&gt;
+    &lt;version&gt;1.0.0-SNAPSHOT&lt;/version&gt;
+&lt;/dependency&gt;
+&lt;dependency&gt;
+    &lt;groupId&gt;org.springframework.boot&lt;/groupId&gt;
+    &lt;artifactId&gt;spring-boot-starter-web&lt;/artifactId&gt;
+&lt;/dependency&gt;
+</code></pre>
+<p>SDK 尚未发布公共 Maven 仓库。先在引擎源码根目录执行 <code>mvn clean install -DskipTests</code> 安装本地依赖，或由团队提供内部 Maven 仓库。Web 依赖版本由业务项目的 Spring Boot parent / BOM 管理。</p>
+</section><section class="manual-section deployment-section" id="config" data-search="3. 配置 Java 服务 rule-engine:
+  client:
+    server-url: ${RULE_SERVER_URL}
+    app-name: risk-service
+    project-id: ${RULE_PROJECT_ID}
+    project-code: ${RULE_PROJECT_CODE}
+    token: ${PROJECT_ACCESS_TOKEN}
+    server-side-execution: true
+    http-timeout-ms: 10000
+    trace-enabled: false
+    log-report-enabled: false
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0} 项目凭据在“项目管理 → 调用鉴权”中取得；实际入口以控制台为准。凭据仅放在 Java 服务的 Secret/环境变量中，不交给浏览器或移动端。Redis 地址、密码和 database 必须与引擎服务端一致。 project-code 是实时推送路由键； app-name 只标识业务应用，不授予权限。HTTP 超时应覆盖规则、外数调用及轮询总耗时。 账号密码、API Key、HMAC-SHA256 的配置见 部署与接入 ，也可直接复制该项目导出 API 文档中的鉴权配置。"><h2>3. 配置 Java 服务</h2>
+<pre><code class="language-yaml">rule-engine:
+  client:
+    server-url: ${RULE_SERVER_URL}
+    app-name: risk-service
+    project-id: ${RULE_PROJECT_ID}
+    project-code: ${RULE_PROJECT_CODE}
+    token: ${PROJECT_ACCESS_TOKEN}
+    server-side-execution: true
+    http-timeout-ms: 10000
+    trace-enabled: false
+    log-report-enabled: false
+spring:
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+      database: ${REDIS_DATABASE:0}
+</code></pre>
+<p>项目凭据在“项目管理 → 调用鉴权”中取得；实际入口以控制台为准。凭据仅放在 Java 服务的 Secret/环境变量中，不交给浏览器或移动端。Redis 地址、密码和 database 必须与引擎服务端一致。<code>project-code</code> 是实时推送路由键；<code>app-name</code> 只标识业务应用，不授予权限。HTTP 超时应覆盖规则、外数调用及轮询总耗时。</p>
+<p>账号密码、API Key、HMAC-SHA256 的配置见 <a href="deployment.html#sdk">部署与接入</a>，也可直接复制该项目导出 API 文档中的鉴权配置。</p>
+</section><section class="manual-section deployment-section" id="api" data-search="4. 暴露业务接口并处理结果 将以下类放入业务应用的 Spring 扫描包中，把 RISK_RULE 替换为授权范围内的已发布规则编码。生产应固定或校验规则白名单，不能把任意规则执行接口无鉴权地对外开放。 import com.hengshucredit.rule.client.RuleEngineClient;
+import com.hengshucredit.rule.model.dto.RuleResult;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.util.Map;
+
+@RestController
+@RequestMapping(&quot;/api/decision&quot;)
+public class DecisionController {
+    private final RuleEngineClient ruleClient;
+
+    public DecisionController(RuleEngineClient ruleClient) {
+        this.ruleClient = ruleClient;
+    }
+
+    @PostMapping
+    public ResponseEntity&lt;RuleResult&gt; decide(@RequestBody Map&lt;String, Object&gt; params) {
+        RuleResult result = ruleClient.execute(&quot;RISK_RULE&quot;, params);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 422).body(result);
+    }
+} 调用业务接口时，请求体直接使用规则文档 params 内的结构，例如 {&quot;age&quot;:18} ；SDK 也接受字段名与规则输入一致的 Java DTO。SDK 返回的 RuleResult 包含 success 、 result 、 errorMessage 、 traceId 、 traces 、 executeTimeMs ，没有引擎 HTTP 接口外层的 code/message/data 。 success=true 仅代表规则执行成功，实际通过、拒绝、人工复核取决于 result 中定义的业务字段。示例将执行失败映射为 HTTP 422；业务服务应另行提供自身鉴权、输入校验、异常映射和明确的失败策略，不能在引擎错误或超时时默认放行。默认不要把包含敏感输入的追踪明细直接返回终端用户。 如果绕过 SDK 直接调用引擎，请求如下（Shell 示例）： curl -X POST https://engine.example.com/api/rule/sync/execute/RISK_RULE \
+  -H &#x27;X-Rule-Token: &lt;PROJECT_TOKEN&gt;&#x27; \
+  -H &#x27;Content-Type: application/json&#x27; \
+  -d &#x27;{&quot;clientAppName&quot;:&quot;risk-service&quot;,&quot;traceEnabled&quot;:false,&quot;params&quot;:{&quot;age&quot;:18}}&#x27; HTTP 响应先检查外层 code == 200 ，再检查 data.success ，最后读取 data.result 。401/403 检查鉴权；404 检查所属项目、全局关联与发布状态。 traceEnabled 位于请求体顶层，不在 params 中，默认 true；JSON 使用布尔值，multipart 可使用字符串 true / false ，其他值返回业务码 400。 外数原始报文关联 规则中的 API 外数变量结果会带有统一的 externalCall 信息： externalCall.callId 是一次逻辑调用的稳定关联键， externalCall.request.rawBody 、 externalCall.rawResponseBody 是供应商请求体和原始响应体， rawRequestAvailable / rawResponseAvailable 标明对应报文是否实际存在。 externalCall.traceSteps 还按顺序记录规则入参、API 请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和 API 变量实际赋值。顶层也提供同名 callId 、 rawRequestBody 、 rawResponseBody ，业务系统可直接落库或透传，不需要根据缓存、重试或 responseMapping 进行分支判断。 需要在规则执行结束后补查报文时，使用同一项目令牌调用： GET /api/rule/runtime/external-calls/{callId} 该接口只返回调用所属项目的报文；缓存命中没有真实的供应商请求， rawRequestAvailable=false 属于正常情况，响应仍可通过 callId 关联。 外数接口的报文留存策略还可以在控制台按请求/响应分别配置：选择实际报文或脚本显式写入的 state.logRequestBody / state.logResponseBody 中间副本，配置 JSONPath 排除字段和单字段字节上限；Base64、3DES Base64 解密只生成分析副本，失败时不会回退覆盖未处理密文， originalRequestBody / originalResponseBody 仍保存供应商实际报文，规则实时结果不受影响。"><h2>4. 暴露业务接口并处理结果</h2>
+<p>将以下类放入业务应用的 Spring 扫描包中，把 <code>RISK_RULE</code> 替换为授权范围内的已发布规则编码。生产应固定或校验规则白名单，不能把任意规则执行接口无鉴权地对外开放。</p>
+<pre><code class="language-java">import com.hengshucredit.rule.client.RuleEngineClient;
+import com.hengshucredit.rule.model.dto.RuleResult;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/decision")
+public class DecisionController {
+    private final RuleEngineClient ruleClient;
+
+    public DecisionController(RuleEngineClient ruleClient) {
+        this.ruleClient = ruleClient;
+    }
+
+    @PostMapping
+    public ResponseEntity&lt;RuleResult&gt; decide(@RequestBody Map&lt;String, Object&gt; params) {
+        RuleResult result = ruleClient.execute("RISK_RULE", params);
+        return ResponseEntity.status(result.isSuccess() ? 200 : 422).body(result);
+    }
+}
+</code></pre>
+<p>调用业务接口时，请求体直接使用规则文档 <code>params</code> 内的结构，例如 <code>{"age":18}</code>；SDK 也接受字段名与规则输入一致的 Java DTO。SDK 返回的 <code>RuleResult</code> 包含 <code>success</code>、<code>result</code>、<code>errorMessage</code>、<code>traceId</code>、<code>traces</code>、<code>executeTimeMs</code>，没有引擎 HTTP 接口外层的 <code>code/message/data</code>。</p>
+<p><code>success=true</code> 仅代表规则执行成功，实际通过、拒绝、人工复核取决于 <code>result</code> 中定义的业务字段。示例将执行失败映射为 HTTP 422；业务服务应另行提供自身鉴权、输入校验、异常映射和明确的失败策略，不能在引擎错误或超时时默认放行。默认不要把包含敏感输入的追踪明细直接返回终端用户。</p>
+<p>如果绕过 SDK 直接调用引擎，请求如下（Shell 示例）：</p>
+<pre><code class="language-bash">curl -X POST https://engine.example.com/api/rule/sync/execute/RISK_RULE \
+  -H 'X-Rule-Token: &lt;PROJECT_TOKEN&gt;' \
+  -H 'Content-Type: application/json' \
+  -d '{"clientAppName":"risk-service","traceEnabled":false,"params":{"age":18}}'
+</code></pre>
+<p>HTTP 响应先检查外层 <code>code == 200</code>，再检查 <code>data.success</code>，最后读取 <code>data.result</code>。401/403 检查鉴权；404 检查所属项目、全局关联与发布状态。<code>traceEnabled</code> 位于请求体顶层，不在 <code>params</code> 中，默认 true；JSON 使用布尔值，multipart 可使用字符串 <code>true</code> / <code>false</code>，其他值返回业务码 400。</p>
+<h3>外数原始报文关联</h3>
+<p>规则中的 API 外数变量结果会带有统一的 <code>externalCall</code> 信息：<code>externalCall.callId</code> 是一次逻辑调用的稳定关联键，<code>externalCall.request.rawBody</code>、<code>externalCall.rawResponseBody</code> 是供应商请求体和原始响应体，<code>rawRequestAvailable</code> / <code>rawResponseAvailable</code> 标明对应报文是否实际存在。<code>externalCall.traceSteps</code> 还按顺序记录规则入参、API 请求拼装、脱敏鉴权、外部请求、响应处理、字段映射和 API 变量实际赋值。顶层也提供同名 <code>callId</code>、<code>rawRequestBody</code>、<code>rawResponseBody</code>，业务系统可直接落库或透传，不需要根据缓存、重试或 responseMapping 进行分支判断。</p>
+<p>需要在规则执行结束后补查报文时，使用同一项目令牌调用：</p>
+<pre><code class="language-text">GET /api/rule/runtime/external-calls/{callId}
+</code></pre>
+<p>该接口只返回调用所属项目的报文；缓存命中没有真实的供应商请求，<code>rawRequestAvailable=false</code> 属于正常情况，响应仍可通过 <code>callId</code> 关联。</p>
+<p>外数接口的报文留存策略还可以在控制台按请求/响应分别配置：选择实际报文或脚本显式写入的 <code>state.logRequestBody</code>/<code>state.logResponseBody</code> 中间副本，配置 JSONPath 排除字段和单字段字节上限；Base64、3DES Base64 解密只生成分析副本，失败时不会回退覆盖未处理密文，<code>originalRequestBody</code>/<code>originalResponseBody</code> 仍保存供应商实际报文，规则实时结果不受影响。</p>
+</section><section class="manual-section deployment-section" id="logging" data-search="5. 日志追踪开关 配置 默认值 作用 trace-enabled true 控制本地及服务端执行的表达式追踪；关闭后不返回表达式 traces ，仍保留 traceId log-report-enabled true 控制 SDK 本地执行 日志上报；关闭后 HTTP、Kafka、自定义 reporter 均不接收日志 两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 log-report-enabled 控制；两个开关都关闭不等于平台不留任何日志。 本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 ExecutionLogReporter 时使用自定义实现，否则存在 KafkaTemplate 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 .traceEnabled(false).logReportEnabled(false) ；即使显式传入 reporter，关闭上报仍然生效。"><h2>5. 日志追踪开关</h2>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>默认值</th>
+<th>作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>trace-enabled</code></td>
+<td><code>true</code></td>
+<td>控制本地及服务端执行的表达式追踪；关闭后不返回表达式 <code>traces</code>，仍保留 <code>traceId</code></td>
+</tr>
+<tr>
+<td><code>log-report-enabled</code></td>
+<td><code>true</code></td>
+<td>控制 SDK <strong>本地执行</strong>日志上报；关闭后 HTTP、Kafka、自定义 reporter 均不接收日志</td>
+</tr>
+</tbody>
+</table>
+<p>两个开关独立：关闭追踪但保留上报时，可保留基础执行日志；开启追踪但关闭上报时，可在 Java 服务读取追踪而不从 SDK 上报。服务端执行不重复从客户端上报日志。服务端基础执行日志、鉴权审计、外数日志及计费不受 <code>log-report-enabled</code> 控制；两个开关都关闭不等于平台不留任何日志。</p>
+<p>本地上报默认使用有界 HTTP 异步队列。启用上报且有自定义 <code>ExecutionLogReporter</code> 时使用自定义实现，否则存在 <code>KafkaTemplate</code> 时自动选择 Kafka。日志上报失败不应改变决策结果。程序化 Builder 支持 <code>.traceEnabled(false).logReportEnabled(false)</code>；即使显式传入 reporter，关闭上报仍然生效。</p>
+</section><section class="manual-section deployment-section" id="example" data-search="6. 运行现成示例 当前默认示例已改为 HTTP-only，配置 RULE_SERVER_URL 、 PROJECT_ACCESS_TOKEN 、 RULE_ALLOWED_CODES 即可接入，不再使用 RULE_PROJECT_ID 、 RULE_PROJECT_CODE 或 Redis。表达式追踪使用 RULE_TRACE_ENABLED ，默认关闭；没有本地日志上报。 在根目录运行 node scripts/package-java-offline.mjs 生成对外 tar.gz。解压后复制配置模板，执行 start.ps1 或 sh start.sh ，访问默认 7070 端口的联调页。完整使用方法见 HTTP 接入示例 。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 rule-engine-example/legacy/ ，不随对外包交付。"><h2>6. 运行现成示例</h2>
+<p>当前默认示例已改为 HTTP-only，配置 <code>RULE_SERVER_URL</code>、<code>PROJECT_ACCESS_TOKEN</code>、<code>RULE_ALLOWED_CODES</code> 即可接入，不再使用 <code>RULE_PROJECT_ID</code>、<code>RULE_PROJECT_CODE</code> 或 Redis。表达式追踪使用 <code>RULE_TRACE_ENABLED</code>，默认关闭；没有本地日志上报。</p>
+<p>在根目录运行 <code>node scripts/package-java-offline.mjs</code> 生成对外 tar.gz。解压后复制配置模板，执行 <code>start.ps1</code> 或 <code>sh start.sh</code>，访问默认 7070 端口的联调页。完整使用方法见 <a href="http-sdk-example.html">HTTP 接入示例</a>。原本依赖预置 SQL 和本地 Java/Bean 函数的示例保留在 <code>rule-engine-example/legacy/</code>，不随对外包交付。</p>
+</section><section class="manual-section deployment-section" id="multi" data-search="7. 一个 Java 服务连接多个项目 不要修改共享客户端的项目或凭据来处理不同请求。为每个项目声明独立的 Spring Bean，通过 @Qualifier 在业务服务中选择；凭据从服务端配置读取，不接受业务请求直接传入。下面的方法可按不同 Bean 名重复声明： @Bean(name = &quot;creditRuleClient&quot;, initMethod = &quot;start&quot;, destroyMethod = &quot;close&quot;)
+RuleEngineClient creditRuleClient(RedisConnectionFactory redis, Environment env) {
+    return RuleEngineClient.builder()
+            .serverUrl(env.getRequiredProperty(&quot;RULE_SERVER_URL&quot;))
+            .appName(&quot;risk-service&quot;)
+            .projectId(Long.parseLong(env.getRequiredProperty(&quot;CREDIT_PROJECT_ID&quot;)))
+            .projectCode(env.getRequiredProperty(&quot;CREDIT_PROJECT_CODE&quot;))
+            .token(env.getRequiredProperty(&quot;CREDIT_PROJECT_TOKEN&quot;))
+            .connectionFactory(redis)
+            .serverSideExecution(true)
+            .httpTimeoutMs(10000)
+            .traceEnabled(false)
+            .logReportEnabled(false)
+            .build();
+} 该方法放入 @Configuration 类，导入 org.springframework.context.annotation.Bean 、 org.springframework.core.env.Environment 、 org.springframework.data.redis.connection.RedisConnectionFactory 和 SDK 类。手动声明客户端后自动配置不会再创建默认客户端。每个实例有独立缓存、函数和订阅；若连接不同引擎部署，应分别注入对应的 Redis 连接工厂。"><h2>7. 一个 Java 服务连接多个项目</h2>
+<p>不要修改共享客户端的项目或凭据来处理不同请求。为每个项目声明独立的 Spring Bean，通过 <code>@Qualifier</code> 在业务服务中选择；凭据从服务端配置读取，不接受业务请求直接传入。下面的方法可按不同 Bean 名重复声明：</p>
+<pre><code class="language-java">@Bean(name = "creditRuleClient", initMethod = "start", destroyMethod = "close")
+RuleEngineClient creditRuleClient(RedisConnectionFactory redis, Environment env) {
+    return RuleEngineClient.builder()
+            .serverUrl(env.getRequiredProperty("RULE_SERVER_URL"))
+            .appName("risk-service")
+            .projectId(Long.parseLong(env.getRequiredProperty("CREDIT_PROJECT_ID")))
+            .projectCode(env.getRequiredProperty("CREDIT_PROJECT_CODE"))
+            .token(env.getRequiredProperty("CREDIT_PROJECT_TOKEN"))
+            .connectionFactory(redis)
+            .serverSideExecution(true)
+            .httpTimeoutMs(10000)
+            .traceEnabled(false)
+            .logReportEnabled(false)
+            .build();
+}
+</code></pre>
+<p>该方法放入 <code>@Configuration</code> 类，导入 <code>org.springframework.context.annotation.Bean</code>、<code>org.springframework.core.env.Environment</code>、<code>org.springframework.data.redis.connection.RedisConnectionFactory</code> 和 SDK 类。手动声明客户端后自动配置不会再创建默认客户端。每个实例有独立缓存、函数和订阅；若连接不同引擎部署，应分别注入对应的 Redis 连接工厂。</p></section></div>
+
+        <footer class="site-footer">
+          <div class="site-footer-inner">
+            <div class="footer-meta"><strong>上海衡枢真信科技有限公司</strong><span>© 2026 上海衡枢真信科技有限公司 · ALL RIGHTS RESERVED</span><a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">沪ICP备2026005682号-1</a><span>Java 业务服务接入 · <a href="index.html">返回操作手册</a></span></div>
+            <div class="footer-contact"><strong>联系我们</strong><a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a><span>上海市 · <a href="https://hengshucredit.com/" target="_blank" rel="noreferrer">hengshucredit.com ↗</a></span></div>
+            <div class="footer-social"><a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber.svg" alt="微信号二维码" /><span>微信号</span></a><a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber_art.svg" alt="公众号二维码" /><span>公众号</span></a></div>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <button class="back-to-top" id="back-to-top" type="button" aria-label="返回顶部" title="返回顶部"><svg class="back-to-top-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg></button>
+    <script src="deployment.js"></script>
+  </body>
+</html>

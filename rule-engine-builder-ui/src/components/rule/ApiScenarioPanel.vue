@@ -303,6 +303,7 @@ export default {
       draftVisible: false,
       requestMode: 'FORM',
       scenarios: [],
+      scenariosRequestId: 0,
       testFields: [],
       formParams: {},
       draft: this.emptyDraft(),
@@ -359,15 +360,20 @@ export default {
     },
     async loadScenarios() {
       if (!this.rule.id) return
+      const ruleId = this.rule.id
+      const requestId = ++this.scenariosRequestId
       this.loading = true
+      this.scenarios = []
       try {
-        const response = await listApiScenarios(this.rule.id)
+        const response = await listApiScenarios(ruleId)
+        if (requestId !== this.scenariosRequestId || String(ruleId) !== String(this.rule.id)) return
         const data = this.unwrapResponse(response)
         this.scenarios = Array.isArray(data) ? data : []
       } catch (error) {
+        if (requestId !== this.scenariosRequestId || String(ruleId) !== String(this.rule.id)) return
         this.$message.error(error.message || '加载 API 测试用例失败')
       } finally {
-        this.loading = false
+        if (requestId === this.scenariosRequestId) this.loading = false
       }
     },
     async openCreate() {

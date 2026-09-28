@@ -482,6 +482,17 @@
               <div class="uiue-card-title">共享执行会话</div>
               <code>{{ detail.traceId || '-' }}</code>
             </div>
+            <div class="uiue-card runtime-identity-card">
+              <div class="uiue-card-title">执行制品归因</div>
+              <div class="runtime-identity-grid">
+                <div>
+                  <span>规则修订</span><code>{{ detail.revisionId || '-' }}</code>
+                </div>
+                <div>
+                  <span>制品摘要</span><code>{{ detail.artifactDigest || '-' }}</code>
+                </div>
+              </div>
+            </div>
             <div class="uiue-card auth-attribution-card">
               <div class="uiue-card-title">鉴权归因</div>
               <div class="auth-attribution-grid">
@@ -1319,11 +1330,34 @@ emits: ['pick']
 .auth-attribution-card {
   margin-bottom: 12px;
 }
+.runtime-identity-card {
+  margin-bottom: 12px;
+}
 .auth-attribution-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px 24px;
   margin-top: 12px;
+}
+.runtime-identity-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin-top: 12px;
+}
+.runtime-identity-grid > div {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+.runtime-identity-grid span {
+  color: var(--tianshu-text-tertiary);
+  font-size: 12px;
+}
+.runtime-identity-grid code {
+  color: var(--tianshu-text-primary);
+  word-break: break-all;
 }
 .auth-attribution-grid > div {
   display: grid;

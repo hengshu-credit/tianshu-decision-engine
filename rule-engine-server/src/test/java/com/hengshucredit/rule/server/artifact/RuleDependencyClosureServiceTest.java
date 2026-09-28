@@ -14,6 +14,8 @@ import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.service.RuleFieldAnalyzer;
+import com.hengshucredit.rule.core.engine.QLExpressEngine;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -71,6 +73,138 @@ public class RuleDependencyClosureServiceTest {
         Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
         Assert.assertEquals(List.of("FUNCTION:13"), closure.getDependencies().stream()
                 .map(ArtifactDependency::getComponentId).toList());
+    }
+
+    @Test
+    public void compiledScriptFunctionWithoutStableIdIsRejectedEvenWhenCodeExists() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"return roundTax(amount);\"}");
+        service.revision.setCompiledScript("return roundTax(amount);");
+        RuleFunction existing = function(13L, 1, "SCRIPT");
+        existing.setFuncCode("roundTax");
+        service.functions.put(13L, existing);
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertTrue(closure.getIssues().stream()
+                .anyMatch(value -> "FUNCTION_NOT_BOUND".equals(value.getCode())));
+        Assert.assertFalse(closure.getDependencies().stream()
+                .anyMatch(value -> "FUNCTION:13".equals(value.getComponentId())));
+    }
+
+    @Test
+    public void compiledScriptOnlyFreezesTheSelectedFunctionId() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"return roundTax(8);\",\"scriptVarRefs\":["
+                + "{\"refCode\":\"roundTax\",\"varId\":13,\"refType\":\"FUNCTION\"}]}");
+        service.revision.setCompiledScript("return roundTax(8);");
+        RuleFunction selected = function(13L, 1, "SCRIPT");
+        selected.setFuncCode("roundTax");
+        service.functions.put(13L, selected);
+        // 同名新函数不能替换规则保存的 ID。
+        RuleFunction replacement = function(99L, 1, "SCRIPT");
+        replacement.setFuncCode("roundTax");
+        service.functions.put(99L, replacement);
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertEquals(List.of("FUNCTION:13"), closure.getDependencies().stream()
+                .map(ArtifactDependency::getComponentId).toList());
+    }
+
+    @Test
+    public void functionRegisteredByAnotherExecutionCannotBypassIdBinding() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"return otherProjectFunction();\"}");
+        service.revision.setCompiledScript("return otherProjectFunction();");
+        QLExpressEngine engine = new QLExpressEngine();
+        engine.getRunner().addFunction("otherProjectFunction", (Runnable) () -> { });
+        ReflectionTestUtils.setField(service, "qlExpressEngine", engine);
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertTrue(closure.getIssues().stream()
+                .anyMatch(value -> "FUNCTION_NOT_BOUND".equals(value.getCode())));
+    }
+
+    @Test
+    public void inlineAndBuiltinFunctionsDoNotRequireBusinessIds() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"function local(v) { return isBlank(v); } return local(null);\"}");
+        service.revision.setCompiledScript("function local(v) { return isBlank(v); } return local(null);");
+        ReflectionTestUtils.setField(service, "qlExpressEngine", new QLExpressEngine());
+
+        Assert.assertFalse(service.resolve(100L, 200L).hasErrors());
+    }
+
+    @Test
+    public void idlessCustomOperandCannotMasqueradeAsBuiltin() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"kind\":\"FUNCTION\",\"functionCode\":\"roundTax\",\"args\":[]}");
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertTrue(closure.getIssues().stream()
+                .anyMatch(value -> "MISSING_FUNCTION_ID".equals(value.getCode())));
+        Assert.assertTrue(closure.getDependencies().isEmpty());
+    }
+
+    @Test
+    public void staleFunctionNameCannotRebindToAReplacementWithTheOldName() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"script\":\"return oldName();\",\"scriptVarRefs\":["
+                + "{\"refCode\":\"oldName\",\"varId\":13,\"refType\":\"FUNCTION\"}]}");
+        service.revision.setCompiledScript("return oldName();");
+        RuleFunction selected = function(13L, 1, "SCRIPT");
+        selected.setFuncCode("newName");
+        service.functions.put(13L, selected);
+        RuleFunction replacement = function(99L, 1, "SCRIPT");
+        replacement.setFuncCode("oldName");
+        service.functions.put(99L, replacement);
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertTrue(closure.getIssues().stream()
+                .anyMatch(value -> "FUNCTION_NOT_BOUND".equals(value.getCode())));
+        Assert.assertEquals(List.of("FUNCTION:13"), closure.getDependencies().stream()
+                .map(ArtifactDependency::getComponentId).toList());
+    }
+
+    @Test
+    public void fixedChildChecksItsSelectedScriptInsteadOfLatestPublishedScript() {
+        FixtureService service = new FixtureService();
+        service.revision.setModelJson("{\"kind\":\"RULE_CALL\",\"ruleId\":101,"
+                + "\"versionMode\":\"FIXED\",\"versionBindingId\":7}");
+        service.childDefinition = new RuleDefinition();
+        service.childDefinition.setId(101L);
+        service.childDefinition.setProjectId(9L);
+        service.childDefinition.setStatus(1);
+        service.childPublished = new RulePublished();
+        service.childPublished.setDefinitionId(101L);
+        service.childPublished.setCompiledScript("return unboundLatest();");
+        RulePublished fixed = new RulePublished();
+        fixed.setDefinitionId(101L);
+        fixed.setVersion(2);
+        fixed.setStatus(1);
+        fixed.setModelJson("{\"script\":\"return 2;\"}");
+        fixed.setCompiledScript("return 2;");
+        service.childPublishedFields = new RuleFieldAnalyzer.ResolvedFields(List.of(), List.of());
+        ReflectionTestUtils.setField(service, "versionBindingService",
+                new com.hengshucredit.rule.server.service.RuleVersionBindingService() {
+                    @Override public RulePublished resolvePublished(RulePublished published, Long bindingId) {
+                        Assert.assertEquals(Long.valueOf(7), bindingId);
+                        return fixed;
+                    }
+                });
+
+        var closure = service.resolve(100L, 200L);
+
+        Assert.assertFalse(closure.getIssues().toString(), closure.hasErrors());
+        Assert.assertTrue(closure.getDependencies().stream()
+                .anyMatch(value -> "RULE:101:2".equals(value.getComponentId())));
     }
 
     @Test

@@ -1,0 +1,1044 @@
+<!doctype html>
+<!-- 部署教程 HTML 镜像 docs/deployment.md，修改部署文案后请同步刷新本页面。 -->
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="天枢决策引擎 Docker、Compose、JAR 和多节点部署教程" />
+    <meta name="theme-color" content="#10142d" />
+    <title>天枢决策引擎 · 部署教程</title>
+    <link rel="icon" href="brand/favicon.ico" sizes="64x64" />
+    <link rel="icon" href="brand/hengshucredit_animated.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="deployment.css" />
+  </head>
+  <body class="deployment-page">
+    <div class="reading-progress" aria-hidden="true"><span></span></div>
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="brand" href="index.html" aria-label="返回操作手册首页">
+          <img src="brand/hengshucredit_animated.svg" alt="天枢决策引擎" class="brand-logo" />
+          <span class="brand-copy"><strong>天枢决策引擎</strong><small>天工开物，枢衡定策</small></span>
+        </a>
+        <nav id="toc" class="header-menu" aria-label="部署教程目录">
+          <a href="#params">参数</a>
+          <a href="#prerequisites">环境</a>
+          <a href="#startup">基础配置</a>
+          <a href="#docker">Docker</a>
+          <a href="#compose">Compose</a>
+          <a href="#jar">JAR 部署</a>
+          <a href="#cluster">多节点</a>
+          <a href="#sdk">SDK</a>
+        </nav>
+        <div class="header-actions">
+          <label class="search-box" for="manual-search">
+            <span aria-hidden="true">⌕</span>
+            <input id="manual-search" type="search" placeholder="搜索部署教程" autocomplete="off" />
+            <kbd>/</kbd>
+          </label>
+          <button class="icon-button" id="theme-toggle" type="button" aria-label="切换阅读主题">☼</button>
+          <a class="official-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer">官网</a>
+          <a class="github-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer">GitHub</a>
+        </div>
+      </div>
+    </header>
+
+    <div class="page-shell" id="top">
+
+      <main class="content">
+        <section class="hero deployment-hero" data-search="天枢决策引擎 部署教程 Docker Compose JAR 多节点">
+          <div class="hero-main">
+            <div class="eyebrow">TIANSHU DECISION ENGINE · DEPLOYMENT GUIDE</div>
+            <h1>把部署路径，变成<br /><em>可复制、可回滚</em>的运行流程。</h1>
+            <p class="hero-copy">先确认参数与依赖，再选择 Docker、Docker Compose、后管 + JAR 或多节点方案。Docker 部署的后管和 JAR 都从宿主机目录挂载，更新外部文件即可发布。</p>
+            <div class="hero-actions">
+              <a class="button button-quiet button-link" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><span class="button-icon button-icon-logo"><img src="brand/hengshucredit_animated.svg" alt="" /></span><span>官网</span></a>
+              <a class="button button-quiet button-link" href="https://github.com/hengshu-credit/tianshu-decision-engine" target="_blank" rel="noreferrer"><span class="button-icon">↗</span><span>开源</span></a>
+              <a class="button button-quiet button-link" href="#params"><span class="button-icon">↓</span><span>参数</span></a>
+              <a class="button button-quiet button-link" href="java-service-integration.html"><span class="button-icon">→</span><span>接入</span></a>
+            </div>
+          </div>
+          <div class="hero-visual deployment-visual" aria-label="部署拓扑示意">
+            <div class="hero-visual-grid" aria-hidden="true"></div>
+            <div class="hero-visual-head"><span><i></i> DEPLOYMENT / RELEASE</span><b>READY</b></div>
+            <div class="hero-visual-stage">
+              <div class="hero-visual-node node-mysql"><span>01</span><strong>MYSQL</strong><small>schema + data</small></div>
+              <div class="hero-visual-node node-redis"><span>02</span><strong>REDIS</strong><small>push + state</small></div>
+              <div class="hero-visual-node node-jar"><span>03</span><strong>JAR</strong><small>volume mount</small></div>
+              <div class="hero-visual-node node-console"><span>04</span><strong>CONSOLE</strong><small>dist + nginx</small></div>
+              <div class="hero-visual-line line-a"></div><div class="hero-visual-line line-b"></div><div class="hero-visual-line line-c"></div>
+            </div>
+            <div class="hero-visual-footer"><span>HOST VOLUME</span><code>JAR + DIST → RELOAD</code></div>
+          </div>
+        </section>
+
+        <div class="notice notice-blue"><span class="notice-icon">i</span><p>每个部署模块都可以单独执行。生产环境请使用 Secret/KMS 注入密码和密钥，并在 readiness 返回 UP 后再接入业务流量。</p></div>
+
+        <div class="deployment-body">
+          <section class="manual-section deployment-section" id="params" data-search="一、部署参数总览 参数可以来自操作系统环境变量、JAR 启动参数或仓库根目录（JAR 从 rule-engine-server 目录启动时为上一级目录）的 .env 。优先级为：命令行参数/操作系统环境变量 &gt; .env &gt; application.yml 默认值。生产环境请把密码和密钥放在 Secret/KMS 或容器编排的 Secret 中，不要提交到 Git。 1.1 服务、前端与数据库参数 参数名 默认值 含义与具体作用 SERVER_PORT 8080 Spring Boot 监听端口；容器内端口和负载均衡器后端端口应保持一致。 VITE_PORT 9090 仅用于 npm run dev 的 Vite 开发端口；不会改变生产 dist 静态站点端口。 VITE_DEV_PROXY 空 Vite 开发服务器 /api 代理目标；设置后优先于 SERVER_PORT 推导出的后端地址。 MYSQL_HOST localhost MySQL 主机名。后端在 Compose 网络中运行时填 mysql ，不能填容器内的 127.0.0.1 。 MYSQL_PORT 3306 MySQL 端口。 MYSQL_DATABASE rule_engine 后端连接的数据库名；根 Compose 的初始化容器固定创建 rule_engine ，修改此值前必须同步改编排和初始化脚本。 MYSQL_USERNAME 空 后端连接 MySQL 的应用账号；应只授予 rule_engine 所需权限。 MYSQL_PASSWORD 空 后端应用账号密码。 MYSQL_ROOT_PASSWORD 无 仅由 MySQL 容器初始化和 mysql-init 使用的 root 密码；不能替代 MYSQL_PASSWORD 。 MYSQL_ALLOW_MULTI_QUERIES false 是否在 JDBC URL 中开启多语句；只有确认 SQL 来源可信且确实需要时才开启。 REDIS_HOST localhost Redis 主机名。多节点必须指向同一个 Redis 实例或同一高可用服务。 REDIS_PORT 6379 Redis 端口。 REDIS_PASSWORD 空 Redis 认证密码；根 Compose 会强制要求非空。 1.2 鉴权、控制台与安全参数 参数名 默认值 含义与具体作用 RULE_AUTH_MASTER_KEY 无 项目长期凭证的活动加密主密钥，至少 32 个字符；缺失或使用公开示例值时服务拒绝启动。所有节点必须一致。 RULE_AUTH_ACTIVE_KEY_ID v2 新写入凭证使用的密钥版本标识；轮换时先配置新版本，再按项目重置/迁移凭证。 RULE_AUTH_LEGACY_MASTER_KEY 空 读取历史 v1 密文的旧主密钥；旧凭证全部重置后删除。 RULE_AUTH_LEGACY_V2_MASTER_KEY 空 读取曾错误复用 v2 标识的历史密文；迁移完成后删除。 CONSOLE_USERNAME 空 管理控制台登录用户名。 CONSOLE_PASSWORD 空 管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 .env 。 CONSOLE_PASSWORD_ENCODING BCRYPT CONSOLE_PASSWORD 的编码方式；本地临时调试可设 PLAIN ，生产使用 BCRYPT 或外部身份系统。 CORS_ALLOWED_ORIGIN_PATTERNS 跟随 VITE_PORT 的本地来源 允许访问后端的控制台来源，多个来源用英文逗号分隔；生产填写实际 HTTPS 域名。 SESSION_COOKIE_SECURE false 是否给控制台会话 Cookie 设置 Secure ；HTTPS 生产必须为 true ，HTTP 本地开发保持 false 。 1.3 初始化、追踪与资源解析参数 参数名 默认值 含义与具体作用 SPRING_SQL_INIT_MODE never Spring 启动时是否执行 schema.sql ；生产已有数据库保持 never ，不要让每个应用节点重复初始化。 SPRING_DATASOURCE_INITIALIZATION_MODE 空 Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 SPRING_SQL_INIT_MODE 。 SPRING_SQL_INIT_CONTINUE_ON_ERROR false 初始化 SQL 出错时是否继续；生产保持 false ，让错误阻止启动。 RULE_TRACE_MAX_PERSIST_BYTES 1048576 单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。 RULE_TRACE_MASK_PATHS 空 持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 $.input.idCard,$.items[*].phone 。 SOURCE_RESOLUTION_PARALLELISM 4 API、数据库、名单等外部变量并行解析线程数；按外部依赖容量调整。 Compose 还会使用 MYSQL_PUBLIC_PORT 、 REDIS_PUBLIC_PORT 、 CONSOLE_PUBLIC_PORT 这类“宿主机映射参数”（如果在自定义 Compose 文件中定义），它们只改变宿主机暴露端口，不会改变应用在容器网络中的端口。Docker 的 -p 左侧同样只是宿主机端口。 1.4 四种部署方式如何选择 模块 适用场景 本模块直接交付的内容 Docker 运行时部署 已有 MySQL/Redis，希望用容器运行 JAR 和后管 两个运行时容器，JAR 与 dist 均从宿主机目录挂载，更新文件后重启对应容器。 Docker Compose 部署 希望用一条 Compose 命令管理 MySQL、Redis、JAR 和后管 根 Compose 基础设施 + 应用覆盖文件，整套服务可启动、停止和升级。 后管 + JAR 包部署 不运行应用容器，使用 Nginx/Java 进程或 systemd dist 由 Nginx 提供，JAR 由 java -jar 或 systemd 启动。 多节点横向扩容 需要提高吞吐或故障切换能力 多个相同 JAR 节点置于负载均衡器后，共享 MySQL/Redis，按 readiness 滚动发布。 Docker 更新约定： 后管 dist 和服务端 JAR 都通过宿主机目录挂载到容器内，不把它们写死在运行时镜像中。更新时先替换容器外的 dist 或 JAR，再对后管执行 Nginx reload、对 JAR 容器执行 restart；这样可以在不重建镜像的情况下发布和回滚。 以上模块都依赖可访问的 MySQL 8 和 Redis；如果没有现成依赖，请先按对应模块中的基础设施步骤启动。不要同时启动根 Compose 与 rule-engine-mysql/ 、 rule-engine-redis/ 下的独立 Compose，它们会争用相同端口或容器名。"><h2>一、部署参数总览</h2>
+<p>参数可以来自操作系统环境变量、JAR 启动参数或仓库根目录（JAR 从 <code>rule-engine-server</code> 目录启动时为上一级目录）的 <code>.env</code>。优先级为：命令行参数/操作系统环境变量 &gt; <code>.env</code> &gt; <code>application.yml</code> 默认值。生产环境请把密码和密钥放在 Secret/KMS 或容器编排的 Secret 中，不要提交到 Git。</p>
+<h3>1.1 服务、前端与数据库参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数名</th>
+<th style="text-align: right;">默认值</th>
+<th>含义与具体作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SERVER_PORT</code></td>
+<td style="text-align: right;"><code>8080</code></td>
+<td>Spring Boot 监听端口；容器内端口和负载均衡器后端端口应保持一致。</td>
+</tr>
+<tr>
+<td><code>VITE_PORT</code></td>
+<td style="text-align: right;"><code>9090</code></td>
+<td>仅用于 <code>npm run dev</code> 的 Vite 开发端口；不会改变生产 <code>dist</code> 静态站点端口。</td>
+</tr>
+<tr>
+<td><code>VITE_DEV_PROXY</code></td>
+<td style="text-align: right;">空</td>
+<td>Vite 开发服务器 <code>/api</code> 代理目标；设置后优先于 <code>SERVER_PORT</code> 推导出的后端地址。</td>
+</tr>
+<tr>
+<td><code>MYSQL_HOST</code></td>
+<td style="text-align: right;"><code>localhost</code></td>
+<td>MySQL 主机名。后端在 Compose 网络中运行时填 <code>mysql</code>，不能填容器内的 <code>127.0.0.1</code>。</td>
+</tr>
+<tr>
+<td><code>MYSQL_PORT</code></td>
+<td style="text-align: right;"><code>3306</code></td>
+<td>MySQL 端口。</td>
+</tr>
+<tr>
+<td><code>MYSQL_DATABASE</code></td>
+<td style="text-align: right;"><code>rule_engine</code></td>
+<td>后端连接的数据库名；根 Compose 的初始化容器固定创建 <code>rule_engine</code>，修改此值前必须同步改编排和初始化脚本。</td>
+</tr>
+<tr>
+<td><code>MYSQL_USERNAME</code></td>
+<td style="text-align: right;">空</td>
+<td>后端连接 MySQL 的应用账号；应只授予 <code>rule_engine</code> 所需权限。</td>
+</tr>
+<tr>
+<td><code>MYSQL_PASSWORD</code></td>
+<td style="text-align: right;">空</td>
+<td>后端应用账号密码。</td>
+</tr>
+<tr>
+<td><code>MYSQL_ROOT_PASSWORD</code></td>
+<td style="text-align: right;">无</td>
+<td>仅由 MySQL 容器初始化和 <code>mysql-init</code> 使用的 root 密码；不能替代 <code>MYSQL_PASSWORD</code>。</td>
+</tr>
+<tr>
+<td><code>MYSQL_ALLOW_MULTI_QUERIES</code></td>
+<td style="text-align: right;"><code>false</code></td>
+<td>是否在 JDBC URL 中开启多语句；只有确认 SQL 来源可信且确实需要时才开启。</td>
+</tr>
+<tr>
+<td><code>REDIS_HOST</code></td>
+<td style="text-align: right;"><code>localhost</code></td>
+<td>Redis 主机名。多节点必须指向同一个 Redis 实例或同一高可用服务。</td>
+</tr>
+<tr>
+<td><code>REDIS_PORT</code></td>
+<td style="text-align: right;"><code>6379</code></td>
+<td>Redis 端口。</td>
+</tr>
+<tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td style="text-align: right;">空</td>
+<td>Redis 认证密码；根 Compose 会强制要求非空。</td>
+</tr>
+</tbody>
+</table>
+<h3>1.2 鉴权、控制台与安全参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数名</th>
+<th style="text-align: right;">默认值</th>
+<th>含义与具体作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>RULE_AUTH_MASTER_KEY</code></td>
+<td style="text-align: right;">无</td>
+<td>项目长期凭证的活动加密主密钥，至少 32 个字符；缺失或使用公开示例值时服务拒绝启动。所有节点必须一致。</td>
+</tr>
+<tr>
+<td><code>RULE_AUTH_ACTIVE_KEY_ID</code></td>
+<td style="text-align: right;"><code>v2</code></td>
+<td>新写入凭证使用的密钥版本标识；轮换时先配置新版本，再按项目重置/迁移凭证。</td>
+</tr>
+<tr>
+<td><code>RULE_AUTH_LEGACY_MASTER_KEY</code></td>
+<td style="text-align: right;">空</td>
+<td>读取历史 <code>v1</code> 密文的旧主密钥；旧凭证全部重置后删除。</td>
+</tr>
+<tr>
+<td><code>RULE_AUTH_LEGACY_V2_MASTER_KEY</code></td>
+<td style="text-align: right;">空</td>
+<td>读取曾错误复用 <code>v2</code> 标识的历史密文；迁移完成后删除。</td>
+</tr>
+<tr>
+<td><code>CONSOLE_USERNAME</code></td>
+<td style="text-align: right;">空</td>
+<td>管理控制台登录用户名。</td>
+</tr>
+<tr>
+<td><code>CONSOLE_PASSWORD</code></td>
+<td style="text-align: right;">空</td>
+<td>管理控制台密码；默认按 BCrypt 哈希校验。不要把明文密码提交到 <code>.env</code>。</td>
+</tr>
+<tr>
+<td><code>CONSOLE_PASSWORD_ENCODING</code></td>
+<td style="text-align: right;"><code>BCRYPT</code></td>
+<td><code>CONSOLE_PASSWORD</code> 的编码方式；本地临时调试可设 <code>PLAIN</code>，生产使用 <code>BCRYPT</code> 或外部身份系统。</td>
+</tr>
+<tr>
+<td><code>CORS_ALLOWED_ORIGIN_PATTERNS</code></td>
+<td style="text-align: right;">跟随 <code>VITE_PORT</code> 的本地来源</td>
+<td>允许访问后端的控制台来源，多个来源用英文逗号分隔；生产填写实际 HTTPS 域名。</td>
+</tr>
+<tr>
+<td><code>SESSION_COOKIE_SECURE</code></td>
+<td style="text-align: right;"><code>false</code></td>
+<td>是否给控制台会话 Cookie 设置 <code>Secure</code>；HTTPS 生产必须为 <code>true</code>，HTTP 本地开发保持 <code>false</code>。</td>
+</tr>
+</tbody>
+</table>
+<h3>1.3 初始化、追踪与资源解析参数</h3>
+<table>
+<thead>
+<tr>
+<th>参数名</th>
+<th style="text-align: right;">默认值</th>
+<th>含义与具体作用</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SPRING_SQL_INIT_MODE</code></td>
+<td style="text-align: right;"><code>never</code></td>
+<td>Spring 启动时是否执行 <code>schema.sql</code>；生产已有数据库保持 <code>never</code>，不要让每个应用节点重复初始化。</td>
+</tr>
+<tr>
+<td><code>SPRING_DATASOURCE_INITIALIZATION_MODE</code></td>
+<td style="text-align: right;">空</td>
+<td>Spring Boot 旧版本兼容别名，仅在迁移旧部署时使用；优先使用 <code>SPRING_SQL_INIT_MODE</code>。</td>
+</tr>
+<tr>
+<td><code>SPRING_SQL_INIT_CONTINUE_ON_ERROR</code></td>
+<td style="text-align: right;"><code>false</code></td>
+<td>初始化 SQL 出错时是否继续；生产保持 <code>false</code>，让错误阻止启动。</td>
+</tr>
+<tr>
+<td><code>RULE_TRACE_MAX_PERSIST_BYTES</code></td>
+<td style="text-align: right;"><code>1048576</code></td>
+<td>单条持久化追踪 JSON 的最大字节数（默认 1 MiB）；超出时只截断持久化副本，不截断本次请求结果。</td>
+</tr>
+<tr>
+<td><code>RULE_TRACE_MASK_PATHS</code></td>
+<td style="text-align: right;">空</td>
+<td>持久化追踪副本的 JSONPath 脱敏列表，逗号分隔，例如 <code>$.input.idCard,$.items[*].phone</code>。</td>
+</tr>
+<tr>
+<td><code>SOURCE_RESOLUTION_PARALLELISM</code></td>
+<td style="text-align: right;"><code>4</code></td>
+<td>API、数据库、名单等外部变量并行解析线程数；按外部依赖容量调整。</td>
+</tr>
+</tbody>
+</table>
+<p>Compose 还会使用 <code>MYSQL_PUBLIC_PORT</code>、<code>REDIS_PUBLIC_PORT</code>、<code>CONSOLE_PUBLIC_PORT</code> 这类“宿主机映射参数”（如果在自定义 Compose 文件中定义），它们只改变宿主机暴露端口，不会改变应用在容器网络中的端口。Docker 的 <code>-p</code> 左侧同样只是宿主机端口。</p>
+<h3>1.4 四种部署方式如何选择</h3>
+<table>
+<thead>
+<tr>
+<th>模块</th>
+<th>适用场景</th>
+<th>本模块直接交付的内容</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><a href="#docker">Docker 运行时部署</a></td>
+<td>已有 MySQL/Redis，希望用容器运行 JAR 和后管</td>
+<td>两个运行时容器，JAR 与 <code>dist</code> 均从宿主机目录挂载，更新文件后重启对应容器。</td>
+</tr>
+<tr>
+<td><a href="#compose">Docker Compose 部署</a></td>
+<td>希望用一条 Compose 命令管理 MySQL、Redis、JAR 和后管</td>
+<td>根 Compose 基础设施 + 应用覆盖文件，整套服务可启动、停止和升级。</td>
+</tr>
+<tr>
+<td><a href="#jar">后管 + JAR 包部署</a></td>
+<td>不运行应用容器，使用 Nginx/Java 进程或 systemd</td>
+<td><code>dist</code> 由 Nginx 提供，JAR 由 <code>java -jar</code> 或 systemd 启动。</td>
+</tr>
+<tr>
+<td><a href="#cluster">多节点横向扩容</a></td>
+<td>需要提高吞吐或故障切换能力</td>
+<td>多个相同 JAR 节点置于负载均衡器后，共享 MySQL/Redis，按 readiness 滚动发布。</td>
+</tr>
+</tbody>
+</table>
+<p><strong>Docker 更新约定：</strong>后管 <code>dist</code> 和服务端 JAR 都通过宿主机目录挂载到容器内，不把它们写死在运行时镜像中。更新时先替换容器外的 <code>dist</code> 或 JAR，再对后管执行 Nginx reload、对 JAR 容器执行 restart；这样可以在不重建镜像的情况下发布和回滚。</p>
+<p>以上模块都依赖可访问的 MySQL 8 和 Redis；如果没有现成依赖，请先按对应模块中的基础设施步骤启动。不要同时启动根 Compose 与 <code>rule-engine-mysql/</code>、<code>rule-engine-redis/</code> 下的独立 Compose，它们会争用相同端口或容器名。</p>
+</section>
+<section class="manual-section deployment-section" id="prerequisites" data-search="环境要求 JDK 17（Maven 构建会校验 Java 版本，低于 17 将直接失败） Maven 3.6+ MySQL 8 Redis Node.js 20.19+，不设置最高版本；建议使用当前维护中的 Node.js LTS，已验证 Node.js 26.4.0 可选 NVIDIA GPU：默认构建使用可移植的 ONNX Runtime CPU 包，不要求 NVIDIA 驱动、CUDA 或 cuDNN；只有使用 -Ponnx-gpu 构建 CUDA 版后端时，才需安装与项目 ONNX Runtime GPU 版本兼容的 NVIDIA 驱动、CUDA 和 cuDNN，并确保其动态库在服务进程的 PATH / LD_LIBRARY_PATH 中。"><h2>环境要求</h2>
+<ul>
+<li>JDK 17（Maven 构建会校验 Java 版本，低于 17 将直接失败）</li>
+<li>Maven 3.6+</li>
+<li>MySQL 8</li>
+<li>Redis</li>
+<li>Node.js 20.19+，不设置最高版本；建议使用当前维护中的 Node.js LTS，已验证 Node.js 26.4.0</li>
+<li>可选 NVIDIA GPU：默认构建使用可移植的 ONNX Runtime CPU 包，不要求 NVIDIA 驱动、CUDA 或 cuDNN；只有使用 <code>-Ponnx-gpu</code> 构建 CUDA 版后端时，才需安装与项目 ONNX Runtime GPU 版本兼容的 NVIDIA 驱动、CUDA 和 cuDNN，并确保其动态库在服务进程的 <code>PATH</code>/<code>LD_LIBRARY_PATH</code> 中。</li>
+</ul>
+</section>
+<section class="manual-section deployment-section" id="startup" data-search="启动与配置 数据库与基础设施 cp .env.example .env
+# 编辑 .env，替换全部 replace-with-* 占位值
+docker compose --env-file .env up -d PowerShell 可使用 Copy-Item .env.example .env 。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 MYSQL_USERNAME 、 MYSQL_PASSWORD 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。 复用已经运行的 Compose 容器 如果 MySQL 和 Redis 已由仓库根目录 Compose 启动，不需要再次创建容器。确认端口和健康状态： docker ps --filter &quot;name=rule-engine-mysql&quot; --filter &quot;name=rule-engine-redis&quot;
+docker inspect --format=&#x27;{{.Name}} {{.State.Health.Status}}&#x27; rule-engine-mysql rule-engine-redis 服务端在宿主机上用 Maven 启动时，将 .env 设置为： MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379 如果服务端也运行在同一个 Compose 网络内，使用 Compose 服务名： MYSQL_HOST=mysql
+MYSQL_PORT=3306
+REDIS_HOST=redis
+REDIS_PORT=6379 此时只启动后端即可： cd rule-engine-server
+mvn spring-boot:run MYSQL_HOST 、 MYSQL_PORT 由 application.yml 读取；Redis 已通过 REDIS_HOST 、 REDIS_PORT 读取。不要在 .env 中写入 Spring 风格的 ${NAME:default} 表达式，因为 Docker Compose 会把它解析为非法模板； .env 中应使用已经展开的实际值。 schema.sql 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权； export_202607161151.sql 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 01-schema.sql 和 02-export.sql 。根编排中的 mysql-init 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。 需要手工完整恢复时，固定顺序为：删除 rule_engine 数据库，执行 schema.sql ，再执行 export_202607161151.sql 。export 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。 后端 Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端： .\start-dev.cmd 需先配置根目录 .env ，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 PATH 调用。命令会编译后端依赖、在缺少前端依赖时执行 npm ci ，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 .env 的 SERVER_PORT 和 VITE_PORT ，日志及本次启动的进程 ID 保存在 .codex-run-logs/ 。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。 mvn clean install -DskipTests
+cd rule-engine-server
+mvn spring-boot:run 以上命令构建并启动 CPU 版，适用于没有 NVIDIA GPU/CUDA 的机器。需要 CUDA 推理时，构建和启动必须使用同一个 Maven Profile： mvn clean install -Ponnx-gpu -DskipTests
+cd rule-engine-server
+mvn spring-boot:run -Ponnx-gpu GPU 构建完成后，可在仓库根目录执行真实 CUDA 诊断。诊断直接使用启动进程的 PATH ，不需要额外传入 CUDA/cuDNN 目录： mvn &quot;-Ponnx-gpu&quot; &quot;-Dtianshu.cuda.diagnostic=true&quot; &quot;-Dtest=CudaEnvironmentDiagnosticTest&quot; &quot;-Dsurefire.failIfNoSpecifiedTests=false&quot; -pl rule-engine-server -am test 诊断通过后使用同一 onnx-gpu Profile 启动服务，并在模型管理页面将目标 ONNX 模型的执行设备显式设置为“GPU（CUDA）”。仅启用 GPU Profile 不会自动修改已有模型的 CPU/CUDA 配置。 后端启动时会将当前目录的 .env 和上级目录的 .env 作为可选配置源读取：在仓库根目录运行 JAR 时读取 ./.env ，在 rule-engine-server 目录运行 mvn spring-boot:run 时读取 ../.env 。操作系统环境变量和命令行参数的优先级高于 .env ，因此生产环境仍应通过 Secret/KMS 注入真实凭据；缺少必填密钥时，现有安全校验仍会拒绝启动。关键配置如下： 配置 要求 MYSQL_USERNAME / MYSQL_PASSWORD 必填；生产使用仅具备 rule_engine 所需权限的独立账号 REDIS_PASSWORD 必填；与 server 和 SDK 实际连接的 Redis 实例一致 RULE_AUTH_MASTER_KEY 必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入 RULE_AUTH_LEGACY_MASTER_KEY / RULE_AUTH_LEGACY_V2_MASTER_KEY 仅升级旧部署时配置；分别用于读取历史 v1 密文和曾复用 v2 标识的旧密文 CONSOLE_USERNAME / CONSOLE_PASSWORD 必填；密码默认按 BCrypt 校验 CORS_ALLOWED_ORIGIN_PATTERNS 生产控制台的精确 HTTPS 来源，不使用任意来源 SESSION_COOKIE_SECURE HTTPS 生产环境设为 true 本地临时开发如需使用明文控制台密码，可显式设置 CONSOLE_PASSWORD_ENCODING=PLAIN ；生产必须使用 BCrypt 或外部身份系统，不应提交密码或密钥到仓库。 ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。CPU 版后端即使读取到历史 CUDA 配置也会自动回退 CPU，不影响服务启动；CUDA 版后端会实际检查 CUDA 共享库及其依赖是否可加载。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。 模型运行时当前使用 JPMML Evaluator Metro 1.7.7 和 ONNX Runtime 1.26.0。PMML 输入字段按模型声明精确匹配，不自动转换大小写、驼峰或下划线；PMML/ONNX 缓存键均包含模型内容或运行配置，替换文件后不会继续复用旧模型。本项目已选择以 AGPL-3.0 开源方式交付 JPMML：凡对外提供包含 JPMML 的制品或网络服务，都必须同步提供与运行版本一致的完整 Corresponding Source、许可证和重建材料，详见 THIRD_PARTY_LICENSES.md 。 前端 cd rule-engine-builder-ui
+npm ci
+npm run dev 开发访问地址为 http://localhost:9090/ ， /api 会代理到 http://localhost:8080 。 在仓库根目录 .env 中设置以下配置，可统一修改后端和前端开发端口： SERVER_PORT=8081
+VITE_PORT=9091 修改后重启后端和 npm run dev ，访问 http://localhost:9091/ ， /api 会自动代理到 http://localhost:8081 。未配置时仍使用后端 8080 、前端 9090 ；前端端口被占用时会直接报错，不会自动切换端口。 后端运行在其他地址时，可额外设置 VITE_DEV_PROXY=http://后端地址:端口 ，该配置优先于 SERVER_PORT 推导的地址。系统环境变量优先于 .env 。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。 前端生产静态服务器需要保留 dist/vs/ 下的 Monaco 资源，并将 AMD loader 生成的资源标识 URL 重写后再读取静态文件： /vs/css!vs/&lt;path&gt; 映射到 /vs/&lt;path&gt; ， /vs/nls!vs/&lt;path&gt; 映射到 /vs/&lt;path&gt;.js （已有 .js 后缀时不重复添加）。若静态服务器不支持此重写，规则设计器、SQL 和 JSON 编辑器会出现资源 404，页面控制台会报 Monaco 加载错误。 未设置 CORS_ALLOWED_ORIGIN_PATTERNS 时，后端默认允许的本地来源会跟随 VITE_PORT ；如果 .env 已显式设置该项，修改前端端口时也要同步更新其中的来源地址。本地 HTTP 开发使用 SESSION_COOKIE_SECURE=false ，生产 HTTPS 保持 true 。"><h2>启动与配置</h2>
+<h3>数据库与基础设施</h3>
+<pre><code class="language-bash">cp .env.example .env
+# 编辑 .env，替换全部 replace-with-* 占位值
+docker compose --env-file .env up -d
+</code></pre>
+<p>PowerShell 可使用 <code>Copy-Item .env.example .env</code>。Compose 不再提供 MySQL/Redis 共享默认密码；全新数据卷会根据 <code>MYSQL_USERNAME</code>、<code>MYSQL_PASSWORD</code> 创建应用账号。已有数据卷升级时，需由数据库管理员按最小权限原则预先创建或更新该账号。</p>
+<h4>复用已经运行的 Compose 容器</h4>
+<p>如果 MySQL 和 Redis 已由仓库根目录 Compose 启动，不需要再次创建容器。确认端口和健康状态：</p>
+<pre><code class="language-powershell">docker ps --filter "name=rule-engine-mysql" --filter "name=rule-engine-redis"
+docker inspect --format='{{.Name}} {{.State.Health.Status}}' rule-engine-mysql rule-engine-redis
+</code></pre>
+<p>服务端在宿主机上用 Maven 启动时，将 <code>.env</code> 设置为：</p>
+<pre><code class="language-dotenv">MYSQL_HOST=127.0.0.1
+MYSQL_PORT=3306
+REDIS_HOST=127.0.0.1
+REDIS_PORT=6379
+</code></pre>
+<p>如果服务端也运行在同一个 Compose 网络内，使用 Compose 服务名：</p>
+<pre><code class="language-dotenv">MYSQL_HOST=mysql
+MYSQL_PORT=3306
+REDIS_HOST=redis
+REDIS_PORT=6379
+</code></pre>
+<p>此时只启动后端即可：</p>
+<pre><code class="language-powershell">cd rule-engine-server
+mvn spring-boot:run
+</code></pre>
+<p><code>MYSQL_HOST</code>、<code>MYSQL_PORT</code> 由 <code>application.yml</code> 读取；Redis 已通过 <code>REDIS_HOST</code>、<code>REDIS_PORT</code> 读取。不要在 <code>.env</code> 中写入 Spring 风格的 <code>${NAME:default}</code> 表达式，因为 Docker Compose 会把它解析为非法模板；<code>.env</code> 中应使用已经展开的实际值。</p>
+<p><code>schema.sql</code> 只包含数据库、表和索引等结构 DDL，不创建用户、不修改 root 账号、也不执行全局授权；<code>export_202607161151.sql</code> 是当前唯一的初始数据快照。空 Docker 数据卷首次启动时会依次执行 <code>01-schema.sql</code> 和 <code>02-export.sql</code>。根编排中的 <code>mysql-init</code> 对已有数据卷只重复执行结构 DDL，不会自动重放会覆盖业务数据的 export。项目鉴权、临时 Token 及其访问审计数据与部署主密钥绑定，不写入初始快照；服务启动后会把项目表中的兼容访问令牌按当前主密钥迁移为默认鉴权记录。</p>
+<p>需要手工完整恢复时，固定顺序为：删除 <code>rule_engine</code> 数据库，执行 <code>schema.sql</code>，再执行 <code>export_202607161151.sql</code>。export 会清空并重建其覆盖的全部数据表，因此不得直接用于需要保留现有业务数据的数据库。</p>
+<h3>后端</h3>
+<p>Windows 本地开发可在仓库根目录执行以下命令，同时启动前后端：</p>
+<pre><code class="language-powershell">.\start-dev.cmd
+</code></pre>
+<p>需先配置根目录 <code>.env</code>，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 <code>PATH</code> 调用。命令会编译后端依赖、在缺少前端依赖时执行 <code>npm ci</code>，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 <code>.env</code> 的 <code>SERVER_PORT</code> 和 <code>VITE_PORT</code>，日志及本次启动的进程 ID 保存在 <code>.codex-run-logs/</code>。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。</p>
+<pre><code class="language-bash">mvn clean install -DskipTests
+cd rule-engine-server
+mvn spring-boot:run
+</code></pre>
+<p>以上命令构建并启动 CPU 版，适用于没有 NVIDIA GPU/CUDA 的机器。需要 CUDA 推理时，构建和启动必须使用同一个 Maven Profile：</p>
+<pre><code class="language-bash">mvn clean install -Ponnx-gpu -DskipTests
+cd rule-engine-server
+mvn spring-boot:run -Ponnx-gpu
+</code></pre>
+<p>GPU 构建完成后，可在仓库根目录执行真实 CUDA 诊断。诊断直接使用启动进程的 <code>PATH</code>，不需要额外传入 CUDA/cuDNN 目录：</p>
+<pre><code class="language-powershell">mvn "-Ponnx-gpu" "-Dtianshu.cuda.diagnostic=true" "-Dtest=CudaEnvironmentDiagnosticTest" "-Dsurefire.failIfNoSpecifiedTests=false" -pl rule-engine-server -am test
+</code></pre>
+<p>诊断通过后使用同一 <code>onnx-gpu</code> Profile 启动服务，并在模型管理页面将目标 ONNX 模型的执行设备显式设置为“GPU（CUDA）”。仅启用 GPU Profile 不会自动修改已有模型的 CPU/CUDA 配置。</p>
+<p>后端启动时会将当前目录的 <code>.env</code> 和上级目录的 <code>.env</code> 作为可选配置源读取：在仓库根目录运行 JAR 时读取 <code>./.env</code>，在 <code>rule-engine-server</code> 目录运行 <code>mvn spring-boot:run</code> 时读取 <code>../.env</code>。操作系统环境变量和命令行参数的优先级高于 <code>.env</code>，因此生产环境仍应通过 Secret/KMS 注入真实凭据；缺少必填密钥时，现有安全校验仍会拒绝启动。关键配置如下：</p>
+<table>
+<thead>
+<tr>
+<th>配置</th>
+<th>要求</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>MYSQL_USERNAME</code> / <code>MYSQL_PASSWORD</code></td>
+<td>必填；生产使用仅具备 <code>rule_engine</code> 所需权限的独立账号</td>
+</tr>
+<tr>
+<td><code>REDIS_PASSWORD</code></td>
+<td>必填；与 server 和 SDK 实际连接的 Redis 实例一致</td>
+</tr>
+<tr>
+<td><code>RULE_AUTH_MASTER_KEY</code></td>
+<td>必填；至少 32 位的私有随机密钥，生产通过 Secret/KMS 注入</td>
+</tr>
+<tr>
+<td><code>RULE_AUTH_LEGACY_MASTER_KEY</code> / <code>RULE_AUTH_LEGACY_V2_MASTER_KEY</code></td>
+<td>仅升级旧部署时配置；分别用于读取历史 <code>v1</code> 密文和曾复用 <code>v2</code> 标识的旧密文</td>
+</tr>
+<tr>
+<td><code>CONSOLE_USERNAME</code> / <code>CONSOLE_PASSWORD</code></td>
+<td>必填；密码默认按 BCrypt 校验</td>
+</tr>
+<tr>
+<td><code>CORS_ALLOWED_ORIGIN_PATTERNS</code></td>
+<td>生产控制台的精确 HTTPS 来源，不使用任意来源</td>
+</tr>
+<tr>
+<td><code>SESSION_COOKIE_SECURE</code></td>
+<td>HTTPS 生产环境设为 <code>true</code></td>
+</tr>
+</tbody>
+</table>
+<p>本地临时开发如需使用明文控制台密码，可显式设置 <code>CONSOLE_PASSWORD_ENCODING=PLAIN</code>；生产必须使用 BCrypt 或外部身份系统，不应提交密码或密钥到仓库。</p>
+<p>ONNX 神经网络模型可在“模型管理”中逐个选择 CPU 或 CUDA，并配置 GPU 设备号、显存上限、显存扩展策略、cuDNN 卷积算法搜索和默认 CUDA 流。CPU 版后端即使读取到历史 CUDA 配置也会自动回退 CPU，不影响服务启动；CUDA 版后端会实际检查 CUDA 共享库及其依赖是否可加载。服务按“模型文件内容 + 运行配置”缓存推理会话；开启“启动预加载”后会在服务启动阶段创建对应 CPU/CUDA 会话。配置 CUDA 的模型在 GPU 会话初始化或推理失败时会自动重试 CPU，CPU 成功后同一服务进程内后续调用会直接使用 CPU；修复 GPU 环境后需重启服务以重新尝试 CUDA。YuNet 人脸检测同样通过 ONNX Runtime 执行，OpenCV 仅保留图片解码、缩放和检测结果后处理。</p>
+<p>模型运行时当前使用 JPMML Evaluator Metro 1.7.7 和 ONNX Runtime 1.26.0。PMML 输入字段按模型声明精确匹配，不自动转换大小写、驼峰或下划线；PMML/ONNX 缓存键均包含模型内容或运行配置，替换文件后不会继续复用旧模型。本项目已选择以 AGPL-3.0 开源方式交付 JPMML：凡对外提供包含 JPMML 的制品或网络服务，都必须同步提供与运行版本一致的完整 Corresponding Source、许可证和重建材料，详见 <a href="../THIRD_PARTY_LICENSES.md">THIRD_PARTY_LICENSES.md</a>。</p>
+<h3>前端</h3>
+<pre><code class="language-bash">cd rule-engine-builder-ui
+npm ci
+npm run dev
+</code></pre>
+<p>开发访问地址为 <code>http://localhost:9090/</code>，<code>/api</code> 会代理到 <code>http://localhost:8080</code>。</p>
+<p>在仓库根目录 <code>.env</code> 中设置以下配置，可统一修改后端和前端开发端口：</p>
+<pre><code class="language-dotenv">SERVER_PORT=8081
+VITE_PORT=9091
+</code></pre>
+<p>修改后重启后端和 <code>npm run dev</code>，访问 <code>http://localhost:9091/</code>，<code>/api</code> 会自动代理到 <code>http://localhost:8081</code>。未配置时仍使用后端 <code>8080</code>、前端 <code>9090</code>；前端端口被占用时会直接报错，不会自动切换端口。</p>
+<p>后端运行在其他地址时，可额外设置 <code>VITE_DEV_PROXY=http://后端地址:端口</code>，该配置优先于 <code>SERVER_PORT</code> 推导的地址。系统环境变量优先于 <code>.env</code>。这些配置不会改变生产静态站点的监听端口，生产前端仍需配置 Nginx 或容器端口映射。</p>
+<p>前端生产静态服务器需要保留 <code>dist/vs/</code> 下的 Monaco 资源，并将 AMD loader 生成的资源标识 URL 重写后再读取静态文件：<code>/vs/css!vs/&lt;path&gt;</code> 映射到 <code>/vs/&lt;path&gt;</code>，<code>/vs/nls!vs/&lt;path&gt;</code> 映射到 <code>/vs/&lt;path&gt;.js</code>（已有 <code>.js</code> 后缀时不重复添加）。若静态服务器不支持此重写，规则设计器、SQL 和 JSON 编辑器会出现资源 404，页面控制台会报 Monaco 加载错误。</p>
+<p>未设置 <code>CORS_ALLOWED_ORIGIN_PATTERNS</code> 时，后端默认允许的本地来源会跟随 <code>VITE_PORT</code>；如果 <code>.env</code> 已显式设置该项，修改前端端口时也要同步更新其中的来源地址。本地 HTTP 开发使用 <code>SESSION_COOKIE_SECURE=false</code>，生产 HTTPS 保持 <code>true</code>。</p>
+</section>
+<section class="manual-section deployment-section" id="docker" data-search="二、Docker 运行时部署 本模块不要求项目提供 Dockerfile，直接使用 eclipse-temurin:17-jre 运行 JAR、使用 nginx:1.27-alpine 提供后管静态文件。MySQL 和 Redis 可以是云服务、物理机服务或已经运行的容器；只要从应用容器内可访问即可。 2.1 准备宿主机目录和制品 以下命令在仓库根目录执行。生产环境请把 /opt/tianshu 换成实际发布目录，并让运行 Docker 的账号对该目录有读权限。 mkdir -p /opt/tianshu/server /opt/tianshu/console/dist /opt/tianshu/console
+
+# 构建 JAR；默认跳过测试，正式发布前应在 CI 先完成完整测试
+mvn clean package -DskipTests
+cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
+
+# 构建后管
+cd rule-engine-builder-ui
+npm ci
+npm run build
+rm -rf /opt/tianshu/console/dist/*
+cp -a dist/. /opt/tianshu/console/dist/
+cd .. 在 /opt/tianshu/server/.env 写入服务端参数。 MYSQL_HOST 、 REDIS_HOST 必须填写应用容器能够解析和访问的地址；如果依赖也在 Docker 中，请使用同一网络里的服务名，不要写 localhost 。 SERVER_PORT=8080
+MYSQL_HOST=10.0.0.20
+MYSQL_PORT=3306
+MYSQL_DATABASE=rule_engine
+MYSQL_USERNAME=rule_engine_app
+MYSQL_PASSWORD=替换为应用账号密码
+REDIS_HOST=10.0.0.21
+REDIS_PORT=6379
+REDIS_PASSWORD=替换为Redis密码
+RULE_AUTH_MASTER_KEY=至少32位的当前环境随机密钥
+RULE_AUTH_ACTIVE_KEY_ID=v2
+CONSOLE_USERNAME=admin
+CONSOLE_PASSWORD=BCrypt哈希
+CONSOLE_PASSWORD_ENCODING=BCRYPT
+CORS_ALLOWED_ORIGIN_PATTERNS=https://console.example.com
+SESSION_COOKIE_SECURE=true 2.2 启动 JAR 容器 挂载目录而不是单个 JAR 文件。这样替换宿主机目录中的 JAR 后，重启容器会重新打开新文件，避免文件替换后仍绑定旧 inode。 docker run -d \
+  --name tianshu-server \
+  --restart unless-stopped \
+  --env-file /opt/tianshu/server/.env \
+  -p 8080:8080 \
+  -v /opt/tianshu/server:/opt/tianshu/server:ro \
+  eclipse-temurin:17-jre \
+  java -jar /opt/tianshu/server/rule-engine-server.jar 如果 MySQL/Redis 也是 Docker 容器，可先创建网络并在同一网络启动依赖，再把 .env 中的主机名改为容器名；不要把宿主机 3306 / 6379 映射端口误当成容器网络地址。 2.3 启动后管容器 后管需要把 /api 反向代理到 JAR 容器，并保留 Monaco 的 vs 资源重写。先创建 /opt/tianshu/console/nginx.conf ： server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://host.docker.internal:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/vs/css!vs/(.*)$ {
+        rewrite ^/vs/css!vs/(.*)$ /vs/$1 break;
+        try_files $uri =404;
+    }
+    location ~ ^/vs/nls!vs/(.*\.js)$ {
+        rewrite ^/vs/nls!vs/(.*\.js)$ /vs/$1 break;
+        try_files $uri =404;
+    }
+    location ~ ^/vs/nls!vs/(.*)$ {
+        rewrite ^/vs/nls!vs/(.*)$ /vs/$1.js break;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+} 上例假设 JAR 容器通过宿主机 8080 端口访问。Linux Docker 默认不一定提供 host.docker.internal ，启动后管容器时补充宿主机网关映射： docker run -d \
+  --name tianshu-console \
+  --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
+  -p 9090:80 \
+  -v /opt/tianshu/console/dist:/usr/share/nginx/html:ro \
+  -v /opt/tianshu/console/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+  nginx:1.27-alpine 2.4 验证与更新 curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+curl -I http://127.0.0.1:9090/
+docker logs --tail 200 tianshu-server 后端必须等待 readiness 返回 UP 后再接收业务流量；它会检查数据库、Redis、ONNX 和已发布规则预热状态。发布更新时，在宿主机替换 /opt/tianshu/server/rule-engine-server.jar ，然后执行 docker restart tianshu-server ；不要重新构建运行时镜像。后管更新时把新 dist 内容同步到 /opt/tianshu/console/dist/ ，再执行 docker exec tianshu-console nginx -s reload 。文件同步完成前不要删除旧目录，避免用户拿到不完整的静态资源。"><h2>二、Docker 运行时部署</h2>
+<p>本模块不要求项目提供 Dockerfile，直接使用 <code>eclipse-temurin:17-jre</code> 运行 JAR、使用 <code>nginx:1.27-alpine</code> 提供后管静态文件。MySQL 和 Redis 可以是云服务、物理机服务或已经运行的容器；只要从应用容器内可访问即可。</p>
+<h3>2.1 准备宿主机目录和制品</h3>
+<p>以下命令在仓库根目录执行。生产环境请把 <code>/opt/tianshu</code> 换成实际发布目录，并让运行 Docker 的账号对该目录有读权限。</p>
+<pre><code class="language-bash">mkdir -p /opt/tianshu/server /opt/tianshu/console/dist /opt/tianshu/console
+
+# 构建 JAR；默认跳过测试，正式发布前应在 CI 先完成完整测试
+mvn clean package -DskipTests
+cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
+
+# 构建后管
+cd rule-engine-builder-ui
+npm ci
+npm run build
+rm -rf /opt/tianshu/console/dist/*
+cp -a dist/. /opt/tianshu/console/dist/
+cd ..
+</code></pre>
+<p>在 <code>/opt/tianshu/server/.env</code> 写入服务端参数。<code>MYSQL_HOST</code>、<code>REDIS_HOST</code> 必须填写应用容器能够解析和访问的地址；如果依赖也在 Docker 中，请使用同一网络里的服务名，不要写 <code>localhost</code>。</p>
+<pre><code class="language-dotenv">SERVER_PORT=8080
+MYSQL_HOST=10.0.0.20
+MYSQL_PORT=3306
+MYSQL_DATABASE=rule_engine
+MYSQL_USERNAME=rule_engine_app
+MYSQL_PASSWORD=替换为应用账号密码
+REDIS_HOST=10.0.0.21
+REDIS_PORT=6379
+REDIS_PASSWORD=替换为Redis密码
+RULE_AUTH_MASTER_KEY=至少32位的当前环境随机密钥
+RULE_AUTH_ACTIVE_KEY_ID=v2
+CONSOLE_USERNAME=admin
+CONSOLE_PASSWORD=BCrypt哈希
+CONSOLE_PASSWORD_ENCODING=BCRYPT
+CORS_ALLOWED_ORIGIN_PATTERNS=https://console.example.com
+SESSION_COOKIE_SECURE=true
+</code></pre>
+<h3>2.2 启动 JAR 容器</h3>
+<p>挂载目录而不是单个 JAR 文件。这样替换宿主机目录中的 JAR 后，重启容器会重新打开新文件，避免文件替换后仍绑定旧 inode。</p>
+<pre><code class="language-bash">docker run -d \
+  --name tianshu-server \
+  --restart unless-stopped \
+  --env-file /opt/tianshu/server/.env \
+  -p 8080:8080 \
+  -v /opt/tianshu/server:/opt/tianshu/server:ro \
+  eclipse-temurin:17-jre \
+  java -jar /opt/tianshu/server/rule-engine-server.jar
+</code></pre>
+<p>如果 MySQL/Redis 也是 Docker 容器，可先创建网络并在同一网络启动依赖，再把 <code>.env</code> 中的主机名改为容器名；不要把宿主机 <code>3306</code>/<code>6379</code> 映射端口误当成容器网络地址。</p>
+<h3>2.3 启动后管容器</h3>
+<p>后管需要把 <code>/api</code> 反向代理到 JAR 容器，并保留 Monaco 的 <code>vs</code> 资源重写。先创建 <code>/opt/tianshu/console/nginx.conf</code>：</p>
+<pre><code class="language-nginx">server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    location /api/ {
+        proxy_pass http://host.docker.internal:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ~ ^/vs/css!vs/(.*)$ {
+        rewrite ^/vs/css!vs/(.*)$ /vs/$1 break;
+        try_files $uri =404;
+    }
+    location ~ ^/vs/nls!vs/(.*\.js)$ {
+        rewrite ^/vs/nls!vs/(.*\.js)$ /vs/$1 break;
+        try_files $uri =404;
+    }
+    location ~ ^/vs/nls!vs/(.*)$ {
+        rewrite ^/vs/nls!vs/(.*)$ /vs/$1.js break;
+        try_files $uri =404;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+</code></pre>
+<p>上例假设 JAR 容器通过宿主机 <code>8080</code> 端口访问。Linux Docker 默认不一定提供 <code>host.docker.internal</code>，启动后管容器时补充宿主机网关映射：</p>
+<pre><code class="language-bash">docker run -d \
+  --name tianshu-console \
+  --restart unless-stopped \
+  --add-host=host.docker.internal:host-gateway \
+  -p 9090:80 \
+  -v /opt/tianshu/console/dist:/usr/share/nginx/html:ro \
+  -v /opt/tianshu/console/nginx.conf:/etc/nginx/conf.d/default.conf:ro \
+  nginx:1.27-alpine
+</code></pre>
+<h3>2.4 验证与更新</h3>
+<pre><code class="language-bash">curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+curl -I http://127.0.0.1:9090/
+docker logs --tail 200 tianshu-server
+</code></pre>
+<p>后端必须等待 <code>readiness</code> 返回 <code>UP</code> 后再接收业务流量；它会检查数据库、Redis、ONNX 和已发布规则预热状态。发布更新时，在宿主机替换 <code>/opt/tianshu/server/rule-engine-server.jar</code>，然后执行 <code>docker restart tianshu-server</code>；不要重新构建运行时镜像。后管更新时把新 <code>dist</code> 内容同步到 <code>/opt/tianshu/console/dist/</code>，再执行 <code>docker exec tianshu-console nginx -s reload</code>。文件同步完成前不要删除旧目录，避免用户拿到不完整的静态资源。</p>
+</section>
+<section class="manual-section deployment-section" id="compose" data-search="三、Docker Compose 一体化部署 本模块在根 Compose 的 MySQL、mysql-init、Redis 基础设施上叠加 JAR 和后管服务。它与“Docker 运行时部署”二选一，不要同时创建同名的 tianshu-server 、 tianshu-console 容器。 3.1 准备制品和目录 mkdir -p deploy/server deploy/console/dist deploy/console
+mvn clean package -DskipTests
+cp rule-engine-server/target/rule-engine-server-*.jar deploy/server/rule-engine-server.jar
+cd rule-engine-builder-ui &amp;&amp; npm ci &amp;&amp; npm run build
+cp -a dist/. ../deploy/console/dist/
+cd .. 将上一节的 Nginx 配置保存为 deploy/console/nginx.conf ，并把其中的 proxy_pass 改为 Compose 服务名 http://server:8080 （不能使用 host.docker.internal ）。然后复制 .env.example 为 .env 。Compose 网络中的服务地址必须改为： MYSQL_HOST=mysql
+MYSQL_PORT=3306
+REDIS_HOST=redis
+REDIS_PORT=6379 3.2 创建 Compose 应用覆盖文件 在仓库根目录创建 docker-compose.app.yaml 。它会复用根 docker-compose.yaml 中名为 rule-engine 的网络和健康检查： services:
+  server:
+    image: eclipse-temurin:17-jre
+    container_name: tianshu-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - &quot;8080:8080&quot;
+    volumes:
+      - ./deploy/server:/opt/tianshu/server:ro
+    command: [&quot;java&quot;, &quot;-jar&quot;, &quot;/opt/tianshu/server/rule-engine-server.jar&quot;]
+    networks:
+      - rule-engine
+
+  console:
+    image: nginx:1.27-alpine
+    container_name: tianshu-console
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - &quot;9090:80&quot;
+    volumes:
+      - ./deploy/console/dist:/usr/share/nginx/html:ro
+      - ./deploy/console/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - rule-engine
+
+networks:
+  rule-engine:
+    name: rule-engine_rule-engine
+    external: true 示例把 JAR 固定监听容器内 8080 、后管固定监听容器内 80 。只想换宿主机端口时修改 ports 左侧，例如 18080:8080 、 19090:80 ；若连容器内端口一起修改，必须同步 SERVER_PORT 、 proxy_pass 和 ports 两侧。 根 Compose 首次启动时先创建网络，再启动基础设施和应用： docker compose -p rule-engine --env-file .env -f docker-compose.yaml up -d mysql redis mysql-init
+docker compose -p rule-engine --env-file .env -f docker-compose.yaml -f docker-compose.app.yaml up -d
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml ps 如果基础设施不是由根 Compose 创建，而是由其他项目创建，请把覆盖文件最后的 external 网络名改为实际网络名，并确认 mysql 、 redis 是该网络中的服务别名。空 MySQL 数据卷首次启动会执行 schema.sql 和 export_202607161151.sql ；已有数据卷不会自动重放 export。 3.3 Compose 验证、更新与回滚 curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+curl -I http://127.0.0.1:9090/
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml logs --tail 200 server console 更新只改宿主机挂载目录： cp new-rule-engine-server.jar deploy/server/rule-engine-server.jar
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml restart server
+
+rsync -a --delete new-dist/ deploy/console/dist/
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml exec console nginx -s reload 更新 JAR 后必须重启 server 才会加载新字节码；后管静态文件更新后 reload Nginx 即可。回滚时用备份的 JAR 或 dist 目录覆盖挂载目录，再按相同命令重启/reload，并重新检查 readiness。Compose .env 中的 BCrypt 哈希若包含 $ ，需写成 $$ 以避免 Compose 变量插值；容器最终收到单个 $ 。 只停止应用而保留 MySQL/Redis 数据： docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml stop server console"><h2>三、Docker Compose 一体化部署</h2>
+<p>本模块在根 Compose 的 MySQL、mysql-init、Redis 基础设施上叠加 JAR 和后管服务。它与“Docker 运行时部署”二选一，不要同时创建同名的 <code>tianshu-server</code>、<code>tianshu-console</code> 容器。</p>
+<h3>3.1 准备制品和目录</h3>
+<pre><code class="language-bash">mkdir -p deploy/server deploy/console/dist deploy/console
+mvn clean package -DskipTests
+cp rule-engine-server/target/rule-engine-server-*.jar deploy/server/rule-engine-server.jar
+cd rule-engine-builder-ui &amp;&amp; npm ci &amp;&amp; npm run build
+cp -a dist/. ../deploy/console/dist/
+cd ..
+</code></pre>
+<p>将上一节的 Nginx 配置保存为 <code>deploy/console/nginx.conf</code>，并把其中的 <code>proxy_pass</code> 改为 Compose 服务名 <code>http://server:8080</code>（不能使用 <code>host.docker.internal</code>）。然后复制 <code>.env.example</code> 为 <code>.env</code>。Compose 网络中的服务地址必须改为：</p>
+<pre><code class="language-dotenv">MYSQL_HOST=mysql
+MYSQL_PORT=3306
+REDIS_HOST=redis
+REDIS_PORT=6379
+</code></pre>
+<h3>3.2 创建 Compose 应用覆盖文件</h3>
+<p>在仓库根目录创建 <code>docker-compose.app.yaml</code>。它会复用根 <code>docker-compose.yaml</code> 中名为 <code>rule-engine</code> 的网络和健康检查：</p>
+<pre><code class="language-yaml">services:
+  server:
+    image: eclipse-temurin:17-jre
+    container_name: tianshu-server
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8080
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./deploy/server:/opt/tianshu/server:ro
+    command: ["java", "-jar", "/opt/tianshu/server/rule-engine-server.jar"]
+    networks:
+      - rule-engine
+
+  console:
+    image: nginx:1.27-alpine
+    container_name: tianshu-console
+    restart: unless-stopped
+    depends_on:
+      - server
+    ports:
+      - "9090:80"
+    volumes:
+      - ./deploy/console/dist:/usr/share/nginx/html:ro
+      - ./deploy/console/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - rule-engine
+
+networks:
+  rule-engine:
+    name: rule-engine_rule-engine
+    external: true
+</code></pre>
+<p>示例把 JAR 固定监听容器内 <code>8080</code>、后管固定监听容器内 <code>80</code>。只想换宿主机端口时修改 <code>ports</code> 左侧，例如 <code>18080:8080</code>、<code>19090:80</code>；若连容器内端口一起修改，必须同步 <code>SERVER_PORT</code>、<code>proxy_pass</code> 和 <code>ports</code> 两侧。</p>
+<p>根 Compose 首次启动时先创建网络，再启动基础设施和应用：</p>
+<pre><code class="language-bash">docker compose -p rule-engine --env-file .env -f docker-compose.yaml up -d mysql redis mysql-init
+docker compose -p rule-engine --env-file .env -f docker-compose.yaml -f docker-compose.app.yaml up -d
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml ps
+</code></pre>
+<p>如果基础设施不是由根 Compose 创建，而是由其他项目创建，请把覆盖文件最后的 <code>external</code> 网络名改为实际网络名，并确认 <code>mysql</code>、<code>redis</code> 是该网络中的服务别名。空 MySQL 数据卷首次启动会执行 <code>schema.sql</code> 和 <code>export_202607161151.sql</code>；已有数据卷不会自动重放 export。</p>
+<h3>3.3 Compose 验证、更新与回滚</h3>
+<pre><code class="language-bash">curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+curl -I http://127.0.0.1:9090/
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml logs --tail 200 server console
+</code></pre>
+<p>更新只改宿主机挂载目录：</p>
+<pre><code class="language-bash">cp new-rule-engine-server.jar deploy/server/rule-engine-server.jar
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml restart server
+
+rsync -a --delete new-dist/ deploy/console/dist/
+docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml exec console nginx -s reload
+</code></pre>
+<p>更新 JAR 后必须重启 <code>server</code> 才会加载新字节码；后管静态文件更新后 reload Nginx 即可。回滚时用备份的 JAR 或 <code>dist</code> 目录覆盖挂载目录，再按相同命令重启/reload，并重新检查 readiness。Compose <code>.env</code> 中的 BCrypt 哈希若包含 <code>$</code>，需写成 <code>$$</code> 以避免 Compose 变量插值；容器最终收到单个 <code>$</code>。</p>
+<p>只停止应用而保留 MySQL/Redis 数据：</p>
+<pre><code class="language-bash">docker compose -p rule-engine -f docker-compose.yaml -f docker-compose.app.yaml stop server console
+</code></pre>
+</section>
+<section class="manual-section deployment-section" id="jar" data-search="四、后管静态文件 + JAR 包部署 本模块不运行应用容器，适合已有 Nginx、systemd 或进程管理器的服务器。MySQL 和 Redis 可以继续使用根 Compose： cp .env.example .env
+# 将 MYSQL_HOST、REDIS_HOST 保持为 127.0.0.1/localhost（服务在宿主机运行）
+docker compose --env-file .env up -d mysql redis mysql-init 4.1 构建并发布后管 cd rule-engine-builder-ui
+npm ci
+npm run build
+sudo mkdir -p /var/www/tianshu
+sudo rsync -a --delete dist/ /var/www/tianshu/
+cd .. Nginx 的 server 配置使用 Docker 模块中的配置 ，但把 proxy_pass 改为 http://127.0.0.1:8080 ， root 改为 /var/www/tianshu 。配置检查并 reload： sudo nginx -t
+sudo systemctl reload nginx 4.2 构建并启动 JAR mvn clean package -DskipTests
+sudo mkdir -p /opt/tianshu/server
+sudo cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
+sudo cp .env /opt/tianshu/server/.env
+cd /opt/tianshu/server
+# application.yml 会从当前目录自动读取 .env；不需要在 shell 中 source，避免 BCrypt 的 $ 被 shell 展开
+java -jar ./rule-engine-server.jar 生产建议使用 systemd，创建 /etc/systemd/system/tianshu-server.service ： [Unit]
+Description=Tianshu Rule Engine Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tianshu/server
+EnvironmentFile=/opt/tianshu/server/.env
+ExecStart=/usr/bin/java -jar /opt/tianshu/server/rule-engine-server.jar
+Restart=always
+RestartSec=5
+User=tianshu
+
+[Install]
+WantedBy=multi-user.target 如果系统还没有 tianshu 用户，先创建并授权运行目录： sudo useradd --system --home /opt/tianshu --shell /usr/sbin/nologin tianshu 2&gt;/dev/null || true
+sudo chown -R tianshu:tianshu /opt/tianshu/server 启用并验证： sudo systemctl daemon-reload
+sudo systemctl enable --now tianshu-server
+curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness 更新 JAR 时先复制到临时文件，再原子替换并重启： install -m 0644 rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar.new
+mv /opt/tianshu/server/rule-engine-server.jar.new /opt/tianshu/server/rule-engine-server.jar
+sudo systemctl restart tianshu-server 确认 readiness 为 UP 后再恢复流量；如果失败，查看 journalctl -u tianshu-server -n 200 并用上一份 JAR 回滚。"><h2>四、后管静态文件 + JAR 包部署</h2>
+<p>本模块不运行应用容器，适合已有 Nginx、systemd 或进程管理器的服务器。MySQL 和 Redis 可以继续使用根 Compose：</p>
+<pre><code class="language-bash">cp .env.example .env
+# 将 MYSQL_HOST、REDIS_HOST 保持为 127.0.0.1/localhost（服务在宿主机运行）
+docker compose --env-file .env up -d mysql redis mysql-init
+</code></pre>
+<h3>4.1 构建并发布后管</h3>
+<pre><code class="language-bash">cd rule-engine-builder-ui
+npm ci
+npm run build
+sudo mkdir -p /var/www/tianshu
+sudo rsync -a --delete dist/ /var/www/tianshu/
+cd ..
+</code></pre>
+<p>Nginx 的 <code>server</code> 配置使用 <a href="#docker">Docker 模块中的配置</a>，但把 <code>proxy_pass</code> 改为 <code>http://127.0.0.1:8080</code>，<code>root</code> 改为 <code>/var/www/tianshu</code>。配置检查并 reload：</p>
+<pre><code class="language-bash">sudo nginx -t
+sudo systemctl reload nginx
+</code></pre>
+<h3>4.2 构建并启动 JAR</h3>
+<pre><code class="language-bash">mvn clean package -DskipTests
+sudo mkdir -p /opt/tianshu/server
+sudo cp rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar
+sudo cp .env /opt/tianshu/server/.env
+cd /opt/tianshu/server
+# application.yml 会从当前目录自动读取 .env；不需要在 shell 中 source，避免 BCrypt 的 $ 被 shell 展开
+java -jar ./rule-engine-server.jar
+</code></pre>
+<p>生产建议使用 systemd，创建 <code>/etc/systemd/system/tianshu-server.service</code>：</p>
+<pre><code class="language-ini">[Unit]
+Description=Tianshu Rule Engine Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+WorkingDirectory=/opt/tianshu/server
+EnvironmentFile=/opt/tianshu/server/.env
+ExecStart=/usr/bin/java -jar /opt/tianshu/server/rule-engine-server.jar
+Restart=always
+RestartSec=5
+User=tianshu
+
+[Install]
+WantedBy=multi-user.target
+</code></pre>
+<p>如果系统还没有 <code>tianshu</code> 用户，先创建并授权运行目录：</p>
+<pre><code class="language-bash">sudo useradd --system --home /opt/tianshu --shell /usr/sbin/nologin tianshu 2&gt;/dev/null || true
+sudo chown -R tianshu:tianshu /opt/tianshu/server
+</code></pre>
+<p>启用并验证：</p>
+<pre><code class="language-bash">sudo systemctl daemon-reload
+sudo systemctl enable --now tianshu-server
+curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+</code></pre>
+<p>更新 JAR 时先复制到临时文件，再原子替换并重启：</p>
+<pre><code class="language-bash">install -m 0644 rule-engine-server/target/rule-engine-server-*.jar /opt/tianshu/server/rule-engine-server.jar.new
+mv /opt/tianshu/server/rule-engine-server.jar.new /opt/tianshu/server/rule-engine-server.jar
+sudo systemctl restart tianshu-server
+</code></pre>
+<p>确认 readiness 为 <code>UP</code> 后再恢复流量；如果失败，查看 <code>journalctl -u tianshu-server -n 200</code> 并用上一份 JAR 回滚。</p>
+</section>
+<section class="manual-section deployment-section" id="cluster" data-search="五、多节点横向扩容 多节点扩容复制的是无状态的 JAR 执行节点，数据和分布式状态不能各自保存一份：所有节点必须连接同一个 MySQL 数据库和同一个 Redis 实例（或同一高可用 Redis 服务），并使用完全相同的 RULE_AUTH_MASTER_KEY 、 RULE_AUTH_ACTIVE_KEY_ID 、控制台账号和 CORS 配置。每个节点可以使用自己的 JAR 挂载目录和日志目录，但不要为每个节点创建独立的规则数据库或 Redis。 5.1 负载均衡器配置 以 Nginx 为例，后端节点监听内网地址 10.0.0.31:8080 、 10.0.0.32:8080 ： upstream tianshu_server {
+    # 管理端 HttpSession 需要粘性；这是 Nginx 开源版可直接使用的简单方案
+    ip_hash;
+    server 10.0.0.31:8080 max_fails=3 fail_timeout=10s;
+    server 10.0.0.32:8080 max_fails=3 fail_timeout=10s;
+}
+
+server {
+    listen 443 ssl;
+    server_name console.example.com;
+    # ssl_certificate /...;
+    # ssl_certificate_key /...;
+
+    location /api/ {
+        proxy_pass http://tianshu_server;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+} 当前控制台登录使用节点本地 HttpSession ，没有配置 Spring Session Redis。因此管理端流量必须启用负载均衡器的会话粘性（例如按 Cookie 粘性或 ip_hash ），或者把管理端 API 固定路由到一个节点；否则登录后请求落到另一节点会被当作未登录。项目 Token、规则发布 outbox、跨节点执行保护和 Redis 推送使用共享 Redis，不依赖会话粘性。 5.2 启动、摘除和扩容节点 每台节点分别准备相同的 JAR、 .env 和运行目录；节点可以都监听自己的 8080 ，由负载均衡器通过节点地址区分，不需要额外的实例标识参数： # 节点 1/2 都执行，MYSQL_HOST 与 REDIS_HOST 指向共享依赖
+cd /opt/tianshu/server
+java -jar /opt/tianshu/server/rule-engine-server.jar
+
+# 节点加入负载均衡前检查
+curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness 扩容顺序如下：先部署新节点并等待 readiness 为 UP ，再把它加入 upstream；缩容或升级时先从 upstream 摘除，等待正在处理的请求完成，再停止/重启节点。readiness 返回 503 或 OUT_OF_SERVICE 时不要把节点加入流量池；它可能表示 MySQL、Redis、ONNX 或已发布规则预热尚未就绪。 5.3 滚动更新与一致性检查 按节点逐台更新宿主机挂载的 JAR，重启后执行以下检查，确认通过再处理下一台： sha256sum /opt/tianshu/server/rule-engine-server.jar
+curl -fsS http://127.0.0.1:8080/actuator/health/readiness 发布规则后，所有节点会通过共享 Redis 收到项目频道或 GLOBAL 广播；新节点启动时还会执行 HTTP 全量同步。若 Redis 不可用，先修复共享 Redis，再恢复节点流量；不要通过给每个节点配置不同 Redis 来规避故障，否则节点缓存和跨节点限流/执行保护会分裂。扩容完成后至少验证：同一项目请求在不同节点均能鉴权和执行、规则发布后各节点最终使用相同版本、执行日志和计费没有重复写入、任一节点摘除后业务仍可用。"><h2>五、多节点横向扩容</h2>
+<p>多节点扩容复制的是无状态的 JAR 执行节点，数据和分布式状态不能各自保存一份：所有节点必须连接同一个 MySQL 数据库和同一个 Redis 实例（或同一高可用 Redis 服务），并使用完全相同的 <code>RULE_AUTH_MASTER_KEY</code>、<code>RULE_AUTH_ACTIVE_KEY_ID</code>、控制台账号和 CORS 配置。每个节点可以使用自己的 JAR 挂载目录和日志目录，但不要为每个节点创建独立的规则数据库或 Redis。</p>
+<h3>5.1 负载均衡器配置</h3>
+<p>以 Nginx 为例，后端节点监听内网地址 <code>10.0.0.31:8080</code>、<code>10.0.0.32:8080</code>：</p>
+<pre><code class="language-nginx">upstream tianshu_server {
+    # 管理端 HttpSession 需要粘性；这是 Nginx 开源版可直接使用的简单方案
+    ip_hash;
+    server 10.0.0.31:8080 max_fails=3 fail_timeout=10s;
+    server 10.0.0.32:8080 max_fails=3 fail_timeout=10s;
+}
+
+server {
+    listen 443 ssl;
+    server_name console.example.com;
+    # ssl_certificate /...;
+    # ssl_certificate_key /...;
+
+    location /api/ {
+        proxy_pass http://tianshu_server;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+</code></pre>
+<p>当前控制台登录使用节点本地 <code>HttpSession</code>，没有配置 Spring Session Redis。因此管理端流量必须启用负载均衡器的会话粘性（例如按 Cookie 粘性或 <code>ip_hash</code>），或者把管理端 API 固定路由到一个节点；否则登录后请求落到另一节点会被当作未登录。项目 Token、规则发布 outbox、跨节点执行保护和 Redis 推送使用共享 Redis，不依赖会话粘性。</p>
+<h3>5.2 启动、摘除和扩容节点</h3>
+<p>每台节点分别准备相同的 JAR、<code>.env</code> 和运行目录；节点可以都监听自己的 <code>8080</code>，由负载均衡器通过节点地址区分，不需要额外的实例标识参数：</p>
+<pre><code class="language-bash"># 节点 1/2 都执行，MYSQL_HOST 与 REDIS_HOST 指向共享依赖
+cd /opt/tianshu/server
+java -jar /opt/tianshu/server/rule-engine-server.jar
+
+# 节点加入负载均衡前检查
+curl -fsS http://127.0.0.1:8080/actuator/health/liveness
+curl -i http://127.0.0.1:8080/actuator/health/readiness
+</code></pre>
+<p>扩容顺序如下：先部署新节点并等待 readiness 为 <code>UP</code>，再把它加入 upstream；缩容或升级时先从 upstream 摘除，等待正在处理的请求完成，再停止/重启节点。readiness 返回 <code>503</code> 或 <code>OUT_OF_SERVICE</code> 时不要把节点加入流量池；它可能表示 MySQL、Redis、ONNX 或已发布规则预热尚未就绪。</p>
+<h3>5.3 滚动更新与一致性检查</h3>
+<p>按节点逐台更新宿主机挂载的 JAR，重启后执行以下检查，确认通过再处理下一台：</p>
+<pre><code class="language-bash">sha256sum /opt/tianshu/server/rule-engine-server.jar
+curl -fsS http://127.0.0.1:8080/actuator/health/readiness
+</code></pre>
+<p>发布规则后，所有节点会通过共享 Redis 收到项目频道或 GLOBAL 广播；新节点启动时还会执行 HTTP 全量同步。若 Redis 不可用，先修复共享 Redis，再恢复节点流量；不要通过给每个节点配置不同 Redis 来规避故障，否则节点缓存和跨节点限流/执行保护会分裂。扩容完成后至少验证：同一项目请求在不同节点均能鉴权和执行、规则发布后各节点最终使用相同版本、执行日志和计费没有重复写入、任一节点摘除后业务仍可用。</p>
+</section>
+<section class="manual-section deployment-section" id="sdk" data-search="业务系统 SDK 集成 外部客户优先使用 纯 HTTP SDK 与离线 tar 包 。以下配置属于完整 SDK rule-engine-client ；HTTP-only SDK 不使用 Redis、规则同步、本地执行和本地日志上报。 从业务 HTTP 接口到引擎结果返回的完整示例、全局规则关联、多项目客户端及日志开关语义见 Java 业务服务接入指南 。 业务系统引入 rule-engine-client 后，可继续使用项目原有访问令牌，也可按项目配置账号密码、API Key 或 HMAC-SHA256。非旧令牌方式默认先调用 /api/rule/auth/token 换取短期 Bearer Token，再同步或执行规则；调用方不需要也不能传 authCode ，服务端会根据凭证自动识别鉴权配置。 rule-engine:
+  client:
+    server-url: http://localhost:8080
+    app-name: your-service-name
+    project-code: your-project-code
+    token: &lt;项目访问令牌&gt;
+    project-id: 1
+    trace-enabled: true
+    log-report-enabled: true
+    log-buffer-size: 500
+    log-batch-size: 50
+    log-flush-interval-ms: 5000
+    # 规则依赖 API/DB/名单变量时必须开启服务端执行
+    server-side-execution: true project-code 是项目级实时推送和项目函数隔离的必填路由键，必须与服务端项目编码完全一致； app-name 只标识调用应用，不会替代 project-code 订阅项目频道。未配置 project-code 时 SDK 仍可通过 HTTP 同步并接收 GLOBAL 广播，但不会订阅任何项目频道，因此不能获得项目规则/函数的实时变更。 账号密码方式示例（默认 Token 有效期 2 小时、失效后宽限 10 分钟，均可在项目鉴权配置中调整）： rule-engine:
+  client:
+    server-url: http://localhost:8080
+    app-name: your-service-name
+    project-code: your-project-code
+    auth-type: BASIC
+    username: caller-account
+    password: caller-password
+    token-exchange-enabled: true
+    token-refresh-ahead-seconds: 60 API Key 使用 auth-type: API_KEY 并配置 api-key 、 api-key-placement （ HEADER 或 QUERY ）和 api-key-parameter-name ；HMAC 使用 auth-type: HMAC_SHA256 并配置 access-key 与 hmac-secret 。Java Builder 分别提供 basicAuth(...) 、 apiKeyAuth(...) 和 hmacAuth(...) 。 HMAC 请求固定携带 X-Rule-Access-Key 、 X-Rule-Timestamp 、 X-Rule-Nonce 和 X-Rule-Signature 。签名值为以下标准串使用 HMAC-SHA256 计算后的小写十六进制结果；Query 使用原始编码串，请求体使用原始字节。下面每行代表一个字段，字段之间使用 LF（换行符）连接，最后的 NONCE 后不再追加换行符： HTTP_METHOD
+REQUEST_URI
+RAW_QUERY
+SHA256_HEX(REQUEST_BODY)
+UNIX_TIMESTAMP_SECONDS
+NONCE 直接调用 /token 时，只提交当前鉴权方式的凭证。例如账号密码使用 HTTP Basic： curl -X POST http://localhost:8080/api/rule/auth/token \
+  -H &quot;Authorization: Basic &lt;base64(username:password)&gt;&quot;
+
+curl -X POST http://localhost:8080/api/rule/sync/execute/RC_PRICING_TABLE \
+  -H &quot;Authorization: Bearer &lt;accessToken&gt;&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d &#x27;{&quot;clientAppName&quot;:&quot;your-service-name&quot;,&quot;params&quot;:{}}&#x27; 执行示例： RuleResult result = ruleEngineClient.execute(&quot;RC_PRICING_TABLE&quot;, requestMap); SDK 行为： 启动时先通过 HTTP 全量同步规则和函数，再建立 Redis 订阅；项目鉴权失败会直接使启动失败，不会留下半启动的订阅或定时任务。 成功的全量响应是权威快照：服务端已删除的规则/函数会从客户端移除，成功返回空数组会清空对应远端快照；HTTP 非 2xx、空响应、业务 code != 200 、非法 JSON 或网络失败不会清空旧快照。 订阅 rule:push:{projectCode} 和 rule:push:broadcast ，规则发布/下线及函数更新/删除后增量刷新本地状态。项目推送只接受相同 projectCode ；GLOBAL 推送对所有客户端生效。 缓存未命中时可按规则编码单条拉取。 默认本地使用 QLExpress 执行脚本，适合只依赖入参、常量、计算变量和已同步函数的规则。 同名远端函数按“当前项目 PROJECT → GLOBAL”解析；删除项目函数后自动回退同名 GLOBAL 函数，删除 GLOBAL 函数不会删除仍存在的项目函数。HTTP 成功快照与 Redis 删除消息都会真正撤销已删除函数，不需要重启业务应用。 如果规则依赖 API 变量、数据库变量或名单变量，必须开启 server-side-execution: true ，或直接调用服务端接口 POST /api/rule/sync/execute/{ruleCode} 。这些外部变量只在服务端通过 VariableSourceResolver 解析，本地 SDK 不会直连外部 API、数据库或名单库。 SDK 在 Token 到期前 60 秒自动续期；续期失败时继续使用旧 Token，直到其宽限期结束。 没有外部 ExecutionLogReporter 时，日志通过有界 HTTP 队列异步上报，不阻塞规则结果；达到 log-batch-size 立即发送，否则最多等待 log-flush-interval-ms 。队列达到 log-buffer-size 后采用 drop-newest 并记录丢弃计数/告警；HTTP 或业务响应失败最多尝试 3 次，最终失败记录批次和日志计数。 RuleEngineClient.close() 会在有界等待内冲刷自己创建的 HTTP reporter；规则结果不会因 reporter 抛错而改为失败。应用提供的外部 reporter 生命周期归应用容器管理，客户端不会替它启动或关闭。 trace-enabled 控制本地及服务端执行的表达式追踪，默认 true；直接 HTTP 调用通过顶层 traceEnabled 字段控制。关闭后仍保留 traceId 和服务端基础执行日志。 服务端持久化追踪默认限制为 1 MiB，可通过 RULE_TRACE_MAX_PERSIST_BYTES 调整；超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。 log-report-enabled=false 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 ExecutionLogReporter 优先；存在 KafkaTemplate 且没有自定义 reporter 时自动创建 Kafka reporter，默认主题为 rule-execution-log 。鉴权类型不会强制覆盖该 reporter 选择。 项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 RULE_AUTH_MASTER_KEY 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 v2 密钥；升级前若已有旧 v1 密文，需通过 RULE_AUTH_LEGACY_MASTER_KEY 保留原主密钥；若历史版本曾在更换密钥材料时继续复用 v2 标识，还需通过 RULE_AUTH_LEGACY_V2_MASTER_KEY 配置当时的材料。解密会优先使用密文标识对应的密钥，再尝试已配置的历史密钥；待旧凭证全部修改或重置后应移除历史密钥。可通过 RULE_AUTH_ACTIVE_KEY_ID 显式选择活动密钥版本，后续轮换必须使用新的 key ID。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 authCode 和 tokenCode ，按日汇总到鉴权配置维度。"><h2>业务系统 SDK 集成</h2>
+<p>外部客户优先使用 <a href="../rule-engine-example/README.md">纯 HTTP SDK 与离线 tar 包</a>。以下配置属于完整 SDK <code>rule-engine-client</code>；HTTP-only SDK 不使用 Redis、规则同步、本地执行和本地日志上报。</p>
+<p>从业务 HTTP 接口到引擎结果返回的完整示例、全局规则关联、多项目客户端及日志开关语义见 <a href="java-service-integration.html">Java 业务服务接入指南</a>。</p>
+<p>业务系统引入 <code>rule-engine-client</code> 后，可继续使用项目原有访问令牌，也可按项目配置账号密码、API Key 或 HMAC-SHA256。非旧令牌方式默认先调用 <code>/api/rule/auth/token</code> 换取短期 Bearer Token，再同步或执行规则；调用方不需要也不能传 <code>authCode</code>，服务端会根据凭证自动识别鉴权配置。</p>
+<pre><code class="language-yaml">rule-engine:
+  client:
+    server-url: http://localhost:8080
+    app-name: your-service-name
+    project-code: your-project-code
+    token: &lt;项目访问令牌&gt;
+    project-id: 1
+    trace-enabled: true
+    log-report-enabled: true
+    log-buffer-size: 500
+    log-batch-size: 50
+    log-flush-interval-ms: 5000
+    # 规则依赖 API/DB/名单变量时必须开启服务端执行
+    server-side-execution: true
+</code></pre>
+<p><code>project-code</code> 是项目级实时推送和项目函数隔离的必填路由键，必须与服务端项目编码完全一致；<code>app-name</code> 只标识调用应用，不会替代 <code>project-code</code> 订阅项目频道。未配置 <code>project-code</code> 时 SDK 仍可通过 HTTP 同步并接收 GLOBAL 广播，但不会订阅任何项目频道，因此不能获得项目规则/函数的实时变更。</p>
+<p>账号密码方式示例（默认 Token 有效期 2 小时、失效后宽限 10 分钟，均可在项目鉴权配置中调整）：</p>
+<pre><code class="language-yaml">rule-engine:
+  client:
+    server-url: http://localhost:8080
+    app-name: your-service-name
+    project-code: your-project-code
+    auth-type: BASIC
+    username: caller-account
+    password: caller-password
+    token-exchange-enabled: true
+    token-refresh-ahead-seconds: 60
+</code></pre>
+<p>API Key 使用 <code>auth-type: API_KEY</code> 并配置 <code>api-key</code>、<code>api-key-placement</code>（<code>HEADER</code> 或 <code>QUERY</code>）和 <code>api-key-parameter-name</code>；HMAC 使用 <code>auth-type: HMAC_SHA256</code> 并配置 <code>access-key</code> 与 <code>hmac-secret</code>。Java Builder 分别提供 <code>basicAuth(...)</code>、<code>apiKeyAuth(...)</code> 和 <code>hmacAuth(...)</code>。</p>
+<p>HMAC 请求固定携带 <code>X-Rule-Access-Key</code>、<code>X-Rule-Timestamp</code>、<code>X-Rule-Nonce</code> 和 <code>X-Rule-Signature</code>。签名值为以下标准串使用 HMAC-SHA256 计算后的小写十六进制结果；Query 使用原始编码串，请求体使用原始字节。下面每行代表一个字段，字段之间使用 LF（换行符）连接，最后的 <code>NONCE</code> 后不再追加换行符：</p>
+<pre><code class="language-text">HTTP_METHOD
+REQUEST_URI
+RAW_QUERY
+SHA256_HEX(REQUEST_BODY)
+UNIX_TIMESTAMP_SECONDS
+NONCE
+</code></pre>
+<p>直接调用 <code>/token</code> 时，只提交当前鉴权方式的凭证。例如账号密码使用 HTTP Basic：</p>
+<pre><code class="language-bash">curl -X POST http://localhost:8080/api/rule/auth/token \
+  -H "Authorization: Basic &lt;base64(username:password)&gt;"
+
+curl -X POST http://localhost:8080/api/rule/sync/execute/RC_PRICING_TABLE \
+  -H "Authorization: Bearer &lt;accessToken&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{"clientAppName":"your-service-name","params":{}}'
+</code></pre>
+<p>执行示例：</p>
+<pre><code class="language-java">RuleResult result = ruleEngineClient.execute("RC_PRICING_TABLE", requestMap);
+</code></pre>
+<p>SDK 行为：</p>
+<ul>
+<li>启动时先通过 HTTP 全量同步规则和函数，再建立 Redis 订阅；项目鉴权失败会直接使启动失败，不会留下半启动的订阅或定时任务。</li>
+<li>成功的全量响应是权威快照：服务端已删除的规则/函数会从客户端移除，成功返回空数组会清空对应远端快照；HTTP 非 2xx、空响应、业务 <code>code != 200</code>、非法 JSON 或网络失败不会清空旧快照。</li>
+<li>订阅 <code>rule:push:{projectCode}</code> 和 <code>rule:push:broadcast</code>，规则发布/下线及函数更新/删除后增量刷新本地状态。项目推送只接受相同 <code>projectCode</code>；GLOBAL 推送对所有客户端生效。</li>
+<li>缓存未命中时可按规则编码单条拉取。</li>
+<li>默认本地使用 QLExpress 执行脚本，适合只依赖入参、常量、计算变量和已同步函数的规则。</li>
+<li>同名远端函数按“当前项目 PROJECT → GLOBAL”解析；删除项目函数后自动回退同名 GLOBAL 函数，删除 GLOBAL 函数不会删除仍存在的项目函数。HTTP 成功快照与 Redis 删除消息都会真正撤销已删除函数，不需要重启业务应用。</li>
+<li>如果规则依赖 API 变量、数据库变量或名单变量，必须开启 <code>server-side-execution: true</code>，或直接调用服务端接口 <code>POST /api/rule/sync/execute/{ruleCode}</code>。这些外部变量只在服务端通过 <code>VariableSourceResolver</code> 解析，本地 SDK 不会直连外部 API、数据库或名单库。</li>
+<li>SDK 在 Token 到期前 60 秒自动续期；续期失败时继续使用旧 Token，直到其宽限期结束。</li>
+<li>没有外部 <code>ExecutionLogReporter</code> 时，日志通过有界 HTTP 队列异步上报，不阻塞规则结果；达到 <code>log-batch-size</code> 立即发送，否则最多等待 <code>log-flush-interval-ms</code>。队列达到 <code>log-buffer-size</code> 后采用 drop-newest 并记录丢弃计数/告警；HTTP 或业务响应失败最多尝试 3 次，最终失败记录批次和日志计数。</li>
+<li><code>RuleEngineClient.close()</code> 会在有界等待内冲刷自己创建的 HTTP reporter；规则结果不会因 reporter 抛错而改为失败。应用提供的外部 reporter 生命周期归应用容器管理，客户端不会替它启动或关闭。</li>
+<li><code>trace-enabled</code> 控制本地及服务端执行的表达式追踪，默认 true；直接 HTTP 调用通过顶层 <code>traceEnabled</code> 字段控制。关闭后仍保留 traceId 和服务端基础执行日志。</li>
+<li>服务端持久化追踪默认限制为 1 MiB，可通过 <code>RULE_TRACE_MAX_PERSIST_BYTES</code> 调整；超过上限的日志保存截断标记和原始大小，请求结果及内存中的本次追踪不受该持久化上限影响。</li>
+<li><code>log-report-enabled=false</code> 禁止 SDK 本地日志上报，包括自定义、HTTP 和 Kafka reporter；不关闭服务端基础日志、鉴权审计或计费。开启上报时 Spring 容器中的自定义 <code>ExecutionLogReporter</code> 优先；存在 <code>KafkaTemplate</code> 且没有自定义 reporter 时自动创建 Kafka reporter，默认主题为 <code>rule-execution-log</code>。鉴权类型不会强制覆盖该 reporter 选择。</li>
+</ul>
+<p>项目鉴权配置、长期凭证和短期 Token 均可在控制台再次查看完整值。长期凭证在数据库中使用 AES-GCM 可逆加密存储；启动服务前必须通过 <code>RULE_AUTH_MASTER_KEY</code> 配置至少 32 位的独立主密钥并妥善保管，未配置或使用公开开发密钥时服务会拒绝启动。新密文默认使用 <code>v2</code> 密钥；升级前若已有旧 <code>v1</code> 密文，需通过 <code>RULE_AUTH_LEGACY_MASTER_KEY</code> 保留原主密钥；若历史版本曾在更换密钥材料时继续复用 <code>v2</code> 标识，还需通过 <code>RULE_AUTH_LEGACY_V2_MASTER_KEY</code> 配置当时的材料。解密会优先使用密文标识对应的密钥，再尝试已配置的历史密钥；待旧凭证全部修改或重置后应移除历史密钥。可通过 <code>RULE_AUTH_ACTIVE_KEY_ID</code> 显式选择活动密钥版本，后续轮换必须使用新的 key ID。访问审计记录所有受保护接口调用；只有实际规则执行进入计费，计费明细可区分 <code>authCode</code> 和 <code>tokenCode</code>，按日汇总到鉴权配置维度。</p></section>
+        </div>
+
+        <footer class="site-footer">
+          <div class="site-footer-inner">
+            <div class="footer-meta">
+              <strong>上海衡枢真信科技有限公司</strong>
+              <span>© 2026 上海衡枢真信科技有限公司 · ALL RIGHTS RESERVED</span>
+              <a href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer">沪ICP备2026005682号-1</a>
+              <span>天枢决策引擎部署教程 · <a href="index.html">返回操作手册</a></span>
+            </div>
+            <div class="footer-contact">
+              <strong>联系我们</strong>
+              <a href="mailto:hscredit@hengshucredit.com">hscredit@hengshucredit.com</a>
+              <span>上海市 · <a href="https://hengshucredit.com/" target="_blank" rel="noreferrer">hengshucredit.com ↗</a></span>
+            </div>
+            <div class="footer-social">
+              <a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber.svg" alt="微信号二维码" /><span>微信号</span></a>
+              <a class="footer-qr" href="https://hengshucredit.com/" target="_blank" rel="noreferrer"><img src="brand/itlubber_art.svg" alt="公众号二维码" /><span>公众号</span></a>
+            </div>
+          </div>
+        </footer>
+      </main>
+    </div>
+
+    <button class="back-to-top" id="back-to-top" type="button" aria-label="回到顶部" title="回到顶部"><svg class="back-to-top-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5" /><path d="m6 11 6-6 6 6" /></svg></button>
+    <script src="deployment.js"></script>
+  </body>
+</html>

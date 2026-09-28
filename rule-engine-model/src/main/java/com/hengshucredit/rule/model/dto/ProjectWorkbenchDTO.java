@@ -5,6 +5,7 @@ import lombok.Data;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 @Data
 public class ProjectWorkbenchDTO {
@@ -13,6 +14,8 @@ public class ProjectWorkbenchDTO {
     private List<CheckItem> checks = new ArrayList<>();
     private RecentExecution recentExecution;
     private List<String> warnings = new ArrayList<>();
+    /** 全局规则预热状态，供项目工作台显示发布后的运行可用性。 */
+    private Map<String, Object> warmup;
 
     @Data
     public static class ProjectSummary {

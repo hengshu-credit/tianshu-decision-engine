@@ -21,16 +21,18 @@ export function coerceSampleValue(value, ref) {
   if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
     raw = raw.slice(1, -1)
   }
-  if (raw === 'true') return true
-  if (raw === 'false') return false
   const variable = ref && ref.varObj ? ref.varObj : {}
-  const type = (ref && ref.varType) || variable.varType || 'STRING'
-  if (type === 'NUMBER') {
+  const type = String((ref && ref.varType) || variable.varType || 'STRING').toUpperCase()
+  if (['BOOLEAN', 'BOOL'].indexOf(type) >= 0) {
+    return raw === '1' || raw.toLowerCase() === 'true'
+  }
+  if (['NUMBER', 'DOUBLE', 'FLOAT', 'DECIMAL', 'PROBABILITY'].indexOf(type) >= 0) {
     const n = Number(raw)
     if (!Number.isNaN(n)) return n
   }
-  if (type === 'BOOLEAN') {
-    return raw === '1' || raw.toLowerCase() === 'true'
+  if (['INTEGER', 'INT', 'LONG'].indexOf(type) >= 0) {
+    const n = parseInt(raw, 10)
+    if (!Number.isNaN(n)) return n
   }
   return raw
 }
@@ -339,7 +341,7 @@ function sampleValueForModelField(field) {
     return parseConfiguredValue(field.defaultValue, field.fieldType || field.varType || 'STRING')
   }
   const type = field.fieldType || field.varType || 'STRING'
-  if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT'].indexOf(String(type).toUpperCase()) >= 0) return 0
+  if (['NUMBER', 'INTEGER', 'INT', 'LONG', 'DECIMAL', 'DOUBLE', 'FLOAT', 'PROBABILITY'].indexOf(String(type).toUpperCase()) >= 0) return 0
   if (['BOOLEAN', 'BOOL'].indexOf(String(type).toUpperCase()) >= 0) return false
   return ''
 }

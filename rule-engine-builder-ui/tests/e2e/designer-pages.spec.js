@@ -70,6 +70,9 @@ const designers = [
 // 初始数据只有正式版本；草稿只能由 UI 暂存请求生成。
 function manualDraftFixtures(definitionId, modelJson = '{}') {
   const apiData = createDesignerApiData()
+  if (definitionId === 108 && modelJson === '{}') {
+    modelJson = JSON.stringify({ initialScore: 0, resultVar: { varCode: 'score' }, dimensionGroups: [], thresholds: [] })
+  }
   const saves = []
   let draft = null
   const base = `/api/rule/definition/${definitionId}`

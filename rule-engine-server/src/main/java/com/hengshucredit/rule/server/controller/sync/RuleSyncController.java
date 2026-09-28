@@ -10,6 +10,10 @@ import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
 import com.hengshucredit.rule.server.service.RuleExecuteService;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleFunctionService;
+import com.hengshucredit.rule.server.service.RuleIdempotencyService;
+import com.hengshucredit.rule.server.service.RuleVariableService;
+import com.hengshucredit.rule.server.openapi.OpenApiContract;
+import com.hengshucredit.rule.server.openapi.OpenApiContractCodec;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
@@ -54,6 +58,12 @@ public class RuleSyncController {
 
     @Resource
     private RuleDefinitionService definitionService;
+
+    @Resource
+    private RuleVariableService variableService;
+
+    @Resource
+    private RuleIdempotencyService idempotencyService;
 
     @GetMapping("/{ruleCode}")
     public R<RulePublished> getByCode(@PathVariable String ruleCode, HttpServletRequest request) {
@@ -136,8 +146,33 @@ public class RuleSyncController {
             return R.fail(400, "traceEnabled must be true or false");
         }
         boolean traceEnabled = traceOption == null || Boolean.parseBoolean(traceOption.toString());
-        return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName,
-                ProjectAuthContext.from(request), traceEnabled, traceEnabled));
+        RuleIdempotencyService.Decision idempotency = idempotencyService == null
+                ? null : idempotencyService.begin(published, scope.projectId, params);
+        if (idempotency == null) {
+            return R.ok(executeService.executePublished(published, params, scope.projectId, clientAppName,
+                    ProjectAuthContext.from(request), traceEnabled, traceEnabled));
+        }
+        if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) return R.ok(idempotency.getResult());
+        if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
+            R<RuleResult> response = R.fail(409, "幂等键已被其他请求使用且请求内容不同");
+            response.setData(idempotencyStatus(idempotency, "CONFLICT"));
+            return response;
+        }
+        if (idempotency.getStatus() == RuleIdempotencyService.Status.IN_PROGRESS) {
+            R<RuleResult> response = R.fail(409, "相同幂等键的请求正在执行");
+            response.setData(idempotencyStatus(idempotency, "IN_PROGRESS"));
+            return response;
+        }
+        try {
+            RuleResult result = idempotencyService.withDecision(idempotency, () -> executeService.executePublished(
+                    published, params, scope.projectId, clientAppName,
+                    ProjectAuthContext.from(request), traceEnabled, traceEnabled));
+            idempotencyService.complete(idempotency, result, null);
+            return R.ok(result);
+        } catch (RuntimeException error) {
+            idempotencyService.release(idempotency, error.getMessage());
+            throw error;
+        }
     }
 
     static Map<String, Object> buildMultipartBody(Map<String, String[]> fields,
@@ -240,7 +275,57 @@ public class RuleSyncController {
                     .map(String::trim)
                     .collect(Collectors.toList()));
         }
+        markServerExecutionRequirement(published);
         return published;
+    }
+
+    private RuleResult idempotencyStatus(RuleIdempotencyService.Decision decision, String status) {
+        RuleResult result = new RuleResult();
+        result.setSuccess(false);
+        result.setExecutionStatus(status);
+        result.setTraceId(decision == null ? null : decision.getRootTraceId());
+        result.setRevisionId(decision == null ? null : decision.getCurrentRevisionId());
+        return result;
+    }
+
+    private void markServerExecutionRequirement(RulePublished published) {
+        var definition = safeDefinition(published.getDefinitionId());
+        if (definition != null && variableService != null) {
+            for (var variable : variableService.listByProject(definition.getProjectId(), null)) {
+                String source = variable == null || variable.getVarSource() == null ? ""
+                        : variable.getVarSource().trim().toUpperCase();
+                if ("API".equals(source) || "DB".equals(source)
+                        || "LIST".equals(source) || "DERIVED".equals(source)) {
+                    published.setRequiresServerExecution(true);
+                    published.setServerExecutionReason("包含" + source + "变量来源");
+                    return;
+                }
+            }
+        }
+        if (published.getArtifactId() != null && artifactSnapshotService != null && definition != null) {
+            var snapshot = artifactSnapshotService.load(published.getArtifactId(), published.getDefinitionId(),
+                    definition.getProjectId());
+            if (snapshot != null && snapshot.getModels() != null && !snapshot.getModels().isEmpty()) {
+                published.setRequiresServerExecution(true);
+                published.setServerExecutionReason("包含模型执行");
+                return;
+            }
+        }
+        OpenApiContract contract = OpenApiContractCodec.parse(published.getOpenApiConfigJson());
+        if (contract.getIdempotency() != null && contract.getIdempotency().isEnabled()) {
+            published.setRequiresServerExecution(true);
+            published.setServerExecutionReason("包含服务端幂等与恢复");
+        }
+    }
+
+    private com.hengshucredit.rule.model.entity.RuleDefinition safeDefinition(Long definitionId) {
+        if (definitionService == null || definitionId == null) return null;
+        try {
+            return definitionService.getById(definitionId);
+        } catch (RuntimeException ignored) {
+            // 同步单测或无持久化预览上下文可能没有 Mapper；不阻断规则同步。
+            return null;
+        }
     }
 
     private ProjectScope resolveProjectScope(HttpServletRequest request) {

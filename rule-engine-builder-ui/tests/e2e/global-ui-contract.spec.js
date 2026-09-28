@@ -610,7 +610,7 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
   await page.goto('http://tianshu.local/index.html#/project')
   const row = page.getByRole('row').filter({ hasText: 'E2E 项目' })
   const actions = row.locator('button[data-action]')
-  await expect(actions).toHaveCount(5)
+  await expect(actions).toHaveCount(6)
 
   const appearance = await actions.evaluateAll(buttons => buttons.map(button => ({
     action: button.dataset.action,
@@ -621,6 +621,7 @@ test('项目列表同一行操作使用互不重复且语义稳定的主题色',
     'detail',
     'configure',
     'docs',
+    'openapi',
     'delete',
   ])
   expect(new Set(appearance.map(item => item.color)).size).toBe(appearance.length)

@@ -1,6 +1,7 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleModelInputField;
 import org.springframework.stereotype.Service;
@@ -28,22 +29,50 @@ public class ExecutionParameterBinder {
                                                VariableResolveOptions options) {
         Map<String, Object> result = copyMap(params);
         bindRuleInputsInPlace(fields, result, options);
+        materializeUntypedMissingFields(fields, result);
         return result;
+    }
+
+    /** Runtime source references remain absent; standalone binding of an untyped field exposes explicit null. */
+    public Map<String, Object> bindRuleInputsPreservingMissing(List<RuleDefinitionInputField> fields,
+                                                                Map<String, Object> params,
+                                                                VariableResolveOptions options) {
+        Map<String, Object> result = copyMap(params);
+        List<String> missingUntyped = new ArrayList<>();
+        for (RuleDefinitionInputField field : fields == null
+                ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
+            if (field == null || (field.getRefType() != null && !field.getRefType().isBlank())) continue;
+            String path = firstText(field.getScriptName(), field.getFieldName());
+            if (path != null && !readPath(result, path).present) missingUntyped.add(path);
+        }
+        bindRuleInputsInPlace(fields, result, options);
+        missingUntyped.forEach(path -> removePath(result, path));
+        return result;
+    }
+
+    public Map<String, Object> bindRuleInputsPreservingMissing(List<RuleDefinitionInputField> fields,
+                                                                Map<String, Object> params) {
+        return bindRuleInputsPreservingMissing(fields, params, VariableResolveOptions.defaults());
     }
 
     /** 子规则沿用当前会话，只绑定声明入参，不能替换父规则已持有的嵌套输出对象。 */
     public void bindRuleInputsInPlace(List<RuleDefinitionInputField> fields,
                                      Map<String, Object> params,
                                      VariableResolveOptions options) {
+        if (params == null) return;
+        VariableResolveOptions effectiveOptions = options == null
+                ? VariableResolveOptions.defaults() : options;
         for (RuleDefinitionInputField field : fields == null ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
-            bindRuleField(params, field, options == null ? VariableResolveOptions.defaults() : options);
+            if (field == null) continue;
+            bindRuleField(params, field, effectiveOptions);
         }
     }
 
     public Map<String, Object> bindModelInputs(List<RuleModelInputField> fields,
                                                 Map<String, Object> params) {
-        Map<String, Object> result = copyMap(params);
+        Map<String, Object> result = normalizeMap(copyMap(params));
         for (RuleModelInputField field : fields == null ? Collections.<RuleModelInputField>emptyList() : fields) {
+            if (field == null) continue;
             bindOne(result, firstText(field.getScriptName(), field.getFieldName()), field.getFieldType());
         }
         return result;
@@ -58,6 +87,7 @@ public class ExecutionParameterBinder {
         Map<String, Object> result = new LinkedHashMap<>();
         for (RuleModelInputField field : fields == null
                 ? Collections.<RuleModelInputField>emptyList() : fields) {
+            if (field == null) continue;
             String nativeName = firstOriginalText(
                     field.getFieldName(), field.getScriptName());
             if (nativeName == null) continue;
@@ -66,9 +96,8 @@ public class ExecutionParameterBinder {
             if (!value.present && scriptPath != null && !scriptPath.equals(nativeName)) {
                 value = readPath(params, scriptPath);
             }
-            if (value.present) {
-                result.put(nativeName, coerce(nativeName, field.getFieldType(), value.value));
-            }
+            result.put(nativeName, value.present
+                    ? coerce(nativeName, field.getFieldType(), value.value) : null);
         }
         return result;
     }
@@ -76,7 +105,12 @@ public class ExecutionParameterBinder {
     private void bindOne(Map<String, Object> params, String path, String type) {
         if (path == null) return;
         PathValue pathValue = readPath(params, path);
-        if (!pathValue.present) return;
+        if (!pathValue.present) {
+            // 模型声明字段即使请求没有传入，也必须形成显式 null，交给模型运行时或配置的默认值处理。
+            setPath(params, path, null);
+            if (path.indexOf('.') >= 0) params.remove(path);
+            return;
+        }
         Object value = coerce(path, type, pathValue.value);
         setPath(params, path, value);
         if (path.indexOf('.') >= 0) {
@@ -92,9 +126,15 @@ public class ExecutionParameterBinder {
         boolean tracksStatus = options.requiresSourceStatus(field.getRefType(), field.getVarId());
         if (!pathValue.present) {
             if (tracksStatus) options.recordSourceState(field.getRefType(), field.getVarId(), "PRESENCE", "MISSING");
+            // 数据对象、模型及模型输出可能由执行计划按需解析；保留 absent，避免提前写 null
+            // 让引用计划误判为已读取。普通声明字段则显式暴露 null。
+            if (tracksStatus || isDeferredSourceReference(field)) return;
+            setPath(params, path, null);
+            if (path.indexOf('.') >= 0) params.remove(path);
             return;
         }
         if (tracksStatus) options.recordSourceState(field.getRefType(), field.getVarId(), "PRESENCE", "PRESENT");
+        if (tracksStatus) return;
         try {
             Object value = coerce(path, field.getFieldType(), pathValue.value);
             setPath(params, path, value);
@@ -107,7 +147,25 @@ public class ExecutionParameterBinder {
         }
     }
 
+    private void materializeUntypedMissingFields(List<RuleDefinitionInputField> fields,
+                                                  Map<String, Object> params) {
+        for (RuleDefinitionInputField field : fields == null
+                ? Collections.<RuleDefinitionInputField>emptyList() : fields) {
+            if (field == null || field.getRefType() != null && !field.getRefType().isBlank()) continue;
+            String path = firstText(field.getScriptName(), field.getFieldName());
+            if (path != null && !readPath(params, path).present) setPath(params, path, null);
+        }
+    }
+
+    private boolean isDeferredSourceReference(RuleDefinitionInputField field) {
+        String refType = field == null || field.getRefType() == null
+                ? "" : field.getRefType().trim().toUpperCase(Locale.ROOT);
+        return "DATA_OBJECT".equals(refType) || "MODEL".equals(refType)
+                || "MODEL_OUTPUT".equals(refType);
+    }
+
     private Object coerce(String path, String type, Object value) {
+        value = MissingValueSemantics.normalize(value);
         if (value == null || type == null) return value;
         String normalized = type.trim().toUpperCase(Locale.ROOT);
         try {
@@ -220,12 +278,38 @@ public class ExecutionParameterBinder {
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private void removePath(Map<String, Object> params, String path) {
+        if (params == null || path == null) return;
+        String[] parts = path.split("\\.");
+        if (parts.length == 1) {
+            params.remove(parts[0]);
+            return;
+        }
+        Map<String, Object> current = params;
+        for (int i = 0; i < parts.length - 1; i++) {
+            Object child = current.get(parts[i]);
+            if (!(child instanceof Map<?, ?>)) return;
+            current = (Map<String, Object>) child;
+        }
+        current.remove(parts[parts.length - 1]);
+    }
+
     private Map<String, Object> copyMap(Map<String, Object> source) {
         Map<String, Object> result = new LinkedHashMap<>();
         if (source != null) {
             for (Map.Entry<String, Object> entry : source.entrySet()) {
                 result.put(entry.getKey(), copyValue(entry.getValue()));
             }
+        }
+        return result;
+    }
+
+    private Map<String, Object> normalizeMap(Map<String, Object> source) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (source == null) return result;
+        for (Map.Entry<String, Object> entry : source.entrySet()) {
+            result.put(entry.getKey(), MissingValueSemantics.normalize(entry.getValue()));
         }
         return result;
     }

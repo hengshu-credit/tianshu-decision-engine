@@ -29,7 +29,7 @@ public class HealthProbeConfigurationTest {
                 environment.getProperty("management.endpoint.health.probes.enabled"));
         assertEquals("livenessState,ping",
                 environment.getProperty("management.endpoint.health.group.liveness.include"));
-        assertEquals("readinessState,db,redis,onnxWarmup",
+        assertEquals("readinessState,db,redis,onnxWarmup,ruleWarmup",
                 environment.getProperty("management.endpoint.health.group.readiness.include"));
     }
 }

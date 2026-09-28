@@ -14,6 +14,9 @@ import com.hengshucredit.rule.client.sync.RedisSubscriber;
 import com.hengshucredit.rule.core.engine.QLExpressEngine;
 import com.hengshucredit.rule.core.engine.RuleTerminationSignal;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.model.dto.RuleExperimentExecuteRequest;
+import com.hengshucredit.rule.model.dto.RuleExperimentExecuteResult;
+import com.hengshucredit.rule.model.dto.RuleExecutionStatus;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import com.alibaba.fastjson.JSON;
 import com.alibaba.fastjson.JSONObject;
@@ -53,13 +56,14 @@ public class RuleEngineClient {
         ClientRequestAuthenticator authenticator = new ClientRequestAuthenticator(
                 config.getServerUrl(), config.getHttpTimeoutMs(), resolveAuthConfig(config));
         this.httpSyncClient = new HttpSyncClient(config.getServerUrl(), config.getHttpTimeoutMs(), authenticator);
-        this.redisSubscriber = new RedisSubscriber(l1Cache, connectionFactory, resolvePushSubscriptionKey(config),
+        this.redisSubscriber = connectionFactory == null ? null
+                : new RedisSubscriber(l1Cache, connectionFactory, resolvePushSubscriptionKey(config),
                 httpSyncClient::fetchRule);
         this.runtimeRuleInvoker = new ClientRuleRuntimeInvoker(l1Cache, httpSyncClient, engine, config);
         this.runtimeRuleInvoker.register(engine.getRunner());
         this.functionRegistrar = new ClientFunctionRegistrar(engine, applicationContext, config.getProjectCode());
 
-        if (!config.isLogReportEnabled()) {
+        if (config.isServerSideExecution() || !config.isLogReportEnabled()) {
             this.logReporter = new NoOpLogReporter();
             this.ownsLogReporter = true;
         } else if (externalReporter != null) {
@@ -88,18 +92,20 @@ public class RuleEngineClient {
                     config.getServerUrl(), config.getAppName(), config.getProjectCode(),
                     logReporter.getClass().getSimpleName());
             try {
-                // 先完成首次 HTTP 同步，避免认证/配置错误被 Redis 重试掩盖。
-                syncFunctions();
-                fullSync();
-                redisSubscriber.setFunctionRegistrar(functionRegistrar);
-                redisSubscriber.start();
-                scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
-                    Thread t = new Thread(r, "rule-client-heartbeat");
-                    t.setDaemon(true);
-                    return t;
-                });
-                scheduler.scheduleAtFixedRate(this::fullSync,
-                        config.getHeartbeatIntervalMs(), config.getHeartbeatIntervalMs(), TimeUnit.MILLISECONDS);
+                if (!config.isServerSideExecution()) {
+                    // 本地执行模式才下载规则、函数并订阅 Redis。
+                    syncFunctions();
+                    fullSync();
+                    redisSubscriber.setFunctionRegistrar(functionRegistrar);
+                    redisSubscriber.start();
+                    scheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+                        Thread t = new Thread(r, "rule-client-heartbeat");
+                        t.setDaemon(true);
+                        return t;
+                    });
+                    scheduler.scheduleAtFixedRate(this::fullSync,
+                            config.getHeartbeatIntervalMs(), config.getHeartbeatIntervalMs(), TimeUnit.MILLISECONDS);
+                }
                 lifecycleState = LifecycleState.STARTED;
                 log.info("RuleEngineClient started, {} rules cached", l1Cache.size());
             } catch (ProjectClientAuthenticationException e) {
@@ -124,7 +130,7 @@ public class RuleEngineClient {
                 scheduler.shutdownNow();
                 scheduler = null;
             }
-            redisSubscriber.stop();
+            if (redisSubscriber != null) redisSubscriber.stop();
             closeOwnedLogReporter();
             lifecycleState = LifecycleState.STOPPED;
         }
@@ -135,6 +141,22 @@ public class RuleEngineClient {
      */
     public RuleResult execute(String ruleCode, Map<String, Object> params) {
         return doExecute(ruleCode, params);
+    }
+
+    public RuleExperimentExecuteResult executeExperiment(String experimentCode,
+                                                          RuleExperimentExecuteRequest request) {
+        if (!config.isServerSideExecution()) {
+            throw new IllegalStateException("分流实验仅支持服务端执行模式");
+        }
+        return httpSyncClient.executeExperiment(experimentCode, request);
+    }
+
+    /** 查询远程执行状态；本地纯计算模式没有跨请求状态。 */
+    public RuleExecutionStatus getExecutionStatus(String traceId) {
+        if (!config.isServerSideExecution()) {
+            throw new IllegalStateException("本地纯计算模式没有服务端执行状态");
+        }
+        return httpSyncClient.getExecutionStatus(traceId);
     }
 
     /**
@@ -174,6 +196,7 @@ public class RuleEngineClient {
             r.setErrorMessage("规则未找到: " + ruleCode);
             return r;
         }
+        ensureLocalPureRule(cached);
 
         String originalInputJson = config.isLogReportEnabled() ? toJsonSafely(params) : null;
         runtimeRuleInvoker.enter(cached, params);
@@ -213,6 +236,7 @@ public class RuleEngineClient {
             r.setErrorMessage("规则未找到: " + ruleCode);
             return r;
         }
+        ensureLocalPureRule(cached);
 
         String originalInputJson = config.isLogReportEnabled() ? toJsonSafely(params) : null;
         runtimeRuleInvoker.enter(cached, params);
@@ -282,6 +306,9 @@ public class RuleEngineClient {
     }
 
     public void refreshRule(String ruleCode) {
+        if (config.isServerSideExecution()) {
+            throw new IllegalStateException("serverSideExecution=true 时规则由服务端统一管理，不能刷新本地缓存");
+        }
         CachedRule rule = httpSyncClient.fetchRule(ruleCode);
         if (rule != null) {
             l1Cache.put(rule);
@@ -289,7 +316,17 @@ public class RuleEngineClient {
     }
 
     public void refreshAll() {
+        if (config.isServerSideExecution()) {
+            throw new IllegalStateException("serverSideExecution=true 时规则由服务端统一管理，不能刷新本地缓存");
+        }
         fullSync();
+    }
+
+    private void ensureLocalPureRule(CachedRule cached) {
+        if (config.isServerSideExecution() || cached == null || !cached.isRequiresServerExecution()) return;
+        String reason = cached.getServerExecutionReason();
+        throw new IllegalStateException("规则依赖服务端运行能力，当前为本地纯计算模式；请配置 serverSideExecution=true"
+                + (reason == null || reason.isBlank() ? "" : "（" + reason + "）"));
     }
 
     public CachedRule getRuleInfo(String ruleCode) {
@@ -359,7 +396,7 @@ public class RuleEngineClient {
             scheduler.shutdownNow();
             scheduler = null;
         }
-        redisSubscriber.stop();
+        if (redisSubscriber != null) redisSubscriber.stop();
         closeOwnedLogReporter();
         lifecycleState = LifecycleState.STOPPED;
     }
@@ -433,7 +470,7 @@ public class RuleEngineClient {
         }
 
         public RuleEngineClient build() {
-            if (connectionFactory == null) {
+            if (connectionFactory == null && !config.isServerSideExecution()) {
                 throw new IllegalStateException("RedisConnectionFactory is required. " +
                         "Please provide it via builder.connectionFactory(redisConnectionFactory)");
             }

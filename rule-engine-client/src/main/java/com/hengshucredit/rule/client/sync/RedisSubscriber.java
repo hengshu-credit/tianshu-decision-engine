@@ -17,9 +17,14 @@ import org.springframework.data.redis.listener.Topic;
 
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.ArrayDeque;
+import java.util.Deque;
 import java.util.List;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 /**
@@ -48,6 +53,11 @@ public class RedisSubscriber {
     private final String channel;
     private final List<Topic> topics;
     private final Function<String, CachedRule> ruleFetcher;
+    private static final int MAX_PROCESSED_OPERATIONS = 8192;
+    private final Set<String> processedOperations = ConcurrentHashMap.newKeySet();
+    private final Deque<String> processedOperationOrder = new ArrayDeque<>();
+    private final Object processedOperationsLock = new Object();
+    private final ConcurrentHashMap<String, OperationLock> operationLocks = new ConcurrentHashMap<>();
 
     private RedisMessageListenerContainer container;
     private ClientFunctionRegistrar functionRegistrar;
@@ -86,6 +96,15 @@ public class RedisSubscriber {
      * 启动Redis订阅（带指数退避重试）
      */
     public void start() {
+        if (projectCode == null) {
+            // 项目级推送必须按真实 projectCode 隔离；没有项目编码时不订阅广播频道。
+            log.warn("Redis subscriber skipped because projectCode is not configured");
+            return;
+        }
+        if (connectionFactory == null) {
+            log.warn("Redis subscriber skipped because RedisConnectionFactory is not configured");
+            return;
+        }
         if (running.compareAndSet(false, true)) {
             doStartWithRetry();
             startHealthCheck();
@@ -117,6 +136,10 @@ public class RedisSubscriber {
     }
 
     private synchronized void doStart() {
+        if (!running.get()) {
+            return;
+        }
+        if (connectionFactory == null) throw new IllegalStateException("RedisConnectionFactory 未配置");
         stopContainer();
         container = new RedisMessageListenerContainer();
         container.setConnectionFactory(connectionFactory);
@@ -129,7 +152,7 @@ public class RedisSubscriber {
     /**
      * 停止Redis订阅
      */
-    public void stop() {
+    public synchronized void stop() {
         running.set(false);
         stopContainer();
         stopHealthCheck();
@@ -212,7 +235,7 @@ public class RedisSubscriber {
     private class RuleMessageListener implements org.springframework.data.redis.connection.MessageListener {
         @Override
         public void onMessage(Message message, byte[] pattern) {
-            String body = new String(message.getBody());
+            String body = new String(message.getBody(), StandardCharsets.UTF_8);
             handleMessage(body);
         }
     }
@@ -225,42 +248,101 @@ public class RedisSubscriber {
                         push.getAction(), push.getProjectCode(), push.getScope());
                 return;
             }
-            String action = push.getAction();
-
-            if ("PUBLISH".equals(action)) {
-                cache.invalidateVersions(push.getDefinitionId());
-                CachedRule cached = resolvePublishedRule(push);
-                if (cached == null) {
-                    log.debug("Ignored rule push outside authorized scope or unavailable: {}", push.getRuleCode());
-                    return;
+            String operationId = trimToNull(push.getOperationId());
+            if (operationId == null) {
+                processPush(push);
+                return;
+            }
+            OperationLock lock = acquireOperationLock(operationId);
+            try {
+                synchronized (lock) {
+                    if (isDuplicateOperation(operationId)) return;
+                    if (processPush(push)) rememberOperation(operationId);
                 }
-                cache.put(cached);
-                log.info("Rule updated via Redis push: {} v{}", push.getRuleCode(), push.getVersion());
-
-            } else if ("VERSION_UPDATE".equals(action)) {
-                cache.invalidateVersions(push.getDefinitionId());
-            } else if ("UNPUBLISH".equals(action) || "DELETE".equals(action)) {
-                cache.remove(push.getRuleCode());
-                log.info("Rule removed via Redis push: {}", push.getRuleCode());
-
-            } else if ("FUNC_UPDATE".equals(action)) {
-                if (functionRegistrar != null && push.getFuncCode() != null) {
-                    functionRegistrar.registerRemoteFromPush(
-                            push.getScope(), push.getProjectCode(), push.getFuncCode(), push.getFuncImplType(),
-                            push.getFuncImplScript(), push.getFuncImplClass(),
-                            push.getFuncImplMethod(), push.getFuncImplBeanName(),
-                            push.getFuncParamsJson());
-                    log.info("Function updated via Redis push: {} ({})", push.getFuncCode(), push.getFuncImplType());
-                }
-
-            } else if ("FUNC_DELETE".equals(action)) {
-                if (functionRegistrar != null && push.getFuncCode() != null) {
-                    functionRegistrar.removeRemote(push.getScope(), push.getProjectCode(), push.getFuncCode());
-                    log.info("Function removed via Redis push: {}", push.getFuncCode());
-                }
+            } finally {
+                releaseOperationLock(operationId, lock);
             }
         } catch (Exception e) {
             log.warn("Failed to handle Redis push message: {}", e.getMessage());
+        }
+    }
+
+    private boolean processPush(RulePushMessage push) {
+        String action = push.getAction();
+        boolean handled = false;
+
+        if ("PUBLISH".equals(action)) {
+            cache.invalidateVersions(push.getDefinitionId());
+            CachedRule cached = resolvePublishedRule(push);
+            if (cached == null) {
+                log.debug("Ignored rule push outside authorized scope or unavailable: {}", push.getRuleCode());
+                return false;
+            }
+            cache.put(cached);
+            log.info("Rule updated via Redis push: {} v{}", push.getRuleCode(), push.getVersion());
+            handled = true;
+
+        } else if ("VERSION_UPDATE".equals(action)) {
+            cache.invalidateVersions(push.getDefinitionId());
+            handled = true;
+        } else if ("UNPUBLISH".equals(action) || "DELETE".equals(action)) {
+            cache.remove(push.getRuleCode());
+            log.info("Rule removed via Redis push: {}", push.getRuleCode());
+            handled = true;
+
+        } else if ("FUNC_UPDATE".equals(action)) {
+            if (functionRegistrar != null && push.getFuncCode() != null) {
+                handled = functionRegistrar.tryRegisterRemoteFromPush(
+                        push.getScope(), push.getProjectCode(), push.getFuncCode(), push.getFuncImplType(),
+                        push.getFuncImplScript(), push.getFuncImplClass(),
+                        push.getFuncImplMethod(), push.getFuncImplBeanName(),
+                        push.getFuncParamsJson());
+                log.info("Function updated via Redis push: {} ({})", push.getFuncCode(), push.getFuncImplType());
+            }
+
+        } else if ("FUNC_DELETE".equals(action)) {
+            if (functionRegistrar != null && push.getFuncCode() != null) {
+                handled = functionRegistrar.tryRemoveRemote(push.getScope(), push.getProjectCode(), push.getFuncCode());
+                log.info("Function removed via Redis push: {}", push.getFuncCode());
+            }
+        }
+        return handled;
+    }
+
+    private OperationLock acquireOperationLock(String operationId) {
+        return operationLocks.compute(operationId, (ignored, current) -> {
+            OperationLock lock = current == null ? new OperationLock() : current;
+            lock.references.incrementAndGet();
+            return lock;
+        });
+    }
+
+    private void releaseOperationLock(String operationId, OperationLock lock) {
+        operationLocks.computeIfPresent(operationId, (ignored, current) -> {
+            if (current != lock) {
+                return current;
+            }
+            return lock.references.decrementAndGet() == 0 ? null : lock;
+        });
+    }
+
+    private boolean isDuplicateOperation(String operationId) {
+        String value = trimToNull(operationId);
+        if (value == null) return false;
+        synchronized (processedOperationsLock) {
+            return processedOperations.contains(value);
+        }
+    }
+
+    private void rememberOperation(String operationId) {
+        String value = trimToNull(operationId);
+        if (value == null) return;
+        synchronized (processedOperationsLock) {
+            if (!processedOperations.add(value)) return;
+            processedOperationOrder.addLast(value);
+            while (processedOperationOrder.size() > MAX_PROCESSED_OPERATIONS) {
+                processedOperations.remove(processedOperationOrder.removeFirst());
+            }
         }
     }
 
@@ -304,5 +386,9 @@ public class RedisSubscriber {
         }
         String trimmed = value.trim();
         return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private static final class OperationLock {
+        private final AtomicInteger references = new AtomicInteger();
     }
 }

@@ -6,6 +6,8 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.hengshucredit.rule.model.entity.RuleExternalApiConfig;
 import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import org.springframework.stereotype.Service;
@@ -22,6 +24,9 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
 
     @Resource
     private RuleExternalDatasourceMapper datasourceMapper;
+
+    @Resource
+    private RuleDataObjectMapper dataObjectMapper;
 
     @Resource
     private ProjectFilterService projectFilterService;
@@ -89,12 +94,14 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
 
     public RuleExternalApiConfig saveWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
+        validateReferences(config);
         save(config);
         return getById(config.getId());
     }
 
     public RuleExternalApiConfig updateWithDefaults(RuleExternalApiConfig config) {
         fillDefaults(config);
+        validateReferences(config);
         updateById(config);
         apiHttpClientRegistry.invalidate("api:" + String.valueOf(config.getId()));
         externalApiGuardRegistry.invalidate(config.getId());
@@ -113,13 +120,36 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
     }
 
     public void deleteByDatasourceId(Long datasourceId) {
+        if (datasourceId == null) return;
+        List<Long> apiIds = list(new LambdaQueryWrapper<RuleExternalApiConfig>()
+                .select(RuleExternalApiConfig::getId)
+                .eq(RuleExternalApiConfig::getDatasourceId, datasourceId))
+                .stream()
+                .map(RuleExternalApiConfig::getId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
         remove(new LambdaQueryWrapper<RuleExternalApiConfig>()
                 .eq(RuleExternalApiConfig::getDatasourceId, datasourceId));
+        for (Long apiId : apiIds) {
+            apiHttpClientRegistry.invalidate("api:" + apiId);
+            externalApiGuardRegistry.invalidate(apiId);
+            circuitBreakerRegistry.invalidate(apiId);
+            externalApiResponseCache.invalidate(apiId);
+        }
     }
 
     private void fillDefaults(RuleExternalApiConfig config) {
+        config.setRequestMode(normalizeEnum(config.getRequestMode(), "SYNC", "ASYNC", "请求模式"));
+        if (hasText(config.getAsyncResultMode())) {
+            config.setAsyncResultMode(normalizeEnum(config.getAsyncResultMode(), "POLL", "CALLBACK", "异步结果模式"));
+        }
         if (!hasText(config.getRequestMethod())) {
             config.setRequestMethod("POST");
+        } else {
+            config.setRequestMethod(config.getRequestMethod().trim().toUpperCase(java.util.Locale.ROOT));
+            if (!java.util.Set.of("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS").contains(config.getRequestMethod())) {
+                throw new IllegalArgumentException("HTTP请求方法不受支持: " + config.getRequestMethod());
+            }
         }
         if (!hasText(config.getRequestMode())) {
             config.setRequestMode("SYNC");
@@ -136,6 +166,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
         config.setRetryCondition(nullIfBlank(config.getRetryCondition()));
         config.setTokenFailureCondition(nullIfBlank(config.getTokenFailureCondition()));
         config.setBillingCondition(nullIfBlank(config.getBillingCondition()));
+        config.setPayloadCaptureConfig(nullIfBlank(config.getPayloadCaptureConfig()));
         config.setAuthApiConfig(nullIfBlank(config.getAuthApiConfig()));
         config.setTestSampleParams(nullIfBlank(config.getTestSampleParams()));
         config.setAsyncPollConfig(nullIfBlank(config.getAsyncPollConfig()));
@@ -230,11 +261,37 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
                 0, 0, 86400, "过期缓存兜底秒数");
         if (!hasText(config.getExceptionStrategy())) {
             config.setExceptionStrategy("FAIL_FAST");
+        } else {
+            config.setExceptionStrategy(config.getExceptionStrategy().trim().toUpperCase(java.util.Locale.ROOT));
+            if (!java.util.Set.of("FAIL_FAST", "RETURN_DEFAULT", "IGNORE", "USE_CACHE").contains(config.getExceptionStrategy())) {
+                throw new IllegalArgumentException("异常处理策略不受支持: " + config.getExceptionStrategy());
+            }
         }
         if (config.getStatus() == null) {
             config.setStatus(1);
         }
         ExternalApiConfigValidator.validate(config);
+    }
+
+    private void validateReferences(RuleExternalApiConfig config) {
+        if (datasourceMapper == null || dataObjectMapper == null) {
+            throw new IllegalStateException("外数引用校验依赖未初始化");
+        }
+        RuleExternalDatasource datasource = datasourceMapper.selectById(config.getDatasourceId());
+        RuleDataObject requestObject = config.getRequestObjectId() == null ? null
+                : dataObjectMapper.selectById(config.getRequestObjectId());
+        RuleDataObject responseObject = config.getResponseObjectId() == null ? null
+                : dataObjectMapper.selectById(config.getResponseObjectId());
+        ExternalApiConfigValidator.validateReferences(config, datasource, requestObject, responseObject);
+    }
+
+    private String normalizeEnum(String value, String first, String second, String label) {
+        if (!hasText(value)) return first;
+        String normalized = value.trim().toUpperCase(java.util.Locale.ROOT);
+        if (!first.equals(normalized) && !second.equals(normalized)) {
+            throw new IllegalArgumentException(label + "只能是" + first + "或" + second);
+        }
+        return normalized;
     }
 
     private void fillDatasourceInfo(List<RuleExternalApiConfig> list) {

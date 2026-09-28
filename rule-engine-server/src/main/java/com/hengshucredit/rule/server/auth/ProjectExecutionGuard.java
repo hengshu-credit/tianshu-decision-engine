@@ -9,7 +9,12 @@ import java.util.Map;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.ThreadFactory;
 import java.util.function.LongSupplier;
+import java.util.UUID;
 
 /** authId 维度的有界令牌桶与并发隔离。 */
 @Component
@@ -18,21 +23,49 @@ public class ProjectExecutionGuard {
     private final LongSupplier nanoTime;
     private final LinkedHashMap<Long, State> states = new LinkedHashMap<>(16, 0.75f, true);
 
+    private static final ScheduledExecutorService RENEW_EXECUTOR =
+            Executors.newScheduledThreadPool(
+                    Math.max(2, Math.min(8, Runtime.getRuntime().availableProcessors() / 2)),
+                    new RenewThreadFactory());
+    private final ProjectExecutionGuardStore distributedStore;
+
     @Autowired
-    public ProjectExecutionGuard(ProjectAuthProperties properties) {
-        this(properties.getGuardRegistryMaxEntries(), System::nanoTime);
+    public ProjectExecutionGuard(ProjectAuthProperties properties,
+                                 ProjectExecutionGuardStore distributedStore) {
+        this(properties.getGuardRegistryMaxEntries(), System::nanoTime, distributedStore);
     }
 
     public ProjectExecutionGuard(int maxEntries, LongSupplier nanoTime) {
+        this(maxEntries, nanoTime, null);
+    }
+
+    public ProjectExecutionGuard(int maxEntries, LongSupplier nanoTime,
+                                 ProjectExecutionGuardStore distributedStore) {
         if (maxEntries <= 0) throw new IllegalArgumentException("guard registry maxEntries 必须大于 0");
         this.maxEntries = maxEntries;
         this.nanoTime = nanoTime;
+        this.distributedStore = distributedStore;
     }
 
     public Permit acquire(Long authId, ProjectAccessPolicy policy) {
         if (authId == null) throw new IllegalArgumentException("authId 不能为空");
         ProjectAccessPolicy effective = policy == null ? new ProjectAccessPolicy() : policy;
         effective.validate();
+        if (distributedStore != null) {
+            String permitId = UUID.randomUUID().toString();
+            ProjectExecutionGuardStore.AcquireResult result;
+            try {
+                result = distributedStore.acquire(authId, effective, permitId);
+            } catch (ProjectExecutionGuardStore.DistributedUnavailable e) {
+                throw new Rejected(Reason.DISTRIBUTED_UNAVAILABLE, e);
+            }
+            if (result == null || !result.isAllowed()) {
+                throw new Rejected(result == null || result.getReason() == null
+                        ? Reason.DISTRIBUTED_UNAVAILABLE : result.getReason());
+            }
+            return new Permit(distributedStore, authId, permitId,
+                    result.getLeaseMillis(), result.getHardExpiryMillis());
+        }
         State state = state(authId, effective);
         if (!state.tryToken(nanoTime.getAsLong())) throw new Rejected(Reason.RATE_LIMITED);
         if (!state.tryConcurrent()) throw new Rejected(Reason.CONCURRENT_LIMITED);
@@ -66,10 +99,11 @@ public class ProjectExecutionGuard {
     }
 
     private String fingerprint(ProjectAccessPolicy policy) {
-        return policy.getQps() + ":" + policy.getBurst() + ":" + policy.getMaxConcurrent();
+        return policy.getQps() + ":" + policy.getBurst() + ":" + policy.getMaxConcurrent()
+                + ":" + policy.getRequestTimeoutMs();
     }
 
-    public enum Reason { RATE_LIMITED, CONCURRENT_LIMITED, REGISTRY_FULL }
+    public enum Reason { RATE_LIMITED, CONCURRENT_LIMITED, REGISTRY_FULL, DISTRIBUTED_UNAVAILABLE }
 
     public static class Rejected extends RuntimeException {
         private final Reason reason;
@@ -79,18 +113,89 @@ public class ProjectExecutionGuard {
             this.reason = reason;
         }
 
+        private Rejected(Reason reason, Throwable cause) {
+            super(reason.name(), cause);
+            this.reason = reason;
+        }
+
         public Reason getReason() { return reason; }
     }
 
     public static class Permit implements AutoCloseable {
         private final State state;
+        private final ProjectExecutionGuardStore distributedStore;
+        private final Long authId;
+        private final String permitId;
+        private final Thread ownerThread;
         private final AtomicBoolean closed = new AtomicBoolean(false);
+        private final AtomicBoolean lost = new AtomicBoolean(false);
+        private final Object lifecycle = new Object();
+        private final ScheduledFuture<?> renewTask;
 
-        private Permit(State state) { this.state = state; }
+        private Permit(State state) {
+            this.state = state;
+            this.distributedStore = null;
+            this.authId = null;
+            this.permitId = null;
+            this.ownerThread = null;
+            this.renewTask = null;
+        }
+
+        private Permit(ProjectExecutionGuardStore distributedStore, Long authId, String permitId,
+                       long leaseMillis, long hardExpiryMillis) {
+            this.state = null;
+            this.distributedStore = distributedStore;
+            this.authId = authId;
+            this.permitId = permitId;
+            this.ownerThread = Thread.currentThread();
+            long period = Math.max(250L, Math.max(1L, leaseMillis) / 3L);
+            this.renewTask = distributedStore == null || leaseMillis <= 0L
+                    ? null : RENEW_EXECUTOR.scheduleAtFixedRate(() -> {
+                        if (closed.get()) return;
+                        try {
+                            if (!distributedStore.renew(authId, permitId, leaseMillis, hardExpiryMillis)) {
+                                markLost();
+                            }
+                        } catch (RuntimeException ignored) {
+                            markLost();
+                        }
+                    }, period, period, java.util.concurrent.TimeUnit.MILLISECONDS);
+        }
 
         @Override
         public void close() {
-            if (closed.compareAndSet(false, true)) state.release();
+            synchronized (lifecycle) {
+                if (!closed.compareAndSet(false, true)) return;
+            }
+            if (renewTask != null) renewTask.cancel(false);
+            if (distributedStore != null) {
+                try {
+                    distributedStore.release(authId, permitId);
+                } catch (ProjectExecutionGuardStore.DistributedUnavailable ignored) {
+                    // 释放按 permitId 幂等；Redis 恢复后租约自动过期。
+                }
+            } else if (state != null) {
+                state.release();
+            }
+        }
+
+        private void markLost() {
+            synchronized (lifecycle) {
+                if (closed.get() || !lost.compareAndSet(false, true)) return;
+                // 让正在阻塞的 Servlet/开放执行线程尽快结束；规则代码若继续计算，
+                // 也不能再续租该 permit，Redis 侧会在有界租约后自动回收。
+                Thread owner = ownerThread;
+                if (owner != null && owner != Thread.currentThread()) owner.interrupt();
+            }
+        }
+    }
+
+    private static final class RenewThreadFactory implements ThreadFactory {
+        @Override
+        public Thread newThread(Runnable runnable) {
+            Thread thread = new Thread(runnable, "rule-auth-guard-renew");
+            thread.setDaemon(true);
+            return thread;
         }
     }
 

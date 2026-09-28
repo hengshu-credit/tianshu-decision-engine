@@ -94,7 +94,7 @@
         </template>
       </el-table-column>
       <el-table-column prop="createTime" label="创建时间" min-width="160" />
-      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="300" align="center" fixed="right">
+      <el-table-column class-name="table-operation-column" :show-overflow-tooltip="false" label="操作" width="380" align="center" fixed="right">
         <template v-slot="{ row }">
           <div class="table-operation-group project-action-links">
             <el-button v-permission="'project:edit'" link data-action="edit" size="small" type="primary" @click="handleEdit(row)"
@@ -113,6 +113,9 @@
             >
             <el-button link data-action="docs" size="small" type="info" @click="handleExportDoc(row)"
               >API</el-button
+            >
+            <el-button link data-action="openapi" size="small" type="success" @click="handleExportOpenApi(row)"
+              >OpenAPI</el-button
             >
             <el-button
               v-permission="'project:edit'"
@@ -212,7 +215,7 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { generateApiDocHtml } from '@/utils/apiDoc'
+import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
@@ -418,6 +421,26 @@ export default {
         }
       } catch (e) {
         this.$message.error('导出文档失败')
+      } finally {
+        if (objectUrl) URL.revokeObjectURL(objectUrl)
+      }
+    },
+    async handleExportOpenApi(row) {
+      let objectUrl = ''
+      try {
+        const res = await exportApiDoc(row.id)
+        if (res.code !== 200 || !res.data) throw new Error('API 文档数据为空')
+        const openApi = generateOpenApiDocument(res.data)
+        const blob = new Blob([JSON.stringify(openApi, null, 2)], { type: 'application/json;charset=utf-8' })
+        objectUrl = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = objectUrl
+        anchor.download = `${res.data.project.projectCode}-openapi.json`
+        document.body.appendChild(anchor)
+        anchor.click()
+        document.body.removeChild(anchor)
+      } catch (e) {
+        this.$message.error('导出 OpenAPI 文档失败')
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl)
       }

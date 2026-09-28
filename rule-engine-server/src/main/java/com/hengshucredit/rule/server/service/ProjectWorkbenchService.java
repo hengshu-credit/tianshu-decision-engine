@@ -20,6 +20,8 @@ import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RuleModelMapper;
 import com.hengshucredit.rule.server.mapper.RuleProjectMapper;
 import com.hengshucredit.rule.server.mapper.RuleVariableMapper;
+import com.hengshucredit.rule.server.health.RuleWarmupState;
+import com.hengshucredit.rule.server.health.RuleWarmupStatus;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
@@ -27,6 +29,7 @@ import jakarta.annotation.Resource;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Supplier;
 
 @Slf4j
@@ -53,6 +56,8 @@ public class ProjectWorkbenchService {
     private RuleExecutionLogMapper executionLogMapper;
     @Resource
     private RuleReferenceIntegrityService referenceIntegrityService;
+    @Resource
+    private RuleWarmupStatus ruleWarmupStatus;
 
     public ProjectWorkbenchDTO getWorkbench(Long projectId) {
         RuleProject project = projectId == null ? null : projectMapper.selectById(projectId);
@@ -162,9 +167,34 @@ public class ProjectWorkbenchService {
                 });
         result.setRecentExecution(toRecentExecution(latest));
         result.setChecks(buildChecks(project, metrics, latest));
+        if (ruleWarmupStatus != null) {
+            result.setWarmup(ruleWarmupStatus.details());
+            result.getChecks().add(warmupCheck(ruleWarmupStatus.details()));
+        }
         ProjectWorkbenchDTO.CheckItem fieldCheck = checkRuleFieldReferences(rules);
         result.getChecks().replaceAll(item -> "FIELD".equals(item.getCode()) ? fieldCheck : item);
         return result;
+    }
+
+    private ProjectWorkbenchDTO.CheckItem warmupCheck(Map<String, Object> details) {
+        String state = String.valueOf(details.getOrDefault("state", "NOT_STARTED"));
+        Number failures = details.get("failureCount") instanceof Number
+                ? (Number) details.get("failureCount") : 0;
+        if (RuleWarmupState.FAILED.name().equals(state)) {
+            return check("WARMUP", "检查规则预热", "ACTION_REQUIRED",
+                    "有 " + failures.intValue() + " 个已发布规则版本未通过启动预热，请先修复脚本、函数或制品，再重新验证。",
+                    "RETRY_WARMUP", "重新验证预热");
+        }
+        if (RuleWarmupState.WARMING.name().equals(state)) {
+            return check("WARMUP", "检查规则预热", "ATTENTION",
+                    "规则预热正在进行，请稍后刷新工作台查看结果。", "REFRESH_WORKBENCH", "刷新状态");
+        }
+        if (RuleWarmupState.READY.name().equals(state)) {
+            return check("WARMUP", "检查规则预热", "READY",
+                    "已发布规则版本均已完成运行预热。", null, null);
+        }
+        return check("WARMUP", "检查规则预热", "UNAVAILABLE",
+                "尚未获取规则预热结果。", "REFRESH_WORKBENCH", "刷新状态");
     }
 
     ProjectWorkbenchDTO.CheckItem checkRuleFieldReferences(List<RuleDefinition> rules) {

@@ -37,4 +37,17 @@ public class RuleExternalDatasourceServiceTest {
         assertThrows(java.lang.reflect.InvocationTargetException.class,
                 () -> method.invoke(new RuleExternalDatasourceService(), invalid));
     }
+
+    @Test
+    public void projectScopeRequiresAnExplicitProjectId() throws Exception {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setScope(" project ");
+        Method method = RuleExternalDatasourceService.class.getDeclaredMethod(
+                "fillDefaults", RuleExternalDatasource.class);
+        method.setAccessible(true);
+        java.lang.reflect.InvocationTargetException error = assertThrows(
+                java.lang.reflect.InvocationTargetException.class,
+                () -> method.invoke(new RuleExternalDatasourceService(), datasource));
+        org.junit.Assert.assertTrue(error.getCause().getMessage().contains("所属项目"));
+    }
 }

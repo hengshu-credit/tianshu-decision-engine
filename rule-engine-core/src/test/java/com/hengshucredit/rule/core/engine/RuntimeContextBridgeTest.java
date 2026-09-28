@@ -110,6 +110,19 @@ public class RuntimeContextBridgeTest {
     }
 
     @Test
+    public void rootInputSnapshotSurvivesLaterRuleAssignmentsAndWorkerForks() {
+        RequestContext request = new RequestContext();
+        Map<String, Object> input = new LinkedHashMap<>();
+        input.put("customerId", "C001");
+        request.setRootInput(input);
+        input.put("customerId", "changed");
+
+        assertEquals("C001", ((Map<?, ?>) request.rootInput()).get("customerId"));
+        RequestContext worker = request.forkForWorker(null);
+        assertEquals("C001", ((Map<?, ?>) worker.rootInput()).get("customerId"));
+    }
+
+    @Test
     public void nestedWriteScopesReplayOnlyTheirWritesAndResetBetweenRequests() {
         RequestContext request = new RequestContext();
         Map<String, Object> captured = new LinkedHashMap<>();
@@ -156,6 +169,24 @@ public class RuntimeContextBridgeTest {
         assertEquals(List.of(1, 2), values.get("LIMIT"));
         org.junit.Assert.assertThrows(IllegalStateException.class,
                 () -> request.setValue("OTHER", 4));
+    }
+
+    @Test
+    public void stableRandomSlotsSurviveWorkerForkAndUseSharedRootStore() {
+        RuntimeContextBridge.clear();
+        Object first = RuntimeContextBridge.randomSlot("randomInt", "node-A", "args",
+                () -> 17L);
+        try (var ignored = RuntimeContextBridge.installContext(
+                RuntimeContextBridge.captureContext(), event -> { })) {
+            assertEquals(first, RuntimeContextBridge.randomSlot("randomInt", "node-A", "args",
+                    () -> 99L));
+            RuntimeContextBridge.randomSlot("randomInt", "node-B", "args",
+                    () -> 23L);
+        }
+        assertEquals(first, RuntimeContextBridge.randomSlot("randomInt", "node-A", "args",
+                () -> 101L));
+        assertEquals(23L, RuntimeContextBridge.randomSnapshot().get("slot:node-B#args"));
+        RuntimeContextBridge.clear();
     }
 
     private Map<String, Object> singletonMap(String key, Object value) {

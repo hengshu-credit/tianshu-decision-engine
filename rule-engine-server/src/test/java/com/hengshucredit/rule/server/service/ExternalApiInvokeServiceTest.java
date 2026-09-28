@@ -5,6 +5,10 @@ import com.hengshucredit.rule.model.entity.RuleExternalDatasource;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.dto.RuleResult;
+import com.hengshucredit.rule.core.engine.RuntimeContextBridge;
+import com.hengshucredit.rule.core.engine.RequestContext;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONObject;
 import com.hengshucredit.rule.server.mapper.RuleExternalApiConfigMapper;
 import com.hengshucredit.rule.server.mapper.RuleExternalDatasourceMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
@@ -13,6 +17,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.util.MultiValueMap;
+import org.springframework.util.LinkedMultiValueMap;
 
 import java.io.ByteArrayOutputStream;
 import java.lang.reflect.Proxy;
@@ -22,6 +27,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -30,6 +36,7 @@ import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.fail;
 import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
@@ -615,6 +622,24 @@ public class ExternalApiInvokeServiceTest {
         return config;
     }
 
+    @SuppressWarnings("unchecked")
+    private List<JSONObject> steps(Object value) {
+        if (value instanceof String) value = JSON.parse((String) value);
+        List<JSONObject> result = new ArrayList<>();
+        if (value instanceof Iterable) {
+            for (Object item : (Iterable<Object>) value) {
+                result.add(item instanceof JSONObject ? (JSONObject) item : JSON.parseObject(JSON.toJSONString(item)));
+            }
+        }
+        return result;
+    }
+
+    private List<String> stepTypes(List<JSONObject> steps) {
+        List<String> result = new ArrayList<>();
+        for (JSONObject step : steps) result.add(step.getString("type"));
+        return result;
+    }
+
     @Test
     public void responseMappingReplacesBodyWithMappedFields() {
         RuleExternalApiConfig config = new RuleExternalApiConfig();
@@ -789,6 +814,18 @@ public class ExternalApiInvokeServiceTest {
     }
 
     @Test
+    public void formRequestRawPayloadUsesWireCompatibleEncoding() {
+        LinkedMultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+        form.add("name", "张三");
+        form.add("note", "a b");
+
+        String raw = ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(),
+                "rawRequestPayload", form, MediaType.APPLICATION_FORM_URLENCODED);
+
+        assertEquals("name=%E5%BC%A0%E4%B8%89&note=a+b", raw);
+    }
+
+    @Test
     public void tokenContentTypeDefaultsToJson() {
         assertEquals(MediaType.APPLICATION_JSON,
                 new ExternalApiInvokeService().resolveTokenContentType(new LinkedHashMap<>()));
@@ -813,6 +850,19 @@ public class ExternalApiInvokeServiceTest {
         assertNotEquals(key, service.buildResponseCacheKey(7L, config, changed));
         assertNull(service.buildResponseCacheKey(7L, config,
                 Collections.singletonMap("name", "张三")));
+    }
+
+    @Test
+    public void globalDatasourceLogUsesProjectFromActiveRuleContext() {
+        RuleExternalDatasource datasource = new RuleExternalDatasource();
+        datasource.setProjectId(0L);
+        RequestContext context = new RequestContext();
+        context.setRuleContext(Map.of("projectId", 88L, "traceId", "root-88"), List.of());
+        try (RuntimeContextBridge.ContextScope ignored = RuntimeContextBridge.install(context)) {
+            Long projectId = ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(),
+                    "resolveRuntimeProjectId", datasource);
+            assertEquals(Long.valueOf(88L), projectId);
+        }
     }
 
     @Test
@@ -853,6 +903,42 @@ public class ExternalApiInvokeServiceTest {
         assertEquals("STALE_CACHE", response.get("dataOrigin"));
         assertEquals(5L, response.get("costTimeMs"));
         assertEquals(88, ((Map<?, ?>) response.get("body")).get("score"));
+    }
+
+    @Test
+    public void cachedTraceRestoresCapturedRequestAndRequestStageFields() throws Exception {
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+        Map<String, Object> request = new LinkedHashMap<>();
+        request.put("method", "POST");
+        request.put("url", "https://provider.example/score");
+        request.put("headers", Map.of("X-Request-Id", "req-1"));
+        request.put("params", Map.of("customerId", "c-1"));
+        request.put("body", Map.of("score", 88));
+        Map<String, Object> cached = new LinkedHashMap<>();
+        cached.put("body", Map.of("decision", "PASS"));
+        cached.put("rawRequestBody", "{\"score\":88}");
+        cached.put("rawRequestMetadata", Map.of("status", "CAPTURED"));
+        cached.put("originalRequestBody", "{\"score\":88,\"attachment\":\"large\"}");
+        cached.put("rawResponseBody", "{\"decision\":\"PASS\"}");
+        cached.put("rawResponseMetadata", Map.of("status", "CAPTURED"));
+        cached.put("originalResponseBody", "{\"decision\":\"PASS\"}");
+        cached.put("responseStatus", 200);
+        cached.put("externalCall", Map.of("request", request));
+
+        Class<?> traceType = java.util.Arrays.stream(ExternalApiInvokeService.class.getDeclaredClasses())
+                .filter(type -> "InvokeTrace".equals(type.getSimpleName())).findFirst().orElseThrow();
+        var constructor = traceType.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        Object trace = constructor.newInstance();
+        ReflectionTestUtils.invokeMethod(service, "restoreCachedTrace", cached, trace);
+
+        assertEquals("{\"score\":88}", ReflectionTestUtils.getField(trace, "rawRequestBody"));
+        assertEquals(Map.of("status", "CAPTURED"), ReflectionTestUtils.getField(trace, "rawRequestMetadata"));
+        assertEquals("POST", ReflectionTestUtils.getField(trace, "requestMethod"));
+        assertEquals("https://provider.example/score", ReflectionTestUtils.getField(trace, "requestUrl"));
+        assertEquals(Map.of("customerId", "c-1"), ReflectionTestUtils.getField(trace, "requestParams"));
+        assertEquals(Map.of("score", 88), ReflectionTestUtils.getField(trace, "requestBody"));
+        assertEquals(200, ReflectionTestUtils.getField(trace, "responseStatus"));
     }
 
     @Test
@@ -970,6 +1056,13 @@ public class ExternalApiInvokeServiceTest {
             assertEquals("HIT", second.get("cacheStatus"));
             assertEquals("CACHE", second.get("dataOrigin"));
             assertEquals(0L, second.get("costTimeMs"));
+            assertEquals(first.get("rawResponseBody"), second.get("rawResponseBody"));
+            assertNotNull(second.get("callId"));
+            assertNotEquals(first.get("callId"), second.get("callId"));
+            List<JSONObject> cachedSteps = steps(second.get("traceSteps"));
+            assertEquals(List.of("REQUEST_INPUT", "CACHE_RESULT"), stepTypes(cachedSteps));
+            assertEquals(Map.of("data", Map.of("score", 88)), cachedSteps.get(1).get("output"));
+            for (JSONObject step : cachedSteps) assertEquals(second.get("callId"), step.get("callId"));
             assertEquals(88, ((Map<?, ?>) second.get("body")).get("data") instanceof Map
                     ? ((Map<?, ?>) ((Map<?, ?>) second.get("body")).get("data")).get("score")
                     : null);
@@ -1009,7 +1102,7 @@ public class ExternalApiInvokeServiceTest {
             ReflectionTestUtils.setField(service, "runtimeCallLogService", logs);
             Map<String, Object> params = Collections.singletonMap("name", "张三");
 
-            service.invoke(101L, params);
+            Map<String, Object> firstResult = service.invoke(101L, params);
             service.invoke(101L, params);
 
             assertEquals(2, callCount.get());
@@ -1024,6 +1117,21 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(Integer.valueOf(1), log.getProviderRequest());
             assertEquals(Integer.valueOf(1), log.getRequestSuccess());
             assertEquals(Integer.valueOf(1), log.getFound());
+            assertNotNull(log.getCallId());
+            assertNull(log.getRawRequestBody());
+            assertEquals("{\"code\":\"2000\"}", log.getRawResponseBody());
+            assertEquals(log.getCallId(), firstResult.get("callId"));
+            assertNull(firstResult.get("rawRequestBody"));
+            assertEquals("{\"code\":\"2000\"}", firstResult.get("rawResponseBody"));
+            assertTrue(firstResult.get("externalCall") instanceof Map);
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE"),
+                    stepTypes(steps(log.getTraceSteps())));
+            assertTrue(firstResult.get("traceSteps") instanceof java.util.List);
+            RuleRuntimeCallLog attempt = logs.logs.stream()
+                    .filter(item -> "API_ATTEMPT".equals(item.getActionType()))
+                    .findFirst().orElseThrow();
+            assertEquals(log.getCallId(), attempt.getCallId());
+            assertEquals(log.getRawResponseBody(), attempt.getRawResponseBody());
         } finally {
             server.stop(0);
         }
@@ -1370,7 +1478,7 @@ public class ExternalApiInvokeServiceTest {
 
             service.invoke(100L, new LinkedHashMap<>());
 
-            assertEquals("Bearer header-token-123456", authHeader.get());
+            assertEquals("header-token-123456", authHeader.get());
         } finally {
             server.stop(0);
         }
@@ -1448,6 +1556,16 @@ public class ExternalApiInvokeServiceTest {
             assertEquals(Integer.valueOf(2), attemptLogs.get(1).getAttemptNo());
             assertEquals("FETCH", attemptLogs.get(0).getTokenCacheStatus());
             assertEquals("REFRESH", attemptLogs.get(1).getTokenCacheStatus());
+            List<JSONObject> firstAttempt = steps(attemptLogs.get(0).getTraceSteps());
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE"), stepTypes(firstAttempt));
+            assertEquals(Map.of("message", "unauthorized"), firstAttempt.get(4).get("output"));
+            assertEquals("FAILED", firstAttempt.get(4).getString("status"));
+            assertEquals(1, firstAttempt.get(4).getIntValue("attemptNo"));
+            List<JSONObject> retried = steps(attemptLogs.get(1).getTraceSteps());
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE",
+                    "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE"), stepTypes(retried));
+            assertEquals(Map.of("message", "unauthorized"), retried.get(8).get("output"));
+            assertEquals(2, retried.get(8).getIntValue("attemptNo"));
             clientRegistry.close();
         } finally {
             server.stop(0);
@@ -1597,7 +1715,7 @@ public class ExternalApiInvokeServiceTest {
 
             configuredService(config, datasource).invoke(114L, new LinkedHashMap<>());
 
-            assertEquals("Bearer xml-token-123", authorization.get());
+            assertEquals("xml-token-123", authorization.get());
         } finally {
             server.stop(0);
         }
@@ -1717,8 +1835,9 @@ public class ExternalApiInvokeServiceTest {
             config.setAuthMode("NONE");
             config.setRequestMapping("{\"mobile\":\"$.mobile_no\"}");
             config.setAuthApiConfig("{\"scriptVariables\":[{\"name\":\"secret\",\"value\":\"S001\",\"sensitive\":true}]}");
-            config.setRequestScript("apiPut(state, \"transientKey\", \"EPHEMERAL\"); apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
-            config.setResponseScript("_result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result = mapPut(_result, \"shared\", mapGet(state, \"transientKey\")); _result");
+            config.setRequestScript("apiPut(state, \"logRequestBody\", body); apiPut(state, \"transientKey\", \"EPHEMERAL\"); apiPut(body, \"sign\", apiMd5(mapGet(vars, \"secret\") + mapGet(body, \"mobile\"))); body");
+            config.setResponseScript("apiPut(state, \"logResponseBody\", body); _result = newMap(); _result = mapPut(_result, \"score\", toNumberValue(mapGet(body, \"encryptedScore\"))); _result = mapPut(_result, \"shared\", mapGet(state, \"transientKey\")); _result");
+            config.setPayloadCaptureConfig("{\"request\":{\"source\":\"PROCESSED\"},\"response\":{\"source\":\"PROCESSED\"}}");
             config.setResponseMapping("{\"score\":\"body.score\",\"shared\":\"body.shared\"}");
             config.setResponseCacheSeconds(0);
             config.setTimeoutMs(3000);
@@ -1727,6 +1846,8 @@ public class ExternalApiInvokeServiceTest {
             config.setExceptionStrategy("FAIL_FAST");
 
             ExternalApiInvokeService service = configuredService(config, datasource);
+            RecordingRuntimeCallLogService runtimeLogs = new RecordingRuntimeCallLogService();
+            ReflectionTestUtils.setField(service, "runtimeCallLogService", runtimeLogs);
             Map<String, Object> params = new LinkedHashMap<>();
             params.put("mobile_no", "13800138000");
 
@@ -1735,6 +1856,23 @@ public class ExternalApiInvokeServiceTest {
             assertEquals("caa2bb3d3bb8a610f0d76c6c3c0898dd", receivedBody.get().get("sign"));
             assertEquals(720, ((Number) ((Map<String, Object>) result.get("body")).get("score")).intValue());
             assertEquals("EPHEMERAL", ((Map<String, Object>) result.get("body")).get("shared"));
+            RuleRuntimeCallLog summary = runtimeLogs.logs.stream()
+                    .filter(item -> "API_INVOKE".equals(item.getActionType()))
+                    .findFirst().orElseThrow();
+            assertTrue(summary.getRawRequestBody().contains("\"mobile\":\"13800138000\""));
+            assertTrue(summary.getOriginalRequestBody().contains("\"mobile\":\"13800138000\""));
+            assertEquals("{\"encryptedScore\":\"720\"}", summary.getRawResponseBody());
+            assertEquals("{\"encryptedScore\":\"720\"}", summary.getOriginalResponseBody());
+            assertEquals(summary.getRawRequestBody(), result.get("rawRequestBody"));
+            assertEquals(summary.getRawResponseBody(), result.get("rawResponseBody"));
+            List<JSONObject> trace = steps(result.get("traceSteps"));
+            assertEquals(List.of("REQUEST_INPUT", "API_REQUEST", "AUTHENTICATION", "EXTERNAL_REQUEST", "EXTERNAL_RESPONSE",
+                    "RESPONSE_PROCESSING", "RESPONSE_MAPPING"), stepTypes(trace));
+            assertEquals(Map.of("encryptedScore", "720"), trace.get(4).get("output"));
+            assertEquals(Map.of("encryptedScore", "720"), trace.get(5).get("input"));
+            assertEquals(720, trace.get(5).getJSONObject("output").getIntValue("score"));
+            assertEquals(trace.get(5).get("output"), trace.get(6).get("input"));
+            assertEquals(JSON.toJSONString(result.get("body")), JSON.toJSONString(trace.get(6).get("output")));
         } finally {
             server.stop(0);
         }
@@ -1892,6 +2030,24 @@ public class ExternalApiInvokeServiceTest {
 
         ReflectionTestUtils.invokeMethod(new ExternalApiInvokeService(), "applyTokenHeader",
                 new HttpHeaders(), config, "token-value");
+    }
+
+    @Test
+    public void tokenApiDefaultsToRawAuthorizationAndPreservesPrefixSpaces() {
+        ExternalApiInvokeService service = new ExternalApiInvokeService();
+
+        HttpHeaders defaultHeaders = new HttpHeaders();
+        ReflectionTestUtils.invokeMethod(service, "applyTokenHeader", defaultHeaders,
+                new LinkedHashMap<>(), "token-value");
+        assertEquals("token-value", defaultHeaders.getFirst(HttpHeaders.AUTHORIZATION));
+
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("tokenHeaderName", "X-Custom-Token");
+        config.put("tokenPrefix", "Custom  ");
+        HttpHeaders customHeaders = new HttpHeaders();
+        ReflectionTestUtils.invokeMethod(service, "applyTokenHeader", customHeaders,
+                config, "token-value");
+        assertEquals("Custom  token-value", customHeaders.getFirst("X-Custom-Token"));
     }
 
     @SuppressWarnings("unchecked")

@@ -1,5 +1,6 @@
 package com.hengshucredit.rule.server.service;
 
+import com.hengshucredit.rule.core.util.MissingValueSemantics;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
@@ -73,6 +74,7 @@ public class ListMatchMatrix {
 
     private boolean cell(Long listId, Object value, List<String> itemTypes,
                          String matchMode, LocalDateTime matchTime) {
+        if (MissingValueSemantics.isMissing(value)) return false;
         String effectiveMatchMode = matchMode == null || matchMode.trim().isEmpty() ? "IN_LIST" : matchMode;
         return matchTime == null
                 ? ruleListService.match(listId, value, itemTypes, effectiveMatchMode)

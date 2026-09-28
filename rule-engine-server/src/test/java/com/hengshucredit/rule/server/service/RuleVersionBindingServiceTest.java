@@ -4,8 +4,11 @@ import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
 import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.entity.RuleVersionBinding;
 import com.hengshucredit.rule.model.entity.RulePublished;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.junit.Test;
 import java.util.*;
+import java.lang.reflect.Proxy;
 import static org.junit.Assert.*;
 
 public class RuleVersionBindingServiceTest {
@@ -62,6 +65,34 @@ public class RuleVersionBindingServiceTest {
         assertEquals(3, service.history.size());
     }
 
+    @Test
+    public void fixedBindingUsesTheNewestGenerationOfItsBusinessVersion() {
+        Fixture service = new Fixture();
+        RuleDefinitionVersion old = snapshot(18, 1, "old");
+        old.setBusinessVersion(1); old.setBindingGeneration(1L);
+        old.setRevisionId(29L); old.setArtifactId(201L); old.setArtifactDigest("old-digest");
+        RuleDefinitionVersion replacement = snapshot(23, 2, "replacement");
+        replacement.setBusinessVersion(1); replacement.setBindingGeneration(2L);
+        replacement.setRevisionId(30L); replacement.setArtifactId(301L); replacement.setArtifactDigest("new-digest");
+        service.history.add(old); service.history.add(replacement);
+        RuleVersionBinding binding = new RuleVersionBinding();
+        binding.setId(81L); binding.setDefinitionId(22L); binding.setVersionNo(1);
+        binding.setGeneration(2L); binding.setSnapshotId(23L); binding.setStatus(1);
+        service.bindings.add(binding);
+
+        RulePublished latest = new RulePublished();
+        latest.setDefinitionId(22L); latest.setVersion(2); latest.setCompiledScript("latest-v2");
+        RulePublished resolved = service.resolvePublished(latest, 81L);
+
+        assertEquals(Integer.valueOf(1), resolved.getVersion());
+        assertEquals(Long.valueOf(81L), resolved.getVersionBindingId());
+        assertEquals(Long.valueOf(2L), resolved.getBindingGeneration());
+        assertEquals("replacement", resolved.getCompiledScript());
+        assertEquals(Long.valueOf(30L), resolved.getRevisionId());
+        assertEquals(Long.valueOf(301L), resolved.getArtifactId());
+        assertEquals("new-digest", resolved.getArtifactDigest());
+    }
+
     private static RuleDefinitionVersion snapshot(long id, int no, String script) {
         RuleDefinitionVersion value = new RuleDefinitionVersion();
         value.setId(id); value.setDefinitionId(22L); value.setVersion(no);
@@ -76,6 +107,20 @@ public class RuleVersionBindingServiceTest {
     private static class Fixture extends RuleVersionBindingService {
         final List<RuleDefinitionVersion> history = new ArrayList<>();
         final List<RuleVersionBinding> bindings = new ArrayList<>();
+
+        Fixture() {
+            RuleDefinitionVersionMapper mapper = (RuleDefinitionVersionMapper) Proxy.newProxyInstance(
+                    RuleDefinitionVersionMapper.class.getClassLoader(),
+                    new Class<?>[]{RuleDefinitionVersionMapper.class},
+                    (proxy, method, args) -> {
+                        if ("selectById".equals(method.getName()) && args != null && args.length == 1) {
+                            return history.stream().filter(value -> Objects.equals(value.getId(), args[0])).findFirst().orElse(null);
+                        }
+                        return null;
+                    });
+            ReflectionTestUtils.setField(this, "versionMapper", mapper);
+        }
+
         @Override protected List<RuleDefinitionVersion> history(Long id) { return history; }
         @Override protected List<RuleVersionBinding> bindings(Long id) { return bindings; }
         @Override protected void insertBinding(RuleVersionBinding value) { value.setId((long) bindings.size() + 1); bindings.add(value); }

@@ -989,9 +989,21 @@ export default {
     handleCompile() {
       return this.runDesignerAction(async () => {
         if (this.designerBusy) return false
+        if (!this.validateResultVariable()) return false
         this.designerBusy = true
         try { return await this.compileDesignerDraft() } finally { this.designerBusy = false }
       })
+    },
+    validateResultVariable() {
+      const resultVar = this.model && this.model.resultVar
+      const operand = resultVar && resultVar.operand
+      const hasOperand = operand && typeof operand === 'object' && !Array.isArray(operand)
+        && (operand.kind || operand.code || operand.value)
+      const hasReference = resultVar && resultVar._varId != null
+      const hasLegacyCode = resultVar && String(resultVar.varCode || '').trim()
+      if (hasOperand || hasReference || hasLegacyCode) return true
+      this.$message.warning('请先选择复杂评分卡的结果变量')
+      return false
     },
     async handleTest() {
       if (!this.ensureDesignerReadyForTest()) return

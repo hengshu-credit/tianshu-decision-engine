@@ -33,6 +33,7 @@ function createContext(overrides = {}) {
     successConditionRoot: ApiDetail.methods.emptyApiConditionRoot('httpStatus', 'starts_with', '2'),
     retryConditionRoot: ApiDetail.methods.emptyApiConditionRoot('body.response_code', '==', '10000429'),
     billingConfig: ApiDetail.methods.emptyBillingConfig(),
+    payloadCapture: ApiDetail.methods.emptyPayloadCaptureConfig(),
     asyncShared: ApiDetail.methods.emptyAsyncShared(),
     asyncPollConfig: ApiDetail.methods.emptyAsyncPollConfig(),
     asyncCallbackConfig: ApiDetail.methods.emptyAsyncCallbackConfig(),
@@ -123,7 +124,7 @@ describe('ApiDetail helpers', () => {
     const visible = ApiDetail.computed.visibleConfigTabs.call(ctx)
 
     expect(visible.map(item => item.name)).toEqual([
-      'auth', 'headers', 'query', 'request', 'response', 'test'
+      'auth', 'headers', 'query', 'request', 'response', 'payloadCapture', 'test'
     ])
     ctx.visibleConfigTabs = visible
     ctx.switchConfigGroup('reliability')
@@ -416,6 +417,17 @@ describe('ApiDetail helpers', () => {
     })
   })
 
+  test('token api defaults to no prefix and keeps user-entered spaces', () => {
+    const ctx = createContext()
+    ctx.form.authMode = 'TOKEN_API'
+    ctx.apiAuthConfig.tokenPrefix = 'Custom  '
+
+    const config = JSON.parse(ctx.buildApiAuthConfig())
+
+    expect(config.tokenPrefix).toBe('Custom  ')
+    expect(ApiDetail.methods.emptyAuthConfig('TOKEN_API').tokenPrefix).toBe('')
+  })
+
   test('normalizeForm allows enabled cache without configured key components', () => {
     const ctx = createContext({ cacheKeyRows: [ApiDetail.methods.emptyCacheKeyRow()] })
     ctx.form.responseCacheSeconds = 60
@@ -423,6 +435,43 @@ describe('ApiDetail helpers', () => {
     const normalized = ctx.normalizeForm(ctx.form)
     expect(normalized.responseCacheSeconds).toBe(60)
     expect(normalized.cacheKeyConfig).toBeNull()
+  })
+
+  test('报文留存配置按请求和响应分别保存并重新加载', () => {
+    const ctx = createContext({
+      payloadCapture: {
+        request: {
+          source: 'PROCESSED',
+          excludePaths: ['$.items[*].Base64'],
+          maxFieldBytes: 4096
+        },
+        response: {
+          source: 'ORIGINAL',
+          excludePaths: ["$['含点.字段']"],
+          maxFieldBytes: 0
+        }
+      }
+    })
+
+    const normalized = ctx.normalizeForm(ctx.form)
+    expect(JSON.parse(normalized.payloadCaptureConfig)).toEqual({
+      request: { ...ctx.payloadCapture.request, saveOriginal: true },
+      response: { ...ctx.payloadCapture.response, saveOriginal: true }
+    })
+    ctx.form = normalized
+    ctx.syncPayloadCaptureFromForm()
+    expect(ctx.payloadCapture.request.source).toBe('PROCESSED')
+    expect(ctx.payloadCapture.request.excludePaths).toEqual(['$.items[*].Base64'])
+    expect(ctx.payloadCapture.response.excludePaths).toEqual(["$['含点.字段']"])
+  })
+
+  test('报文留存路径和大小校验阻止错误配置保存', () => {
+    const ctx = createContext()
+    ctx.payloadCapture.request.excludePaths = ['$.items[bad]']
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('请求排除路径格式不合法')
+    ctx.payloadCapture.request.excludePaths = []
+    ctx.payloadCapture.response.maxFieldBytes = -1
+    expect(() => ctx.normalizeForm(ctx.form)).toThrow('响应单字段上限')
   })
 
   test('buildRequestMappingConfig nests dotted api field paths', () => {
@@ -595,7 +644,15 @@ describe('ApiDetail helpers', () => {
       invokeResultText: '',
       $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
     })
-    const draft = { id: 8, datasourceId: 2, endpointUrl: '/draft-score' }
+    const draft = {
+      id: 8,
+      datasourceId: 2,
+      endpointUrl: '/draft-score',
+      payloadCaptureConfig: JSON.stringify({
+        request: { source: 'PROCESSED', excludePaths: ['$.secret'], maxFieldBytes: 2048 },
+        response: { source: 'ORIGINAL', excludePaths: [], maxFieldBytes: 0 }
+      })
+    }
     ctx.normalizeForm = vi.fn().mockReturnValue(draft)
     datasourceApi.invokeApiConfigPreview.mockResolvedValue({ data: { success: true } })
 
@@ -606,6 +663,41 @@ describe('ApiDetail helpers', () => {
       params: { customer: { idNo: 'A001' } }
     })
     expect(ctx.invokeResultText).toContain('"success": true')
+  })
+
+  test('保存测试样例送审时携带报文留存配置', async () => {
+    const ctx = createContext({
+      form: { ...ApiDetail.methods.emptyForm(), id: 8, datasourceId: 2 },
+      invokeParamsText: '{"mobile":"13800138000"}',
+      payloadCapture: {
+        request: { source: 'PROCESSED', excludePaths: ['$.secret'], maxFieldBytes: 1024 },
+        response: { source: 'ORIGINAL', excludePaths: [], maxFieldBytes: 0 }
+      },
+      $router: { push: vi.fn() },
+      $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() }
+    })
+    datasourceApi.updateApiConfig.mockResolvedValue({ data: { id: 8 } })
+
+    await ctx.saveCurrentSample()
+
+    const submitted = datasourceApi.updateApiConfig.mock.calls[0][0]
+    expect(JSON.parse(submitted.payloadCaptureConfig)).toEqual({
+      request: { ...ctx.payloadCapture.request, saveOriginal: true },
+      response: { ...ctx.payloadCapture.response, saveOriginal: true }
+    })
+  })
+
+  test('real invocation warning explains network and cost impact next to the test controls', async () => {
+    const wrapper = mount(ApiDetail, {
+      global: {
+        mocks: { $route: { params: {}, query: {} } }
+      }
+    })
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('执行测试会真实访问外部接口')
+    expect(wrapper.text()).toContain('生成请求预览')
+    wrapper.unmount()
   })
 
   test('request preview uses non-network preparation endpoint', async () => {

@@ -32,7 +32,7 @@ describe('DatasourceDetail token config', () => {
     expect(config.tokenPrefix).toBe('')
   })
 
-  test('old token config receives bearer-compatible editable defaults', () => {
+  test('old token config receives raw-token editable defaults', () => {
     const ctx = createContext()
 
     const config = ctx.parseAuthConfig(
@@ -41,7 +41,16 @@ describe('DatasourceDetail token config', () => {
     )
 
     expect(config.tokenHeaderName).toBe('Authorization')
-    expect(config.tokenPrefix).toBe('Bearer ')
+    expect(config.tokenPrefix).toBe('')
+  })
+
+  test('token prefix keeps user-entered spaces when serializing', () => {
+    const ctx = createContext()
+    ctx.authConfig.tokenPrefix = 'Custom  '
+
+    const config = JSON.parse(ctx.buildAuthConfig('TOKEN_API', ''))
+
+    expect(config.tokenPrefix).toBe('Custom  ')
   })
 
   test('token response script is preserved for xml or encrypted token responses', () => {

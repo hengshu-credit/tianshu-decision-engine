@@ -89,10 +89,42 @@ public class SchemaSyncService {
             ensureDataObjectFieldUniqueKey();
             ensureDashboardIndexes();
             ensureHistoricalFieldSnapshots();
-            ensureTablesFromSchema(List.of("rule_application_history"));
+            ensurePublishOutboxSchema();
+            ensureExecutionPersistenceOutboxSchema();
+            ensureTablesFromSchema(List.of("rule_application_history", "rule_execution_state",
+                    "rule_execution_persistence_outbox",
+                    "rule_execution_checkpoint", "rule_experiment_execution_state"));
+            if (tableExists("rule_execution_state")) {
+                addColumnIfMissing("rule_execution_state", "result_json", "`result_json` LONGTEXT DEFAULT NULL");
+                addColumnIfMissing("rule_execution_state", "expire_time",
+                        "`expire_time` DATETIME(6) DEFAULT NULL COMMENT '幂等结果保留截止时间'");
+                addIndexIfMissing("rule_execution_state", "idx_execution_state_expire", "`expire_time`");
+            }
         } catch (Exception e) {
             log.warn("运行时数据库结构同步失败，请检查 sql/schema.sql 与当前数据库: {}", e.getMessage());
         }
+    }
+
+    private void ensurePublishOutboxSchema() {
+        if (!tableExists("rule_publish_outbox")) return;
+        addColumnIfMissing("rule_publish_outbox", "dead_letter_time",
+                "`dead_letter_time` DATETIME DEFAULT NULL COMMENT '进入死信状态时间'");
+        addColumnIfMissing("rule_publish_outbox", "claim_token",
+                "`claim_token` CHAR(36) DEFAULT NULL COMMENT '投递租约令牌'");
+        addColumnIfMissing("rule_publish_outbox", "lease_until",
+                "`lease_until` DATETIME DEFAULT NULL COMMENT '投递租约到期时间'");
+        addIndexIfMissing("rule_publish_outbox", "idx_outbox_status_time",
+                "`delivery_status`, `create_time`");
+    }
+
+    private void ensureExecutionPersistenceOutboxSchema() {
+        if (!tableExists("rule_execution_persistence_outbox")) return;
+        addColumnIfMissing("rule_execution_persistence_outbox", "claim_token",
+                "`claim_token` CHAR(36) DEFAULT NULL COMMENT '恢复租约令牌'");
+        addColumnIfMissing("rule_execution_persistence_outbox", "lease_until",
+                "`lease_until` DATETIME DEFAULT NULL COMMENT '恢复租约到期时间'");
+        addIndexIfMissing("rule_execution_persistence_outbox", "idx_execution_persistence_lease",
+                "`delivery_status`, `lease_until`");
     }
 
     /**
@@ -120,6 +152,7 @@ public class SchemaSyncService {
             addColumnIfMissing("rule_execution_log", "execution_project_id", "`execution_project_id` BIGINT DEFAULT NULL");
             addColumnIfMissing("rule_execution_log", "started_at", "`started_at` DATETIME(6) DEFAULT NULL");
             addColumnIfMissing("rule_execution_log", "history_fields", "`history_fields` LONGTEXT DEFAULT NULL");
+            addColumnIfMissing("rule_execution_log", "attempt_no", "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
             addIndexIfMissing("rule_execution_log", "idx_history_scope_time", "`execution_project_id`, `root_rule_id`, `started_at`");
         }
         if (tableExists("rule_runtime_call_log")) {
@@ -465,6 +498,7 @@ public class SchemaSyncService {
                     + "`request_headers` TEXT DEFAULT NULL COMMENT '请求头JSON（敏感值脱敏）',"
                     + "`request_params` LONGTEXT DEFAULT NULL COMMENT '请求入参JSON',"
                     + "`request_body` LONGTEXT DEFAULT NULL COMMENT '请求体JSON或文本',"
+                    + "`trace_steps` LONGTEXT DEFAULT NULL COMMENT '外数调用阶段链路JSON，仅保存脱敏分析副本',"
                     + "`response_status` INT DEFAULT NULL COMMENT '响应状态码',"
                     + "`response_body` LONGTEXT DEFAULT NULL COMMENT '响应内容JSON或文本',"
                     + "`error_type` VARCHAR(128) DEFAULT NULL COMMENT '异常类型',"
@@ -491,6 +525,8 @@ public class SchemaSyncService {
                 "`datasource_id` BIGINT DEFAULT NULL COMMENT '外数数据源ID' AFTER `project_code`");
         addColumnIfMissing("rule_runtime_call_log", "request_id",
                 "`request_id` VARCHAR(128) DEFAULT NULL COMMENT '调用方请求ID' AFTER `datasource_id`");
+        addColumnIfMissing("rule_runtime_call_log", "call_id",
+                "`call_id` CHAR(36) DEFAULT NULL COMMENT '一次逻辑外数调用ID，重试共用' AFTER `trace_id`");
         addColumnIfMissing("rule_runtime_call_log", "attempt_no",
                 "`attempt_no` INT DEFAULT NULL COMMENT '本次实际上游请求序号' AFTER `cache_key`");
         addColumnIfMissing("rule_runtime_call_log", "circuit_state",
@@ -499,6 +535,23 @@ public class SchemaSyncService {
                 "`token_cache_status` VARCHAR(32) DEFAULT NULL COMMENT 'Token缓存状态' AFTER `circuit_state`");
         addColumnIfMissing("rule_runtime_call_log", "error_type",
                 "`error_type` VARCHAR(128) DEFAULT NULL COMMENT '异常类型' AFTER `response_body`");
+        addColumnIfMissing("rule_runtime_call_log", "raw_request_body",
+                "`raw_request_body` LONGTEXT DEFAULT NULL COMMENT '原始请求体，仅受控接口返回' AFTER `request_body`");
+        addColumnIfMissing("rule_runtime_call_log", "raw_request_metadata",
+                "`raw_request_metadata` LONGTEXT DEFAULT NULL COMMENT '原始请求留存策略元数据JSON' AFTER `raw_request_body`");
+        addColumnIfMissing("rule_runtime_call_log", "original_request_body",
+                "`original_request_body` LONGTEXT DEFAULT NULL COMMENT '供应商实际收到的原始请求体，受控接口返回' AFTER `raw_request_metadata`");
+        addColumnIfMissing("rule_runtime_call_log", "trace_steps",
+                "`trace_steps` LONGTEXT DEFAULT NULL COMMENT '外数调用阶段链路JSON，仅保存脱敏分析副本' AFTER `original_request_body`");
+        addColumnIfMissing("rule_runtime_call_log", "raw_response_body",
+                "`raw_response_body` LONGTEXT DEFAULT NULL COMMENT '上游原始响应体，仅受控接口返回' AFTER `response_body`");
+        addColumnIfMissing("rule_runtime_call_log", "raw_response_metadata",
+                "`raw_response_metadata` LONGTEXT DEFAULT NULL COMMENT '原始响应留存策略元数据JSON' AFTER `raw_response_body`");
+        addColumnIfMissing("rule_runtime_call_log", "original_response_body",
+                "`original_response_body` LONGTEXT DEFAULT NULL COMMENT '供应商实际返回的原始响应体，受控接口返回' AFTER `raw_response_metadata`");
+        if (!indexExists("rule_runtime_call_log", "idx_runtime_call_id")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_runtime_call_log` ADD KEY `idx_runtime_call_id` (`call_id`)");
+        }
         ensureUtf8mb4Table("rule_runtime_call_log");
     }
 
@@ -542,6 +595,10 @@ public class SchemaSyncService {
         addTraceColumns("rule_execution_log", false);
         addTraceColumns("rule_runtime_call_log", true);
         if (tableExists("rule_experiment_execution_log")) {
+            addColumnIfMissing("rule_experiment_execution_log", "config_digest",
+                    "`config_digest` CHAR(64) DEFAULT NULL COMMENT '实验配置摘要'");
+            addIndexIfMissing("rule_experiment_execution_log", "idx_exp_log_replay",
+                    "`experiment_id`, `group_id`, `request_key`, `config_digest`, `stage`");
             addColumnIfMissing("rule_experiment_execution_log", "experiment_trace_id",
                     "`experiment_trace_id` CHAR(36) DEFAULT NULL COMMENT '本次分流实验Trace ID' AFTER `experiment_code`");
             addColumnIfMissing("rule_experiment_execution_log", "child_trace_id",
@@ -649,8 +706,26 @@ public class SchemaSyncService {
 
         addAuthAttributionColumns("rule_execution_log", "create_time", true);
         addAuthAttributionColumns("rule_billing_record", "occur_time", true);
+        addColumnIfMissing("rule_billing_record", "root_trace_id",
+                "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '规则根Trace ID' AFTER `target_ref_id`");
+        addColumnIfMissing("rule_billing_record", "billing_dedup_key",
+                "`billing_dedup_key` CHAR(64) DEFAULT NULL COMMENT '引擎计费幂等键摘要，仅根Trace计费记录使用' AFTER `root_trace_id`");
+        addColumnIfMissing("rule_billing_record", "attempt_no",
+                "`attempt_no` INT DEFAULT NULL COMMENT '逻辑执行恢复尝试次数'");
+        addIndexIfMissing("rule_billing_record", "idx_billing_record_root_trace",
+                "`root_trace_id`, `occur_time`");
+        if (tableExists("rule_billing_record")
+                && !indexExists("rule_billing_record", "uk_billing_record_dedup_key")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_billing_record` ADD UNIQUE KEY `uk_billing_record_dedup_key` (`billing_dedup_key`)");
+        }
         addAuthAttributionColumns("rule_billing_summary", "summary_date", false);
         ensureBillingSummaryAuthUniqueKey();
+        if (tableExists("rule_experiment_execution_log")) {
+            addColumnIfMissing("rule_experiment_execution_log", "root_trace_id",
+                    "`root_trace_id` CHAR(36) DEFAULT NULL COMMENT '外层规则根Trace ID' AFTER `experiment_trace_id`");
+            addIndexIfMissing("rule_experiment_execution_log", "idx_exp_root_trace",
+                    "`root_trace_id`, `create_time`");
+        }
     }
 
     private void ensureConsoleRbacSchema() {
@@ -795,6 +870,8 @@ public class SchemaSyncService {
     private void ensureExternalApiCacheColumns() {
         String table = "rule_external_api_config";
         if (!tableExists(table)) return;
+        addColumnIfMissing(table, "payload_capture_config",
+                "`payload_capture_config` JSON DEFAULT NULL COMMENT '请求/响应诊断报文留存策略JSON' AFTER `request_script`");
         addColumnIfMissing(table, "response_cache_seconds",
                 "`response_cache_seconds` INT NOT NULL DEFAULT 0 COMMENT '接口响应缓存秒数，0表示不缓存' AFTER `token_cache_seconds`");
         addColumnIfMissing(table, "response_cache_max_size",

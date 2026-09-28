@@ -30,6 +30,11 @@ import java.util.Set;
 
 @Service
 public class RuleExecuteService {
+    @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.max-persist-bytes:1048576}")
+    private int maxPersistTraceBytes = 1048576;
+
+    @org.springframework.beans.factory.annotation.Value("${rule-engine.trace.mask-paths:}")
+    private String traceMaskPaths = "";
 
     @Resource
     private QLExpressEngine qlExpressEngine;
@@ -75,6 +80,9 @@ public class RuleExecuteService {
 
     @Resource
     private DataObjectFieldReferenceResolver dataObjectFieldReferenceResolver;
+
+    @Resource
+    private RuleIdempotencyService idempotencyService;
 
     @Resource
     private com.hengshucredit.rule.server.derived.DerivedVariableService derivedVariableService;
@@ -188,6 +196,7 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
+            if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, definition.getModelType());
@@ -213,11 +222,14 @@ public class RuleExecuteService {
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         if (result.getTraces() != null) {
-            log.setTraceInfo(toJsonSafely(result.getTraces()));
+            log.setTraceInfo(TracePayloadBudget.limit(
+                    TracePayloadSanitizer.mask(toJsonSafely(result.getTraces()), traceMaskPaths),
+                    maxPersistTraceBytes));
         }
         ProjectAuthContext billingContext = executionProjectId == null
                 ? null : ProjectAuthContext.direct(
                 executionProjectId, projectCode, null, null, null);
+        definition.setExecutionTraceId(result.getTraceId());
         persistExecution(log, definition, result, billingContext);
 
         return result;
@@ -350,15 +362,32 @@ public class RuleExecuteService {
         if (runtimeSnapshot != null) {
             executionDefinition.setModelType(runtimeModelType);
         }
+        String resumeTraceId = idempotencyService == null || idempotencyService.current() == null
+                ? null : idempotencyService.current().getRootTraceId();
         if (runtimeSnapshot == null) {
-            runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
+            if (resumeTraceId == null) runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
                     executeParams, originalInput, false, runtimeModelJson);
+            else runtimeRuleInvoker.enter(executionDefinition, executionProjectId, projectCode,
+                    executeParams, originalInput, false, runtimeModelJson, resumeTraceId);
         } else {
-            runtimeRuleInvoker.enterArtifact(executionDefinition, executionProjectId, projectCode,
-                    executeParams, originalInput, false, runtimeModelJson,
-                    runtimeSnapshot);
+            if (resumeTraceId == null) runtimeRuleInvoker.enterArtifact(executionDefinition, executionProjectId, projectCode,
+                    executeParams, originalInput, false, runtimeModelJson, runtimeSnapshot);
+            else runtimeRuleInvoker.enterArtifact(executionDefinition, executionProjectId, projectCode,
+                    executeParams, originalInput, false, runtimeModelJson, runtimeSnapshot, resumeTraceId);
         }
         bindInvocationCache(effectiveOptions);
+        if (idempotencyService != null && idempotencyService.current() != null) {
+            var checkpointDecision = idempotencyService.current();
+            effectiveOptions.getInvocationCache().setSourceStepListener(step ->
+                    idempotencyService.persistStep(checkpointDecision, step));
+            idempotencyService.restoreCheckpoint(idempotencyService.current(),
+                    effectiveOptions.getInvocationCache(), executeParams, effectiveOptions);
+            RuntimeContextBridge.bindCheckpointListener(() -> idempotencyService.checkpoint(
+                    checkpointDecision,
+                    idempotencyService.snapshotCheckpoint(effectiveOptions.getInvocationCache(), executeParams,
+                            RuntimeContextBridge.currentSourceStates()),
+                    published.getRevisionId(), published.getArtifactDigest()));
+        }
         runtimeRuleInvoker.setTraceEnabled(collectTrace);
         long executionStart = System.currentTimeMillis();
         java.time.LocalDateTime historyStartedAt = RuntimeContextBridge.currentContext().startedAt();
@@ -383,10 +412,17 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
+            if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, runtimeModelType);
             runtimeRuleInvoker.completeRoot(result);
+            if (idempotencyService != null && idempotencyService.current() != null) {
+                idempotencyService.checkpoint(idempotencyService.current(),
+                        idempotencyService.snapshotCheckpoint(effectiveOptions.getInvocationCache(), executeParams,
+                                effectiveOptions.getSourceStates()),
+                        published.getRevisionId(), published.getArtifactDigest());
+            }
             runtimeRuleInvoker.exit();
         }
 
@@ -414,7 +450,27 @@ public class RuleExecuteService {
         log.setErrorMessage(result.getErrorMessage());
         log.setExecuteTimeMs(result.getExecuteTimeMs());
         if (recordTrace && result.getTraces() != null) {
-            log.setTraceInfo(toJsonSafely(result.getTraces()));
+            log.setTraceInfo(TracePayloadBudget.limit(
+                    TracePayloadSanitizer.mask(toJsonSafely(result.getTraces()), traceMaskPaths),
+                    maxPersistTraceBytes));
+        }
+        // Published execution identity is part of the result contract even when
+        // idempotency/recovery is disabled. Callers must be able to attribute a
+        // successful response to the immutable revision and artifact that ran.
+        result.setRevisionId(published.getRevisionId());
+        result.setArtifactDigest(published.getArtifactDigest());
+        if (idempotencyService != null && idempotencyService.current() != null) {
+            var recovery = idempotencyService.current();
+            result.setResumed(recovery.getAttemptNo() > 1);
+            result.setAttemptNo(recovery.getAttemptNo());
+            if (result.getExecutionStatus() == null || result.getExecutionStatus().isBlank()) {
+                result.setExecutionStatus(result.isSuccess() ? "SUCCESS" : "FAILED_RETRYABLE");
+            }
+            log.setAttemptNo(result.getAttemptNo());
+        }
+        if (definition != null) {
+            definition.setExecutionTraceId(result.getTraceId());
+            definition.setExecutionAttemptNo(result.getAttemptNo());
         }
         persistExecution(isExperimentSource(source) ? null : log, definition, result, authContext);
 
@@ -428,9 +484,19 @@ public class RuleExecuteService {
                     result.getExecuteTimeMs(), result.getErrorMessage(), authContext);
             return;
         }
-        if (log != null) logService.save(log);
+        if (log != null) logService.saveLogical(log);
         billingService.recordEngineExecution(definition, result.isSuccess(),
                 result.getExecuteTimeMs(), result.getErrorMessage(), authContext);
+    }
+
+    private boolean isUnknownExternalFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ExternalApiInvokeService.ApiInvokeException api
+                    && api.isUnknown()) return true;
+            current = current.getCause();
+        }
+        return false;
     }
 
     private RuleDefinition publishedDefinition(RulePublished published, Long executionProjectId) {
@@ -516,7 +582,8 @@ public class RuleExecuteService {
     }
 
     private void addRequiredScriptName(Set<String> names, RuleDefinitionInputField field) {
-        if (field != null && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
+        if (field != null && !"MODEL_OUTPUT".equalsIgnoreCase(field.getRefType())
+                && field.getScriptName() != null && !field.getScriptName().trim().isEmpty()) {
             names.add(field.getScriptName().trim());
         }
     }
@@ -556,7 +623,7 @@ public class RuleExecuteService {
     private Map<String, Object> bindInputs(List<RuleDefinitionInputField> fields, Map<String, Object> params,
                                            VariableResolveOptions options) {
         Map<String, Object> safeParams = params == null ? Collections.emptyMap() : params;
-        return executionParameterBinder.bindRuleInputs(fields, safeParams, options);
+        return executionParameterBinder.bindRuleInputsPreservingMissing(fields, safeParams, options);
     }
 
     private Map<String, CustomFunction> prepareFunctions(List<RuleFunction> functions) {

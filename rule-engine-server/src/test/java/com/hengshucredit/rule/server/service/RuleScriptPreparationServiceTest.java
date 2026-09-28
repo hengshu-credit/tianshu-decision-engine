@@ -101,6 +101,8 @@ public class RuleScriptPreparationServiceTest {
         assertEquals(List.of("legacy:return 2;", "artifact:99"), warmed);
         assertEquals(RuleWarmupState.READY,
                 ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus")).getState());
+        assertEquals(2, ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus"))
+                .details().get("targetCount"));
     }
 
     @Test
@@ -163,6 +165,8 @@ public class RuleScriptPreparationServiceTest {
         assertEquals(2, bindingQueries.get());
         assertEquals(RuleWarmupState.FAILED,
                 ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus")).getState());
+        assertEquals(4, ((RuleWarmupStatus) ReflectionTestUtils.getField(service, "warmupStatus"))
+                .details().get("targetCount"));
     }
 
     private RuleScriptPreparationService service(QLExpressEngine engine) {

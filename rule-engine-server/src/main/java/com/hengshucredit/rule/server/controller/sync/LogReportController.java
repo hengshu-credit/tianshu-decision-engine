@@ -76,7 +76,7 @@ public class LogReportController {
                 markTransactionRollbackOnly();
                 return R.fail(400, e.getMessage());
             }
-            logService.saveBatch(scopedLogs);
+            logService.saveLogicalBatch(scopedLogs);
             for (RuleExecutionLog log : scopedLogs) {
                 billingService.recordEngineExecutionLog(log, authContext);
             }

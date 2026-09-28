@@ -112,6 +112,12 @@
       >
     </el-descriptions>
 
+    <resource-preflight-panel
+      resource-type="MODEL"
+      :resource-id="model.id"
+      :config-signature="preflightConfigSignature"
+    />
+
     <!-- 描述 -->
     <el-card
       v-if="model.description"
@@ -913,6 +919,7 @@ import { getVariableTree } from '@/api/dataObject'
 import { listAllFunctionsByProject } from '@/api/function'
 import OperandPicker from '@/components/common/OperandPicker.vue'
 import OperandValueDisplay from '@/components/common/OperandValueDisplay.vue'
+import ResourcePreflightPanel from '@/components/common/ResourcePreflightPanel.vue'
 import ModelImpactDialog from '@/components/model/ModelImpactDialog.vue'
 import JsonVersionDiff from '@/components/common/JsonVersionDiff.vue'
 import {
@@ -1021,10 +1028,15 @@ export default {
     ElIconInfo,
     ElIconEdit,
     ElIconArrowUp,
+    ResourcePreflightPanel,
   },
   name: 'ModelDetail',
   mixins: [workspaceTabTitleMixin(vm => vm.model.modelName)],
   computed: {
+    preflightConfigSignature() {
+      if (!this.model || !this.model.id) return ''
+      return [this.model.id, this.model.updateTime, this.model.currentVersion, this.model.publishedVersion].join(':')
+    },
     modelSampleStatus() {
       try {
         const report = JSON.parse(this.model.validationReportJson || '{}')
