@@ -1,6 +1,6 @@
 # 天枢决策引擎独立产品与工程审计（2026-09-27）
 
-> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：服务端 `mvn -pl rule-engine-server -am test` 1365 项通过、16 项跳过；全模块 `mvn clean install -DskipTests` 通过。前端 `npm test` 201 个文件、2445 项通过，lint/build 通过；当前代码版本的完整 dist 浏览器回归 217 项全部通过，包含新增的复杂评分卡配置校验、预热失败提示和按钮对比度门禁。8080 实际启动连接 MySQL 并监听成功，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功（其中 1 个 CPU fallback）；样例规则 17/28 制品预热失败使 readiness 返回 503，服务已主动停止。浏览器工具连接仍不可用，因此以 Playwright 页面回归作为页面证据，真实生产配置流程和跨节点容量门禁仍未完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单，执行指标面板不显示日志清理模块。
+> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：服务端 `mvn -pl rule-engine-server -am test` 1366 项通过、16 项跳过；全模块 `mvn clean install -DskipTests` 通过。前端 `npm test` 201 个文件、2447 项通过，lint/build 通过；当前代码版本的完整 dist 浏览器回归 218 项全部通过，包含新增的复杂评分卡配置校验、预热失败提示、离线迁移页面和按钮对比度门禁。8080 实际启动连接 MySQL 并监听成功，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功（其中 1 个 CPU fallback）；样例规则 17/28 制品预热失败使 readiness 返回 503，服务已主动停止。浏览器工具连接仍不可用，因此以 Playwright 页面回归作为页面证据，真实生产配置流程和跨节点容量门禁仍未完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单，执行指标面板不显示日志清理模块。
 
 ## 1. 审计结论
 
@@ -193,7 +193,7 @@ QLExpress 预热和依赖加载失败不能只写日志后继续把服务视为�
 - 新增资源级配置预检协议：`GET /api/rule/preflight/{resourceType}/{id}`（`EXTERNAL_API`、`DATABASE`、`VARIABLE`、`MODEL`），统一返回 `resourceType/resourceId/checkedAt/checkScope/valid/errors/warnings`；只读取已保存配置，不执行真实外数或数据库连接，使用 `rule:view` 权限。外数复用引用校验，数据库和变量拒绝缺失/非只读 SQL，模型检查制品、Schema 和 JSON 配置。
 - 外数、数据库、模型详情和变量编辑弹窗接入同一预检面板，报告过期时明确提示重新保存后重查；请求失败不生成“正常”兜底报告。新增前端预检组件单测 3 项、后端资源预检单测 4 项。
 - 发现并修复 `DecisionExecutionPersistence` 生产启动缺陷：队列容量构造参数改为读取 `rule-engine.execution-persistence.queue-capacity`，不再因 Spring 找不到 `int` Bean 导致 8080 启动失败。修复后 `mvn spring-boot:run` 已连接 MySQL 并监听 8080，匿名预检请求按预期返回 401，服务已主动停止。
-- 当前复核基线：前端 `npm test` 201 个文件、2445 个测试通过，`npm run lint`、`npm run build`、当前代码版本的完整 dist Playwright 217/217 和 9090 启动 HTTP 200 通过；后端 `mvn -pl rule-engine-server -am test` 共 1365 项测试通过（16 项按环境跳过），`mvn clean install -DskipTests` 全模块通过。服务启动实测连接 MySQL 并监听 8080，10 个生产发布 ONNX 模型按已发布版本快照完成预热；当前样例的 readiness 仍因规则 17/28 预热失败返回 503，已主动停止服务，未把进程启动误判为业务就绪。
+- 当前复核基线：前端 `npm test` 201 个文件、2447 个测试通过，`npm run lint`、`npm run build`、当前代码版本的完整 dist Playwright 218/218 和 9090 启动 HTTP 200 通过；后端 `mvn -pl rule-engine-server -am test` 共 1366 项测试通过（16 项按环境跳过），`mvn clean install -DskipTests` 全模块通过。服务启动实测连接 MySQL 并监听 8080，10 个生产发布 ONNX 模型按已发布版本快照完成预热；当前样例的 readiness 仍因规则 17/28 预热失败返回 503，已主动停止服务，未把进程启动误判为业务就绪。
 - 新增复杂评分卡结果变量必填校验：草稿可以暂存不完整配置，编译和发布前会阻止空结果变量，避免生成 `= 100.0` 这类不可执行脚本；规则预热失败明细增加错误分类、标题和下一步操作。修复弹窗主按钮 hover/focus 使用浅色背景造成白字对比度不足的问题，UI 质量回归重新通过。
 - 预热目标范围明确为 `PRODUCTION_ACTIVE`：规则只读取上线发布记录和有效生产固定版本绑定，ONNX 模型只在 `published_version` 非空时启动预热；草稿、审核中、下线和未发布模型不会触发预热。
 - 留存策略再次收紧：生命周期事件和名单变更日志不再暴露保留天数配置，也不进入任何删除 SQL；可选清理仅保留项目鉴权访问日志，账单、规则/外数/数据库/模型/名单调用和分流实验仍永久留存。

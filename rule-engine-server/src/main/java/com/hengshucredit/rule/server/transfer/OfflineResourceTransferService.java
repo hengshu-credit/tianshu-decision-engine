@@ -6,6 +6,7 @@ import com.hengshucredit.rule.server.governance.GovernedResourceAdapter;
 import com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry;
 import com.hengshucredit.rule.server.governance.ResourceDependencyRef;
 import com.hengshucredit.rule.server.governance.ResourceSnapshot;
+import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
 import com.hengshucredit.rule.model.entity.GovernedResource;
 import com.hengshucredit.rule.model.entity.GovernedResourceVersion;
 import com.hengshucredit.rule.server.mapper.GovernedResourceMapper;
@@ -43,6 +44,8 @@ public class OfflineResourceTransferService {
     private GovernedResourceMapper governedResourceMapper;
     @Resource
     private GovernedResourceVersionMapper governedResourceVersionMapper;
+    @Resource
+    private GovernanceSecretCodec secretCodec;
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
     @Transactional(readOnly = true)
@@ -59,6 +62,11 @@ public class OfflineResourceTransferService {
             GovernedResourceAdapter adapter = adapterRegistry.require(key.type().name());
             ResourceSnapshot snapshot = adapter.loadEffective(key.id());
             Map<String, Object> configuration = CanonicalJson.readMap(snapshot.snapshotJson());
+            // 模型文件不是凭据：还原后打入迁移包，目标治理适配器会再次加密保存。
+            // 外数/数据库/鉴权敏感字段不还原，必须在目标环境重新配置。
+            if (key.type() == TransferResourceType.MODEL && secretCodec != null) {
+                configuration = secretCodec.restore(snapshot);
+            }
             List<TransferBundle.Reference> references = new ArrayList<>();
             for (ResourceDependencyRef dependency : adapter.collectDependencies(snapshot)) {
                 if (dependency.targetResourceType() == null || dependency.targetResourceId() == null) {
