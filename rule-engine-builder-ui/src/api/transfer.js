@@ -20,3 +20,15 @@ export function previewResourceTransfer(file, options = null) {
     headers: { 'Content-Type': 'multipart/form-data' }
   })
 }
+
+export function importResourceTransfer(file, options) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('options', JSON.stringify(options || {}))
+  return request({
+    url: '/rule/transfer/import',
+    method: 'post',
+    data: form,
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}

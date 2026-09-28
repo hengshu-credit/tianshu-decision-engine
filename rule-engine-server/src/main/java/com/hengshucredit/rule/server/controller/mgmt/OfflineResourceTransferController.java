@@ -5,6 +5,8 @@ import com.hengshucredit.rule.server.security.RequirePermission;
 import com.hengshucredit.rule.server.transfer.OfflineResourceTransferService;
 import com.hengshucredit.rule.server.transfer.TransferRootRequest;
 import com.hengshucredit.rule.server.transfer.TransferImportOptions;
+import com.hengshucredit.rule.server.transfer.OfflineResourceImportService;
+import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.alibaba.fastjson.JSON;
 import jakarta.annotation.Resource;
 import org.springframework.http.HttpHeaders;
@@ -21,6 +23,8 @@ import java.util.Map;
 @RequestMapping("/api/rule/transfer")
 public class OfflineResourceTransferController {
     @Resource private OfflineResourceTransferService service;
+    @Resource private OfflineResourceImportService importService;
+    @Resource private ConsoleOperatorResolver operatorResolver;
 
     @PostMapping(value = "/export", produces = "application/zip")
     @RequirePermission("rule:view")
@@ -61,6 +65,24 @@ public class OfflineResourceTransferController {
             return R.fail(422, error.getMessage());
         } catch (Exception error) {
             return R.fail(500, "读取离线迁移包失败: " + error.getMessage());
+        }
+    }
+
+    @PostMapping(value = "/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @RequirePermission("rule:edit")
+    public R<Map<String, Object>> importPackage(@RequestPart("file") MultipartFile file,
+                                                @RequestPart("options") String options) {
+        try {
+            if (file == null || file.isEmpty()) return R.fail(422, "离线迁移包不能为空");
+            TransferImportOptions parsed = JSON.parseObject(options, TransferImportOptions.class);
+            return R.ok(importService.apply(file.getBytes(), parsed,
+                    operatorResolver == null ? ConsoleOperatorResolver.SYSTEM_CONSOLE : operatorResolver.resolve()));
+        } catch (IllegalArgumentException error) {
+            return R.fail(422, error.getMessage());
+        } catch (IllegalStateException error) {
+            return R.fail(409, error.getMessage());
+        } catch (Exception error) {
+            return R.fail(500, "导入离线配置失败: " + error.getMessage());
         }
     }
 }
