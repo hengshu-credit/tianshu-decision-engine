@@ -276,6 +276,12 @@ const routes = [
         meta: { title: '审批管理', permission: 'approval:view' }
       },
       {
+        path: 'transfer',
+        name: 'OfflineTransfer',
+        component: () => import('@/views/transfer/OfflineTransfer.vue'),
+        meta: { title: '离线迁移', permission: 'rule:view' }
+      },
+      {
         path: 'approval/:id',
         name: 'ApprovalDetail',
         component: () => import('@/views/approval/ApprovalDetail.vue'),

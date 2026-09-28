@@ -20,6 +20,7 @@ export const SIDEBAR_MENUS = [
   { index: '/log', label: '执行日志', icon: 'DocumentChecked', permission: 'rule:view' },
   { index: '/billing', label: '账单管理', icon: 'Wallet', permission: 'project:view' },
   { index: '/approval', label: '审批管理', icon: 'Stamp', permission: 'approval:view' },
+  { index: '/transfer', label: '离线迁移', icon: 'Upload', permission: 'rule:view' },
   { index: '/account', label: '账户管理', icon: 'User', permission: 'account:view' }
 ]
 
