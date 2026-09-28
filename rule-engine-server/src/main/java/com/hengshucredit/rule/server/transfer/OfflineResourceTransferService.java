@@ -77,14 +77,17 @@ public class OfflineResourceTransferService {
                     continue;
                 }
                 String pointer = toPointer(dependency.referencePath());
+                Object referencedValue = null;
                 try { TransferJsonPath.read(configuration, pointer); }
                 catch (RuntimeException missingPath) {
                     if (dependency.required()) throw new IllegalArgumentException("离线导出引用路径不存在: " + key.value() + pointer, missingPath);
                     warnings.add("可选依赖引用路径不存在: " + key.value() + pointer);
                     continue;
                 }
+                referencedValue = TransferJsonPath.read(configuration, pointer);
                 String targetKey = new TransferKey(targetType, dependency.targetResourceId()).value();
-                references.add(new TransferBundle.Reference(pointer, targetKey, null));
+                String childPath = childPath(targetType, dependency.targetResourceId(), referencedValue);
+                references.add(new TransferBundle.Reference(pointer, targetKey, childPath));
                 queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
             }
             resources.put(key.value(), new TransferBundle.Resource(key.value(), configuration,
@@ -159,11 +162,13 @@ public class OfflineResourceTransferService {
         for (String piece : pieces) {
             if (piece.isBlank()) continue;
             int bracket = piece.indexOf('[');
-            if (bracket >= 0) {
+                if (bracket >= 0) {
                 appendPointer(pointer, piece.substring(0, bracket));
                 int close = piece.indexOf(']', bracket);
                 if (close < 0) throw new IllegalArgumentException("上游引用路径无效: " + path);
-                appendPointer(pointer, piece.substring(bracket + 1, close));
+                    String bracketToken = piece.substring(bracket + 1, close);
+                    if ("json".equalsIgnoreCase(bracketToken)) pointer.append("/@json");
+                    else appendPointer(pointer, bracketToken);
             } else {
                 if (!pointer.isEmpty() && JSON_FIELDS.contains(lastToken(pointer))) pointer.append("/@json");
                 appendPointer(pointer, piece);
@@ -202,6 +207,25 @@ public class OfflineResourceTransferService {
     private String identity(Map<String, Object> configuration, TransferResourceType type) {
         Object value = configuration.get(type.codeField);
         return value == null ? null : String.valueOf(value);
+    }
+
+    private String childPath(TransferResourceType targetType, long targetId, Object referencedValue) {
+        if (targetType != TransferResourceType.DATA_OBJECT || !(referencedValue instanceof Number number)) return null;
+        try {
+            Map<String, Object> object = CanonicalJson.readMap(adapterRegistry.require(targetType.name())
+                    .loadEffective(targetId).snapshotJson());
+            Object fields = object.get("fields");
+            if (!(fields instanceof List<?> list)) return null;
+            for (int index = 0; index < list.size(); index++) {
+                if (list.get(index) instanceof Map<?, ?> field
+                        && String.valueOf(field.get("id")).equals(String.valueOf(number.longValue()))) {
+                    return "/fields/" + index + "/id";
+                }
+            }
+        } catch (RuntimeException ignored) {
+            // Child ownership is advisory in the package; the root dependency remains required.
+        }
+        return null;
     }
 
     private TransferConflict findConflict(TransferBundle.Resource resource, TransferKey key,
