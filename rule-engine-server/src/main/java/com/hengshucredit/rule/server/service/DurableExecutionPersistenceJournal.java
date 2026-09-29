@@ -6,11 +6,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
 import java.nio.channels.FileChannel;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -62,9 +65,10 @@ public class DurableExecutionPersistenceJournal {
 
     public synchronized List<Entry> read(int limit) {
         if (!enabled || file == null || !Files.exists(file) || limit <= 0) return List.of();
-        try {
+        try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8)) {
             List<Entry> result = new ArrayList<>();
-            for (String line : Files.readAllLines(file, java.nio.charset.StandardCharsets.UTF_8)) {
+            String line;
+            while ((line = reader.readLine()) != null) {
                 if (line == null || line.isBlank()) continue;
                 try {
                     result.add(JSON.parseObject(line, Entry.class));
@@ -77,6 +81,68 @@ public class DurableExecutionPersistenceJournal {
             return result;
         } catch (IOException error) {
             return List.of();
+        }
+    }
+
+    /** 原子移除已处理的前缀，保留未读取的尾部，避免重放时一次性加载整个 journal。 */
+    public synchronized void replacePrefix(int prefixCount, List<Entry> replacement) {
+        if (!enabled || file == null || !Files.exists(file) || prefixCount <= 0) return;
+        List<Entry> safe = replacement == null ? Collections.emptyList() : replacement;
+        Path temp = file.resolveSibling(file.getFileName() + ".prefix.tmp");
+        int skipped = 0;
+        boolean replacementWritten = false;
+        try {
+            boolean malformed = false;
+            try (BufferedReader reader = Files.newBufferedReader(file, StandardCharsets.UTF_8);
+                 BufferedWriter writer = Files.newBufferedWriter(temp, StandardCharsets.UTF_8,
+                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING,
+                         StandardOpenOption.WRITE)) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.isBlank()) continue;
+                    try {
+                        JSON.parseObject(line, Entry.class);
+                    } catch (RuntimeException malformedLine) {
+                        malformed = true;
+                        break;
+                    }
+                    if (skipped < prefixCount) {
+                        skipped++;
+                        continue;
+                    }
+                    if (!replacementWritten) {
+                        writeEntries(writer, safe);
+                        replacementWritten = true;
+                    }
+                    writer.write(line);
+                    writer.newLine();
+                }
+                if (!malformed && skipped >= prefixCount && !replacementWritten) {
+                    writeEntries(writer, safe);
+                }
+                writer.flush();
+            }
+            if (malformed || skipped < prefixCount) return;
+            try (FileChannel channel = FileChannel.open(temp, StandardOpenOption.WRITE)) {
+                channel.force(true);
+            }
+            try {
+                Files.move(temp, file, java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+                        java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException unsupported) {
+                Files.move(temp, file, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException ignored) {
+            // 旧文件仍保留，下一轮继续重放。
+        } finally {
+            try { Files.deleteIfExists(temp); } catch (IOException ignored) { }
+        }
+    }
+
+    private void writeEntries(BufferedWriter writer, List<Entry> entries) throws IOException {
+        for (Entry entry : entries) {
+            writer.write(JSON.toJSONString(entry));
+            writer.newLine();
         }
     }
 
@@ -110,7 +176,9 @@ public class DurableExecutionPersistenceJournal {
         result.put("path", file == null ? directory : file.toString());
         try { result.put("bytes", file == null || !Files.exists(file) ? 0L : Files.size(file)); }
         catch (IOException ignored) { result.put("bytes", null); }
-        result.put("pending", read(10000).size());
+        List<Entry> pending = read(10000);
+        result.put("pending", pending.size());
+        result.put("pendingTruncated", pending.size() >= 10000);
         return result;
     }
 

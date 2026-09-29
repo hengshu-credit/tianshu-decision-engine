@@ -73,6 +73,7 @@ rule-engine:
     journal-dir: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR:./logs/execution-persistence-journal}
     journal-max-entry-bytes: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES:10485760}
     journal-replay-delay-ms: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS:5000}
+    journal-replay-batch-size: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_BATCH_SIZE:1000}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}

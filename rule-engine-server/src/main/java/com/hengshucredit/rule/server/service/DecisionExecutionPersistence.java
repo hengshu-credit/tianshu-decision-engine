@@ -36,6 +36,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     private final RuleExecutionPersistenceOutboxService recoveryOutbox;
     @Autowired(required = false)
     private DurableExecutionPersistenceJournal journal;
+    @Value("${rule-engine.execution-persistence.journal-replay-batch-size:1000}")
+    private int journalReplayBatchSize = 1000;
     private final ArrayBlockingQueue<Event> queue;
     private final int queueCapacity;
     private final ExecutorService executor;
@@ -194,7 +196,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     public void replayJournal() {
         if (journal == null) return;
         synchronized (journal) {
-            List<DurableExecutionPersistenceJournal.Entry> entries = journal.read(Integer.MAX_VALUE);
+            List<DurableExecutionPersistenceJournal.Entry> entries = journal.read(
+                    Math.max(1, journalReplayBatchSize));
             if (entries.isEmpty()) return;
             List<DurableExecutionPersistenceJournal.Entry> remaining = new ArrayList<>();
             for (DurableExecutionPersistenceJournal.Entry entry : entries) {
@@ -202,7 +205,7 @@ public class DecisionExecutionPersistence implements AutoCloseable {
                 persist(event, false);
                 if (event.logPending || event.billingPending) remaining.add(toJournalEntry(event));
             }
-            journal.replace(remaining);
+            journal.replacePrefix(entries.size(), remaining);
         }
     }
 
