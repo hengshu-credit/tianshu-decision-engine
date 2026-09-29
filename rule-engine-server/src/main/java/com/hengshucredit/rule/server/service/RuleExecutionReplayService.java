@@ -4,10 +4,14 @@ import com.alibaba.fastjson.JSON;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.RuleResult;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
+import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.entity.RulePublished;
 import com.hengshucredit.rule.model.entity.RuleRuntimeCallLog;
 import com.hengshucredit.rule.model.entity.RuleVariable;
+import com.hengshucredit.rule.model.entity.DecisionArtifact;
+import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
 import com.hengshucredit.rule.server.mapper.RulePublishedMapper;
+import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
 import com.hengshucredit.rule.server.derived.HistoryFieldValues;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
@@ -28,6 +32,8 @@ public class RuleExecutionReplayService {
     @Resource private RuleExecutionLogService executionLogService;
     @Resource private RuleRuntimeCallLogService runtimeCallLogService;
     @Resource private RulePublishedMapper publishedMapper;
+    @Resource private RuleRevisionMapper revisionMapper;
+    @Resource private DecisionArtifactMapper artifactMapper;
     @Resource private RuleExecuteService executeService;
     @Resource private RuleVariableService variableService;
     @Resource private RuleProjectService projectService;
@@ -42,11 +48,12 @@ public class RuleExecutionReplayService {
                     .last("LIMIT 1"));
             projectId = project == null ? null : project.getId();
         }
-        RulePublished published = findPublished(log.getRuleCode(), log.getProjectCode());
-        if (published == null) throw new IllegalArgumentException("规则当前未发布，无法回溯");
-
         List<String> warnings = new ArrayList<>();
-        if (changedAttribution(log, published)) {
+        RulePublished currentPublished = findPublished(log.getRuleCode(), log.getProjectCode());
+        if (currentPublished == null) throw new IllegalArgumentException("规则当前未发布，无法回溯");
+        RulePublished published = resolveReplayPublished(log, currentPublished, warnings);
+        boolean historicalArtifact = published != currentPublished;
+        if (!historicalArtifact && changedAttribution(log, published)) {
             warnings.add("历史日志对应的规则制品已变化，本次按当前已发布内容执行，结果可能与原执行不同。");
         }
         Map<String, Object> params = parseMap(log.getInputParams());
@@ -83,6 +90,7 @@ public class RuleExecutionReplayService {
         }
         Map<String, Object> response = new LinkedHashMap<>();
         response.put("replayed", true);
+        response.put("replaySource", historicalArtifact ? "HISTORICAL_ARTIFACT" : "CURRENT_PUBLISHED");
         response.put("sourceLogCount", sourceLogs.size());
         response.put("traceId", result.getTraceId());
         response.put("success", result.isSuccess() ? 1 : 0);
@@ -201,6 +209,45 @@ public class RuleExecutionReplayService {
         return publishedMapper.selectOne(new LambdaQueryWrapper<RulePublished>()
                 .eq(RulePublished::getRuleCode, ruleCode).eq(RulePublished::getStatus, 1)
                 .orderByDesc(RulePublished::getPublishTime).last("LIMIT 1"));
+    }
+
+    /** 优先按日志记录的不可变制品回溯；旧日志或制品缺失时才回退当前发布版本。 */
+    private RulePublished resolveReplayPublished(RuleExecutionLog log, RulePublished current,
+                                                 List<String> warnings) {
+        if (log.getRevisionId() == null || revisionMapper == null || artifactMapper == null) return current;
+        RuleRevision revision = revisionMapper.selectById(log.getRevisionId());
+        if (revision == null || revision.getArtifactId() == null) {
+            warnings.add("历史日志缺少可执行制品，已回退当前发布版本执行。");
+            return current;
+        }
+        if (log.getRootRuleId() != null && revision.getDefinitionId() != null
+                && !Objects.equals(log.getRootRuleId(), revision.getDefinitionId())) {
+            warnings.add("历史日志与修订定义不匹配，已回退当前发布版本执行。");
+            return current;
+        }
+        DecisionArtifact artifact = artifactMapper.selectById(revision.getArtifactId());
+        if (artifact == null || !hasText(artifact.getArtifactDigest())
+                || (hasText(log.getArtifactDigest())
+                && !Objects.equals(log.getArtifactDigest(), artifact.getArtifactDigest()))) {
+            warnings.add("历史日志对应制品不存在或摘要不一致，已回退当前发布版本执行。");
+            return current;
+        }
+        RulePublished historical = new RulePublished();
+        historical.setRuleCode(log.getRuleCode() == null ? current.getRuleCode() : log.getRuleCode());
+        historical.setDefinitionId(revision.getDefinitionId());
+        historical.setRevisionId(revision.getId());
+        historical.setArtifactId(revision.getArtifactId());
+        historical.setArtifactDigest(artifact.getArtifactDigest());
+        historical.setProjectCode(log.getProjectCode() == null ? current.getProjectCode() : log.getProjectCode());
+        historical.setVersion(log.getRuleVersion() == null ? revision.getRevisionNo() : log.getRuleVersion());
+        historical.setModelType(current.getModelType());
+        historical.setCompiledScript(revision.getCompiledScript());
+        historical.setCompiledType(revision.getCompiledType());
+        historical.setModelJson(revision.getModelJson());
+        historical.setOpenApiConfigJson(revision.getOpenApiConfigJson());
+        historical.setStatus(1);
+        warnings.add("已按历史日志对应的不可变制品回溯，当前发布版本变化不会影响本次结果。");
+        return historical;
     }
 
     private boolean changedAttribution(RuleExecutionLog log, RulePublished published) {
