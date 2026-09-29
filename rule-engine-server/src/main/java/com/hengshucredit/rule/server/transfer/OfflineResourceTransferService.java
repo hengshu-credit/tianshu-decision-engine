@@ -133,7 +133,8 @@ public class OfflineResourceTransferService {
         TransferBundleCodec.Decoded decoded = codec.decode(bytes);
         List<Map<String, Object>> resources = new ArrayList<>();
         List<TransferConflict> conflicts = new ArrayList<>();
-        for (TransferBundle.Resource resource : decoded.bundle().resources()) {
+        Map<String, PreviewTarget> targets = new LinkedHashMap<>();
+        for (TransferBundle.Resource resource : OfflineResourceImportService.topologicalOrder(decoded.bundle().resources())) {
             TransferKey key = TransferKey.parse(resource.key());
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("key", resource.key());
@@ -146,7 +147,7 @@ public class OfflineResourceTransferService {
             item.put("requiredEnvironmentFields", resource.requiredEnvironmentFields());
             item.put("configurationOnly", DATA_FREE_TYPES.contains(key.type()));
             resources.add(item);
-            TransferConflict conflict = findConflict(resource, key, options);
+            TransferConflict conflict = findConflict(resource, key, options, targets);
             if (conflict != null) conflicts.add(conflict);
         }
         Map<String, Object> result = new LinkedHashMap<>();
@@ -312,19 +313,23 @@ public class OfflineResourceTransferService {
     }
 
     private TransferConflict findConflict(TransferBundle.Resource resource, TransferKey key,
-                                         TransferImportOptions options) {
+                                         TransferImportOptions options, Map<String, PreviewTarget> targets) {
         String code = identity(resource.configuration(), key.type());
-        if (code == null || governedResourceMapper == null || governedResourceVersionMapper == null) return null;
         if (key.type() == TransferResourceType.PROJECT) {
-            if ("GLOBAL".equals(options.normalizedScope())) return null;
+            if ("GLOBAL".equals(options.normalizedScope())) {
+                targets.put(resource.key(), new PreviewTarget(0L, Map.of(), true));
+                return null;
+            }
             if (!Boolean.TRUE.equals(options.createProject())) {
                 Long bound = options.projectBindings() == null ? null : options.projectBindings().get(String.valueOf(key.id()));
                 if (bound == null || bound <= 0) bound = options.targetProjectId();
+                if (bound != null && bound > 0) targets.put(resource.key(), new PreviewTarget(bound, Map.of(), true));
                 return bound != null && bound > 0 ? null : new TransferConflict(resource.key(), key.type().name(), code,
                         "TARGET_PROJECT_REQUIRED", null, "SELECT_PROJECT", "请选择目标项目 ID 或新建项目，不能按源项目编码自动绑定");
             }
             if (options.projectCode() != null && !options.projectCode().isBlank()) code = options.projectCode().trim();
             else if ("SUFFIX".equals(options.normalizedResourcePolicy())) code += options.normalizedSuffix();
+            if (code == null || governedResourceMapper == null || governedResourceVersionMapper == null) return null;
             List<GovernedResource> projects = governedResourceMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
                             .eq(GovernedResource::getResourceType, key.type().name()));
@@ -340,6 +345,7 @@ public class OfflineResourceTransferService {
             }
             return null;
         }
+        if (code == null || governedResourceMapper == null || governedResourceVersionMapper == null) return null;
         if (!"GLOBAL".equals(options.normalizedScope()) && Boolean.TRUE.equals(options.createProject())) return null;
         long targetProject = "GLOBAL".equals(options.normalizedScope()) ? 0L : options.targetProjectId() == null ? -1L : options.targetProjectId();
         if (!"GLOBAL".equals(options.normalizedScope()) && options.projectBindings() != null) {
@@ -356,34 +362,44 @@ public class OfflineResourceTransferService {
             if (version == null) continue;
             Map<String, Object> current = CanonicalJson.readMap(version.getSnapshotJson());
             if (!code.equals(identity(current, key.type()))) continue;
-            boolean sameType = key.type() != TransferResourceType.VARIABLE
-                    || String.valueOf(resource.configuration().get("varType")).equals(String.valueOf(current.get("varType")));
-            String conflictType = sameType && comparable(resource.configuration()).equals(comparable(current))
-                    ? "IDENTICAL" : (sameType ? "CONFIG_CONFLICT" : "TYPE_CONFLICT");
+            if (key.type() == TransferResourceType.MODEL && secretCodec != null) {
+                current = secretCodec.restore(new ResourceSnapshot(version.getSnapshotJson(), candidate.getEffectiveStatus(),
+                        version.getSecretPayloadCiphertext(), version.getSecretDigest()));
+            }
+            Map<String, Object> incoming = previewConfiguration(resource, targets);
+            String conflictType = TransferResourceComparison.conflict(key.type(), incoming, current, candidate.getEffectiveStatus());
             String action = key.type() == TransferResourceType.VARIABLE
-                    ? (sameType ? options.normalizedVariablePolicy() : "SUFFIX") : options.normalizedResourcePolicy();
+                    ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
+            boolean canReuse = TransferResourceComparison.reusable(key.type(), incoming, current, candidate.getEffectiveStatus());
+            if (("REUSE".equals(action) && canReuse) || "OVERWRITE".equals(action)) {
+                targets.put(resource.key(), new PreviewTarget(candidate.getResourceId(), current, "REUSE".equals(action) && canReuse));
+            }
+            if ("REUSE".equals(action) && !canReuse) action = "SUFFIX";
             return new TransferConflict(resource.key(), key.type().name(), code, conflictType,
                     key.type().name() + ":" + candidate.getResourceId(), action,
-                    "目标环境已存在同编码资源，请确认复用、覆盖或添加后缀");
+                    canReuse ? "目标环境已存在可复用的同编码资源，请确认复用、覆盖或添加后缀"
+                            : "同编码资源的类型、配置、状态或环境凭据未匹配，不能复用；请更改为覆盖或添加后缀（类型冲突只能添加后缀）");
         }
         return null;
     }
 
-    @SuppressWarnings("unchecked")
-    private Map<String, Object> comparable(Map<String, Object> input) {
-        Map<String, Object> copy = (Map<String, Object>) JSON.parseObject(JSON.toJSONString(input), Map.class);
-        removeRecursive(copy, Set.of("id", "projectId", "definitionId", "datasourceId", "createTime", "updateTime", "accessToken"));
-        return copy;
+    private Map<String, Object> previewConfiguration(TransferBundle.Resource resource, Map<String, PreviewTarget> targets) {
+        Map<String, Object> value = CanonicalJson.readMap(CanonicalJson.write(resource.configuration()));
+        for (TransferBundle.Reference reference : resource.references()) {
+            PreviewTarget target = targets.get(reference.targetKey());
+            Object replacement = "UNRESOLVED_TARGET:" + reference.targetKey();
+            if (target != null) {
+                if (reference.childPath() == null) replacement = target.id();
+                else if (target.reused()) {
+                    try { replacement = TransferJsonPath.read(target.configuration(), reference.childPath()); }
+                    catch (IllegalArgumentException ignored) { /* 子字段未确认，不能判为相同配置。 */ }
+                }
+            }
+            TransferJsonPath.replace(value, reference.path(), replacement);
+        }
+        return value;
     }
 
-    @SuppressWarnings("unchecked")
-    private void removeRecursive(Object value, Set<String> keys) {
-        if (value instanceof Map<?, ?> raw) {
-            Map<String, Object> map = (Map<String, Object>) raw;
-            keys.forEach(map::remove);
-            new ArrayList<>(map.values()).forEach(item -> removeRecursive(item, keys));
-        } else if (value instanceof List<?> list) {
-            list.forEach(item -> removeRecursive(item, keys));
-        }
-    }
+    private record PreviewTarget(Long id, Map<String, Object> configuration, boolean reused) { }
+
 }

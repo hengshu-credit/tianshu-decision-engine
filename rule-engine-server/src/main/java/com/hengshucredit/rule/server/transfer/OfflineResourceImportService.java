@@ -18,6 +18,7 @@ import com.hengshucredit.rule.server.governance.GovernedResourceAdapter;
 import com.hengshucredit.rule.server.governance.GovernedResourceAdapterRegistry;
 import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 import com.hengshucredit.rule.server.governance.GovernanceResourceTypes;
+import com.hengshucredit.rule.server.governance.GovernanceSecretCodec;
 import com.hengshucredit.rule.server.mapper.GovernedResourceMapper;
 import com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper;
 import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
@@ -52,6 +53,7 @@ public class OfflineResourceImportService {
     @Resource private RuleLifecycleService lifecycleService;
     @Resource private RuleDraftService draftService;
     @Resource private RuleProjectService projectService;
+    @Resource private GovernanceSecretCodec secretCodec;
     @Resource private com.hengshucredit.rule.server.governance.GovernanceResourceBootstrapService governanceBootstrapService;
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
@@ -143,13 +145,19 @@ public class OfflineResourceImportService {
             }
             applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
             Long resourceTargetProjectId = number(configuration.get("projectId"));
-            Long existingId = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
+            ExistingResource existing = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
+            Long existingId = existing == null ? null : existing.id();
+            rewriteReferences(configuration, resource, byKey, idMap, childMap);
             String policy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
             if (existingId != null && "REUSE".equals(policy)) {
+                if (!TransferResourceComparison.reusable(sourceKey.type(), configuration, existing.configuration(), existing.status())) {
+                    throw new IllegalArgumentException("资源不能复用（类型、配置、启用状态或环境凭据未匹配）: " + resource.key()
+                            + "；请选择覆盖已有配置或新建并追加后缀，变量类型冲突只能新建并追加后缀");
+                }
                 idMap.put(resource.key(), existingId);
                 if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(),
-                        fieldMap(resource.configuration(), sourceKey, existingId));
+                        reusedFieldMap(resource.configuration(), existing.configuration()));
                 result.add(row(resource, existingId, "REUSED", null));
                 continue;
             }
@@ -159,7 +167,6 @@ public class OfflineResourceImportService {
                 addSuffix(configuration, sourceKey.type(), options.normalizedSuffix());
                 existingId = null;
             }
-            rewriteReferences(configuration, resource, byKey, idMap, childMap);
             ResourceSnapshot snapshot = ResourceSnapshot.ofJson(CanonicalJson.write(configuration));
             Long targetId;
             if (sourceKey.type() == TransferResourceType.RULE) {
@@ -253,7 +260,7 @@ public class OfflineResourceImportService {
         return binding.getId();
     }
 
-    private List<TransferBundle.Resource> topologicalOrder(List<TransferBundle.Resource> resources) {
+    static List<TransferBundle.Resource> topologicalOrder(List<TransferBundle.Resource> resources) {
         Map<String, TransferBundle.Resource> byKey = resources.stream().collect(java.util.stream.Collectors.toMap(
                 TransferBundle.Resource::key, value -> value, (left, right) -> left, LinkedHashMap::new));
         List<TransferBundle.Resource> ordered = new ArrayList<>();
@@ -308,7 +315,20 @@ public class OfflineResourceImportService {
         } catch (RuntimeException ignored) { return Map.of(); }
     }
 
-    private Long findExisting(TransferResourceType type, Map<String, Object> config, Long projectId) {
+    /** 配置比较已确认字段顺序和父子结构相同，按对应位置映射，避免不同对象分支下同名字段串绑。 */
+    private Map<Long, Long> reusedFieldMap(Map<String, Object> source, Map<String, Object> target) {
+        List<?> sourceFields = list(source.get("fields"));
+        List<?> targetFields = list(target.get("fields"));
+        Map<Long, Long> result = new HashMap<>();
+        for (int i = 0; i < sourceFields.size(); i++) {
+            Long sourceId = number(object(sourceFields.get(i)).get("id"));
+            Long targetId = number(object(targetFields.get(i)).get("id"));
+            if (sourceId != null && targetId != null) result.put(sourceId, targetId);
+        }
+        return result;
+    }
+
+    private ExistingResource findExisting(TransferResourceType type, Map<String, Object> config, Long projectId) {
         String code = String.valueOf(config.get(type.codeField));
         if (code == null || "null".equals(code) || governedResourceMapper == null) return null;
         if (projectId == null || projectId < 0) return null;
@@ -316,10 +336,19 @@ public class OfflineResourceImportService {
                 .eq(GovernedResource::getResourceType, type.name()).eq(GovernedResource::getProjectId, projectId))) {
             if (row.getEffectiveVersionId() == null) continue;
             GovernedResourceVersion version = governedResourceVersionMapper.selectById(row.getEffectiveVersionId());
-            if (version != null && code.equals(String.valueOf(CanonicalJson.readMap(version.getSnapshotJson()).get(type.codeField)))) return row.getResourceId();
+            if (version == null) continue;
+            Map<String, Object> current = CanonicalJson.readMap(version.getSnapshotJson());
+            if (!code.equals(String.valueOf(current.get(type.codeField)))) continue;
+            if (type == TransferResourceType.MODEL && secretCodec != null) {
+                current = secretCodec.restore(new ResourceSnapshot(version.getSnapshotJson(), row.getEffectiveStatus(),
+                        version.getSecretPayloadCiphertext(), version.getSecretDigest()));
+            }
+            return new ExistingResource(row.getResourceId(), current, row.getEffectiveStatus());
         }
         return null;
     }
+
+    private record ExistingResource(Long id, Map<String, Object> configuration, String status) { }
 
     /** 先验证整包归属，禁止写入一部分后才发现目标项目无效。 */
     private void validateProjectTargets(List<TransferBundle.Resource> resources, TransferImportOptions options,

@@ -178,7 +178,7 @@ public class OfflineProjectBindingTest {
     private static Map<?, ?> mapping(Map<String, Object> result) { return (Map<?, ?>) result.get("resourceIdMapping"); }
     private static Map<String, Object> snapshot(GovernanceDraftRequest draft) { return CanonicalJson.readMap(draft.getSnapshotJson()); }
 
-    private static class Fixture {
+    static class Fixture {
         final OfflineResourceImportService service = new OfflineResourceImportService();
         final OfflineResourceTransferService previewService = new OfflineResourceTransferService();
         final Map<Long, RuleProject> projects = new HashMap<>();
@@ -223,6 +223,7 @@ public class OfflineProjectBindingTest {
         }
         void seed(String type, Long id, Long projectId, Map<String, Object> config) {
             GovernedResource row = new GovernedResource(); row.setResourceType(type); row.setResourceId(id);
+            row.setEffectiveStatus("ACTIVE");
             row.setProjectId(projectId); row.setEffectiveVersionId(id); resources.add(row);
             GovernedResourceVersion version = new GovernedResourceVersion(); version.setId(id);
             version.setSnapshotJson(CanonicalJson.write(config)); versions.put(id, version);
