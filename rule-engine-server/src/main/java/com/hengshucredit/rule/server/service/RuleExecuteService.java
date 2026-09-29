@@ -196,7 +196,8 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
-            if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
+            if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
+            else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, definition.getModelType());
@@ -424,7 +425,8 @@ public class RuleExecuteService {
         } catch (RuntimeException e) {
             result.setSuccess(false);
             result.setErrorMessage(e.getMessage());
-            if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
+            if (isCapacityRejectedExternalFailure(e)) result.setExecutionStatus("THROTTLED");
+            else if (isUnknownExternalFailure(e)) result.setExecutionStatus("UNKNOWN");
         } finally {
             result.setExecuteTimeMs(System.currentTimeMillis() - executionStart);
             collectDeclaredOutputsIfNeeded(result, runtimeModelType);
@@ -508,6 +510,19 @@ public class RuleExecuteService {
         while (current != null) {
             if (current instanceof ExternalApiInvokeService.ApiInvokeException api
                     && api.isUnknown()) return true;
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private boolean isCapacityRejectedExternalFailure(Throwable error) {
+        Throwable current = error;
+        while (current != null) {
+            if (current instanceof ExternalApiGuardRegistry.RejectedException
+                    || current instanceof ExternalApiCircuitBreakerRegistry.OpenException
+                    || current instanceof ApiHttpClientRegistry.PoolBusyException) {
+                return true;
+            }
             current = current.getCause();
         }
         return false;

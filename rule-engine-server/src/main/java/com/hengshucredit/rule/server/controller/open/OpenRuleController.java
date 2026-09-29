@@ -88,17 +88,21 @@ public class OpenRuleController {
                                 || executionContract.getContract().isReturnTrace(),
                         executionContract.getContract().isRecordTrace()));
                 if (hasText(result.getTraceId())) traceId = result.getTraceId();
-                return render(resolved.getContract(), result.isSuccess()
-                                ? OpenApiStatuses.success()
-                                : OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常")),
+                OpenApiStatus status = result.isSuccess() ? OpenApiStatuses.success()
+                        : "THROTTLED".equals(result.getExecutionStatus())
+                        ? OpenApiStatuses.qpsConcurrencyExceeded()
+                        : OpenApiStatuses.resultError(safeMessage(result.getErrorMessage(), "结果处理异常"));
+                return render(resolved.getContract(), status,
                         traceId, result.isSuccess() ? outputValues(resolved, result) : errorValues(result.getErrorMessage()));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.COMPLETED) {
                 RuleResult cached = idempotency.getResult();
                 if (hasText(cached.getTraceId())) traceId = cached.getTraceId();
-                return render(resolved.getContract(), cached.isSuccess()
-                                ? OpenApiStatuses.success()
-                                : OpenApiStatuses.resultError(safeMessage(cached.getErrorMessage(), "结果处理异常")),
+                OpenApiStatus cachedStatus = cached.isSuccess() ? OpenApiStatuses.success()
+                        : "THROTTLED".equals(cached.getExecutionStatus())
+                        ? OpenApiStatuses.qpsConcurrencyExceeded()
+                        : OpenApiStatuses.resultError(safeMessage(cached.getErrorMessage(), "结果处理异常"));
+                return render(resolved.getContract(), cachedStatus,
                         traceId, cached.isSuccess() ? outputValues(resolved, cached) : errorValues(cached.getErrorMessage()));
             }
             if (idempotency.getStatus() == RuleIdempotencyService.Status.CONFLICT) {
@@ -124,6 +128,10 @@ public class OpenRuleController {
             activeIdempotency = null;
             if (!result.isSuccess()) {
                 Map<String, Object> values = errorValues(result.getErrorMessage());
+                if ("THROTTLED".equals(result.getExecutionStatus())) {
+                    return render(resolved.getContract(), OpenApiStatuses.qpsConcurrencyExceeded(),
+                            traceId, values);
+                }
                 return render(resolved.getContract(), OpenApiStatuses.resultError(
                         safeMessage(result.getErrorMessage(), "结果处理异常")),
                         traceId, values);

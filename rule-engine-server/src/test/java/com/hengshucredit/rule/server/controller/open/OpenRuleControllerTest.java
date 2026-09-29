@@ -109,6 +109,25 @@ public class OpenRuleControllerTest {
         Assert.assertNull(executeService.params);
     }
 
+    @Test
+    public void throttledExecutionReturnsCapacityHeaders() {
+        OpenApiContractService.ResolvedContract resolved = resolvedContract();
+        RecordingExecuteService executeService = new RecordingExecuteService();
+        executeService.result.setSuccess(false);
+        executeService.result.setExecutionStatus("THROTTLED");
+        executeService.result.setErrorMessage("外数API达到最大并发数");
+        OpenRuleController controller = controller(resolved, executeService);
+
+        ResponseEntity<Object> response = controller.execute("OPEN_RISK",
+                Collections.singletonMap("customer", Collections.singletonMap("idNo", "A001")),
+                new HttpHeaders(), authenticatedRequest());
+
+        Assert.assertEquals(429, response.getStatusCodeValue());
+        Assert.assertEquals("1", response.getHeaders().getFirst("Retry-After"));
+        Assert.assertEquals("open-execution-queue", response.getHeaders().getFirst("X-Rule-Limit-Name"));
+        Assert.assertNotNull(response.getHeaders().getFirst("X-Rule-Queue-Depth"));
+    }
+
     private OpenRuleController controller(OpenApiContractService.ResolvedContract resolved,
                                           RuleExecuteService executeService) {
         return controller(resolved, executeService, new RuleFieldValidationService() {
