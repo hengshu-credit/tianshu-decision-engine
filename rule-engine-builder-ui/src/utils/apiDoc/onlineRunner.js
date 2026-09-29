@@ -1,7 +1,7 @@
 import { renderCodeEditor } from './editor'
 
 export function renderOnlineRunner() {
-  return `<button id="runner-toggle" class="button primary runner-toggle" type="button">在线调用</button>
+  return `<button id="runner-toggle" class="button primary runner-toggle" type="button" aria-controls="online-runner">在线调用</button>
   <aside id="online-runner" class="runner" aria-label="在线调用">
     <div class="runner-heading"><div><div class="runner-kicker">接口调试台</div><h2>在线调用</h2><p>凭据仅保留在当前页面内存</p></div><div class="runner-heading-actions"><span id="runner-connection-state" class="runner-connection-state">浏览器直连</span><button id="runner-close" class="button secondary" type="button">关闭</button></div></div>
     <div class="runner-config-grid">
@@ -286,21 +286,28 @@ export function renderOnlineRunnerScript() {
     } catch (error) { showState(error.message || '复制响应失败', 'danger'); }
   }
   async function sendRequest() {
-    var request;
-    try { request = await prepareRequest(); } catch (error) { showState(error.message || '请求参数不正确', 'danger'); return; }
-    if (state.controller) state.controller.abort();
-    state.controller = new AbortController();
+    if (state.controller) return;
+    var controller = new AbortController();
+    state.controller = controller;
     state.abortReason = '';
-    state.timeoutMs = Math.max(1000, Number(elements.timeout.value) || 30000);
+    state.timeoutMs = Math.min(180000, Math.max(1000, Number(elements.timeout.value) || 30000));
     var started = performance.now();
-    var timer = setTimeout(function () { state.abortReason = 'timeout'; state.controller.abort(); }, state.timeoutMs);
+    var timer = setTimeout(function () { state.abortReason = 'timeout'; controller.abort(); }, state.timeoutMs);
+    var sending = false;
     elements.send.disabled = true;
     elements.cancel.disabled = false;
-    showState('请求发送中…', 'warning');
-    connectionHelp('正在请求 ' + request.url.origin + '，请保持当前页面打开。');
+    elements.responseMeta.textContent = '';
+    elements.responseHeaders.textContent = '—';
+    elements.responseBody.textContent = '—';
+    showState('正在准备请求…', 'warning');
     try {
-      var requestOptions = { method: 'POST', headers: request.headers, mode: 'cors', credentials: 'omit', signal: state.controller.signal };
-      if (state.bodyType !== 'none') requestOptions.body = request.prepared.body;
+      var request = await prepareRequest();
+      if (controller.signal.aborted) throw new DOMException('Request aborted', 'AbortError');
+      var requestOptions = { method: 'POST', headers: request.headers, mode: 'cors', credentials: 'omit', signal: controller.signal };
+      if (request.prepared.body !== undefined) requestOptions.body = request.prepared.body;
+      sending = true;
+      showState('请求发送中…', 'warning');
+      connectionHelp('正在请求 ' + request.url.origin + '，请保持当前页面打开。');
       var response = await fetch(request.url.toString(), requestOptions);
       var responseText = await response.text();
       var responseValue;
@@ -314,7 +321,12 @@ export function renderOnlineRunnerScript() {
       showState(response.ok ? '请求完成' : '服务端返回非成功 HTTP 状态', response.ok ? 'success' : 'danger');
       connectionHelp(response.ok ? '请求已完成；响应内容保留在当前页面。' : '服务端已返回响应，请根据 HTTP 状态和响应内容排查。', !response.ok);
     } catch (error) {
-      if (error && error.name === 'AbortError') showState(state.abortReason === 'timeout' ? '请求超时' : '请求已取消', 'danger');
+      if (controller.signal.aborted) {
+        var abortMessage = state.abortReason === 'timeout' ? '请求超时' : '请求已取消';
+        showState(abortMessage, 'danger');
+        connectionHelp(abortMessage + '，可调整参数后重新发送。');
+      }
+      else if (!sending) showState(error.message || '请求参数不正确', 'danger');
       else { showState(networkFailureMessage(error), 'danger'); connectionHelp(networkFailureMessage(error), true); }
     } finally {
       clearTimeout(timer);
@@ -327,6 +339,12 @@ export function renderOnlineRunnerScript() {
     state.bodyType = type;
     document.querySelectorAll('[data-body-type]').forEach(function (button) { button.classList.toggle('active', button.getAttribute('data-body-type') === type); });
     document.querySelectorAll('[data-body-panel]').forEach(function (panel) { panel.classList.toggle('active', panel.getAttribute('data-body-panel') === type); });
+  }
+  function setRunnerOpen(open) {
+    document.body.classList.toggle('runner-collapsed', !open);
+    document.body.classList.toggle('runner-expanded', open);
+    byId('online-runner').classList.toggle('open', open);
+    byId(open ? 'runner-close' : 'runner-toggle').focus();
   }
   function initialize() {
     elements = { baseUrl: byId('runner-base-url'), endpoint: byId('runner-endpoint'), auth: byId('runner-auth'), authSummary: byId('runner-auth-summary'), credentials: byId('runner-credentials'), path: byId('runner-path'), timeout: byId('runner-timeout'), send: byId('runner-send'), cancel: byId('runner-cancel'), copyCurl: byId('runner-copy-curl'), copyResponse: byId('runner-copy-response'), usePageOrigin: byId('runner-use-page-origin'), connectionState: byId('runner-connection-state'), connectionHelp: byId('runner-connection-help'), formRows: byId('runner-form-data-rows'), formAdd: byId('runner-form-data-add'), status: byId('runner-status'), responseMeta: byId('runner-response-meta'), responseHeaders: byId('runner-response-headers'), responseBody: byId('runner-response-body') };
@@ -373,8 +391,8 @@ export function renderOnlineRunnerScript() {
       renderFormRows();
     });
     document.querySelectorAll('[data-body-type]').forEach(function (button) { button.addEventListener('click', function () { setBodyType(button.getAttribute('data-body-type')); }); });
-    byId('runner-toggle').addEventListener('click', function () { byId('online-runner').classList.add('open'); });
-    byId('runner-close').addEventListener('click', function () { byId('online-runner').classList.remove('open'); });
+    byId('runner-toggle').addEventListener('click', function () { setRunnerOpen(true); });
+    byId('runner-close').addEventListener('click', function () { setRunnerOpen(false); });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initialize); else initialize();
 }());`
