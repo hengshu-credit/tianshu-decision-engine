@@ -2,7 +2,11 @@ package com.hengshucredit.rule.server.transfer;
 
 import java.util.Map;
 
-/** 只描述预览/导入选择，不在反序列化时执行任何数据库写入。 */
+/**
+ * 只描述预览/导入选择，不在反序列化时执行任何数据库写入。
+ * projectBindings 的 key 是离线包中的源项目 ID 字符串，value 是目标项目 ID；
+ * 项目级导入必须使用 targetProjectId、projectBindings 或 createProject 三者之一明确给出归属。
+ */
 public record TransferImportOptions(Long targetProjectId,
                                     String targetScope,
                                     String variablePolicy,

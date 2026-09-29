@@ -51,7 +51,10 @@
             <el-option label="项目级" value="PROJECT" />
             <el-option label="全局" value="GLOBAL" />
           </el-select>
-          <el-input v-if="options.targetScope === 'PROJECT'" v-model="options.targetProjectId" placeholder="目标项目 ID" />
+          <el-input v-if="options.targetScope === 'PROJECT' && !options.createProject" v-model="options.targetProjectId" placeholder="目标项目 ID" />
+          <el-checkbox v-if="options.targetScope === 'PROJECT'" v-model="options.createProject">导入时新建项目</el-checkbox>
+          <el-input v-if="options.createProject" v-model="options.projectCode" placeholder="新项目编码（可覆盖源编码）" />
+          <el-input v-if="options.createProject" v-model="options.projectName" placeholder="新项目名称（可覆盖源名称）" />
           <el-select v-model="options.variablePolicy" placeholder="变量同码策略">
             <el-option label="同编码同类型复用" value="REUSE" />
             <el-option label="新建并追加后缀" value="SUFFIX" />
@@ -63,6 +66,7 @@
           </el-select>
           <el-input v-model="options.suffix" placeholder="新建后缀，如 _dev" />
         </div>
+        <p class="import-hint">项目级导入请选择目标项目 ID，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。</p>
         <div class="card-actions">
           <el-button :disabled="!importFile" :loading="previewing" @click="previewPackage">预览冲突</el-button>
           <el-button type="primary" :disabled="!importFile || !preview" :loading="applying" @click="applyPackage">确认导入</el-button>
@@ -141,7 +145,10 @@ export default {
       preview: null,
       importResult: null,
       resultVisible: false,
-      options: { targetScope: 'PROJECT', targetProjectId: '', variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported' }
+      options: {
+        targetScope: 'PROJECT', targetProjectId: '', createProject: false,
+        projectCode: '', projectName: '', variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported'
+      }
     }
   },
   methods: {
@@ -166,11 +173,14 @@ export default {
       } finally { this.exporting = false }
     },
     async previewPackage() {
+      if (!this.validateTargetOptions()) return
       this.previewing = true
       try { this.preview = (await previewResourceTransfer(this.importFile, this.normalizedOptions())).data } finally { this.previewing = false }
     },
     async applyPackage() {
-      await ElMessageBox.confirm('确认写入目标环境？普通资源会进入治理审批，规则只创建目标环境草稿。', '确认导入', { type: 'warning' })
+      if (!this.validateTargetOptions()) return
+      const projectHint = this.options.createProject ? '并新建目标项目' : '并绑定目标项目'
+      await ElMessageBox.confirm(`确认写入目标环境${projectHint}？普通资源会进入治理审批，规则只创建目标环境草稿。`, '确认导入', { type: 'warning' })
       this.applying = true
       try {
         this.importResult = (await importResourceTransfer(this.importFile, this.normalizedOptions())).data
@@ -178,7 +188,26 @@ export default {
       } finally { this.applying = false }
     },
     normalizedOptions() {
-      return { ...this.options, targetProjectId: this.options.targetScope === 'PROJECT' && this.options.targetProjectId ? Number(this.options.targetProjectId) : null }
+      return {
+        ...this.options,
+        targetProjectId: this.options.targetScope === 'PROJECT' && !this.options.createProject && this.options.targetProjectId
+          ? Number(this.options.targetProjectId) : null,
+        projectCode: this.options.createProject ? this.options.projectCode.trim() : null,
+        projectName: this.options.createProject ? this.options.projectName.trim() : null,
+        projectBindings: {}
+      }
+    },
+    validateTargetOptions() {
+      if (this.options.targetScope === 'PROJECT' && !this.options.createProject
+        && !/^[1-9]\d*$/.test(String(this.options.targetProjectId || ''))) {
+        ElMessage.warning('项目级导入请填写目标项目 ID，或勾选导入时新建项目')
+        return false
+      }
+      if (this.options.createProject && !this.options.projectCode.trim()) {
+        ElMessage.warning('新建项目请填写项目编码')
+        return false
+      }
+      return true
     }
   }
 }
@@ -200,6 +229,7 @@ export default {
 .preview-card { margin-top: 18px; }
 .preview-summary { display: flex; flex-wrap: wrap; gap: 16px; padding: 16px 0; color: var(--el-text-color-secondary); font-size: 13px; }
 .preview-warning { margin-top: 16px; }
+.import-hint { margin: 10px 0 0; color: var(--el-text-color-secondary); font-size: 12px; line-height: 1.5; }
 .preview-warning ul { margin: 0; padding-left: 18px; }
 .result-json { max-height: 360px; overflow: auto; background: var(--el-fill-color-light); padding: 12px; border-radius: 8px; font-size: 12px; }
 @media (max-width: 900px) { .transfer-grid { grid-template-columns: 1fr; } }
