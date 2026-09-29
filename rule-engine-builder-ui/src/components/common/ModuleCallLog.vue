@@ -27,6 +27,14 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item label="项目">
+          <project-filter-select
+            v-model:value="query.projectCode"
+            field="projectCode"
+            placeholder="全部项目"
+            style="width: 170px"
+          />
+        </el-form-item>
         <el-form-item :label="profile.targetLabel">
           <remote-filter-select
             v-model:value="query.targetCode"
@@ -424,6 +432,7 @@ import { plantRenderPara } from '../../utils/gogocodeTransfer'
 import * as Vue from 'vue'
 import { getRuntimeCallPayload, listRuntimeLogs } from '@/api/runtimeLog'
 import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
+import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ExternalCallTrace from './ExternalCallTrace.vue'
 
 const PROFILES = {
@@ -493,6 +502,7 @@ export default {
         pageNum: 1,
         pageSize: 10,
         actionType: '',
+        projectCode: '',
         targetCode: '',
         traceId: '',
         success: '',
@@ -521,6 +531,7 @@ export default {
   name: 'ModuleCallLog',
   components: {
     RemoteFilterSelect,
+    ProjectFilterSelect,
     ExternalCallTrace,
     DetailBlock: function render(_props, _context) {
       const ctx = {
@@ -629,6 +640,7 @@ export default {
         pageNum: 1,
         pageSize: this.query.pageSize,
         actionType: '',
+        projectCode: '',
         targetCode: '',
         traceId: '',
         success: '',
@@ -647,7 +659,9 @@ export default {
         return
       }
       try {
-        const res = await getRuntimeCallPayload(row.id)
+        const res = row.projectId == null
+          ? await getRuntimeCallPayload(row.id)
+          : await getRuntimeCallPayload(row.id, row.projectId)
         if (requestSeq !== this.detailRequestSeq) return
         this.apiPayload = (res && res.data) || {}
       } catch (error) {

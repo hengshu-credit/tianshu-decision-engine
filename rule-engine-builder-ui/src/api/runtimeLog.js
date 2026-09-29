@@ -16,8 +16,12 @@ export function retryRuleWarmup() {
   return request({ url: '/rule/ops/rule-warmup/retry', method: 'post' })
 }
 
-export function getRuntimeCallPayload(id) {
-  return request({ url: `/rule/runtime-log/${id}/payload`, method: 'get' })
+export function getRuntimeCallPayload(id, projectId) {
+  return request({
+    url: `/rule/runtime-log/${id}/payload`,
+    method: 'get',
+    params: projectId == null ? undefined : { projectId },
+  })
 }
 
 export function getRuntimeCallPayloadByCallId(callId) {

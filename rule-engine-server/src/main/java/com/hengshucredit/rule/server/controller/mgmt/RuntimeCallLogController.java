@@ -31,11 +31,12 @@ public class RuntimeCallLogController {
             @RequestParam(required = false) String traceId,
             @RequestParam(required = false) String callId,
             @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String projectCode,
             @RequestParam(required = false) Integer success,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         IPage<RuleRuntimeCallLog> page = logService.pageList(pageNum, pageSize, moduleType, actionType,
-                targetCode, traceId, callId, projectId, success, startTime, endTime);
+                targetCode, traceId, callId, projectId, projectCode, success, startTime, endTime);
         if (page.getRecords() != null) {
             page.getRecords().forEach(item -> {
                 item.setRawRequestBody(null);

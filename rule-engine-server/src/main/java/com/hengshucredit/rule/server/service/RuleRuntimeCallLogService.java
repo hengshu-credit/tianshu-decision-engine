@@ -29,19 +29,27 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                                               String targetCode, String traceId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
         return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, null,
-                null, success, startTime, endTime);
+                null, null, success, startTime, endTime);
     }
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, String callId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
         return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, callId,
-                null, success, startTime, endTime);
+                null, null, success, startTime, endTime);
     }
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, String callId, Long projectId,
                                               Integer success, LocalDateTime startTime, LocalDateTime endTime) {
+        return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, callId, projectId,
+                null, success, startTime, endTime);
+    }
+
+    public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
+                                              String targetCode, String traceId, String callId, Long projectId,
+                                              String projectCode, Integer success, LocalDateTime startTime,
+                                              LocalDateTime endTime) {
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<>();
         if (hasText(moduleType)) {
             wrapper.eq(RuleRuntimeCallLog::getModuleType, moduleType);
@@ -61,6 +69,9 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         }
         if (projectId != null) {
             wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+        }
+        if (hasText(projectCode)) {
+            wrapper.eq(RuleRuntimeCallLog::getProjectCode, projectCode);
         }
         if (success != null) {
             wrapper.eq(RuleRuntimeCallLog::getSuccess, success);
