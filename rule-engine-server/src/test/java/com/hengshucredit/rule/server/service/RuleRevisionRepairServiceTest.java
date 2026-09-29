@@ -62,10 +62,9 @@ public class RuleRevisionRepairServiceTest {
                         "icekredit_vn_credit_profile_features")));
         FixtureRepairService target =
                 new FixtureRepairService(fixture);
-        TransactionInterceptor interceptor =
-                new TransactionInterceptor(
-                        new FixtureTransactionManager(fixture),
-                        new AnnotationTransactionAttributeSource());
+        TransactionInterceptor interceptor = new TransactionInterceptor();
+        interceptor.setTransactionManager(new FixtureTransactionManager(fixture));
+        interceptor.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
         ProxyFactory proxyFactory = new ProxyFactory(target);
         proxyFactory.setProxyTargetClass(true);
         proxyFactory.addAdvice(interceptor);
