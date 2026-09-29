@@ -51,6 +51,18 @@ mysql --host $env:MYSQL_HOST --port $env:MYSQL_PORT `
 
 恢复后必须核对：规则制品摘要、发布版本、变量/模型 ID 引用、实验版本、执行日志分区和账单汇总。Redis 需要单独导出项目推送相关键或重新触发全量同步，不能只恢复 MySQL。
 
+Windows Docker 本地验证可使用容器内部管道，避免宿主机大文件重定向导致恢复中断：
+
+```powershell
+$env:MYSQL_ROOT_PASSWORD = '<local-secret>'
+.\scripts\quality-gates\run-docker-backup-restore-gate.ps1 `
+  -DockerContainer rule-engine-mysql `
+  -Database rule_engine `
+  -RestoreDatabase rule_engine_restore_gate
+```
+
+脚本只写入临时恢复库，校验关键表计数后删除恢复库和容器内临时 dump；报告写入 `target/quality-gates/backup-restore-summary.json`，不保存密码。
+
 ## 3. 真实环境浏览器 E2E
 
 推荐使用组合门禁脚本，一次执行 readiness、容量、备份和浏览器验证：
