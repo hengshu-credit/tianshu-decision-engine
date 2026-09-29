@@ -124,7 +124,7 @@ public class RuleDefinitionServiceTest {
 
         ReflectionTestUtils.setField(service, "baseMapper", mapper(RuleDefinitionMapper.class, (proxy, method, args) -> {
             if ("selectPage".equals(method.getName())) {
-                Page<RuleDefinition> page = (Page<RuleDefinition>) args[0];
+                Page<RuleDefinition> page = page(args[0]);
                 page.setRecords(Collections.singletonList(definition));
                 page.setTotal(1);
                 return page;
@@ -173,8 +173,7 @@ public class RuleDefinitionServiceTest {
                 mapper(RuleDefinitionMapper.class,
                         (proxy, method, args) -> {
                             if ("selectPage".equals(method.getName())) {
-                                Page<RuleDefinition> page =
-                                        (Page<RuleDefinition>) args[0];
+                                Page<RuleDefinition> page = page(args[0]);
                                 page.setRecords(Arrays.asList(
                                         projectRule, globalRule));
                                 page.setTotal(2);
@@ -476,6 +475,11 @@ public class RuleDefinitionServiceTest {
         if (returnType == boolean.class) return false;
         if (returnType == void.class) return null;
         return 0;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Page<T> page(Object value) {
+        return (Page<T>) value;
     }
 
     private static class RecordingRuleFieldAnalyzer extends RuleFieldAnalyzer {

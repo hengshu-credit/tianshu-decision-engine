@@ -120,16 +120,28 @@ public class RuleApiDocScenarioService {
     }
 
     public List<RuleApiDocScenario> listExportable(Long definitionId, Integer publishedVersion) {
+        return listExportable(definitionId, publishedVersion, null, null);
+    }
+
+    public List<RuleApiDocScenario> listExportable(Long definitionId, Integer publishedVersion,
+                                                   Long publishedRevisionId, String publishedArtifactDigest) {
         if (definitionId == null || publishedVersion == null) {
             return Collections.emptyList();
         }
-        return scenarioMapper.selectList(new LambdaQueryWrapper<RuleApiDocScenario>()
+        List<RuleApiDocScenario> scenarios = scenarioMapper.selectList(new LambdaQueryWrapper<RuleApiDocScenario>()
                 .eq(RuleApiDocScenario::getDefinitionId, definitionId)
                 .eq(RuleApiDocScenario::getStatus, 1)
                 .eq(RuleApiDocScenario::getIncludeInDoc, 1)
                 .eq(RuleApiDocScenario::getRuleVersion, publishedVersion)
                 .orderByAsc(RuleApiDocScenario::getSortOrder)
                 .orderByAsc(RuleApiDocScenario::getId));
+        if (publishedRevisionId == null || !StringUtils.hasText(publishedArtifactDigest)) {
+            return scenarios;
+        }
+        return scenarios == null ? Collections.emptyList() : scenarios.stream()
+                .filter(scenario -> publishedRevisionId.equals(scenario.getRevisionId())
+                        && publishedArtifactDigest.equals(scenario.getArtifactDigest()))
+                .toList();
     }
 
     @Transactional

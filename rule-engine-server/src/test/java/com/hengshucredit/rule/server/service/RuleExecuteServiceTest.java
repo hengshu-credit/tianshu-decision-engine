@@ -810,7 +810,14 @@ public class RuleExecuteServiceTest {
             this.requiredScriptNames = options == null ? null : options.getRequiredScriptNames();
             this.target = target;
             target.put("externalScore", 80);
-            ((Map<String, Object>) target.get("requestMeta")).put("channel", "DERIVED");
+            Map<String, Object> requestMeta = new LinkedHashMap<>();
+            if (target.get("requestMeta") instanceof Map<?, ?> raw) {
+                raw.forEach((key, value) -> {
+                    if (key != null) requestMeta.put(String.valueOf(key), value);
+                });
+            }
+            requestMeta.put("channel", "DERIVED");
+            target.put("requestMeta", requestMeta);
             return target;
         }
     }

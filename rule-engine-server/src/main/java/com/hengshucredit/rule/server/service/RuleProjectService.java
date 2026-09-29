@@ -468,7 +468,9 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
 
             List<ApiDocDTO.ScenarioInfo> scenarioInfos = new ArrayList<>();
             List<RuleApiDocScenario> scenarios = apiDocScenarioService.listExportable(
-                    def.getId(), def.getPublishedVersion());
+                    def.getId(), def.getPublishedVersion(),
+                    published == null ? null : published.getRevisionId(),
+                    published == null ? null : published.getArtifactDigest());
             if (scenarios != null) {
                 for (RuleApiDocScenario scenario : scenarios) {
                     ApiDocDTO.ScenarioInfo scenarioInfo = new ApiDocDTO.ScenarioInfo();

@@ -128,6 +128,23 @@ public class RuleApiDocScenarioServiceTest {
     }
 
     @Test
+    public void exportWithPublishedIdentityDropsSameVersionOldArtifact() {
+        RuleApiDocScenario current = scenario(31L, 7L, "当前", 3);
+        current.setRevisionId(44L);
+        current.setArtifactDigest("current-digest");
+        RuleApiDocScenario old = scenario(32L, 7L, "旧制品", 3);
+        old.setRevisionId(43L);
+        old.setArtifactDigest("old-digest");
+        scenarioHandler.selectListResult = Arrays.asList(current, old);
+
+        List<RuleApiDocScenario> result = service.listExportable(
+                7L, 3, 44L, "current-digest");
+
+        assertEquals(1, result.size());
+        assertEquals("当前", result.get(0).getScenarioName());
+    }
+
+    @Test
     public void exportReturnsEmptyWhenRuleIsNotPublished() {
         assertEquals(Collections.emptyList(), service.listExportable(7L, null));
         assertFalse(scenarioHandler.selectListCalled);

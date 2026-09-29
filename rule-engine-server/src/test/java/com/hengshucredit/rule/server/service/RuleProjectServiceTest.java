@@ -403,6 +403,14 @@ public class RuleProjectServiceTest {
             this.publishedVersion = publishedVersion;
             return scenarios;
         }
+
+        @Override
+        public List<RuleApiDocScenario> listExportable(Long definitionId, Integer publishedVersion,
+                                                       Long publishedRevisionId, String publishedArtifactDigest) {
+            this.definitionId = definitionId;
+            this.publishedVersion = publishedVersion;
+            return scenarios;
+        }
     }
 
     private static class ExportFixture {
