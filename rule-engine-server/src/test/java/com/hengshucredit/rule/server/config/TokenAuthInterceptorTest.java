@@ -35,6 +35,13 @@ public class TokenAuthInterceptorTest {
     }
 
     @Test
+    public void onlyRuntimeExecutionConsumesProjectExecutionPermit() {
+        assertTrue(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/experiment/execute/exp"));
+        assertFalse(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/executions/TRACE"));
+        assertFalse(TokenAuthInterceptor.isExecutionPath("/api/rule/runtime/external-calls/CALL"));
+    }
+
+    @Test
     public void keepsLegacySyncEndpointProtected() {
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/sync"));
         assertTrue(TokenAuthInterceptor.isProtectedPath("/api/sync/all"));

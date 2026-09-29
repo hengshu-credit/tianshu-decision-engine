@@ -159,7 +159,7 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
     static boolean isExecutionPath(String uri) {
         return uri != null && (uri.startsWith("/api/rule/open/execute/")
                 || uri.startsWith("/api/rule/sync/execute/")
-                || uri.startsWith("/api/rule/runtime/"));
+                || uri.startsWith("/api/rule/runtime/experiment/execute/"));
     }
 
     static boolean isProtectedPath(String uri) {
