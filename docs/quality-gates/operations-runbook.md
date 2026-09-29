@@ -17,6 +17,21 @@ node scripts/quality-gates/run-capacity-gate.mjs `
   --report-dir target/quality-gates
 ```
 
+多节点上线前将 `--url` 替换为 `--urls`，以逗号分隔各节点地址。脚本会并行压测并生成 `capacity-report.multi.json/md`，聚合吞吐为各节点之和，错误率和 P95 以最差节点判定：
+
+```powershell
+node scripts/quality-gates/run-capacity-gate.mjs `
+  --urls https://engine-1.example.com/api/rule/open/execute/RISK_RULE,https://engine-2.example.com/api/rule/open/execute/RISK_RULE `
+  --request-file scripts/quality-gates/fixtures/request.local.json `
+  --concurrency 20 `
+  --warmup-seconds 10 `
+  --duration-seconds 60 `
+  --max-error-rate 0.01 `
+  --max-p95-ms 500 `
+  --min-throughput 20 `
+  --report-dir target/quality-gates
+```
+
 验收要求：错误率、P95、吞吐量全部满足项目阈值；同时读取管理端 `/api/rule/ops/execution-metrics`，确认异步持久化、来源解析、开放执行和数据库连接池队列没有持续增长，`failed` 为 0，`fallback` 只在瞬时峰值出现。
 
 ## 2. 数据库备份与恢复
