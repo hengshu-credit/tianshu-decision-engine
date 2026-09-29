@@ -57,13 +57,13 @@ public class OfflineResourceImportService {
 
     @Transactional
     public Map<String, Object> apply(byte[] bytes, TransferImportOptions options, String actor) {
+        if (options == null) throw new IllegalArgumentException("请选择导入作用范围及目标项目");
         if (actor == null || actor.isBlank()) actor = ConsoleOperatorResolver.SYSTEM_CONSOLE;
         TransferBundle bundle = codec.decode(bytes).bundle();
+        boolean global = "GLOBAL".equals(options.normalizedScope());
+        boolean createProject = !global && Boolean.TRUE.equals(options.createProject());
         boolean hasProjectResource = bundle.resources().stream().anyMatch(resource ->
                 TransferKey.parse(resource.key()).type() == TransferResourceType.PROJECT);
-        if (Boolean.TRUE.equals(options.createProject()) && !hasProjectResource) {
-            throw new IllegalArgumentException("新建项目必须随离线包导入项目配置");
-        }
         if (!"GLOBAL".equals(options.normalizedScope()) && (options.targetProjectId() == null || options.targetProjectId() <= 0)
                 && !Boolean.TRUE.equals(options.createProject())
                 && (options.projectBindings() == null || options.projectBindings().isEmpty())
@@ -75,6 +75,7 @@ public class OfflineResourceImportService {
                 .collect(java.util.stream.Collectors.toMap(TransferBundle.Resource::key, value -> value,
                         (left, right) -> left, LinkedHashMap::new));
         List<TransferBundle.Resource> ordered = topologicalOrder(bundle.resources());
+        validateProjectTargets(ordered, options, createProject);
         Map<String, Long> idMap = new LinkedHashMap<>();
         if (options.projectBindings() != null) {
             options.projectBindings().forEach((sourceId, targetId) -> {
@@ -90,8 +91,12 @@ public class OfflineResourceImportService {
         }
         Map<String, Map<Long, Long>> childMap = new HashMap<>();
         List<Map<String, Object>> result = new ArrayList<>();
-        Long effectiveTargetProjectId = options.targetProjectId();
+        Long effectiveTargetProjectId = global ? Long.valueOf(0) : options.targetProjectId();
         boolean createdProject = false;
+        if (createProject && !hasProjectResource) {
+            effectiveTargetProjectId = importProject(Map.of(), options, actor);
+            createdProject = true;
+        }
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
             if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
@@ -114,38 +119,19 @@ public class OfflineResourceImportService {
                 result.add(row(resource, 0L, "SKIPPED", "全局导入不创建项目，项目级资源将按全局范围写入"));
                 continue;
             }
-            Long existingId = sourceKey.type() == TransferResourceType.PROJECT && idMap.containsKey(resource.key())
-                    ? idMap.get(resource.key()) : sourceKey.type() == TransferResourceType.PROJECT
-                    && !Boolean.TRUE.equals(options.createProject())
-                    && options.targetProjectId() != null && options.targetProjectId() > 0
-                    ? options.targetProjectId() : findExisting(sourceKey.type(), resource.configuration(), options);
-            String policy = sourceKey.type() == TransferResourceType.VARIABLE
-                    ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
-            if (existingId != null && ("REUSE".equals(policy) || "IDENTICAL".equals(policy))) {
-                idMap.put(resource.key(), existingId);
-                if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(),
-                        fieldMap(resource.configuration(), sourceKey, existingId));
-                result.add(row(resource, existingId, "REUSED", null));
-                continue;
-            }
             Map<String, Object> configuration = copy(resource.configuration());
             if (sourceKey.type() == TransferResourceType.PROJECT) {
-                if (existingId != null) {
-                    if ("OVERWRITE".equals(policy)) {
-                        throw new IllegalArgumentException("项目不能覆盖导入，请选择绑定已有项目或使用新编码新建");
-                    }
-                    idMap.put(resource.key(), existingId);
-                    result.add(row(resource, existingId, "BOUND", "已绑定目标项目"));
-                    effectiveTargetProjectId = effectiveTargetProjectId == null ? existingId : effectiveTargetProjectId;
+                // 项目归属仅由显式 ID / 新建选项决定，不受普通资源冲突策略影响。
+                if (!createProject) {
+                    Long targetId = resolveTargetProjectId(Map.of("projectId", sourceKey.id()), options, options.targetProjectId());
+                    idMap.put(resource.key(), targetId);
+                    result.add(row(resource, targetId, "BOUND", "已绑定目标项目"));
                     continue;
-                }
-                if (!Boolean.TRUE.equals(options.createProject())) {
-                    throw new IllegalArgumentException("目标项目不存在，请选择已有项目或勾选新建项目");
                 }
                 if (createdProject) {
                     throw new IllegalArgumentException("一个离线包只能在本次导入中新建一个目标项目");
                 }
-                if (!options.normalizedSuffix().isBlank() && "SUFFIX".equals(policy)) {
+                if ("SUFFIX".equals(options.normalizedResourcePolicy())) {
                     addSuffix(configuration, sourceKey.type(), options.normalizedSuffix());
                 }
                 Long targetId = importProject(configuration, options, actor);
@@ -157,6 +143,16 @@ public class OfflineResourceImportService {
             }
             applyTargetScope(configuration, sourceKey.type(), options, effectiveTargetProjectId);
             Long resourceTargetProjectId = number(configuration.get("projectId"));
+            Long existingId = findExisting(sourceKey.type(), configuration, resourceTargetProjectId);
+            String policy = sourceKey.type() == TransferResourceType.VARIABLE
+                    ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
+            if (existingId != null && "REUSE".equals(policy)) {
+                idMap.put(resource.key(), existingId);
+                if (sourceKey.type() == TransferResourceType.DATA_OBJECT) childMap.put(resource.key(),
+                        fieldMap(resource.configuration(), sourceKey, existingId));
+                result.add(row(resource, existingId, "REUSED", null));
+                continue;
+            }
             if (existingId != null && "OVERWRITE".equals(policy)) {
                 // Existing resources are updated only through the governance approval service.
             } else if (existingId != null) {
@@ -312,22 +308,10 @@ public class OfflineResourceImportService {
         } catch (RuntimeException ignored) { return Map.of(); }
     }
 
-    private Long findExisting(TransferResourceType type, Map<String, Object> config, TransferImportOptions options) {
+    private Long findExisting(TransferResourceType type, Map<String, Object> config, Long projectId) {
         String code = String.valueOf(config.get(type.codeField));
         if (code == null || "null".equals(code) || governedResourceMapper == null) return null;
-        if (type == TransferResourceType.PROJECT) {
-            for (GovernedResource row : governedResourceMapper.selectList(new LambdaQueryWrapper<GovernedResource>()
-                    .eq(GovernedResource::getResourceType, type.name()))) {
-                if (row.getEffectiveVersionId() == null) continue;
-                GovernedResourceVersion version = governedResourceVersionMapper.selectById(row.getEffectiveVersionId());
-                if (version != null && code.equals(String.valueOf(CanonicalJson.readMap(version.getSnapshotJson()).get(type.codeField)))) {
-                    return row.getResourceId();
-                }
-            }
-            return null;
-        }
-        long projectId = "GLOBAL".equals(options.normalizedScope()) ? 0L : options.targetProjectId() == null ? -1L : options.targetProjectId();
-        if (projectId < 0) return null;
+        if (projectId == null || projectId < 0) return null;
         for (GovernedResource row : governedResourceMapper.selectList(new LambdaQueryWrapper<GovernedResource>()
                 .eq(GovernedResource::getResourceType, type.name()).eq(GovernedResource::getProjectId, projectId))) {
             if (row.getEffectiveVersionId() == null) continue;
@@ -335,6 +319,39 @@ public class OfflineResourceImportService {
             if (version != null && code.equals(String.valueOf(CanonicalJson.readMap(version.getSnapshotJson()).get(type.codeField)))) return row.getResourceId();
         }
         return null;
+    }
+
+    /** 先验证整包归属，禁止写入一部分后才发现目标项目无效。 */
+    private void validateProjectTargets(List<TransferBundle.Resource> resources, TransferImportOptions options,
+                                        boolean createProject) {
+        if ("GLOBAL".equals(options.normalizedScope())) return;
+        if (createProject) {
+            if (options.targetProjectId() != null || (options.projectBindings() != null && !options.projectBindings().isEmpty())) {
+                throw new IllegalArgumentException("新建项目不能同时指定已有项目绑定");
+            }
+            long projectCount = resources.stream().filter(resource -> TransferKey.parse(resource.key()).type() == TransferResourceType.PROJECT).count();
+            if (projectCount > 1) {
+                throw new IllegalArgumentException("包含多个源项目时请显式配置项目绑定，不能同时新建单一目标项目");
+            }
+            if (projectCount == 0 && (options.projectCode() == null || options.projectCode().isBlank())) {
+                throw new IllegalArgumentException("新建项目必须填写项目编码");
+            }
+            return;
+        }
+        Set<Long> targets = new LinkedHashSet<>();
+        for (TransferBundle.Resource resource : resources) {
+            TransferKey source = TransferKey.parse(resource.key());
+            if (source.type() == TransferResourceType.RULE_VERSION) continue;
+            Map<String, Object> config = source.type() == TransferResourceType.PROJECT
+                    ? Map.of("projectId", source.id()) : resource.configuration();
+            targets.add(resolveTargetProjectId(config, options, options.targetProjectId()));
+        }
+        for (Long id : targets) {
+            RuleProject target = projectService.getById(id);
+            if (target == null || Integer.valueOf(-1).equals(target.getStatus())) {
+                throw new IllegalArgumentException("目标项目不存在或已删除，ID=" + id);
+            }
+        }
     }
 
     private void applyTargetScope(Map<String, Object> config, TransferResourceType type, TransferImportOptions options,

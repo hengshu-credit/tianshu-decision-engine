@@ -172,8 +172,8 @@ public class OfflineResourceTransferService {
                 !"PROJECT".equals(item.get("resourceType"))
                         && !"GLOBAL".equalsIgnoreCase(String.valueOf(item.getOrDefault("scope", "")))
                         && !Boolean.TRUE.equals(options.createProject())));
-        result.put("requiresProjectCreation", Boolean.TRUE.equals(options.createProject())
-                && resources.stream().anyMatch(item -> "PROJECT".equals(item.get("resourceType"))));
+        result.put("requiresProjectCreation", !"GLOBAL".equals(options.normalizedScope())
+                && Boolean.TRUE.equals(options.createProject()));
         return result;
     }
 
@@ -316,6 +316,15 @@ public class OfflineResourceTransferService {
         String code = identity(resource.configuration(), key.type());
         if (code == null || governedResourceMapper == null || governedResourceVersionMapper == null) return null;
         if (key.type() == TransferResourceType.PROJECT) {
+            if ("GLOBAL".equals(options.normalizedScope())) return null;
+            if (!Boolean.TRUE.equals(options.createProject())) {
+                Long bound = options.projectBindings() == null ? null : options.projectBindings().get(String.valueOf(key.id()));
+                if (bound == null || bound <= 0) bound = options.targetProjectId();
+                return bound != null && bound > 0 ? null : new TransferConflict(resource.key(), key.type().name(), code,
+                        "TARGET_PROJECT_REQUIRED", null, "SELECT_PROJECT", "请选择目标项目 ID 或新建项目，不能按源项目编码自动绑定");
+            }
+            if (options.projectCode() != null && !options.projectCode().isBlank()) code = options.projectCode().trim();
+            else if ("SUFFIX".equals(options.normalizedResourcePolicy())) code += options.normalizedSuffix();
             List<GovernedResource> projects = governedResourceMapper.selectList(
                     new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
                             .eq(GovernedResource::getResourceType, key.type().name()));
@@ -325,21 +334,18 @@ public class OfflineResourceTransferService {
                 if (version == null) continue;
                 Map<String, Object> current = CanonicalJson.readMap(version.getSnapshotJson());
                 if (!code.equals(identity(current, key.type()))) continue;
-                String action = options.normalizedResourcePolicy();
-                if ("OVERWRITE".equals(action)) action = "SELECT_PROJECT";
                 return new TransferConflict(resource.key(), key.type().name(), code,
-                        "CONFIG_CONFLICT", "PROJECT:" + candidate.getResourceId(), action,
+                        "CONFIG_CONFLICT", "PROJECT:" + candidate.getResourceId(), "SELECT_PROJECT",
                         "目标环境已存在同编码项目，请绑定已有项目或修改项目编码后新建");
-            }
-            if (Boolean.TRUE.equals(options.createProject()) && options.projectCode() != null
-                    && !options.projectCode().isBlank() && !options.projectCode().equals(code)) {
-                return new TransferConflict(resource.key(), key.type().name(), code,
-                        "PROJECT_CODE_OVERRIDE", null, "CREATE_PROJECT",
-                        "将使用导入选项中的新项目编码创建目标项目");
             }
             return null;
         }
+        if (!"GLOBAL".equals(options.normalizedScope()) && Boolean.TRUE.equals(options.createProject())) return null;
         long targetProject = "GLOBAL".equals(options.normalizedScope()) ? 0L : options.targetProjectId() == null ? -1L : options.targetProjectId();
+        if (!"GLOBAL".equals(options.normalizedScope()) && options.projectBindings() != null) {
+            Long mapped = options.projectBindings().get(String.valueOf(resource.configuration().get("projectId")));
+            if (mapped != null && mapped > 0) targetProject = mapped;
+        }
         if (targetProject < 0) return new TransferConflict(resource.key(), key.type().name(), code,
                 "TARGET_PROJECT_REQUIRED", null, "SELECT_PROJECT", "项目级资源需要先选择目标项目");
         List<GovernedResource> candidates = governedResourceMapper.selectList(new com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<GovernedResource>()
