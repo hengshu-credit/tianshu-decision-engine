@@ -136,9 +136,20 @@ public class TokenAuthInterceptor implements HandlerInterceptor {
             return;
         }
         response.setStatus(status.getHttpStatus());
+        addCapacityHeaders(request, response, status);
         response.setContentType("application/json;charset=UTF-8");
         response.getWriter().write("{\"code\":\"" + status.getCode() + "\",\"message\":\""
                 + escape(status.getMessage()) + "\"}");
+    }
+
+    private void addCapacityHeaders(HttpServletRequest request, HttpServletResponse response,
+                                    OpenApiStatus status) {
+        if (status == null || status.getHttpStatus() != 429) return;
+        response.setHeader("Retry-After", "1");
+        response.setHeader("X-Rule-Queue-Depth", "0");
+        String limitName = OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
+                ? "project-execution-guard" : "token-request-rate";
+        response.setHeader("X-Rule-Limit-Name", limitName);
     }
 
     private String escape(String value) {

@@ -43,6 +43,13 @@ public class OpenApiErrorResponder {
         for (Map.Entry<String, String> header : rendered.getHeaders().entrySet()) {
             response.setHeader(header.getKey(), header.getValue());
         }
+        if (status.getHttpStatus() == 429) {
+            response.setHeader("Retry-After", "1");
+            response.setHeader("X-Rule-Queue-Depth", "0");
+            response.setHeader("X-Rule-Limit-Name",
+                    OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
+                            ? "project-execution-guard" : "token-request-rate");
+        }
         response.setCharacterEncoding("UTF-8");
         response.getWriter().write(com.alibaba.fastjson.JSON.toJSONString(rendered.getBody()));
     }

@@ -179,6 +179,14 @@ public class OpenRuleController {
         OpenResponseRenderer.RenderedResponse rendered = responseRenderer.render(contract, status, traceId, values);
         HttpHeaders responseHeaders = new HttpHeaders();
         rendered.getHeaders().forEach(responseHeaders::set);
+        if (status.getHttpStatus() == 429) {
+            responseHeaders.set("Retry-After", "1");
+            responseHeaders.set("X-Rule-Queue-Depth", String.valueOf(
+                    executionExecutor.snapshot().getOrDefault("queueDepth", 0)));
+            responseHeaders.set("X-Rule-Limit-Name",
+                    OpenApiStatuses.QPS_CONCURRENCY_EXCEEDED.equals(status.getCode())
+                            ? "open-execution-queue" : "project-quota");
+        }
         return ResponseEntity.status(rendered.getHttpStatus()).headers(responseHeaders).body(rendered.getBody());
     }
 

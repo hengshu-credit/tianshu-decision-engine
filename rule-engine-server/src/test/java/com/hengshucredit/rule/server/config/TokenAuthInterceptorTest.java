@@ -170,6 +170,9 @@ public class TokenAuthInterceptorTest {
         assertFalse(interceptor.preHandle(second, limited, new Object()));
         assertEquals(429, limited.getStatus());
         assertTrue(limited.getContentAsString().contains("\"code\":\"400001\""));
+        assertEquals("1", limited.getHeader("Retry-After"));
+        assertEquals("project-execution-guard", limited.getHeader("X-Rule-Limit-Name"));
+        assertEquals("0", limited.getHeader("X-Rule-Queue-Depth"));
         interceptor.afterCompletion(first, new MockHttpServletResponse(), new Object(), null);
         assertTrue(interceptor.preHandle(second, new MockHttpServletResponse(), new Object()));
         interceptor.afterCompletion(second, new MockHttpServletResponse(), new Object(), null);
