@@ -46,7 +46,7 @@ public class RuleListChangeBatchServiceTest {
         Assert.assertEquals(0, service.logWrites);
 
         Map<String, Object> snapshot = JSON.parseObject(
-                service.draft.getSnapshotJson(), LinkedHashMap.class);
+                service.draft.getSnapshotJson());
         Assert.assertEquals(9L,
                 ((Number) snapshot.get("listId")).longValue());
         Assert.assertEquals("mobile_black", snapshot.get("listCode"));
