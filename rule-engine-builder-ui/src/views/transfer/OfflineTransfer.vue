@@ -47,7 +47,7 @@
           </div>
         </el-upload>
         <div class="import-options">
-          <el-select v-model="options.targetScope" placeholder="目标范围">
+          <el-select v-model="options.targetScope" placeholder="目标范围" @change="onTargetScopeChange">
             <el-option label="项目级" value="PROJECT" />
             <el-option label="全局" value="GLOBAL" />
           </el-select>
@@ -157,6 +157,13 @@ export default {
     addRoot() { this.roots.push({ resourceType: 'RULE', resourceId: '' }) },
     removeRoot(index) { this.roots.splice(index, 1) },
     selectFile(upload) { this.importFile = upload?.raw || null; this.preview = null },
+    onTargetScopeChange(scope) {
+      if (scope !== 'GLOBAL') return
+      this.options.createProject = false
+      this.options.targetProjectId = ''
+      this.options.projectCode = ''
+      this.options.projectName = ''
+    },
     async exportPackage() {
       const roots = this.roots.map(item => ({ resourceType: item.resourceType, resourceId: Number(item.resourceId) }))
       if (roots.some(item => !Number.isInteger(item.resourceId) || item.resourceId <= 0)) {

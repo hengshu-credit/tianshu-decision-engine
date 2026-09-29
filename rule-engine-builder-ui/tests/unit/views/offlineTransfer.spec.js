@@ -51,6 +51,30 @@ describe('OfflineTransfer', () => {
     wrapper.unmount()
   })
 
+  test('切换为全局导入时清除隐藏的项目绑定参数', () => {
+    const wrapper = shallowMount(OfflineTransfer)
+    wrapper.vm.options = {
+      ...wrapper.vm.options,
+      targetScope: 'PROJECT',
+      targetProjectId: '9',
+      createProject: true,
+      projectCode: 'new_credit',
+      projectName: '新授信项目',
+    }
+
+    wrapper.vm.options.targetScope = 'GLOBAL'
+    wrapper.vm.onTargetScopeChange('GLOBAL')
+
+    expect(wrapper.vm.options).toMatchObject({
+      targetScope: 'GLOBAL',
+      targetProjectId: '',
+      createProject: false,
+      projectCode: '',
+      projectName: '',
+    })
+    wrapper.unmount()
+  })
+
   test('预检使用目标作用域和冲突选项发送配置包', async () => {
     transferApi.previewResourceTransfer.mockResolvedValue({
       data: { packageDigest: 'digest-1', conflictCount: 0, resources: [], roots: [] },
