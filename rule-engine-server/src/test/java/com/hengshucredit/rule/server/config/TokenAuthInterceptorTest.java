@@ -186,6 +186,24 @@ public class TokenAuthInterceptorTest {
     }
 
     @Test
+    public void externalPayloadReadsDoNotConsumeExecutionPermit() throws Exception {
+        ProjectAccessPolicy policy = new ProjectAccessPolicy();
+        policy.setMaxConcurrent(1);
+        ProjectAuthContext context = ProjectAuthContext.direct(7L, "credit", 9L,
+                "BASIC_MAIN", ProjectAuthType.BASIC, policy);
+        TokenAuthInterceptor interceptor = interceptor(service(context));
+        MockHttpServletResponse firstResponse = new MockHttpServletResponse();
+        MockHttpServletResponse secondResponse = new MockHttpServletResponse();
+
+        assertTrue(interceptor.preHandle(new MockHttpServletRequest(
+                "GET", "/api/rule/runtime/external-calls/CALL_1"), firstResponse, new Object()));
+        assertTrue(interceptor.preHandle(new MockHttpServletRequest(
+                "GET", "/api/rule/runtime/external-calls/CALL_2"), secondResponse, new Object()));
+        assertEquals(200, firstResponse.getStatus());
+        assertEquals(200, secondResponse.getStatus());
+    }
+
+    @Test
     public void rejectsExecutionWhenDistributedGuardIsUnavailable() throws Exception {
         ProjectAccessPolicy policy = new ProjectAccessPolicy();
         policy.setMaxConcurrent(1);
