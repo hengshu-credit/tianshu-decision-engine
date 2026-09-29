@@ -1,6 +1,6 @@
 # 天枢决策引擎独立产品与工程审计（2026-09-27）
 
-> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：服务端 `mvn -pl rule-engine-server -am test` 全量通过；全模块 `mvn clean install -DskipTests` 通过。前端 `npm test` 201 个文件、2449 项通过，lint/build 通过；8080 实际启动连接 MySQL 并监听成功，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功。规则 17、28 已通过真实控制台完成配置、编译、审批和发布，重启预热不再出现两条规则错误；readiness 仍为 503 的剩余原因是本机 Redis/Lettuce 回环资源限制。浏览器工具已完成登录和数据看板检查，首页不再展示执行指标面板；真实生产跨节点容量、外数供应商和灾备门禁仍需在目标拓扑完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单。
+> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：服务端 `mvn -pl rule-engine-server -am test` 全量通过；全模块 `mvn clean install -DskipTests` 通过。前端 `npm test` 201 个文件、2449 项通过，lint/build 通过；8080 实际启动连接 MySQL 并监听成功，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功。规则 17、28 已通过真实控制台完成配置、编译、审批和发布，重启预热不再出现两条规则错误；在 Windows 本机为 JDK 指定 `-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs` 后，Redis 127.0.0.2 可连接，liveness/readiness 均为 200。浏览器工具已完成登录和数据看板检查，首页不再展示执行指标面板；真实生产跨节点容量、外数供应商和灾备门禁仍需在目标拓扑完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单。
 
 ## 1. 审计结论
 
@@ -196,7 +196,7 @@ QLExpress 预热和依赖加载失败不能只写日志后继续把服务视为�
 - 发现并修复 `DecisionExecutionPersistence` 生产启动缺陷：队列容量构造参数改为读取 `rule-engine.execution-persistence.queue-capacity`，不再因 Spring 找不到 `int` Bean 导致 8080 启动失败。修复后 `mvn spring-boot:run` 已连接 MySQL 并监听 8080，匿名预检请求按预期返回 401，服务已主动停止。
 - 历史复核基线（修复前）：前端 `npm test` 201 个文件、2447 个测试通过，`npm run lint`、`npm run build`、dist Playwright 218/218 和 9090 启动检查通过；后端启动连接 MySQL，但样例 readiness 因规则 17/28 预热失败返回 503。
 - 2026-09-29 真实 MySQL 核查确认规则 17/28 的故障来源（已修复）：规则 17（`SCORE_ADV`）的模型 JSON 结果变量编码为空且没有输出字段；规则 28（`SCRIPT`）的已发布版本没有 `artifact_id`，脚本调用项目函数 `roundTax`，旧制品没有冻结函数绑定。两条规则随后按控制台设计、编译、审批、发布流程修复，未通过下线、跳过预热或放宽 readiness 校验消除告警。
-- 2026-09-29 已按控制台真实流程修复并发布：项目函数 `roundTax` 生效版本 V2；规则 28 重新保存并补齐函数稳定 ID 后发布 V6，制品 ID 为 19；规则 17 选择结果变量 `score`（变量 ID 130），自动生成输出字段后发布 V2，制品 ID 为 20。重启预热日志不再出现规则 17/28 的 QL/函数错误；readiness 仍为 503 的剩余原因是当前本机 Redis/Lettuce 回环资源无法建立，不再是这两条规则的配置或制品错误。
+- 2026-09-29 已按控制台真实流程修复并发布：项目函数 `roundTax` 生效版本 V2；规则 28 重新保存并补齐函数稳定 ID 后发布 V6，制品 ID 为 19；规则 17 选择结果变量 `score`（变量 ID 130），自动生成输出字段后发布 V2，制品 ID 为 20。重启预热日志不再出现规则 17/28 的 QL/函数错误；Windows 本机通过 JDK Unix Domain Socket 临时目录配置后 readiness 已验证为 200，不再是这两条规则的配置或制品错误。
 - 新增复杂评分卡结果变量必填校验：草稿可以暂存不完整配置，编译和发布前会阻止空结果变量，避免生成 `= 100.0` 这类不可执行脚本；规则预热失败明细增加错误分类、标题和下一步操作。修复弹窗主按钮 hover/focus 使用浅色背景造成白字对比度不足的问题，UI 质量回归重新通过。
 - 预热目标范围明确为 `PRODUCTION_ACTIVE`：规则只读取上线发布记录和有效生产固定版本绑定，ONNX 模型只在 `published_version` 非空时启动预热；草稿、审核中、下线和未发布模型不会触发预热。
 - 留存策略再次收紧：生命周期事件和名单变更日志不再暴露保留天数配置，也不进入任何删除 SQL；可选清理仅保留项目鉴权访问日志，账单、规则/外数/数据库/模型/名单调用和分流实验仍永久留存。

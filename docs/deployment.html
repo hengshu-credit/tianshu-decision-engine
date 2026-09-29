@@ -352,6 +352,12 @@ mvn spring-boot:run
 <pre><code class="language-powershell">.\start-dev.cmd
 </code></pre>
 <p>需先配置根目录 <code>.env</code>，并保持 MySQL、Redis 运行，确保 Java、Maven、Node.js 可从 <code>PATH</code> 调用。命令会编译后端依赖、在缺少前端依赖时执行 <code>npm ci</code>，后台启动服务并等待健康检查及前端 API 代理检查通过；已就绪的服务会直接复用。端口沿用 <code>.env</code> 的 <code>SERVER_PORT</code> 和 <code>VITE_PORT</code>，日志及本次启动的进程 ID 保存在 <code>.codex-run-logs/</code>。命令只启动前后端，不会重启 MySQL、Redis；检测到 WSL 与项目 Docker 服务的本机端口冲突时，仅为本次后端进程调整连接地址。</p>
+<p>Windows 本机如果 JDK 默认 Unix Domain Socket 临时目录导致 Redis/Lettuce 健康检查出现 <code>Unable to establish loopback connection</code>，先为本次进程指定工作区目录，再启动后端：</p>
+<pre><code class="language-powershell">$env:JAVA_TOOL_OPTIONS='-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs'
+cd rule-engine-server
+mvn spring-boot:run
+</code></pre>
+<p>这是本机 JDK 临时目录兼容性配置，不应替代生产 Redis、网络和 readiness 检查。</p>
 <pre><code class="language-bash">mvn clean install -DskipTests
 cd rule-engine-server
 mvn spring-boot:run

@@ -368,9 +368,9 @@ TIMEOUT
 - 随机函数结果进入根请求上下文检查点；恢复时按调用序号复用，避免规则重试改变已经产生的随机结果。
 - 子规则共享执行上下文改为原地绑定，避免入参预处理深拷贝导致父规则持有的对象引用失效；对象字段缺失继续保留为待解析状态，外数/变量来源可以完成后续组装。
 - QLExpress 嵌套上下文支持多层 Map 绑定，`setRuntimeValue` 写入会同步到当前活动上下文；子规则运行前校验冻结函数集合，未绑定函数会返回明确执行失败。
-- 2026-09-29 回归：`mvn -pl rule-engine-server -am test` 全量通过；`mvn clean install -DskipTests` 全模块通过；前端 `npm test` 为 201 个文件、2449 个测试通过，lint/build 通过。8080 启动可连接 MySQL，10 个生产发布 ONNX 模型按已发布版本快照完成预热；规则 17/28 已通过控制台真实流程修复并发布，启动预热不再报两条规则错误，readiness 剩余 503 来自本机 Redis/Lettuce 回环资源限制。
+- 2026-09-29 回归：`mvn -pl rule-engine-server -am test` 全量通过；`mvn clean install -DskipTests` 全模块通过；前端 `npm test` 为 201 个文件、2449 个测试通过，lint/build 通过。8080 启动可连接 MySQL，10 个生产发布 ONNX 模型按已发布版本快照完成预热；规则 17/28 已通过控制台真实流程修复并发布，启动预热不再报两条规则错误。Windows 本机指定 `-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs` 后 Redis、liveness 和 readiness 均验证通过。
 - 2026-09-29 数据层复核：规则 17 的复杂评分卡结果变量为空且没有输出字段，规则 28 的已发布脚本版本没有制品 ID，且旧制品缺少项目函数 `roundTax` 绑定。两项必须按正常设计/编译/审批/发布流程修复后再验证 readiness，不能以忽略失败或下线生产资源代替修复。
-- 2026-09-29 规则修复闭环：通过控制台为规则 17 选择 `score` 结果变量并发布 V2（制品 20），为规则 28 补齐 `roundTax` 稳定函数 ID 并发布 V6（制品 19）。重启预热不再报这两条规则错误；本机 readiness 剩余 503 来自 Redis/Lettuce 回环资源限制。
+- 2026-09-29 规则修复闭环：通过控制台为规则 17 选择 `score` 结果变量并发布 V2（制品 20），为规则 28 补齐 `roundTax` 稳定函数 ID 并发布 V6（制品 19）。重启预热不再报这两条规则错误；Windows 本机 readiness 已通过 JDK Unix Domain Socket 临时目录配置恢复为 200。
 - 2026-09-29 持久化增量：数据库日志/计费写入和恢复 outbox 同时失败时，`DecisionExecutionPersistence` 将事件 fsync 到本地 NDJSON 写前日志；恢复后自动重放并只保留未完成侧。生产仍需把日志目录放到独立持久化盘并完成断电、磁盘满、重启和节点隔离演练。
 - 2026-09-29 回溯增量：执行日志详情增加离线回溯入口，回溯执行关闭日志和计费持久化，并通过离线来源模式阻止 API、数据库、名单和模型真实调用；响应包含回溯 trace、来源缺口和规则修订/制品归因。
 
