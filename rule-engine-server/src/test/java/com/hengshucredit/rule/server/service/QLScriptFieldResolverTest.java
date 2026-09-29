@@ -255,7 +255,7 @@ public class QLScriptFieldResolverTest {
         assertThrows(UnsupportedOperationException.class,
                 () -> fields.getInputPropertySchemas().clear());
         assertThrows(UnsupportedOperationException.class,
-                () -> ((List<Object>) fields.getInputPropertySchemas().get("types")).clear());
+                () -> ((List<?>) fields.getInputPropertySchemas().get("types")).clear());
     }
 
     @Test
