@@ -91,7 +91,7 @@ public class ProjectFilterServiceTest {
 
     private static class FakeProjectMapper {
         private final List<RuleProject> projects;
-        private LambdaQueryWrapper<RuleProject> wrapper;
+        private LambdaQueryWrapper<?> wrapper;
         private int selectCount;
 
         private FakeProjectMapper(List<RuleProject> projects) {
@@ -105,7 +105,7 @@ public class ProjectFilterServiceTest {
                     (proxy, method, args) -> {
                         if ("selectList".equals(method.getName())) {
                             selectCount++;
-                            wrapper = (LambdaQueryWrapper<RuleProject>) args[0];
+                            wrapper = (LambdaQueryWrapper<?>) args[0];
                             return projects;
                         }
                         return defaultValue(method.getReturnType());
