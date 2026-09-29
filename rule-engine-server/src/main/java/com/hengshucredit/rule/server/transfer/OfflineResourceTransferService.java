@@ -11,6 +11,11 @@ import com.hengshucredit.rule.model.entity.GovernedResource;
 import com.hengshucredit.rule.model.entity.GovernedResourceVersion;
 import com.hengshucredit.rule.server.mapper.GovernedResourceMapper;
 import com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper;
+import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
+import com.hengshucredit.rule.server.mapper.RuleDefinitionVersionMapper;
+import com.hengshucredit.rule.model.entity.RuleVersionBinding;
+import com.hengshucredit.rule.model.entity.RuleDefinitionVersion;
+import com.hengshucredit.rule.server.service.OperandDependencyCollector;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,7 +39,7 @@ public class OfflineResourceTransferService {
     private static final Set<String> JSON_FIELDS = Set.of(
             "sourceConfig", "authApiConfig", "headerConfig", "queryConfig",
             "requestMapping", "responseMapping", "bodyTemplate", "asyncPollConfig",
-            "asyncCallbackConfig", "conditionConfig", "inputFields", "outputFields");
+            "asyncCallbackConfig", "conditionConfig", "inputFields", "outputFields", "modelJson");
     private static final Set<TransferResourceType> DATA_FREE_TYPES = Set.of(
             TransferResourceType.LIST_LIBRARY);
 
@@ -46,6 +51,10 @@ public class OfflineResourceTransferService {
     private GovernedResourceVersionMapper governedResourceVersionMapper;
     @Resource
     private GovernanceSecretCodec secretCodec;
+    @Resource
+    private RuleVersionBindingMapper ruleVersionBindingMapper;
+    @Resource
+    private RuleDefinitionVersionMapper ruleDefinitionVersionMapper;
     private final TransferBundleCodec codec = new TransferBundleCodec();
 
     @Transactional(readOnly = true)
@@ -59,6 +68,11 @@ public class OfflineResourceTransferService {
             TransferKey key = queue.removeFirst();
             if (resources.containsKey(key.value())) continue;
             if (!visiting.add(key.value())) throw new IllegalArgumentException("离线导出依赖形成循环: " + key.value());
+            if (key.type() == TransferResourceType.RULE_VERSION) {
+                resources.put(key.value(), exportRuleVersion(key, queue, warnings));
+                visiting.remove(key.value());
+                continue;
+            }
             GovernedResourceAdapter adapter = adapterRegistry.require(key.type().name());
             ResourceSnapshot snapshot = adapter.loadEffective(key.id());
             Map<String, Object> configuration = CanonicalJson.readMap(snapshot.snapshotJson());
@@ -97,6 +111,9 @@ public class OfflineResourceTransferService {
                 String childPath = childPath(targetType, dependency.targetResourceId(), referencedValue);
                 references.add(new TransferBundle.Reference(pointer, targetKey, childPath));
                 queue.addLast(new TransferKey(targetType, dependency.targetResourceId()));
+            }
+            if (key.type() == TransferResourceType.RULE) {
+                collectFixedRuleVersions(configuration, references, queue, warnings);
             }
             resources.put(key.value(), new TransferBundle.Resource(key.value(), configuration,
                     references, requiredEnvironmentFields(key.type(), configuration)));
@@ -159,6 +176,55 @@ public class OfflineResourceTransferService {
             unique.put(key.value(), key);
         }
         return new ArrayList<>(unique.values());
+    }
+
+    private TransferBundle.Resource exportRuleVersion(TransferKey key, Deque<TransferKey> queue,
+                                                       List<String> warnings) {
+        if (ruleVersionBindingMapper == null || ruleDefinitionVersionMapper == null)
+            throw new IllegalStateException("规则版本迁移依赖版本绑定数据源");
+        RuleVersionBinding binding = ruleVersionBindingMapper.selectById(key.id());
+        if (binding == null) throw new IllegalArgumentException("指定规则版本绑定不存在: " + key.value());
+        RuleDefinitionVersion snapshot = binding.getSnapshotId() == null ? null : ruleDefinitionVersionMapper.selectById(binding.getSnapshotId());
+        if (snapshot == null) throw new IllegalArgumentException("指定规则版本快照不存在: " + key.value());
+        Map<String, Object> config = new LinkedHashMap<>();
+        config.put("id", binding.getId()); config.put("definitionId", binding.getDefinitionId());
+        config.put("versionNo", binding.getVersionNo()); config.put("generation", binding.getGeneration());
+        config.put("status", binding.getStatus()); config.put("snapshotId", binding.getSnapshotId());
+        config.put("snapshot", CanonicalJson.readMap(CanonicalJson.write(snapshot)));
+        List<TransferBundle.Reference> refs = List.of(
+                new TransferBundle.Reference("/definitionId", "RULE:" + binding.getDefinitionId(), null));
+        queue.addLast(new TransferKey(TransferResourceType.RULE, binding.getDefinitionId()));
+        return new TransferBundle.Resource(key.value(), config, refs,
+                List.of("目标环境需要在规则发布后重新建立该业务版本绑定"));
+    }
+
+    private void collectFixedRuleVersions(Map<String, Object> configuration,
+                                          List<TransferBundle.Reference> references,
+                                          Deque<TransferKey> queue,
+                                          List<String> warnings) {
+        Map<String, Object> content = object(configuration.get("content"));
+        Object modelJson = content.get("modelJson");
+        if (!(modelJson instanceof String script) || script.isBlank()) return;
+        Object model;
+        try { model = JSON.parse(script); } catch (RuntimeException invalid) {
+            warnings.add("规则模型 JSON 无法解析，未能分析固定版本引用: " + configuration.get("ruleCode"));
+            return;
+        }
+        for (OperandDependencyCollector.Reference reference : OperandDependencyCollector.collectReferences(model)) {
+            if (!"RULE".equalsIgnoreCase(reference.getRefType())
+                    || !"FIXED".equalsIgnoreCase(reference.getVersionMode())
+                    || reference.getVersionBindingId() == null) continue;
+            String bindingKey = new TransferKey(TransferResourceType.RULE_VERSION,
+                    reference.getVersionBindingId()).value();
+            String pointer = "/content/modelJson/@json" + toPointer(reference.getPath());
+            references.add(new TransferBundle.Reference(pointer, bindingKey, null));
+            queue.addLast(new TransferKey(TransferResourceType.RULE_VERSION, reference.getVersionBindingId()));
+        }
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> object(Object value) {
+        return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of();
     }
 
     private String toPointer(String path) {

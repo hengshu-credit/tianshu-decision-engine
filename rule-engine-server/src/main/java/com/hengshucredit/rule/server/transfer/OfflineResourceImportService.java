@@ -65,6 +65,13 @@ public class OfflineResourceImportService {
         List<Map<String, Object>> result = new ArrayList<>();
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
+            if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
+                throw new IllegalArgumentException("固定版本绑定必须在目标规则发布后重新建立，请先导入并发布对应规则: " + resource.key());
+            }
+            if (sourceKey.type() == TransferResourceType.RULE
+                    && resource.references().stream().anyMatch(reference -> reference.targetKey().startsWith("RULE_VERSION:"))) {
+                throw new IllegalArgumentException("包含固定版本引用的规则需要目标规则发布后重建版本绑定: " + resource.key());
+            }
             Long existingId = findExisting(sourceKey.type(), resource.configuration(), options);
             String policy = sourceKey.type() == TransferResourceType.VARIABLE
                     ? options.normalizedVariablePolicy() : options.normalizedResourcePolicy();
