@@ -30,11 +30,12 @@ public class RuntimeCallLogController {
             @RequestParam(required = false) String targetCode,
             @RequestParam(required = false) String traceId,
             @RequestParam(required = false) String callId,
+            @RequestParam(required = false) Long projectId,
             @RequestParam(required = false) Integer success,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime startTime,
             @RequestParam(required = false) @DateTimeFormat(pattern = "yyyy-MM-dd HH:mm:ss") LocalDateTime endTime) {
         IPage<RuleRuntimeCallLog> page = logService.pageList(pageNum, pageSize, moduleType, actionType,
-                targetCode, traceId, callId, success, startTime, endTime);
+                targetCode, traceId, callId, projectId, success, startTime, endTime);
         if (page.getRecords() != null) {
             page.getRecords().forEach(item -> {
                 item.setRawRequestBody(null);
@@ -48,13 +49,15 @@ public class RuntimeCallLogController {
     }
 
     @GetMapping("/{id}/payload")
-    public R<Map<String, Object>> payload(@org.springframework.web.bind.annotation.PathVariable Long id) {
-        return R.ok(logService.payload(id));
+    public R<Map<String, Object>> payload(@org.springframework.web.bind.annotation.PathVariable Long id,
+                                           @RequestParam(required = false) Long projectId) {
+        return R.ok(logService.payload(id, projectId));
     }
 
     @GetMapping("/payload/by-call-id")
-    public R<Map<String, Object>> payloadByCallId(@RequestParam String callId) {
-        return R.ok(logService.payloadByCallId(callId));
+    public R<Map<String, Object>> payloadByCallId(@RequestParam String callId,
+                                                   @RequestParam(required = false) Long projectId) {
+        return R.ok(logService.payloadByCallId(callId, projectId));
     }
 
     @GetMapping("/payload/by-root-trace-id")

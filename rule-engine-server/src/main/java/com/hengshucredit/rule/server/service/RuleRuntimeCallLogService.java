@@ -29,12 +29,19 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
                                               String targetCode, String traceId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
         return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, null,
-                success, startTime, endTime);
+                null, success, startTime, endTime);
     }
 
     public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
                                               String targetCode, String traceId, String callId, Integer success,
                                               LocalDateTime startTime, LocalDateTime endTime) {
+        return pageList(pageNum, pageSize, moduleType, actionType, targetCode, traceId, callId,
+                null, success, startTime, endTime);
+    }
+
+    public IPage<RuleRuntimeCallLog> pageList(int pageNum, int pageSize, String moduleType, String actionType,
+                                              String targetCode, String traceId, String callId, Long projectId,
+                                              Integer success, LocalDateTime startTime, LocalDateTime endTime) {
         LambdaQueryWrapper<RuleRuntimeCallLog> wrapper = new LambdaQueryWrapper<>();
         if (hasText(moduleType)) {
             wrapper.eq(RuleRuntimeCallLog::getModuleType, moduleType);
@@ -52,6 +59,9 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
         if (hasText(callId)) {
             wrapper.eq(RuleRuntimeCallLog::getCallId, callId);
         }
+        if (projectId != null) {
+            wrapper.eq(RuleRuntimeCallLog::getProjectId, projectId);
+        }
         if (success != null) {
             wrapper.eq(RuleRuntimeCallLog::getSuccess, success);
         }
@@ -67,7 +77,14 @@ public class RuleRuntimeCallLogService extends ServiceImpl<RuleRuntimeCallLogMap
 
     /** 返回一次调用的原始报文和稳定关联键，供业务分析系统按日志 ID 直接取数。 */
     public Map<String, Object> payload(Long id) {
+        return payload(id, null);
+    }
+
+    public Map<String, Object> payload(Long id, Long projectId) {
         RuleRuntimeCallLog log = id == null ? null : getById(id);
+        if (projectId != null && (log == null || !projectId.equals(log.getProjectId()))) {
+            return Collections.emptyMap();
+        }
         return payloadWithAssignments(log);
     }
 

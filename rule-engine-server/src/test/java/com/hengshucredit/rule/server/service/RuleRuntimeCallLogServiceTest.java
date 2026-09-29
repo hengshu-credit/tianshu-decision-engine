@@ -176,6 +176,25 @@ public class RuleRuntimeCallLogServiceTest {
         assertTrue(Boolean.TRUE.equals(payload.get("rawPayloadAvailable")));
     }
 
+    @Test
+    public void payloadByIdCanEnforceProjectScope() {
+        RuleRuntimeCallLog source = traceLog("call-scope", "API_INVOKE", "[]");
+        RuleRuntimeCallLogService service = new RuleRuntimeCallLogService() {
+            @Override
+            public RuleRuntimeCallLog getById(java.io.Serializable id) {
+                return source;
+            }
+
+            @Override
+            public List<RuleRuntimeCallLog> list(Wrapper<RuleRuntimeCallLog> query) {
+                return List.of();
+            }
+        };
+
+        assertTrue(service.payload(9L, 5L).containsKey("callId"));
+        assertTrue(service.payload(9L, 6L).isEmpty());
+    }
+
     private RuleRuntimeCallLog log(Long targetId, String targetCode, int providerRequest, String cacheStatus,
                                    int requestSuccess, int found, Long costTimeMs) {
         RuleRuntimeCallLog log = new RuleRuntimeCallLog();
