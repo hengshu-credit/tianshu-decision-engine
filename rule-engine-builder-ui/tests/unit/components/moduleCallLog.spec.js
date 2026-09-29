@@ -68,6 +68,29 @@ describe('ModuleCallLog', () => {
     wrapper.unmount()
   })
 
+  test('按项目编码筛选日志并将项目 ID 传入详情报文查询', async () => {
+    const wrapper = shallowMount(ModuleCallLog, {
+      props: { moduleType: 'DATASOURCE' },
+      stubs: [
+        'el-button', 'el-form', 'el-form-item', 'el-select', 'el-option', 'el-input',
+        'el-table', 'el-table-column', 'el-tag', 'el-pagination', 'el-drawer',
+        'el-descriptions', 'el-descriptions-item', 'el-alert'
+      ]
+    })
+    await wrapper.vm.$nextTick()
+    wrapper.vm.query.projectCode = 'PROJECT_A'
+    await wrapper.vm.load()
+
+    expect(listRuntimeLogs).toHaveBeenLastCalledWith(expect.objectContaining({
+      projectCode: 'PROJECT_A',
+      moduleType: 'DATASOURCE'
+    }))
+
+    await wrapper.vm.openDetail({ id: 19, projectId: 7, actionType: 'API_INVOKE', success: 1 })
+    expect(getRuntimeCallPayload).toHaveBeenLastCalledWith(19, 7)
+    wrapper.unmount()
+  })
+
   test('外数日志详情按日志 ID 拉取原始报文并展示稳定关联键', async () => {
     getRuntimeCallPayload.mockResolvedValueOnce({
       data: {
