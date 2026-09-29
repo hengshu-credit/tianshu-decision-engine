@@ -1,6 +1,6 @@
 # 天枢决策引擎独立产品与工程审计（2026-09-27）
 
-> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：服务端 `mvn -pl rule-engine-server -am test` 全量通过；全模块 `mvn clean install -DskipTests` 通过。前端 `npm test` 201 个文件、2449 项通过，lint/build 通过；8080 实际启动连接 MySQL 并监听成功，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功。规则 17、28 已通过真实控制台完成配置、编译、审批和发布，重启预热不再出现两条规则错误；在 Windows 本机为 JDK 指定 `-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs` 后，Redis 127.0.0.2 可连接，liveness/readiness 均为 200。浏览器工具已完成登录和数据看板检查，首页不再展示执行指标面板；真实生产跨节点容量、外数供应商和灾备门禁仍需在目标拓扑完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单。
+> **2026-09-29 复核状态更新：**并发修改造成的空值/对象映射冲突已合并：全模块 `mvn clean install -DskipTests` 与配置 `JAVA_TOOL_OPTIONS=-Djdk.net.unixdomain.tmpdir=E:/workspace/tianshu-run-logs` 的全量 `mvn test` 均通过。前端 `npm test` 203 个文件、2456 项通过，lint/build 通过；8080 实际启动连接 MySQL 并监听成功，32 个活动规则版本预热且 0 个拒绝，10 个生产发布 ONNX 模型按 `published_version` 快照预热成功。规则 17、28 已通过真实控制台完成配置、编译、审批和发布，重启预热不再出现两条规则错误；Windows 本机为 JDK 指定 Unix Domain Socket 临时目录后，Redis 127.0.0.2 可连接，liveness/readiness 均为 200。浏览器工具已完成登录和数据看板检查，首页不再展示执行指标面板；真实生产跨节点容量、外数供应商和灾备门禁仍需在目标拓扑完成。外数报文留存新增 `saveOriginal=false`：按配置不保存完整原文，留存处理失败时强制保存原文并标注 `originalStoredReason=CAPTURE_FAILED`；后端策略 7 项、前端配置 5 项回归通过。规则、外数、模型、数据库、名单、生命周期、账单和分流实验历史不进入自动清理白名单。
 
 ## 1. 审计结论
 
