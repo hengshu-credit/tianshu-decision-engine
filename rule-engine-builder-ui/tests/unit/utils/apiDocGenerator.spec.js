@@ -1,4 +1,5 @@
 import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
+import { DEFAULT_THEME_CONFIG } from '@/theme/themeConfig'
 
 describe('完整 API 文档生成器', () => {
   test('生成可导入的 OpenAPI 3.1 文档且不输出凭据', () => {
@@ -95,6 +96,14 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('认证鉴权')
     expect(html).toContain('通用响应约定与码表')
     expect(html).toContain('在线调用')
+    expect(html).toContain('data-export-openapi')
+    expect(html).toContain('可直接导入 Postman 或 Apifox 进行接口管理')
+    expect(html).toContain('window.__OPEN_API__')
+    expect(html).toContain('openapi":"3.1.0')
+    const openApiStart = html.indexOf('window.__OPEN_API__=') + 'window.__OPEN_API__='.length
+    const openApiEnd = html.indexOf(';</script>', openApiStart)
+    const embeddedOpenApi = JSON.parse(html.slice(openApiStart, openApiEnd))
+    expect(embeddedOpenApi.paths['/api/rule/sync/execute/RISK'].post.requestBody.content['application/json'].schema.properties.params.properties.age.type).toBe('integer')
     expect(html).toContain('Shell')
     expect(html).toContain('JavaScript')
     expect(html).toContain('风险拒绝')
@@ -192,5 +201,17 @@ describe('完整 API 文档生成器', () => {
     expect(html).toContain('new FormData()')
     expect(html).not.toContain('monaco')
     expect(html).not.toContain('<script src=')
+  })
+
+  test('导出文档沿用当前主题的模式和强调色', () => {
+    const html = generateApiDocHtml(doc, {
+      logoSvg: '<svg></svg>',
+      theme: { ...DEFAULT_THEME_CONFIG, colorScheme: 'DARK', accentPreset: 'LIQUID_PURPLE' }
+    })
+
+    expect(html).toContain('color-scheme:dark')
+    expect(html).toContain('--brand:#873FF2')
+    expect(html).toContain('--bg:#101828')
+    expect(html).toContain('--surface:#151D31')
   })
 })

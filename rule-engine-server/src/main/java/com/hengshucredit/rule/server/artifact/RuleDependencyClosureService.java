@@ -621,6 +621,7 @@ public class RuleDependencyClosureService {
         snapshot.put("varCode", field.getVarCode());
         snapshot.put("scriptName", field.getScriptName());
         snapshot.put("varType", field.getVarType());
+        snapshot.put("sourcePath", field.getSourcePath());
         snapshot.put("genericType", field.getGenericType());
         snapshot.put("refObjectId", field.getRefObjectId());
         snapshot.put("refVariableId", field.getRefVariableId());
@@ -629,6 +630,10 @@ public class RuleDependencyClosureService {
         snapshot.put("recordResult", field.getRecordResult());
         RuleDataObject owner = field.getObjectId() == null ? null : loadDataObject(field.getObjectId());
         snapshot.put("lazyReference", owner != null && Boolean.TRUE.equals(owner.getLazyLoadReferences()));
+        snapshot.put("objectSourceType", owner == null ? null : owner.getSourceType());
+        snapshot.put("objectSourceContent", owner == null ? null : owner.getSourceContent());
+        snapshot.put("objectScriptName", owner == null ? null : owner.getScriptName());
+        snapshot.put("objectCode", owner == null ? null : owner.getObjectCode());
         String objectPath = owner == null ? null : owner.getScriptName();
         if (owner != null && (objectPath == null || objectPath.isBlank())) objectPath = owner.getObjectCode();
         String fieldPath = field.getScriptName();

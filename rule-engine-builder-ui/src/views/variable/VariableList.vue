@@ -350,6 +350,8 @@
             <el-option label="Java 实体" value="JAVA" />
             <el-option label="JSON" value="JSON" />
             <el-option label="DDL" value="DDL" />
+            <el-option label="API 外数" value="API" />
+            <el-option label="数据库查询" value="DB" />
             <el-option label="手动" value="MANUAL" />
           </el-select>
           <remote-filter-select
@@ -1299,6 +1301,13 @@
             />
           </el-select>
         </el-form-item>
+        <el-form-item v-if="isObjectField && objectHasExternalSource" label="来源路径">
+          <el-input
+            v-model="form.sourcePath"
+            placeholder="例如 data.customer.name；留空使用字段编码"
+          />
+          <div class="field-help">从对象来源返回结果中读取该字段；API 路径相对于对象结果路径，数据库默认使用查询结果列名。</div>
+        </el-form-item>
         <el-form-item v-if="!isObjectField" label="取值方式">
           <variable-source-selector
             v-model="form.varSource"
@@ -1818,13 +1827,64 @@
               </div>
             </template>
             <el-form-item label="来源类型">
-              <el-select v-model="objectForm.sourceType" style="width: 100%">
+              <el-select v-model="objectForm.sourceType" style="width: 100%" @change="onObjectSourceTypeChange">
                 <el-option label="Java 实体" value="JAVA" />
                 <el-option label="JSON" value="JSON" />
                 <el-option label="DDL" value="DDL" />
+                <el-option label="API 外数" value="API" />
+                <el-option label="数据库查询" value="DB" />
                 <el-option label="手动" value="MANUAL" />
               </el-select>
             </el-form-item>
+            <template v-if="objectForm.sourceType === 'API'">
+              <el-form-item label="API 配置">
+                <el-select v-model="objectForm.apiConfigId" filterable clearable placeholder="选择 API 配置" style="width: 100%">
+                  <el-option
+                    v-for="api in apiConfigOptions"
+                    :key="api.id"
+                    :label="(api.apiName || api.name || api.apiCode || api.code) + (api.apiCode || api.code ? ' / ' + (api.apiCode || api.code) : '')"
+                    :value="api.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="绑定方式">
+                <el-radio-group v-model="objectForm.bindingMode">
+                  <el-radio value="OBJECT">整体结果</el-radio>
+                  <el-radio value="FIELDS">按字段路径</el-radio>
+                </el-radio-group>
+              </el-form-item>
+              <el-form-item label="对象结果路径">
+                <el-input v-model="objectForm.resultPath" placeholder="body.data；默认 body" />
+                <div class="field-help">整体结果模式从此路径绑定对象；字段模式下各字段路径相对于此结果填写。</div>
+              </el-form-item>
+              <el-form-item label="请求参数映射">
+                <el-input v-model="objectForm.paramMapping" type="textarea" :rows="3" placeholder='例如 {"customerId":"customerId"}' />
+              </el-form-item>
+            </template>
+            <template v-if="objectForm.sourceType === 'DB'">
+              <el-form-item label="数据库源">
+                <el-select v-model="objectForm.dbDatasourceId" filterable clearable placeholder="选择数据库源" style="width: 100%">
+                  <el-option
+                    v-for="db in dbDatasourceOptions"
+                    :key="db.id"
+                    :label="(db.datasourceName || db.name || db.datasourceCode || db.code) + (db.datasourceCode || db.code ? ' / ' + (db.datasourceCode || db.code) : '')"
+                    :value="db.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="查询 SQL">
+                <el-input v-model="objectForm.sql" type="textarea" :rows="4" placeholder="仅支持只读查询，例如 SELECT * FROM customer WHERE id = ?" />
+              </el-form-item>
+              <el-form-item label="SQL 参数">
+                <el-input v-model="objectForm.params" type="textarea" :rows="3" placeholder='例如 [{"kind":"REFERENCE","path":"customerId"}]' />
+              </el-form-item>
+              <el-form-item label="绑定方式">
+                <el-radio-group v-model="objectForm.bindingMode">
+                  <el-radio value="OBJECT">整行结果</el-radio>
+                  <el-radio value="FIELDS">按字段列名/路径</el-radio>
+                </el-radio-group>
+              </el-form-item>
+            </template>
             <el-form-item label="懒加载引用字段">
               <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
               <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
@@ -2812,6 +2872,14 @@ export default {
         projectId: '',
         objectType: 'INPUT',
         sourceType: 'MANUAL',
+        sourceContent: null,
+        apiConfigId: '',
+        dbDatasourceId: '',
+        bindingMode: 'OBJECT',
+        resultPath: 'body',
+        paramMapping: '{}',
+        sql: '',
+        params: '[]',
         description: '',
       },
       objectRules: {
@@ -3065,6 +3133,9 @@ export default {
     },
     objectConfigurationReadyCount() {
       return this.objectConfigurationChecklist.filter((item) => item.ready).length
+    },
+    objectHasExternalSource() {
+      return ['API', 'DB'].includes(String(this.objectFieldOwner?.sourceType || '').toUpperCase())
     },
     sourceCatalogCounts() {
       return {
@@ -4350,8 +4421,17 @@ export default {
         projectId: this.currentProjectId || '',
         objectType: 'INPUT',
         sourceType: 'MANUAL',
+        apiConfigId: '',
+        dbDatasourceId: '',
+        bindingMode: 'OBJECT',
+        resultPath: 'body',
+        paramMapping: '{}',
+        sql: '',
+        params: '[]',
         description: '',
       }
+      this.loadVariableSourceOptions('API')
+      this.loadVariableSourceOptions('DB')
       this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
@@ -4360,6 +4440,7 @@ export default {
     },
     /** 编辑数据对象（从行内操作） */
     handleEditObject(obj) {
+      const sourceConfig = this.parseJsonSafe(obj.sourceContent, {})
       this.objectForm = {
         lazyLoadReferences: obj.lazyLoadReferences === true,
         id: obj.id,
@@ -4370,8 +4451,18 @@ export default {
         projectId: obj.scope === 'GLOBAL' ? '' : this.normalizeProjectId(obj.projectId),
         objectType: obj.objectType || 'INPUT',
         sourceType: obj.sourceType || 'MANUAL',
+        sourceContent: obj.sourceContent || null,
+        apiConfigId: sourceConfig.apiConfigId || '',
+        dbDatasourceId: sourceConfig.dbDatasourceId || sourceConfig.datasourceId || '',
+        bindingMode: sourceConfig.bindingMode || 'OBJECT',
+        resultPath: sourceConfig.resultPath || 'body',
+        paramMapping: this.stringifyConfig(sourceConfig.paramMapping || {}),
+        sql: sourceConfig.sql || '',
+        params: this.stringifyConfig(sourceConfig.params || []),
         description: obj.description || '',
       }
+      this.loadVariableSourceOptions('API')
+      this.loadVariableSourceOptions('DB')
       this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
@@ -4383,6 +4474,10 @@ export default {
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate('projectId')
       })
+    },
+    onObjectSourceTypeChange(source) {
+      if (source === 'API') this.loadVariableSourceOptions('API')
+      if (source === 'DB') this.loadVariableSourceOptions('DB')
     },
     /** 提交数据对象表单 */
     handleObjectSubmit() {
@@ -4396,9 +4491,51 @@ export default {
           this.$message.warning('请选择所属项目')
           return
         }
+        const sourceType = String(this.objectForm.sourceType || 'MANUAL').toUpperCase()
+        let sourceContent = null
+        if (sourceType === 'API') {
+          if (!this.objectForm.apiConfigId) {
+            this.$message.warning('请选择 API 配置')
+            return
+          }
+          const paramMapping = this.parseSourceJson(this.objectForm.paramMapping, '请求参数映射', {})
+          if (paramMapping == null || Array.isArray(paramMapping) || typeof paramMapping !== 'object') return
+          sourceContent = JSON.stringify({
+            apiConfigId: this.objectForm.apiConfigId,
+            bindingMode: this.objectForm.bindingMode || 'OBJECT',
+            resultPath: this.objectForm.resultPath || 'body',
+            paramMapping,
+          })
+        } else if (sourceType === 'DB') {
+          if (!this.objectForm.dbDatasourceId) {
+            this.$message.warning('请选择数据库源')
+            return
+          }
+          if (!this.objectForm.sql || !this.objectForm.sql.trim()) {
+            this.$message.warning('请输入查询 SQL')
+            return
+          }
+          const params = this.parseSourceJson(this.objectForm.params, 'SQL 参数', [])
+          if (params == null || !Array.isArray(params)) {
+            if (params != null) this.$message.warning('SQL 参数必须是 JSON 数组')
+            return
+          }
+          sourceContent = JSON.stringify({
+            dbDatasourceId: this.objectForm.dbDatasourceId,
+            sql: this.objectForm.sql,
+            params,
+            bindingMode: this.objectForm.bindingMode || 'OBJECT',
+            maxRows: 1,
+            queryTimeoutSeconds: 5,
+          })
+        }
         try {
           const payload = {
             ...this.objectForm,
+            sourceType,
+            sourceContent: sourceType === 'API' || sourceType === 'DB'
+              ? sourceContent
+              : this.objectForm.sourceContent,
             projectId: this.objectForm.scope === 'GLOBAL'
               ? 0
               : this.objectForm.projectId,
@@ -4430,6 +4567,7 @@ export default {
         varLabel: '',
         scriptName: '',
         varType: 'STRING',
+        sourcePath: '',
         refVariableId: null,
         referenceMode: 'VALUE',
         recordResult: false,
@@ -4459,6 +4597,7 @@ export default {
         varLabel: row.varLabel,
         scriptName: Object.prototype.hasOwnProperty.call(row, 'originalScriptName') ? row.originalScriptName : row.scriptName,
         varType: row.varType || 'STRING',
+        sourcePath: row.sourcePath || '',
         refVariableId: row.refVariableId || null,
         referenceMode: row.referenceMode || 'VALUE',
         recordResult: row.recordResult === true,
@@ -4821,6 +4960,7 @@ export default {
             varLabel: this.form.varLabel,
             scriptName: this.form.scriptName,
             varType: this.form.varType,
+            sourcePath: this.form.sourcePath || null,
             refObjectCode: this.form.refObjectCode || null,
             refObjectId: this.form.refObjectId || null,
             refVariableId: this.form.refVariableId || null,

@@ -193,6 +193,7 @@ public class DataObjectGovernedResourceAdapter
                                      List<GovernanceIssue> issues) {
         List<FieldDraft> fields = parseDrafts(snapshot);
         RuleDataObject owner = JSON.parseObject(CanonicalJson.write(snapshot), RuleDataObject.class);
+        validateObjectSource(snapshot, owner, issues);
         List<RuleDataObjectField> referenceFields = fields.stream().map(FieldDraft::field).toList();
         Set<Long> ids = new HashSet<>();
         for (FieldDraft draft : fields) {
@@ -226,6 +227,47 @@ public class DataObjectGovernedResourceAdapter
                         longValue(snapshot.get("id")),
                         "$.fields[*].parentFieldId"));
             }
+        }
+    }
+
+    private void validateObjectSource(Map<String, Object> snapshot,
+                                      RuleDataObject owner,
+                                      List<GovernanceIssue> issues) {
+        String sourceType = owner.getSourceType() == null ? "" : owner.getSourceType().trim().toUpperCase();
+        if (!"API".equals(sourceType) && !"DB".equals(sourceType)
+                && !"DATABASE".equals(sourceType)) return;
+        String content = owner.getSourceContent();
+        Map<String, Object> config;
+        try {
+            config = JSON.parseObject(content, Map.class);
+        } catch (RuntimeException e) {
+            issues.add(GovernanceIssue.error("DATA_OBJECT_SOURCE_INVALID",
+                    "数据对象来源配置不是合法 JSON", GovernanceResourceTypes.DATA_OBJECT,
+                    owner.getId(), "$.sourceContent"));
+            return;
+        }
+        if (config == null) {
+            issues.add(GovernanceIssue.error("DATA_OBJECT_SOURCE_REQUIRED",
+                    "API 或数据库数据对象必须配置来源内容", GovernanceResourceTypes.DATA_OBJECT,
+                    owner.getId(), "$.sourceContent"));
+            return;
+        }
+        if ("API".equals(sourceType) && longValue(config.get("apiConfigId")) == null) {
+            issues.add(GovernanceIssue.error("DATA_OBJECT_API_REQUIRED",
+                    "API 数据对象必须选择 API 配置", GovernanceResourceTypes.DATA_OBJECT,
+                    owner.getId(), "$.sourceContent.apiConfigId"));
+        }
+        if (("DB".equals(sourceType) || "DATABASE".equals(sourceType))
+                && longValue(config.get(config.containsKey("dbDatasourceId") ? "dbDatasourceId" : "datasourceId")) == null) {
+            issues.add(GovernanceIssue.error("DATA_OBJECT_DB_REQUIRED",
+                    "数据库数据对象必须选择数据库源", GovernanceResourceTypes.DATA_OBJECT,
+                    owner.getId(), "$.sourceContent.dbDatasourceId"));
+        }
+        if (("DB".equals(sourceType) || "DATABASE".equals(sourceType))
+                && (config.get("sql") == null || String.valueOf(config.get("sql")).isBlank())) {
+            issues.add(GovernanceIssue.error("DATA_OBJECT_SQL_REQUIRED",
+                    "数据库数据对象必须填写查询 SQL", GovernanceResourceTypes.DATA_OBJECT,
+                    owner.getId(), "$.sourceContent.sql"));
         }
     }
 

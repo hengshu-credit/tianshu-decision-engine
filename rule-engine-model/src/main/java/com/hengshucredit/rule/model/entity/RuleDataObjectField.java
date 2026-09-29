@@ -22,6 +22,9 @@ public class RuleDataObjectField {
     private String varLabel;
     private String scriptName;
     private String varType;
+    /** API 响应或数据库首行结果中的字段取值路径。为空时使用字段编码。 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
+    private String sourcePath;
     private Boolean recordResult;
     @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String refObjectCode;
@@ -36,6 +39,15 @@ public class RuleDataObjectField {
     /** 发布快照中的有效对象取值策略，不作为字段表列持久化。 */
     @TableField(exist = false)
     private Boolean lazyReference;
+    /** 制品运行时携带的对象来源快照，不落库。 */
+    @TableField(exist = false)
+    private String objectSourceType;
+    @TableField(exist = false)
+    private String objectSourceContent;
+    @TableField(exist = false)
+    private String objectScriptName;
+    @TableField(exist = false)
+    private String objectCode;
 
     public boolean referencesValue() {
         return refVariableId != null && !"STRUCTURE".equals(referenceMode);

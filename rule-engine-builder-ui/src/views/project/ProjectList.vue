@@ -114,9 +114,6 @@
             <el-button link data-action="docs" size="small" type="info" @click="handleExportDoc(row)"
               >API</el-button
             >
-            <el-button link data-action="openapi" size="small" type="success" @click="handleExportOpenApi(row)"
-              >OpenAPI</el-button
-            >
             <el-button
               v-permission="'project:edit'"
               link
@@ -215,7 +212,8 @@ import {
   restorePageState,
   savePageState,
 } from '@/utils/pageStateCache'
-import { generateApiDocHtml, generateOpenApiDocument } from '@/utils/apiDoc'
+import { generateApiDocHtml } from '@/utils/apiDoc'
+import { readLocalTheme } from '@/theme/themeRuntime'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 import ProjectAuthDialog from './ProjectAuthDialog.vue'
 export default {
@@ -400,6 +398,11 @@ export default {
       if (!response.ok) throw new Error('加载 hengshucredit Logo 失败')
       return response.text()
     },
+    getApiDocTheme() {
+      return readLocalTheme(
+        typeof window !== 'undefined' ? window.localStorage : null
+      )
+    },
     async handleExportDoc(row) {
       let objectUrl = ''
       try {
@@ -409,7 +412,10 @@ export default {
         ])
         if (res.code === 200 && res.data) {
           const doc = res.data
-          const html = generateApiDocHtml(doc, { logoSvg })
+          const html = generateApiDocHtml(doc, {
+            logoSvg,
+            theme: this.getApiDocTheme(),
+          })
           const blob = new Blob([html], { type: 'text/html;charset=utf-8' })
           objectUrl = URL.createObjectURL(blob)
           const a = document.createElement('a')
@@ -421,26 +427,6 @@ export default {
         }
       } catch (e) {
         this.$message.error('导出文档失败')
-      } finally {
-        if (objectUrl) URL.revokeObjectURL(objectUrl)
-      }
-    },
-    async handleExportOpenApi(row) {
-      let objectUrl = ''
-      try {
-        const res = await exportApiDoc(row.id)
-        if (res.code !== 200 || !res.data) throw new Error('API 文档数据为空')
-        const openApi = generateOpenApiDocument(res.data)
-        const blob = new Blob([JSON.stringify(openApi, null, 2)], { type: 'application/json;charset=utf-8' })
-        objectUrl = URL.createObjectURL(blob)
-        const anchor = document.createElement('a')
-        anchor.href = objectUrl
-        anchor.download = `${res.data.project.projectCode}-openapi.json`
-        document.body.appendChild(anchor)
-        anchor.click()
-        document.body.removeChild(anchor)
-      } catch (e) {
-        this.$message.error('导出 OpenAPI 文档失败')
       } finally {
         if (objectUrl) URL.revokeObjectURL(objectUrl)
       }

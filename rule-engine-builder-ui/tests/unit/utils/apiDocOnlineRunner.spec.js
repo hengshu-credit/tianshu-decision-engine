@@ -15,7 +15,10 @@ describe('API 文档在线调用台', () => {
 
     expect(source).toContain('AbortError')
     expect(source).toContain('请求超时')
-    expect(source).toContain('网络连接失败或被跨域策略阻止')
+    expect(source).toContain('当前文档通过 file:// 打开')
+    expect(source).toContain('目标服务需要允许 Origin: null')
+    expect(source).toContain('mode: \'cors\'')
+    expect(source).toContain('credentials: \'omit\'')
     expect(source).toContain('response.text()')
     expect(source).toContain('JSON.parse')
   })
@@ -42,6 +45,10 @@ describe('API 文档在线调用台', () => {
     expect(html).not.toContain('runner-param-form')
     expect(html).toContain('返回结果')
     expect(html).toContain('取消请求')
+    expect(html).toContain('runner-copy-curl')
+    expect(html).toContain('runner-copy-response')
+    expect(html).toContain('runner-use-page-origin')
+    expect(html).toContain('runner-connection-help')
   })
 
   test('Query、Header 和 JSON Body 使用离线代码编辑器', () => {
@@ -90,6 +97,9 @@ describe('API 文档在线调用台', () => {
     expect(source).toContain("headers.set('Content-Type', 'application/json')")
     expect(source).toContain('window.ApiDocEditors.validate')
     expect(source).toContain('window.ApiDocEditors.get')
+    expect(source).toContain('function endpointUrl')
+    expect(source).toContain('function curlCommand')
+    expect(source).toContain('function copyText')
   })
 
   test('鉴权凭据默认收进折叠区域', () => {

@@ -9,6 +9,7 @@ import com.hengshucredit.rule.model.entity.ArtifactResourceBinding;
 import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.model.entity.RuleDefinitionInputField;
 import com.hengshucredit.rule.model.entity.RuleDefinitionOutputField;
+import com.hengshucredit.rule.model.entity.RuleDataObject;
 import com.hengshucredit.rule.model.entity.RuleDataObjectField;
 import com.hengshucredit.rule.model.entity.RuleFunction;
 import com.hengshucredit.rule.model.entity.RuleModel;
@@ -18,6 +19,7 @@ import com.hengshucredit.rule.model.entity.RuleVariable;
 import com.hengshucredit.rule.server.mapper.ArtifactDeploymentMapper;
 import com.hengshucredit.rule.server.mapper.ArtifactResourceBindingMapper;
 import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
+import com.hengshucredit.rule.server.mapper.RuleDataObjectMapper;
 import jakarta.annotation.Resource;
 import org.springframework.stereotype.Service;
 
@@ -40,6 +42,8 @@ public class ArtifactRuntimeSnapshotService {
     private ArtifactDeploymentMapper deploymentMapper;
     @Resource
     private ArtifactResourceBindingMapper bindingMapper;
+    @Resource
+    private RuleDataObjectMapper dataObjectMapper;
 
     private final DecisionArtifactPackageCodec codec = new DecisionArtifactPackageCodec();
     private static final int MAX_DECODED_PACKAGES = 64;
@@ -97,8 +101,10 @@ public class ArtifactRuntimeSnapshotService {
             } else if ("MODEL".equals(resourceType)) {
                 snapshot.models.add(model(component, executionProjectId));
             } else if ("DATA_OBJECT".equals(resourceType)) {
-                snapshot.dataObjectFields.add(JSON.parseObject(
-                        component.getContent(), RuleDataObjectField.class));
+                RuleDataObjectField dataObjectField = JSON.parseObject(
+                        component.getContent(), RuleDataObjectField.class);
+                applyDataObjectBinding(dataObjectField, bindings);
+                snapshot.dataObjectFields.add(dataObjectField);
                 JSONObject field = JSON.parseObject(component.getContent());
                 if (field.getString("referencePath") != null) {
                     snapshot.referencePaths.put("DATA_OBJECT:" + field.getLong("id"), field.getString("referencePath"));
@@ -116,6 +122,18 @@ public class ArtifactRuntimeSnapshotService {
             }
         }
         return snapshot;
+    }
+
+    private void applyDataObjectBinding(RuleDataObjectField field, Map<String, Long> bindings) {
+        if (field == null || field.getObjectId() == null || bindings == null || bindings.isEmpty()
+                || dataObjectMapper == null) return;
+        Long targetId = bindings.get("BINDING:DATA_OBJECT:" + field.getObjectId());
+        if (targetId == null) return;
+        RuleDataObject target = dataObjectMapper.selectById(targetId);
+        if (target == null) return;
+        field.setObjectSourceType(target.getSourceType());
+        field.setObjectSourceContent(target.getSourceContent());
+        field.setObjectScriptName(target.getScriptName());
     }
 
     private DecisionArtifactPackageCodec.DecodedPackage decodeVerified(DecisionArtifact artifact) {

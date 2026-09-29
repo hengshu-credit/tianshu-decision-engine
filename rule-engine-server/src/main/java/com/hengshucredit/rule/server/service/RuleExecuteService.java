@@ -82,6 +82,9 @@ public class RuleExecuteService {
     private DataObjectFieldReferenceResolver dataObjectFieldReferenceResolver;
 
     @Resource
+    private DataObjectSourceResolver dataObjectSourceResolver;
+
+    @Resource
     private RuleIdempotencyService idempotencyService;
 
     @Resource
@@ -186,7 +189,13 @@ public class RuleExecuteService {
             bindHistoryDefaults(executionProjectId, resolveOptions);
             try (var context = RuleVariableExecutionContext.prepare(modelType, executeParams,
                     resolveOptions, referencePlan, explicitReferenceTargets,
-                    () -> variableSourceResolver.resolveInto(executionProjectId, executeParams, resolveOptions))) {
+                    () -> {
+                        if (dataObjectSourceResolver != null) {
+                            dataObjectSourceResolver.resolve(executionProjectId, directFields,
+                                    executeParams, resolveOptions);
+                        }
+                        variableSourceResolver.resolveInto(executionProjectId, executeParams, resolveOptions);
+                    })) {
                 result = qlExpressEngine.execute(qlExpressEngine.prepare(fullScript), context, true,
                         RuntimeContextBridge.currentContext());
             }
@@ -409,6 +418,11 @@ public class RuleExecuteService {
             bindHistoryDefaults(executionProjectId, effectiveOptions);
             try (var context = RuleVariableExecutionContext.prepare(runtimeModelType, executeParams,
                     effectiveOptions, referencePlan, explicitReferenceTargets, () -> {
+                        if (dataObjectSourceResolver != null) {
+                            dataObjectSourceResolver.resolve(executionProjectId, directFields,
+                                    executeParams, effectiveOptions,
+                                    runtimeSnapshot == null ? null : runtimeSnapshot.getDataObjectFields());
+                        }
                         if (runtimeSnapshot == null) {
                             variableSourceResolver.resolveInto(executionProjectId, executeParams, effectiveOptions);
                         } else {

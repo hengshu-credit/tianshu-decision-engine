@@ -52,7 +52,7 @@
 
 ### 项目与规则管理
 
-项目集中管理规则及相关资源，提供项目工作台、访问鉴权和接口说明。规则列表支持进入设计、执行测试与生命周期管理；项目列表可分别导出可读 HTML 文档和 OpenAPI 3.1 JSON，便于导入 Swagger、Postman 或网关工具。
+项目集中管理规则及相关资源，提供项目工作台、访问鉴权和接口说明。规则列表支持进入设计、执行测试与生命周期管理；项目列表可导出可读 HTML API 文档，打开文档后可一键导出 OpenAPI 3.1 JSON，便于导入 Postman、Apifox 或网关工具。
 
 ![项目管理](docs/readme/project.png)
 
@@ -71,7 +71,7 @@
 
 ![变量管理](docs/readme/variable.png)
 
-数据对象支持 Java 实体、JSON、DDL 导入及手动配置。展开对象可按层级维护字段，在“引用变量”中选择已有变量：调用方未传入对象字段时，从引用变量取值；已显式传入时优先使用当前字段值。列表元素内的字段不直接引用变量，可在 LIST 字段上整体引用。
+数据对象支持 Java 实体、JSON、DDL 导入及手动配置，也可绑定 API 外数或数据库查询。API 对象可选择整体响应结果，或为每个字段配置响应路径；数据库对象按查询结果首行绑定整体对象，或按列名/路径逐字段绑定。展开对象可按层级维护字段，在“引用变量”中选择已有变量：调用方未传入对象字段时，从来源或引用变量取值；已显式传入时优先使用当前字段值。列表元素内的字段不直接引用变量，可在 LIST 字段上整体引用。
 
 ![数据对象字段配置](docs/readme/data-object.png)
 
@@ -329,6 +329,8 @@ SDK 通过 HTTP 同步规则与函数，并订阅 Redis 变更通知。`project-
 外部公司接入优先参考 [Java 离线交付与可运行示例](rule-engine-example/README.md)。执行 `node scripts/package-java-offline.mjs` 生成 SDK、依赖、可运行服务和示例源码的 tar.gz；客户仅需 JDK 17，无需引擎源码或 Maven 下载即可运行及重编译示例。
 
 “业务端 → Java 服务 → 决策引擎”的完整配置、全局/项目规则访问、多项目客户端及日志追踪开关见 [Java 业务服务接入指南](https://hengshu-credit.github.io/tianshu-decision-engine/java-service-integration.html)；HTTP-only SDK 与离线交付示例见 [HTTP 接入示例](https://hengshu-credit.github.io/tianshu-decision-engine/http-sdk-example.html)。项目导出的 API 文档内也提供 Java 服务接入示例。
+
+导出 API 文档右侧的在线调用台采用浏览器直连，跨域环境需要在服务端通过 `CORS_ALLOWED_ORIGIN_PATTERNS` 配置文档来源；从 `file://` 打开的离线文档若被浏览器拦截，可直接复制调用台生成的 cURL，在能访问目标服务的网络环境执行。
 
 
 ## 交流与许可证

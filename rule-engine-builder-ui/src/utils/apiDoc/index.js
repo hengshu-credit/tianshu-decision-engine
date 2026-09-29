@@ -6,6 +6,37 @@ import { renderCodeEditorScript } from './editor'
 import { renderAuthentication, renderResponseContract, renderRuleEndpoint } from './sections'
 import { apiDocStyles } from './styles'
 import { renderJavaIntegration } from './javaIntegration'
+import {
+  createPrimaryScale,
+  mixThemeColors,
+  normalizeThemeConfig,
+  resolveThemeAccent,
+} from '../../theme/themeConfig'
+
+function renderThemeStyles(theme) {
+  const normalized = normalizeThemeConfig(theme)
+  const accent = resolveThemeAccent(normalized)
+  const scale = createPrimaryScale(accent.primary)
+  const dark = normalized.colorScheme === 'DARK'
+  const surface = dark ? '#151D31' : '#FFFFFF'
+  const surfaceSoft = dark ? '#1F2A40' : '#F9FAFB'
+  const background = dark ? '#101828' : '#F6F8FB'
+  const text = dark ? '#F2F4F7' : '#172033'
+  const muted = dark ? '#A7B2C5' : '#667085'
+  const border = dark ? '#33415F' : '#DFE5EF'
+  const danger = dark ? '#F97066' : '#B42318'
+  const dangerSoft = dark ? '#3A1F28' : '#FEF3F2'
+  const success = dark ? '#6EE7B7' : '#067647'
+  const successSoft = dark ? '#14382F' : '#ECFDF3'
+  const warning = dark ? '#FEC84B' : '#B54708'
+  const warningSoft = dark ? '#3B2C13' : '#FFFAEB'
+  const code = dark ? '#0B1220' : '#111827'
+  const runner = dark ? '#0F172A' : '#11131B'
+  const runnerBorder = dark ? '#33415F' : '#252938'
+  const brandSoft = mixThemeColors(accent.primary, dark ? surface : '#FFFFFF', dark ? 0.58 : 0.9)
+  const gradient = accent.kind === 'gradient' ? accent.background : 'none'
+  return `<style>:root{color-scheme:${dark ? 'dark' : 'light'};--brand:${accent.primary};--brand-strong:${scale.dark2};--brand-soft:${brandSoft};--bg:${background};--surface:${surface};--surface-soft:${surfaceSoft};--text:${text};--muted:${muted};--border:${border};--danger:${danger};--danger-soft:${dangerSoft};--success:${success};--success-soft:${successSoft};--warning:${warning};--warning-soft:${warningSoft};--code:${code};--runner:${runner};--runner-border:${runnerBorder};--brand-foreground:${accent.foreground};--brand-gradient:${gradient}}.button.primary{background:var(--brand);background-image:var(--brand-gradient);color:var(--brand-foreground)}</style>`
+}
 
 function renderOverview(doc) {
   return `<section id="overview" class="panel">
@@ -13,6 +44,7 @@ function renderOverview(doc) {
     <p class="lead"><code>${escapeHtml(doc.project.projectCode)}</code></p>
     <p>${escapeHtml(doc.project.description || '本文档描述项目已发布规则的调用方式。')}</p>
     <div class="notice">本文档中的全部凭据与参数值均为样例；生产环境请以平台单独提供的账号密码、Token、API Key 或 HMAC 密钥为准。</div>
+    <div class="overview-actions"><button class="button primary" type="button" data-export-openapi>导出 OpenAPI 3</button><span class="muted">可直接导入 Postman 或 Apifox 进行接口管理</span></div>
   </section>`
 }
 
@@ -34,6 +66,22 @@ function renderNavigation(doc, logoSvg) {
 function renderInteractionScript() {
   return `(function () {
   document.addEventListener('click', function (event) {
+    var exportOpenApi = event.target.closest('[data-export-openapi]');
+    if (exportOpenApi) {
+      var openApi = window.__OPEN_API__;
+      if (!openApi) return;
+      var objectUrl = URL.createObjectURL(new Blob([JSON.stringify(openApi, null, 2)], { type: 'application/json;charset=utf-8' }));
+      var anchor = document.createElement('a');
+      var project = window.__API_DOC__ && window.__API_DOC__.project || {};
+      var projectCode = String(project.projectCode || 'api').replace(/[\\/:*?"<>|]/g, '_');
+      anchor.href = objectUrl;
+      anchor.download = projectCode + '-openapi.json';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      window.setTimeout(function () { URL.revokeObjectURL(objectUrl); }, 0);
+      return;
+    }
     var fieldToggle = event.target.closest('[data-field-toggle]');
     if (fieldToggle) {
       var fieldId = fieldToggle.getAttribute('data-field-toggle');
@@ -79,6 +127,7 @@ export function generateApiDocHtml(doc, options = {}) {
     throw new Error('加载 hengshucredit Logo 失败：内容不是 SVG')
   }
   const normalized = normalizeApiDoc(doc)
+  const openApiDocument = generateOpenApiDocument(doc)
   const endpointPanels = normalized.rules.map((rule, index) => renderRuleEndpoint(rule, normalized.authentications, index === 0)).join('')
   const resizeHandles = renderResizeHandles()
   const title = `${normalized.project.projectName || normalized.project.projectCode || '项目'} API 文档`
@@ -90,6 +139,7 @@ export function generateApiDocHtml(doc, options = {}) {
   <meta name="referrer" content="no-referrer">
   <title>${escapeHtml(title)}</title>
   <style>${apiDocStyles}</style>
+  ${renderThemeStyles(options.theme)}
 </head>
 <body>
   <div class="app">
@@ -105,7 +155,7 @@ export function generateApiDocHtml(doc, options = {}) {
     ${resizeHandles.runner}
     ${renderOnlineRunner()}
   </div>
-  <script>window.__API_DOC__=${serializeForScript(normalized)};</script>
+  <script>window.__API_DOC__=${serializeForScript(normalized)};window.__OPEN_API__=${serializeForScript(openApiDocument)};</script>
   <script>${renderInteractionScript()}\n${renderCodeEditorScript()}\n${renderOnlineRunnerScript()}\n${renderLayoutScript()}</script>
 </body>
 </html>`

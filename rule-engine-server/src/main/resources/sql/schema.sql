@@ -758,7 +758,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object` (
   `object_label`     VARCHAR(128) DEFAULT NULL             COMMENT '对象中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的对象引用名（默认驼峰，如 taxRequest）',
   `object_type`      VARCHAR(16)  NOT NULL DEFAULT 'INPUT' COMMENT '对象类型：INPUT-输入/OUTPUT-输出/INOUT-输入输出',
-  `source_type`      VARCHAR(16)  DEFAULT NULL             COMMENT '来源类型：JAVA/JSON',
+  `source_type`      VARCHAR(16)  DEFAULT NULL             COMMENT '来源类型：JAVA/JSON/DDL/API/DB/MANUAL',
   `source_content`   LONGTEXT     DEFAULT NULL             COMMENT '原始文件内容',
   `parent_object_id` BIGINT       DEFAULT NULL             COMMENT '父对象ID（嵌套对象）',
   `status`           TINYINT      NOT NULL DEFAULT 1       COMMENT '状态：0-停用，1-启用',
@@ -783,6 +783,7 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   `var_label`        VARCHAR(128) NOT NULL                COMMENT '字段中文名称',
   `script_name`      VARCHAR(128) DEFAULT NULL             COMMENT '脚本中的字段名（驼峰）',
   `var_type`         VARCHAR(32)  NOT NULL                COMMENT '数据类型：STRING/NUMBER/BOOLEAN/DATE/ENUM/OBJECT/LIST/MAP',
+  `source_path`      VARCHAR(512) DEFAULT NULL             COMMENT 'API响应或数据库首行结果中的字段取值路径',
   `ref_object_code`  VARCHAR(128) DEFAULT NULL             COMMENT 'OBJECT 时引用的对象编码（兼容旧逻辑，铁律四后以 ref_object_id 为准）',
   `ref_object_id`    BIGINT       DEFAULT NULL             COMMENT 'OBJECT 时引用的对象ID（铁律四：指向 rule_data_object.id）',
   `ref_variable_id`  BIGINT       DEFAULT NULL             COMMENT '字段值直接引用的变量ID（指向 rule_variable.id）',
@@ -799,6 +800,18 @@ CREATE TABLE IF NOT EXISTS `rule_data_object_field` (
   KEY `idx_ref_object_id` (`ref_object_id`),
   KEY `idx_ref_variable_id` (`ref_variable_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='数据对象字段表';
+
+-- 兼容已存在数据库：补齐 API/数据库对象字段来源路径列
+SET @exist_data_object_source_path := (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS
+                                        WHERE TABLE_SCHEMA = DATABASE()
+                                          AND TABLE_NAME = 'rule_data_object_field'
+                                          AND COLUMN_NAME = 'source_path');
+SET @sql_data_object_source_path := IF(@exist_data_object_source_path = 0,
+    'ALTER TABLE `rule_data_object_field` ADD COLUMN `source_path` VARCHAR(512) DEFAULT NULL COMMENT ''API响应或数据库首行结果中的字段取值路径'' AFTER `var_type`',
+    'SELECT 1');
+PREPARE stmt_data_object_source_path FROM @sql_data_object_source_path;
+EXECUTE stmt_data_object_source_path;
+DEALLOCATE PREPARE stmt_data_object_source_path;
 
 -- ============================================================
 -- 8. rule_data_object_field_option - 对象字段枚举选项

@@ -7,8 +7,7 @@ import ProjectList from '@/views/project/ProjectList.vue'
 import ProjectFilterSelect from '@/components/ProjectFilterSelect.vue'
 
 vi.mock('@/utils/apiDoc', () => ({
-  generateApiDocHtml: vi.fn(() => '<!DOCTYPE html><html></html>'),
-  generateOpenApiDocument: vi.fn(() => ({ openapi: '3.1.0', paths: {} }))
+  generateApiDocHtml: vi.fn(() => '<!DOCTYPE html><html></html>')
 }))
 
 afterEach(() => { vi.clearAllMocks() })
@@ -226,6 +225,7 @@ describe('ProjectList — 项目操作', () => {
       API: 'info',
       删除: 'danger'
     })
+    expect(actionTypes.OpenAPI).toBeUndefined()
   })
 
   test('操作链接使用同一不换行操作组', () => {
@@ -291,25 +291,12 @@ describe('ProjectList — 项目操作', () => {
 
     expect(projectApi.exportApiDoc).toHaveBeenCalledWith(1)
     expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('images/hengshucredit_animated.svg'))
-    expect(apiDoc.generateApiDocHtml).toHaveBeenCalledWith(doc, {
-      logoSvg: '<svg id="hengshucredit"></svg>'
-    })
+    expect(apiDoc.generateApiDocHtml).toHaveBeenCalledWith(doc, expect.objectContaining({
+      logoSvg: '<svg id="hengshucredit"></svg>',
+      theme: expect.objectContaining({ colorScheme: expect.any(String) })
+    }))
     expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:api-doc')
     expect(wrapper.vm.generateDocHtml).toBeUndefined()
-    anchorClick.mockRestore()
-  })
-
-  test('handleExportOpenApi 下载 OpenAPI 3.1 JSON', async () => {
-    const doc = { project: { projectCode: 'project_a' }, authentications: [], rules: [] }
-    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
-    projectApi.exportApiDoc.mockResolvedValue({ code: 200, data: doc })
-    global.URL.createObjectURL = vi.fn(() => 'blob:openapi')
-    global.URL.revokeObjectURL = vi.fn()
-
-    await wrapper.vm.handleExportOpenApi({ id: 1 })
-
-    expect(apiDoc.generateOpenApiDocument).toHaveBeenCalledWith(doc)
-    expect(global.URL.revokeObjectURL).toHaveBeenCalledWith('blob:openapi')
     anchorClick.mockRestore()
   })
 

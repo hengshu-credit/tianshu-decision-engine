@@ -80,6 +80,9 @@ public class RuleRuntimeInvoker {
     @Resource
     private DataObjectFieldReferenceResolver dataObjectFieldReferenceResolver;
 
+    @Resource
+    private DataObjectSourceResolver dataObjectSourceResolver;
+
     private final AtomicBoolean registered = new AtomicBoolean(false);
     private final ThreadLocal<RuleExecutionSession> currentSession = new ThreadLocal<>();
 
@@ -481,6 +484,10 @@ public class RuleRuntimeInvoker {
             try (var context = RuleVariableExecutionContext.prepare(
                     runtimeSnapshot == null ? published.getModelType() : runtimeSnapshot.getModelType(),
                     session.getValues(), options, referencePlan, explicitReferenceTargets, () -> {
+                        if (dataObjectSourceResolver != null) {
+                            dataObjectSourceResolver.resolve(projectId, directFields, session.getValues(), options,
+                                    runtimeSnapshot == null ? null : runtimeSnapshot.getDataObjectFields());
+                        }
                         if (runtimeSnapshot == null) {
                             variableSourceResolver.resolveInto(projectId, session.getValues(), options);
                         } else {
