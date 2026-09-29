@@ -61,8 +61,9 @@ public class RuleDraftServiceTest {
 
         FixtureTransactionManager transactionManager =
                 new FixtureTransactionManager(fixture);
-        TransactionInterceptor interceptor = new TransactionInterceptor(
-                transactionManager, new AnnotationTransactionAttributeSource());
+        TransactionInterceptor interceptor = new TransactionInterceptor();
+        interceptor.setTransactionManager(transactionManager);
+        interceptor.setTransactionAttributeSource(new AnnotationTransactionAttributeSource());
         ProxyFactory proxyFactory = new ProxyFactory(fixture);
         proxyFactory.setProxyTargetClass(true);
         proxyFactory.addAdvice(interceptor);
