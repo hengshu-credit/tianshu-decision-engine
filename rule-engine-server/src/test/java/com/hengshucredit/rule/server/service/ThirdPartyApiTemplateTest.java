@@ -45,7 +45,7 @@ public class ThirdPartyApiTemplateTest {
             RuleExternalApiConfig api = apiConfig(row);
             assertEquals(Integer.valueOf(0), api.getStatus());
             assertFalse(api.getRequestMapping() != null && api.getRequestMapping().contains("securityProfile"));
-            Map<String, Object> sample = JSON.parseObject(api.getTestSampleParams(), LinkedHashMap.class);
+            Map<String, Object> sample = JSON.parseObject(api.getTestSampleParams());
             assertEquals(4, sample.size());
             replaceBaihangDemoKey(api);
 
