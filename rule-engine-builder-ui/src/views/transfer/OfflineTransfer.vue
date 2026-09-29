@@ -40,37 +40,46 @@
           </div>
           <el-tag size="small" type="warning">先预检再写入</el-tag>
         </div>
-        <el-upload drag :auto-upload="false" :show-file-list="false" accept=".zip" :on-change="selectFile">
+        <el-upload drag :auto-upload="false" :show-file-list="false" accept=".zip" :disabled="applying" :on-change="selectFile">
           <div class="upload-copy">
             <strong>{{ importFile ? importFile.name : '拖入配置包，或点击选择 ZIP' }}</strong>
             <span>只接受 TIANSHU_RESOURCE_TRANSFER 配置包</span>
           </div>
         </el-upload>
-        <div class="import-options">
-          <el-select v-model="options.targetScope" placeholder="目标范围" @change="onTargetScopeChange">
+        <el-form :disabled="applying" class="import-options">
+          <el-select v-model="options.targetScope" aria-label="目标范围" placeholder="目标范围" @change="onTargetScopeChange">
             <el-option label="项目级" value="PROJECT" />
             <el-option label="全局" value="GLOBAL" />
           </el-select>
-          <el-input v-if="options.targetScope === 'PROJECT' && !options.createProject" v-model="options.targetProjectId" placeholder="目标项目 ID" />
+          <remote-filter-select
+            v-if="options.targetScope === 'PROJECT' && !options.createProject"
+            v-model:value="options.targetProjectId"
+            :fetch-options="fetchTargetProjects"
+            option-label-key="label"
+            option-value-key="id"
+            aria-label="目标项目"
+            placeholder="搜索项目名称或编码"
+          />
           <el-checkbox v-if="options.targetScope === 'PROJECT'" v-model="options.createProject">导入时新建项目</el-checkbox>
           <el-input v-if="options.createProject" v-model="options.projectCode" placeholder="新项目编码（可覆盖源编码）" />
           <el-input v-if="options.createProject" v-model="options.projectName" placeholder="新项目名称（可覆盖源名称）" />
           <el-checkbox v-model="options.publishRules">导入并发布规则（重建固定版本）</el-checkbox>
-          <el-select v-model="options.variablePolicy" placeholder="变量同码策略">
+          <el-select v-model="options.variablePolicy" aria-label="变量同码策略" placeholder="变量同码策略">
             <el-option label="同编码同类型复用" value="REUSE" />
             <el-option label="新建并追加后缀" value="SUFFIX" />
           </el-select>
-          <el-select v-model="options.resourcePolicy" placeholder="资源冲突策略">
+          <el-select v-model="options.resourcePolicy" aria-label="资源冲突策略" placeholder="资源冲突策略">
             <el-option label="新建并追加后缀" value="SUFFIX" />
             <el-option label="复用相同配置" value="REUSE" />
             <el-option label="覆盖已有配置" value="OVERWRITE" />
           </el-select>
           <el-input v-model="options.suffix" placeholder="新建后缀，如 _dev" />
-        </div>
-        <p class="import-hint">项目级导入请选择目标项目 ID，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。</p>
+        </el-form>
+        <p class="import-hint">项目级导入请选择目标项目，或勾选“导入时新建项目”；全局导入会把项目级资源转换为全局范围。修改文件或选项后需重新预览冲突。</p>
+        <el-alert v-if="previewError" :title="previewError" type="error" :closable="false" />
         <div class="card-actions">
-          <el-button :disabled="!importFile" :loading="previewing" @click="previewPackage">预览冲突</el-button>
-          <el-button type="primary" :disabled="!importFile || !preview" :loading="applying" @click="applyPackage">确认导入</el-button>
+          <el-button :disabled="!importFile || applying" :loading="previewing" @click="previewPackage">预览冲突</el-button>
+          <el-button type="primary" :disabled="!hasCurrentPreview || applying" :loading="applying" @click="applyPackage">确认导入</el-button>
         </div>
       </article>
     </section>
@@ -108,7 +117,7 @@
 
     <el-dialog v-model="resultVisible" title="导入结果" width="620px">
       <el-alert type="success" :closable="false" title="配置已导入">
-        规则保持为目标环境草稿，其他资源按治理审批流程写入。
+        {{ appliedOptions?.publishRules ? '规则已按所选策略发布。' : '规则保存为目标环境草稿。' }}其他资源已通过治理流程导入生效；复用、覆盖和新建明细见下方结果。
       </el-alert>
       <pre class="result-json">{{ JSON.stringify(importResult, null, 2) }}</pre>
     </el-dialog>
@@ -118,6 +127,8 @@
 <script>
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { exportResourceTransfer, importResourceTransfer, previewResourceTransfer } from '@/api/transfer'
+import { listProjects } from '@/api/project'
+import RemoteFilterSelect from '@/components/RemoteFilterSelect.vue'
 
 const RESOURCE_TYPES = [
   { value: 'PROJECT', label: '项目' },
@@ -135,6 +146,7 @@ const RESOURCE_TYPES = [
 
 export default {
   name: 'OfflineTransfer',
+  components: { RemoteFilterSelect },
   data() {
     return {
       resourceTypes: RESOURCE_TYPES,
@@ -144,6 +156,11 @@ export default {
       applying: false,
       importFile: null,
       preview: null,
+      previewFile: null,
+      previewOptionsSignature: '',
+      previewRequestId: 0,
+      previewError: '',
+      appliedOptions: null,
       importResult: null,
       resultVisible: false,
       options: {
@@ -153,10 +170,36 @@ export default {
       }
     }
   },
+  computed: {
+    optionsSignature() { return JSON.stringify(this.normalizedOptions()) },
+    hasCurrentPreview() {
+      return Boolean(this.preview && !this.previewing && this.importFile === this.previewFile
+        && this.optionsSignature === this.previewOptionsSignature)
+    }
+  },
+  watch: {
+    options: { deep: true, flush: 'sync', handler() { this.invalidatePreview() } }
+  },
+  beforeUnmount() { this.invalidatePreview() },
   methods: {
     addRoot() { this.roots.push({ resourceType: 'RULE', resourceId: '' }) },
     removeRoot(index) { this.roots.splice(index, 1) },
-    selectFile(upload) { this.importFile = upload?.raw || null; this.preview = null },
+    invalidatePreview() {
+      this.previewRequestId += 1
+      this.preview = null
+      this.previewFile = null
+      this.previewOptionsSignature = ''
+      this.previewError = ''
+      this.previewing = false
+    },
+    selectFile(upload) { this.importFile = upload?.raw || null; this.invalidatePreview() },
+    async fetchTargetProjects({ query, pageNum, pageSize }) {
+      const response = await listProjects({ keyword: query, pageNum, pageSize })
+      const data = response.data || {}
+      return { ...data, records: (data.records || []).map(project => ({
+        id: project.id, label: `${project.projectName} / ${project.projectCode}`
+      })) }
+    },
     onTargetScopeChange(scope) {
       if (scope !== 'GLOBAL') return
       this.options.createProject = false
@@ -182,28 +225,68 @@ export default {
       } finally { this.exporting = false }
     },
     async previewPackage() {
+      if (this.applying || !this.importFile) return
+      this.invalidatePreview()
       if (!this.validateTargetOptions()) return
+      const requestId = this.previewRequestId
+      const file = this.importFile
+      const options = this.normalizedOptions()
+      const signature = JSON.stringify(options)
       this.previewing = true
-      try { this.preview = (await previewResourceTransfer(this.importFile, this.normalizedOptions())).data } finally { this.previewing = false }
+      try {
+        const response = await previewResourceTransfer(file, options)
+        if (requestId !== this.previewRequestId || file !== this.importFile || signature !== this.optionsSignature) return
+        if (!response.data?.packageDigest) throw new Error('预检未返回有效的配置包摘要，请重新预览冲突')
+        this.preview = response.data
+        this.previewFile = file
+        this.previewOptionsSignature = signature
+      } catch (error) {
+        if (requestId === this.previewRequestId) this.previewError = error.message || '预检失败，请重新预览冲突'
+      } finally {
+        if (requestId === this.previewRequestId) this.previewing = false
+      }
     },
     async applyPackage() {
+      if (this.applying) return
+      if (!this.hasCurrentPreview) {
+        ElMessage.warning('请先对当前文件和导入选项重新预览冲突')
+        return
+      }
       if (!this.validateTargetOptions()) return
-      const projectHint = this.options.createProject ? '并新建目标项目' : '并绑定目标项目'
-      const ruleHint = this.options.publishRules ? '规则将按选项发布并重建固定版本' : '规则只创建目标环境草稿'
-      await ElMessageBox.confirm(`确认写入目标环境${projectHint}？普通资源会进入治理审批，${ruleHint}。`, '确认导入', { type: 'warning' })
+      const file = this.importFile
+      const options = this.normalizedOptions()
+      const requestId = this.previewRequestId
+      const projectHint = options.targetScope === 'GLOBAL' ? '全局范围'
+        : options.createProject ? `新项目「${options.projectName || options.projectCode}」` : '所选项目'
+      const ruleHint = options.publishRules ? '规则将按选项发布并重建固定版本' : '规则只创建目标环境草稿'
       this.applying = true
       try {
-        this.importResult = (await importResourceTransfer(this.importFile, this.normalizedOptions())).data
+        await ElMessageBox.confirm(`确认导入到${projectHint}？普通资源将通过治理流程导入生效，${ruleHint}。`, '确认导入', { type: 'warning' })
+        if (!this.hasCurrentPreview || requestId !== this.previewRequestId) {
+          ElMessage.warning('导入配置已变化，请重新预览冲突')
+          return
+        }
+        this.resultVisible = false
+        this.importResult = null
+        this.importResult = (await importResourceTransfer(file, options)).data
+        this.appliedOptions = options
         this.resultVisible = true
+        this.invalidatePreview()
+      } catch (error) {
+        if (error === 'cancel' || error === 'close') return
+        this.invalidatePreview()
+        if (!error.requestErrorNotified) ElMessage.error(error.message || '导入失败，请核对目标环境后重新预览冲突')
       } finally { this.applying = false }
     },
     normalizedOptions() {
+      const createProject = this.options.targetScope === 'PROJECT' && Boolean(this.options.createProject)
       return {
         ...this.options,
-        targetProjectId: this.options.targetScope === 'PROJECT' && !this.options.createProject && this.options.targetProjectId
+        createProject,
+        targetProjectId: this.options.targetScope === 'PROJECT' && !createProject && this.options.targetProjectId
           ? Number(this.options.targetProjectId) : null,
-        projectCode: this.options.createProject ? this.options.projectCode.trim() : null,
-        projectName: this.options.createProject ? this.options.projectName.trim() : null,
+        projectCode: createProject ? this.options.projectCode.trim() : null,
+        projectName: createProject ? this.options.projectName.trim() : null,
         projectBindings: {},
         publishRules: Boolean(this.options.publishRules)
       }
@@ -211,10 +294,10 @@ export default {
     validateTargetOptions() {
       if (this.options.targetScope === 'PROJECT' && !this.options.createProject
         && !/^[1-9]\d*$/.test(String(this.options.targetProjectId || ''))) {
-        ElMessage.warning('项目级导入请填写目标项目 ID，或勾选导入时新建项目')
+        ElMessage.warning('项目级导入请选择目标项目，或勾选导入时新建项目')
         return false
       }
-      if (this.options.createProject && !this.options.projectCode.trim()) {
+      if (this.options.targetScope === 'PROJECT' && this.options.createProject && !this.options.projectCode.trim()) {
         ElMessage.warning('新建项目请填写项目编码')
         return false
       }
