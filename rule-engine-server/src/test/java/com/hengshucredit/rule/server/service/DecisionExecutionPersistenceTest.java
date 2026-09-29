@@ -3,7 +3,10 @@ package com.hengshucredit.rule.server.service;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.model.entity.RuleExecutionLog;
 import org.junit.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -192,6 +195,41 @@ public class DecisionExecutionPersistenceTest {
             assertEquals(1, recoveryEvents.get());
             assertEquals(1, recoveryLogPending.get());
             assertEquals(0, recoveryBillingPending.get());
+        } finally {
+            persistence.close();
+        }
+    }
+
+    @Test
+    public void databaseAndRecoveryOutboxFailureFallsBackToLocalJournal() throws Exception {
+        Path directory = Files.createTempDirectory("tianshu-journal-fallback-");
+        DurableExecutionPersistenceJournal journal = new DurableExecutionPersistenceJournal();
+        ReflectionTestUtils.setField(journal, "directory", directory.toString());
+        ReflectionTestUtils.setField(journal, "enabled", true);
+        journal.initialize();
+        RuleExecutionLogService logService = new RuleExecutionLogService() {
+            @Override public void saveLogical(RuleExecutionLog entity) {
+                throw new IllegalStateException("database unavailable");
+            }
+        };
+        RuleBillingService billingService = new RuleBillingService() {
+            @Override public void recordEngineExecution(RuleDefinition definition, boolean success,
+                                                         Long costTimeMs, String errorMessage,
+                                                         com.hengshucredit.rule.server.auth.ProjectAuthContext authContext) {
+                throw new IllegalStateException("database unavailable");
+            }
+        };
+        DecisionExecutionPersistence persistence =
+                new DecisionExecutionPersistence(logService, billingService, 100);
+        ReflectionTestUtils.setField(persistence, "journal", journal);
+        persistence.start();
+        try {
+            persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null);
+            long deadline = System.currentTimeMillis() + 3000;
+            while (System.currentTimeMillis() < deadline && journal.read(10).isEmpty()) Thread.sleep(10);
+            assertEquals(1, journal.read(10).size());
+            assertTrue(journal.read(10).get(0).logPending());
+            assertTrue(journal.read(10).get(0).billingPending());
         } finally {
             persistence.close();
         }

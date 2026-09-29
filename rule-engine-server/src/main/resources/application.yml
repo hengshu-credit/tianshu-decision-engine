@@ -68,6 +68,11 @@ rule-engine:
     parallelism: ${SOURCE_RESOLUTION_PARALLELISM:4}
   execution-persistence:
     queue-capacity: ${RULE_EXECUTION_PERSISTENCE_QUEUE_CAPACITY:5000}
+    # 数据库日志和恢复 outbox 同时不可写时的本地写前日志；目录应放在独立持久化盘。
+    journal-enabled: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_ENABLED:true}
+    journal-dir: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR:./logs/execution-persistence-journal}
+    journal-max-entry-bytes: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES:10485760}
+    journal-replay-delay-ms: ${RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS:5000}
   cors:
     # 生产环境必须通过环境变量配置为实际控制台域名，多个来源使用英文逗号分隔
     allowed-origin-patterns: ${CORS_ALLOWED_ORIGIN_PATTERNS:http://localhost:${VITE_PORT:9090},http://127.0.0.1:${VITE_PORT:9090}}

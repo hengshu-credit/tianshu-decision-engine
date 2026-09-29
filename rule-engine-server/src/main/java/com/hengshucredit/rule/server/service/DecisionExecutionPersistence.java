@@ -10,7 +10,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
+import org.springframework.scheduling.annotation.Scheduled;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -31,6 +34,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     private final RuleExecutionLogService logService;
     private final RuleBillingService billingService;
     private final RuleExecutionPersistenceOutboxService recoveryOutbox;
+    @Autowired(required = false)
+    private DurableExecutionPersistenceJournal journal;
     private final ArrayBlockingQueue<Event> queue;
     private final int queueCapacity;
     private final ExecutorService executor;
@@ -79,7 +84,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
                       ProjectAuthContext authContext) {
         if (log == null && definition == null) return;
         offered.incrementAndGet();
-        Event event = new Event(log, definition, success, costTimeMs, errorMessage, authContext);
+        Event event = new Event(log, definition, success, costTimeMs, errorMessage, authContext,
+                log != null, definition != null);
         if (!queue.offer(event)) {
             fallback.incrementAndGet();
             lastFallbackAt.set(System.currentTimeMillis());
@@ -108,6 +114,7 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         result.put("lastFailureAt", lastFailureAt.get() == 0 ? null : lastFailureAt.get());
         long count = persisted.get();
         result.put("avgWriteMs", count == 0 ? 0D : (double) totalWriteMs.get() / count);
+        if (journal != null) result.put("journal", journal.snapshot());
         return result;
     }
 
@@ -126,30 +133,44 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     }
 
     private void persist(Event event) {
+        persist(event, true);
+    }
+
+    private void persist(Event event, boolean enqueueRecovery) {
         long started = System.nanoTime();
-        boolean logSucceeded = event.log == null || retry("日志", () -> logService.saveLogical(event.log));
+        boolean logSucceeded = !event.logPending || event.log == null
+                || retry("日志", () -> logService.saveLogical(event.log));
         if (!logSucceeded) logFailed.incrementAndGet();
 
         if (event.definition != null && event.log != null) {
             event.definition.setExecutionTraceId(event.log.getTraceId());
         }
-        boolean billingSucceeded = event.definition == null || retry("计费", () ->
+        boolean billingSucceeded = !event.billingPending || event.definition == null || retry("计费", () ->
                 billingService.recordEngineExecution(event.definition, event.success,
                         event.costTimeMs, event.errorMessage, event.authContext));
         if (!billingSucceeded) billingFailed.incrementAndGet();
+
+        event.logPending = event.log != null && !logSucceeded;
+        event.billingPending = event.definition != null && !billingSucceeded;
 
         boolean succeeded = logSucceeded && billingSucceeded;
         if (!succeeded) {
             failed.incrementAndGet();
             lastFailureAt.set(System.currentTimeMillis());
-            if (recoveryOutbox != null) {
+            boolean durable = false;
+            if (enqueueRecovery && recoveryOutbox != null) {
                 try {
                     recoveryOutbox.enqueue(event.log, event.definition, event.success, event.costTimeMs,
                             event.errorMessage, event.authContext,
-                            event.log != null && !logSucceeded,
-                            event.definition != null && !billingSucceeded);
+                            event.logPending, event.billingPending);
+                    durable = true;
                 } catch (RuntimeException outboxError) {
                     log.error("持久化恢复事件入队失败: {}", outboxError.getMessage(), outboxError);
+                }
+            }
+            if (enqueueRecovery && !durable && journal != null) {
+                if (!journal.append(toJournalEntry(event))) {
+                    log.error("持久化恢复事件本地写前日志写入失败，日志和计费可能需要人工恢复");
                 }
             }
         }
@@ -157,6 +178,54 @@ public class DecisionExecutionPersistence implements AutoCloseable {
             persisted.incrementAndGet();
             totalWriteMs.addAndGet(TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
         }
+    }
+
+    /** 数据库恢复后重放此前无法写入数据库 outbox 的本地事件。 */
+    @Scheduled(fixedDelayString = "${rule-engine.execution-persistence.journal-replay-delay-ms:5000}")
+    public void replayJournal() {
+        if (journal == null) return;
+        synchronized (journal) {
+            List<DurableExecutionPersistenceJournal.Entry> entries = journal.read(Integer.MAX_VALUE);
+            if (entries.isEmpty()) return;
+            List<DurableExecutionPersistenceJournal.Entry> remaining = new ArrayList<>();
+            for (DurableExecutionPersistenceJournal.Entry entry : entries) {
+                Event event = fromJournalEntry(entry);
+                persist(event, false);
+                if (event.logPending || event.billingPending) remaining.add(toJournalEntry(event));
+            }
+            journal.replace(remaining);
+        }
+    }
+
+    private DurableExecutionPersistenceJournal.Entry toJournalEntry(Event event) {
+        ProjectAuthContext auth = event.authContext;
+        return new DurableExecutionPersistenceJournal.Entry(
+                java.util.UUID.randomUUID().toString(),
+                event.log == null ? null : com.alibaba.fastjson.JSON.toJSONString(event.log),
+                event.definition == null ? null : com.alibaba.fastjson.JSON.toJSONString(event.definition),
+                event.success, event.costTimeMs, event.errorMessage,
+                auth == null ? null : auth.getProjectId(), auth == null ? null : auth.getProjectCode(),
+                auth == null ? null : auth.getAuthId(), auth == null ? null : auth.getAuthCode(),
+                auth == null ? null : auth.getAuthType(), auth == null ? null : auth.getTokenId(),
+                auth == null ? null : auth.getTokenCode(), auth == null ? null : auth.getAuthPhase(),
+                event.logPending, event.billingPending);
+    }
+
+    private Event fromJournalEntry(DurableExecutionPersistenceJournal.Entry entry) {
+        RuleExecutionLog log = entry.logJson() == null ? null
+                : com.alibaba.fastjson.JSON.parseObject(entry.logJson(), RuleExecutionLog.class);
+        RuleDefinition definition = entry.definitionJson() == null ? null
+                : com.alibaba.fastjson.JSON.parseObject(entry.definitionJson(), RuleDefinition.class);
+        ProjectAuthContext auth = null;
+        if (entry.tokenId() != null) {
+            auth = ProjectAuthContext.temporary(entry.projectId(), entry.projectCode(), entry.authId(),
+                    entry.authCode(), entry.authType(), entry.tokenId(), entry.tokenCode(), entry.authPhase());
+        } else if (entry.projectId() != null || entry.authId() != null) {
+            auth = ProjectAuthContext.direct(entry.projectId(), entry.projectCode(), entry.authId(),
+                    entry.authCode(), entry.authType());
+        }
+        return new Event(log, definition, entry.success(), entry.costTimeMs(), entry.errorMessage(), auth,
+                entry.logPending(), entry.billingPending());
     }
 
     private boolean retry(String operation, Runnable action) {
@@ -195,7 +264,27 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         }
     }
 
-    private record Event(RuleExecutionLog log, RuleDefinition definition, boolean success,
-                         Long costTimeMs, String errorMessage, ProjectAuthContext authContext) {
+    private static final class Event {
+        private final RuleExecutionLog log;
+        private final RuleDefinition definition;
+        private final boolean success;
+        private final Long costTimeMs;
+        private final String errorMessage;
+        private final ProjectAuthContext authContext;
+        private boolean logPending;
+        private boolean billingPending;
+
+        private Event(RuleExecutionLog log, RuleDefinition definition, boolean success,
+                      Long costTimeMs, String errorMessage, ProjectAuthContext authContext,
+                      boolean logPending, boolean billingPending) {
+            this.log = log;
+            this.definition = definition;
+            this.success = success;
+            this.costTimeMs = costTimeMs;
+            this.errorMessage = errorMessage;
+            this.authContext = authContext;
+            this.logPending = logPending;
+            this.billingPending = billingPending;
+        }
     }
 }
