@@ -174,6 +174,7 @@ QLExpress 预热和依赖加载失败不能只写日志后继续把服务视为�
 - 原始报文查询接口包括 `GET /api/rule/runtime-log/{id}/payload`、`GET /api/rule/runtime-log/payload/by-call-id` 和 `GET /api/rule/runtime-log/payload/by-root-trace-id`；返回请求方法/URL、原始请求体、HTTP 状态、原始响应体、调用 ID 和执行时间，便于控制台或审计侧直接关联。payload 同时提供 `rawRequestAvailable`/`rawResponseAvailable`，明确区分 GET 无请求体、历史记录缺少 raw 字段和真实原始报文。新增面向业务令牌的 `GET /api/rule/runtime/external-calls/{callId}`，按项目隔离后返回同一 payload；规则执行返回值也提供 `externalCall.callId`、`externalCall.request.rawBody`、`externalCall.rawResponseBody` 及顶层 `rawRequestBody`/`rawResponseBody`，实时分析无需再拼接日志或判断 responseMapping。缓存命中不会伪造供应商请求，原始请求体为空时以 `dataOrigin`/`cacheStatus` 解释来源。
 - 外数 API 新增“报文留存”策略：请求/响应分别选择 `ORIGINAL` 或脚本显式设置的 `state.logRequestBody`/`state.logResponseBody` 中间副本，支持 JSONPath 字段排除、单字段字节上限、Base64/3DES Base64 解密副本；策略只作用于分析副本，不改变规则执行结果，失败时不覆盖未处理密文；`original_request_body`/`original_response_body` 单独永久保存供应商实际报文，元数据返回省略路径和处理状态。
 - 外数调用阶段链已接入规则模块追踪和受控 payload：同一 `callId` 按顺序记录根请求入参、规则/变量拼装 API 请求、脱敏鉴权、实际外部请求、原始响应、响应脚本处理、字段映射候选；API 变量真正写入 `resolvedParams` 时追加 `EXTERNAL_ASSIGNMENT` 事件和 `API_ASSIGNMENT` 诊断行，业务系统按 `callId` 可直接取得完整链路。原始报文仍只从受控 payload 接口返回，阶段链只保存脱敏分析副本。
+- 异步外数提交后的轮询和回调最终响应现在重新执行同一套报文留存策略，并覆盖 `originalResponseBody`；业务分析不会把提交回执误当作最终原始响应。轮询与回调回归用例已覆盖原始响应取值。
 - 外数 payload 查询按 `callId` 使用最新汇总行 `LIMIT 1`，根 Trace 查询一次批量读取赋值日志并合并阶段，避免高并发日志分析产生 N+1 查询；项目归属同时参与赋值日志过滤。
 - 全局数据源被项目规则调用时，外数汇总和赋值日志现在优先记录当前根规则的项目 ID，而不是把全局数据源的 `0/null` 归属带入业务日志；业务令牌可按项目稳定取回对应 `callId` payload，实时返回同时提供 `externalCall.rootTraceId`。
 - 历史实现曾在数据看板增加执行容量与持久化状态面板；按业务要求已移除首页展示，执行容量、外数熔断、预热和持久化状态仍由受权限保护的 `/api/rule/ops/execution-metrics` 提供给运维侧。
@@ -208,7 +209,7 @@ QLExpress 预热和依赖加载失败不能只写日志后继续把服务视为�
 ## 9. 复核后仍需落实的明确缺口
 
 1. **缺失与显式 null 的生产核对。**代码和自动化回归已覆盖根规则、子规则、延迟对象字段和模型投影；仍需在真实生产数据源中核对显式 null、字段缺失和多级对象映射的业务约定。
-2. **“不保存大字段”的全链路核对。**`saveOriginal=false` 已覆盖主调用 Trace、attempt 日志、汇总日志和缓存命中/过期缓存路径；留存处理失败仍回退保存原文。仍需在真实生产配置中核对鉴权日志和异步轮询副本，确保所有副本都遵循同一策略。
+2. **“不保存大字段”的全链路核对。**`saveOriginal=false` 已覆盖主调用 Trace、attempt 日志、汇总日志、缓存命中/过期缓存和异步轮询/回调最终响应；留存处理失败仍回退保存原文。仍需在真实生产配置中核对鉴权日志副本，确保供应商密文和超大字段都按部署策略留存。
 3. **数据库整体故障时的日志保障。**已增加可配置的本地 NDJSON 写前日志：日志/计费写入和数据库恢复 Outbox 同时失败时先 fsync 到 `RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR`，数据库恢复后逐条重放，部分成功只保留未完成侧；坏行不会被自动删除。仍需在目标生产盘完成断电、磁盘满、节点重启和多节点共享目录演练，不能把本地盘方案当作跨节点复制或备份。
 4. **生产验收闭环。**规则 17/28 已完成真实控制台修复和发布，且启动预热不再报错；执行日志新增受权限保护的离线回溯接口，缺失来源会显式返回告警且不访问线上数据源。仍需在目标生产拓扑完成外数日志回溯、Redis 恢复、容量、备份和灾备演练。
 

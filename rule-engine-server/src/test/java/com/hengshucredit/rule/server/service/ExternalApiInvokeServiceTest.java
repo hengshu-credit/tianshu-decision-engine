@@ -217,8 +217,11 @@ public class ExternalApiInvokeServiceTest {
             config.setAsyncPollConfig("{\"taskIdPath\":\"body.taskId\",\"resultEndpointUrl\":\"/result/${taskId}\","
                     + "\"requestMethod\":\"GET\",\"intervalMs\":1,\"maxAttempts\":3,"
                     + "\"statusPath\":\"body.status\",\"successValue\":\"SUCCESS\",\"resultPath\":\"body.data\"}");
+            config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
             Map<String, Object> result = configuredService(config, httpDatasource(server)).invoke(1L, Map.of());
             assertEquals(680, ((Map<?, ?>) result.get("body")).get("score"));
+            assertEquals(680, com.alibaba.fastjson.JSON.parseObject(
+                    (String) result.get("originalResponseBody")).getJSONObject("data").getInteger("score").intValue());
             assertEquals(1, submissions.get());
             assertEquals(2, polls.get());
         } finally {
@@ -304,8 +307,12 @@ public class ExternalApiInvokeServiceTest {
             config.setAsyncCallbackConfig(ExternalApiCallbackStoreTest.protocol().toJSONString());
             config.setAsyncCallbackUrl("http://engine.example/api/external-callback/${invocationId}");
             config.setRequestMapping("{\"callback\":\"$.callbackUrl\"}");
+            config.setPayloadCaptureConfig("{\"response\":{\"source\":\"ORIGINAL\",\"saveOriginal\":true}}");
             ExternalApiInvokeService api = configuredService(config, httpDatasource(server));
             ReflectionTestUtils.setField(api, "callbackStore", callbacks);
+            Map<String, Object> directResult = api.invoke(1L, Map.of());
+            assertEquals(730, com.alibaba.fastjson.JSON.parseObject(
+                    (String) directResult.get("originalResponseBody")).getJSONObject("report").getInteger("score").intValue());
             var variable = new com.hengshucredit.rule.model.entity.RuleVariable();
             variable.setId(3L); variable.setProjectId(1L); variable.setVarCode("riskScore");
             variable.setVarSource("API"); variable.setStatus(1);

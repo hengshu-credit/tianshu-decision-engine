@@ -739,10 +739,13 @@ public class ExternalApiInvokeService {
             trace.responseStatus = ((Number) response.get("httpStatus")).intValue();
             trace.responseBody = result;
             trace.processedResponseBody = result;
+            String originalResponseBody = rawPayload(completed.get("body"));
             ExternalApiPayloadCapturePolicy.Capture finalCapture = capturePayload(
-                    config, "response", rawPayload(completed.get("body")), trace.processedResponseBody);
+                    config, "response", originalResponseBody, trace.processedResponseBody);
             trace.rawResponseBody = finalCapture.capturedBody();
             trace.rawResponseMetadata = finalCapture.metadata();
+            trace.originalResponseBody = ExternalApiPayloadCapturePolicy.originalBody(
+                    config.getPayloadCaptureConfig(), "response", originalResponseBody, finalCapture);
             return response;
         } finally {
             if (invocationId != null) callbackStore.close(invocationId);
