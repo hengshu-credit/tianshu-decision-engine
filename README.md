@@ -144,6 +144,8 @@ API 配置中的“报文留存”可分别设置 `request` / `response`：`sour
 
 生产表达式追踪可通过 `RULE_TRACE_MASK_PATHS` 配置持久化遮罩路径，例如 `$.input.idCard,$.items[*].phone`；遮罩只作用于执行日志中的 `trace_info`，不会改变本次规则结果或内存追踪。
 
+数据库日志和计费写入、数据库恢复 outbox 同时不可用时，服务会把未完成事件 fsync 到本地 NDJSON 写前日志，数据库恢复后自动重放。生产应将 `RULE_EXECUTION_PERSISTENCE_JOURNAL_DIR` 指向独立持久化盘，限制目录访问权限并纳入备份、磁盘容量告警、断电和节点重启演练；日志目录不是跨节点共享复制，也不能替代备份。可通过 `RULE_EXECUTION_PERSISTENCE_JOURNAL_ENABLED`、`RULE_EXECUTION_PERSISTENCE_JOURNAL_MAX_ENTRY_BYTES` 和 `RULE_EXECUTION_PERSISTENCE_JOURNAL_REPLAY_DELAY_MS` 调整策略。
+
 ![规则执行日志](docs/readme/logs.png)
 
 账单管理支持引擎执行、API 调用和数据库调用的计费配置、明细与聚合汇总。
