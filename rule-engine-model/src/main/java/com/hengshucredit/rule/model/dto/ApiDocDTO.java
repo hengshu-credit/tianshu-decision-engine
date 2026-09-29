@@ -87,6 +87,8 @@ public class ApiDocDTO {
         private String businessCodePath;
         private String businessCode;
         private Integer sortOrder;
+        private Long revisionId;
+        private String artifactDigest;
     }
 
     @Data

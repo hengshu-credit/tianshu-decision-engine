@@ -2,8 +2,12 @@ package com.hengshucredit.rule.server.service;
 
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSaveRequest;
 import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
+import com.hengshucredit.rule.model.entity.RuleRevision;
+import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
 import com.hengshucredit.rule.server.mapper.RuleApiDocScenarioMapper;
+import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
+import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import org.junit.Before;
 import org.junit.Test;
@@ -46,6 +50,28 @@ public class RuleApiDocScenarioServiceTest {
                     }
                     return defaultValue(method.getReturnType());
                 }));
+        ReflectionTestUtils.setField(service, "revisionMapper",
+                mapper(RuleRevisionMapper.class, (proxy, method, args) -> {
+                    if ("selectList".equals(method.getName())) {
+                        RuleRevision revision = new RuleRevision();
+                        revision.setId(44L);
+                        revision.setDefinitionId(7L);
+                        revision.setRevisionNo(4);
+                        revision.setArtifactId(99L);
+                        return Collections.singletonList(revision);
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
+        ReflectionTestUtils.setField(service, "artifactMapper",
+                mapper(DecisionArtifactMapper.class, (proxy, method, args) -> {
+                    if ("selectById".equals(method.getName()) && Long.valueOf(99L).equals(args[0])) {
+                        DecisionArtifact artifact = new DecisionArtifact();
+                        artifact.setId(99L);
+                        artifact.setArtifactDigest("a".repeat(64));
+                        return artifact;
+                    }
+                    return defaultValue(method.getReturnType());
+                }));
     }
 
     @Test
@@ -59,6 +85,8 @@ public class RuleApiDocScenarioServiceTest {
         RuleApiDocScenario saved = service.create(7L, request);
 
         assertEquals(Integer.valueOf(4), saved.getRuleVersion());
+        assertEquals(Long.valueOf(44L), saved.getRevisionId());
+        assertEquals("a".repeat(64), saved.getArtifactDigest());
         assertEquals(Integer.valueOf(200), saved.getOuterCode());
         assertEquals("REJECT", saved.getBusinessCode());
         assertEquals(requestJson, saved.getRequestJson());

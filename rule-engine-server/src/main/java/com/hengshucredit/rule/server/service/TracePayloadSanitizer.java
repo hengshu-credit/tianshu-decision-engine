@@ -1,6 +1,8 @@
 package com.hengshucredit.rule.server.service;
 
 import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -44,12 +46,12 @@ final class TracePayloadSanitizer {
             return;
         }
         if (index + 1 == tokens.size() - 1) {
-            if (current instanceof java.util.Map<?, ?> && token instanceof String) {
-                ((java.util.Map<Object, Object>) current).put(token, "******");
-            } else if (current instanceof List<?> && token instanceof Integer) {
+            if (current instanceof JSONObject map && token instanceof String) {
+                map.put((String) token, "******");
+            } else if (current instanceof JSONArray list && token instanceof Integer) {
                 int position = (Integer) token;
-                if (position >= 0 && position < ((List<?>) current).size()) {
-                    ((List<Object>) current).set(position, "******");
+                if (position >= 0 && position < list.size()) {
+                    list.set(position, "******");
                 }
             }
             return;

@@ -112,7 +112,8 @@ public class DbDatasourceController {
         LocalDateTime startTime = LocalDateTime.now();
         RuleDbDatasource datasource = datasourceService.getById(id);
         String sql = body.get("sql") == null ? null : String.valueOf(body.get("sql"));
-        List<Object> params = body.get("params") instanceof List ? (List<Object>) body.get("params") : Collections.emptyList();
+        List<Object> params = new java.util.ArrayList<>();
+        if (body.get("params") instanceof List<?> rawParams) params.addAll(rawParams);
         Integer maxRows = null;
         try {
             DatabaseQueryOptions options = DatabaseQueryOptions.from(body, 100);

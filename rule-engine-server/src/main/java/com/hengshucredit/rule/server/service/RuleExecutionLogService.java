@@ -215,7 +215,13 @@ public class RuleExecutionLogService extends ServiceImpl<RuleExecutionLogMapper,
 
     private JSONObject asObject(Object value) {
         if (value instanceof JSONObject) return (JSONObject) value;
-        if (value instanceof Map) return new JSONObject((Map<String, Object>) value);
+        if (value instanceof Map<?, ?> raw) {
+            JSONObject result = new JSONObject();
+            raw.forEach((key, item) -> {
+                if (key != null) result.put(String.valueOf(key), item);
+            });
+            return result;
+        }
         return null;
     }
 

@@ -46,8 +46,8 @@ public class OpenRuleControllerTest {
 
         Map<?, ?> successBody = (Map<?, ?>) success.getBody();
         Map<?, ?> failureBody = (Map<?, ?>) failure.getBody();
-        Assert.assertEquals(200, success.getStatusCodeValue());
-        Assert.assertEquals(500, failure.getStatusCodeValue());
+        Assert.assertEquals(200, success.getStatusCode().value());
+        Assert.assertEquals(500, failure.getStatusCode().value());
         Assert.assertEquals(successBody.keySet(), failureBody.keySet());
         Assert.assertEquals("A001", executeService.params.get("currentIdNo"));
         Assert.assertEquals("PASS", ((Map<?, ?>) successBody.get("payload")).get("decision"));
@@ -67,7 +67,7 @@ public class OpenRuleControllerTest {
         ResponseEntity<Object> response = controller.execute("OPEN_RISK", Collections.emptyMap(),
                 headers, authenticatedRequest());
 
-        Assert.assertEquals(400, response.getStatusCodeValue());
+        Assert.assertEquals(400, response.getStatusCode().value());
         Map<?, ?> body = (Map<?, ?>) response.getBody();
         Assert.assertEquals("100002", body.get("retCode"));
         Assert.assertEquals("100002", ((Map<?, ?>) body.get("payload")).get("errorCode"));
@@ -98,7 +98,7 @@ public class OpenRuleControllerTest {
 
         ResponseEntity<Object> response = controller.execute("OPEN_RISK", body, headers, authenticatedRequest());
 
-        Assert.assertEquals(400, response.getStatusCodeValue());
+        Assert.assertEquals(400, response.getStatusCode().value());
         Map<?, ?> responseBody = (Map<?, ?>) response.getBody();
         Assert.assertEquals("100001", responseBody.get("retCode"));
         Map<?, ?> payload = (Map<?, ?>) responseBody.get("payload");
@@ -122,7 +122,7 @@ public class OpenRuleControllerTest {
                 Collections.singletonMap("customer", Collections.singletonMap("idNo", "A001")),
                 new HttpHeaders(), authenticatedRequest());
 
-        Assert.assertEquals(429, response.getStatusCodeValue());
+        Assert.assertEquals(429, response.getStatusCode().value());
         Assert.assertEquals("1", response.getHeaders().getFirst("Retry-After"));
         Assert.assertEquals("open-execution-queue", response.getHeaders().getFirst("X-Rule-Limit-Name"));
         Assert.assertNotNull(response.getHeaders().getFirst("X-Rule-Queue-Depth"));

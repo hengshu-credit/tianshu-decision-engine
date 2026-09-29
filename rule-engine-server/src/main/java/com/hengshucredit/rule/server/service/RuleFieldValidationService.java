@@ -196,8 +196,12 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         }
         if ("IN".equals(type) || "NOT_IN".equals(type)) {
             String trimmed = expected.trim();
-            List<Object> values = trimmed.startsWith("[")
-                    ? JSON.parseArray(trimmed, Object.class) : java.util.Arrays.asList(trimmed.split(","));
+            List<Object> values;
+            if (trimmed.startsWith("[")) {
+                values = JSON.parseArray(trimmed, Object.class);
+            } else {
+                values = new ArrayList<>(java.util.Arrays.asList(trimmed.split(",")));
+            }
             if (values.isEmpty()) throw new IllegalArgumentException("集合校验值不能为空");
         }
     }
@@ -237,7 +241,7 @@ public class RuleFieldValidationService extends ServiceImpl<RuleFieldValidationM
         List<Long> projectIds = rules.stream().map(RuleFieldValidation::getProjectId)
                 .filter(id -> id != null && id > 0).distinct().collect(Collectors.toList());
         if (projectIds.isEmpty()) return;
-        Map<Long, String> names = projectMapper.selectBatchIds(projectIds).stream().collect(
+        Map<Long, String> names = projectMapper.selectByIds(projectIds).stream().collect(
                 Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (left, right) -> left));
         for (RuleFieldValidation rule : rules) rule.setProjectName(names.get(rule.getProjectId()));
     }

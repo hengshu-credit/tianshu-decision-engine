@@ -378,7 +378,7 @@ public class ConsoleAccountManagementService {
         List<Long> roleIds = memberships.stream()
                 .map(ConsoleUserRole::getRoleId).distinct().toList();
         List<ConsoleRole> roles = roleIds.isEmpty()
-                ? Collections.emptyList() : roleMapper.selectBatchIds(roleIds);
+                ? Collections.emptyList() : roleMapper.selectByIds(roleIds);
         Set<String> inherited = permissionCodesForRoles(
                 enabledRoleIds(roles));
         Map<String, String> overrides = overrideCodes(user.getId());
@@ -438,7 +438,7 @@ public class ConsoleAccountManagementService {
                 .distinct().toList();
         LinkedHashSet<String> codes = new LinkedHashSet<>();
         for (ConsolePermission permission
-                : permissionMapper.selectBatchIds(permissionIds)) {
+                : permissionMapper.selectByIds(permissionIds)) {
             if (Integer.valueOf(1).equals(permission.getStatus())) {
                 codes.add(permission.getPermissionCode());
             }
@@ -452,7 +452,7 @@ public class ConsoleAccountManagementService {
                         .eq(ConsoleUserPermissionOverride::getUserId, userId));
         if (rows.isEmpty()) return Collections.emptyMap();
         Map<Long, String> codes = new LinkedHashMap<>();
-        for (ConsolePermission permission : permissionMapper.selectBatchIds(
+        for (ConsolePermission permission : permissionMapper.selectByIds(
                 rows.stream().map(ConsoleUserPermissionOverride::getPermissionId)
                         .distinct().toList())) {
             codes.put(permission.getId(), permission.getPermissionCode());

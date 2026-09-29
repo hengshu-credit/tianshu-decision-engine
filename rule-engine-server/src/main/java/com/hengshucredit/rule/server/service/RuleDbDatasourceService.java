@@ -176,7 +176,7 @@ public class RuleDbDatasourceService extends ServiceImpl<RuleDbDatasourceMapper,
                 .distinct()
                 .collect(Collectors.toList());
         if (projectIds.isEmpty()) return;
-        Map<Long, String> nameMap = projectMapper.selectBatchIds(projectIds).stream()
+        Map<Long, String> nameMap = projectMapper.selectByIds(projectIds).stream()
                 .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
         list.forEach(v -> v.setProjectName(nameMap.get(v.getProjectId())));
     }

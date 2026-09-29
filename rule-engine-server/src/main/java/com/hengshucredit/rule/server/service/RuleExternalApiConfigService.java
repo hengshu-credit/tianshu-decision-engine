@@ -302,7 +302,7 @@ public class RuleExternalApiConfigService extends ServiceImpl<RuleExternalApiCon
                 .distinct()
                 .collect(Collectors.toList());
         if (datasourceIds.isEmpty()) return;
-        Map<Long, RuleExternalDatasource> datasourceMap = datasourceMapper.selectBatchIds(datasourceIds).stream()
+        Map<Long, RuleExternalDatasource> datasourceMap = datasourceMapper.selectByIds(datasourceIds).stream()
                 .collect(Collectors.toMap(RuleExternalDatasource::getId, v -> v, (a, b) -> a));
         list.forEach(v -> {
             RuleExternalDatasource datasource = datasourceMap.get(v.getDatasourceId());

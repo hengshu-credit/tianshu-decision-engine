@@ -511,7 +511,7 @@ public class RuleListService extends ServiceImpl<RuleListLibraryMapper, RuleList
                 .collect(Collectors.toList());
         Map<Long, String> projectNames = new HashMap<>();
         if (!projectIds.isEmpty()) {
-            projectNames = projectMapper.selectBatchIds(projectIds).stream()
+            projectNames = projectMapper.selectByIds(projectIds).stream()
                     .collect(Collectors.toMap(RuleProject::getId, RuleProject::getProjectName, (a, b) -> a));
         }
         for (RuleListLibrary library : libraries) {

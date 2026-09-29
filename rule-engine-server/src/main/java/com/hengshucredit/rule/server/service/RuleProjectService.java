@@ -481,6 +481,8 @@ public class RuleProjectService extends ServiceImpl<RuleProjectMapper, RuleProje
                     scenarioInfo.setBusinessCodePath(scenario.getBusinessCodePath());
                     scenarioInfo.setBusinessCode(scenario.getBusinessCode());
                     scenarioInfo.setSortOrder(scenario.getSortOrder());
+                    scenarioInfo.setRevisionId(scenario.getRevisionId());
+                    scenarioInfo.setArtifactDigest(scenario.getArtifactDigest());
                     scenarioInfos.add(scenarioInfo);
                 }
             }

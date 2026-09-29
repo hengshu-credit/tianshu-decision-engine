@@ -155,4 +155,45 @@ describe('ApiScenarioPanel', () => {
 
     expect(wrapper.vm.draft.businessCodePath).toBe('')
   })
+
+  test('加入文档前同时校验业务版本、修订和制品摘要', () => {
+    const currentRule = {
+      id: 7,
+      publishedVersion: 4,
+      publishedRevisionId: 44,
+      publishedArtifactDigest: 'digest-current',
+    }
+    wrapper.unmount()
+    wrapper = shallowMount(ApiScenarioPanel, {
+      props: { rule: currentRule },
+      mocks: {
+        $message: { success: vi.fn(), error: vi.fn(), warning: vi.fn() },
+      },
+      stubs: {
+        MonacoEditor: { name: 'MonacoEditor', template: '<textarea />' },
+      },
+    })
+
+    expect(wrapper.vm.scenarioDocState({
+      status: 1,
+      includeInDoc: 1,
+      ruleVersion: 4,
+      revisionId: 43,
+      artifactDigest: 'digest-current',
+    })).toEqual({ label: '修订已过期', type: 'warning' })
+    expect(wrapper.vm.scenarioDocState({
+      status: 1,
+      includeInDoc: 1,
+      ruleVersion: 4,
+      revisionId: 44,
+      artifactDigest: 'digest-old',
+    })).toEqual({ label: '制品已变化', type: 'warning' })
+    expect(wrapper.vm.scenarioDocState({
+      status: 1,
+      includeInDoc: 1,
+      ruleVersion: 4,
+      revisionId: 44,
+      artifactDigest: 'digest-current',
+    })).toEqual({ label: '已加入', type: 'success' })
+  })
 })

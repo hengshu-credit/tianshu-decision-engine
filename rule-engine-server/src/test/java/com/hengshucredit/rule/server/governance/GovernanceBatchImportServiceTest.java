@@ -117,7 +117,7 @@ public class GovernanceBatchImportServiceTest {
         Assert.assertEquals("CREATE", service.drafts.get(1).getAction());
         Assert.assertNull(service.drafts.get(1).getResourceId());
         Map<String, Object> updateSnapshot = JSON.parseObject(
-                service.drafts.get(0).getSnapshotJson(), Map.class);
+                service.drafts.get(0).getSnapshotJson());
         Assert.assertEquals("65", updateSnapshot.get("defaultValue"));
         Assert.assertEquals("最大年龄", updateSnapshot.get("varLabel"));
         Assert.assertEquals("60", existing.getDefaultValue());
@@ -126,7 +126,7 @@ public class GovernanceBatchImportServiceTest {
         globalService.importConstants(
                 null, "GLOBAL", group, "tester");
         Map<String, Object> globalSnapshot = JSON.parseObject(
-                globalService.drafts.get(0).getSnapshotJson(), Map.class);
+                globalService.drafts.get(0).getSnapshotJson());
         Assert.assertEquals(0L,
                 ((Number) globalSnapshot.get("projectId")).longValue());
     }
@@ -180,9 +180,8 @@ public class GovernanceBatchImportServiceTest {
         GovernanceDraftRequest draft = service.drafts.get(0);
         Assert.assertEquals("UPDATE", draft.getAction());
         Map<String, Object> aggregate = JSON.parseObject(
-                draft.getSnapshotJson(), Map.class);
-        List<Map<String, Object>> fields =
-                (List<Map<String, Object>>) aggregate.get("fields");
+                draft.getSnapshotJson());
+        List<?> fields = (List<?>) aggregate.get("fields");
         Map<String, Object> stableRoot = findField(fields, "params");
         Map<String, Object> preserved = findField(fields, "legacy");
         Map<String, Object> added = findField(fields, "name");
@@ -318,10 +317,16 @@ public class GovernanceBatchImportServiceTest {
         return field;
     }
 
-    private static Map<String, Object> findField(
-            List<Map<String, Object>> fields, String code) {
+    private static Map<String, Object> findField(List<?> fields, String code) {
         return fields.stream()
+                .filter(Map.class::isInstance)
+                .map(field -> (Map<?, ?>) field)
                 .filter(field -> code.equals(field.get("varCode")))
+                .map(field -> {
+                    Map<String, Object> result = new LinkedHashMap<>();
+                    field.forEach((key, value) -> result.put(String.valueOf(key), value));
+                    return result;
+                })
                 .findFirst()
                 .orElseThrow();
     }
@@ -366,8 +371,7 @@ public class GovernanceBatchImportServiceTest {
                     .orElse(null);
             return variable == null
                     ? new LinkedHashMap<>()
-                    : JSON.parseObject(JSON.toJSONString(variable),
-                    LinkedHashMap.class);
+                    : JSON.parseObject(JSON.toJSONString(variable));
         }
 
         @Override

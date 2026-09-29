@@ -464,7 +464,7 @@ public class ExternalApiInvokeService {
         trace.rawRequestBody = rawRequest == null ? null : String.valueOf(rawRequest);
         Object requestMetadata = cached.get("rawRequestMetadata");
         if (requestMetadata instanceof Map) {
-            trace.rawRequestMetadata = new LinkedHashMap<>((Map<String, Object>) requestMetadata);
+            trace.rawRequestMetadata = copyStringKeyedMap(requestMetadata);
         }
         Object raw = cached.get("rawResponseBody");
         trace.rawResponseBody = raw == null ? rawPayload(cached.get("body")) : String.valueOf(raw);
@@ -472,7 +472,7 @@ public class ExternalApiInvokeService {
         trace.originalResponseBody = stringOrNull(cached.get("originalResponseBody"));
         Object responseMetadata = cached.get("rawResponseMetadata");
         if (responseMetadata instanceof Map) {
-            trace.rawResponseMetadata = (Map<String, Object>) responseMetadata;
+            trace.rawResponseMetadata = copyStringKeyedMap(responseMetadata);
         }
         Object externalCall = cached.get("externalCall");
         if (externalCall instanceof Map) {
@@ -482,7 +482,7 @@ public class ExternalApiInvokeService {
                 trace.requestMethod = stringOrNull(requestMap.get("method"));
                 trace.requestUrl = stringOrNull(requestMap.get("url"));
                 Object headers = requestMap.get("headers");
-                if (headers instanceof Map) trace.requestHeaders = new LinkedHashMap<>((Map<String, Object>) headers);
+                if (headers instanceof Map) trace.requestHeaders = copyStringKeyedMap(headers);
                 trace.requestParams = requestMap.get("params");
                 trace.requestBody = requestMap.get("body");
             }
@@ -498,6 +498,15 @@ public class ExternalApiInvokeService {
         cacheStepInput.put("cacheStatus", trace.cacheStatus);
         recordTraceStep(trace, "CACHE_RESULT", "缓存返回外数结果", "SUCCESS",
                 cacheStepInput, maskSensitiveForLog(trace.responseBody), null);
+    }
+
+    private Map<String, Object> copyStringKeyedMap(Object value) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        if (!(value instanceof Map<?, ?> raw)) return result;
+        for (Map.Entry<?, ?> entry : raw.entrySet()) {
+            if (entry.getKey() != null) result.put(String.valueOf(entry.getKey()), entry.getValue());
+        }
+        return result;
     }
 
     private String failureOutcome(Throwable error) {
@@ -521,7 +530,7 @@ public class ExternalApiInvokeService {
         }
         HttpStatusCodeException statusError = findCause(error, HttpStatusCodeException.class);
         if (statusError != null) {
-            return retryStatusCodes(apiConfig.getRetryStatusCodes()).contains(statusError.getRawStatusCode());
+            return retryStatusCodes(apiConfig.getRetryStatusCodes()).contains(statusError.getStatusCode().value());
         }
         if (isTimeoutError(error)) {
             return Integer.valueOf(1).equals(apiConfig.getRetryOnTimeout());
@@ -665,7 +674,7 @@ public class ExternalApiInvokeService {
             trace.rawResponseBody = originalResponseCapture.capturedBody();
             trace.rawResponseMetadata = originalResponseCapture.metadata();
             Map<String, Object> envelope = new LinkedHashMap<>();
-            envelope.put("httpStatus", response.getStatusCodeValue());
+            envelope.put("httpStatus", response.getStatusCode().value());
             envelope.put("headers", headersForScript(response.getHeaders()));
             envelope.put("body", MissingValueSemantics.normalize(parseJsonOrRaw(response.getBody())));
             if (prepared.tokenCacheKey != null && shouldRefreshToken(config, envelope)) {
@@ -680,7 +689,7 @@ public class ExternalApiInvokeService {
             Object body;
             try {
                 body = executeResponseScript(config, params, envelope.get("body"), response.getBody(),
-                        response.getStatusCodeValue(), response.getHeaders(), prepared.state);
+                        response.getStatusCode().value(), response.getHeaders(), prepared.state);
             } catch (RuntimeException scriptError) {
                 recordTraceStep(trace, "RESPONSE_PROCESSING", "响应脚本处理", "FAILED",
                         envelope.get("body"), Map.of("errorMessage", scriptError.getMessage()), config.getId());
@@ -688,7 +697,7 @@ public class ExternalApiInvokeService {
             }
             envelope.put("body", body);
             envelope.put("success", response.getStatusCode().is2xxSuccessful());
-            trace.responseStatus = response.getStatusCodeValue();
+            trace.responseStatus = response.getStatusCode().value();
             trace.responseBody = body;
             trace.processedResponseBody = prepared.state.containsKey("logResponseBody")
                     ? prepared.state.get("logResponseBody") : body;
@@ -857,19 +866,19 @@ public class ExternalApiInvokeService {
                 response = lease.getRestTemplate().exchange(prepared.finalUrl, prepared.method,
                         new HttpEntity<>(prepared.requestBody, prepared.headers), String.class);
             }
-            Map<String, Object> responseInput = responseStepInput(response.getStatusCodeValue());
+            Map<String, Object> responseInput = responseStepInput(response.getStatusCode().value());
             responseInput.put("attemptNo", attemptNo);
             recordTraceStep(trace, "EXTERNAL_RESPONSE", "外部数据响应",
                     response.getStatusCode().is2xxSuccessful() ? "SUCCESS" : "FAILED",
                     responseInput, parseJsonOrRaw(response.getBody()),
                     apiConfig.getId());
             logApiAttempt(apiConfig, datasource, prepared, trace, attemptNo,
-                    response.getStatusCodeValue(), parseJsonOrRaw(response.getBody()), response.getBody(), null,
+                    response.getStatusCode().value(), parseJsonOrRaw(response.getBody()), response.getBody(), null,
                     System.currentTimeMillis() - start);
             return response;
         } catch (RuntimeException e) {
             HttpStatusCodeException statusError = findCause(e, HttpStatusCodeException.class);
-            Integer status = statusError == null ? null : statusError.getRawStatusCode();
+            Integer status = statusError == null ? null : statusError.getStatusCode().value();
             Object responseBody = statusError == null ? null
                     : parseJsonOrRaw(statusError.getResponseBodyAsString());
             Map<String, Object> responseInput = responseStepInput(status);
@@ -908,7 +917,7 @@ public class ExternalApiInvokeService {
     }
 
     private void recordHttpError(InvokeTrace trace, HttpStatusCodeException error) {
-        trace.responseStatus = error.getRawStatusCode();
+        trace.responseStatus = error.getStatusCode().value();
         trace.responseBody = parseJsonOrRaw(error.getResponseBodyAsString());
         trace.rawResponseBody = error.getResponseBodyAsString();
         trace.originalResponseBody = error.getResponseBodyAsString();
@@ -1173,7 +1182,7 @@ public class ExternalApiInvokeService {
     }
 
     private UriComponentsBuilder httpUrlBuilder(String url) {
-        UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(url);
+        UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(url);
         UriComponents components = builder.build();
         String scheme = components.getScheme();
         if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
@@ -1517,14 +1526,14 @@ public class ExternalApiInvokeService {
             int refreshAheadSeconds = ttlSeconds <= 0 ? 0 : Math.min(configuredAhead, ttlSeconds / 2);
             long usableExpiresAt = expiresAt - refreshAheadSeconds * 1000L;
             logTokenCall(datasource, apiConfig, forceRefresh, cacheKey, method, tokenUrl,
-                    headers, body, response.getStatusCodeValue(), true, ttlSeconds, null,
+                    headers, body, response.getStatusCode().value(), true, ttlSeconds, null,
                     response.getBody(),
                     System.currentTimeMillis() - start);
             return new ExternalTokenCache.CachedToken(tokenText, expiresAt, usableExpiresAt);
         } catch (RuntimeException e) {
-            Integer status = response == null ? null : response.getStatusCodeValue();
+            Integer status = response == null ? null : response.getStatusCode().value();
             HttpStatusCodeException statusError = findCause(e, HttpStatusCodeException.class);
-            if (statusError != null) status = statusError.getRawStatusCode();
+            if (statusError != null) status = statusError.getStatusCode().value();
             logTokenCall(datasource, apiConfig, forceRefresh, cacheKey, method, tokenUrl,
                     headers, body, status, false, null, e.getMessage(),
                     statusError == null ? null : statusError.getResponseBodyAsString(),
@@ -1573,7 +1582,7 @@ public class ExternalApiInvokeService {
                 datasource.getTokenCacheSeconds() == null ? 0 : datasource.getTokenCacheSeconds());
 
         Map<String, Object> responseDetail = new LinkedHashMap<>();
-        responseDetail.put("httpStatus", response.getStatusCodeValue());
+        responseDetail.put("httpStatus", response.getStatusCode().value());
         responseDetail.put("headers", headersToLog(response.getHeaders()));
         responseDetail.put("body", parsed);
 
@@ -1588,7 +1597,7 @@ public class ExternalApiInvokeService {
         result.put("expiresInSeconds", ttlSeconds);
         result.put("request", requestDetail(trace));
         result.put("response", responseDetail);
-        trace.responseStatus = response.getStatusCodeValue();
+        trace.responseStatus = response.getStatusCode().value();
         trace.responseBody = responseDetail;
         trace.originalResponseBody = response.getBody();
         return result;
@@ -1602,7 +1611,7 @@ public class ExternalApiInvokeService {
         context.put("input", params);
         context.put("body", parsed);
         context.put("rawBody", response.getBody());
-        context.put("httpStatus", response.getStatusCodeValue());
+        context.put("httpStatus", response.getStatusCode().value());
         context.put("headers", headersForScript(response.getHeaders()));
         context.put("vars", externalApiScriptService.parseScriptVariables(JSON.toJSONString(config)));
         return externalApiScriptService.executeResponse(script, context);
@@ -2819,9 +2828,9 @@ public class ExternalApiInvokeService {
         try {
             int queryIndex = url.indexOf('?');
             String baseUrl = url.substring(0, queryIndex);
-            MultiValueMap<String, String> query = UriComponentsBuilder.fromHttpUrl(url)
+            MultiValueMap<String, String> query = UriComponentsBuilder.fromUriString(url)
                     .build(false).getQueryParams();
-            UriComponentsBuilder builder = UriComponentsBuilder.fromHttpUrl(baseUrl);
+            UriComponentsBuilder builder = UriComponentsBuilder.fromUriString(baseUrl);
             for (Map.Entry<String, List<String>> entry : query.entrySet()) {
                 for (String value : entry.getValue()) {
                     builder.queryParam(entry.getKey(), isSensitiveKey(entry.getKey()) ? "******" : value);

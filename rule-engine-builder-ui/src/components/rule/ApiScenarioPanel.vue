@@ -566,6 +566,20 @@ export default {
       ) {
         return { label: '版本已过期', type: 'warning' }
       }
+      if (
+        row.revisionId &&
+        this.rule.publishedRevisionId &&
+        String(row.revisionId) !== String(this.rule.publishedRevisionId)
+      ) {
+        return { label: '修订已过期', type: 'warning' }
+      }
+      if (
+        row.artifactDigest &&
+        this.rule.publishedArtifactDigest &&
+        row.artifactDigest !== this.rule.publishedArtifactDigest
+      ) {
+        return { label: '制品已变化', type: 'warning' }
+      }
       return { label: '已加入', type: 'success' }
     },
     isBooleanType(type) {

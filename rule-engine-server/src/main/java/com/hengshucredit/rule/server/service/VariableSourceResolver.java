@@ -1607,8 +1607,12 @@ public class VariableSourceResolver {
         if (variable == null) return;
         String callId = response == null || response.get("callId") == null
                 ? null : String.valueOf(response.get("callId"));
-        Map<String, Object> externalCall = response != null && response.get("externalCall") instanceof Map
-                ? (Map<String, Object>) response.get("externalCall") : Collections.emptyMap();
+        Map<String, Object> externalCall = new LinkedHashMap<>();
+        if (response != null && response.get("externalCall") instanceof Map<?, ?> rawExternalCall) {
+            for (Map.Entry<?, ?> entry : rawExternalCall.entrySet()) {
+                if (entry.getKey() != null) externalCall.put(String.valueOf(entry.getKey()), entry.getValue());
+            }
+        }
         String traceId = externalCall.get("traceId") == null ? null : String.valueOf(externalCall.get("traceId"));
         Map<String, Object> step = new LinkedHashMap<>();
         step.put("sequence", 1);

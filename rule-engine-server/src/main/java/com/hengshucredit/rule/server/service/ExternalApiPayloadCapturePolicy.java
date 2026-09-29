@@ -140,7 +140,17 @@ final class ExternalApiPayloadCapturePolicy {
         Object value = config.get(phase);
         if (value == null) return new JSONObject();
         if (!(value instanceof Map)) throw new IllegalArgumentException("报文留存 " + phase + " 配置必须是对象");
-        JSONObject result = value instanceof JSONObject ? (JSONObject) value : new JSONObject((Map<String, Object>) value);
+        JSONObject result;
+        if (value instanceof JSONObject jsonObject) {
+            result = jsonObject;
+        } else {
+            result = new JSONObject();
+            if (value instanceof Map<?, ?> raw) {
+                raw.forEach((key, item) -> {
+                    if (key != null) result.put(String.valueOf(key), item);
+                });
+            }
+        }
         if (result.get("saveOriginal") != null && !(result.get("saveOriginal") instanceof Boolean)) {
             throw new IllegalArgumentException("报文留存 " + phase + " saveOriginal 必须是布尔值");
         }
@@ -305,16 +315,14 @@ final class ExternalApiPayloadCapturePolicy {
     }
 
     private static void trimLargeFields(Object current, int maxBytes, String path, Set<String> omitted) {
-        if (current instanceof Map) {
-            Map<Object, Object> map = (Map<Object, Object>) current;
+        if (current instanceof Map<?, ?> map) {
             for (Object key : new ArrayList<>(map.keySet())) {
                 Object value = map.get(key);
                 String childPath = path + "." + key;
                 if (JSON.toJSONString(value).getBytes(StandardCharsets.UTF_8).length > maxBytes) { map.remove(key); omitted.add(childPath); }
                 else trimLargeFields(value, maxBytes, childPath, omitted);
             }
-        } else if (current instanceof List) {
-            List<Object> list = (List<Object>) current;
+        } else if (current instanceof List<?> list) {
             for (int i = list.size() - 1; i >= 0; i--) {
                 String childPath = path + "[" + i + "]";
                 if (JSON.toJSONString(list.get(i)).getBytes(StandardCharsets.UTF_8).length > maxBytes) { list.remove(i); omitted.add(childPath); }
@@ -340,8 +348,17 @@ final class ExternalApiPayloadCapturePolicy {
     private static boolean replaceAtPath(Object root, List<Object> tokens, int index, Object value) {
         if (index + 1 == tokens.size() - 1) {
             Object token = tokens.get(index + 1);
-            if (root instanceof Map && token instanceof String) { ((Map<Object, Object>) root).put(token, value); return true; }
-            if (root instanceof List && token instanceof Integer) { int position = (Integer) token; if (position >= 0 && position < ((List<?>) root).size()) { ((List<Object>) root).set(position, value); return true; } }
+            if (root instanceof JSONObject map && token instanceof String) {
+                map.put((String) token, value);
+                return true;
+            }
+            if (root instanceof JSONArray list && token instanceof Integer) {
+                int position = (Integer) token;
+                if (position >= 0 && position < list.size()) {
+                    list.set(position, value);
+                    return true;
+                }
+            }
             return false;
         }
         Object next = readChild(root, tokens.get(index + 1));

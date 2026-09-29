@@ -24,6 +24,8 @@ public class RuleApiDocScenario {
     private String businessCodePath;
     private String businessCode;
     private Integer ruleVersion;
+    private Long revisionId;
+    private String artifactDigest;
     private Integer includeInDoc;
     private Integer sortOrder;
     private Integer status;

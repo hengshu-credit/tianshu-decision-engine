@@ -6,8 +6,12 @@ import com.alibaba.fastjson.JSONPath;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.ApiDocScenarioSaveRequest;
 import com.hengshucredit.rule.model.entity.RuleApiDocScenario;
+import com.hengshucredit.rule.model.entity.RuleRevision;
 import com.hengshucredit.rule.model.entity.RuleDefinition;
+import com.hengshucredit.rule.model.entity.DecisionArtifact;
 import com.hengshucredit.rule.server.mapper.RuleApiDocScenarioMapper;
+import com.hengshucredit.rule.server.mapper.RuleRevisionMapper;
+import com.hengshucredit.rule.server.mapper.DecisionArtifactMapper;
 import com.hengshucredit.rule.server.mapper.RuleDefinitionMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,6 +35,12 @@ public class RuleApiDocScenarioService {
 
     @Resource
     private RuleDefinitionMapper definitionMapper;
+
+    @Resource
+    private RuleRevisionMapper revisionMapper;
+
+    @Resource
+    private DecisionArtifactMapper artifactMapper;
 
     public List<RuleApiDocScenario> listByDefinition(Long definitionId) {
         requireDefinition(definitionId);
@@ -78,7 +88,7 @@ public class RuleApiDocScenarioService {
         copied.setOuterCode(source.getOuterCode());
         copied.setBusinessCodePath(source.getBusinessCodePath());
         copied.setBusinessCode(source.getBusinessCode());
-        copied.setRuleVersion(currentVersion(definition));
+        bindCurrentRevision(copied, definition);
         copied.setIncludeInDoc(0);
         copied.setSortOrder(nextSortOrder(definitionId));
         copied.setStatus(source.getStatus() == null ? 1 : source.getStatus());
@@ -149,7 +159,7 @@ public class RuleApiDocScenarioService {
         scenario.setBusinessCodePath(businessCodePath);
         Object businessCode = readPath(responseObject, businessCodePath);
         scenario.setBusinessCode(businessCode == null ? null : String.valueOf(businessCode));
-        scenario.setRuleVersion(currentVersion(definition));
+        bindCurrentRevision(scenario, definition);
         scenario.setIncludeInDoc(binaryFlag(request.getIncludeInDoc(), 0, "是否加入文档"));
         scenario.setSortOrder(request.getSortOrder() == null
                 ? nextSortOrder(scenario.getDefinitionId()) : request.getSortOrder());
@@ -238,6 +248,26 @@ public class RuleApiDocScenarioService {
 
     private int currentVersion(RuleDefinition definition) {
         return definition.getCurrentVersion() == null ? 0 : definition.getCurrentVersion();
+    }
+
+    private void bindCurrentRevision(RuleApiDocScenario scenario, RuleDefinition definition) {
+        int version = currentVersion(definition);
+        scenario.setRuleVersion(version);
+        scenario.setRevisionId(null);
+        scenario.setArtifactDigest(null);
+        if (revisionMapper == null || definition == null || definition.getId() == null) return;
+        List<RuleRevision> revisions = revisionMapper.selectList(new LambdaQueryWrapper<RuleRevision>()
+                .eq(RuleRevision::getDefinitionId, definition.getId())
+                .eq(RuleRevision::getRevisionNo, version)
+                .orderByDesc(RuleRevision::getId)
+                .last("LIMIT 1"));
+        if (revisions == null || revisions.isEmpty()) return;
+        RuleRevision revision = revisions.get(0);
+        scenario.setRevisionId(revision.getId());
+        if (artifactMapper != null && revision.getArtifactId() != null) {
+            DecisionArtifact artifact = artifactMapper.selectById(revision.getArtifactId());
+            if (artifact != null) scenario.setArtifactDigest(artifact.getArtifactDigest());
+        }
     }
 
     private String requireName(String value) {

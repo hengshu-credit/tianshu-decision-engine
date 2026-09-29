@@ -49,7 +49,7 @@ public class DerivedVariableService {
         Map<String, String> original = new LinkedHashMap<>(paths);
         List<Long> ids = paths.keySet().stream().filter(key -> key.startsWith("DATA_OBJECT:"))
                 .map(key -> Long.valueOf(key.substring("DATA_OBJECT:".length()))).toList();
-        if (!ids.isEmpty()) HistoryFieldValues.applyAliases(paths, dataObjectFieldMapper.selectBatchIds(ids));
+        if (!ids.isEmpty()) HistoryFieldValues.applyAliases(paths, dataObjectFieldMapper.selectByIds(ids));
         HistoryFieldValues.preferAssignedObjectPaths(paths, original, values);
         return paths;
     }
@@ -59,7 +59,7 @@ public class DerivedVariableService {
         List<Long> ids = paths.keySet().stream().filter(key -> key.startsWith("DATA_OBJECT:"))
                 .map(key -> Long.valueOf(key.substring("DATA_OBJECT:".length()))).toList();
         var fields = ids.isEmpty() || dataObjectFieldMapper == null ? List.<com.hengshucredit.rule.model.entity.RuleDataObjectField>of()
-                : dataObjectFieldMapper.selectBatchIds(ids);
+                : dataObjectFieldMapper.selectByIds(ids);
         return HistoricalFieldDefinition.build(variables, fields, models, paths);
     }
 

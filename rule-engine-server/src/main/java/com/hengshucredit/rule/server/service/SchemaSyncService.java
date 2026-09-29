@@ -787,6 +787,8 @@ public class SchemaSyncService {
                     + "`business_code_path` VARCHAR(256) DEFAULT NULL,"
                     + "`business_code` VARCHAR(256) DEFAULT NULL,"
                     + "`rule_version` INT NOT NULL,"
+                    + "`revision_id` BIGINT DEFAULT NULL,"
+                    + "`artifact_digest` CHAR(64) DEFAULT NULL,"
                     + "`include_in_doc` TINYINT NOT NULL DEFAULT 0,"
                     + "`sort_order` INT NOT NULL DEFAULT 0,"
                     + "`status` TINYINT NOT NULL DEFAULT 1,"
@@ -794,12 +796,20 @@ public class SchemaSyncService {
                     + "`update_time` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,"
                     + "PRIMARY KEY (`id`),"
                     + "UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),"
-                    + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)"
+                    + "KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`),"
+                    + "KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)"
                     + ") ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='Rule API documentation scenarios'");
             return;
         }
         ensureLongTextColumn("rule_api_doc_scenario", "request_json", "完整请求报文");
         ensureLongTextColumn("rule_api_doc_scenario", "response_json", "完整响应报文");
+        addColumnIfMissing("rule_api_doc_scenario", "revision_id",
+                "`revision_id` BIGINT DEFAULT NULL COMMENT '测试场景绑定的规则修订ID'");
+        addColumnIfMissing("rule_api_doc_scenario", "artifact_digest",
+                "`artifact_digest` CHAR(64) DEFAULT NULL COMMENT '测试场景绑定的不可变制品摘要'");
+        if (!indexExists("rule_api_doc_scenario", "idx_api_doc_scenario_revision")) {
+            jdbcTemplate.execute("ALTER TABLE `rule_api_doc_scenario` ADD KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)");
+        }
     }
 
     private void addAuthAttributionColumns(String table, String timeColumn, boolean includeToken) {
@@ -1038,16 +1048,14 @@ public class SchemaSyncService {
     private boolean tableExists(String tableName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?",
-                new Object[]{tableName},
-                Integer.class);
+                Integer.class, tableName);
         return count != null && count > 0;
     }
 
     private boolean columnExists(String tableName, String columnName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
-                new Object[]{tableName, columnName},
-                Integer.class);
+                Integer.class, tableName, columnName);
         return count != null && count > 0;
     }
 
@@ -1055,8 +1063,7 @@ public class SchemaSyncService {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS "
                         + "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ? AND DATA_TYPE = ?",
-                new Object[]{tableName, columnName, dataType},
-                Integer.class);
+                Integer.class, tableName, columnName, dataType);
         return count != null && count > 0;
     }
 
@@ -1088,8 +1095,7 @@ public class SchemaSyncService {
     private boolean indexExists(String tableName, String indexName) {
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?",
-                new Object[]{tableName, indexName},
-                Integer.class);
+                Integer.class, tableName, indexName);
         return count != null && count > 0;
     }
 
@@ -1097,8 +1103,7 @@ public class SchemaSyncService {
         if (!indexExists(tableName, indexName)) return Collections.emptyList();
         return jdbcTemplate.queryForList(
                 "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ? ORDER BY SEQ_IN_INDEX",
-                new Object[]{tableName, indexName},
-                String.class);
+                String.class, tableName, indexName);
     }
 
     private boolean sameColumns(List<String> actual, List<String> expected) {
@@ -1113,8 +1118,7 @@ public class SchemaSyncService {
         if (!tableExists(tableName)) return;
         Integer count = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = 'FOREIGN KEY'",
-                new Object[]{tableName, constraintName},
-                Integer.class);
+                Integer.class, tableName, constraintName);
         if (count != null && count > 0) {
             jdbcTemplate.execute("ALTER TABLE `" + tableName + "` DROP FOREIGN KEY `" + constraintName + "`");
         }

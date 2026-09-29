@@ -107,7 +107,7 @@ public class ConsolePermissionService {
                 .map(ConsoleRolePermission::getPermissionId)
                 .distinct()
                 .toList();
-        List<ConsolePermission> permissions = permissionMapper.selectBatchIds(permissionIds);
+        List<ConsolePermission> permissions = permissionMapper.selectByIds(permissionIds);
         LinkedHashSet<String> codes = new LinkedHashSet<>();
         for (ConsolePermission permission : permissions) {
             if (Integer.valueOf(1).equals(permission.getStatus())) {
@@ -126,7 +126,7 @@ public class ConsolePermissionService {
                 .map(ConsoleUserRole::getRoleId)
                 .distinct()
                 .toList();
-        List<ConsoleRole> roles = roleMapper.selectBatchIds(roleIds);
+        List<ConsoleRole> roles = roleMapper.selectByIds(roleIds);
         return roles.stream()
                 .filter(role -> Integer.valueOf(1).equals(role.getStatus()))
                 .toList();
@@ -142,7 +142,7 @@ public class ConsolePermissionService {
                 .distinct()
                 .toList();
         Map<Long, String> codes = new HashMap<>();
-        for (ConsolePermission permission : permissionMapper.selectBatchIds(permissionIds)) {
+        for (ConsolePermission permission : permissionMapper.selectByIds(permissionIds)) {
             if (Integer.valueOf(1).equals(permission.getStatus())) {
                 codes.put(permission.getId(), permission.getPermissionCode());
             }

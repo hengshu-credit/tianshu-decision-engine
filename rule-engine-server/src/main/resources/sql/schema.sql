@@ -469,6 +469,8 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   `business_code_path` VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码路径',
   `business_code`      VARCHAR(256) DEFAULT NULL            COMMENT '内层业务码展示值',
   `rule_version`       INT          NOT NULL                COMMENT '保存时规则版本',
+  `revision_id`        BIGINT       DEFAULT NULL            COMMENT '测试场景绑定的规则修订ID',
+  `artifact_digest`    CHAR(64)     DEFAULT NULL            COMMENT '测试场景绑定的不可变制品摘要',
   `include_in_doc`     TINYINT      NOT NULL DEFAULT 0      COMMENT '是否加入API文档',
   `sort_order`         INT          NOT NULL DEFAULT 0      COMMENT '展示顺序',
   `status`             TINYINT      NOT NULL DEFAULT 1      COMMENT '状态：0-停用，1-启用',
@@ -476,7 +478,8 @@ CREATE TABLE IF NOT EXISTS `rule_api_doc_scenario` (
   `update_time`        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_api_doc_scenario_name` (`definition_id`, `scenario_name`),
-  KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`)
+  KEY `idx_api_doc_scenario_export` (`definition_id`, `status`, `include_in_doc`, `sort_order`),
+  KEY `idx_api_doc_scenario_revision` (`definition_id`, `revision_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='规则 API 文档测试场景';
 
 -- ============================================================

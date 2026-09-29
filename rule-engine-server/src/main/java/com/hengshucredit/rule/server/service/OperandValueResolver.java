@@ -204,11 +204,10 @@ public final class OperandValueResolver {
         Map<String, Object> current = values;
         for (int i = 0; i < parts.length - 1; i++) {
             Object nested = current.get(parts[i]);
-            if (!(nested instanceof Map)) {
-                nested = new java.util.LinkedHashMap<String, Object>();
-                current.put(parts[i], nested);
-            }
-            current = (Map<String, Object>) nested;
+            Map<String, Object> next = nested instanceof Map<?, ?> rawNested
+                    ? stringKeyedMap(rawNested) : new LinkedHashMap<>();
+            current.put(parts[i], next);
+            current = next;
         }
         current.put(parts[parts.length - 1], value);
     }
@@ -421,9 +420,17 @@ public final class OperandValueResolver {
 
     private static Map<String, Object> mapValue(Object value) {
         if (value == null) return new LinkedHashMap<>();
-        if (value instanceof Map) return new LinkedHashMap<>((Map<String, Object>) value);
-        if (value instanceof String) return JSON.parseObject((String) value, LinkedHashMap.class);
+        if (value instanceof Map<?, ?> raw) return stringKeyedMap(raw);
+        if (value instanceof String) return JSON.parseObject((String) value);
         throw new IllegalArgumentException("无法转换为 Map: " + value);
+    }
+
+    private static Map<String, Object> stringKeyedMap(Map<?, ?> raw) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        raw.forEach((key, value) -> {
+            if (key != null) result.put(String.valueOf(key), value);
+        });
+        return result;
     }
 
     private static List<JSONObject> children(JSONObject operand) {

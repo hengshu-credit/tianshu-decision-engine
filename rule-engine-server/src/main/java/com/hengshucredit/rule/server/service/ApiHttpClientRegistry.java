@@ -114,7 +114,6 @@ public class ApiHttpClientRegistry {
                         .build();
         RequestConfig requestConfig = RequestConfig.custom()
                 .setConnectionRequestTimeout(Timeout.ofMilliseconds(settings.connectionRequestTimeoutMs))
-                .setConnectTimeout(Timeout.ofMilliseconds(settings.connectTimeoutMs))
                 .setResponseTimeout(Timeout.ofMilliseconds(settings.readTimeoutMs))
                 .build();
         CloseableHttpClient client = HttpClients.custom()
