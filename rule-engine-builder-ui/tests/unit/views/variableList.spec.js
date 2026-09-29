@@ -9,7 +9,6 @@ vi.mock('@/api/variable', () => ({
   listVariablesByProject: vi.fn(),
   createVariable: vi.fn(),
   updateVariable: vi.fn(),
-  toGlobalVariable: vi.fn(),
   deleteVariable: vi.fn(),
   testVariable: vi.fn(),
   getVariableSourceOptions: vi.fn(),
@@ -37,9 +36,9 @@ vi.mock('@/api/dataObject', () => ({
   batchValidateRules: vi.fn(),
   batchValidateAll: vi.fn(),
   getVariableTree: vi.fn(),
-  toGlobalDataObject: vi.fn(),
   createDataObjectField: vi.fn(),
-  updateDataObjectField: vi.fn()
+  updateDataObjectField: vi.fn(),
+  createOrUpdateDataObject: vi.fn()
 }))
 
 vi.mock('@/api/function', () => ({ listAllFunctionsByProject: vi.fn() }))
@@ -526,58 +525,75 @@ describe('VariableList — 变量操作', () => {
     expect(variableApi.deleteVariable).toHaveBeenCalledWith(1)
   })
 
-  test('项目级变量确认后创建转全局审批并跳转审批详情', async () => {
-    variableApi.toGlobalVariable.mockResolvedValue({ data: { id: 41 } })
-    const row = { id: 1, varLabel: '年龄', varSource: 'INPUT', scope: 'PROJECT' }
+  test('编辑中切换全局再回项目级时保留原项目并提交项目 ID', async () => {
+    variableApi.updateVariable.mockResolvedValue({ data: { id: 41 } })
+    const row = { ...mockVars()[0], id: 1, scope: 'PROJECT', projectId: 1 }
 
-    await wrapper.vm.handleToGlobal(row)
+    wrapper.vm.handleEdit(row)
+    expect(wrapper.vm.form.projectId).toBe(1)
 
-    expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
-      '确认将「年龄」转为全局变量？转换后将不再归属原项目。',
-      '转为全局',
-      { type: 'warning' }
+    wrapper.vm.onVarScopeChange('GLOBAL')
+    expect(wrapper.vm.form.projectId).toBe(1)
+    wrapper.vm.onVarScopeChange('PROJECT')
+
+    expect(wrapper.vm.form.projectId).toBe(1)
+    expect(wrapper.vm.getProjectName(wrapper.vm.form.projectId)).toBe('项目A')
+
+    wrapper.vm.handleSubmit()
+    await nextTick()
+    expect(variableApi.updateVariable).toHaveBeenCalledWith(
+      expect.objectContaining({ scope: 'PROJECT', projectId: 1 })
     )
-    expect(variableApi.toGlobalVariable).toHaveBeenCalledWith(1)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/41')
-    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('已创建转全局审批，请完成审批后生效')
   })
 
-  test('项目级常量确认后创建转全局审批', async () => {
-    variableApi.toGlobalVariable.mockResolvedValue({ data: { id: 42 } })
-    const row = { id: 3, varLabel: '最大年龄', varSource: 'CONSTANT', scope: 'PROJECT' }
+  test('编辑全局变量切回项目级时要求重新选择项目', () => {
+    wrapper.vm.handleEdit({ ...mockVars()[0], id: 4, scope: 'GLOBAL', projectId: 0 })
 
-    await wrapper.vm.handleToGlobal(row)
+    expect(wrapper.vm.form.projectId).toBe('')
+    wrapper.vm.onVarScopeChange('PROJECT')
 
-    expect(variableApi.toGlobalVariable).toHaveBeenCalledWith(3)
-    expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/42')
+    expect(wrapper.vm.form.projectId).toBe('')
+    expect(wrapper.vm.getProjectName(wrapper.vm.form.projectId)).toBe('')
   })
 
-  test('项目级数据对象确认后连同字段创建转全局审批', async () => {
-    dataObjectApi.toGlobalDataObject.mockResolvedValue({ data: { id: 43 } })
-    const object = { id: 5, objectLabel: '请求对象', objectCode: 'TSRequestBody', scope: 'PROJECT' }
+  test('数据对象编辑中切换全局再回项目级时保留原项目并按全局提交 0', async () => {
+    dataObjectApi.createOrUpdateDataObject.mockResolvedValue({ data: { id: 43 } })
+    const object = {
+      id: 5,
+      objectLabel: '请求对象',
+      objectCode: 'TSRequestBody',
+      scriptName: 'requestBody',
+      objectType: 'INPUT',
+      sourceType: 'MANUAL',
+      scope: 'PROJECT',
+      projectId: 1,
+    }
 
-    await wrapper.vm.handleObjectToGlobal(object)
+    wrapper.vm.handleEditObject(object)
+    expect(wrapper.vm.objectForm.projectId).toBe(1)
+    wrapper.vm.onObjScopeChange('GLOBAL')
+    expect(wrapper.vm.objectForm.projectId).toBe(1)
+    wrapper.vm.onObjScopeChange('PROJECT')
+    expect(wrapper.vm.objectForm.projectId).toBe(1)
 
-    expect(wrapper.vm.$confirm).toHaveBeenCalledWith(
-      '确认将「请求对象」及其字段转为全局？转换后将不再归属原项目。',
-      '转为全局',
-      { type: 'warning' }
+    wrapper.vm.objectForm.scope = 'GLOBAL'
+    wrapper.vm.handleObjectSubmit()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(dataObjectApi.createOrUpdateDataObject).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 5, scope: 'GLOBAL', projectId: 0 })
     )
-    expect(dataObjectApi.toGlobalDataObject).toHaveBeenCalledWith(5)
     expect(wrapper.vm.$router.push).toHaveBeenCalledWith('/approval/43')
-    expect(wrapper.vm.$message.success).toHaveBeenCalledWith('已创建转全局审批，请完成审批后生效')
   })
 
-  test('变量列表和常量列表仅为项目级记录显示转为全局入口', () => {
+  test('变量列表和常量列表通过编辑弹窗调整作用范围', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const variableTable = source.slice(source.indexOf('<el-tab-pane label="变量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="变量列表"')))
     const constantTable = source.slice(source.indexOf('<el-tab-pane label="常量列表"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="常量列表"')))
 
-    expect(variableTable).toContain('row.scope === \'PROJECT\'')
-    expect(variableTable).toContain('转全局')
+    expect(variableTable).not.toContain('转全局')
     expect(variableTable).not.toContain('<el-dropdown')
-    expect(constantTable).toContain('row.scope === \'PROJECT\'')
-    expect(constantTable).toContain('转为全局')
+    expect(constantTable).not.toContain('转为全局')
   })
 
   test('数据对象仅为项目级记录显示转为全局入口', () => {
@@ -585,10 +601,12 @@ describe('VariableList — 变量操作', () => {
     const objectPanel = source.slice(source.indexOf('<el-tab-pane label="数据对象"'), source.indexOf('</el-tab-pane>', source.indexOf('<el-tab-pane label="数据对象"')))
     const objectDialog = source.slice(source.indexOf('<!-- Create/Edit Data Object Dialog -->'), source.indexOf('<!-- Create/Edit Object Field Dialog -->'))
 
-    expect(objectPanel).toContain("node.object.scope === 'PROJECT'")
-    expect(objectPanel).toContain('handleObjectToGlobal(node.object)')
-    expect(objectPanel).toContain('转为全局')
-    expect(objectDialog).toMatch(/<el-select\s+v-model="objectForm\.scope"\s+:disabled="!!objectForm\.id"/)
+    expect(objectPanel).not.toContain('handleObjectToGlobal(node.object)')
+    expect(objectPanel).not.toContain('转为全局')
+    expect(objectDialog).toContain('class="resizable-config-dialog"')
+    expect(objectDialog).toContain('class="variable-config-guide object-config-guide"')
+    expect(objectDialog).not.toMatch(/v-model="objectForm\.scope"\s*:disabled/)
+    expect(objectDialog).toContain('label="项目名称"')
   })
 
   test('数据对象按表格逐行展示并通过展开列查看字段', () => {
@@ -732,7 +750,6 @@ describe('VariableList — 变量操作', () => {
   test('所有字段、常量和数据对象写操作均由字段编辑权限控制', () => {
     const source = fs.readFileSync(path.resolve(process.cwd(), 'src/views/variable/VariableList.vue'), 'utf8')
     const guardedHandlers = [
-      'handleObjectToGlobal(node.object)',
       'handleAddObjectField(node)',
       'handleDeleteObject(node.object)',
       'handleEditObjectField(row, node)',
@@ -741,7 +758,6 @@ describe('VariableList — 变量操作', () => {
       'editFieldValidation(row)',
       'removeFieldValidation(row)',
       "handleVariableRowCommand('options', row)",
-      "handleVariableRowCommand('global', row)",
       "handleVariableRowCommand('delete', row)",
     ]
 
@@ -754,7 +770,6 @@ describe('VariableList — 变量操作', () => {
     })
     expect(source).toContain("if (!hasPermission('field:edit'))")
     expect(source).toContain("if (command === 'options') return this.handleOptions(row)")
-    expect(source).toContain("if (command === 'global') return this.handleToGlobal(row)")
     expect(source).toContain("if (command === 'delete') return this.handleDelete(row)")
     expect(source).toMatch(/v-model="node\.object\.objectType"[\s\S]*?:disabled="!canEditFields"/)
     expect(source).not.toContain('v-model="node.object.scriptName"')

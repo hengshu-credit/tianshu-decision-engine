@@ -42,6 +42,17 @@ export async function createOrUpdateDataObject(obj) {
   const aggregate = obj.id
     ? { ...(await loadDataObjectAggregate(obj.id)), ...obj }
     : { ...obj, fields: obj.fields || [] }
+  if (aggregate.scope && Array.isArray(aggregate.fields)) {
+    const projectId = aggregate.scope === 'GLOBAL'
+      ? 0
+      : (aggregate.projectId ?? 0)
+    aggregate.projectId = projectId
+    aggregate.fields = aggregate.fields.map(field => ({
+      ...field,
+      scope: aggregate.scope,
+      projectId,
+    }))
+  }
   return createResourceDraft(
     'DATA_OBJECT',
     aggregate,

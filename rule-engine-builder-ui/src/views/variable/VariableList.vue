@@ -267,16 +267,6 @@
                   >枚举</el-button
                 >
                 <el-button
-                  v-if="row.scope === 'PROJECT'"
-                  v-permission="'field:edit'"
-                  link
-                  data-action="global"
-                  size="small"
-                  type="primary"
-                  @click="handleVariableRowCommand('global', row)"
-                  >转全局</el-button
-                >
-                <el-button
                   v-permission="'field:edit'"
                   link
                   data-action="delete"
@@ -606,15 +596,6 @@
                     >编辑</el-button
                   >
                   <el-button
-                    v-if="node.object.scope === 'PROJECT'"
-                    v-permission="'field:edit'"
-                    link
-                    data-action="global"
-                    size="small"
-                    @click.stop="handleObjectToGlobal(node.object)"
-                    >转为全局</el-button
-                  >
-                  <el-button
                     v-permission="'field:edit'"
                     link
                     data-action="add"
@@ -818,16 +799,6 @@
                 type="warning"
                 @click="handleEdit(row)"
                 >编辑</el-button
-              >
-              <el-button
-                v-if="row.scope === 'PROJECT'"
-                v-permission="'field:edit'"
-                link
-                data-action="global"
-                size="small"
-                type="success"
-                @click="handleToGlobal(row)"
-                >转为全局</el-button
               >
               <el-button
                 v-permission="'field:edit'"
@@ -1743,17 +1714,75 @@
     <!-- Create/Edit Data Object Dialog -->
     <el-dialog
       :title="objectDialogTitle"
+      class="resizable-config-dialog"
       v-model="objectDialogVisible"
-      width="560px"
+      width="820px"
       :close-on-click-modal="false"
     >
+      <dialog-resize-handle :visible="objectDialogVisible" :min-width="720" :min-height="520" />
+      <section class="variable-config-guide object-config-guide" aria-label="对象配置进度">
+        <div class="variable-config-guide__heading">
+          <div>
+            <strong>按业务对象完成基础配置</strong>
+            <span>先确定对象归属和定义，再设置来源与引用加载方式。</span>
+          </div>
+          <el-tag type="primary">
+            {{ objectConfigurationReadyCount }} / 3 已就绪
+          </el-tag>
+        </div>
+        <div class="variable-config-checklist">
+          <div
+            v-for="(item, index) in objectConfigurationChecklist"
+            :key="item.label"
+            class="variable-config-check"
+            :class="{ 'is-ready': item.ready }"
+          >
+            <span>{{ item.ready ? '✓' : index + 1 }}</span>
+            <div>
+              <strong>{{ item.label }}</strong>
+              <small>{{ item.help }}</small>
+            </div>
+          </div>
+        </div>
+      </section>
       <el-form
         ref="objForm"
         :model="objectForm"
         :rules="objectRules"
-        label-width="110px"
+        label-width="120px"
         size="small"
       >
+        <el-form-item label="作用范围" prop="scope">
+          <el-select
+            v-model="objectForm.scope"
+            placeholder="选择作用范围"
+            style="width: 100%"
+            @change="onObjScopeChange"
+          >
+            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
+            <el-option label="📁 项目级" value="PROJECT" />
+          </el-select>
+        </el-form-item>
+        <el-form-item
+          v-if="objectForm.scope === 'PROJECT'"
+          label="项目名称"
+          prop="projectId"
+        >
+          <el-select
+            v-model="objectForm.projectId"
+            placeholder="请选择项目"
+            style="width: 100%"
+            filterable
+            clearable
+          >
+            <el-option
+              v-for="p in projects"
+              :key="p.id"
+              :label="p.projectName"
+              :value="p.id"
+            />
+          </el-select>
+        </el-form-item>
         <el-form-item label="对象编码" prop="objectCode">
           <el-input
             v-model="objectForm.objectCode"
@@ -1773,63 +1802,43 @@
             placeholder="QLExpress 脚本中的引用名，如 taxRequest"
           />
         </el-form-item>
-        <el-form-item label="作用范围" prop="scope">
-          <el-select
-            v-model="objectForm.scope"
-            :disabled="!!objectForm.id"
-            style="width: 100%"
-            @change="onObjScopeChange"
-          >
-            <el-option label="🌐 全局（所有项目可用）" value="GLOBAL" />
-            <el-option label="📁 项目级" value="PROJECT" />
-          </el-select>
-        </el-form-item>
-        <el-form-item
-          v-if="objectForm.scope === 'PROJECT'"
-          label="所属项目"
-          prop="projectId"
-        >
-          <el-select
-            v-model="objectForm.projectId"
-            placeholder="请选择项目"
-            style="width: 100%"
-            filterable
-          >
-            <el-option
-              v-for="p in projects"
-              :key="p.id"
-              :label="p.projectName"
-              :value="p.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="对象类型">
+        <el-form-item label="对象类型" prop="objectType">
           <el-radio-group v-model="objectForm.objectType">
             <el-radio value="INPUT">输入对象</el-radio>
             <el-radio value="OUTPUT">输出对象</el-radio>
             <el-radio value="INOUT">输入输出</el-radio>
           </el-radio-group>
         </el-form-item>
-        <el-form-item label="来源类型">
-          <el-select v-model="objectForm.sourceType" style="width: 100%">
-            <el-option label="Java 实体" value="JAVA" />
-            <el-option label="JSON" value="JSON" />
-            <el-option label="DDL" value="DDL" />
-            <el-option label="手动" value="MANUAL" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="懒加载引用字段">
-          <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
-          <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
-        </el-form-item>
-        <el-form-item label="说明">
-          <el-input
-            v-model="objectForm.description"
-            type="textarea"
-            :rows="2"
-            placeholder="对象说明"
-          />
-        </el-form-item>
+        <el-collapse v-model="objectAdvancedSections" class="variable-advanced-collapse">
+          <el-collapse-item name="advanced">
+            <template #title>
+              <div class="variable-advanced-title">
+                <strong>来源与加载设置</strong>
+                <span>来源类型、懒加载和对象说明</span>
+              </div>
+            </template>
+            <el-form-item label="来源类型">
+              <el-select v-model="objectForm.sourceType" style="width: 100%">
+                <el-option label="Java 实体" value="JAVA" />
+                <el-option label="JSON" value="JSON" />
+                <el-option label="DDL" value="DDL" />
+                <el-option label="手动" value="MANUAL" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="懒加载引用字段">
+              <el-switch v-model="objectForm.lazyLoadReferences" aria-label="懒加载引用字段" />
+              <div class="field-help">默认关闭：对象参与取值时补齐所需的缺失引用字段。开启后仅在读取引用型叶子时补取；普通字段、仅复用结构和已有值不触发调用。发布规则需重新发布以更新此配置。</div>
+            </el-form-item>
+            <el-form-item label="说明">
+              <el-input
+                v-model="objectForm.description"
+                type="textarea"
+                :rows="2"
+                placeholder="对象说明"
+              />
+            </el-form-item>
+          </el-collapse-item>
+        </el-collapse>
       </el-form>
       <template v-slot:footer>
         <div>
@@ -1837,7 +1846,7 @@
             >取消</el-button
           >
           <el-button size="small" type="primary" @click="handleObjectSubmit"
-            >确定</el-button
+            >生成审批草稿</el-button
           >
         </div>
       </template>
@@ -2560,7 +2569,6 @@ import {
   listVariablesByProject,
   createVariable,
   updateVariable,
-  toGlobalVariable,
   deleteVariable,
   testVariable,
   getVariableSourceOptions,
@@ -2585,7 +2593,6 @@ import {
   importJsonObject,
   importDdlTable,
   updateObjectType,
-  toGlobalDataObject,
   deleteDataObject,
   batchValidateRules,
   createDataObjectField,
@@ -2794,6 +2801,7 @@ export default {
       optionTargetIsField: false,
       // Data Object Dialog
       objectDialogVisible: false,
+      objectAdvancedSections: [],
       objectForm: {
         lazyLoadReferences: false,
         id: null,
@@ -3040,6 +3048,24 @@ export default {
       if (this.isConstantCreate) return '新建常量'
       return '新建字段'
     },
+    objectConfigurationChecklist() {
+      const scoped = this.objectForm.scope === 'GLOBAL' ||
+        (this.objectForm.scope === 'PROJECT' && !!this.objectForm.projectId)
+      const defined = scoped && !!(
+        this.objectForm.objectCode &&
+        this.objectForm.objectLabel &&
+        this.objectForm.scriptName &&
+        this.objectForm.objectType
+      )
+      return [
+        { label: '确定归属', help: '选择全局或具体项目', ready: scoped },
+        { label: '填写定义', help: '补充编码、名称、脚本名和类型', ready: defined },
+        { label: '设置能力', help: '配置来源类型和懒加载策略', ready: defined && !!this.objectForm.sourceType },
+      ]
+    },
+    objectConfigurationReadyCount() {
+      return this.objectConfigurationChecklist.filter((item) => item.ready).length
+    },
     sourceCatalogCounts() {
       return {
         API: this.sourceCatalog.apiOptions.length,
@@ -3202,7 +3228,6 @@ export default {
     handleVariableRowCommand(command, row) {
       if (!hasPermission('field:edit')) { this.$message.warning('当前账号没有字段编辑权限'); return }
       if (command === 'options') return this.handleOptions(row)
-      if (command === 'global') return this.handleToGlobal(row)
       if (command === 'delete') return this.handleDelete(row)
     },
     dbSampleValue(field) { const params = this.parseJsonSafe(this.draftPreviewParamsText, {}); const value = params[field.code]; return value == null ? '' : String(value) },
@@ -3777,8 +3802,13 @@ export default {
     },
     getProjectName(pid) {
       if (!pid) return ''
-      const p = this.projectList.find((x) => x.id === pid)
+      const p = this.projectList.find((x) => String(x.id) === String(pid))
       return p ? p.projectName : ''
+    },
+    normalizeProjectId(pid) {
+      if (pid === '' || pid == null || Number(pid) === 0) return ''
+      const project = this.projectList.find((item) => String(item.id) === String(pid))
+      return project ? project.id : pid
     },
     fetchVarCodeOptions({ query, pageNum, pageSize }) {
       return listVariables({
@@ -4308,24 +4338,6 @@ export default {
       const response = await deleteDataObject(obj.id)
       this.openApproval(response, '数据对象删除已送审')
     },
-    async handleObjectToGlobal(obj) {
-      try {
-        await this.$confirm(
-          `确认将「${
-            obj.objectLabel || obj.objectCode
-          }」及其字段转为全局？转换后将不再归属原项目。`,
-          '转为全局',
-          { type: 'warning' }
-        )
-        const response = await toGlobalDataObject(obj.id)
-        this.$message.success('已创建转全局审批，请完成审批后生效')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
-      } catch (e) {
-        if (e !== 'cancel' && e !== 'close')
-          this.$message.error('转换失败: ' + (e.message || '未知错误'))
-      }
-    },
     /** 新建数据对象（从工具栏按钮） */
     handleCreateObject() {
       this.objectForm = {
@@ -4340,6 +4352,7 @@ export default {
         sourceType: 'MANUAL',
         description: '',
       }
+      this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
@@ -4354,19 +4367,22 @@ export default {
         objectLabel: obj.objectLabel || '',
         scriptName: obj.scriptName || '',
         scope: obj.scope || 'PROJECT',
-        projectId: obj.projectId || '',
+        projectId: obj.scope === 'GLOBAL' ? '' : this.normalizeProjectId(obj.projectId),
         objectType: obj.objectType || 'INPUT',
         sourceType: obj.sourceType || 'MANUAL',
         description: obj.description || '',
       }
+      this.objectAdvancedSections = []
       this.objectDialogVisible = true
       this.$nextTick(() => {
         if (this.$refs.objForm) this.$refs.objForm.clearValidate()
       })
     },
-    /** 切换数据对象 scope 时清空项目 */
-    onObjScopeChange(val) {
-      if (val === 'GLOBAL') this.objectForm.projectId = ''
+    /** 切换数据对象作用范围时保留项目归属，提交全局时统一归一化为 0 */
+    onObjScopeChange() {
+      this.$nextTick(() => {
+        if (this.$refs.objForm) this.$refs.objForm.clearValidate('projectId')
+      })
     },
     /** 提交数据对象表单 */
     handleObjectSubmit() {
@@ -4381,7 +4397,13 @@ export default {
           return
         }
         try {
-          const response = await createOrUpdateDataObject(this.objectForm)
+          const payload = {
+            ...this.objectForm,
+            projectId: this.objectForm.scope === 'GLOBAL'
+              ? 0
+              : this.objectForm.projectId,
+          }
+          const response = await createOrUpdateDataObject(payload)
           this.openApproval(response, '数据对象变更已送审')
           this.objectDialogVisible = false
         } catch (e) {
@@ -4765,7 +4787,11 @@ export default {
       this.isObjectField = false
       this.isConstantCreate = false
       this.objectFieldParentId = null
-      this.form = { ...this.initForm(), ...row }
+      this.form = {
+        ...this.initForm(),
+        ...row,
+        projectId: row.scope === 'GLOBAL' ? '' : this.normalizeProjectId(row.projectId),
+      }
       this.variableAdvancedSections = []
       this.form.scope = this.form.scope || 'PROJECT'
       this.applySourceConfigToForm()
@@ -4778,10 +4804,7 @@ export default {
         if (this.$refs.form) this.$refs.form.clearValidate()
       })
     },
-    onVarScopeChange(val) {
-      if (val === 'GLOBAL') {
-        this.form.projectId = 0
-      }
+    onVarScopeChange() {
       this.onVariableProjectChange()
     },
     handleSubmit() {
@@ -4871,24 +4894,6 @@ export default {
           this.openApproval(response, '字段删除已送审')
         })
         .catch(() => {})
-    },
-    async handleToGlobal(row) {
-      try {
-        await this.$confirm(
-          `确认将「${
-            row.varLabel || row.varCode
-          }」转为全局变量？转换后将不再归属原项目。`,
-          '转为全局',
-          { type: 'warning' }
-        )
-        const response = await toGlobalVariable(row.id)
-        this.$message.success('已创建转全局审批，请完成审批后生效')
-        if (response.data && response.data.id)
-          this.$router.push('/approval/' + response.data.id)
-      } catch (e) {
-        if (e !== 'cancel' && e !== 'close')
-          this.$message.error('转换失败: ' + (e.message || '未知错误'))
-      }
     },
     isTestableSource(row) {
       return row && ['API', 'DB', 'LIST', 'DERIVED'].indexOf(row.varSource) >= 0
