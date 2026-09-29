@@ -141,7 +141,8 @@ public class RuleCompileServiceTest {
         return value;
     }
 
-    private Map<String, Object> function(Long id, String code, Map<String, Object>... args) {
+    @SafeVarargs
+    private final Map<String, Object> function(Long id, String code, Map<String, Object>... args) {
         Map<String, Object> value = new LinkedHashMap<>();
         value.put("kind", "FUNCTION");
         value.put("functionId", id);
