@@ -467,7 +467,7 @@ public class SchemaSyncServiceTest {
         }
 
         @Override
-        public <T> T queryForObject(String sql, Object[] args, Class<T> requiredType) {
+        public <T> T queryForObject(String sql, Class<T> requiredType, Object... args) {
             if (sql.contains("INFORMATION_SCHEMA.TABLES") && args != null && args.length > 0
                     && missingTables.contains(String.valueOf(args[0]))) {
                 return requiredType.cast(Integer.valueOf(0));
@@ -492,7 +492,7 @@ public class SchemaSyncServiceTest {
         }
 
         @Override
-        public <T> List<T> queryForList(String sql, Object[] args, Class<T> elementType) {
+        public <T> List<T> queryForList(String sql, Class<T> elementType, Object... args) {
             if (sql.contains("INFORMATION_SCHEMA.STATISTICS") && args != null && args.length > 1
                     && "uk_billing_summary_key".equals(String.valueOf(args[1]))) {
                 List<String> columns = Arrays.asList("summary_date", "project_code", "billing_code",
