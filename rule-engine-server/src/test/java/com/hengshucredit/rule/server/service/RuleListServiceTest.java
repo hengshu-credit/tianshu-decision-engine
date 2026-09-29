@@ -288,9 +288,9 @@ public class RuleListServiceTest {
                     new Class[]{RuleListRecordLogMapper.class},
                     (proxy, method, args) -> {
                         if ("selectPage".equals(method.getName())) {
-                            Page<RuleListRecordLog> page = (Page<RuleListRecordLog>) args[0];
+                            Page<RuleListRecordLog> page = page(args[0]);
                             selectedPage = page;
-                            selectedWrapper = (LambdaQueryWrapper<RuleListRecordLog>) args[1];
+                            selectedWrapper = wrapper(args[1]);
                             page.setRecords(pageRecord == null ? Collections.emptyList() : Collections.singletonList(pageRecord));
                             page.setTotal(page.getRecords().size());
                             return page;
@@ -317,5 +317,15 @@ public class RuleListServiceTest {
         if (type == double.class) return 0D;
         if (type == char.class) return '\0';
         return null;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> Page<T> page(Object value) {
+        return (Page<T>) value;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static <T> LambdaQueryWrapper<T> wrapper(Object value) {
+        return (LambdaQueryWrapper<T>) value;
     }
 }
