@@ -14,6 +14,7 @@ test('离线迁移页面展示导出、目标范围和冲突策略流程', async
   await page.getByText('导入时新建项目', { exact: true }).click()
   await expect(page.getByPlaceholder('新项目编码（可覆盖源编码）')).toBeVisible()
   await expect(page.getByPlaceholder('新项目名称（可覆盖源名称）')).toBeVisible()
+  await expect(page.getByText('导入并发布规则（重建固定版本）', { exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: '预览冲突' })).toBeDisabled()
   await expect(page.getByRole('button', { name: '确认导入' })).toBeDisabled()
   await expect(page.locator('.menu-label', { hasText: '离线迁移' })).toBeVisible()

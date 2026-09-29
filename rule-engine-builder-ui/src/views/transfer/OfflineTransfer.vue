@@ -55,6 +55,7 @@
           <el-checkbox v-if="options.targetScope === 'PROJECT'" v-model="options.createProject">导入时新建项目</el-checkbox>
           <el-input v-if="options.createProject" v-model="options.projectCode" placeholder="新项目编码（可覆盖源编码）" />
           <el-input v-if="options.createProject" v-model="options.projectName" placeholder="新项目名称（可覆盖源名称）" />
+          <el-checkbox v-model="options.publishRules">导入并发布规则（重建固定版本）</el-checkbox>
           <el-select v-model="options.variablePolicy" placeholder="变量同码策略">
             <el-option label="同编码同类型复用" value="REUSE" />
             <el-option label="新建并追加后缀" value="SUFFIX" />
@@ -147,7 +148,8 @@ export default {
       resultVisible: false,
       options: {
         targetScope: 'PROJECT', targetProjectId: '', createProject: false,
-        projectCode: '', projectName: '', variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported'
+        projectCode: '', projectName: '', publishRules: false,
+        variablePolicy: 'REUSE', resourcePolicy: 'SUFFIX', suffix: '_imported'
       }
     }
   },
@@ -180,7 +182,8 @@ export default {
     async applyPackage() {
       if (!this.validateTargetOptions()) return
       const projectHint = this.options.createProject ? '并新建目标项目' : '并绑定目标项目'
-      await ElMessageBox.confirm(`确认写入目标环境${projectHint}？普通资源会进入治理审批，规则只创建目标环境草稿。`, '确认导入', { type: 'warning' })
+      const ruleHint = this.options.publishRules ? '规则将按选项发布并重建固定版本' : '规则只创建目标环境草稿'
+      await ElMessageBox.confirm(`确认写入目标环境${projectHint}？普通资源会进入治理审批，${ruleHint}。`, '确认导入', { type: 'warning' })
       this.applying = true
       try {
         this.importResult = (await importResourceTransfer(this.importFile, this.normalizedOptions())).data
@@ -194,7 +197,8 @@ export default {
           ? Number(this.options.targetProjectId) : null,
         projectCode: this.options.createProject ? this.options.projectCode.trim() : null,
         projectName: this.options.createProject ? this.options.projectName.trim() : null,
-        projectBindings: {}
+        projectBindings: {},
+        publishRules: Boolean(this.options.publishRules)
       }
     },
     validateTargetOptions() {

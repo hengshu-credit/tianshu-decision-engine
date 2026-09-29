@@ -5,6 +5,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
 
 import static org.junit.Assert.assertEquals;
 
@@ -33,5 +34,25 @@ public class OfflineResourceImportServiceTest {
                 null, null, Map.of());
         ReflectionTestUtils.invokeMethod(service, "resolveTargetProjectId",
                 Map.of("projectId", 7L), options, null);
+    }
+
+    @Test
+    public void fixedVersionCycleIsOrderedByTargetRuleBeforeCallerRule() {
+        OfflineResourceImportService service = new OfflineResourceImportService();
+        TransferBundle.Resource caller = new TransferBundle.Resource(
+                "RULE:1", Map.of("ruleCode", "caller"),
+                List.of(new TransferBundle.Reference("/fixedVersion", "RULE_VERSION:9", null)), List.of());
+        TransferBundle.Resource binding = new TransferBundle.Resource(
+                "RULE_VERSION:9", Map.of("definitionId", 2L, "versionNo", 1),
+                List.of(new TransferBundle.Reference("/definitionId", "RULE:2", null)), List.of());
+        TransferBundle.Resource target = new TransferBundle.Resource(
+                "RULE:2", Map.of("ruleCode", "target"), List.of(), List.of());
+
+        @SuppressWarnings("unchecked")
+        List<TransferBundle.Resource> ordered = ReflectionTestUtils.invokeMethod(
+                service, "topologicalOrder", List.of(caller, binding, target));
+
+        assertEquals(List.of("RULE:2", "RULE_VERSION:9", "RULE:1"),
+                ordered.stream().map(TransferBundle.Resource::key).toList());
     }
 }

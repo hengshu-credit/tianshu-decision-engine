@@ -5,6 +5,7 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.hengshucredit.rule.model.dto.GovernanceDraftRequest;
 import com.hengshucredit.rule.model.dto.GovernanceReviewRequest;
 import com.hengshucredit.rule.model.dto.GovernanceSubmitRequest;
+import com.hengshucredit.rule.model.dto.RuleLifecycleActionRequest;
 import com.hengshucredit.rule.model.dto.RuleDraftSaveRequest;
 import com.hengshucredit.rule.model.entity.GovernedResource;
 import com.hengshucredit.rule.model.entity.GovernedResourceVersion;
@@ -19,6 +20,7 @@ import com.hengshucredit.rule.server.governance.ResourceSnapshot;
 import com.hengshucredit.rule.server.governance.GovernanceResourceTypes;
 import com.hengshucredit.rule.server.mapper.GovernedResourceMapper;
 import com.hengshucredit.rule.server.mapper.GovernedResourceVersionMapper;
+import com.hengshucredit.rule.server.mapper.RuleVersionBindingMapper;
 import com.hengshucredit.rule.server.service.ConsoleOperatorResolver;
 import com.hengshucredit.rule.server.service.RuleDefinitionService;
 import com.hengshucredit.rule.server.service.RuleDraftService;
@@ -45,6 +47,7 @@ public class OfflineResourceImportService {
     @Resource private GovernanceApprovalService approvalService;
     @Resource private GovernedResourceMapper governedResourceMapper;
     @Resource private GovernedResourceVersionMapper governedResourceVersionMapper;
+    @Resource private RuleVersionBindingMapper ruleVersionBindingMapper;
     @Resource private RuleDefinitionService definitionService;
     @Resource private RuleLifecycleService lifecycleService;
     @Resource private RuleDraftService draftService;
@@ -92,11 +95,19 @@ public class OfflineResourceImportService {
         for (TransferBundle.Resource resource : ordered) {
             TransferKey sourceKey = TransferKey.parse(resource.key());
             if (sourceKey.type() == TransferResourceType.RULE_VERSION) {
-                throw new IllegalArgumentException("固定版本绑定必须在目标规则发布后重新建立，请先导入并发布对应规则: " + resource.key());
+                if (!Boolean.TRUE.equals(options.publishRules())) {
+                    throw new IllegalArgumentException("固定版本绑定必须在目标规则发布后重新建立；确认导入时请开启“导入并发布规则”或先手工发布对应规则: " + resource.key());
+                }
+                Long targetBinding = rebindRuleVersion(resource, idMap);
+                idMap.put(resource.key(), targetBinding);
+                result.add(row(resource, targetBinding, "REBOUND", "按目标规则业务版本重建并使用最新代次"));
+                continue;
             }
             if (sourceKey.type() == TransferResourceType.RULE
                     && resource.references().stream().anyMatch(reference -> reference.targetKey().startsWith("RULE_VERSION:"))) {
-                throw new IllegalArgumentException("包含固定版本引用的规则需要目标规则发布后重建版本绑定: " + resource.key());
+                if (!Boolean.TRUE.equals(options.publishRules())) {
+                    throw new IllegalArgumentException("包含固定版本引用的规则需要目标规则发布后重建版本绑定；请开启“导入并发布规则”: " + resource.key());
+                }
             }
             if (sourceKey.type() == TransferResourceType.PROJECT && "GLOBAL".equals(options.normalizedScope())) {
                 idMap.put(resource.key(), 0L);
@@ -212,8 +223,38 @@ public class OfflineResourceImportService {
         save.setModelJson(String.valueOf(content.getOrDefault("modelJson", "{}")));
         save.setOpenApiConfigJson(content.get("openApiConfigJson") == null ? null : String.valueOf(content.get("openApiConfigJson")));
         save.setUpdateOpenApiConfig(true);
-        draftService.save(save);
+        var saved = draftService.save(save);
+        if (Boolean.TRUE.equals(options.publishRules())) {
+            RuleRevision savedRevision = saved.getRevision();
+            RuleLifecycleActionRequest action = new RuleLifecycleActionRequest();
+            action.setComment("离线配置迁移按显式选项发布规则");
+            lifecycleService.submit(savedRevision.getId(), action);
+            lifecycleService.approve(savedRevision.getId(), action);
+            lifecycleService.publish(savedRevision.getId(), action);
+        }
         return created.getId();
+    }
+
+    private Long rebindRuleVersion(TransferBundle.Resource resource, Map<String, Long> idMap) {
+        Map<String, Object> configuration = resource.configuration();
+        Long sourceDefinitionId = number(configuration.get("definitionId"));
+        Integer versionNo = integer(configuration.get("versionNo"));
+        if (sourceDefinitionId == null || versionNo == null || versionNo <= 0) {
+            throw new IllegalArgumentException("固定版本包缺少源规则或业务版本号: " + resource.key());
+        }
+        Long targetDefinitionId = idMap.get("RULE:" + sourceDefinitionId);
+        if (targetDefinitionId == null) {
+            throw new IllegalArgumentException("固定版本对应的目标规则尚未导入: " + resource.key());
+        }
+        var binding = ruleVersionBindingMapper.selectOne(new LambdaQueryWrapper<com.hengshucredit.rule.model.entity.RuleVersionBinding>()
+                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getDefinitionId, targetDefinitionId)
+                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getVersionNo, versionNo)
+                .eq(com.hengshucredit.rule.model.entity.RuleVersionBinding::getStatus, 1)
+                .last("LIMIT 1"));
+        if (binding == null) {
+            throw new IllegalStateException("目标规则尚未生成业务版本 " + versionNo + "，请先导入并发布对应版本后重试: " + resource.key());
+        }
+        return binding.getId();
     }
 
     private List<TransferBundle.Resource> topologicalOrder(List<TransferBundle.Resource> resources) {
@@ -225,7 +266,8 @@ public class OfflineResourceImportService {
             boolean progressed = false;
             for (TransferBundle.Resource resource : resources) {
                 if (done.contains(resource.key())) continue;
-                boolean ready = resource.references().stream().allMatch(reference -> byKey.containsKey(reference.targetKey()) && done.contains(reference.targetKey()));
+                boolean ready = resource.references().stream().allMatch(reference ->
+                        byKey.containsKey(reference.targetKey()) && done.contains(reference.targetKey()));
                 if (ready) { ordered.add(resource); done.add(resource.key()); progressed = true; }
             }
             if (!progressed) throw new IllegalArgumentException("离线资源依赖形成循环，无法安全导入");
@@ -352,6 +394,7 @@ public class OfflineResourceImportService {
     @SuppressWarnings("unchecked") private Map<String, Object> object(Object value) { return value instanceof Map<?, ?> ? (Map<String, Object>) value : Map.of(); }
     private List<?> list(Object value) { return value instanceof List<?> list ? list : List.of(); }
     private Long number(Object value) { try { return value == null ? null : Long.valueOf(String.valueOf(value)); } catch (RuntimeException ignored) { return null; } }
+    private Integer integer(Object value) { try { return value == null ? null : Integer.valueOf(String.valueOf(value)); } catch (RuntimeException ignored) { return null; } }
     private Map<String, Object> row(TransferBundle.Resource resource, Long id, String status, String message) {
         Map<String, Object> value = new LinkedHashMap<>(); value.put("sourceKey", resource.key()); value.put("targetId", id); value.put("status", status); value.put("message", message); return value;
     }

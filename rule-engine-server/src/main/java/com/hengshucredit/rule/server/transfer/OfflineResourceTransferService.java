@@ -162,6 +162,7 @@ public class OfflineResourceTransferService {
         result.put("projectCode", options.projectCode());
         result.put("projectName", options.projectName());
         result.put("projectBindings", options.projectBindings() == null ? Map.of() : options.projectBindings());
+        result.put("publishRules", Boolean.TRUE.equals(options.publishRules()));
         result.put("variablePolicy", options.normalizedVariablePolicy());
         result.put("resourcePolicy", options.normalizedResourcePolicy());
         result.put("suffix", options.normalizedSuffix());
