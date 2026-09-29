@@ -43,6 +43,21 @@ node scripts/quality-gates/run-capacity-gate.mjs `
   --report-dir target/quality-gates
 ```
 
+横向扩容前可用 `--urls` 并行压测多个节点；脚本会分别记录节点摘要，并生成聚合的 `capacity-report.multi.json/md`，聚合吞吐为各节点之和，错误率和 P95 按最差节点判断：
+
+```powershell
+node scripts/quality-gates/run-capacity-gate.mjs `
+  --urls http://10.0.0.31:8080/api/rule/sync/execute/RISK_RULE,http://10.0.0.32:8080/api/rule/sync/execute/RISK_RULE `
+  --request-file scripts/quality-gates/fixtures/request.local.json `
+  --concurrency 16 `
+  --warmup-seconds 10 `
+  --duration-seconds 60 `
+  --max-error-rate 0.01 `
+  --max-p95-ms 300 `
+  --min-throughput 40 `
+  --report-dir target/quality-gates
+```
+
 脚本使用 Node 20 内置 `fetch`，预热样本不计入统计；报告写到 `target/quality-gates/capacity-report.json` 和 `.md`。报告不保存 Header 值、请求体、响应体或 URL 查询参数原值。任一错误率、p95 或吞吐阈值不满足时返回非零退出码。
 
 容量阈值依赖 CPU、内存、JVM、数据库、Redis 和网络规格，默认 CI 只验证脚本和可靠性语义，不在共享 runner 上设置绝对性能阈值。

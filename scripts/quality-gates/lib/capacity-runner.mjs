@@ -73,6 +73,64 @@ export function buildCapacityReport(config, request, summary, evaluation) {
   }
 }
 
+export function aggregateCapacityReports(reports, config) {
+  const nodes = reports || []
+  const total = nodes.reduce((sum, report) => sum + report.summary.total, 0)
+  const success = nodes.reduce((sum, report) => sum + report.summary.success, 0)
+  const failed = total - success
+  const summary = {
+    total,
+    success,
+    failed,
+    errorRate: total === 0 ? 1 : failed / total,
+    throughput: nodes.reduce((sum, report) => sum + report.summary.throughput, 0),
+    medianMs: nodes.length === 0 ? 0 : Math.max(...nodes.map(report => report.summary.medianMs)),
+    p95Ms: nodes.length === 0 ? 0 : Math.max(...nodes.map(report => report.summary.p95Ms)),
+    p99Ms: nodes.length === 0 ? 0 : Math.max(...nodes.map(report => report.summary.p99Ms)),
+  }
+  const evaluation = evaluateThresholds(summary, config)
+  for (const report of nodes) {
+    if (!report.result.passed) {
+      for (const failure of report.result.failures) {
+        evaluation.failures.push(`${report.target}: ${failure}`)
+      }
+    }
+  }
+  evaluation.passed = evaluation.failures.length === 0
+  return { summary, evaluation }
+}
+
+export async function writeMultiCapacityReports(report, directory) {
+  await mkdir(directory, { recursive: true })
+  await writeFile(
+    join(directory, 'capacity-report.multi.json'),
+    `${JSON.stringify(report, null, 2)}\n`,
+    'utf8'
+  )
+  const failures = report.result.failures.length === 0
+    ? '无'
+    : report.result.failures.map(failure => `- ${failure}`).join('\n')
+  const nodeLines = report.nodes.map(node =>
+    `- ${node.target}: ${node.result.passed ? 'PASS' : 'FAIL'}，吞吐 ${format(node.summary.throughput)} req/s，p95 ${format(node.summary.p95Ms)}ms`)
+  const markdown = `# 多节点容量门禁报告
+
+- 结果：${report.result.passed ? 'PASS' : 'FAIL'}
+- 节点数：${report.nodes.length}
+- 聚合吞吐：${format(report.summary.throughput)} req/s
+- 聚合错误率：${format(report.summary.errorRate * 100)}%
+- 最差 p95：${format(report.summary.p95Ms)}ms
+
+## 节点结果
+
+${nodeLines.join('\n')}
+
+## 未通过项
+
+${failures}
+`
+  await writeFile(join(directory, 'capacity-report.multi.md'), markdown, 'utf8')
+}
+
 export async function writeCapacityReports(report, directory) {
   await mkdir(directory, { recursive: true })
   await writeFile(

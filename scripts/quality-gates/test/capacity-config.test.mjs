@@ -30,6 +30,17 @@ test('requires an explicit target, request file, and all thresholds', () => {
   )
 })
 
+test('accepts comma separated node targets for a multi-node gate', () => {
+  const config = parseCapacityConfig(validArgs
+    .filter((_, index) => index !== 0 && index !== 1)
+    .concat(['--urls', 'http://node-a:8080/execute,http://node-b:8080/execute']))
+  assert.deepEqual(config.urls, [
+    'http://node-a:8080/execute',
+    'http://node-b:8080/execute',
+  ])
+  assert.equal(config.url, 'http://node-a:8080/execute')
+})
+
 test('rejects unsafe protocols and non-positive load settings', () => {
   assert.throws(
     () => parseCapacityConfig(validArgs.map(value =>

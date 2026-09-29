@@ -4,13 +4,19 @@ const SECRET_KEY = /(authorization|cookie|token|password|secret|api[-_]?key|(^|[
 
 export function parseCapacityConfig(args) {
   const values = parseArgs(args)
-  const url = required(values, '--url')
-  const parsedUrl = new URL(url)
-  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
-    throw new Error('--url must use http or https')
+  const urlValues = values.get('--urls')
+    ? values.get('--urls').split(',').map(value => value.trim()).filter(Boolean)
+    : [required(values, '--url')]
+  if (urlValues.length === 0) throw new Error('--url or --urls is required')
+  for (const url of urlValues) {
+    const parsedUrl = new URL(url)
+    if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+      throw new Error('--url must use http or https')
+    }
   }
   const config = {
-    url,
+    url: urlValues[0],
+    urls: urlValues,
     requestFile: required(values, '--request-file'),
     concurrency: positiveInteger(values, '--concurrency'),
     warmupSeconds: positiveNumber(values, '--warmup-seconds'),

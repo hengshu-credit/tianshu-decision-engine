@@ -7,11 +7,25 @@ import { join } from 'node:path'
 
 import {
   buildCapacityReport,
+  aggregateCapacityReports,
   evaluateThresholds,
   runCapacityScenario,
   summarizeSamples,
   writeCapacityReports,
 } from '../lib/capacity-runner.mjs'
+
+test('aggregates multi-node summaries and keeps node failures attributable', () => {
+  const result = aggregateCapacityReports([
+    { target: 'http://node-a/execute', summary: { total: 10, success: 10, failed: 0, errorRate: 0, throughput: 10, medianMs: 10, p95Ms: 20, p99Ms: 25 }, result: { passed: true, failures: [] } },
+    { target: 'http://node-b/execute', summary: { total: 8, success: 7, failed: 1, errorRate: 0.125, throughput: 8, medianMs: 12, p95Ms: 40, p99Ms: 50 }, result: { passed: false, failures: ['errorRate 0.125 exceeds 0.1'] } },
+  ], { maxErrorRate: 0.1, maxP95Ms: 100, minThroughput: 1 })
+  assert.equal(result.summary.total, 18)
+  assert.equal(result.summary.failed, 1)
+  assert.equal(result.summary.throughput, 18)
+  assert.equal(result.summary.p95Ms, 40)
+  assert.equal(result.evaluation.passed, false)
+  assert.ok(result.evaluation.failures.some(failure => failure.includes('node-b')))
+})
 
 test('summarizes throughput, errors, and latency percentiles from measured samples', () => {
   const summary = summarizeSamples([
