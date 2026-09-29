@@ -24,12 +24,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 将根执行日志和计费写入移出规则请求线程；队列满时回退到当前线程，保证审计和计费不丢失。
+ * 将根执行日志和计费写入移出规则请求线程；队列满时优先写本地恢复 journal，
+ * journal 不可用才回退到当前线程，保证审计和计费不丢失。
  */
 @Component
 public class DecisionExecutionPersistence implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(DecisionExecutionPersistence.class);
-    private static final String OVERFLOW_STRATEGY = "SYNC_FALLBACK";
 
     private final RuleExecutionLogService logService;
     private final RuleBillingService billingService;
@@ -43,6 +43,8 @@ public class DecisionExecutionPersistence implements AutoCloseable {
     private final AtomicLong offered = new AtomicLong();
     private final AtomicLong persisted = new AtomicLong();
     private final AtomicLong fallback = new AtomicLong();
+    private final AtomicLong journalQueued = new AtomicLong();
+    private final AtomicLong journalFailed = new AtomicLong();
     private final AtomicLong failed = new AtomicLong();
     private final AtomicLong logFailed = new AtomicLong();
     private final AtomicLong billingFailed = new AtomicLong();
@@ -87,6 +89,11 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         Event event = new Event(log, definition, success, costTimeMs, errorMessage, authContext,
                 log != null, definition != null);
         if (!queue.offer(event)) {
+            if (journal != null && journal.append(toJournalEntry(event))) {
+                journalQueued.incrementAndGet();
+                return;
+            }
+            if (journal != null) journalFailed.incrementAndGet();
             fallback.incrementAndGet();
             lastFallbackAt.set(System.currentTimeMillis());
             persist(event);
@@ -104,12 +111,14 @@ public class DecisionExecutionPersistence implements AutoCloseable {
         result.put("offered", offered.get());
         result.put("persisted", persisted.get());
         result.put("fallback", fallback.get());
+        result.put("journalQueued", journalQueued.get());
+        result.put("journalFailed", journalFailed.get());
         result.put("failed", failed.get());
         result.put("logFailed", logFailed.get());
         result.put("billingFailed", billingFailed.get());
         result.put("maxQueueDepth", maxQueueDepth.get());
         result.put("queueUtilization", (double) queueDepth / (double) queueCapacity);
-        result.put("overflowStrategy", OVERFLOW_STRATEGY);
+        result.put("overflowStrategy", journal == null ? "SYNC_FALLBACK" : "JOURNAL_THEN_SYNC_FALLBACK");
         result.put("lastFallbackAt", lastFallbackAt.get() == 0 ? null : lastFallbackAt.get());
         result.put("lastFailureAt", lastFailureAt.get() == 0 ? null : lastFailureAt.get());
         long count = persisted.get();

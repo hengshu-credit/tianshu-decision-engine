@@ -95,11 +95,11 @@
 
 ### P1：异步持久化已开始，但队列满时会回退到请求线程
 
-`DecisionExecutionPersistence` 使用有界队列和单写线程，把根日志和计费移出请求线程；队列满时 `offer` 回退到 `persist(event)`，保证审计不丢失，但高峰期会把数据库慢写重新传导到请求延迟。当前已有 `queueDepth、fallback、failed、avgWriteMs` 指标；本轮补充 `queueUtilization、overflowStrategy、lastFallbackAt、lastFailureAt`，并把 `SYNC_FALLBACK` 写入配置和看板，仍需在生产拓扑中建立按项目/规则版本的告警和容量门槛。
+`DecisionExecutionPersistence` 使用有界队列和单写线程，把根日志和计费移出请求线程；队列满时优先 fsync 到本地恢复 journal，journal 不可用才同步回退，避免正常高峰把数据库慢写传回请求延迟。当前已有 `queueDepth、journalQueued、fallback、failed、avgWriteMs` 指标；`overflowStrategy` 明确报告 `JOURNAL_THEN_SYNC_FALLBACK` 或无 journal 时的 `SYNC_FALLBACK`，仍需在生产拓扑中建立按项目/规则版本的告警和容量门槛。
 
 本轮进一步把日志和计费写入拆成两个独立重试单元：日志写入失败不会阻断计费，计费失败不会重复写日志；指标新增 `logFailed` 与 `billingFailed`，看板分别展示两类失败。事件级 `persisted/failed` 总状态保持不变，仍可识别部分成功事件。
 
-**需求：**日志和计费拆成可恢复 outbox；请求线程只写轻量事件或内存缓冲；队列满时按明确策略选择限流、降级 trace、持久化最小摘要或返回可重试错误，不能静默改变 P95；增加持久化延迟、丢弃/降级计数和告警。
+**需求：**日志和计费拆成可恢复 outbox；请求线程只写轻量事件或内存缓冲；队列满时按明确策略写入本地恢复 journal，journal 失败才同步回退或返回可重试错误，不能静默改变 P95；增加持久化延迟、溢出、丢弃/降级计数和告警。
 
 ### P2：横向扩容和高并发仍缺少跨节点容量契约
 

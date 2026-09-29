@@ -59,6 +59,31 @@ public class DecisionExecutionPersistenceTest {
     }
 
     @Test
+    public void fullQueueUsesJournalBeforeSynchronousDatabaseFallback() {
+        AtomicInteger journalWrites = new AtomicInteger();
+        DurableExecutionPersistenceJournal journal = new DurableExecutionPersistenceJournal() {
+            @Override
+            public synchronized boolean append(Entry entry) {
+                journalWrites.incrementAndGet();
+                return true;
+            }
+        };
+        DecisionExecutionPersistence persistence = new DecisionExecutionPersistence(
+                new RuleExecutionLogService(), new RuleBillingService(), 100);
+        ReflectionTestUtils.setField(persistence, "journal", journal);
+        for (int i = 0; i < 101; i++) {
+            persistence.offer(new RuleExecutionLog(), new RuleDefinition(), true, 12L, null, null);
+        }
+
+        Map<String, Object> snapshot = persistence.snapshot();
+        assertEquals(1, journalWrites.get());
+        assertEquals(1L, snapshot.get("journalQueued"));
+        assertEquals(0L, snapshot.get("fallback"));
+        assertEquals("JOURNAL_THEN_SYNC_FALLBACK", snapshot.get("overflowStrategy"));
+        persistence.close();
+    }
+
+    @Test
     public void excludesFailedWriteTimeFromAverage() throws Exception {
         RuleExecutionLogService logService = new RuleExecutionLogService() {
             @Override
